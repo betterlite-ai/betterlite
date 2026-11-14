@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use hmac::{Hmac, Mac as _};
+use hmac::digest::InvalidLength;
+use hmac::{Hmac, KeyInit as _, Mac as _};
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::Sha256;
 use url::{ParseError, Url};
@@ -13,12 +14,16 @@ const HTTP_DATE: &str = "%a, %d %b %Y %H:%M:%S GMT";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SigningError {
-    #[error("the Azure storage request URL is not valid")]
-    Url(#[source] ParseError),
+    #[error("the Azure storage request URL {url} is not valid")]
+    Url {
+        url: String,
+        #[source]
+        source: ParseError,
+    },
     #[error("the Azure storage account key is not valid base64")]
     Key(#[source] base64::DecodeError),
     #[error("the Azure storage account key has an invalid length")]
-    KeyLength(#[source] hmac::digest::InvalidLength),
+    KeyLength(#[source] InvalidLength),
 }
 
 // x-ms-date carries the clock, so a fixed clock makes a signature reproducible in a test
@@ -56,7 +61,10 @@ fn resource(account: &str, url: &Url) -> String {
 
 // the canonical string the service documents; x-ms-date replaces the Date line, which stays empty
 fn canonical(request: &StorageRequest, account: &str) -> Result<String, SigningError> {
-    let url = Url::parse(&request.url).map_err(SigningError::Url)?;
+    let url = Url::parse(&request.url).map_err(|source| SigningError::Url {
+        url: request.url.clone(),
+        source,
+    })?;
     let length = if request.body.is_empty() {
         String::new()
     } else {
@@ -75,7 +83,6 @@ fn canonical(request: &StorageRequest, account: &str) -> Result<String, SigningE
     ))
 }
 
-#[must_use]
 pub fn shared_key_authorization(
     account: &str,
     key: &SecretString,

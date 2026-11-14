@@ -17,44 +17,40 @@ pub enum StorageAuthorization<'secret> {
     },
 }
 
+// LiteLLM's header sets: an empty create or flush says Content-Length 0, an append says Content-Type
 pub fn storage_request(
     method: Method,
     url: String,
     auth: &StorageAuthorization<'_>,
     now: Duration,
-    headers: Vec<(String, String)>,
-    body: Vec<u8>,
+    body: &[u8],
 ) -> Result<StorageRequest, SigningError> {
-    let mut headers = headers;
-    headers.push(("x-ms-version".to_owned(), STORAGE_API_VERSION.to_owned()));
-    match auth {
-        StorageAuthorization::Bearer(token) => headers.push((
-            "Authorization".to_owned(),
-            format!("Bearer {}", token.expose_secret()),
-        )),
-        StorageAuthorization::SharedKey { account, key } => {
-            headers.push(("x-ms-date".to_owned(), http_date(now)));
-            let mut request = StorageRequest {
-                method,
-                url,
-                query: Vec::new(),
-                headers,
-                body,
-                deadline: STORAGE_TIMEOUT,
-            };
-            let value = shared_key_authorization(account, key, &request)?;
-            request.headers.push(("Authorization".to_owned(), value));
-            return Ok(request);
-        }
+    let mut headers = vec![("x-ms-version".to_owned(), STORAGE_API_VERSION.to_owned())];
+    if body.is_empty() && method != Method::HEAD {
+        headers.push(("Content-Length".to_owned(), "0".to_owned()));
     }
-    Ok(StorageRequest {
+    if !body.is_empty() {
+        headers.push(("Content-Type".to_owned(), "application/json".to_owned()));
+    }
+    let mut request = StorageRequest {
         method,
         url,
         query: Vec::new(),
         headers,
-        body,
+        body: body.to_vec(),
         deadline: STORAGE_TIMEOUT,
-    })
+    };
+    let value = match auth {
+        StorageAuthorization::Bearer(token) => format!("Bearer {}", token.expose_secret()),
+        StorageAuthorization::SharedKey { account, key } => {
+            request
+                .headers
+                .push(("x-ms-date".to_owned(), http_date(now)));
+            shared_key_authorization(account, key, &request)?
+        }
+    };
+    request.headers.push(("Authorization".to_owned(), value));
+    Ok(request)
 }
 
 pub fn create_file_request(
@@ -67,8 +63,7 @@ pub fn create_file_request(
         format!("{base_url}?resource=file"),
         auth,
         now,
-        vec![("Content-Length".to_owned(), "0".to_owned())],
-        Vec::new(),
+        &[],
     )
 }
 
@@ -83,8 +78,7 @@ pub fn append_request(
         format!("{base_url}?action=append&position=0"),
         auth,
         now,
-        vec![("Content-Type".to_owned(), "application/json".to_owned())],
-        content.to_vec(),
+        content,
     )
 }
 
@@ -100,8 +94,7 @@ pub fn flush_data_request(
         format!("{base_url}?action=flush&position={position}{extra_query}"),
         auth,
         now,
-        vec![("Content-Length".to_owned(), "0".to_owned())],
-        Vec::new(),
+        &[],
     )
 }
 
@@ -110,14 +103,7 @@ pub fn directory_exists_request(
     auth: &StorageAuthorization<'_>,
     now: Duration,
 ) -> Result<StorageRequest, SigningError> {
-    storage_request(
-        Method::HEAD,
-        directory_url.to_owned(),
-        auth,
-        now,
-        Vec::new(),
-        Vec::new(),
-    )
+    storage_request(Method::HEAD, directory_url.to_owned(), auth, now, &[])
 }
 
 pub fn create_directory_request(
@@ -130,7 +116,6 @@ pub fn create_directory_request(
         format!("{directory_url}?resource=directory"),
         auth,
         now,
-        vec![("Content-Length".to_owned(), "0".to_owned())],
-        Vec::new(),
+        &[],
     )
 }

@@ -3,6 +3,7 @@ use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use secrecy::SecretString;
+use tokio::runtime::Handle;
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
@@ -22,7 +23,6 @@ use crate::azure_storage_logging::transport::{StorageRequest, StorageResponse};
 
 const FIRST_ERROR_STATUS: u16 = 400;
 const NOT_FOUND: u16 = 404;
-// the SDK's flush_data adds these two to LiteLLM's REST flush
 const SDK_FLUSH_QUERY: &str = "&retainUncommittedData=false&close=false";
 
 impl AzureBlobStorageLogger {
@@ -42,36 +42,16 @@ impl AzureBlobStorageLogger {
         payload: &StandardLoggingPayload,
     ) -> Result<(), AzureStorageError> {
         let token = self.set_valid_azure_ad_token().await?;
-        let auth = StorageAuthorization::Bearer(&token);
         let dumped = safe_dumps(payload, DEFAULT_MAX_RECURSE_DEPTH, None)
             .map_err(AzureStorageError::Serialize)?;
-        let json_payload = format!("{dumped}\n");
-        let now = self.deps.clock.now_unix();
         let file_name = adls_safe_file_name(Some(payload.id.as_str()), self.deps.ids.as_ref());
-        let endpoint = format!(
-            "https://{}.dfs.{}",
-            self.settings.account_name, self.settings.endpoint_suffix
-        );
         let base_url = storage_url(
-            &endpoint,
+            &self.settings.dfs_endpoint(),
             &[self.settings.file_system.as_str(), file_name.as_str()],
         );
-        let _created = self
-            .execute(create_file_request(&base_url, &auth, now)?, "create")
-            .await?;
-        let _appended = self
-            .execute(
-                append_request(&base_url, &auth, now, json_payload.as_bytes())?,
-                "append",
-            )
-            .await?;
-        let _flushed = self
-            .execute(
-                flush_data_request(&base_url, &auth, now, json_payload.len(), "")?,
-                "flush",
-            )
-            .await?;
-        Ok(())
+        let auth = StorageAuthorization::Bearer(&token);
+        self.write_file(&base_url, &auth, format!("{dumped}\n").as_bytes())
+            .await
     }
 
     async fn upload_with_account_key(
@@ -85,45 +65,70 @@ impl AzureBlobStorageLogger {
             key: &client.key,
         };
         let directory = dated_directory(now).ok_or(AzureStorageError::Date)?;
-        let endpoint = format!(
-            "https://{}.dfs.{}",
-            self.settings.account_name, self.settings.endpoint_suffix
-        );
-        let directory_url = storage_url(
-            &endpoint,
-            &[self.settings.file_system.as_str(), directory.as_str()],
-        );
-        // the SDK's directory exists() is a HEAD on the blob endpoint
-        let exists_url = storage_url(
-            &self.settings.blob_endpoint(),
-            &[self.settings.file_system.as_str(), directory.as_str()],
-        );
+        let segments = [self.settings.file_system.as_str(), directory.as_str()];
+        let directory_url = storage_url(&self.settings.dfs_endpoint(), &segments);
+        let exists_url = storage_url(&self.settings.blob_endpoint(), &segments);
+        self.ensure_directory(&exists_url, &directory_url, &auth)
+            .await?;
+        let file_name = adls_safe_file_name(Some(payload.id.as_str()), self.deps.ids.as_ref());
+        let content = safe_dumps(payload, DEFAULT_MAX_RECURSE_DEPTH, None)
+            .map_err(AzureStorageError::Serialize)?;
+        let base_url = storage_url(&directory_url, &[file_name.as_str()]);
+        self.write_file(&base_url, &auth, content.as_bytes()).await
+    }
+
+    // the SDK's directory exists() is a HEAD on the blob endpoint, and a 404 there means create it
+    async fn ensure_directory(
+        &self,
+        exists_url: &str,
+        directory_url: &str,
+        auth: &StorageAuthorization<'_>,
+    ) -> Result<(), AzureStorageError> {
+        let now = self.deps.clock.now_unix();
         let exists = self
-            .execute(directory_exists_request(&exists_url, &auth, now)?, "exists")
+            .deps
+            .transport
+            .send(directory_exists_request(exists_url, auth, now)?)
             .await?;
         if exists.status == NOT_FOUND {
             let _made = self
                 .execute(
-                    create_directory_request(&directory_url, &auth, now)?,
+                    create_directory_request(directory_url, auth, now)?,
                     "create_directory",
                 )
                 .await?;
+            return Ok(());
         }
-        let file_name = adls_safe_file_name(Some(payload.id.as_str()), self.deps.ids.as_ref());
-        let base_url = storage_url(&directory_url, &[file_name.as_str()]);
-        let content = safe_dumps(payload, DEFAULT_MAX_RECURSE_DEPTH, None)
-            .map_err(AzureStorageError::Serialize)?
-            .into_bytes();
-        let position = content.len();
+        if exists.status >= FIRST_ERROR_STATUS {
+            return Err(AzureStorageError::Status {
+                operation: "exists",
+                status: exists.status,
+            });
+        }
+        Ok(())
+    }
+
+    // create, append, flush; the SDK's flush adds retainUncommittedData and close to LiteLLM's REST flush
+    async fn write_file(
+        &self,
+        base_url: &str,
+        auth: &StorageAuthorization<'_>,
+        content: &[u8],
+    ) -> Result<(), AzureStorageError> {
+        let now = self.deps.clock.now_unix();
+        let flush_query = match auth {
+            StorageAuthorization::Bearer(_) => "",
+            StorageAuthorization::SharedKey { .. } => SDK_FLUSH_QUERY,
+        };
         let _created = self
-            .execute(create_file_request(&base_url, &auth, now)?, "create")
+            .execute(create_file_request(base_url, auth, now)?, "create")
             .await?;
         let _appended = self
-            .execute(append_request(&base_url, &auth, now, &content)?, "append")
+            .execute(append_request(base_url, auth, now, content)?, "append")
             .await?;
         let _flushed = self
             .execute(
-                flush_data_request(&base_url, &auth, now, position, SDK_FLUSH_QUERY)?,
+                flush_data_request(base_url, auth, now, content.len(), flush_query)?,
                 "flush",
             )
             .await?;
@@ -153,6 +158,7 @@ impl AzureBlobStorageLogger {
         }
         let provider = self.deps.chain_factory.provider()?;
         state.chain = Some(Arc::clone(&provider));
+        drop(state);
         Ok(provider)
     }
 
@@ -163,11 +169,15 @@ impl AzureBlobStorageLogger {
         {
             let provider = self.chain_provider()?;
             // the chain walk probes IMDS and may run a CLI, so it runs off the async worker
-            let token = tokio::task::spawn_blocking(move || provider.token())
+            let token = Handle::current()
+                .spawn_blocking(move || provider.token())
                 .await
                 .map_err(TokenError::Worker)??;
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.token.token = Some(token.clone());
+            self.state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .token
+                .token = Some(token.clone());
             return Ok(token);
         }
         let now = self.deps.clock.now_unix();
@@ -189,23 +199,27 @@ impl AzureBlobStorageLogger {
             .send(client_secret_request(&credentials))
             .await?;
         let token = parse_token_response(&response)?;
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.token.store(token.clone(), now);
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .token
+            .store(token.clone(), now);
         Ok(token)
     }
 
     // the SDK client is rebuilt once its TTL passes, which is LiteLLM's connection-pool reset
     fn service_client(&self, now: Duration) -> Result<CachedClient, AzureStorageError> {
-        {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Some(cached) = state.client.take() {
-                if cached.expires_at > now {
-                    let client = cached.clone();
-                    state.client = Some(cached);
-                    return Ok(client);
-                }
-                let _closed = self.closed_clients.fetch_add(1, Ordering::SeqCst);
+        let cached = self
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .client
+            .clone();
+        if let Some(client) = cached {
+            if client.expires_at > now {
+                return Ok(client);
             }
+            let _closed = self.closed_clients.fetch_add(1, Ordering::SeqCst);
         }
         let key = self
             .settings
@@ -218,8 +232,10 @@ impl AzureBlobStorageLogger {
             expires_at: now.saturating_add(SERVICE_CLIENT_TTL),
         };
         let _created = self.created_clients.fetch_add(1, Ordering::SeqCst);
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.client = Some(created.clone());
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .client = Some(created.clone());
         Ok(created)
     }
 }

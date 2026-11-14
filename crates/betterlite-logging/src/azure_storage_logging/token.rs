@@ -5,10 +5,11 @@ use http::Method;
 use http::header::CONTENT_TYPE;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use tokio::task::JoinError;
 use url::form_urlencoded;
 
 use super::settings::AzureStorageSettings;
-use super::transport::{STORAGE_TIMEOUT, StorageRequest};
+use super::transport::{STORAGE_TIMEOUT, StorageRequest, StorageResponse, StorageTransportError};
 
 pub const STORAGE_SCOPE: &str = "https://storage.azure.com/.default";
 pub const REFRESH_MARGIN: Duration = Duration::from_secs(300);
@@ -26,15 +27,15 @@ pub enum TokenError {
     #[error("Missing required environment variable: AZURE_STORAGE_CLIENT_SECRET")]
     MissingClientSecret,
     #[error("the Azure AD token request could not be completed")]
-    Transport(#[from] super::transport::StorageTransportError),
+    Transport(#[from] StorageTransportError),
     #[error("the Azure AD token endpoint answered with status {status}")]
-    Status { status: u16, detail: String },
+    Status { status: u16 },
     #[error("the Azure AD token response is not JSON")]
     Body(#[source] serde_json::Error),
     #[error("the Azure AD token response has no access_token")]
     MissingAccessToken,
     #[error("the Azure AD token worker task failed")]
-    Worker(#[source] tokio::task::JoinError),
+    Worker(#[source] JoinError),
     #[error(transparent)]
     Chain(#[from] ChainError),
 }
@@ -124,13 +125,10 @@ pub fn client_secret_request(credentials: &(String, String, SecretString)) -> St
 }
 
 // a token response that cannot be read raises in the SDK, so the upload fails rather than sending an empty bearer
-pub fn parse_token_response(
-    response: &super::transport::StorageResponse,
-) -> Result<SecretString, TokenError> {
+pub fn parse_token_response(response: &StorageResponse) -> Result<SecretString, TokenError> {
     if response.status != 200 {
         return Err(TokenError::Status {
             status: response.status,
-            detail: String::from_utf8_lossy(&response.body).into_owned(),
         });
     }
     let parsed: TokenResponse = serde_json::from_slice(&response.body).map_err(TokenError::Body)?;

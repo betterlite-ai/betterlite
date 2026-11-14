@@ -5,7 +5,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use http::Method;
-use http::header::{HeaderMap, HeaderName, HeaderValue};
+use http::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use url::{ParseError, Url};
 
 // LiteLLM's cached logging client keeps its fallback total, so a dead endpoint cannot wedge a flush forever
@@ -29,12 +29,16 @@ pub struct StorageResponse {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageTransportError {
-    #[error("the Azure storage request URL is not valid")]
-    Url(#[source] ParseError),
+    #[error("the Azure storage request URL {url} is not valid")]
+    Url {
+        url: String,
+        #[source]
+        source: ParseError,
+    },
     #[error("an Azure storage request header name is not valid")]
-    HeaderName(#[source] http::header::InvalidHeaderName),
+    HeaderName(#[source] InvalidHeaderName),
     #[error("an Azure storage request header value is not valid")]
-    HeaderValue(#[source] http::header::InvalidHeaderValue),
+    HeaderValue(#[source] InvalidHeaderValue),
     #[error("the Azure storage request could not be completed")]
     Request(#[source] TransportError),
 }
@@ -57,7 +61,10 @@ impl StorageTransport for PooledTransport {
         &self,
         request: StorageRequest,
     ) -> Result<StorageResponse, StorageTransportError> {
-        let url = Url::parse(&request.url).map_err(StorageTransportError::Url)?;
+        let url = Url::parse(&request.url).map_err(|source| StorageTransportError::Url {
+            url: request.url.clone(),
+            source,
+        })?;
         let mut headers = HeaderMap::new();
         for (name, value) in &request.headers {
             let header_name = HeaderName::from_bytes(name.as_bytes())

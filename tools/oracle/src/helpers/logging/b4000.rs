@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::str::from_utf8;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_logging::azure_storage_logging::filename::IdSource;
+use betterlite_logging::azure_storage_logging::filename::RandomIds;
 use betterlite_logging::azure_storage_logging::logger::{AzureBlobStorageLogger, AzureStorageDeps};
 use betterlite_logging::azure_storage_logging::settings::AzureStorageSettings;
 use betterlite_logging::azure_storage_logging::token::{
@@ -18,6 +19,8 @@ use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::datadog_logging::clock::Clock;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_models::decisions::Json;
+use http::Method;
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -99,7 +102,7 @@ async fn drive(scenario: &Scenario) -> Value {
         Err(error) => return json!({ "initialized": false, "error": error.to_string() }),
     };
     let endpoints = json!({
-        "dfs": format!("https://{}.dfs.{}", settings.account_name, settings.endpoint_suffix),
+        "dfs": settings.dfs_endpoint(),
         "blob": settings.blob_endpoint(),
     });
     let transport = Arc::new(ScriptedTransport {
@@ -110,10 +113,10 @@ async fn drive(scenario: &Scenario) -> Value {
     let logger = AzureBlobStorageLogger::new(
         settings,
         AzureStorageDeps {
-            transport: Arc::clone(&transport) as Arc<dyn StorageTransport>,
-            clock: Arc::clone(&clock) as Arc<dyn Clock>,
+            transport: Arc::<ScriptedTransport>::clone(&transport),
+            clock: Arc::<ManualClock>::clone(&clock),
             environment: Arc::new(environment),
-            ids: Arc::new(FixedIds),
+            ids: Arc::new(RandomIds),
             chain_factory: Arc::new(FixedFactory),
             shutdown: CancellationToken::new(),
             tasks: None,
@@ -182,6 +185,7 @@ async fn perform(
             let queued = Arc::new(LoggerEvent {
                 payload: Arc::new(payload),
                 dynamic_params: Arc::new(Json::Null),
+                litellm_metadata: Arc::new(IndexMap::new()),
                 stream: false,
                 guardrail_snapshot: None,
             });
@@ -216,13 +220,6 @@ async fn perform(
     }
 }
 
-struct FixedIds;
-impl IdSource for FixedIds {
-    fn next_id(&self) -> String {
-        "generated-id".to_owned()
-    }
-}
-
 struct FixedFactory;
 impl ChainProviderFactory for FixedFactory {
     fn provider(&self) -> Result<Arc<dyn ChainTokenProvider>, ChainError> {
@@ -246,7 +243,7 @@ fn operation(call: &StorageRequest) -> &'static str {
     if url.ends_with(TOKEN_SUFFIX) {
         return "entra_token";
     }
-    if call.method == http::Method::HEAD {
+    if call.method == Method::HEAD {
         return "exists";
     }
     MARKERS
@@ -264,7 +261,7 @@ fn describe(call: &StorageRequest) -> Value {
     if op != "append" {
         return json!({ "op": op, "url": url });
     }
-    let text = std::str::from_utf8(&call.body).unwrap_or_default();
+    let text = from_utf8(&call.body).unwrap_or_default();
     let body: Option<Value> = serde_json::from_str(text.trim_end_matches('\n')).ok();
     json!({ "op": op, "url": url, "body": body, "trailing_newline": text.ends_with('\n') })
 }

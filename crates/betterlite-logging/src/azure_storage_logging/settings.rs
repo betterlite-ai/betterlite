@@ -87,6 +87,11 @@ impl AzureStorageSettings {
     }
 
     #[must_use]
+    pub fn dfs_endpoint(&self) -> String {
+        format!("https://{}.dfs.{}", self.account_name, self.endpoint_suffix)
+    }
+
+    #[must_use]
     pub fn blob_endpoint(&self) -> String {
         format!(
             "https://{}.blob.{}",

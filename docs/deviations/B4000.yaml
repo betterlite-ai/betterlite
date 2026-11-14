@@ -33,6 +33,13 @@ deviations:
       that may depend on both.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L37-L135
   - what: >-
+      A payload id holding a percent escape, such as a%2Fb, is sent with its % escaped on both paths, so the
+      stored file is named a%2Fb.json. LiteLLM's token path puts the id into the URL unescaped, so the service
+      decodes it and stores a/b.json.
+    why: The account-key path already escapes it through the SDK, and one rule for both paths keeps the stored name
+      equal to the logged id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L203
+  - what: >-
       An account-key upload that fails (a 4xx or 5xx from the directory, create, append or flush request) returns the
       error, so flush keeps the event queued. LiteLLM catches every exception in that path and logs it.
     why: A swallowed error reports success for a record that was never stored, and the flush then drops the event.

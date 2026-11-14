@@ -4,7 +4,7 @@ use crate::azure_storage_logging::chain::UnwiredChainFactory;
 use crate::azure_storage_logging::filename::RandomIds;
 use crate::azure_storage_logging::logger::{AzureBlobStorageLogger, AzureStorageDeps};
 use crate::azure_storage_logging::settings::AzureStorageSettings;
-use crate::azure_storage_logging::transport::{PooledTransport, StorageTransport};
+use crate::azure_storage_logging::transport::PooledTransport;
 use crate::callback_logger::CallbackLogger;
 use crate::datadog_logging::clock::SystemClock;
 
@@ -20,11 +20,10 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
                 message: error.to_string(),
             }
         })?;
-    let transport: Arc<dyn StorageTransport> = Arc::new(PooledTransport {
-        client: inputs.http.clone(),
-    });
     let deps = AzureStorageDeps {
-        transport: Arc::clone(&transport),
+        transport: Arc::new(PooledTransport {
+            client: inputs.http.clone(),
+        }),
         clock: Arc::new(SystemClock),
         environment: Arc::clone(&inputs.env),
         ids: Arc::new(RandomIds),

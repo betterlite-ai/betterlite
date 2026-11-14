@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -13,6 +14,7 @@ use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
 use crate::datadog_logging::clock::Clock;
 use crate::fields::payload::StandardLoggingPayload;
+use crate::private_json::error::PrivateJsonError;
 
 use super::filename::IdSource;
 use super::settings::AzureStorageSettings;
@@ -30,7 +32,7 @@ const DATE_FORMAT: &str = "%Y-%m-%d";
 #[derive(Debug, thiserror::Error)]
 pub enum AzureStorageError {
     #[error("the Azure storage payload could not be serialized")]
-    Serialize(#[source] crate::private_json::error::PrivateJsonError),
+    Serialize(#[source] PrivateJsonError),
     #[error("the Azure storage token could not be obtained")]
     Token(#[from] TokenError),
     #[error("the Azure storage request could not be signed")]
@@ -74,7 +76,7 @@ struct CachedClient {
 }
 
 #[derive(Default)]
-struct UploadState {
+pub struct UploadState {
     token: TokenState,
     chain: Option<Arc<dyn ChainTokenProvider>>,
     client: Option<CachedClient>,
@@ -84,11 +86,11 @@ pub struct AzureBlobStorageLogger {
     pub settings: AzureStorageSettings,
     pub deps: AzureStorageDeps,
     pub queue: BatchQueue<StandardLoggingPayload>,
-    state: Mutex<UploadState>,
-    last_flush_time: Mutex<Duration>,
+    pub state: Mutex<UploadState>,
+    pub last_flush_time: Mutex<Duration>,
     // the account-key client lifecycle, so a flush and a test both see how often the SDK client was rebuilt
-    pub created_clients: std::sync::atomic::AtomicUsize,
-    pub closed_clients: std::sync::atomic::AtomicUsize,
+    pub created_clients: AtomicUsize,
+    pub closed_clients: AtomicUsize,
 }
 
 impl AzureBlobStorageLogger {
@@ -101,8 +103,8 @@ impl AzureBlobStorageLogger {
             deps,
             state: Mutex::new(UploadState::default()),
             last_flush_time: Mutex::new(last_flush_time),
-            created_clients: std::sync::atomic::AtomicUsize::new(0),
-            closed_clients: std::sync::atomic::AtomicUsize::new(0),
+            created_clients: AtomicUsize::new(0),
+            closed_clients: AtomicUsize::new(0),
         });
         if let Some(tasks) = logger.deps.tasks.clone() {
             let periodic = Arc::clone(&logger);
