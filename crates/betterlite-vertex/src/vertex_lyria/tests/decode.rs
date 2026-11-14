@@ -217,6 +217,16 @@ fn prefers_steps_over_outputs() {
 }
 
 #[test]
+fn keeps_the_steps_when_they_carry_no_audio() {
+    let body = r#"{
+        "steps": [{"type": "text", "data": "QUJD"}],
+        "outputs": [{"type": "audio", "data": "WFk="}]
+    }"#;
+    let error = decode("lyria-3-pro-preview", body).unwrap_err();
+    assert!(matches!(error, VertexLyriaError::MissingAudio { .. }));
+}
+
+#[test]
 fn descends_the_content_of_a_model_output_step() {
     let body = r#"{"steps": [{
         "type": "model_output",
@@ -236,6 +246,13 @@ fn treats_a_step_with_another_type_as_its_own_audio_item() {
     let audio = decode("lyria-3-pro-preview", body).unwrap();
     assert_eq!(audio.bytes.as_slice(), b"ABC");
     assert_eq!(audio.content_type.as_deref(), Some("audio/wav"));
+}
+
+#[test]
+fn ignores_the_data_of_a_model_output_step() {
+    let body = r#"{"steps": [{"type": "model_output", "data": "QUJD"}]}"#;
+    let error = decode("lyria-3-pro-preview", body).unwrap_err();
+    assert!(matches!(error, VertexLyriaError::MissingAudio { .. }));
 }
 
 #[test]
