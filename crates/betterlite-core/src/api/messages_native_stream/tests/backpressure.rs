@@ -39,7 +39,8 @@ async fn two_queued_chunks_hold_the_third_pull() {
         .release(SseChunk::Bytes(frame("three")))
         .await;
     harness.script.try_release(SseChunk::Bytes(frame("four")));
-    // the pump is blocked on the full queue, so it has not pulled the fourth chunk
+    // a pump with room reaches the fourth command; this one stays parked on the full queue
+    tokio::task::yield_now().await;
     assert_eq!(harness.script.pulls(), 3);
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
     harness.script.await_delivery().await;

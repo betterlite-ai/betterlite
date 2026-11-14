@@ -23,6 +23,7 @@ async fn teardown_dispatches_parked_logging() {
     a_sentinel_that_loses_to_detach_dispatches_in_the_pump().await;
     a_detached_completion_bills_with_teardown().await;
     a_consumed_sentinel_leaves_the_parked_callback_to_the_proxy().await;
+    an_incomplete_frame_that_loses_to_detach_bills_teardown().await;
 }
 
 async fn a_disconnect_dispatches_the_parked_callback_once() {
@@ -57,12 +58,31 @@ async fn a_sentinel_that_loses_to_detach_dispatches_in_the_pump() {
     while !harness.parked() {
         tokio::task::yield_now().await;
     }
-    drop(relay);
+    // detaching on the queue keeps the relay alive, so only the pump can dispatch the park
+    relay.queue.detach();
     pump.wait().await;
     harness.worker.flush().await;
     assert_eq!(deferred.calls(), vec![1]);
+    assert!(!harness.parked());
     assert_eq!(harness.ran(), 1);
     assert_eq!(harness.routed_frames(), vec![frame("one"), frame("two")]);
+}
+
+// B979 bills teardown when the incomplete frame loses to a detach after EOF began
+async fn an_incomplete_frame_that_loses_to_detach_bills_teardown() {
+    let (harness, relay) = Harness::start(limits(1), Arc::new(StreamRegistry::default()));
+    let deferred = arm_deferred(&harness);
+    harness.script.release(SseChunk::Bytes(frame("one"))).await;
+    // the chunk stays unread, so the queue is full when the pump tries the incomplete frame
+    harness.script.finish().await;
+    relay.queue.detach();
+    let pump = pump_of(&relay);
+    pump.wait().await;
+    harness.worker.flush().await;
+    assert_eq!(harness.ran(), 1);
+    assert!(!harness.parked());
+    assert_eq!(deferred.calls(), Vec::<usize>::new());
+    assert_eq!(harness.routed_frames(), vec![frame("one")]);
 }
 
 async fn a_detached_completion_bills_with_teardown() {
