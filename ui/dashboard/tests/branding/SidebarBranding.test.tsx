@@ -89,7 +89,8 @@ describe("shared sidebar branding", () => {
     renderSidebar();
 
     const home = screen.getByRole("link", { name: "betterlite home" });
-    expect(home).toHaveAttribute("href", "/ui/");
+    // The test router renders uiHref("") as /ui, without the trailing slash.
+    expect(home).toHaveAttribute("href", "/ui");
     expect(home).toHaveTextContent("betterlite");
     expect(screen.queryByRole("link", { name: /litellm home/i })).not.toBeInTheDocument();
   });

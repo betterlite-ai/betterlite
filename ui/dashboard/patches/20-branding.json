@@ -58,7 +58,7 @@
     {
       "path": "ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx",
       "preimage": "bc8339d6590cff26e515017178e6a430e53c0fe8f4f858355180bc22278a1bcb",
-      "postimage": "7c6cc6b2b024b5bc14012a90b48f17b9635330e792807867a9d6ccb2751f5ef8"
+      "postimage": "c11843c245d869cf5ad51997fb85fefde35774d74917f1f820282e0c88d8f76f"
     },
     {
       "path": "ui/litellm-dashboard/src/components/DashboardHeader.tsx",

@@ -228,7 +228,7 @@ index 11cf5ffad3d442f408ce0a029be1b307dc756bc3..0494b0f32fab58401f03617959d08492
                        .
                      </p>
 diff --git a/ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx b/ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx
-index 96eb165d43c6153efc814f556503b6def7cd77a3..66739de8a7c8abfcd31b88a29c3fa08b9dcd4ed5 100644
+index 96eb165d43c6153efc814f556503b6def7cd77a3..9c096a7ae0cc8b7f35d32dc1f6ee40f0ba8d7d57 100644
 --- a/ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx
 +++ b/ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx
 @@ -1,15 +1,15 @@
@@ -237,7 +237,8 @@ index 96eb165d43c6153efc814f556503b6def7cd77a3..66739de8a7c8abfcd31b88a29c3fa08b
 +import { CircleAlert } from "lucide-react";
  import { z } from "zod/v4";
 +import { BrandWordmark } from "@/components/branding/BrandWordmark";
- import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
+-import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
++import { Alert, AlertTitle } from "@/components/shared/Alert";
  import { PasswordInput } from "@/components/shared/PasswordInput";
  import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
  import { FormField } from "@/components/shared/form/FormField";

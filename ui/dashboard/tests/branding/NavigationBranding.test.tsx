@@ -88,7 +88,8 @@ describe("shared navbar branding", () => {
     renderNavbar();
 
     const home = screen.getByRole("link", { name: "betterlite home" });
-    expect(home).toHaveAttribute("href", "/ui/");
+    // The test router renders uiHref("") as /ui, without the trailing slash.
+    expect(home).toHaveAttribute("href", "/ui");
     expect(within(home).getByText("betterlite")).toBeInTheDocument();
   });
 
