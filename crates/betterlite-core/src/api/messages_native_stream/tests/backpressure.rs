@@ -10,7 +10,9 @@ use tokio::task::yield_now;
 use super::super::queue::QueueItem;
 use super::super::registry::StreamRegistry;
 use super::super::{ClientRelay, RelayLimits};
-use super::support::{Frame, Harness, Recorder, frame, pump_of, queue_of, read, settle};
+use super::support::{
+    Frame, Harness, ProviderError, Recorder, frame, pump_of, queue_of, read, settle,
+};
 use crate::api::messages_sse_events::render::incomplete_error_sse_event;
 use crate::api::messages_stream_logging::SseChunk;
 
