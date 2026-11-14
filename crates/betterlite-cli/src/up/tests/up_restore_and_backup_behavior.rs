@@ -1,6 +1,9 @@
+use std::fs;
+
+use betterlite_config::sections::settings::JsonValue;
 use secrecy::SecretString;
 
-use super::support::{World, record};
+use super::support::{World, document, json_file, record, seed, utf8};
 use crate::settings_backup::report::restore_and_report;
 use crate::up::command::run_up;
 use crate::up::error::UpError;
@@ -12,7 +15,7 @@ fn prepared(settings: Option<&str>) -> World {
     world.seed_token(record("sk-live", 1_000.0, Some(FRESH)));
     world.context.api_key = Some(SecretString::from("sk-live".to_owned()));
     if let Some(text) = settings {
-        world.seed(&world.settings_path(), text);
+        seed(&world.settings_path(), text);
     }
     world
 }
@@ -24,8 +27,8 @@ fn up_restores_the_original_settings_after_stopping() {
     run_up(&mut ports).expect("the session ran and restored");
     drop(ports);
     assert_eq!(
-        super::support::json_file(&world.settings_path()),
-        serde_json::json!({"model": "opus"})
+        json_file(&world.settings_path()),
+        Some(document(r#"{"model":"opus"}"#))
     );
     assert!(!world.backup_path().exists());
     let text = world.text();
@@ -49,7 +52,7 @@ fn up_removes_settings_it_created_after_stopping() {
 
 #[test]
 fn up_records_the_original_settings_in_the_backup_before_patching() {
-    let mut world = prepared(Some(r#"{"model":"opus","statusLine":{"type":"command"}}"#));
+    let mut world = prepared(Some(r#"{"model":"opus","theme":"dark"}"#));
     let mut ports = world.ports();
     run_up(&mut ports).expect("the session ran and restored");
     drop(ports);
@@ -58,30 +61,58 @@ fn up_records_the_original_settings_in_the_backup_before_patching() {
         .expect("the stop hook saw the patched state");
     assert_eq!(
         snapshot.backup,
-        serde_json::json!({
-            "existed": true,
-            "content": {"model": "opus", "statusLine": {"type": "command"}},
-        })
+        Some(document(
+            r#"{"existed":true,"content":{"model":"opus","theme":"dark"}}"#
+        ))
     );
-    let patched = snapshot.settings;
+    let patched = snapshot.settings.expect("the settings were patched");
+    let env = patched.get("env").expect("the env block was written");
     assert_eq!(
-        patched.pointer("/env/ANTHROPIC_AUTH_TOKEN"),
-        Some(&serde_json::json!("sk-live"))
-    );
-    assert_eq!(
-        patched.pointer("/env/ANTHROPIC_BASE_URL"),
-        Some(&serde_json::json!("http://gateway.test:4000"))
+        env.get("ANTHROPIC_AUTH_TOKEN").and_then(JsonValue::as_str),
+        Some("sk-live")
     );
     assert_eq!(
-        patched.pointer("/statusLine/command"),
-        Some(&serde_json::json!("/opt/betterlite statusline"))
+        env.get("ANTHROPIC_BASE_URL").and_then(JsonValue::as_str),
+        Some("http://gateway.test:4000")
+    );
+    assert_eq!(
+        patched
+            .get("statusLine")
+            .and_then(|entry| entry.get("command"))
+            .and_then(JsonValue::as_str),
+        Some("/opt/betterlite statusline")
+    );
+    assert_eq!(
+        patched.get("theme").and_then(JsonValue::as_str),
+        Some("dark")
+    );
+}
+
+#[test]
+fn up_keeps_a_status_line_the_user_runs_themselves() {
+    let mut world = prepared(Some(
+        r#"{"statusLine":{"type":"command","command":"my-own-line"}}"#,
+    ));
+    let mut ports = world.ports();
+    run_up(&mut ports).expect("the session ran and restored");
+    drop(ports);
+    let patched = world
+        .snapshot()
+        .and_then(|snapshot| snapshot.settings)
+        .expect("the settings were patched");
+    assert_eq!(
+        patched
+            .get("statusLine")
+            .and_then(|entry| entry.get("command"))
+            .and_then(JsonValue::as_str),
+        Some("my-own-line")
     );
 }
 
 #[test]
 fn up_reports_when_the_settings_directory_cannot_be_created() {
     let mut world = prepared(None);
-    std::fs::write(world.home_path().join(".claude"), "not a directory")
+    fs::write(world.home_path().join(".claude"), "not a directory")
         .expect("a file where the settings directory goes");
     let mut ports = world.ports();
     let error = run_up(&mut ports).expect_err("the settings directory cannot be created");
@@ -99,7 +130,7 @@ fn up_remembers_that_the_settings_did_not_exist() {
         .expect("the stop hook saw the patched state");
     assert_eq!(
         snapshot.backup,
-        serde_json::json!({"existed": false, "content": null})
+        Some(document(r#"{"existed":false,"content":null}"#))
     );
 }
 
@@ -109,13 +140,13 @@ fn down_without_a_backup_reports_nothing_to_restore() {
     let mut stdout = Vec::new();
     restore_and_report(world.home_path(), &world.private_files, &mut stdout)
         .expect("there is nothing to restore");
-    assert_eq!(String::from_utf8_lossy(&stdout), "Nothing to restore.\n");
+    assert_eq!(utf8(&stdout), "Nothing to restore.\n");
 }
 
 #[test]
 fn down_reports_a_corrupted_backup_with_its_path() {
     let world = prepared(None);
-    world.seed(&world.backup_path(), "{not json");
+    seed(&world.backup_path(), "{not json");
     let mut stdout = Vec::new();
     let error = restore_and_report(world.home_path(), &world.private_files, &mut stdout)
         .expect_err("the backup cannot be read");

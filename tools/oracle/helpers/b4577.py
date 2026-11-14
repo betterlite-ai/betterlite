@@ -26,8 +26,6 @@ from litellm.proxy.client.cli.commands import claude_settings as claude_settings
 from litellm.proxy.client.cli.commands import up as up_module
 from litellm.proxy.client.cli.commands.agents import AgentRunError, verify_proxy_key
 from litellm.proxy.client.cli.commands.auth import CliContextObj
-from litellm.proxy.client.cli.commands.claude_settings import ClaudeSettingsError
-from litellm.proxy.client.cli.commands.up import UpError
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
@@ -237,9 +235,9 @@ def run_fresh_login(input_value: Input) -> JsonValue:
                 up_module.ensure_fresh_login(context)
         except AgentRunError as caught:
             error = failure(caught, "AgentRunError", str(root))
-        except UpError as caught:
+        except up_module.UpError as caught:
             error = failure(caught, "UpError", str(root))
-        except ClaudeSettingsError as caught:
+        except claude_settings_module.ClaudeSettingsError as caught:
             error = failure(caught, "ClaudeSettingsError", str(root))
         return answer(script, stdout.getvalue(), error)
 
@@ -251,7 +249,7 @@ def run_read_backup(input_value: Input) -> JsonValue:
         error: JsonValue = None
         try:
             up_module.read_backup(backup_path=script.backup)
-        except UpError as caught:
+        except up_module.UpError as caught:
             error = failure(caught, "UpError", str(root))
         return answer(script, "", error)
 
@@ -261,9 +259,11 @@ def run_command(input_value: Input) -> JsonValue:
         root = Path(temporary)
         script = prepare(root, input_value)
         if input_value["operation"] == "down":
-            result = CliRunner().invoke(up_module.down)
+            result = CliRunner().invoke(up_module.down, standalone_mode=False)
         else:
-            result = CliRunner().invoke(up_module.up, obj=context_value(script))
+            result = CliRunner().invoke(
+                up_module.up, obj=context_value(script), standalone_mode=False
+            )
         error: JsonValue = None
         if result.exception is not None:
             error = failure(result.exception, "ClickException", str(root))

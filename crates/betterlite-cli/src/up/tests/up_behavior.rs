@@ -1,9 +1,10 @@
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::support::{World, pkce_record, record};
+use super::support::{World, pkce_record, record, seed};
 use crate::up::command::run_up;
 use crate::up::error::UpError;
 use crate::up::login::{ensure_fresh_login, resolve_api_key};
+use crate::up::{UP_ABOUT, UP_LONG_ABOUT};
 
 const FRESH: f64 = 4_000_000_000.0;
 
@@ -175,11 +176,11 @@ fn resolve_api_key_reports_a_missing_key_without_a_terminal() {
 #[test]
 fn up_help_matches_the_litellm_docstring() {
     assert_eq!(
-        crate::up::UP_ABOUT,
+        UP_ABOUT,
         "Route every Claude Code session through your LiteLLM proxy until stopped"
     );
     assert_eq!(
-        crate::up::UP_LONG_ABOUT,
+        UP_LONG_ABOUT,
         concat!(
             "Route every Claude Code session through your LiteLLM proxy until stopped.\n\n",
             "Patches ~/.claude/settings.json so Claude Code picks up the proxy on its own next startup, ",
@@ -235,7 +236,7 @@ fn up_refuses_while_a_backup_exists() {
     let mut world = World::new(false);
     world.seed_token(record("sk-live", 1_000.0, Some(FRESH)));
     world.context.api_key = Some(SecretString::from("sk-live".to_owned()));
-    world.seed(
+    seed(
         &world.backup_path(),
         r#"{"existed": false, "content": null}"#,
     );

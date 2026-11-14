@@ -1,20 +1,23 @@
 use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::str;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_logging::private_json::files::{PrivateFiles, StagedFile};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Value;
 use tempfile::TempDir;
 
 use crate::agent_launch::{KeyProbe, Terminal};
+use crate::claude_settings::SettingsDocument;
 use crate::cli_context::CliContext;
 use crate::credential_lifecycle::files::CredentialFiles;
 use crate::keyring::{KeyringUnusable, SecretErase, SecretRead, SecretVault, SecretWrite};
+use crate::login::NeverInterrupted;
 use crate::login::error::LoginError;
 use crate::pkce_login::models::PkceFailure;
 use crate::pkce_login::{Clock, Entropy, Http, HttpBody, HttpResponse, WallClock};
@@ -25,6 +28,8 @@ use crate::token_records::error::TokenRecordError;
 use crate::token_records::record::CliTokenRecord;
 use crate::up::error::UpError;
 use crate::up::ports::{FlowLogin, LoginAttempt, LoginLauncher, StopSource, UpPorts};
+#[cfg(unix)]
+use crate::up::signals::SignalStop;
 
 pub(crate) const SERVER: &str = "http://gateway.test:4000";
 const CLOCK_SECONDS: i64 = 2_000_000_000;
@@ -36,16 +41,16 @@ pub(crate) struct Probe {
     pub(crate) authorization: String,
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone)]
 pub(crate) struct Snapshot {
-    pub(crate) settings: Value,
-    pub(crate) backup: Value,
+    pub(crate) settings: Option<SettingsDocument>,
+    pub(crate) backup: Option<SettingsDocument>,
 }
 
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) record: Mutex<Option<CliTokenRecord>>,
-    pub(crate) logins: Mutex<usize>,
+    pub(crate) logins: AtomicUsize,
     pub(crate) probe: Mutex<Option<Probe>>,
     pub(crate) snapshot: Mutex<Option<Snapshot>>,
     pub(crate) stopped: AtomicBool,
@@ -110,8 +115,8 @@ impl SecretVault for DisabledVault {
 pub(crate) struct FixedClock;
 
 impl Clock for FixedClock {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
+    fn now(&self) -> Instant {
+        Instant::now()
     }
 }
 
@@ -247,11 +252,7 @@ where
             .record
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = self.token.clone();
-        *self
-            .state
-            .logins
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) += 1;
+        self.state.logins.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 }
@@ -261,8 +262,8 @@ pub(crate) struct ScriptedStop {
     pub(crate) settings: PathBuf,
     pub(crate) backup: PathBuf,
     #[cfg(unix)]
-    pub(crate) real: Option<crate::up::signals::SignalStop>,
-    pub(crate) installed: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    pub(crate) real: Option<SignalStop>,
+    pub(crate) installed: Mutex<Option<SyncSender<()>>>,
 }
 
 impl StopSource for ScriptedStop {
@@ -282,16 +283,14 @@ impl StopSource for ScriptedStop {
             .snapshot
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(snapshot);
-        self.state
-            .stopped
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        if let Some(installed) = self
+        self.state.stopped.store(true, Ordering::SeqCst);
+        let installed = self
             .installed
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            let _unused = installed.send(());
+            .take();
+        if let Some(sender) = installed {
+            let _unused = sender.send(());
         }
         Ok(())
     }
@@ -308,10 +307,43 @@ impl StopSource for ScriptedStop {
 
 fn ignore_message(_message: &str) {}
 
-pub(crate) fn json_file(path: &Path) -> Value {
-    match fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or(Value::String(text)),
-        Err(_unreadable) => Value::Null,
+pub(crate) fn json_file(path: &Path) -> Option<SettingsDocument> {
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+pub(crate) fn document(text: &str) -> SettingsDocument {
+    serde_json::from_str(text).expect("the expected document is a JSON object")
+}
+
+pub(crate) fn utf8(bytes: &[u8]) -> &str {
+    str::from_utf8(bytes).expect("the output is UTF-8")
+}
+
+pub(crate) fn seed(path: &Path, text: &str) {
+    if let Some(directory) = path.parent() {
+        fs::create_dir_all(directory).expect("the seed directory");
+    }
+    fs::write(path, text).expect("the seed file");
+}
+
+fn cli_context() -> CliContext {
+    CliContext {
+        base_url: SERVER.to_owned(),
+        base_url_explicit: false,
+        api_key: None,
+        api_key_from_token_file: false,
+    }
+}
+
+fn scripted_stop(state: Arc<State>, root: &Path) -> ScriptedStop {
+    ScriptedStop {
+        state,
+        settings: root.join(".claude").join("settings.json"),
+        backup: root.join(".litellm").join("claude_settings_backup.json"),
+        #[cfg(unix)]
+        real: None,
+        installed: Mutex::new(None),
     }
 }
 
@@ -326,7 +358,7 @@ pub(crate) struct World {
     pub(crate) entropy: ZeroEntropy,
     pub(crate) sleeper: NoSleeper,
     pub(crate) selection: SelectionTerminal,
-    pub(crate) interrupt: crate::login::NeverInterrupted,
+    pub(crate) interrupt: NeverInterrupted,
     pub(crate) token_path: PathBuf,
     pub(crate) binary_path: PathBuf,
     pub(crate) home: TempDir,
@@ -346,12 +378,7 @@ impl World {
         let state = Arc::new(State::default());
         let token_path = root.join(".litellm").join("token.json");
         Self {
-            context: CliContext {
-                base_url: SERVER.to_owned(),
-                base_url_explicit: false,
-                api_key: None,
-                api_key_from_token_file: false,
-            },
+            context: cli_context(),
             environment: FakeEnvironment { home: root.clone() },
             files: MemoryFiles {
                 state: Arc::clone(&state),
@@ -364,7 +391,7 @@ impl World {
             entropy: ZeroEntropy,
             sleeper: NoSleeper,
             selection: SelectionTerminal::default(),
-            interrupt: crate::login::NeverInterrupted,
+            interrupt: NeverInterrupted,
             token_path,
             binary_path: PathBuf::from("/opt/betterlite"),
             home,
@@ -380,23 +407,16 @@ impl World {
                 state: Arc::clone(&state),
                 real: false,
             },
-            stop: ScriptedStop {
-                state,
-                settings: root.join(".claude").join("settings.json"),
-                backup: root.join(".litellm").join("claude_settings_backup.json"),
-                #[cfg(unix)]
-                real: None,
-                installed: Mutex::new(None),
-            },
+            stop: scripted_stop(state, &root),
             stdout: Vec::new(),
             stderr: Vec::new(),
         }
     }
 
     #[cfg(unix)]
-    pub(crate) fn use_real_signals(&mut self) -> std::sync::mpsc::Receiver<()> {
-        let (sender, receiver) = std::sync::mpsc::channel();
-        self.stop.real = Some(crate::up::signals::SignalStop::default());
+    pub(crate) fn use_real_signals(&mut self) -> Receiver<()> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.stop.real = Some(SignalStop::default());
         *self
             .stop
             .installed
@@ -418,13 +438,6 @@ impl World {
             .path()
             .join(".litellm")
             .join("claude_settings_backup.json")
-    }
-
-    pub(crate) fn seed(&self, path: &Path, text: &str) {
-        if let Some(directory) = path.parent() {
-            fs::create_dir_all(directory).expect("the seed directory");
-        }
-        fs::write(path, text).expect("the seed file");
     }
 
     pub(crate) fn seed_token(&self, record: CliTokenRecord) {
@@ -464,15 +477,11 @@ impl World {
     }
 
     pub(crate) fn text(&self) -> String {
-        String::from_utf8_lossy(&self.stdout).into_owned()
+        utf8(&self.stdout).to_owned()
     }
 
     pub(crate) fn login_count(&self) -> usize {
-        *self
-            .state
-            .logins
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.state.logins.load(Ordering::SeqCst)
     }
 
     pub(crate) fn probe_record(&self) -> Option<Probe> {
@@ -492,21 +501,23 @@ impl World {
     }
 
     pub(crate) fn stopped(&self) -> bool {
-        self.state.stopped.load(std::sync::atomic::Ordering::SeqCst)
+        self.state.stopped.load(Ordering::SeqCst)
     }
 }
 
 pub(crate) fn record(key: &str, timestamp: f64, expires_at: Option<f64>) -> CliTokenRecord {
-    let mut record = CliTokenRecord::default();
-    record.base_url = SERVER.to_owned();
-    record.key = Some(SecretString::from(key.to_owned()));
-    record.timestamp = timestamp;
-    record.expires_at = expires_at;
-    record
+    CliTokenRecord {
+        base_url: SERVER.to_owned(),
+        key: Some(SecretString::from(key.to_owned())),
+        timestamp,
+        expires_at,
+        ..CliTokenRecord::default()
+    }
 }
 
 pub(crate) fn pkce_record(key: &str, expires_at: f64) -> CliTokenRecord {
-    let mut record = record(key, 1_000.0, Some(expires_at));
-    record.refresh_token = Some(SecretString::from("rt-old".to_owned()));
-    record
+    CliTokenRecord {
+        refresh_token: Some(SecretString::from("rt-old".to_owned())),
+        ..record(key, 1_000.0, Some(expires_at))
+    }
 }
