@@ -45,7 +45,7 @@ class BulkUpdateTeamMemberPermissionsResponse(BaseModel):
     permissions_appended: list[str] | None = None
 
 
-class TeamListItem(LiteLLMPydanticObjectBase):
+class _TeamBase(LiteLLMPydanticObjectBase):
     team_alias: str | None = None
     team_id: str
     organization_id: str | None = None
@@ -79,6 +79,9 @@ class TeamListItem(LiteLLMPydanticObjectBase):
     object_permission_id: str | None = None
     updated_at: datetime | None = None
     created_at: datetime | None = None
+
+
+class TeamListItem(_TeamBase):
     members_count: int = 0
     keys_count: int = 0
     access_group_models: list[str] | None = None
@@ -86,8 +89,16 @@ class TeamListItem(LiteLLMPydanticObjectBase):
     access_group_agent_ids: list[str] | None = None
 
 
+class _DeletedTeamListItem(_TeamBase):
+    id: str | None = None
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
+    deleted_by_api_key: str | None = None
+    litellm_changed_by: str | None = None
+
+
 class TeamListResponse(BaseModel):
-    teams: list[TeamListItem]
+    teams: list[TeamListItem | _DeletedTeamListItem]
     total: int
     page: int
     page_size: int

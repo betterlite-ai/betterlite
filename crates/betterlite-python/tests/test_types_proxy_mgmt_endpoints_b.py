@@ -543,6 +543,23 @@ def test_names_team_valid_payloads() -> None:
     assert sorted(our_info) == sorted(reference_info)
 
 
+def test_names_team_list_items() -> None:
+    payload: dict[str, JsonValue] = {
+        "teams": [
+            {"team_id": "d", "deleted_at": "2024-01-01T00:00:00Z", "deleted_by": "u"},
+            {"team_id": "p", "team_alias": "a"},
+        ],
+        "total": 2,
+        "page": 1,
+        "page_size": 10,
+        "total_pages": 1,
+    }
+    our_list = team.TeamListResponse.model_validate(payload)
+    their_list = litellm_team.TeamListResponse.model_validate(payload)
+    assert our_list.model_dump() == their_list.model_dump()
+    assert our_list.model_dump_json() == their_list.model_dump_json()
+
+
 @pytest.mark.parametrize(("ours", "reference", "payload"), TEAM_REJECTIONS)
 def test_names_team_rejections(
     ours: type[BaseModel], reference: type[BaseModel], payload: dict[str, JsonValue]
@@ -569,6 +586,12 @@ def test_names_team_member_limit() -> None:
 
 
 def test_names_team_deviations() -> None:
+    json_metadata: dict[str, JsonValue] = {"team_id": "t", "metadata": '{"a": 1}'}
+    assert rejects(team.TeamListItem, json_metadata)
+    assert not rejects(litellm_team.TeamListItem, json_metadata)
+    empty_roles: dict[str, JsonValue] = {"team_id": "t", "members_with_roles": {}}
+    assert rejects(team.TeamListItem, empty_roles)
+    assert not rejects(litellm_team.TeamListItem, empty_roles)
     budget_patch: dict[str, JsonValue] = {"user_id": "u", "budget_duration": "bogus"}
     assert not rejects(team.TeamMemberBudgetPatch, budget_patch)
     assert rejects(litellm_team.TeamMemberBudgetPatch, budget_patch)

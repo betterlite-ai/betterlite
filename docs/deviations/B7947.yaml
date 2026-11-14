@@ -25,13 +25,20 @@ deviations:
       TeamListItem declares the fields of LiteLLM_TeamTable itself, TeamMemberRef those of
       MemberDeleteRequest, TeamMemberInfoResponse those of LiteLLM_TeamMembership, and the bulk
       delete and bulk budget responses declare data directly instead of deriving from
-      ResourceResponse. None of those base classes exists in the wheel.
+      ResourceResponse. None of those base classes exists in the wheel; TeamListResponse's deleted
+      team item is a private sibling carrying LiteLLM_DeletedTeamTable's five extra fields.
+      LiteLLM_TeamTable's set_model_info validator is not ported, so a team row whose metadata,
+      aliases, config, permissions, model_max_budget, model_aliases, router_settings or
+      budget_limits column arrives as a JSON string is rejected instead of decoded, and an empty
+      members_with_roles dict is rejected instead of becoming [].
     why: >-
-      litellm/proxy/_types.py, litellm/models/team_membership.py and management_v1.py have no Python
-      owner. Fields, defaults, config and the two base validators that reject a member without an
-      identifier are reproduced; isinstance checks against the base classes and the inherited
-      LiteLLM_TeamMembership.safe_get_team_member_*_limit helpers are absent.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team_membership.py#L12
+      litellm/proxy/_types.py, litellm/models/team.py, litellm/models/team_membership.py and
+      management_v1.py have no Python owner. Fields, defaults, config and the base validators that
+      reject a member without an identifier are reproduced; isinstance checks against the base
+      classes, set_model_info and the inherited LiteLLM_TeamMembership.safe_get_team_member_*_limit
+      helpers are absent. A JSON string where the declared type is a dict is an error that names the
+      field, per docs/compatibility.md.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L105-L133
   - what: >-
       Nested models that have no Python owner are JSON types: TeamListItem.members_with_roles,
       budget_limits, litellm_model_table, object_permission, model_spend and model_max_budget,
@@ -44,6 +51,16 @@ deviations:
       for omitted keys are not applied; LiteLLM's dump of a member adds e.g. user_email: null, while
       this port keeps only the keys the input carried.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L39
+  - what: >-
+      Fields LiteLLM types as Any, object or a bare dict take JSON here: meta, patch.value and
+      authenticationSchemes on the SCIM models, PublicModelHubInfo's nested useful_links values,
+      TeamListItem's metadata and router_settings, and updated_user, updated_team_membership and
+      updated_team on the bulk team member add models.
+    why: >-
+      The Python rules ban Any, object and unparameterized containers in annotations. Every value
+      these HTTP payloads carry is JSON; a non-JSON Python object such as a datetime inside one of
+      these fields is rejected here instead of kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L174
   - what: >-
       TeamMemberBudgetPatch accepts any budget_duration string; LiteLLM rejects one that does not
       parse to a positive duration and resets at "now".
