@@ -327,30 +327,45 @@ pub(crate) fn seed(path: &Path, text: &str) {
     fs::write(path, text).expect("the seed file");
 }
 
-fn cli_context() -> CliContext {
-    CliContext {
-        base_url: SERVER.to_owned(),
-        base_url_explicit: false,
-        api_key: None,
-        api_key_from_token_file: false,
-    }
+pub(crate) struct Doubles {
+    pub(crate) files: MemoryFiles,
+    pub(crate) probe: RecordingProbe,
+    pub(crate) login: ScriptedLogin,
+    pub(crate) stop: ScriptedStop,
 }
 
-fn scripted_stop(state: Arc<State>, root: &Path) -> ScriptedStop {
-    ScriptedStop {
-        state,
-        settings: root.join(".claude").join("settings.json"),
-        backup: root.join(".litellm").join("claude_settings_backup.json"),
-        #[cfg(unix)]
-        real: None,
-        installed: Mutex::new(None),
+impl Doubles {
+    fn new(state: &Arc<State>, root: &Path) -> Self {
+        Self {
+            files: MemoryFiles {
+                state: Arc::clone(state),
+                path: root.join(".litellm").join("token.json"),
+            },
+            probe: RecordingProbe {
+                status: 200,
+                unreachable: false,
+                state: Arc::clone(state),
+            },
+            login: ScriptedLogin {
+                token: None,
+                state: Arc::clone(state),
+                real: false,
+            },
+            stop: ScriptedStop {
+                state: Arc::clone(state),
+                settings: root.join(".claude").join("settings.json"),
+                backup: root.join(".litellm").join("claude_settings_backup.json"),
+                #[cfg(unix)]
+                real: None,
+                installed: Mutex::new(None),
+            },
+        }
     }
 }
 
 pub(crate) struct World {
     pub(crate) context: CliContext,
     pub(crate) environment: FakeEnvironment,
-    pub(crate) files: MemoryFiles,
     pub(crate) vault: DisabledVault,
     pub(crate) private_files: PrivateFiles,
     pub(crate) http: Arc<UnusedHttp>,
@@ -362,11 +377,9 @@ pub(crate) struct World {
     pub(crate) token_path: PathBuf,
     pub(crate) binary_path: PathBuf,
     pub(crate) home: TempDir,
-    pub(crate) probe: RecordingProbe,
     pub(crate) terminal: FakeTerminal,
     pub(crate) state: Arc<State>,
-    pub(crate) login: ScriptedLogin,
-    pub(crate) stop: ScriptedStop,
+    pub(crate) doubles: Doubles,
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,
 }
@@ -376,14 +389,14 @@ impl World {
         let home = tempfile::tempdir().expect("a temporary home");
         let root = home.path().to_path_buf();
         let state = Arc::new(State::default());
-        let token_path = root.join(".litellm").join("token.json");
         Self {
-            context: cli_context(),
-            environment: FakeEnvironment { home: root.clone() },
-            files: MemoryFiles {
-                state: Arc::clone(&state),
-                path: token_path.clone(),
+            context: CliContext {
+                base_url: SERVER.to_owned(),
+                base_url_explicit: false,
+                api_key: None,
+                api_key_from_token_file: false,
             },
+            environment: FakeEnvironment { home: root.clone() },
             vault: DisabledVault,
             private_files: PrivateFiles::default(),
             http: Arc::new(UnusedHttp),
@@ -392,22 +405,12 @@ impl World {
             sleeper: NoSleeper,
             selection: SelectionTerminal::default(),
             interrupt: NeverInterrupted,
-            token_path,
+            token_path: root.join(".litellm").join("token.json"),
             binary_path: PathBuf::from("/opt/betterlite"),
+            doubles: Doubles::new(&state, &root),
             home,
-            probe: RecordingProbe {
-                status: 200,
-                unreachable: false,
-                state: Arc::clone(&state),
-            },
             terminal: FakeTerminal { interactive },
-            state: Arc::clone(&state),
-            login: ScriptedLogin {
-                token: None,
-                state: Arc::clone(&state),
-                real: false,
-            },
-            stop: scripted_stop(state, &root),
+            state,
             stdout: Vec::new(),
             stderr: Vec::new(),
         }
@@ -416,8 +419,9 @@ impl World {
     #[cfg(unix)]
     pub(crate) fn use_real_signals(&mut self) -> Receiver<()> {
         let (sender, receiver) = mpsc::sync_channel(1);
-        self.stop.real = Some(SignalStop::default());
+        self.doubles.stop.real = Some(SignalStop::default());
         *self
+            .doubles
             .stop
             .installed
             .lock()
@@ -452,7 +456,7 @@ impl World {
         UpPorts {
             context: &self.context,
             environment: &self.environment,
-            files: &self.files,
+            files: &self.doubles.files,
             vault: &mut self.vault,
             private_files: &self.private_files,
             http: Arc::clone(&self.http),
@@ -468,9 +472,9 @@ impl World {
             expiration_hours: 24,
             warn: &ignore_message,
             terminal: Some(&self.terminal),
-            login: &mut self.login,
-            probe: &self.probe,
-            signals: &self.stop,
+            login: &mut self.doubles.login,
+            probe: &self.doubles.probe,
+            signals: &self.doubles.stop,
             stdout: &mut self.stdout,
             stderr: &mut self.stderr,
         }
@@ -509,15 +513,38 @@ pub(crate) fn record(key: &str, timestamp: f64, expires_at: Option<f64>) -> CliT
     CliTokenRecord {
         base_url: SERVER.to_owned(),
         key: Some(SecretString::from(key.to_owned())),
+        user_id: String::new(),
+        user_email: String::new(),
+        user_role: String::new(),
+        auth_header_name: "Authorization".to_owned(),
+        jwt_token: SecretString::default(),
         timestamp,
         expires_at,
-        ..CliTokenRecord::default()
+        refresh_token: None,
+        client_id: None,
+        token_endpoint: None,
+        revocation_endpoint: None,
+        resource: None,
+        team_id: None,
     }
 }
 
 pub(crate) fn pkce_record(key: &str, expires_at: f64) -> CliTokenRecord {
     CliTokenRecord {
+        base_url: SERVER.to_owned(),
+        key: Some(SecretString::from(key.to_owned())),
+        user_id: String::new(),
+        user_email: String::new(),
+        user_role: String::new(),
+        auth_header_name: "Authorization".to_owned(),
+        jwt_token: SecretString::default(),
+        timestamp: 1_000.0,
+        expires_at: Some(expires_at),
         refresh_token: Some(SecretString::from("rt-old".to_owned())),
-        ..record(key, 1_000.0, Some(expires_at))
+        client_id: None,
+        token_endpoint: None,
+        revocation_endpoint: None,
+        resource: None,
+        team_id: None,
     }
 }
