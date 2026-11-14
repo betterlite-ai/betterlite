@@ -1,0 +1,35 @@
+kind: helper
+name: passthrough-guardrail-get-settings-missing-logging
+call:
+  b3573:
+    scenarios:
+      - function: settings
+        guardrail_name: g1
+        logging: null
+      - function: settings
+        guardrail_name: g1
+        logging:
+          config: null
+      - function: settings
+        guardrail_name: null
+        logging:
+          config:
+            g1:
+              request_fields: [query]
+      - function: settings
+        guardrail_name: ""
+        logging:
+          config:
+            g1:
+              request_fields: [query]
+      - function: settings
+        guardrail_name: g1
+        logging:
+          config: {}
+      - function: settings
+        guardrail_name: g1
+        logging:
+          config:
+            g1: null
+env: {}
+compare: {ignore: []}

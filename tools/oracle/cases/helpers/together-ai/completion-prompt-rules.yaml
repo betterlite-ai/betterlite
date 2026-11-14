@@ -1,0 +1,52 @@
+kind: helper
+name: completion-prompt-rules
+call:
+  b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map: []
+    chat_messages: []
+    completion:
+    - model: together/llama
+      messages:
+      - {role: user, content: hello}
+      optional_params: {}
+    - model: together/llama
+      messages:
+      - {role: user, content: a}
+      - {role: user, content: b}
+      optional_params: {}
+    - model: together/llama
+      messages:
+      - role: user
+        content: [1, 2, 3]
+      optional_params: {}
+    - model: together/llama
+      messages:
+      - role: user
+        content:
+        - [1, 2]
+        - [3]
+      optional_params: {}
+    - model: together/llama
+      messages: []
+      optional_params: {}
+    - model: together/llama
+      messages:
+      - {role: user, content: ''}
+      optional_params: {}
+    - model: together/llama
+      messages:
+      - {role: user, content: []}
+      optional_params: {}
+    - model: together/llama
+      messages:
+      - {role: user, content: null}
+      optional_params: {}
+    rerank_requests: []
+    rerank_responses: []
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []

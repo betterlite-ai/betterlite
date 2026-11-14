@@ -1,7 +1,7 @@
 id: B1384
 milestone: M3 providers
 title: Vertex supervised tuning creation and result conversion
-status: todo
+status: done
 depends_on: [B1302, B1304, B1305, B1306, B518, B173, B171]
 file: tasks/B1384-vertex-fine-tuning.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai.py"
 parent: B034
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1729

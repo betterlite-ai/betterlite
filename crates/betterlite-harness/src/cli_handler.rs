@@ -1,5 +1,5 @@
 pub mod io;
-mod setup;
+pub mod setup;
 mod tests;
 mod turn_io;
 
