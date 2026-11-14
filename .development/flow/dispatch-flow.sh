@@ -12,7 +12,7 @@ maintenance() {
   fi
 }
 maintenance
-# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit reruns once `gate availability <id>` finds a runner left on its own ladder, and says once that it waits, since a grant moves it to another vendor (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged and its early draft PR's branch (early-pr.sh) merged back, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, eight rounds at most (stage 3, since CI is the only place that builds); once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
+# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit reruns once `gate availability <id>` finds a runner left on its own ladder, and says once that it waits, since a grant moves it to another vendor (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, a run whose reviewer hit its timeout reruns after a pause that doubles from 30 minutes, six times at most (a slow night API, not a wrong answer; the count lives in the journal), and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged and its early draft PR's branch (early-pr.sh) merged back, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, eight rounds at most (stage 3, since CI is the only place that builds); once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
 GH_TOKEN=$(gh auth token --user HardMax71)
 export GH_TOKEN
 id=$1
@@ -155,6 +155,18 @@ if [[ -z "${LAND_ONLY}" ]]; then
       PAUSES=$((${PAUSES:-0} + 1)) exec bash "${P}/dispatch-flow.sh" "${id}" "${run}p" "${note}"
     fi
     reason=$(grep -m1 -o -E 'cannot dispatch [^:]+: .*' "${log}")
+    if [[ ${reason} == *"minute timeout before its answer"* ]]; then
+      reruns=$(cat "${main}/.git/betterlite/${id}/review-reruns" 2> /dev/null)
+      if [[ "${reruns:-0}" -lt 6 ]]; then
+        echo "$((${reruns:-0} + 1))" > "${main}/.git/betterlite/${id}/review-reruns"
+        pause=$((30 << ${reruns:-0}))
+        say "paused: the reviewer hit its timeout, so the review runs again in ${pause} minutes"
+        sleep $((pause * 60))
+        maintenance
+        GRANT=1 exec bash "${P}/dispatch-flow.sh" "${id}" "${run}t" "The reviewer hit its time limit before it answered, so the review runs again. Your commits are kept: continue where the last run stopped, run the gate and answer with the report."
+      fi
+      reason="${reason} after ${reruns} review reruns"
+    fi
     if [[ -n "${reason}" ]] && [[ -d "${worktree}" ]] && unblock_note=$(bash "${P}/unblock.sh" "${id}" "${worktree}" "${reason}"); then
       say "unblocked by a rule: ${unblock_note}"
       GRANT=1 exec bash "${P}/dispatch-flow.sh" "${id}" "${run}u" "${unblock_note}"
