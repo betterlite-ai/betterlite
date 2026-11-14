@@ -157,8 +157,10 @@ pub(super) struct Stalling {
     pub(super) _tasks: JoinSet<()>,
 }
 
-// answers the head and never the body, so a lookup's body read runs into its own read timeout
-pub(super) async fn stalled_body_server() -> Stalling {
+pub(super) const STALLED_BODY_HEAD: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 64\r\n\r\n";
+
+// accepts connections and never answers, or answers this head and stalls the body, so a client's own read timeout fails first
+pub(super) async fn stalled_server(head: Option<&'static [u8]>) -> Stalling {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let held: Arc<Mutex<Vec<TcpStream>>> = Arc::default();
@@ -166,28 +168,9 @@ pub(super) async fn stalled_body_server() -> Stalling {
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         while let Ok((mut stream, _peer)) = listener.accept().await {
-            let _head = stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 64\r\n\r\n")
-                .await;
-            keeper.lock().unwrap().push(stream);
-        }
-    });
-    Stalling {
-        base,
-        _held: held,
-        _tasks: tasks,
-    }
-}
-
-// accepts connections and never answers, so a client with a read timeout fails first
-pub(super) async fn stalling_server() -> Stalling {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let held: Arc<Mutex<Vec<TcpStream>>> = Arc::default();
-    let keeper = Arc::clone(&held);
-    let mut tasks = JoinSet::new();
-    tasks.spawn(async move {
-        while let Ok((stream, _peer)) = listener.accept().await {
+            if let Some(response_head) = head {
+                let _written = stream.write_all(response_head).await;
+            }
             keeper.lock().unwrap().push(stream);
         }
     });

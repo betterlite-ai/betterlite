@@ -43,7 +43,7 @@ use crate::vertex_batch_create::error::VertexBatchCreateError;
 use crate::vertex_batch_create::fetch::{ProtectedGet, SafeGet};
 use crate::vertex_batch_records::types::VertexAIBatchPredictionJob;
 use support::{
-    JOB, Reply, Scripted, access, reply, reply_bytes, stalled_body_server, stalling_server,
+    JOB, Reply, STALLED_BODY_HEAD, Scripted, access, reply, reply_bytes, stalled_server,
 };
 
 const TUNED: &str = "gs://bucket/endpoints/222/file.jsonl";
@@ -495,7 +495,7 @@ async fn an_error_body_keeps_the_text_before_its_first_invalid_byte(
 
 #[tokio::test]
 async fn the_lookup_deadline_covers_the_whole_get() {
-    let server = stalling_server().await;
+    let server = stalled_server(None).await;
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
     );
@@ -524,7 +524,7 @@ async fn the_lookup_deadline_covers_the_whole_get() {
 
 #[tokio::test]
 async fn a_lookup_body_read_timeout_is_a_500_like_litellms_raw_timeout() {
-    let server = stalled_body_server().await;
+    let server = stalled_server(Some(STALLED_BODY_HEAD)).await;
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
     );
@@ -569,7 +569,7 @@ async fn transport_failure_is_a_500() {
 
 #[tokio::test]
 async fn a_stalled_provider_is_a_408() {
-    let server = stalling_server().await;
+    let server = stalled_server(None).await;
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
     );
