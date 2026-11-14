@@ -142,7 +142,13 @@ fn a_word_price_is_not_a_number() {
 #[case::integer_without_a_tier(GuardrailValue::SignedInteger(-1), None)]
 #[case::integer_with_a_free_tier(GuardrailValue::SignedInteger(-1), Some(CostTier::Free))]
 #[case::integer_with_a_paid_tier(GuardrailValue::SignedInteger(-1), Some(CostTier::Paid))]
-fn a_negative_price_is_rejected(#[case] price: GuardrailValue, #[case] tier: Option<CostTier>) {
+#[case::not_a_number(GuardrailValue::Decimal(f64::NAN), None)]
+#[case::infinite(GuardrailValue::Decimal(f64::INFINITY), None)]
+#[case::negative_infinite(GuardrailValue::Decimal(f64::NEG_INFINITY), None)]
+fn a_negative_or_non_finite_price_is_rejected(
+    #[case] price: GuardrailValue,
+    #[case] tier: Option<CostTier>,
+) {
     let error = resolve_price(Some(&price), tier, &NoSecrets).unwrap_err();
     assert!(
         matches!(&error, PromptShieldError::InvalidPrice { .. }),
@@ -165,6 +171,21 @@ fn a_negative_text_price_is_rejected() {
         "{error}"
     );
     assert!(error.to_string().contains("\"-1.5\""), "{error}");
+}
+
+#[test]
+fn a_blank_price_is_no_price() {
+    let price = text("   ");
+    assert_eq!(resolve_price(Some(&price), None, &NoSecrets).unwrap(), None);
+}
+
+#[test]
+fn a_padded_text_price_is_trimmed() {
+    let price = text("  0.5  ");
+    assert_eq!(
+        resolve_price(Some(&price), None, &NoSecrets).unwrap(),
+        Some(Decimal::try_from(0.5).unwrap())
+    );
 }
 
 #[test]
