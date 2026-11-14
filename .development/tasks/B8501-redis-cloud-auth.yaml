@@ -67,6 +67,8 @@ scope:
     - crates/betterlite-azure/src/azure_managed_identity.rs
     - crates/betterlite-azure/src/azure_managed_identity/**
     - crates/betterlite-azure/src/azure_default_chain/tests/native.rs
+    - tools/oracle/src/helpers/azure/arc_identity.rs
+    - tools/oracle/src/helpers/azure/managed_identity/fixture/transport.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/gcp_iam_token.rs
