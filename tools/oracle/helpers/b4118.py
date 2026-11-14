@@ -121,7 +121,7 @@ def logging_for(case: Case) -> Logging | None:
         function_id="fn",
     )
     seeded: AgenticLogging = logging_obj
-    seeded.model_call_details["agentic_loop_params"] = spec["model_call_details"]
+    seeded.model_call_details.update(spec["model_call_details"])
     return logging_obj
 
 
