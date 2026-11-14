@@ -135,9 +135,7 @@ class RelayHook:
 class RelayStep(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    op: Literal[
-        "start", "release", "read", "detach", "finish", "fail", "arm", "wait", "settle"
-    ]
+    op: Literal["start", "release", "read", "detach", "finish", "fail", "arm", "wait", "settle"]
     stream: str = ""
     count: int = 0
     until: Literal["idle", "parked", "hook"] = "idle"
@@ -161,7 +159,8 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         dispatcher: Dispatcher,
     ) -> None:
         self.logging = RecordedLogging()
-        self.litellm_logging_obj, self.request_body = self.logging, call.body  # instead of the untyped base __init__
+        self.litellm_logging_obj = self.logging
+        self.request_body: dict[str, Json] = call.body
         self.start_time, self.completion_start_time = datetime.now(UTC).astimezone().replace(tzinfo=None), None
         self.body = call.body
         self.api_base = api_base
