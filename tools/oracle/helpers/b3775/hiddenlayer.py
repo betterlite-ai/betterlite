@@ -7,6 +7,7 @@ import threading
 import time
 from collections import deque
 from functools import partial
+from io import BufferedIOBase
 from typing import Final
 
 import httpx
@@ -28,6 +29,7 @@ INVALID_RESPONSE_PREFIX: Final = (
     "Unable to get authentication credentials for the HiddenLayer API - invalid response: "
 )
 TIMEOUT_SECONDS: Final = 0.3
+VERSION_TWO: Final = 2
 
 
 class Store:
@@ -57,6 +59,16 @@ class Store:
             return queue.popleft()
 
 
+def read_headers(rfile: BufferedIOBase) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    while True:
+        line = rfile.readline().decode("latin-1")
+        if not line or line in ("\r\n", "\n"):
+            return headers
+        name, _, value = line.partition(":")
+        headers[name.strip().lower()] = value.strip()
+
+
 class Handler(socketserver.StreamRequestHandler):
     def __init__(
         self,
@@ -71,13 +83,14 @@ class Handler(socketserver.StreamRequestHandler):
     @override
     def handle(self) -> None:
         parts = self.rfile.readline().decode("latin-1").split(" ")
-        length = self.headers.get("content-length")
+        headers = read_headers(self.rfile)
+        length = headers.get("content-length")
         if length is not None and length.isdigit():
             self.rfile.read(int(length))
         seen: Seen = {
             "method": parts[0],
             "path": parts[1],
-            "authorization": self.headers.get("authorization"),
+            "authorization": headers.get("authorization"),
         }
         self.store.record(seen)
         reply = self.store.admit(seen["path"])
@@ -121,7 +134,7 @@ def build(
     input_value: HiddenlayerInput, base: str
 ) -> HiddenlayerGuardrail | HiddenlayerGuardrailV2:
     api_base = SAAS_BASE if input_value["saas"] else base
-    if input_value["version"] == 2:
+    if input_value["version"] == VERSION_TWO:
         return HiddenlayerGuardrailV2(
             api_id=input_value["api_id"],
             api_key=input_value["api_key"],
