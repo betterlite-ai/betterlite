@@ -463,3 +463,34 @@ async fn _call_crowdstrike_aidr_guard_rejects_a_streamed_body_over_the_limit() {
         CrowdStrikeError::ResponseTooLarge { limit: LIMIT }
     ));
 }
+
+#[tokio::test]
+async fn _call_crowdstrike_aidr_guard_reports_a_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let mut server = JoinSet::new();
+    server.spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        socket.read(&mut [0_u8; 8192]).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+    });
+    let mut guardrail = handler_for(&base, None);
+    guardrail.settings.timeout = Some(0.2);
+    let error = call_guard(&guardrail, &payload(), "test")
+        .await
+        .expect_err("a reply that never comes times out");
+    assert!(matches!(error, CrowdStrikeError::Timeout { .. }));
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn _call_crowdstrike_aidr_guard_reports_a_refused_connection() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let guardrail = handler_for(&base, None);
+    let error = call_guard(&guardrail, &payload(), "test")
+        .await
+        .expect_err("a refused connection fails the call");
+    assert!(matches!(error, CrowdStrikeError::Request { .. }));
+}
