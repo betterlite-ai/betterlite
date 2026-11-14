@@ -441,6 +441,15 @@ fn case_eval_auth_required() {
         .validate_environment(Headers::new(), Some(&empty_params))
         .unwrap();
     assert_eq!(header(&sent, "Authorization"), "Bearer sk-global");
+    let blank_secret = OpenAiEvalsConfig {
+        api_key: Some(SecretString::from("")),
+        openai_key: Some(SecretString::from("sk-openai")),
+        env_api_key: None,
+    };
+    let sent = blank_secret
+        .validate_environment(Headers::new(), None)
+        .unwrap();
+    assert_eq!(header(&sent, "Authorization"), "Bearer sk-openai");
     assert!(matches!(
         OpenAiEvalsConfig::default().validate_environment(Headers::new(), None),
         Err(EvalsError::ApiKeyRequired)
