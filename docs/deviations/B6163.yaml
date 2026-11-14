@@ -2,7 +2,7 @@ task: B6163
 deviations:
   - what: A response that is not a JSON object is returned unchanged with a warning, and there is no Pydantic model_dump path.
     why: docs/compatibility.md excludes Python duck typing; betterlite responses are JSON values.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/guardrail_translation/handler.py#L186-L192
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/guardrail_translation/handler.py#L147-L156
   - what: The streaming scan key skips a chunk whose parts cannot be read, where LiteLLM raises from get_streaming_scan_key.
     why: B3661's get_streaming_scan_key has no error channel; a scan-key hint cannot fail the stream.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/common_utils.py#L96-L145
