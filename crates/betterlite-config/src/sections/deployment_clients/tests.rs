@@ -101,13 +101,12 @@ fn a_text_limit_is_an_error() {
     assert!(error.contains("max_parallel_requests"), "{error}");
 }
 
-#[rstest]
-#[case::single_underscores("20_000", Some(20_000))]
-#[case::plain("20000", Some(20_000))]
-#[case::leading("_1", None)]
-#[case::trailing("1_", None)]
-#[case::doubled("1__0", None)]
-#[case::after_sign("-_5", None)]
-fn an_underscored_limit_reads_like_a_python_int(#[case] text: &str, #[case] expected: Option<i64>) {
-    assert_eq!(super::parse_integer::<i64>(text, "tpm").ok(), expected);
+#[test]
+fn a_negative_limit_is_an_error_that_names_the_field() {
+    let error = settings(
+        "model_list:\n  - model_name: a\n    litellm_params: {model: openai/a, tpm: -1}\n",
+        &[],
+    )
+    .unwrap_err();
+    assert!(error.contains("model_list.0.litellm_params.tpm"), "{error}");
 }

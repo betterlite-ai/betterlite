@@ -1,8 +1,12 @@
+from hashlib import sha256
 from typing import Final, Literal, NoReturn
 
 from litellm.exceptions import RateLimitError
 from litellm.router import Router
-from litellm.router_utils.client_initalization_utils import MaxParallelRequestsLimit
+from litellm.router_utils.client_initalization_utils import (
+    InitalizeCachedClient,
+    MaxParallelRequestsLimit,
+)
 from litellm.router_utils.clientside_credential_handler import (
     get_dynamic_litellm_params,
     is_clientside_credential,
@@ -16,6 +20,7 @@ from probes.protocol import Operation, Strict
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
 JSON_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
+OPTIONAL_TEXT: Final = TypeAdapter(str | None)
 
 
 class CalculateInput(Strict):
@@ -84,6 +89,7 @@ class CachedObservation(Strict):
 class CredentialObservation(Strict):
     clientside: bool
     params: dict[str, JsonValue]
+    api_key_sha256: str | None
     model_id: str | None
 
 
@@ -179,19 +185,9 @@ def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
         cached: object | None = router.cache.get_cache(key=key, local_only=True)
         installed = cached is None
         if cached is None:
-            calculated = calculate_max_parallel_requests(
-                max_parallel_requests=spec.max_parallel_requests,
-                rpm=spec.rpm,
-                tpm=spec.tpm,
-                default_max_parallel_requests=spec.default_max_parallel_requests,
+            InitalizeCachedClient.set_max_parallel_requests_client(
+                litellm_router_instance=router, model=model_entry(spec)
             )
-            if calculated:
-                limit = MaxParallelRequestsLimit(
-                    max_parallel_requests=calculated,
-                    model_id=spec.model_id,
-                    model_group=spec.model_group,
-                )
-                router.cache.set_cache(key=key, value=limit, local_only=True)
             cached = router.cache.get_cache(key=key, local_only=True)
         observations.append(
             CachedObservation(
@@ -219,7 +215,11 @@ def credential_lookup(spec: CredentialInput) -> CredentialObservation:
         if clientside and spec.model_group is not None
         else None
     )
-    return CredentialObservation(clientside=clientside, params=params, model_id=model_id)
+    api_key = OPTIONAL_TEXT.validate_python(params.pop("api_key", None))
+    api_key_sha256 = None if api_key is None else sha256(api_key.encode()).hexdigest()
+    return CredentialObservation(
+        clientside=clientside, params=params, api_key_sha256=api_key_sha256, model_id=model_id
+    )
 
 
 class DeploymentClients(Operation):

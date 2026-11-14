@@ -31,7 +31,7 @@ pub struct MaxParallelRequestsLimit {
     pub max_parallel_requests: i64,
     pub model_id: String,
     pub model_group: String,
-    pub(super) in_flight: AtomicI64,
+    pub in_flight: AtomicI64,
 }
 
 // The guard holds one slot until it is dropped, which is what makes a stream release it when it ends.

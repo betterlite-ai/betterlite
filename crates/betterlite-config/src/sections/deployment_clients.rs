@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::resolve_number;
+use crate::resolve::{parse_integer, resolve_number};
 use crate::sections::Section;
 
 mod tests;
@@ -73,15 +73,16 @@ impl Section for Raw {
             self.router_settings.client_ttl,
             "router_settings.client_ttl",
             lookup,
-            parse_integer::<u64>,
+            parse_integer,
         )?
-        .unwrap_or(DEFAULT_CLIENT_TTL_SECONDS);
+        .map_or(DEFAULT_CLIENT_TTL_SECONDS, u64::from);
         let default_max_parallel_requests = resolve_number(
             self.router_settings.default_max_parallel_requests,
             "router_settings.default_max_parallel_requests",
             lookup,
-            parse_integer::<i64>,
-        )?;
+            parse_integer,
+        )?
+        .map(i64::from);
         let mut deployments = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
             deployments.push(deployment_limits(index, deployment.litellm_params, lookup)?);
@@ -108,29 +109,10 @@ where
             params.max_parallel_requests,
             &path("max_parallel_requests"),
             lookup,
-            parse_integer::<i64>,
-        )?,
-        rpm: resolve_number(params.rpm, &path("rpm"), lookup, parse_integer::<i64>)?,
-        tpm: resolve_number(params.tpm, &path("tpm"), lookup, parse_integer::<i64>)?,
+            parse_integer,
+        )?
+        .map(i64::from),
+        rpm: resolve_number(params.rpm, &path("rpm"), lookup, parse_integer)?.map(i64::from),
+        tpm: resolve_number(params.tpm, &path("tpm"), lookup, parse_integer)?.map(i64::from),
     })
-}
-
-fn parse_integer<T>(text: &str, path: &str) -> Result<T, ConfigError>
-where
-    T: std::str::FromStr<Err = std::num::ParseIntError>,
-{
-    let trimmed = text.trim();
-    let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
-    // Python's int() takes single underscores between digits, as in tpm: 20_000
-    let plain = if digits.split('_').any(str::is_empty) {
-        trimmed.to_owned()
-    } else {
-        trimmed.replace('_', "")
-    };
-    plain
-        .parse::<T>()
-        .map_err(|source| ConfigError::InvalidInteger {
-            path: path.to_owned(),
-            source,
-        })
 }

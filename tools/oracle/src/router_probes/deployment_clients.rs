@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, UNIX_EPOCH};
 
 use betterlite_config::sections::deployment_clients::Settings;
@@ -16,6 +17,7 @@ use betterlite_router::deployment_clients::guard::{
 use betterlite_router::deployment_identity::stable_id::generate_model_id;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
@@ -128,6 +130,7 @@ pub struct CachedObservation {
 pub struct CredentialObservation {
     pub clientside: bool,
     pub params: JsonObject,
+    pub api_key_sha256: Option<String>,
     pub model_id: Option<String>,
 }
 
@@ -172,7 +175,7 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
                 let error = acquire_once(&limit, &mut held);
                 observations.push(LimitObservation {
                     kind: String::from("acquire"),
-                    in_flight: limit.in_flight(),
+                    in_flight: limit.in_flight.load(Ordering::SeqCst),
                     error,
                     failed: false,
                 });
@@ -181,7 +184,7 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
                 drop(held.pop());
                 observations.push(LimitObservation {
                     kind: String::from("release"),
-                    in_flight: limit.in_flight(),
+                    in_flight: limit.in_flight.load(Ordering::SeqCst),
                     error: None,
                     failed: false,
                 });
@@ -194,7 +197,7 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
                 };
                 observations.push(LimitObservation {
                     kind: String::from("enter_exit"),
-                    in_flight: limit.in_flight(),
+                    in_flight: limit.in_flight.load(Ordering::SeqCst),
                     error,
                     failed,
                 });
@@ -274,15 +277,20 @@ fn credential_outcome(input: &CredentialInput) -> CredentialObservation {
         api_base: input.request.api_base.clone(),
         base_url: None,
     };
-    let params = dynamic_litellm_params(input.config.clone(), &request);
+    let mut params = dynamic_litellm_params(input.config.clone(), &request);
     let model_id = input
         .model_group
         .as_deref()
         .filter(|_group| clientside)
         .map(|group| generate_model_id(group, &params));
+    let api_key_sha256 = match params.shift_remove("api_key") {
+        Some(Json::Text(key)) => Some(hex::encode(Sha256::digest(key.as_bytes()))),
+        _ => None,
+    };
     CredentialObservation {
         clientside,
         params,
+        api_key_sha256,
         model_id,
     }
 }
