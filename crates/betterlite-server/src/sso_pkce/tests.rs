@@ -46,11 +46,18 @@ const VERIFIER_FOR_SEQUENCE: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8
 const CHALLENGE_FOR_SEQUENCE: &str = "6oZqdX5MOLq_qBJ8vppAnT4fk6AP8UiP9zX8-Rev_9A";
 const STATE_FOR_SEQUENCE: &str = "000102030405460788090a0b0c0d0e0f";
 
-fn settings(use_pkce: bool, strict_cache_miss: bool) -> PkceSettings {
+fn settings(use_pkce: bool) -> PkceSettings {
     PkceSettings {
         use_pkce,
-        strict_cache_miss,
+        strict_cache_miss: false,
         generic_client_state: None,
+    }
+}
+
+fn strict(base: PkceSettings) -> PkceSettings {
+    PkceSettings {
+        strict_cache_miss: true,
+        ..base
     }
 }
 
@@ -59,7 +66,7 @@ struct SequenceEntropy;
 impl VerifierEntropy for SequenceEntropy {
     fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
         for (index, byte) in bytes.iter_mut().enumerate() {
-            *byte = u8::try_from(index).unwrap();
+            *byte = u8::try_from(index).unwrap_or(u8::MAX);
         }
         Ok(())
     }
@@ -251,7 +258,7 @@ fn generate_pkce_params_reports_a_broken_entropy_source() {
 fn a_supplied_cli_state_wins_over_the_configured_state() {
     let configured = PkceSettings {
         generic_client_state: Some("configured".to_owned()),
-        ..settings(false, false)
+        ..settings(false)
     };
     let redirect = generic_sso_redirect_params(Some("cli"), &configured, &SequenceEntropy).unwrap();
     assert_eq!(redirect.params.state, "cli");
@@ -262,7 +269,7 @@ fn a_supplied_cli_state_wins_over_the_configured_state() {
 fn an_empty_cli_state_falls_through_to_the_configured_state() {
     let configured = PkceSettings {
         generic_client_state: Some("configured".to_owned()),
-        ..settings(false, false)
+        ..settings(false)
     };
     let redirect = generic_sso_redirect_params(Some(""), &configured, &SequenceEntropy).unwrap();
     assert_eq!(redirect.params.state, "configured");
@@ -270,7 +277,7 @@ fn an_empty_cli_state_falls_through_to_the_configured_state() {
 
 #[test]
 fn a_missing_state_becomes_a_uuid_hex_value() {
-    let redirect = generic_sso_redirect_params(None, &settings(false, false), &OsEntropy).unwrap();
+    let redirect = generic_sso_redirect_params(None, &settings(false), &OsEntropy).unwrap();
     assert_eq!(redirect.params.state.len(), 32);
     assert!(!redirect.params.state.contains('-'));
     assert!(
@@ -281,7 +288,7 @@ fn a_missing_state_becomes_a_uuid_hex_value() {
             .all(|character| character.is_ascii_hexdigit() && !character.is_ascii_uppercase())
     );
     assert!(uuid::Uuid::parse_str(&redirect.params.state).is_ok());
-    let other = generic_sso_redirect_params(None, &settings(false, false), &OsEntropy)
+    let other = generic_sso_redirect_params(None, &settings(false), &OsEntropy)
         .unwrap()
         .params
         .state;
@@ -290,16 +297,14 @@ fn a_missing_state_becomes_a_uuid_hex_value() {
 
 #[test]
 fn the_generated_state_comes_from_the_injected_entropy() {
-    let redirect =
-        generic_sso_redirect_params(None, &settings(false, false), &SequenceEntropy).unwrap();
+    let redirect = generic_sso_redirect_params(None, &settings(false), &SequenceEntropy).unwrap();
     assert_eq!(redirect.params.state, STATE_FOR_SEQUENCE);
 }
 
 #[test]
 fn pkce_parameters_are_absent_when_pkce_is_disabled() {
     let redirect =
-        generic_sso_redirect_params(Some("state"), &settings(false, false), &SequenceEntropy)
-            .unwrap();
+        generic_sso_redirect_params(Some("state"), &settings(false), &SequenceEntropy).unwrap();
     assert_eq!(redirect.params.pkce, None);
     assert!(redirect.code_verifier.is_none());
     assert_eq!(
@@ -311,8 +316,7 @@ fn pkce_parameters_are_absent_when_pkce_is_disabled() {
 #[test]
 fn pkce_parameters_carry_the_s256_challenge_and_the_verifier() {
     let redirect =
-        generic_sso_redirect_params(Some("state"), &settings(true, false), &SequenceEntropy)
-            .unwrap();
+        generic_sso_redirect_params(Some("state"), &settings(true), &SequenceEntropy).unwrap();
     let pkce = redirect.params.pkce.as_ref().unwrap();
     assert_eq!(pkce.code_challenge, CHALLENGE_FOR_SEQUENCE);
     assert_eq!(pkce.code_challenge_method, CODE_CHALLENGE_METHOD);
@@ -368,7 +372,7 @@ fn stored_entry_classifies_cached_values(#[case] value: Json, #[case] expected: 
         PkceCacheEntry::UnexpectedShape(PkceCacheShape::List) => "unexpected_list",
         PkceCacheEntry::UnexpectedShape(PkceCacheShape::Null) => "unexpected_null",
     });
-    assert_eq!(actual.as_deref(), Some(expected));
+    assert_eq!(actual.unwrap_or("missing"), expected);
 }
 
 #[rstest]
@@ -416,10 +420,9 @@ async fn a_cached_object_verifier_is_returned_with_its_cache_key() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters =
-        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), true, &settings(true), &caches)
+        .await
+        .unwrap();
     assert!(parameters.include_client_id);
     assert_eq!(verifier_of(&parameters).as_deref(), Some("verify-me"));
     assert_eq!(
@@ -442,10 +445,9 @@ async fn a_legacy_string_verifier_stays_usable_and_warns() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters =
-        token_exchange_parameters(Some("state"), false, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), false, &settings(true), &caches)
+        .await
+        .unwrap();
     assert_eq!(verifier_of(&parameters).as_deref(), Some("legacy"));
     assert!(cache.deletes().is_empty());
     assert!(written(&log).contains("legacy plain-string format"));
@@ -459,7 +461,7 @@ async fn a_missing_state_only_warns_even_in_strict_mode() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters = token_exchange_parameters(None, true, &settings(true, true), &caches)
+    let parameters = token_exchange_parameters(None, true, &strict(settings(true)), &caches)
         .await
         .unwrap();
     assert!(parameters.verifier.is_none());
@@ -475,7 +477,7 @@ async fn an_empty_callback_state_counts_as_missing() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters = token_exchange_parameters(Some(""), true, &settings(true, true), &caches)
+    let parameters = token_exchange_parameters(Some(""), true, &strict(settings(true)), &caches)
         .await
         .unwrap();
     assert!(parameters.verifier.is_none());
@@ -491,7 +493,7 @@ async fn pkce_disabled_without_a_state_does_not_warn() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters = token_exchange_parameters(None, true, &settings(false, true), &caches)
+    let parameters = token_exchange_parameters(None, true, &strict(settings(false)), &caches)
         .await
         .unwrap();
     assert!(parameters.verifier.is_none());
@@ -509,7 +511,7 @@ async fn pkce_disabled_never_touches_the_cache() {
         user: &cache,
     };
     let parameters =
-        token_exchange_parameters(Some("state"), true, &settings(false, true), &caches)
+        token_exchange_parameters(Some("state"), true, &strict(settings(false)), &caches)
             .await
             .unwrap();
     assert!(parameters.verifier.is_none());
@@ -525,7 +527,7 @@ async fn a_strict_cache_miss_returns_the_pkce_cache_miss_error() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+    let error = token_exchange_parameters(Some("state"), true, &strict(settings(true)), &caches)
         .await
         .unwrap_err();
     assert!(matches!(&error, PkceError::MissingVerifier { .. }));
@@ -546,10 +548,9 @@ async fn a_permissive_cache_miss_continues_without_a_verifier() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters =
-        token_exchange_parameters(Some("state"), false, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), false, &settings(true), &caches)
+        .await
+        .unwrap();
     assert!(parameters.verifier.is_none());
     assert!(!parameters.include_client_id);
     assert!(cache.deletes().is_empty());
@@ -566,7 +567,7 @@ async fn an_empty_verifier_field_is_deleted_and_fails_in_strict_mode() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+    let error = token_exchange_parameters(Some("state"), true, &strict(settings(true)), &caches)
         .await
         .unwrap_err();
     assert!(matches!(&error, PkceError::EmptyVerifier { .. }));
@@ -586,10 +587,9 @@ async fn an_empty_verifier_field_is_deleted_and_warns_when_permissive() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters =
-        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), true, &settings(true), &caches)
+        .await
+        .unwrap();
     assert!(parameters.verifier.is_none());
     assert_eq!(cache.deletes(), vec!["pkce_verifier:state".to_owned()]);
     assert!(written(&log).contains("empty or null code_verifier"));
@@ -606,7 +606,7 @@ async fn a_corrupt_entry_is_deleted_before_the_strict_error() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+    let error = token_exchange_parameters(Some("state"), true, &strict(settings(true)), &caches)
         .await
         .unwrap_err();
     assert!(matches!(&error, PkceError::UnexpectedShape { .. }));
@@ -626,10 +626,9 @@ async fn a_corrupt_entry_is_deleted_and_warns_when_permissive() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters =
-        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), true, &settings(true), &caches)
+        .await
+        .unwrap();
     assert!(parameters.verifier.is_none());
     assert_eq!(cache.deletes(), vec!["pkce_verifier:state".to_owned()]);
 }
@@ -652,10 +651,9 @@ async fn the_redis_usage_cache_is_read_when_one_is_configured() {
         redis: Some(&redis),
         user: &user,
     };
-    let parameters =
-        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), true, &settings(true), &caches)
+        .await
+        .unwrap();
     assert_eq!(verifier_of(&parameters).as_deref(), Some("from-redis"));
     assert_eq!(redis.reads.load(Ordering::SeqCst), 1);
     assert_eq!(user.reads.load(Ordering::SeqCst), 0);
@@ -673,10 +671,9 @@ async fn the_user_cache_is_read_when_no_redis_cache_exists() {
         redis: None::<&FakeCache>,
         user: &user,
     };
-    let parameters =
-        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), true, &settings(true), &caches)
+        .await
+        .unwrap();
     assert_eq!(verifier_of(&parameters).as_deref(), Some("from-user"));
     assert_eq!(user.reads.load(Ordering::SeqCst), 1);
 }
@@ -689,7 +686,7 @@ async fn a_strict_miss_names_the_multi_instance_cause_when_redis_is_configured()
         redis: Some(&redis),
         user: &user,
     };
-    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+    let error = token_exchange_parameters(Some("state"), true, &strict(settings(true)), &caches)
         .await
         .unwrap_err();
     assert!(error.to_string().contains("different instances"));
@@ -702,10 +699,9 @@ async fn a_failed_cache_read_is_a_miss() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters =
-        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), true, &settings(true), &caches)
+        .await
+        .unwrap();
     assert!(parameters.verifier.is_none());
 }
 
@@ -716,7 +712,7 @@ async fn a_strict_miss_on_the_auth_cache_names_the_restart_cause() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+    let error = token_exchange_parameters(Some("state"), true, &strict(settings(true)), &caches)
         .await
         .unwrap_err();
     assert!(error.to_string().contains("Configure Redis"));
@@ -755,10 +751,9 @@ async fn a_user_cache_entry_round_trips_through_the_auth_cache() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters =
-        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), true, &settings(true), &caches)
+        .await
+        .unwrap();
     let verifier = parameters.verifier.unwrap();
     assert_eq!(verifier.code_verifier.expose_secret(), "stored-verifier");
     assert_eq!(verifier.cache_key, "pkce_verifier:state");
@@ -780,10 +775,9 @@ async fn deleting_a_verifier_removes_the_user_cache_entry() {
         user: &cache,
     };
     caches.delete_verifier("pkce_verifier:state").await;
-    let parameters =
-        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
-            .await
-            .unwrap();
+    let parameters = token_exchange_parameters(Some("state"), true, &settings(true), &caches)
+        .await
+        .unwrap();
     assert!(parameters.verifier.is_none());
 }
 

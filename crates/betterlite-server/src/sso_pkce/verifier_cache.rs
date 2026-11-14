@@ -113,24 +113,34 @@ pub(super) fn json_from_cached(value: CachedValue) -> Json {
 
 // Both cache tiers read a stored null as a miss, so only a present non-null value reaches this match
 pub(super) fn stored_entry(value: &Json) -> Option<PkceCacheEntry> {
-    match value {
-        Json::Object(fields) => match fields.get("code_verifier") {
-            Some(Json::Text(text)) if !text.is_empty() => {
-                Some(PkceCacheEntry::Verifier(SecretString::from(text.clone())))
-            }
-            Some(Json::Text(_) | Json::Null) => Some(PkceCacheEntry::EmptyVerifier),
-            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) | None => {
-                Some(PkceCacheEntry::UnexpectedShape(PkceCacheShape::Object))
-            }
-        },
-        Json::Text(text) if text.is_empty() => Some(PkceCacheEntry::EmptyVerifier),
-        Json::Text(text) => Some(PkceCacheEntry::LegacyVerifier(SecretString::from(
-            text.to_owned(),
-        ))),
-        Json::Bool(_) => Some(PkceCacheEntry::UnexpectedShape(PkceCacheShape::Boolean)),
-        Json::Number(_) => Some(PkceCacheEntry::UnexpectedShape(PkceCacheShape::Number)),
-        Json::List(_) => Some(PkceCacheEntry::UnexpectedShape(PkceCacheShape::List)),
-        Json::Null => None,
+    let shape = match value {
+        Json::Null => return None,
+        Json::Object(fields) => return Some(object_entry(fields.get("code_verifier"))),
+        Json::Text(text) => return Some(text_entry(text)),
+        Json::Bool(_) => PkceCacheShape::Boolean,
+        Json::Number(_) => PkceCacheShape::Number,
+        Json::List(_) => PkceCacheShape::List,
+    };
+    Some(PkceCacheEntry::UnexpectedShape(shape))
+}
+
+fn object_entry(verifier: Option<&Json>) -> PkceCacheEntry {
+    match verifier {
+        Some(Json::Text(text)) if !text.is_empty() => {
+            PkceCacheEntry::Verifier(SecretString::from(text.clone()))
+        }
+        Some(Json::Text(_) | Json::Null) => PkceCacheEntry::EmptyVerifier,
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) | None => {
+            PkceCacheEntry::UnexpectedShape(PkceCacheShape::Object)
+        }
+    }
+}
+
+fn text_entry(text: &str) -> PkceCacheEntry {
+    if text.is_empty() {
+        PkceCacheEntry::EmptyVerifier
+    } else {
+        PkceCacheEntry::LegacyVerifier(SecretString::from(text.to_owned()))
     }
 }
 
@@ -157,9 +167,5 @@ where
             Some(redis) => redis.delete(cache_key).await,
             None => self.user.delete(cache_key).await,
         }
-    }
-
-    pub(crate) fn kind(&self) -> PkceCacheKind {
-        self.redis.map_or_else(|| self.user.kind(), Redis::kind)
     }
 }

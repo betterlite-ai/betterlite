@@ -134,7 +134,7 @@ where
             }
         }
         MissingKind::Absent => {
-            let cause = missing_cause(caches.kind());
+            let cause = missing_cause(caches);
             tracing::error!(
                 state,
                 cause,
@@ -170,8 +170,12 @@ async fn permissive_miss<Redis, User>(
     );
 }
 
-const fn missing_cause(kind: PkceCacheKind) -> &'static str {
-    match kind {
+fn missing_cause<Redis, User>(caches: &PkceCaches<'_, Redis, User>) -> &'static str
+where
+    Redis: VerifierCache,
+    User: VerifierCache,
+{
+    match caches.redis.map_or_else(|| caches.user.kind(), Redis::kind) {
         PkceCacheKind::RedisUsage => {
             "The authorization and callback were likely handled by different instances, so the verifier was stored on one pod but not found on another."
         }
