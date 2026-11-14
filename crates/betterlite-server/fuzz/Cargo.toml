@@ -170,3 +170,10 @@ path = "fuzz_targets/token_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "gcp_iam_token"
+path = "fuzz_targets/gcp_iam_token.rs"
+test = false
+doc = false
+bench = false

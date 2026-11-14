@@ -1,0 +1,1 @@
+{"id":"c","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":17,"completion_tokens_details":{"reasoning_tokens":5},"server_side_tool_usage_details":7}}

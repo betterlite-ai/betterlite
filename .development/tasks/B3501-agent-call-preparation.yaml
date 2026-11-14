@@ -10,6 +10,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/src/api/agents.rs
+    - crates/betterlite-core/src/api/agents/**
   lint_tables: false
 
 references:
@@ -23,7 +24,7 @@ references:
 dod:
   - text: merge_agent_headers merges dynamic and static header mappings with case-insensitive header-name comparison, static headers winning, and returns None if the merged result is empty.
     proof: [header-merge]
-  - text: get_provider_agents_api_config returns GeminiAgentsConfig (from B1392) for custom_llm_provider="gemini" and None for any other provider.
+  - text: get_provider_agents_api_config returns Some(AgentsProvider::Gemini) for custom_llm_provider="gemini" and None for any other provider. AgentsProvider is a plain enum in betterlite-core, like InteractionsProvider in api/interactions/utils/selection.rs; core names no Gemini type, since betterlite-vertex (B1392) depends on betterlite-core, and the caller above core maps the marker to B1392's Gemini agents code.
     proof: [provider-config]
   - text: _get_agents_api_config calls get_provider_agents_api_config and raises litellm.BadRequestError if config is None, with a message listing the proxy endpoint as the fallback for unsupported providers.
     proof: [provider-validation]
