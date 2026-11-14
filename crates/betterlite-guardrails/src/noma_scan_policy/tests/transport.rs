@@ -196,7 +196,6 @@ async fn requests_without_scannable_messages_skip_the_api(#[case] body: &str) {
         .unwrap();
     assert_eq!(outcome, None);
     assert_eq!(request_count(&mock), 0);
-    assert_eq!(model_response, value(body));
 }
 
 #[tokio::test]
@@ -445,6 +444,7 @@ async fn responses_without_text_are_not_scanned(#[case] body: &str) {
         .unwrap();
     assert_eq!(outcome, None);
     assert_eq!(request_count(&mock), 0);
+    assert_eq!(model_response, value(body));
 }
 
 #[rstest]
