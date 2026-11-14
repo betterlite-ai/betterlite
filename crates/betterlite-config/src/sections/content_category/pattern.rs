@@ -1,7 +1,9 @@
+use regex::bytes::{Regex, RegexBuilder};
+
 #[derive(Debug)]
 pub enum Pattern {
     Backtracking(fancy_regex::Regex),
-    Linear(regex::bytes::Regex),
+    Linear(Regex),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -52,9 +54,7 @@ impl Pattern {
         }
         let linear =
             translate_flag_syntax(&translate_scoped_syntax(source, r"(?:\n?\z)", &flag_group))?;
-        let regex = regex::bytes::RegexBuilder::new(&linear)
-            .case_insensitive(true)
-            .build()?;
+        let regex = RegexBuilder::new(&linear).case_insensitive(true).build()?;
         Ok(Self::Linear(regex))
     }
 

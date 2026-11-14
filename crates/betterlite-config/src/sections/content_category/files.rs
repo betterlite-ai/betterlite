@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::sections::content_filter_records::category_types::CategoryFileData;
+use serde::de::IgnoredAny;
 
 use super::model::{CategoryConfig, CategoryConfigError};
 
@@ -149,7 +150,7 @@ enum JsonEntries {
 #[serde(untagged)]
 enum JsonItem {
     Entry(JsonEntry),
-    Other(serde::de::IgnoredAny),
+    Other(IgnoredAny),
 }
 
 #[derive(serde::Deserialize)]
@@ -163,7 +164,7 @@ struct JsonEntry {
 #[serde(untagged)]
 enum JsonSeverity {
     Number(serde_json::Number),
-    Other(serde::de::IgnoredAny),
+    Other(IgnoredAny),
 }
 
 fn severity_name(severity: Option<&JsonSeverity>) -> &'static str {

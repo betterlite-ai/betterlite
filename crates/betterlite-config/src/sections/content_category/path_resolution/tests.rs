@@ -65,7 +65,7 @@ fn symlinks_cannot_escape_roots(#[case] name: &str, #[case] absolute: bool) {
     assert!(matches!(error, CategoryPathError::OutsideRoots { .. }));
     let alias = temp.path().join("alias");
     symlink(&root, &alias).unwrap();
-    super::paths::assert_within_data_roots(&root.join("missing.yaml"), &[alias]).unwrap();
+    assert_within_data_roots(&root.join("missing.yaml"), &[alias]).unwrap();
 }
 
 #[cfg(unix)]
