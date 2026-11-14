@@ -138,7 +138,7 @@ fn enforce_tool_call_cap(
         direction,
     );
     detail.error.message = format!(
-        "{}; at most {MAX_SCANNED_TOOL_CALLS} tool calls are scanned per request",
+        "{}; at most {MAX_SCANNED_TOOL_CALLS} tool calls are scanned in one request or response",
         detail.error.message
     );
     Err(GuardrailHttpError {
