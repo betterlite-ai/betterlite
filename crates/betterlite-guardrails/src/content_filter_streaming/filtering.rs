@@ -152,7 +152,7 @@ fn mask_patterns_and_words(
 }
 
 // The source a scan sees: the configured categories, or none while a dropped phrase suppresses them
-pub(super) fn source_with_categories<'scan>(
+pub(super) const fn source_with_categories<'scan>(
     source: &'scan ContentFilterSource<'_>,
     empty: &'scan CategoryLoadResult,
     suppress: bool,
