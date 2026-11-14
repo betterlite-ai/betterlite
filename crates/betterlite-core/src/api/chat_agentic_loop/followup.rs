@@ -15,13 +15,14 @@ use serde_json::from_str;
 use serde_json::value::{RawValue, to_raw_value};
 
 use super::error::ChatCallError;
+use super::fake_stream::FakeStreamPort;
 use super::settings::{AgenticSettings, converted_stream_requested};
 use super::{
     AGENTIC_LOOP_API_SURFACE_KEY, AGENTIC_LOOP_DEPTH_KEY, AGENTIC_LOOP_FINGERPRINTS_KEY,
     AGENTIC_LOOP_PREFIX, CUSTOM_LLM_PROVIDER_KEY, LITELLM_METADATA_KEY, MAX_AGENTIC_LOOPS_KEY,
     MESSAGES_KEY, MODEL_KEY, TOOL_CHOICE_KEY, TOOLS_KEY,
 };
-use super::{ChatContinuation, ChatLoopResult, FakeStreamPort, LoggingHandle};
+use super::{ChatContinuation, ChatLoopResult, LoggingHandle};
 
 mod tests;
 
@@ -101,7 +102,29 @@ where
     FakeStream: FakeStreamPort + ?Sized,
 {
     let hooked = match response {
-        ChatLoopResult::Response(raw) => ChatLoopResult::Response(post_hook(raw, call).await),
+        ChatLoopResult::Response(response) => {
+            let hooked = if call.callback.overrides().post_response {
+                let original = response.clone();
+                match call
+                    .callback
+                    .post_agentic_loop_response(response, call.plan, call.kwargs)
+                    .await
+                {
+                    Ok(hooked) => hooked,
+                    Err(error) => {
+                        let call_id = call.logging.call_id();
+                        let log_model = call.model;
+                        tracing::error!(
+                            "LiteLLM.AgenticHookError: Exception in async_post_agentic_loop_response_hook [call_id={call_id} model={log_model}]: {error}"
+                        );
+                        original
+                    }
+                }
+            } else {
+                response
+            };
+            ChatLoopResult::Response(hooked)
+        }
         stream @ ChatLoopResult::Stream(_) => stream,
     };
     if converted_stream_requested(call.kwargs) && call.settings.depth == 0 {
@@ -110,35 +133,6 @@ where
             .wrap(hooked, call.model, call.custom_llm_provider, &call.logging);
     }
     hooked
-}
-
-async fn post_hook<Continuation, FakeStream>(
-    response: Box<RawValue>,
-    call: &FollowupCall<'_, Continuation, FakeStream>,
-) -> Box<RawValue>
-where
-    Continuation: ?Sized,
-    FakeStream: ?Sized,
-{
-    if !call.callback.overrides().post_response {
-        return response;
-    }
-    let original = response.clone();
-    match call
-        .callback
-        .post_agentic_loop_response(response, call.plan, call.kwargs)
-        .await
-    {
-        Ok(hooked) => hooked,
-        Err(error) => {
-            let call_id = call.logging.call_id();
-            let log_model = call.model;
-            tracing::error!(
-                "LiteLLM.AgenticHookError: Exception in async_post_agentic_loop_response_hook [call_id={call_id} model={log_model}]: {error}"
-            );
-            original
-        }
-    }
 }
 
 fn followup_model(

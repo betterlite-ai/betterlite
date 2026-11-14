@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use betterlite_context::agentic_callback::AgenticHookError;
+use betterlite_context::agentic_callback::error::AgenticHookError;
 use betterlite_context::agentic_followup_kwargs::AgenticFollowupKwargsError;
 use thiserror::Error;
 

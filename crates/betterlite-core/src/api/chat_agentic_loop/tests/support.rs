@@ -2,9 +2,10 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
+use betterlite_context::agentic_callback::error::AgenticHookError;
 use betterlite_context::agentic_callback::{
-    AgenticCall, AgenticCallback, AgenticFlag, AgenticGate, AgenticHookError, AgenticLogging,
-    AgenticLoopCall, AgenticOverrides,
+    AgenticCall, AgenticCallback, AgenticFlag, AgenticGate, AgenticLogging, AgenticLoopCall,
+    AgenticOverrides,
 };
 use betterlite_context::agentic_loop_plan::{
     AgenticLoopPlan, AgenticLoopRequestPatch, FollowupMessage, JsonMap,
@@ -20,9 +21,10 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::super::error::{AgenticLoopError, ChatCallError};
+use super::super::fake_stream::FakeStreamPort;
 use super::super::followup::FollowupCall;
 use super::super::settings::AgenticSettings;
-use super::super::{ChatContinuation, ChatLoopCall, ChatLoopResult, FakeStreamPort, LoggingHandle};
+use super::super::{ChatContinuation, ChatLoopCall, ChatLoopResult, LoggingHandle};
 
 pub(crate) fn raw(text: &str) -> Box<RawValue> {
     RawValue::from_string(text.to_owned()).unwrap()
@@ -305,16 +307,53 @@ pub(crate) struct LoopRecord {
     pub kwargs: JsonMap,
 }
 
+impl LoopRecord {
+    fn of(call: &AgenticLoopCall<'_>) -> Self {
+        Self {
+            tools: call.tools.clone(),
+            model: call.model.to_owned(),
+            messages: call
+                .messages
+                .iter()
+                .map(|message| message.0.get().to_owned())
+                .collect(),
+            response: call.response.get().to_owned(),
+            log_call_id: call.logging.and_then(|logging| logging.call_id.clone()),
+            stream: call.stream,
+            optional_params: call.optional_params.clone(),
+            kwargs: call.kwargs.clone(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct PostRecord {
     pub kwargs: JsonMap,
     pub stop_reason: Option<String>,
 }
 
+impl PostRecord {
+    fn of(plan: &AgenticLoopPlan, kwargs: &JsonMap) -> Self {
+        Self {
+            kwargs: kwargs.clone(),
+            stop_reason: plan.stop_reason.clone(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct CleanupRecord {
     pub stop_reason: Option<String>,
     pub kwargs: JsonMap,
+}
+
+impl CleanupRecord {
+    fn of(plan: &AgenticLoopPlan, kwargs: &JsonMap) -> Self {
+        Self {
+            stop_reason: plan.stop_reason.clone(),
+            kwargs: kwargs.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -324,6 +363,14 @@ pub(crate) struct CallbackRecords {
     pub plan_calls: Vec<LoopRecord>,
     pub post_calls: Vec<PostRecord>,
     pub cleanup_calls: Vec<CleanupRecord>,
+}
+
+enum CallRecord {
+    Gate(GateRecord),
+    Legacy(LoopRecord),
+    Plan(LoopRecord),
+    Post(PostRecord),
+    Cleanup(CleanupRecord),
 }
 
 #[derive(Default)]
@@ -389,14 +436,24 @@ impl Script {
 }
 
 pub(crate) struct ScriptedCallback {
-    script: Mutex<Script>,
+    overrides: Mutex<AgenticOverrides>,
+    gate: Mutex<Option<Result<AgenticGate, AgenticHookError>>>,
+    legacy: Mutex<Option<Result<Option<Box<RawValue>>, AgenticHookError>>>,
+    plan: Mutex<Option<Result<AgenticLoopPlan, AgenticHookError>>>,
+    post: Mutex<Option<Result<Box<RawValue>, AgenticHookError>>>,
+    cleanup: Mutex<Option<Result<(), AgenticHookError>>>,
     records: Mutex<CallbackRecords>,
 }
 
 impl ScriptedCallback {
     pub(crate) fn new(script: Script) -> Self {
         Self {
-            script: Mutex::new(script),
+            overrides: Mutex::new(script.overrides),
+            gate: Mutex::new(script.gate),
+            legacy: Mutex::new(script.legacy),
+            plan: Mutex::new(script.plan),
+            post: Mutex::new(script.post),
+            cleanup: Mutex::new(script.cleanup),
             records: Mutex::new(CallbackRecords::default()),
         }
     }
@@ -408,26 +465,20 @@ impl ScriptedCallback {
             .clone()
     }
 
-    fn record_loop(&self, call: &AgenticLoopCall<'_>, legacy: bool) {
-        let record = LoopRecord {
-            tools: call.tools.clone(),
-            model: call.model.to_owned(),
-            messages: call
-                .messages
-                .iter()
-                .map(|message| message.0.get().to_owned())
-                .collect(),
-            response: call.response.get().to_owned(),
-            log_call_id: call.logging.and_then(|logging| logging.call_id.clone()),
-            stream: call.stream,
-            optional_params: call.optional_params.clone(),
-            kwargs: call.kwargs.clone(),
-        };
+    fn scripted_answer<T>(&self, record: CallRecord, slot: &Mutex<Option<T>>) -> Option<T> {
+        self.record(record);
+        let mut answer = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        answer.take()
+    }
+
+    fn record(&self, record: CallRecord) {
         let mut records = self.records.lock().unwrap_or_else(PoisonError::into_inner);
-        if legacy {
-            records.legacy_calls.push(record);
-        } else {
-            records.plan_calls.push(record);
+        match record {
+            CallRecord::Gate(gate) => records.gate_calls.push(gate),
+            CallRecord::Legacy(legacy) => records.legacy_calls.push(legacy),
+            CallRecord::Plan(plan) => records.plan_calls.push(plan),
+            CallRecord::Post(post) => records.post_calls.push(post),
+            CallRecord::Cleanup(cleanup) => records.cleanup_calls.push(cleanup),
         }
     }
 }
@@ -439,71 +490,42 @@ impl AgenticCallback for ScriptedCallback {
     }
 
     fn overrides(&self) -> AgenticOverrides {
-        self.script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        let overrides = self
             .overrides
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        *overrides
     }
 
     async fn should_run_agentic_loop(
         &self,
         call: &AgenticCall<'_>,
     ) -> Result<AgenticGate, AgenticHookError> {
-        self.records
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .gate_calls
-            .push(GateRecord {
-                model: call.model.to_owned(),
-                stream: call.stream,
-                provider: call.custom_llm_provider.to_owned(),
-                kwargs: call.kwargs.clone(),
-                tools: call.tools.map(|tools| tools.to_vec()),
-            });
-        let scripted = self
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .gate
-            .take();
-        match scripted {
-            Some(gate) => gate,
-            None => Ok(AgenticGate::default()),
-        }
+        let record = GateRecord {
+            model: call.model.to_owned(),
+            stream: call.stream,
+            provider: call.custom_llm_provider.to_owned(),
+            kwargs: call.kwargs.clone(),
+            tools: call.tools.map(|tools| tools.to_vec()),
+        };
+        self.scripted_answer(CallRecord::Gate(record), &self.gate)
+            .unwrap_or(Ok(AgenticGate::default()))
     }
 
     async fn build_agentic_loop_plan(
         &self,
         call: &AgenticLoopCall<'_>,
     ) -> Result<AgenticLoopPlan, AgenticHookError> {
-        self.record_loop(call, false);
-        let scripted = self
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .plan
-            .take();
-        match scripted {
-            Some(plan) => plan,
-            None => Ok(AgenticLoopPlan::default()),
-        }
+        self.scripted_answer(CallRecord::Plan(LoopRecord::of(call)), &self.plan)
+            .unwrap_or(Ok(AgenticLoopPlan::default()))
     }
 
     async fn run_agentic_loop(
         &self,
         call: &AgenticLoopCall<'_>,
     ) -> Result<Option<Box<RawValue>>, AgenticHookError> {
-        self.record_loop(call, true);
-        let scripted = self
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .legacy
-            .take();
-        match scripted {
-            Some(legacy) => legacy,
-            None => Ok(None),
-        }
+        self.scripted_answer(CallRecord::Legacy(LoopRecord::of(call)), &self.legacy)
+            .unwrap_or(Ok(None))
     }
 
     async fn post_agentic_loop_response(
@@ -512,24 +534,9 @@ impl AgenticCallback for ScriptedCallback {
         plan: &AgenticLoopPlan,
         kwargs: &JsonMap,
     ) -> Result<Box<RawValue>, AgenticHookError> {
-        self.records
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .post_calls
-            .push(PostRecord {
-                kwargs: kwargs.clone(),
-                stop_reason: plan.stop_reason.clone(),
-            });
-        let scripted = self
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .post
-            .take();
-        match scripted {
-            Some(hooked) => hooked,
-            None => Ok(response),
-        }
+        let hooked =
+            self.scripted_answer(CallRecord::Post(PostRecord::of(plan, kwargs)), &self.post);
+        hooked.unwrap_or(Ok(response))
     }
 
     async fn agentic_loop_cleanup(
@@ -537,21 +544,10 @@ impl AgenticCallback for ScriptedCallback {
         plan: &AgenticLoopPlan,
         kwargs: &JsonMap,
     ) -> Result<(), AgenticHookError> {
-        self.records
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .cleanup_calls
-            .push(CleanupRecord {
-                stop_reason: plan.stop_reason.clone(),
-                kwargs: kwargs.clone(),
-            });
-        let scripted = self
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .cleanup
-            .take();
-        match scripted {
+        match self.scripted_answer(
+            CallRecord::Cleanup(CleanupRecord::of(plan, kwargs)),
+            &self.cleanup,
+        ) {
             Some(result) => result,
             None => Ok(()),
         }

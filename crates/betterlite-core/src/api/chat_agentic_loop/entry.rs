@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_context::agentic_callback::{
-    AgenticCall, AgenticCallback, AgenticGate, AgenticHookError, AgenticLoopCall,
+    AgenticCall, AgenticCallback, AgenticGate, AgenticLoopCall,
 };
 use betterlite_context::agentic_loop_plan::{AgenticLoopPlan, FollowupMessage, JsonMap};
 use serde_json::from_str;
@@ -108,24 +108,7 @@ async fn gate_or_skip(
     tools: &[FollowupMessage],
     hook_kwargs: &JsonMap,
 ) -> Option<AgenticGate> {
-    match ask_gate(callback, call, tools, hook_kwargs).await {
-        Ok(gate) => Some(gate),
-        Err(error) => {
-            tracing::error!(
-                "LiteLLM.AgenticHookError: Exception in chat completion agentic gate: {error}"
-            );
-            None
-        }
-    }
-}
-
-async fn ask_gate(
-    callback: &dyn AgenticCallback,
-    call: &ChatLoopCall<'_>,
-    tools: &[FollowupMessage],
-    hook_kwargs: &JsonMap,
-) -> Result<AgenticGate, AgenticHookError> {
-    callback
+    let gate = callback
         .should_run_agentic_loop(&AgenticCall {
             response: call.response,
             model: call.model,
@@ -135,7 +118,16 @@ async fn ask_gate(
             custom_llm_provider: call.custom_llm_provider,
             kwargs: hook_kwargs,
         })
-        .await
+        .await;
+    match gate {
+        Ok(gate) => Some(gate),
+        Err(error) => {
+            tracing::error!(
+                "LiteLLM.AgenticHookError: Exception in chat completion agentic gate: {error}"
+            );
+            None
+        }
+    }
 }
 
 async fn plan_or_legacy<Continuation, FakeStream>(
