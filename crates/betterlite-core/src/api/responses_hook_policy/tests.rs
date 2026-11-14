@@ -48,7 +48,6 @@ struct StaticAgentic {
     overrides: AgenticOverrides,
 }
 
-#[async_trait]
 impl AgenticCallback for StaticAgentic {
     fn callback_name(&self) -> &str {
         "static"

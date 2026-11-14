@@ -15,19 +15,19 @@ const PATH_ROOT: &str = "litellm_params.max_agentic_loops";
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
-    pub model_list: Vec<RawDeployment>,
+    model_list: Vec<RawDeployment>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct RawDeployment {
+struct RawDeployment {
     #[serde(default)]
-    pub litellm_params: RawParams,
+    litellm_params: RawParams,
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct RawParams {
+struct RawParams {
     #[serde(default)]
-    pub max_agentic_loops: Option<RawNumber>,
+    max_agentic_loops: Option<RawNumber>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
