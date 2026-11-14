@@ -11,6 +11,7 @@ use crate::spend_partitions::{SpendPartitionError, SpendPartitionOperation};
 
 const RELKIND_SQL: &str =
     "SELECT relkind::text AS relkind FROM pg_class WHERE oid = to_regclass($1)";
+const PARTITIONED_TABLE: &str = "LiteLLM_SpendLogs_partitioned";
 const TABLE_NAME_SQL: &str = "SELECT to_regclass($1)::text AS name";
 const CANONICAL_COUNT_SQL: &str = r#"SELECT count(*) AS rows FROM "LiteLLM_SpendLogs""#;
 const LEGACY_COUNT_SQL: &str = r#"SELECT count(*) AS rows FROM "LiteLLM_SpendLogs_legacy""#;
@@ -598,7 +599,6 @@ async fn assert_partition_collision_rolls_back(case: &SpendPartitionCase) {
     )
     .await;
     assert!(matches!(error, SpendPartitionError::Statement { .. }));
-    assert!(error.to_string().contains("LiteLLM_SpendLogs_legacy"));
     assert_canonical(case, Canonical::Plain, 1).await;
     assert!(
         table_name(case, "LiteLLM_SpendLogs_pdefault")
@@ -608,13 +608,12 @@ async fn assert_partition_collision_rolls_back(case: &SpendPartitionCase) {
 }
 
 async fn assert_unpartition_collision_rolls_back(case: &SpendPartitionCase) {
-    let error = collide(
+    collide(
         case,
         SpendPartitionOperation::Unpartition,
-        "LiteLLM_SpendLogs_partitioned",
+        PARTITIONED_TABLE,
     )
     .await;
-    assert!(error.to_string().contains("LiteLLM_SpendLogs_partitioned"));
     assert_partitioned_after_failed_unpartition(case).await;
 }
 
@@ -628,7 +627,9 @@ async fn collide(
         .batch_execute(&statement)
         .await
         .expect("the collision table");
-    case.run_error(operation).await
+    let error = case.run_error(operation).await;
+    assert!(error.to_string().contains(table));
+    error
 }
 
 async fn assert_partitioned_after_failed_unpartition(case: &SpendPartitionCase) {

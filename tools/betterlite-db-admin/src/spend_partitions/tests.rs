@@ -48,6 +48,14 @@ fn maps_partition_commands_to_their_variant() {
         DbAdminCommand::SpendPartition(SpendPartitionOperation::Partition)
     );
     assert_eq!(partition.operation(), Operation::PartitionSpendLogs);
+    assert_eq!(
+        Operation::PartitionSpendLogs.name(),
+        SpendPartitionOperation::Partition.name()
+    );
+    assert_eq!(
+        Operation::UnpartitionSpendLogs.name(),
+        SpendPartitionOperation::Unpartition.name()
+    );
     let unpartition = Operation::UnpartitionSpendLogs.command(&environment);
     assert_eq!(
         unpartition,
