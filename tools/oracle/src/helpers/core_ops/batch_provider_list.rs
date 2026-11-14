@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::batch_provider_list::{Raw, RawSettings};
 use betterlite_core::api::batch_provider_list::call::{
-    AzureBatchListParams, BatchProviderListCall,
+    AzureBatchListParams, BatchListProviderCall,
 };
 use betterlite_core::api::batch_provider_list::error::BatchProviderListError;
 use betterlite_core::api::batch_provider_list::{
@@ -77,48 +77,49 @@ fn params_value(params: &AzureBatchListParams) -> Value {
 
 fn call_value(result: BatchProviderListResult, provider: &str) -> Value {
     let is_async = result.is_async;
-    match result.call {
-        BatchProviderListCall::OpenAiCompatible(call) => json!({
+    let window = result.call.window;
+    match result.call.provider {
+        BatchListProviderCall::OpenAiCompatible(call) => json!({
             "provider": provider,
             "is_async": is_async,
-            "after": call.after,
-            "limit": call.limit,
+            "after": window.after,
+            "limit": window.limit,
             "api_base": call.api_base,
             "api_key": secret_value(call.api_key.as_ref()),
             "organization": call.organization,
-            "timeout": timeout_value(&call.timeout),
+            "timeout": timeout_value(&window.timeout),
             "max_retries": call.max_retries,
         }),
-        BatchProviderListCall::Azure(call) => json!({
+        BatchListProviderCall::Azure(call) => json!({
             "provider": provider,
             "is_async": is_async,
             "api_base": call.api_base,
             "api_key": secret_value(call.api_key.as_ref()),
             "api_version": call.api_version,
-            "timeout": timeout_value(&call.timeout),
+            "timeout": timeout_value(&window.timeout),
             "max_retries": call.max_retries,
             "litellm_params": params_value(&call.litellm_params),
         }),
-        BatchProviderListCall::VertexAi(call) => json!({
+        BatchListProviderCall::VertexAi(call) => json!({
             "provider": provider,
             "is_async": is_async,
-            "after": call.after,
-            "limit": call.limit,
+            "after": window.after,
+            "limit": window.limit,
             "api_base": call.api_base,
             "vertex_project": call.vertex_project,
             "vertex_location": call.vertex_location,
             "vertex_credentials": secret_value(call.vertex_credentials.as_ref()),
-            "timeout": timeout_value(&call.timeout),
+            "timeout": timeout_value(&window.timeout),
             "max_retries": call.max_retries,
         }),
-        BatchProviderListCall::Xai(call) => json!({
+        BatchListProviderCall::Xai(call) => json!({
             "provider": provider,
             "is_async": is_async,
-            "after": call.after,
-            "limit": call.limit,
+            "after": window.after,
+            "limit": window.limit,
             "api_base": call.api_base,
             "api_key": secret_value(call.api_key.as_ref()),
-            "timeout": timeout_value(&call.timeout),
+            "timeout": timeout_value(&window.timeout),
         }),
     }
 }
