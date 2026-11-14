@@ -31,18 +31,16 @@ impl Helper for Op {
             .enable_time()
             .build()
             .map_err(|error| failure("RuntimeError", error))?;
-        runtime.block_on(execute(input))
-    }
-}
-
-async fn execute(input: &Input) -> HelperResult {
-    match input.action {
-        Action::Initialize => initialize_case(input).await,
-        Action::AsyncHeaders => headers_case(input, HeaderMode::Async).await,
-        Action::SyncHeaders => headers_case(input, HeaderMode::Sync).await,
-        Action::Upload => upload_case(input).await,
-        Action::LoggingConfig => logging_config_case(input).await,
-        Action::VertexInstance => vertex_instance_case(input).await,
+        runtime.block_on(async {
+            match input.action {
+                Action::Initialize => initialize_case(input).await,
+                Action::AsyncHeaders => headers_case(input, HeaderMode::Async).await,
+                Action::SyncHeaders => headers_case(input, HeaderMode::Sync).await,
+                Action::Upload => upload_case(input).await,
+                Action::LoggingConfig => logging_config_case(input).await,
+                Action::VertexInstance => vertex_instance_case(input).await,
+            }
+        })
     }
 }
 
@@ -55,8 +53,11 @@ pub(super) struct Session {
 pub(super) fn open(input: &Input) -> Result<Session, Box<HelperError>> {
     let auth = FakeAuth::default();
     let sent = Arc::new(Mutex::new(Vec::new()));
-    let body = input.body.clone().unwrap_or_default();
-    let client = RecordingClient::new(Arc::clone(&sent), input.status.unwrap_or(200), body);
+    let client = RecordingClient {
+        sent: Arc::clone(&sent),
+        status: input.status.unwrap_or(200),
+        body: input.body.clone().unwrap_or_default().into_bytes(),
+    };
     let environment: Arc<dyn EnvironmentSource> = Arc::new(input.environment.clone());
     let base = initialize(environment, input.bucket.clone(), auth.clone(), client)
         .map_err(|error| failure("ValueError", error))?;

@@ -17,12 +17,8 @@ PAYLOAD_KEYS = ("id", "trace_id", "call_type", "status", "total_tokens", "model"
 
 class Input(TypedDict):
     action: Literal[
-        "initialize",
-        "async_headers",
-        "sync_headers",
-        "upload",
-        "logging_config",
-        "vertex_instance",
+        "initialize", "async_headers", "sync_headers", "upload",
+        "logging_config", "vertex_instance",
     ]
     environment: NotRequired[dict[str, str]]
     bucket: NotRequired[str]
@@ -81,19 +77,13 @@ class VertexView(Protocol):
 
 class VertexFake(VertexView):
     def __init__(self) -> None:
-        self.ensure_calls: list[JsonValue] = []
         self.token_calls: list[JsonValue] = []
 
     def record(
-        self, credentials: JsonValue, project_id: str | None, custom_llm_provider: str
+        self, _credentials: JsonValue, project_id: str | None, _custom_llm_provider: str
     ) -> tuple[str, str]:
-        entry: dict[str, JsonValue] = {
-            "credentials": credentials,
-            "project_id": project_id,
-            "custom_llm_provider": custom_llm_provider,
-        }
-        self.ensure_calls.append(entry)
-        return ("mock-gcs-token", "mock-project-id")
+        # echo the requested project so the token call shows which project the header path asked for
+        return ("mock-gcs-token", project_id if project_id is not None else "")
 
     @override
     def _ensure_access_token(
@@ -175,8 +165,9 @@ def scripted(base: GCSBucketBase, input_value: Input) -> Recorder:
     status = input_value.get("status")
     body = input_value.get("body")
     recorder = Recorder(200 if status is None else status, "" if body is None else body)
-    transport = httpx.MockTransport(recorder.handle)
-    base.async_httpx_client.client = httpx.AsyncClient(transport=transport)
+    base.async_httpx_client.client = httpx.AsyncClient(
+        transport=httpx.MockTransport(recorder.handle)
+    )
     return recorder
 
 
@@ -187,11 +178,7 @@ def vertex_fake() -> VertexFake:
 
 
 def header_result(fake: VertexFake, headers: JsonValue) -> JsonValue:
-    result: dict[str, JsonValue] = {
-        "headers": headers,
-        "ensure": fake.ensure_calls[-1],
-        "token": fake.token_calls[-1],
-    }
+    result: dict[str, JsonValue] = {"headers": headers, "token": fake.token_calls[-1]}
     return result
 
 
@@ -214,8 +201,7 @@ def initialize_case(input_value: Input) -> JsonValue:
     object_name = input_value.get("object_name")
     downloaded: JsonValue = None
     if object_name is not None:
-        body = asyncio.run(download(base, object_name))
-        downloaded = {"body": body, "request": recorder.last()}
+        downloaded = {"body": asyncio.run(download(base, object_name)), "request": recorder.last()}
     result: dict[str, JsonValue] = {
         "is_mock_mode": base.is_mock_mode,
         "path_service_account": base.path_service_account_json,

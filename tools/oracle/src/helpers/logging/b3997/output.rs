@@ -1,6 +1,5 @@
 use betterlite_logging::gcs_client::gcs_storage_auth::RequestHeaders;
-use betterlite_logging::gcs_mock::auth::{EnsureAccessToken, GetTokenAndUrl, VertexAuthProvider};
-use betterlite_models::decisions::Json;
+use betterlite_logging::gcs_mock::auth::{GetTokenAndUrl, VertexAuthProvider};
 use secrecy::ExposeSecret;
 use serde_json::{Map, Value, json};
 
@@ -9,14 +8,6 @@ pub(super) fn headers_json(headers: &RequestHeaders) -> Value {
         .iter()
         .map(|(name, value)| (name.clone(), json!(value.expose_secret())))
         .collect()
-}
-
-pub(super) fn ensure_json(request: &EnsureAccessToken) -> Value {
-    json!({
-        "credentials": json!(request.credentials.as_ref().map(ExposeSecret::expose_secret)),
-        "project_id": request.project_id,
-        "custom_llm_provider": provider_name(request.custom_llm_provider),
-    })
 }
 
 pub(super) fn token_json(request: &GetTokenAndUrl) -> Value {
@@ -28,17 +19,13 @@ pub(super) fn token_json(request: &GetTokenAndUrl) -> Value {
         "vertex_location": request.vertex_location,
         "gemini_api_key": json!(request.gemini_api_key.as_ref().map(ExposeSecret::expose_secret)),
         "stream": request.stream,
-        "custom_llm_provider": provider_name(request.custom_llm_provider),
+        "custom_llm_provider": match request.custom_llm_provider {
+            VertexAuthProvider::VertexAi => "vertex_ai",
+            VertexAuthProvider::VertexAiBeta => "vertex_ai_beta",
+            VertexAuthProvider::Gemini => "gemini",
+        },
         "api_base": request.api_base,
     })
-}
-
-pub(super) const fn provider_name(provider: VertexAuthProvider) -> &'static str {
-    match provider {
-        VertexAuthProvider::VertexAi => "vertex_ai",
-        VertexAuthProvider::VertexAiBeta => "vertex_ai_beta",
-        VertexAuthProvider::Gemini => "gemini",
-    }
 }
 
 pub(super) fn body_json(body: Option<&[u8]>) -> Value {
@@ -48,7 +35,7 @@ pub(super) fn body_json(body: Option<&[u8]>) -> Value {
     serde_json::from_str(text).unwrap_or_else(|_error| Value::String(text.to_owned()))
 }
 
-const PAYLOAD_KEYS: [&str; 6] = [
+const KEPT_KEYS: [&str; 6] = [
     "id",
     "trace_id",
     "call_type",
@@ -61,11 +48,9 @@ pub(super) fn project_payload(value: Value) -> Value {
     match value {
         Value::Object(fields) if fields.contains_key("id") && fields.contains_key("trace_id") => {
             let mut kept = Map::new();
-            for key in PAYLOAD_KEYS {
-                kept.insert(
-                    key.to_owned(),
-                    fields.get(key).cloned().unwrap_or(Value::Null),
-                );
+            for key in KEPT_KEYS {
+                let value = fields.get(key).cloned().unwrap_or(Value::Null);
+                kept.insert(key.to_owned(), value);
             }
             Value::Object(kept)
         }

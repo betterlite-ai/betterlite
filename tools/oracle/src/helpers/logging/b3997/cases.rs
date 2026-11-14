@@ -18,17 +18,17 @@ use betterlite_models::decisions::Json;
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::{Value, json};
 
-use super::output::{body_json, ensure_json, headers_json, project_payload, token_json};
+use super::output::{body_json, headers_json, project_payload, token_json};
 use super::recording::{FakeAuth, RecordingClient};
 use super::{Session, failure, open};
-use crate::helpers::HelperError;
+use crate::helpers::{HelperError, HelperResult};
 
 pub(super) enum HeaderMode {
     Async,
     Sync,
 }
 
-pub(super) async fn initialize_case(input: &super::Input) -> crate::helpers::HelperResult {
+pub(super) async fn initialize_case(input: &super::Input) -> HelperResult {
     let session = open(input)?;
     let download = download_value(&session, input.object_name.as_deref()).await;
     Ok(initialize_json(&session, download))
@@ -42,6 +42,13 @@ async fn download_value(session: &Session, object_name: Option<&str>) -> Value {
     download_json(session, body.as_deref())
 }
 
+fn download_json(session: &Session, body: Option<&[u8]>) -> Value {
+    json!({
+        "body": body_json(body),
+        "request": last_request(session).map(|request| request_json(&request)),
+    })
+}
+
 fn initialize_json(session: &Session, download: Value) -> Value {
     json!({
         "is_mock_mode": session.base.is_mock_mode,
@@ -50,10 +57,7 @@ fn initialize_json(session: &Session, download: Value) -> Value {
     })
 }
 
-pub(super) async fn headers_case(
-    input: &super::Input,
-    mode: HeaderMode,
-) -> crate::helpers::HelperResult {
+pub(super) async fn headers_case(input: &super::Input, mode: HeaderMode) -> HelperResult {
     let session = open(input)?;
     let headers = request_headers(&session, input, mode).await?;
     Ok(header_json(&session, &headers))
@@ -79,41 +83,31 @@ async fn request_headers(
     .map_err(|error| failure("ValueError", error))
 }
 
-pub(super) async fn upload_case(input: &super::Input) -> crate::helpers::HelperResult {
+pub(super) async fn upload_case(input: &super::Input) -> HelperResult {
     let session = open(input)?;
     let response = send_upload(&session, input).await?;
     Ok(upload_json(&session, &response))
 }
 
 async fn send_upload(session: &Session, input: &super::Input) -> Result<Json, Box<HelperError>> {
-    let bucket = input
-        .bucket
-        .as_deref()
-        .ok_or_else(|| failure("ValueError", "bucket"))?;
-    let object_name = input
-        .object_name
-        .as_deref()
-        .ok_or_else(|| failure("ValueError", "object_name"))?;
+    let bucket = input.bucket.as_deref();
+    let bucket = bucket.ok_or_else(|| failure("ValueError", "bucket"))?;
+    let object_name = input.object_name.as_deref();
+    let object_name = object_name.ok_or_else(|| failure("ValueError", "object_name"))?;
     let payload = logging_payload(input.payload.as_ref())?;
-    log_json_data_on_gcs(
-        &session.base,
-        &RequestHeaders::new(),
-        bucket,
-        object_name,
-        &payload,
-    )
-    .await
-    .map_err(upload_failure)
+    let headers = RequestHeaders::new();
+    let sent = log_json_data_on_gcs(&session.base, &headers, bucket, object_name, &payload);
+    sent.await.map_err(upload_failure)
 }
 
 fn upload_json(session: &Session, response: &Json) -> Value {
     json!({
         "response": serde_json::to_value(response).unwrap_or(Value::Null),
-        "request": last_request(session).map(request_json),
+        "request": last_request(session).map(|request| request_json(&request)),
     })
 }
 
-pub(super) async fn logging_config_case(input: &super::Input) -> crate::helpers::HelperResult {
+pub(super) async fn logging_config_case(input: &super::Input) -> HelperResult {
     let session = open(input)?;
     let config = logging_config_for(&session, input).await?;
     Ok(config_json(&session, &config))
@@ -124,20 +118,16 @@ async fn logging_config_for(
     input: &super::Input,
 ) -> Result<GcsLoggingConfig<FakeAuth>, Box<HelperError>> {
     let kwargs = GcsLoggingKwargs {
-        dynamic_params: dynamic_params(input.dynamic.as_ref())?,
+        dynamic_params: match input.dynamic.as_ref() {
+            None => None,
+            Some(value) => serde_json::from_value::<Json>(value.clone())
+                .map(Some)
+                .map_err(|error| failure("ValueError", error))?,
+        },
     };
     logging_config(&session.base, &kwargs)
         .await
         .map_err(|error| failure("ValueError", error))
-}
-
-fn dynamic_params(value: Option<&Value>) -> Result<Option<Json>, Box<HelperError>> {
-    match value {
-        None => Ok(None),
-        Some(value) => serde_json::from_value::<Json>(value.clone())
-            .map(Some)
-            .map_err(|error| failure("ValueError", error)),
-    }
 }
 
 fn config_json(session: &Session, config: &GcsLoggingConfig<FakeAuth>) -> Value {
@@ -150,16 +140,10 @@ fn config_json(session: &Session, config: &GcsLoggingConfig<FakeAuth>) -> Value 
     })
 }
 
-pub(super) async fn vertex_instance_case(input: &super::Input) -> crate::helpers::HelperResult {
+pub(super) async fn vertex_instance_case(input: &super::Input) -> HelperResult {
     let session = open(input)?;
     let instances = cached_instances(&session, input).await?;
-    let [first, second, other] = instances.as_slice() else {
-        return Err(failure(
-            "RuntimeError",
-            "the vertex cache returned an unexpected number of instances",
-        ));
-    };
-    Ok(instances_json(&session, first, second, other))
+    instances_json(&session, &instances)
 }
 
 async fn cached_instances(
@@ -179,110 +163,79 @@ async fn cached_instances(
 
 fn instances_json(
     session: &Session,
-    first: &VertexInstance<FakeAuth>,
-    second: &VertexInstance<FakeAuth>,
-    other: &VertexInstance<FakeAuth>,
-) -> Value {
-    json!({
+    instances: &[VertexInstance<FakeAuth>],
+) -> Result<Value, Box<HelperError>> {
+    let [first, second, other] = instances else {
+        return Err(failure("RuntimeError", "unexpected vertex instance count"));
+    };
+    Ok(json!({
         "instances": {
             "same_instance": Arc::ptr_eq(first, second),
             "distinct_credentials": !Arc::ptr_eq(first, other),
         },
         "cached_keys": cache_keys(session),
-    })
+    }))
 }
 
 fn cache_keys(session: &Session) -> Value {
-    let instances = session
-        .base
-        .vertex_instances
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let mut keys: Vec<String> = instances
-        .keys()
-        .map(|key| key.0.expose_secret().to_owned())
-        .collect();
+    let guard = session.base.vertex_instances.lock();
+    let instances = guard.unwrap_or_else(PoisonError::into_inner);
+    let mut keys = Vec::new();
+    for key in instances.keys() {
+        keys.push(key.0.expose_secret().to_owned());
+    }
     keys.sort();
     json!(keys)
 }
 
 fn header_json(session: &Session, headers: &RequestHeaders) -> Value {
-    let ensure = session
-        .auth
-        .ensure_calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .last()
-        .map(ensure_json);
-    let token = session
-        .auth
-        .token_calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .last()
-        .map(token_json);
+    let guard = session.auth.token_calls.lock();
+    let calls = guard.unwrap_or_else(PoisonError::into_inner);
+    let token = calls.last().map(token_json);
     json!({
         "headers": headers_json(headers),
-        "ensure": ensure,
         "token": token,
     })
 }
 
-fn download_json(session: &Session, body: Option<&[u8]>) -> Value {
-    json!({
-        "body": body_json(body),
-        "request": last_request(session).map(request_json),
-    })
-}
-
 fn last_request(session: &Session) -> Option<GcsRequest> {
-    session
-        .sent
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .last()
-        .cloned()
+    let guard = session.sent.lock();
+    let sent = guard.unwrap_or_else(PoisonError::into_inner);
+    sent.last().cloned()
 }
 
 fn request_json(request: &GcsRequest) -> Value {
-    let headers = match request {
-        GcsRequest::Get(read) => &read.headers,
-        GcsRequest::Post(write) | GcsRequest::Delete(write) => &write.headers,
+    let (headers, data) = match request {
+        GcsRequest::Get(read) => (&read.headers, None),
+        GcsRequest::Post(write) | GcsRequest::Delete(write) => {
+            (&write.headers, write.data.as_ref())
+        }
     };
-    let authorization = headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .map_or(Value::Null, |text| json!(text));
-    let body = match request {
-        GcsRequest::Get(_) => Value::Null,
-        GcsRequest::Post(write) | GcsRequest::Delete(write) => match &write.data {
-            Some(Json::Text(text)) => project_payload(
-                serde_json::from_str(text).unwrap_or_else(|_error| Value::String(text.clone())),
-            ),
-            Some(other) => serde_json::to_value(other).unwrap_or(Value::Null),
-            None => Value::Null,
-        },
+    let header = headers.get("authorization");
+    let authorization = header.and_then(|value| value.to_str().ok());
+    let body = match data {
+        Some(Json::Text(text)) => project_payload(
+            serde_json::from_str(text).unwrap_or_else(|_error| Value::String(text.clone())),
+        ),
+        Some(other) => serde_json::to_value(other).unwrap_or(Value::Null),
+        None => Value::Null,
     };
     json!({
         "method": request.method().to_string(),
         "url": request.url(),
-        "authorization": authorization,
+        "authorization": json!(authorization),
         "body": body,
     })
 }
 
-fn logging_payload(
-    value: Option<&Value>,
-) -> Result<GcsLoggingPayload, Box<crate::helpers::HelperError>> {
-    let Some(value) = value else {
-        return Err(failure("ValueError", "payload is required"));
-    };
-    if let Value::String(text) = value {
-        return Ok(GcsLoggingPayload::Text(text.clone()));
+fn logging_payload(value: Option<&Value>) -> Result<GcsLoggingPayload, Box<HelperError>> {
+    match value {
+        None => Err(failure("ValueError", "payload is required")),
+        Some(Value::String(text)) => Ok(GcsLoggingPayload::Text(text.clone())),
+        Some(value) => serde_json::from_value::<StandardLoggingPayload>(value.clone())
+            .map(|payload| GcsLoggingPayload::Standard(Box::new(payload)))
+            .map_err(|error| failure("ValueError", error)),
     }
-    let standard: StandardLoggingPayload =
-        serde_json::from_value(value.clone()).map_err(|error| failure("ValueError", error))?;
-    Ok(GcsLoggingPayload::Standard(Box::new(standard)))
 }
 
 fn upload_failure(error: GcsClientError<FakeAuth, RecordingClient>) -> Box<HelperError> {

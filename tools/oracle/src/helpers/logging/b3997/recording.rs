@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_logging::gcs_mock::auth::{
-    AccessToken, EnsureAccessToken, GetTokenAndUrl, TokenAndUrl, VertexAuth,
+    AccessToken, EnsureAccessToken, GetTokenAndUrl, MOCK_TOKEN, TokenAndUrl, VertexAuth,
 };
 use betterlite_logging::gcs_mock::client::{GcsHttpClient, GcsHttpResponse};
 use betterlite_logging::gcs_mock::request::GcsRequest;
@@ -20,23 +20,15 @@ pub(crate) struct TransportFailure;
 
 #[derive(Clone, Default)]
 pub(crate) struct FakeAuth {
-    pub(crate) ensure_calls: Arc<Mutex<Vec<EnsureAccessToken>>>,
     pub(crate) token_calls: Arc<Mutex<Vec<GetTokenAndUrl>>>,
 }
 
-fn push<Request>(calls: &Mutex<Vec<Request>>, request: Request) {
-    calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push(request);
-}
-
 impl FakeAuth {
+    // echo the requested project so the token call shows which project the header path asked for
     fn record(&self, request: EnsureAccessToken) -> Result<AccessToken, AuthFailure> {
-        push(&self.ensure_calls, request);
         Ok(AccessToken {
-            token: SecretString::from("mock-gcs-token"),
-            project_id: "mock-project-id".to_owned(),
+            token: SecretString::from(MOCK_TOKEN),
+            project_id: request.project_id.unwrap_or_default(),
         })
     }
 }
@@ -57,9 +49,12 @@ impl VertexAuth for FakeAuth {
     }
 
     fn get_token_and_url(&self, request: GetTokenAndUrl) -> Result<TokenAndUrl, AuthFailure> {
-        push(&self.token_calls, request);
+        self.token_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request);
         Ok(TokenAndUrl {
-            token: SecretString::from("mock-gcs-token"),
+            token: SecretString::from(MOCK_TOKEN),
             url: "https://original.example.com".to_owned(),
         })
     }
@@ -67,18 +62,8 @@ impl VertexAuth for FakeAuth {
 
 pub(crate) struct RecordingClient {
     pub(crate) sent: Arc<Mutex<Vec<GcsRequest>>>,
-    status: u16,
-    body: Vec<u8>,
-}
-
-impl RecordingClient {
-    pub(crate) fn new(sent: Arc<Mutex<Vec<GcsRequest>>>, status: u16, body: String) -> Self {
-        Self {
-            sent,
-            status,
-            body: body.into_bytes(),
-        }
-    }
+    pub(crate) status: u16,
+    pub(crate) body: Vec<u8>,
 }
 
 #[async_trait]
