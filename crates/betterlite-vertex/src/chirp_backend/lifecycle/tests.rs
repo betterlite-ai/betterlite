@@ -11,7 +11,9 @@ use google_cloud_speech_v2::model::{
 };
 use google_cloud_wkt::Duration as ProtoDuration;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
+use tokio::task::yield_now;
 use tokio::time::timeout;
 
 use super::{ChirpBackend, ChirpClock, SpeechClientFactory};
@@ -337,24 +339,42 @@ fn response(event: SpeechEventType, seconds: i64, nanos: i32) -> StreamingRecogn
         )
 }
 
-async fn wait_for(counter: &AtomicUsize, expected: usize) {
+async fn script_response(
+    responses: &mpsc::Sender<ScriptedResponse>,
+    response: StreamingRecognizeResponse,
+) {
+    let queued = responses.send(Some(Ok(response))).await;
+    queued.expect("the response is scripted");
+}
+
+trait Counted {
+    fn at_least(&self, expected: usize) -> bool;
+}
+
+impl Counted for AtomicUsize {
+    fn at_least(&self, expected: usize) -> bool {
+        self.load(Ordering::SeqCst) >= expected
+    }
+}
+
+impl<T> Counted for mpsc::Receiver<T> {
+    fn at_least(&self, expected: usize) -> bool {
+        self.len() >= expected
+    }
+}
+
+async fn wait_for<T: Counted>(counted: &T, expected: usize) {
     timeout(Duration::from_secs(5), async {
-        while counter.load(Ordering::SeqCst) < expected {
-            tokio::task::yield_now().await;
+        while !counted.at_least(expected) {
+            yield_now().await;
         }
     })
     .await
     .expect("the backend reaches the expected state");
 }
 
-async fn wait_for_outbox(backend: &ChirpBackend, expected: usize) {
-    timeout(Duration::from_secs(5), async {
-        while backend.outbox.len() < expected {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("the outbox reaches the expected depth");
+fn assert_opened(harness: &Harness, expected: usize, why: &str) {
+    assert_eq!(harness.recorder.opened(), expected, "{why}");
 }
 
 #[derive(serde::Deserialize)]
@@ -448,36 +468,21 @@ async fn rotation_waits_for_silence() {
     harness.send_text(CONFIGURE).await;
     assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
     harness.send_audio(1).await;
-    first_responses
-        .send(Some(Ok(response(
-            SpeechEventType::SpeechActivityBegin,
-            0,
-            500_000_000,
-        ))))
-        .await
-        .expect("the response is scripted");
+    script_response(
+        &first_responses,
+        response(SpeechEventType::SpeechActivityBegin, 0, 500_000_000),
+    )
+    .await;
     assert!(harness.recv().await.contains("\"begin\""));
     harness.clock.advance(Duration::from_secs(240));
     harness.send_audio(2).await;
-    assert_eq!(
-        harness.recorder.opened(),
-        1,
-        "speech activity blocks the soft rotation at its threshold"
-    );
+    assert_opened(&harness, 1, "speech blocks the soft rotation");
     harness.clock.advance(Duration::from_secs(1));
     harness.send_audio(3).await;
-    assert_eq!(
-        harness.recorder.opened(),
-        1,
-        "an active stream stays below the hard deadline"
-    );
+    assert_opened(&harness, 1, "an active stream stays below the deadline");
     harness.clock.advance(Duration::from_secs(39));
     harness.send_audio(4).await;
-    assert_eq!(
-        harness.recorder.opened(),
-        2,
-        "the hard deadline rotates a stream that is still speaking"
-    );
+    assert_opened(&harness, 2, "the hard deadline rotates a speaking stream");
     wait_for(&harness.recorder.half_closes, 1).await;
     assert_eq!(harness.recorder.half_closed(), vec![0]);
     drop(first_responses);
@@ -497,14 +502,11 @@ async fn hard_deadline_rotation() {
     harness.send_text(CONFIGURE).await;
     assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
     harness.send_audio(1).await;
-    first_responses
-        .send(Some(Ok(response(
-            SpeechEventType::SpeechActivityBegin,
-            0,
-            250_000_000,
-        ))))
-        .await
-        .expect("the response is scripted");
+    script_response(
+        &first_responses,
+        response(SpeechEventType::SpeechActivityBegin, 0, 250_000_000),
+    )
+    .await;
     assert!(harness.recv().await.contains("\"begin\""));
     harness.clock.advance(Duration::from_secs(279));
     harness.send_audio(2).await;
@@ -537,24 +539,18 @@ async fn finish_fifo() {
     harness.send_text(CONFIGURE).await;
     assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
     harness.send_audio(1).await;
-    responses
-        .send(Some(Ok(response(
-            SpeechEventType::Unspecified,
-            0,
-            250_000_000,
-        ))))
-        .await
-        .expect("the response is scripted");
+    script_response(
+        &responses,
+        response(SpeechEventType::Unspecified, 0, 250_000_000),
+    )
+    .await;
     assert!(harness.recv().await.contains("\"response\""));
     harness.send_text(FINISH).await;
-    responses
-        .send(Some(Ok(response(
-            SpeechEventType::Unspecified,
-            0,
-            250_000_000,
-        ))))
-        .await
-        .expect("the response is scripted");
+    script_response(
+        &responses,
+        response(SpeechEventType::Unspecified, 0, 250_000_000),
+    )
+    .await;
     assert!(
         harness.recv().await.contains("\"response\""),
         "a stream result queued before turn_finished is delivered first"
@@ -572,28 +568,22 @@ async fn discard_suppresses_old_events() {
     harness.send_text(CONFIGURE).await;
     assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
     harness.send_audio(1).await;
-    first_responses
-        .send(Some(Ok(response(
-            SpeechEventType::Unspecified,
-            0,
-            500_000_000,
-        ))))
-        .await
-        .expect("the response is scripted");
-    wait_for_outbox(&harness.backend, 1).await;
+    script_response(
+        &first_responses,
+        response(SpeechEventType::Unspecified, 0, 500_000_000),
+    )
+    .await;
+    wait_for(&harness.backend.outbox, 1).await;
     harness.clock.advance(Duration::from_secs(240));
     harness.send_audio(2).await;
     drop(first_responses);
     wait_for(&harness.recorder.closed, 1).await;
-    second_responses
-        .send(Some(Ok(response(
-            SpeechEventType::Unspecified,
-            0,
-            250_000_000,
-        ))))
-        .await
-        .expect("the response is scripted");
-    wait_for_outbox(&harness.backend, 2).await;
+    script_response(
+        &second_responses,
+        response(SpeechEventType::Unspecified, 0, 250_000_000),
+    )
+    .await;
+    wait_for(&harness.backend.outbox, 2).await;
     harness.send_text(DISCARD).await;
     let marker = timeout(Duration::from_secs(5), harness.backend.recv())
         .await
@@ -623,14 +613,11 @@ async fn a_discarded_turn_leaves_the_next_turn_deliverable() {
         r#"{"kind":"turn_discarded","billed_seconds":0.0}"#
     );
     harness.send_audio(2).await;
-    second_responses
-        .send(Some(Ok(response(
-            SpeechEventType::Unspecified,
-            0,
-            250_000_000,
-        ))))
-        .await
-        .expect("the response is scripted");
+    script_response(
+        &second_responses,
+        response(SpeechEventType::Unspecified, 0, 250_000_000),
+    )
+    .await;
     assert!(
         harness.recv().await.contains("\"response\""),
         "the turn after a discard delivers its results"
@@ -645,10 +632,11 @@ async fn billing_accumulates_across_turns() {
     harness.send_text(CONFIGURE).await;
     assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
     harness.send_audio(1).await;
-    first_responses
-        .send(Some(Ok(response(SpeechEventType::Unspecified, 2, 0))))
-        .await
-        .expect("the response is scripted");
+    script_response(
+        &first_responses,
+        response(SpeechEventType::Unspecified, 2, 0),
+    )
+    .await;
     assert_eq!(
         billed_seconds(&harness.recv().await).to_bits(),
         2.0_f64.to_bits()
@@ -657,10 +645,11 @@ async fn billing_accumulates_across_turns() {
     drop(first_responses);
     assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
     harness.send_audio(2).await;
-    second_responses
-        .send(Some(Ok(response(SpeechEventType::Unspecified, 1, 0))))
-        .await
-        .expect("the response is scripted");
+    script_response(
+        &second_responses,
+        response(SpeechEventType::Unspecified, 1, 0),
+    )
+    .await;
     assert_eq!(
         billed_seconds(&harness.recv().await).to_bits(),
         3.0_f64.to_bits(),
@@ -741,7 +730,14 @@ async fn a_stream_failure_closes_with_the_stream_failure_code() {
                 "the reason names the stream failure: {reason}"
             );
         }
-        other => panic!("expected a stream failure close, got {other:?}"),
+        other @ ChirpBackendError::Command(_)
+        | other @ ChirpBackendError::Encode(_)
+        | other @ ChirpBackendError::NotConfigured
+        | other @ ChirpBackendError::Token(_)
+        | other @ ChirpBackendError::QueueClosed
+        | other @ ChirpBackendError::Stream(_) => {
+            panic!("expected a stream failure close, got {other:?}")
+        }
     }
 }
 
@@ -749,7 +745,7 @@ async fn a_stream_failure_closes_with_the_stream_failure_code() {
 async fn close_queues_the_closed_sentinel_after_buffered_events() {
     let mut harness = harness(Vec::new());
     harness.send_text(FINISH).await;
-    wait_for_outbox(&harness.backend, 1).await;
+    wait_for(&harness.backend.outbox, 1).await;
     harness.backend.close().await;
     harness.backend.close().await;
     assert_eq!(
@@ -773,13 +769,13 @@ async fn close_queues_the_closed_sentinel_after_buffered_events() {
 }
 
 async fn fill_outbox(harness: &mut Harness) {
-    for _ in 0..256 {
+    for _ in 0..256_usize {
         harness.send_text(FINISH).await;
     }
 }
 
 async fn drain_outbox(harness: &mut Harness) {
-    for _ in 0..256 {
+    for _ in 0..256_usize {
         assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
     }
 }
@@ -788,7 +784,7 @@ async fn drain_outbox(harness: &mut Harness) {
 async fn full_outbox_close() {
     let mut harness = harness(Vec::new());
     fill_outbox(&mut harness).await;
-    wait_for_outbox(&harness.backend, 256).await;
+    wait_for(&harness.backend.outbox, 256).await;
     harness.backend.close().await;
     assert_eq!(
         harness.backend.outbox.len(),
@@ -856,28 +852,20 @@ async fn close_closes_a_stream_still_waiting_in_the_link_queue() {
 
 #[tokio::test]
 async fn no_task_leak() {
-    let baseline = tokio::runtime::Handle::current()
-        .metrics()
-        .num_alive_tasks();
+    let baseline = Handle::current().metrics().num_alive_tasks();
     let (first, responses) = scripted(2);
     let mut harness = harness(vec![first]);
     harness.send_text(CONFIGURE).await;
     assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
     harness.send_audio(1).await;
     assert!(
-        tokio::runtime::Handle::current()
-            .metrics()
-            .num_alive_tasks()
-            > baseline,
+        Handle::current().metrics().num_alive_tasks() > baseline,
         "the link pump and the stream relay run as owned tasks"
     );
     drop(responses);
     harness.backend.close().await;
-    tokio::task::yield_now().await;
     assert_eq!(
-        tokio::runtime::Handle::current()
-            .metrics()
-            .num_alive_tasks(),
+        Handle::current().metrics().num_alive_tasks(),
         baseline,
         "close joins every task the backend started"
     );

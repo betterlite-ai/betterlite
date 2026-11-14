@@ -19,7 +19,7 @@ fn decodes_a_configure_command() {
         ChirpCommand::Configure {
             model: "chirp_2".to_owned(),
             language_codes: vec!["en-US".to_owned(), "fr-FR".to_owned()],
-            sample_rate_hertz: 16000,
+            sample_rate_hertz: 16_000_i32,
         }
     );
 }
@@ -47,13 +47,13 @@ fn decodes_a_unit_command(#[case] message: &[u8], #[case] expected: ChirpCommand
 #[case::trailing_data(br#"{"kind":"finish_turn"} {"kind":"finish_turn"}"#)]
 #[case::empty(b"")]
 fn rejects_an_invalid_command(#[case] message: &[u8]) {
-    assert!(ChirpCommand::try_from(message).is_err());
+    let _error = ChirpCommand::try_from(message).unwrap_err();
 }
 
 #[test]
 fn rejects_a_command_that_is_not_utf8() {
     let message: &[u8] = &[0x7b, 0xff, 0x7d];
-    assert!(ChirpCommand::try_from(message).is_err());
+    let _error = ChirpCommand::try_from(message).unwrap_err();
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn serializes_the_control_events() {
     let finished = serde_json::to_string(&ChirpEvent::TurnFinished).expect("a turn event");
     assert_eq!(finished, r#"{"kind":"turn_finished"}"#);
     let discarded = serde_json::to_string(&ChirpEvent::TurnDiscarded {
-        billed_seconds: 1.25,
+        billed_seconds: 1.25_f64,
     })
     .expect("a discard event");
     assert_eq!(

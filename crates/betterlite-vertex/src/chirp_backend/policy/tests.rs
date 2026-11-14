@@ -152,7 +152,7 @@ fn a_short_failure_reason_is_kept_whole() {
 #[test]
 fn a_long_failure_reason_is_cut_at_the_first_hundred_and_twenty_characters() {
     let mut discarded = BTreeSet::new();
-    let reason = "é".repeat(130);
+    let reason = "\u{e9}".repeat(130);
     match deliver(
         Deliverable::StreamFailure { reason: &reason },
         &mut discarded,
@@ -160,7 +160,7 @@ fn a_long_failure_reason_is_cut_at_the_first_hundred_and_twenty_characters() {
         Err(frame) => {
             assert_eq!(frame.code, 1011);
             assert_eq!(frame.reason.chars().count(), 120);
-            assert_eq!(frame.reason, "é".repeat(120));
+            assert_eq!(frame.reason, "\u{e9}".repeat(120));
         }
         other => panic!("expected a close, got {other:?}"),
     }
