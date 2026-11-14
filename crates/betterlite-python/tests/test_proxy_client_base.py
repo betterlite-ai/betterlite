@@ -411,44 +411,41 @@ def test_users_get_404(server: RecordingServer) -> None:
     compare_error(server, lite.get_user, ours.get_user, errors, Reply(404, "user not found"))
 
 
-def test_users_create(server: RecordingServer) -> None:
-    reply = Reply(OK, '{"user_id": "u1"}')
+@pytest.mark.parametrize("operation", ["create", "delete"])
+def test_users_write(server: RecordingServer, operation: str) -> None:
     lite: LiteUsers = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     user: Mapping[str, JsonValue] = {"user_id": "u1"}
-    call = partial(ours.create_user, user)
-    lite_call = partial(lite.create_user, user)
-    compare_call(server, lite_call, call, {"user_id": "u1"}, reply)
-
-
-def test_users_delete(server: RecordingServer) -> None:
-    reply = Reply(OK, '{"deleted": true}')
-    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
-    ours = UsersManagementClient(server.url, timeout=TIMEOUT)
     user_ids = ["u1", "u2"]
-    call = partial(ours.delete_user, user_ids)
-    lite_call = partial(lite.delete_user, user_ids)
-    compare_call(server, lite_call, call, {"deleted": True}, reply)
+    lite_call: LiteCall
+    call: Callable[[], JsonValue | Response]
+    match operation:
+        case "create":
+            lite_call = partial(lite.create_user, user)
+            call = partial(ours.create_user, user)
+            reply = Reply(OK, '{"user_id": "u1"}')
+            compare_call(server, lite_call, call, {"user_id": "u1"}, reply)
+        case _:
+            lite_call = partial(lite.delete_user, user_ids)
+            call = partial(ours.delete_user, user_ids)
+            reply = Reply(OK, '{"deleted": true}')
+            compare_call(server, lite_call, call, {"deleted": True}, reply)
 
 
-def test_users_create_401(server: RecordingServer) -> None:
+@pytest.mark.parametrize("operation", ["create", "delete"])
+def test_users_write_401(server: RecordingServer, operation: str) -> None:
     lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, timeout=TIMEOUT)
     errors = (LiteLLMUnauthorizedError, UnauthorizedError)
+    denied = Reply(401, "denied")
     user: Mapping[str, JsonValue] = {"user_id": "u1"}
-    call = partial(ours.create_user, user)
-    lite_call = partial(lite.create_user, user)
-    compare_error(server, lite_call, call, errors, Reply(401, "denied"))
-
-
-def test_users_delete_401(server: RecordingServer) -> None:
-    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
-    ours = UsersManagementClient(server.url, timeout=TIMEOUT)
-    errors = (LiteLLMUnauthorizedError, UnauthorizedError)
     user_ids = ["u1"]
-    call = partial(ours.delete_user, user_ids)
-    lite_call = partial(lite.delete_user, user_ids)
-    compare_error(server, lite_call, call, errors, Reply(401, "denied"))
+    if operation == "create":
+        create_pair = (partial(lite.create_user, user), partial(ours.create_user, user))
+        compare_error(server, create_pair[0], create_pair[1], errors, denied)
+    else:
+        delete_pair = (partial(lite.delete_user, user_ids), partial(ours.delete_user, user_ids))
+        compare_error(server, delete_pair[0], delete_pair[1], errors, denied)
 
 
 def test_bridge_redacts() -> None:
