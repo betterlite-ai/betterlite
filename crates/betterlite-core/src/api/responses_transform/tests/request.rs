@@ -201,6 +201,7 @@ fn wrong_typed_optional_params_error(#[case] optional_params: &str, #[case] fiel
 #[case::temperature(r#"{"temperature": "hot"}"#, "temperature: ")]
 #[case::top_p(r#"{"top_p": []}"#, "top_p: ")]
 #[case::max_output_tokens(r#"{"max_output_tokens": "many"}"#, "max_output_tokens: ")]
+#[case::fractional_max_output_tokens(r#"{"max_output_tokens": 1.5}"#, "max_output_tokens: ")]
 #[case::stream(r#"{"stream": "yes"}"#, "stream: ")]
 #[case::store(r#"{"store": 0}"#, "store: ")]
 #[case::user(r#"{"user": {}}"#, "user: ")]

@@ -8,6 +8,8 @@ pub enum ResponsesTransformError {
     FieldType {
         field: &'static str,
         expected: &'static str,
+        #[source]
+        source: Option<serde_json::Error>,
     },
     #[error("{field} must be an object")]
     NotObject { field: &'static str },

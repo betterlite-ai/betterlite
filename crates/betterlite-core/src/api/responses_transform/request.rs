@@ -119,24 +119,33 @@ fn apply_extras(
     for (name, value) in extras {
         match name.as_str() {
             "model" => {
-                request.model =
-                    nullable_text("model", value)?.ok_or(ResponsesTransformError::FieldType {
+                request.model = extra_value("model", "a string", value)?.ok_or(
+                    ResponsesTransformError::FieldType {
                         field: "model",
                         expected: "a string",
-                    })?;
+                        source: None,
+                    },
+                )?;
             }
             "input" => request.input = explicit_value(value),
-            "instructions" => request.instructions = nullable_text("instructions", value)?,
-            "tools" => request.tools = nullable_tools(value)?,
-            "temperature" => request.temperature = nullable_number("temperature", value)?,
-            "top_p" => request.top_p = nullable_number("top_p", value)?,
-            "max_output_tokens" => {
-                request.max_output_tokens = nullable_tokens(value)?;
+            "instructions" => {
+                request.instructions = extra_value("instructions", "a string", value)?;
             }
-            "stream" => request.stream = nullable_bool("stream", value)?,
-            "store" => request.store = nullable_bool("store", value)?,
+            "tools" => {
+                request.tools =
+                    extra_value::<Vec<JsonValue>>("tools", "a list", value)?.map(JsonValue::Array);
+            }
+            "temperature" => {
+                request.temperature = extra_value("temperature", "a number", value)?;
+            }
+            "top_p" => request.top_p = extra_value("top_p", "a number", value)?,
+            "max_output_tokens" => {
+                request.max_output_tokens = extra_value("max_output_tokens", "an integer", value)?;
+            }
+            "stream" => request.stream = extra_value("stream", "a boolean", value)?,
+            "store" => request.store = extra_value("store", "a boolean", value)?,
             "metadata" => request.metadata = explicit_value(value),
-            "user" => request.user = nullable_text("user", value)?,
+            "user" => request.user = extra_value("user", "a string", value)?,
             _ => {
                 request.passthrough.insert(name.clone(), value.clone());
             }
@@ -156,82 +165,24 @@ fn explicit_value(value: &JsonValue) -> Option<JsonValue> {
     }
 }
 
-fn nullable_text(
+fn extra_value<T>(
     field: &'static str,
+    expected: &'static str,
     value: &JsonValue,
-) -> Result<Option<String>, ResponsesTransformError> {
-    match value {
-        JsonValue::Null => Ok(None),
-        JsonValue::Text(text) => Ok(Some(text.clone())),
-        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(ResponsesTransformError::FieldType {
-                field,
-                expected: "a string",
-            })
-        }
+) -> Result<Option<T>, ResponsesTransformError>
+where
+    T: DeserializeOwned,
+{
+    if matches!(value, JsonValue::Null) {
+        return Ok(None);
     }
-}
-
-fn nullable_bool(
-    field: &'static str,
-    value: &JsonValue,
-) -> Result<Option<bool>, ResponsesTransformError> {
-    match value {
-        JsonValue::Null => Ok(None),
-        JsonValue::Bool(flag) => Ok(Some(*flag)),
-        JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(ResponsesTransformError::FieldType {
-                field,
-                expected: "a boolean",
-            })
-        }
-    }
-}
-
-fn nullable_number(
-    field: &'static str,
-    value: &JsonValue,
-) -> Result<Option<Number>, ResponsesTransformError> {
-    match value {
-        JsonValue::Null => Ok(None),
-        JsonValue::Number(number) => Ok(Some(number.clone())),
-        JsonValue::Bool(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(ResponsesTransformError::FieldType {
-                field,
-                expected: "a number",
-            })
-        }
-    }
-}
-
-fn nullable_tokens(value: &JsonValue) -> Result<Option<i64>, ResponsesTransformError> {
-    match value {
-        JsonValue::Null => Ok(None),
-        JsonValue::Number(number) => match number.as_i64() {
-            Some(tokens) => Ok(Some(tokens)),
-            None => Err(ResponsesTransformError::FieldType {
-                field: "max_output_tokens",
-                expected: "an integer",
-            }),
-        },
-        JsonValue::Bool(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(ResponsesTransformError::FieldType {
-                field: "max_output_tokens",
-                expected: "an integer",
-            })
-        }
-    }
-}
-
-fn nullable_tools(value: &JsonValue) -> Result<Option<JsonValue>, ResponsesTransformError> {
-    match value {
-        JsonValue::Null => Ok(None),
-        JsonValue::Array(_) => Ok(Some(value.clone())),
-        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Object(_) => {
-            Err(ResponsesTransformError::FieldType {
-                field: "tools",
-                expected: "a list",
-            })
-        }
-    }
+    let encoded =
+        serde_json::to_vec(value).map_err(|source| ResponsesTransformError::Encode { source })?;
+    serde_json::from_slice(&encoded)
+        .map(Some)
+        .map_err(|source| ResponsesTransformError::FieldType {
+            field,
+            expected,
+            source: Some(source),
+        })
 }
