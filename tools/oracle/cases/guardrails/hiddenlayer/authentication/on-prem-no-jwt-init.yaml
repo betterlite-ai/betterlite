@@ -1,0 +1,26 @@
+kind: helper
+name: on-prem-no-jwt-init
+call:
+  b3775: {
+      "kind": "hiddenlayer",
+      "version": 1,
+      "saas": false,
+      "api_id": null,
+      "api_key": null,
+      "timeout": null,
+      "env": {},
+      "tokens": [],
+      "detection": [
+        {
+          "kind": "answer",
+          "status": 200,
+          "body": {
+            "evaluation": {
+              "action": "none"
+            }
+          }
+        }
+      ]
+    }
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,34 @@
+kind: helper
+name: jwt-bearer-header
+call:
+  b3775: {
+      "kind": "hiddenlayer",
+      "version": 1,
+      "saas": true,
+      "api_id": "id",
+      "api_key": "key",
+      "timeout": null,
+      "env": {},
+      "tokens": [
+        {
+          "kind": "answer",
+          "status": 200,
+          "body": {
+            "access_token": ""
+          }
+        }
+      ],
+      "detection": [
+        {
+          "kind": "answer",
+          "status": 200,
+          "body": {
+            "evaluation": {
+              "action": "none"
+            }
+          }
+        }
+      ]
+    }
+env: {}
+compare: {ignore: []}

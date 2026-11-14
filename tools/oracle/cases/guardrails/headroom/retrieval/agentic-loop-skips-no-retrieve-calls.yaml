@@ -1,0 +1,40 @@
+kind: helper
+name: agentic-loop-skips-no-retrieve-calls
+call:
+  b3775: {
+      "kind": "should_run",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "content": "no calls"
+            }
+          }
+        ]
+      },
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "headroom_retrieve",
+            "description": "Retrieve original content.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "hash": {
+                  "type": "string"
+                },
+                "query": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "hash"
+              ]
+            }
+          }
+        }
+      ]
+    }
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,48 @@
+kind: helper
+name: jwt-refresh-on-401
+call:
+  b3775: {
+      "kind": "hiddenlayer",
+      "version": 1,
+      "saas": true,
+      "api_id": "id",
+      "api_key": "key",
+      "timeout": null,
+      "env": {},
+      "tokens": [
+        {
+          "kind": "answer",
+          "status": 200,
+          "body": {
+            "access_token": "jwt-1"
+          }
+        },
+        {
+          "kind": "answer",
+          "status": 200,
+          "body": {
+            "access_token": "jwt-2"
+          }
+        }
+      ],
+      "detection": [
+        {
+          "kind": "answer",
+          "status": 401,
+          "body": {
+            "detail": "expired"
+          }
+        },
+        {
+          "kind": "answer",
+          "status": 200,
+          "body": {
+            "evaluation": {
+              "action": "none"
+            }
+          }
+        }
+      ]
+    }
+env: {}
+compare: {ignore: []}

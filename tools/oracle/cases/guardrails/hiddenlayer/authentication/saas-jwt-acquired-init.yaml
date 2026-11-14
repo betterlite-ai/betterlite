@@ -1,0 +1,24 @@
+kind: helper
+name: saas-jwt-acquired-init
+call:
+  b3775: {
+      "kind": "hiddenlayer",
+      "version": 1,
+      "saas": true,
+      "api_id": "id",
+      "api_key": "key",
+      "timeout": null,
+      "env": {},
+      "tokens": [
+        {
+          "kind": "answer",
+          "status": 200,
+          "body": {
+            "access_token": "jwt-1"
+          }
+        }
+      ],
+      "detection": null
+    }
+env: {}
+compare: {ignore: []}
