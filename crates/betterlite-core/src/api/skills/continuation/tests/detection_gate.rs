@@ -6,7 +6,7 @@ use super::fixtures::{
     ScriptedContinuation, capture, chat_tool_call, final_answer, hook, outcome, request,
     request_with, skill_files, tool_use,
 };
-use crate::api::skills::continuation::ContinuationLoop;
+use crate::api::skills::continuation::ContinuationLoop as _;
 use crate::api::skills::continuation::error::SkillsLoopError;
 use crate::api::skills::hook::execution::SkillFiles;
 

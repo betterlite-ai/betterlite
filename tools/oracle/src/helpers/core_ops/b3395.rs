@@ -4,7 +4,7 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_core::api::skills::continuation::ContinuationLoop;
+use betterlite_core::api::skills::continuation::ContinuationLoop as _;
 use betterlite_core::api::skills::continuation::messages::{
     ContinuationRequest, MessagesContinuation,
 };

@@ -5,7 +5,7 @@ use super::fixtures::{
     ScriptedContinuation, capture, chat_tool_call, dict, final_answer, hook, marker,
     object_response, outcome, request, tool_block, tool_use,
 };
-use crate::api::skills::continuation::ContinuationLoop;
+use crate::api::skills::continuation::ContinuationLoop as _;
 use crate::api::skills::continuation::error::SkillsLoopError;
 
 const DETECTED: &str = "SkillsInjectionHook: Detected tool call, starting execution loop";
