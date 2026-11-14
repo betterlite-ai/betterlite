@@ -26,7 +26,8 @@ class DataSourceConfigStoredCompletions(TypedDict, total=False):  # ast-grep-ign
 DataSourceConfig: TypeAlias = (
     DataSourceConfigCustom
     | DataSourceConfigLogs
-    | DataSourceConfigStoredCompletions  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    | DataSourceConfigStoredCompletions
 )
 
 

@@ -5,7 +5,7 @@ from typing import TypedDict
 import pytest
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-import betterlite.types.llms.oci as oci
+from betterlite.types.llms import oci
 
 DESCRIBE_SCRIPT = """
 import json
@@ -367,17 +367,18 @@ def test_oci_wire_dumps(report: NamesReport) -> None:
 
 def test_role_names_are_enforced() -> None:
     tool_payload: dict[str, JsonValue] = {"toolResults": []}
+    invalid_tool_payload: dict[str, JsonValue] = {**tool_payload, "role": "USER"}
     assert oci.CohereUserMessage(role="USER").role == "USER"
     assert oci.CohereToolMessage.model_validate(tool_payload).role == "TOOL"
-    with pytest.raises(ValidationError) as user:
+    with pytest.raises(ValidationError, match="role") as user:
         oci.CohereUserMessage(role="SYSTEM")
-    assert user.value.errors()[0]["loc"] == ("role",)
-    with pytest.raises(ValidationError) as chatbot:
+    assert user.value.error_count() == 1
+    with pytest.raises(ValidationError, match="role") as chatbot:
         oci.CohereChatBotMessage(role="USER")
-    assert chatbot.value.errors()[0]["loc"] == ("role",)
-    with pytest.raises(ValidationError) as system:
+    assert chatbot.value.error_count() == 1
+    with pytest.raises(ValidationError, match="role") as system:
         oci.CohereSystemMessage(role="USER")
-    assert system.value.errors()[0]["loc"] == ("role",)
-    with pytest.raises(ValidationError) as tool:
-        oci.CohereToolMessage.model_validate({**tool_payload, "role": "USER"})
-    assert tool.value.errors()[0]["loc"] == ("role",)
+    assert system.value.error_count() == 1
+    with pytest.raises(ValidationError, match="role") as tool:
+        oci.CohereToolMessage.model_validate(invalid_tool_payload)
+    assert tool.value.error_count() == 1
