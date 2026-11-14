@@ -129,14 +129,14 @@ pub(crate) fn conditional_inheritance_is_severity_filtered() {
 }
 
 #[test]
-pub(crate) fn file_yaml_defaults_action_and_json_deduplicates_and_maps_severity() {
+pub(crate) fn file_yaml_defaults_and_json_deduplicates_and_maps_severity() {
     let temp = fixture();
     let yaml = temp.path().join("cat.yaml");
     fs::write(&yaml, "keywords: []\n").unwrap();
-    assert_eq!(
-        load_category_file(&yaml).unwrap().default_action,
-        ContentFilterAction::Block
-    );
+    let defaults = load_category_file(&yaml).unwrap();
+    assert_eq!(defaults.category_name, "unknown");
+    assert_eq!(defaults.description, "");
+    assert_eq!(defaults.default_action, ContentFilterAction::Block);
     let json = temp.path().join("harm.json");
     fs::write(
         &json,
@@ -144,6 +144,11 @@ pub(crate) fn file_yaml_defaults_action_and_json_deduplicates_and_maps_severity(
     )
     .unwrap();
     let category = load_category_file(&json).unwrap();
+    assert_eq!(
+        category.description,
+        "Detects harmful, toxic, or abusive language and content"
+    );
+    assert_eq!(category.default_action, ContentFilterAction::Block);
     assert_eq!(category.keywords.len(), 4);
     assert_eq!(
         category.keywords[0].get("keyword").map(String::as_str),

@@ -119,3 +119,26 @@ fn load_categories_warns_when_the_file_is_missing() {
     assert!(output.contains("missing.yaml"));
     assert!(!output.contains("ERROR"));
 }
+
+#[test]
+fn load_categories_resolves_default_category_files_from_roots() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().to_path_buf();
+    fs::create_dir_all(root.join("categories")).unwrap();
+    fs::write(
+        root.join("categories/sample.json"),
+        r#"[{"match": "Danger|safe", "severity": 4}]"#,
+    )
+    .unwrap();
+    let config: ContentFilterCategoryConfig =
+        serde_saphyr::from_str("category: sample\naction: BLOCK\n").unwrap();
+    let loaded = load_categories(
+        &[config],
+        slice::from_ref(&root),
+        &root,
+        &super::Settings::default(),
+    );
+    assert!(loaded.loaded_categories.contains_key("sample"));
+    assert!(loaded.category_keywords.contains_key("danger"));
+    assert!(loaded.category_keywords.contains_key("safe"));
+}
