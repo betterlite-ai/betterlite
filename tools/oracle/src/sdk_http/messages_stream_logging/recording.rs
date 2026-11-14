@@ -154,12 +154,12 @@ impl StreamSeams for Recorder {
         &self,
         call: RouteStreamingLogging,
     ) -> Result<LoggingFuture, ReportedFailure> {
-        let failure = self
+        let recorded = self
             .route_failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        if let Some(failure) = failure {
+        if let Some(failure) = recorded {
             return Err(failure);
         }
         self.routed
