@@ -110,7 +110,7 @@ async fn a_timeout_is_reported() {
         Duration::from_millis(300),
     )])
     .await;
-    let harness = support::harness_with_timeout(&server.base, Some(0.05));
+    let harness = support::harness_with_timeout(&server.base, Some(0.05_f64));
     assert_eq!(fetch(&harness.guardrail, support::HASH, None).await, FAILED);
 }
 

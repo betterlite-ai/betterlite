@@ -15,6 +15,7 @@ use error::HiddenlayerError;
 use settings::{HiddenlayerCredentials, HiddenlayerSettings};
 use token::JwtTransport;
 
+#[must_use]
 pub fn is_saas(api_base: &str) -> bool {
     Url::parse(api_base)
         .ok()
@@ -105,8 +106,8 @@ impl HiddenlayerAuth {
             .as_ref()
             .filter(|token| !token.expose_secret().is_empty())
             .cloned();
-        if let Some(token) = token {
-            builder = builder.bearer_auth(token.expose_secret());
+        if let Some(present) = token {
+            builder = builder.bearer_auth(present.expose_secret());
         }
         builder
             .send()

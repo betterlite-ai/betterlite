@@ -10,10 +10,10 @@ pub(crate) fn assistant_text(view: &ResponseView) -> Option<String> {
 }
 
 fn chat_text(choices: &JsonValue) -> Option<String> {
-    let JsonValue::Array(choices) = choices else {
+    let JsonValue::Array(items) = choices else {
         return None;
     };
-    let Some(JsonValue::Object(choice)) = choices.first() else {
+    let Some(JsonValue::Object(choice)) = items.first() else {
         return None;
     };
     let Some(JsonValue::Object(message)) = choice.get("message") else {
@@ -89,7 +89,12 @@ fn message_output_text(item: &JsonValue) -> Vec<&str> {
                     _ => None,
                 }
             }
-            _ => None,
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_) => None,
         })
         .collect()
 }

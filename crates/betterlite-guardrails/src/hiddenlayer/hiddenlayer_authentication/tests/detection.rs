@@ -28,7 +28,7 @@ fn on_prem(base: &str, script: &Arc<TokenScript>) -> HiddenlayerAuth {
         timeout: None,
     };
     let client = base_builder().build().unwrap();
-    let transport: Arc<dyn JwtTransport> = Arc::clone(script);
+    let transport: Arc<dyn JwtTransport> = Arc::<TokenScript>::clone(script);
     HiddenlayerAuth::new(&input, &BTreeMap::new(), client, transport).unwrap()
 }
 
@@ -44,7 +44,7 @@ fn saas(port: u16, auth_url: &str, script: &Arc<TokenScript>) -> HiddenlayerAuth
         .resolve(SAAS_HOST, SocketAddr::from(([127, 0, 0, 1], port)))
         .build()
         .unwrap();
-    let transport: Arc<dyn JwtTransport> = Arc::clone(script);
+    let transport: Arc<dyn JwtTransport> = Arc::<TokenScript>::clone(script);
     HiddenlayerAuth::new(&input, &BTreeMap::new(), client, transport).unwrap()
 }
 
@@ -254,7 +254,7 @@ async fn detection_returns_the_error_body() {
     );
     assert!(matches!(
         &error,
-        HiddenlayerError::Status { status: 500, body } if body.as_str() == "boom"
+        HiddenlayerError::Status { status: 500, body: reported } if reported.as_str() == "boom"
     ));
     assert_eq!(
         error.to_string(),

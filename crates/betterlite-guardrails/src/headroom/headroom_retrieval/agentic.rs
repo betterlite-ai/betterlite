@@ -39,14 +39,14 @@ impl AgenticCallback for HeadroomGuardrail {
         if !tools::request_holds_retrieve_tool(call.tools) {
             return Ok(AgenticGate::default());
         }
-        let response = ModelResponse::parse(call.response).map_err(hook_error)?;
+        let response = ModelResponse::parse(call.response).map_err(|error| hook_error(&error))?;
         let calls = tools::retrieve_calls(&response.calls);
         if calls.is_empty() {
             return Ok(AgenticGate::default());
         }
         let mut gate_tools = JsonMap::new();
         let encoded =
-            to_raw_value(&calls).map_err(|error| hook_error(RetrievalError::from(error)))?;
+            to_raw_value(&calls).map_err(|error| hook_error(&RetrievalError::from(error)))?;
         gate_tools.insert(TOOL_CALLS_KEY.to_owned(), encoded);
         Ok(AgenticGate {
             run: true,
@@ -58,11 +58,13 @@ impl AgenticCallback for HeadroomGuardrail {
         &self,
         call: &AgenticLoopCall<'_>,
     ) -> Result<AgenticLoopPlan, AgenticHookError> {
-        plan::build(self, call).await.map_err(hook_error)
+        plan::build(self, call)
+            .await
+            .map_err(|error| hook_error(&error))
     }
 }
 
-fn hook_error(error: RetrievalError) -> AgenticHookError {
+fn hook_error(error: &RetrievalError) -> AgenticHookError {
     AgenticHookError::Failed {
         callback: CALLBACK_NAME.to_owned(),
         message: error.to_string(),

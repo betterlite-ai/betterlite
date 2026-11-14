@@ -35,8 +35,8 @@ async fn send(
         .get(url)
         .headers(headers)
         .timeout(guardrail.settings.timeout.total);
-    if let Some(query) = query {
-        request = request.query(&[("query", query)]);
+    if let Some(text) = query {
+        request = request.query(&[("query", text)]);
     }
     let mut response = match request.send().await {
         Ok(response) => response,

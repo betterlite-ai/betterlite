@@ -12,11 +12,8 @@ pub(crate) enum RetrievalError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("`{field}` must be {expected}")]
-    FieldType {
-        field: &'static str,
-        expected: &'static str,
-    },
+    #[error("`{0}` must be an integer")]
+    FieldType(&'static str),
     #[error("a Headroom agentic loop value could not be encoded as JSON")]
     Json {
         #[from]

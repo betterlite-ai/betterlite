@@ -38,7 +38,7 @@ impl ModelResponse {
         Ok(Self { calls, view })
     }
 
-    pub(crate) fn format(&self) -> ResponseFormat {
+    pub(crate) const fn format(&self) -> ResponseFormat {
         if matches!(self.view.output, JsonValue::Array(_)) {
             ResponseFormat::Responses
         } else if matches!(self.view.content, JsonValue::Array(_)) {

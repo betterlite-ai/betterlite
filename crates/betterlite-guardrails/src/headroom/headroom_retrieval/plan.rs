@@ -85,7 +85,7 @@ async fn collect(
 
 fn resolve_call_id(logging: Option<&AgenticLogging>, kwargs: &JsonMap) -> Option<String> {
     if let Some(call_id) = logging
-        .and_then(|logging| logging.call_id.as_deref())
+        .and_then(|record| record.call_id.as_deref())
         .filter(|call_id| !call_id.is_empty())
     {
         return Some(call_id.to_owned());
@@ -95,7 +95,7 @@ fn resolve_call_id(logging: Option<&AgenticLogging>, kwargs: &JsonMap) -> Option
 
 fn full_model_name(logging: Option<&AgenticLogging>, fallback: &str) -> String {
     let candidate = logging
-        .and_then(|logging| logging.agentic_loop_params.as_ref())
+        .and_then(|record| record.agentic_loop_params.as_ref())
         .and_then(|params| get_text(params, MODEL_KEY));
     match candidate {
         Some(model) if !model.is_empty() => model,
@@ -111,15 +111,10 @@ fn max_tokens(optional: &JsonMap, kwargs: &JsonMap) -> Result<Option<u64>, Retri
 }
 
 fn read_max_tokens(map: &JsonMap) -> Result<Option<u64>, RetrievalError> {
-    match map.get(MAX_TOKENS_KEY) {
-        Some(raw) => serde_json::from_str::<Option<u64>>(raw.get()).map_err(|_error| {
-            RetrievalError::FieldType {
-                field: MAX_TOKENS_KEY,
-                expected: "an integer",
-            }
-        }),
-        None => Ok(None),
-    }
+    map.get(MAX_TOKENS_KEY).map_or(Ok(None), |raw| {
+        serde_json::from_str::<Option<u64>>(raw.get())
+            .map_err(|_error| RetrievalError::FieldType(MAX_TOKENS_KEY))
+    })
 }
 
 fn without_max_tokens(params: &JsonMap) -> JsonMap {

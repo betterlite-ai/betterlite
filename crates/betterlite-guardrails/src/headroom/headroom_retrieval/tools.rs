@@ -1,3 +1,5 @@
+use std::slice::from_ref;
+
 use betterlite_context::agentic_loop_plan::FollowupMessage;
 use betterlite_models::decisions;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -57,21 +59,20 @@ pub(crate) fn query_argument(call: &RetrieveCall) -> Option<&str> {
 }
 
 pub(crate) fn request_holds_retrieve_tool(tools: Option<&[FollowupMessage]>) -> bool {
-    let Some(tools) = tools else {
+    let Some(entries) = tools else {
         return false;
     };
-    tools.iter().any(|tool| {
-        serde_json::from_str::<Json>(tool.0.get()).is_ok_and(|parsed| {
-            has_tool_with_name(std::slice::from_ref(&parsed), HEADROOM_RETRIEVE_TOOL_NAME)
-        })
+    entries.iter().any(|tool| {
+        serde_json::from_str::<Json>(tool.0.get())
+            .is_ok_and(|parsed| has_tool_with_name(from_ref(&parsed), HEADROOM_RETRIEVE_TOOL_NAME))
     })
 }
 
 pub(crate) fn value_holds_retrieve_tool(tools: Option<&decisions::Json>) -> bool {
-    let Some(tools) = tools else {
+    let Some(value) = tools else {
         return false;
     };
-    let Ok(encoded) = serde_json::to_string(tools) else {
+    let Ok(encoded) = serde_json::to_string(value) else {
         return false;
     };
     let Ok(Json::List(parsed)) = serde_json::from_str::<Json>(&encoded) else {

@@ -34,7 +34,7 @@ fn build(
     script: &Arc<TokenScript>,
 ) -> Result<HiddenlayerAuth, HiddenlayerError> {
     let client = base_builder().build().unwrap();
-    let transport: Arc<dyn JwtTransport> = Arc::clone(script);
+    let transport: Arc<dyn JwtTransport> = Arc::<TokenScript>::clone(script);
     HiddenlayerAuth::new(input, env, client, transport)
 }
 
@@ -281,7 +281,7 @@ fn the_custom_timeout_reaches_the_token_request() {
         Some("client"),
         Some("secret"),
     );
-    input.timeout = Some(2.5);
+    input.timeout = Some(2.5_f64);
     build(&input, &BTreeMap::new(), &script).unwrap();
     assert_eq!(script.requests()[0].timeout, Duration::from_millis(2500));
 }
@@ -292,7 +292,7 @@ fn the_default_timeout_is_thirty_seconds() {
 }
 
 #[rstest]
-#[case::negative(-1.0)]
+#[case::negative(-1.0_f64)]
 #[case::not_a_number(f64::NAN)]
 #[case::infinite(f64::INFINITY)]
 fn an_unusable_timeout_is_refused(#[case] timeout: f64) {

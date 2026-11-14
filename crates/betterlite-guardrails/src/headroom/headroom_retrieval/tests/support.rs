@@ -16,7 +16,9 @@ use betterlite_context::agentic_loop_plan::{AgenticLoopPlan, FollowupMessage, Js
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
+use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
@@ -96,23 +98,23 @@ impl Server {
 }
 
 pub(crate) async fn start(replies: Vec<Reply>) -> Server {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
     let answers = Arc::new(Mutex::new(VecDeque::from(replies)));
     let recorder = Arc::clone(&seen);
     let answer = move |method: Method, uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let recorder = Arc::clone(&recorder);
-        let answers = Arc::clone(&answers);
+        let capture = Arc::clone(&recorder);
+        let queue = Arc::clone(&answers);
         async move {
-            record(&recorder, &method, &uri, &headers, &bytes);
-            let next = answers
+            record(&capture, &method, &uri, &headers, &bytes);
+            let next = queue
                 .lock()
                 .unwrap()
                 .pop_front()
                 .unwrap_or_else(|| reply(500, "{}"));
             if let Some(delay) = next.delay {
-                tokio::time::sleep(delay).await;
+                sleep(delay).await;
             }
             (StatusCode::from_u16(next.status).unwrap(), next.body)
         }
@@ -173,7 +175,7 @@ impl Harness {
     }
 }
 
-fn epoch() -> SystemTime {
+const fn epoch() -> SystemTime {
     UNIX_EPOCH
 }
 
@@ -295,12 +297,12 @@ impl GateCall {
 }
 
 pub(crate) fn gate_call(response: &str) -> GateCall {
-    let response = raw(response);
+    let parsed = raw(response);
     let tools = Some(vec![request_tool()]);
     let model = "gpt-4o".to_owned();
     let custom_llm_provider = "openai".to_owned();
     GateCall {
-        response,
+        response: parsed,
         model,
         messages: Vec::new(),
         tools,

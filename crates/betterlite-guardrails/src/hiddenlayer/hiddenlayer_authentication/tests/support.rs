@@ -1,13 +1,18 @@
 use std::collections::VecDeque;
 use std::io;
+use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
+use std::thread::{Builder as ThreadBuilder, JoinHandle};
 use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use secrecy::ExposeSecret as _;
+use tokio::net::TcpListener as TokioListener;
+use tokio::runtime::Builder as RuntimeBuilder;
 use tokio::sync::oneshot;
+use tokio::time::sleep;
 
 use super::super::HiddenlayerAuth;
 use super::super::token::{JwtError, JwtTransport, TokenRequest};
@@ -66,7 +71,7 @@ pub(crate) struct Server {
     pub(crate) port: u16,
     pub(crate) seen: Arc<Mutex<Vec<Seen>>>,
     stop: Option<oneshot::Sender<()>>,
-    thread: Option<std::thread::JoinHandle<io::Result<()>>>,
+    thread: Option<JoinHandle<io::Result<()>>>,
 }
 
 impl Server {
@@ -87,29 +92,29 @@ impl Drop for Server {
 }
 
 pub(crate) fn start(replies: Vec<Reply>) -> Server {
-    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
     let seen = Arc::new(Mutex::new(Vec::new()));
     let answers = Arc::new(Mutex::new(VecDeque::from(replies)));
     let recorder = Arc::clone(&seen);
     let answer = move |method: Method, uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let recorder = Arc::clone(&recorder);
-        let answers = Arc::clone(&answers);
+        let capture = Arc::clone(&recorder);
+        let queue = Arc::clone(&answers);
         async move {
-            record(&recorder, &method, &uri, &headers, &bytes);
-            let next = answers
+            record(&capture, &method, &uri, &headers, &bytes);
+            let next = queue
                 .lock()
                 .unwrap()
                 .pop_front()
                 .unwrap_or_else(|| reply(500, "{}"));
             if let Some(delay) = next.delay {
-                tokio::time::sleep(delay).await;
+                sleep(delay).await;
             }
             let mut response_headers = HeaderMap::new();
-            for (name, value) in &next.headers {
-                let name = HeaderName::from_bytes(name.as_bytes()).unwrap();
-                response_headers.insert(name, HeaderValue::from_str(value).unwrap());
+            for (header_name, header_value) in &next.headers {
+                let name = HeaderName::from_bytes(header_name.as_bytes()).unwrap();
+                response_headers.insert(name, HeaderValue::from_str(header_value).unwrap());
             }
             response_headers.insert(
                 HeaderName::from_static("content-type"),
@@ -124,15 +129,15 @@ pub(crate) fn start(replies: Vec<Reply>) -> Server {
     };
     let router = Router::new().fallback(answer);
     let (stop, stopped) = oneshot::channel();
-    let thread = std::thread::Builder::new()
+    let thread = ThreadBuilder::new()
         .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
+            let runtime = RuntimeBuilder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
             runtime.block_on(async move {
-                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-                axum::serve(listener, router)
+                let tokio_listener = TokioListener::from_std(listener).unwrap();
+                axum::serve(tokio_listener, router)
                     .with_graceful_shutdown(async move {
                         let _stopped = stopped.await;
                     })

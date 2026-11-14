@@ -83,12 +83,10 @@ fn detection_base(input: &Input, server: &Server) -> String {
 }
 
 fn client(saas: bool, port: u16) -> Result<reqwest::Client, Box<HelperError>> {
-    let builder = base_builder();
-    let builder = if saas {
-        builder.resolve(SAAS_HOST, SocketAddr::from(([127, 0, 0, 1], port)))
-    } else {
-        builder
-    };
+    let mut builder = base_builder();
+    if saas {
+        builder = builder.resolve(SAAS_HOST, SocketAddr::from(([127, 0, 0, 1], port)));
+    }
     builder.build().or_config_error()
 }
 
@@ -111,18 +109,18 @@ fn detect(
     }
 }
 
-fn path(version: u8) -> &'static str {
+const fn path(version: u8) -> &'static str {
     if version == 1 { V1_PATH } else { V2_PATH }
 }
 
 fn described(seen: &[Seen], tokens: bool) -> Vec<Value> {
     seen.iter()
-        .filter(|seen| seen.path.starts_with(TOKEN_PREFIX) == tokens)
-        .map(|seen| {
+        .filter(|entry| entry.path.starts_with(TOKEN_PREFIX) == tokens)
+        .map(|entry| {
             json!({
-                "method": seen.method,
-                "path": seen.path,
-                "authorization": seen.authorization,
+                "method": entry.method,
+                "path": entry.path,
+                "authorization": entry.authorization,
             })
         })
         .collect()

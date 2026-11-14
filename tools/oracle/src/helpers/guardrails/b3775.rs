@@ -6,12 +6,13 @@ use serde::Deserialize;
 
 use crate::helpers::{Helper, HelperResult};
 
+// boxed so the variants keep one size; variant_size_differences and large_enum_variant deny the spread
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Input {
-    ShouldRun(headroom::ShouldRun),
-    Plan(headroom::Plan),
-    Hiddenlayer(hiddenlayer::Input),
+    ShouldRun(Box<headroom::ShouldRun>),
+    Plan(Box<headroom::Plan>),
+    Hiddenlayer(Box<hiddenlayer::Input>),
 }
 
 pub(crate) struct Op;
@@ -21,9 +22,9 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ShouldRun(input) => headroom::should_run(input),
-            Input::Plan(input) => headroom::plan(input),
-            Input::Hiddenlayer(input) => hiddenlayer::run(input),
+            Input::ShouldRun(item) => headroom::should_run(item),
+            Input::Plan(item) => headroom::plan(item),
+            Input::Hiddenlayer(item) => hiddenlayer::run(item),
         }
     }
 }

@@ -18,13 +18,13 @@ const STREAM_CONVERTIBLE_CALL_TYPES: [CallType; 4] = [
 ];
 
 // the base hook runs first, and its replacement is what the guards below inspect and return
+#[must_use]
 pub fn pre_call_deployment_hook(
     base_result: Option<&IndexMap<String, Json>>,
     kwargs: &IndexMap<String, Json>,
     call_type: Option<CallType>,
 ) -> Option<IndexMap<String, Json>> {
-    let convertible =
-        call_type.is_some_and(|call_type| STREAM_CONVERTIBLE_CALL_TYPES.contains(&call_type));
+    let convertible = call_type.is_some_and(|kind| STREAM_CONVERTIBLE_CALL_TYPES.contains(&kind));
     if !convertible {
         return base_result.cloned();
     }

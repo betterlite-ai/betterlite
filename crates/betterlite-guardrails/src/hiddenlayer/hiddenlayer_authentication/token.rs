@@ -1,8 +1,9 @@
-use std::io::Read as _;
+use std::io::{self, Read as _};
 use std::time::Duration;
 
 use betterlite_http::proxy::base_builder;
 use betterlite_http::proxy::limits::TransportLimits;
+use reqwest::blocking::ClientBuilder;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
@@ -38,7 +39,7 @@ pub enum JwtError {
     #[error("the HiddenLayer token response body could not be read")]
     Body {
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("the HiddenLayer token response body is larger than {limit} bytes")]
     TooLarge { limit: usize },
@@ -54,7 +55,7 @@ pub struct ReqwestJwtTransport;
 
 impl JwtTransport for ReqwestJwtTransport {
     fn fetch_token(&self, request: &TokenRequest) -> Result<String, JwtError> {
-        let client = reqwest::blocking::ClientBuilder::from(base_builder())
+        let client = ClientBuilder::from(base_builder())
             .timeout(request.timeout)
             .build()
             .map_err(|source| JwtError::Transport { source })?;
@@ -95,7 +96,11 @@ fn parse_token(body: &str) -> Result<String, JwtError> {
                 body: body.to_owned(),
             }),
         },
-        _ => Err(JwtError::InvalidResponse {
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_) => Err(JwtError::InvalidResponse {
             body: body.to_owned(),
         }),
     }

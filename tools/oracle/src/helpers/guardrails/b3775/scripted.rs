@@ -46,7 +46,7 @@ impl Script {
         };
         queue
             .and_then(VecDeque::pop_front)
-            .unwrap_or(Reply::Answer {
+            .unwrap_or_else(|| Reply::Answer {
                 status: 500,
                 body: json!({}),
             })
@@ -90,10 +90,10 @@ impl Server {
     }
 
     pub(crate) fn requests(&self) -> Vec<Seen> {
-        self.seen
-            .lock()
-            .map(|seen| seen.clone())
-            .unwrap_or_default()
+        match self.seen.lock() {
+            Ok(seen) => seen.to_vec(),
+            Err(_poisoned) => Vec::new(),
+        }
     }
 }
 
@@ -146,7 +146,7 @@ fn handle(stream: TcpStream, script: &Mutex<Script>, seen: &Mutex<Vec<Seen>>) {
         });
     }
     let reply = match script.lock() {
-        Ok(mut script) => script.admit(&path),
+        Ok(mut state) => state.admit(&path),
         Err(_poisoned) => Reply::Close,
     };
     respond(stream, reply);
@@ -170,7 +170,7 @@ fn read_headers(reader: &mut BufReader<TcpStream>) -> BTreeMap<String, String> {
         if reader.read_line(&mut line).unwrap_or(0) == 0 {
             break;
         }
-        let trimmed = line.trim_end_matches(|character| character == '\r' || character == '\n');
+        let trimmed = line.trim_end_matches(['\r', '\n']);
         if trimmed.is_empty() {
             break;
         }
@@ -200,8 +200,8 @@ fn answer(stream: &mut TcpStream, status: u16, body: &Value) {
         "HTTP/1.1 {status} OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
         encoded.len()
     );
-    let _written = stream.write_all(head.as_bytes());
-    let _written = stream.write_all(&encoded);
+    let _head_written = stream.write_all(head.as_bytes());
+    let _body_written = stream.write_all(&encoded);
     let _flushed = stream.flush();
     let _shutdown = stream.shutdown(Shutdown::Write);
 }

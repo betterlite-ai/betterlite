@@ -76,11 +76,13 @@ where
 }
 
 fn resolve_timeout(timeout: Option<f64>) -> Result<Duration, HiddenlayerError> {
-    match timeout {
-        Some(seconds) => Duration::try_from_secs_f64(seconds)
-            .map_err(|source| HiddenlayerError::InvalidTimeout { source }),
-        None => Ok(DEFAULT_AUTH_TIMEOUT),
-    }
+    timeout.map_or_else(
+        || Ok(DEFAULT_AUTH_TIMEOUT),
+        |seconds| {
+            Duration::try_from_secs_f64(seconds)
+                .map_err(|source| HiddenlayerError::InvalidTimeout { source })
+        },
+    )
 }
 
 impl HiddenlayerSettings {
