@@ -14,7 +14,9 @@ use secrecy::SecretString;
 
 use super::VllmConfig;
 use super::completion::ENGINE_ERROR;
-use super::error::{ENGINE_MISSING_MESSAGE, ENGINE_STATUS, VllmError, VllmSetupError};
+use super::error::{
+    ENGINE_MISSING_MESSAGE, ENGINE_STATUS, VllmError, VllmSetupError, get_error_class,
+};
 use super::model_info::{API_BASE_ENV, API_KEY_HEADER, VllmModelInfo};
 use super::passthrough::VllmPassthroughConfig;
 
@@ -318,6 +320,17 @@ fn an_api_error_keeps_the_status_message_and_headers() {
     let environment = environment(&[]);
     let headers = Headers::from([(String::from("x"), String::from("1"))]);
     let error = info(&environment).get_error_class("boom", 418, &headers);
+    assert_eq!(error.status(), Some(418));
+    assert_eq!(error.to_string(), "boom");
+    assert!(
+        matches!(error, VllmError::Api { ref headers, .. } if headers.get("x").map(String::as_str) == Some("1"))
+    );
+}
+
+#[test]
+fn the_error_class_carries_the_status_message_and_headers() {
+    let headers = Headers::from([(String::from("x"), String::from("1"))]);
+    let error = get_error_class("boom", 418, &headers);
     assert_eq!(error.status(), Some(418));
     assert_eq!(error.to_string(), "boom");
     assert!(

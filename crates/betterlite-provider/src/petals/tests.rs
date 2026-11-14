@@ -14,7 +14,7 @@ use serde_json::Number;
 use super::config::{
     DEFAULT_MAX_NEW_TOKENS, PetalsConfig, SUPPORTED_OPENAI_PARAMS, map_openai_params,
 };
-use super::error::PetalsSetupError;
+use super::error::{PetalsSetupError, get_error_class};
 use super::request::{CustomPrompt, RequestContext};
 
 mod reply;
@@ -351,4 +351,13 @@ async fn request_body_without_a_prompt_factory_match_has_a_null_input() {
         .await
         .unwrap();
     assert_eq!(body.inputs, None);
+}
+
+#[test]
+fn the_error_class_carries_the_status_message_and_headers() {
+    let headers = BTreeMap::from([(String::from("x"), String::from("1"))]);
+    let error = get_error_class("boom", 418, &headers);
+    assert_eq!(error.status_code, 418);
+    assert_eq!(error.message, "boom");
+    assert_eq!(error.headers, headers);
 }

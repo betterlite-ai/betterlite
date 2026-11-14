@@ -1,0 +1,61 @@
+use std::collections::BTreeMap;
+
+use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
+use betterlite_openai::passthrough::transformation::types::{
+    PassthroughTarget, PassthroughUrlRequest,
+};
+use betterlite_provider::vllm::passthrough::VllmPassthroughConfig;
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PassInput {
+    calls: Vec<PassCall>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PassCall {
+    endpoint: String,
+    #[serde(default)]
+    api_base: Option<String>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    #[serde(default)]
+    query: Option<Object>,
+    #[serde(default)]
+    request_data: Object,
+}
+
+fn passthrough_value(call: &PassCall) -> Value {
+    let config = VllmPassthroughConfig {
+        environment: &call.env,
+    };
+    let litellm_params = Object::new();
+    let request = PassthroughUrlRequest {
+        api_base: call.api_base.as_deref(),
+        api_key: None,
+        target: PassthroughTarget {
+            model: "m",
+            custom_llm_provider: "vllm",
+            endpoint: &call.endpoint,
+        },
+        request_query_params: call.query.as_ref(),
+        litellm_params: &litellm_params,
+    };
+    let result = match config.get_complete_url(&request) {
+        Ok((url, base)) => json!({"ok": true, "url": url.as_str(), "base": base}),
+        Err(error) => json!({"ok": false, "message": error.to_string()}),
+    };
+    json!({
+        "streaming": config.is_streaming_request(&call.endpoint, &call.request_data),
+        "result": result,
+    })
+}
+
+pub(crate) fn passthrough_values(input: &PassInput) -> Value {
+    let calls: Vec<Value> = input.calls.iter().map(passthrough_value).collect();
+    json!({"calls": calls})
+}
