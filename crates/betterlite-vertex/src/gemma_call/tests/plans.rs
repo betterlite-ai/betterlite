@@ -19,6 +19,15 @@ fn required_base() {
     assert!(matches!(empty_error, GemmaPlanError::MissingApiBase));
 }
 
+#[test]
+fn malformed_base_is_a_vertex_500() {
+    let fixture = Fixture::new();
+    let call = fixture.call(MODEL, Some("not a url"), false);
+    let error = for_call(&call, None).unwrap_err();
+    assert!(matches!(error, GemmaPlanError::Target(_)));
+    assert_eq!(error.status_code(), 500);
+}
+
 #[rstest]
 #[case::already_predict(
     "https://ep.example/v1/projects/p/locations/l/endpoints/e:predict",
@@ -30,8 +39,8 @@ fn required_base() {
     true,
     "https://ep.example/v1/projects/p/locations/l/endpoints/e:predict"
 )]
-#[case::host_only("https://ep.example", false, "https://ep.example")]
-#[case::host_only_stream("https://ep.example", true, "https://ep.example?alt=sse")]
+#[case::host_only("https://ep.example", false, "https://ep.example/")]
+#[case::host_only_stream("https://ep.example", true, "https://ep.example/?alt=sse")]
 #[case::trailing_slash("https://ep.example/", false, "https://ep.example/")]
 #[case::custom_path(
     "https://ep.example/custom",
@@ -47,7 +56,7 @@ fn required_base() {
 #[case::deployment_path(
     "https://ep.example/v1/projects/p/locations/l/endpoints/e",
     false,
-    "https://ep.example/v1/projects/p/locations/l/endpoints/e/projects/p/locations/l/endpoints/e"
+    "https://ep.example/v1/projects/p/locations/l/endpoints/e:predict"
 )]
 fn predict_suffix_preserved(#[case] api_base: &str, #[case] stream: bool, #[case] expected: &str) {
     let fixture = Fixture::new();

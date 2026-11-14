@@ -34,6 +34,7 @@ pub(super) enum Event {
 pub(super) enum Reply {
     Ok(&'static str),
     Status(u16, &'static str),
+    Failure,
 }
 
 #[derive(Clone, Debug)]
@@ -75,6 +76,7 @@ impl GemmaPost for FixtureClient {
         let (status, body) = match self.reply {
             Reply::Ok(body) => (200, body.as_bytes().to_vec()),
             Reply::Status(status, body) => (status, body.as_bytes().to_vec()),
+            Reply::Failure => return Box::pin(ready(Err::<PostReply, _>(PostNever))),
         };
         Box::pin(ready(Ok(PostReply { status, body })))
     }

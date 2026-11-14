@@ -17,15 +17,19 @@ fn replays_the_gemma_reply_corpus(#[files("fuzz/corpus/gemma_reply/*")] path: Pa
         assert!(outcome.is_ok(), "{name}");
         return;
     }
+    let status = outcome.err().map(|error| error.status_code());
+    if name.starts_with("embedded-400") {
+        assert_eq!(status, Some(400), "{name}");
+        return;
+    }
     if name.starts_with("embedded-429") {
-        let status = outcome.err().map(|error| error.status_code());
         assert_eq!(status, Some(429), "{name}");
         return;
     }
-    if name.starts_with("missing-predictions") {
-        let status = outcome.err().map(|error| error.status_code());
+    if name.starts_with("missing-predictions") || name.starts_with("non-object-root") {
         assert_eq!(status, Some(422), "{name}");
         return;
     }
-    assert!(outcome.is_err(), "{name}");
+    // an out-of-range code is no error record, and a non-record reply is a Vertex 500
+    assert_eq!(status, Some(500), "{name}");
 }
