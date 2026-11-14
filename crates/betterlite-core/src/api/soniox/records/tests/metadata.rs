@@ -1,5 +1,8 @@
-use super::*;
+use betterlite_models::controls::json_value::JsonValue;
 use rstest::rstest;
+
+use super::super::tokens::{FloatMilliseconds, float_milliseconds};
+use super::*;
 
 #[rstest]
 #[case::negative("-1500", Some("-1.5"))]
@@ -31,6 +34,18 @@ fn duration_is_best_effort(#[case] value: &str, #[case] expected: Option<&str>) 
             .expect("the expected duration")
     });
     assert_eq!(stored, wanted, "{value}");
+}
+
+#[test]
+fn decimal_timings_are_kept_only_when_the_float_division_agrees() {
+    assert!(matches!(
+        float_milliseconds(&JsonValue::Text("1500".to_owned())),
+        Some(FloatMilliseconds::Exact(_))
+    ));
+    assert!(matches!(
+        float_milliseconds(&JsonValue::Text("1e-28".to_owned())),
+        Some(FloatMilliseconds::Approximate(_))
+    ));
 }
 
 #[rstest]
