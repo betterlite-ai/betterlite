@@ -109,8 +109,8 @@ fn cometapi_supports_five_params() {
 
 #[rstest]
 #[case::n("n", "2", "num_images", "2")]
-#[case::response_format("response_format", "b64_json", "output_format", "b64_json")]
-#[case::size_string("size", "512", "image_size", "\"512\"")]
+#[case::response_format("response_format", "\"b64_json\"", "output_format", "\"b64_json\"")]
+#[case::size_string("size", "\"512\"", "image_size", "\"512\"")]
 #[case::size_number("size", "512", "image_size", "512")]
 fn flux_mapping_renames_without_parsing_plain_values(
     #[case] name: &str,
@@ -170,7 +170,7 @@ fn flux_size_that_does_not_split_into_two_integers_fails(#[case] size: &str) {
 
 #[test]
 fn preexisting_options_skip_the_support_check_and_stay_untouched() {
-    let existing = params(&[("quality", "\"hd\""), ("num_images", "4")]);
+    let existing = params(&[("quality", "\"hd\""), ("n", "4")]);
     let mut optional = existing.clone();
     map_openai_params(
         Host::Aiml,
@@ -233,7 +233,7 @@ fn cometapi_passes_supported_options_without_renaming() {
     let mut optional = params(&[]);
     map_openai_params(
         Host::CometApi,
-        &params(&[("n", "2"), ("style", "\"vivid\""), ("size", "1024x768")]),
+        &params(&[("n", "2"), ("style", "\"vivid\""), ("size", "\"1024x768\"")]),
         &mut optional,
         "any-model",
         false,
@@ -241,7 +241,7 @@ fn cometapi_passes_supported_options_without_renaming() {
     .expect("every listed option is supported");
     assert_eq!(
         optional,
-        params(&[("n", "2"), ("style", "\"vivid\""), ("size", "1024x768")])
+        params(&[("n", "2"), ("style", "\"vivid\""), ("size", "\"1024x768\"")])
     );
 }
 
