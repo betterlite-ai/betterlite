@@ -59,10 +59,10 @@ fn bare_supports_reasoning(catalog: &ModelCatalog, model: &str) -> bool {
             .lookup
             .iter()
             .find(|(key, _)| key.to_lowercase() == lowercase)
-            .map(|(_, canonical)| canonical)
+            .map(|(_, entry_key)| entry_key)
     });
     canonical
-        .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+        .and_then(|entry_key| catalog.entries.get(entry_key.as_ref()))
         .and_then(|entry| entry.fields.capabilities.reasoning.supports_reasoning)
         == Some(true)
 }
