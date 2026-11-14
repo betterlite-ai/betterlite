@@ -2,11 +2,6 @@ import importlib
 from enum import Enum
 from typing import ClassVar, NamedTuple, Protocol, get_args, get_origin
 
-import litellm.types.llms.gemini as ref_gemini
-import litellm.types.llms.gemini_audio_transcription as ref_audio
-import litellm.types.llms.vertex_ai_gemini_transcription as ref_transcription
-import litellm.types.llms.vertex_ai_speech_to_text as ref_speech
-import litellm.types.passthrough_endpoints.vertex_ai as ref_passthrough
 import pydantic
 import pytest
 from pydantic import JsonValue, TypeAdapter
@@ -39,6 +34,10 @@ class TypeViews(Protocol):
     def __getattr__(self, name: str) -> type: ...
 
 
+class EnumViews(Protocol):
+    def __getattr__(self, name: str) -> type[Enum]: ...
+
+
 class ModelPair(NamedTuple):
     reference: type[pydantic.BaseModel]
     ours: type[pydantic.BaseModel]
@@ -61,7 +60,17 @@ ref_speech_blocks: Blocks = importlib.import_module("litellm.types.llms.vertex_a
 ours_speech_blocks: Blocks = importlib.import_module(
     "betterlite.types.llms.vertex_ai_audio.vertex_ai_speech_to_text",
 )
-ref_gemini_models: ModelViews = importlib.import_module("litellm.types.llms.gemini")
+ref_gemini: ModelViews = importlib.import_module("litellm.types.llms.gemini")
+ref_gemini_enums: EnumViews = importlib.import_module("litellm.types.llms.gemini")
+ref_gemini_types: TypeViews = importlib.import_module("litellm.types.llms.gemini")
+ref_audio: ModelViews = importlib.import_module("litellm.types.llms.gemini_audio_transcription")
+ref_transcription: ModelViews = importlib.import_module(
+    "litellm.types.llms.vertex_ai_gemini_transcription",
+)
+ref_speech: ModelViews = importlib.import_module("litellm.types.llms.vertex_ai_speech_to_text")
+ref_passthrough: ModelViews = importlib.import_module(
+    "litellm.types.passthrough_endpoints.vertex_ai",
+)
 ref_speech_types: TypeViews = importlib.import_module(
     "litellm.types.llms.vertex_ai_speech_to_text",
 )
@@ -294,12 +303,12 @@ MODELS: dict[str, ModelPair] = {
         {"instances": [{"prompt": "a cat"}], "parameters": IMAGE_PARAMETERS},
     ),
     "GeminiVideoGenerationParameters": ModelPair(
-        ref_gemini_models.GeminiVideoGenerationParameters,
+        ref_gemini.GeminiVideoGenerationParameters,
         ours_gemini.GeminiVideoGenerationParameters,
         VIDEO_PARAMETERS,
     ),
     "GeminiVideoGenerationRequest": ModelPair(
-        ref_gemini_models.GeminiVideoGenerationRequest,
+        ref_gemini.GeminiVideoGenerationRequest,
         ours_gemini.GeminiVideoGenerationRequest,
         {"instances": [{"prompt": "a dog"}], "parameters": VIDEO_PARAMETERS},
     ),
@@ -329,7 +338,7 @@ MODELS: dict[str, ModelPair] = {
         OPERATION_METADATA,
     ),
     "GeminiLongRunningOperationResponse": ModelPair(
-        ref_gemini_models.GeminiLongRunningOperationResponse,
+        ref_gemini.GeminiLongRunningOperationResponse,
         ours_gemini.GeminiLongRunningOperationResponse,
         {
             "name": "operations/1",
@@ -617,14 +626,16 @@ def test_names_model_matches(name: str) -> None:
 
 
 def test_names_gemini_literals() -> None:
-    assert enum_members(ours_gemini.GeminiFilesState) == enum_members(ref_gemini.GeminiFilesState)
-    assert enum_members(ours_gemini.GeminiFilesSource) == enum_members(
-        ref_gemini.GeminiFilesSource,
+    assert enum_members(ours_gemini.GeminiFilesState) == enum_members(
+        ref_gemini_enums.GeminiFilesState,
     )
-    reference_start: tuple[str, ...] = get_args(ref_gemini.StartOfSpeechSensitivityEnum)
+    assert enum_members(ours_gemini.GeminiFilesSource) == enum_members(
+        ref_gemini_enums.GeminiFilesSource,
+    )
+    reference_start: tuple[str, ...] = get_args(ref_gemini_types.StartOfSpeechSensitivityEnum)
     ours_start: tuple[str, ...] = get_args(ours_gemini.StartOfSpeechSensitivityEnum)
     assert ours_start == reference_start
-    reference_end: tuple[str, ...] = get_args(ref_gemini.EndOfSpeechSensitivityEnum)
+    reference_end: tuple[str, ...] = get_args(ref_gemini_types.EndOfSpeechSensitivityEnum)
     ours_end: tuple[str, ...] = get_args(ours_gemini.EndOfSpeechSensitivityEnum)
     assert ours_end == reference_end
 
@@ -641,8 +652,8 @@ def test_names_unions(kind: str) -> None:
     assert [info.discriminator for info in reference_metadata[1:]] == ["kind"]
     assert [info.discriminator for info in ours_metadata[1:]] == ["kind"]
 
-    reference_adapter: TypeAdapter[pydantic.BaseModel] = TypeAdapter(reference_tagged)
-    ours_adapter: TypeAdapter[pydantic.BaseModel] = TypeAdapter(ours_tagged)
+    reference_adapter = TypeAdapter[pydantic.BaseModel](reference_tagged)
+    ours_adapter = TypeAdapter[pydantic.BaseModel](ours_tagged)
     for name in names:
         payload = MODELS[name].payload
         reference_value = reference_adapter.validate_python(payload)

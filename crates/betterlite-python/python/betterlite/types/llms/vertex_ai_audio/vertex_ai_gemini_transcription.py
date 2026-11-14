@@ -72,8 +72,10 @@ class VertexGeminiTranscriptionUsageMetadata(ResponseObject):  # ast-grep-ignore
     candidatesTokenCount: int = 0  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L63
     totalTokenCount: int = 0  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L64
 
-    # ast-grep-ignore: no-long-names
-    promptTokensDetails: tuple[VertexGeminiTranscriptionModalityTokens, ...] = ()  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L65
+    promptTokensDetails: tuple[  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L65
+        VertexGeminiTranscriptionModalityTokens,  # ast-grep-ignore: no-long-names
+        ...,
+    ] = ()
 
 
 class VertexGeminiTranscriptionResponse(ResponseObject):  # ast-grep-ignore: no-long-names
