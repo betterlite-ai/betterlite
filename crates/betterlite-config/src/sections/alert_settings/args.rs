@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_integer, resolve_number};
+use crate::resolve::{parse_integer, parse_money, resolve_number};
 use crate::sections::alert_settings::flags::{RawFlag, resolve_flag};
 use crate::sections::alert_settings::types::{
     ANOMALY_BASELINE_DAYS, ANOMALY_MIN_SPEND, ANOMALY_MULTIPLIER, BUDGET_ALERT_TTL, CountField,
@@ -132,14 +132,6 @@ impl RawAlertingArgs {
                 .count(raw.spend_check_interval.take(), SPEND_CHECK_INTERVAL)?,
         })
     }
-}
-
-fn parse_money(text: &str, path: &str) -> Result<Decimal, ConfigError> {
-    text.parse::<Decimal>()
-        .map_err(|_source| ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: false,
-        })
 }
 
 fn positive(value: Decimal, path: &str) -> Result<Decimal, ConfigError> {

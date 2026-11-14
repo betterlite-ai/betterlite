@@ -1,0 +1,17 @@
+task: B3041
+deviations:
+  - what: Failed token_counter calls fall back to cheap char-count estimation instead of propagating the exception or returning None.
+    why: LiteLLM degrades to a char-count estimate on any token_counter error so a model name mismatch or a missing tokenizer does not block the request; betterlite keeps that behavior so an estimation failure cannot reject a rate-limited call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3734-L3738
+  - what: The precise input estimate counts images through betterlite's configured token-counting mode; LiteLLM forces use_default_image_token_count=True for this one call.
+    why: The counting entry in betterlite's tokenizer (betterlite_tokenizer::count::Counter) reads image counting from the token_counting config section and takes no per-call override, so the forced default count is not expressible; a deployment that relies on exact image counts can differ from LiteLLM in the reserved amount only, never in the request that reaches the provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3723-L3733
+  - what: A cap value outside the signed 64-bit range is clamped to i64::MAX or i64::MIN instead of keeping Python's unbounded integer.
+    why: Rust's token budget is i64 and saturating keeps a huge requested cap a cap (the implicit cap still skips the request); Python would carry the large integer through the same comparison.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L742-L748
+  - what: An output field that exists but holds a non-numeric value (text, bool, list or object) is left untouched instead of raising TypeError from the floor comparison.
+    why: LiteLLM's `effective_cap < existing_cap` raises TypeError on those values, which turns a request the provider layer would reject with a 4xx into a 500 from inside the rate limiter; betterlite does not write a cap it cannot compare and lets the route reject the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1025-L1027
+  - what: A Responses input that the chat-message transformation cannot convert yields no countable messages instead of an exception out of the estimator.
+    why: LiteLLM lets the transformation error escape the pre-call hook as a 500; betterlite leaves the estimate at zero and the route rejects the same input with its own 4xx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3608-L3626

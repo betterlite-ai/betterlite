@@ -1,0 +1,11 @@
+task: B6071
+deviations:
+  - what: A response_format that tools must translate returns 400 BadRequestError when it is not an object or its json_schema has no schema, instead of LiteLLM's unhandled TypeError or KeyError.
+    why: LiteLLM fails with a 500 and no status for input it already rejects; a malformed request parameter is a client error, so betterlite names the field and answers 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L216-L222
+  - what: A tools value that is not a list, when a response_format is translated into a tool, returns 400 BadRequestError instead of LiteLLM's unhandled AttributeError.
+    why: appending to a non-list tools value raises inside LiteLLM and becomes a 500; betterlite reports the malformed field as a 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L220-L221
+  - what: A reasoning_budget in chat_template_kwargs that is a non-finite number (for example 1e400) is ignored, where LiteLLM's int() raises OverflowError.
+    why: The JSON value is a positive number Python's int() cannot convert; betterlite drops the effort instead of turning a chat_template_kwargs entry into a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L102-L104
