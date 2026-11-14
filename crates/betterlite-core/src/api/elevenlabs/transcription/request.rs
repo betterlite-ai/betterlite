@@ -84,10 +84,10 @@ fn float_text(value: f64) -> String {
     let Some((mantissa, exponent)) = shown.split_once('e') else {
         return shown;
     };
-    let (sign, digits) = match exponent.strip_prefix('-') {
-        Some(digits) => ("-", digits),
-        None => ("+", exponent.strip_prefix('+').unwrap_or(exponent)),
-    };
+    let (sign, digits) = exponent.strip_prefix('-').map_or_else(
+        || ("+", exponent.strip_prefix('+').unwrap_or(exponent)),
+        |digits| ("-", digits),
+    );
     let padded = if digits.len() < 2 {
         format!("0{digits}")
     } else {
