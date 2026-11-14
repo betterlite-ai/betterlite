@@ -1,0 +1,5 @@
+kind: helper
+name: metadata-evidence-mapping
+call: {"b3154": {"operation": "metadata_evidence", "pull": {"repo": "octocat/hello", "number": 12, "title": "Add the thing", "body": "Line one\nline two", "url": "https://github.com/octocat/hello/pull/12", "login": "octocat", "emails": [], "profile_email": "", "merged_at": "2026-01-01T00:00:00Z", "head_sha": "abc123", "additions": 10, "deletions": 2, "changed_files": 3, "files": [{"filename": "a.py", "status": "added", "additions": 10, "deletions": 0}, {"filename": null, "status": null, "additions": null, "deletions": null}], "commits": [{"sha": "abc", "message": "first", "additions": 5}, {"sha": "def", "message": "second", "changed_files": null}], "commit_count": 2, "incomplete_metadata": false}}}
+env: {}
+compare: {ignore: []}

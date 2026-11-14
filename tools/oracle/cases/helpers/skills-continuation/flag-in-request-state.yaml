@@ -1,0 +1,18 @@
+kind: helper
+name: skills-continuation-flag-in-request-state
+call:
+  b3395:
+    max_iterations: 10
+    enabled: true
+    model: claude-opus
+    messages: [{role: user, content: first}, {role: assistant, content: second}, {role: user, content: third}]
+    tools: [{name: litellm_code_execution}]
+    max_tokens: 1000
+    skill_files: {litellm_skill_one: {a.py: a}, litellm_skill_two: {b.py: b}}
+    response: {id: msg_1, type: message, role: assistant, model: claude-opus, stop_reason: tool_use, content: [{type: tool_use, id: t1, name: litellm_skill_two, input: {}}]}
+    replies:
+      - kind: response
+        response: {id: msg_2, type: message, role: assistant, model: claude-opus, stop_reason: end_turn, content: [{type: text, text: done}]}
+env: {}
+compare:
+  ignore: []

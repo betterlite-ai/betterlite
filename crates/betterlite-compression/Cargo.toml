@@ -6,10 +6,23 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
+betterlite-anthropic = { path = "../betterlite-anthropic" }
+betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-semantic = { path = "../betterlite-semantic" }
+betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+indexmap = "2.14.2"
 regex.workspace = true
 serde_json = "1.0.154"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+
+[dev-dependencies]
+betterlite-config = { path = "../betterlite-config" }
+betterlite-http = { path = "../betterlite-http" }
+betterlite-models = { path = "../betterlite-models" }
+rstest = "=0.27.0"
+tokio = { workspace = true, features = ["time"] }
 
 [lints]
 workspace = true

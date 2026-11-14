@@ -1,0 +1,12 @@
+kind: helper
+name: studio-agents-seed-validate
+call:
+  studio_agents:
+    calls:
+      - function: validate
+        name: unused
+        headers: {X-Seed: kept}
+        api_key: seed-key
+        environment: {GOOGLE_API_KEY: seed-google, GEMINI_API_KEY: seed-gemini}
+env: {}
+compare: {ignore: []}

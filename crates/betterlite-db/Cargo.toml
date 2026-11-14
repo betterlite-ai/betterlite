@@ -19,6 +19,8 @@ aws-smithy-runtime-api = { version = "=1.19.2", features = ["client"] }
 aws-types = "=1.6.0"
 base64 = "0.23.1"
 betterlite-env = { path = "../betterlite-env" }
+betterlite-lens = { path = "../betterlite-lens" }
+betterlite-models = { path = "../betterlite-models" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
