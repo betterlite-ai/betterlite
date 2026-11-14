@@ -9,3 +9,6 @@ deviations:
   - what: The provider options reach the /listen query in the order the Object of B1122's transcription contract keeps them, which is sorted by name, where LiteLLM keeps the caller's dict order.
     why: The contract hands the adapter an Object rather than the caller's dict, and HTTP gives query parameter order no meaning.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/audio_transcription/transformation.py#L207-L226
+  - what: A reply whose metadata.duration is null is refused as a transform error.
+    why: duration is a required member of the transcription reply the task requires, where LiteLLM accepts a null duration and answers with a response that has none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/audio_transcription/transformation.py#L111
