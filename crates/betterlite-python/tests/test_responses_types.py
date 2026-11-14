@@ -535,7 +535,7 @@ def test_api_response_nulls() -> None:
     assert [item.model_dump() for item in ours.output] == output
 
 
-def test_api_response_reasoning_raw() -> None:
+def test_api_response_malformed() -> None:
     malformed: dict[str, JsonValue] = {
         "type": "reasoning",
         "summary": [],
