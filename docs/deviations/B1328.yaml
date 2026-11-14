@@ -1,0 +1,6 @@
+task: B1328
+deviations:
+  - what: An empty private-endpoint instances list returns the "Instances are required for private endpoint" error, where LiteLLM indexes instances[0] and raises an IndexError.
+    why: LiteLLM's own guard checks only for None, so the empty list crashes with a message that names nothing; betterlite reports the missing input with the error the source meant for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_non_gemini.py#L654-L658
+kept_bugs: []
