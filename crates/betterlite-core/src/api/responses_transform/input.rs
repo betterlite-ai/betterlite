@@ -12,11 +12,13 @@ pub(super) fn transform_input(input: &JsonValue) -> Result<JsonValue, ResponsesT
             let content: Vec<&JsonValue> = match fields.get("content") {
                 Some(JsonValue::Array(items)) => items.iter().collect(),
                 None
-                | Some(JsonValue::Null)
-                | Some(JsonValue::Bool(_))
-                | Some(JsonValue::Number(_))
-                | Some(JsonValue::Text(_))
-                | Some(JsonValue::Object(_)) => vec![input],
+                | Some(
+                    JsonValue::Null
+                    | JsonValue::Bool(_)
+                    | JsonValue::Number(_)
+                    | JsonValue::Text(_)
+                    | JsonValue::Object(_),
+                ) => vec![input],
             };
             Ok(JsonValue::Array(vec![transform_message(&content, "user")?]))
         }

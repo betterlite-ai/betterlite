@@ -119,7 +119,10 @@ fn requested_input(
     }
 }
 
-fn request_fields<T: DeserializeOwned>(params: &Params) -> Result<T, ResponsesTransformError> {
+fn request_fields<T>(params: &Params) -> Result<T, ResponsesTransformError>
+where
+    T: DeserializeOwned,
+{
     let encoded =
         serde_json::to_vec(params).map_err(|source| ResponsesTransformError::Encode { source })?;
     let mut decoder = Deserializer::from_slice(&encoded);
