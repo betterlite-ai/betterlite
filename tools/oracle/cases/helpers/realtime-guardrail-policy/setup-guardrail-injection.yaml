@@ -1,0 +1,39 @@
+kind: helper
+name: realtime-guardrail-setup-injection
+call:
+  realtime_guardrail_policy:
+    function: setup_guardrail_injection
+    sessions:
+      - sent: false
+        callbacks:
+          - {custom: true, runs_for: [realtime_input_transcription]}
+        request_data: {model: gpt-4}
+        setup_messages:
+          - '{"setup": {"model": "gpt-4"}}'
+          - '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"sensitivity": "high"}}}}'
+          - '{"type": "session.update", "session": {"type": "realtime"}}'
+      - sent: false
+        callbacks:
+          - {custom: true, runs_for: [pre_call, post_call]}
+          - {custom: false, runs_for: [realtime_input_transcription]}
+        request_data: {model: gpt-4}
+        setup_messages:
+          - '{"setup": {}}'
+      - sent: false
+        callbacks:
+          - {custom: true, runs_for: [realtime_input_transcription]}
+        request_data: {model: gpt-4}
+        setup_messages:
+          - 'not json'
+          - '{"setup": null}'
+          - '{"setup": []}'
+          - '[]'
+          - '"realtime"'
+      - sent: true
+        callbacks:
+          - {custom: true, runs_for: [realtime_input_transcription]}
+        request_data: {model: gpt-4}
+        setup_messages:
+          - '{"setup": {}}'
+env: {}
+compare: {ignore: []}

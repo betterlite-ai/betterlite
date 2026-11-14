@@ -1,0 +1,23 @@
+kind: helper
+name: corpus
+call:
+  scim_member_partition:
+    members:
+      - {value: " u1 ", type: User}
+      - {value: u2, type: null}
+    metadata:
+      - {scim_managed: true}
+      - {scim_data: null}
+    entries:
+      - {kind: resolved, user_id: u1}
+      - {kind: resolved, user_id: u1}
+      - {kind: skipped, value: g1, reason: nested_group}
+      - {kind: skipped, value: g2, reason: existing_team}
+      - {kind: unknown, value: u9}
+      - {kind: ambiguous, value: a1}
+    created_ids: [u9]
+    removals:
+      - {value: placeholder-id, roster: [placeholder-id, u1], resolved: [u1]}
+env: {}
+compare:
+  ignore: []
