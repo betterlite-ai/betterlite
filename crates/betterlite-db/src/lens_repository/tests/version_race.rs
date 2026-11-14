@@ -14,13 +14,13 @@ async fn a_matching_version_completes_the_update_and_stores_it() {
         record.revision = 2;
         Ok::<Lens, &str>(record)
     };
-    let (completed, updated) = repository(&db.pool)
+    let (completed, returned) = repository(&db.pool)
         .await
         .try_update(LENS_ID, &mut transform, false)
         .await
         .unwrap();
     assert!(completed);
-    let updated = updated.unwrap();
+    let updated = returned.unwrap();
     assert_eq!((updated.revision, updated.version), (2, 1));
     let (version, stored) = stored_lens(&db.pool, LENS_ID).await;
     assert_eq!((version, stored.revision), (1, 2));
@@ -36,13 +36,13 @@ async fn a_lost_version_race_reports_incomplete_and_leaves_the_row() {
         record.revision = 2;
         Ok::<Lens, &str>(record)
     };
-    let (completed, updated) = racing_repository
+    let (completed, returned) = racing_repository
         .repository
         .try_update(LENS_ID, &mut transform, false)
         .await
         .unwrap();
     assert!(!completed);
-    let updated = updated.unwrap();
+    let updated = returned.unwrap();
     assert_eq!((updated.revision, updated.version), (2, 1));
     let (version, stored) = stored_lens(&db.pool, LENS_ID).await;
     assert_eq!((version, stored.revision), (1, 1));

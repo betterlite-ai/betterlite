@@ -51,7 +51,7 @@ async fn another_lens_present_does_not_satisfy_the_missing_id() {
     insert_lens(&db.pool, &lens("lens-b"), 0).await;
     let result = repository(&db.pool)
         .await
-        .update(LENS_ID, |record| Ok::<Lens, &str>(record), 8, false)
+        .update(LENS_ID, Ok::<Lens, &str>, 8, false)
         .await
         .unwrap();
     assert!(result.is_none());

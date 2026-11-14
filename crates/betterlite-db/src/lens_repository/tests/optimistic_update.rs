@@ -115,7 +115,7 @@ async fn zero_attempts_returns_none_without_reading_the_lens() {
         },
     };
     let result = repository_instance
-        .update(LENS_ID, |record| Ok::<Lens, &str>(record), 0, false)
+        .update(LENS_ID, Ok::<Lens, &str>, 0, false)
         .await
         .unwrap();
     assert!(result.is_none());

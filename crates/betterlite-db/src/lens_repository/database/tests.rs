@@ -8,7 +8,11 @@ use crate::lens_repository::support::database;
 
 #[test]
 fn writer_database_implements_the_database_protocol() {
-    fn accepts<Db: Database>() {}
+    fn accepts<Db>()
+    where
+        Db: Database,
+    {
+    }
 
     accepts::<WriterDatabase<Client>>();
 }
@@ -57,7 +61,7 @@ async fn writer_database_binds_text_and_integer_arguments() {
     };
     let rows = writer
         .query_raw(
-            r#"SELECT ($1::text || ':' || $2::bigint)::text AS data"#,
+            "SELECT ($1::text || ':' || $2::bigint)::text AS data",
             &[
                 SqlBind::Text(Some("answer".to_owned())),
                 SqlBind::Integer(Some(42)),

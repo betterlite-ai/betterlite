@@ -24,7 +24,7 @@ async fn changed_only_true_returns_none_for_an_unchanged_lens() {
         },
     };
     let result = repository_instance
-        .update(LENS_ID, |record| Ok::<Lens, &str>(record), 8, true)
+        .update(LENS_ID, Ok::<Lens, &str>, 8, true)
         .await
         .unwrap();
     assert!(result.is_none());
@@ -47,7 +47,7 @@ async fn changed_only_false_returns_the_previous_lens_for_an_unchanged_one() {
     insert_lens(&db.pool, &original, 0).await;
     let result = repository(&db.pool)
         .await
-        .update(LENS_ID, |record| Ok::<Lens, &str>(record), 8, false)
+        .update(LENS_ID, Ok::<Lens, &str>, 8, false)
         .await
         .unwrap();
     assert_eq!(result, Some(original));

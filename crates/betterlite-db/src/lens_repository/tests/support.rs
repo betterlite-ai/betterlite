@@ -283,32 +283,27 @@ impl<Db: Database> Database for Racer<Db> {
 
 pub(crate) struct Racing {
     pub(crate) repository: RacingRepository,
-    pub(crate) queries: Arc<Mutex<Vec<String>>>,
     pub(crate) races: Arc<AtomicUsize>,
 }
 
 pub(crate) async fn racing(pool: &Pool, lens_id: &str, races: usize) -> Racing {
-    let queries = Arc::new(Mutex::new(Vec::new()));
     let remaining = Arc::new(AtomicUsize::new(races));
     let recorder = Recorder {
         database: WriterDatabase {
             writer: pool.get().await.unwrap(),
         },
-        queries: Arc::clone(&queries),
+        queries: Arc::new(Mutex::new(Vec::new())),
     };
-    let racer = Racer {
+    let contender = Racer {
         database: recorder,
         pool: pool.clone(),
         lens_id: lens_id.to_owned(),
         races: Arc::clone(&remaining),
     };
     Racing {
-        repository: LensRepository { database: racer },
-        queries,
+        repository: LensRepository {
+            database: contender,
+        },
         races: remaining,
     }
-}
-
-pub(crate) fn recorded(queries: &Mutex<Vec<String>>) -> Vec<String> {
-    queries.lock().unwrap().clone()
 }
