@@ -565,6 +565,11 @@ def test_model_names_match_litellm(
 def test_required_names_match(
     betterlite_model: type[BaseModel], reference_model: type[BaseModel],
 ) -> None:
+    ours = {name for name, field in betterlite_model.model_fields.items() if field.is_required()}
+    reference = {
+        name for name, field in reference_model.model_fields.items() if field.is_required()
+    }
+    assert ours == reference, betterlite_model.__name__
     with pytest.raises(ValidationError):
         _ = reference_model.model_validate({})
     with pytest.raises(ValidationError):
@@ -816,8 +821,14 @@ def test_guardrails_names_default() -> None:
 
 
 def test_attachment_names_scope() -> None:
-    global_reference = litellm_policy.PolicyAttachment(policy="global-baseline", scope="*")
-    global_ours = betterlite_policy.PolicyAttachment(policy="global-baseline", scope="*")
+    global_reference = litellm_policy.PolicyAttachment(
+        policy="global-baseline", scope="*",
+        teams=["healthcare-team"], keys=["dev-key-*"], models=["gpt-4"], tags=["prod"],
+    )
+    global_ours = betterlite_policy.PolicyAttachment(
+        policy="global-baseline", scope="*",
+        teams=["healthcare-team"], keys=["dev-key-*"], models=["gpt-4"], tags=["prod"],
+    )
     assert global_ours.is_global() == global_reference.is_global()
     assert global_ours.is_global()
     assert as_json(global_ours.to_policy_scope()) == as_json(global_reference.to_policy_scope())
