@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-batch-rows-unicode-chunk-roundtrip
+call:
+  vertex_batch_rows:
+    operation: encode
+    custom_ids:
+      - "héllo wörld ✓ héllo wörld ✓ héllo wörld ✓ héllo wörld ✓ "
+      - req-1
+      - ""
+      - İstanbul
+      - a%23b
+      - xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+env: {}
+compare: {ignore: []}
