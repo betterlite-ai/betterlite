@@ -61,6 +61,22 @@ fn category(exceptions: &[&str]) -> CategoryConfig {
     }
 }
 
+fn phrase_category() -> CategoryLoadResult {
+    let mut categories = CategoryLoadResult::default();
+    categories
+        .loaded_categories
+        .insert("stream".to_owned(), category(&["allowed phrase"]));
+    categories.category_keywords.insert(
+        "target".to_owned(),
+        (
+            "stream".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    categories
+}
+
 fn source<'source>(
     categories: &'source CategoryLoadResult,
     patterns: &'source [CompiledPattern],
@@ -222,18 +238,7 @@ fn trim_drops_the_prefix_and_remembers_the_exception_phrase() {
 
 #[test]
 fn trim_scans_the_halves_as_the_suppressed_whole_scan_did() {
-    let mut categories = CategoryLoadResult::default();
-    categories
-        .loaded_categories
-        .insert("stream".to_owned(), category(&["allowed phrase"]));
-    categories.category_keywords.insert(
-        "target".to_owned(),
-        (
-            "stream".to_owned(),
-            "high".to_owned(),
-            ContentFilterAction::Mask,
-        ),
-    );
+    let categories = phrase_category();
     let source = source(&categories, &[], &[]);
     let buffered = format!(
         "{} target {}{}allowed phrase{}",
@@ -271,18 +276,7 @@ fn trim_scans_the_halves_as_the_suppressed_whole_scan_did() {
 
 #[test]
 fn trim_stays_suppressed_after_the_seen_phrase_left_the_buffer() {
-    let mut categories = CategoryLoadResult::default();
-    categories
-        .loaded_categories
-        .insert("stream".to_owned(), category(&["allowed phrase"]));
-    categories.category_keywords.insert(
-        "target".to_owned(),
-        (
-            "stream".to_owned(),
-            "high".to_owned(),
-            ContentFilterAction::Mask,
-        ),
-    );
+    let categories = phrase_category();
     let source = source(&categories, &[], &[]);
     let buffered = format!(
         "{} target {}{}{}",
@@ -580,8 +574,9 @@ fn trim_keeps_the_carried_keyword_ahead_of_a_later_one_in_the_head() {
     let buffered = format!("zzz {}", "x".repeat(1082));
     let masked = format!("[KEYWORD_REDACTED] {}", "x".repeat(1082));
     let carried = CarriedMatches {
+        conditional: None,
+        phrase: None,
         keyword: Some(found("aaa", "alpha_policy", ContentFilterAction::Mask)),
-        ..CarriedMatches::default()
     };
     let trimmed =
         trim_streamed_choice_buffer(&source, state(&buffered, 1051, carried), &masked, &plan());
@@ -616,8 +611,9 @@ fn trim_takes_the_heads_keyword_when_it_comes_first() {
     let buffered = format!("aaa {}", "x".repeat(1082));
     let masked = format!("[KEYWORD_REDACTED] {}", "x".repeat(1082));
     let carried = CarriedMatches {
+        conditional: None,
+        phrase: None,
         keyword: Some(found("zzz", "zeta_policy", ContentFilterAction::Mask)),
-        ..CarriedMatches::default()
     };
     let trimmed =
         trim_streamed_choice_buffer(&source, state(&buffered, 1051, carried), &masked, &plan());
@@ -646,7 +642,8 @@ fn trim_keeps_the_carried_conditional_ahead_of_the_same_category_in_the_head() {
     let buffered = format!("kid harm {}", "x".repeat(1076));
     let carried = CarriedMatches {
         conditional: Some(found("child + harm", "stream", ContentFilterAction::Mask)),
-        ..CarriedMatches::default()
+        phrase: None,
+        keyword: None,
     };
     let trimmed =
         trim_streamed_choice_buffer(&source, state(&buffered, 1049, carried), &buffered, &plan());
@@ -687,7 +684,8 @@ fn trim_takes_the_heads_conditional_when_its_category_comes_first() {
             "zeta_policy",
             ContentFilterAction::Mask,
         )),
-        ..CarriedMatches::default()
+        phrase: None,
+        keyword: None,
     };
     let trimmed =
         trim_streamed_choice_buffer(&source, state(&buffered, 1049, carried), &buffered, &plan());
@@ -710,12 +708,13 @@ fn trim_takes_the_heads_phrase_pattern_when_it_comes_first() {
     let source = source(&categories, &[], &[]);
     let buffered = format!("first pattern {}", "x".repeat(1070));
     let carried = CarriedMatches {
+        conditional: None,
         phrase: Some(found(
             "phrase: second pattern",
             "stream",
             ContentFilterAction::Mask,
         )),
-        ..CarriedMatches::default()
+        keyword: None,
     };
     let trimmed =
         trim_streamed_choice_buffer(&source, state(&buffered, 1034, carried), &buffered, &plan());

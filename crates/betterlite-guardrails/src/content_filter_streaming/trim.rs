@@ -49,8 +49,7 @@ pub fn trim_streamed_choice_buffer(
     );
     let head = state.buffered_text.get(..boundary).unwrap_or_default();
     let tail = state.buffered_text.get(boundary..).unwrap_or_default();
-    // Python's buffer would keep every phrase and open sentence it holds, and its scan suppresses
-    // every category match for them, so the dropped prefix travels as flags and text instead
+    // Python's buffer keeps every phrase and open sentence and its scan suppresses their category matches, so the dropped prefix travels as flags and text instead
     let dropped_phrases = exception_phrases_in(&state.buffered_text, plan);
     let suppression = !state.seen_exception_phrases.is_empty() || !dropped_phrases.is_empty();
     let cut = committable_cut(source, &state, (head, tail), masked_text, suppression);

@@ -23,8 +23,7 @@ fn choice_state_starts_with_no_buffer_or_detections() {
     assert!(state.carried_matches.keyword.is_none());
 }
 
-#[test]
-fn choice_state_keeps_the_fields_it_was_built_with() {
+fn populated_state() -> StreamedChoiceState {
     let detection = ContentFilterDetection::BlockedWord(BlockedWordDetection {
         r#type: "blocked_word".to_owned(),
         keyword: "secret".to_owned(),
@@ -36,7 +35,7 @@ fn choice_state_keeps_the_fields_it_was_built_with() {
         position: (0, 0),
         detection: detection.clone(),
     };
-    let state = StreamedChoiceState {
+    StreamedChoiceState {
         buffered_text: "hello secret".to_owned(),
         yielded_masked_text_len: 4,
         committed_detections: vec![streamed.clone()],
@@ -45,15 +44,21 @@ fn choice_state_keeps_the_fields_it_was_built_with() {
         seen_exception_phrases: vec!["allowed phrase".to_owned()],
         open_sentence: "child ".to_owned(),
         carried_matches: CarriedMatches {
+            conditional: None,
+            phrase: None,
             keyword: Some(CategoryMatch {
                 matched: "alpha".to_owned(),
                 category: "alpha_policy".to_owned(),
                 severity: "high".to_owned(),
                 action: ContentFilterAction::Mask,
             }),
-            ..CarriedMatches::default()
         },
-    };
+    }
+}
+
+#[test]
+fn choice_state_keeps_the_fields_it_was_built_with() {
+    let state = populated_state();
     assert_eq!(state.buffered_text, "hello secret");
     assert_eq!(state.yielded_masked_text_len, 4);
     assert_eq!(state.committed_detections.len(), 1);

@@ -47,13 +47,13 @@ fn drive_chunks(case: &StreamCase) -> DrivenStream {
     let mut max_buffered_len = 0;
     let mut max_carried_len = 0;
     for item in &case.items {
-        let mut item = item.clone();
-        process_chunk(&mut item, &mut scan).expect("the stream does not block");
+        let mut outgoing = item.clone();
+        process_chunk(&mut outgoing, &mut scan).expect("the stream does not block");
         for state in scan.states.values() {
             max_buffered_len = max_buffered_len.max(state.buffered_text.chars().count());
             max_carried_len = max_carried_len.max(state.open_sentence.chars().count());
         }
-        chunks.push(item);
+        chunks.push(outgoing);
     }
     DrivenStream {
         chunks,
@@ -72,10 +72,10 @@ fn untrimmed(case: &StreamCase) -> (Vec<String>, Vec<ContentFilterDetection>) {
     let mut latest = Vec::new();
     let mut contents = Vec::with_capacity(case.items.len());
     for item in &case.items {
-        let choice = choice_of(item, 0);
+        let payload = choice_of(item, 0);
         let is_final =
-            text_field(choice, &["finish_reason"]).is_some_and(|reason| !reason.is_empty());
-        let content = text_field(choice, &["delta", "content"]).unwrap_or_default();
+            text_field(payload, &["finish_reason"]).is_some_and(|reason| !reason.is_empty());
+        let content = text_field(payload, &["delta", "content"]).unwrap_or_default();
         buffer.push_str(content);
         if buffer.is_empty() {
             contents.push(String::new());
@@ -133,8 +133,21 @@ fn conditional_categories() -> CategoryLoadResult {
     categories
 }
 
-#[test]
-fn hook_keeps_the_buffer_bounded_while_an_exception_phrase_stays_behind_the_tail() {
+fn child_categories(action: ContentFilterAction, severity: &str) -> CategoryLoadResult {
+    let mut categories = CategoryLoadResult::default();
+    categories.conditional_categories.insert(
+        "stream_policy".to_owned(),
+        ConditionalCategoryConfig {
+            identifier_words: vec!["child".to_owned()],
+            block_words: vec!["harm".to_owned()],
+            action,
+            severity: severity.to_owned(),
+        },
+    );
+    categories
+}
+
+fn exception_category() -> CategoryLoadResult {
     let mut categories = CategoryLoadResult::default();
     categories.loaded_categories.insert(
         "stream_policy".to_owned(),
@@ -151,127 +164,11 @@ fn hook_keeps_the_buffer_bounded_while_an_exception_phrase_stays_behind_the_tail
             phrase_patterns: Vec::new(),
         },
     );
-    categories.category_keywords.insert(
-        "target".to_owned(),
-        (
-            "stream_policy".to_owned(),
-            "high".to_owned(),
-            ContentFilterAction::Mask,
-        ),
-    );
-    let mut items = Vec::new();
-    let opening = format!("allowed phrase {}", "a".repeat(85));
-    items.push(chunk(vec![choice(Some(0), Some(opening.as_str()), None)]));
-    for index in 0..40 {
-        let content = if index == 2 {
-            format!("secret{}", "x".repeat(94))
-        } else {
-            "x".repeat(100)
-        };
-        items.push(chunk(vec![choice(Some(0), Some(content.as_str()), None)]));
-    }
-    items.push(chunk(vec![choice(
-        Some(0),
-        Some(" target the end"),
-        Some("stop"),
-    )]));
-    let mut case = stream_case(items);
-    case.categories = categories;
-    case.blocked_words = vec![masked_word("secret")];
-    let driven = drive_chunks(&case);
-    assert!(driven.max_buffered_len <= driven.context_chars * 2);
-    assert!(driven.max_carried_len <= driven.context_chars * 2);
-    let state = driven.states.get(&0).expect("choice 0 has a state");
-    assert_eq!(
-        state.seen_exception_phrases,
-        vec!["allowed phrase".to_owned()]
-    );
-    let ours = merge_detections(&ordered_detections(state));
-    let (expected_contents, expected_detections) = untrimmed(&case);
-    assert_eq!(chunk_contents(&driven.chunks), expected_contents);
-    assert_eq!(
-        serde_json::to_value(&ours).unwrap(),
-        serde_json::to_value(&expected_detections).unwrap()
-    );
-    // the phrase left the buffer long ago, so the keyword after it stays unmasked as before
-    assert!(
-        expected_contents
-            .iter()
-            .any(|content| content.contains("target"))
-    );
+    categories
 }
 
-#[test]
-fn hook_keeps_the_buffer_bounded_while_an_open_conditional_sentence_has_no_end() {
-    let mut items = Vec::new();
-    let opening = format!("attack {}", "a".repeat(93));
-    items.push(chunk(vec![choice(Some(0), Some(opening.as_str()), None)]));
-    for index in 0..40 {
-        let content = if index == 2 {
-            format!("secret{}", "x".repeat(94))
-        } else {
-            "x".repeat(100)
-        };
-        items.push(chunk(vec![choice(Some(0), Some(content.as_str()), None)]));
-    }
-    items.push(chunk(vec![choice(Some(0), Some(" the end"), Some("stop"))]));
-    let mut case = stream_case(items);
-    case.categories = conditional_categories();
-    case.blocked_words = vec![masked_word("secret")];
-    let driven = drive_chunks(&case);
-    assert!(driven.max_buffered_len <= driven.context_chars * 2);
-    assert!(driven.max_carried_len <= driven.context_chars * 2);
-    let state = driven.states.get(&0).expect("choice 0 has a state");
-    assert!(!state.open_sentence.is_empty());
-    let ours = merge_detections(&ordered_detections(state));
-    let (expected_contents, expected_detections) = untrimmed(&case);
-    assert_eq!(chunk_contents(&driven.chunks), expected_contents);
-    assert_eq!(
-        serde_json::to_value(&ours).unwrap(),
-        serde_json::to_value(&expected_detections).unwrap()
-    );
-}
-
-#[test]
-fn hook_keeps_a_block_word_inside_a_longer_word_of_the_carried_sentence() {
-    let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "stream_policy".to_owned(),
-        ConditionalCategoryConfig {
-            identifier_words: vec!["child".to_owned()],
-            block_words: vec!["harm".to_owned()],
-            action: ContentFilterAction::Block,
-            severity: "high".to_owned(),
-        },
-    );
-    let opening = format!("child harmless {}", "a".repeat(900));
-    let mut items = vec![chunk(vec![choice(Some(0), Some(opening.as_str()), None)])];
-    for _ in 0..2 {
-        let padding = "x".repeat(100);
-        items.push(chunk(vec![choice(Some(0), Some(padding.as_str()), None)]));
-    }
-    items.push(chunk(vec![choice(
-        Some(0),
-        Some(" more text"),
-        Some("stop"),
-    )]));
-    let mut case = stream_case(items);
-    case.categories = categories;
-    let driven = drive_chunks(&case);
-    assert!(driven.max_buffered_len <= driven.context_chars * 2);
-    let state = driven.states.get(&0).expect("choice 0 has a state");
-    assert!(state.open_sentence.contains("harmless"));
-    let (expected_contents, expected_detections) = untrimmed(&case);
-    assert_eq!(chunk_contents(&driven.chunks), expected_contents);
-    assert_eq!(
-        serde_json::to_value(merge_detections(&ordered_detections(state))).unwrap(),
-        serde_json::to_value(&expected_detections).unwrap()
-    );
-}
-
-#[test]
-fn hook_keeps_the_dropped_prefixs_first_keyword_ahead_of_a_later_block() {
-    let mut categories = CategoryLoadResult::default();
+fn keyword_order_categories() -> CategoryLoadResult {
+    let mut categories = child_categories(ContentFilterAction::Mask, "medium");
     categories.category_keywords.insert(
         "alpha".to_owned(),
         (
@@ -288,28 +185,111 @@ fn hook_keeps_the_dropped_prefixs_first_keyword_ahead_of_a_later_block() {
             ContentFilterAction::Block,
         ),
     );
-    categories.conditional_categories.insert(
-        "stream_policy".to_owned(),
-        ConditionalCategoryConfig {
-            identifier_words: vec!["child".to_owned()],
-            block_words: vec!["harm".to_owned()],
-            action: ContentFilterAction::Mask,
-            severity: "medium".to_owned(),
-        },
-    );
-    let opening = format!("alpha child {}", "x".repeat(955));
-    let mut items = vec![chunk(vec![choice(Some(0), Some(opening.as_str()), None)])];
-    for _ in 0..2 {
+    categories
+}
+
+// Forty non-final chunks put a phrase or identifier in the opening more than two contexts behind
+fn padded_items(opening: &str, final_text: &str) -> Vec<GuardrailValue> {
+    let mut items = vec![chunk(vec![choice(Some(0), Some(opening), None)])];
+    for index in 0..40_usize {
+        let content = if index == 2 {
+            format!("secret{}", "x".repeat(94))
+        } else {
+            "x".repeat(100)
+        };
+        items.push(chunk(vec![choice(Some(0), Some(content.as_str()), None)]));
+    }
+    items.push(chunk(vec![choice(Some(0), Some(final_text), Some("stop"))]));
+    items
+}
+
+fn short_items(opening: &str, final_text: &str) -> Vec<GuardrailValue> {
+    let mut items = vec![chunk(vec![choice(Some(0), Some(opening), None)])];
+    for _ in 0..2_usize {
         let padding = "x".repeat(100);
         items.push(chunk(vec![choice(Some(0), Some(padding.as_str()), None)]));
     }
-    items.push(chunk(vec![choice(
-        Some(0),
-        Some("beta done"),
-        Some("stop"),
-    )]));
-    let mut case = stream_case(items);
+    items.push(chunk(vec![choice(Some(0), Some(final_text), Some("stop"))]));
+    items
+}
+
+fn assert_buffer_bounded(driven: &DrivenStream) {
+    assert!(driven.max_buffered_len <= driven.context_chars * 2);
+    assert!(driven.max_carried_len <= driven.context_chars * 2);
+}
+
+fn assert_stream_matches_untrimmed(case: &StreamCase, driven: &DrivenStream) {
+    let state = driven.states.get(&0).expect("choice 0 has a state");
+    let ours = merge_detections(&ordered_detections(state));
+    let (expected_contents, expected_detections) = untrimmed(case);
+    assert_eq!(chunk_contents(&driven.chunks), expected_contents);
+    assert_eq!(
+        serde_json::to_value(&ours).expect("the detections serialize"),
+        serde_json::to_value(&expected_detections).expect("the detections serialize")
+    );
+}
+
+#[test]
+fn hook_keeps_the_buffer_bounded_while_an_exception_phrase_stays_behind_the_tail() {
+    let mut categories = exception_category();
+    categories.category_keywords.insert(
+        "target".to_owned(),
+        (
+            "stream_policy".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    let opening = format!("allowed phrase {}", "a".repeat(85));
+    let mut case = stream_case(padded_items(&opening, " target the end"));
     case.categories = categories;
+    case.blocked_words = vec![masked_word("secret")];
+    let driven = drive_chunks(&case);
+    assert_buffer_bounded(&driven);
+    let state = driven.states.get(&0).expect("choice 0 has a state");
+    assert_eq!(
+        state.seen_exception_phrases,
+        vec!["allowed phrase".to_owned()]
+    );
+    assert_stream_matches_untrimmed(&case, &driven);
+    // the phrase left the buffer long ago, so the keyword after it stays unmasked as before
+    assert!(
+        chunk_contents(&driven.chunks)
+            .iter()
+            .any(|content| content.contains("target"))
+    );
+}
+
+#[test]
+fn hook_keeps_the_buffer_bounded_while_an_open_conditional_sentence_has_no_end() {
+    let opening = format!("attack {}", "a".repeat(93));
+    let mut case = stream_case(padded_items(&opening, " the end"));
+    case.categories = conditional_categories();
+    case.blocked_words = vec![masked_word("secret")];
+    let driven = drive_chunks(&case);
+    assert_buffer_bounded(&driven);
+    let state = driven.states.get(&0).expect("choice 0 has a state");
+    assert!(!state.open_sentence.is_empty());
+    assert_stream_matches_untrimmed(&case, &driven);
+}
+
+#[test]
+fn hook_keeps_a_block_word_inside_a_longer_word_of_the_carried_sentence() {
+    let opening = format!("child harmless {}", "a".repeat(900));
+    let mut case = stream_case(short_items(&opening, " more text"));
+    case.categories = child_categories(ContentFilterAction::Block, "high");
+    let driven = drive_chunks(&case);
+    assert_buffer_bounded(&driven);
+    let state = driven.states.get(&0).expect("choice 0 has a state");
+    assert!(state.open_sentence.contains("harmless"));
+    assert_stream_matches_untrimmed(&case, &driven);
+}
+
+#[test]
+fn hook_keeps_the_dropped_prefixs_first_keyword_ahead_of_a_later_block() {
+    let opening = format!("alpha child {}", "x".repeat(955));
+    let mut case = stream_case(short_items(&opening, "beta done"));
+    case.categories = keyword_order_categories();
     let driven = drive_chunks(&case);
     let state = driven.states.get(&0).expect("choice 0 has a state");
     let carried = state
@@ -318,32 +298,12 @@ fn hook_keeps_the_dropped_prefixs_first_keyword_ahead_of_a_later_block() {
         .as_ref()
         .expect("the dropped keyword is carried");
     assert_eq!(carried.matched, "alpha");
-    let (expected_contents, expected_detections) = untrimmed(&case);
-    assert_eq!(chunk_contents(&driven.chunks), expected_contents);
-    assert_eq!(
-        serde_json::to_value(merge_detections(&ordered_detections(state))).unwrap(),
-        serde_json::to_value(&expected_detections).unwrap()
-    );
+    assert_stream_matches_untrimmed(&case, &driven);
 }
 
 #[tokio::test]
 async fn hook_stops_masking_a_carried_keyword_once_the_phrase_is_dropped() {
-    let mut categories = CategoryLoadResult::default();
-    categories.loaded_categories.insert(
-        "stream_policy".to_owned(),
-        CategoryConfig {
-            category_name: "stream_policy".to_owned(),
-            description: String::new(),
-            default_action: ContentFilterAction::Mask,
-            keywords: Vec::new(),
-            exceptions: vec!["allowed phrase".to_owned()],
-            identifier_words: Vec::new(),
-            always_block_keywords: Vec::new(),
-            inherit_from: None,
-            additional_block_words: Vec::new(),
-            phrase_patterns: Vec::new(),
-        },
-    );
+    let mut categories = exception_category();
     categories.category_keywords.insert(
         "alpha".to_owned(),
         (

@@ -78,31 +78,38 @@ fn stream_source(case: &StreamCase) -> ContentFilterSource<'_> {
     }
 }
 
+// the sender moves into the feeder, so the input channel closes when the last item is sent
+async fn feed_items(items: &[GuardrailValue], input: mpsc::Sender<GuardrailValue>) {
+    for item in items {
+        if input.send(item.clone()).await.is_err() {
+            break;
+        }
+    }
+}
+
+// the receiver is owned and dropped here, so a stopped consumer really disconnects the hook
+async fn collect_chunks(
+    mut relayed: mpsc::Receiver<GuardrailValue>,
+    close_after: Option<usize>,
+) -> Vec<GuardrailValue> {
+    let limit = close_after.unwrap_or(usize::MAX);
+    let mut chunks = Vec::new();
+    while let Some(item) = relayed.recv().await {
+        chunks.push(item);
+        if chunks.len() >= limit {
+            break;
+        }
+    }
+    chunks
+}
+
 async fn run_stream(case: &StreamCase) -> StreamRun {
     let source = stream_source(case);
     let (input, response) = mpsc::channel(case.items.len().max(1));
-    let (output, mut relayed) = mpsc::channel(1);
+    let (output, relayed) = mpsc::channel(1);
     let user_api_key_dict = case.user_api_key_dict.as_ref();
-    // the sender moves into the feeder, so the input channel closes when the last item is sent
-    let feed = async move {
-        for item in &case.items {
-            if input.send(item.clone()).await.is_err() {
-                break;
-            }
-        }
-    };
-    // the receiver is owned and dropped here, so a stopped consumer really disconnects the hook
-    let consume = async move {
-        let close_after = case.close_after.unwrap_or(usize::MAX);
-        let mut chunks = Vec::new();
-        while let Some(item) = relayed.recv().await {
-            chunks.push(item);
-            if chunks.len() >= close_after {
-                break;
-            }
-        }
-        chunks
-    };
+    let feed = feed_items(&case.items, input);
+    let consume = collect_chunks(relayed, case.close_after);
     let mut request_data = BTreeMap::new();
     let (outcome, (), chunks) = {
         let mut call = StreamFilterCall {
@@ -382,14 +389,19 @@ async fn hook_keys_a_missing_or_non_integer_index_as_choice_zero() {
     assert_eq!(content_at(&run.chunks[2], 0), "b".repeat(50));
 }
 
-#[tokio::test]
-async fn hook_masks_a_blocked_word_in_the_chunk_it_arrives() {
+fn blocked_word_case() -> StreamCase {
     let mut case = stream_case(vec![chunk(vec![choice(
         Some(0),
         Some("hello secret world"),
         Some("stop"),
     )])]);
     case.blocked_words = vec![masked_word("secret")];
+    case
+}
+
+#[tokio::test]
+async fn hook_masks_a_blocked_word_in_the_chunk_it_arrives() {
+    let case = blocked_word_case();
     let run = run_stream(&case).await;
     assert_eq!(
         content_at(&run.chunks[0], 0),
@@ -423,6 +435,13 @@ async fn hook_masks_a_blocked_word_in_the_chunk_it_arrives() {
     assert_eq!(text_field(&detections[0], &["type"]), Some("blocked_word"));
     assert_eq!(text_field(&detections[0], &["keyword"]), Some("secret"));
     assert_eq!(text_field(&detections[0], &["action"]), Some("MASK"));
+}
+
+#[tokio::test]
+async fn hook_times_a_masked_blocked_word_after_the_epoch() {
+    let case = blocked_word_case();
+    let run = run_stream(&case).await;
+    let record = record(&run);
     let start_time = float_field(record, &["start_time"]).expect("the record has a start time");
     let end_time = float_field(record, &["end_time"]).expect("the record has an end time");
     assert!(start_time > 1_700_000_000.0);
@@ -556,14 +575,19 @@ fn store_choice_trims_only_non_final_chunks() {
     assert_eq!(scan.states[&1].yielded_masked_text_len, 512);
 }
 
-#[tokio::test]
-async fn hook_raises_a_blocked_error_and_logs_the_intervention() {
+fn blocking_case() -> StreamCase {
     let mut case = stream_case(vec![chunk(vec![choice(
         Some(0),
         Some("hello blockedword"),
         Some("stop"),
     )])]);
     case.blocked_words = vec![word("blockedword", ContentFilterAction::Block)];
+    case
+}
+
+#[tokio::test]
+async fn hook_raises_a_blocked_error_and_logs_the_intervention() {
+    let case = blocking_case();
     let run = run_stream(&case).await;
     assert!(run.chunks.is_empty());
     let Err(StreamFilterError::Blocked { detail }) = &run.outcome else {
@@ -582,6 +606,12 @@ async fn hook_raises_a_blocked_error_and_logs_the_intervention() {
         .as_ref()
         .expect_err("the hook reports the block");
     assert_eq!(error.status_code(), Some(400));
+}
+
+#[tokio::test]
+async fn hook_logs_the_intervention_when_a_blocked_word_stops_the_stream() {
+    let case = blocking_case();
+    let run = run_stream(&case).await;
     let record = record(&run);
     assert_eq!(
         text_field(record, &["guardrail_status"]),
