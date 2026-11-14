@@ -1,8 +1,7 @@
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::LiteLLMSendMessageResponse;
-use futures_core::Stream;
 use futures_util::StreamExt as _;
-use futures_util::stream::{BoxStream, once};
+use futures_util::stream::BoxStream;
 
 use crate::completion_bridge::EventSource;
 use crate::completion_bridge::completion::CompletionPort;
@@ -74,39 +73,21 @@ where
             api_base: call.api_base.as_deref(),
             agent_extra_headers: call.agent_extra_headers.as_ref(),
         };
-        let mut events = bridge_events(&bridge_call, completion, providers, &mut source);
-        while let Some(event) = events.next().await {
-            yield event;
-        }
-    }
-    .boxed()
-}
-
-// dispatch's Mode-generic future is not provably Send inside the stream (rust-lang/rust#100013)
-fn bridge_events<'call, C, P, S>(
-    call: &'call BridgeCall<'_>,
-    completion: &'call C,
-    providers: &'call P,
-    source: &'call mut S,
-) -> impl Stream<Item = Result<AgentJson, SendEntryError<C::Error, P::Error>>> + Send + 'call
-where
-    C: CompletionPort,
-    P: A2AProviderDispatch,
-    S: EventSource + Send + 'call,
-{
-    once(async move {
-        match select_config(call) {
+        // dispatch's Mode-generic future is not provably Send inside the stream (rust-lang/rust#100013)
+        let mut events = match select_config(&bridge_call) {
             Ok(Some(config)) => {
-                <Streamed as Mode<'call, C, P>>::provider(providers, config, call).await
+                <Streamed as Mode<'_, C, P>>::provider(providers, config, &bridge_call).await
             }
             // direct's prefixed_model reads the same fields and reports the same ParamsError
             Ok(None) | Err(_) => {
-                <Streamed as Mode<'call, C, P>>::direct(call, completion, source).await
+                <Streamed as Mode<'_, C, P>>::direct(&bridge_call, completion, &mut source).await
             }
+        };
+        while let Some(event) = events.next().await {
+            yield event.map_err(SendEntryError::<C::Error, P::Error>::Bridge);
         }
-    })
-    .flatten()
-    .map(|event| event.map_err(SendEntryError::<C::Error, P::Error>::Bridge))
+    }
+    .boxed()
 }
 
 fn select_config(call: &BridgeCall<'_>) -> Result<Option<A2AProviderConfig>, ParamsError> {
