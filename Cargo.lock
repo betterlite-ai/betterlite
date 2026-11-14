@@ -1463,7 +1463,14 @@ name = "betterlite-compression"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-anthropic",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-prompts",
  "betterlite-semantic",
+ "betterlite-tokenizer",
+ "indexmap 2.14.2",
  "regex",
  "rstest",
  "serde_json",
