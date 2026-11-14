@@ -30,7 +30,13 @@ impl Run<'_> {
                 self.sessions.insert(step.stream.clone(), session);
                 Ok(StepOutcome::default())
             }
-            _ => {
+            RelayOp::Release
+            | RelayOp::Read
+            | RelayOp::Detach
+            | RelayOp::Finish
+            | RelayOp::Fail
+            | RelayOp::Arm
+            | RelayOp::Wait => {
                 let session = self.sessions.get_mut(&step.stream).ok_or_else(|| {
                     SdkHttpError::Invalid("the step names an unknown stream".to_owned())
                 })?;
