@@ -141,12 +141,12 @@ fn insert_key_limits(headers: &mut HeaderSet, key: &KeyHeaderView, spend: Decima
 fn insert_timings(headers: &mut HeaderSet, input: &CustomHeadersInput) {
     let (response_ms, overhead_ms) = timing_values(input);
     let callback_ms = input.hidden_params.get("callback_duration_ms");
-    for (header, value) in [
+    for (header, raw) in [
         ("x-litellm-response-duration-ms", response_ms),
         ("x-litellm-overhead-duration-ms", overhead_ms),
         ("x-litellm-callback-duration-ms", callback_ms),
     ] {
-        headers.set(header, value.and_then(|value| header_text(header, value)));
+        headers.set(header, raw.and_then(|value| header_text(header, value)));
     }
 }
 
