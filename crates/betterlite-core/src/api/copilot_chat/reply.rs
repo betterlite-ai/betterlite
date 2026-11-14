@@ -13,8 +13,7 @@ pub struct ChatReply {
     pub choices: Vec<TransformedChoice>,
 }
 
-// A reply that is not JSON, or whose choices are filled, goes to the parent decoder as it came, so a
-// failure there carries the original response. A repaired reply keeps its status and headers.
+// only a repaired reply is re-encoded; every other body reaches the parent decoder as it came
 pub fn transform_response(
     mut response: UpstreamResponse,
     optional_params: Option<&Object>,
