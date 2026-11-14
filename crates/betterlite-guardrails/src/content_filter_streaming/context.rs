@@ -1,4 +1,5 @@
 use crate::content_filter_streaming::plan::StreamedScanPlan;
+use crate::content_filter_streaming::text::char_slice;
 
 mod tests;
 
@@ -43,4 +44,22 @@ pub fn conditional_words_at_cut(head: &str, tail: &str, plan: &StreamedScanPlan)
         .filter(|word| cut_sentence.contains(word.as_str()))
         .cloned()
         .collect()
+}
+
+// The dropped part of the sentence the cut splits, as text so the next scan keeps its spacing
+#[must_use]
+pub fn open_sentence_prefix(previous: &str, head: &str, context_chars: usize) -> String {
+    let open = if head.contains(['.', '!', '?']) {
+        head.split(['.', '!', '?'])
+            .next_back()
+            .unwrap_or_default()
+            .to_owned()
+    } else {
+        format!("{previous}{head}")
+    };
+    // a sentence longer than two contexts keeps its end, the part nearest the buffer
+    let limit = context_chars.saturating_mul(2);
+    let length = open.chars().count();
+    let start = length.saturating_sub(limit);
+    char_slice(&open, start, length).to_owned()
 }

@@ -10,8 +10,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use indexmap::IndexMap;
 
 use super::{
-    StreamCase, choice, choice_of, chunk, content_at, masked_word, record, run_stream, stream_case,
-    stream_source, text_field,
+    StreamCase, choice, choice_of, chunk, compiled_pattern, content_at, masked_word, record,
+    response_detections, run_stream, stream_case, stream_source, text_field,
 };
 use crate::content_filter_actions::error::ContentFilterActionError;
 use crate::content_filter_actions::filter_single_text;
@@ -28,6 +28,7 @@ struct DrivenStream {
     chunks: Vec<GuardrailValue>,
     states: IndexMap<i64, StreamedChoiceState>,
     max_buffered_len: usize,
+    max_carried_len: usize,
     context_chars: usize,
 }
 
@@ -44,11 +45,13 @@ fn drive_chunks(case: &StreamCase) -> DrivenStream {
     };
     let mut chunks = Vec::with_capacity(case.items.len());
     let mut max_buffered_len = 0;
+    let mut max_carried_len = 0;
     for item in &case.items {
         let mut item = item.clone();
         process_chunk(&mut item, &mut scan).expect("the stream does not block");
         for state in scan.states.values() {
             max_buffered_len = max_buffered_len.max(state.buffered_text.chars().count());
+            max_carried_len = max_carried_len.max(state.open_sentence.chars().count());
         }
         chunks.push(item);
     }
@@ -56,6 +59,7 @@ fn drive_chunks(case: &StreamCase) -> DrivenStream {
         chunks,
         states: scan.states,
         max_buffered_len,
+        max_carried_len,
         context_chars,
     }
 }
@@ -101,6 +105,18 @@ fn chunk_contents(chunks: &[GuardrailValue]) -> Vec<String> {
     (0..chunks.len())
         .map(|position| content_at(&chunks[position], 0))
         .collect()
+}
+
+// The record's order: category checks first, then patterns and blocked words in config order
+fn ordered_detections(state: &StreamedChoiceState) -> Vec<ContentFilterDetection> {
+    let mut ordered: Vec<_> = state
+        .committed_detections
+        .iter()
+        .chain(&state.latest_detections)
+        .cloned()
+        .collect();
+    ordered.sort_by_key(|entry| (entry.check, entry.position));
+    ordered.into_iter().map(|entry| entry.detection).collect()
 }
 
 fn conditional_categories() -> CategoryLoadResult {
@@ -164,18 +180,13 @@ fn hook_keeps_the_buffer_bounded_while_an_exception_phrase_stays_behind_the_tail
     case.blocked_words = vec![masked_word("secret")];
     let driven = drive_chunks(&case);
     assert!(driven.max_buffered_len <= driven.context_chars * 2);
+    assert!(driven.max_carried_len <= driven.context_chars * 2);
     let state = driven.states.get(&0).expect("choice 0 has a state");
     assert_eq!(
         state.seen_exception_phrases,
         vec!["allowed phrase".to_owned()]
     );
-    let detections: Vec<_> = state
-        .committed_detections
-        .iter()
-        .chain(&state.latest_detections)
-        .cloned()
-        .collect();
-    let ours = merge_detections(&detections);
+    let ours = merge_detections(&ordered_detections(state));
     let (expected_contents, expected_detections) = untrimmed(&case);
     assert_eq!(chunk_contents(&driven.chunks), expected_contents);
     assert_eq!(
@@ -209,21 +220,225 @@ fn hook_keeps_the_buffer_bounded_while_an_open_conditional_sentence_has_no_end()
     case.blocked_words = vec![masked_word("secret")];
     let driven = drive_chunks(&case);
     assert!(driven.max_buffered_len <= driven.context_chars * 2);
+    assert!(driven.max_carried_len <= driven.context_chars * 2);
     let state = driven.states.get(&0).expect("choice 0 has a state");
-    assert_eq!(state.open_sentence_words, vec!["attack".to_owned()]);
-    let detections: Vec<_> = state
-        .committed_detections
-        .iter()
-        .chain(&state.latest_detections)
-        .cloned()
-        .collect();
-    let ours = merge_detections(&detections);
+    assert!(!state.open_sentence.is_empty());
+    let ours = merge_detections(&ordered_detections(state));
     let (expected_contents, expected_detections) = untrimmed(&case);
     assert_eq!(chunk_contents(&driven.chunks), expected_contents);
     assert_eq!(
         serde_json::to_value(&ours).unwrap(),
         serde_json::to_value(&expected_detections).unwrap()
     );
+}
+
+#[test]
+fn hook_keeps_a_block_word_inside_a_longer_word_of_the_carried_sentence() {
+    let mut categories = CategoryLoadResult::default();
+    categories.conditional_categories.insert(
+        "stream_policy".to_owned(),
+        ConditionalCategoryConfig {
+            identifier_words: vec!["child".to_owned()],
+            block_words: vec!["harm".to_owned()],
+            action: ContentFilterAction::Block,
+            severity: "high".to_owned(),
+        },
+    );
+    let opening = format!("child harmless {}", "a".repeat(900));
+    let mut items = vec![chunk(vec![choice(Some(0), Some(opening.as_str()), None)])];
+    for _ in 0..2 {
+        let padding = "x".repeat(100);
+        items.push(chunk(vec![choice(Some(0), Some(padding.as_str()), None)]));
+    }
+    items.push(chunk(vec![choice(
+        Some(0),
+        Some(" more text"),
+        Some("stop"),
+    )]));
+    let mut case = stream_case(items);
+    case.categories = categories;
+    let driven = drive_chunks(&case);
+    assert!(driven.max_buffered_len <= driven.context_chars * 2);
+    let state = driven.states.get(&0).expect("choice 0 has a state");
+    assert!(state.open_sentence.contains("harmless"));
+    let (expected_contents, expected_detections) = untrimmed(&case);
+    assert_eq!(chunk_contents(&driven.chunks), expected_contents);
+    assert_eq!(
+        serde_json::to_value(merge_detections(&ordered_detections(state))).unwrap(),
+        serde_json::to_value(&expected_detections).unwrap()
+    );
+}
+
+#[test]
+fn hook_keeps_the_dropped_prefixs_first_keyword_ahead_of_a_later_block() {
+    let mut categories = CategoryLoadResult::default();
+    categories.category_keywords.insert(
+        "alpha".to_owned(),
+        (
+            "alpha_policy".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    categories.category_keywords.insert(
+        "beta".to_owned(),
+        (
+            "beta_policy".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Block,
+        ),
+    );
+    categories.conditional_categories.insert(
+        "stream_policy".to_owned(),
+        ConditionalCategoryConfig {
+            identifier_words: vec!["child".to_owned()],
+            block_words: vec!["harm".to_owned()],
+            action: ContentFilterAction::Mask,
+            severity: "medium".to_owned(),
+        },
+    );
+    let opening = format!("alpha child {}", "x".repeat(955));
+    let mut items = vec![chunk(vec![choice(Some(0), Some(opening.as_str()), None)])];
+    for _ in 0..2 {
+        let padding = "x".repeat(100);
+        items.push(chunk(vec![choice(Some(0), Some(padding.as_str()), None)]));
+    }
+    items.push(chunk(vec![choice(
+        Some(0),
+        Some("beta done"),
+        Some("stop"),
+    )]));
+    let mut case = stream_case(items);
+    case.categories = categories;
+    let driven = drive_chunks(&case);
+    let state = driven.states.get(&0).expect("choice 0 has a state");
+    let carried = state
+        .carried_matches
+        .keyword
+        .as_ref()
+        .expect("the dropped keyword is carried");
+    assert_eq!(carried.matched, "alpha");
+    let (expected_contents, expected_detections) = untrimmed(&case);
+    assert_eq!(chunk_contents(&driven.chunks), expected_contents);
+    assert_eq!(
+        serde_json::to_value(merge_detections(&ordered_detections(state))).unwrap(),
+        serde_json::to_value(&expected_detections).unwrap()
+    );
+}
+
+#[tokio::test]
+async fn hook_stops_masking_a_carried_keyword_once_the_phrase_is_dropped() {
+    let mut categories = CategoryLoadResult::default();
+    categories.loaded_categories.insert(
+        "stream_policy".to_owned(),
+        CategoryConfig {
+            category_name: "stream_policy".to_owned(),
+            description: String::new(),
+            default_action: ContentFilterAction::Mask,
+            keywords: Vec::new(),
+            exceptions: vec!["allowed phrase".to_owned()],
+            identifier_words: Vec::new(),
+            always_block_keywords: Vec::new(),
+            inherit_from: None,
+            additional_block_words: Vec::new(),
+            phrase_patterns: Vec::new(),
+        },
+    );
+    categories.category_keywords.insert(
+        "alpha".to_owned(),
+        (
+            "alpha_policy".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    let opening = format!("alpha {}", "a".repeat(900));
+    let padding = "b".repeat(200);
+    let phrase = format!(" allowed phrase {}", "c".repeat(700));
+    let mut case = stream_case(vec![
+        chunk(vec![choice(Some(0), Some(opening.as_str()), None)]),
+        chunk(vec![choice(Some(0), Some(padding.as_str()), None)]),
+        chunk(vec![choice(Some(0), Some(phrase.as_str()), None)]),
+        chunk(vec![choice(Some(0), Some(" alpha again "), Some("stop"))]),
+    ]);
+    case.categories = categories;
+    let run = run_stream(&case).await;
+    let (expected_contents, _) = untrimmed(&case);
+    assert_eq!(chunk_contents(&run.chunks), expected_contents);
+    // Python's buffer keeps the phrase, so its keyword check stays skipped and masks no later alpha
+    assert!(content_at(&run.chunks[3], 0).contains(" alpha again "));
+    let detections = response_detections(record(&run));
+    assert_eq!(detections.len(), 1);
+    assert_eq!(
+        text_field(&detections[0], &["type"]),
+        Some("category_keyword")
+    );
+    assert_eq!(text_field(&detections[0], &["keyword"]), Some("alpha"));
+}
+
+#[tokio::test]
+async fn hook_records_detections_in_whole_buffer_scan_order_after_a_trim() {
+    let opening = format!("earlypat earlyword {}", "a".repeat(1080));
+    let mut items = vec![chunk(vec![choice(Some(0), Some(opening.as_str()), None)])];
+    items.push(chunk(vec![choice(
+        Some(0),
+        Some(" latepat lateword"),
+        Some("stop"),
+    )]));
+    let mut case = stream_case(items);
+    case.patterns = vec![
+        compiled_pattern("latepat", "late"),
+        compiled_pattern("earlypat", "early"),
+    ];
+    case.blocked_words = vec![masked_word("lateword"), masked_word("earlyword")];
+    let run = run_stream(&case).await;
+    let (expected_contents, _) = untrimmed(&case);
+    assert_eq!(chunk_contents(&run.chunks), expected_contents);
+    // a whole-buffer scan finds the patterns and blocked words in config order, whichever half holds them
+    let detections = response_detections(record(&run));
+    assert_eq!(detections.len(), 4);
+    assert_eq!(text_field(&detections[0], &["type"]), Some("pattern"));
+    assert_eq!(text_field(&detections[0], &["pattern_name"]), Some("late"));
+    assert_eq!(text_field(&detections[1], &["pattern_name"]), Some("early"));
+    assert_eq!(text_field(&detections[2], &["type"]), Some("blocked_word"));
+    assert_eq!(text_field(&detections[2], &["keyword"]), Some("lateword"));
+    assert_eq!(text_field(&detections[3], &["keyword"]), Some("earlyword"));
+}
+
+#[tokio::test]
+async fn hook_records_a_later_category_keyword_before_a_committed_pattern() {
+    let opening = format!("earlypat {}", "a".repeat(1080));
+    let padding = "b".repeat(200);
+    let mut case = stream_case(vec![
+        chunk(vec![choice(Some(0), Some(opening.as_str()), None)]),
+        chunk(vec![choice(Some(0), Some(padding.as_str()), None)]),
+        chunk(vec![choice(Some(0), Some(" keywordword"), Some("stop"))]),
+    ]);
+    case.patterns = vec![compiled_pattern("earlypat", "early")];
+    case.categories.category_keywords.insert(
+        "keywordword".to_owned(),
+        (
+            "kw_policy".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    let run = run_stream(&case).await;
+    let (expected_contents, _) = untrimmed(&case);
+    assert_eq!(chunk_contents(&run.chunks), expected_contents);
+    // the category check runs before the patterns, though its detection came from the later chunk
+    let detections = response_detections(record(&run));
+    assert_eq!(detections.len(), 2);
+    assert_eq!(
+        text_field(&detections[0], &["type"]),
+        Some("category_keyword")
+    );
+    assert_eq!(
+        text_field(&detections[0], &["keyword"]),
+        Some("keywordword")
+    );
+    assert_eq!(text_field(&detections[1], &["type"]), Some("pattern"));
+    assert_eq!(text_field(&detections[1], &["pattern_name"]), Some("early"));
 }
 
 #[tokio::test]

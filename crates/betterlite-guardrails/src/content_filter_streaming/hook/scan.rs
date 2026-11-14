@@ -2,15 +2,17 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use betterlite_config::sections::content_category::loading::CategoryLoadResult;
-use betterlite_config::sections::content_filter_records::ContentFilterDetection;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::StreamScan;
 use crate::content_filter_actions::error::ContentFilterActionError;
-use crate::content_filter_actions::{ContentFilterSource, filter_single_text};
 use crate::content_filter_streaming::STREAM_HOLDBACK_CHARS;
+use crate::content_filter_streaming::context::exception_phrases_in;
 use crate::content_filter_streaming::error::StreamFilterError;
-use crate::content_filter_streaming::state::StreamedChoiceState;
+use crate::content_filter_streaming::filtering::{
+    ScanInput, filter_streamed_text, source_with_categories,
+};
+use crate::content_filter_streaming::state::{StreamedChoiceState, StreamedDetection};
 use crate::content_filter_streaming::text::char_slice;
 use crate::content_filter_streaming::trim::trim_streamed_choice_buffer;
 
@@ -103,12 +105,6 @@ fn scan_choice(
         is_final,
     )?;
     let yielded_len = write_yielded_content(delta, &masked_text, &buffer.previous, is_final);
-    // a sentence end inside the buffer closes the one the previous trim left open
-    let open_sentence_words = if buffer.buffered_text.contains(['.', '!', '?']) {
-        Vec::new()
-    } else {
-        buffer.previous.open_sentence_words
-    };
     Ok(Some(PendingChoice {
         masked_text,
         state: StreamedChoiceState {
@@ -118,7 +114,8 @@ fn scan_choice(
             latest_detections,
             next_trim_len: buffer.previous.next_trim_len,
             seen_exception_phrases: buffer.previous.seen_exception_phrases,
-            open_sentence_words,
+            open_sentence: buffer.previous.open_sentence,
+            carried_matches: buffer.previous.carried_matches,
         },
     }))
 }
@@ -154,51 +151,34 @@ fn scan_text(
     previous: &StreamedChoiceState,
     text_to_scan: &str,
     is_final: bool,
-) -> Result<(String, Vec<ContentFilterDetection>), StreamFilterError> {
-    let mut choice_detections = Vec::new();
-    let started = Instant::now();
+) -> Result<(String, Vec<StreamedDetection>), StreamFilterError> {
     // Python's buffer still holds the phrase a trim dropped, so its scan suppresses every category match
     let empty_categories = CategoryLoadResult::default();
-    let categories = if previous.seen_exception_phrases.is_empty() {
-        scan.source.categories
-    } else {
-        &empty_categories
+    let suppress = !previous.seen_exception_phrases.is_empty();
+    let filter_source = source_with_categories(scan.source, &empty_categories, suppress);
+    // Python's global exception check reads the whole buffer, and the flags hold the dropped phrases
+    let checks = !suppress && exception_phrases_in(text_to_scan, &scan.plan).is_empty();
+    let conditional_text = open_sentence_text(&previous.open_sentence, text_to_scan);
+    let input = ScanInput {
+        checks,
+        conditional_text: &conditional_text,
+        text: text_to_scan,
+        carried: &previous.carried_matches,
     };
-    let filter_source = ContentFilterSource {
-        categories,
-        patterns: scan.source.patterns,
-        blocked_words: scan.source.blocked_words,
-        pattern_redaction_format: scan.source.pattern_redaction_format,
-        keyword_redaction_tag: scan.source.keyword_redaction_tag,
-    };
-    let open_sentence = previous.open_sentence_words.join(" ");
-    let outcome = scan_with_open_sentence(
-        &filter_source,
-        text_to_scan,
-        &open_sentence,
-        &mut choice_detections,
-    );
+    let mut choice_detections = Vec::new();
+    let started = Instant::now();
+    let outcome = filter_streamed_text(&filter_source, &input, &mut choice_detections);
     scan.scan_time = scan.scan_time.saturating_add(started.elapsed());
     match outcome {
-        Ok(mut masked) => {
+        Ok((mut masked, _)) => {
             if is_final && masked.ends_with(' ') {
                 masked.pop();
             }
             Ok((masked, choice_detections))
         }
         Err(ContentFilterActionError::Blocked { detail }) => {
-            scan.states.insert(
-                index,
-                StreamedChoiceState {
-                    buffered_text: previous.buffered_text.clone(),
-                    yielded_masked_text_len: previous.yielded_masked_text_len,
-                    committed_detections: previous.committed_detections.clone(),
-                    latest_detections: choice_detections,
-                    next_trim_len: previous.next_trim_len,
-                    seen_exception_phrases: previous.seen_exception_phrases.clone(),
-                    open_sentence_words: previous.open_sentence_words.clone(),
-                },
-            );
+            scan.states
+                .insert(index, blocked_state(previous, choice_detections));
             Err(StreamFilterError::Blocked { detail })
         }
         Err(error) => {
@@ -211,30 +191,28 @@ fn scan_text(
     }
 }
 
-// The open sentence a trim cut joins this text's first sentence, as Python's buffer still holds it
-fn scan_with_open_sentence(
-    source: &ContentFilterSource<'_>,
-    text: &str,
-    open_sentence: &str,
-    detections: &mut Vec<ContentFilterDetection>,
-) -> Result<String, ContentFilterActionError> {
-    if open_sentence.is_empty() {
-        return filter_single_text(source, text, Some(detections));
+// the sentence a trim split continues into this text, so the checks see it in its real spacing
+fn open_sentence_text(previous: &str, text: &str) -> String {
+    if previous.is_empty() {
+        return text.to_owned();
     }
-    // a newline ends no sentence and no keyword crosses it, so the first one separates the words again
-    let combined = format!("{open_sentence}\n{text}");
-    let mut combined_detections = Vec::new();
-    let masked = filter_single_text(source, &combined, Some(&mut combined_detections))?;
-    match masked.split_once('\n') {
-        Some((_, masked_text)) => {
-            detections.extend(combined_detections);
-            Ok(masked_text.to_owned())
-        }
-        None => {
-            // a phrase pattern matched across the join and its mask replaced the newline
-            detections.clear();
-            filter_single_text(source, text, Some(detections))
-        }
+    format!("{previous}{text}")
+}
+
+// A blocked chunk keeps the buffer and the scans before it, and carries the blocking detections
+fn blocked_state(
+    previous: &StreamedChoiceState,
+    latest_detections: Vec<StreamedDetection>,
+) -> StreamedChoiceState {
+    StreamedChoiceState {
+        buffered_text: previous.buffered_text.clone(),
+        yielded_masked_text_len: previous.yielded_masked_text_len,
+        committed_detections: previous.committed_detections.clone(),
+        latest_detections,
+        next_trim_len: previous.next_trim_len,
+        seen_exception_phrases: previous.seen_exception_phrases.clone(),
+        open_sentence: previous.open_sentence.clone(),
+        carried_matches: previous.carried_matches.clone(),
     }
 }
 

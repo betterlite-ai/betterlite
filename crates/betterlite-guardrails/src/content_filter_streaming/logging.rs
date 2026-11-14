@@ -16,6 +16,7 @@ use crate::content_filter_actions::ContentFilterSource;
 use crate::content_filter_streaming::error::StreamFilterError;
 use crate::content_filter_streaming::hook::{StreamFilterCall, StreamFilterSettings, StreamScan};
 use crate::content_filter_streaming::merge::merge_detections;
+use crate::content_filter_streaming::state::{StreamedChoiceState, StreamedDetection};
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::guardrail_records::error::{GuardrailRecordError, GuardrailSpanError};
@@ -67,13 +68,7 @@ fn record_parts(
 ) -> RecordParts {
     let mut detections = Vec::new();
     for state in scan.states.values() {
-        let pending = state
-            .committed_detections
-            .iter()
-            .chain(&state.latest_detections)
-            .cloned()
-            .collect::<Vec<_>>();
-        detections.extend(merge_detections(&pending));
+        detections.extend(merge_detections(&ordered_detections(state)));
     }
     let mut masked_entity_count = BTreeMap::new();
     count_masked_entities(&detections, &mut masked_entity_count);
@@ -98,6 +93,18 @@ fn record_parts(
         finished_seconds: epoch_seconds(finished),
         duration: scan.scan_time.as_secs_f64(),
     }
+}
+
+// a whole-buffer scan finds category checks first, then patterns and blocked words in config order
+fn ordered_detections(state: &StreamedChoiceState) -> Vec<ContentFilterDetection> {
+    let mut ordered = state
+        .committed_detections
+        .iter()
+        .chain(&state.latest_detections)
+        .cloned()
+        .collect::<Vec<StreamedDetection>>();
+    ordered.sort_by_key(|entry| (entry.check, entry.position));
+    ordered.into_iter().map(|entry| entry.detection).collect()
 }
 
 fn policy_template(

@@ -3,12 +3,34 @@ deviations:
   - what: >-
       A streamed choice's buffer is trimmed even when an exception phrase or an
       unfinished conditional sentence would leave it, so the buffer stays near two
-      context lengths. The dropped phrases and open-sentence words travel as per-choice
-      state, so every yielded chunk and every recorded detection stays what the
-      untrimmed buffer gives.
+      context lengths. The dropped phrases, the open sentence as its own text, and the
+      dropped prefix's first matching conditional, phrase pattern and category keyword
+      travel as per-choice state, so every yielded chunk and every recorded detection
+      stays what the untrimmed buffer gives.
     why: >-
       LiteLLM defers the trim while a phrase sits outside the tail or a conditional
       word sits in the sentence the cut splits. Once either is more than one context
       behind the end it never re-enters the tail, so the deferral lasts for the rest of
       the stream, the buffer holds the whole response and every chunk rescans it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1981-L1989
+  - what: >-
+      The open sentence carried past a trim keeps at most two context lengths of text.
+      A conditional identifier or block word further than that behind the cut no longer
+      pairs with text that arrives later in the same sentence, so its detection is
+      missing where LiteLLM's untrimmed buffer still holds it.
+    why: >-
+      Carrying the whole sentence would leave the per-choice state growing with the
+      response, which this trim exists to prevent. Two contexts keep the carried text
+      near the size of the buffer the next scans rescan.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1991-L2026
+  - what: >-
+      The guardrail record lists a choice's detections in whole-buffer scan order:
+      category checks, then patterns in config order, then blocked words in config
+      order. LiteLLM lists the detections its trim committed before the ones the latest
+      scan found, so its order follows the trim history.
+    why: >-
+      Betterlite trims in cases where LiteLLM defers, so a blocked word or pattern can
+      sit in committed detections while an earlier pattern is still in the latest scan.
+      Whole-buffer order is the order the untrimmed reference scan gives, and it is what
+      LiteLLM itself records whenever its trim deferred.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1414-L1427

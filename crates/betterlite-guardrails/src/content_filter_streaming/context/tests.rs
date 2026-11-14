@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::content_filter_streaming::context::{
-    conditional_words_at_cut, cut_breaks_wider_context, exception_phrases_in,
+    conditional_words_at_cut, cut_breaks_wider_context, exception_phrases_in, open_sentence_prefix,
 };
 use crate::content_filter_streaming::plan::StreamedScanPlan;
 
@@ -149,4 +149,38 @@ fn conditional_words_at_cut_skips_a_word_away_from_the_cut() {
     let head = format!("child. {}", "x".repeat(582));
     let tail = "y".repeat(516);
     assert!(conditional_words_at_cut(&head, &tail, &plan).is_empty());
+}
+
+#[test]
+fn open_sentence_prefix_joins_the_previous_sentence_to_the_head() {
+    assert_eq!(
+        open_sentence_prefix("child ", "harm rest", 512),
+        "child harm rest"
+    );
+}
+
+#[test]
+fn open_sentence_prefix_keeps_only_the_heads_last_sentence() {
+    assert_eq!(open_sentence_prefix("gone ", "aa. harm", 512), " harm");
+}
+
+#[test]
+fn open_sentence_prefix_starts_a_new_sentence_at_any_terminator() {
+    assert_eq!(open_sentence_prefix("gone ", "x! harm", 512), " harm");
+    assert_eq!(open_sentence_prefix("gone ", "x? harm", 512), " harm");
+}
+
+#[test]
+fn open_sentence_prefix_ends_the_sentence_at_a_trailing_terminator() {
+    assert!(open_sentence_prefix("child ", "xx harm.", 512).is_empty());
+}
+
+#[test]
+fn open_sentence_prefix_keeps_a_sentence_that_fits_two_contexts() {
+    assert_eq!(open_sentence_prefix("", "01234567", 4), "01234567");
+}
+
+#[test]
+fn open_sentence_prefix_keeps_the_end_of_a_sentence_over_two_contexts() {
+    assert_eq!(open_sentence_prefix("", "0123456789", 4), "23456789");
 }

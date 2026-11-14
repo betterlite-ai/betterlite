@@ -25,7 +25,7 @@ use crate::content_filter_actions::error::ContentFilterBlockDetail;
 use crate::content_filter_streaming::error::StreamFilterError;
 use crate::content_filter_streaming::logging::log_stream_record;
 use crate::content_filter_streaming::plan::streamed_scan_plan;
-use crate::content_filter_streaming::state::StreamedChoiceState;
+use crate::content_filter_streaming::state::{CarriedMatches, StreamedChoiceState};
 use crate::guardrail_records::error::GuardrailRecordError;
 use crate::pattern_matching::{CompiledPattern, compile};
 
@@ -206,7 +206,8 @@ fn pending(buffer: &str, yielded: usize) -> PendingChoice {
             latest_detections: Vec::new(),
             next_trim_len: 0,
             seen_exception_phrases: Vec::new(),
-            open_sentence_words: Vec::new(),
+            open_sentence: String::new(),
+            carried_matches: CarriedMatches::default(),
         },
     }
 }

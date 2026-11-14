@@ -1,5 +1,6 @@
 pub mod context;
 pub mod error;
+mod filtering;
 pub mod hook;
 mod logging;
 pub mod merge;
