@@ -1,0 +1,43 @@
+kind: helper
+name: vertex-fine-tuning-request-names
+call:
+  vertex_fine_tuning:
+    operation: request
+    calls:
+      - data:
+          model: gemini-1.5-flash-002
+          training_file: gs://bucket/train.jsonl
+          suffix: my-run
+          validation_file: gs://bucket/valid.jsonl
+          hyperparameters: {n_epochs: 3, learning_rate_multiplier: 0.1}
+        original_hyperparameters: {adapter_size: ADAPTER_SIZE_ONE}
+      - data:
+          model: gemini-1.5-flash-002
+          training_file: gs://bucket/train.jsonl
+          suffix: null
+          validation_file: null
+          hyperparameters: null
+        original_hyperparameters: {}
+      - data:
+          model: gemini-1.5-flash-002
+          training_file: gs://bucket/train.jsonl
+          suffix: ""
+          validation_file: ""
+        original_hyperparameters: {}
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {learning_rate_multiplier: "2e-5"}
+        original_hyperparameters: {}
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {n_epochs: "3", learning_rate_multiplier: "1.5E-3"}
+        original_hyperparameters: {}
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {learning_rate_multiplier: 0.00002}
+        original_hyperparameters: {}
+env: {}
+compare: {ignore: []}

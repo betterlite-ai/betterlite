@@ -1,0 +1,5 @@
+kind: helper
+name: configured-models-default
+call: {"b3154": {"operation": "configured_models", "settings": {"estimator_model": "gpt-5.2", "estimator_prompt": "Estimate this."}, "models": null}}
+env: {}
+compare: {ignore: []}
