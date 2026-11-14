@@ -86,8 +86,8 @@ impl Helper for Op {
 
 fn resolve(call: &Call) -> HelperResult {
     match call.function {
-        Function::Capabilities => capabilities_view(),
-        Function::Environment => environment_view(call),
+        Function::Capabilities => Ok(capabilities_view()),
+        Function::Environment => Ok(environment_view(call)),
         Function::Url => {
             let settings = settings(&call.environment);
             let base = call.api_base.as_deref().unwrap_or(&settings.api_base);
@@ -101,7 +101,7 @@ fn resolve(call: &Call) -> HelperResult {
             };
             decode_reply(call, Shape::Search, query, TimeZone::UTC)
         }
-        Function::Create => create_view(call),
+        Function::Create => Ok(create_view(call)),
         Function::CreateReply => {
             let zone =
                 TimeZone::get(call.timezone.as_deref().unwrap_or_default()).or_value_error()?;
@@ -110,16 +110,16 @@ fn resolve(call: &Call) -> HelperResult {
     }
 }
 
-fn capabilities_view() -> HelperResult {
+fn capabilities_view() -> serde_json::Value {
     let found = capabilities();
-    Ok(json!({
+    json!({
         "endpoints": found.endpoints,
         "credentials": found.credentials,
         "supported": found.supported_params,
-    }))
+    })
 }
 
-fn environment_view(call: &Call) -> HelperResult {
+fn environment_view(call: &Call) -> serde_json::Value {
     let settings = settings(&call.environment);
     let params = call.params.as_ref().map(|given| RequestParams {
         api_key: given
@@ -129,7 +129,7 @@ fn environment_view(call: &Call) -> HelperResult {
         model: None,
     });
     let headers = validate_environment(&call.headers, params.as_ref(), &settings);
-    Ok(json!({ "headers": exposed(&headers) }))
+    json!({ "headers": exposed(&headers) })
 }
 
 fn search_view(call: &Call) -> HelperResult {
@@ -153,15 +153,15 @@ fn search_view(call: &Call) -> HelperResult {
         api_base: call.api_base.as_deref(),
         settings: &settings,
     })
-    .map_err(failure)?;
+    .map_err(|error| failure(&error))?;
     Ok(json!({ "url": plan.url, "body": plan.body }))
 }
 
-fn create_view(call: &Call) -> HelperResult {
+fn create_view(call: &Call) -> serde_json::Value {
     let settings = settings(&call.environment);
     let base = call.api_base.as_deref().unwrap_or(&settings.api_base);
     let plan = create_request(call.name.as_deref(), &format!("{base}/{API_VERSION}"));
-    Ok(json!({ "url": plan.url, "body": plan.body }))
+    json!({ "url": plan.url, "body": plan.body })
 }
 
 fn decode_reply(call: &Call, shape: Shape, query: &str, zone: TimeZone) -> HelperResult {
@@ -171,14 +171,16 @@ fn decode_reply(call: &Call, shape: Shape, query: &str, zone: TimeZone) -> Helpe
         body: call.body.as_deref().unwrap_or_default().as_bytes(),
     };
     let local = LocalTimeContext { zone };
-    match decode_studio_file_search(shape, &response, query, &local).map_err(failure)? {
+    match decode_studio_file_search(shape, &response, query, &local)
+        .map_err(|error| failure(&error))?
+    {
         Decoded::Search(record) => Ok(serde_json::to_value(&*record)?),
         Decoded::Create(record) => Ok(serde_json::to_value(&*record)?),
     }
 }
 
-fn failure(error: StudioFileSearchError) -> Box<HelperError> {
-    let (class, status) = match &error {
+fn failure(error: &StudioFileSearchError) -> Box<HelperError> {
+    let (class, status) = match error {
         StudioFileSearchError::SearchReply { status, .. }
         | StudioFileSearchError::CreateReply { status, .. } => ("GeminiError", Some(*status)),
         StudioFileSearchError::MissingKey | StudioFileSearchError::Json { .. } => {

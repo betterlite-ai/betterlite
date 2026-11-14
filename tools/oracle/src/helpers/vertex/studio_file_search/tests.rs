@@ -154,15 +154,15 @@ fn oracle_result_limit_requests_one_candidate() {
     assert_eq!(result["calls"][0]["body"].get("generationConfig"), None);
     assert_eq!(
         result["calls"][1]["body"]["generationConfig"],
-        json!({"candidateCount": 1})
+        json!({"candidateCount": 1_i32})
     );
     assert_eq!(
         result["calls"][2]["body"]["generationConfig"],
-        json!({"candidateCount": 1})
+        json!({"candidateCount": 1_i32})
     );
     assert_eq!(
         result["calls"][3]["body"]["generationConfig"],
-        json!({"candidateCount": 1})
+        json!({"candidateCount": 1_i32})
     );
     assert_eq!(result["calls"][4]["body"].get("generationConfig"), None);
 }
@@ -184,9 +184,9 @@ fn oracle_grounding_dedupes_supports() {
                     "attributes": {"uri": "files/a", "title": "a.txt"},
                 },
                 {
-                    "score": 0.5,
+                    "score": 0.5_f64,
                     "content": [{"text": "answer one", "type": "text"}],
-                    "attributes": {"grounding_chunk_indices": [0]},
+                    "attributes": {"grounding_chunk_indices": [0_i32]},
                 },
                 {
                     "score": null,
@@ -196,9 +196,9 @@ fn oracle_grounding_dedupes_supports() {
                     "attributes": {"uri": "files/b", "title": "b.txt"},
                 },
                 {
-                    "score": 0.25,
+                    "score": 0.25_f64,
                     "content": [{"text": "answer two", "type": "text"}],
-                    "attributes": {"grounding_chunk_indices": [0, 1]},
+                    "attributes": {"grounding_chunk_indices": [0_i32, 1_i32]},
                 },
             ],
         })
@@ -264,13 +264,13 @@ fn oracle_create_keeps_the_complete_store_id() {
             "object": "vector_store",
             "created_at": 1_704_164_645_i64,
             "name": "Docs",
-            "bytes": 0,
+            "bytes": 0_i64,
             "file_counts": {
-                "in_progress": 0,
-                "completed": 0,
-                "failed": 0,
-                "cancelled": 0,
-                "total": 0,
+                "in_progress": 0_i64,
+                "completed": 0_i64,
+                "failed": 0_i64,
+                "cancelled": 0_i64,
+                "total": 0_i64,
             },
             "status": "completed",
             "expires_after": null,
@@ -283,9 +283,9 @@ fn oracle_create_keeps_the_complete_store_id() {
     assert_eq!(result["calls"][4]["created_at"], 1_704_144_845_i64);
     assert_eq!(result["calls"][4]["name"], "");
     assert_eq!(result["calls"][5]["id"], "");
-    assert_eq!(result["calls"][5]["created_at"], 0);
+    assert_eq!(result["calls"][5]["created_at"], 0_i64);
     assert_eq!(result["calls"][6]["name"], "");
-    assert_eq!(result["calls"][6]["created_at"], 0);
+    assert_eq!(result["calls"][6]["created_at"], 0_i64);
 }
 
 #[test]
