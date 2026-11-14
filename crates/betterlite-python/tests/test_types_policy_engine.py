@@ -778,6 +778,13 @@ def test_names_reexports_match() -> None:
         assert exported is defined
 
 
+def test_names_mapping_access() -> None:
+    policy = betterlite_policy.Policy(inherit="global-baseline")
+    assert "inherit" in policy
+    assert policy.get("inherit") == "global-baseline"
+    assert policy["inherit"] == "global-baseline"
+
+
 def test_scope_names_default() -> None:
     reference = litellm_policy.PolicyScope()
     ours = betterlite_policy.PolicyScope()
