@@ -1,0 +1,8 @@
+task: B1355
+deviations:
+  - what: A Gemini transcription reply over 16 MiB is refused with a typed TooLarge error before it is decoded, where LiteLLM parses any size.
+    why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the pooled transport's reply cap that the shared generate-content decoder already uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/gemini_transcribe_transformation.py#L174-L185
+  - what: Token counts are 64-bit integers, so a reply whose prompt or total count or whose audio detail sum does not fit i64 is refused, where Python keeps an arbitrary-precision int and reports it.
+    why: LiteLLM declares these counts as int and betterlite reads JSON numbers as i64; no working setup sends a count past the i64 range, and silently wrapping one would report a wrong transcript cost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L56-L65

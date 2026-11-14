@@ -1,0 +1,13 @@
+kind: helper
+name: agents-collection-unsupported-provider-error
+call:
+  b3504:
+    function: create
+    name: rejected-agent
+    custom_llm_provider: openai
+    kwargs: {}
+    reply:
+      status: 400
+      body: {}
+env: {}
+compare: {ignore: []}

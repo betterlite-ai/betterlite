@@ -1,0 +1,24 @@
+kind: probe
+name: deployment-clients-different-key-isolation
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0]
+    operation:
+      deployment_clients:
+        calculate: []
+        limits: []
+        cached:
+          - {model_id: d1, model_group: gpt, max_parallel_requests: 1, rpm: null, tpm: null, default_max_parallel_requests: null, lookups: 2}
+          - {model_id: d2, model_group: gpt, max_parallel_requests: 1, rpm: null, tpm: null, default_max_parallel_requests: null, lookups: 2}
+        credentials:
+          - model_group: gpt
+            config: {model: openai/gpt-4o}
+            request: {api_key: sk-one}
+          - model_group: gpt
+            config: {model: openai/gpt-4o}
+            request: {api_key: sk-two}
+          - model_group: gpt
+            config: {model: openai/gpt-4o}
+            request: {}
+compare:
+  ignore: []

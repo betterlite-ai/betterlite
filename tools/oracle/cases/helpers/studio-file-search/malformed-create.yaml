@@ -1,0 +1,11 @@
+kind: helper
+name: malformed-create
+call:
+  studio_file_search:
+    calls:
+      - function: create_reply
+        status: 422
+        body: "<html></html>"
+        timezone: UTC
+env: {}
+compare: {ignore: []}
