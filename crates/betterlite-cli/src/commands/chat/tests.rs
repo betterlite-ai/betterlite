@@ -583,6 +583,28 @@ fn stream_caps_an_unterminated_line(#[case] size: usize, #[case] accepted: bool)
     }
 }
 
+#[rstest]
+#[case::at_the_cap(MAX_LINE_BYTES, true)]
+#[case::past_the_cap(MAX_LINE_BYTES + 1, false)]
+fn stream_caps_a_completed_line(#[case] size: usize, #[case] accepted: bool) {
+    let mut lines = StreamLines::default();
+    let mut chunk = vec![b'x'; size];
+    chunk.push(b'\n');
+
+    let result = lines.push(&chunk);
+
+    assert_eq!(result.is_ok(), accepted, "{result:?}");
+    if !accepted {
+        assert!(
+            matches!(
+                &result,
+                Err(StreamLineError::TooLarge { limit }) if *limit == MAX_LINE_BYTES
+            ),
+            "{result:?}"
+        );
+    }
+}
+
 #[test]
 fn stream_reports_a_chunk_of_the_wrong_shape() {
     let body = String::from("data: [1,2]\n\n");
