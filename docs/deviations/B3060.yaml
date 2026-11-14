@@ -9,6 +9,6 @@ deviations:
   - what: A missing database connection returns DbError::NoDbConnected instead of RuntimeError("Database not connected. Connect a database to your proxy - ...") on FOCUS and Exception(...) on CloudZero (litellm/integrations/cloudzero/database.py L35-L38).
     why: betterlite reports an unconfigured pool through B700's typed DbError; a working LiteLLM setup always has a Prisma client, so no caller relies on the exception type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/database.py#L18-L21
-  - what: Query and alias-recovery failures return typed FocusUsageError and CloudZeroUsageError variants instead of RuntimeError/Exception("Error retrieving usage data: ...").
-    why: Errors are typed thiserror enums in betterlite; wrapping them in a message loses the variant a caller matches on. CloudZero's wrapper is at litellm/integrations/cloudzero/database.py L111.
+  - what: 'Query and alias-recovery failures return typed FocusUsageError and CloudZeroUsageError variants instead of RuntimeError/Exception("Error retrieving usage data: ...").'
+    why: 'Errors are typed thiserror enums in betterlite; wrapping them in a message loses the variant a caller matches on. CloudZero''s wrapper is at litellm/integrations/cloudzero/database.py L111.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/database.py#L112-L113
