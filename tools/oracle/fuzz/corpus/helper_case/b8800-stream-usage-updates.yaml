@@ -1,0 +1,15 @@
+kind: helper
+name: b8800-stream-usage-updates-seed
+call:
+  b8800:
+    function: stream_usage_updates
+    data:
+      stream: true
+      stream_options:
+        include_usage: false
+    always_include: null
+    route_type: acompletion
+    supports: true
+env: {}
+compare:
+  ignore: []
