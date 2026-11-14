@@ -9,7 +9,7 @@ deviations:
   - what: Completion execution goes through the CompletionExecutor trait (completion and acompletion) and is not reimplemented here.
     why: B014 owns the completion pipeline; the handler only prepares the call and translates the answer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L77-L104
-  - what: A stream answer to a call that did not set stream fails with "Error calling litellm.<operation> for generate_content: the completion answered a stream to a call that did not ask for one".
+  - what: A stream answer to a call that did not set stream fails with a wrapped error that says the completion answered a stream to a call that did not ask for one.
     why: LiteLLM passes the stream object to translate_completion_to_generate_content and the ValueError carries an AttributeError text about the stream object; the typed port has no such object, so the message names the cause directly.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L90-L104
   - what: The "Failed to transform streaming response" ValueError is not built.
