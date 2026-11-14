@@ -23,15 +23,17 @@ use super::VertexArmorTokens;
 use super::error::ArmorTokenError;
 
 const CREDENTIALS_TEXT: &str = "credentials-text";
-const AUTHORIZED_USER: &str = r#"{"type":"authorized_user","client_id":"client","client_secret":"CLIENTSECRET","refresh_token":"REFRESHTOKEN","quota_project_id":"quota-project"}"#;
+const TOKEN_URI: &str = "https://oauth2.example/token";
+const AUTHORIZED_USER: &str = r#"{"type":"authorized_user","client_id":"client","client_secret":"CLIENTSECRET","refresh_token":"REFRESHTOKEN","quota_project_id":"quota-project","token_uri":"https://oauth2.example/token"}"#;
 const MALFORMED_AUTHORIZED_USER: &str = r#"{"type":"authorized_user","client_id":"client","client_secret":"CLIENTSECRET","refresh_token":"REFRESHTOKEN","token_uri":7}"#;
+const SERVICE_ACCOUNT: &str = r#"{"type":"service_account","project_id":"key-project","private_key":"PRIVATEKEY","client_email":"sa@key-project.iam.gserviceaccount.com"}"#;
 
 type LoadResult = Result<LoadedCredential, CredentialCacheError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SeenCredentials {
-    AuthorizedUser,
-    ServiceAccount,
+    AuthorizedUser { token_uri: Option<String> },
+    ServiceAccount { project_id: Option<String> },
     OtherSource,
     Text(String),
 }
@@ -62,11 +64,15 @@ impl FakeExecutor {
 
 fn seen(credentials: Option<&ConfiguredCredentials>) -> Option<SeenCredentials> {
     match credentials? {
-        ConfiguredCredentials::Source(CredentialSource::AuthorizedUser(_)) => {
-            Some(SeenCredentials::AuthorizedUser)
+        ConfiguredCredentials::Source(CredentialSource::AuthorizedUser(user)) => {
+            Some(SeenCredentials::AuthorizedUser {
+                token_uri: user.token_uri.clone(),
+            })
         }
-        ConfiguredCredentials::Source(CredentialSource::ServiceAccount(_)) => {
-            Some(SeenCredentials::ServiceAccount)
+        ConfiguredCredentials::Source(CredentialSource::ServiceAccount(account)) => {
+            Some(SeenCredentials::ServiceAccount {
+                project_id: account.project_id.clone(),
+            })
         }
         ConfiguredCredentials::Source(_) => Some(SeenCredentials::OtherSource),
         ConfiguredCredentials::Text(text) => {
@@ -222,7 +228,26 @@ async fn tokens_decodes_json_credentials_before_the_lookup() {
     assert_eq!(
         harness.requests(),
         vec![LookupRequest {
-            credentials: Some(SeenCredentials::AuthorizedUser),
+            credentials: Some(SeenCredentials::AuthorizedUser {
+                token_uri: Some(TOKEN_URI.to_owned()),
+            }),
+            project: None,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn tokens_decodes_a_service_account_before_the_lookup() {
+    let harness = Harness::new(vec![Ok(loaded("token", Some("key-project")))]);
+    let tokens = harness.tokens(Some(SERVICE_ACCOUNT), None).unwrap();
+    let (_token, project) = tokens.access_token().await.unwrap();
+    assert_eq!(project.as_deref(), Some("key-project"));
+    assert_eq!(
+        harness.requests(),
+        vec![LookupRequest {
+            credentials: Some(SeenCredentials::ServiceAccount {
+                project_id: Some("key-project".to_owned()),
+            }),
             project: None,
         }]
     );
