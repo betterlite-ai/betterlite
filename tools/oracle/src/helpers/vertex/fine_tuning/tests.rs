@@ -46,7 +46,7 @@ fn a_request_call_returns_the_vertex_job() {
                 "training_file": "gs://bucket/train.jsonl",
                 "suffix": "my-run",
                 "validation_file": "gs://bucket/valid.jsonl",
-                "hyperparameters": {"n_epochs": 3, "learning_rate_multiplier": 0.1},
+                "hyperparameters": {"n_epochs": 3_i64, "learning_rate_multiplier": 0.1_f64},
             },
             "original_hyperparameters": {"adapter_size": "ADAPTER_SIZE_ONE"},
         }],
@@ -64,7 +64,7 @@ fn a_request_call_returns_the_vertex_job() {
     );
     assert_eq!(
         job["supervisedTuningSpec"]["hyperParameters"]["epoch_count"],
-        json!(3)
+        json!(3_i64)
     );
     assert_eq!(
         job["supervisedTuningSpec"]["hyperParameters"]["adapter_size"],
@@ -80,7 +80,7 @@ fn a_zero_hyperparameter_call_omits_the_object() {
             "data": {
                 "model": "m",
                 "training_file": "gs://bucket/train.jsonl",
-                "hyperparameters": {"n_epochs": 0, "learning_rate_multiplier": 0.0, "batch_size": 4},
+                "hyperparameters": {"n_epochs": 0_i64, "learning_rate_multiplier": 0.0_f64, "batch_size": 4_i64},
             },
             "original_hyperparameters": {"adapter_size": ""},
         }],
