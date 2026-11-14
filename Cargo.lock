@@ -2524,6 +2524,7 @@ dependencies = [
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
+ "betterlite-vertex",
  "chrono",
  "hex",
  "indexmap 2.14.2",
