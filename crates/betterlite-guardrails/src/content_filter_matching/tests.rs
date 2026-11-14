@@ -33,14 +33,46 @@ fn category(name: &str, action: ContentFilterAction) -> CategoryConfig {
 }
 
 fn phrase_category(name: &str, action: ContentFilterAction, patterns: &[&str]) -> CategoryConfig {
-    let mut category = category(name, action);
-    for pattern in patterns {
-        category.phrase_patterns.push(CompiledPhrasePattern {
+    let mut config = category(name, action);
+    config.phrase_patterns = compiled_patterns(patterns);
+    config
+}
+
+fn compiled_patterns(patterns: &[&str]) -> Vec<CompiledPhrasePattern> {
+    patterns
+        .iter()
+        .map(|pattern| CompiledPhrasePattern {
             source: (*pattern).to_owned(),
             regex: Pattern::compile(pattern).unwrap(),
-        });
-    }
-    category
+        })
+        .collect()
+}
+
+fn conditional_categories(blocks: &[&str]) -> CategoryLoadResult {
+    let entry = conditional(ContentFilterAction::Block, "high", &["minor"], blocks);
+    let mut categories = CategoryLoadResult::default();
+    categories
+        .conditional_categories
+        .insert("child_safety".to_owned(), entry);
+    categories
+}
+
+fn keyword_categories(entries: &[(&str, &str, &str, ContentFilterAction)]) -> CategoryLoadResult {
+    let mut categories = CategoryLoadResult::default();
+    categories.category_keywords = keyword_map(entries);
+    categories
+}
+
+fn conditional_matched(categories: &CategoryLoadResult, text: &str) -> Option<String> {
+    check_conditional_categories(text, &[], categories)
+        .unwrap()
+        .map(|category_match| category_match.matched)
+}
+
+fn keyword_matched(categories: &CategoryLoadResult, text: &str) -> Option<String> {
+    check_category_keywords(text, &[], categories)
+        .unwrap()
+        .map(|category_match| category_match.matched)
 }
 
 fn conditional(
@@ -82,23 +114,8 @@ fn conditional_matches_need_the_identifier_and_block_word_in_one_sentence(
     #[case] text: &str,
     #[case] expected: Option<&str>,
 ) {
-    let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "child_safety".to_owned(),
-        conditional(
-            ContentFilterAction::Block,
-            "high",
-            &["minor"],
-            &["romantic"],
-        ),
-    );
-    let found = check_conditional_categories(text, &[], &categories).unwrap();
-    assert_eq!(
-        found
-            .as_ref()
-            .map(|category_match| category_match.matched.as_str()),
-        expected
-    );
+    let categories = conditional_categories(&["romantic"]);
+    assert_eq!(conditional_matched(&categories, text).as_deref(), expected);
 }
 
 #[test]
@@ -129,23 +146,8 @@ fn conditional_sentences_split_on_common_terminators(
     #[case] text: &str,
     #[case] expected: Option<&str>,
 ) {
-    let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "child_safety".to_owned(),
-        conditional(
-            ContentFilterAction::Block,
-            "high",
-            &["minor"],
-            &["romantic"],
-        ),
-    );
-    let found = check_conditional_categories(text, &[], &categories).unwrap();
-    assert_eq!(
-        found
-            .as_ref()
-            .map(|category_match| category_match.matched.as_str()),
-        expected
-    );
+    let categories = conditional_categories(&["romantic"]);
+    assert_eq!(conditional_matched(&categories, text).as_deref(), expected);
 }
 
 #[test]
@@ -195,23 +197,8 @@ fn conditional_single_word_block_words_use_word_boundaries(
     #[case] text: &str,
     #[case] expected: Option<&str>,
 ) {
-    let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "child_safety".to_owned(),
-        conditional(
-            ContentFilterAction::Block,
-            "high",
-            &["minor"],
-            &["romantic"],
-        ),
-    );
-    let found = check_conditional_categories(text, &[], &categories).unwrap();
-    assert_eq!(
-        found
-            .as_ref()
-            .map(|category_match| category_match.matched.as_str()),
-        expected
-    );
+    let categories = conditional_categories(&["romantic"]);
+    assert_eq!(conditional_matched(&categories, text).as_deref(), expected);
 }
 
 #[rstest]
@@ -222,23 +209,8 @@ fn conditional_multi_word_block_words_use_substring_matching(
     #[case] text: &str,
     #[case] expected: Option<&str>,
 ) {
-    let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "child_safety".to_owned(),
-        conditional(
-            ContentFilterAction::Block,
-            "high",
-            &["minor"],
-            &["romantic ideas"],
-        ),
-    );
-    let found = check_conditional_categories(text, &[], &categories).unwrap();
-    assert_eq!(
-        found
-            .as_ref()
-            .map(|category_match| category_match.matched.as_str()),
-        expected
-    );
+    let categories = conditional_categories(&["romantic ideas"]);
+    assert_eq!(conditional_matched(&categories, text).as_deref(), expected);
 }
 
 #[rstest]
@@ -248,18 +220,8 @@ fn conditional_block_words_treat_asterisks_literally(
     #[case] text: &str,
     #[case] expected: Option<&str>,
 ) {
-    let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "child_safety".to_owned(),
-        conditional(ContentFilterAction::Block, "high", &["minor"], &["r*m"]),
-    );
-    let found = check_conditional_categories(text, &[], &categories).unwrap();
-    assert_eq!(
-        found
-            .as_ref()
-            .map(|category_match| category_match.matched.as_str()),
-        expected
-    );
+    let categories = conditional_categories(&["r*m"]);
+    assert_eq!(conditional_matched(&categories, text).as_deref(), expected);
 }
 
 #[test]
@@ -609,15 +571,12 @@ fn phrase_patterns_are_checked_in_category_name_order() {
 #[test]
 fn phrase_patterns_surface_a_pattern_matching_error() {
     let mut risky = category("risky", ContentFilterAction::Block);
-    risky.phrase_patterns.push(CompiledPhrasePattern {
-        source: "(a|aa)+$".to_owned(),
-        regex: Pattern::compile("(a|aa)+$").unwrap(),
-    });
+    risky.phrase_patterns = compiled_patterns(&["(a|aa)+(?<=b)"]);
     let mut categories = CategoryLoadResult::default();
     categories
         .loaded_categories
         .insert("risky".to_owned(), risky);
-    let text = format!("{}b", "a".repeat(64));
+    let text = "a".repeat(40);
     assert!(matches!(
         check_phrase_patterns(&text, &[], &categories),
         Err(ContentFilterMatchingError::PhrasePattern(_))
@@ -740,20 +699,8 @@ fn category_keywords_stop_on_a_global_exception() {
 #[case::whole_word("ask the men", Some("men"))]
 #[case::punctuation_neighbour("ask the men.", Some("men"))]
 fn single_word_keywords_use_word_boundaries(#[case] text: &str, #[case] expected: Option<&str>) {
-    let mut categories = CategoryLoadResult::default();
-    categories.category_keywords.extend(keyword_map(&[(
-        "men",
-        "gender",
-        "medium",
-        ContentFilterAction::Block,
-    )]));
-    let found = check_category_keywords(text, &[], &categories).unwrap();
-    assert_eq!(
-        found
-            .as_ref()
-            .map(|category_match| category_match.matched.as_str()),
-        expected
-    );
+    let categories = keyword_categories(&[("men", "gender", "medium", ContentFilterAction::Block)]);
+    assert_eq!(keyword_matched(&categories, text).as_deref(), expected);
 }
 
 #[rstest]
@@ -761,20 +708,9 @@ fn single_word_keywords_use_word_boundaries(#[case] text: &str, #[case] expected
 #[case::inside_a_longer_word("a nice cream", Some("ice cream"))]
 #[case::partial_phrase("i like ice", None)]
 fn multi_word_keywords_use_substring_matching(#[case] text: &str, #[case] expected: Option<&str>) {
-    let mut categories = CategoryLoadResult::default();
-    categories.category_keywords.extend(keyword_map(&[(
-        "ice cream",
-        "food",
-        "medium",
-        ContentFilterAction::Block,
-    )]));
-    let found = check_category_keywords(text, &[], &categories).unwrap();
-    assert_eq!(
-        found
-            .as_ref()
-            .map(|category_match| category_match.matched.as_str()),
-        expected
-    );
+    let categories =
+        keyword_categories(&[("ice cream", "food", "medium", ContentFilterAction::Block)]);
+    assert_eq!(keyword_matched(&categories, text).as_deref(), expected);
 }
 
 #[rstest]
@@ -786,19 +722,9 @@ fn keywords_treat_asterisks_as_a_zero_or_one_character_wildcard(
     #[case] text: &str,
     #[case] matched: bool,
 ) {
-    let mut categories = CategoryLoadResult::default();
-    categories.category_keywords.extend(keyword_map(&[(
-        "fu*c*k",
-        "profanity",
-        "high",
-        ContentFilterAction::Block,
-    )]));
-    assert_eq!(
-        check_category_keywords(text, &[], &categories)
-            .unwrap()
-            .is_some(),
-        matched
-    );
+    let categories =
+        keyword_categories(&[("fu*c*k", "profanity", "high", ContentFilterAction::Block)]);
+    assert_eq!(keyword_matched(&categories, text).is_some(), matched);
 }
 
 #[rstest]
@@ -806,19 +732,13 @@ fn keywords_treat_asterisks_as_a_zero_or_one_character_wildcard(
 #[case::wildcard_matches_one_character("child x abuse", true)]
 #[case::no_room_for_the_wildcard("child abuse", false)]
 fn multi_word_keywords_apply_asterisk_wildcards(#[case] text: &str, #[case] matched: bool) {
-    let mut categories = CategoryLoadResult::default();
-    categories.category_keywords.extend(keyword_map(&[(
+    let categories = keyword_categories(&[(
         "child * abuse",
         "child_safety",
         "high",
         ContentFilterAction::Block,
-    )]));
-    assert_eq!(
-        check_category_keywords(text, &[], &categories)
-            .unwrap()
-            .is_some(),
-        matched
-    );
+    )]);
+    assert_eq!(keyword_matched(&categories, text).is_some(), matched);
 }
 
 #[test]
