@@ -20,7 +20,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/agents/transformation.py#L121-L127
   - what: post_call records original_response and additional_args only.
     why: LiteLLM's Logging.post_call also writes input, api_key and log_event_type; those keys belong to B247's logging pipeline, which owns model_call_details, so the transport writes only the two arguments this call passes.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1555-L1564
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1554-L1562
   - what: pre_call records the input, the empty api key, the api base and the validated headers as a typed PreCall on the logging object instead of writing model_call_details keys.
     why: B3492 records the same deviation for the interaction handlers; the header values stay in SecretString and the logging pipeline owns the keys.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1327-L1348
