@@ -141,11 +141,16 @@ fn handle_round_failure<T>(
 where
     T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
 {
+    let emission = StreamErrorEmission {
+        call_type: Some(context.call_type),
+        responses_so_far: context.responses_so_far,
+        request_data,
+        translation: Some(context.translation),
+        stream_started: !context.responses_yielded.is_empty(),
+        responses_yielded: Some(context.responses_yielded),
+    };
     match failure {
-        RoundCallError::Http(error) => {
-            let emission = stream_error_emission(context, request_data);
-            terminate_with_http(error, &emission, outputs)
-        }
+        RoundCallError::Http(error) => terminate_with_http(error, &emission, outputs),
         RoundCallError::Guardrail(GuardrailFailure::ModifyResponse(mut details)) => {
             if details.original_response.is_none() {
                 details.original_response =
@@ -164,24 +169,8 @@ where
                     source: other,
                 }));
             };
-            let emission = stream_error_emission(context, request_data);
             terminate_with_http(error, &emission, outputs)
         }
-    }
-}
-
-// LiteLLM's emit_streaming_http_error arguments, built from the failed round's lists
-const fn stream_error_emission<'state, T: ?Sized>(
-    context: &'state FailureContext<'_, T>,
-    request_data: &'state BTreeMap<String, GuardrailValue>,
-) -> StreamErrorEmission<'state, T> {
-    StreamErrorEmission {
-        call_type: Some(context.call_type),
-        responses_so_far: context.responses_so_far,
-        request_data,
-        translation: Some(context.translation),
-        stream_started: !context.responses_yielded.is_empty(),
-        responses_yielded: Some(context.responses_yielded),
     }
 }
 
