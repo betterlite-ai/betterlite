@@ -1,0 +1,15 @@
+kind: helper
+name: max-tokens-default
+call:
+  b4118:
+    cases:
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls: []
+        optional_params: {}
+        kwargs: {}
+        searches: []
+env: {}
+compare: {ignore: []}

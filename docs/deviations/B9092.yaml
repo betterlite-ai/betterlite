@@ -1,0 +1,11 @@
+task: B9092
+deviations:
+  - what: The shared dashboard identifies itself as betterlite with a text wordmark, image alt text and document metadata, and ships no logo, monogram or favicon image.
+    why: README Decisions keeps LiteLLM's MIT UI but requires betterlite product branding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/layout.tsx#L14-L18
+  - what: Shared source, release, support and general documentation links point to betterlite's GitHub repository; feature references without a replacement explicitly say Upstream LiteLLM documentation, and the upstream blog menu is omitted.
+    why: A betterlite installation must not advertise another product's support or releases or link to invented documentation pages.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons.tsx#L1-L22
+  - what: The shell has no Standard/Premium badge, license-expiry banner, licensed seat/team-cap meter or paid-upgrade prompt; ordinary software updates and permission restrictions remain.
+    why: betterlite has no paid tier and excludes enterprise-only code, per README Decisions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/SidebarAccountMenu/SidebarAccountMenu.tsx#L212-L228
