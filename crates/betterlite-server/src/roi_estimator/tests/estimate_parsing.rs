@@ -39,6 +39,55 @@ async fn estimate_uses_the_first_complete_object_in_the_reply() {
     assert_eq!(estimate.reasoning, "first");
 }
 
+#[tokio::test]
+async fn estimate_keeps_the_last_value_of_a_repeated_hours_key() {
+    let estimate = run_estimate(ok_response(
+        r#"{"hours": 1, "hours": 2, "reasoning": "Small change."}"#,
+    ))
+    .await
+    .unwrap();
+    assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
+    assert_eq!(estimate.hours, Some(2.0));
+}
+
+#[rstest]
+#[case::null(json!({
+    "choices": [{"finish_reason": null, "message": {"content": r#"{"hours": 1, "reasoning": "x"}"#}}],
+}))]
+#[case::missing(json!({
+    "choices": [{"message": {"content": r#"{"hours": 1, "reasoning": "x"}"#}}],
+}))]
+#[tokio::test]
+async fn estimate_accepts_a_choice_whose_finish_reason_is_null_or_missing(#[case] response: Value) {
+    let estimate = run_estimate(response).await.unwrap();
+    assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
+    assert_eq!(estimate.hours, Some(1.0));
+}
+
+#[tokio::test]
+async fn estimate_ignores_the_extra_keys_of_a_gateway_response() {
+    let estimate = run_estimate(json!({
+        "id": "chatcmpl-9",
+        "object": "chat.completion",
+        "created": 1_760_000_000,
+        "model": "gpt-5.2",
+        "choices": [{
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+                "role": "assistant",
+                "content": r#"{"hours": 1, "reasoning": "x"}"#,
+                "tool_calls": null,
+            },
+        }],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }))
+    .await
+    .unwrap();
+    assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
+    assert_eq!(estimate.hours, Some(1.0));
+}
+
 #[rstest]
 #[case::not_json(ok_response("not json"))]
 #[case::extra_field(ok_response(r#"{"hours": 1, "reasoning": "x", "extra": 2}"#))]

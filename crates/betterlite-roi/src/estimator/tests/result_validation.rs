@@ -47,6 +47,8 @@ fn validate_hours_accepts_zero_and_positive_values() {
 #[case::empty("")]
 #[case::spaces("   ")]
 #[case::newlines("\n\t ")]
+#[case::unit_separator("\u{1f}")]
+#[case::information_separators("\u{1c}\u{1d}\u{1e}")]
 fn parse_rejects_blank_reasoning(#[case] reasoning: &str) {
     let value = json!({"hours": 1, "reasoning": reasoning});
     let error = serde_json::from_value::<ROIEstimatorResult>(value).unwrap_err();
@@ -68,6 +70,60 @@ fn parse_keeps_reasoning_whitespace_around_text() {
 #[case::missing_reasoning(json!({"hours": 1}))]
 fn parse_is_strict(#[case] value: serde_json::Value) {
     assert!(serde_json::from_value::<ROIEstimatorResult>(value).is_err());
+}
+
+#[test]
+fn parse_rejects_a_non_object_and_names_the_expected_shape() {
+    let error = serde_json::from_str::<ROIEstimatorResult>("[1, 2]").unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("an object with hours and reasoning")
+    );
+}
+
+#[rstest]
+#[case::hours(r#"{"hours": 1, "hours": 2, "reasoning": "ok"}"#, 2.0, "ok")]
+#[case::reasoning(
+    r#"{"hours": 1, "reasoning": "first", "reasoning": "second"}"#,
+    1.0,
+    "second"
+)]
+fn parse_keeps_the_last_value_of_a_repeated_key(
+    #[case] raw: &str,
+    #[case] hours: f64,
+    #[case] reasoning: &str,
+) {
+    let result: ROIEstimatorResult = serde_json::from_str(raw).unwrap();
+    assert_eq!(result.hours, hours);
+    assert_eq!(result.reasoning, reasoning);
+}
+
+#[test]
+fn parse_ignores_an_earlier_value_of_the_wrong_type() {
+    let result: ROIEstimatorResult =
+        serde_json::from_str(r#"{"hours": "1", "hours": 2, "reasoning": 5, "reasoning": "ok"}"#)
+            .unwrap();
+    assert_eq!(result.hours, 2.0);
+    assert_eq!(result.reasoning, "ok");
+}
+
+#[test]
+fn parse_rejects_a_last_value_of_the_wrong_type() {
+    let error = serde_json::from_str::<ROIEstimatorResult>(
+        r#"{"hours": 2, "hours": "1", "reasoning": "ok"}"#,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("invalid type"));
+}
+
+#[test]
+fn parse_rejects_an_unknown_key_beside_a_repeated_one() {
+    let error = serde_json::from_str::<ROIEstimatorResult>(
+        r#"{"hours": 1, "hours": 2, "reasoning": "ok", "extra": true}"#,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("unknown field `extra`"));
 }
 
 #[test]
@@ -162,5 +218,9 @@ fn validate_reasoning_matches_pythons_truthiness_for_blank_text() {
     assert_eq!(
         validate_reasoning(" \u{a0} ".to_owned()),
         Err(ResultError::Reasoning)
+    );
+    assert_eq!(
+        validate_reasoning("\u{1f}kept ".to_owned()),
+        Ok("\u{1f}kept ".to_owned())
     );
 }

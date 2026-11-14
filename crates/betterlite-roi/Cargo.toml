@@ -14,7 +14,7 @@ indexmap = { version = "2.14.2", features = ["serde"] }
 rust_decimal = { workspace = true, features = ["serde-with-float"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = { version = "3.24.0", default-features = false }
 sha2.workspace = true
 thiserror.workspace = true
