@@ -5,7 +5,7 @@ pub const DEFAULT_BM25_WEIGHT: f64 = 0.4;
 pub fn combine_scores(bm25_scores: &[f64], embedding_scores: &[f64], bm25_weight: f64) -> Vec<f64> {
     let normalized_bm25 = normalize_scores(bm25_scores);
     let normalized_embedding = normalize_scores(embedding_scores);
-    let embedding_weight = Sub::sub(1.0, bm25_weight);
+    let embedding_weight = Sub::sub(1.0_f64, bm25_weight);
     normalized_bm25
         .iter()
         .zip(&normalized_embedding)

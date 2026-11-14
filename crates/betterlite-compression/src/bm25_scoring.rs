@@ -75,10 +75,10 @@ fn inverse_document_frequencies(
         let count_as_f64 =
             u32::try_from(occurrences).map_or_else(|_| f64::from(u32::MAX), f64::from);
         let difference = Sub::sub(documents_as_f64, count_as_f64);
-        let numerator = Add::add(difference, 0.5);
-        let denominator = Add::add(count_as_f64, 0.5);
+        let numerator = Add::add(difference, 0.5_f64);
+        let denominator = Add::add(count_as_f64, 0.5_f64);
         let ratio = Div::div(numerator, denominator);
-        idf.insert(term.to_owned(), Add::add(ratio, 1.0).ln());
+        idf.insert(term.to_owned(), Add::add(ratio, 1.0_f64).ln());
     }
     idf
 }
@@ -103,7 +103,7 @@ fn saturation_factor(document_length: f64, context: &ScoringContext<'_>) -> f64 
         Mul::mul(context.length_normalization, document_length),
         context.average_length,
     );
-    let length_complement = Sub::sub(1.0, context.length_normalization);
+    let length_complement = Sub::sub(1.0_f64, context.length_normalization);
     Mul::mul(
         context.term_saturation,
         Add::add(length_complement, scaled_length),
@@ -131,7 +131,7 @@ fn document_score(tokens: &[String], context: &ScoringContext<'_>) -> f64 {
     let document_length =
         u32::try_from(tokens.len()).map_or_else(|_| f64::from(u32::MAX), f64::from);
     let saturation = saturation_factor(document_length, context);
-    let saturation_numerator = Add::add(context.term_saturation, 1.0);
+    let saturation_numerator = Add::add(context.term_saturation, 1.0_f64);
     let mut score = 0.0_f64;
     for term in context.query_terms {
         let Some(idf_value) = context.idf.get(term.as_str()) else {

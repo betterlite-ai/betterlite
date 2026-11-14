@@ -39,10 +39,11 @@ fn extracts_text_blocks_and_string_parts() {
     ]);
     let plain = json!({"role": "user", "content": "def login_handler login handler"});
     let list_content = json!({"role": "user", "content": content_parts});
-    let result = scores("login handler", &[list_content]);
+    let filler = json!({"role": "user", "content": "x"});
+    let result = scores("login handler", &[list_content, filler.clone()]);
     assert_eq!(
         result,
-        scores("login handler", &[plain]),
+        scores("login handler", &[plain, filler]),
         "a block list reads like its joined text"
     );
     assert!(close(result[0], 1.091_570_363_086_528));

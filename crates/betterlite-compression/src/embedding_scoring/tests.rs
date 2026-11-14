@@ -190,7 +190,7 @@ async fn forwards_embedding_model_params() {
             "api_base".to_owned(),
             json!("https://example-embeddings.test"),
         ),
-        ("dimensions".to_owned(), json!(256)),
+        ("dimensions".to_owned(), json!(256_u32)),
     ]);
     let configured_request = EmbeddingScoringRequest {
         query: "auth",
@@ -207,7 +207,7 @@ async fn forwards_embedding_model_params() {
         Some(&json!("https://example-embeddings.test")),
         "every supplied parameter reaches the executor"
     );
-    assert_eq!(calls[0].get("dimensions"), Some(&json!(256)));
+    assert_eq!(calls[0].get("dimensions"), Some(&json!(256_u32)));
 }
 
 #[tokio::test]
@@ -285,6 +285,19 @@ async fn truncates_long_contents_before_the_embedding_call() {
     assert_eq!(content.chars().count(), 30_005);
     assert!(content.starts_with(&"z".repeat(15_000)));
     assert!(content.ends_with(&"z".repeat(15_000)));
+}
+
+#[tokio::test]
+async fn truncates_a_long_query_before_the_embedding_call() {
+    let executor = RecordingExecutor::new(vec![vec![1.0], vec![1.0]]);
+    let messages = vec![json!({"content": "short"})];
+    let query = format!("{}m{}", "a".repeat(15_000), "b".repeat(15_000));
+    run_scorer(request(&query, &messages), &executor).await;
+    let expected = format!("{}\n...\n{}", "a".repeat(15_000), "b".repeat(15_000));
+    assert_eq!(
+        executor.recorded()[0].get("input"),
+        Some(&json!([expected, "short"]))
+    );
 }
 
 #[tokio::test]
