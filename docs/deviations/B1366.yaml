@@ -6,3 +6,6 @@ deviations:
   - what: An Interactions reply over 16 MiB is refused with a typed TooLarge error before it is decoded, where LiteLLM parses any size.
     why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the pooled transport's reply cap that the shared generate-content decoder already uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/audio_transcription/transformation.py#L130
+  - what: A token count outside the i64 range is a shape error, and an audio token sum or derived text token count that leaves i64 is refused with a typed UsageOverflow error, where Python's unbounded int holds and computes both.
+    why: The usage fields are i64 the way LiteLLM's int hints are, and a provider never reports token counts near the i64 bounds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/audio_transcription/transformation.py#L166-L181
