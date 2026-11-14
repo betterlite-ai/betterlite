@@ -68,6 +68,10 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_
 tracing-subscriber.workspace = true
 
 [[test]]
+name = "block_code_execution"
+path = "src/block_code_execution/lifecycle/tests.rs"
+
+[[test]]
 name = "onyx"
 path = "src/onyx/tests.rs"
 
