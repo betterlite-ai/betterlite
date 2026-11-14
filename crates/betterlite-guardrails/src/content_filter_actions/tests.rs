@@ -160,10 +160,17 @@ mod content_filter_actions_behavior {
     }
 
     fn with_logs<Outcome, Run: FnOnce() -> Outcome>(run: Run) -> (Outcome, String) {
+        with_logs_at(tracing::Level::WARN, run)
+    }
+
+    fn with_logs_at<Outcome, Run: FnOnce() -> Outcome>(
+        level: tracing::Level,
+        run: Run,
+    ) -> (Outcome, String) {
         let captured = Captured::default();
         let writer = captured.clone();
         let subscriber = tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::WARN)
+            .with_max_level(level)
             .with_ansi(false)
             .with_writer(move || writer.clone())
             .finish();
@@ -396,10 +403,11 @@ mod content_filter_actions_behavior {
     fn category_keyword_appends_a_detection_before_the_action() {
         let matched = matched("alert", "operational", "medium", ContentFilterAction::Mask);
         let mut detections = Vec::new();
-        let masked =
+        let (outcome, logs) = with_logs_at(tracing::Level::INFO, || {
             handle_category_keyword_match(&matched, "an ALERT", KEYWORD_TAG, Some(&mut detections))
-                .unwrap();
-        assert_eq!(masked, "an [KEYWORD_REDACTED]");
+        });
+        assert!(logs.contains("masked category keyword"));
+        assert_eq!(outcome.unwrap(), "an [KEYWORD_REDACTED]");
         assert_eq!(detections.len(), 1);
         let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
             panic!("expected a category keyword record");
@@ -478,15 +486,17 @@ mod content_filter_actions_behavior {
         let pattern = regex_pattern("email", "a@b", ContentFilterAction::Mask);
         let spans = pattern.find_spans("a@b").unwrap();
         let mut detections = Vec::new();
-        let masked = handle_pattern_match(
-            &pattern,
-            "a@b",
-            &spans,
-            PATTERN_FORMAT,
-            Some(&mut detections),
-        )
-        .unwrap();
-        assert_eq!(masked, "[EMAIL_REDACTED]");
+        let (outcome, logs) = with_logs_at(tracing::Level::INFO, || {
+            handle_pattern_match(
+                &pattern,
+                "a@b",
+                &spans,
+                PATTERN_FORMAT,
+                Some(&mut detections),
+            )
+        });
+        assert!(logs.contains("masked every pattern match"));
+        assert_eq!(outcome.unwrap(), "[EMAIL_REDACTED]");
         assert_eq!(detections.len(), 1);
         let ContentFilterDetection::Pattern(record) = &detections[0] else {
             panic!("expected a pattern record");
@@ -565,6 +575,19 @@ mod content_filter_actions_behavior {
         assert_eq!(record.keyword, "hunter2");
         assert_eq!(record.action, "MASK");
         assert_eq!(record.description.as_deref(), Some("password"));
+    }
+
+    #[test]
+    fn blocked_word_match_logs_the_keyword_and_action_at_debug() {
+        let word = blocked("hunter2", ContentFilterAction::Mask, None);
+        let (outcome, logs) = with_logs_at(tracing::Level::DEBUG, || {
+            handle_blocked_word_match(&word, "hunter2", KEYWORD_TAG, None)
+        });
+        assert_eq!(outcome.unwrap(), KEYWORD_TAG);
+        assert!(logs.contains("blocked word found"));
+        assert!(logs.contains("keyword=hunter2"));
+        assert!(logs.contains("action=MASK"));
+        assert!(logs.contains("masked blocked word"));
     }
 
     #[test]
