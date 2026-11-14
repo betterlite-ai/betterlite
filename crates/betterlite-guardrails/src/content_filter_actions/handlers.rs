@@ -135,7 +135,7 @@ impl<'matched> Matched<'matched> {
                     matched_phrase = %found.matched,
                     "conditional match detected but MASK action is not supported for conditional categories"
                 );
-                Ok(text.to_string())
+                Ok((*text).to_owned())
             }
             Self::CategoryKeyword {
                 found,
