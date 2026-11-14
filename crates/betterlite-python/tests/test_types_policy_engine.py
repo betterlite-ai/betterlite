@@ -623,7 +623,7 @@ def test_extra_names_match_litellm(
 
 
 def test_names_policy_types_match() -> None:
-    pairs = [
+    pairs: list[tuple[type[BaseModel], type[BaseModel]]] = [
         (betterlite_policy.PolicyCondition, litellm_policy.PolicyCondition),
         (betterlite_policy.PolicyScope, litellm_policy.PolicyScope),
         (betterlite_policy.PolicyGuardrails, litellm_policy.PolicyGuardrails),
@@ -654,7 +654,7 @@ def test_names_policy_types_match() -> None:
 
 
 def test_names_resolver_match() -> None:
-    pairs = [
+    pairs: list[tuple[type[BaseModel], type[BaseModel]]] = [
         (betterlite_resolver.PolicyMatchContext, litellm_resolver.PolicyMatchContext),
         (betterlite_resolver.ResolvedPolicy, litellm_resolver.ResolvedPolicy),
         (betterlite_resolver.PolicyScopeResponse, litellm_resolver.PolicyScopeResponse),
@@ -732,7 +732,7 @@ def test_names_pipeline_match() -> None:
         litellm_pipeline.VALID_PIPELINE_ACTIONS,
         litellm_pipeline.VALID_PIPELINE_MODES,
     )
-    pairs = [
+    pairs: list[tuple[type[BaseModel], type[BaseModel]]] = [
         (betterlite_pipeline.PipelineStep, litellm_pipeline.PipelineStep),
         (betterlite_pipeline.GuardrailPipeline, litellm_pipeline.GuardrailPipeline),
         (betterlite_pipeline.PipelineStepResult, pipeline_models.PipelineStepResult),
@@ -752,11 +752,11 @@ def test_names_pipeline_match() -> None:
 
 
 def test_names_validation_match() -> None:
-    pairs = [
-        (
-            betterlite_validation.PolicyValidationErrorType,
-            litellm_validation.PolicyValidationErrorType,
-        ),
+    assert (
+        betterlite_validation.PolicyValidationErrorType.__name__
+        == litellm_validation.PolicyValidationErrorType.__name__
+    )
+    pairs: list[tuple[type[BaseModel], type[BaseModel]]] = [
         (
             betterlite_validation.PolicyValidationError,
             litellm_validation.PolicyValidationError,
