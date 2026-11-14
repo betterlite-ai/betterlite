@@ -1,0 +1,18 @@
+kind: helper
+name: lyria-global-interactions
+call:
+  vertex_lyria_speech:
+    function: prepared
+    cases:
+      - {model: lyria-3-clip-preview, params: {response_format: mp3}, voice: null, drop_params: false, global_drop_params: false, project: null, location: us-central1, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {response_format: mp3}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: vertex_ai/lyria-3-pro-preview, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: 'https://proxy.example/', input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {}, voice: null, drop_params: false, global_drop_params: false, project: team-project, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: '', api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false, project: team/project, location: europe-west4, api_base: null, input: a calm river, headers: {x-api-key: caller-secret}}
+      - {model: lyria-3-pro-preview, params: {instructions: whisper}, voice: null, drop_params: true, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: '', input: a calm river, headers: {}}
+env: {}
+compare: {ignore: []}
