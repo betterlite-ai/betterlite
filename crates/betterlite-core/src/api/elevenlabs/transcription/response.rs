@@ -2,6 +2,7 @@ use betterlite_openai::openai_base_config::Object;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use serde_with::rust::double_option;
+use thiserror::Error;
 
 use super::error::TranscriptionError;
 
@@ -44,6 +45,18 @@ struct ProviderReply {
     words: Option<Option<Vec<Object>>>,
 }
 
+#[derive(Debug, Error)]
+enum WordError {
+    #[error("the words field is not a list")]
+    NotList,
+    #[error("the word text is not a string")]
+    Text,
+    #[error("the word start is not a number")]
+    Start,
+    #[error("the word end is not a number")]
+    End,
+}
+
 pub fn decode_eleven_transcript(
     body: &[u8],
     max_bytes: usize,
@@ -51,43 +64,18 @@ pub fn decode_eleven_transcript(
     if body.len() > max_bytes {
         return Err(TranscriptionError::ReplyTooLarge { limit: max_bytes });
     }
-    let raw = || {
-        str::from_utf8(body).map_or_else(
-            |_| format!("{} bytes that are not UTF-8", body.len()),
-            str::to_owned,
-        )
-    };
-    let failed = |source: serde_json::Error| TranscriptionError::Reply {
-        message: source.to_string(),
-        raw: raw(),
-    };
     // httpx decodes reply bytes as utf-8-sig, so json.loads skips a leading byte order mark
     let payload = body.strip_prefix(BYTE_ORDER_MARK).unwrap_or(body);
     // LiteLLM calls .json() once and then .get() on it, so the reply must be one JSON object and nothing else
-    let hidden: Object = serde_json::from_slice(payload).map_err(&failed)?;
-    let reply: ProviderReply = serde_json::from_slice(payload).map_err(&failed)?;
+    let hidden: Object =
+        serde_json::from_slice(payload).map_err(|source| reply_error(body, source.to_string()))?;
+    let reply: ProviderReply =
+        serde_json::from_slice(payload).map_err(|source| reply_error(body, source.to_string()))?;
     let words = match reply.words {
         None => None,
-        Some(None) => {
-            return Err(TranscriptionError::Reply {
-                message: "the words field is not a list".to_owned(),
-                raw: raw(),
-            });
-        }
+        Some(None) => return Err(reply_error(body, WordError::NotList.to_string())),
         Some(Some(entries)) => {
-            let mut kept = Vec::new();
-            for entry in entries {
-                if entry.get("type").and_then(|value| value.as_str()) != Some("word") {
-                    continue;
-                }
-                let projected =
-                    project_word(&entry).map_err(|message| TranscriptionError::Reply {
-                        message: message.to_owned(),
-                        raw: raw(),
-                    })?;
-                kept.push(projected);
-            }
-            Some(kept)
+            Some(project_words(&entries).map_err(|source| reply_error(body, source.to_string()))?)
         }
     };
     Ok(ElevenTranscript {
@@ -101,36 +89,39 @@ pub fn decode_eleven_transcript(
     })
 }
 
-fn project_word(entry: &Object) -> Result<TranscriptWord, &'static str> {
+fn reply_error(body: &[u8], message: String) -> TranscriptionError {
+    TranscriptionError::Reply {
+        message,
+        raw: str::from_utf8(body).map_or_else(
+            |_| format!("{} bytes that are not UTF-8", body.len()),
+            str::to_owned,
+        ),
+    }
+}
+
+fn project_words(entries: &[Object]) -> Result<Vec<TranscriptWord>, WordError> {
+    entries
+        .iter()
+        .filter(|entry| entry.get("type").and_then(|value| value.as_str()) == Some("word"))
+        .map(project_word)
+        .collect()
+}
+
+fn project_word(entry: &Object) -> Result<TranscriptWord, WordError> {
     let word = match entry.get("text") {
         None => Some(String::new()),
         Some(value) if value.is_null() => None,
-        Some(value) => Some(
-            value
-                .as_str()
-                .ok_or("the word text is not a string")?
-                .to_owned(),
-        ),
+        Some(value) => Some(value.as_str().ok_or(WordError::Text)?.to_owned()),
     };
     let start = match entry.get("start") {
         None => Some(Number::from(0_u8)),
         Some(value) if value.is_null() => None,
-        Some(value) => Some(
-            value
-                .as_number()
-                .cloned()
-                .ok_or("the word start is not a number")?,
-        ),
+        Some(value) => Some(value.as_number().cloned().ok_or(WordError::Start)?),
     };
     let end = match entry.get("end") {
         None => Some(Number::from(0_u8)),
         Some(value) if value.is_null() => None,
-        Some(value) => Some(
-            value
-                .as_number()
-                .cloned()
-                .ok_or("the word end is not a number")?,
-        ),
+        Some(value) => Some(value.as_number().cloned().ok_or(WordError::End)?),
     };
     Ok(TranscriptWord { word, start, end })
 }
