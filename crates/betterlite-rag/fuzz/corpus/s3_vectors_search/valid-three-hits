@@ -1,0 +1,1 @@
+{"vectors": [{"distance": 0.1, "metadata": {"source_text": "a"}}, {"distance": 0.5, "metadata": {"source_text": "b", "chunk_index": "2"}}, {"distance": 0.9, "metadata": {"source_text": "c", "chunk_index": 3}}]}

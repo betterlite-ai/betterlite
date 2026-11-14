@@ -1,0 +1,22 @@
+kind: helper
+name: score_clamp
+call:
+  b7812:
+    calls:
+      - call: response
+        input:
+          status: 200
+          headers: {}
+          body: >-
+            {"vectors": [
+              {"distance": 0, "metadata": {"source_text": "a"}},
+              {"distance": 0.25, "metadata": {"source_text": "b"}},
+              {"distance": 0.7, "metadata": {"source_text": "c"}},
+              {"distance": 0.9, "metadata": {"source_text": "d"}},
+              {"distance": 1, "metadata": {"source_text": "e"}},
+              {"distance": 1.5, "metadata": {"source_text": "f"}},
+              {"distance": -0.5, "metadata": {"source_text": "g"}},
+              {"distance": 0.123456789, "metadata": {"source_text": "h"}}
+            ]}
+env: {}
+compare: {ignore: []}
