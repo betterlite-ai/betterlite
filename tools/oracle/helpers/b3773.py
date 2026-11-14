@@ -135,6 +135,7 @@ def protected_indices(input_value: ProtectedIndicesInput) -> JsonValue:
     indices = sorted(found)
     return {"indices": JSON.validate_python(indices)}
 
+
 def compress_failure_detail(input_value: FailureDetailInput) -> JsonValue:
     detail = _build_compress_failure_detail(input_value["status"], input_value["body"])
     return {"detail": JSON.validate_python(detail)}
