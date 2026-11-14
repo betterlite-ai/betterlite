@@ -1,0 +1,14 @@
+kind: helper
+name: legacy-stream-chunk
+call:
+  anthropic_completion:
+    function: chunk
+    chunks:
+      - {completion: Hi, stop_reason: null}
+      - {completion: "", stop_reason: end_turn}
+      - {stop_reason: max_tokens}
+      - {completion: 7, index: 3, stop_reason: ""}
+      - {completion: null}
+      - {}
+env: {}
+compare: {ignore: []}

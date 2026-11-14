@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-completion-chunk
+call: {anthropic_completion: {function: chunk, chunks: [{completion: Hi, stop_reason: null}, {stop_reason: max_tokens}, {}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,21 @@
+kind: helper
+name: legacy-options
+call:
+  anthropic_completion:
+    function: options
+    constructor: {max_tokens_to_sample: 512, stop_sequences: [END], top_k: 5, metadata: {user_id: configured}}
+    cases:
+      - model: claude-2
+        messages: [{role: user, content: Hi there}]
+        non_default: {max_tokens: 100, stream: true, stop: [a, b], temperature: 0.5, top_p: 0.9, extra_headers: {x-trace: one}, user: person-1}
+        existing: {}
+      - model: claude-2
+        messages: [{role: user, content: Hi there}]
+        non_default: {max_tokens: 100, max_completion_tokens: 200, stream: false, stop: STOP}
+        existing: {top_k: 9, max_tokens_to_sample: 7}
+      - model: claude-instant-1
+        messages: [{role: user, content: Hi there}]
+        non_default: {user: null, logit_bias: {"5": 1}, n: 2}
+        existing: {}
+env: {}
+compare: {ignore: []}

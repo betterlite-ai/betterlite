@@ -1084,6 +1084,7 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
  "betterlite-context",
  "betterlite-error",
@@ -1092,6 +1093,8 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "hex",

@@ -1,0 +1,13 @@
+kind: helper
+name: legacy-response-stop-reason
+call:
+  anthropic_completion:
+    function: reply
+    cases:
+      - {model: claude-2, messages: [{role: user, content: Hi there}], status: 200, body: '{"completion":" Hello there","stop_reason":"stop_sequence","model":"claude-2"}', initial_content: initial}
+      - {model: claude-instant-1, messages: [{role: user, content: Hi there}], status: 200, body: '{"completion":"","stop_reason":"max_tokens"}', initial_content: kept}
+      - {model: claude-2, messages: [{role: user, content: Hi there}], status: 200, body: '{"completion":"Un café, s''il vous plaît 😀","stop_reason":"end_turn"}', initial_content: initial}
+      - {model: claude-2, messages: [{role: user, content: Hi there}], status: 529, body: '{"error":"overloaded"}', initial_content: initial}
+      - {model: claude-2, messages: [{role: user, content: Hi there}], status: 502, body: "<html>bad gateway</html>", initial_content: initial}
+env: {}
+compare: {ignore: []}
