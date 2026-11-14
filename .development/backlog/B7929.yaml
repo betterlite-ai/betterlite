@@ -1,7 +1,7 @@
 id: B7929
 milestone: M12 python
 title: Python types for the small provider files and llms/base.py (types/llms aiml to xai)
-status: todo
+status: done
 depends_on: [B5657, B9951]
 file: tasks/B7929-types-small-provider-types.yaml
 covers:
@@ -24,7 +24,7 @@ covers:
   - "litellm/types/llms/xai.py"
 parent: B167
 split_from: B167
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1720
