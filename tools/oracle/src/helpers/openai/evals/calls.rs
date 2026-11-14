@@ -60,7 +60,7 @@ pub(super) fn params_object(params: Option<&LitellmParams>) -> Result<Object, Bo
     }
 }
 
-pub(super) fn context_of<'call>(
+pub(super) const fn context_of<'call>(
     params: &'call Object,
     headers: &'call HeaderMap,
 ) -> EvalsRequestContext<'call> {
