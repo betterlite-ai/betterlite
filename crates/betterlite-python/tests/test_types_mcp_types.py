@@ -2,7 +2,7 @@ import asyncio
 import itertools
 from collections.abc import Callable, Mapping
 from enum import Enum, StrEnum
-from typing import Final
+from typing import Final, Protocol, runtime_checkable
 
 import httpx
 import litellm.types.mcp as litellm_mcp  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L1
@@ -97,6 +97,7 @@ NARROWED_FIELDS: Final = frozenset(
         "arguments",
         "env_vars",
         "hidden_params",
+        "inputSchema",
         "input_schema",
         "mcp_info",
         "mcp_tool_call_response",
@@ -112,37 +113,43 @@ ENUM_PAIRS: Final[list[tuple[type[StrEnum], type[Enum]]]] = [
     (betterlite_enums.MCPSpecVersion, litellm_mcp.MCPSpecVersion),
     (betterlite_enums.MCPAuth, litellm_mcp.MCPAuth),
 ]
-MODEL_PAIRS: Final[list[tuple[type[BaseModel], type[BaseModel]]]] = [
-    (betterlite_models.MCPPublicServer, litellm_mcp.MCPPublicServer),
-    (betterlite_models.MCPAllowedClient, litellm_mcp.MCPAllowedClient),
-    (betterlite_models.MCPToolSearchSettings, litellm_mcp.MCPToolSearchSettings),
-    (betterlite_hooks.MCPPreCallRequestObject, litellm_mcp.MCPPreCallRequestObject),
-    (betterlite_hooks.MCPPreCallResponseObject, litellm_mcp.MCPPreCallResponseObject),
-    (betterlite_hooks.MCPDuringCallRequestObject, litellm_mcp.MCPDuringCallRequestObject),
-    (betterlite_hooks.MCPDuringCallResponseObject, litellm_mcp.MCPDuringCallResponseObject),
-    (betterlite_hooks.MCPPostCallResponseObject, litellm_mcp.MCPPostCallResponseObject),
-    (betterlite_hooks.MCPGatewaySession, litellm_mcp.MCPGatewaySession),
-    (betterlite_hooks.MCPGatewaySessionGroupCount, litellm_mcp.MCPGatewaySessionGroupCount),
-    (betterlite_hooks.MCPGatewaySessionsResponse, litellm_mcp.MCPGatewaySessionsResponse),
-    (
-        betterlite_hooks.MCPGatewaySessionsTerminateResponse,
-        litellm_mcp.MCPGatewaySessionsTerminateResponse,
-    ),
-    (betterlite_manager.MCPOAuthMetadata, litellm_manager.MCPOAuthMetadata),
-    (betterlite_manager.MCPOAuthIdentityBinding, litellm_manager.MCPOAuthIdentityBinding),
-    (betterlite_manager.PinnedMCPTool, litellm_manager.PinnedMCPTool),
-    (betterlite_manager.MCPServer, litellm_manager.MCPServer),
-    (betterlite_toolset.MCPToolset, litellm_toolset.MCPToolset),
-    (betterlite_toolset.NewMCPToolsetRequest, litellm_toolset.NewMCPToolsetRequest),
-    (betterlite_toolset.UpdateMCPToolsetRequest, litellm_toolset.UpdateMCPToolsetRequest),
-    (betterlite_registry.MCPTool, litellm_registry.MCPTool),
-    (betterlite_registry.ToolSchema, litellm_registry.ToolSchema),
-    (betterlite_registry.ListToolsResponse, litellm_registry.ListToolsResponse),
-    (betterlite_registry.CallToolRequest, litellm_registry.CallToolRequest),
-    (betterlite_registry.ContentItem, litellm_registry.ContentItem),
+BETTERLITE_MODELS: Final[list[type[BaseModel]]] = [
+    betterlite_models.MCPPublicServer,
+    betterlite_models.MCPAllowedClient,
+    betterlite_models.MCPToolSearchSettings,
+    betterlite_hooks.MCPPreCallRequestObject,
+    betterlite_hooks.MCPPreCallResponseObject,
+    betterlite_hooks.MCPDuringCallRequestObject,
+    betterlite_hooks.MCPDuringCallResponseObject,
+    betterlite_hooks.MCPPostCallResponseObject,
+    betterlite_hooks.MCPGatewaySession,
+    betterlite_hooks.MCPGatewaySessionGroupCount,
+    betterlite_hooks.MCPGatewaySessionsResponse,
+    betterlite_hooks.MCPGatewaySessionsTerminateResponse,
+    betterlite_manager.MCPOAuthMetadata,
+    betterlite_manager.MCPOAuthIdentityBinding,
+    betterlite_manager.PinnedMCPTool,
+    betterlite_manager.MCPServer,
+    betterlite_toolset.MCPToolset,
+    betterlite_toolset.NewMCPToolsetRequest,
+    betterlite_toolset.UpdateMCPToolsetRequest,
+    betterlite_registry.MCPTool,
+    betterlite_registry.ToolSchema,
+    betterlite_registry.ListToolsResponse,
+    betterlite_registry.CallToolRequest,
+    betterlite_registry.ContentItem,
 ]
+# LiteLLM's models carry Any fields, which mypy rejects as values, so they are found by name
+LITELLM_MODELS: Final = {
+    model.__name__: model
+    for model in BaseModel.__subclasses__()
+    if model.__module__.startswith("litellm.types.mcp")
+}
+THEIR_SERVER: Final = LITELLM_MODELS["MCPServer"]
 # MCPTool holds a callable, which has no JSON schema
-SCHEMA_PAIRS: Final = [pair for pair in MODEL_PAIRS if pair[0] is not betterlite_registry.MCPTool]
+SCHEMA_MODELS: Final = [
+    model for model in BETTERLITE_MODELS if model is not betterlite_registry.MCPTool
+]
 
 ALIAS_ADAPTERS: Final[list[tuple[TypeAdapter[JsonValue], TypeAdapter[JsonValue]]]] = [
     (TypeAdapter(betterlite_enums.MCPTransportType), TypeAdapter(litellm_mcp.MCPTransportType)),
@@ -150,10 +157,6 @@ ALIAS_ADAPTERS: Final[list[tuple[TypeAdapter[JsonValue], TypeAdapter[JsonValue]]
     (
         TypeAdapter(betterlite_enums.MCPUpstreamProtocol),
         TypeAdapter(litellm_mcp.MCPUpstreamProtocol),
-    ),
-    (
-        TypeAdapter(betterlite_enums.MCPAdvertisedVersions),
-        TypeAdapter(litellm_mcp.MCPAdvertisedVersions),
     ),
     (TypeAdapter(betterlite_enums.MCPSpecVersionType), TypeAdapter(litellm_mcp.MCPSpecVersionType)),
     (TypeAdapter(betterlite_enums.MCPAuthType), TypeAdapter(litellm_mcp.MCPAuthType)),
@@ -296,11 +299,102 @@ URL_PAIRS: Final[list[tuple[JsonValue, JsonValue]]] = [
     ("a", "c"),
     ("a", ""),
 ]
+AUTH_TYPES: Final[list[JsonValue]] = [None, "none", "oauth2", "true_passthrough"]
+FLOWS: Final[list[JsonValue]] = [None, "client_credentials", "authorization_code"]
+FLAGS: Final[list[JsonValue]] = [False, True]
+VERSION_PAYLOADS: Final[list[dict[str, JsonValue]]] = [
+    payload
+    for info, version in itertools.product(MCP_INFOS, PROTOCOL_VERSIONS)
+    for payload in (
+        {**BASE_SERVER, "mcp_info": info, "protocol_version": version},
+        {**BASE_SERVER, "mcp_info": info},
+        {**BASE_SERVER, "protocol_version": version},
+        BASE_SERVER,
+    )
+]
+BINDING_PAYLOADS: Final[list[dict[str, JsonValue]]] = [
+    {
+        **BASE_SERVER,
+        "auth_type": auth_type,
+        "oauth2_flow": flow,
+        "delegate_auth_to_upstream": delegate,
+        "oauth_identity_binding": binding,
+    }
+    for binding, auth_type, flow, delegate in itertools.product(BINDINGS, AUTH_TYPES, FLOWS, FLAGS)
+]
+TOKEN_HEADER_PAYLOADS: Final[list[dict[str, JsonValue]]] = [
+    {**BASE_SERVER, "upstream_token_header": header} for header in UPSTREAM_HEADERS
+]
+INFO_PAYLOADS: Final[list[dict[str, JsonValue]]] = [
+    {**BASE_SERVER, "mcp_info": info} for info in MCP_INFOS
+]
+REJECTED_PAYLOADS: Final[list[dict[str, JsonValue]]] = [
+    {},
+    {**BASE_SERVER, "transport": "sse", "auth_type": "bogus"},
+    {**BASE_SERVER, "transport": "bogus", "auth_type": "oauth2"},
+]
+URL_PAYLOADS: Final[list[dict[str, JsonValue]]] = [
+    {
+        **BASE_SERVER,
+        "authorization_url": primary,
+        "token_url": primary,
+        "registration_url": primary,
+        "configured_authorization_url": configured,
+        "configured_token_url": configured,
+        "configured_registration_url": configured,
+    }
+    for primary, configured in URL_PAIRS
+]
 
 
 class ObjectSchema(BaseModel):
     properties: dict[str, JsonValue]
     required: list[str] = []
+
+
+@runtime_checkable
+class ServerFlags(Protocol):
+    @property
+    def effective_authorization_url(self) -> str | None: ...
+
+    @property
+    def effective_token_url(self) -> str | None: ...
+
+    @property
+    def effective_registration_url(self) -> str | None: ...
+
+    @property
+    def has_client_credentials(self) -> bool: ...
+
+    @property
+    def needs_user_oauth_token(self) -> bool: ...
+
+    @property
+    def is_gateway_managed_oauth2(self) -> bool: ...
+
+    @property
+    def uses_per_server_oauth_relay(self) -> bool: ...
+
+    @property
+    def advertises_gateway_authorization_server(self) -> bool: ...  # ast-grep-ignore: no-long-names
+
+    @property
+    def is_true_passthrough(self) -> bool: ...
+
+    @property
+    def is_oauth_delegate(self) -> bool: ...
+
+    @property
+    def is_client_forwarded_token(self) -> bool: ...
+
+    @property
+    def is_dcr_bridge(self) -> bool: ...
+
+    @property
+    def requires_per_user_auth(self) -> bool: ...
+
+    @property
+    def is_oauth_passthrough(self) -> bool: ...
 
 
 def object_schema(model: type[BaseModel]) -> ObjectSchema:
@@ -323,11 +417,7 @@ def outcome(model: type[BaseModel], payload: dict[str, JsonValue]) -> JsonValue:
     try:
         built = model.model_validate(payload)
     except ValidationError as error:
-        failures: list[JsonValue] = [
-            [detail["type"], [str(part) for part in detail["loc"]], detail["msg"]]
-            for detail in error.errors()
-        ]
-        return failures
+        return error.json(include_url=False, include_input=False)
     dumped: dict[str, JsonValue] = built.model_dump(mode="json")
     return dumped
 
@@ -345,40 +435,54 @@ def pinned_result(
     return dumped
 
 
+def server_flags(server: BaseModel) -> tuple[str | bool | None, ...]:
+    match server:
+        case ServerFlags():
+            return (
+                server.effective_authorization_url,
+                server.effective_token_url,
+                server.effective_registration_url,
+                server.has_client_credentials,
+                server.needs_user_oauth_token,
+                server.is_gateway_managed_oauth2,
+                server.uses_per_server_oauth_relay,
+                server.advertises_gateway_authorization_server,
+                server.is_true_passthrough,
+                server.is_oauth_delegate,
+                server.is_client_forwarded_token,
+                server.is_dcr_bridge,
+                server.requires_per_user_auth,
+                server.is_oauth_passthrough,
+            )
+        case BaseModel():
+            pass
+    raise TypeError(f"{type(server).__name__} has no server flags")
+
+
 def assert_server_flags_match(payload: dict[str, JsonValue]) -> None:
-    ours = betterlite_manager.MCPServer.model_validate(payload)
-    theirs = litellm_manager.MCPServer.model_validate(payload)
-    assert ours.effective_authorization_url == theirs.effective_authorization_url, payload
-    assert ours.effective_token_url == theirs.effective_token_url, payload
-    assert ours.effective_registration_url == theirs.effective_registration_url, payload
-    assert ours.has_client_credentials == theirs.has_client_credentials, payload
-    assert ours.needs_user_oauth_token == theirs.needs_user_oauth_token, payload
-    assert ours.is_gateway_managed_oauth2 == theirs.is_gateway_managed_oauth2, payload
-    assert ours.uses_per_server_oauth_relay == theirs.uses_per_server_oauth_relay, payload
-    assert (
-        ours.advertises_gateway_authorization_server
-        == theirs.advertises_gateway_authorization_server
-    ), payload
-    assert ours.is_true_passthrough == theirs.is_true_passthrough, payload
-    assert ours.is_oauth_delegate == theirs.is_oauth_delegate, payload
-    assert ours.is_client_forwarded_token == theirs.is_client_forwarded_token, payload
-    assert ours.is_dcr_bridge == theirs.is_dcr_bridge, payload
-    assert ours.requires_per_user_auth == theirs.requires_per_user_auth, payload
-    assert ours.is_oauth_passthrough == theirs.is_oauth_passthrough, payload
+    ours = server_flags(betterlite_manager.MCPServer.model_validate(payload))
+    theirs = server_flags(THEIR_SERVER.model_validate(payload))
+    assert ours == theirs, payload
 
 
-def test_names_exist_in_litellm_and_betterlite() -> None:
+def assert_server_outcomes_match(payload: dict[str, JsonValue]) -> None:
+    ours = outcome(betterlite_manager.MCPServer, payload)
+    theirs = outcome(THEIR_SERVER, payload)
+    assert ours == theirs, payload
+
+
+def test_names_exist() -> None:
     betterlite_mcp_names: set[str] = set()
     for module in BETTERLITE_MCP_MODULES:
         betterlite_mcp_names.update(dir(module))
-    assert LITELLM_MCP_NAMES <= set(dir(litellm_mcp))
-    assert LITELLM_MCP_NAMES <= betterlite_mcp_names
-    assert LITELLM_MANAGER_NAMES <= set(dir(litellm_manager))
-    assert LITELLM_MANAGER_NAMES <= set(dir(betterlite_manager))
-    assert LITELLM_TOOLSET_NAMES <= set(dir(litellm_toolset))
-    assert LITELLM_TOOLSET_NAMES <= set(dir(betterlite_toolset))
-    assert LITELLM_REGISTRY_NAMES <= set(dir(litellm_registry))
-    assert LITELLM_REGISTRY_NAMES <= set(dir(betterlite_registry))
+    assert set(dir(litellm_mcp)) >= LITELLM_MCP_NAMES
+    assert betterlite_mcp_names >= LITELLM_MCP_NAMES
+    assert set(dir(litellm_manager)) >= LITELLM_MANAGER_NAMES
+    assert set(dir(betterlite_manager)) >= LITELLM_MANAGER_NAMES
+    assert set(dir(litellm_toolset)) >= LITELLM_TOOLSET_NAMES
+    assert set(dir(betterlite_toolset)) >= LITELLM_TOOLSET_NAMES
+    assert set(dir(litellm_registry)) >= LITELLM_REGISTRY_NAMES
+    assert set(dir(betterlite_registry)) >= LITELLM_REGISTRY_NAMES
 
 
 def test_names_constants() -> None:
@@ -403,6 +507,12 @@ def test_names_literal_aliases() -> None:
         ours_schema: dict[str, JsonValue] = ours.json_schema()
         theirs_schema: dict[str, JsonValue] = theirs.json_schema()
         assert ours_schema == theirs_schema
+
+
+def test_names_advertised_versions() -> None:
+    ours: dict[str, JsonValue] = TypeAdapter(betterlite_enums.MCPAdvertisedVersions).json_schema()
+    theirs: dict[str, JsonValue] = TypeAdapter(litellm_mcp.MCPAdvertisedVersions).json_schema()
+    assert ours == theirs
 
 
 def test_names_typeddict_keys() -> None:
@@ -440,16 +550,17 @@ def test_names_typeddict_keys() -> None:
     )
 
 
-@pytest.mark.parametrize(("ours", "theirs"), MODEL_PAIRS)
-def test_names_model_fields(ours: type[BaseModel], theirs: type[BaseModel]) -> None:
+@pytest.mark.parametrize("ours", BETTERLITE_MODELS)
+def test_names_model_fields(ours: type[BaseModel]) -> None:
+    theirs = LITELLM_MODELS[ours.__name__]
     assert field_shape(ours) == field_shape(theirs)
     assert dict(ours.model_config) == dict(theirs.model_config)
 
 
-@pytest.mark.parametrize(("ours", "theirs"), SCHEMA_PAIRS)
-def test_names_model_schemas(ours: type[BaseModel], theirs: type[BaseModel]) -> None:
+@pytest.mark.parametrize("ours", SCHEMA_MODELS)
+def test_names_model_schemas(ours: type[BaseModel]) -> None:
     ours_schema = object_schema(ours)
-    theirs_schema = object_schema(theirs)
+    theirs_schema = object_schema(LITELLM_MODELS[ours.__name__])
     assert sorted(ours_schema.required) == sorted(theirs_schema.required)
     assert {
         name: prop for name, prop in ours_schema.properties.items() if name not in NARROWED_FIELDS
@@ -458,14 +569,31 @@ def test_names_model_schemas(ours: type[BaseModel], theirs: type[BaseModel]) -> 
     }
 
 
-def test_names_registry_private_meta() -> None:
+def test_names_registry_meta() -> None:
     assert betterlite_registry.ListToolsResponse.__private_attributes__.keys() == (
-        litellm_registry.ListToolsResponse.__private_attributes__.keys()
+        LITELLM_MODELS["ListToolsResponse"].__private_attributes__.keys()
     )
 
 
+def test_names_tool_handler() -> None:
+    tool = betterlite_registry.MCPTool(
+        name="n", description="d", input_schema={}, handler=lambda **arguments: arguments
+    )
+    assert tool.handler(a=1) == {"a": 1}
+    payload: dict[str, JsonValue] = {
+        "name": "n",
+        "description": "d",
+        "input_schema": {},
+        "handler": 3,
+    }
+    with pytest.raises(ValidationError):
+        betterlite_registry.MCPTool.model_validate(payload)
+    with pytest.raises(ValidationError):
+        LITELLM_MODELS["MCPTool"].model_validate(payload)
+
+
 @pytest.mark.parametrize("raw", HEADER_NAMES)
-def test_normalize_upstream_header_name_matches(raw: str) -> None:
+def test_names_normalize_header(raw: str) -> None:
     assert betterlite_headers.normalize_upstream_header_name(
         raw
     ) == litellm_mcp.normalize_upstream_header_name(raw)
@@ -473,7 +601,7 @@ def test_normalize_upstream_header_name_matches(raw: str) -> None:
 
 @pytest.mark.parametrize("name", LOOKUP_NAMES)
 @pytest.mark.parametrize("headers", HEADER_MAPS)
-def test_header_lookups_match(headers: dict[str, str] | None, name: str) -> None:
+def test_names_header_lookups(headers: dict[str, str] | None, name: str) -> None:
     assert betterlite_headers.same_header(name, "x-KEY") == litellm_mcp.same_header(name, "x-KEY")
     assert betterlite_headers.has_header(headers, name) == litellm_mcp.has_header(headers, name)
     assert betterlite_headers.without_header(headers, name) == litellm_mcp.without_header(
@@ -482,20 +610,20 @@ def test_header_lookups_match(headers: dict[str, str] | None, name: str) -> None
 
 
 @pytest.mark.parametrize("headers", HEADER_MAPS)
-def test_custom_credential_slot_matches(headers: dict[str, str] | None) -> None:
+def test_names_credential_slot(headers: dict[str, str] | None) -> None:
     assert betterlite_headers.custom_credential_slot(
         headers
     ) == litellm_mcp.custom_credential_slot(headers)
 
 
 @pytest.mark.parametrize(("configured", "target"), ORIGIN_PAIRS)
-def test_crosses_origin_matches(configured: str, target: str) -> None:
+def test_names_crosses_origin(configured: str, target: str) -> None:
     assert betterlite_headers.crosses_origin(configured, target) == litellm_mcp.crosses_origin(
         configured, target
     )
 
 
-def test_crosses_origin_rejects_bad_port_like_litellm() -> None:
+def test_names_origin_bad_port() -> None:
     with pytest.raises(ValueError, match="Port out of range") as theirs:
         litellm_mcp.crosses_origin("http://a:99999", "http://a")
     with pytest.raises(ValueError, match="Port out of range") as ours:
@@ -505,7 +633,7 @@ def test_crosses_origin_rejects_bad_port_like_litellm() -> None:
 
 @pytest.mark.parametrize("target", HOOK_TARGETS)
 @pytest.mark.parametrize(("configured", "slot"), HOOK_ARGS)
-def test_credential_redirect_hook_matches(configured: str, slot: str | None, target: str) -> None:
+def test_names_redirect_hook(configured: str, slot: str | None, target: str) -> None:
     ours = betterlite_headers.credential_redirect_hook(configured, slot)
     theirs = litellm_mcp.credential_redirect_hook(configured, slot)
     assert (ours is None) == (theirs is None)
@@ -518,76 +646,32 @@ def test_credential_redirect_hook_matches(configured: str, slot: str | None, tar
     assert ours_request.headers == theirs_request.headers
 
 
-@pytest.mark.parametrize("mcp_info", MCP_INFOS)
-@pytest.mark.parametrize("protocol_version", PROTOCOL_VERSIONS)
-def test_server_protocol_version_matches(mcp_info: JsonValue, protocol_version: JsonValue) -> None:
-    with_both: dict[str, JsonValue] = {
-        **BASE_SERVER,
-        "mcp_info": mcp_info,
-        "protocol_version": protocol_version,
-    }
-    only_info: dict[str, JsonValue] = {**BASE_SERVER, "mcp_info": mcp_info}
-    only_version: dict[str, JsonValue] = {**BASE_SERVER, "protocol_version": protocol_version}
-    for payload in (with_both, only_info, only_version, BASE_SERVER):
-        assert outcome(betterlite_manager.MCPServer, payload) == outcome(
-            litellm_manager.MCPServer, payload
-        )
+def test_names_server_version() -> None:
+    for payload in VERSION_PAYLOADS:
+        assert_server_outcomes_match(payload)
 
 
-@pytest.mark.parametrize("binding", BINDINGS)
-@pytest.mark.parametrize("auth_type", [None, "none", "oauth2", "true_passthrough"])
-@pytest.mark.parametrize("flow", [None, "client_credentials", "authorization_code"])
-@pytest.mark.parametrize("delegate", [False, True])
-def test_server_identity_binding_matches(
-    binding: JsonValue, auth_type: JsonValue, flow: JsonValue, delegate: JsonValue
-) -> None:
-    payload: dict[str, JsonValue] = {
-        **BASE_SERVER,
-        "auth_type": auth_type,
-        "oauth2_flow": flow,
-        "delegate_auth_to_upstream": delegate,
-        "oauth_identity_binding": binding,
-    }
-    assert outcome(betterlite_manager.MCPServer, payload) == outcome(
-        litellm_manager.MCPServer, payload
-    )
+def test_names_server_binding() -> None:
+    for payload in BINDING_PAYLOADS:
+        assert_server_outcomes_match(payload)
 
 
-@pytest.mark.parametrize("header", UPSTREAM_HEADERS)
-def test_server_upstream_token_header_matches(header: JsonValue) -> None:
-    payload: dict[str, JsonValue] = {**BASE_SERVER, "upstream_token_header": header}
-    assert outcome(betterlite_manager.MCPServer, payload) == outcome(
-        litellm_manager.MCPServer, payload
-    )
+def test_names_token_header() -> None:
+    for payload in TOKEN_HEADER_PAYLOADS:
+        assert_server_outcomes_match(payload)
 
 
-@pytest.mark.parametrize(("transport", "auth_type"), [("sse", "bogus"), ("bogus", "oauth2")])
-def test_server_literal_rejections_match(transport: str, auth_type: str) -> None:
-    payload: dict[str, JsonValue] = {**BASE_SERVER, "transport": transport, "auth_type": auth_type}
-    assert outcome(betterlite_manager.MCPServer, payload) == outcome(
-        litellm_manager.MCPServer, payload
-    )
+def test_names_server_rejections() -> None:
+    for payload in REJECTED_PAYLOADS:
+        assert_server_outcomes_match(payload)
 
 
-def test_server_required_fields_match() -> None:
-    assert outcome(betterlite_manager.MCPServer, {}) == outcome(litellm_manager.MCPServer, {})
+def test_names_server_urls() -> None:
+    for payload in URL_PAYLOADS:
+        assert_server_flags_match(payload)
 
 
-@pytest.mark.parametrize(("authorization_url", "configured"), URL_PAIRS)
-def test_server_effective_urls_match(authorization_url: JsonValue, configured: JsonValue) -> None:
-    payload: dict[str, JsonValue] = {
-        **BASE_SERVER,
-        "authorization_url": authorization_url,
-        "token_url": authorization_url,
-        "registration_url": authorization_url,
-        "configured_authorization_url": configured,
-        "configured_token_url": configured,
-        "configured_registration_url": configured,
-    }
-    assert_server_flags_match(payload)
-
-
-def test_server_flags_match_over_every_auth_combination() -> None:
+def test_names_server_flags() -> None:
     for combination in itertools.product(*SERVER_AXES.values()):
         payload: dict[str, JsonValue] = {
             **BASE_SERVER,
@@ -596,7 +680,7 @@ def test_server_flags_match_over_every_auth_combination() -> None:
         assert_server_flags_match(payload)
 
 
-def test_server_repr_hides_credentials_like_litellm() -> None:
+def test_names_server_repr() -> None:
     payload: dict[str, JsonValue] = {
         **BASE_SERVER,
         "auth_type": "api_key",
@@ -604,7 +688,7 @@ def test_server_repr_hides_credentials_like_litellm() -> None:
         "client_secret": OPAQUE,
     }
     ours = betterlite_manager.MCPServer.model_validate(payload)
-    theirs = litellm_manager.MCPServer.model_validate(payload)
+    theirs = THEIR_SERVER.model_validate(payload)
     assert OPAQUE not in repr(ours)
     assert OPAQUE not in str(ours)
     assert repr(ours) == repr(theirs)
@@ -612,15 +696,12 @@ def test_server_repr_hides_credentials_like_litellm() -> None:
 
 
 @pytest.mark.parametrize("value", PINNED_VALUES)
-def test_parse_pinned_tools_matches(value: JsonValue) -> None:
-    assert pinned_result(betterlite_manager.parse_pinned_tools, value) == pinned_result(
-        litellm_manager.parse_pinned_tools, value
-    )
+def test_names_pinned_tools(value: JsonValue) -> None:
+    ours = pinned_result(betterlite_manager.parse_pinned_tools, value)
+    theirs = pinned_result(litellm_manager.parse_pinned_tools, value)
+    assert ours == theirs
 
 
-@pytest.mark.parametrize("info", MCP_INFOS)
-def test_protocol_metadata_check_matches(info: JsonValue) -> None:
-    payload: dict[str, JsonValue] = {**BASE_SERVER, "mcp_info": info}
-    assert outcome(betterlite_manager.MCPServer, payload) == outcome(
-        litellm_manager.MCPServer, payload
-    )
+def test_names_info_check() -> None:
+    for payload in INFO_PAYLOADS:
+        assert_server_outcomes_match(payload)

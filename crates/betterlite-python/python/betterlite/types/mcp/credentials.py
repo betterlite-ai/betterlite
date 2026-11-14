@@ -32,7 +32,7 @@ class MCPCredentials(TypedDict, total=False):
     token_exchange_profile: str | None
 
 
-MCP_ADMIN_CONFIG_CREDENTIAL_KEYS: Final[tuple[str, ...]] = (
+MCP_ADMIN_CONFIG_CREDENTIAL_KEYS: Final[tuple[str, ...]] = (  # ast-grep-ignore: no-long-names
     "upstream_resource",
     "upstream_token_header",
 )

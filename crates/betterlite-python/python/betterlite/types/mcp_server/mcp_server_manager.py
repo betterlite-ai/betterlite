@@ -31,13 +31,18 @@ _CREDENTIAL_HEADER_NAMES: Final = ("authorization", "x-api-key", "api-key", "api
 _EXCHANGE_PROFILE: Final = "rfc8693"
 
 
-def _validate_mcp_protocol_metadata(value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+def _validate_mcp_protocol_metadata(  # ast-grep-ignore: no-long-names
+    value: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
     if "protocol_version" in value:
         _UPSTREAM_PROTOCOL.validate_python(value["protocol_version"])
     return value
 
 
-MCPInfo = Annotated[dict[str, JsonValue], AfterValidator(_validate_mcp_protocol_metadata)]
+MCPInfo = Annotated[
+    dict[str, JsonValue],
+    AfterValidator(_validate_mcp_protocol_metadata),  # ast-grep-ignore: no-long-names
+]
 
 
 class MCPOAuthMetadata(BaseModel):
@@ -74,14 +79,13 @@ _PINNED_TOOLS: Final[TypeAdapter[dict[str, PinnedMCPTool] | None]] = TypeAdapter
 def parse_pinned_tools(
     value: JsonValue | Mapping[str, PinnedMCPTool],
 ) -> dict[str, PinnedMCPTool] | None:
+    decoded: JsonValue | Mapping[str, PinnedMCPTool] = value
     match value:
         case str() if value:
-            decoded: JsonValue | Mapping[str, PinnedMCPTool] = json.loads(value)
+            decoded = json.loads(value)
         case str() | bool() | int() | float() | list() | Mapping() | None:
-            decoded = value
-    if not decoded:
-        return None
-    return _PINNED_TOOLS.validate_python(decoded)
+            pass
+    return _PINNED_TOOLS.validate_python(decoded or None)
 
 
 class MCPServer(BaseModel):
@@ -210,10 +214,9 @@ class MCPServer(BaseModel):
     @model_validator(mode="after")
     def resolve_protocol_version(self) -> Self:
         if "protocol_version" not in self.model_fields_set and self.mcp_info is not None:
-            declared: Final = (
-                self.mcp_info["protocol_version"] if "protocol_version" in self.mcp_info else "auto"
+            self.protocol_version = _UPSTREAM_PROTOCOL.validate_python(
+                self.mcp_info.get("protocol_version", "auto")
             )
-            self.protocol_version = _UPSTREAM_PROTOCOL.validate_python(declared)
         return self
 
     @model_validator(mode="after")
@@ -246,7 +249,7 @@ class MCPServer(BaseModel):
         )
 
     @property
-    def advertises_gateway_authorization_server(self) -> bool:
+    def advertises_gateway_authorization_server(self) -> bool:  # ast-grep-ignore: no-long-names
         if self.auth_type == MCPAuth.oauth2:
             return self.is_gateway_managed_oauth2 and not self.uses_per_server_oauth_relay
         if self.auth_type not in (
@@ -260,9 +263,9 @@ class MCPServer(BaseModel):
             MCPAuth.aws_sigv4,
         ):
             return False
-        if self.extra_headers is None:
-            return True
-        return not any(header.lower() in _CREDENTIAL_HEADER_NAMES for header in self.extra_headers)
+        return not any(
+            header.lower() in _CREDENTIAL_HEADER_NAMES for header in (self.extra_headers or ())
+        )
 
     @property
     def is_true_passthrough(self) -> bool:
@@ -282,13 +285,11 @@ class MCPServer(BaseModel):
 
     @property
     def requires_per_user_auth(self) -> bool:
-        if self.needs_user_oauth_token:
+        if self.needs_user_oauth_token or self.is_client_forwarded_token:
             return True
-        if self.is_client_forwarded_token:
-            return True
-        if self.auth_type == MCPAuth.none and self.extra_headers:
-            return any(header.lower() in _CREDENTIAL_HEADER_NAMES for header in self.extra_headers)
-        return False
+        return self.auth_type == MCPAuth.none and any(
+            header.lower() in _CREDENTIAL_HEADER_NAMES for header in self.extra_headers or ()
+        )
 
     @property
     def is_oauth_passthrough(self) -> bool:

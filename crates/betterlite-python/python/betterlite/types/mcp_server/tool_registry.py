@@ -1,7 +1,12 @@
-from collections.abc import Awaitable, Callable
-from typing import ClassVar
+from collections.abc import Awaitable
+from typing import ClassVar, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, JsonValue
+
+
+@runtime_checkable
+class ToolHandler(Protocol):
+    def __call__(self, **arguments: JsonValue) -> JsonValue | Awaitable[JsonValue]: ...
 
 
 class MCPTool(BaseModel):
@@ -9,7 +14,7 @@ class MCPTool(BaseModel):
     name: str
     description: str
     input_schema: dict[str, JsonValue]
-    handler: Callable[..., JsonValue | Awaitable[JsonValue]]
+    handler: ToolHandler
 
 
 class ToolSchema(BaseModel):

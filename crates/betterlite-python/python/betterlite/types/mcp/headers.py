@@ -5,6 +5,8 @@ from types import MappingProxyType
 from typing import Final, Protocol
 from urllib.parse import urlsplit
 
+from typing_extensions import override
+
 DEFAULT_CREDENTIAL_HEADER: Final = "Authorization"
 
 _HEADER_NAME_TOKEN: Final = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
@@ -12,6 +14,7 @@ _DEFAULT_PORTS: Final[Mapping[str, int]] = MappingProxyType({"http": 80, "https"
 
 
 class Stringable(Protocol):
+    @override
     def __str__(self) -> str: ...
 
 

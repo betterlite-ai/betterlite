@@ -64,7 +64,7 @@ class MCPGatewaySessionsResponse(BaseModel):
     sessions: list[MCPGatewaySession] = Field(default_factory=list)
 
 
-class MCPGatewaySessionsTerminateResponse(BaseModel):
+class MCPGatewaySessionsTerminateResponse(BaseModel):  # ast-grep-ignore: no-long-names
     worker_pid: int
     terminated_sessions: int
     sessions: list[MCPGatewaySession] = Field(default_factory=list)
