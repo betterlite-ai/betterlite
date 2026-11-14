@@ -64,6 +64,14 @@ where
         failure: FailureKind,
         deployment_id: &str,
     ) {
-        entry::on_failure(self, alert_types, failure, deployment_id).await;
+        let FailureKind::ApiError { status_code } = failure else {
+            return;
+        };
+        if alert_types.contains(&AlertType::OutageAlerts) {
+            self.outage_alerts(status_code, deployment_id).await;
+        }
+        if alert_types.contains(&AlertType::RegionOutageAlerts) {
+            let _dropped = self.region_outage_alerts(status_code, deployment_id).await;
+        }
     }
 }

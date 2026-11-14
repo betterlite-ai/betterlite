@@ -33,10 +33,13 @@ fn model_region(deployment: &OutageDeployment, provider: &str) -> Option<String>
     get_model_region(provider, &params, None).map(str::to_owned)
 }
 
-fn region_provider<Providers: OutageProviders>(
+fn region_provider<Providers>(
     providers: &Providers,
     deployment: &OutageDeployment,
-) -> Result<String, Providers::Error> {
+) -> Result<String, Providers::Error>
+where
+    Providers: OutageProviders,
+{
     let Some(provider) = deployment.custom_llm_provider.as_deref() else {
         return Ok(providers.get_llm_provider(&deployment.model)?.provider);
     };

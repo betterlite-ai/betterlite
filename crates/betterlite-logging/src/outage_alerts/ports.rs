@@ -40,7 +40,6 @@ pub trait OutageApiBase: Send + Sync {
     fn api_base(&self, model: &str, deployment_id: &str) -> Result<Option<String>, Self::Error>;
 }
 
-/// A cache write of one deployment's outage record.
 #[derive(Debug, PartialEq)]
 pub struct DeploymentWrite<'record> {
     pub key: &'record str,
@@ -48,7 +47,6 @@ pub struct DeploymentWrite<'record> {
     pub ttl_seconds: Option<u32>,
 }
 
-/// A cache write of one provider region's outage record.
 #[derive(Debug, PartialEq)]
 pub struct RegionWrite<'record> {
     pub key: &'record str,

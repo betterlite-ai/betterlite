@@ -99,7 +99,10 @@ impl FakeStore {
     }
 
     // One read path and one write path serve both cached record kinds.
-    fn read<Record: StoredRecord>(&self, key: &str) -> Result<Option<Record>, FakeFailure> {
+    fn read<Record>(&self, key: &str) -> Result<Option<Record>, FakeFailure>
+    where
+        Record: StoredRecord,
+    {
         let mut state = self.lock();
         state.reads.push(key.to_owned());
         if state.fail_read {
@@ -108,12 +111,15 @@ impl FakeStore {
         Ok(Record::cached(&state).cloned())
     }
 
-    fn write<Record: StoredRecord>(
+    fn write<Record>(
         &self,
         key: &str,
         record: &Record,
         ttl_seconds: Option<u32>,
-    ) -> Result<(), FakeFailure> {
+    ) -> Result<(), FakeFailure>
+    where
+        Record: StoredRecord,
+    {
         let mut state = self.lock();
         state.write_attempts.push(key.to_owned());
         if state.fail_write {
