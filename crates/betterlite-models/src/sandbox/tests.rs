@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io;
+use std::iter::once;
 use std::string::FromUtf8Error;
 
 use futures_util::stream;
@@ -114,9 +115,9 @@ async fn read_capped_lines_counts_bare_newlines_until_the_cap() {
     let chunks = stream::iter(
         data.chunks(4096)
             .map(|chunk| Ok::<Vec<u8>, io::Error>(chunk.to_vec()))
-            .chain(std::iter::once(Err::<Vec<u8>, io::Error>(
-                io::Error::other("a chunk the reader must never request"),
-            ))),
+            .chain(once(Err::<Vec<u8>, io::Error>(io::Error::other(
+                "a chunk the reader must never request",
+            )))),
     );
     assert!(matches!(
         read_capped_lines(chunks).await.unwrap_err(),
@@ -158,7 +159,8 @@ async fn read_capped_lines_accepts_exactly_the_limit() {
 
 #[tokio::test]
 async fn read_capped_lines_counts_utf8_bytes_rather_than_characters() {
-    let mut data = "\u{e9}".repeat(SANDBOX_MAX_OUTPUT_BYTES / 2).into_bytes();
+    // each character is two bytes, so the line passes a character cap and crosses the byte cap
+    let mut data = "\u{e9}".repeat(SANDBOX_MAX_OUTPUT_BYTES - 1).into_bytes();
     data.push(b'\n');
     let chunks = stream::iter(vec![Ok::<Vec<u8>, io::Error>(data)]);
     assert!(matches!(
