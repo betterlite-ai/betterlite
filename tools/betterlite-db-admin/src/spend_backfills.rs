@@ -10,7 +10,7 @@ pub(crate) struct SpendBackfillsService;
 impl DbAdminService for SpendBackfillsService {
     fn run(&self, command: DbAdminCommand, config: ResolvedConfig) -> DbAdminFuture<'_> {
         Box::pin(async move {
-            let plan = plan(command)?;
+            let plan = plan(&command)?;
             let session = connect(&config.database_url).await.map_err(|source| {
                 DbAdminError::SpendBackfill {
                     source: SpendBackfillError::Connection { source },
@@ -24,7 +24,7 @@ impl DbAdminService for SpendBackfillsService {
     }
 }
 
-const fn plan(command: DbAdminCommand) -> Result<BackfillPlan, DbAdminError> {
+const fn plan(command: &DbAdminCommand) -> Result<BackfillPlan, DbAdminError> {
     match command {
         DbAdminCommand::DailyToolSpend(options) => Ok(BackfillPlan::DailyToolSpend {
             cutover: options.cutover,
@@ -33,7 +33,9 @@ const fn plan(command: DbAdminCommand) -> Result<BackfillPlan, DbAdminError> {
         DbAdminCommand::KeyTotalSpendFromLogs => Ok(BackfillPlan::KeyTotalSpendFromLogs),
         other @ (DbAdminCommand::Migrate(_)
         | DbAdminCommand::DatabaseViews
-        | DbAdminCommand::SpendPartition(_)) => Err(DbAdminError::Unregistered {
+        | DbAdminCommand::SpendPartition(_)
+        | DbAdminCommand::UpdateUnassignedTeams
+        | DbAdminCommand::MigrateVerificationTokens(_)) => Err(DbAdminError::Unregistered {
             operation: other.operation().name(),
         }),
     }

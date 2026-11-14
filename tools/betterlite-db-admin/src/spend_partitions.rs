@@ -10,7 +10,7 @@ pub(crate) struct SpendPartitionsService;
 impl DbAdminService for SpendPartitionsService {
     fn run(&self, command: DbAdminCommand, config: ResolvedConfig) -> DbAdminFuture<'_> {
         Box::pin(async move {
-            let operation = partition_operation(command)?;
+            let operation = partition_operation(&command)?;
             let session = connect(&config.database_url).await.map_err(|source| {
                 DbAdminError::SpendPartition {
                     source: SpendPartitionAdminError::Connection { source },
@@ -25,15 +25,17 @@ impl DbAdminService for SpendPartitionsService {
 }
 
 const fn partition_operation(
-    command: DbAdminCommand,
+    command: &DbAdminCommand,
 ) -> Result<SpendPartitionOperation, DbAdminError> {
     match command {
-        DbAdminCommand::SpendPartition(operation) => Ok(operation),
+        DbAdminCommand::SpendPartition(operation) => Ok(*operation),
         other @ (DbAdminCommand::Migrate(_)
         | DbAdminCommand::DatabaseViews
         | DbAdminCommand::DailyToolSpend(_)
         | DbAdminCommand::KeyTotalSpend
-        | DbAdminCommand::KeyTotalSpendFromLogs) => Err(DbAdminError::Unregistered {
+        | DbAdminCommand::KeyTotalSpendFromLogs
+        | DbAdminCommand::UpdateUnassignedTeams
+        | DbAdminCommand::MigrateVerificationTokens(_)) => Err(DbAdminError::Unregistered {
             operation: other.operation().name(),
         }),
     }
