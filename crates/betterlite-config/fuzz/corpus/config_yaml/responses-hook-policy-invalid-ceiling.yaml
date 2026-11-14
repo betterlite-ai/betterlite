@@ -1,0 +1,13 @@
+model_list:
+  - model_name: zero
+    litellm_params:
+      model: openai/gpt-4o
+      max_agentic_loops: 0
+  - model_name: boolean
+    litellm_params:
+      model: openai/gpt-4o
+      max_agentic_loops: true
+  - model_name: text
+    litellm_params:
+      model: openai/gpt-4o
+      max_agentic_loops: three

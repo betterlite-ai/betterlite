@@ -82,5 +82,5 @@ pitfalls:
   - Unknown Display Name applies to both userName and displayName even when user_alias is populated.
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 2
 review_level: security

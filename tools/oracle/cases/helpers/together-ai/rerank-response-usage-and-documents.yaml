@@ -1,0 +1,36 @@
+kind: helper
+name: rerank-response-usage-and-documents
+call:
+  b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map: []
+    chat_messages: []
+    completion: []
+    rerank_requests: []
+    rerank_responses:
+    - response:
+        id: req-1
+        results:
+        - index: 0
+          relevance_score: 0.93
+          document: {text: doc one, extra: 1}
+        - index: 1
+          relevance_score: 0.5
+          document: {}
+        - {index: 2, relevance_score: 0.5}
+        usage: {search_units: 2, total_tokens: 10, input_tokens: 7, prompt_tokens: 4}
+      next_id: 00000000-0000-0000-0000-000000000007
+    - response:
+        results: []
+      next_id: 00000000-0000-0000-0000-000000000007
+    - response:
+        id: ''
+        results:
+        - {index: 0, relevance_score: 0.25}
+      next_id: 00000000-0000-0000-0000-000000000007
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []

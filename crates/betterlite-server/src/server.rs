@@ -9,15 +9,18 @@ use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::headers::failure_headers;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
+use crate::server::filter::filter_route;
 use crate::shutdown::build_shutdown_signal;
 use crate::state::ServerState;
 use crate::state::shared::Shared;
 use axum::http::StatusCode;
+use axum::middleware::from_fn;
 use axum::response::{IntoResponse as _, Response as AxumResponse};
 use axum::{Json, Router};
 use betterlite_config::types::Config;
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::envelope::error_body_call_id;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::execution::ChatExecutor;
@@ -65,10 +68,20 @@ pub async fn run(
     host: &str,
     port: u16,
 ) -> Result<(), ServerError> {
-    let shutdown_signal = build_shutdown_signal()?;
     let shutting_down = Arc::new(AtomicBool::new(false));
     let outbound = chat.client.clone();
     let application = application(&config, chat, Arc::clone(&shutting_down))?;
+    Box::pin(serve(application, shutting_down, outbound, host, port)).await
+}
+
+async fn serve(
+    application: Router,
+    shutting_down: Arc<AtomicBool>,
+    outbound: ProxiedClient,
+    host: &str,
+    port: u16,
+) -> Result<(), ServerError> {
+    let shutdown_signal = build_shutdown_signal()?;
     let address = format!("{host}:{port}");
     let listener = TcpListener::bind((host, port))
         .await
@@ -125,8 +138,9 @@ pub(crate) fn application(
         )?,
         embedding_routes(executor),
     );
+    // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
-        routed,
+        routed.route_layer(from_fn(filter_route)),
         &config.sections.request_size_limit,
         &config.sections.security_headers,
     );
@@ -273,6 +287,8 @@ pub(crate) fn failure(
     (status, headers, Json(body)).into_response()
 }
 
+pub mod component;
+pub mod filter;
 pub mod inputs;
 pub mod listener;
 mod tests;
