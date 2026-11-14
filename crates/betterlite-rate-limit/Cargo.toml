@@ -11,6 +11,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-redis = { path = "../betterlite-redis" }
 crc16 = "0.4.0"
+num-traits = "0.2.19"
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
