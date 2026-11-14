@@ -96,8 +96,8 @@ impl Parser<'_> {
         }
         loop {
             self.skip_whitespace();
-            let key = self.member(depth.saturating_add(1), track_keys)?;
-            if let Some(key) = key {
+            let member_key = self.member(depth.saturating_add(1), track_keys)?;
+            if let Some(key) = member_key {
                 self.mark(&key);
             }
             self.skip_whitespace();
@@ -177,7 +177,7 @@ impl Parser<'_> {
     }
     fn mark(&mut self, key: &str) {
         if let Some(bit) = self.shape.key_bit(key) {
-            self.seen = self.seen.bitor(bit);
+            self.seen |= bit;
         }
     }
     fn string(&mut self, capture: bool) -> Option<Option<String>> {

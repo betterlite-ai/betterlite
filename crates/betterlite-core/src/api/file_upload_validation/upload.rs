@@ -86,9 +86,11 @@ pub fn check_extension(
     extensions: Option<&[String]>,
     rule: ExtensionRule,
 ) -> Option<UploadValidationFailure> {
-    let extensions = extensions?;
+    let Some(configured) = extensions else {
+        return None;
+    };
     let extension = normalized_extension(filename);
-    let listed = !extension.is_empty() && listed(extensions, &extension);
+    let listed = !extension.is_empty() && listed(configured, &extension);
     match rule {
         ExtensionRule::Allowed if !listed => {
             Some(UploadValidationFailure::ExtensionNotAllowed { extension })
@@ -100,28 +102,25 @@ pub fn check_extension(
     }
 }
 pub fn check_unsafe_filename(filename: Option<&str>) -> Option<UploadValidationFailure> {
-    let Some(filename) = filename else {
+    let Some(name) = filename else {
         return None;
     };
-    if filename.is_empty() {
+    if name.is_empty() {
         return None;
     }
-    let traversal = filename
-        .replace('\\', "/")
-        .split('/')
-        .any(|part| part == "..");
-    if filename.contains('\0') || traversal {
+    let traversal = name.replace('\\', "/").split('/').any(|part| part == "..");
+    if name.contains('\0') || traversal {
         return Some(UploadValidationFailure::UnsafeFilename {
-            filename: filename.to_owned(),
+            filename: name.to_owned(),
         });
     }
     None
 }
 fn normalized_extension(filename: Option<&str>) -> String {
-    let Some(filename) = filename.filter(|name| !name.is_empty()) else {
+    let Some(name) = filename.filter(|name| !name.is_empty()) else {
         return String::new();
     };
-    let Ok(base) = safe_filename(filename) else {
+    let Ok(base) = safe_filename(name) else {
         return String::new();
     };
     let Some(index) = base.rfind('.') else {

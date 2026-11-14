@@ -13,6 +13,7 @@ call:
       - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: true, allowed_file_extensions: null, blocked_file_extensions: null}
       - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: 1.0, allowed_file_extensions: null, blocked_file_extensions: null}
       - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: 1.5, allowed_file_extensions: null, blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: "1_0", allowed_file_extensions: null, blocked_file_extensions: null}
       - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: null, allowed_file_extensions: ".pdf", blocked_file_extensions: null}
       - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: null, allowed_file_extensions: [".pdf", 1], blocked_file_extensions: null}
 env: {}

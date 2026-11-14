@@ -86,6 +86,8 @@ mod loads_settings {
     #[case::negative_text("general_settings: {max_batch_file_size_mb: '-3'}", Some(-3))]
     #[case::integral_text("general_settings: {max_batch_file_size_mb: '2.0'}", Some(2))]
     #[case::zero_fraction_text("general_settings: {max_batch_file_size_mb: '2.00'}", Some(2))]
+    #[case::underscored_text("general_settings: {max_batch_file_size_mb: '1_0'}", Some(10))]
+    #[case::underscored_fraction("general_settings: {max_batch_file_size_mb: '1_0.00'}", Some(10))]
     fn accepts_lax_batch_integers(#[case] source: &str, #[case] expected: Option<i64>) {
         assert_eq!(load(source).unwrap().max_batch_file_size_mb, expected);
     }
@@ -98,6 +100,10 @@ mod loads_settings {
     #[case::bare_point("general_settings: {max_batch_file_size_mb: '1.'}")]
     #[case::text_fraction("general_settings: {max_batch_file_size_mb: '1.50'}")]
     #[case::fraction_only("general_settings: {max_batch_file_size_mb: '.0'}")]
+    #[case::leading_underscore("general_settings: {max_batch_file_size_mb: '_1'}")]
+    #[case::trailing_underscore("general_settings: {max_batch_file_size_mb: '1_'}")]
+    #[case::double_underscore("general_settings: {max_batch_file_size_mb: '1__0'}")]
+    #[case::underscored_fraction("general_settings: {max_batch_file_size_mb: '1_0.0_0'}")]
     fn rejects_lax_batch_integers(#[case] source: &str) {
         assert!(matches!(
             load(source),

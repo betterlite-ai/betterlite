@@ -32,7 +32,7 @@ impl LineShape {
             let Some(bit) = KEY_BITS.get(index) else {
                 continue;
             };
-            if seen.bitand(*bit) == 0 {
+            if seen & *bit == 0 {
                 return Some(*key);
             }
         }

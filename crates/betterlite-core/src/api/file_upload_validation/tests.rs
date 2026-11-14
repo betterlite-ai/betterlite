@@ -108,8 +108,8 @@ fn extension_policy_allow_failures(
     #[case] filename: Option<&str>,
     #[case] missing_extension: bool,
 ) {
-    let allow = names(allow);
-    let failure = check_extension(filename, Some(&allow), ExtensionRule::Allowed).unwrap();
+    let allowed = names(allow);
+    let failure = check_extension(filename, Some(&allowed), ExtensionRule::Allowed).unwrap();
     let fields = failure.fields();
     let exception = exception(fields.clone());
     assert_eq!(fields.status, 400);
@@ -173,9 +173,9 @@ fn upload_size_boundaries_restore_a_seekable_position() {
     let mut small = Cursor::new(b"abcdefgh".to_vec());
     small.set_position(7);
     let mut body = FileBody::Seekable(&mut small);
-    let failure = check_upload_file_size(&mut body, Some(1)).unwrap();
+    let small_failure = check_upload_file_size(&mut body, Some(1)).unwrap();
     drop(body);
-    assert!(failure.is_none());
+    assert!(small_failure.is_none());
     assert_eq!(small.position(), 7);
 }
 
@@ -308,8 +308,12 @@ fn batch_line_failures(
     assert_eq!(exception.param, Some("file".to_owned()));
     assert_eq!(exception.code, "400");
     let reported = match failure {
-        BatchValidationFailure::InvalidJsonLine { line_number }
-        | BatchValidationFailure::LineNotObject { line_number } => Some(line_number),
+        BatchValidationFailure::InvalidJsonLine {
+            line_number: reported_line,
+        }
+        | BatchValidationFailure::LineNotObject {
+            line_number: reported_line,
+        } => Some(reported_line),
         BatchValidationFailure::TooLarge { .. }
         | BatchValidationFailure::WrongExtension { .. }
         | BatchValidationFailure::Empty
@@ -379,7 +383,16 @@ fn required_batch_keys_accept_null_values() {
 
 #[test]
 fn required_batch_keys_vertex_shape() {
-    assert!(batch_failure(b"{\"request\":null}", Some("x.jsonl")).is_none());
+    let mut accepted_body = FileBody::Bytes(b"{\"request\":null}");
+    let accepted = check_batch_file_upload(
+        Some("x.jsonl"),
+        &mut accepted_body,
+        None,
+        LineShape::VertexPassthrough,
+        limits(),
+    )
+    .unwrap();
+    assert!(accepted.is_none());
     let mut body = FileBody::Bytes(b"{}");
     let failure = check_batch_file_upload(
         Some("x.jsonl"),
@@ -737,10 +750,10 @@ fn extension_policy_empty_entries_never_match() {
 #[case::last_entry(&[".txt", ".pdf"])]
 #[case::middle_entry(&[".txt", ".pdf", ".md"])]
 fn extension_policy_finds_any_listed_entry(#[case] list: &[&str]) {
-    let list = names(list);
-    assert!(check_extension(Some("a.pdf"), Some(&list), ExtensionRule::Allowed).is_none());
+    let extensions = names(list);
+    assert!(check_extension(Some("a.pdf"), Some(&extensions), ExtensionRule::Allowed).is_none());
     assert_eq!(
-        check_extension(Some("a.pdf"), Some(&list), ExtensionRule::Blocked),
+        check_extension(Some("a.pdf"), Some(&extensions), ExtensionRule::Blocked),
         Some(UploadValidationFailure::BlockedExtension {
             extension: ".pdf".to_owned(),
         })

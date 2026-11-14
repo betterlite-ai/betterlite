@@ -48,10 +48,8 @@ fn strict_integer(raw: Option<&JsonValue>, path: &str) -> Result<Option<i64>, Co
     let Some(value) = raw else {
         return Ok(None);
     };
-    match value.as_i64() {
-        Some(integer) => Ok(Some(integer)),
-        None => Err(invalid(path, value)),
-    }
+    let integer = value.as_i64().ok_or_else(|| invalid(path, value))?;
+    Ok(Some(integer))
 }
 fn lax_integer(raw: Option<&JsonValue>, path: &str) -> Result<Option<i64>, ConfigError> {
     let Some(value) = raw else {
@@ -63,9 +61,8 @@ fn lax_integer(raw: Option<&JsonValue>, path: &str) -> Result<Option<i64>, Confi
         JsonValue::Number(number) => number
             .as_i64()
             .or_else(|| {
-                number
-                    .as_f64()
-                    .and_then(|float| float.to_string().parse::<i64>().ok())
+                let float = number.as_f64()?;
+                float.to_string().parse::<i64>().ok()
             })
             .map(Some),
         JsonValue::String(text) => lax_string_integer(text).map(Some),
@@ -75,14 +72,25 @@ fn lax_integer(raw: Option<&JsonValue>, path: &str) -> Result<Option<i64>, Confi
 }
 fn lax_string_integer(text: &str) -> Option<i64> {
     let trimmed = text.trim();
-    if let Ok(value) = trimmed.parse::<i64>() {
-        return Some(value);
-    }
-    let (integer, fraction) = trimmed.split_once('.')?;
-    if fraction.is_empty() || !fraction.bytes().all(|digit| digit == b'0') {
+    let (integral, fraction) = match trimmed.split_once('.') {
+        Some((integral, fraction)) => (integral, Some(fraction)),
+        None => (trimmed, None),
+    };
+    if fraction.is_some_and(|rest| rest.is_empty() || rest.bytes().any(|byte| byte != b'0')) {
         return None;
     }
-    integer.parse::<i64>().ok()
+    let digits = integral.strip_prefix(['+', '-']).unwrap_or(integral);
+    if digits.is_empty()
+        || digits.starts_with('_')
+        || digits.ends_with('_')
+        || digits.contains("__")
+        || !digits
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'_')
+    {
+        return None;
+    }
+    integral.replace('_', "").parse::<i64>().ok()
 }
 fn strings_of(value: &JsonValue) -> Option<Vec<String>> {
     value

@@ -88,14 +88,14 @@ pub fn check_batch_file_upload(
     line_shape: LineShape,
     limits: ApiLimits,
 ) -> Result<Option<BatchValidationFailure>, FileUploadValidationError> {
-    let Some(filename) = filename else {
+    let Some(name) = filename else {
         return Ok(Some(BatchValidationFailure::WrongExtension {
             filename: String::new(),
         }));
     };
-    if !filename.to_lowercase().ends_with(JSONL_EXTENSION) {
+    if !name.to_lowercase().ends_with(JSONL_EXTENSION) {
         return Ok(Some(BatchValidationFailure::WrongExtension {
-            filename: filename.to_owned(),
+            filename: name.to_owned(),
         }));
     }
     if let Some(limit_mb) = max_batch_file_size_mb {

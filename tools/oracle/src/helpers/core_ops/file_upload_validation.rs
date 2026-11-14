@@ -104,11 +104,11 @@ fn value_error(error: &dyn std::fmt::Display) -> Box<HelperError> {
     })
 }
 fn failure_json(fields: Option<FailureFields>) -> Value {
-    let Some(fields) = fields else {
+    let Some(present) = fields else {
         return Value::Null;
     };
-    let status = fields.status;
-    let exception = exception(fields);
+    let status = present.status;
+    let exception = exception(present);
     json!({
         "message": exception.message,
         "type": exception.error_type,
@@ -192,19 +192,19 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
             allowed,
             blocked,
         } => {
-            let allowed = check_extension(
+            let allow_failure = check_extension(
                 filename.as_deref(),
                 allowed.as_deref(),
                 ExtensionRule::Allowed,
             );
-            let blocked = check_extension(
+            let block_failure = check_extension(
                 filename.as_deref(),
                 blocked.as_deref(),
                 ExtensionRule::Blocked,
             );
             Ok(json!({
-                "allowed": failure_json(allowed.as_ref().map(UploadValidationFailure::fields)),
-                "blocked": failure_json(blocked.as_ref().map(UploadValidationFailure::fields)),
+                "allowed": failure_json(allow_failure.as_ref().map(UploadValidationFailure::fields)),
+                "blocked": failure_json(block_failure.as_ref().map(UploadValidationFailure::fields)),
             }))
         }
         Call::UploadSize {

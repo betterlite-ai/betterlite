@@ -9,7 +9,7 @@ pub enum FileBody<'a> {
 impl FileBody<'_> {
     pub fn size(&mut self) -> Result<u128, FileUploadValidationError> {
         match self {
-            Self::Bytes(bytes) => Ok(u128::from(bytes.len())),
+            Self::Bytes(bytes) => Ok(u128::try_from(bytes.len())?),
             Self::Seekable(reader) => {
                 let position = reader.stream_position()?;
                 let end = reader.seek(SeekFrom::End(0))?;
