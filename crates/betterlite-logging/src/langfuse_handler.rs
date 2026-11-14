@@ -73,7 +73,6 @@ impl LangFuseHandler {
         .await
     }
 
-    // the cache lookup both selection paths end in
     async fn cached_or_created(
         services: &LangfuseServices,
         cache: &DynamicLoggerCache<Arc<LangFuseLogger>>,

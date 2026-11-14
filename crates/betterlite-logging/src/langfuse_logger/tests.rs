@@ -101,7 +101,7 @@ mod initialization_tests {
             &[],
             LangfuseClientBudget::new(1),
             Arc::new(support::FailingBuilder),
-            None,
+            Arc::new(support::FixedIds),
         );
         let request = support::request("pk-failing", "sk-failing");
         let (exporter, recording) = support::recording();
@@ -223,8 +223,12 @@ mod budget_enforcement {
     #[tokio::test]
     async fn a_failed_client_build_does_not_hold_a_slot() {
         let budget = LangfuseClientBudget::new(1);
-        let failing =
-            support::services_with(&[], budget.clone(), Arc::new(support::FailingBuilder), None);
+        let failing = support::services_with(
+            &[],
+            budget.clone(),
+            Arc::new(support::FailingBuilder),
+            Arc::new(support::FixedIds),
+        );
         let error = LangFuseLogger::new(&failing, &support::request("pk-slot", "sk-slot"))
             .await
             .err()
@@ -234,7 +238,7 @@ mod budget_enforcement {
             &[("LANGFUSE_MOCK", "true")],
             budget,
             support::real_builder(),
-            None,
+            Arc::new(support::FixedIds),
         );
         LangFuseLogger::new(&mock, &support::request("pk-slot-2", "sk-slot-2"))
             .await
@@ -251,6 +255,39 @@ mod budget_enforcement {
         LangFuseLogger::new(&services, &support::request("pk-stop-2", "sk-stop-2"))
             .await
             .expect("the slot was given back");
+    }
+
+    #[tokio::test]
+    async fn a_logger_dropped_without_stop_frees_its_slot() {
+        let services = support::services(&[("LANGFUSE_MOCK", "true")], 1);
+        let logger = LangFuseLogger::new(&services, &support::request("pk-drop", "sk-drop"))
+            .await
+            .expect("the logger builds");
+        drop(logger);
+        LangFuseLogger::new(&services, &support::request("pk-drop-2", "sk-drop-2"))
+            .await
+            .expect("the dropped logger's slot is free");
+    }
+
+    #[tokio::test]
+    async fn a_stopped_and_dropped_logger_frees_one_slot() {
+        let services = support::services(&[("LANGFUSE_MOCK", "true")], 2);
+        let first = LangFuseLogger::new(&services, &support::request("pk-both-1", "sk-both-1"))
+            .await
+            .expect("the first logger builds");
+        let _second = LangFuseLogger::new(&services, &support::request("pk-both-2", "sk-both-2"))
+            .await
+            .expect("the second logger builds");
+        first.stop();
+        drop(first);
+        let _third = LangFuseLogger::new(&services, &support::request("pk-both-3", "sk-both-3"))
+            .await
+            .expect("the one freed slot is reused");
+        let error = LangFuseLogger::new(&services, &support::request("pk-both-4", "sk-both-4"))
+            .await
+            .err()
+            .expect("only one slot was freed");
+        assert!(matches!(error, LangfuseLoggerError::Budget(_)));
     }
 }
 
@@ -370,7 +407,7 @@ mod lifecycle_tests {
             .expect("the second logger builds");
         first.stop();
         first.stop();
-        LangFuseLogger::new(&services, &support::request("pk-idem-3", "sk-idem-3"))
+        let _third = LangFuseLogger::new(&services, &support::request("pk-idem-3", "sk-idem-3"))
             .await
             .expect("the released slot is free");
         let error = LangFuseLogger::new(&services, &support::request("pk-idem-4", "sk-idem-4"))
@@ -448,7 +485,7 @@ mod event_dispatch_tests {
             &[],
             LangfuseClientBudget::new(10),
             support::real_builder(),
-            Some(Arc::new(support::FixedIds)),
+            Arc::new(support::FixedIds),
         );
         let request = support::request("pk-fixed", "sk-fixed");
         let (exporter, _recording) = support::recording();

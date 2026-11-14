@@ -111,7 +111,7 @@ pub(crate) fn services(variables: &[(&str, &str)], limit: usize) -> LangfuseServ
         variables,
         LangfuseClientBudget::new(limit),
         real_builder(),
-        None,
+        Arc::new(RequestedIdGenerator::default()),
     )
 }
 
@@ -119,7 +119,7 @@ pub(crate) fn services_with(
     variables: &[(&str, &str)],
     budget: LangfuseClientBudget,
     clients: Arc<dyn LangfuseClientBuilder>,
-    id_generator: Option<Arc<dyn IdGenerator>>,
+    id_generator: Arc<dyn IdGenerator>,
 ) -> LangfuseServices {
     let environment = lookup(variables);
     LangfuseServices {
@@ -130,13 +130,9 @@ pub(crate) fn services_with(
         tasks: TaskTracker::new(),
         runtime: Handle::current(),
         assembly: AssemblyDefaults::default(),
-        id_generator: id_generator.unwrap_or_else(requested_ids),
+        id_generator,
         clients,
     }
-}
-
-fn requested_ids() -> Arc<dyn IdGenerator> {
-    Arc::new(RequestedIdGenerator::default())
 }
 
 pub(crate) fn real_builder() -> Arc<dyn LangfuseClientBuilder> {
