@@ -1,0 +1,12 @@
+kind: helper
+name: rerank-guardrail-fields-short-result-documents-untouched
+call:
+  rerank_guardrail_fields:
+    calls:
+      - operation: input
+        data: {query: how tall, instruction: rank by height, documents: [tall, short]}
+        texts: [sanitized query]
+      - operation: input
+        data: {query: how tall, documents: [tall, short]}
+compare: {ignore: []}
+env: {}
