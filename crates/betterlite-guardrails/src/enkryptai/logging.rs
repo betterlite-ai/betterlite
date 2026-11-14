@@ -4,11 +4,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::guardrail_base::inputs::GuardrailLogTarget;
-use crate::guardrail_records::error::GuardrailSpanError;
 use crate::guardrail_records::metadata::add_guardrail_record;
 use crate::guardrail_records::record::{
-    GuardrailInvocationRecord, GuardrailRecordContext, GuardrailRecordInput, GuardrailSpanSink,
-    GuardrailStatus,
+    GuardrailRecordContext, GuardrailRecordInput, GuardrailStatus,
 };
 
 use super::error::EnkryptAiError;
@@ -27,14 +25,6 @@ pub(crate) struct RecordRequest<'request> {
     pub(crate) response: GuardrailValue,
     pub(crate) status: GuardrailStatus,
     pub(crate) timing: Timing,
-}
-
-pub(crate) struct DiscardSpans;
-
-impl GuardrailSpanSink for DiscardSpans {
-    fn emit(&self, _record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError> {
-        Ok(())
-    }
 }
 
 pub(crate) fn record(request: RecordRequest<'_>) -> Result<(), EnkryptAiError> {

@@ -20,12 +20,21 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use super::EnkryptAiGuardrail;
-use super::logging::DiscardSpans;
 use super::process::{Processed, process};
 use super::wire::{DetectPayload, DetectionResponse};
 
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
+use crate::guardrail_records::error::GuardrailSpanError;
+use crate::guardrail_records::record::{GuardrailInvocationRecord, GuardrailSpanSink};
+
+struct DiscardSpans;
+
+impl GuardrailSpanSink for DiscardSpans {
+    fn emit(&self, _record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError> {
+        Ok(())
+    }
+}
 
 struct Reply {
     status: StatusCode,

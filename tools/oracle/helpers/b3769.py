@@ -168,7 +168,7 @@ async def detect(call: DetectCall) -> DetectOutput:
         transport=httpx.MockTransport(transport)
     )
     send = cast(Apply, guard.apply_guardrail)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L455-L499
-    request_data: dict[str, JsonValue] = {}
+    request_data: dict[str, JsonValue] = {"model": "enkryptai"}
     raised = False
     attacks: list[str] = []
     try:

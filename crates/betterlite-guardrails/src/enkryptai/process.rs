@@ -3,14 +3,14 @@ use crate::primitives::json_value::JsonValue;
 
 use super::wire::DetectionResponse;
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Processed {
     pub attacks: Vec<String>,
 }
 
 impl Processed {
     #[must_use]
-    pub fn status(&self) -> GuardrailStatus {
+    pub const fn status(&self) -> GuardrailStatus {
         if self.attacks.is_empty() {
             GuardrailStatus::Success
         } else {

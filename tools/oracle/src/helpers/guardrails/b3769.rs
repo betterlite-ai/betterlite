@@ -183,7 +183,10 @@ fn detect(args: DetectArgs<'_>) -> HelperResult {
         model: None,
         stream_holdback_chars: None,
     };
-    let mut request_data: BTreeMap<String, GuardrailValue> = BTreeMap::new();
+    let mut request_data = BTreeMap::from([(
+        "model".to_owned(),
+        GuardrailValue::Text("enkryptai".to_owned()),
+    )]);
     let outcome = runtime.block_on(guardrail.apply_guardrail(
         inputs,
         &mut request_data,

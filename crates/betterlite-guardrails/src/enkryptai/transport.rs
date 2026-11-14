@@ -12,7 +12,7 @@ use crate::primitives::json_value::JsonValue;
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 pub(crate) enum Parsed {
-    Response(DetectionResponse),
+    Response(Box<DetectionResponse>),
     Malformed(EnkryptAiError),
 }
 
@@ -32,7 +32,7 @@ pub(crate) async fn send(guardrail: &EnkryptAiGuardrail, text: &str) -> Response
     };
     let parsed = match raw {
         JsonValue::Object(_) => match serde_json::from_slice::<DetectionResponse>(&body) {
-            Ok(response) => Parsed::Response(response),
+            Ok(response) => Parsed::Response(Box::new(response)),
             Err(source) => Parsed::Malformed(EnkryptAiError::ResponseShape { source }),
         },
         JsonValue::Null
@@ -62,17 +62,12 @@ fn guardrail_value(value: JsonValue) -> GuardrailValue {
     match value {
         JsonValue::Null => GuardrailValue::Null,
         JsonValue::Bool(flag) => GuardrailValue::Boolean(flag),
-        JsonValue::Number(number) => {
-            if let Some(signed) = number.as_i64() {
-                GuardrailValue::SignedInteger(signed)
-            } else if let Some(unsigned) = number.as_u64() {
-                GuardrailValue::UnsignedInteger(unsigned)
-            } else if let Some(decimal) = number.as_f64() {
-                GuardrailValue::Decimal(decimal)
-            } else {
-                GuardrailValue::Text(number.to_string())
-            }
-        }
+        JsonValue::Number(number) => number
+            .as_i64()
+            .map(GuardrailValue::SignedInteger)
+            .or_else(|| number.as_u64().map(GuardrailValue::UnsignedInteger))
+            .or_else(|| number.as_f64().map(GuardrailValue::Decimal))
+            .unwrap_or_else(|| GuardrailValue::Text(number.to_string())),
         JsonValue::String(text) => GuardrailValue::Text(text),
         JsonValue::Array(items) => {
             GuardrailValue::Array(items.into_iter().map(guardrail_value).collect())
@@ -94,7 +89,7 @@ async fn post(guardrail: &EnkryptAiGuardrail, text: &str) -> Result<Vec<u8>, Enk
     let response = guardrail
         .client
         .post(url)
-        .headers(guardrail.request_headers()?)
+        .headers(request_headers(guardrail)?)
         .json(&payload)
         .timeout(guardrail.settings.timeout)
         .send()
@@ -109,29 +104,27 @@ async fn post(guardrail: &EnkryptAiGuardrail, text: &str) -> Result<Vec<u8>, Enk
     read_capped(response).await
 }
 
-impl EnkryptAiGuardrail {
-    pub(crate) fn request_headers(&self) -> Result<HeaderMap, EnkryptAiError> {
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        let mut api_key =
-            HeaderValue::from_str(self.settings.api_key.expose_secret()).map_err(|source| {
-                EnkryptAiError::InvalidHeader {
-                    name: "apikey",
-                    source,
-                }
+fn request_headers(guardrail: &EnkryptAiGuardrail) -> Result<HeaderMap, EnkryptAiError> {
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    let mut api_key =
+        HeaderValue::from_str(guardrail.settings.api_key.expose_secret()).map_err(|source| {
+            EnkryptAiError::InvalidHeader {
+                name: "apikey",
+                source,
+            }
+        })?;
+    api_key.set_sensitive(true);
+    headers.insert(HeaderName::from_static("apikey"), api_key);
+    if let Some(policy) = &guardrail.settings.policy_name {
+        let value =
+            HeaderValue::from_str(policy).map_err(|source| EnkryptAiError::InvalidHeader {
+                name: "x-enkrypt-policy",
+                source,
             })?;
-        api_key.set_sensitive(true);
-        headers.insert(HeaderName::from_static("apikey"), api_key);
-        if let Some(policy) = &self.settings.policy_name {
-            let value =
-                HeaderValue::from_str(policy).map_err(|source| EnkryptAiError::InvalidHeader {
-                    name: "x-enkrypt-policy",
-                    source,
-                })?;
-            headers.insert(HeaderName::from_static("x-enkrypt-policy"), value);
-        }
-        Ok(headers)
+        headers.insert(HeaderName::from_static("x-enkrypt-policy"), value);
     }
+    Ok(headers)
 }
 
 fn request_error(source: reqwest::Error) -> EnkryptAiError {

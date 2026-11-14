@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::primitives::json_value::JsonValue;
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DetectPayload {
     pub text: String,
 }
@@ -43,7 +43,7 @@ pub struct Details {
     pub other: BTreeMap<String, JsonValue>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct PolicyViolationDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -75,13 +75,13 @@ pub struct ToxicityDetail {
     pub identity_hate: Option<f64>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct KeywordDetail {
     pub detected_keywords: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct BiasDetail {
     pub bias_detected: bool,

@@ -57,11 +57,11 @@ fn describe(attack: &str, response: &DetectionResponse) -> Result<String, serde_
 }
 
 fn policy(response: &DetectionResponse) -> String {
-    let detail = response.details.policy_violation.as_ref();
-    let violating_policy = detail
+    let violation = response.details.policy_violation.as_ref();
+    let violating_policy = violation
         .and_then(|detail| detail.violating_policy.as_deref())
         .unwrap_or(NOT_AVAILABLE);
-    let explanation = detail
+    let explanation = violation
         .and_then(|detail| detail.explanation.as_deref())
         .unwrap_or(NOT_AVAILABLE);
     format!("policy \"{violating_policy}\", explanation \"{explanation}\"")
