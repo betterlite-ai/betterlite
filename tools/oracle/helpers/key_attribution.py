@@ -1,11 +1,12 @@
 import asyncio
+import sys
+import types
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from types import TracebackType
-from typing import TypedDict
+from typing import NamedTuple, Self, TypedDict
 
 from litellm.litellm_core_utils.litellm_logging import is_valid_sha256_hash
-from litellm.models.user import LiteLLM_UserTable
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.spend_tracking.key_metadata_recovery import (
     KeyMetadataDict,
@@ -17,6 +18,23 @@ from litellm.proxy.spend_tracking.key_metadata_recovery import (
 )
 from litellm.proxy.utils import PrismaClient
 from pydantic import JsonValue, TypeAdapter
+
+
+class PrismaUnavailableError(Exception):
+    pass
+
+
+class PrismaErrorsModule(types.ModuleType):
+    PrismaError = PrismaUnavailableError
+
+
+class PrismaModule(types.ModuleType):
+    errors: PrismaErrorsModule = PrismaErrorsModule("prisma.errors")
+
+
+_PRISMA = PrismaModule("prisma")
+sys.modules.setdefault("prisma", _PRISMA)
+sys.modules.setdefault("prisma.errors", _PRISMA.errors)
 
 ROW_VALUE: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
@@ -61,23 +79,29 @@ class Input(TypedDict):
     export_fields: Fields
 
 
+class FakeUser(NamedTuple):
+    user_id: str
+    user_email: str | None
+    teams: list[str]
+
+
 class FakeTable:
-    def __init__(self, users: list[LiteLLM_UserTable]) -> None:
+    def __init__(self, users: Sequence[FakeUser]) -> None:
         self.users = users
 
     async def find_many(
         self, *, where: Mapping[str, Mapping[str, Sequence[str]]]
-    ) -> Sequence[LiteLLM_UserTable]:
+    ) -> Sequence[FakeUser]:
         await asyncio.sleep(0)
         wanted = where["user_id"]["in"]
         return [user for user in self.users if user.user_id in wanted]
 
 
 class FakeTransaction:
-    def __init__(self, rows: Sequence[Mapping[str, JsonValue]]) -> None:
+    def __init__(self, rows: Sequence[DailyRow]) -> None:
         self.rows = rows
 
-    async def __aenter__(self) -> "FakeTransaction":
+    async def __aenter__(self) -> Self:
         await asyncio.sleep(0)
         return self
 
@@ -95,7 +119,7 @@ class FakeTransaction:
         await asyncio.sleep(0)
         return 0
 
-    async def query_raw(self, sql: str, *params: JsonValue) -> Sequence[Mapping[str, JsonValue]]:
+    async def query_raw(self, sql: str, *params: JsonValue) -> Sequence[DailyRow]:
         del sql, params
         await asyncio.sleep(0)
         return self.rows
@@ -105,9 +129,9 @@ class FakeWrapper(PrismaWrapper):
     def __init__(
         self,
         table: FakeTable,
-        active: Sequence[Mapping[str, JsonValue]],
-        deleted: Sequence[Mapping[str, JsonValue]],
-        daily: Sequence[Mapping[str, JsonValue]],
+        active: Sequence[TokenRow],
+        deleted: Sequence[TokenRow],
+        daily: Sequence[DailyRow],
     ) -> None:
         self.litellm_usertable = table
         self.active = active
@@ -118,7 +142,7 @@ class FakeWrapper(PrismaWrapper):
         del timeout
         return FakeTransaction(self.daily)
 
-    async def query_raw(self, sql: str, *params: JsonValue) -> Sequence[Mapping[str, JsonValue]]:
+    async def query_raw(self, sql: str, *params: JsonValue) -> Sequence[TokenRow]:
         del params
         await asyncio.sleep(0)
         if '"LiteLLM_DeletedVerificationToken"' in sql:
@@ -129,10 +153,10 @@ class FakeWrapper(PrismaWrapper):
 class FakePrismaClient(PrismaClient):
     def __init__(
         self,
-        users: list[LiteLLM_UserTable],
-        active: Sequence[Mapping[str, JsonValue]],
-        deleted: Sequence[Mapping[str, JsonValue]],
-        daily: Sequence[Mapping[str, JsonValue]],
+        users: Sequence[FakeUser],
+        active: Sequence[TokenRow],
+        deleted: Sequence[TokenRow],
+        daily: Sequence[DailyRow],
     ) -> None:
         self.db = FakeWrapper(FakeTable(users), active, deleted, daily)
 
@@ -165,7 +189,14 @@ def dump_mapping(recovered: Mapping[str, KeyMetadataDict]) -> dict[str, JsonValu
 
 
 def fake_client(input_value: Input) -> FakePrismaClient:
-    users = [LiteLLM_UserTable.model_validate(user) for user in input_value["users"]]
+    users = [
+        FakeUser(
+            user_id=user["user_id"],
+            user_email=user["user_email"],
+            teams=user["teams"],
+        )
+        for user in input_value["users"]
+    ]
     return FakePrismaClient(
         users,
         input_value["active_token_rows"],
@@ -195,15 +226,12 @@ async def collect(client: FakePrismaClient, input_value: Input) -> dict[str, Jso
         team_id_field=fields["team_id"],
         user_email_field=fields["user_email"],
     )
-    owners: dict[str, JsonValue] = {}
-    for key, owner in daily_owners.items():
-        owners[key] = owner
     rows: list[JsonValue] = [ROW_VALUE.validate_python(row) for row in export]
     return {
         "digest": digest,
         "cli": dump_mapping(cli),
         "double_hashed": dump_mapping(double_hashed),
-        "daily_owners": owners,
+        "daily_owners": ROW_VALUE.validate_python(daily_owners),
         "attached": dump_mapping(attached),
         "export": rows,
     }
