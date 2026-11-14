@@ -896,71 +896,40 @@ def test_management_v1_names() -> None:
 
 
 def test_model_mgmt_names() -> None:
+    models = model_management_endpoints
+    assert_model_names(models.ModelGroupInfoProxy, {"model_group", "providers"}, MODEL_GROUP_PROXY)
+    assert_model_names(models.UpdateUsefulLinksRequest, {"useful_links"}, {})
+    assert_model_names(models.AutoRouterClassifierDefaultPromptResponse, {"system_prompt"}, {})
+    assert_model_names(models.NewModelGroupRequest, {"access_group"}, NEW_MODEL_GROUP)
     assert_model_names(
-        model_management_endpoints.ModelGroupInfoProxy,
-        {"model_group", "providers"},
-        MODEL_GROUP_PROXY,
-    )
-    assert_model_names(
-        model_management_endpoints.UpdateUsefulLinksRequest,
-        {"useful_links"},
-        {},
-    )
-    assert_model_names(
-        model_management_endpoints.AutoRouterClassifierDefaultPromptResponse,
-        {"system_prompt"},
-        {},
-    )
-    assert_model_names(
-        model_management_endpoints.NewModelGroupRequest,
-        {"access_group"},
-        NEW_MODEL_GROUP,
-    )
-    assert_model_names(
-        model_management_endpoints.NewModelGroupResponse,
+        models.NewModelGroupResponse,
         {"access_group", "models_updated"},
         NEW_MODEL_GROUP,
     )
+    assert_model_names(models.UpdateModelGroupRequest, set(), NEW_MODEL_GROUP)
     assert_model_names(
-        model_management_endpoints.UpdateModelGroupRequest,
-        set(),
-        NEW_MODEL_GROUP,
-    )
-    assert_model_names(
-        model_management_endpoints.DeleteModelGroupResponse,
+        models.DeleteModelGroupResponse,
         {"access_group", "models_updated", "message"},
         {},
     )
+    assert_model_names(models.AccessGroupBudget, {"budget_id"}, GROUP_BUDGET)
+    assert_model_names(models.AccessGroupBudgetRequest, set(), GROUP_BUDGET_REQUEST)
     assert_model_names(
-        model_management_endpoints.AccessGroupBudget,
-        {"budget_id"},
-        GROUP_BUDGET,
-    )
-    assert_model_names(
-        model_management_endpoints.AccessGroupBudgetRequest,
-        set(),
-        GROUP_BUDGET_REQUEST,
-    )
-    assert_model_names(
-        model_management_endpoints.AccessGroupBudgetResponse,
+        models.AccessGroupBudgetResponse,
         {"access_group", "spend"},
         {"budget": None},
     )
     assert_model_names(
-        model_management_endpoints.DeleteAccessGroupBudgetResponse,
+        models.DeleteAccessGroupBudgetResponse,
         {"access_group", "budget_deleted", "message"},
         {},
     )
     assert_model_names(
-        model_management_endpoints.AccessGroupInfo,
+        models.AccessGroupInfo,
         {"access_group", "model_names", "deployment_count"},
         GROUP_INFO,
     )
-    assert_model_names(
-        model_management_endpoints.ListAccessGroupsResponse,
-        {"access_groups"},
-        {},
-    )
+    assert_model_names(models.ListAccessGroupsResponse, {"access_groups"}, {})
 
 
 def test_model_mgmt_names_rules() -> None:
