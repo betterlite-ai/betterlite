@@ -479,26 +479,37 @@ fn reply(body: &str) -> Reply {
 
 const TOOL_REPLY: &str = r#"{"id":"c","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":""}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":17,"completion_tokens_details":{"reasoning_tokens":5},"cost_in_usd_ticks":123,"server_side_tool_usage_details":{"web_search_calls":2}}}"#;
 
+const STOP_WITH_CALLS: &str = r#"{"id":"c","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+
 #[test]
-fn an_empty_finish_reason_becomes_tool_calls_only_with_calls() {
-    let converted = reply(TOOL_REPLY);
+fn an_empty_finish_reason_is_mapped_to_stop_by_the_parent_before_the_repair() {
     assert_eq!(
-        converted.response.choices[0].finish_reason.as_deref(),
-        Some("tool_calls")
+        reply(TOOL_REPLY).response.choices[0]
+            .finish_reason
+            .as_deref(),
+        Some("stop")
     );
     let without_calls = reply(
         r#"{"id":"c","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":""}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#,
     );
     assert_eq!(
         without_calls.response.choices[0].finish_reason.as_deref(),
-        Some("")
+        Some("stop")
     );
-    let stopped = reply(
-        r#"{"id":"c","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#,
-    );
+}
+
+#[test]
+fn a_stop_finish_with_tool_calls_becomes_tool_calls() {
     assert_eq!(
-        stopped.response.choices[0].finish_reason.as_deref(),
+        reply(STOP_WITH_CALLS).response.choices[0]
+            .finish_reason
+            .as_deref(),
         Some("tool_calls")
+    );
+    let length = reply(&STOP_WITH_CALLS.replace("\"stop\"}],", "\"length\"}],"));
+    assert_eq!(
+        length.response.choices[0].finish_reason.as_deref(),
+        Some("length")
     );
 }
 

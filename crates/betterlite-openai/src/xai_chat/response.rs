@@ -5,6 +5,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::chat::choice_finish_reason;
 use crate::chat::response::{ChatResponse, ChatUsage};
 use crate::xai_chat::error::XaiChatError;
 use crate::xai_usage::error::XaiUsageError;
@@ -75,15 +76,19 @@ pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, XaiChatError>
         serde_json::from_slice(input.body).map_err(|source| XaiChatError::Decode { source })?;
     let mut response: ChatResponse =
         serde_json::from_value(raw.clone()).map_err(|source| XaiChatError::Decode { source })?;
+    // the parent's Choices maps "" to "stop" before XAIChatConfig tests for "", so that repair never fires
     for choice in &mut response.choices {
         let calls = choice
             .message
             .tool_calls
             .as_ref()
             .is_some_and(|calls| !calls.is_empty());
-        if calls && matches!(choice.finish_reason.as_deref(), Some("" | "stop")) {
-            choice.finish_reason = Some(String::from("tool_calls"));
-        }
+        let raw = choice.finish_reason.as_deref();
+        choice.finish_reason = Some(if calls && raw == Some("stop") {
+            String::from("tool_calls")
+        } else {
+            choice_finish_reason(raw).0
+        });
     }
     let mut usage = usage_from_parent(&response.usage)?;
     if let Some(fields) = raw.get("usage").and_then(Value::as_object) {
