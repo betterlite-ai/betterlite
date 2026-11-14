@@ -183,15 +183,16 @@ class ModelsManagementClient:
         models = self.info()
         for model in models:
             match model:
-                case {"model_name": str(name)} if name == model_name:
+                case {"model_name": str(name)} if model_name and name == model_name:
                     return model
-                case {"model_info": {"id": str(identifier)}} if identifier == model_id:
+                case {"model_info": {"id": str(identifier)}} if model_id and identifier == model_id:
                     return model
                 case dict() | list() | str() | bool() | int() | float() | None:
                     continue
-        message = (
-            f"Model with id={model_id} not found"
-            if model_id is not None
-            else f"Model with model_name={model_name} not found"
-        )
+        if model_id:
+            message = f"Model with id={model_id} not found"
+        elif model_name:
+            message = f"Model with model_name={model_name} not found"
+        else:
+            message = "Unknown error trying to find model"
         raise NotFoundError(HTTPError(message, response=Response()))

@@ -14,7 +14,10 @@ from pydantic import JsonValue
 from proxy_client_support import RecordingServer
 from test_proxy_client_base import OK, TIMEOUT, Reply, compare_call, compare_error
 
-from betterlite.proxy.client._transport import HTTPError, RequestError
+from betterlite.proxy.client import chat as chat_module
+from betterlite.proxy.client import models as models_module
+from betterlite.proxy.client import teams as teams_module
+from betterlite.proxy.client._transport import HTTPError, Request, RequestError, Response
 from betterlite.proxy.client.chat import ChatClient, CompletionOptions
 from betterlite.proxy.client.exceptions import NotFoundError, UnauthorizedError
 from betterlite.proxy.client.models import ModelsManagementClient
@@ -92,10 +95,31 @@ class LiteTeams(Protocol):
     def get_available(self) -> Sequence[Mapping[str, JsonValue]]: ...
 
 
+class TimeoutProbe:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, float]] = []
+
+    def __call__(self, request: Request, timeout: float) -> Response:
+        self.calls.append((request.url, timeout))
+        return Response(status_code=OK, text='{"data": []}')
+
+
 @pytest.fixture(autouse=False)
 def server() -> Iterator[RecordingServer]:
     with RecordingServer() as recording:
         yield recording
+
+
+@pytest.fixture(autouse=False)
+def probe() -> Iterator[TimeoutProbe]:
+    recording = TimeoutProbe()
+    saved = (models_module.send, teams_module.send, chat_module.send, chat_module.stream)
+    models_module.send = recording
+    teams_module.send = recording
+    chat_module.send = recording
+    chat_module.stream = recording
+    yield recording
+    models_module.send, teams_module.send, chat_module.send, chat_module.stream = saved
 
 
 def models_clients(server: RecordingServer) -> tuple[LiteModels, ModelsManagementClient]:
@@ -114,6 +138,22 @@ def teams_clients(server: RecordingServer) -> tuple[LiteTeams, TeamsManagementCl
     lite: LiteTeams = LiteLLMTeamsClient(server.url, api_key=KEY, timeout=TIMEOUT)
     ours = TeamsManagementClient(server.url, api_key=KEY, timeout=TIMEOUT)
     return lite, ours
+
+
+def test_client_default_timeouts(probe: TimeoutProbe) -> None:
+    models_client = ModelsManagementClient("http://proxy:4000", api_key=KEY)
+    teams_client = TeamsManagementClient("http://proxy:4000")
+    chat_client = ChatClient("http://proxy:4000")
+    assert models_client.list() == []
+    assert teams_client.get_available() == {"data": []}
+    assert chat_client.completions(MODEL, MESSAGES) == {"data": []}
+    assert builtins.list(chat_client.completions_stream(MODEL, MESSAGES)) == []
+    assert probe.calls == [
+        ("http://proxy:4000/models", 30),
+        ("http://proxy:4000/team/available", 30),
+        ("http://proxy:4000/chat/completions", 600),
+        ("http://proxy:4000/chat/completions", 600),
+    ]
 
 
 def test_models_list(server: RecordingServer) -> None:
@@ -367,6 +407,28 @@ def test_models_get_missing(server: RecordingServer) -> None:
     assert str(actual.value) == "Model with model_name=missing not found"
 
 
+def test_models_get_empty_selector(server: RecordingServer) -> None:
+    lite, ours = models_clients(server)
+    reply = '{"data": [{"model_name": "", "model_info": {"id": ""}}]}'
+    server.reply(OK, reply)
+    with pytest.raises(LiteLLMNotFoundError) as expected:
+        lite.get(model_id="")
+    server.reply(OK, reply)
+    with pytest.raises(NotFoundError) as actual:
+        ours.get(model_id="")
+    assert str(actual.value) == str(expected.value)
+    assert str(actual.value) == "Unknown error trying to find model"
+    server.reply(OK, reply)
+    with pytest.raises(LiteLLMNotFoundError) as expected:
+        lite.get(model_name="")
+    server.reply(OK, reply)
+    with pytest.raises(NotFoundError) as actual:
+        ours.get(model_name="")
+    assert str(actual.value) == str(expected.value)
+    assert server.requests[1] == server.requests[0]
+    assert server.requests[3] == server.requests[2]
+
+
 def test_models_get_bad_entry(server: RecordingServer) -> None:
     _, ours = models_clients(server)
     server.reply(OK, '{"data": ["no", {"model_name": "gpt-4"}, 3]}')
@@ -380,6 +442,23 @@ def test_chat_completions(server: RecordingServer) -> None:
     server.reply(OK, '{"id": "c1"}')
     assert ours.completions(MODEL, MESSAGES) == expected
     assert server.requests[1] == server.requests[0]
+
+
+def test_chat_completions_no_key(server: RecordingServer) -> None:
+    lite: LiteChat = LiteLLMChatClient(server.url, timeout=TIMEOUT)
+    ours = ChatClient(server.url, timeout=TIMEOUT)
+    server.reply(OK, '{"id": "c1"}')
+    expected = lite.completions(MODEL, MESSAGES)
+    server.reply(OK, '{"id": "c1"}')
+    assert ours.completions(MODEL, MESSAGES) == expected
+    server.reply(OK, STREAM_BODY)
+    builtins.list(lite.completions_stream(MODEL, MESSAGES))
+    server.reply(OK, STREAM_BODY)
+    builtins.list(ours.completions_stream(MODEL, MESSAGES))
+    assert server.requests[1] == server.requests[0]
+    assert server.requests[3] == server.requests[2]
+    assert server.requests[2].authorization is None
+    assert server.requests[2].content_type == "application/json"
 
 
 def test_chat_completions_options(server: RecordingServer) -> None:
@@ -572,6 +651,14 @@ def test_teams_get_available(server: RecordingServer) -> None:
     server.reply(OK, "[]")
     assert slashed.get_available() == []
     assert server.requests[2].path == "/team/available"
+
+
+def test_teams_available_no_key(server: RecordingServer) -> None:
+    lite: LiteTeams = LiteLLMTeamsClient(server.url, timeout=TIMEOUT)
+    ours = TeamsManagementClient(server.url, timeout=TIMEOUT)
+    compare_call(server, lite.get_available, ours.get_available, [], Reply(OK, "[]"))
+    assert server.requests[0].authorization is None
+    assert server.requests[0].content_type == "application/json"
 
 
 def test_teams_failures(server: RecordingServer) -> None:
