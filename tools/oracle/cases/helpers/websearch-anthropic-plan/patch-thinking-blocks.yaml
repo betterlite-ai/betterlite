@@ -1,0 +1,27 @@
+kind: helper
+name: patch-thinking-blocks
+call:
+  b4118:
+    cases:
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls:
+          - id: toolu_1
+            type: tool_use
+            name: web_search
+            input: {query: first}
+        thinking_blocks:
+          - type: thinking
+            thinking: hmm
+            signature: sig
+          - type: redacted_thinking
+            data: zzz
+        optional_params: {}
+        kwargs: {}
+        searches:
+          - kind: success
+            text: one
+env: {}
+compare: {ignore: []}
