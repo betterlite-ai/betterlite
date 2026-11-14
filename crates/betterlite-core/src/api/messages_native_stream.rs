@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
@@ -14,6 +14,8 @@ use tokio::sync::Notify;
 use tokio_util::task::TaskTracker;
 
 use super::api_boundaries::{ApiLimits, LimitErrorFields};
+use super::messages_sse_events::chunk::ChunkFlag;
+use super::messages_sse_events::decode_messages_sse_chunk;
 use super::messages_sse_events::stream::{MessagesProviderStream, MessagesStreamingResponse};
 use super::messages_stream_logging::seams::{ReportedFailure, StreamSeams};
 use super::messages_stream_logging::{MessagesStreamLogging, SseChunk, StreamDeps};
@@ -230,6 +232,29 @@ where
         reached_end: false,
         pump: tracker,
     }
+}
+
+// LiteLLM's _is_message_stop_chunk and _is_provider_error_chunk, which B3608 probes
+// through its AnthropicFrameProbe trait
+#[must_use]
+pub fn is_message_stop_chunk(frames: &[u8]) -> bool {
+    classified_flags(frames).is_some_and(|flags| flags.contains(&ChunkFlag::MessageStop))
+}
+
+#[must_use]
+pub fn is_provider_error_chunk(frames: &[u8]) -> bool {
+    classified_flags(frames).is_some_and(|flags| flags.contains(&ChunkFlag::ProviderError))
+}
+
+// The frames are already in memory, so the per-read byte bound must not reject a joined stream
+fn classified_flags(frames: &[u8]) -> Option<BTreeSet<ChunkFlag>> {
+    let limits = ApiLimits {
+        max_event_bytes: frames.len(),
+        ..ApiLimits::default()
+    };
+    decode_messages_sse_chunk(frames, &limits)
+        .ok()
+        .map(|decoded| decoded.flags)
 }
 
 #[must_use]
