@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str;
 use std::sync::Arc;
@@ -16,7 +17,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
@@ -115,6 +116,40 @@ async fn execution_text_posts_the_transformed_request() {
             String::from("Content-Type"),
             String::from("application/json"),
         ),
+    ]);
+    assert_eq!(calls[0].headers, expected);
+}
+
+#[tokio::test]
+async fn execution_text_caller_headers_win() {
+    let optional = json("{}");
+    let input = EmbeddingInput::Text(String::from("hello"));
+    let mut headers = BTreeMap::new();
+    headers.insert(String::from("Content-Type"), String::from("text/plain"));
+    headers.insert(
+        String::from("Authorization"),
+        String::from("Bearer caller-key"),
+    );
+    headers.insert(String::from("x-goog-custom"), String::from("kept"));
+    let mut call = text_call(&input, &optional);
+    call.extra_headers = &headers;
+    let recorder = Arc::new(PostRecorder::scripted(vec![reply(200, TEXT_ANSWER)]));
+    let fixture = auth();
+    let clients = TextClients {
+        pooled: recorder.as_ref(),
+        caller: None,
+    };
+    text_embedding(&call, &catalog(), &text_auth(&fixture), &clients)
+        .await
+        .unwrap();
+    let calls = recorder.recorded();
+    let expected = BTreeMap::from([
+        (
+            String::from("Authorization"),
+            String::from("Bearer caller-key"),
+        ),
+        (String::from("Content-Type"), String::from("text/plain")),
+        (String::from("x-goog-custom"), String::from("kept")),
     ]);
     assert_eq!(calls[0].headers, expected);
 }
@@ -369,6 +404,29 @@ async fn execution_direct_async_client_used() {
     assert!(pooled.recorded().is_empty());
 }
 
+#[rstest]
+#[case::sync(false)]
+#[case::async_handoff(true)]
+#[tokio::test]
+async fn execution_multimodal_forwards_the_caller_client(#[case] aembedding: bool) {
+    let input = json(r#""hello""#);
+    let optional = extra("{}");
+    let mut call = multimodal_call(MULTIMODAL_MODEL, &input, &optional, &NO_HEADERS);
+    call.aembedding = aembedding;
+    let caller = Arc::new(PostRecorder::scripted(vec![reply(200, MULTIMODAL_ANSWER)]));
+    let pooled = Arc::new(PostRecorder::scripted(vec![reply(200, MULTIMODAL_ANSWER)]));
+    let fixture = auth();
+    let clients = MultimodalClients {
+        pooled: pooled.as_ref(),
+        caller: Some(caller.as_ref()),
+    };
+    multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
+        .await
+        .unwrap();
+    assert_eq!(caller.recorded().len(), 1);
+    assert!(pooled.recorded().is_empty());
+}
+
 #[tokio::test]
 async fn execution_cancelled_call_drops_the_post() {
     let optional = json("{}");
@@ -460,8 +518,71 @@ async fn execution_posts_through_the_pooled_client() {
     assert!(request.ends_with(r#"{"instances":[{"content":"hello"}],"parameters":{}}"#));
 }
 
+#[tokio::test]
+async fn execution_posts_follow_a_redirect() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let api_base = format!("http://{address}/");
+    let optional = json("{}");
+    let input = EmbeddingInput::Text(String::from("hello"));
+    let mut call = text_call(&input, &optional);
+    call.api_base = Some(&api_base);
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let fixture = auth();
+    let clients = TextClients {
+        pooled: &client,
+        caller: None,
+    };
+    let mut server = JoinSet::new();
+    server.spawn(answer_redirect_then_embedding(listener, address));
+    let response = text_embedding(&call, &catalog(), &text_auth(&fixture), &clients)
+        .await
+        .unwrap();
+    assert_eq!(response.model, TEXT_MODEL);
+    let received = timeout(Duration::from_secs(5), server.join_next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let first = String::from_utf8(received[0].clone()).unwrap();
+    let second = String::from_utf8(received[1].clone()).unwrap();
+    assert!(first.starts_with(
+        "POST /v1/projects/project-p/locations/us-central1/publishers/google/models/text-embedding-005:predict HTTP/1.1"
+    ));
+    assert!(second.starts_with("POST /redirected HTTP/1.1"));
+    assert!(second.contains(&format!("authorization: Bearer {TOKEN}")));
+    assert!(second.ends_with(r#"{"instances":[{"content":"hello"}],"parameters":{}}"#));
+}
+
 async fn answer_embedding(listener: TcpListener) -> Vec<u8> {
     let (mut stream, _) = listener.accept().await.unwrap();
+    let received = read_request(&mut stream).await;
+    write_embedding(&mut stream).await;
+    received
+}
+
+async fn answer_redirect_then_embedding(
+    listener: TcpListener,
+    address: SocketAddr,
+) -> Vec<Vec<u8>> {
+    let mut received = Vec::new();
+    for redirect in [true, false] {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        received.push(read_request(&mut stream).await);
+        if redirect {
+            let head = format!(
+                "HTTP/1.1 307 Temporary Redirect\r\nlocation: http://{address}/redirected\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+            );
+            stream.write_all(head.as_bytes()).await.unwrap();
+        } else {
+            write_embedding(&mut stream).await;
+        }
+    }
+    received
+}
+
+async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
     let mut received = Vec::new();
     let mut buffer = [0_u8; 4096];
     while !request_is_complete(&received) {
@@ -472,6 +593,10 @@ async fn answer_embedding(listener: TcpListener) -> Vec<u8> {
         );
         received.extend_from_slice(&buffer[..read]);
     }
+    received
+}
+
+async fn write_embedding(stream: &mut TcpStream) {
     let body = TEXT_ANSWER.as_bytes();
     let head = format!(
         "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
@@ -479,7 +604,6 @@ async fn answer_embedding(listener: TcpListener) -> Vec<u8> {
     );
     stream.write_all(head.as_bytes()).await.unwrap();
     stream.write_all(body).await.unwrap();
-    received
 }
 
 fn request_is_complete(received: &[u8]) -> bool {
