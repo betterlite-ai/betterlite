@@ -200,8 +200,8 @@ fn cache_part(value: Option<&JsonValue>, field: &str) -> Option<Decimal> {
 
 // LiteLLM adds only a positive response cost to the key spend
 pub(crate) fn updated_spend(spend: Option<Decimal>, response_cost: Option<&JsonValue>) -> Decimal {
-    let current_spend = spend.unwrap_or(Decimal::new(0, 1));
-    match decimal_value(response_cost) {
+    let current_spend = spend.unwrap_or_else(|| Decimal::new(0, 1));
+    match response_cost.and_then(decimal_value) {
         Some(cost) if cost > Decimal::ZERO => {
             current_spend.checked_add(cost).unwrap_or(current_spend)
         }
@@ -252,10 +252,10 @@ fn decimal_value(value: &JsonValue) -> Option<Decimal> {
 fn decimal_from_text(text: &str) -> Option<Decimal> {
     let body = text.trim();
     let mut cleaned = String::with_capacity(body.len());
-    let mut previous = None;
+    let mut previous: Option<char> = None;
     for (at, character) in body.char_indices() {
         if character == '_' {
-            let next = body.get(at + 1..)?.chars().next()?;
+            let next = body.get(at.checked_add(1)?..)?.chars().next()?;
             if previous.is_none_or(|before| !before.is_ascii_digit()) || !next.is_ascii_digit() {
                 return None;
             }
