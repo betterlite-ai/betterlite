@@ -7,12 +7,10 @@ import httpx
 from litellm.llms.bedrock.audio_transcription import BedrockAudioTranscriptionRustDispatch
 from litellm.rust_bridge import reset_native_bridge_cache
 from litellm.types.utils import FileTypes, TranscriptionResponse
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
 
 NATIVE_MODULE: Final = "litellm.rust_bridge._native"
 UNSUPPORTED_PREFIX: Final = "Unsupported Bedrock audio format"
-# the pinned dispatch takes dict[str, object]; a json value dict is not one under dict invariance
-OBJECT_FIELDS: Final = TypeAdapter(dict[str, object])
 
 
 class BytesFile(TypedDict):
@@ -92,8 +90,8 @@ def sync_call(call: Call) -> TranscriptionResponse:
         api_key=call.get("api_key"),
         api_base=call.get("api_base"),
         custom_llm_provider=call["custom_llm_provider"],
-        extra_headers=None if headers is None else OBJECT_FIELDS.validate_python(headers),
-        optional_params=OBJECT_FIELDS.validate_python(call["optional_params"]),
+        extra_headers=None if headers is None else {**headers},
+        optional_params={**call["optional_params"]},
         timeout=timeout_argument(call),
     )
 
@@ -106,8 +104,8 @@ async def async_call(call: Call) -> TranscriptionResponse:
         api_key=call.get("api_key"),
         api_base=call.get("api_base"),
         custom_llm_provider=call["custom_llm_provider"],
-        extra_headers=None if headers is None else OBJECT_FIELDS.validate_python(headers),
-        optional_params=OBJECT_FIELDS.validate_python(call["optional_params"]),
+        extra_headers=None if headers is None else {**headers},
+        optional_params={**call["optional_params"]},
         timeout=timeout_argument(call),
     )
 

@@ -71,13 +71,13 @@ fn runtime_endpoint(
         .or(api_base)
         .map(str::trim)
         .filter(|endpoint| !endpoint.is_empty());
-    match configured {
-        Some(endpoint) => endpoint.to_owned(),
-        None => {
+    configured.map_or_else(
+        || {
             let region = resolve_region(model_region, params, env);
             format!("https://bedrock-runtime.{region}.amazonaws.com")
-        }
-    }
+        },
+        str::to_owned,
+    )
 }
 
 #[must_use]

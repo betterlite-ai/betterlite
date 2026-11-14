@@ -20,7 +20,7 @@ use super::reply::decode_transcription_reply;
 use super::request::transcription_body;
 use super::url::complete_url;
 
-// LiteLLM's native handler waits ten minutes when the caller sets no timeout
+// LiteLLM's native handler waits ten minutes when the caller sets no usable timeout
 const DEFAULT_TIMEOUT: Duration = Duration::from_mins(10);
 const ERROR_BODY_CHARS: usize = 256;
 const SECRET_HEADERS: [&str; 2] = ["x-amz-security-token", "authorization"];
@@ -103,10 +103,13 @@ where
         let body = transcription_body(&audio, call.optional_params)?;
         let credentials = resolve_credentials(&validated.credentials, &self.credentials).await?;
         let signed = sign_transcription(&validated, &url, &body, &credentials, self.clock.now())?;
+        // the native optional_timeout counts a zero, negative, NaN or infinite timeout as unset
         let deadline = match arguments.timeout_seconds {
-            None => DEFAULT_TIMEOUT,
-            Some(seconds) => Duration::try_from_secs_f64(seconds)
-                .map_err(|source| CallError::Timeout { seconds, source })?,
+            Some(seconds) if seconds.is_finite() && seconds > 0.0 => {
+                Duration::try_from_secs_f64(seconds)
+                    .map_err(|source| CallError::Timeout { seconds, source })?
+            }
+            Some(_) | None => DEFAULT_TIMEOUT,
         };
         Ok(OutboundRequest {
             method: Method::POST,

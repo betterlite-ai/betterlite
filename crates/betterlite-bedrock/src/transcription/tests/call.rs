@@ -10,6 +10,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::transcription::transport::TranscriptionTransport;
 use http::{HeaderMap, Method};
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::support::{env, params};
@@ -18,7 +19,7 @@ use crate::credentials::error::CredentialError;
 use crate::transcription::audio::{AudioFormat, AudioPayload};
 use crate::transcription::auth::ChainCredentials;
 use crate::transcription::binding::{
-    BindingArguments, TranscriptionBinding, TranscriptionCall, async_audio_transcriptions,
+    BindingArguments, TranscriptionBinding as _, TranscriptionCall, async_audio_transcriptions,
 };
 use crate::transcription::call::NativeTranscription;
 use crate::transcription::error::{CallError, TranscriptionError};
@@ -216,25 +217,27 @@ async fn chain_call_resolves_credentials_with_the_call_settings() {
     assert_eq!(header(&sent[0], "x-amz-security-token"), None);
 }
 
+#[rstest]
+#[case::positive_seconds(Some(2.5_f64), Duration::from_millis(2500))]
+#[case::half_second(Some(0.5_f64), Duration::from_millis(500))]
+#[case::no_timeout(None, Duration::from_mins(10))]
+#[case::zero(Some(0.0_f64), Duration::from_mins(10))]
+#[case::negative(Some(-1.0_f64), Duration::from_mins(10))]
+#[case::not_a_number(Some(f64::NAN), Duration::from_mins(10))]
+#[case::infinite(Some(f64::INFINITY), Duration::from_mins(10))]
 #[tokio::test]
-async fn timeout_seconds_set_the_request_deadline() {
+async fn timeout_seconds_set_the_request_deadline(
+    #[case] timeout_seconds: Option<f64>,
+    #[case] deadline: Duration,
+) {
     let binding = native(200, REPLY.as_bytes());
     let options = params(HOSTED);
     let call = call(&options, None);
     binding
-        .atranscribe(&arguments(&call, Some(2.5)))
+        .atranscribe(&arguments(&call, timeout_seconds))
         .await
         .unwrap();
-    assert_eq!(
-        binding.transport.sent()[0].deadline,
-        Duration::from_millis(2500)
-    );
-    let failure = binding
-        .atranscribe(&arguments(&call, Some(-1.0)))
-        .await
-        .unwrap_err();
-    assert!(matches!(failure, CallError::Timeout { .. }), "{failure}");
-    assert!(binding.transport.sent().is_empty());
+    assert_eq!(binding.transport.sent()[0].deadline, deadline);
 }
 
 #[tokio::test]
@@ -267,10 +270,10 @@ async fn extra_headers_must_be_strings_and_are_sent_signed() {
 #[tokio::test]
 async fn non_success_status_reports_the_truncated_body() {
     let long = "e".repeat(300);
-    let binding = native(403, long.as_bytes());
+    let long_binding = native(403, long.as_bytes());
     let options = params(HOSTED);
     let call = call(&options, None);
-    let failure = binding
+    let failure = long_binding
         .atranscribe(&arguments(&call, None))
         .await
         .unwrap_err();
@@ -280,12 +283,39 @@ async fn non_success_status_reports_the_truncated_body() {
     assert_eq!(status, 403);
     assert_eq!(body, format!("{}... (truncated)", "e".repeat(256)));
     let exact = "e".repeat(256);
-    let binding = native(500, exact.as_bytes());
+    let exact_binding = native(500, exact.as_bytes());
+    let exact_failure = exact_binding
+        .atranscribe(&arguments(&call, None))
+        .await
+        .unwrap_err();
+    let CallError::Status {
+        status: 500,
+        body: reported,
+    } = exact_failure
+    else {
+        panic!("a status error is expected");
+    };
+    assert_eq!(reported, exact);
+}
+
+#[tokio::test]
+async fn a_non_utf8_error_body_is_reported_as_a_byte_count() {
+    let binding = native(500, &[0xff, 0xfe]);
+    let options = params(HOSTED);
+    let call = call(&options, None);
     let failure = binding
         .atranscribe(&arguments(&call, None))
         .await
         .unwrap_err();
-    assert!(matches!(&failure, CallError::Status { status: 500, body } if *body == exact));
+    let CallError::Status {
+        status: code,
+        body: message,
+    } = failure
+    else {
+        panic!("a status error is expected");
+    };
+    assert_eq!(code, 500);
+    assert_eq!(message, "2 bytes that are not UTF-8");
 }
 
 #[tokio::test]
@@ -293,7 +323,7 @@ async fn the_status_boundary_sits_at_300() {
     let options = params(HOSTED);
     let call = call(&options, None);
     let accepted = native(299, REPLY.as_bytes());
-    assert!(accepted.atranscribe(&arguments(&call, None)).await.is_ok());
+    accepted.atranscribe(&arguments(&call, None)).await.unwrap();
     let rejected = native(300, REPLY.as_bytes());
     assert!(matches!(
         rejected.atranscribe(&arguments(&call, None)).await,
@@ -314,6 +344,19 @@ async fn an_undecodable_reply_is_a_transcription_error() {
         failure,
         CallError::Transcription(TranscriptionError::InvalidResponse(_))
     ));
+}
+
+#[tokio::test]
+async fn a_timeout_too_large_for_a_duration_is_an_error() {
+    let binding = native(200, REPLY.as_bytes());
+    let options = params(HOSTED);
+    let call = call(&options, None);
+    let failure = binding
+        .atranscribe(&arguments(&call, Some(f64::MAX)))
+        .await
+        .unwrap_err();
+    assert!(matches!(failure, CallError::Timeout { .. }), "{failure}");
+    assert!(binding.transport.sent().is_empty());
 }
 
 #[test]
