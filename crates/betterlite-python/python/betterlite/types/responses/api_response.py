@@ -196,5 +196,3 @@ class ResponsesAPIResponse(ResponseObject):
                 case Dumpable() | Mapping() | bool() | int() | float() | str() | Sequence() | None:
                     pass
         return "".join(texts)
-
-
