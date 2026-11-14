@@ -29,6 +29,7 @@ class MapParamsFn(Protocol):
         non_default_params: Object,
         optional_params: Object,
         model: str,
+        *,
         drop_params: bool,
     ) -> Object: ...
 
