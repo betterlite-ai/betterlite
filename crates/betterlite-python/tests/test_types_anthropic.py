@@ -9,10 +9,12 @@ from pydantic import JsonValue, TypeAdapter
 from betterlite.types.llms.anthropic import (
     ANTHROPIC_API_HEADERS,
     ANTHROPIC_API_ONLY_HEADERS,
-    ANTHROPIC_BETA_HEADER_VALUES,
-    ANTHROPIC_HOSTED_TOOLS,
 )
 from betterlite.types.llms.anthropic.anthropic_tool_search import get_tool_search_beta_header
+from betterlite.types.llms.anthropic.headers import (
+    AnthropicBetaHeaderValues,
+    AnthropicHostedToolNames,
+)
 
 NAMES: Final[dict[str, frozenset[str]]] = {
     "anthropic": frozenset({
@@ -731,10 +733,10 @@ def test_names_enums(report: Report) -> None:
     assert beta is not None
     assert beta["kind"] == "enum"
     assert dict(beta["enum_members"]) == BETA_HEADER_MEMBERS
-    assert ANTHROPIC_HOSTED_TOOLS.BASH == "bash"
-    assert ANTHROPIC_HOSTED_TOOLS.TOOL_SEARCH_TOOL.value == "tool_search_tool"
-    assert ANTHROPIC_BETA_HEADER_VALUES.COMPACT_2026_01_12 == "compact-2026-01-12"
-    assert ANTHROPIC_BETA_HEADER_VALUES.WEB_FETCH_2025_09_10.value == "web-fetch-2025-09-10"
+    assert AnthropicHostedToolNames.BASH == "bash"
+    assert AnthropicHostedToolNames.TOOL_SEARCH_TOOL.value == "tool_search_tool"
+    assert AnthropicBetaHeaderValues.COMPACT_2026_01_12 == "compact-2026-01-12"
+    assert AnthropicBetaHeaderValues.WEB_FETCH_2025_09_10.value == "web-fetch-2025-09-10"
 
 
 def test_names_tool_search(report: Report) -> None:
