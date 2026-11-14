@@ -1594,8 +1594,11 @@ dependencies = [
  "betterlite-config",
  "rstest",
  "rust_decimal",
+ "serde",
+ "serde_json",
  "strum",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

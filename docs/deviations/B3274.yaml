@@ -1,0 +1,14 @@
+task: B3274
+deviations:
+  - what: search_provider_cost_per_query is async and takes the pricing lookup as an argument (a SearchPricingSource) instead of importing get_model_info.
+    why: B2225's get_model_info is async and owns its caches in injected values, so the cost crate receives it from the caller and stays free of a models dependency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/cost_calculator.py#L55
+  - what: optional_params is a typed SearchOptionalParams struct (max_results, mode, advanced_settings, _parallel_ai_usage) instead of a free mapping, and a value of the wrong type for those keys is an error.
+    why: Rust needs explicit types for request data, and docs/compatibility.md makes a wrong-typed value an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/cost_calculator.py#L32-L36
+  - what: search_provider_cost_per_query reads the pricing source on every call and keeps no cache of model info.
+    why: LiteLLM wraps get_model_info in an lru_cache that goes stale when model_cost is edited without an invalidation; the injected source (B2225) owns any caching, so a changed record shows in the next cost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6407-L6413
+  - what: parallel_ai's processor value is not read, so processor "pro" selects no pricing model of its own.
+    why: LiteLLM maps processor "pro" to mode "advanced", and every mode except fast and turbo prices the standard model, so the answer is the same as without the branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/parallel_ai/search/cost_calculator.py#L44-L51
