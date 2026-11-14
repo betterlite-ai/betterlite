@@ -100,7 +100,10 @@ pub struct UrlInput<'request, A> {
 
 // XAIChatConfig.get_complete_url: OAuth swaps the base only when no key resolves
 #[must_use]
-pub fn complete_url<A: OauthTokens>(input: UrlInput<'_, A>) -> String {
+pub fn complete_url<A>(input: UrlInput<'_, A>) -> String
+where
+    A: OauthTokens,
+{
     let resolved = provider_info(input.api_base, input.api_key, input.settings);
     let base = if input.use_xai_oauth && resolved.api_key.is_none() {
         input.oauth.api_base()

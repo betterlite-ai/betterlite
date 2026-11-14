@@ -83,12 +83,14 @@ pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, XaiChatError>
             .tool_calls
             .as_ref()
             .is_some_and(|calls| !calls.is_empty());
-        let raw = choice.finish_reason.as_deref();
-        choice.finish_reason = Some(if calls && raw == Some("stop") {
+        let finish_reason = choice.finish_reason.as_deref();
+        let (mapped, native) = choice_finish_reason(finish_reason);
+        choice.finish_reason = Some(if calls && finish_reason == Some("stop") {
             String::from("tool_calls")
         } else {
-            choice_finish_reason(raw).0
+            mapped
         });
+        choice.provider_specific_fields = native;
     }
     let mut usage = usage_from_parent(&response.usage)?;
     if let Some(fields) = raw.get("usage").and_then(Value::as_object) {

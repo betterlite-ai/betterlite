@@ -2,19 +2,21 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fs;
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::xai_identity::Settings as IdentitySettings;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use rust_decimal::Decimal;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use uuid::Uuid;
 
 use super::error::XaiChatError;
@@ -96,7 +98,10 @@ impl Visit for Message {
     }
 }
 
-impl<Inner: Subscriber> Layer<Inner> for Warnings {
+impl<Inner> Layer<Inner> for Warnings
+where
+    Inner: Subscriber,
+{
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
         if *event.metadata().level() != Level::WARN {
             return;
@@ -425,18 +430,21 @@ fn the_chat_key_order_ignores_the_generic_key() {
     let mut settings = settings();
     settings.generic_api_key = Some(secret("generic"));
     settings.environment_key = Some(secret("environment"));
+    let resolved = provider_info(None, None, &settings).api_key;
     assert_eq!(
-        provider_info(None, None, &settings).api_key,
-        Some(secret("environment"))
+        resolved.as_ref().map(ExposeSecret::expose_secret),
+        Some("environment")
     );
     settings.xai_key = Some(secret("xai"));
+    let resolved = provider_info(None, None, &settings).api_key;
     assert_eq!(
-        provider_info(None, None, &settings).api_key,
-        Some(secret("xai"))
+        resolved.as_ref().map(ExposeSecret::expose_secret),
+        Some("xai")
     );
+    let resolved = provider_info(None, Some(&secret("explicit")), &settings).api_key;
     assert_eq!(
-        provider_info(None, Some(&secret("explicit")), &settings).api_key,
-        Some(secret("explicit"))
+        resolved.as_ref().map(ExposeSecret::expose_secret),
+        Some("explicit")
     );
 }
 
@@ -488,6 +496,10 @@ fn an_empty_finish_reason_is_mapped_to_stop_by_the_parent_before_the_repair() {
             .finish_reason
             .as_deref(),
         Some("stop")
+    );
+    assert_eq!(
+        reply(TOOL_REPLY).response.choices[0].provider_specific_fields,
+        BTreeMap::from([(String::from("native_finish_reason"), Value::from(""))])
     );
     let without_calls = reply(
         r#"{"id":"c","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":""}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#,
@@ -565,6 +577,12 @@ fn a_reply_with_malformed_usage_extras_is_retained() {
     assert_eq!(converted.usage.tokens.total_tokens, 17);
     assert_eq!(converted.usage.cost, None);
     assert!(converted.usage.server_side_tool_usage_details.is_none());
+}
+
+#[rstest]
+fn replays_the_xai_chat_reply_corpus(#[files("fuzz/corpus/xai_chat_reply/*")] path: PathBuf) {
+    let body = fs::read(path).unwrap();
+    let _converted = transform_response(&ReplyInput { body: &body });
 }
 
 fn zero_clock() -> i64 {
