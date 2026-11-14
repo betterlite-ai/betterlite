@@ -52,14 +52,6 @@ fn store_bucket(
     data.insert(key.to_owned(), value);
 }
 
-fn scanners_value(response: &ProtectResponse) -> GuardrailValue {
-    GuardrailValue::Object(response.scanners.clone().unwrap_or_default())
-}
-
-fn evidence_value(response: &ProtectResponse) -> GuardrailValue {
-    GuardrailValue::Array(response.evidence.clone().unwrap_or_default())
-}
-
 fn detection_detail(
     response: &ProtectResponse,
     settings: &PillarSettings,
@@ -71,10 +63,12 @@ fn detection_detail(
         .map_or(GuardrailValue::Null, |id| GuardrailValue::Text(id.clone()));
     pillar_response.insert("session_id".to_owned(), session);
     if settings.include_scanners {
-        pillar_response.insert("scanners".to_owned(), scanners_value(response));
+        let scanners = GuardrailValue::Object(response.scanners.clone().unwrap_or_default());
+        pillar_response.insert("scanners".to_owned(), scanners);
     }
     if settings.include_evidence {
-        pillar_response.insert("evidence".to_owned(), evidence_value(response));
+        let evidence = GuardrailValue::Array(response.evidence.clone().unwrap_or_default());
+        pillar_response.insert("evidence".to_owned(), evidence);
     }
     IndexMap::from([
         (
@@ -92,23 +86,11 @@ fn detection_detail(
     ])
 }
 
-pub fn process_pillar_response(
+fn store_response_metadata(
+    bucket: &mut BTreeMap<String, GuardrailValue>,
     response: &ProtectResponse,
-    data: &mut BTreeMap<String, GuardrailValue>,
     settings: &PillarSettings,
-) -> Result<(), PillarError> {
-    // LiteLLM returns early on an empty body, before writing any metadata
-    if *response == ProtectResponse::default() {
-        return Ok(());
-    }
-    let flagged = response.flagged.unwrap_or(false);
-    let key = metadata_key(data);
-    let mut bucket = match data.remove(key) {
-        Some(GuardrailValue::Object(fields)) => fields,
-        None | Some(_) => BTreeMap::new(),
-    };
-    let alias_metadata =
-        key != "metadata" && !matches!(data.get("metadata"), Some(GuardrailValue::Object(_)));
+) {
     if let Some(session_id) = response
         .session_id
         .as_deref()
@@ -123,42 +105,73 @@ pub fn process_pillar_response(
     }
     bucket.insert(
         "pillar_flagged".to_owned(),
-        GuardrailValue::Boolean(flagged),
+        GuardrailValue::Boolean(response.flagged.unwrap_or(false)),
     );
     if settings.include_scanners {
-        bucket.insert("pillar_scanners".to_owned(), scanners_value(response));
+        let scanners = GuardrailValue::Object(response.scanners.clone().unwrap_or_default());
+        bucket.insert("pillar_scanners".to_owned(), scanners);
     }
     if settings.include_evidence {
-        bucket.insert("pillar_evidence".to_owned(), evidence_value(response));
+        let evidence = GuardrailValue::Array(response.evidence.clone().unwrap_or_default());
+        bucket.insert("pillar_evidence".to_owned(), evidence);
     }
-    if flagged {
-        tracing::warn!("Pillar Guardrail: Threat detected");
-        match settings.on_flagged_action {
-            OnFlaggedAction::Block => {
-                // the writes above stay on the request data, as they do before LiteLLM raises
-                store_bucket(data, key, bucket, alias_metadata);
-                let detail = detection_detail(response, settings);
-                return Err(PillarError::Http(GuardrailFailure::HttpObject {
-                    status: BLOCKED_STATUS,
-                    detail,
-                }));
-            }
-            OnFlaggedAction::Mask => {
-                tracing::info!("Pillar Guardrail: Masking mode - masking flagged content");
-                let masked = response.masked_session_messages.clone().unwrap_or_default();
-                if masked.is_empty() {
-                    tracing::warn!(
-                        "Pillar Guardrail: Masking requested but no masked_session_messages in response"
-                    );
-                } else {
-                    data.insert("messages".to_owned(), GuardrailValue::Array(masked));
-                }
-            }
-            OnFlaggedAction::Monitor => {
-                tracing::info!(
-                    "Pillar Guardrail: Monitoring mode - allowing flagged content to proceed"
+}
+
+// Masking rewrites the request messages in place; blocking returns the 400 detail to raise after the store
+fn apply_flagged_action(
+    settings: &PillarSettings,
+    response: &ProtectResponse,
+    data: &mut BTreeMap<String, GuardrailValue>,
+) -> Option<IndexMap<String, GuardrailValue>> {
+    tracing::warn!("Pillar Guardrail: Threat detected");
+    match settings.on_flagged_action {
+        OnFlaggedAction::Block => Some(detection_detail(response, settings)),
+        OnFlaggedAction::Mask => {
+            tracing::info!("Pillar Guardrail: Masking mode - masking flagged content");
+            let masked = response.masked_session_messages.clone().unwrap_or_default();
+            if masked.is_empty() {
+                tracing::warn!(
+                    "Pillar Guardrail: Masking requested but no masked_session_messages in response"
                 );
+            } else {
+                data.insert("messages".to_owned(), GuardrailValue::Array(masked));
             }
+            None
+        }
+        OnFlaggedAction::Monitor => {
+            tracing::info!(
+                "Pillar Guardrail: Monitoring mode - allowing flagged content to proceed"
+            );
+            None
+        }
+    }
+}
+
+pub fn process_pillar_response(
+    response: &ProtectResponse,
+    data: &mut BTreeMap<String, GuardrailValue>,
+    settings: &PillarSettings,
+) -> Result<(), PillarError> {
+    // LiteLLM returns early on an empty body, before writing any metadata
+    if *response == ProtectResponse::default() {
+        return Ok(());
+    }
+    let key = metadata_key(data);
+    let mut bucket = match data.remove(key) {
+        Some(GuardrailValue::Object(fields)) => fields,
+        None | Some(_) => BTreeMap::new(),
+    };
+    let alias_metadata =
+        key != "metadata" && !matches!(data.get("metadata"), Some(GuardrailValue::Object(_)));
+    store_response_metadata(&mut bucket, response, settings);
+    if response.flagged.unwrap_or(false) {
+        if let Some(detail) = apply_flagged_action(settings, response, data) {
+            // the writes above stay on the request data, as they do before LiteLLM raises
+            store_bucket(data, key, bucket, alias_metadata);
+            return Err(PillarError::Http(GuardrailFailure::HttpObject {
+                status: BLOCKED_STATUS,
+                detail,
+            }));
         }
     }
     build_pillar_response_headers(&mut bucket);

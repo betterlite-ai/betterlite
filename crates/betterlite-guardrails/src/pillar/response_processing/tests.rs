@@ -1,11 +1,12 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
-use super::TRUSTED_PILLAR_RESPONSE_HEADERS_METADATA_KEY;
+use super::TRUSTED_PILLAR_HEADERS_KEY;
 use super::error::PillarError;
 use super::response::{ProtectResponse, process_pillar_response};
 use super::settings::{FallbackAction, OnFlaggedAction, PillarSettings};
@@ -21,7 +22,7 @@ fn pillar_settings(action: OnFlaggedAction) -> PillarSettings {
         include_scanners: true,
         include_evidence: true,
         fallback_on_error: FallbackAction::Allow,
-        timeout: std::time::Duration::from_secs(5),
+        timeout: Duration::from_secs(5),
     }
 }
 
@@ -103,7 +104,7 @@ fn monitor_mode_stores_the_flag_scanners_evidence_and_session() {
     assert!(headers.contains_key("x-pillar-scanners"));
     assert!(headers.contains_key("x-pillar-evidence"));
     assert_eq!(
-        metadata.get(TRUSTED_PILLAR_RESPONSE_HEADERS_METADATA_KEY),
+        metadata.get(TRUSTED_PILLAR_HEADERS_KEY),
         Some(&GuardrailValue::Boolean(true))
     );
 }
@@ -122,13 +123,10 @@ fn an_existing_pillar_session_id_is_not_replaced_from_the_response_but_the_respo
         &pillar_settings(OnFlaggedAction::Monitor),
     )
     .expect("monitor mode does not fail");
-    let metadata = bucket(&request, "metadata");
+    let stored = bucket(&request, "metadata");
+    assert_eq!(stored.get("pillar_session_id"), Some(&text("sent-session")));
     assert_eq!(
-        metadata.get("pillar_session_id"),
-        Some(&text("sent-session"))
-    );
-    assert_eq!(
-        metadata.get("pillar_session_id_response"),
+        stored.get("pillar_session_id_response"),
         Some(&text("session-9"))
     );
 }
@@ -305,7 +303,7 @@ fn excluded_scanners_and_evidence_set_no_keys_and_no_headers() {
 }
 
 #[rstest]
-#[case::absent_scanners_and_evidence(true, false)]
+#[case::absent_scanners_and_evidence(true, true)]
 #[case::both_excluded(false, false)]
 fn missing_fields_of_the_response_default_to_empty_collections(
     #[case] include: bool,
@@ -316,7 +314,11 @@ fn missing_fields_of_the_response_default_to_empty_collections(
     settings.include_evidence = include;
     let response = ProtectResponse {
         flagged: Some(false),
-        ..ProtectResponse::default()
+        session_id: None,
+        scanners: None,
+        evidence: None,
+        masked_session_messages: None,
+        other: BTreeMap::new(),
     };
     let mut request = data(&[("messages", messages())]);
     process_pillar_response(&response, &mut request, &settings)
@@ -368,8 +370,12 @@ fn an_empty_response_leaves_the_request_untouched() {
 #[test]
 fn an_unknown_only_response_is_processed() {
     let response = ProtectResponse {
+        flagged: None,
+        session_id: None,
+        scanners: None,
+        evidence: None,
+        masked_session_messages: None,
         other: BTreeMap::from([("note".to_owned(), text("hi"))]),
-        ..ProtectResponse::default()
     };
     let mut request = data(&[("messages", messages())]);
     process_pillar_response(
