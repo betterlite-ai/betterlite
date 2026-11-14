@@ -55,7 +55,7 @@ class UserAPIKeyLabelValues:
     model: str | None = None
     litellm_model_name: str | None = None
     tags: tuple[str, ...] | list[str] = ()
-    custom_metadata_labels: Mapping[str, str] = field(default_factory=dict)
+    custom_metadata_labels: Mapping[str, str] = field(default_factory=dict[str, str])
     model_id: str | None = None
     api_base: str | None = None
     api_provider: str | None = None

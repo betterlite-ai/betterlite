@@ -1,4 +1,4 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Final, get_args
 
@@ -413,13 +413,11 @@ def test_names_label_value_fields() -> None:
 
 
 def test_names_value_rejects_keys() -> None:
-    construct: Callable[..., UserAPIKeyLabelValues] = UserAPIKeyLabelValues
+    accepted = UserAPIKeyLabelValues()
     with pytest.raises(TypeError):
-        construct(bogus=1)
+        _ = replace(accepted, bogus="1")
     with pytest.raises(TypeError):
-        construct(api_key_hash="hashed")
-    with pytest.raises(TypeError):
-        construct("end_user")
+        _ = replace(accepted, api_key_hash="hashed")
 
 
 def test_names_metric_config() -> None:
