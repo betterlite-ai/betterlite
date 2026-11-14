@@ -3,7 +3,6 @@ use std::str::FromStr;
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::TuningRecordError;
 
@@ -53,10 +52,17 @@ pub fn to_vertex_request(
     let mut hyperparameters = VertexHyperparameters::default();
     // LiteLLM tests each hyperparameter for truthiness: null, the number 0 and "" never reach Vertex
     if let Some(raw) = create.hyperparameters.as_ref() {
-        hyperparameters.epoch_count = hyperparameter(raw.get("n_epochs"), "n_epochs")?;
+        hyperparameters.epoch_count =
+            hyperparameter(raw.get("n_epochs"), "n_epochs", |text| text.parse().ok())?;
         hyperparameters.learning_rate_multiplier = hyperparameter(
             raw.get("learning_rate_multiplier"),
             "learning_rate_multiplier",
+            // Python's float() reads 2e-05, which Decimal's plain parser refuses
+            |text| {
+                Decimal::from_str(text)
+                    .or_else(|_error| Decimal::from_scientific(text))
+                    .ok()
+            },
         )?;
     }
     hyperparameters.adapter_size = original
@@ -66,12 +72,17 @@ pub fn to_vertex_request(
     Ok(vertex_job(create, hyperparameters))
 }
 
+#[expect(
+    clippy::disallowed_types,
+    reason = "the caller's hyperparameters are an untyped passthrough map"
+)]
 fn hyperparameter<T>(
-    value: Option<&Value>,
+    value: Option<&serde_json::Value>,
     field: &'static str,
+    parse: fn(&str) -> Option<T>,
 ) -> Result<Option<T>, TuningRecordError>
 where
-    T: FromStr + Default + PartialEq,
+    T: Default + PartialEq,
 {
     let Some(value) = value.filter(|value| !value.is_null()) else {
         return Ok(None);
@@ -82,10 +93,7 @@ where
     if text.is_empty() {
         return Ok(None);
     }
-    let parsed = text
-        .trim()
-        .parse::<T>()
-        .map_err(|_error| TuningRecordError::Hyperparameter { field })?;
+    let parsed = parse(text.trim()).ok_or(TuningRecordError::Hyperparameter { field })?;
     Ok((value.is_string() || parsed != T::default()).then_some(parsed))
 }
 

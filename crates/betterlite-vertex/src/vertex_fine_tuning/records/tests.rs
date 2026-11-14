@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use jiff::tz::TimeZone;
 use rstest::rstest;
+use rust_decimal::Decimal;
 
 use super::TuningRecordError;
 use super::request::{OriginalHyperparameters, VertexTuningJobCreate, to_vertex_request};
@@ -90,7 +91,7 @@ fn an_empty_suffix_is_kept_as_sent() {
 #[case::empty_rate_text(r#"{"learning_rate_multiplier":""}"#, None)]
 #[case::null_epochs(r#"{"n_epochs":null}"#, None)]
 #[case::null_rate(r#"{"learning_rate_multiplier":null}"#, None)]
-#[case::empty_adapter(r#"{}"#, Some(""))]
+#[case::empty_adapter("{}", Some(""))]
 #[case::null_hyperparameters("null", None)]
 #[case::other_keys(r#"{"batch_size":4}"#, None)]
 fn zero_valued_hyperparameters_are_omitted(
@@ -148,6 +149,21 @@ fn string_hyperparameters_are_parsed_and_a_text_zero_is_kept() {
         value["supervisedTuningSpec"]["hyperParameters"],
         serde_json::json!({"epoch_count": 0, "learning_rate_multiplier": 0.25})
     );
+}
+
+#[rstest]
+#[case::text_exponent(r#"{"learning_rate_multiplier":"2e-5"}"#)]
+#[case::number_exponent(r#"{"learning_rate_multiplier":2e-05}"#)]
+#[case::padded_text_exponent(r#"{"learning_rate_multiplier":" 2E-5 "}"#)]
+fn an_exponent_rate_is_read_like_pythons_float(#[case] hyperparameters: &str) {
+    let text =
+        format!(r#"{{"model":"m","training_file":"f","hyperparameters":{hyperparameters}}}"#);
+    let rate = request(&text, None)
+        .supervised_tuning_spec
+        .hyperparameters
+        .unwrap()
+        .learning_rate_multiplier;
+    assert_eq!(rate, Some(Decimal::new(2, 5)));
 }
 
 #[rstest]

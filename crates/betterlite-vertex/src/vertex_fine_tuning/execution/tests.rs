@@ -105,11 +105,11 @@ impl Fixture {
         }
     }
 
-    fn request(
-        &self,
-        api_base: Option<&str>,
+    fn request<'a>(
+        &'a self,
+        api_base: Option<&'a str>,
         timeout: Option<Duration>,
-    ) -> TuningCreateRequest<'_> {
+    ) -> TuningCreateRequest<'a> {
         TuningCreateRequest {
             catalog: &self.catalog,
             data: &self.data,
@@ -279,7 +279,7 @@ async fn error_status_body() {
     let error = create_tuning_job(&transport, &fixture.request(None, None), lookup)
         .await
         .unwrap_err();
-    assert_eq!(error.status_code(), 400);
+    assert_eq!(error.status_code(), 500);
     assert!(error.to_string().contains("invalid tuning job"), "{error}");
     assert!(error.to_string().contains("400"), "{error}");
 }
@@ -292,7 +292,8 @@ async fn only_a_200_is_accepted() {
     let error = create_tuning_job(&transport, &fixture.request(None, None), lookup)
         .await
         .unwrap_err();
-    assert_eq!(error.status_code(), 201);
+    assert_eq!(error.status_code(), 500);
+    assert!(error.to_string().contains("201"), "{error}");
 }
 
 #[tokio::test]

@@ -1,0 +1,23 @@
+kind: helper
+name: vertex-fine-tuning-exponent-rate
+call:
+  vertex_fine_tuning:
+    operation: request
+    calls:
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {learning_rate_multiplier: "2e-5"}
+        original_hyperparameters: {}
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {n_epochs: "3", learning_rate_multiplier: "1.5E-3"}
+        original_hyperparameters: {}
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {learning_rate_multiplier: 0.00002}
+        original_hyperparameters: {}
+env: {}
+compare: {ignore: []}

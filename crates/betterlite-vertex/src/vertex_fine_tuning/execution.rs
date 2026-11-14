@@ -34,18 +34,18 @@ pub enum TuningExecutionError {
 }
 
 impl TuningExecutionError {
-    // LiteLLM keeps the upstream status on a non-200 answer and fails every other step with a 500
+    // LiteLLM keeps the upstream status in the text of a bare Exception, so the proxy answers 500 for every failure
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
-            Self::Http { status, .. } => *status,
             Self::Credentials(_)
             | Self::Target(_)
             | Self::VertexUrl(_)
             | Self::Url(_)
             | Self::Header(_)
             | Self::Transport(_)
-            | Self::Record(_) => 500,
+            | Self::Record(_)
+            | Self::Http { .. } => 500,
         }
     }
 }
