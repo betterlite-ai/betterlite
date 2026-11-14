@@ -77,6 +77,13 @@ impl Operation {
         }
     }
 
+    const fn of_spend_partition(operation: SpendPartitionOperation) -> Self {
+        match operation {
+            SpendPartitionOperation::Partition => Self::PartitionSpendLogs,
+            SpendPartitionOperation::Unpartition => Self::UnpartitionSpendLogs,
+        }
+    }
+
     #[must_use]
     pub fn command(self, environment: &BTreeMap<String, String>) -> DbAdminCommand {
         match self {
@@ -135,12 +142,7 @@ impl DbAdminCommand {
             Self::DailyToolSpend(_) => DAILY_TOOL_SPEND_KEY,
             Self::KeyTotalSpend => Operation::KeyTotalSpend,
             Self::KeyTotalSpendFromLogs => Operation::KeyTotalSpendFromLogs,
-            Self::SpendPartition(SpendPartitionOperation::Partition) => {
-                Operation::PartitionSpendLogs
-            }
-            Self::SpendPartition(SpendPartitionOperation::Unpartition) => {
-                Operation::UnpartitionSpendLogs
-            }
+            Self::SpendPartition(operation) => Operation::of_spend_partition(*operation),
         }
     }
 }
