@@ -102,7 +102,7 @@ async fn an_empty_request_model_is_not_sent() {
     let mut request = data(r#"{"model":""}"#);
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     let body = data(&only_call(&server).body);
-    assert!(body.get("model").is_none());
+    assert!(!body.contains_key("model"));
 }
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn the_compression_request_omits_an_unknown_model() {
     let mut request = data("{}");
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     let body = data(&only_call(&server).body);
-    assert!(body.get("model").is_none());
+    assert!(!body.contains_key("model"));
 }
 
 #[tokio::test]
@@ -214,7 +214,7 @@ async fn tokens_saved_is_derived_from_float_counts() {
 #[tokio::test]
 async fn tokens_saved_is_omitted_without_two_numbers(#[case] payload: &str) {
     let response = recorded_response(payload).await;
-    assert!(response.get("tokens_saved").is_none());
+    assert!(!response.contains_key("tokens_saved"));
 }
 
 #[rstest]
@@ -303,7 +303,7 @@ async fn an_http_error_status_fails_closed_with_the_body() {
         detail.get("body"),
         Some(&GuardrailValue::Text("boom".to_owned()))
     );
-    assert!(detail.get("hint").is_none());
+    assert!(!detail.contains_key("hint"));
     assert!(records_are_absent(&request));
 }
 
@@ -452,7 +452,7 @@ async fn a_timeout_fails_open() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let input = HeadroomInput {
-        timeout: Some(0.1),
+        timeout: Some(0.1_f64),
         ..fail_open_input(&base)
     };
     let guardrail = guardrail_with_clock(&input);
@@ -470,7 +470,7 @@ async fn a_timeout_fails_closed() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let input = HeadroomInput {
-        timeout: Some(0.1),
+        timeout: Some(0.1_f64),
         ..default_input(&base)
     };
     let guardrail = guardrail_with_clock(&input);
@@ -518,13 +518,13 @@ fn updating_params_re_resolves_and_re_clamps_the_timeout() {
     let mut guardrail = guardrail("http://127.0.0.1:1");
     assert_eq!(guardrail.settings.timeout.total, Duration::from_mins(1));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(5));
-    guardrail.update_in_memory_params(Some(2.0)).unwrap();
+    guardrail.update_in_memory_params(Some(2.0_f64)).unwrap();
     assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(2));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(2));
-    guardrail.update_in_memory_params(Some(10.0)).unwrap();
+    guardrail.update_in_memory_params(Some(10.0_f64)).unwrap();
     assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(10));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(5));
-    guardrail.update_in_memory_params(Some(0.0)).unwrap();
+    guardrail.update_in_memory_params(Some(0.0_f64)).unwrap();
     assert_eq!(guardrail.settings.timeout.total, Duration::from_mins(1));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(5));
     guardrail.update_in_memory_params(None).unwrap();
@@ -553,13 +553,13 @@ fn updating_params_rebuilds_the_client_for_the_new_connect_deadline() {
     )
     .unwrap();
     assert_eq!(*seen.lock().unwrap(), [Duration::from_secs(5)]);
-    guardrail.update_in_memory_params(Some(2.0)).unwrap();
+    guardrail.update_in_memory_params(Some(2.0_f64)).unwrap();
     assert_eq!(
         *seen.lock().unwrap(),
         [Duration::from_secs(5), Duration::from_secs(2)]
     );
-    guardrail.update_in_memory_params(Some(10.0)).unwrap();
-    guardrail.update_in_memory_params(Some(0.0)).unwrap();
+    guardrail.update_in_memory_params(Some(10.0_f64)).unwrap();
+    guardrail.update_in_memory_params(Some(0.0_f64)).unwrap();
     guardrail.update_in_memory_params(None).unwrap();
     assert_eq!(
         *seen.lock().unwrap(),

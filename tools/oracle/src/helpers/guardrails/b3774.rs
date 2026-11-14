@@ -51,7 +51,7 @@ impl Helper for Op {
         let guardrail = build_guardrail(input, &base)?;
         let mut request_data = input.request_data.clone();
         let input_type = input.input_type.unwrap_or(GuardrailInputType::Request);
-        let mut target = logging_target(input.logging_call_id.as_deref());
+        let mut target = input.logging_call_id.as_deref().map(logging_target);
         let (inputs, raised) = call(
             &guardrail,
             input,
@@ -72,7 +72,7 @@ impl Helper for Op {
                 .is_some_and(|id| Uuid::parse_str(id).is_ok());
         let issued = call_id
             .as_deref()
-            .and_then(|call_id| guardrail.has_issued_hashes(call_id))
+            .and_then(|identifier| guardrail.has_issued_hashes(identifier))
             .map(|hashes| hashes.into_iter().collect::<Vec<_>>());
         let request_data_json = serde_json::to_value(&request_data).or_value_error()?;
         Ok(json!({
@@ -139,14 +139,14 @@ fn text_field<'data>(
     }
 }
 
-fn logging_target(call_id: Option<&str>) -> Option<GuardrailLogTarget> {
-    call_id.map(|call_id| GuardrailLogTarget {
+fn logging_target(call_id: &str) -> GuardrailLogTarget {
+    GuardrailLogTarget {
         litellm_params: None,
         model_call_params: Some(BTreeMap::from([(
             CALL_ID.to_owned(),
             GuardrailValue::Text(call_id.to_owned()),
         )])),
-    })
+    }
 }
 
 fn build_guardrail(

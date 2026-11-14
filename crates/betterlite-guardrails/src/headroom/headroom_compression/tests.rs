@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
+use std::iter::once;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -194,7 +195,10 @@ fn gv(text: &str) -> GuardrailValue {
     serde_json::from_str(text).unwrap()
 }
 
-fn encoded<T: Serialize>(value: &T) -> GuardrailValue {
+fn encoded<T>(value: &T) -> GuardrailValue
+where
+    T: Serialize,
+{
     gv(&serde_json::to_string(value).unwrap())
 }
 
@@ -541,7 +545,7 @@ async fn call_id_comes_from_the_logging_object() {
         .unwrap();
     assert_eq!(
         guardrail.has_issued_hashes("call-1"),
-        Some([SENT_HASH.to_owned()].into_iter().collect())
+        Some(once(SENT_HASH.to_owned()).collect())
     );
     assert_eq!(guardrail.has_issued_hashes("request-id"), None);
 }
@@ -621,7 +625,7 @@ async fn a_missing_call_id_is_generated_and_written_to_the_request() {
     let parsed = Uuid::parse_str(generated).expect("a UUID");
     assert_eq!(
         guardrail.has_issued_hashes(generated),
-        Some([SENT_HASH.to_owned()].into_iter().collect())
+        Some(once(SENT_HASH.to_owned()).collect())
     );
     assert_ne!(parsed, Uuid::nil());
 }
@@ -644,7 +648,7 @@ async fn hashes_are_lowercased_from_the_service_response() {
     let issued = guardrail
         .has_issued_hashes("call-1")
         .expect("issued hashes");
-    assert_eq!(issued, [SENT_HASH.to_owned()].into_iter().collect());
+    assert_eq!(issued, once(SENT_HASH.to_owned()).collect());
 }
 
 #[tokio::test]
@@ -730,7 +734,7 @@ async fn a_response_without_hashes_does_not_prune() {
     let (guardrail, now) = clocked(&default_input(&server.base));
     guardrail.issued.record(
         "first",
-        [SENT_HASH.to_owned()].into_iter().collect(),
+        once(SENT_HASH.to_owned()).collect(),
         Duration::ZERO,
     );
     *now.lock().unwrap() = Duration::from_hours(1);
