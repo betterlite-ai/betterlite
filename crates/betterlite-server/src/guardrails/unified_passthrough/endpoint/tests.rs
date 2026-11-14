@@ -177,6 +177,24 @@ async fn endpoint_default_methods_keep_the_base_behavior() {
 }
 
 #[tokio::test]
+async fn endpoint_output_sends_only_the_configured_response_fields() {
+    let fake = FakeGuardrail::unchanged();
+    let config: Json = serde_json::from_str(r#"{"g1": {"response_fields": ["output"]}}"#)
+        .expect("valid JSON fixture");
+    let response = json_value(r#"{"model": "m", "output": "hello", "secret": "hide"}"#);
+    let mut log_target = GuardrailLogTarget::default();
+    Adapter::new(Some("g1".to_owned()), Some(config))
+        .process_output_response(
+            response,
+            &fake,
+            response_call(None, None, Some(&mut log_target)),
+        )
+        .await
+        .expect("the guardrail accepts");
+    assert_eq!(fake.calls()[0].texts, vec!["hello".to_owned()]);
+}
+
+#[tokio::test]
 async fn endpoint_input_sends_only_the_configured_request_fields() {
     let fake = FakeGuardrail::unchanged();
     let config: Json = serde_json::from_str(r#"{"g1": {"request_fields": ["query"]}}"#)
