@@ -45,7 +45,7 @@ pub(super) async fn lua_failure_fallback<E>(
     error: &E,
 ) -> Result<RateLimitResponse, SettlementError>
 where
-    E: Display + ?Sized,
+    E: Display + Sync + ?Sized,
 {
     let message = error.to_string();
     settlement.refund_applied_descriptor_groups(applied).await;

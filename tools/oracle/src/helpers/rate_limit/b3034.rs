@@ -18,7 +18,7 @@ use betterlite_rate_limit::settlement_and_rollback::AtomicSettlement;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::HelperError;
+use crate::helpers::{HelperError, OrHelperError as _};
 
 use fakes::{FixedClock, PlannedBatch, PlannedBatchSource, PlannedScript, RecordingCache};
 use output::{response_json, settlement_error};
@@ -78,7 +78,9 @@ impl crate::helpers::Helper for Op {
             .pipelined
             .then(|| Arc::new(PlannedBatch::new(input.replies.clone())));
         let store = window_store(Arc::clone(&cache), batch.as_ref());
-        let clock = FixedClock::at(input.now);
+        let clock = FixedClock::at(input.now)
+            .ok_or("now is too large")
+            .or_value_error()?;
         let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&main_script);
         let refunds: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&refund_script);
         let response = settle(input, &store, &clock, script, refunds)?;

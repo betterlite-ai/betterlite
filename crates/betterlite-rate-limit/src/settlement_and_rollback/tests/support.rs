@@ -15,15 +15,16 @@ use crate::atomic_counter::payload::IncrementAmounts;
 use crate::fail_closed::FailClosedPolicy;
 use crate::limiter_records::{
     AtomicCounterMeta, CacheCounterValue, LimiterClock, RateLimitDescriptor,
-    RateLimitDescriptorRateLimit, ScriptReply, WindowRateLimitType,
+    RateLimitDescriptorRateLimit, RateLimitResponse, ScriptReply, WindowRateLimitType,
 };
 use crate::rate_limit_window_store::{
     CounterCache, CounterScript, CounterValues, RedisCacheKind, RequestBatchSource, ScriptBatch,
     ScriptHandle, WindowStore,
 };
-use crate::settlement_and_rollback::AtomicSettlement;
+use crate::settlement_and_rollback::{AtomicSettlement, SettlementError};
 
 pub(crate) const WINDOW: i64 = 60;
+const SETTLEMENT_NOW: u64 = 1_700_000_000;
 
 pub(crate) fn descriptor(
     key: &str,
@@ -64,10 +65,6 @@ pub(crate) fn reply(values: &[i64]) -> ScriptReply {
     )
 }
 
-pub(crate) fn empty_reply() -> ScriptReply {
-    ScriptReply::Array(Vec::new())
-}
-
 pub(crate) fn key_list(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
@@ -105,7 +102,9 @@ pub(crate) struct FixedClock {
 impl FixedClock {
     pub(crate) fn at(seconds: u64) -> Self {
         Self {
-            at: UNIX_EPOCH + Duration::from_secs(seconds),
+            at: UNIX_EPOCH
+                .checked_add(Duration::from_secs(seconds))
+                .expect("the test clock stays inside SystemTime"),
         }
     }
 
@@ -259,7 +258,7 @@ impl FakeScript {
 
 #[async_trait::async_trait]
 impl CounterScript for FakeScript {
-    fn source(&self) -> &str {
+    fn source(&self) -> &'static str {
         "fixture script"
     }
 
@@ -390,6 +389,100 @@ pub(crate) fn settlement<'settlement>(
             enabled: fail_closed,
         },
         default_window_size: WINDOW,
+    }
+}
+
+pub(crate) fn recorded_calls(script: &FakeScript) -> Vec<(Vec<String>, Vec<RedisScalar>)> {
+    script
+        .calls()
+        .iter()
+        .map(|call| (call.keys.clone(), call.args.clone()))
+        .collect()
+}
+
+pub(crate) fn expected_refund_calls(
+    entries: &[(&str, &str, &str, &str)],
+) -> Vec<(Vec<String>, Vec<RedisScalar>)> {
+    entries
+        .iter()
+        .map(|entry| {
+            let (window_key, counter_key, window_start, amount) = *entry;
+            (
+                key_list(&[window_key, counter_key]),
+                vec![text(window_start), text(amount), text("0")],
+            )
+        })
+        .collect()
+}
+
+pub(crate) struct BatchedRun {
+    pub(crate) cache: Arc<FakeCache>,
+    pub(crate) direct: Arc<FakeScript>,
+    pub(crate) refunds: Arc<FakeScript>,
+    pub(crate) outcome: Result<RateLimitResponse, SettlementError>,
+}
+
+pub(crate) async fn run_batched(
+    batch: &Arc<FakeBatch>,
+    refund_replies: &[ScriptReply],
+    fail_closed: bool,
+    descriptors: &[RateLimitDescriptor],
+    increments: &[IncrementAmounts],
+) -> BatchedRun {
+    let cache = FakeCache::empty();
+    let windows_store = pipelined_store(Arc::clone(&cache), Arc::clone(batch));
+    let clock = FixedClock::at(SETTLEMENT_NOW);
+    let direct = FakeScript::new(Vec::new());
+    let refunds = FakeScript::new(refund_replies.to_vec());
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(Arc::clone(&direct)),
+        Some(Arc::clone(&refunds)),
+        fail_closed,
+    );
+    let outcome = settler
+        .atomic_check_and_increment_by_n(descriptors, increments)
+        .await;
+    BatchedRun {
+        cache,
+        direct,
+        refunds,
+        outcome,
+    }
+}
+
+pub(crate) struct ScriptedRun {
+    pub(crate) cache: Arc<FakeCache>,
+    pub(crate) refunds: Arc<FakeScript>,
+    pub(crate) outcome: Result<RateLimitResponse, SettlementError>,
+}
+
+pub(crate) async fn run_scripted(
+    script: Arc<FakeScript>,
+    refund_replies: &[ScriptReply],
+    fail_closed: bool,
+    descriptors: &[RateLimitDescriptor],
+    increments: &[IncrementAmounts],
+) -> ScriptedRun {
+    let cache = FakeCache::empty();
+    let windows_store = store(Arc::clone(&cache));
+    let clock = FixedClock::at(SETTLEMENT_NOW);
+    let refunds = FakeScript::new(refund_replies.to_vec());
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(script),
+        Some(Arc::clone(&refunds)),
+        fail_closed,
+    );
+    let outcome = settler
+        .atomic_check_and_increment_by_n(descriptors, increments)
+        .await;
+    ScriptedRun {
+        cache,
+        refunds,
+        outcome,
     }
 }
 

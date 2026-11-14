@@ -5,11 +5,37 @@ use std::sync::Arc;
 use crate::limiter_records::{CacheCounterValue, RateLimitType};
 use crate::settlement_and_rollback::SettlementError;
 use crate::settlement_and_rollback::tests::support::{
-    CacheRead, CacheWrite, FakeCache, FakeScript, FixedClock, amounts, descriptor, reply,
-    settlement, store, text,
+    CacheRead, FakeCache, FakeScript, FixedClock, amounts, descriptor, reply, settlement, store,
+    text,
 };
 
 const NOW: u64 = 1_700_000_000;
+
+fn started_window_writes() -> Vec<(String, CacheCounterValue)> {
+    vec![
+        (
+            "{model:gpt-4}:requests".to_owned(),
+            CacheCounterValue::Int(0),
+        ),
+        ("{model:gpt-4}:tokens".to_owned(), CacheCounterValue::Int(0)),
+        (
+            "{model:gpt-4}:window".to_owned(),
+            CacheCounterValue::Text(NOW.to_string()),
+        ),
+        (
+            "{model:gpt-4}:requests".to_owned(),
+            CacheCounterValue::Int(1),
+        ),
+    ]
+}
+
+fn written(cache: &FakeCache) -> Vec<(String, CacheCounterValue)> {
+    cache
+        .writes()
+        .iter()
+        .map(|write| (write.key.clone(), write.value.clone()))
+        .collect()
+}
 
 #[tokio::test]
 async fn a_configured_script_serves_the_lua_path() {
@@ -64,34 +90,12 @@ async fn without_a_script_the_memory_store_starts_the_window() {
             local_only: true,
         }]
     );
-    assert_eq!(
-        cache.writes(),
-        vec![
-            CacheWrite {
-                key: "{model:gpt-4}:requests".to_owned(),
-                value: CacheCounterValue::Int(0),
-                ttl: 60,
-                local_only: true,
-            },
-            CacheWrite {
-                key: "{model:gpt-4}:tokens".to_owned(),
-                value: CacheCounterValue::Int(0),
-                ttl: 60,
-                local_only: true,
-            },
-            CacheWrite {
-                key: "{model:gpt-4}:window".to_owned(),
-                value: CacheCounterValue::Text(NOW.to_string()),
-                ttl: 60,
-                local_only: true,
-            },
-            CacheWrite {
-                key: "{model:gpt-4}:requests".to_owned(),
-                value: CacheCounterValue::Int(1),
-                ttl: 60,
-                local_only: true,
-            },
-        ]
+    assert_eq!(written(&cache), started_window_writes());
+    assert!(
+        cache
+            .writes()
+            .iter()
+            .all(|write| write.ttl == 60 && write.local_only)
     );
     assert_eq!(response.overall_code, "OK");
     assert_eq!(response.statuses.len(), 1);

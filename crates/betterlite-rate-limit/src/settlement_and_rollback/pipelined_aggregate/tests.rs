@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::limiter_records::RateLimitResponse;
 use crate::settlement_and_rollback::tests::support::{
     FakeBatch, FakeCache, FakeScript, FixedClock, amounts, descriptor, pipelined_store, reply,
-    settlement,
+    run_batched, settlement,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -19,6 +19,14 @@ fn windows(response: &RateLimitResponse) -> Vec<(String, String)> {
         .collect()
 }
 
+fn descriptor_values(response: &RateLimitResponse) -> Vec<Option<String>> {
+    response
+        .statuses
+        .iter()
+        .map(|status| status.descriptor_value.clone())
+        .collect()
+}
+
 #[tokio::test]
 async fn ok_groups_aggregate_their_statuses_and_windows() {
     let batch = FakeBatch::new(
@@ -29,34 +37,22 @@ async fn ok_groups_aggregate_their_statuses_and_windows() {
         ],
         &[],
     );
-    let cache = FakeCache::empty();
-    let windows_store = pipelined_store(Arc::clone(&cache), Arc::clone(&batch));
-    let clock = FixedClock::at(NOW);
-    let settler = settlement(
-        &windows_store,
-        &clock,
-        Some(FakeScript::new(Vec::new())),
-        None,
+    let run = run_batched(
+        &batch,
+        &[],
         false,
-    );
-    let response = settler
-        .atomic_check_and_increment_by_n(
-            &[
-                descriptor("model", "gpt-4", Some(10), None),
-                descriptor("model", "gpt-3.5", Some(10), None),
-                descriptor("model", "claude", Some(10), None),
-            ],
-            &[amounts(1, 0), amounts(1, 0), amounts(1, 0)],
-        )
-        .await
-        .expect("every group settles");
+        &[
+            descriptor("model", "gpt-4", Some(10), None),
+            descriptor("model", "gpt-3.5", Some(10), None),
+            descriptor("model", "claude", Some(10), None),
+        ],
+        &[amounts(1, 0), amounts(1, 0), amounts(1, 0)],
+    )
+    .await;
+    let response = run.outcome.expect("every group settles");
     assert_eq!(response.overall_code, "OK");
     assert_eq!(
-        response
-            .statuses
-            .iter()
-            .map(|status| status.descriptor_value.clone())
-            .collect::<Vec<_>>(),
+        descriptor_values(&response),
         vec![
             Some("gpt-4".to_owned()),
             Some("gpt-3.5".to_owned()),

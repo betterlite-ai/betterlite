@@ -5,7 +5,8 @@ use std::sync::Arc;
 use crate::limiter_records::{RateLimitResponse, ReservationBackend, ScriptReply};
 use crate::settlement_and_rollback::SettlementError;
 use crate::settlement_and_rollback::tests::support::{
-    FakeCache, FakeScript, FixedClock, amounts, descriptor, key_list, reply, settlement, store,
+    FakeCache, FakeScript, FixedClock, amounts, descriptor, key_list, reply, run_scripted,
+    settlement, store,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -25,67 +26,48 @@ fn windows(response: &RateLimitResponse) -> Vec<(String, String, ReservationBack
         .collect()
 }
 
+fn redis_window(counter_key: &str, window_start: &str) -> (String, String, ReservationBackend) {
+    (
+        counter_key.to_owned(),
+        window_start.to_owned(),
+        ReservationBackend::Redis,
+    )
+}
+
 #[tokio::test]
 async fn each_descriptor_runs_its_own_script_call_in_order() {
     let script = FakeScript::new(vec![reply(&[0, 1, 100]), reply(&[0, 2, 200, 300, 200])]);
-    let cache = FakeCache::empty();
-    let windows_store = store(Arc::clone(&cache));
-    let clock = FixedClock::at(NOW);
-    let settler = settlement(
-        &windows_store,
-        &clock,
-        Some(Arc::clone(&script)),
-        None,
+    let run = run_scripted(
+        Arc::clone(&script),
+        &[],
         false,
-    );
-    let response = settler
-        .atomic_check_and_increment_by_n(
-            &[
-                descriptor("model", "gpt-4", Some(10), None),
-                descriptor("user", "alice", Some(10), Some(100)),
-            ],
-            &[amounts(1, 0), amounts(1, 2)],
-        )
-        .await
-        .expect("both descriptors settle");
+        &[
+            descriptor("model", "gpt-4", Some(10), None),
+            descriptor("user", "alice", Some(10), Some(100)),
+        ],
+        &[amounts(1, 0), amounts(1, 2)],
+    )
+    .await;
+    let response = run.outcome.expect("both descriptors settle");
     let calls = script.calls();
     assert_eq!(calls.len(), 2);
-    assert_eq!(
-        calls.first().map(|call| call.keys.clone()),
-        Some(key_list(&[
-            "{model:gpt-4}:window",
-            "{model:gpt-4}:requests"
-        ]))
-    );
-    assert_eq!(
-        calls.get(1).map(|call| call.keys.clone()),
-        Some(key_list(&[
-            "{user:alice}:window",
-            "{user:alice}:requests",
-            "{user:alice}:window",
-            "{user:alice}:tokens",
-        ]))
-    );
+    let gpt4_keys = key_list(&["{model:gpt-4}:window", "{model:gpt-4}:requests"]);
+    let alice_keys = key_list(&[
+        "{user:alice}:window",
+        "{user:alice}:requests",
+        "{user:alice}:window",
+        "{user:alice}:tokens",
+    ]);
+    assert_eq!(calls.first().map(|call| call.keys.clone()), Some(gpt4_keys));
+    assert_eq!(calls.get(1).map(|call| call.keys.clone()), Some(alice_keys));
     assert_eq!(response.overall_code, "OK");
     assert_eq!(response.statuses.len(), 3);
     assert_eq!(
         windows(&response),
         vec![
-            (
-                "{model:gpt-4}:requests".to_owned(),
-                "100".to_owned(),
-                ReservationBackend::Redis
-            ),
-            (
-                "{user:alice}:requests".to_owned(),
-                "200".to_owned(),
-                ReservationBackend::Redis
-            ),
-            (
-                "{user:alice}:tokens".to_owned(),
-                "200".to_owned(),
-                ReservationBackend::Redis
-            ),
+            redis_window("{model:gpt-4}:requests", "100"),
+            redis_window("{user:alice}:requests", "200"),
+            redis_window("{user:alice}:tokens", "200"),
         ]
     );
 }

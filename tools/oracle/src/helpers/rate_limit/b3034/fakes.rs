@@ -85,7 +85,7 @@ impl PlannedScript {
 
 #[async_trait::async_trait]
 impl CounterScript for PlannedScript {
-    fn source(&self) -> &str {
+    fn source(&self) -> &'static str {
         "b3034 planned script"
     }
 
@@ -260,10 +260,10 @@ pub(super) struct FixedClock {
 }
 
 impl FixedClock {
-    pub(super) fn at(seconds: u64) -> Self {
-        Self {
-            at: UNIX_EPOCH + Duration::from_secs(seconds),
-        }
+    pub(super) fn at(seconds: u64) -> Option<Self> {
+        Some(Self {
+            at: UNIX_EPOCH.checked_add(Duration::from_secs(seconds))?,
+        })
     }
 }
 

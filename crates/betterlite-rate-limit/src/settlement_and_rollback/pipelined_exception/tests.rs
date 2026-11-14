@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::settlement_and_rollback::SettlementError;
 use crate::settlement_and_rollback::tests::support::{
     FakeBatch, FakeCache, FakeScript, FixedClock, LogCapture, amounts, descriptor, key_list,
-    pipelined_store, reply, settlement, text,
+    pipelined_store, reply, run_batched, settlement, text,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -14,28 +14,19 @@ const NOW: u64 = 1_700_000_000;
 async fn a_failed_group_refunds_the_ok_groups_and_falls_back() {
     let capture = LogCapture::start();
     let batch = FakeBatch::new(vec![reply(&[0, 1, 100]), reply(&[0, 2, 200])], &[0]);
-    let refunds = FakeScript::new(vec![reply(&[1])]);
-    let cache = FakeCache::empty();
-    let windows_store = pipelined_store(Arc::clone(&cache), Arc::clone(&batch));
-    let clock = FixedClock::at(NOW);
-    let settler = settlement(
-        &windows_store,
-        &clock,
-        Some(FakeScript::new(Vec::new())),
-        Some(Arc::clone(&refunds)),
+    let run = run_batched(
+        &batch,
+        &[reply(&[1])],
         false,
-    );
-    let response = settler
-        .atomic_check_and_increment_by_n(
-            &[
-                descriptor("model", "gpt-4", Some(10), None),
-                descriptor("model", "gpt-3.5", Some(10), None),
-            ],
-            &[amounts(1, 0), amounts(1, 0)],
-        )
-        .await
-        .expect("the failed group falls back to memory");
-    let refund_calls = refunds.calls();
+        &[
+            descriptor("model", "gpt-4", Some(10), None),
+            descriptor("model", "gpt-3.5", Some(10), None),
+        ],
+        &[amounts(1, 0), amounts(1, 0)],
+    )
+    .await;
+    let response = run.outcome.expect("the failed group falls back to memory");
+    let refund_calls = run.refunds.calls();
     assert_eq!(refund_calls.len(), 1);
     assert_eq!(
         refund_calls.first().map(|call| call.keys.clone()),
@@ -50,7 +41,7 @@ async fn a_failed_group_refunds_the_ok_groups_and_falls_back() {
     );
     assert_eq!(response.overall_code, "OK");
     assert_eq!(response.statuses.len(), 2);
-    assert!(!cache.writes().is_empty());
+    assert!(!run.cache.writes().is_empty());
     let logged = capture.text();
     assert!(logged.contains("ERROR"));
     assert!(logged.contains("script=\"check_and_increment_by_n_script\""));
