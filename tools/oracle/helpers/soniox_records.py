@@ -77,7 +77,7 @@ class BuildResponseFn(Protocol):
     ) -> TranscriptionResponse: ...
 
 
-# LiteLLM annotates these five methods with bare dicts, and the gate counts one suppression line in this file
+# LiteLLM annotates these five methods with bare dicts, so each one needs a typed view
 MAP_PARAMS, VALIDATE_ENVIRONMENT, COMPLETE_URL, ERROR_CLASS, BUILD_RESPONSE = cast(MapParamsFn, BASE.map_openai_params), cast(ValidateEnvironmentFn, BASE.validate_environment), cast(CompleteUrlFn, BASE.get_complete_url), cast(ErrorClassFn, BASE.get_error_class), cast(BuildResponseFn, BASE._build_response_from_payload)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/transformation.py#L192-L261
 
 
@@ -137,7 +137,8 @@ def apply_environment(environment: dict[str, str]) -> None:
 
 
 def map_params(call: MapParamsCall) -> JsonValue:
-    options = dict(call.get("optional_params", EMPTY))
+    supplied = call.get("optional_params")
+    options = dict(EMPTY if supplied is None else supplied)
     params = MAP_PARAMS(call["non_default_params"], options, MODEL, drop_params=False)
     return {"ok": True, "params": params, "optional_params": options}
 
@@ -152,16 +153,18 @@ def validate_view(call: ValidateEnvironmentCall) -> JsonValue:
         api_key=call.get("api_key"),
         api_base=None,
     )
-    return {"ok": True, "headers": merged}
+    return {"ok": True, "headers": JSON.validate_python(merged)}
 
 
 def validate_environment(call: ValidateEnvironmentCall) -> JsonValue:
-    apply_environment(call.get("environment", EMPTY))
+    environment = call.get("environment")
+    apply_environment({} if environment is None else environment)
     return guarded(validate_view, call)
 
 
 def complete_url(call: CompleteUrlCall) -> JsonValue:
-    apply_environment(call.get("environment", EMPTY))
+    environment = call.get("environment")
+    apply_environment({} if environment is None else environment)
     url = COMPLETE_URL(call.get("api_base"), None, MODEL, EMPTY, EMPTY)
     return {"ok": True, "url": url}
 
@@ -184,7 +187,8 @@ def response(call: ResponseCall) -> JsonValue:
 def answer(call: Call) -> JsonValue:
     match call["function"]:
         case "supported_params":
-            return {"ok": True, "params": BASE.get_supported_openai_params(MODEL)}
+            params = BASE.get_supported_openai_params(MODEL)
+            return {"ok": True, "params": JSON.validate_python(params)}
         case "map_params":
             return map_params(call)
         case "validate_environment":
@@ -198,4 +202,5 @@ def answer(call: Call) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    return {"calls": [answer(call) for call in input_value["calls"]]}
+    answers: list[JsonValue] = [answer(call) for call in input_value["calls"]]
+    return {"calls": answers}
