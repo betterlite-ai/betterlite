@@ -72,10 +72,10 @@ pub(super) fn stream_reply(
     }
 }
 
-fn block_on_timeout<Value>(
-    client: &Client,
-    future: impl Future<Output = Value>,
-) -> Result<Value, ChatError> {
+fn block_on_timeout<Value, Pending>(client: &Client, future: Pending) -> Result<Value, ChatError>
+where
+    Pending: Future<Output = Value>,
+{
     // tokio::time::timeout reads the current runtime when it is created
     let _entered = client.runtime.enter();
     client
@@ -123,10 +123,14 @@ fn open_and_read(
     Ok(content)
 }
 
-fn read_events<Chunk: AsRef<[u8]>>(
+fn read_events<Chunk, Source>(
     terminal: &mut dyn Terminal,
-    mut next_chunk: impl FnMut() -> Result<Option<Chunk>, ChatError>,
-) -> Result<String, ChatError> {
+    mut next_chunk: Source,
+) -> Result<String, ChatError>
+where
+    Chunk: AsRef<[u8]>,
+    Source: FnMut() -> Result<Option<Chunk>, ChatError>,
+{
     let mut lines = StreamLines::default();
     let mut content = String::new();
     while let Some(chunk) = next_chunk()? {
