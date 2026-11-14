@@ -2,10 +2,10 @@ import importlib
 import inspect
 from enum import Enum
 from types import ModuleType
-from typing import Final, Protocol, TypeVar
+from typing import Final, TypeVar
 
 import pytest
-from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import TypeForm
 
 from betterlite.types.interactions import (
@@ -19,7 +19,6 @@ from betterlite.types.interactions import (
     tools,
 )
 
-PACKAGE = "betterlite.types.interactions"
 FormT = TypeVar("FormT")
 OUR_MODULES: Final = (
     content,
@@ -38,32 +37,6 @@ AWARE_TIME: Final = "2026-01-01T00:00:00Z"
 NAIVE_TIME: Final = "2026-01-01T00:00:00"
 TAG_ERROR: Final = "does not match any of the expected tags"
 
-
-class ReferenceModule(Protocol):
-    CancelInteractionResult: type[BaseModel]
-    Content: type[BaseModel]
-    ContentDelta: type[BaseModel]
-    CreateAgentInteractionParams: type[BaseModel]
-    CreateModelInteractionParams: type[BaseModel]
-    DeleteInteractionResult: type[BaseModel]
-    Interaction: type[BaseModel]
-    InteractionInput: TypeForm[
-        str | content.Content | list[content.Content] | list[interaction.Turn]
-    ]
-    InteractionSseEvent: type[BaseModel]
-    InteractionTool: type[BaseModel]
-    InteractionToolChoiceConfig: type[BaseModel]
-    InteractionEnvironment: TypeForm[str | dict[str, JsonValue]]
-    # ast-grep-ignore: no-long-names
-    InteractionsAPIOptionalRequestParams: TypeForm[dict[str, JsonValue]]
-    InteractionsAPIResponse: type[BaseModel]
-    # ast-grep-ignore: no-long-names
-    InteractionsAPIStreamingResponse: type[BaseModel]
-    Tool: type[BaseModel]
-    ToolChoice: type[BaseModel]
-
-
-THEIRS: ReferenceModule = importlib.import_module("litellm.types.interactions.generated")
 
 CONTENT_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
     {"type": "text", "text": "hi"},
@@ -145,6 +118,12 @@ def defined_classes(module: ModuleType) -> dict[str, type]:
     return found
 
 
+def defined_forms(module: ModuleType) -> dict[str, TypeForm[JsonValue]]:
+    members: list[tuple[str, TypeForm[JsonValue]]] = inspect.getmembers(module)
+    found: dict[str, TypeForm[JsonValue]] = dict(members)
+    return found
+
+
 def our_classes() -> dict[str, type]:
     found: dict[str, type] = {}
     for module in OUR_MODULES:
@@ -152,10 +131,10 @@ def our_classes() -> dict[str, type]:
     return found
 
 
+THEIRS: Final[ModuleType] = importlib.import_module("litellm.types.interactions.generated")
 OUR_CLASSES: Final = our_classes()
-THEIR_CLASSES: Final = defined_classes(
-    importlib.import_module("litellm.types.interactions.generated")
-)
+THEIR_CLASSES: Final = defined_classes(THEIRS)
+THEIR_FORMS: Final = defined_forms(THEIRS)
 CLASS_NAMES: Final = tuple(sorted(THEIR_CLASSES))
 
 
@@ -291,57 +270,57 @@ def test_names_option_roots(name: str) -> None:
 @pytest.mark.parametrize("payload", CONTENT_PAYLOADS)
 def test_names_content_union(payload: dict[str, JsonValue]) -> None:
     ours: JsonValue = dumped_value(content.Content, payload)
-    theirs: JsonValue = dumped_value(THEIRS.Content, payload)
+    theirs: JsonValue = dumped_value(THEIR_CLASSES["Content"], payload)
     assert ours == theirs, payload
 
 
 @pytest.mark.parametrize("payload", TOOL_PAYLOADS)
 def test_names_tool_union(payload: dict[str, JsonValue]) -> None:
     ours: JsonValue = dumped_value(tools.Tool, payload)
-    theirs: JsonValue = dumped_value(THEIRS.Tool, payload)
+    theirs: JsonValue = dumped_value(THEIR_CLASSES["Tool"], payload)
     assert ours == theirs, payload
 
 
 @pytest.mark.parametrize("payload", EVENT_PAYLOADS)
 def test_names_event_union(payload: dict[str, JsonValue]) -> None:
     ours: JsonValue = dumped_value(events.InteractionSseEvent, payload)
-    theirs: JsonValue = dumped_value(THEIRS.InteractionSseEvent, payload)
+    theirs: JsonValue = dumped_value(THEIR_CLASSES["InteractionSseEvent"], payload)
     assert ours == theirs, payload
 
 
 @pytest.mark.parametrize("payload", DELTA_PAYLOADS)
 def test_names_delta_union(payload: dict[str, JsonValue]) -> None:
     ours: JsonValue = dumped_value(deltas.ContentDelta, {"delta": payload})
-    theirs: JsonValue = dumped_value(THEIRS.ContentDelta, {"delta": payload})
+    theirs: JsonValue = dumped_value(THEIR_CLASSES["ContentDelta"], {"delta": payload})
     assert ours == theirs, payload
 
 
 @pytest.mark.parametrize("payload", INPUT_PAYLOADS)
 def test_names_interaction_input(payload: JsonValue) -> None:
     ours: JsonValue = dumped_value(interaction.InteractionInput, payload)
-    theirs: JsonValue = dumped_value(THEIRS.InteractionInput, payload)
+    theirs: JsonValue = dumped_value(THEIR_FORMS["InteractionInput"], payload)
     assert ours == theirs, payload
 
 
 @pytest.mark.parametrize("payload", PARAM_PAYLOADS)
 def test_names_request_alias(payload: JsonValue) -> None:
     ours: JsonValue = dumped_value(interaction.InteractionsAPIOptionalRequestParams, payload)
-    theirs: JsonValue = dumped_value(THEIRS.InteractionsAPIOptionalRequestParams, payload)
+    theirs: JsonValue = dumped_value(THEIR_FORMS["InteractionsAPIOptionalRequestParams"], payload)
     assert ours == theirs, payload
 
 
 @pytest.mark.parametrize("payload", ENVIRONMENT_PAYLOADS)
 def test_names_environment_alias(payload: JsonValue) -> None:
     ours: JsonValue = dumped_value(interaction.InteractionEnvironment, payload)
-    theirs: JsonValue = dumped_value(THEIRS.InteractionEnvironment, payload)
+    theirs: JsonValue = dumped_value(THEIR_FORMS["InteractionEnvironment"], payload)
     assert ours == theirs, payload
 
 
 def test_names_aliases() -> None:
     assert tools.InteractionTool is tools.Tool
-    assert THEIRS.InteractionTool is THEIRS.Tool
+    assert THEIR_CLASSES["InteractionTool"] is THEIR_CLASSES["Tool"]
     assert tools.InteractionToolChoiceConfig is tools.ToolChoiceConfig
-    assert THEIRS.InteractionToolChoiceConfig is THEIRS.ToolChoiceConfig
+    assert THEIR_CLASSES["InteractionToolChoiceConfig"] is THEIR_CLASSES["ToolChoiceConfig"]
 
 
 @pytest.mark.parametrize("name", RESPONSE_NAMES)
@@ -357,7 +336,7 @@ def test_names_tool_choice_union() -> None:
     assert dumped_value(tools.ToolChoice, "auto") == "auto"
     payload: dict[str, JsonValue] = {"allowed_tools": {"mode": "any", "tools": ["f"]}}
     ours: JsonValue = dumped_value(tools.ToolChoice, payload)
-    assert ours == dumped_value(THEIRS.ToolChoice, payload)
+    assert ours == dumped_value(THEIR_CLASSES["ToolChoice"], payload)
     assert ours == payload
 
 
@@ -367,7 +346,7 @@ def test_names_computer_wire() -> None:
         "excludedPredefinedFunctions": ["open"],
     }
     ours: JsonValue = dumped_value(tools.Tool, payload)
-    assert ours == dumped_value(THEIRS.Tool, payload)
+    assert ours == dumped_value(THEIR_CLASSES["Tool"], payload)
     computer: tools.ComputerUse = tools.ComputerUse.model_validate(payload)
     assert computer.excluded_predefined_functions == ["open"]
     assert computer.model_dump()["excludedPredefinedFunctions"] == ["open"]
@@ -376,14 +355,14 @@ def test_names_computer_wire() -> None:
 def test_names_create_params() -> None:
     model_payload: dict[str, JsonValue] = {"model": "gemini-3", "input": "hi"}
     ours: JsonValue = dumped_value(interaction.CreateModelInteractionParams, model_payload)
-    assert ours == dumped_value(THEIRS.CreateModelInteractionParams, model_payload)
+    assert ours == dumped_value(THEIR_CLASSES["CreateModelInteractionParams"], model_payload)
     agent_payload: dict[str, JsonValue] = {
         "agent": "a",
         "input": "hi",
         "agent_config": {"type": "deep-research", "thinking_summaries": "auto"},
     }
     ours_agent: JsonValue = dumped_value(interaction.CreateAgentInteractionParams, agent_payload)
-    assert ours_agent == dumped_value(THEIRS.CreateAgentInteractionParams, agent_payload)
+    assert ours_agent == dumped_value(THEIR_CLASSES["CreateAgentInteractionParams"], agent_payload)
     with pytest.raises(ValidationError, match="Field required"):
         dumped_value(interaction.CreateModelInteractionParams, {"model": "gemini-3"})
     with pytest.raises(ValidationError, match=TAG_ERROR):
@@ -397,18 +376,21 @@ def test_names_aware_datetime() -> None:
     aware: JsonValue = dumped_value(
         interaction.Interaction, {**INTERACTION_CORE, "created": AWARE_TIME}
     )
-    assert aware == dumped_value(THEIRS.Interaction, {**INTERACTION_CORE, "created": AWARE_TIME})
+    theirs: JsonValue = dumped_value(
+        THEIR_CLASSES["Interaction"], {**INTERACTION_CORE, "created": AWARE_TIME}
+    )
+    assert aware == theirs
     with pytest.raises(ValidationError, match="timezone"):
         dumped_value(interaction.Interaction, {**INTERACTION_CORE, "created": NAIVE_TIME})
     with pytest.raises(ValidationError, match="timezone"):
-        dumped_value(THEIRS.Interaction, {**INTERACTION_CORE, "created": NAIVE_TIME})
+        dumped_value(THEIR_CLASSES["Interaction"], {**INTERACTION_CORE, "created": NAIVE_TIME})
 
 
 def test_names_unknown_type() -> None:
     with pytest.raises(ValidationError, match=TAG_ERROR):
         dumped_value(content.Content, {"type": "bogus"})
     with pytest.raises(ValidationError, match=TAG_ERROR):
-        dumped_value(THEIRS.Content, {"type": "bogus"})
+        dumped_value(THEIR_CLASSES["Content"], {"type": "bogus"})
 
 
 def test_names_thought_summary() -> None:
