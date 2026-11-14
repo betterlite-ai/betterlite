@@ -31,9 +31,9 @@ use crate::limiter_records::{CounterReplyError, LimiterClock};
 use crate::rate_limit_window_store::counter_value::CounterValueError;
 use crate::rate_limit_window_store::{CounterScript, WindowStore};
 
-pub struct AtomicSettlement<'a> {
-    pub windows: &'a WindowStore,
-    pub clock: &'a dyn LimiterClock,
+pub struct AtomicSettlement<'settlement> {
+    pub windows: &'settlement WindowStore,
+    pub clock: &'settlement dyn LimiterClock,
     pub script: Option<Arc<dyn CounterScript>>,
     pub refund_script: Option<Arc<dyn CounterScript>>,
     pub fail_closed: FailClosedPolicy,

@@ -56,8 +56,8 @@ impl AtomicSettlement<'_> {
 }
 
 // LiteLLM's in-memory helpers read its internal usage cache, the same store this crate reads counters from
-struct WindowCacheAdapter<'a> {
-    cache: &'a dyn CounterCache,
+struct WindowCacheAdapter<'cache> {
+    cache: &'cache dyn CounterCache,
 }
 
 #[async_trait::async_trait]

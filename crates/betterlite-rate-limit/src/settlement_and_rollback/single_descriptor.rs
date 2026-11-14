@@ -23,6 +23,6 @@ impl AtomicSettlement<'_> {
             }
         };
         let values = counter_values_from_reply(&reply)?;
-        build_atomic_response(&values, meta)
+        Ok(build_atomic_response(&values, meta)?)
     }
 }

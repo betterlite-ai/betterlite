@@ -1,4 +1,3 @@
-use std::fmt;
 use std::sync::Arc;
 
 use betterlite_redis::batch::error::BatchError;
@@ -19,20 +18,14 @@ pub(super) enum GroupResponse {
     Failure(GroupFailure),
 }
 
+#[derive(Debug, thiserror::Error)]
 pub(super) enum GroupFailure {
+    #[error(transparent)]
     Batch(Arc<BatchError>),
+    #[error(transparent)]
     Reply(CounterReplyError),
+    #[error(transparent)]
     Decode(ResponseDecodeError),
-}
-
-impl fmt::Display for GroupFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Batch(error) => fmt::Display::fmt(error.as_ref(), formatter),
-            Self::Reply(error) => fmt::Display::fmt(error, formatter),
-            Self::Decode(error) => fmt::Display::fmt(error, formatter),
-        }
-    }
 }
 
 impl GroupResponse {

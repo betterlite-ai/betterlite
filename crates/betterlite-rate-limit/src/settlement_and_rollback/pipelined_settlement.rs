@@ -9,10 +9,8 @@ use crate::rate_limit_window_store::ScriptHandle;
 use super::group_response::{GroupResponse, pipelined_group_response};
 
 mod tests;
-use super::refunds::{
-    // ast-grep-ignore: no-long-names
-    counter_refunds_from_atomic_response as atomic_response_refunds,
-};
+// ast-grep-ignore: no-long-names
+use super::refunds::counter_refunds_from_atomic_response as atomic_response_refunds;
 use super::{AtomicSettlement, SettlementError};
 
 struct AppliedGroups {
@@ -69,10 +67,7 @@ fn accumulate_applied_groups(
         if response.overall_code != "OK" {
             continue;
         }
-        applied.refunds.push(
-            // ast-grep-ignore: no-long-names
-            atomic_response_refunds(values, meta)?,
-        );
+        applied.refunds.push(atomic_response_refunds(values, meta)?);
         applied.statuses.extend(response.statuses.iter().cloned());
         applied
             .windows

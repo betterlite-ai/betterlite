@@ -7,10 +7,8 @@ use crate::limiter_records::{
 };
 use crate::rate_limit_window_store::{CounterScript, ScriptCall};
 
-use super::refunds::{
-    // ast-grep-ignore: no-long-names
-    counter_refunds_from_atomic_response as atomic_response_refunds,
-};
+// ast-grep-ignore: no-long-names
+use super::refunds::counter_refunds_from_atomic_response as atomic_response_refunds;
 use super::{AtomicSettlement, SettlementError};
 
 mod tests;
@@ -39,10 +37,7 @@ impl AtomicSettlement<'_> {
                 self.refund_applied_descriptor_groups(&applied).await;
                 return Ok(response);
             }
-            applied.push(
-                // ast-grep-ignore: no-long-names
-                atomic_response_refunds(&values, meta)?,
-            );
+            applied.push(atomic_response_refunds(&values, meta)?);
             statuses.extend(response.statuses);
             windows.extend(response.reservation_windows.into_iter().flatten());
         }
