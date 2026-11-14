@@ -4,15 +4,14 @@ use std::path::Path;
 
 use betterlite_config::sections::Sections;
 use betterlite_core::api::deepgram::transcription::request::{
-    DeepgramTranscriptionConfig, SUPPORTED_OPENAI_PARAMS, map_openai_params,
-    transform_audio_transcription_request,
+    DeepgramTranscriptionConfig, SUPPORTED_OPENAI_PARAMS, map_openai_params, raw_audio_request,
 };
 use betterlite_core::api::deepgram::transcription::response::decode_deepgram_transcript;
 use betterlite_openai::api::audio_file_input::{
     AudioFile, AudioTuple, AuthorizedAudioFiles, TupleContent,
 };
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
-use indexmap::IndexMap;
+use betterlite_openai::openai_base_config::Object;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -30,8 +29,8 @@ pub(crate) struct Input {
 #[serde(tag = "step", rename_all = "snake_case", deny_unknown_fields)]
 enum Step {
     Params {
-        optional: IndexMap<String, Value>,
-        non_default: IndexMap<String, Value>,
+        optional: Object,
+        non_default: Object,
     },
     Request {
         audio: AudioKind,
@@ -41,7 +40,7 @@ enum Step {
     Url {
         model: String,
         api_base: Option<String>,
-        options: IndexMap<String, Value>,
+        options: Object,
     },
     Auth {
         api_key: Option<String>,
@@ -103,7 +102,7 @@ fn step(step: &Step, config: &DeepgramTranscriptionConfig) -> Result<Value, Box<
                     content: Some(TupleContent::Bytes(bytes)),
                 }),
             };
-            let Ok(request) = transform_audio_transcription_request(file, &NoFiles) else {
+            let Ok(request) = raw_audio_request(file, &NoFiles) else {
                 return Ok(json!({ "raised": "ValueError" }));
             };
             let AudioTranscriptionData::Bytes(data) = request.data else {
@@ -160,7 +159,7 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let (api_key, api_base) = Sections::deepgram_transcription_settings(&input.env);
+        let (api_key, api_base) = Sections::deepgram_transcript_settings(&input.env);
         let config = DeepgramTranscriptionConfig { api_key, api_base };
         let answers = input
             .steps

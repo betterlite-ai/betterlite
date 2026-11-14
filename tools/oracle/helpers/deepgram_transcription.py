@@ -1,19 +1,30 @@
 import os
+from collections.abc import Callable
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 from litellm.llms.deepgram.audio_transcription.transformation import (
     DeepgramAudioTranscriptionConfig,
 )
+from litellm.types.llms.openai import AllMessageValues, OpenAIAudioTranscriptionOptionalParams
 from pydantic import JsonValue, TypeAdapter
 
-CONFIG: Final = DeepgramAudioTranscriptionConfig()
-JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-BYTES: Final[TypeAdapter[bytes]] = TypeAdapter(bytes)
+
+class RequestData(Protocol):
+    @property
+    def data(self) -> bytes | dict[str, JsonValue]: ...
+
+    @property
+    def files(self) -> dict[str, JsonValue] | None: ...
+
+    @property
+    def content_type(self) -> str | None: ...
 
 
 class Transcription(Protocol):
     def get(self, key: str) -> JsonValue: ...
+
+    def model_dump_json(self, *, exclude_none: bool = False) -> str: ...
 
 
 class RaisedError(Protocol):
@@ -25,6 +36,49 @@ class RaisedError(Protocol):
 
     @property
     def headers(self) -> dict[str, str] | httpx.Headers | None: ...
+
+
+class TranscriptionConfig(Protocol):
+    def get_supported_openai_params(
+        self, model: str
+    ) -> list[OpenAIAudioTranscriptionOptionalParams]: ...
+
+    # LiteLLM declares both with a bare dict or a positional bool, which a signature here cannot repeat
+    @property
+    def map_openai_params(self) -> Callable[..., dict[str, JsonValue]]: ...
+
+    @property
+    def validate_environment(self) -> Callable[..., dict[str, JsonValue]]: ...
+
+    def transform_audio_transcription_request(  # ast-grep-ignore: no-long-names
+        self,
+        model: str,
+        audio_file: bytes | tuple[str, bytes],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+    ) -> RequestData: ...
+
+    def transform_audio_transcription_response(  # ast-grep-ignore: no-long-names
+        self, raw_response: httpx.Response
+    ) -> Transcription: ...
+
+    def get_complete_url(
+        self,
+        api_base: str | None,
+        api_key: str | None,
+        model: str,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+    ) -> str: ...
+
+    def get_error_class(
+        self, error_message: str, status_code: int, headers: dict[str, str]
+    ) -> RaisedError: ...
+
+
+CONFIG: Final[TranscriptionConfig] = DeepgramAudioTranscriptionConfig()
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+BYTES: Final[TypeAdapter[bytes]] = TypeAdapter(bytes)
 
 
 class Params(TypedDict):
@@ -74,12 +128,15 @@ class Input(TypedDict):
 
 def request_answer(step: Request) -> JsonValue:
     content = step["content"].encode()
-    audio = content if step["audio"] == "bytes" else (step["filename"], content)
+    audio: bytes | tuple[str, bytes] = (
+        content if step["audio"] == "bytes" else (step["filename"], content)
+    )
     result = CONFIG.transform_audio_transcription_request(
         model="", audio_file=audio, optional_params={}, litellm_params={}
     )
+    data: list[JsonValue] = [byte for byte in BYTES.validate_python(result.data)]
     return {
-        "data": list(BYTES.validate_python(result.data)),
+        "data": data,
         "files": JSON.validate_python(result.files),
         "content_type": result.content_type,
     }
@@ -88,17 +145,14 @@ def request_answer(step: Request) -> JsonValue:
 def reply_answer(step: Reply) -> JsonValue:
     raw = httpx.Response(200, content=step["body"].encode())
     result = CONFIG.transform_audio_transcription_response(raw_response=raw)
-    view: Transcription = result
     return {
         "response": JSON.validate_json(result.model_dump_json(exclude_none=True)),
-        "hidden": view.get("_hidden_params"),
+        "hidden": result.get("_hidden_params"),
     }
 
 
 def error_class_answer(step: ErrorClass) -> JsonValue:
-    error: RaisedError = CONFIG.get_error_class(
-        step["message"], step["status_code"], step["headers"]
-    )
+    error = CONFIG.get_error_class(step["message"], step["status_code"], step["headers"])
     return JSON.validate_python(
         {
             "status_code": error.status_code,
@@ -132,7 +186,7 @@ def outcome(step: Step) -> JsonValue:
             headers = CONFIG.validate_environment(
                 headers={},
                 model="",
-                messages=(),
+                messages=[],
                 optional_params={},
                 litellm_params={},
                 api_key=step["api_key"],
