@@ -42,7 +42,7 @@ fn helper_seeds_select_gemini_embedding_call_plan() {
 #[test]
 fn flattening_keeps_repeats_and_drops_non_strings() {
     assert_eq!(
-        plan(&json!([["files/a", ["files/a", "b"], [1, 2], "c"]])),
+        plan(&json!([["files/a", ["files/a", "b"], [1_i64, 2_i64], "c"]])),
         json!({"calls": [{"elements": ["files/a", "files/a", "b", "c"], "has_file_refs": true}]})
     );
 }
