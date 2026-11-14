@@ -276,6 +276,23 @@ fn csv_absent_columns_fail_the_row() {
 }
 
 #[test]
+fn csv_absent_team_column_leaves_team_unset() {
+    let columns: Vec<&str> = COLUMNS
+        .iter()
+        .copied()
+        .filter(|name| *name != "team_id")
+        .collect();
+    let cells = columns
+        .iter()
+        .map(|name| quote_cell(if *name == "token" { "tok-1" } else { "" }))
+        .collect::<Vec<String>>();
+    let data = format!("{}\n{}\n", columns.join(","), cells.join(","));
+    let decoded = decode_verification_csv(data.as_bytes()).unwrap();
+    let row = decoded.rows[0].outcome.as_ref().unwrap();
+    assert_eq!(row.team_id, None);
+}
+
+#[test]
 fn csv_absent_token_column_fails_each_row() {
     let decoded = decode_verification_csv(b"spend\ntok-1\n").unwrap();
     let error = decoded.rows[0].outcome.as_ref().unwrap_err();
@@ -603,6 +620,7 @@ async fn assert_team_update_failure(postgres: &RepairCase) {
         .await
         .unwrap();
     let error = apply_db_fixes(&postgres.client).await.unwrap_err();
+    assert!(error.to_string().starts_with("Error apply_db_fixes: "));
     assert!(matches!(error, UnassignedTeamError::Update { .. }));
     assert_eq!(postgres.spend_team("req-fail").await, None);
 }
