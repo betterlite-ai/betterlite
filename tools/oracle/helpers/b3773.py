@@ -1,9 +1,9 @@
-from typing import Final, Literal, NotRequired, TypeAlias, TypedDict  # noqa: I001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L81-L321
+from typing import Final, Literal, NotRequired, TypedDict  # noqa: I001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L81-L321
 
 import httpx
-from fastapi.exceptions import HTTPException
 from litellm.proxy.guardrails.guardrail_hooks.headroom.headroom import HeadroomGuardrail, _build_compress_failure_detail, _flatten_messages_for_compression, _protected_indices, _raw_retrieve_call_ids, _read_ccr_hashes, _restore_content_shapes, _restore_protected_messages, _retrieval_result_indices  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L81-L321
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 JSON: Final = TypeAdapter(JsonValue)
 API_BASE: Final = "https://headroom.test"
@@ -68,7 +68,7 @@ class TimeoutInput(TypedDict):
     timeout: float | None
 
 
-Input: TypeAlias = (
+Input = (
     FlattenInput
     | RestoreShapesInput
     | RestoreProtectedInput
@@ -81,16 +81,12 @@ Input: TypeAlias = (
     | TimeoutInput
 )
 
-ShapeInput: TypeAlias = FlattenInput | RestoreShapesInput | RestoreProtectedInput
-RetrievalInput: TypeAlias = RetrieveIdsInput | RetrievalResultsInput | ProtectedIndicesInput
-FailureInput: TypeAlias = FailureDetailInput | HandleFailureInput | CcrHashesInput
-
 
 def flatten(input_value: FlattenInput) -> JsonValue:
     flattened = _flatten_messages_for_compression(
         [{key: row[key] for key in row} for row in input_value["rows"]]
     )
-    return JSON.validate_python({"rows": flattened})
+    return {"rows": JSON.validate_python(flattened)}
 
 
 def restore_shapes(input_value: RestoreShapesInput) -> JsonValue:
@@ -98,7 +94,7 @@ def restore_shapes(input_value: RestoreShapesInput) -> JsonValue:
         [{key: row[key] for key in row} for row in input_value["originals"]],
         [{key: row[key] for key in row} for row in input_value["returned"]],
     )
-    return JSON.validate_python({"rows": restored})
+    return {"rows": JSON.validate_python(restored)}
 
 
 def restore_protected(input_value: RestoreProtectedInput) -> JsonValue:
@@ -107,12 +103,12 @@ def restore_protected(input_value: RestoreProtectedInput) -> JsonValue:
         [{key: row[key] for key in row} for row in input_value["compressed"]],
         frozenset(input_value["protected"]),
     )
-    return JSON.validate_python({"rows": restored})
+    return {"rows": JSON.validate_python(restored)}
 
 
 def retrieve_ids(input_value: RetrieveIdsInput) -> JsonValue:
-    ids = _raw_retrieve_call_ids(input_value.get("messages"))
-    return JSON.validate_python({"ids": sorted(ids)})
+    ids = sorted(_raw_retrieve_call_ids(input_value.get("messages")))
+    return {"ids": JSON.validate_python(ids)}
 
 
 def allowed_ids(input_value: RetrievalResultsInput | ProtectedIndicesInput) -> frozenset[str]:
@@ -123,24 +119,25 @@ def allowed_ids(input_value: RetrievalResultsInput | ProtectedIndicesInput) -> f
 
 
 def retrieval_results(input_value: RetrievalResultsInput) -> JsonValue:
-    indices = _retrieval_result_indices(
+    found = _retrieval_result_indices(
         [{key: row[key] for key in row} for row in input_value["messages"]],
         allowed_ids(input_value),
     )
-    return JSON.validate_python({"indices": sorted(indices)})
+    indices = sorted(found)
+    return {"indices": JSON.validate_python(indices)}
 
 
 def protected_indices(input_value: ProtectedIndicesInput) -> JsonValue:
-    indices = _protected_indices(
+    found = _protected_indices(
         [{key: row[key] for key in row} for row in input_value["messages"]],
         allowed_ids(input_value),
     )
-    return JSON.validate_python({"indices": sorted(indices)})
-
+    indices = sorted(found)
+    return {"indices": JSON.validate_python(indices)}
 
 def compress_failure_detail(input_value: FailureDetailInput) -> JsonValue:
     detail = _build_compress_failure_detail(input_value["status"], input_value["body"])
-    return JSON.validate_python({"detail": detail})
+    return {"detail": JSON.validate_python(detail)}
 
 
 def handle_failure(input_value: HandleFailureInput) -> JsonValue:
@@ -151,61 +148,42 @@ def handle_failure(input_value: HandleFailureInput) -> JsonValue:
             input_value["error"],
             {key: input_value["detail"][key] for key in input_value["detail"]},
         )
-    except HTTPException as failure:
-        return JSON.validate_python({"status": failure.status_code, "body": failure.detail})
-    return JSON.validate_python({"rows": forwarded})
+    except StarletteHTTPException as failure:
+        return {"status": failure.status_code, "body": failure.detail}
+    return {"rows": JSON.validate_python(forwarded)}
 
 
 def ccr_hashes(input_value: CcrHashesInput) -> JsonValue:
-    hashes = _read_ccr_hashes(input_value["body"])
-    return JSON.validate_python({"hashes": sorted(hashes)})
+    hashes = sorted(_read_ccr_hashes(input_value["body"]))
+    return {"hashes": JSON.validate_python(hashes)}
 
 
 def timeout(input_value: TimeoutInput) -> JsonValue:
     guardrail = HeadroomGuardrail(api_base=API_BASE, timeout=input_value["timeout"])
-    resolved = httpx.Timeout(guardrail.timeout).as_dict()
-    return JSON.validate_python(
-        {"total_seconds": resolved["read"], "connect_seconds": resolved["connect"]}
-    )
-
-
-def shape_result(input_value: ShapeInput) -> JsonValue:
-    match input_value["function"]:
-        case "flatten":
-            return flatten(input_value)
-        case "restore_shapes":
-            return restore_shapes(input_value)
-        case "restore_protected":
-            return restore_protected(input_value)
-
-
-def retrieval_result(input_value: RetrievalInput) -> JsonValue:
-    match input_value["function"]:
-        case "retrieve_ids":
-            return retrieve_ids(input_value)
-        case "retrieval_results":
-            return retrieval_results(input_value)
-        case "protected_indices":
-            return protected_indices(input_value)
-
-
-def failure_result(input_value: FailureInput) -> JsonValue:
-    match input_value["function"]:
-        case "compress_failure_detail":
-            return compress_failure_detail(input_value)
-        case "handle_failure":
-            return handle_failure(input_value)
-        case "ccr_hashes":
-            return ccr_hashes(input_value)
+    budget = httpx.Timeout(guardrail.timeout).as_dict()
+    return {"total_seconds": budget["read"], "connect_seconds": budget["connect"]}
 
 
 def run(input_value: Input) -> JsonValue:
-    match input_value["function"]:
-        case "flatten" | "restore_shapes" | "restore_protected":
-            return shape_result(input_value)
-        case "retrieve_ids" | "retrieval_results" | "protected_indices":
-            return retrieval_result(input_value)
-        case "compress_failure_detail" | "handle_failure" | "ccr_hashes":
-            return failure_result(input_value)
-        case "timeout":
-            return timeout(input_value)
+    result: JsonValue
+    if input_value["function"] == "flatten":
+        result = flatten(input_value)
+    elif input_value["function"] == "restore_shapes":
+        result = restore_shapes(input_value)
+    elif input_value["function"] == "restore_protected":
+        result = restore_protected(input_value)
+    elif input_value["function"] == "retrieve_ids":
+        result = retrieve_ids(input_value)
+    elif input_value["function"] == "retrieval_results":
+        result = retrieval_results(input_value)
+    elif input_value["function"] == "protected_indices":
+        result = protected_indices(input_value)
+    elif input_value["function"] == "compress_failure_detail":
+        result = compress_failure_detail(input_value)
+    elif input_value["function"] == "handle_failure":
+        result = handle_failure(input_value)
+    elif input_value["function"] == "ccr_hashes":
+        result = ccr_hashes(input_value)
+    else:
+        result = timeout(input_value)
+    return result
