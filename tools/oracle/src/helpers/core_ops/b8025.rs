@@ -5,7 +5,7 @@ use betterlite_core::api::search_providers::nimble::error::NimbleSearchError;
 use betterlite_core::api::search_providers::parallel_ai::ParallelAiSearch;
 use betterlite_core::api::search_providers::parallel_ai::request::PARALLEL_AI_USAGE_PARAM;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{ProviderResponse, SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{ProviderResponse, SearchProvider, SearchQuery};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -71,6 +71,23 @@ struct Outcome {
     status: Option<u16>,
 }
 
+impl Outcome {
+    fn settled(settled: Result<Value, Option<u16>>) -> Self {
+        match settled {
+            Ok(value) => Self {
+                ok: true,
+                value: Some(value),
+                status: None,
+            },
+            Err(status) => Self {
+                ok: false,
+                value: None,
+                status,
+            },
+        }
+    }
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -91,12 +108,20 @@ fn outcome(provider: Provider, call: &Call) -> Outcome {
         Call::Url {
             api_base,
             environment,
-        } => url(provider, api_base.as_deref(), environment),
+        } => match provider {
+            Provider::Nimble => url(&NimbleSearch::load(environment), api_base.as_deref()),
+            Provider::ParallelAi => url(&ParallelAiSearch::load(environment), api_base.as_deref()),
+        },
         Call::Request {
             query,
             optional_params,
             environment,
-        } => request(provider, query, optional_params, environment),
+        } => match provider {
+            Provider::Nimble => request(&NimbleSearch::load(environment), query, optional_params),
+            Provider::ParallelAi => {
+                request(&ParallelAiSearch::load(environment), query, optional_params)
+            }
+        },
         Call::Reply {
             status,
             headers,
@@ -109,56 +134,31 @@ fn outcome(provider: Provider, call: &Call) -> Outcome {
             headers,
         } => error_class(provider, message, *status, headers),
     };
-    match settled {
-        Ok(value) => Outcome {
-            ok: true,
-            value: Some(value),
-            status: None,
-        },
-        Err(status) => Outcome {
-            ok: false,
-            value: None,
-            status,
-        },
-    }
+    Outcome::settled(settled)
 }
 
-fn url(
-    provider: Provider,
-    api_base: Option<&str>,
-    environment: &BTreeMap<String, String>,
-) -> Result<Value, Option<u16>> {
-    let endpoint = match provider {
-        Provider::Nimble => NimbleSearch::load(environment)
-            .complete_url(api_base, &Object::new(), None)
-            .map_err(|_error| None)?,
-        Provider::ParallelAi => ParallelAiSearch::load(environment)
-            .complete_url(api_base, &Object::new(), None)
-            .map_err(|_error| None)?,
-    };
+fn url<Search>(search: &Search, api_base: Option<&str>) -> Result<Value, Option<u16>>
+where
+    Search: SearchProvider,
+{
+    let endpoint = search
+        .complete_url(api_base, &Object::new(), None)
+        .map_err(|_error| None)?;
     Ok(Value::String(endpoint))
 }
 
-fn request(
-    provider: Provider,
+fn request<Search>(
+    search: &Search,
     query: &SearchQuery,
     optional_params: &Object,
-    environment: &BTreeMap<String, String>,
-) -> Result<Value, Option<u16>> {
-    match provider {
-        Provider::Nimble => {
-            let body = NimbleSearch::load(environment)
-                .transform_search_request(query, optional_params)
-                .map_err(|_error| None)?;
-            serde_json::to_value(body).map_err(|_error| None)
-        }
-        Provider::ParallelAi => {
-            let body = ParallelAiSearch::load(environment)
-                .transform_search_request(query, optional_params)
-                .map_err(|_error| None)?;
-            serde_json::to_value(body).map_err(|_error| None)
-        }
-    }
+) -> Result<Value, Option<u16>>
+where
+    Search: SearchProvider,
+{
+    let body = search
+        .transform_search_request(query, optional_params)
+        .map_err(|_error| None)?;
+    serde_json::to_value(body).map_err(|_error| None)
 }
 
 fn reply(
