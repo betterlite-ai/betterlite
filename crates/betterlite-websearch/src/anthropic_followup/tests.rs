@@ -822,7 +822,9 @@ async fn request_patch_rejects_a_non_object_agentic_loop_params() {
 #[tokio::test]
 async fn anthropic_plan_prepends_a_null_signature_thinking_block() {
     let searcher = ScriptedSearches::new(Vec::new());
-    let block = json!({"type": "thinking", "thinking": "hmm", "signature": null});
+    let block: ResponseJson =
+        serde_json::from_str(r#"{"type": "thinking", "thinking": "hmm", "signature": null}"#)
+            .unwrap();
     let tools = tools_dict(Vec::new(), "anthropic", Some(vec![block.clone()]));
     let value = plan_value(&searcher, &tools, &map("{}")).await;
     assert_eq!(
