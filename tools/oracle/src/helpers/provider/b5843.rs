@@ -27,11 +27,6 @@ mod input;
 
 const FIXED_SECONDS: i64 = 1_730_882_977;
 
-fn per_model(models: &[String], answer: fn(&str) -> serde_json::Value) -> serde_json::Value {
-    let found: Vec<serde_json::Value> = models.iter().map(|model| answer(model)).collect();
-    json!({"models": found})
-}
-
 fn exchange_values(shared: &Object, calls: &[ExchangeCall]) -> HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -187,14 +182,12 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Supported { models } => Ok(per_model(
-                models,
-                |model| json!({"model": model, "params": get_supported_openai_params(model)}),
-            )),
-            Input::Vendor { models } => Ok(per_model(
-                models,
-                |model| json!({"model": model, "vendor": get_vendor_from_model(model).api_format()}),
-            )),
+            Input::Supported { models } => Ok(json!({"models": models.iter().map(|model| {
+                json!({"model": model, "params": get_supported_openai_params(model)})
+            }).collect::<Vec<_>>()})),
+            Input::Vendor { models } => Ok(json!({"models": models.iter().map(|model| {
+                json!({"model": model, "vendor": get_vendor_from_model(model).api_format()})
+            }).collect::<Vec<_>>()})),
             Input::Exchange {
                 credentials,
                 exchanges,
