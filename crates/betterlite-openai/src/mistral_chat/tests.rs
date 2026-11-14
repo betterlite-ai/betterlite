@@ -143,6 +143,15 @@ fn empty_predicate_reads_assistant_field_names_on_every_role() {
     assert!(!is_empty_assistant_message(&prompt(
         json!({"role": "tool", "content": "", "name": "lookup"})
     )));
+    assert!(!is_empty_assistant_message(&prompt(
+        json!({"role": "assistant", "content": "", "reasoning_content": "why"})
+    )));
+    assert!(!is_empty_assistant_message(&prompt(
+        json!({"role": "assistant", "content": "", "thinking_blocks": [{"type": "thinking"}]})
+    )));
+    assert!(!is_empty_assistant_message(&prompt(
+        json!({"role": "assistant", "content": "", "reasoning_items": [{"type": "reasoning"}]})
+    )));
     assert!(is_empty_assistant_message(&prompt(
         json!({"role": "assistant", "content": "", "tool_calls": null})
     )));
@@ -201,6 +210,21 @@ fn empty_file_ids_stay_on_the_file_object() {
         panic!("parts");
     };
     assert!(parts[0].fields.get("file").is_some());
+    assert!(parts[0].fields.get("file_id").is_none());
+}
+
+#[test]
+fn a_file_block_without_a_file_object_is_left_alone() {
+    let mut messages = vec![message(json!({
+        "role": "user",
+        "content": [{"type": "file"}]
+    }))];
+    handle_message_with_file(&mut messages).expect("a conversation");
+    let part = &messages[0].content.as_ref().expect("content");
+    let crate::chat::MessageContent::Parts(parts) = part else {
+        panic!("parts");
+    };
+    assert!(parts[0].fields.get("file").is_none());
     assert!(parts[0].fields.get("file_id").is_none());
 }
 
@@ -323,6 +347,36 @@ fn transform_messages_returns_the_conversation_only() {
 }
 
 #[test]
+fn async_modes_transform_messages_like_the_sync_mode() {
+    let messages = [
+        message(json!({"role": "user", "name": "ada", "content": [
+            {"type": "text", "text": "look"},
+            {"type": "image_url", "image_url": "https://example.test/a.png"},
+            {"type": "file", "file": {"file_id": "file-1"}}
+        ]})),
+        message(json!({"role": "assistant", "content": ""})),
+    ];
+    let sync = transform_messages(&MessageTransform {
+        model: "mistral-small-latest",
+        messages: &messages,
+        mode: Mode::Sync,
+        downloads: &RefuseDownloads,
+    })
+    .expect("sync messages");
+    assert_eq!(sync.len(), 2);
+    for mode in [Mode::AsyncBaseClass, Mode::AsyncSubclass] {
+        let asynchronous = transform_messages(&MessageTransform {
+            model: "mistral-small-latest",
+            messages: &messages,
+            mode,
+            downloads: &RefuseDownloads,
+        })
+        .expect("async messages");
+        assert_eq!(asynchronous, sync);
+    }
+}
+
+#[test]
 fn empty_reply_content_becomes_null() {
     let mut reply = json!({"choices": [{"message": {"role": "assistant", "content": ""}}]});
     handle_empty_content_response(&mut reply);
@@ -374,6 +428,34 @@ fn a_string_reply_content_is_left_alone() {
     let mut reply = json!({"choices": [{"message": {"role": "assistant", "content": "plain"}}]});
     convert_content_list_to_str(&mut reply).expect("a conversion");
     assert_eq!(reply["choices"][0]["message"]["content"], json!("plain"));
+}
+
+#[test]
+fn an_empty_reply_content_list_is_left_alone() {
+    let mut reply = json!({"choices": [{"message": {"role": "assistant", "content": []}}]});
+    convert_content_list_to_str(&mut reply).expect("a conversion");
+    assert_eq!(reply["choices"][0]["message"]["content"], json!([]));
+}
+
+#[test]
+fn unknown_reply_blocks_are_ignored() {
+    let mut reply = json!({"choices": [{"message": {"role": "assistant", "content": [
+        {"type": "image_url", "image_url": {"url": "https://example.test/a.png"}},
+        {"type": "text", "text": "kept"}
+    ]}}]});
+    convert_content_list_to_str(&mut reply).expect("a conversion");
+    assert_eq!(reply["choices"][0]["message"]["content"], json!("kept"));
+}
+
+#[test]
+fn a_malformed_reply_block_is_a_block_error() {
+    let reply = json!({"choices": [{"message": {"role": "assistant", "content": [
+        {"type": "thinking", "thinking": "not-a-list"}
+    ]}}]});
+    assert!(matches!(
+        decode_mistral_chat(reply.to_string().as_bytes()),
+        Err(MistralChatError::ReplyBlock { .. })
+    ));
 }
 
 #[test]
