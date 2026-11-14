@@ -1,0 +1,2 @@
+# ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE and ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS are read from the process environment
+model_list: []
