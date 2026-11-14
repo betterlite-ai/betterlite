@@ -8,7 +8,7 @@ mod tests;
 use betterlite_config::sections::batch_provider_list::Settings as ConfiguredSettings;
 use betterlite_openai::batches::sdk::TimeoutPhases;
 use secrecy::SecretString;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 use call::{
@@ -18,7 +18,8 @@ use call::{
 use error::BatchProviderListError;
 use timeout::resolve_timeout;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "String")]
 pub enum BatchListProvider {
     Azure,
     HostedVllm,
@@ -29,22 +30,20 @@ pub enum BatchListProvider {
     Other(String),
 }
 
-impl<'de> Deserialize<'de> for BatchListProvider {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let name = String::deserialize(deserializer)?;
-        let provider = match name.as_str() {
-            "azure" => Self::Azure,
-            "hosted_vllm" => Self::HostedVllm,
-            "litellm_proxy" => Self::LitellmProxy,
-            "openai" => Self::OpenAi,
-            "vertex_ai" => Self::VertexAi,
-            "xai" => Self::Xai,
-            _ => Self::Other(name),
-        };
-        Ok(provider)
+impl From<String> for BatchListProvider {
+    fn from(name: String) -> Self {
+        let known = [
+            Self::Azure,
+            Self::HostedVllm,
+            Self::LitellmProxy,
+            Self::OpenAi,
+            Self::VertexAi,
+            Self::Xai,
+        ];
+        let matched = known
+            .into_iter()
+            .find(|provider| provider.name() == name.as_str());
+        matched.unwrap_or_else(|| Self::Other(name))
     }
 }
 
