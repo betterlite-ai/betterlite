@@ -99,6 +99,8 @@ fn make_logging_obj_records_model_provider_call_type_and_optional_params() {
         state.model_call_details.get("custom_llm_provider"),
         Some(&text("gemini"))
     );
+    assert!(state.user.is_none());
+    assert!(state.litellm_params.get("name").is_none());
 }
 
 #[test]
