@@ -192,6 +192,18 @@ fn session_type_is_kept() {
     assert_eq!(update.session_type.as_deref(), Some("transcription"));
 }
 
+#[test]
+fn turn_detection_keeps_every_member() {
+    let update = parse(
+        r#"{"type":"session.update","session":{"turn_detection":{"type":"server_vad","threshold":0.5,"silence_duration_ms":500}}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(update.turn_detection.as_ref().unwrap()).unwrap(),
+        r#"{"type":"server_vad","threshold":0.5,"silence_duration_ms":500}"#
+    );
+}
+
 #[rstest]
 #[case::malformed("{", "invalid JSON object")]
 #[case::empty("", "invalid JSON object")]
