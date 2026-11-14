@@ -1,3 +1,4 @@
+use std::mem;
 use std::time::Duration;
 
 use betterlite_openai::stream::chunk::Choice;
@@ -8,6 +9,9 @@ use crate::oci_chat_wire::generic::reply::handle_generic_stream_chunk;
 use crate::oci_common::OciError;
 
 pub const STREAMING_TIMEOUT: Duration = Duration::from_secs(300);
+
+// LiteLLM keeps the unfinished line without a limit; one line of an OCI event is far below this
+pub const MAX_LINE_BYTES: usize = 0x0010_0000;
 
 const DATA_PREFIX: &str = "data:";
 const DONE_PAYLOAD: &str = "[DONE]";
@@ -24,7 +28,7 @@ pub struct StreamChunk {
 #[derive(Debug)]
 pub enum StreamItem {
     Done,
-    Chunk(StreamChunk),
+    Chunk(Box<StreamChunk>),
 }
 
 #[derive(Debug, Default)]
@@ -35,37 +39,41 @@ pub struct SseDecoder {
 
 impl SseDecoder {
     pub fn push(&mut self, text: &str) -> Result<Vec<StreamItem>, OciError> {
-        self.buffer.push_str(text);
+        let mut joined = mem::take(&mut self.buffer);
+        joined.push_str(text);
+        let mut lines: Vec<&str> = joined.split('\n').collect();
+        let tail = lines.pop().unwrap_or_default();
         let mut items = Vec::new();
-        while let Some(index) = self.buffer.find('\n') {
-            let rest = self.buffer.split_off(index.saturating_add(1));
-            let line = std::mem::replace(&mut self.buffer, rest);
-            self.decode_line(&line, &mut items)?;
+        for line in lines {
+            check_line_length(line)?;
+            self.decode_line(line, &mut items)?;
         }
+        check_line_length(tail)?;
+        tail.clone_into(&mut self.buffer);
         Ok(items)
     }
 
     pub fn finish(&mut self) -> Result<Vec<StreamItem>, OciError> {
         let mut items = Vec::new();
-        let tail = std::mem::take(&mut self.buffer);
+        let tail = mem::take(&mut self.buffer);
         self.decode_line(&tail, &mut items)?;
         Ok(items)
     }
 
     fn decode_line(&mut self, line: &str, items: &mut Vec<StreamItem>) -> Result<(), OciError> {
-        let Some(payload) = line.trim().strip_prefix(DATA_PREFIX) else {
+        let Some(data) = line.trim().strip_prefix(DATA_PREFIX) else {
             return Ok(());
         };
-        let payload = payload.trim();
-        if payload == DONE_PAYLOAD {
+        let data = data.trim();
+        if data == DONE_PAYLOAD {
             items.push(StreamItem::Done);
             return Ok(());
         }
-        let chunk: Json = serde_json::from_str(payload).map_err(|source| OciError {
+        let chunk: Json = serde_json::from_str(data).map_err(|source| OciError {
             status: 500,
             message: format!("Chunk cannot be parsed as JSON: {source}"),
         })?;
-        items.push(StreamItem::Chunk(self.decode_chunk(&chunk)?));
+        items.push(StreamItem::Chunk(Box::new(self.decode_chunk(&chunk)?)));
         Ok(())
     }
 
@@ -76,9 +84,9 @@ impl SseDecoder {
             .and_then(Json::as_str)
             == Some(COHERE_FORMAT);
         let choice = if cohere {
-            let choice = handle_cohere_stream_chunk(chunk, self.emitted)?;
-            self.record(&choice);
-            choice
+            let decoded = handle_cohere_stream_chunk(chunk, self.emitted)?;
+            self.record(&decoded);
+            decoded
         } else {
             handle_generic_stream_chunk(chunk.clone())?
         };
@@ -105,6 +113,16 @@ impl SseDecoder {
             self.emitted.text = true;
         }
     }
+}
+
+fn check_line_length(line: &str) -> Result<(), OciError> {
+    if line.len() > MAX_LINE_BYTES {
+        return Err(OciError {
+            status: 500,
+            message: format!("the OCI stream line is longer than {MAX_LINE_BYTES} bytes"),
+        });
+    }
+    Ok(())
 }
 
 pub fn check_stream_status(status: u16, body: &str) -> Result<(), OciError> {

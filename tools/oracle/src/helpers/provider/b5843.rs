@@ -15,6 +15,7 @@ use betterlite_provider::oci_common::credentials::{
     OciEnvValues, OciExplicitParams, resolve_oci_credentials,
 };
 use betterlite_provider::oci_common::environment::OciEnvironment;
+use betterlite_provider::ollama_chat::ids::IdSource;
 use chrono::{DateTime, Utc};
 use http::HeaderMap;
 use indexmap::IndexMap;
@@ -49,40 +50,23 @@ fn input_failure(message: String) -> Box<HelperError> {
     })
 }
 
-fn text_param(params: &Object, name: &str) -> Option<String> {
-    params.get(name).and_then(Json::as_str).map(str::to_owned)
-}
-
 fn explicit_params(params: &Object) -> OciExplicitParams {
+    let text = |name: &str| params.get(name).and_then(Json::as_str).map(str::to_owned);
     OciExplicitParams {
-        oci_region: text_param(params, "oci_region"),
-        oci_user: text_param(params, "oci_user"),
-        oci_fingerprint: text_param(params, "oci_fingerprint"),
-        oci_tenancy: text_param(params, "oci_tenancy"),
-        oci_key: text_param(params, "oci_key").map(SecretString::from),
-        oci_key_file: text_param(params, "oci_key_file"),
-        oci_compartment_id: text_param(params, "oci_compartment_id"),
+        oci_region: text("oci_region"),
+        oci_user: text("oci_user"),
+        oci_fingerprint: text("oci_fingerprint"),
+        oci_tenancy: text("oci_tenancy"),
+        oci_key: text("oci_key").map(SecretString::from),
+        oci_key_file: text("oci_key_file"),
+        oci_compartment_id: text("oci_compartment_id"),
     }
 }
 
-fn supported_params(models: &[String]) -> serde_json::Value {
+fn per_model(models: &[String], answer: fn(&str) -> serde_json::Value) -> serde_json::Value {
     let mut found = Vec::with_capacity(models.len());
     for model in models {
-        found.push(serde_json::json!({
-            "model": model,
-            "params": get_supported_openai_params(model),
-        }));
-    }
-    serde_json::json!({"models": found})
-}
-
-fn vendor_of(models: &[String]) -> serde_json::Value {
-    let mut found = Vec::with_capacity(models.len());
-    for model in models {
-        found.push(serde_json::json!({
-            "model": model,
-            "vendor": get_vendor_from_model(model).api_format(),
-        }));
+        found.push(answer(model));
     }
     serde_json::json!({"models": found})
 }
@@ -141,7 +125,14 @@ fn response_values(calls: &[ResponseCall]) -> HelperResult {
         let body =
             serde_json::to_vec(&call.body).map_err(|source| input_failure(source.to_string()))?;
         values.push(
-            match transform_response(&call.model, call.status, &body, &IndexMap::new(), &clock) {
+            match transform_response(
+                &call.model,
+                call.status,
+                &body,
+                &IndexMap::new(),
+                &clock,
+                &FixedIds,
+            ) {
                 Ok(reply) => project_response(&reply.response),
                 Err(error) => serde_json::json!({"status": error.status}),
             },
@@ -255,6 +246,14 @@ impl betterlite_provider::oci_common::Clock for FixedClock {
     }
 }
 
+struct FixedIds;
+
+impl IdSource for FixedIds {
+    fn next_id(&self) -> String {
+        "fixed".to_owned()
+    }
+}
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
@@ -262,8 +261,18 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Supported { models } => Ok(supported_params(models)),
-            Input::Vendor { models } => Ok(vendor_of(models)),
+            Input::Supported { models } => Ok(per_model(models, |model| {
+                serde_json::json!({
+                    "model": model,
+                    "params": get_supported_openai_params(model),
+                })
+            })),
+            Input::Vendor { models } => Ok(per_model(models, |model| {
+                serde_json::json!({
+                    "model": model,
+                    "vendor": get_vendor_from_model(model).api_format(),
+                })
+            })),
             Input::Exchange {
                 credentials,
                 exchanges,

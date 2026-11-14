@@ -8,13 +8,13 @@ use betterlite_openai::chat::response::{
 };
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
-use uuid::Uuid;
 
 use crate::oci_chat::config::get_vendor_from_model;
 use crate::oci_chat_wire::cohere::reply::handle_cohere_response;
 use crate::oci_chat_wire::generic::reply::handle_generic_response;
 use crate::oci_chat_wire::types::oci::OciVendor;
 use crate::oci_common::{Clock, OciError};
+use crate::ollama_chat::ids::IdSource;
 
 pub const MAX_CHAT_BODY_BYTES: usize = 0x0100_0000;
 
@@ -47,6 +47,7 @@ pub fn transform_response(
     body: &[u8],
     headers: &IndexMap<String, String>,
     clock: &dyn Clock,
+    ids: &dyn IdSource,
 ) -> Result<OciChatReply, OciError> {
     let document = decode_chat_body(status, body)?;
     let Json::Object(fields) = &document else {
@@ -64,7 +65,7 @@ pub fn transform_response(
             message: error_text(error),
         });
     }
-    let mut response = empty_response();
+    let mut response = empty_response(ids);
     match get_vendor_from_model(model) {
         OciVendor::Cohere => {
             let created = u64::try_from(clock.now().timestamp()).unwrap_or_default();
@@ -78,9 +79,9 @@ pub fn transform_response(
     })
 }
 
-fn empty_response() -> ChatResponse {
+fn empty_response(ids: &dyn IdSource) -> ChatResponse {
     ChatResponse {
-        id: format!("chatcmpl-{}", Uuid::new_v4()),
+        id: format!("chatcmpl-{}", ids.next_id()),
         object: String::from("chat.completion"),
         created: 0,
         model: String::new(),
@@ -106,8 +107,8 @@ fn empty_response() -> ChatResponse {
 }
 
 fn error_text(value: &Json) -> String {
-    match value {
-        Json::Text(text) => text.clone(),
-        other => serde_json::to_string(other).unwrap_or_default(),
+    if let Json::Text(text) = value {
+        return text.clone();
     }
+    serde_json::to_string(value).unwrap_or_default()
 }

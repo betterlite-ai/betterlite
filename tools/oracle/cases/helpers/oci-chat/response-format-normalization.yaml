@@ -129,6 +129,22 @@ call:
         reply: generic
         status: 200
         drop_params: false
+      - model: meta.llama-3.3-70b-instruct
+        messages:
+          - role: user
+            content: "hi"
+        params:
+          stream: false
+          response_format:
+            type: json_schema
+            json_schema:
+              name: null
+              description: null
+              schema: null
+              strict: null
+        reply: generic
+        status: 200
+        drop_params: false
       - model: cohere.command-r
         messages:
           - role: user
@@ -142,6 +158,20 @@ call:
               schema:
                 type: object
               strict: true
+        reply: cohere
+        status: 200
+        drop_params: false
+      - model: cohere.command-r
+        messages:
+          - role: user
+            content: "hi"
+        params:
+          stream: false
+          response_format:
+            type: json_schema
+            json_schema:
+              name: n
+              schema: null
         reply: cohere
         status: 200
         drop_params: false

@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-pub(super) enum Input {
+pub(crate) enum Input {
     Supported {
         models: Vec<String>,
     },
@@ -25,7 +25,7 @@ pub(super) enum Input {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct ExchangeCall {
+pub(crate) struct ExchangeCall {
     pub(super) model: String,
     pub(super) messages: Vec<ChatMessage>,
     pub(super) params: Object,
@@ -33,7 +33,7 @@ pub(super) struct ExchangeCall {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct ResponseCall {
+pub(crate) struct ResponseCall {
     pub(super) model: String,
     pub(super) status: u16,
     pub(super) body: Json,

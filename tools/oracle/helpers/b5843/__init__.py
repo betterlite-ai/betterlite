@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 import httpx
@@ -241,7 +241,7 @@ def stream_logger() -> Logging:
         messages=[],
         stream=True,
         call_type="completion",
-        start_time=datetime.datetime.now(tz=datetime.UTC),
+        start_time=dt.datetime.now(tz=dt.UTC),
         litellm_call_id="oci-chat-stream",
         function_id="oci-chat-stream",
     )

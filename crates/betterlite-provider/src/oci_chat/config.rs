@@ -78,7 +78,7 @@ fn cohere_params() -> Vec<(&'static str, OciParam)> {
         })
         .collect();
     for (key, alias) in &mut params {
-        if COHERE_UNSUPPORTED.iter().any(|name| *name == *key) {
+        if COHERE_UNSUPPORTED.contains(key) {
             *alias = OciParam::Unsupported;
         }
     }

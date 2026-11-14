@@ -13,6 +13,6 @@ fuzz_target!(|bytes: &[u8]| {
         return;
     };
     let mut decoder = SseDecoder::default();
-    let _ = decoder.push(text);
-    let _ = decoder.finish();
+    let _pushed = decoder.push(text);
+    let _finished = decoder.finish();
 });

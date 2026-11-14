@@ -12,7 +12,7 @@ deviations:
   - what: A chat completion response id is chatcmpl-<uuid4>, generated in this module, where LiteLLM leaves the id its ModelResponse constructor made; the wire body carries no id.
     why: The shared betterlite ChatResponse requires an id before B5942's handlers fill the rest.
     link: ""
-  - what: The tool_choice error messages render the offending value as JSON text and call a JSON number "number", where LiteLLM prints the Python repr of the value and type(tc).__name__.
+  - what: The tool_choice error messages render the offending value as JSON text and name the kind of a JSON number "int" or "float", where LiteLLM prints the Python repr of the value and type(tc).__name__.
     why: Python repr and Python type names are runtime text that betterlite does not port; the status and the rest of each message match.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L156-L182
   - what: A non-string response_format type is a 400 that names the field, where LiteLLM runs str() on it and forwards the upper-cased text as an OCI type.
@@ -21,3 +21,6 @@ deviations:
   - what: A response body larger than 16 MiB is an error with the upstream status before JSON decoding; LiteLLM has no body size limit.
     why: betterlite bounds the bytes it buffers instead of decoding an unbounded upstream body.
     link: ""
+  - what: An unfinished stream line longer than 1 MiB (1048576 bytes) is a 500 error, where LiteLLM keeps the unfinished line without a limit.
+    why: betterlite bounds the bytes it buffers while it waits for the end of a line, and one line of an OCI event is far below the cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L98-L135

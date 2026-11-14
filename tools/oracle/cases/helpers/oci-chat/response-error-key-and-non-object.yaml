@@ -52,8 +52,25 @@ call:
         status: 201
         body: []
       - model: meta.llama-3.3-70b-instruct
-        status: 201
+        status: 200
         body:
           error: null
+          modelId: meta.llama
+          modelVersion: "1"
+          chatResponse:
+            apiFormat: GENERIC
+            timeCreated: "2024-01-01T00:00:00Z"
+            choices:
+              - index: 0
+                finishReason: STOP
+                message:
+                  role: ASSISTANT
+                  content:
+                    - type: TEXT
+                      text: "null error is ignored"
+            usage:
+              promptTokens: 1
+              completionTokens: 2
+              totalTokens: 3
 env: {}
 compare: {ignore: []}
