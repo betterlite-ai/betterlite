@@ -100,41 +100,48 @@ fn selected_fields(payload: &Payload, kind: Kind) -> Result<Fields, OperationErr
     let Some(resolved) = resolve_settings(payload)? else {
         return Ok(invalid_fields());
     };
+    let deployments = resolved.iter().flatten();
     match kind {
         Kind::Routers => {
-            let mut routers = Vec::new();
-            for deployment in resolved.iter().flatten() {
-                if let Some(config) = &deployment.config {
-                    routers.push(wire::RouterOutput {
-                        model_name: deployment.model_name.clone(),
-                        available_models: config.available_models.clone(),
-                        quality: format!("{:.6}", config.weights.quality),
-                        cost: format!("{:.6}", config.weights.economy),
-                    });
-                }
-            }
+            let routers = deployments.filter_map(router_output).collect();
             Ok(Fields {
+                types: None,
+                tiers: None,
                 routers: Some(routers),
-                ..Fields::default()
+                preferences: None,
+                invalid: None,
             })
         }
         Kind::Preferences => {
-            let mut preferences = Vec::new();
-            for deployment in resolved.iter().flatten() {
-                if let Some(configured) = &deployment.preferences {
-                    preferences.push(wire::PreferenceOutput {
+            let preferences = deployments
+                .filter_map(|deployment| {
+                    let configured = deployment.preferences.as_ref()?;
+                    Some(wire::PreferenceOutput {
                         model_name: deployment.model_name.clone(),
                         quality_tier: i64::from(configured.quality_tier),
                         strengths: configured.strengths.clone(),
-                    });
-                }
-            }
+                    })
+                })
+                .collect();
             Ok(Fields {
+                types: None,
+                tiers: None,
+                routers: None,
                 preferences: Some(preferences),
-                ..Fields::default()
+                invalid: None,
             })
         }
     }
+}
+
+fn router_output(deployment: &DeploymentConfig) -> Option<wire::RouterOutput> {
+    let config = deployment.config.as_ref()?;
+    Some(wire::RouterOutput {
+        model_name: deployment.model_name.clone(),
+        available_models: config.available_models.clone(),
+        quality: format!("{:.6}", config.weights.quality),
+        cost: format!("{:.6}", config.weights.economy),
+    })
 }
 
 fn resolve_settings(

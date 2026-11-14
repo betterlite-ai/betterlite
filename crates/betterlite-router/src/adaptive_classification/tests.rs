@@ -144,7 +144,7 @@ fn adaptive_classification_boundaries(
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 enum PreferencesOutcome {
     Accepted(u8, Vec<RequestType>),
     Tier,
