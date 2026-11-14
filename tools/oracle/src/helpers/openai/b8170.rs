@@ -82,15 +82,16 @@ struct ModelInfoStep {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UsageStep {
-    prompt_tokens: i64,
-    #[serde(default)]
-    completion_tokens: Option<i64>,
-    #[serde(default)]
-    cached_tokens: Option<i64>,
-    #[serde(default)]
-    cache_creation_tokens: Option<i64>,
-    #[serde(default)]
-    reasoning_tokens: Option<i64>,
+    #[serde(rename = "prompt_tokens")]
+    prompt: i64,
+    #[serde(default, rename = "completion_tokens")]
+    completion: Option<i64>,
+    #[serde(default, rename = "cached_tokens")]
+    cached: Option<i64>,
+    #[serde(default, rename = "cache_creation_tokens")]
+    cache_creation: Option<i64>,
+    #[serde(default, rename = "reasoning_tokens")]
+    reasoning: Option<i64>,
 }
 
 impl Helper for Op {
@@ -207,8 +208,8 @@ fn priced(step: &ModelInfoStep) -> PricedModel {
 
 fn cost_usage(step: &UsageStep) -> CostUsage {
     CostUsage {
-        prompt_tokens: step.prompt_tokens,
-        completion_tokens: step.completion_tokens.unwrap_or(0),
+        prompt_tokens: step.prompt,
+        completion_tokens: step.completion.unwrap_or(0),
         total_tokens: 0,
         prompt_details: Some(PromptDetails {
             text_tokens: None,
@@ -217,22 +218,22 @@ fn cost_usage(step: &UsageStep) -> CostUsage {
             video_tokens: None,
             web_search_requests: None,
         }),
-        completion_details: step.reasoning_tokens.map(|reasoning| CompletionDetails {
+        completion_details: step.reasoning.map(|reasoning| CompletionDetails {
             text_tokens: None,
             audio_tokens: None,
             image_tokens: None,
             video_tokens: None,
             reasoning_tokens: Some(reasoning),
         }),
-        cache_read_tokens: step.cached_tokens,
+        cache_read_tokens: step.cached,
         numeric_extras: BTreeMap::new(),
     }
 }
 
-fn prompt_extras(step: &UsageStep) -> PromptExtras {
+const fn prompt_extras(step: &UsageStep) -> PromptExtras {
     PromptExtras {
         cache_write_tokens: None,
-        cache_creation_tokens: step.cache_creation_tokens,
+        cache_creation_tokens: step.cache_creation,
         cache_creation_token_details: None,
         cached_tokens_details: None,
         character_count: None,
