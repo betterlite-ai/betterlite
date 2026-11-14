@@ -10,6 +10,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use http::Method;
 use http::header::HeaderMap;
 use secrecy::SecretString;
+use tokio::io::AsyncWriteExt as _;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
@@ -154,6 +155,28 @@ pub(super) struct Stalling {
     pub(super) base: String,
     pub(super) _held: Arc<Mutex<Vec<TcpStream>>>,
     pub(super) _tasks: JoinSet<()>,
+}
+
+// answers the head and never the body, so a lookup's body read runs into its own read timeout
+pub(super) async fn stalled_body_server() -> Stalling {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let held: Arc<Mutex<Vec<TcpStream>>> = Arc::default();
+    let keeper = Arc::clone(&held);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        while let Ok((mut stream, _peer)) = listener.accept().await {
+            let _head = stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 64\r\n\r\n")
+                .await;
+            keeper.lock().unwrap().push(stream);
+        }
+    });
+    Stalling {
+        base,
+        _held: held,
+        _tasks: tasks,
+    }
 }
 
 // accepts connections and never answers, so a client with a read timeout fails first

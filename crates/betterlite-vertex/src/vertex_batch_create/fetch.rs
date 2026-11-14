@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::Resolve;
 use http::header::HeaderMap;
@@ -41,10 +42,16 @@ where
                 .fetch(self.client, url, headers)
                 .await
                 .map_err(|source| VertexBatchCreateError::Lookup { source })?;
+            // LiteLLM's safe_get GET has no timeout translation, so a timeout here is a 500 like any other
             fetched
                 .buffered(self.client.limits.body_bytes)
                 .await
-                .map_err(VertexBatchCreateError::from_transport)
+                .map_err(|source| match source {
+                    TransportError::ConnectTimeout(_) | TransportError::Deadline(_) => {
+                        VertexBatchCreateError::LookupTimeout
+                    }
+                    other => VertexBatchCreateError::Transport { source: other },
+                })
         };
         // safe_get returns at the response head, so the deadline has to cover the body read too
         timeout(deadline, attempt)
