@@ -27,7 +27,8 @@ pub struct RankRequest {
     pub records: Vec<RankRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_n: Option<i64>,
-    pub ignore_record_details_in_response: bool,
+    #[serde(rename = "ignoreRecordDetailsInResponse")]
+    pub ignore_details: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_labels: Option<BTreeMap<String, String>>,
 }
@@ -76,7 +77,7 @@ pub fn transform_request(
         query: query.clone(),
         records,
         top_n: top_n(params)?,
-        ignore_record_details_in_response: !return_documents(params)?,
+        ignore_details: !return_documents(params)?,
         user_labels: request_labels_from_params(litellm_params),
     })
 }

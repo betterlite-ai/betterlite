@@ -130,7 +130,7 @@ fn top_n_is_emitted_for_every_non_null_value(#[case] field: &str, #[case] expect
 #[case::false_value(r#","return_documents":false"#, true)]
 fn return_documents_defaults_to_true_and_is_inverted(#[case] field: &str, #[case] ignored: bool) {
     let request = request_of(&format!(r#"{{"query":"q","documents":[]{field}}}"#));
-    assert_eq!(request.ignore_record_details_in_response, ignored);
+    assert_eq!(request.ignore_details, ignored);
 }
 
 #[test]
