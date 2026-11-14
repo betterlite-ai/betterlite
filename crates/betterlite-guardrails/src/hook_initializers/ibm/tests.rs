@@ -56,7 +56,7 @@ fn ibm_reads_optional_params_when_it_is_set() {
     assert!(!args.is_detector_server);
     assert!(!args.verify_ssl);
     assert!(!args.block_on_detection);
-    assert_eq!(args.score_threshold, Some(0.4));
+    assert_eq!(args.score_threshold, Some(0.4_f64));
     assert_eq!(
         args.detector_params,
         BTreeMap::from([("threshold".to_owned(), GuardrailValue::Decimal(0.9))])
@@ -65,7 +65,7 @@ fn ibm_reads_optional_params_when_it_is_set() {
         args.extra_headers,
         BTreeMap::from([("x-org".to_owned(), GuardrailValue::Text("acme".to_owned()))])
     );
-    assert_eq!(args.timeout, Some(4.5));
+    assert_eq!(args.timeout, Some(4.5_f64));
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn ibm_reads_integer_score_thresholds() {
         Some("ibm-check"),
     )
     .unwrap();
-    assert_eq!(signed.score_threshold, Some(1.0));
+    assert_eq!(signed.score_threshold, Some(1.0_f64));
     let unsigned = initialize_ibm(
         &params(&format!(
             r#"{{{REQUIRED}, "optional_params": {{"score_threshold": 18446744073709551615}}}}"#

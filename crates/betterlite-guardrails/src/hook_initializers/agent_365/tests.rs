@@ -52,7 +52,7 @@ fn agent_365_args_copy_the_params_and_the_mode() {
     assert_eq!(args.tenant_id, "tenant");
     assert_eq!(args.client_id, "client");
     assert_eq!(args.client_secret.expose_secret(), "secret");
-    assert_eq!(args.request_timeout, 2.5);
+    assert_eq!(Some(args.request_timeout), Some(2.5_f64));
     assert_eq!(args.unreachable_fallback, UnreachableFallback::FailOpen);
     assert!(args.default_on);
     assert_eq!(
@@ -175,10 +175,10 @@ fn agent_365_defaults_the_request_timeout_only_when_it_is_none() {
         "client_id": "c", "api_key": "s""#;
     let defaulted = params(&format!("{{{required}}}"));
     let (args, _) = initialize_agent_365(&defaulted, Some("name"), &lookup(&[])).unwrap();
-    assert_eq!(args.request_timeout, 10.0);
+    assert_eq!(Some(args.request_timeout), Some(10.0_f64));
     let explicit = params(&format!("{{{required}, \"timeout\": 0}}"));
     let (zero, _) = initialize_agent_365(&explicit, Some("name"), &lookup(&[])).unwrap();
-    assert_eq!(zero.request_timeout, 0.0);
+    assert_eq!(Some(zero.request_timeout), Some(0.0_f64));
 }
 
 #[rstest]
@@ -249,7 +249,13 @@ fn agent_365_lists_the_ignored_overrides_in_order() {
             IgnoredOverride::AgentId
         ]
     );
-    assert_eq!(ignored[0].as_str(), "api_base");
+    assert_eq!(
+        ignored
+            .iter()
+            .map(IgnoredOverride::as_str)
+            .collect::<Vec<_>>(),
+        ["api_base", "resource_app_id", "agent_id"]
+    );
 }
 
 #[test]

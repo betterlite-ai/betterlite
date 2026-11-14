@@ -47,7 +47,7 @@ fn model_armor_copies_the_flags_timeout_and_mode() {
     assert!(!args.fail_on_error);
     assert!(args.skip_unscannable_attachments);
     assert!(!args.sanitize_error_detail);
-    assert_eq!(args.timeout, Some(4.5));
+    assert_eq!(args.timeout, Some(4.5_f64));
     assert_eq!(
         args.event_hook,
         LitellmParamsMode::One("during_call".to_owned())

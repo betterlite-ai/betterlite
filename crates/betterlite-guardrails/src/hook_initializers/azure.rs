@@ -32,7 +32,7 @@ pub fn initialize_azure(
     guardrail_name: Option<&str>,
 ) -> Result<AzureArgs, HookInitError> {
     let (api_key, api_base) = connection(params)?;
-    let guardrail_name = required_name(guardrail_name, VENDOR)?;
+    let name = required_name(guardrail_name, VENDOR)?;
     let part = params.guardrail.split('/').nth(1);
     let default_on = params.base.fields.default_on.unwrap_or_default();
     let extras = params_extras(
@@ -43,7 +43,7 @@ pub fn initialize_azure(
         default_on,
     )?;
     let common = AzureCommon {
-        guardrail_name,
+        guardrail_name: name,
         api_key,
         api_base,
         default_on,
@@ -53,8 +53,8 @@ pub fn initialize_azure(
     match part {
         Some("prompt_shield") => Ok(AzureArgs::PromptShield(common)),
         Some("text_moderations") => Ok(AzureArgs::TextModerations(common)),
-        Some(part) => Err(HookInitError::AzureGuardrailNotValid {
-            part: part.to_owned(),
+        Some(unknown) => Err(HookInitError::AzureGuardrailNotValid {
+            part: unknown.to_owned(),
         }),
         None => Err(HookInitError::AzureGuardrailNotValid {
             part: params.guardrail.clone(),

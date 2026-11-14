@@ -32,7 +32,7 @@ pub fn initialize_openai(
     params: &LitellmParams,
     guardrail_name: Option<&str>,
 ) -> Result<OpenAiArgs, HookInitError> {
-    let guardrail_name = required_name(guardrail_name, VENDOR)?;
+    let name = required_name(guardrail_name, VENDOR)?;
     let extra = &params.base.extra.0;
     let optional = read::<ParamMap>(extra, VENDOR, "optional_params")?;
     let api_key = params.base.fields.api_key.clone();
@@ -55,7 +55,7 @@ pub fn initialize_openai(
     let streaming_sampling_rate =
         get_config_value(optional.as_ref(), extra, SAMPLING_RATE, read::<i64>)?;
     Ok(OpenAiArgs {
-        guardrail_name,
+        guardrail_name: name,
         api_key,
         api_base,
         default_on,

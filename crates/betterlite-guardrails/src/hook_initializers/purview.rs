@@ -45,7 +45,7 @@ pub fn initialize_purview(
                 .map(SecretString::from)
         })
         .ok_or(HookInitError::PurviewClientSecretRequired)?;
-    let guardrail_name = required_name(guardrail_name, VENDOR)?;
+    let name = required_name(guardrail_name, VENDOR)?;
     let purview_app_name = app_text(extra, "purview_app_name")?
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_APP_NAME.to_owned());
@@ -53,7 +53,7 @@ pub fn initialize_purview(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_USER_ID_FIELD.to_owned());
     Ok(PurviewArgs {
-        guardrail_name,
+        guardrail_name: name,
         tenant_id,
         client_id,
         client_secret,

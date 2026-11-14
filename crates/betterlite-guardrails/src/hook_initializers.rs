@@ -54,17 +54,16 @@ pub(crate) fn params_extras(
     default_on: GuardrailFlag,
 ) -> Result<OpaqueParams, HookInitError> {
     let mut extras = params_dump(params, vendor)?;
-    if let Some(api_key) = api_key {
+    if let Some(key) = api_key {
         extras.0.insert(
             "api_key".to_owned(),
-            GuardrailValue::Text(api_key.expose_secret().to_owned()),
+            GuardrailValue::Text(key.expose_secret().to_owned()),
         );
     }
-    if let Some(api_base) = api_base {
-        extras.0.insert(
-            "api_base".to_owned(),
-            GuardrailValue::Text(api_base.to_owned()),
-        );
+    if let Some(base) = api_base {
+        extras
+            .0
+            .insert("api_base".to_owned(), GuardrailValue::Text(base.to_owned()));
     }
     extras
         .0
@@ -103,11 +102,14 @@ pub(crate) fn required_text(
 }
 
 // the declared type of the param; serde's own decoder refuses a value of another type
-pub(crate) fn read<T: DeserializeOwned>(
+pub(crate) fn read<T>(
     map: &ParamMap,
     vendor: &'static str,
     key: &str,
-) -> Result<Option<T>, HookInitError> {
+) -> Result<Option<T>, HookInitError>
+where
+    T: DeserializeOwned,
+{
     let Some(value) = map.get(key) else {
         return Ok(None);
     };

@@ -52,9 +52,9 @@ pub fn initialize_agent_365(
     lookup: &dyn SecretLookup,
 ) -> Result<(Agent365Args, Vec<IgnoredOverride>), HookInitError> {
     let (tenant_id, client_id, client_secret) = credentials(params, lookup)?;
-    let guardrail_name = required_name(guardrail_name, VENDOR)?;
+    let name = required_name(guardrail_name, VENDOR)?;
     let args = Agent365Args {
-        guardrail_name,
+        guardrail_name: name,
         tenant_id,
         client_id,
         client_secret,

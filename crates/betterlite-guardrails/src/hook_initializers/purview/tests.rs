@@ -5,6 +5,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
+use std::error::Error as _;
 
 use super::initialize_purview;
 
@@ -30,7 +31,7 @@ fn purview_reads_the_named_fields_from_the_params_only() {
     assert_eq!(args.client_secret.expose_secret(), "secret");
     assert_eq!(args.purview_app_name, "LiteLLM");
     assert_eq!(args.user_id_field, "user_id");
-    assert_eq!(args.timeout, Some(6.0));
+    assert_eq!(args.timeout, Some(6.0_f64));
     assert_eq!(
         args.event_hook,
         LitellmParamsMode::One("pre_call".to_owned())
@@ -177,5 +178,5 @@ fn purview_refuses_a_boolean_app_name_and_keeps_the_decoder_cause() {
         error.to_string(),
         "Microsoft Purview: purview_app_name has an invalid value"
     );
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
 }

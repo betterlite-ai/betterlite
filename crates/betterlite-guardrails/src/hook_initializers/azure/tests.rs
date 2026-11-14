@@ -75,16 +75,6 @@ fn azure_picks_the_variant_from_the_text_after_the_first_slash() {
     None,
     "Azure Content Safety: api_key is required"
 )]
-fn azure_refuses_missing_values_in_litellm_order(
-    #[case] json: &str,
-    #[case] name: Option<&str>,
-    #[case] message: &str,
-) {
-    let error = initialize_azure(&params(json), name).unwrap_err();
-    assert_eq!(error.to_string(), message);
-}
-
-#[rstest]
 #[case::unknown_part(
     r#"{"guardrail": "azure/other", "mode": "pre_call", "api_key": "key", "api_base": "https://azure.example"}"#,
     Some("name"),
@@ -105,7 +95,7 @@ fn azure_refuses_missing_values_in_litellm_order(
     None,
     "Azure Content Safety: guardrail_name is required"
 )]
-fn azure_refuses_an_unknown_guardrail(
+fn azure_refuses_missing_values_in_litellm_order(
     #[case] json: &str,
     #[case] name: Option<&str>,
     #[case] message: &str,
@@ -160,7 +150,7 @@ fn azure_keeps_the_params_when_default_on_is_absent() {
     let common = prompt_shield(
         initialize_azure(
             &params(
-                r#"{"guardrail": "azure/text_moderations", "mode": "pre_call", "api_key": "key", "api_base": "https://azure.example"}"#,
+                r#"{"guardrail": "azure/prompt_shield", "mode": "pre_call", "api_key": "key", "api_base": "https://azure.example"}"#,
             ),
             Some("name"),
         )

@@ -44,10 +44,10 @@ pub fn initialize_ibm(
     let auth_token = SecretString::from(required_text(extra, VENDOR, "auth_token")?);
     let base_url = required_text(extra, VENDOR, "base_url")?;
     let detector_id = required_text(extra, VENDOR, "detector_id")?;
-    let guardrail_name = required_name(guardrail_name, VENDOR)?;
+    let name = required_name(guardrail_name, VENDOR)?;
     let optional = optional_params(extra)?;
     Ok(IbmArgs {
-        guardrail_name,
+        guardrail_name: name,
         auth_token,
         base_url,
         detector_id,
