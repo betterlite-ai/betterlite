@@ -141,6 +141,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "genai_chat_output"
+path = "fuzz_targets/genai_chat_output.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "google_pse_reply"
 path = "fuzz_targets/google_pse_reply.rs"
 test = false

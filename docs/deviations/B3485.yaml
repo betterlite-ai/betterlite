@@ -1,0 +1,11 @@
+task: B3485
+deviations:
+  - what: GoogleGenAIStreamWrapper.__next__, __anext__ and the sync google_genai_sse_wrapper are not implemented; the module serves the streaming output only through the async SSE byte iterator.
+    why: The handler calls translate_completion_output_params_streaming, which returns async_google_genai_sse_wrapper, so the wrapper's own next methods and its sync iterator never run in production.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L163-L260
+  - what: Tool calls whose accumulated arguments never parse as JSON are dropped when the stream ends instead of being flushed as a final chunk.
+    why: The EOF flush of remaining accumulated calls lives in __anext__, which no production path calls; async_google_genai_sse_wrapper iterates the chunks and ends without one, so an incomplete call is lost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L262-L287
+  - what: The adapter is a pair of free functions over a typed chunk stream plus a GenAiStreamState value, not a GoogleGenAIStreamWrapper object whose methods carry the transformation.
+    why: The wrapper's only state read on the production path is the accumulated tool-call map; sent_first_chunk and _returned_response are written in __init__ and read only by the unimplemented next methods, so the Rust state holds just the accumulator.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L154-L161
