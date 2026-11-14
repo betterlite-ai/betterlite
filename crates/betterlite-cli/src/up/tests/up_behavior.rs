@@ -149,6 +149,30 @@ fn resolve_api_key_reads_the_key_the_login_stored_in_a_token_file_session() {
 }
 
 #[test]
+fn resolve_api_key_returns_an_explicit_key_without_a_terminal() {
+    let mut world = World::new(false);
+    world.context.api_key = Some(SecretString::from("sk-explicit".to_owned()));
+    let mut ports = world.ports();
+    let key = resolve_api_key(&mut ports).expect("the explicit key needs no login");
+    drop(ports);
+    assert_eq!(key.expose_secret(), "sk-explicit");
+    assert_eq!(world.login_count(), 0);
+}
+
+#[test]
+fn resolve_api_key_reports_a_missing_key_without_a_terminal() {
+    let mut world = World::new(false);
+    let mut ports = world.ports();
+    let error = resolve_api_key(&mut ports).expect_err("no key and no terminal");
+    drop(ports);
+    assert_eq!(
+        error.to_string(),
+        "No LiteLLM key found. Set LITELLM_PROXY_API_KEY (or pass --api-key) for non-interactive use, or run `lite login` from a terminal."
+    );
+    assert_eq!(world.login_count(), 0);
+}
+
+#[test]
 fn up_help_matches_the_litellm_docstring() {
     assert_eq!(
         crate::up::UP_ABOUT,
@@ -187,6 +211,23 @@ fn up_verifies_the_key_with_the_proxy_before_patching() {
     assert_eq!(probe.url, "http://gateway.test:4000/v1/models");
     assert_eq!(probe.timeout, 10);
     assert_eq!(probe.authorization, "Bearer sk-live");
+}
+
+#[test]
+fn up_reports_an_unreachable_proxy_with_the_litellm_message() {
+    let mut world = World::new(false);
+    world.seed_token(record("sk-live", 1_000.0, Some(FRESH)));
+    world.context.api_key = Some(SecretString::from("sk-live".to_owned()));
+    world.probe.unreachable = true;
+    let mut ports = world.ports();
+    let error = run_up(&mut ports).expect_err("the proxy is unreachable");
+    drop(ports);
+    assert_eq!(
+        error.to_string(),
+        "Could not reach the LiteLLM proxy at http://gateway.test:4000: connection refused. Is it running, and is --base-url (or LITELLM_PROXY_URL) correct?"
+    );
+    assert!(!world.settings_path().exists());
+    assert!(!world.backup_path().exists());
 }
 
 #[test]

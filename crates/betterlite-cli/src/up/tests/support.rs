@@ -202,6 +202,7 @@ impl EnvironmentLookup for FakeEnvironment {
 
 pub(crate) struct RecordingProbe {
     pub(crate) status: u16,
+    pub(crate) unreachable: bool,
     pub(crate) state: Arc<State>,
 }
 
@@ -217,6 +218,9 @@ impl KeyProbe for RecordingProbe {
             .probe
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(probe);
+        if self.unreachable {
+            return Err(io::Error::other("connection refused"));
+        }
         Ok(self.status)
     }
 }
@@ -365,6 +369,7 @@ impl World {
             home,
             probe: RecordingProbe {
                 status: 200,
+                unreachable: false,
                 state: Arc::clone(&state),
             },
             terminal: FakeTerminal { interactive },
