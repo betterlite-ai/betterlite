@@ -1,0 +1,31 @@
+kind: helper
+name: passthrough-guardrail-process-input-empty-text-skip
+call:
+  b3573:
+    scenarios:
+      - function: input
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              request_fields: [absent]
+        data:
+          query: hello
+      - function: input
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              request_fields: [empty]
+        data:
+          empty: ""
+      - function: input
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              request_fields: [query]
+        data:
+          query: hello
+env: {}
+compare: {ignore: []}
