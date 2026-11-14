@@ -940,7 +940,9 @@ async fn aget_sends_the_same_request_as_get() {
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
+        .provider("gemini")
         .header("x-extra", "yes")
+        .kwarg("custom_llm_provider", text("cohere"))
         .kwarg("api_base", text(&base(serving.address)));
     let output = aget(&config, harness.deps(), &call.request())
         .await
