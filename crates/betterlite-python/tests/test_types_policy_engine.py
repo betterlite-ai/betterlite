@@ -6,7 +6,7 @@ import litellm.types.proxy.policy_engine.policy_types as litellm_policy  # pyrig
 import litellm.types.proxy.policy_engine.resolver_types as litellm_resolver  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L1
 import litellm.types.proxy.policy_engine.validation_types as litellm_validation  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/validation_types.py#L1
 import pytest
-from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, JsonValue, ValidationError
 
 import betterlite.types.policy_engine as betterlite_compat
 import betterlite.types.proxy.policy_engine.pipeline_types as betterlite_pipeline
@@ -15,12 +15,26 @@ import betterlite.types.proxy.policy_engine.resolver_types as betterlite_resolve
 import betterlite.types.proxy.policy_engine.validation_types as betterlite_validation
 
 
-class JsonDumpable(Protocol):
-    def model_dump_json(self) -> str: ...
+class ResolverModels(Protocol):
+    PolicyCreateRequest: type[litellm_resolver.PolicyCreateRequest]
+    PolicyUpdateRequest: type[litellm_resolver.PolicyUpdateRequest]
+    PolicyDBResponse: type[litellm_resolver.PolicyDBResponse]
+    PolicyVersionCompareResponse: type[litellm_resolver.PolicyVersionCompareResponse]
+    PipelineTestRequest: type[litellm_resolver.PipelineTestRequest]
 
 
-def as_json(model: JsonDumpable) -> JsonValue:
-    return TypeAdapter(JsonValue).validate_json(model.model_dump_json())
+class PipelineModels(Protocol):
+    PipelineStepResult: type[litellm_pipeline.PipelineStepResult]
+    PipelineExecutionResult: type[litellm_pipeline.PipelineExecutionResult]
+
+
+class ValidationModels(Protocol):
+    PolicyValidateRequest: type[litellm_validation.PolicyValidateRequest]
+
+
+resolver_models: ResolverModels = litellm_resolver
+pipeline_models: PipelineModels = litellm_pipeline
+validation_models: ValidationModels = litellm_validation
 
 
 MODEL_PARAMS = [
@@ -190,34 +204,34 @@ MODEL_PARAMS = [
         {"model": "gpt-4.*"}, id="PolicyConditionRequest-values",
     ),
     pytest.param(
-        betterlite_resolver.PolicyCreateRequest, litellm_resolver.PolicyCreateRequest,
+        betterlite_resolver.PolicyCreateRequest, resolver_models.PolicyCreateRequest,
         {"policy_name": "dev-safety"}, id="PolicyCreateRequest-minimal",
     ),
     pytest.param(
-        betterlite_resolver.PolicyCreateRequest, litellm_resolver.PolicyCreateRequest,
+        betterlite_resolver.PolicyCreateRequest, resolver_models.PolicyCreateRequest,
         {"policy_name": "dev-safety", "inherit": "global-baseline", "description": "dev",
          "guardrails_add": ["toxicity_filter"], "guardrails_remove": ["phi_blocker"],
          "condition": {"model": "gpt-4"}, "pipeline": {"mode": "post_call", "steps": []}},
         id="PolicyCreateRequest-values",
     ),
     pytest.param(
-        betterlite_resolver.PolicyUpdateRequest, litellm_resolver.PolicyUpdateRequest, {},
+        betterlite_resolver.PolicyUpdateRequest, resolver_models.PolicyUpdateRequest, {},
         id="PolicyUpdateRequest-defaults",
     ),
     pytest.param(
-        betterlite_resolver.PolicyUpdateRequest, litellm_resolver.PolicyUpdateRequest,
+        betterlite_resolver.PolicyUpdateRequest, resolver_models.PolicyUpdateRequest,
         {"policy_name": "renamed", "inherit": "global-baseline", "description": "updated",
          "guardrails_add": ["toxicity_filter"], "guardrails_remove": ["phi_blocker"],
          "condition": {"model": "gpt-4"}, "pipeline": {"mode": "pre_call"}},
         id="PolicyUpdateRequest-values",
     ),
     pytest.param(
-        betterlite_resolver.PolicyDBResponse, litellm_resolver.PolicyDBResponse,
+        betterlite_resolver.PolicyDBResponse, resolver_models.PolicyDBResponse,
         {"policy_id": "policy-1", "policy_name": "global-baseline"},
         id="PolicyDBResponse-minimal",
     ),
     pytest.param(
-        betterlite_resolver.PolicyDBResponse, litellm_resolver.PolicyDBResponse,
+        betterlite_resolver.PolicyDBResponse, resolver_models.PolicyDBResponse,
         {
             "policy_id": "policy-2",
             "policy_name": "healthcare-compliance",
@@ -281,14 +295,14 @@ MODEL_PARAMS = [
     ),
     pytest.param(
         betterlite_resolver.PolicyVersionCompareResponse,
-        litellm_resolver.PolicyVersionCompareResponse,
+        resolver_models.PolicyVersionCompareResponse,
         {"version_a": {"policy_id": "policy-1", "policy_name": "global-baseline"},
          "version_b": {"policy_id": "policy-2", "policy_name": "global-baseline"}},
         id="PolicyVersionCompareResponse-minimal",
     ),
     pytest.param(
         betterlite_resolver.PolicyVersionCompareResponse,
-        litellm_resolver.PolicyVersionCompareResponse,
+        resolver_models.PolicyVersionCompareResponse,
         {"version_a": {"policy_id": "policy-1", "policy_name": "global-baseline"},
          "version_b": {"policy_id": "policy-2", "policy_name": "global-baseline"},
          "field_diffs": {"description": {"version_a": "a", "version_b": "b"}}},
@@ -336,7 +350,7 @@ MODEL_PARAMS = [
         id="PolicyAttachmentList-values",
     ),
     pytest.param(
-        betterlite_resolver.PipelineTestRequest, litellm_resolver.PipelineTestRequest,
+        betterlite_resolver.PipelineTestRequest, resolver_models.PipelineTestRequest,
         {"pipeline": {"mode": "pre_call", "steps": []},
          "test_messages": [{"role": "user", "content": "hello"}]},
         id="PipelineTestRequest-minimal",
@@ -409,26 +423,31 @@ MODEL_PARAMS = [
         id="GuardrailPipeline-values",
     ),
     pytest.param(
-        betterlite_pipeline.PipelineStepResult, litellm_pipeline.PipelineStepResult,
+        betterlite_pipeline.PipelineStepResult, pipeline_models.PipelineStepResult,
         {"guardrail_name": "pii_blocker", "outcome": "fail", "action_taken": "block"},
         id="PipelineStepResult-minimal",
     ),
     pytest.param(
-        betterlite_pipeline.PipelineStepResult, litellm_pipeline.PipelineStepResult,
+        betterlite_pipeline.PipelineStepResult, pipeline_models.PipelineStepResult,
         {"guardrail_name": "pii_blocker", "outcome": "error", "action_taken": "next",
          "modified_data": {"messages": []}, "error_detail": "timeout",
          "duration_seconds": 0.05},
         id="PipelineStepResult-values",
     ),
     pytest.param(
+        betterlite_pipeline.PipelineStepResult, pipeline_models.PipelineStepResult,
+        {"guardrail_name": "pii_blocker", "outcome": "pass", "action_taken": "allow"},
+        id="PipelineStepResult-pass",
+    ),
+    pytest.param(
         betterlite_pipeline.PipelineExecutionResult,
-        litellm_pipeline.PipelineExecutionResult,
+        pipeline_models.PipelineExecutionResult,
         {"terminal_action": "block", "step_results": []},
         id="PipelineExecutionResult-minimal",
     ),
     pytest.param(
         betterlite_pipeline.PipelineExecutionResult,
-        litellm_pipeline.PipelineExecutionResult,
+        pipeline_models.PipelineExecutionResult,
         {"terminal_action": "modify_response",
          "step_results": [{"guardrail_name": "pii_blocker", "outcome": "fail",
                            "action_taken": "modify_response"}],
@@ -467,7 +486,7 @@ MODEL_PARAMS = [
     ),
     pytest.param(
         betterlite_validation.PolicyValidateRequest,
-        litellm_validation.PolicyValidateRequest,
+        validation_models.PolicyValidateRequest,
         {"policies": {"global-baseline": {"guardrails": {"add": ["pii_blocker"]}}}},
         id="PolicyValidateRequest-minimal",
     ),
@@ -487,8 +506,8 @@ REQUIRED_PARAMS = [
     pytest.param(betterlite_resolver.PolicyTestResponse, litellm_resolver.PolicyTestResponse,
                  id="PolicyTestResponse"),
     pytest.param(betterlite_resolver.PolicyCreateRequest,
-                 litellm_resolver.PolicyCreateRequest, id="PolicyCreateRequest"),
-    pytest.param(betterlite_resolver.PolicyDBResponse, litellm_resolver.PolicyDBResponse,
+                 resolver_models.PolicyCreateRequest, id="PolicyCreateRequest"),
+    pytest.param(betterlite_resolver.PolicyDBResponse, resolver_models.PolicyDBResponse,
                  id="PolicyDBResponse"),
     pytest.param(betterlite_resolver.PolicyVersionStatusUpdateRequest,
                  litellm_resolver.PolicyVersionStatusUpdateRequest,
@@ -496,7 +515,7 @@ REQUIRED_PARAMS = [
     pytest.param(betterlite_resolver.PolicyVersionListResponse,
                  litellm_resolver.PolicyVersionListResponse, id="PolicyVersionListResponse"),
     pytest.param(betterlite_resolver.PolicyVersionCompareResponse,
-                 litellm_resolver.PolicyVersionCompareResponse,
+                 resolver_models.PolicyVersionCompareResponse,
                  id="PolicyVersionCompareResponse"),
     pytest.param(betterlite_resolver.PolicyAttachmentCreateRequest,
                  litellm_resolver.PolicyAttachmentCreateRequest,
@@ -505,24 +524,24 @@ REQUIRED_PARAMS = [
                  litellm_resolver.PolicyAttachmentDBResponse,
                  id="PolicyAttachmentDBResponse"),
     pytest.param(betterlite_resolver.PipelineTestRequest,
-                 litellm_resolver.PipelineTestRequest, id="PipelineTestRequest"),
+                 resolver_models.PipelineTestRequest, id="PipelineTestRequest"),
     pytest.param(betterlite_resolver.PolicyMatchDetail, litellm_resolver.PolicyMatchDetail,
                  id="PolicyMatchDetail"),
     pytest.param(betterlite_pipeline.PipelineStep, litellm_pipeline.PipelineStep,
                  id="PipelineStep"),
     pytest.param(betterlite_pipeline.GuardrailPipeline, litellm_pipeline.GuardrailPipeline,
                  id="GuardrailPipeline"),
-    pytest.param(betterlite_pipeline.PipelineStepResult, litellm_pipeline.PipelineStepResult,
+    pytest.param(betterlite_pipeline.PipelineStepResult, pipeline_models.PipelineStepResult,
                  id="PipelineStepResult"),
     pytest.param(betterlite_pipeline.PipelineExecutionResult,
-                 litellm_pipeline.PipelineExecutionResult, id="PipelineExecutionResult"),
+                 pipeline_models.PipelineExecutionResult, id="PipelineExecutionResult"),
     pytest.param(betterlite_validation.PolicyValidationError,
                  litellm_validation.PolicyValidationError, id="PolicyValidationError"),
     pytest.param(betterlite_validation.PolicyValidationResponse,
                  litellm_validation.PolicyValidationResponse,
                  id="PolicyValidationResponse"),
     pytest.param(betterlite_validation.PolicyValidateRequest,
-                 litellm_validation.PolicyValidateRequest, id="PolicyValidateRequest"),
+                 validation_models.PolicyValidateRequest, id="PolicyValidateRequest"),
 ]
 
 POLICY_CONFIG: dict[str, JsonValue] = {
@@ -549,6 +568,8 @@ POLICY_CONFIG: dict[str, JsonValue] = {
     },
 }
 
+EMPTY_PAYLOAD: dict[str, JsonValue] = {}
+
 
 @pytest.mark.parametrize(("betterlite_model", "reference_model", "payload"), MODEL_PARAMS)
 def test_model_names_match_litellm(
@@ -558,7 +579,7 @@ def test_model_names_match_litellm(
 ) -> None:
     reference = reference_model.model_validate(payload)
     ours = betterlite_model.model_validate(payload)
-    assert as_json(ours) == as_json(reference), betterlite_model.__name__
+    assert ours.model_dump_json() == reference.model_dump_json(), betterlite_model.__name__
 
 
 @pytest.mark.parametrize(("betterlite_model", "reference_model"), REQUIRED_PARAMS)
@@ -571,9 +592,9 @@ def test_required_names_match(
     }
     assert ours == reference, betterlite_model.__name__
     with pytest.raises(ValidationError):
-        _ = reference_model.model_validate({})
+        _ = reference_model.model_validate(EMPTY_PAYLOAD)
     with pytest.raises(ValidationError):
-        _ = betterlite_model.model_validate({})
+        _ = betterlite_model.model_validate(EMPTY_PAYLOAD)
 
 
 @pytest.mark.parametrize(("betterlite_model", "reference_model", "payload"), MODEL_PARAMS)
@@ -598,7 +619,7 @@ def test_extra_names_match_litellm(
     if reference is None:
         return
     assert ours is not None
-    assert as_json(ours) == as_json(reference), betterlite_model.__name__
+    assert ours.model_dump_json() == reference.model_dump_json(), betterlite_model.__name__
 
 
 def test_names_policy_types_match() -> None:
@@ -649,9 +670,9 @@ def test_names_resolver_match() -> None:
             betterlite_resolver.PolicyConditionRequest,
             litellm_resolver.PolicyConditionRequest,
         ),
-        (betterlite_resolver.PolicyCreateRequest, litellm_resolver.PolicyCreateRequest),
-        (betterlite_resolver.PolicyUpdateRequest, litellm_resolver.PolicyUpdateRequest),
-        (betterlite_resolver.PolicyDBResponse, litellm_resolver.PolicyDBResponse),
+        (betterlite_resolver.PolicyCreateRequest, resolver_models.PolicyCreateRequest),
+        (betterlite_resolver.PolicyUpdateRequest, resolver_models.PolicyUpdateRequest),
+        (betterlite_resolver.PolicyDBResponse, resolver_models.PolicyDBResponse),
         (
             betterlite_resolver.PolicyListDBResponse,
             litellm_resolver.PolicyListDBResponse,
@@ -670,7 +691,7 @@ def test_names_resolver_match() -> None:
         ),
         (
             betterlite_resolver.PolicyVersionCompareResponse,
-            litellm_resolver.PolicyVersionCompareResponse,
+            resolver_models.PolicyVersionCompareResponse,
         ),
         (
             betterlite_resolver.PolicyAttachmentCreateRequest,
@@ -684,7 +705,7 @@ def test_names_resolver_match() -> None:
             betterlite_resolver.PolicyAttachmentListResponse,
             litellm_resolver.PolicyAttachmentListResponse,
         ),
-        (betterlite_resolver.PipelineTestRequest, litellm_resolver.PipelineTestRequest),
+        (betterlite_resolver.PipelineTestRequest, resolver_models.PipelineTestRequest),
         (
             betterlite_resolver.PolicyResolveRequest,
             litellm_resolver.PolicyResolveRequest,
@@ -714,10 +735,10 @@ def test_names_pipeline_match() -> None:
     pairs = [
         (betterlite_pipeline.PipelineStep, litellm_pipeline.PipelineStep),
         (betterlite_pipeline.GuardrailPipeline, litellm_pipeline.GuardrailPipeline),
-        (betterlite_pipeline.PipelineStepResult, litellm_pipeline.PipelineStepResult),
+        (betterlite_pipeline.PipelineStepResult, pipeline_models.PipelineStepResult),
         (
             betterlite_pipeline.PipelineExecutionResult,
-            litellm_pipeline.PipelineExecutionResult,
+            pipeline_models.PipelineExecutionResult,
         ),
     ]
     for ours, reference in pairs:
@@ -746,7 +767,7 @@ def test_names_validation_match() -> None:
         ),
         (
             betterlite_validation.PolicyValidateRequest,
-            litellm_validation.PolicyValidateRequest,
+            validation_models.PolicyValidateRequest,
         ),
     ]
     for ours, reference in pairs:
@@ -831,7 +852,9 @@ def test_attachment_names_scope() -> None:
     )
     assert global_ours.is_global() == global_reference.is_global()
     assert global_ours.is_global()
-    assert as_json(global_ours.to_policy_scope()) == as_json(global_reference.to_policy_scope())
+    global_ours_scope = global_ours.to_policy_scope()
+    global_reference_scope = global_reference.to_policy_scope()
+    assert global_ours_scope.model_dump_json() == global_reference_scope.model_dump_json()
     scoped_reference = litellm_policy.PolicyAttachment(
         policy="dev-safety", teams=["healthcare-team"], keys=["dev-key-*"], tags=["prod"],
     )
@@ -839,32 +862,30 @@ def test_attachment_names_scope() -> None:
         policy="dev-safety", teams=["healthcare-team"], keys=["dev-key-*"], tags=["prod"],
     )
     assert scoped_ours.is_global() == scoped_reference.is_global()
-    assert as_json(scoped_ours.to_policy_scope()) == as_json(scoped_reference.to_policy_scope())
+    scoped_ours_scope = scoped_ours.to_policy_scope()
+    scoped_reference_scope = scoped_reference.to_policy_scope()
+    assert scoped_ours_scope.model_dump_json() == scoped_reference_scope.model_dump_json()
 
 
 @pytest.mark.parametrize("priority", [-2147483648, 2147483647])
 def test_priority_names_bounds(priority: int) -> None:
     reference = litellm_policy.PolicyAttachment(policy="p", priority=priority)
     ours = betterlite_policy.PolicyAttachment(policy="p", priority=priority)
-    assert as_json(ours) == as_json(reference)
+    assert ours.model_dump_json() == reference.model_dump_json()
 
 
 @pytest.mark.parametrize("priority", [-2147483649, 2147483648])
 def test_priority_names_rejected(priority: int) -> None:
+    attachment: dict[str, JsonValue] = {"policy": "p", "priority": priority}
+    create: dict[str, JsonValue] = {"policy_name": "p", "priority": priority}
     with pytest.raises(ValidationError):
-        _ = litellm_policy.PolicyAttachment.model_validate({"policy": "p", "priority": priority})
+        _ = litellm_policy.PolicyAttachment.model_validate(attachment)
     with pytest.raises(ValidationError):
-        _ = betterlite_policy.PolicyAttachment.model_validate(
-            {"policy": "p", "priority": priority},
-        )
+        _ = betterlite_policy.PolicyAttachment.model_validate(attachment)
     with pytest.raises(ValidationError):
-        _ = litellm_resolver.PolicyAttachmentCreateRequest.model_validate(
-            {"policy_name": "p", "priority": priority},
-        )
+        _ = litellm_resolver.PolicyAttachmentCreateRequest.model_validate(create)
     with pytest.raises(ValidationError):
-        _ = betterlite_resolver.PolicyAttachmentCreateRequest.model_validate(
-            {"policy_name": "p", "priority": priority},
-        )
+        _ = betterlite_resolver.PolicyAttachmentCreateRequest.model_validate(create)
 
 
 @pytest.mark.parametrize("action", ["allow", "block", "next", "modify_response"])
@@ -874,7 +895,7 @@ def test_pipeline_names_actions(action: str) -> None:
     }
     reference = litellm_pipeline.PipelineStep.model_validate(payload)
     ours = betterlite_pipeline.PipelineStep.model_validate(payload)
-    assert as_json(ours) == as_json(reference)
+    assert ours.model_dump_json() == reference.model_dump_json()
 
 
 @pytest.mark.parametrize("action", ["", "skip", "ALLOW"])
@@ -891,7 +912,7 @@ def test_pipeline_names_modes(mode: str) -> None:
     payload: dict[str, JsonValue] = {"mode": mode, "steps": [{"guardrail": "g"}]}
     reference = litellm_pipeline.GuardrailPipeline.model_validate(payload)
     ours = betterlite_pipeline.GuardrailPipeline.model_validate(payload)
-    assert as_json(ours) == as_json(reference)
+    assert ours.model_dump_json() == reference.model_dump_json()
 
 
 @pytest.mark.parametrize("payload", [
@@ -919,17 +940,7 @@ def test_enum_names_match() -> None:
         reference = litellm_validation.PolicyValidationError(
             policy_name="p", error_type=reference_member, message="m",
         )
-        assert as_json(ours) == as_json(reference)
-
-
-@pytest.mark.parametrize("outcome", ["pass", "fail", "error"])
-def test_literal_names_match(outcome: str) -> None:
-    payload: dict[str, JsonValue] = {
-        "guardrail_name": "g", "outcome": outcome, "action_taken": "allow",
-    }
-    reference = litellm_pipeline.PipelineStepResult.model_validate(payload)
-    ours = betterlite_pipeline.PipelineStepResult.model_validate(payload)
-    assert as_json(ours) == as_json(reference)
+        assert ours.model_dump_json() == reference.model_dump_json()
 
 
 def test_literal_names_rejected() -> None:
@@ -937,19 +948,9 @@ def test_literal_names_rejected() -> None:
         "guardrail_name": "g", "outcome": "other", "action_taken": "allow",
     }
     with pytest.raises(ValidationError):
-        _ = litellm_pipeline.PipelineStepResult.model_validate(payload)
+        _ = pipeline_models.PipelineStepResult.model_validate(payload)
     with pytest.raises(ValidationError):
         _ = betterlite_pipeline.PipelineStepResult.model_validate(payload)
-
-
-@pytest.mark.parametrize("location", ["db", "config"])
-def test_definition_names_match(location: str) -> None:
-    payload: dict[str, JsonValue] = {
-        "policy_id": "id", "policy_name": "p", "definition_location": location,
-    }
-    reference = litellm_resolver.PolicyDBResponse.model_validate(payload)
-    ours = betterlite_resolver.PolicyDBResponse.model_validate(payload)
-    assert as_json(ours) == as_json(reference)
 
 
 def test_definition_names_rejected() -> None:
@@ -957,7 +958,7 @@ def test_definition_names_rejected() -> None:
         "policy_id": "id", "policy_name": "p", "definition_location": "memory",
     }
     with pytest.raises(ValidationError):
-        _ = litellm_resolver.PolicyDBResponse.model_validate(payload)
+        _ = resolver_models.PolicyDBResponse.model_validate(payload)
     with pytest.raises(ValidationError):
         _ = betterlite_resolver.PolicyDBResponse.model_validate(payload)
     attachment: dict[str, JsonValue] = {
@@ -972,19 +973,19 @@ def test_definition_names_rejected() -> None:
 def test_policy_names_dump_match() -> None:
     reference = litellm_policy.PolicyConfig.model_validate(POLICY_CONFIG)
     ours = betterlite_policy.PolicyConfig.model_validate(POLICY_CONFIG)
-    assert as_json(ours) == as_json(reference)
+    assert ours.model_dump_json() == reference.model_dump_json()
 
 
 def test_execution_names_exclude() -> None:
-    reference = litellm_pipeline.PipelineExecutionResult.model_validate(
-        {"terminal_action": "block", "step_results": []},
+    reference = pipeline_models.PipelineExecutionResult(
+        terminal_action="block", step_results=[],
     )
-    ours = betterlite_pipeline.PipelineExecutionResult.model_validate(
-        {"terminal_action": "block", "step_results": []},
+    ours = betterlite_pipeline.PipelineExecutionResult(
+        terminal_action="block", step_results=[],
     )
     failure = ValueError("guardrail call failed")
     reference.original_exception = failure
     ours.original_exception = failure
     assert ours.original_exception is failure
     assert reference.original_exception is failure
-    assert as_json(ours) == as_json(reference)
+    assert ours.model_dump_json() == reference.model_dump_json()
