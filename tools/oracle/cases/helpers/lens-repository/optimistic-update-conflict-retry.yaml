@@ -1,0 +1,24 @@
+kind: helper
+name: optimistic-update-conflict-retry
+call:
+  b4501:
+    seed:
+      lenses:
+        lens-a:
+          version: 0
+          data:
+            id: lens-a
+            scope: {}
+            settings: {name: lens, model: gpt-4o, context: cite}
+            created_at: "2026-01-01T00:00:00Z"
+            next_run_at: "2026-01-01T00:15:00Z"
+            budget_month: "2026-01"
+    call:
+      operation: update
+      lens_id: lens-a
+      attempts: 8
+      changed_only: false
+      transform: {kind: set_revision, revision: 2}
+      conflicts: 1
+env: {}
+compare: {ignore: []}
