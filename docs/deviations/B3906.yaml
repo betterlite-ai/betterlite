@@ -1,0 +1,39 @@
+task: B3906
+deviations:
+  - what: >-
+      Both resolved_trace_id and the returned trace ID are call_trace_id, which may differ from the
+      user-submitted trace_id when _is_session_header_trace finds a session header; the user's original
+      session trace_id is never written to the trace parameters in that case.
+    why: >-
+      Session-header detection at the pin derives call_trace_id specifically so each call gets its own
+      trace while continuing the shared session, and the source returns that value. A working setup sees
+      one trace per call, not one trace per session.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L676-L687
+  - what: >-
+      Credential redaction runs on the clean metadata and on the proxy request headers before anything
+      is traced: every user_api_key* key is dropped when redact_user_api_key_info is set, and the
+      authorization, cookie and referer headers never reach an attribute.
+    why: >-
+      The pin redacts secrets before logging, and this is the secret-redaction path the security review
+      reserves. Without it a key or a session cookie would land in Langfuse metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L713
+  - what: >-
+      The masking function is injected as an infallible Fn(&Json) -> Json instead of being called out of
+      litellm_params["_langfuse_masking_function"] or the langfuse_masking_function metadata key. A Rust
+      callable cannot raise, so the projection's warn-and-keep-original path never fires; the caller
+      owns its own failure handling.
+    why: >-
+      A Python callable cannot ride in JSON metadata and betterlite has no dynamic callables at this
+      layer. The logged behavior is kept: with no function injected the input and output pass through
+      unmasked, and the metadata key is dropped so it never reaches an attribute.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L695-L711
+  - what: >-
+      The preset cache key that the cache_key tag falls back to arrives as a caller-supplied
+      preset_cache_key instead of being read from litellm.cache._get_preset_cache_key_from_kwargs. The
+      owner of the cache leaf passes it; without one the tag reads cache_key:None as the source's own
+      fallback does.
+    why: >-
+      litellm.cache is a Python global this crate does not reach, and the cache leaf belongs to another
+      task. The value the source would compute is identical when the caller supplies it, and the
+      hidden-params cache_key still wins over it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1021-L1028

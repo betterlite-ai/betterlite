@@ -1,0 +1,17 @@
+task: B7929
+deviations:
+  - what: HiddenParams derives from the wheel's DictJsonObject instead of openai's BaseModel, and its original_response is typed JsonValue.
+    why: The wheel does not depend on openai.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L46
+  - what: databricks.py defines ChatCompletionUsageBlock itself instead of importing it from llms/openai.
+    why: The wheel has no llms/openai module yet, and the TypedDict keeps LiteLLM's keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/databricks.py#L10
+  - what: LiteLLMPydanticObjectBase.json and fields_set drop the pydantic v1 fallback.
+    why: The wheel pins pydantic 2, so the fallback never runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L11-L23
+  - what: "The str-mixin enum httpxSpecialProvider subclasses enum.StrEnum instead of (str, Enum)."
+    why: "Ruff UP042 rejects the two-base form, and the members and values stay the same. str() of a member returns its value, where (str, Enum) returns the member name."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/custom_http.py#L6"
+  - what: "Fields LiteLLM types as a bare dict or Any (in databricks, langgraph, mistral, ollama, openrouter, recraft and cohere) are typed with dict[str, JsonValue] or JsonValue."
+    why: "The repo bans Any and unparameterized containers in annotations, and these fields carry JSON request and response payloads."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/databricks.py#L45-L49"

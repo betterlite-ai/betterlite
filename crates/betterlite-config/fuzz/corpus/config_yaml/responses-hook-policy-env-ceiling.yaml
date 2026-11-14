@@ -1,0 +1,10 @@
+model_list:
+  - model_name: agentic
+    litellm_params:
+      model: azure/gpt-4o
+      api_key: os.environ/AZURE_API_KEY
+      max_agentic_loops: os.environ/MAX_AGENTIC_LOOPS
+litellm_settings:
+  drop_params: true
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
