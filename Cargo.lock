@@ -2765,8 +2765,16 @@ dependencies = [
 name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-guardrails",
  "betterlite-models",
+ "betterlite-redact",
  "pyo3",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
