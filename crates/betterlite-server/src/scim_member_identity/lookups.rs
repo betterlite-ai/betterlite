@@ -37,7 +37,7 @@ impl<'database> MemberResolver<'database> {
             })
     }
 
-    // the id compares exactly and unstripped, and a bounded scan that could have omitted it is completed below
+    // the id compares exactly and unstripped; a read of two rows without it may have stopped before the row keyed by it
     pub async fn accounts_named_by_member_value(
         &self,
         value: &str,
@@ -57,7 +57,7 @@ impl<'database> MemberResolver<'database> {
             .map_err(|driver| ScimMemberIdentityError::Database {
                 source: backend(driver),
             })?;
-        if named.len() < 2 || named.iter().any(|found| found == value) {
+        if matches!(named.len(), 0 | 1) || named.iter().any(|found| found == value) {
             return Ok(named);
         }
         let keyed = client
