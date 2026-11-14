@@ -1,0 +1,26 @@
+task: B169
+deviations:
+- what: >-
+    The README examples call client.chat.completions, client.chat.completions_stream, client.models.new,
+    client.models.delete(model_id=...) and client.model_groups.info, where LiteLLM's README calls
+    client.chat.completions.create, client.models.add, client.models.delete(model_name=...) and
+    client.model_groups.create/list/delete.
+  why: >-
+    LiteLLM's README names methods its own client does not have, so those examples fail against either package.
+    The ported examples call the management methods both clients expose.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/README.md#L23-L30
+- what: >-
+    The package lists HTTPError and RequestError in __all__ in addition to LiteLLM's seven names.
+  why: >-
+    Every client method raises these transport errors, and betterlite's wheel has no requests module, so a
+    script needs the classes from the public package to catch a failed management call.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/__init__.py#L1-L10
+- what: >-
+    The README's keychain paragraph does not say that keyring support comes with a pip extra.
+  why: >-
+    betterlite's lite CLI is a native binary rather than a Python extra, so no package install enables the
+    keychain; the rest of the paragraph's behavior is unchanged.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/README.md#L381
+- what: This task has no helper oracle cases.
+  why: The pytest file compares the two packages directly against a recording HTTP server.
+  link: ""
