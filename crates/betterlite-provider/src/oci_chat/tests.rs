@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::future::{Future, ready};
+use std::time::Duration;
 
 use betterlite_models::decisions::Json as ModelJson;
 use betterlite_models::model_capability_predicates::{CapabilityPredicates, CapabilityRequest};
@@ -20,7 +21,7 @@ use crate::oci_chat::config::{
 };
 use crate::oci_chat::payload::{OciChatRequest, transform_request};
 use crate::oci_chat::response::{decode_chat_body, transform_response};
-use crate::oci_chat::stream::{SseDecoder, StreamItem, check_stream_status};
+use crate::oci_chat::stream::{STREAMING_TIMEOUT, SseDecoder, StreamItem, check_stream_status};
 use crate::oci_chat_wire::types::oci::OciVendor;
 use crate::oci_common::credentials::OciCredentials;
 use crate::oci_common::environment::OciEnvironment;
@@ -933,6 +934,11 @@ fn stream_status_maps_non_200() {
     let error = check_stream_status(503, "unavailable").unwrap_err();
     assert_eq!(error.status, 503);
     assert_eq!(error.message, "unavailable");
+}
+
+#[test]
+fn streaming_timeout_is_300_seconds() {
+    assert_eq!(STREAMING_TIMEOUT, Duration::from_secs(300));
 }
 
 #[test]
