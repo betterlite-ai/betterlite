@@ -1,7 +1,7 @@
 id: B3154
 milestone: M4 keys, spend and management
 title: Estimate engineering effort from pull request metadata
-status: todo
+status: done
 depends_on: [B3150, B3152, B394, B2221]
 file: tasks/B3154-roi-estimator.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/roi_calculator/estimator.py"
 parent: B076
 split_from: B076
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1659
