@@ -1,0 +1,6 @@
+kind: helper
+name: scan-mark-merge
+call:
+  b3666: {"function": "scan_mark", "guardrail_name": "g", "event_hook": null, "default_on": false, "only_scan_new_messages": true, "mask_request_content": false, "mask_response_content": false, "texts": ["a", "x"], "existing": ["x"], "data": {"litellm_metadata": {"session_id": "s1"}}}
+env: {}
+compare: {ignore: []}

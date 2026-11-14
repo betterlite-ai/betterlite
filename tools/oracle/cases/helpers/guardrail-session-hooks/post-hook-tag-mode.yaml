@@ -1,0 +1,6 @@
+kind: helper
+name: post-hook-tag-mode
+call:
+  b3666: {"function": "deployment_post", "guardrail_name": "g", "event_hook": {"tags": {"a": "post_call"}, "default": null}, "default_on": true, "only_scan_new_messages": false, "mask_request_content": false, "mask_response_content": false, "request_data": {"guardrails": ["g"]}, "suppressed": []}
+env: {}
+compare: {ignore: []}
