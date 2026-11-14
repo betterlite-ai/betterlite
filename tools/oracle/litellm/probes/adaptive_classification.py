@@ -152,6 +152,15 @@ class RecordingRouter(AdaptiveRouter):
         return self.config.available_models[0]
 
 
+async def record_pre_routing(hook: PreRoutingHook, requests: list[RequestInput]) -> None:
+    for request in requests:
+        _ = await hook.async_pre_routing_hook(
+            model="probe",
+            request_kwargs={"headers": request.headers, "metadata": request.metadata},
+            messages=[{"role": "user", "content": request.prompt}],
+        )
+
+
 class AdaptiveClassification(Operation):
     check: Check
     prompts: list[str]
@@ -178,13 +187,7 @@ class AdaptiveClassification(Operation):
 
     async def minimum_quality(self) -> Output:
         router = RecordingRouter(AdaptiveRouterConfig(available_models=["fast"]))
-        hook: PreRoutingHook = router
-        for request in self.requests:
-            _ = await hook.async_pre_routing_hook(
-                model="probe",
-                request_kwargs={"headers": request.headers, "metadata": request.metadata},
-                messages=[{"role": "user", "content": request.prompt}],
-            )
+        await record_pre_routing(router, self.requests)
         return Output(
             types=[request_type for request_type, _tier in router.recorded],
             tiers=[tier for _request_type, tier in router.recorded],

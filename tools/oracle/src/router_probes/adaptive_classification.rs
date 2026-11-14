@@ -86,7 +86,7 @@ enum Kind {
     Preferences,
 }
 
-fn invalid_fields() -> Fields {
+const fn invalid_fields() -> Fields {
     Fields {
         types: None,
         tiers: None,
