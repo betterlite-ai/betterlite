@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::error::Error as StdError;
 
 use betterlite_anthropic::stream_events::StreamEventConverter;
@@ -12,19 +13,8 @@ use indexmap::IndexMap;
 use serde::Serialize;
 use thiserror::Error;
 
-const CHOICES: &str = "choices";
-const DELTA: &str = "delta";
-const CONTENT: &str = "content";
-const FINISH_REASON: &str = "finish_reason";
-const TOOL_CALLS: &str = "tool_calls";
-const FUNCTION: &str = "function";
-const NAME: &str = "name";
-const ARGUMENTS: &str = "arguments";
-const INDEX: &str = "index";
-const ID: &str = "id";
-
 #[derive(Debug, Error)]
-pub enum StreamError<CounterFailure = std::convert::Infallible>
+pub enum StreamError<CounterFailure = Infallible>
 where
     CounterFailure: StdError + Send + Sync + 'static,
 {
@@ -36,17 +26,8 @@ where
 
 #[derive(Debug, Error)]
 pub enum OpenAiChunkError {
-    #[error("the stream chunk choices must be a list")]
-    Choices,
-    #[error("a stream chunk choice must be an object")]
-    Choice,
-    #[error("a stream chunk tool call must be an object")]
-    ToolCall,
-    #[error("the stream chunk field {field} must be {expected}")]
-    Field {
-        field: &'static str,
-        expected: &'static str,
-    },
+    #[error("{0}")]
+    Message(&'static str),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -56,7 +37,7 @@ pub enum SnowflakeChunk {
     Anthropic(StreamEventChunk),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct OpenAiStreamChunk {
     pub text: String,
     pub is_finished: bool,
@@ -129,7 +110,7 @@ where
     ) -> Result<SnowflakeChunk, StreamError<Counter::Failure>> {
         let has_choices = chunk
             .as_object()
-            .is_some_and(|fields| fields.contains_key(CHOICES));
+            .is_some_and(|fields| fields.contains_key("choices"));
         if has_choices {
             return Ok(SnowflakeChunk::OpenAi(parse_openai_chunk(chunk)?));
         }
@@ -138,117 +119,93 @@ where
 }
 
 fn parse_openai_chunk(chunk: &Json) -> Result<OpenAiStreamChunk, OpenAiChunkError> {
-    let fields = chunk.as_object().ok_or(OpenAiChunkError::Choice)?;
-    let choices = match fields.get(CHOICES) {
-        None => &[][..],
+    let fields = chunk.as_object().ok_or(OpenAiChunkError::Message(
+        "a stream chunk must be an object",
+    ))?;
+    let choices = match fields.get("choices") {
+        None | Some(Json::Null) => return Ok(OpenAiStreamChunk::default()),
         Some(Json::List(items)) => items.as_slice(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            return Err(OpenAiChunkError::Choices);
+        Some(_) => {
+            return Err(OpenAiChunkError::Message(
+                "the stream chunk choices must be a list",
+            ));
         }
     };
-    let Some(choice) = choices.first() else {
-        return Ok(empty_chunk());
+    let Some(first) = choices.first() else {
+        return Ok(OpenAiStreamChunk::default());
     };
-    let choice = choice.as_object().ok_or(OpenAiChunkError::Choice)?;
+    let choice = first
+        .as_object()
+        .ok_or(OpenAiChunkError::Message("a choice must be an object"))?;
     let empty_delta = Object::new();
-    let delta = match choice.get(DELTA) {
+    let delta = match choice.get("delta") {
         None | Some(Json::Null) => &empty_delta,
         Some(Json::Object(delta)) => delta,
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(OpenAiChunkError::Field {
-                field: DELTA,
-                expected: "an object",
-            });
-        }
+        Some(_) => return Err(OpenAiChunkError::Message("delta must be an object")),
     };
-    let finish_reason = text_field(choice.get(FINISH_REASON), FINISH_REASON)?;
+    let finish_reason = text_field(
+        choice.get("finish_reason"),
+        "finish_reason must be a string",
+    )?;
     Ok(OpenAiStreamChunk {
-        text: text_field(delta.get(CONTENT), CONTENT)?,
+        text: text_field(
+            delta.get("content"),
+            "the stream chunk field content must be a string",
+        )?,
         is_finished: !finish_reason.is_empty(),
         finish_reason,
         usage: None,
-        index: index_field(choice.get(INDEX))?,
-        tool_use: tool_use(delta.get(TOOL_CALLS))?,
+        index: index_field(choice.get("index"))?,
+        tool_use: tool_use(delta.get("tool_calls"))?,
     })
-}
-
-// LiteLLM answers an empty choices list with the same empty chunk it would build for no delta at all
-const fn empty_chunk() -> OpenAiStreamChunk {
-    OpenAiStreamChunk {
-        text: String::new(),
-        is_finished: false,
-        finish_reason: String::new(),
-        usage: None,
-        index: 0,
-        tool_use: None,
-    }
 }
 
 fn tool_use(tool_calls: Option<&Json>) -> Result<Option<StreamToolUse>, OpenAiChunkError> {
     let Some(Json::List(calls)) = tool_calls else {
         return match tool_calls {
-            None | Some(Json::Null | Json::List(_)) => Ok(None),
-            Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-                Err(OpenAiChunkError::Field {
-                    field: TOOL_CALLS,
-                    expected: "a list",
-                })
-            }
+            None | Some(Json::Null) => Ok(None),
+            Some(_) => Err(OpenAiChunkError::Message("tool_calls must be a list")),
         };
     };
-    let Some(call) = calls.first() else {
+    let Some(first) = calls.first() else {
         return Ok(None);
     };
-    let call = call.as_object().ok_or(OpenAiChunkError::ToolCall)?;
+    let call = first
+        .as_object()
+        .ok_or(OpenAiChunkError::Message("a tool call must be an object"))?;
     let empty_function = Object::new();
-    let function = match call.get(FUNCTION) {
+    let function = match call.get("function") {
         None | Some(Json::Null) => &empty_function,
         Some(Json::Object(function)) => function,
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(OpenAiChunkError::Field {
-                field: FUNCTION,
-                expected: "an object",
-            });
-        }
+        Some(_) => return Err(OpenAiChunkError::Message("function must be an object")),
     };
     Ok(Some(StreamToolUse {
-        id: text_field(call.get(ID), ID)?,
+        id: text_field(call.get("id"), "id must be a string")?,
         kind: "function".to_owned(),
         function: StreamToolFunction {
-            name: text_field(function.get(NAME), NAME)?,
-            arguments: text_field(function.get(ARGUMENTS), ARGUMENTS)?,
+            name: text_field(function.get("name"), "name must be a string")?,
+            arguments: text_field(function.get("arguments"), "arguments must be a string")?,
         },
-        index: index_field(call.get(INDEX))?,
+        index: index_field(call.get("index"))?,
     }))
 }
 
 // LiteLLM reads "value or ''", so an absent or null value reads as the empty string and another type is an error
-fn text_field(value: Option<&Json>, field: &'static str) -> Result<String, OpenAiChunkError> {
+fn text_field(value: Option<&Json>, message: &'static str) -> Result<String, OpenAiChunkError> {
     match value {
         None | Some(Json::Null) => Ok(String::new()),
         Some(Json::Text(text)) => Ok(text.clone()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(OpenAiChunkError::Field {
-                field,
-                expected: "a string",
-            })
-        }
+        Some(_) => Err(OpenAiChunkError::Message(message)),
     }
 }
 
 fn index_field(value: Option<&Json>) -> Result<i64, OpenAiChunkError> {
     match value {
         None | Some(Json::Null) => Ok(0),
-        Some(Json::Number(number)) => number.as_i64().ok_or(OpenAiChunkError::Field {
-            field: INDEX,
-            expected: "an integer",
-        }),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(OpenAiChunkError::Field {
-                field: INDEX,
-                expected: "an integer",
-            })
-        }
+        Some(Json::Number(number)) => number
+            .as_i64()
+            .ok_or(OpenAiChunkError::Message("index must be an integer")),
+        Some(_) => Err(OpenAiChunkError::Message("index must be an integer")),
     }
 }
 

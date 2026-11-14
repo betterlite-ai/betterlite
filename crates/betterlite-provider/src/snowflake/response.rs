@@ -118,7 +118,6 @@ where
     let wire: AnthropicCompletionResponse =
         serde_json::from_str(input.raw_response).map_err(decode)?;
     let reply = project_response(&wire, None)?;
-    let finish_reason = stop_reason(&body).to_owned();
     let usage_object = field(&body, "usage")
         .cloned()
         .unwrap_or_else(|| AnswerJson::Object(IndexMap::new()));
@@ -140,7 +139,7 @@ where
         model: format!("snowflake/{response_model}"),
         choices: vec![ClaudeChoice {
             index: 0,
-            finish_reason,
+            finish_reason: stop_reason(&body).to_owned(),
             message: claude_message(reply),
         }],
         usage,
@@ -169,25 +168,17 @@ fn stop_reason(body: &AnswerJson) -> &'static str {
 }
 
 fn field<'answer>(answer: &'answer AnswerJson, name: &str) -> Option<&'answer AnswerJson> {
-    match answer {
-        AnswerJson::Object(fields) => fields.get(name),
-        AnswerJson::Null
-        | AnswerJson::Bool(_)
-        | AnswerJson::Number(_)
-        | AnswerJson::Text(_)
-        | AnswerJson::List(_) => None,
+    if let AnswerJson::Object(fields) = answer {
+        return fields.get(name);
     }
+    None
 }
 
 fn answer_text(answer: &AnswerJson) -> Option<&str> {
-    match answer {
-        AnswerJson::Text(text) => Some(text.as_str()),
-        AnswerJson::Null
-        | AnswerJson::Bool(_)
-        | AnswerJson::Number(_)
-        | AnswerJson::List(_)
-        | AnswerJson::Object(_) => None,
+    if let AnswerJson::Text(text) = answer {
+        return Some(text.as_str());
     }
+    None
 }
 
 fn decode<CounterFailure>(source: serde_json::Error) -> ResponseError<CounterFailure>

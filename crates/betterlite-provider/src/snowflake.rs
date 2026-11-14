@@ -1,4 +1,4 @@
-//! Snowflake Cortex REST API transforms: OpenAI chat completions, the Claude Messages dialect and embeddings.
+use thiserror::Error;
 
 pub mod config;
 pub mod embedding;
@@ -7,13 +7,16 @@ pub mod request;
 pub mod response;
 pub mod stream;
 
-use thiserror::Error;
-
-// LiteLLM's SnowflakeException subclasses BaseLLMException and adds no member, so B2202's error is the whole class
 pub type SnowflakeException = crate::api::file_contracts::error::BaseLlmException;
 
-// LiteLLM raises these as ValueError texts from SnowflakeBaseConfig._get_api_base and validate_environment
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+// The fetchers are all async-only, so the three call sites share one bound instead of repeating it
+pub(crate) trait Fetcher:
+    betterlite_prompts::media::inline::RemoteMediaFetcher + Sync
+{
+}
+impl<T: betterlite_prompts::media::inline::RemoteMediaFetcher + Sync> Fetcher for T {}
+
+#[derive(Debug, Error)]
 pub enum SnowflakeError {
     #[error("Missing snowflake account_id")]
     MissingAccountId,

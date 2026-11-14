@@ -1,14 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use thiserror::Error;
 
-const TYPE: &str = "type";
-const FUNCTION: &str = "function";
-const NAME: &str = "name";
-const DESCRIPTION: &str = "description";
-const PARAMETERS: &str = "parameters";
-const INPUT_SCHEMA: &str = "input_schema";
-const SCHEMA_KEY: &str = "$schema";
-
 #[derive(Debug, Error)]
 pub enum ToolError {
     #[error("tools must be a list of objects")]
@@ -23,13 +15,13 @@ pub fn transform_tools(tools: &[Json]) -> Result<Vec<Json>, ToolError> {
     let mut converted = Vec::with_capacity(tools.len());
     for tool in tools {
         let fields = tool.as_object().ok_or(ToolError::NotObject)?;
-        if fields.get(TYPE).and_then(Json::as_str) == Some(FUNCTION)
-            && fields.contains_key(FUNCTION)
+        if fields.get("type").and_then(Json::as_str) == Some("function")
+            && fields.contains_key("function")
         {
             converted.push(Json::Object(function_tool(fields)?));
-        } else if let Some(schema) = fields.get(INPUT_SCHEMA) {
+        } else if let Some(schema) = fields.get("input_schema") {
             let mut kept = fields.clone();
-            kept.insert(INPUT_SCHEMA.to_owned(), clean_input_schema(schema));
+            kept.insert("input_schema".to_owned(), clean_input_schema(schema));
             converted.push(Json::Object(kept));
         } else {
             converted.push(tool.clone());
@@ -40,29 +32,29 @@ pub fn transform_tools(tools: &[Json]) -> Result<Vec<Json>, ToolError> {
 
 fn function_tool(fields: &Object) -> Result<Object, ToolError> {
     let function = fields
-        .get(FUNCTION)
+        .get("function")
         .and_then(Json::as_object)
         .ok_or(ToolError::FunctionNotObject)?;
     let mut converted = Object::from_iter([(
-        NAME.to_owned(),
+        "name".to_owned(),
         function
-            .get(NAME)
+            .get("name")
             .cloned()
             .unwrap_or_else(|| Json::Text(String::new())),
     )]);
-    if let Some(description) = function.get(DESCRIPTION) {
-        converted.insert(DESCRIPTION.to_owned(), description.clone());
+    if let Some(description) = function.get("description") {
+        converted.insert("description".to_owned(), description.clone());
     }
     let schema = function
-        .get(PARAMETERS)
+        .get("parameters")
         .map_or_else(default_schema, clean_input_schema);
-    converted.insert(INPUT_SCHEMA.to_owned(), schema);
+    converted.insert("input_schema".to_owned(), schema);
     Ok(converted)
 }
 
 fn default_schema() -> Json {
     Json::Object(Object::from_iter([
-        (TYPE.to_owned(), Json::Text("object".to_owned())),
+        ("type".to_owned(), Json::Text("object".to_owned())),
         ("properties".to_owned(), Json::Object(Object::new())),
     ]))
 }
@@ -74,43 +66,46 @@ pub fn clean_input_schema(schema: &Json) -> Json {
         return schema.clone();
     };
     let mut cleaned = fields.clone();
-    cleaned.shift_remove(SCHEMA_KEY);
+    cleaned.shift_remove("$schema");
     Json::Object(cleaned)
 }
 
 pub fn transform_tool_choice(tool_choice: &Json) -> Result<Json, ToolError> {
     match tool_choice {
         Json::Text(name) => Ok(choice_kind(name)),
-        Json::Object(fields) => {
-            if fields.get(TYPE).and_then(Json::as_str) == Some(FUNCTION) {
-                let name = match fields.get(FUNCTION) {
-                    None | Some(Json::Null) => Json::Text(String::new()),
-                    Some(Json::Object(function)) => function
-                        .get(NAME)
-                        .cloned()
-                        .unwrap_or_else(|| Json::Text(String::new())),
-                    Some(_) => return Err(ToolError::ChoiceFunctionNotObject),
-                };
-                return Ok(Json::Object(Object::from_iter([
-                    (TYPE.to_owned(), Json::Text("tool".to_owned())),
-                    (NAME.to_owned(), name),
-                ])));
-            }
-            Ok(tool_choice.clone())
-        }
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => Ok(choice_kind("auto")),
+        Json::Object(fields) => function_choice(tool_choice, fields),
     }
 }
 
+fn function_choice(tool_choice: &Json, fields: &Object) -> Result<Json, ToolError> {
+    if fields.get("type").and_then(Json::as_str) != Some("function") {
+        return Ok(tool_choice.clone());
+    }
+    let name = match fields.get("function") {
+        None | Some(Json::Null) => Json::Text(String::new()),
+        Some(Json::Object(function)) => function
+            .get("name")
+            .cloned()
+            .unwrap_or_else(|| Json::Text(String::new())),
+        Some(_) => return Err(ToolError::ChoiceFunctionNotObject),
+    };
+    Ok(Json::Object(Object::from_iter([
+        ("type".to_owned(), Json::Text("tool".to_owned())),
+        ("name".to_owned(), name),
+    ])))
+}
+
 fn choice_kind(kind: &str) -> Json {
-    let name = match kind {
-        "auto" => "auto",
-        "required" => "any",
-        "none" => "none",
-        _ => "auto",
+    let name = if kind == "required" {
+        "any"
+    } else if kind == "none" {
+        "none"
+    } else {
+        "auto"
     };
     Json::Object(Object::from_iter([(
-        TYPE.to_owned(),
+        "type".to_owned(),
         Json::Text(name.to_owned()),
     )]))
 }

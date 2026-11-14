@@ -2,6 +2,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, ContentPart, Message};
 use thiserror::Error;
 
+use super::Fetcher;
+
 mod files;
 mod image;
 pub(crate) mod tools;
@@ -32,34 +34,30 @@ pub struct SplitMessages {
     pub conversation: Vec<Json>,
 }
 
-pub async fn extract_system_and_messages<Source>(
+pub async fn extract_system_and_messages<Source: Fetcher>(
     messages: &[Message],
     fetcher: &Source,
-) -> Result<SplitMessages, MessageError>
-where
-    Source: betterlite_prompts::media::inline::RemoteMediaFetcher + Sync,
-{
-    let mut system_parts: Vec<Json> = Vec::new();
-    let mut conversation: Vec<Json> = Vec::new();
+) -> Result<SplitMessages, MessageError> {
+    let mut system = Vec::new();
+    let mut conversation = Vec::new();
     for message in messages {
         match message.role.as_str() {
-            "system" => collect_system(message, &mut system_parts),
+            "system" => collect_system(message, &mut system),
             "assistant" => assistant_turn(message, &mut conversation)?,
             "tool" => tool_turn(message, fetcher, &mut conversation).await?,
             role => conversation.push(other_turn(role, message, fetcher).await?),
         }
     }
-    let system = (!system_parts.is_empty()).then_some(system_parts);
     Ok(SplitMessages {
-        system,
+        system: (!system.is_empty()).then_some(system),
         conversation,
     })
 }
 
-fn collect_system(message: &Message, system_parts: &mut Vec<Json>) {
+fn collect_system(message: &Message, system: &mut Vec<Json>) {
     match message.content.as_ref() {
         Some(Content::Text(text)) if !text.is_empty() => {
-            system_parts.push(Json::Object(text_block(Json::Text(text.clone()))));
+            system.push(Json::Object(text_block(Json::Text(text.clone()))));
         }
         Some(Content::Parts(parts)) => {
             for part in parts.iter().filter(|part| part.kind == "text") {
@@ -72,7 +70,7 @@ fn collect_system(message: &Message, system_parts: &mut Vec<Json>) {
                 if let Some(cache_control) = part.fields.get("cache_control") {
                     block.insert("cache_control".to_owned(), cache_control.clone());
                 }
-                system_parts.push(Json::Object(block));
+                system.push(Json::Object(block));
             }
         }
         Some(Content::Text(_)) | None => {}
@@ -86,6 +84,11 @@ fn text_block(text: Json) -> Object {
     ])
 }
 
+fn text_or_empty(value: Option<&Json>) -> Json {
+    value.cloned().unwrap_or_else(|| Json::Text(String::new()))
+}
+
+// Only signed thinking blocks round-trip: Cortex rejects an unsigned block
 fn signed_thinking_blocks(message: &Message) -> Vec<Json> {
     let Some(Json::List(blocks)) = message.provider_specific_fields.get("thinking_blocks") else {
         return Vec::new();
@@ -93,12 +96,10 @@ fn signed_thinking_blocks(message: &Message) -> Vec<Json> {
     blocks
         .iter()
         .filter(|block| {
-            let Some(fields) = block.as_object() else {
-                return false;
-            };
-            let signed = fields.get("signature").is_some_and(Json::is_truthy);
-            let redacted = fields.get("type").and_then(Json::as_str) == Some("redacted_thinking");
-            signed || redacted
+            block.as_object().is_some_and(|fields| {
+                fields.get("signature").is_some_and(Json::is_truthy)
+                    || fields.get("type").and_then(Json::as_str) == Some("redacted_thinking")
+            })
         })
         .cloned()
         .collect()
@@ -106,34 +107,36 @@ fn signed_thinking_blocks(message: &Message) -> Vec<Json> {
 
 fn assistant_turn(message: &Message, conversation: &mut Vec<Json>) -> Result<(), MessageError> {
     let content = content_json(message.content.as_ref());
-    let thinking_blocks = signed_thinking_blocks(message);
+    let thinking = signed_thinking_blocks(message);
     if let Some(Json::List(calls)) = message.provider_specific_fields.get("tool_calls")
         && !calls.is_empty()
     {
-        let blocks = assistant_tool_use_calls(&content, &thinking_blocks, calls)?;
+        let blocks = tool_use_blocks(&content, &thinking, calls)?;
         conversation.push(object_turn("assistant", Json::List(blocks)));
         return Ok(());
     }
-    if !thinking_blocks.is_empty() {
-        let mut blocks = thinking_blocks;
-        match &content {
-            Json::List(items) => blocks.extend(items.iter().cloned()),
-            other if other.is_truthy() => blocks.push(Json::Object(text_block(other.clone()))),
-            _ => {}
+    if thinking.is_empty() {
+        conversation.push(object_turn("assistant", content));
+        return Ok(());
+    }
+    let mut blocks = thinking;
+    match &content {
+        Json::List(items) => blocks.extend(items.iter().cloned()),
+        Json::Text(text) if !text.is_empty() => {
+            blocks.push(Json::Object(text_block(content.clone())));
         }
-        conversation.push(object_turn("assistant", Json::List(blocks)));
-        return Ok(());
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {}
     }
-    conversation.push(object_turn("assistant", content));
+    conversation.push(object_turn("assistant", Json::List(blocks)));
     Ok(())
 }
 
-fn assistant_tool_use_calls(
+fn tool_use_blocks(
     content: &Json,
-    thinking_blocks: &[Json],
+    thinking: &[Json],
     calls: &[Json],
 ) -> Result<Vec<Json>, MessageError> {
-    let mut blocks: Vec<Json> = thinking_blocks.to_vec();
+    let mut blocks: Vec<Json> = thinking.to_vec();
     if content.is_truthy() {
         blocks.push(Json::Object(text_block(content.clone())));
     }
@@ -145,20 +148,8 @@ fn assistant_tool_use_calls(
         let function = call_function(fields)?;
         blocks.push(Json::Object(Object::from_iter([
             ("type".to_owned(), Json::Text("tool_use".to_owned())),
-            (
-                "id".to_owned(),
-                fields
-                    .get("id")
-                    .cloned()
-                    .unwrap_or_else(|| Json::Text(String::new())),
-            ),
-            (
-                "name".to_owned(),
-                function
-                    .get("name")
-                    .cloned()
-                    .unwrap_or_else(|| Json::Text(String::new())),
-            ),
+            ("id".to_owned(), text_or_empty(fields.get("id"))),
+            ("name".to_owned(), text_or_empty(function.get("name"))),
             ("input".to_owned(), tool_input(function.get("arguments"))),
         ])));
     }
@@ -178,29 +169,22 @@ fn call_function(fields: &Object) -> Result<Object, MessageError> {
 
 // Python decodes string arguments, keeps every other value as it is, and gives {} for absent ones
 fn tool_input(arguments: Option<&Json>) -> Json {
-    let Some(value) = arguments else {
-        return Json::Object(Object::new());
-    };
-    let Json::Text(text) = value else {
-        return value.clone();
+    let Some(Json::Text(text)) = arguments else {
+        return arguments
+            .cloned()
+            .unwrap_or_else(|| Json::Object(Object::new()));
     };
     serde_json::from_str(text).unwrap_or_else(|_| Json::Object(Object::new()))
 }
 
-async fn tool_turn<Source>(
+async fn tool_turn<Source: Fetcher>(
     message: &Message,
     fetcher: &Source,
     conversation: &mut Vec<Json>,
-) -> Result<(), MessageError>
-where
-    Source: betterlite_prompts::media::inline::RemoteMediaFetcher + Sync,
-{
+) -> Result<(), MessageError> {
     let tool_call_id = match message.provider_specific_fields.get("tool_call_id") {
         Some(Json::Text(id)) => id.clone(),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            String::new()
-        }
+        None | Some(_) => String::new(),
     };
     let cache_control = message
         .provider_specific_fields
@@ -251,14 +235,11 @@ fn append_tool_result(conversation: &mut Vec<Json>, block: Object) {
     conversation.push(object_turn("user", Json::List(vec![Json::Object(block)])));
 }
 
-async fn other_turn<Source>(
+async fn other_turn<Source: Fetcher>(
     role: &str,
     message: &Message,
     fetcher: &Source,
-) -> Result<Json, MessageError>
-where
-    Source: betterlite_prompts::media::inline::RemoteMediaFetcher + Sync,
-{
+) -> Result<Json, MessageError> {
     let content = image::convert_image_url_blocks(message.content.as_ref(), fetcher).await?;
     Ok(object_turn(role, content))
 }

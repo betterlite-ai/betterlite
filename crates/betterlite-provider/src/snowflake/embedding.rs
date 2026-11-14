@@ -4,6 +4,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use super::SnowflakeException;
+use crate::api::file_contracts::config::Headers;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EmbeddingReply {
@@ -49,11 +50,8 @@ pub fn transform_embedding_response(
 ) -> Result<EmbeddingReply, EmbeddingError> {
     let mut body: Json =
         serde_json::from_str(raw_response).map_err(|source| EmbeddingError::Decode { source })?;
-    let fields = match &mut body {
-        Json::Object(fields) => fields,
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Err(EmbeddingError::Data);
-        }
+    let Json::Object(fields) = &mut body else {
+        return Err(EmbeddingError::Data);
     };
     unwrap_vectors(fields.get_mut("data"))?;
     let response_model = fields
@@ -84,14 +82,11 @@ fn unwrap_vectors(data: Option<&mut Json>) -> Result<(), EmbeddingError> {
         let Json::Object(fields) = item else {
             return Err(EmbeddingError::Item { index });
         };
-        let embedding = match fields.get("embedding") {
+        let values = match fields.get("embedding") {
             Some(Json::List(values)) => values,
-            None
-            | Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_),
-            ) => return Err(EmbeddingError::Shape { index }),
+            None | Some(_) => return Err(EmbeddingError::Shape { index }),
         };
-        let first = embedding.first().ok_or(EmbeddingError::Empty { index })?;
+        let first = values.first().ok_or(EmbeddingError::Empty { index })?;
         if !matches!(first, Json::Number(_)) {
             return Err(EmbeddingError::Shape { index });
         }
@@ -103,14 +98,10 @@ fn unwrap_vectors(data: Option<&mut Json>) -> Result<(), EmbeddingError> {
 
 // LiteLLM's get_error_class hands the caller's status, message and headers to SnowflakeException
 #[must_use]
-pub fn get_error_class(
-    error_message: &str,
-    status_code: u16,
-    headers: crate::api::file_contracts::config::Headers,
-) -> SnowflakeException {
+pub fn get_error_class(message: &str, status_code: u16, headers: Headers) -> SnowflakeException {
     SnowflakeException {
         status_code,
-        message: error_message.to_owned(),
+        message: message.to_owned(),
         headers,
     }
 }
