@@ -1,2 +1,9 @@
 task: B558
 deviations: []
+kept_bugs:
+  - what: The reply transform always drops the literal contentVector field, so a document vector stored under a custom azure_search_vector_field stays in the result attributes.
+    why: A setup that names its own vector field gets that field back in attributes today, so dropping it would remove document data from search results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L231-L235
+  - what: The search URL interpolates vector_store_id without path encoding, so an id holding a slash or a question mark changes the request path or query.
+    why: The captured request keeps the id literal, and encoding it here would silently send a different URL than LiteLLM for the same store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L175
