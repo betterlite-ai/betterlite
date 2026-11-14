@@ -70,8 +70,8 @@ class ResponseAPIUsage(ResponseObject):
     @classmethod
     def parse_cost(cls, value: JsonValue) -> JsonValue:
         match value:
-            case {"total_cost": total_cost}:
-                return total_cost
+            case dict() as costs if "total_cost" in costs:
+                return costs["total_cost"]
             case dict():
                 return None
             case bool() | int() | float() | str() | list() | None:
@@ -110,9 +110,9 @@ def _field(item: InitValue, name: str) -> InitValue:
 
 def _strip_reasoning_nulls(item: JsonValue) -> JsonValue:
     match item:
-        case {"type": "reasoning"}:
+        case dict() as entry if entry.get("type") == "reasoning":
             kept: dict[str, JsonValue] = {}
-            for key, value in item.items():
+            for key, value in entry.items():
                 if value is None and key in DROPPED_REASONING_KEYS:
                     continue
                 kept[key] = value
