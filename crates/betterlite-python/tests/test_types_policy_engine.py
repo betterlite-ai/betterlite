@@ -1,10 +1,10 @@
 from typing import Protocol
 
-import litellm.types.policy_engine as litellm_compat
-import litellm.types.proxy.policy_engine.pipeline_types as litellm_pipeline
-import litellm.types.proxy.policy_engine.policy_types as litellm_policy
-import litellm.types.proxy.policy_engine.resolver_types as litellm_resolver
-import litellm.types.proxy.policy_engine.validation_types as litellm_validation
+import litellm.types.policy_engine as litellm_compat  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/policy_engine.py#L1
+import litellm.types.proxy.policy_engine.pipeline_types as litellm_pipeline  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/pipeline_types.py#L1
+import litellm.types.proxy.policy_engine.policy_types as litellm_policy  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/policy_types.py#L1
+import litellm.types.proxy.policy_engine.resolver_types as litellm_resolver  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L1
+import litellm.types.proxy.policy_engine.validation_types as litellm_validation  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/validation_types.py#L1
 import pytest
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
