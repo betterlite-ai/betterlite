@@ -366,8 +366,9 @@ def test_oci_wire_dumps(report: NamesReport) -> None:
 
 
 def test_role_names_are_enforced() -> None:
+    tool_payload: dict[str, JsonValue] = {"toolResults": []}
     assert oci.CohereUserMessage(role="USER").role == "USER"
-    assert oci.CohereToolMessage(toolResults=[]).role == "TOOL"
+    assert oci.CohereToolMessage.model_validate(tool_payload).role == "TOOL"
     with pytest.raises(ValidationError) as user:
         oci.CohereUserMessage(role="SYSTEM")
     assert user.value.errors()[0]["loc"] == ("role",)
@@ -378,5 +379,5 @@ def test_role_names_are_enforced() -> None:
         oci.CohereSystemMessage(role="USER")
     assert system.value.errors()[0]["loc"] == ("role",)
     with pytest.raises(ValidationError) as tool:
-        oci.CohereToolMessage(role="USER", toolResults=[])
+        oci.CohereToolMessage.model_validate({**tool_payload, "role": "USER"})
     assert tool.value.errors()[0]["loc"] == ("role",)
