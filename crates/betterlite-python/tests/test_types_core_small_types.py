@@ -1,7 +1,6 @@
 import json
 import subprocess
 import sys
-from functools import cache
 from typing import Final
 
 import pytest
@@ -10,6 +9,9 @@ from pydantic import JsonValue, TypeAdapter
 LITELLM: Final = "litellm.types"
 BETTERLITE: Final = "betterlite.types"
 NOT_PORTED: Final = {"wire"}
+MIN_WEIGHT_OUTCOMES: Final = 20
+MIN_WEIGHT_KINDS: Final = 3
+MIN_CONTROL_KINDS: Final = 5
 
 PROBE: Final = """
 import dataclasses, enum, importlib, inspect, json, sys, typing
@@ -295,7 +297,6 @@ OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 STRINGS: Final = TypeAdapter(list[str])
 
 
-@cache
 def run_probe(prefix: str, mode: str, spec: str) -> dict[str, JsonValue]:
     done = subprocess.run(
         [sys.executable, "-c", PROBE, prefix, mode, spec],
@@ -307,18 +308,27 @@ def run_probe(prefix: str, mode: str, spec: str) -> dict[str, JsonValue]:
     return OBJECT.validate_json(done.stdout)
 
 
+@pytest.fixture(scope="module")
+def described() -> dict[str, dict[str, JsonValue]]:
+    names = list(MODULES)
+    spec = json.dumps(MODULES)
+    return {
+        "theirs": run_probe(LITELLM, "describe", spec),
+        "ours": run_probe(BETTERLITE, "describe", spec),
+        "defined": run_probe(LITELLM, "defined", json.dumps(names)),
+    }
+
+
 @pytest.mark.parametrize("module", MODULES)
-def test_names_defined(module: str) -> None:
-    probed = run_probe(LITELLM, "defined", json.dumps(list(MODULES)))
-    defined = STRINGS.validate_python(probed[module])
+def test_names_defined(module: str, described: dict[str, dict[str, JsonValue]]) -> None:
+    defined = STRINGS.validate_python(described["defined"][module])
     assert set(defined) <= set(MODULES[module]) | NOT_PORTED
 
 
 @pytest.mark.parametrize("module", MODULES)
-def test_names_match_litellm(module: str) -> None:
-    spec = json.dumps(MODULES)
-    theirs = OBJECT.validate_python(run_probe(LITELLM, "describe", spec)[module])
-    ours = OBJECT.validate_python(run_probe(BETTERLITE, "describe", spec)[module])
+def test_names_match_litellm(module: str, described: dict[str, dict[str, JsonValue]]) -> None:
+    theirs = OBJECT.validate_python(described["theirs"][module])
+    ours = OBJECT.validate_python(described["ours"][module])
     assert all(item != {"kind": "missing"} for item in theirs.values())
     assert ours == theirs
 
@@ -327,15 +337,15 @@ def test_names_weights_match() -> None:
     theirs = run_probe(LITELLM, "weights", "{}")
     assert run_probe(BETTERLITE, "weights", "{}") == theirs
     outcomes = STRINGS.validate_python(theirs["weights"])
-    assert len(outcomes) > 20
-    assert len(set(outcomes)) > 3
+    assert len(outcomes) > MIN_WEIGHT_OUTCOMES
+    assert len(set(outcomes)) > MIN_WEIGHT_KINDS
 
 
 def test_names_chunk_size_match() -> None:
     theirs = run_probe(LITELLM, "control", "{}")
     assert run_probe(BETTERLITE, "control", "{}") == theirs
     outcomes = STRINGS.validate_python(theirs["control"])
-    assert len(set(outcomes)) > 5
+    assert len(set(outcomes)) > MIN_CONTROL_KINDS
 
 
 def test_names_payload_to_json() -> None:

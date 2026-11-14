@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import Field as DataclassField
 from dataclasses import dataclass, field
-from typing import Final, Literal, Protocol
+from typing import ClassVar, Final, Literal, Protocol, TypedDict
 
 from pydantic import JsonValue
 
@@ -19,6 +20,21 @@ JsonMap = Mapping[str, JsonValue]
 class ForeignObject(Protocol): ...
 
 
+class WireMetadata(TypedDict):
+    wire_name: str
+
+
+class FieldLike(Protocol):
+    @property
+    def name(self) -> str: ...
+    @property
+    def metadata(self) -> Mapping[str, str]: ...
+
+
+class DataclassType(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, DataclassField[JsonValue]]]
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CallState:
     litellm_call_id: str | None = None
@@ -30,45 +46,50 @@ class CallState:
     cache_key: str | None = None
     stream_response: Mapping[str, ModelResponse] | None = None
     context_compaction_state: JsonValue = field(
-        default=None, metadata={WIRE_NAME: "_context_compaction_state"}
+        default=None, metadata=WireMetadata(wire_name="_context_compaction_state")
     )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AgenticLoopState:
-    depth: int | None = field(default=None, metadata={WIRE_NAME: "_agentic_loop_depth"})
+    depth: int | None = field(default=None, metadata=WireMetadata(wire_name="_agentic_loop_depth"))
     fingerprints: Sequence[str] | None = field(
-        default=None, metadata={WIRE_NAME: "_agentic_loop_fingerprints"}
+        default=None, metadata=WireMetadata(wire_name="_agentic_loop_fingerprints")
     )
     api_surface: AgenticSurface | None = field(
-        default=None, metadata={WIRE_NAME: "_agentic_loop_api_surface"}
+        default=None, metadata=WireMetadata(wire_name="_agentic_loop_api_surface")
     )
     code_interpreter_active: bool | None = field(
-        default=None, metadata={WIRE_NAME: "_code_interpreter_interception_active"}
+        default=None, metadata=WireMetadata(wire_name="_code_interpreter_interception_active")
     )
     code_interpreter_sandbox_key: str | None = field(
-        default=None, metadata={WIRE_NAME: "_code_interpreter_interception_sandbox_key"}
+        default=None, metadata=WireMetadata(wire_name="_code_interpreter_interception_sandbox_key")
     )
     code_interpreter_session_scoped: bool | None = field(  # ast-grep-ignore: no-long-names
-        default=None, metadata={WIRE_NAME: "_code_interpreter_interception_session_scoped"}
+        default=None,
+        metadata=WireMetadata(wire_name="_code_interpreter_interception_session_scoped"),
     )
     code_interpreter_converted_stream: bool | None = field(  # ast-grep-ignore: no-long-names
-        default=None, metadata={WIRE_NAME: "_code_interpreter_interception_converted_stream"}
+        default=None,
+        metadata=WireMetadata(wire_name="_code_interpreter_interception_converted_stream"),
     )
     websearch_emit_native_blocks: bool | None = field(
-        default=None, metadata={WIRE_NAME: "_websearch_interception_emit_native_blocks"}
+        default=None, metadata=WireMetadata(wire_name="_websearch_interception_emit_native_blocks")
     )
     websearch_converted_stream: bool | None = field(
-        default=None, metadata={WIRE_NAME: "_websearch_interception_converted_stream"}
+        default=None, metadata=WireMetadata(wire_name="_websearch_interception_converted_stream")
     )
     headroom_converted_stream: bool | None = field(
-        default=None, metadata={WIRE_NAME: "_headroom_interception_converted_stream"}
+        default=None, metadata=WireMetadata(wire_name="_headroom_interception_converted_stream")
     )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RouterState:
-    weights: RouterWeights | None = field(default=None, metadata={WIRE_NAME: "_router_weights"})
+    weights: RouterWeights | None = field(
+        default=None,
+        metadata=WireMetadata(wire_name="_router_weights"),
+    )
     fallback_depth: int | None = None
     max_fallbacks: int | None = None
     attempted_targets: JsonValue = None
@@ -79,13 +100,13 @@ class ProxyRequestState:
     proxy_server_request: JsonMap | None = None
     secret_fields: JsonMap | None = None
     trusted_callback_vars: Mapping[str, str] | None = field(
-        default=None, metadata={WIRE_NAME: TRUSTED_CALLBACK_VARS_FIELD}
+        default=None, metadata=WireMetadata(wire_name=TRUSTED_CALLBACK_VARS_FIELD)
     )
     addressed_response_id: str | None = field(
-        default=None, metadata={WIRE_NAME: ADDRESSED_RESPONSE_ID_FIELD}
+        default=None, metadata=WireMetadata(wire_name=ADDRESSED_RESPONSE_ID_FIELD)
     )
     strip_stream_usage: bool | None = field(
-        default=None, metadata={WIRE_NAME: "_litellm_strip_stream_usage"}
+        default=None, metadata=WireMetadata(wire_name="_litellm_strip_stream_usage")
     )
     client_side_timeout: bool | None = None
     model_file_id_mapping: Mapping[str, Mapping[str, str]] | None = None

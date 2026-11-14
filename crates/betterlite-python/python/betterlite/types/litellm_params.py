@@ -1,44 +1,43 @@
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
-from dataclasses import Field as DataclassField
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from itertools import chain
-from typing import Annotated, ClassVar, Final, Literal, Protocol, get_type_hints
+from typing import Annotated, Final, Literal, get_type_hints
 
 from pydantic import BeforeValidator, Field, JsonValue
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
+from betterlite.types import litellm_params_state as state
 from betterlite.types.caching import DynamicCacheControl
 from betterlite.types.litellm_params_state import (
-    ADDRESSED_RESPONSE_ID_FIELD,
-    TRUSTED_CALLBACK_VARS_FIELD,
     WIRE_NAME,
     AgenticLoopState,
-    AgenticSurface,
-    CallState,
-    EntrypointState,
+    DataclassType,
+    FieldLike,
     ForeignObject,
     InternalState,
     JsonMap,
-    ProxyRequestState,
-    RouterState,
+    WireMetadata,
 )
 from betterlite.types.utils.response import ModelResponse, ModelResponseStream
 
-__all__ = [
-    "ADDRESSED_RESPONSE_ID_FIELD", "TRUSTED_CALLBACK_VARS_FIELD", "AgenticSurface", "CallState",
-    "EntrypointState", "ProxyRequestState", "RouterState",
-]
-
+ADDRESSED_RESPONSE_ID_FIELD = state.ADDRESSED_RESPONSE_ID_FIELD
+TRUSTED_CALLBACK_VARS_FIELD = state.TRUSTED_CALLBACK_VARS_FIELD
+AgenticSurface = state.AgenticSurface
+CallState = state.CallState
+EntrypointState = state.EntrypointState
+ProxyRequestState = state.ProxyRequestState
+RouterState = state.RouterState
 RetryStrategy = Literal["constant_retry", "exponential_backoff_retry"]
 RoutingStrategyName = Literal[
-    "simple-shuffle", "least-busy", "usage-based-routing", "latency-based-routing",
-    "cost-based-routing", "usage-based-routing-v2", "lar1",
+    "simple-shuffle",
+    "least-busy",
+    "usage-based-routing",
+    "latency-based-routing",
+    "cost-based-routing",
+    "usage-based-routing-v2",
+    "lar1",
 ]
 MockResponse = str | Exception | JsonMap | Sequence[float] | ModelResponse | ModelResponseStream
-
-
-class DataclassType(Protocol):
-    __dataclass_fields__: ClassVar[dict[str, DataclassField[JsonValue]]]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -178,7 +177,7 @@ class ObservabilityOptions:
     litellm_request_debug: bool | None = None
     logger_fn: Callable[[JsonMap], None] | None = None
     verbose: bool | None = None
-    no_log: bool | None = field(default=None, metadata={WIRE_NAME: "no-log"})
+    no_log: bool | None = field(default=None, metadata=WireMetadata(wire_name="no-log"))
     log_client_error_tracebacks: bool | None = None
 
 
@@ -271,7 +270,6 @@ class LiteLLMOptions:
 
 
 KWARG_ARTIFACTS: Final[tuple[str, ...]] = ("self", "use_client", "model_config", "rust")
-
 LITELLM_OWNED_ROOTS: Final[tuple[type[DataclassType], ...]] = (
     ConnectionSettings,
     LiteLLMOptions,
@@ -281,9 +279,12 @@ LITELLM_OWNED_ROOTS: Final[tuple[type[DataclassType], ...]] = (
 
 def wire_names(owner: type[DataclassType]) -> tuple[str, ...]:
     names: list[str] = []
-    for owned in fields(owner):
-        metadata: Mapping[str, str] = owned.metadata
-        names.append(metadata[WIRE_NAME] if WIRE_NAME in metadata else owned.name)
+    members: list[FieldLike] = list(owner.__dataclass_fields__.values())
+    for owned in members:
+        if WIRE_NAME in owned.metadata:
+            names.append(owned.metadata[WIRE_NAME])
+        else:
+            names.append(owned.name)
     return tuple(names)
 
 

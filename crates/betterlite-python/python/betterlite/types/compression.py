@@ -1,5 +1,7 @@
+from typing import NotRequired
+
 from pydantic import JsonValue
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import TypedDict
 
 
 class CompressedResult(TypedDict):
