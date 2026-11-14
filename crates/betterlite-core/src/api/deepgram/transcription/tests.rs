@@ -343,7 +343,7 @@ fn plain_transcript_without_speakers_uses_the_transcript() {
     assert_eq!(response.text.as_deref(), Some("hello world"));
     assert_eq!(response.task, TranscriptionTask::Transcribe);
     assert_eq!(response.language, "en");
-    assert_eq!(response.duration.as_f64(), Some(12.5));
+    assert_eq!(response.duration.as_f64(), Some(12.5_f64));
     assert_eq!(
         serde_json::to_string(&response.words).expect("the words serialize"),
         r#"[{"word":"hello","start":0.5,"end":1.5},{"word":"world","start":2,"end":3}]"#
