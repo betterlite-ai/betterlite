@@ -1,22 +1,26 @@
 import asyncio
 import datetime as dt
 import socket
+import socketserver
 import threading
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass
-from typing import Callable, Final, Literal, NotRequired, TypedDict
+from functools import partial
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, Unpack
 
+import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.agents import AgentCreateResponse, AgentDeleteResult, AgentVersionsResponse
 from openai import APIStatusError
 from pydantic import JsonValue, TypeAdapter
 
-JSON: Final = TypeAdapter(JsonValue)
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 litellm.suppress_debug_info = True
 
 
-class ReplyInput(TypedDict):
+class Reply(TypedDict):
     status: int
     body: str
 
@@ -26,31 +30,101 @@ class Input(TypedDict):
     name: str
     api_key: str
     litellm_call_id: str
-    reply: ReplyInput
+    reply: Reply
     provider: NotRequired[str | None]
     extra_headers: NotRequired[dict[str, str] | None]
     page_size: NotRequired[int | None]
     page_token: NotRequired[str | None]
 
 
+class RequestWire(TypedDict):
+    method: str | None
+    path: str | None
+    headers: dict[str, str]
+
+
+class Extras(TypedDict):
+    api_key: str
+    api_base: str
+    litellm_call_id: str
+    litellm_logging_obj: Logging
+    page_size: NotRequired[int | None]
+    page_token: NotRequired[str | None]
+
+
+# the agents SDK's public entry points: a sync one answers its model, async ones a coroutine
+class AgentsItemSdk(Protocol):
+    def get(
+        self,
+        name: str,
+        custom_llm_provider: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+        **extras: Unpack[Extras],
+    ) -> AgentCreateResponse | Awaitable[AgentCreateResponse]: ...
+
+    def aget(
+        self,
+        name: str,
+        custom_llm_provider: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+        **extras: Unpack[Extras],
+    ) -> Coroutine[None, None, AgentCreateResponse]: ...
+
+    def delete(
+        self,
+        name: str,
+        custom_llm_provider: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+        **extras: Unpack[Extras],
+    ) -> AgentDeleteResult | Awaitable[AgentDeleteResult]: ...
+
+    def adelete(
+        self,
+        name: str,
+        custom_llm_provider: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+        **extras: Unpack[Extras],
+    ) -> Coroutine[None, None, AgentDeleteResult]: ...
+
+    def list_versions(
+        self,
+        name: str,
+        custom_llm_provider: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+        **extras: Unpack[Extras],
+    ) -> AgentVersionsResponse | Awaitable[AgentVersionsResponse]: ...
+
+    def alist_versions(
+        self,
+        name: str,
+        custom_llm_provider: str | None = None,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+        **extras: Unpack[Extras],
+    ) -> Coroutine[None, None, AgentVersionsResponse]: ...
+
+
 LOGGING_KEYS: Final[tuple[str, ...]] = (
-    "model", "name", "optional_params", "custom_llm_provider", "litellm_call_id",
-    "user", "stream", "messages", "original_response", "additional_args",
+    "model",
+    "name",
+    "optional_params",
+    "custom_llm_provider",
+    "litellm_call_id",
+    "user",
+    "stream",
+    "messages",
+    "original_response",
+    "additional_args",
 )
-
-# the entry points are decorated without annotations, so each is bound to the type the case relies on
-GET: Final[Callable[..., AgentCreateResponse]] = litellm.interactions.agents.get
-DELETE: Final[Callable[..., AgentDeleteResult]] = litellm.interactions.agents.delete
-LIST_VERSIONS: Final[Callable[..., AgentVersionsResponse]] = litellm.interactions.agents.list_versions
-AGET: Final[Callable[..., Coroutine[None, None, AgentCreateResponse]]] = litellm.interactions.agents.aget
-ADELETE: Final[Callable[..., Coroutine[None, None, AgentDeleteResult]]] = litellm.interactions.agents.adelete
-ALIST_VERSIONS: Final[Callable[..., Coroutine[None, None, AgentVersionsResponse]]] = litellm.interactions.agents.alist_versions
-
-CONNECT_TIMEOUT: Final[float] = 5.0
 
 
 @dataclass
-class RequestRecord:
+class Captured:
     method: str
     path: str
     headers: dict[str, str]
@@ -61,91 +135,102 @@ class Fixture:
     status: int
     body: bytes
     names: tuple[str, ...]
-    request: RequestRecord | None = None
+    captured: Captured | None = None
 
 
-def serve(listener: socket.socket, fixture: Fixture) -> None:
-    try:
-        connection, _peer = listener.accept()
-    except OSError:
-        return
-    received = b""
-    while not received.endswith(b"\r\n\r\n"):
-        chunk = connection.recv(1)
-        if not chunk:
-            break
-        received += chunk
-    lines = received.decode(errors="replace").split("\r\n")
-    method, _space, remainder = lines[0].partition(" ")
-    path, _rest, _version = remainder.partition(" ")
-    headers: dict[str, str] = {}
-    for line in lines[1:]:
-        name, _colon, value = line.partition(":")
-        lowered = name.strip().lower()
-        if lowered in fixture.names:
-            headers[lowered] = value.strip()
-    fixture.request = RequestRecord(method=method, path=path, headers=headers)
-    head = (
-        f"HTTP/1.1 {fixture.status} fixture\r\n"
-        f"content-length: {len(fixture.body)}\r\n"
-        "connection: close\r\n\r\n"
-    )
-    connection.sendall(head.encode() + fixture.body)
-    connection.close()
+class Answering(BaseHTTPRequestHandler):
+    fixture: Fixture
+
+    def __init__(
+        self,
+        fixture: Fixture,
+        request: socket.socket,
+        client_address: tuple[str, int],
+        server: socketserver.BaseServer,
+    ) -> None:
+        self.fixture = fixture
+        super().__init__(request, client_address, server)
+
+    def do_GET(self) -> None:
+        self.answer()
+
+    def do_DELETE(self) -> None:
+        self.answer()
+
+    def answer(self) -> None:
+        fixture = self.fixture
+        fixture.captured = Captured(
+            method=self.command,
+            path=self.path,
+            headers={
+                name.lower(): value
+                for name, value in self.headers.items()
+                if name.lower() in fixture.names
+            },
+        )
+        self.send_response(fixture.status)
+        self.send_header("Content-Length", str(len(fixture.body)))
+        self.end_headers()
+        _written = self.wfile.write(fixture.body)
 
 
-def build_logging(litellm_call_id: str) -> Logging:
-    return Logging(
-        model="",
-        messages=None,
-        stream=False,
-        call_type="",
-        start_time=dt.datetime.now(tz=dt.UTC),
-        litellm_call_id=litellm_call_id,
-        function_id="",
-    )
+def as_created(
+    result: AgentCreateResponse | Awaitable[AgentCreateResponse],
+) -> AgentCreateResponse:
+    match result:
+        case AgentCreateResponse():
+            return result
+        case Awaitable():
+            raise ValueError("the sync get returned a coroutine")
 
 
-def measure(input_value: Input, base: str, log: Logging) -> dict[str, JsonValue]:
-    arguments: dict[str, JsonValue | Logging] = {
-        "name": input_value["name"],
-        "custom_llm_provider": input_value.get("provider"),
-        "extra_headers": JSON.validate_python(input_value.get("extra_headers")),
-        "api_key": input_value["api_key"],
-        "api_base": base,
-        "litellm_call_id": input_value["litellm_call_id"],
-        "litellm_logging_obj": log,
-        "page_size": input_value.get("page_size"),
-        "page_token": input_value.get("page_token"),
-    }
+def as_removed(result: AgentDeleteResult | Awaitable[AgentDeleteResult]) -> AgentDeleteResult:
+    match result:
+        case AgentDeleteResult():
+            return result
+        case Awaitable():
+            raise ValueError("the sync delete returned a coroutine")
+
+
+def as_versions(
+    result: AgentVersionsResponse | Awaitable[AgentVersionsResponse],
+) -> AgentVersionsResponse:
+    match result:
+        case AgentVersionsResponse():
+            return result
+        case Awaitable():
+            raise ValueError("the sync list_versions returned a coroutine")
+
+
+def measure(sdk: AgentsItemSdk, input_value: Input, extras: Extras) -> dict[str, JsonValue]:
+    name = input_value["name"]
+    provider = input_value.get("provider")
+    headers = input_value.get("extra_headers")
     match input_value["operation"]:
         case "get":
-            created = GET(**arguments)
-            return {"response": {"id": created.id, "name": created.name}}
+            # a name keeps the defaulted dict-lookup rule from matching the agents read
+            get_agent = sdk.get
+            agent = as_created(get_agent(name, provider, headers, **extras))
+            return {"response": {"id": agent.id, "name": agent.name}}
         case "delete":
-            removed = DELETE(**arguments)
+            removed = as_removed(sdk.delete(name, provider, headers, **extras))
+            return {"response": {"name": removed.name, "deleted": removed.deleted}}
+        case "aget":
+            agent = asyncio.run(sdk.aget(name, provider, headers, **extras))
+            return {"response": {"id": agent.id, "name": agent.name}}
+        case "adelete":
+            removed = asyncio.run(sdk.adelete(name, provider, headers, **extras))
             return {"response": {"name": removed.name, "deleted": removed.deleted}}
         case "list_versions":
-            listed = LIST_VERSIONS(**arguments)
-            return {"response": JSON.validate_python(listed.model_dump())}
-        case "aget":
-            created = asyncio.run(AGET(**arguments))
-            return {"response": {"id": created.id, "name": created.name}}
-        case "adelete":
-            removed = asyncio.run(ADELETE(**arguments))
-            return {"response": {"name": removed.name, "deleted": removed.deleted}}
+            extras["page_size"] = input_value.get("page_size")
+            extras["page_token"] = input_value.get("page_token")
+            versions = as_versions(sdk.list_versions(name, provider, headers, **extras))
+            return {"response": JSON.validate_json(versions.model_dump_json())}
         case "alist_versions":
-            listed = asyncio.run(ALIST_VERSIONS(**arguments))
-            return {"response": JSON.validate_python(listed.model_dump())}
-
-
-def error_value(error: APIStatusError) -> dict[str, JsonValue]:
-    return {
-        "status": error.status_code,
-        "type": error.type,
-        "param": error.param,
-        "code": error.code,
-    }
+            extras["page_size"] = input_value.get("page_size")
+            extras["page_token"] = input_value.get("page_token")
+            versions = asyncio.run(sdk.alist_versions(name, provider, headers, **extras))
+            return {"response": JSON.validate_json(versions.model_dump_json())}
 
 
 def wanted(input_value: Input) -> tuple[str, ...]:
@@ -159,42 +244,51 @@ def wanted(input_value: Input) -> tuple[str, ...]:
     return tuple(names)
 
 
-def request_value(captured: RequestRecord | None) -> JsonValue:
-    if captured is None:
-        return {"method": None, "path": None, "headers": {}}
-    return JSON.validate_python(
-        {"method": captured.method, "path": captured.path, "headers": captured.headers}
-    )
-
-
-def logging_value(log: Logging) -> JsonValue:
-    details = dict(log.model_call_details)
-    return JSON.validate_python({name: details.get(name) for name in LOGGING_KEYS})
-
-
 def run(input_value: Input) -> JsonValue:
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(1)
-    listener.settimeout(CONNECT_TIMEOUT)
-    address: tuple[str, int] = listener.getsockname()
     fixture = Fixture(
         status=input_value["reply"]["status"],
         body=input_value["reply"]["body"].encode(),
         names=wanted(input_value),
     )
-    thread = threading.Thread(target=serve, args=(listener, fixture), daemon=True)
+    caller = input_value["litellm_call_id"]
+    log = Logging(
+        model="",
+        messages=None,
+        stream=False,
+        call_type="",
+        start_time=dt.datetime.now(tz=dt.UTC),
+        litellm_call_id=caller,
+        function_id="",
+    )
+    outcome: dict[str, JsonValue] = {}
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Answering, fixture))
+    thread = threading.Thread(target=partial(server.serve_forever, poll_interval=0.01), daemon=True)
     thread.start()
-    log = build_logging(input_value["litellm_call_id"])
     try:
-        outcome = measure(input_value, f"http://127.0.0.1:{address[1]}", log)
+        extras = Extras(
+            api_key=input_value["api_key"],
+            api_base=f"http://127.0.0.1:{server.server_address[1]}",
+            litellm_call_id=caller,
+            litellm_logging_obj=log,
+        )
+        outcome.update(measure(litellm.interactions.agents, input_value, extras))
     except APIStatusError as error:
-        outcome = {"error": error_value(error)}
+        outcome["error"] = {
+            "status": error.status_code,
+            "type": error.type,
+            "param": error.param,
+            "code": error.code,
+        }
     finally:
-        listener.close()
-    answer: dict[str, JsonValue] = {
-        "request": request_value(fixture.request),
-        "logging": logging_value(log),
-    }
-    answer.update(outcome)
-    return answer
+        server.shutdown()
+        server.server_close()
+    captured = fixture.captured
+    if captured is None:
+        outcome["request"] = JSON.validate_python(RequestWire(method=None, path=None, headers={}))
+    else:
+        outcome["request"] = JSON.validate_python(
+            RequestWire(method=captured.method, path=captured.path, headers=captured.headers)
+        )
+    details: dict[str, JsonValue] = log.model_call_details
+    outcome["logging"] = {name: details.get(name) for name in LOGGING_KEYS}
+    return outcome
