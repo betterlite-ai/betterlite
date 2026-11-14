@@ -406,6 +406,9 @@ async fn aim_guardrail_anonymize_rejects_malformed_redacted_messages() {
 #[case::unknown_key(
     r#"{"required_action": {"action_type": "anonymize_action"}, "redacted_chat": {"unexpected": []}}"#
 )]
+#[case::not_a_chat(
+    r#"{"required_action": {"action_type": "anonymize_action"}, "redacted_chat": "oops"}"#
+)]
 #[tokio::test]
 async fn aim_guardrail_anonymize_rejects_a_malformed_redacted_chat(#[case] response: &str) {
     let mut data: BTreeMap<String, GuardrailValue> =
