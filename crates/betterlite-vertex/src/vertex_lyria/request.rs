@@ -96,7 +96,9 @@ pub async fn prepare_request(
         .map_err(VertexLyriaError::Mint)?;
     let project = configured_project.unwrap_or(access.project.as_str());
     let url = match model_info.vertex_ai_audio_api {
-        VertexAudioApi::LyriaPredict => predict_url(call, project)?,
+        VertexAudioApi::LyriaPredict => {
+            predict_url_at(call.api_base, project, location(call), call.model)?
+        }
         VertexAudioApi::LyriaInteractions => interactions_url(call, project).await?,
     };
     let mut headers = validate_environment(caller_headers);
@@ -115,30 +117,36 @@ pub async fn prepare_request(
     })
 }
 
-fn predict_url(call: &LyriaCall<'_>, project: &str) -> Result<String, VertexLyriaError> {
-    let location = call
-        .location
+fn location(call: &LyriaCall<'_>) -> &str {
+    call.location
         .filter(|value| !value.is_empty())
-        .unwrap_or(DEFAULT_LOCATION);
-    let base = get_api_base(call.api_base, Some(location)).map_err(VertexLyriaError::ApiBase)?;
-    let encoded_project =
+        .unwrap_or(DEFAULT_LOCATION)
+}
+
+fn predict_url_at(
+    api_base: Option<&str>,
+    project: &str,
+    location: &str,
+    model: &str,
+) -> Result<String, VertexLyriaError> {
+    let base = get_api_base(api_base, Some(location)).map_err(VertexLyriaError::ApiBase)?;
+    let model = model.strip_prefix("vertex_ai/").unwrap_or(model);
+    let project =
         encode_segment(project, "project").map_err(|source| VertexLyriaError::Segment {
             field: "project",
             source,
         })?;
-    let encoded_location =
+    let location =
         encode_segment(location, "location").map_err(|source| VertexLyriaError::Segment {
             field: "location",
             source,
         })?;
-    let model = call.model.strip_prefix("vertex_ai/").unwrap_or(call.model);
-    let encoded_model =
-        encode_segment(model, "model").map_err(|source| VertexLyriaError::Segment {
-            field: "model",
-            source,
-        })?;
+    let model = encode_segment(model, "model").map_err(|source| VertexLyriaError::Segment {
+        field: "model",
+        source,
+    })?;
     Ok(format!(
-        "{}/v1/projects/{encoded_project}/locations/{encoded_location}/publishers/google/models/{encoded_model}:predict",
+        "{}/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:predict",
         base.trim_end_matches('/')
     ))
 }
