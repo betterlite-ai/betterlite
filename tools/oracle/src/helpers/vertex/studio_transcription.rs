@@ -106,7 +106,7 @@ fn step(step: &Step) -> Result<Value, Box<HelperError>> {
                 api_key: api_key.as_deref().map(SecretString::from),
             };
             let checked = validate_environment(&caller, &params, &Settings::default());
-            outcome(checked.map(|headers| rendered_headers(&headers)))
+            outcome(checked.map(|request_headers| rendered_headers(&request_headers)))
         }
         Step::Request {
             model,

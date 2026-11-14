@@ -65,13 +65,13 @@ fn word_record(annotation: &WordAnnotation) -> Option<Json> {
     entries.insert("word".to_owned(), Json::Text(text.clone()));
     let start = parse_duration_seconds(annotation.start_offset.as_deref())
         .and_then(|seconds| duration_number(Some(seconds)).ok());
-    if let Some(start) = start {
-        entries.insert("start".to_owned(), start);
+    if let Some(started) = start {
+        entries.insert("start".to_owned(), started);
     }
     let end = parse_duration_seconds(annotation.end_offset.as_deref())
         .and_then(|seconds| duration_number(Some(seconds)).ok());
-    if let Some(end) = end {
-        entries.insert("end".to_owned(), end);
+    if let Some(ended) = end {
+        entries.insert("end".to_owned(), ended);
     }
     if let Some(speaker) = &annotation.speaker {
         entries.insert("speaker".to_owned(), Json::Text(speaker.clone()));

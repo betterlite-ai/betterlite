@@ -12,7 +12,6 @@ use http::header::HeaderMap;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
 
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::studio_interactions::API_REVISION;
@@ -83,29 +82,24 @@ fn answer_bytes(status: u16, body: &[u8]) -> Object {
     serde_json::from_value(serde_json::to_value(decoded).unwrap()).unwrap()
 }
 
-fn request_body(model: &str, optional: &str) -> String {
+fn request_body(model: &str, optional: &str) -> Object {
     let request = transform_audio_request(model, &audio(), &object(optional)).unwrap();
-    serde_json::to_string(&request.data).unwrap()
+    serde_json::from_value(serde_json::to_value(request.data).unwrap()).unwrap()
 }
 
-fn bare_request(model: &str) -> String {
-    json!({
-        "model": model,
-        "input": [{"type": "audio", "data": "YXVkaW8=", "mime_type": "audio/flac"}]
-    })
-    .to_string()
+fn bare_request(model: &str) -> Object {
+    object(&format!(
+        r#"{{"model":"{model}","input":[{{"type":"audio","data":"YXVkaW8=","mime_type":"audio/flac"}}]}}"#
+    ))
 }
 
-fn configured_request(model: &str, config: &str) -> String {
-    let mut request = json!({
-        "model": model,
-        "input": [{"type": "audio", "data": "YXVkaW8=", "mime_type": "audio/flac"}]
-    });
+fn configured_request(model: &str, config: &str) -> Object {
+    let mut request = bare_request(model);
     request["generation_config"] = serde_json::from_str(config).unwrap();
-    request.to_string()
+    request
 }
 
-fn verbatim_mode() -> String {
+fn verbatim_mode() -> Object {
     configured_request(
         "gemini-3.5-transcribe",
         r#"{"transcription_config":{"mode":{"type":"verbatim","timestamp_granularities":["word"],"diarization_mode":"speaker"}}}"#,
@@ -142,8 +136,13 @@ fn the_word_granularity_enables_verbatim_mode(
     #[case] granularities: &[&str],
     #[case] configured: bool,
 ) {
-    let optional = json!({"timestamp_granularities": granularities});
-    let body = request_body("gemini/gemini-3.5-transcribe", &optional.to_string());
+    let listed = granularities
+        .iter()
+        .map(|granularity| format!(r#""{granularity}""#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let optional = format!(r#"{{"timestamp_granularities":[{listed}]}}"#);
+    let body = request_body("gemini/gemini-3.5-transcribe", &optional);
     let expected = if configured {
         verbatim_mode()
     } else {
@@ -152,21 +151,22 @@ fn the_word_granularity_enables_verbatim_mode(
     assert_eq!(body, expected);
 }
 
-#[rstest]
-#[case::srt("srt", true)]
-#[case::vtt("vtt", true)]
-#[case::json("json", false)]
-#[case::text("text", false)]
-#[case::verbose_json("verbose_json", false)]
-fn a_subtitle_response_format_enables_diarization(#[case] format: &str, #[case] configured: bool) {
-    let optional = json!({"response_format": format});
-    let body = request_body("gemini/gemini-3.5-transcribe", &optional.to_string());
-    let expected = if configured {
-        verbatim_mode()
-    } else {
-        bare_request("gemini-3.5-transcribe")
-    };
-    assert_eq!(body, expected);
+#[test]
+fn a_subtitle_response_format_enables_diarization() {
+    for subtitle in ["srt", "vtt"] {
+        let optional = format!(r#"{{"response_format":"{subtitle}"}}"#);
+        assert_eq!(
+            request_body("gemini/gemini-3.5-transcribe", &optional),
+            verbatim_mode()
+        );
+    }
+    for plain in ["json", "text", "verbose_json"] {
+        let optional = format!(r#"{{"response_format":"{plain}"}}"#);
+        assert_eq!(
+            request_body("gemini/gemini-3.5-transcribe", &optional),
+            bare_request("gemini-3.5-transcribe")
+        );
+    }
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn language_and_word_mode_configure_independently() {
 #[case::number_ignored(r#"{"language":7}"#, "")]
 fn the_language_is_normalized_to_bcp47(#[case] optional: &str, #[case] expected: &str) {
     let body = request_body("gemini/gemini-3.5-transcribe", optional);
-    let expected = if expected.is_empty() {
+    let wanted = if expected.is_empty() {
         bare_request("gemini-3.5-transcribe")
     } else {
         configured_request(
@@ -207,7 +207,7 @@ fn the_language_is_normalized_to_bcp47(#[case] optional: &str, #[case] expected:
             &format!(r#"{{"transcription_config":{{"language_codes":["{expected}"]}}}}"#),
         )
     };
-    assert_eq!(body, expected);
+    assert_eq!(body, wanted);
 }
 
 #[rstest]
@@ -224,8 +224,10 @@ fn supported_params_overlay_the_caller_options() {
     let non_default =
         object(r#"{"response_format":"vtt","timestamp_granularities":["word"],"prompt":"x"}"#);
     assert_eq!(
-        serde_json::to_string(&map_openai_params(&non_default, &optional)).unwrap(),
-        json!({"language": "fr", "response_format": "vtt", "temperature": 1, "timestamp_granularities": ["word"]}).to_string()
+        map_openai_params(&non_default, &optional),
+        object(
+            r#"{"language":"fr","response_format":"vtt","temperature":1,"timestamp_granularities":["word"]}"#
+        )
     );
 }
 
@@ -324,13 +326,11 @@ fn an_offset_renders_seconds_or_disappears(
     #[case] offset: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let body = json!({
-        "status": "completed",
-        "steps": [{"content": [{"type": "text", "text": "w", "annotations": [
-            {"type": "word_info", "text": "w", "start_offset": offset}
-        ]}]}]
-    });
-    let value = answer(200, &body.to_string());
+    let encoded = serde_json::to_string(&offset).unwrap();
+    let body = format!(
+        r#"{{"status":"completed","steps":[{{"content":[{{"type":"text","text":"w","annotations":[{{"type":"word_info","text":"w","start_offset":{encoded}}}]}}]}}]}}"#
+    );
+    let value = answer(200, &body);
     let words = value["words"].as_array().unwrap();
     let start = words.first().unwrap().get("start").map(ToString::to_string);
     assert_eq!(start.as_deref(), expected);
@@ -388,30 +388,28 @@ fn an_absent_usage_stays_absent_and_an_empty_one_counts_zero() {
 
 #[test]
 fn overflowing_token_sums_are_refused() {
-    let sum = json!({
-        "status": "completed",
-        "usage": {"input_tokens_by_modality": [
-            {"modality": "audio", "tokens": i64::MAX},
-            {"modality": "audio", "tokens": 1}
-        ]}
-    });
-    let error = decode_studio_transcription(&reply(200, &sum.to_string())).unwrap_err();
-    assert!(matches!(error, StudioTranscriptionError::UsageOverflow));
-    assert_eq!(error.status_code(), None);
-    let difference = json!({
-        "status": "completed",
-        "usage": {"total_input_tokens": i64::MIN, "input_tokens_by_modality": [
-            {"modality": "audio", "tokens": 1}
-        ]}
-    });
-    let error = decode_studio_transcription(&reply(200, &difference.to_string())).unwrap_err();
-    assert!(matches!(error, StudioTranscriptionError::UsageOverflow));
+    let sum = format!(
+        r#"{{"status":"completed","usage":{{"input_tokens_by_modality":[{{"modality":"audio","tokens":{}}},{{"modality":"audio","tokens":1}}]}}}}"#,
+        i64::MAX
+    );
+    let sum_error = decode_studio_transcription(&reply(200, &sum)).unwrap_err();
+    assert!(matches!(sum_error, StudioTranscriptionError::UsageOverflow));
+    assert_eq!(sum_error.status_code(), None);
+    let difference = format!(
+        r#"{{"status":"completed","usage":{{"total_input_tokens":{},"input_tokens_by_modality":[{{"modality":"audio","tokens":1}}]}}}}"#,
+        i64::MIN
+    );
+    let difference_error = decode_studio_transcription(&reply(200, &difference)).unwrap_err();
+    assert!(matches!(
+        difference_error,
+        StudioTranscriptionError::UsageOverflow
+    ));
 }
 
 #[rstest]
 #[case::in_progress(200, r#"{"status":"in_progress","steps":[]}"#)]
 #[case::missing_status(500, r#"{"steps":[]}"#)]
-#[case::empty_object(201, r#"{}"#)]
+#[case::empty_object(201, "{}")]
 #[case::capitalized(200, r#"{"status":"Completed"}"#)]
 #[case::empty_status(200, r#"{"status":""}"#)]
 fn an_unfinished_interaction_keeps_the_reply_status(#[case] status: u16, #[case] body: &str) {
