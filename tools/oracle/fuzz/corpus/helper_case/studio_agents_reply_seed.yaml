@@ -1,0 +1,12 @@
+kind: helper
+name: studio-agents-seed-reply
+call:
+  studio_agents:
+    calls:
+      - function: reply
+        operation: create
+        name: seed-agent
+        status: 200
+        body: '{"id":"seed-id","base_agent":"waverunner"}'
+env: {}
+compare: {ignore: []}

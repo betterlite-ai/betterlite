@@ -70,6 +70,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "studio_agent_payload"
+path = "fuzz_targets/studio_agent_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "studio_file_metadata"
 path = "fuzz_targets/studio_file_metadata.rs"
 test = false
@@ -100,6 +107,13 @@ bench = false
 [[bin]]
 name = "vertex_batch_records"
 path = "fuzz_targets/vertex_batch_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_batch_rows"
+path = "fuzz_targets/vertex_batch_rows.rs"
 test = false
 doc = false
 bench = false
