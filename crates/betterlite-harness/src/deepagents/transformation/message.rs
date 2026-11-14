@@ -16,7 +16,7 @@ pub enum MessageKind {
     Other,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum Content {
     #[default]
     Empty,
@@ -24,7 +24,7 @@ pub enum Content {
     Blocks(Vec<ContentBlock>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ContentBlock {
     Text(String),
     Reasoning(String),
@@ -37,7 +37,7 @@ pub struct MessageUsage {
     pub output_tokens: u64,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
@@ -51,7 +51,7 @@ pub struct ToolResult {
     pub is_error: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Message {
     pub kind: MessageKind,
     pub content: Content,

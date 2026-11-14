@@ -9,7 +9,7 @@ use crate::types::JsonObject;
 
 pub const TOOL_FILTER_NAME: &str = "LiteLLMHarnessToolFilter";
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ModelTool {
     pub name: String,
     pub description: Option<String>,

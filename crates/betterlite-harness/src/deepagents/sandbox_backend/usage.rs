@@ -9,12 +9,12 @@ use thiserror::Error;
 use crate::deepagents::transformation::message::{Message, MessageUsage};
 use crate::types::Usage;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LlmResult {
     pub generations: Vec<Vec<Generation>>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Generation {
     pub message: Option<Message>,
 }

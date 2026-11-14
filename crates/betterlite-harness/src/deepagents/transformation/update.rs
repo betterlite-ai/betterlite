@@ -12,12 +12,12 @@ use super::message::{Message, MessageKind, content_text, tool_call_event};
 
 pub const INTERRUPT_KEY: &str = "__interrupt__";
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Update {
     pub entries: BTreeMap<String, UpdateEntry>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum UpdateEntry {
     #[default]
     Other,
@@ -26,18 +26,18 @@ pub enum UpdateEntry {
     Interrupts(Vec<Interrupt>),
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Interrupt {
     pub id: String,
     pub value: InterruptValue,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InterruptValue {
     pub action_requests: Vec<ActionRequest>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ActionRequest {
     pub name: String,
     pub args: JsonObject,
@@ -50,7 +50,7 @@ pub enum HitlDecision {
     Reject { message: String },
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TurnState {
     pub interrupts: Vec<Interrupt>,
 }

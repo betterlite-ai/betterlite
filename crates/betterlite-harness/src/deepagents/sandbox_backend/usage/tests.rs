@@ -320,10 +320,14 @@ impl Subscriber for WarningCounter {
     fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
 
     fn event(&self, event: &Event<'_>) {
-        if event.metadata().level() == &Level::WARN {
+        if *event.metadata().level() == Level::WARN {
             self.warnings.fetch_add(1, Ordering::Relaxed);
         }
     }
+
+    fn enter(&self, _span: &Id) {}
+
+    fn exit(&self, _span: &Id) {}
 }
 
 #[test]
