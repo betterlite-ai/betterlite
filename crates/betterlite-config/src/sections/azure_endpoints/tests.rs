@@ -95,9 +95,10 @@ fn loads_azure_default_api_version() {
         load("", &[]).azure_default_api_version,
         AZURE_DEFAULT_API_VERSION
     );
+    // LiteLLM reads no AZURE_DEFAULT_API_VERSION environment variable, so exporting one changes nothing
     assert_eq!(
         load("", &[("AZURE_DEFAULT_API_VERSION", "2024-10-21")]).azure_default_api_version,
-        "2024-10-21"
+        AZURE_DEFAULT_API_VERSION
     );
     assert_eq!(
         load("", &[("AZURE_DEFAULT_API_VERSION", "")]).azure_default_api_version,

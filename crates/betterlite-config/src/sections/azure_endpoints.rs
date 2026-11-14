@@ -10,7 +10,6 @@ mod tests;
 pub const DEFAULT_MAX_RETRIES: i64 = 2;
 pub const AZURE_DEFAULT_API_VERSION: &str = "2025-02-01-preview";
 const MAX_RETRIES_ENV: &str = "DEFAULT_MAX_RETRIES";
-const API_VERSION_ENV: &str = "AZURE_DEFAULT_API_VERSION";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -68,11 +67,8 @@ impl Section for Raw {
             Some(text) => {
                 resolve_string(text, "litellm_settings.AZURE_DEFAULT_API_VERSION", lookup)?
             }
-            // the module setting has no environment default, and an explicit empty value stays empty
-            None => lookup
-                .lookup(API_VERSION_ENV)
-                .filter(|text| !text.is_empty())
-                .unwrap_or_else(|| AZURE_DEFAULT_API_VERSION.to_owned()),
+            // LiteLLM reads no environment default for this constant; only its litellm_settings key overrides it
+            None => AZURE_DEFAULT_API_VERSION.to_owned(),
         };
         Ok(Settings {
             default_max_retries,
