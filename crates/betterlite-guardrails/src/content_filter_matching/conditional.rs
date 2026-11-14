@@ -16,9 +16,9 @@ pub fn check_conditional_categories(
     if global_exception_present(exceptions, &text_lower) {
         return Ok(None);
     }
-    let sentences = text_lower
+    let sentences = text
         .split(['.', '!', '?'])
-        .map(str::trim)
+        .map(|sentence| sentence.to_lowercase().trim().to_owned())
         .collect::<Vec<_>>();
     for (category_name, config) in &categories.conditional_categories {
         if category_exception_present(categories, category_name, &text_lower) {
@@ -34,7 +34,7 @@ pub fn check_conditional_categories(
 fn match_conditional_category(
     category_name: &str,
     config: &ConditionalCategoryConfig,
-    sentences: &[&str],
+    sentences: &[String],
 ) -> Result<Option<CategoryMatch>, ContentFilterMatchingError> {
     for sentence in sentences {
         if sentence.is_empty() {
