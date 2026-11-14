@@ -1,0 +1,20 @@
+task: B4772
+deviations:
+  - what: raise_identity_failure returns a typed AgentIdentityError carrying the status and the failure message instead of raising an HTTPException.
+    why: Rust returns errors instead of raising them; the status rule stays LiteLLM's (503 for policy_unavailable, otherwise the caller's status, 403 by default) and the message is carried unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L68-L69
+  - what: managed_write_fields and classify_agent_subject return Result<ManagedWriteFields, AgentIdentityFailure> and Result<AgentSubject, AgentIdentityFailure> instead of a value-or-failure union.
+    why: Rust names the failure case in the return type; every caller maps it to the same HTTP answer LiteLLM's callers produce.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L88-L119
+  - what: The write structures are typed Rust records with Option fields (an inner Option for a field that can be written as null), and IdentityRelationWrite is an enum of Create, Update and Upsert instead of the total=False TypedDict shapes.
+    why: A closed set of three relation shapes is an enum in Rust, and the nested Option keeps a field that is absent distinct from one written as null, which the typed dictionaries do with missing keys and None values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L22-L65
+  - what: managed_write_fields takes a typed ManagedWriteInput whose identity is Absent, Null or a Value, and it drops LiteLLM's updated_by argument, which its body never reads.
+    why: The identity key's missing, null and set cases must stay apart at the call site, which the enum names; an argument no caller can observe is not carried into the Rust signature.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L88-L93
+  - what: The managed route sets, the model-path patterns and the model-route kind map are compile-time tables, and route matching uses the crate's existing synchronous check_route_access.
+    why: The tables never change while the process runs, so building them once removes per-request work and reuses the matcher the rest of the auth layer already uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L14-L45
+  - what: managed_inference_request takes the model resolver as a parameter instead of calling resolve_inference_model itself, and passes the InferenceModelKind enum that betterlite-auth defines and betterlite-core imports.
+    why: betterlite-core already owns the only port of resolve_inference_model and betterlite-auth cannot depend on betterlite-core, so the caller hands the resolver in. Sharing one enum keeps one implementation of the precedence and one closed set of kinds, so a misspelled or added kind fails at build time instead of at runtime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L32-L63
