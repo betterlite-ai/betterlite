@@ -30,7 +30,7 @@ use betterlite_harness::deepagents::transformation::{
 use betterlite_harness::errors::HarnessError;
 use betterlite_harness::events::{Approval, Decision, Event};
 use betterlite_harness::handlers::BaseHarnessHandler as _;
-use betterlite_harness::options::{DeepAgentsOptions, HarnessOptions};
+use betterlite_harness::options::{ClaudeCodeOptions, DeepAgentsOptions, HarnessOptions};
 use betterlite_harness::sandbox::{CompletedRun, Process, Sandbox, SandboxCommand};
 use betterlite_harness::types::{Harness, JsonObject, PermissionMode, Usage};
 
@@ -561,6 +561,17 @@ async fn build_fails_with_the_install_hint_when_the_runtime_is_missing() {
     assert!(error.to_string().contains(INSTALL_HINT));
     assert!(handler.graph.is_none());
     assert!(handler.thread_id.is_none());
+}
+
+#[tokio::test]
+async fn build_rejects_options_of_another_harness() {
+    let (runtime, _plan) = FakeRuntime::new();
+    let mut handler = handler(runtime);
+    let mut ctx = context("/work");
+    ctx.settings.options = Some(HarnessOptions::ClaudeCode(ClaudeCodeOptions::default()));
+    let error = handler.start(&mut ctx).await.unwrap_err();
+    assert!(matches!(error, HarnessError::OptionsMismatch { .. }));
+    assert!(handler.graph.is_none());
 }
 
 #[tokio::test]
