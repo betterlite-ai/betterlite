@@ -15,6 +15,7 @@ cargo-fuzz = true
 betterlite-bedrock = { path = "../../betterlite-bedrock" }
 betterlite-http = { path = "../../betterlite-http" }
 betterlite-models = { path = "../../betterlite-models" }
+betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
 betterlite-vertex = { path = ".." }
 http = "1.5.0"
 indexmap = "2.14.2"
@@ -51,6 +52,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "embedding_http"
+path = "fuzz_targets/embedding_http.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "generate_content"
 path = "fuzz_targets/generate_content.rs"
 test = false
@@ -60,6 +68,13 @@ bench = false
 [[bin]]
 name = "google_native_content"
 path = "fuzz_targets/google_native_content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "image_options"
+path = "fuzz_targets/image_options.rs"
 test = false
 doc = false
 bench = false
@@ -123,6 +138,13 @@ bench = false
 [[bin]]
 name = "vertex_gcs_id"
 path = "fuzz_targets/vertex_gcs_id.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_speech_audio"
+path = "fuzz_targets/vertex_speech_audio.rs"
 test = false
 doc = false
 bench = false

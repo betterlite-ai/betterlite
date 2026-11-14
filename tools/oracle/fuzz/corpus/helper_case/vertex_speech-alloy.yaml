@@ -1,0 +1,8 @@
+kind: helper
+name: vertex-speech-alloy-seed
+call:
+  vertex_speech:
+    function: alloy_voice
+    voices: [alloy, de-DE-Standard-A, null, {name: custom}]
+env: {}
+compare: {ignore: []}
