@@ -96,6 +96,29 @@ fn oracle_original_is_not_mutated() {
 }
 
 #[test]
+fn oracle_scheduling_is_canonicalized() {
+    let result = run_case("scheduling.yaml");
+    let call = &result["calls"][0];
+    assert_eq!(
+        call["contents"][0]["parts"][0]["functionResponse"],
+        json!({
+            "will_continue": true,
+            "scheduling": "WHEN_IDLE",
+            "name": "read_many_files",
+            "response": {"output": "ok"}
+        })
+    );
+    assert_eq!(
+        call["contents"][1]["parts"][0]["functionResponse"]["scheduling"],
+        "custom"
+    );
+    assert_eq!(
+        call["original"][0]["parts"][0]["functionResponse"]["scheduling"],
+        "when_idle"
+    );
+}
+
+#[test]
 fn oracle_studio_base_suffix_is_concatenated() {
     let result = run_case("studio-base-suffix.yaml");
     let calls = result["calls"].as_array().unwrap();

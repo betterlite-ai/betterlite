@@ -1,24 +1,33 @@
 import sys
 from types import ModuleType
-from typing import NotRequired, TypedDict, cast
+from typing import Annotated, NotRequired, TypedDict, cast
 
 from litellm.llms.gemini.count_tokens.handler import GoogleAIStudioTokenCounter
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, BeforeValidator, ConfigDict, JsonValue
 from pydantic.alias_generators import to_camel
 
+SCHEDULING = ("SCHEDULING_UNSPECIFIED", "SILENT", "WHEN_IDLE", "INTERRUPT")
 
+
+def _canonical_scheduling(value: str | None) -> str | None:
+    if value is None:
+        return None
+    upper = value.upper()
+    return upper if upper in SCHEDULING else value
+
+
+# google-genai is absent from the oracle venv, so this record mirrors its fields and enum cases
 class _FunctionResponse(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
     will_continue: bool | None = None
-    scheduling: str | None = None
+    scheduling: Annotated[str | None, BeforeValidator(_canonical_scheduling)] = None
     parts: list[JsonValue] | None = None
     id: str | None = None
     name: str | None = None
     response: dict[str, JsonValue] | None = None
 
 
-# google-genai is absent from the oracle venv, so this record mirrors the fields it declares
 class _GoogleGenAiTypes(ModuleType):
     FunctionResponse: type[_FunctionResponse] = _FunctionResponse
 
