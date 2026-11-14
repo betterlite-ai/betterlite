@@ -4,9 +4,9 @@ use thiserror::Error;
 
 use super::Fetcher;
 
-mod files;
+pub mod files;
 mod image;
-pub(crate) mod tools;
+pub mod tools;
 
 #[derive(Debug, Error)]
 pub enum MessageError {

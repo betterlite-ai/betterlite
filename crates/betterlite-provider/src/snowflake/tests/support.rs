@@ -14,15 +14,15 @@ use betterlite_prompts::message_content::Message;
 use uuid::Uuid;
 
 #[derive(Default)]
-pub struct MediaSource {
-    pub conversions: Mutex<Vec<String>>,
-    pub mapping: BTreeMap<String, String>,
-    pub slow: bool,
+pub(crate) struct MediaSource {
+    pub(crate) conversions: Mutex<Vec<String>>,
+    pub(crate) mapping: BTreeMap<String, String>,
+    pub(crate) slow: bool,
 }
 
 impl MediaSource {
     #[must_use]
-    pub fn with(pairs: &[(&str, &str)]) -> Self {
+    pub(crate) fn with(pairs: &[(&str, &str)]) -> Self {
         Self {
             conversions: Mutex::new(Vec::new()),
             mapping: pairs
@@ -35,14 +35,14 @@ impl MediaSource {
 
     // its fetches are not ready on the first poll, like a real download
     #[must_use]
-    pub fn slow(pairs: &[(&str, &str)]) -> Self {
+    pub(crate) fn slow(pairs: &[(&str, &str)]) -> Self {
         Self {
             slow: true,
             ..Self::with(pairs)
         }
     }
 
-    pub fn converted(&self) -> Vec<String> {
+    pub(crate) fn converted(&self) -> Vec<String> {
         self.conversions.lock().unwrap().clone()
     }
 }
@@ -84,7 +84,7 @@ impl MediaSource {
     }
 }
 
-pub struct WordCounter;
+pub(crate) struct WordCounter;
 
 impl ReasoningTokenCounter for WordCounter {
     type Failure = Infallible;
@@ -94,7 +94,7 @@ impl ReasoningTokenCounter for WordCounter {
     }
 }
 
-pub struct SequenceIds {
+pub(crate) struct SequenceIds {
     next: AtomicU64,
 }
 
@@ -112,25 +112,14 @@ impl IdSource for SequenceIds {
     }
 }
 
-pub fn parsed(source: &str) -> Json {
+pub(crate) fn parsed(source: &str) -> Json {
     serde_json::from_str(source).unwrap()
 }
 
-pub fn answer(source: &str) -> AnswerJson {
+pub(crate) fn answer(source: &str) -> AnswerJson {
     serde_json::from_str(source).unwrap()
 }
 
-pub fn messages(source: &str) -> Vec<Message> {
+pub(crate) fn messages(source: &str) -> Vec<Message> {
     serde_json::from_str(source).unwrap()
-}
-
-pub fn message(source: &str) -> Message {
-    serde_json::from_str(source).unwrap()
-}
-
-pub fn as_json<Value>(value: &Value) -> Json
-where
-    Value: serde::Serialize,
-{
-    serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
 }

@@ -6,7 +6,7 @@ use betterlite_prompts::message_content::{Content, ContentPart};
 
 use super::{Fetcher, MessageError, part_json};
 
-pub async fn convert_image_url_blocks<Source>(
+pub(super) async fn convert_image_url_blocks<Source>(
     content: Option<&Content>,
     fetcher: &Source,
 ) -> Result<Json, MessageError>
