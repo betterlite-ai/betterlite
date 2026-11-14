@@ -6,11 +6,11 @@ use async_trait::async_trait;
 use betterlite_logging::worker::Admission;
 use rstest::rstest;
 
-use super::super::messages_sse_events::stream::MessagesProviderStream;
 use super::super::seams::ReportedFailure;
 use super::super::slots::{DetachedFailureHook, HookFailure, PostCallFailureHook};
 use super::super::{Logged, abort_upstream};
 use super::support::{Harness, capture_warnings, failure};
+use crate::api::messages_sse_events::stream::MessagesProviderStream;
 
 #[tokio::test]
 async fn logging_failures_are_best_effort() {
@@ -143,14 +143,11 @@ struct ScriptedPostCall {
 
 #[async_trait]
 impl PostCallFailureHook for ScriptedPostCall {
-    async fn post_call_failure(
-        &self,
-        original_exception: &ReportedFailure,
-    ) -> Result<(), HookFailure> {
+    async fn post_call_failure(&self, original: &ReportedFailure) -> Result<(), HookFailure> {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(original_exception.clone());
+            .push(original.clone());
         self.outcome.clone()
     }
 }
