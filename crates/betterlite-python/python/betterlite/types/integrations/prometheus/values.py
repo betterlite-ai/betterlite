@@ -77,9 +77,9 @@ class UserAPIKeyLabelValues:
     input_sequence_length: str | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "tags", tuple(self.tags))
+        object.__setattr__(self, "tags", tuple[str, ...](self.tags))
         labels = dict(self.custom_metadata_labels)
-        object.__setattr__(self, "custom_metadata_labels", MappingProxyType(labels))
+        object.__setattr__(self, "custom_metadata_labels", MappingProxyType[str, str](labels))
 
     def model_dump(self) -> UserAPIKeyLabelValuesDump:
         return {

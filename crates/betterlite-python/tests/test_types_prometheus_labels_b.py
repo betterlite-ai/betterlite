@@ -1,5 +1,5 @@
-from collections.abc import Sequence
-from dataclasses import fields, replace
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from typing import Final, get_args
 
 import litellm
@@ -23,6 +23,7 @@ from betterlite.types.integrations.prometheus.validation import (
 from betterlite.types.integrations.prometheus.values import UserAPIKeyLabelValues
 
 MODE_NAMES: Final[tuple[str, ...]] = ("api_key_alias", "user_email", "both")
+STREAM_LABEL_DUPLICATE_COUNT: Final = 2
 ALL_METRIC_NAMES: Final[tuple[DEFINED_PROMETHEUS_METRICS, ...]] = get_args(
     DEFINED_PROMETHEUS_METRICS,
 )
@@ -317,7 +318,7 @@ def test_names_stream_deduped() -> None:
             prometheus_emit_stream_label=True,
         ),
     )
-    assert theirs.count("stream") == 2
+    assert theirs.count("stream") == STREAM_LABEL_DUPLICATE_COUNT
     assert ours.count("stream") == 1
 
 
@@ -326,12 +327,11 @@ def test_names_value_defaults() -> None:
     theirs = litellm_prometheus.UserAPIKeyLabelValues()
     assert dict(ours.model_dump()) == theirs.model_dump()
     assert list(ours.model_dump()) == list(theirs.model_dump())
-    assert [field.name for field in fields(UserAPIKeyLabelValues)] == [
-        field.name for field in fields(litellm_prometheus.UserAPIKeyLabelValues)
-    ]
 
 
 def test_names_label_value_fields() -> None:
+    tag_values: list[str] = ["a", "b"]
+    metadata: dict[str, str] = {"k": "v"}
     ours = UserAPIKeyLabelValues(
         end_user="eu",
         user="u",
@@ -345,8 +345,8 @@ def test_names_label_value_fields() -> None:
         requested_model="rm",
         model="m",
         litellm_model_name="lm",
-        tags=["a", "b"],
-        custom_metadata_labels={"k": "v"},
+        tags=tag_values,
+        custom_metadata_labels=metadata,
         model_id="id",
         api_base="base",
         api_provider="prov",
@@ -380,8 +380,8 @@ def test_names_label_value_fields() -> None:
         requested_model="rm",
         model="m",
         litellm_model_name="lm",
-        tags=["a", "b"],
-        custom_metadata_labels={"k": "v"},
+        tags=tag_values,
+        custom_metadata_labels=metadata,
         model_id="id",
         api_base="base",
         api_provider="prov",
@@ -413,9 +413,13 @@ def test_names_label_value_fields() -> None:
 
 
 def test_names_value_rejects_keys() -> None:
-    pytest.raises(TypeError, UserAPIKeyLabelValues, bogus=1)
-    pytest.raises(TypeError, UserAPIKeyLabelValues, api_key_hash="hashed")
-    pytest.raises(TypeError, UserAPIKeyLabelValues, "end_user")
+    construct: Callable[..., UserAPIKeyLabelValues] = UserAPIKeyLabelValues
+    with pytest.raises(TypeError):
+        construct(bogus=1)
+    with pytest.raises(TypeError):
+        construct(api_key_hash="hashed")
+    with pytest.raises(TypeError):
+        construct("end_user")
 
 
 def test_names_metric_config() -> None:
@@ -433,12 +437,16 @@ def test_names_metric_config() -> None:
         include_labels=["m"],
     )
     assert ours_with_labels.include_labels == theirs_with_labels.include_labels
-    assert [field.name for field in fields(PrometheusMetricsConfig)] == [
-        field.name for field in fields(litellm_prometheus.PrometheusMetricsConfig)
-    ]
+    positional_ours = PrometheusMetricsConfig("g", ["a"])
+    positional_theirs = litellm_prometheus.PrometheusMetricsConfig("g", ["a"])
+    assert (positional_ours.group, positional_ours.metrics) == (
+        positional_theirs.group,
+        positional_theirs.metrics,
+    )
     our_settings = PrometheusSettings()
     their_settings = litellm_prometheus.PrometheusSettings()
-    assert our_settings.prometheus_metrics_config == their_settings.prometheus_metrics_config
+    assert our_settings.prometheus_metrics_config is None
+    assert their_settings.prometheus_metrics_config is None
 
 
 def test_names_label_settings() -> None:

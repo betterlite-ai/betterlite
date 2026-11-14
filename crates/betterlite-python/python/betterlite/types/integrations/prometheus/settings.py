@@ -1,9 +1,9 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, Self
 
 from pydantic import JsonValue
-from typing_extensions import Self, override
+from typing_extensions import override
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
