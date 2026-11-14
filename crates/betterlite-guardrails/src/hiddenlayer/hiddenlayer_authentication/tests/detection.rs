@@ -13,7 +13,7 @@ use super::super::HiddenlayerAuth;
 use super::super::detection::{DetectionRequest, DetectionResponse};
 use super::super::error::HiddenlayerError;
 use super::super::settings::HiddenlayerCredentials;
-use super::super::token::JwtError;
+use super::super::token::{JwtError, JwtTransport};
 use super::support::{self, TokenScript};
 
 const SAAS_HOST: &str = "api.hiddenlayer.ai";
@@ -28,7 +28,8 @@ fn on_prem(base: &str, script: &Arc<TokenScript>) -> HiddenlayerAuth {
         timeout: None,
     };
     let client = base_builder().build().unwrap();
-    HiddenlayerAuth::new(&input, &BTreeMap::new(), client, Arc::clone(script)).unwrap()
+    let transport: Arc<dyn JwtTransport> = Arc::clone(script);
+    HiddenlayerAuth::new(&input, &BTreeMap::new(), client, transport).unwrap()
 }
 
 fn saas(port: u16, auth_url: &str, script: &Arc<TokenScript>) -> HiddenlayerAuth {
@@ -43,7 +44,8 @@ fn saas(port: u16, auth_url: &str, script: &Arc<TokenScript>) -> HiddenlayerAuth
         .resolve(SAAS_HOST, SocketAddr::from(([127, 0, 0, 1], port)))
         .build()
         .unwrap();
-    HiddenlayerAuth::new(&input, &BTreeMap::new(), client, Arc::clone(script)).unwrap()
+    let transport: Arc<dyn JwtTransport> = Arc::clone(script);
+    HiddenlayerAuth::new(&input, &BTreeMap::new(), client, transport).unwrap()
 }
 
 fn payload() -> JsonValue {

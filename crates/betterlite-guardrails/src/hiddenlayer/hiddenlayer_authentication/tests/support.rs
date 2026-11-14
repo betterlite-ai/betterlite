@@ -56,10 +56,8 @@ pub(crate) fn reply_with(status: u16, headers: &[(&str, &str)], body: &str) -> R
 
 pub(crate) fn delayed(status: u16, body: &str, delay: Duration) -> Reply {
     Reply {
-        status,
-        headers: Vec::new(),
-        body: body.to_owned(),
         delay: Some(delay),
+        ..reply(status, body)
     }
 }
 
@@ -198,7 +196,7 @@ impl JwtTransport for TokenScript {
         self.calls.lock().unwrap().push(SeenTokenRequest {
             url: request.url.clone(),
             api_id: request.api_id.clone(),
-            api_key: request.api_key.expose_secret().clone(),
+            api_key: request.api_key.expose_secret().to_owned(),
             timeout: request.timeout,
         });
         match self.answers.lock().unwrap().pop_front() {

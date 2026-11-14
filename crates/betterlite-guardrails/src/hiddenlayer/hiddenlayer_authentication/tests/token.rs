@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_http::proxy::limits::TransportLimits;
 use secrecy::SecretString;
 
 use super::super::token::{JwtError, JwtTransport as _, ReqwestJwtTransport, TokenRequest};
@@ -97,6 +98,28 @@ fn a_non_json_token_body_is_a_decode_error() {
     let server = support::start(vec![support::reply(200, "not json")]);
     let error = ask(&server).unwrap_err();
     assert!(matches!(error, JwtError::Decode { .. }));
+}
+
+#[test]
+fn a_token_body_at_the_transport_limit_is_read() {
+    let limit = TransportLimits::DEFAULT.body_bytes;
+    let prefix = r#"{"access_token":""#;
+    let suffix = "\"}";
+    let padding = "a".repeat(limit - prefix.len() - suffix.len());
+    let body = format!("{prefix}{padding}{suffix}");
+    assert_eq!(body.len(), limit);
+    let server = support::start(vec![support::reply(200, &body)]);
+    let token = ask(&server).unwrap();
+    assert_eq!(token, padding);
+}
+
+#[test]
+fn a_token_body_past_the_transport_limit_is_an_error() {
+    let limit = TransportLimits::DEFAULT.body_bytes;
+    let oversized = "a".repeat(limit + 1);
+    let server = support::start(vec![support::reply(200, &oversized)]);
+    let error = ask(&server).unwrap_err();
+    assert!(matches!(error, JwtError::TooLarge { limit: reported } if reported == limit));
 }
 
 #[test]

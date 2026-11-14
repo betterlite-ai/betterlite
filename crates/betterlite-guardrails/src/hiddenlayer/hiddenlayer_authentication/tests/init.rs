@@ -10,7 +10,7 @@ use super::super::error::HiddenlayerError;
 use super::super::settings::{
     DEFAULT_API_BASE, DEFAULT_AUTH_TIMEOUT, DEFAULT_AUTH_URL, HiddenlayerCredentials, resolve,
 };
-use super::super::token::JwtError;
+use super::super::token::{JwtError, JwtTransport};
 use super::super::{HiddenlayerAuth, is_saas};
 use super::support::{self, TokenScript};
 
@@ -34,7 +34,8 @@ fn build(
     script: &Arc<TokenScript>,
 ) -> Result<HiddenlayerAuth, HiddenlayerError> {
     let client = base_builder().build().unwrap();
-    HiddenlayerAuth::new(input, env, client, Arc::clone(script))
+    let transport: Arc<dyn JwtTransport> = Arc::clone(script);
+    HiddenlayerAuth::new(input, env, client, transport)
 }
 
 fn failure(

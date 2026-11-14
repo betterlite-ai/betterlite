@@ -1,9 +1,12 @@
+use std::io::Read as _;
 use std::time::Duration;
 
 use betterlite_http::proxy::base_builder;
+use betterlite_http::proxy::limits::TransportLimits;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
+use crate::headroom::text::lossy_text;
 use crate::primitives::json_value::JsonValue;
 
 #[derive(Debug, Clone)]
@@ -32,6 +35,13 @@ pub enum JwtError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the HiddenLayer token response body could not be read")]
+    Body {
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("the HiddenLayer token response body is larger than {limit} bytes")]
+    TooLarge { limit: usize },
 }
 
 // LiteLLM fetches the token with a blocking requests.post inside its constructor
@@ -52,14 +62,22 @@ impl JwtTransport for ReqwestJwtTransport {
             .post(&request.url)
             .basic_auth(
                 request.api_id.as_str(),
-                Some(request.api_key.expose_secret().as_str()),
+                Some(request.api_key.expose_secret()),
             )
             .send()
             .map_err(|source| JwtError::Transport { source })?;
         let status = response.status().as_u16();
-        let body = response
-            .text()
-            .map_err(|source| JwtError::Transport { source })?;
+        let limit = TransportLimits::DEFAULT.body_bytes;
+        let capped = u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1);
+        let mut bytes = Vec::new();
+        response
+            .take(capped)
+            .read_to_end(&mut bytes)
+            .map_err(|source| JwtError::Body { source })?;
+        if bytes.len() > limit {
+            return Err(JwtError::TooLarge { limit });
+        }
+        let body = lossy_text(&bytes);
         if status >= 400 {
             return Err(JwtError::Status { status, body });
         }
