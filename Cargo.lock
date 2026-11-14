@@ -1433,6 +1433,7 @@ dependencies = [
  "betterlite-semantic",
  "betterlite-tokenizer",
  "indexmap 2.14.2",
+ "mutants",
  "regex",
  "rstest",
  "serde_json",

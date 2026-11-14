@@ -13,6 +13,8 @@ pub trait TokenCounter: Send + Sync {
 
 #[async_trait]
 impl TokenCounter for Counter {
+    // a real Counter needs the hub and the fetch service, so unit tests inject a fake instead
+    #[cfg_attr(test, mutants::skip)]
     async fn count_text(&self, model: &str, text: &str) -> Result<usize, CountError> {
         let input = TextInput::One(text.to_owned());
         let request = TokenRequest {
@@ -27,6 +29,7 @@ impl TokenCounter for Counter {
         self.count(&request).await
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn count_messages(&self, model: &str, messages: &[Value]) -> Result<usize, CountError> {
         let parsed: Vec<Message> = serde_json::from_value(Value::Array(messages.to_vec()))
             .map_err(|source| CountError::Json { source })?;
