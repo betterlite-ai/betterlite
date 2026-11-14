@@ -154,6 +154,6 @@ fn request_record(sent: &str, extra: &BTreeSet<String>) -> Value {
 
 fn query_map(query: &str) -> BTreeMap<String, String> {
     form_urlencoded::parse(query.as_bytes())
-        .into_owned()
+        .map(|(name, value)| (name.into_owned(), value.into_owned()))
         .collect()
 }
