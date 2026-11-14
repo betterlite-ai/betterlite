@@ -12,6 +12,7 @@ use crate::azure_storage_logging::logger::SERVICE_CLIENT_TTL;
 
 const DIRECTORY_URL: &str = "https://acct.dfs.core.windows.net/logs/2023-11-14";
 const EXISTS_URL: &str = "https://acct.blob.core.windows.net/logs/2023-11-14";
+const FLUSH_QUERY: &str = "&retainUncommittedData=false&close=false";
 
 #[tokio::test]
 async fn the_account_key_path_creates_the_dated_directory_and_the_file() {
@@ -28,22 +29,14 @@ async fn the_account_key_path_creates_the_dated_directory_and_the_file() {
     assert_eq!(exists.method, "HEAD");
     assert_eq!(exists.url, EXISTS_URL);
     assert_eq!(exists.header("Content-Length"), None);
-    let create_directory = calls.get(1).expect("the directory create");
-    assert_eq!(create_directory.method, "PUT");
-    assert_eq!(
-        create_directory.url,
-        format!("{DIRECTORY_URL}?resource=directory")
-    );
+    let dir = calls.get(1).expect("the directory create");
+    assert_eq!(dir.method, "PUT");
+    assert_eq!(dir.url, format!("{DIRECTORY_URL}?resource=directory"));
+    let file_url = format!("{DIRECTORY_URL}/id-1.json");
     let create_file = calls.get(2).expect("the file create");
-    assert_eq!(
-        create_file.url,
-        format!("{DIRECTORY_URL}/id-1.json?resource=file")
-    );
+    assert_eq!(create_file.url, format!("{file_url}?resource=file"));
     let append = calls.get(3).expect("the append");
-    assert_eq!(
-        append.url,
-        format!("{DIRECTORY_URL}/id-1.json?action=append&position=0")
-    );
+    assert_eq!(append.url, format!("{file_url}?action=append&position=0"));
     assert_eq!(append.header("x-ms-version"), Some("2019-07-07"));
     let authorization = append.header("Authorization").expect("signed");
     assert!(authorization.starts_with("SharedKey acct:"));
@@ -52,7 +45,7 @@ async fn the_account_key_path_creates_the_dated_directory_and_the_file() {
     assert_eq!(
         flush.url,
         format!(
-            "{DIRECTORY_URL}/id-1.json?action=flush&position={}&retainUncommittedData=false&close=false",
+            "{file_url}?action=flush&position={FLUSH_QUERY}",
             append.body.len()
         )
     );

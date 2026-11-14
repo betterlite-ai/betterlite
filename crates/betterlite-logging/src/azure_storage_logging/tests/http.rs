@@ -74,22 +74,17 @@ async fn the_token_path_creates_appends_and_flushes_one_file() {
         .expect("the scripted storage accepts the upload");
     let calls = fixture.transport.calls();
     assert_eq!(calls.len(), 4);
+    let file = "https://acct.dfs.core.windows.net/logs/resp_YWJj_ZA.json";
     let create = calls.get(1).expect("the create call");
     assert_eq!(create.method, "PUT");
-    assert_eq!(
-        create.url,
-        "https://acct.dfs.core.windows.net/logs/resp_YWJj_ZA.json?resource=file"
-    );
+    assert_eq!(create.url, format!("{file}?resource=file"));
     assert_eq!(create.header("x-ms-version"), Some("2019-07-07"));
     assert_eq!(create.header("Content-Length"), Some("0"));
     assert_eq!(create.header("Content-Type"), None);
     assert_eq!(create.header("Authorization"), Some("Bearer tok-1"));
     let append = calls.get(2).expect("the append call");
     assert_eq!(append.method, "PATCH");
-    assert_eq!(
-        append.url,
-        "https://acct.dfs.core.windows.net/logs/resp_YWJj_ZA.json?action=append&position=0"
-    );
+    assert_eq!(append.url, format!("{file}?action=append&position=0"));
     assert_eq!(append.header("Content-Type"), Some("application/json"));
     assert_eq!(append.header("Content-Length"), None);
     assert_eq!(append.header("Authorization"), Some("Bearer tok-1"));
@@ -102,10 +97,7 @@ async fn the_token_path_creates_appends_and_flushes_one_file() {
     assert_eq!(flush.method, "PATCH");
     assert_eq!(
         flush.url,
-        format!(
-            "https://acct.dfs.core.windows.net/logs/resp_YWJj_ZA.json?action=flush&position={}",
-            append.body.len()
-        )
+        format!("{file}?action=flush&position={}", append.body.len())
     );
     assert_eq!(flush.header("Content-Length"), Some("0"));
 }
