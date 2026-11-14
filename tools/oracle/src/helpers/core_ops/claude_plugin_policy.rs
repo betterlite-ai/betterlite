@@ -105,9 +105,8 @@ fn plugin_caller(fields: &CallerFields) -> PluginCaller {
 }
 
 fn permission(values: Option<&[String]>) -> Option<PluginObjectPermission> {
-    let values = values?;
-    Some(PluginObjectPermission {
-        skills: Some(values.to_vec()),
+    values.map(|granted| PluginObjectPermission {
+        skills: Some(granted.to_vec()),
     })
 }
 
