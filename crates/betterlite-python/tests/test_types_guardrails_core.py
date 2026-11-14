@@ -417,8 +417,8 @@ def test_vendor_config_names(report: NamesReport) -> None:
 
 
 def test_constant_names(report: NamesReport) -> None:
-    theirs = report["litellm"]["constants"]
-    ours = report["betterlite"]["constants"]
+    theirs = report["constants"]["litellm"]
+    ours = report["constants"]["betterlite"]
     assert ours == theirs
     assert ours["default_roles"] == ["system", "assistant", "user"]
     assert ours["chunk_budget"] == CHUNK_BUDGET_CHARS
@@ -528,6 +528,6 @@ def test_streaming_extra_names() -> None:
 
 
 def test_str_enum_names() -> None:
-    assert core.Role.SYSTEM == core.Role.SYSTEM.value
-    assert pii.PiiEntityCategory.GENERAL == pii.PiiEntityCategory.GENERAL.value
+    assert core.Role.SYSTEM.value == core.Role.SYSTEM
+    assert pii.PiiEntityCategory.GENERAL.value == pii.PiiEntityCategory.GENERAL
     assert json.dumps({"action": pii.PiiAction.BLOCK}) == '{"action": "BLOCK"}'
