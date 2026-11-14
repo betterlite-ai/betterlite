@@ -547,8 +547,9 @@ def test_names_routing_test_request() -> None:  # ast-grep-ignore: no-long-names
 
 
 def test_names_wire_body() -> None:
-    full: dict[str, JsonValue] = MESSAGES_ONLY | {"system": "s", "tools": [{"type": "function"}]}
-    full_body: dict[str, JsonValue] = {"messages": MESSAGES, "system": "s", "tools": [{"type": "function"}]}
+    extras: dict[str, JsonValue] = {"system": "s", "tools": [{"type": "function"}]}
+    full: dict[str, JsonValue] = MESSAGES_ONLY | extras
+    full_body: dict[str, JsonValue] = {"messages": MESSAGES} | extras
     cases: tuple[tuple[dict[str, JsonValue], dict[str, JsonValue]], ...] = (
         (full, full_body),
         (MESSAGES_ONLY, {"messages": MESSAGES}),
