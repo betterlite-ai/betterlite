@@ -9,8 +9,8 @@ vendors:
     max_writers: 20
   - id: deepseek
     limit_markers: ["Insufficient Balance", "Authentication Fails", "Rate Limit Reached", "Server Overloaded", "Can't reach the API server"]
-    max_parallel: 128
-    max_writers: 128
+    max_parallel: 64
+    max_writers: 64
 runners:
   - id: codex-worker
     vendor: openai
@@ -169,6 +169,7 @@ policy:
   max_review_rounds: 3
   max_blocked_reports: 2
   max_hook_blocks: 6
+  max_upload_backlog_mb: 8
   writable:
     - "{git_common_dir}"
     - "{home}/.cargo/registry"
