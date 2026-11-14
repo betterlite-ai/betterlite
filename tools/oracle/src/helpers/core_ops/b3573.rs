@@ -254,11 +254,16 @@ impl PassthroughGuardrail for RecordingGuardrail {
             PassthroughInputType::Request => "request",
             PassthroughInputType::Response => "response",
         };
+        let texts: Vec<Value> = inputs
+            .texts
+            .iter()
+            .map(|text| normalised_text(text))
+            .collect();
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(json!({
-                "texts": inputs.texts,
+                "texts": texts,
                 "model": inputs.model,
                 "input_type": kind,
                 "request_data": request_data,

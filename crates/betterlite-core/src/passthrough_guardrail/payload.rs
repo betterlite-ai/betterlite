@@ -28,7 +28,7 @@ fn value_json(value: &GuardrailValue) -> Json {
         GuardrailValue::Object(fields) => Json::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), value_json(value)))
+                .map(|(field, nested)| (field.clone(), value_json(nested)))
                 .collect(),
         ),
     }

@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::{Future, ready};
+use std::future::Future;
 use std::sync::Mutex;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -238,7 +238,11 @@ fn get_guardrail_settings_returns_the_policy_settings() {
 fn get_guardrail_settings_returns_none_without_a_logging_object() {
     let policy = FakePolicy::resolving(Some(settings(Some(&["query"]), None)));
     assert_eq!(
-        PassThroughEndpointHandler::get_guardrail_settings(None, Some("g1"), &policy),
+        PassThroughEndpointHandler::get_guardrail_settings(
+            None::<&FakeLogging>,
+            Some("g1"),
+            &policy
+        ),
         None
     );
     assert!(policy.queries().is_empty());
@@ -259,8 +263,8 @@ fn get_guardrail_settings_returns_none_without_a_config() {
 }
 
 #[rstest]
-#[case::empty_object(r#"{}"#)]
-#[case::empty_list(r#"[]"#)]
+#[case::empty_object("{}")]
+#[case::empty_list("[]")]
 #[case::null("null")]
 fn get_guardrail_settings_treats_an_empty_config_as_absent(#[case] config: &str) {
     let policy = FakePolicy::resolving(Some(settings(Some(&["query"]), None)));
@@ -782,7 +786,7 @@ async fn process_output_response_injects_the_policy_user_key_metadata() {
 }
 
 #[rstest]
-#[case::empty(r#"{}"#)]
+#[case::empty("{}")]
 #[case::populated(r#"{"user_id": "u1"}"#)]
 #[tokio::test]
 async fn process_output_response_keeps_an_existing_metadata_bucket(#[case] metadata: &str) {

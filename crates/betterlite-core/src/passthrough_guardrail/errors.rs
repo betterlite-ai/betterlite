@@ -1,5 +1,3 @@
-use std::error::Error as StdError;
-
 use betterlite_logging::private_json::error::PrivateJsonError;
 
 #[derive(Debug, thiserror::Error)]
@@ -9,7 +7,7 @@ pub enum PassthroughPayloadError {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum PassthroughGuardrailError<Failure: StdError + 'static> {
+pub enum PassthroughGuardrailError<Failure: 'static> {
     #[error(transparent)]
     Payload(#[from] PassthroughPayloadError),
     #[error(transparent)]

@@ -40,7 +40,6 @@ impl PassThroughEndpointHandler {
     }
 
     // LiteLLM's _extract_text_for_guardrail; the extractor is B3601's passthrough policy
-    #[must_use]
     pub fn extract_text_for_guardrail<Policy>(
         data: &RequestData,
         field_expressions: Option<&[String]>,
@@ -80,7 +79,7 @@ impl PassThroughEndpointHandler {
         );
         let field_expressions = settings
             .as_ref()
-            .and_then(|settings| settings.request_fields.as_deref());
+            .and_then(|found| found.request_fields.as_deref());
         let text_to_check = Self::extract_text_for_guardrail(data, field_expressions, policy)
             .map_err(PassthroughGuardrailError::Payload)?;
         if text_to_check.is_empty() {
@@ -136,24 +135,18 @@ where
     let ResponseCall {
         logging_obj,
         user_api_key_dict,
-        request_data,
+        mut request_data,
     } = call;
-    let mut standalone;
-    let prepared = match request_data {
-        Some(caller_data) => {
-            if !caller_data.contains_key("response") {
-                caller_data.insert(
-                    "response".to_owned(),
-                    GuardrailValue::Object(fields.clone()),
-                );
-            }
-            caller_data
-        }
-        None => {
-            standalone = fields.clone();
-            &mut standalone
-        }
-    };
+    if let Some(caller_data) = request_data.as_deref_mut() {
+        caller_data
+            .entry("response".to_owned())
+            .or_insert_with(|| GuardrailValue::Object(fields.clone()));
+    }
+    let mut standalone = RequestData::new();
+    let prepared = request_data.unwrap_or_else(|| {
+        standalone.clone_from(fields);
+        &mut standalone
+    });
     if !prepared.contains_key("litellm_metadata") {
         let metadata = policy.user_key_metadata(user_api_key_dict);
         if !metadata.is_empty() {
@@ -196,7 +189,7 @@ where
     );
     let field_expressions = settings
         .as_ref()
-        .and_then(|settings| settings.response_fields.as_deref());
+        .and_then(|found| found.response_fields.as_deref());
     PassThroughEndpointHandler::extract_text_for_guardrail(fields, field_expressions, policy)
         .map_err(PassthroughGuardrailError::Payload)
 }

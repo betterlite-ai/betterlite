@@ -1,8 +1,7 @@
 import asyncio
 import datetime as dt
 from collections.abc import Collection
-from typing import Final, Literal, Protocol, TypedDict, TypeVar
-from unittest.mock import patch
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, TypeVar
 
 from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -14,7 +13,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 
 JSON: Final = TypeAdapter(JsonValue)
 USER_ID: Final = TypeAdapter(str | None)
-APPLY: Final = "litellm.integrations.custom_guardrail.CustomGuardrail.apply_guardrail"
+GUARDRAIL_CLASS: Final = TypeAdapter(type[CustomGuardrail])
 
 Result_co = TypeVar("Result_co", covariant=True, default=object)
 
@@ -56,26 +55,42 @@ class HandlerReader(PassThroughEndpointHandler, TextExtraction):
         return JSON.validate_json(settings.model_dump_json())
 
 
-class Recorder:
-    def __init__(self) -> None:
-        self.calls: list[JsonValue] = []
+class Inputs(TypedDict):
+    texts: list[str]
+    model: NotRequired[JsonValue]
 
-    async def apply(
-        self,
-        inputs: dict[str, JsonValue],
-        request_data: dict[str, JsonValue],
-        input_type: str,
-        logging_obj: object = None,
-    ) -> dict[str, JsonValue]:
-        self.calls.append(
-            {
-                "texts": inputs.get("texts"),
-                "model": inputs.get("model"),
-                "input_type": input_type,
-                "request_data": dict(request_data),
-            }
-        )
-        return inputs
+
+class Recording(Protocol):
+    calls: list[JsonValue]
+
+
+async def recording_apply(
+    self: Recording,
+    inputs: Inputs,
+    request_data: dict[str, JsonValue],
+    input_type: str,
+    **_call: JsonValue,
+) -> Inputs:
+    self.calls.append(
+        {
+            "texts": [normalised_text(text) for text in inputs["texts"]],
+            "model": inputs.get("model"),
+            "input_type": input_type,
+            "request_data": dict(request_data),
+        }
+    )
+    return inputs
+
+
+def recording_guardrail(name: str | None, calls: list[JsonValue]) -> CustomGuardrail:
+    members = {
+        "apply_guardrail": recording_apply,
+        "calls": calls,
+        "records_own_guardrail_information": True,
+    }
+    recording_class = type("Recording", (CustomGuardrail,), members)
+    guardrail_class = GUARDRAIL_CLASS.validate_python(recording_class)
+    return guardrail_class(guardrail_name=name)
 
 
 class LoggingSpec(TypedDict):
@@ -184,32 +199,30 @@ async def call_output(handler: OutputView, args: OutputArgs) -> JsonValue:
 
 
 async def input_answer(call: InputCall) -> JsonValue:
-    recorder = Recorder()
-    with patch(APPLY, recorder.apply):
-        returned = await call_input(
-            PassThroughEndpointHandler(),
-            call["data"],
-            CustomGuardrail(guardrail_name=call["guardrail_name"]),
-            build_logging(call["logging"]),
-        )
-    return {"returned": JSON.validate_python(returned), "calls": recorder.calls}
+    calls: list[JsonValue] = []
+    returned = await call_input(
+        PassThroughEndpointHandler(),
+        call["data"],
+        recording_guardrail(call["guardrail_name"], calls),
+        build_logging(call["logging"]),
+    )
+    return {"returned": JSON.validate_python(returned), "calls": calls}
 
 
 async def output_answer(call: OutputCall) -> JsonValue:
     request_data = call["request_data"]
-    recorder = Recorder()
-    with patch(APPLY, recorder.apply):
-        returned = await call_output(
-            PassThroughEndpointHandler(),
-            {
-                "response": call["response"],
-                "guardrail": CustomGuardrail(guardrail_name=call["guardrail_name"]),
-                "logging_obj": build_logging(call["logging"]),
-                "user_api_key_dict": build_user_key(call["user_api_key"]),
-                "request_data": request_data,
-            },
-        )
-    answer: dict[str, JsonValue] = {"returned": returned, "calls": recorder.calls}
+    calls: list[JsonValue] = []
+    returned = await call_output(
+        PassThroughEndpointHandler(),
+        {
+            "response": call["response"],
+            "guardrail": recording_guardrail(call["guardrail_name"], calls),
+            "logging_obj": build_logging(call["logging"]),
+            "user_api_key_dict": build_user_key(call["user_api_key"]),
+            "request_data": request_data,
+        },
+    )
+    answer: dict[str, JsonValue] = {"returned": returned, "calls": calls}
     if request_data is not None:
         answer["request_data"] = request_data
     return answer
