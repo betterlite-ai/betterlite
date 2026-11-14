@@ -49,7 +49,7 @@ BUCKET_INPUT_NAMES: Final[tuple[JsonValue, ...]] = (
     "500",
     None,
 )
-# Recorded from litellm/types/integrations/prometheus.py at the pinned commit
+# Recorded from litellm/types/integrations/prometheus.py at d665dc1a6315847fcad6cc2c1264ceb47c06abce
 SANITIZED_LABEL_NAMES: Final[list[tuple[str, str]]] = [
     ("", "_"),
     ("simple", "simple"),
