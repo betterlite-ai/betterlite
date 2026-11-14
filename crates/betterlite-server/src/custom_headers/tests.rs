@@ -580,7 +580,8 @@ fn remaining_limits_use_the_h11_safe_group_name() {
                 "litellm-key-remaining-requests-openai/gpt:4o": 5,
                 "litellm-key-remaining-tokens-openai/gpt:4o": 100
             }
-        }
+        },
+        "extra": [["x-litellm-key-remaining-requests-openai-gpt-4o", "99"]]
     }));
     assert_eq!(
         header(&headers, "x-litellm-key-remaining-requests-openai-gpt-4o").as_deref(),
@@ -652,7 +653,8 @@ fn a_non_scalar_model_group_leaves_the_remaining_headers_out() {
 #[test]
 fn guardrail_headers_come_from_the_request_data() {
     let headers = build(json!({
-        "request_data": {"metadata": {"applied_guardrails": ["gr-1", "gr-2"]}}
+        "request_data": {"metadata": {"applied_guardrails": ["gr-1", "gr-2"]}},
+        "extra": [["x-litellm-applied-guardrails", "stale"]]
     }));
     assert_eq!(
         header(&headers, "x-litellm-applied-guardrails").as_deref(),
