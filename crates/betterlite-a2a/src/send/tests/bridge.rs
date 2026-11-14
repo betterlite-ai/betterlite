@@ -4,6 +4,7 @@ use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::JsonRpcId;
 
 use crate::completion_bridge::dispatch::{BridgeError, CompletionError};
+use crate::completion_bridge::params::ParamsError;
 use crate::completion_bridge::tests::support::{
     TestFailure, chunk, parsed, provider_calls, recorded_calls, selected_configs, summaries,
 };
@@ -146,6 +147,46 @@ async fn stream_routing_selects_a_registered_provider() {
     );
     assert_eq!(summaries(&outcome.events), vec!["status:working:false"]);
     assert!(recorded_calls(&fixture.completion).is_empty());
+}
+
+#[tokio::test]
+async fn stream_routing_selects_a_bedrock_agentcore_provider() {
+    let mut fixture = SendFixture::new();
+    let mut params = params_with_provider(Some(AgentJson::String("bedrock".to_owned())));
+    params.insert(
+        "model".to_owned(),
+        AgentJson::String("agentcore-runtime".to_owned()),
+    );
+    let call = stream_call(send_call("hello", None, params));
+
+    let outcome = fixture.stream(call, None).await;
+
+    assert_eq!(
+        selected_configs(&fixture.providers),
+        vec![A2AProviderConfig::BedrockAgentCore]
+    );
+    assert!(recorded_calls(&fixture.completion).is_empty());
+    assert!(outcome.events.is_empty());
+}
+
+#[tokio::test]
+async fn stream_routing_reports_a_params_failure() {
+    let mut fixture = SendFixture::new();
+    let mut params = params_with_provider(Some(AgentJson::String("langgraph".to_owned())));
+    params.insert("model".to_owned(), AgentJson::Bool(true));
+    let call = stream_call(send_call("hello", None, params));
+
+    let outcome = fixture.stream(call, None).await;
+
+    assert_eq!(outcome.events.len(), 1);
+    assert!(matches!(
+        &outcome.events[0],
+        Err(SendEntryError::Bridge(BridgeError::Completion(
+            CompletionError::Params(ParamsError::NotText { field: "model" })
+        )))
+    ));
+    assert!(recorded_calls(&fixture.completion).is_empty());
+    assert!(selected_configs(&fixture.providers).is_empty());
 }
 
 #[tokio::test]

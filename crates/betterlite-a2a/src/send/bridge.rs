@@ -6,9 +6,12 @@ use futures_util::stream::{BoxStream, once};
 
 use crate::completion_bridge::EventSource;
 use crate::completion_bridge::completion::CompletionPort;
-use crate::completion_bridge::dispatch::{A2AProviderDispatch, Buffered, Streamed, dispatch};
-use crate::completion_bridge::params::BridgeCall;
+use crate::completion_bridge::dispatch::{
+    A2AProviderDispatch, Buffered, CompletionError, Mode, Streamed, dispatch,
+};
+use crate::completion_bridge::params::{BridgeCall, ParamsError, optional_text};
 use crate::logging_context::json_rpc_id_text;
+use crate::provider_selector::{A2AProviderConfig, get_provider_config};
 
 use super::call::{SendCall, StreamCall};
 use super::deps::BridgeDeps;
@@ -46,16 +49,16 @@ where
     response_from_dict(&answer, &request_id).map_err(SendEntryError::<C::Error, P::Error>::from)
 }
 
-// rustc's stream Send check cannot use the source's outlives bound, so the source is erased (rust-lang/rust#100013)
-pub(super) fn stream_via_completion_bridge<'deps, C, P>(
+pub(super) fn stream_via_completion_bridge<'deps, C, P, S>(
     call: StreamCall,
     completion: &'deps C,
     providers: &'deps P,
-    mut source: &'deps mut (dyn EventSource + Send + 'deps),
+    mut source: &'deps mut S,
 ) -> BoxStream<'deps, Result<AgentJson, SendEntryError<C::Error, P::Error>>>
 where
     C: CompletionPort,
     P: A2AProviderDispatch,
+    S: EventSource + Send + 'deps,
 {
     async_stream::stream! {
         let params = match bridge_params(&call.request) {
@@ -81,7 +84,7 @@ where
     .boxed()
 }
 
-// the Send bound keeps dispatch's Mode future out of the stream's Send check (rust-lang/rust#100013)
+// dispatch's Mode-generic future is not provably Send inside the stream (rust-lang/rust#100013)
 fn bridge_events<'call, C, P, S>(
     call: &'call BridgeCall<'_>,
     completion: &'call C,
@@ -93,9 +96,21 @@ where
     P: A2AProviderDispatch,
     S: EventSource + Send + 'call,
 {
-    once(dispatch::<Streamed, C, P, S>(
-        call, completion, providers, source,
-    ))
+    once(async move {
+        match select_config(call) {
+            Ok(Some(config)) => {
+                <Streamed as Mode<'call, C, P>>::provider(providers, config, call).await
+            }
+            Ok(None) => <Streamed as Mode<'call, C, P>>::direct(call, completion, source).await,
+            Err(error) => <Streamed as Mode<'call, C, P>>::failed(CompletionError::Params(error)),
+        }
+    })
     .flatten()
     .map(|event| event.map_err(SendEntryError::<C::Error, P::Error>::Bridge))
+}
+
+fn select_config(call: &BridgeCall<'_>) -> Result<Option<A2AProviderConfig>, ParamsError> {
+    let provider = optional_text(call.litellm_params, "custom_llm_provider")?;
+    let model = optional_text(call.litellm_params, "model")?;
+    Ok(get_provider_config(provider, model))
 }
