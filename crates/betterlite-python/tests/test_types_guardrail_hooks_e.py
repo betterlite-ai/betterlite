@@ -872,11 +872,9 @@ def test_permission_error_names() -> None:
         "rule_id",
         "message",
     ]
-    denied = tool_permission.PermissionError.model_validate(
-        {"tool_name": "rm", "rule_id": None, "message": "denied"},
-    )
-    expected: dict[str, JsonValue] = {"tool_name": "rm", "rule_id": None, "message": "denied"}
-    assert denied.model_dump() == expected
+    payload: dict[str, JsonValue] = {"tool_name": "rm", "rule_id": None, "message": "denied"}
+    denied = tool_permission.PermissionError.model_validate(payload)
+    assert denied.model_dump() == payload
 
 
 def test_required_names() -> None:
@@ -886,10 +884,12 @@ def test_required_names() -> None:
     assert rule_fields["tool_name"].is_required() is False
     error_fields = tool_permission.PermissionError.model_fields
     assert error_fields["rule_id"].is_required()
+    error_payload: dict[str, JsonValue] = {"tool_name": "rm", "message": "m"}
     with pytest.raises(ValidationError):
-        tool_permission.PermissionError.model_validate({"tool_name": "rm", "message": "m"})
+        tool_permission.PermissionError.model_validate(error_payload)
+    rule_payload: dict[str, JsonValue] = {"decision": "allow", "tool_name": "x"}
     with pytest.raises(ValidationError):
-        tool_permission.ToolPermissionRule.model_validate({"decision": "allow", "tool_name": "x"})
+        tool_permission.ToolPermissionRule.model_validate(rule_payload)
 
 
 def test_inherited_names() -> None:
@@ -949,24 +949,20 @@ def test_warning_capture_names(
 
 
 def test_extra_field_names() -> None:
-    config = tool_permission.ToolPermissionGuardrailConfigModel.model_validate(
-        {"unknown_knob": True},
-    )
+    payload: dict[str, JsonValue] = {"unknown_knob": True}
+    config = tool_permission.ToolPermissionGuardrailConfigModel.model_validate(payload)
     assert config.model_dump()["unknown_knob"] is True
 
 
 def test_optional_params_names() -> None:
-    config = tool_permission.ToolPermissionGuardrailConfigModel.model_validate(
-        {"optional_params": {"nested_knob": True}},
-    )
+    payload: dict[str, JsonValue] = {"optional_params": {"nested_knob": True}}
+    config = tool_permission.ToolPermissionGuardrailConfigModel.model_validate(payload)
     assert config.optional_params is not None
     dumped = TypeAdapter(dict[str, JsonValue]).validate_json(config.model_dump_json())
     assert dumped["optional_params"] == {}
 
 
 def test_description_absent_names() -> None:
-    schema = TypeAdapter(dict[str, JsonValue]).validate_python(
-        tool_permission.ToolPermissionRule.model_json_schema(),
-    )
+    schema: dict[str, JsonValue] = tool_permission.ToolPermissionRule.model_json_schema()
     properties = TypeAdapter(dict[str, dict[str, JsonValue]]).validate_python(schema["properties"])
     assert all("description" not in field_schema for field_schema in properties.values())
