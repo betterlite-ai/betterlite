@@ -1,0 +1,19 @@
+kind: helper
+name: agents-collection-list-basic
+call:
+  b3504:
+    function: list
+    kwargs:
+      page_size: 25
+      page_token: page-1
+    extra_headers:
+      x-goog-user-project: demo-project
+    reply:
+      status: 200
+      body:
+        agents:
+          - id: alpha
+          - id: beta
+        nextPageToken: page-2
+env: {}
+compare: {ignore: []}

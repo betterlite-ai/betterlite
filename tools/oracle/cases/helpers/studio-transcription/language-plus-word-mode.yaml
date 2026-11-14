@@ -1,0 +1,10 @@
+kind: helper
+name: language-plus-word-mode
+call:
+  studio_transcription:
+    steps:
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: audio, optional: {language: en, timestamp_granularities: [word]}}
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: audio, optional: {language: pt-BR}}
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: audio, optional: {language: pt-BR, response_format: srt}}
+env: {}
+compare: {ignore: []}

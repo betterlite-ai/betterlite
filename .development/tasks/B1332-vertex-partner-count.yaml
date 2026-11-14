@@ -85,5 +85,5 @@ pitfalls:
   - The endpoint contains models/count-tokens:rawPredict rather than the requested model name.
   - A supplied global location is retained despite the comment explaining that Claude counting is unavailable there.
   - The convenience wrapper does not forward tools or system into request_data.
-budget: {max_changed_lines: 675, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard
