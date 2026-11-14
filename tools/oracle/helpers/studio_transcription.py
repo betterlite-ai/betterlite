@@ -31,6 +31,7 @@ class Config(Protocol):
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
+        *,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
