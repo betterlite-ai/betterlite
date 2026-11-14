@@ -63,7 +63,7 @@ fn is_integer_literal(text: &str) -> bool {
         .unwrap_or(text)
         .chars()
         .all(|digit| digit.is_ascii_digit())
-        && !text.is_empty()
+        && !matches!(text, "" | "-")
 }
 
 fn number_from_text(text: &str) -> Result<Option<GuardrailValue>, CallError> {
