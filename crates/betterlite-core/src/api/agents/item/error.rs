@@ -135,8 +135,14 @@ where
     AgentItemError<Provider>: From<Carried>,
     Provider: ProviderFailure,
 {
-    let wrap = |error| failure(error, name, Some(provider), redactor);
-    sent.map_err(|carried| wrap(AgentItemError::from(carried)))
+    sent.map_err(|carried| {
+        failure(
+            AgentItemError::from(carried),
+            name,
+            Some(provider),
+            redactor,
+        )
+    })
 }
 
 // docs/compatibility.md rejects a value outside the declared type with a 400 naming the field
