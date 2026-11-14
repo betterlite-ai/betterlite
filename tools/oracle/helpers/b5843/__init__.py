@@ -121,10 +121,6 @@ def supported_params(models: list[str]) -> JsonValue:
     }
 
 
-def vendor_of(models: list[str]) -> JsonValue:
-    return {"models": [{"model": m, "vendor": get_vendor_from_model(m).name} for m in models]}
-
-
 def exchange_call(
     credentials: dict[str, JsonValue],
     replies: dict[str, JsonValue],
@@ -216,7 +212,12 @@ def run(input_value: Call) -> JsonValue:
         case "supported":
             return supported_params(input_value["models"])
         case "vendor":
-            return vendor_of(input_value["models"])
+            return {
+                "models": [
+                    {"model": model, "vendor": get_vendor_from_model(model).name}
+                    for model in input_value["models"]
+                ]
+            }
         case "exchange":
             return {
                 "calls": [
