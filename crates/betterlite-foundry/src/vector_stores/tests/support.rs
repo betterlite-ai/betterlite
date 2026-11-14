@@ -97,6 +97,43 @@ impl QueryEmbeddingExecutor for FixtureExecutor {
     }
 }
 
+pub(super) struct FailingExecutor {
+    message: String,
+}
+
+impl FailingExecutor {
+    pub(super) fn new(message: &str) -> Self {
+        Self {
+            message: message.to_owned(),
+        }
+    }
+}
+
+#[async_trait]
+impl QueryEmbeddingExecutor for FailingExecutor {
+    fn embed(
+        &self,
+        _model: &str,
+        _query: &str,
+        _configuration: &Params,
+    ) -> Result<EmbeddingResponse, EmbeddingCallError> {
+        Err(EmbeddingCallError::Provider {
+            message: self.message.clone(),
+        })
+    }
+
+    async fn aembed(
+        &self,
+        _model: &str,
+        _query: &str,
+        _configuration: &Params,
+    ) -> Result<EmbeddingResponse, EmbeddingCallError> {
+        Err(EmbeddingCallError::Provider {
+            message: self.message.clone(),
+        })
+    }
+}
+
 pub(super) struct NoSources;
 
 fn unavailable(kind: &str) -> SourceFailure {

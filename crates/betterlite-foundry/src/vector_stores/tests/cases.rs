@@ -21,7 +21,7 @@ use crate::vector_stores::search::{
     search_request,
 };
 
-use super::support::{Call, FixtureExecutor, NoSources, empty_credentials};
+use super::support::{Call, FailingExecutor, FixtureExecutor, NoSources, empty_credentials};
 
 const API_BASE: &str = "https://foundry-search.example";
 const EMBEDDING_MODEL: &str = "openai/text-embedding-3-small";
@@ -319,6 +319,11 @@ fn search_query_fields() {
     assert_eq!(calls[0].model, EMBEDDING_MODEL);
     assert_eq!(calls[0].query, "hello");
     assert!(calls[0].configuration.is_empty());
+    search_query_fields_options();
+    search_query_fields_defaults_only_when_absent();
+    search_query_fields_rejects_bad_types();
+    search_query_fields_embedding_configuration();
+    search_query_fields_reports_embedding_failure();
 }
 
 fn search_query_fields_options() {
@@ -395,6 +400,28 @@ fn search_query_fields_embedding_configuration() {
     assert_eq!(
         query_embedding_model(&params(r#"{"litellm_embedding_model":"m"}"#)).expect("model"),
         "m"
+    );
+}
+
+// an executor failure surfaces with LiteLLM's wrapped diagnostic before any request body exists
+fn search_query_fields_reports_embedding_failure() {
+    let executor = FailingExecutor::new("fixture embedding failure");
+    let litellm_params = embedding_params();
+    let query = SearchQuery::Text("q".to_owned());
+    let mut logging = SearchLogging::default();
+    let error = search_request(AzureSearchStoreRequest {
+        vector_store_id: "store-1",
+        query: &query,
+        optional_params: &Params::new(),
+        api_base: API_BASE,
+        litellm_params: &litellm_params,
+        logging: &mut logging,
+        embedding_executor: &executor,
+    })
+    .expect_err("embedding failure");
+    assert_eq!(
+        error.to_string(),
+        "Failed to generate embedding for query: fixture embedding failure"
     );
 }
 
