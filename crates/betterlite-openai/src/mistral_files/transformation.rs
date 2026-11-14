@@ -45,8 +45,8 @@ pub fn file_url(
     api_base: Option<&str>,
     settings: &Settings,
 ) -> Result<String, MistralFilesError> {
-    let file_id = file_id.ok_or(MistralFilesError::FileIdRequired)?;
-    let encoded = encode_segment(file_id, "file_id")?;
+    let id = file_id.ok_or(MistralFilesError::FileIdRequired)?;
+    let encoded = encode_segment(id, "file_id")?;
     Ok(format!(
         "{}/v1/files/{encoded}{suffix}",
         base_url(api_base, settings)
@@ -58,10 +58,10 @@ pub fn list_request(
     settings: &Settings,
 ) -> Result<(String, Vec<(String, String)>), MistralFilesError> {
     let url = format!("{}/v1/files", base_url(api_base, settings));
-    let Some(purpose) = purpose.filter(|text| !text.is_empty()) else {
+    let Some(named) = purpose.filter(|text| !text.is_empty()) else {
         return Ok((url, Vec::new()));
     };
-    let mapped = upload_purpose(Some(purpose))?.wire_name();
+    let mapped = upload_purpose(Some(named))?.wire_name();
     Ok((url, vec![(String::from("purpose"), mapped.to_owned())]))
 }
 #[must_use]

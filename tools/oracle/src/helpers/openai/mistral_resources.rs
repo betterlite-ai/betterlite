@@ -111,11 +111,11 @@ fn files_outcome(section: &FilesSection, settings: &Settings) -> Value {
 }
 fn create_outcome(section: &CreateSection, settings: &Settings) -> Value {
     let key = section.api_key.as_deref().map(SecretString::from);
-    let headers = auth_headers(&Headers::new(), key.as_ref(), settings);
+    let auth = auth_headers(&Headers::new(), key.as_ref(), settings);
     let api_base = section.api_base.as_deref();
     let plan = create_batch(&section.data, &section.model, api_base, settings);
-    if let (Ok(headers), Ok(plan)) = (headers, plan) {
-        return json!({"ok": true, "url": plan.url, "authorization": headers.get(AUTHORIZATION.as_str()), "body": plan.body});
+    if let (Ok(headers), Ok(created)) = (auth, plan) {
+        return json!({"ok": true, "url": created.url, "authorization": headers.get(AUTHORIZATION.as_str()), "body": created.body});
     }
     json!({"ok": false, "status": null})
 }

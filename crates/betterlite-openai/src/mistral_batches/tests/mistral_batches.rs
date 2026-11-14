@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::api::batch_records::CreateBatchRequest;
-use crate::batches::records::{BatchEndpoint, BatchObject, BatchStatus};
+use crate::batches::records::{BatchEndpoint, BatchStatus};
 use crate::mistral_batches::error::MistralBatchesError;
 use crate::mistral_batches::records::{
     MistralBatchError, MistralBatchJob, MistralBatchStatus, MistralGetRequest,
@@ -40,7 +40,8 @@ fn data(text: &str) -> CreateBatchRequest {
 #[case("CANCELLATION_REQUESTED", BatchStatus::Cancelling)]
 #[case("CANCELLED", BatchStatus::Cancelled)]
 fn job_statuses_map_onto_openai_statuses(#[case] native: &str, #[case] expected: BatchStatus) {
-    let parsed: MistralBatchStatus = serde_json::from_value(serde_json::json!(native)).unwrap();
+    let parsed: MistralBatchStatus =
+        serde_json::from_value(serde_json::Value::String(native.to_owned())).unwrap();
     assert_eq!(openai_status(parsed), expected);
 }
 
@@ -255,7 +256,7 @@ fn an_empty_error_list_stays_absent() {
 
 #[test]
 fn the_job_record_keeps_metadata_and_the_start_time() {
-    let record: BatchObject = to_batch_object(&job(
+    let record = to_batch_object(&job(
         r#"{"id": "j", "endpoint": "/v1/ocr", "status": "RUNNING", "created_at": 1, "started_at": 5, "metadata": {"team": "a"}}"#,
     ));
     assert_eq!(record.in_progress_at, Some(5));

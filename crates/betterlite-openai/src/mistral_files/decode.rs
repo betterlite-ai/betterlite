@@ -13,10 +13,9 @@ pub fn decode_mistral_resource<R: DeserializeOwned>(
     limits: &WireDecodeLimits,
 ) -> Result<R, MistralDecodeError> {
     if bytes.len() > limits.max_json_bytes {
-        return Err(BatchRecordsError::JsonTooLarge {
+        return Err(MistralDecodeError::from(BatchRecordsError::JsonTooLarge {
             limit: limits.max_json_bytes,
-        }
-        .into());
+        }));
     }
     Ok(serde_json::from_slice(bytes)?)
 }
