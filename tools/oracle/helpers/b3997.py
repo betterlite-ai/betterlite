@@ -9,6 +9,7 @@ from litellm.integrations.gcs_bucket import gcs_bucket_mock_client
 from litellm.integrations.gcs_bucket.gcs_bucket_base import GCSBucketBase
 from litellm.llms.vertex_ai.vertex_llm_base import VertexBase
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from typing_extensions import override
 
 JSON_VALUE = TypeAdapter(JsonValue)
 PAYLOAD_KEYS = ("id", "trace_id", "call_type", "status", "total_tokens", "model")
@@ -60,7 +61,25 @@ class Probe(GCSBucketBase):
         return JSON_VALUE.validate_python(response)
 
 
-class VertexFake:
+class VertexView(Protocol):
+    def _ensure_access_token(
+        self,
+        credentials: JsonValue,
+        project_id: str | None,
+        custom_llm_provider: str,
+    ) -> tuple[str, str]: ...
+
+    async def _ensure_access_token_async(
+        self,
+        credentials: JsonValue,
+        project_id: str | None,
+        custom_llm_provider: str,
+    ) -> tuple[str, str]: ...
+
+    def _get_token_and_url(self, **arguments: JsonValue) -> tuple[str, str]: ...
+
+
+class VertexFake(VertexView):
     def __init__(self) -> None:
         self.ensure_calls: list[JsonValue] = []
         self.token_calls: list[JsonValue] = []
@@ -76,6 +95,7 @@ class VertexFake:
         self.ensure_calls.append(entry)
         return ("mock-gcs-token", "mock-project-id")
 
+    @override
     def _ensure_access_token(
         self,
         credentials: JsonValue,
@@ -84,6 +104,7 @@ class VertexFake:
     ) -> tuple[str, str]:
         return self.record(credentials, project_id, custom_llm_provider)
 
+    @override
     async def _ensure_access_token_async(
         self,
         credentials: JsonValue,
@@ -92,6 +113,7 @@ class VertexFake:
     ) -> tuple[str, str]:
         return self.record(credentials, project_id, custom_llm_provider)
 
+    @override
     def _get_token_and_url(self, **arguments: JsonValue) -> tuple[str, str]:
         self.token_calls.append(dict(arguments))
         return ("mock-gcs-token", "https://original.example.com")
@@ -110,6 +132,19 @@ def project_payload(body: JsonValue) -> JsonValue:
             return {key: body[key] for key in PAYLOAD_KEYS}
         case _:
             return body
+
+
+def integral_floats(value: JsonValue) -> JsonValue:
+    # json.dumps writes the mock's zero Decimal as 0.0 where Rust writes 0
+    match value:
+        case list() as items:
+            return [integral_floats(item) for item in items]
+        case dict() as fields:
+            return {key: integral_floats(item) for key, item in fields.items()}
+        case float() as number:
+            return int(number) if number.is_integer() else number
+        case None | bool() | int() | str():
+            return value
 
 
 class Recorder:
@@ -164,7 +199,7 @@ async def download(base: BucketView, object_name: str) -> JsonValue:
     body = await base.download_gcs_object(object_name)
     if body is None:
         return None
-    return parse_or_text(body.decode())
+    return integral_floats(parse_or_text(body.decode()))
 
 
 def cache_keys(base: BucketView) -> JsonValue:
