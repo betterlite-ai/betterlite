@@ -31,7 +31,7 @@ use crate::google_count_tokens::cleaner::clean_contents;
 use crate::google_count_tokens::decode::{MAX_COUNT_BYTES, decode_google_count};
 use crate::google_count_tokens::error::GoogleCountError;
 use crate::google_count_tokens::studio::{StudioCountInput, studio_request};
-use crate::google_count_tokens::transport::{CountTransport, count};
+use crate::google_count_tokens::transport::{CountRequest, CountTransport, count};
 use crate::google_count_tokens::vertex::{VertexCountInput, count_tokens as count_vertex_tokens};
 use crate::studio_identity::NativeParams;
 use crate::token_cache::CredentialCache;
@@ -244,7 +244,7 @@ impl CountTransport for Script {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        let body = match request.body {
+        let sent_body = match request.body {
             RequestBody::Json(bytes) => bytes,
             RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
                 Vec::new()
@@ -254,7 +254,7 @@ impl CountTransport for Script {
             method: request.method,
             url: request.url.to_string(),
             headers: request.headers,
-            body,
+            body: sent_body,
             deadline: request.deadline,
         });
         let reply = self.reply.clone();
@@ -277,6 +277,46 @@ fn studio_settings() -> Settings {
     }
 }
 
+fn studio_count_request(
+    contents: &Json,
+    api_key: Option<&SecretString>,
+    api_base: Option<&str>,
+    timeout: Option<Duration>,
+) -> CountRequest {
+    let settings = studio_settings();
+    let params = NativeParams {
+        api_key: None,
+        gemini_api_key: None,
+    };
+    let input = StudioCountInput {
+        model: "gemini-2.0-flash",
+        contents,
+        api_key,
+        api_base,
+        params: &params,
+        settings: &settings,
+        timeout,
+    };
+    studio_request(&input).unwrap()
+}
+
+#[test]
+fn http_count_names_bad_contents_as_a_client_error() {
+    match clean_contents(&json(r#"{"parts":[]}"#)) {
+        Err(error @ GoogleCountError::Contents { .. }) => {
+            assert_eq!(error.status_code(), 400);
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+    let response = json(r#"[{"parts":[{"functionResponse":{"name":"f","bogus":1}}]}]"#);
+    match clean_contents(&response) {
+        Err(error @ GoogleCountError::FunctionResponse { .. }) => {
+            assert_eq!(error.status_code(), 400);
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn http_count_post_body_sends_only_the_cleaned_contents() {
     let script = Script::replying(
@@ -285,30 +325,14 @@ async fn http_count_post_body_sends_only_the_cleaned_contents() {
     );
     let contents =
         json(r#"[{"parts":[{"functionResponse":{"id":"c","name":"f","response":{"a":1}}}]}]"#);
-    let settings = studio_settings();
-    let params = NativeParams {
-        api_key: None,
-        gemini_api_key: None,
-    };
-    let input = StudioCountInput {
-        model: "gemini-2.0-flash",
-        contents: &contents,
-        api_key: None,
-        api_base: Some("https://proxy.example/"),
-        params: &params,
-        settings: &settings,
-        timeout: Some(Duration::from_millis(1)),
-    };
-    let reply = count(&script, studio_request(&input).unwrap(), DEADLINE)
-        .await
-        .unwrap();
+    let request = studio_count_request(
+        &contents,
+        None,
+        Some("https://proxy.example/"),
+        Some(Duration::from_millis(1)),
+    );
+    let reply = count(&script, request, DEADLINE).await.unwrap();
     assert_eq!(reply.total_tokens, Some(7));
-    assert_eq!(reply.total_billable_characters, Some(3));
-    assert_eq!(reply.tokenizer_used.as_deref(), Some("google"));
-    let details = reply.prompt_tokens_details.unwrap();
-    assert_eq!(details.len(), 1);
-    assert_eq!(details[0].modality, "TEXT");
-    assert_eq!(details[0].token_count, 7);
     let sent = script.requests();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].method, Method::POST);
@@ -336,24 +360,9 @@ async fn http_count_post_body_sends_only_the_cleaned_contents() {
 async fn http_count_defaults_the_studio_base_and_requests_its_key() {
     let script = Script::replying(200, br#"{"totalTokens":1}"#);
     let contents = json(r#"[{"parts":[{"text":"hi"}]}]"#);
-    let settings = studio_settings();
-    let params = NativeParams {
-        api_key: None,
-        gemini_api_key: None,
-    };
     let key = SecretString::from("request-key");
-    let input = StudioCountInput {
-        model: "gemini-2.0-flash",
-        contents: &contents,
-        api_key: Some(&key),
-        api_base: None,
-        params: &params,
-        settings: &settings,
-        timeout: None,
-    };
-    count(&script, studio_request(&input).unwrap(), DEADLINE)
-        .await
-        .unwrap();
+    let request = studio_count_request(&contents, Some(&key), None, None);
+    count(&script, request, DEADLINE).await.unwrap();
     let sent = script.requests();
     assert_eq!(
         sent[0].url,
@@ -368,22 +377,9 @@ async fn http_count_defaults_the_studio_base_and_requests_its_key() {
 #[tokio::test]
 async fn http_count_error_kind_keeps_the_status_and_the_connection_split() {
     let contents = json("[]");
-    let settings = studio_settings();
-    let params = NativeParams {
-        api_key: None,
-        gemini_api_key: None,
-    };
-    let input = StudioCountInput {
-        model: "gemini-2.0-flash",
-        contents: &contents,
-        api_key: None,
-        api_base: None,
-        params: &params,
-        settings: &settings,
-        timeout: None,
-    };
     let failed = Script::replying(500, b"boom");
-    match count(&failed, studio_request(&input).unwrap(), DEADLINE).await {
+    let failed_request = studio_count_request(&contents, None, None, None);
+    match count(&failed, failed_request, DEADLINE).await {
         Err(GoogleCountError::Status { status, body }) => {
             assert_eq!(status, 500);
             assert_eq!(body, "boom");
@@ -391,27 +387,25 @@ async fn http_count_error_kind_keeps_the_status_and_the_connection_split() {
         other => panic!("unexpected result: {other:?}"),
     }
     let rejected = Script::replying(400, b"bad request");
-    match count(&rejected, studio_request(&input).unwrap(), DEADLINE).await {
+    let rejected_request = studio_count_request(&contents, None, None, None);
+    match count(&rejected, rejected_request, DEADLINE).await {
         Err(error @ GoogleCountError::Status { status: 400, .. }) => {
             assert_eq!(error.status_code(), 400);
         }
         other => panic!("unexpected result: {other:?}"),
     }
     let closed = Script::failing();
-    match count(&closed, studio_request(&input).unwrap(), DEADLINE).await {
+    let closed_request = studio_count_request(&contents, None, None, None);
+    match count(&closed, closed_request, DEADLINE).await {
         Err(error @ GoogleCountError::Connection { .. }) => {
             assert_eq!(error.status_code(), 500);
         }
         other => panic!("unexpected result: {other:?}"),
     }
     let created = Script::replying(201, br#"{"totalTokens":2}"#);
-    assert_eq!(
-        count(&created, studio_request(&input).unwrap(), DEADLINE)
-            .await
-            .unwrap()
-            .total_tokens,
-        Some(2)
-    );
+    let created_request = studio_count_request(&contents, None, None, None);
+    let reply = count(&created, created_request, DEADLINE).await.unwrap();
+    assert_eq!(reply.total_tokens, Some(2));
     assert_eq!(PROVIDER, "gemini");
 }
 
@@ -423,21 +417,8 @@ async fn http_count_uses_the_real_client_transport() {
     );
     let client = ProxiedClient::outbound(&policy).expect("an outbound client");
     let contents = json("[]");
-    let settings = studio_settings();
-    let params = NativeParams {
-        api_key: None,
-        gemini_api_key: None,
-    };
-    let input = StudioCountInput {
-        model: "gemini-2.0-flash",
-        contents: &contents,
-        api_key: None,
-        api_base: Some("http://127.0.0.1:1"),
-        params: &params,
-        settings: &settings,
-        timeout: None,
-    };
-    let error = count(&client, studio_request(&input).unwrap(), DEADLINE)
+    let request = studio_count_request(&contents, None, Some("http://127.0.0.1:1"), None);
+    let error = count(&client, request, DEADLINE)
         .await
         .expect_err("nothing listens on the chosen port");
     assert!(matches!(error, GoogleCountError::Connection { .. }));

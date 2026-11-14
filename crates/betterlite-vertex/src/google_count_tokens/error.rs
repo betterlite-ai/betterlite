@@ -52,18 +52,17 @@ pub enum GoogleCountError {
 }
 
 impl GoogleCountError {
-    // LiteLLM answers the upstream status through APIError and every other count failure as a 500
+    // the upstream status passes through, malformed request contents answer 400, and every other count failure is a 500
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
             Self::Status { status, .. } => *status,
+            Self::Contents { .. } | Self::FunctionResponse { .. } => 400,
             Self::Connection { .. }
             | Self::ResponseTooLarge { .. }
             | Self::Json { .. }
             | Self::Url { .. }
             | Self::Header { .. }
-            | Self::Contents { .. }
-            | Self::FunctionResponse { .. }
             | Self::Credentials { .. }
             | Self::Target { .. } => 500,
         }
