@@ -1,0 +1,17 @@
+kind: helper
+name: blank-lines-ignored
+call:
+  b3491:
+    mode: async
+    lines:
+      - ''
+      - 'data: {"id":"int_1","event_type":"step.start"}'
+      - ''
+      - ''
+      - 'data: {"id":"int_1","event_type":"step.stop"}'
+      - ''
+    litellm_params:
+      api_base: https://interactions.test
+env: {}
+compare:
+  ignore: []

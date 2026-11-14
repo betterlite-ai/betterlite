@@ -1,0 +1,14 @@
+kind: helper
+name: sse-strip-then-parse
+call:
+  b3491:
+    mode: async
+    lines:
+      - 'data: {"id":"space"}'
+      - 'data:{"id":"bare"}'
+      - '{"id":"raw"}'
+    litellm_params:
+      api_base: https://interactions.test
+env: {}
+compare:
+  ignore: []

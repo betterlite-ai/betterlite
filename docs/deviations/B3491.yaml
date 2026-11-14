@@ -1,0 +1,11 @@
+task: B3491
+deviations:
+  - what: "The async iterator's completion dispatch hands the response to an injected InteractionsStreamLogging seam instead of calling asyncio.create_task on the logging object directly; the seam's implementation starts the task with prefer_async_handlers=true, so iteration still never awaits completion logging."
+    why: "betterlite has no asyncio; the logging side owns its task tracker, and B250's success dispatch mechanics stay outside this module."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L175-L183
+  - what: "The sync iterator's completion dispatch calls two seam methods, run_async_success_handler and submit_success_handler, instead of calling run_async_function and executor.submit itself; the injection point is the same and both handlers receive the same deep-copied response in the same order."
+    why: "betterlite injects its logging object through a trait, and the executor bridge belongs to the logging crate; the iterator only names the two dispatch paths LiteLLM uses."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L242-L256
+  - what: "The iterator constructor takes the shared get_api_base context through an InteractionsApiBase seam instead of reading process-global model aliases and provider settings."
+    why: "betterlite forbids globals; the context is injected where the request is wired. SharedApiBase calls betterlite-models' get_api_base, and a resolution failure falls back to None the way LiteLLM swallows it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_api_base.py#L84-L86

@@ -55,6 +55,10 @@ tracing.workspace = true
 url = "2.5.8"
 uuid.workspace = true
 
+[[test]]
+name = "interactions_streaming"
+path = "src/api/interactions/streaming/target.rs"
+
 [lints]
 workspace = true
 [dev-dependencies]

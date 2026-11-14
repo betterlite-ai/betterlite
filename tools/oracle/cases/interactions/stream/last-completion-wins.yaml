@@ -1,0 +1,14 @@
+kind: helper
+name: last-completion-wins
+call:
+  b3491:
+    mode: async
+    lines:
+      - 'data: {"id":"int_1","status":"completed"}'
+      - 'data: {"id":"int_3","event_type":"step.delta","index":0}'
+      - 'data: {"id":"int_2","event_type":"interaction.completed"}'
+    litellm_params:
+      api_base: https://interactions.test
+env: {}
+compare:
+  ignore: []
