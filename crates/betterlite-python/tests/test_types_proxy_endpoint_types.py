@@ -245,6 +245,9 @@ def test_dataclass_names_match() -> None:
     assert our_key.date == their_key.date
     assert our_key.category == their_key.category
     assert our_key.route == their_key.route
+    assert hash(our_key) == hash(their_key)
+    assert {their_key: 1}[their_key] == 1
+    assert {our_key: 1}[our_key] == 1
     their_counts = litellm_gateway.GatewayRequestCounts(successful_requests=1, failed_requests=2)
     our_counts = gateway_requests.GatewayRequestCounts(successful_requests=1, failed_requests=2)
     their_success = their_counts.plus(succeeded=True)
@@ -307,6 +310,36 @@ def test_budget_snapshot_names() -> None:
     invalid: dict[str, JsonValue] = {"user_api_key_budget_reset_at": "not-a-date"}
     assert litellm_carried_budget.KeyBudgetSnapshot.from_metadata(invalid) is None
     assert carried_budget.KeyBudgetSnapshot.from_metadata(invalid) is None
+    other_snapshots: tuple[tuple[type[BaseModel], type[BaseModel], dict[str, JsonValue]], ...] = (
+        (
+            litellm_carried_budget.TeamBudgetSnapshot,
+            carried_budget.TeamBudgetSnapshot,
+            {
+                "user_api_key_team_budget_reset_at": "2026-01-01T00:00:00Z",
+                "user_api_key_team_table_max_budget": 5.5,
+            },
+        ),
+        (
+            litellm_carried_budget.UserBudgetSnapshot,
+            carried_budget.UserBudgetSnapshot,
+            {
+                "user_api_key_user_budget_reset_at": "2026-01-01T00:00:00Z",
+                "user_api_key_user_table_max_budget": 7.5,
+                "user_api_key_user_alias": "alias",
+            },
+        ),
+        (
+            litellm_carried_budget.OrgBudgetSnapshot,
+            carried_budget.OrgBudgetSnapshot,
+            {"user_api_key_org_spend": 1.5, "user_api_key_org_max_budget": None},
+        ),
+    )
+    for their_class, our_class, entries in other_snapshots:
+        their_other = their_class.from_metadata(entries)
+        our_other = our_class.from_metadata(entries)
+        assert their_other is not None
+        assert our_other is not None
+        assert dict(our_other.metadata_entries()) == dict(their_other.metadata_entries())
     by_field: dict[str, JsonValue] = {"budget_reset_at": "2026-01-01T00:00:00Z"}
     their_by_field = litellm_carried_budget.KeyBudgetSnapshot.model_validate(by_field)
     our_by_field = carried_budget.KeyBudgetSnapshot.model_validate(by_field)
@@ -399,3 +432,19 @@ def test_error_names_match() -> None:
     their_unset = litellm_vantage.VantageSettingsUpdate(api_key=None)
     our_unset = vantage.VantageSettingsUpdate(api_key=None)
     assert our_unset.model_dump() == their_unset.model_dump()
+    their_worker_ok = litellm_control_plane.WorkerRegistryEntry(
+        worker_id="w", name="n", url="https://worker"
+    )
+    our_worker_ok = control_plane.WorkerRegistryEntry(worker_id="w", name="n", url="https://worker")
+    assert our_worker_ok.model_dump() == their_worker_ok.model_dump()
+    their_init_ok = litellm_vantage.VantageInitRequest(api_key="key", integration_token="token")
+    our_init_ok = vantage.VantageInitRequest(api_key="key", integration_token="token")
+    assert our_init_ok.model_dump() == their_init_ok.model_dump()
+    their_update_ok = litellm_vantage.VantageSettingsUpdate(api_key="key")
+    our_update_ok = vantage.VantageSettingsUpdate(api_key="key")
+    assert our_update_ok.model_dump() == their_update_ok.model_dump()
+    with pytest.raises(ValidationError) as their_blank_init_token:
+        litellm_vantage.VantageInitRequest(api_key="key", integration_token=" ")
+    with pytest.raises(ValidationError) as our_blank_init_token:
+        vantage.VantageInitRequest(api_key="key", integration_token=" ")
+    assert str(our_blank_init_token.value) == str(their_blank_init_token.value)
