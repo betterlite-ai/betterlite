@@ -1,0 +1,131 @@
+kind: probe
+name: adaptive-classification-one-adaptive-router-per-instance
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: router_configs
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "router-a", "adaptive_router_config": {"available_models": ["fast", "smart"], "weights": {"quality": "0.6", "cost": "0.4"}}, "adaptive_router_preferences": null}
+          - {"model_name": "router-b", "adaptive_router_config": {"available_models": ["fast"]}, "adaptive_router_preferences": null}
+          - {"model_name": "router-c", "adaptive_router_config": {"available_models": ["fast", "smart"], "weights": {"quality": "0.9"}}, "adaptive_router_preferences": null}
+          - {"model_name": "fast", "adaptive_router_config": null, "adaptive_router_preferences": {"quality_tier": 2, "strengths": ["code_generation"]}}
+          - {"model_name": "plain", "adaptive_router_config": null, "adaptive_router_preferences": null}
+          - {"model_name": "smart", "adaptive_router_config": null, "adaptive_router_preferences": {"quality_tier": 3}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: preferences
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "router-a", "adaptive_router_config": {"available_models": ["fast", "smart"], "weights": {"quality": "0.6", "cost": "0.4"}}, "adaptive_router_preferences": null}
+          - {"model_name": "router-b", "adaptive_router_config": {"available_models": ["fast"]}, "adaptive_router_preferences": null}
+          - {"model_name": "router-c", "adaptive_router_config": {"available_models": ["fast", "smart"], "weights": {"quality": "0.9"}}, "adaptive_router_preferences": null}
+          - {"model_name": "fast", "adaptive_router_config": null, "adaptive_router_preferences": {"quality_tier": 2, "strengths": ["code_generation"]}}
+          - {"model_name": "plain", "adaptive_router_config": null, "adaptive_router_preferences": null}
+          - {"model_name": "smart", "adaptive_router_config": null, "adaptive_router_preferences": {"quality_tier": 3}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: router_configs
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "router-d", "adaptive_router_config": {"available_models": ["fast"], "weights": {"cost": "0.3"}}, "adaptive_router_preferences": null}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: router_configs
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "router-d", "adaptive_router_config": {"available_models": ["fast"], "weights": {"quality": "0.7009", "cost": "0.3"}}, "adaptive_router_preferences": null}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: router_configs
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "router-d", "adaptive_router_config": {"available_models": ["fast"], "weights": {"quality": "0.7012", "cost": "0.3"}}, "adaptive_router_preferences": null}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: router_configs
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "router-e", "adaptive_router_config": {"available_models": ["fast"], "weights": {"quality": "0.5", "cost": "0.2"}}, "adaptive_router_preferences": null}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: router_configs
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "router-f", "adaptive_router_config": {"available_models": ["fast"], "weights": {"quality": "1.2", "cost": "-0.2"}}, "adaptive_router_preferences": null}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: router_configs
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "router-f", "adaptive_router_config": {"available_models": ["fast"], "weights": {"quality": "0.5", "cost": "1.5"}}, "adaptive_router_preferences": null}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: preferences
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "too-high", "adaptive_router_config": null, "adaptive_router_preferences": {"quality_tier": 4}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: preferences
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "too-low", "adaptive_router_config": null, "adaptive_router_preferences": {"quality_tier": 0}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: preferences
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "negative", "adaptive_router_config": null, "adaptive_router_preferences": {"quality_tier": -1}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: preferences
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "unknown", "adaptive_router_config": null, "adaptive_router_preferences": {"quality_tier": 2, "strengths": ["nope"]}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: preferences
+        prompts: []
+        requests: []
+        deployments:
+          - {"model_name": "named", "adaptive_router_config": null, "adaptive_router_preferences": {"quality_tier": 2, "strengths": ["CODE_GENERATION"]}}
+compare: {ignore: []}
