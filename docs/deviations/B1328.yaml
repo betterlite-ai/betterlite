@@ -3,4 +3,7 @@ deviations:
   - what: An empty private-endpoint instances list returns the "Instances are required for private endpoint" error, where LiteLLM indexes instances[0] and raises an IndexError.
     why: LiteLLM's own guard checks only for None, so the empty list crashes with a message that names nothing; betterlite reports the missing input with the error the source meant for it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_non_gemini.py#L654-L658
+  - what: The prediction decoder is bounded and strict, so a body or a streamed object over four MiB, a stream whose first byte is not "[", and bytes after the closing "]" other than whitespace all fail with a 500 error; LiteLLM hands the same bytes to the Google SDK and parses whatever it returns.
+    why: The task requires a bounded decoder so a broken or hostile response cannot make the proxy buffer without limit. A working Vertex setup sends a compact array well under the cap, so the limit only turns a hang or a memory spike into an error.
+    link: ""
 kept_bugs: []
