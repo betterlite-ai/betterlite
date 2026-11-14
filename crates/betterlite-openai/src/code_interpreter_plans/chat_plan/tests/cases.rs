@@ -26,7 +26,7 @@ fn run_chat_plan(
     kwargs: &Map<String, Value>,
 ) -> AgenticLoopPlan {
     let messages = json!([{"role": "user", "content": "hi"}]);
-    let optional_params = Map::new();
+    let optional_params = test_map([("tools", json!([{"type": "code_interpreter"}]))]);
     let request = plan_request(&messages, &optional_params, tool_calls, kwargs);
     let clock = FixedClock(Instant::now());
     block_on(build_chat_plan(
@@ -134,8 +134,8 @@ fn tool_result_prefers_the_id_and_falls_back_to_the_call_id() {
     let (message, _) = tool_result(&preferred);
     assert_eq!(message.tool_call_id.as_deref(), Some("id-1"));
     let fallback = chat_tool_call(None, Some("call-2"), "print(1)");
-    let (message, _) = tool_result(&fallback);
-    assert_eq!(message.tool_call_id.as_deref(), Some("call-2"));
+    let (fallback_message, _) = tool_result(&fallback);
+    assert_eq!(fallback_message.tool_call_id.as_deref(), Some("call-2"));
 }
 
 #[cfg(test)]
@@ -228,6 +228,6 @@ fn session_scope_reaches_the_chat_metadata_and_the_cache_entry() {
         metadata_value(&plan.metadata, "sandbox_key"),
         json!("user-key:sess-1")
     );
-    let entry = logger.cache.entries.get("user-key:sess-1").unwrap();
+    let entry = &logger.cache.entries["user-key:sess-1"];
     assert_eq!(entry.identity.as_deref(), Some("user-key"));
 }

@@ -38,8 +38,8 @@ fn root_metadata_strips_interception_markers_from_a_root_request() {
             json!({
                 "_code_interpreter_interception_active": true,
                 "_websearch_interception_active": true,
-                "_agentic_loop_depth": 1,
-                "max_agentic_loops": 3,
+                "_agentic_loop_depth": 1_i32,
+                "max_agentic_loops": 3_i32,
                 "session_id": "sess-1"
             }),
         ),
@@ -61,7 +61,7 @@ fn root_metadata_keeps_the_markers_during_a_follow_up_iteration() {
     let mut kwargs = test_map([
         (INTERCEPTION_ACTIVE_KEY, json!(true)),
         (SANDBOX_KEY, json!("kept")),
-        ("_agentic_loop_depth", json!(1)),
+        ("_agentic_loop_depth", json!(1_i32)),
         (
             "litellm_metadata",
             json!({"_websearch_interception_active": true}),
@@ -75,7 +75,7 @@ fn root_metadata_keeps_the_markers_during_a_follow_up_iteration() {
 #[cfg(test)]
 #[rstest]
 #[case::null(json!(null))]
-#[case::zero(json!(0))]
+#[case::zero(json!(0_i32))]
 #[case::boolean_false(json!(false))]
 fn root_metadata_treats_a_missing_zero_or_empty_depth_as_the_root(#[case] depth: Value) {
     let mut logger = empty_logger::<()>();
@@ -97,20 +97,28 @@ fn root_metadata_returns_false_when_the_hook_does_not_apply() {
     assert!(!hook(&logger, &mut disabled, Some(CallType::Responses)));
     assert!(disabled.get(INTERCEPTION_ACTIVE_KEY).is_none());
 
-    let logger = empty_logger::<()>();
+    let enabled_logger = empty_logger::<()>();
     let mut no_call_type = test_map([("tools", code_interpreter_tools())]);
-    assert!(!hook(&logger, &mut no_call_type, None));
+    assert!(!hook(&enabled_logger, &mut no_call_type, None));
     assert!(no_call_type.get(INTERCEPTION_ACTIVE_KEY).is_none());
 
     let mut no_tools = Map::new();
-    assert!(!hook(&logger, &mut no_tools, Some(CallType::Completion)));
+    assert!(!hook(
+        &enabled_logger,
+        &mut no_tools,
+        Some(CallType::Completion)
+    ));
     assert!(no_tools.get(INTERCEPTION_ACTIVE_KEY).is_none());
 
     let mut native_tools = test_map([(
         "tools",
         json!([{"type": "function", "name": "get_weather"}]),
     )]);
-    assert!(!hook(&logger, &mut native_tools, Some(CallType::Responses)));
+    assert!(!hook(
+        &enabled_logger,
+        &mut native_tools,
+        Some(CallType::Responses)
+    ));
     assert!(native_tools.get(INTERCEPTION_ACTIVE_KEY).is_none());
 }
 
@@ -256,7 +264,7 @@ fn tool_rewriting_replaces_code_interpreter_tools_and_keeps_the_rest_in_order() 
     let weather = json!({"type": "function", "name": "get_weather"});
     let mut kwargs = test_map([(
         "tools",
-        json!([{"type": "code_interpreter"}, weather.clone(), {"type": "code_interpreter"}]),
+        json!([{"type": "code_interpreter"}, weather, {"type": "code_interpreter"}]),
     )]);
     assert!(hook(&logger, &mut kwargs, Some(CallType::Responses)));
     let replacement = serde_json::to_value(function_tool(CallDialect::Responses)).unwrap();

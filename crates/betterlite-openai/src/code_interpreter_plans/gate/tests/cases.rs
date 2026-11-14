@@ -16,7 +16,7 @@ fn execution_response() -> Value {
 }
 
 #[cfg(test)]
-fn gate_request<'request>(
+const fn gate_request<'request>(
     response: &'request Value,
     provider: &'request str,
     kwargs: &'request Map<String, Value>,
@@ -111,9 +111,9 @@ fn detection_uses_the_chat_extractor_only_on_the_chat_surface() {
     let chat_response = json!({
         "id": "chatcmpl-1",
         "object": "chat.completion",
-        "created": 1,
+        "created": 1_i32,
         "model": "gpt-4o",
-        "choices": [{"index": 0, "message": {"role": "assistant", "tool_calls": [
+        "choices": [{"index": 0_i32, "message": {"role": "assistant", "tool_calls": [
             {"id": "call-1", "type": "function", "function": {"name": "litellm_code_execution", "arguments": "{\"code\":\"print(1)\"}"}}
         ]}}]
     });

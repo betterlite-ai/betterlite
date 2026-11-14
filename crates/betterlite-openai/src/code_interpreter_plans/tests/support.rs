@@ -224,7 +224,7 @@ fn test_logger(config: MockConfig) -> InterceptionLogger<MockConfig> {
 }
 
 #[cfg(test)]
-fn plan_request<'request>(
+const fn plan_request<'request>(
     messages: &'request Value,
     optional_params: &'request Map<String, Value>,
     tool_calls: &'request [CodeExecutionToolCall],

@@ -75,7 +75,7 @@ fn sandbox_key_is_read_only_from_a_string_marker() {
         container_extraction::sandbox_key(&test_map([(SANDBOX_KEY, json!("k"))])).as_deref(),
         Some("k")
     );
-    assert!(container_extraction::sandbox_key(&test_map([(SANDBOX_KEY, json!(7))])).is_none());
+    assert!(container_extraction::sandbox_key(&test_map([(SANDBOX_KEY, json!(7_i32))])).is_none());
     assert!(container_extraction::sandbox_key(&Map::new()).is_none());
 }
 
@@ -158,6 +158,6 @@ fn identity_reaches_the_cache_entry() {
     ]);
     let mut logger = sample_logger();
     run_responses_plan(&mut logger, &kwargs);
-    let entry = logger.cache.entries.get("user-key:sess-1").unwrap();
+    let entry = &logger.cache.entries["user-key:sess-1"];
     assert_eq!(entry.identity.as_deref(), Some("user-key"));
 }

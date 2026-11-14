@@ -119,9 +119,8 @@ fn call_records_serialize_the_code_interpreter_call_shape() {
     assert!(id.starts_with("ci_"));
     assert_eq!(id.len(), 35);
     assert!(
-        id[3..]
-            .chars()
-            .all(|character| character.is_ascii_hexdigit())
+        id.strip_prefix("ci_")
+            .is_some_and(|hex| hex.chars().all(|character| character.is_ascii_hexdigit()))
     );
     let mut without_id = call.as_object().unwrap().clone();
     without_id.remove("id");
@@ -226,7 +225,7 @@ fn assembly_filters_the_follow_up_request() {
     let optional_params = test_map([
         ("tools", json!([{"type": "code_interpreter"}])),
         ("tool_choice", json!({"type": "code_interpreter"})),
-        ("temperature", json!(0.2)),
+        ("temperature", json!(0.2_f64)),
     ]);
     let kwargs = test_map([
         ("model", json!("openai/gpt-5")),
@@ -242,7 +241,7 @@ fn assembly_filters_the_follow_up_request() {
     );
     assert_eq!(
         metadata_value(&patch.optional_params, "temperature"),
-        json!(0.2)
+        json!(0.2_f64)
     );
     assert!(patch.optional_params.get("tools").is_none());
     assert!(patch.optional_params.get("tool_choice").is_none());

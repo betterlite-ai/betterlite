@@ -49,7 +49,7 @@ fn resolution_returns_none_for_an_unknown_model_without_a_provider() {
 #[cfg(test)]
 #[test]
 fn resolution_returns_none_for_a_model_that_is_not_a_string() {
-    let kwargs = test_map([("model", json!(5)), ("custom_llm_provider", json!(""))]);
+    let kwargs = test_map([("model", json!(5_i32)), ("custom_llm_provider", json!(""))]);
     let catalog = ModelCatalog::default();
     assert!(resolve_provider(&catalog, &kwargs).is_none());
     assert!(resolve_provider(&catalog, &Map::new()).is_none());
