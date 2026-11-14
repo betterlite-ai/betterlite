@@ -601,7 +601,7 @@ async fn tools_are_adapted_per_vendor() {
     assert_eq!(value["chatRequest"]["tools"][0]["name"], json!("lookup"));
     assert_eq!(
         value["chatRequest"]["tools"][0]["parameterDefinitions"]["q"]["type"],
-        json("str")
+        json!("str")
     );
 }
 
@@ -648,6 +648,20 @@ async fn tool_choice_rejects_bad_shapes(#[case] given: serde_json::Value) {
     .await;
     assert_eq!(error.status, 400);
     assert!(error.message.starts_with("Invalid tool_choice for OCI"));
+}
+
+#[tokio::test]
+async fn tool_choice_names_the_rejected_kind() {
+    let error = payload(
+        "meta.llama-3.3-70b-instruct",
+        &[message(Role::User, "hi")],
+        &json!({"tool_choice": [1, 2]}),
+    )
+    .await;
+    assert_eq!(
+        error.message,
+        "Invalid tool_choice for OCI: expected str or dict, got list"
+    );
 }
 
 #[rstest]
@@ -826,9 +840,13 @@ fn response_maps_the_error_key_and_non_objects() {
             .message
             .starts_with("Invalid response format from OCI:")
     );
+    let mut at_limit = vec![b' '; crate::oci_chat::response::MAX_CHAT_BODY_BYTES];
+    at_limit[..2].copy_from_slice(b"{}");
+    assert!(decode_chat_body(200, at_limit.as_slice()).is_ok());
     let oversized = vec![b' '; crate::oci_chat::response::MAX_CHAT_BODY_BYTES + 1];
     let too_large = decode_chat_body(200, oversized.as_slice()).unwrap_err();
     assert_eq!(too_large.status, 200);
+    assert!(too_large.message.contains("larger than"));
 }
 
 #[test]
@@ -916,6 +934,44 @@ fn sse_decoder_suppresses_cohere_restatements() {
         panic!("the line carries a chunk");
     };
     assert!(chunk.choice.delta.content.is_none());
+}
+
+#[test]
+fn sse_decoder_marks_cohere_state_only_after_real_content() {
+    let mut decoder = SseDecoder::default();
+    decoder
+        .push("data: {\"apiFormat\":\"COHERE\",\"index\":0,\"text\":\"\"}\n")
+        .unwrap();
+    let items = decoder
+        .push("data: {\"apiFormat\":\"COHERE\",\"index\":0,\"text\":\"x\",\"chatHistory\":[]}\n")
+        .unwrap();
+    let StreamItem::Chunk(chunk) = &items[0] else {
+        panic!("the line carries a chunk");
+    };
+    assert_eq!(chunk.choice.delta.content.as_deref(), Some("x"));
+    let mut decoder = SseDecoder::default();
+    decoder
+        .push("data: {\"apiFormat\":\"COHERE\",\"index\":0,\"text\":\"a\"}\n")
+        .unwrap();
+    let call = "\"toolCalls\":[{\"name\":\"lookup\",\"parameters\":{}}]";
+    let first = decoder
+        .push(&format!(
+            "data: {{\"apiFormat\":\"COHERE\",\"index\":0,\"chatHistory\":[],{call}}}\n"
+        ))
+        .unwrap();
+    let StreamItem::Chunk(chunk) = &first[0] else {
+        panic!("the line carries a chunk");
+    };
+    assert!(chunk.tool_call);
+    let again = decoder
+        .push(&format!(
+            "data: {{\"apiFormat\":\"COHERE\",\"index\":0,\"chatHistory\":[],{call}}}\n"
+        ))
+        .unwrap();
+    let StreamItem::Chunk(chunk) = &again[0] else {
+        panic!("the line carries a chunk");
+    };
+    assert!(!chunk.tool_call);
 }
 
 #[test]
