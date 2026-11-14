@@ -309,6 +309,7 @@ fn commands_unrecognized_prefix_is_dropped_instead_of_sent() {
         "{}",
         terminal.stdout
     );
+    assert!(!terminal.stdout.contains("Usage:"), "{}", terminal.stdout);
     let requests = server.finish();
     let body = chat_body(&requests);
     assert_eq!(body.messages.len(), 1);
