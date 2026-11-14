@@ -123,6 +123,8 @@ JOB: dict[str, JsonValue] = {
     "created_at": "2026-01-01T00:00:00Z",
     "ends_at": "2999-01-01T00:00:00Z",
 }
+MESSAGES: JsonValue = [{"role": "user", "content": "hi"}]
+MESSAGES_ONLY: dict[str, JsonValue] = {"messages": MESSAGES, "complexity_router_config": {}}
 BUCKETS: dict[str, JsonValue] = {
     "uncached_input_tokens": 1,
     "cache_read_input_tokens": 2,
@@ -533,12 +535,8 @@ def test_names_validators_deferred() -> None:
 
 
 def test_names_routing_test_request() -> None:  # ast-grep-ignore: no-long-names
-    payload: dict[str, JsonValue] = {
-        "messages": [{"role": "user", "content": "hi"}],
-        "complexity_router_config": {},
-    }
-    ours = auto_router.AutoRouterRoutingTestRequest.model_validate(payload)
-    reference = litellm_router.AutoRouterRoutingTestRequest.model_validate(payload)
+    ours = auto_router.AutoRouterRoutingTestRequest.model_validate(MESSAGES_ONLY)
+    reference = litellm_router.AutoRouterRoutingTestRequest.model_validate(MESSAGES_ONLY)
     ours_config: dict[str, JsonValue] = ours.complexity_router_config.model_dump()
     assert ours_config == {"plugins": None, "classifier_plugin": None}
     ours_dump = dump(ours)
@@ -549,23 +547,16 @@ def test_names_routing_test_request() -> None:  # ast-grep-ignore: no-long-names
 
 
 def test_names_wire_body() -> None:
-    payload: dict[str, JsonValue] = {
-        "messages": [{"role": "user", "content": "hi"}],
-        "system": "s",
-        "tools": [{"type": "function"}],
-        "complexity_router_config": {},
-    }
-    ours = auto_router.AutoRouterRoutingTestRequest.model_validate(payload)
-    reference = litellm_router.AutoRouterRoutingTestRequest.model_validate(payload)
-    assert dict(ours.wire_body()) == dict(reference.wire_body())
-    messages_only: dict[str, JsonValue] = {
-        "messages": [{"role": "user", "content": "hi"}],
-        "complexity_router_config": {},
-    }
-    ours_only = auto_router.AutoRouterRoutingTestRequest.model_validate(messages_only)
-    reference_only = litellm_router.AutoRouterRoutingTestRequest.model_validate(messages_only)
-    wanted_body: dict[str, JsonValue] = {"messages": [{"role": "user", "content": "hi"}]}
-    assert dict(ours_only.wire_body()) == dict(reference_only.wire_body()) == wanted_body
+    full = MESSAGES_ONLY | {"system": "s", "tools": [{"type": "function"}]}
+    full_body = {"messages": MESSAGES, "system": "s", "tools": [{"type": "function"}]}
+    cases: tuple[tuple[dict[str, JsonValue], dict[str, JsonValue]], ...] = (
+        (full, full_body),
+        (MESSAGES_ONLY, {"messages": MESSAGES}),
+    )
+    for payload, wanted in cases:
+        ours = auto_router.AutoRouterRoutingTestRequest.model_validate(payload)
+        reference = litellm_router.AutoRouterRoutingTestRequest.model_validate(payload)
+        assert dict(ours.wire_body()) == dict(reference.wire_body()) == wanted
 
 
 def test_names_properties() -> None:
