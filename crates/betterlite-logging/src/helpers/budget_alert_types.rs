@@ -85,7 +85,6 @@ impl BaseBudgetAlertType for BudgetAlertType {
 #[must_use]
 pub fn get_budget_alert_type(name: &str) -> BudgetAlertType {
     match name {
-        "proxy_budget" => BudgetAlertType::ProxyBudget,
         "soft_budget" => BudgetAlertType::SoftBudget,
         "user_budget" => BudgetAlertType::UserBudget,
         "max_budget_alert" | "token_budget" => BudgetAlertType::TokenBudget,
