@@ -58,10 +58,8 @@ fn validate_answer(
     let (environment_key, _) = ModelDeployment::soniox_record_settings(environment);
     match validate_environment(headers.clone(), api_key, environment_key.as_ref()) {
         Ok(merged) => json!({ "ok": true, "headers": merged }),
-        Err(error) => json!({
-            "ok": false,
-            "error": { "status": error.status_code, "message": error.message },
-        }),
+        // the helper's guarded() reports a raised provider error as its status
+        Err(error) => json!({ "raised": error.status_code }),
     }
 }
 
