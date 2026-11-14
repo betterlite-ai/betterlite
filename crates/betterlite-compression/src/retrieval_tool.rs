@@ -1,6 +1,6 @@
 use betterlite_anthropic::tools::{ToolsError, map_tools};
 use betterlite_prompts::arguments::json::Json;
-use serde_json::{Value, json};
+use serde_json::{Map, Value};
 
 use crate::message_normalization::CallType;
 
@@ -17,27 +17,42 @@ pub enum RetrievalToolError {
 }
 
 pub fn build_retrieval_tool(available_keys: &[String]) -> Value {
-    json!({
-        "type": "function",
-        "function": {
-            "name": RETRIEVAL_TOOL_NAME,
-            "description": format!(
-                "Retrieve the full content of a file or message that was compressed to save tokens. Use this when you need the complete content to answer accurately. Available keys: {}",
-                available_keys.join(", ")
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "key": {
-                        "type": "string",
-                        "description": "The identifier of the content to retrieve",
-                        "enum": available_keys,
-                    }
-                },
-                "required": ["key"],
-            },
-        },
-    })
+    let mut key = Map::new();
+    key.insert("type".to_owned(), Value::String("string".to_owned()));
+    key.insert(
+        "description".to_owned(),
+        Value::String("The identifier of the content to retrieve".to_owned()),
+    );
+    key.insert(
+        "enum".to_owned(),
+        Value::Array(available_keys.iter().cloned().map(Value::String).collect()),
+    );
+    let mut properties = Map::new();
+    properties.insert("key".to_owned(), Value::Object(key));
+    let mut parameters = Map::new();
+    parameters.insert("type".to_owned(), Value::String("object".to_owned()));
+    parameters.insert("properties".to_owned(), Value::Object(properties));
+    parameters.insert(
+        "required".to_owned(),
+        Value::Array(vec![Value::String("key".to_owned())]),
+    );
+    let mut function = Map::new();
+    function.insert(
+        "name".to_owned(),
+        Value::String(RETRIEVAL_TOOL_NAME.to_owned()),
+    );
+    function.insert(
+        "description".to_owned(),
+        Value::String(format!(
+            "Retrieve the full content of a file or message that was compressed to save tokens. Use this when you need the complete content to answer accurately. Available keys: {}",
+            available_keys.join(", ")
+        )),
+    );
+    function.insert("parameters".to_owned(), Value::Object(parameters));
+    let mut tool = Map::new();
+    tool.insert("type".to_owned(), Value::String("function".to_owned()));
+    tool.insert("function".to_owned(), Value::Object(function));
+    Value::Object(tool)
 }
 
 pub fn build_retrieval_tools(
