@@ -128,22 +128,28 @@ fn text_field(
 fn patterns_field(
     fields: &BTreeMap<String, GuardrailValue>,
 ) -> Result<Option<BTreeMap<String, String>>, ToolPermissionError> {
-    match fields.get("allowed_param_patterns") {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Object(entries)) => entries
-            .iter()
-            .map(|(path, value)| match value {
-                GuardrailValue::Text(pattern) => Ok((path.clone(), pattern.clone())),
-                _wrong => Err(ToolPermissionError::WrongType {
-                    field: format!("allowed_param_patterns.{path}"),
-                    expected: "a string",
-                }),
+    let Some(value) = fields.get("allowed_param_patterns") else {
+        return Ok(None);
+    };
+    let GuardrailValue::Object(entries) = value else {
+        return if matches!(value, GuardrailValue::Null) {
+            Ok(None)
+        } else {
+            Err(ToolPermissionError::WrongType {
+                field: "allowed_param_patterns".to_owned(),
+                expected: "an object of string patterns",
             })
-            .collect::<Result<BTreeMap<String, String>, ToolPermissionError>>()
-            .map(Some),
-        Some(_wrong) => Err(ToolPermissionError::WrongType {
-            field: "allowed_param_patterns".to_owned(),
-            expected: "an object of string patterns",
-        }),
+        };
+    };
+    let mut patterns = BTreeMap::new();
+    for (path, pattern) in entries {
+        let GuardrailValue::Text(source) = pattern else {
+            return Err(ToolPermissionError::WrongType {
+                field: format!("allowed_param_patterns.{path}"),
+                expected: "a string",
+            });
+        };
+        patterns.insert(path.clone(), source.clone());
     }
+    Ok(Some(patterns))
 }

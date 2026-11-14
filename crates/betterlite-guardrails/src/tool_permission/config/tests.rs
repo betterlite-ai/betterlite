@@ -4,10 +4,7 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use rstest::rstest;
 
-use super::{
-    ToolPermissionConfigModel, default_action_text, disallowed_action_text, parse_default_action,
-    parse_disallowed_action,
-};
+use super::{ToolPermissionConfigModel, default_action_text, disallowed_action_text};
 use crate::guardrail_initializers::tool_permission::{ToolDefaultAction, ToolDisallowedAction};
 use crate::tool_permission::SUPPORTED_EVENT_HOOKS;
 use crate::tool_permission::rule::ToolDecision;
@@ -38,6 +35,11 @@ fn config_model_defaults_to_deny_and_block() {
     r#"{"default_action": "Deny", "on_disallowed_action": "Block"}"#,
     ToolDefaultAction::Deny,
     ToolDisallowedAction::Block
+)]
+#[case::lower(
+    r#"{"default_action": "deny", "on_disallowed_action": "rewrite"}"#,
+    ToolDefaultAction::Deny,
+    ToolDisallowedAction::Rewrite
 )]
 fn config_model_normalizes_the_actions_to_lowercase(
     #[case] text: &str,
@@ -121,31 +123,4 @@ fn supported_event_hooks_are_pre_call_and_post_call() {
         SUPPORTED_EVENT_HOOKS,
         [GuardrailEventHooks::PreCall, GuardrailEventHooks::PostCall]
     );
-}
-
-#[rstest]
-#[case::upper_allow("ALLOW", ToolDefaultAction::Allow)]
-#[case::lower_deny("deny", ToolDefaultAction::Deny)]
-fn parse_default_action_accepts_any_case(#[case] text: &str, #[case] expected: ToolDefaultAction) {
-    assert_eq!(parse_default_action(text).unwrap(), expected);
-}
-
-#[test]
-fn parse_default_action_rejects_an_unknown_value() {
-    assert!(parse_default_action("drop").is_err());
-}
-
-#[rstest]
-#[case::upper_block("BLOCK", ToolDisallowedAction::Block)]
-#[case::lower_rewrite("rewrite", ToolDisallowedAction::Rewrite)]
-fn parse_disallowed_action_accepts_any_case(
-    #[case] text: &str,
-    #[case] expected: ToolDisallowedAction,
-) {
-    assert_eq!(parse_disallowed_action(text).unwrap(), expected);
-}
-
-#[test]
-fn parse_disallowed_action_rejects_an_unknown_value() {
-    assert!(parse_disallowed_action("ignore").is_err());
 }

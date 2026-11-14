@@ -33,9 +33,25 @@ pub struct ToolPermissionSettings {
 
 impl ToolPermissionConfigModel {
     pub fn resolve(&self) -> Result<ToolPermissionSettings, ToolPermissionError> {
+        let default_action = parse_action(
+            &self.default_action,
+            [
+                ("allow", ToolDefaultAction::Allow),
+                ("deny", ToolDefaultAction::Deny),
+            ],
+            |value| ToolPermissionError::InvalidDefaultAction { value },
+        )?;
+        let on_disallowed_action = parse_action(
+            &self.on_disallowed_action,
+            [
+                ("block", ToolDisallowedAction::Block),
+                ("rewrite", ToolDisallowedAction::Rewrite),
+            ],
+            |value| ToolPermissionError::InvalidDisallowedAction { value },
+        )?;
         Ok(ToolPermissionSettings {
-            default_action: parse_default_action(&self.default_action)?,
-            on_disallowed_action: parse_disallowed_action(&self.on_disallowed_action)?,
+            default_action,
+            on_disallowed_action,
         })
     }
 }
@@ -70,26 +86,16 @@ pub const fn disallowed_action_text(action: ToolDisallowedAction) -> &'static st
     }
 }
 
-pub fn parse_default_action(value: &str) -> Result<ToolDefaultAction, ToolPermissionError> {
-    if value.eq_ignore_ascii_case("allow") {
-        return Ok(ToolDefaultAction::Allow);
+// LiteLLM lowercases both action fields before its allow/deny and block/rewrite checks
+fn parse_action<Action: Copy>(
+    value: &str,
+    choices: [(&str, Action); 2],
+    invalid: fn(String) -> ToolPermissionError,
+) -> Result<Action, ToolPermissionError> {
+    for (name, action) in choices {
+        if value.eq_ignore_ascii_case(name) {
+            return Ok(action);
+        }
     }
-    if value.eq_ignore_ascii_case("deny") {
-        return Ok(ToolDefaultAction::Deny);
-    }
-    Err(ToolPermissionError::InvalidDefaultAction {
-        value: value.to_owned(),
-    })
-}
-
-pub fn parse_disallowed_action(value: &str) -> Result<ToolDisallowedAction, ToolPermissionError> {
-    if value.eq_ignore_ascii_case("block") {
-        return Ok(ToolDisallowedAction::Block);
-    }
-    if value.eq_ignore_ascii_case("rewrite") {
-        return Ok(ToolDisallowedAction::Rewrite);
-    }
-    Err(ToolPermissionError::InvalidDisallowedAction {
-        value: value.to_owned(),
-    })
+    Err(invalid(value.to_owned()))
 }
