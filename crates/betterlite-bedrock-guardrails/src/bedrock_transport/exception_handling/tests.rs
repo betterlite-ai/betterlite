@@ -59,12 +59,62 @@ async fn exception_handling_returns_the_transport_error() {
 }
 
 #[tokio::test]
-async fn exception_handling_returns_a_redirect_response() {
+async fn exception_handling_rejects_a_redirect_response() {
     let guardrail = guardrail_with(OpaqueParams::default());
     let transport = RecordingTransport::replying(302, "");
     let log = RecordingLog::default();
+    let error = sign_and_post(&guardrail, &prepared_request(), &transport, &log, true)
+        .await
+        .expect_err("the HTTP error");
+    match error {
+        PostError::Http { status, detail } => {
+            assert_eq!(status, 302);
+            assert_eq!(detail, "Bedrock guardrail request failed");
+        }
+        other => panic!("expected the HTTP error, got {other}"),
+    }
+}
+
+#[tokio::test]
+async fn exception_handling_rejects_a_not_modified_response() {
+    let guardrail = guardrail_with(OpaqueParams::default());
+    let transport = RecordingTransport::replying(304, "");
+    let log = RecordingLog::default();
+    let error = sign_and_post(&guardrail, &prepared_request(), &transport, &log, true)
+        .await
+        .expect_err("the HTTP error");
+    assert!(matches!(error, PostError::Http { status: 304, .. }));
+}
+
+#[tokio::test]
+async fn exception_handling_accepts_the_last_success_status() {
+    let guardrail = guardrail_with(OpaqueParams::default());
+    let transport = RecordingTransport::replying(299, "{}");
+    let log = RecordingLog::default();
     let response = sign_and_post(&guardrail, &prepared_request(), &transport, &log, true)
         .await
-        .expect("the redirect response");
-    assert_eq!(response.status, 302);
+        .expect("a 2xx reply is a success");
+    assert_eq!(response.status, 299);
+}
+
+#[tokio::test]
+async fn exception_handling_accepts_the_first_success_status() {
+    let guardrail = guardrail_with(OpaqueParams::default());
+    let transport = RecordingTransport::replying(200, "{}");
+    let log = RecordingLog::default();
+    let response = sign_and_post(&guardrail, &prepared_request(), &transport, &log, true)
+        .await
+        .expect("a 2xx reply is a success");
+    assert_eq!(response.status, 200);
+}
+
+#[tokio::test]
+async fn exception_handling_rejects_an_informational_response() {
+    let guardrail = guardrail_with(OpaqueParams::default());
+    let transport = RecordingTransport::replying(199, "");
+    let log = RecordingLog::default();
+    let error = sign_and_post(&guardrail, &prepared_request(), &transport, &log, true)
+        .await
+        .expect_err("the HTTP error");
+    assert!(matches!(error, PostError::Http { status: 199, .. }));
 }

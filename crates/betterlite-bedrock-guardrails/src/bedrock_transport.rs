@@ -112,9 +112,9 @@ pub struct BedrockGuardrail {
 }
 
 impl BedrockGuardrail {
-    pub fn __init__(init: BedrockGuardrailInit) -> Result<Self, BedrockGuardrailError> {
+    pub fn __init__(mut init: BedrockGuardrailInit) -> Result<Self, BedrockGuardrailError> {
         let streaming = streaming_params(&init)?;
-        let checks = normalize_checks(init.checks)?;
+        let checks = normalize_checks(init.checks.take())?;
         if checks.is_some()
             && (init.guardrail_identifier.is_some() || init.guardrail_version.is_some())
         {

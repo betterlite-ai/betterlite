@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::PathBuf;
+
 use rstest::rstest;
 
 use crate::guardrail_error_response::parse_error_response;
@@ -20,6 +23,16 @@ fn error_parsing(#[case] status: u16, #[case] body: &str, #[case] expected: &str
     let (parsed_status, message) = parse_error_response(status, body.as_bytes());
     assert_eq!(parsed_status, status);
     assert_eq!(message, expected);
+}
+
+#[rstest]
+fn replays_the_guardrail_error_response_corpus(
+    #[files("fuzz/corpus/guardrail_error_response/*")] path: PathBuf,
+) {
+    let body = fs::read(path).expect("the seed is readable");
+    let (status, message) = parse_error_response(502, &body);
+    assert_eq!(status, 502);
+    assert!(!message.is_empty());
 }
 
 #[test]

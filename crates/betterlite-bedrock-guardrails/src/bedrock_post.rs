@@ -86,7 +86,7 @@ pub async fn sign_and_post<T: GuardrailTransport, L: TransportLog>(
             return Err(PostError::Transport { source });
         }
     };
-    if response.status < 400 {
+    if (200..300).contains(&response.status) {
         return Ok(response);
     }
     let (status, detail) = parse_error_response(response.status, &response.body);
