@@ -135,20 +135,24 @@ where
     F: FnOnce(String) -> Fut,
     Fut: Future<Output = T>,
 {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("the test listener binds");
-    let base = format!(
-        "http://{}",
-        listener.local_addr().expect("the listener has an address")
-    );
-    let card = card_json(&base);
-    serve_agent(listener, base, card, reply, scenario).await
+    live_agent(reply, None, scenario).await
 }
 
 // The same live agent, whose card advertises a released port, as a card can point at another URL
 pub(crate) async fn with_agent_advertising_a_dead_port<T, F, Fut>(
     reply: Reply,
+    scenario: F,
+) -> (T, Vec<Seen>)
+where
+    F: FnOnce(String) -> Fut,
+    Fut: Future<Output = T>,
+{
+    live_agent(reply, Some(&unused_base()), scenario).await
+}
+
+async fn live_agent<T, F, Fut>(
+    reply: Reply,
+    advertised: Option<&str>,
     scenario: F,
 ) -> (T, Vec<Seen>)
 where
@@ -162,7 +166,7 @@ where
         "http://{}",
         listener.local_addr().expect("the listener has an address")
     );
-    let card = card_json(&unused_base());
+    let card = card_json(advertised.unwrap_or(&base));
     serve_agent(listener, base, card, reply, scenario).await
 }
 
@@ -192,8 +196,8 @@ where
         stop.send(()).unwrap_or_default();
         outcome
     };
-    let (outcome, served) = tokio::join!(run, server);
-    served.expect("the test agent serves");
+    let (outcome, joined) = tokio::join!(run, server);
+    joined.expect("the test agent serves");
     let recorded = seen
         .lock()
         .expect("the fixture lock is not poisoned")
@@ -225,12 +229,15 @@ pub(crate) fn card_json(endpoint: &str) -> String {
     .to_string()
 }
 
+// The JSON-RPC envelope every fixture frame carries
+fn json_rpc_result(result: AgentJson) -> AgentJson {
+    serde_json::json!({"jsonrpc": "2.0", "id": "rpc-1", "result": result})
+}
+
 pub(crate) fn buffered_message(text: &str) -> String {
-    serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": "rpc-1",
-        "result": {"message": {"messageId": "m-1", "role": "ROLE_AGENT", "parts": [{"text": text}]}}
-    })
+    json_rpc_result(serde_json::json!({
+        "message": {"messageId": "m-1", "role": "ROLE_AGENT", "parts": [{"text": text}]}
+    }))
     .to_string()
 }
 
@@ -239,15 +246,13 @@ pub(crate) fn message_frame(text: &str) -> String {
 }
 
 pub(crate) fn status_frame(state: &str) -> String {
-    let payload = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": "rpc-1",
-        "result": {"statusUpdate": {
+    let payload = json_rpc_result(serde_json::json!({
+        "statusUpdate": {
             "taskId": "t-1",
             "contextId": "c-1",
             "status": {"state": format!("TASK_STATE_{}", state.to_uppercase())}
-        }}
-    });
+        }
+    }));
     format!("data: {payload}\n\n")
 }
 
