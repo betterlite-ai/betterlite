@@ -76,9 +76,8 @@ pub fn serve_component(
     let result = runtime.block_on(async {
         let shutting_down = Arc::new(AtomicBool::new(false));
         let outbound = chat.client.clone();
-        let router =
-            application(&config, chat, Arc::clone(&shutting_down))?.layer(Extension(routes));
-        Box::pin(serve(router, shutting_down, outbound, host, port)).await
+        let app = application(&config, chat, Arc::clone(&shutting_down))?.layer(Extension(routes));
+        Box::pin(serve(app, shutting_down, outbound, host, port)).await
     });
     match result {
         Ok(()) => ExitCode::SUCCESS,
