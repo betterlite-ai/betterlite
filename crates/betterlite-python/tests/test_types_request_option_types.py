@@ -79,6 +79,7 @@ def empty_shape(kind):
         "defaults": {},
         "literals": {},
         "members": [],
+        "readonly": [],
     }
 
 
@@ -88,6 +89,7 @@ def describe_typeddict(annotation):
         "keys": sorted(annotation.__required_keys__ | annotation.__optional_keys__),
         "required": sorted(annotation.__required_keys__),
         "literals": literal_fields(annotation.__annotations__),
+        "readonly": sorted(getattr(annotation, "__readonly_keys__", frozenset())),
     }
 
 
@@ -483,6 +485,7 @@ class Shape(TypedDict):
     kind: str
     keys: list[str]
     required: list[str]
+    readonly: list[str]
     defaults: dict[str, str]
     literals: dict[str, list[str]]
     members: list[tuple[str, JsonValue]]
@@ -671,6 +674,9 @@ def test_rerank_names(report: Report) -> None:
     assert request_shape["kind"] == "model"
     assert truncation_shape["kind"] == "model"
     assert optional_shape["kind"] == "typeddict"
+    assert optional_shape["readonly"] == [
+        "max_tokens_per_query", "truncate_prompt_tokens", "truncation_side",
+    ]
     assert request_shape["required"] == ["documents", "model", "query"]
     assert request_shape["literals"] == {"truncation_side": ['"left"', '"right"']}
     betterlite = TypeAdapter(RerankBehavior).validate_python(
@@ -786,6 +792,7 @@ def test_containers_names(report: Report) -> None:
     assert params_shape["keys"] == [
         "expires_after", "extra_body", "extra_headers", "file_ids", "name",
     ]
+    assert params_shape["readonly"] == ["expires_after"]
     assert expires_shape["required"] == ["anchor", "minutes"]
     betterlite = TypeAdapter(ContainersBehavior).validate_python(
         report["behavior"]["containers"]["betterlite"]
