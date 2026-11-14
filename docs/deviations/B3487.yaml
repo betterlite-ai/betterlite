@@ -1,0 +1,20 @@
+task: B3487
+deviations:
+  - what: betterlite-core/src/google_genai/streaming calls betterlite-logging's PassThroughStreamingHandler::_route_streaming_logging_to_handler asynchronously on stream EOF, passing the collected SSE bytes and metadata.
+    why: Betterlite preserves LiteLLM's pass-through logging architecture where streamed completion is logged once, after all chunks are collected. The logging callback reports the full interaction with hidden metadata to the success handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py#L83-104
+  - what: A stream line longer than 1 MiB fails the stream with a typed GenAiStreamError::Lines(AlephAlphaError::LineTooLong), and an event whose encoded form is longer than that limit fails it with GenAiStreamError::EventTooLong, both after the events decoded before them were delivered and however the reads split the input.
+    why: LiteLLM buffers a line and joins an event without a bound through response.iter_lines(), while an untrusted provider needs a limit in a gateway. The limit applies to a complete line inside one read and to an event of many short lines with no blank line, so the answer does not depend on how the network splits reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py#L134-136
+  - what: The completion log runs in a task tracked by a TaskTracker the caller supplies, and the stream never waits on it; a stream the consumer drops before the log finishes still gets its completion logged.
+    why: LiteLLM's asyncio.create_task at streaming_iterator.py:92 detaches the same call, so the end of the stream does not wait for the logging callback and a dropped response does not cancel it. Betterlite tracks the task so a server can drain it at shutdown instead of losing it when the event loop stops.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py#L92-104
+  - what: An async pull on the sync iterator yields one typed GenAiStreamError::AsyncIterationOnSyncStream carrying LiteLLM's message, then ends the stream.
+    why: Rust reports a refused pull as a stream item, where LiteLLM raises NotImplementedError from __anext__. The carried message is LiteLLM's, so a caller that matches on its text sees the same words.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py#L152-155
+  - what: A sync pull on the async iterator yields one typed GenAiStreamError::SyncIterationOnAsyncStream, then ends the stream.
+    why: LiteLLM's AsyncGoogleGenAIGenerateContentStreamingIterator declares no __next__, so next() raises TypeError before any read. The task asks the async iterator itself to refuse sync-mode iteration, so betterlite implements Iterator and reports the refusal as a typed error rather than forcing a TypeError at the call site.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py#L158-199
+  - what: The collected chunks reach the pass-through logging handler once per stream, on the pull that observes the end of input.
+    why: LiteLLM calls _handle_async_streaming_logging again on every __anext__ after the stream ended, so a caller that keeps polling schedules the same completion repeatedly. One completion log per stream is what a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py#L192-199
