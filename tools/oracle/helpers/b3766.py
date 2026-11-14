@@ -9,9 +9,6 @@ from litellm.proxy.guardrails.guardrail_hooks.crowdstrike_aidr.crowdstrike_aidr 
     CrowdStrikeAIDRHandler,
 )
 from litellm.types.guardrails import LitellmParams
-from litellm.types.proxy.guardrails.guardrail_hooks.crowdstrike_aidr import (
-    CrowdStrikeAIDRGuardrailConfigModelOptionalParams as OptionalParams,
-)
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from starlette.exceptions import HTTPException
 
@@ -220,11 +217,7 @@ def construct(args: Input) -> Construction | MissingSecret:
 
 def streaming_params(args: Input) -> StreamingFields:
     handler = make_handler(args["settings"])
-    fields: dict[str, JsonValue | OptionalParams] = dict(args["params"])
-    nested = args["params"].get("optional_params")
-    if nested is not None:
-        fields["optional_params"] = OptionalParams.model_validate(nested)
-    handler.update_in_memory_litellm_params(LitellmParams.model_validate(fields))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192
+    handler.update_in_memory_litellm_params(LitellmParams(**args["params"]))
     return streaming_fields(handler)
 
 
