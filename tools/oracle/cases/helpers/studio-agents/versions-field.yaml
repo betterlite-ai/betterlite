@@ -1,0 +1,17 @@
+kind: helper
+name: studio-agents-versions-field
+call:
+  studio_agents:
+    calls:
+      - function: versions_request
+        name: my-agent
+        api_base: https://custom.example
+        page_size: 3
+        page_token: token
+      - function: reply
+        operation: versions
+        name: my-agent
+        status: 200
+        body: '{"agentVersions":[{"name":"agents/my-agent/versions/1","state":"active"}],"nextPageToken":"t","extra":1}'
+env: {}
+compare: {ignore: []}
