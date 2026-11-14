@@ -135,9 +135,7 @@ where
             Ok(hook_kwargs) => hook_kwargs,
             Err(failure) => return SearchResult::Failed(failure),
         };
-        match WebSearchExecution::execute_search(self, query, Some(&hook_kwargs), rich.as_ref())
-            .await
-        {
+        match Self::execute_search(self, query, Some(&hook_kwargs), rich.as_ref()).await {
             Ok((text, response)) => SearchResult::Succeeded { text, response },
             Err(failure) => SearchResult::Failed(failure),
         }

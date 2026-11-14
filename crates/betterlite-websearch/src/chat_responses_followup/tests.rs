@@ -693,7 +693,7 @@ async fn responses_patch_missing_call_id_and_arguments_are_null_and_empty() {
     );
     assert_eq!(
         value[1],
-        json!({"type": "function_call_output", "call_id": null, "output": "result"})
+        json!({"type": "function_call_output", "call_id": null, "output": "No search query provided"})
     );
 }
 
