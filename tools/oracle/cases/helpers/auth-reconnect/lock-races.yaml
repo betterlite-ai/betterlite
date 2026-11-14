@@ -1,0 +1,83 @@
+kind: helper
+name: auth-reconnect-lock-races
+call:
+  auth_reconnect:
+    scenarios:
+      - name: waiting_lock_runs
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0, 1000.0, 1000.0]
+        last_attempt: 0.0
+        failures: 0
+        dead: false
+        failed: []
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 0}
+        reader_unavailable: false
+        routing: false
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: waiting_lock, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
+        stale: null
+        lock: {mode: free, error: null}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+      - name: finite_timeout_acquires
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0, 1000.0, 1000.0]
+        last_attempt: 0.0
+        failures: 0
+        dead: false
+        failed: []
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 0}
+        reader_unavailable: false
+        routing: false
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: finite_window, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: 100}
+        stale: null
+        lock: {mode: free, error: null}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+      - name: lock_timeout_skips
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0]
+        last_attempt: 0.0
+        failures: 0
+        dead: false
+        failed: []
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 0}
+        reader_unavailable: false
+        routing: false
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: lock_timeout, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: 1}
+        stale: null
+        lock: {mode: busy, error: null}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+      - name: lock_error_skips
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0]
+        last_attempt: 0.0
+        failures: 0
+        dead: false
+        failed: []
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 0}
+        reader_unavailable: false
+        routing: false
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: lock_error, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: 1}
+        stale: null
+        lock: {mode: error, error: the reconnect lock is unavailable}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+env: {}
+compare: {ignore: []}
