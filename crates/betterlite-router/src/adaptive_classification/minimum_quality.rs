@@ -1,4 +1,5 @@
-use betterlite_models::decisions::{Json, JsonObject};
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde_json::Number;
 
 use crate::adaptive_classification::constants::{
@@ -24,7 +25,7 @@ pub fn minimum_quality_tier(headers: Option<&Json>, metadata: Option<&Json>) -> 
     raw.and_then(json_integer)
 }
 
-fn header_value(fields: &JsonObject) -> Option<&Json> {
+fn header_value(fields: &IndexMap<String, Json>) -> Option<&Json> {
     fields
         .iter()
         .find(|(name, _value)| name.eq_ignore_ascii_case(MIN_QUALITY_TIER_HEADER))
