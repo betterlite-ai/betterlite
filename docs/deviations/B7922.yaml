@@ -1,6 +1,6 @@
 task: B7922
 deviations:
-  - what: "Fields LiteLLM types as a bare dict, list or object (the realtime session fields, the response objects, the moderation dictionaries) are typed with dict[str, JsonValue], list[JsonValue] or JsonValue."
+  - what: "Fields LiteLLM types as a bare dict, list or object, or as Mapping[str, object] (the realtime session fields, the response objects, the moderation dictionaries, the transcription usage), are typed with dict[str, JsonValue], list[JsonValue], JsonValue or Mapping[str, JsonValue]."
     why: "The repo bans Any and unparameterized containers in annotations, and these fields carry JSON payloads whose shape LiteLLM leaves open."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1935-L2007"
   - what: "OpenAIChatCompletionLogprobs.content, .refusal, OpenAIChatCompletionChoices.message, OpenAIChatCompletionResponse.usage and OpenAIBatchResponse.body are typed as JSON values where LiteLLM names OpenAIChatCompletionLogprobsContent, ChatCompletionResponseMessage, ChatCompletionUsageBlock and OpenAIErrorBody."

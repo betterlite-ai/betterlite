@@ -1,7 +1,7 @@
-from typing import Literal
+from typing import Literal, Required
 
 from pydantic import JsonValue, PrivateAttr
-from typing_extensions import Required, TypedDict
+from typing_extensions import TypedDict
 
 from betterlite.types.utils.base import ResponseObject
 

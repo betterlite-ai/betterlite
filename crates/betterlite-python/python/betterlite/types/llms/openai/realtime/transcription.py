@@ -1,8 +1,8 @@
 from collections.abc import Mapping
-from typing import Literal
+from typing import Literal, NotRequired
 
 from pydantic import JsonValue
-from typing_extensions import NotRequired, ReadOnly, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 
 # ast-grep-ignore: no-long-names
@@ -11,6 +11,7 @@ class OpenAIRealtimeTranscriptionAudioFormat(TypedDict):
     rate: ReadOnly[int]
 
 
+# ast-grep-ignore: no-long-names
 class OpenAIRealtimeTranscriptionSettings(TypedDict):
     model: ReadOnly[str]
     language: NotRequired[ReadOnly[str]]
@@ -23,20 +24,26 @@ class OpenAIRealtimeServerVadTurnDetection(TypedDict):
 
 # ast-grep-ignore: no-long-names
 class OpenAIRealtimeTranscriptionAudioInput(TypedDict):
+    # ast-grep-ignore: no-long-names
     format: ReadOnly[OpenAIRealtimeTranscriptionAudioFormat]
+    # ast-grep-ignore: no-long-names
     transcription: ReadOnly[OpenAIRealtimeTranscriptionSettings]
     # ast-grep-ignore: no-long-names
     turn_detection: ReadOnly[OpenAIRealtimeServerVadTurnDetection | None]
 
 
+# ast-grep-ignore: no-long-names
 class OpenAIRealtimeTranscriptionAudio(TypedDict):
+    # ast-grep-ignore: no-long-names
     input: ReadOnly[OpenAIRealtimeTranscriptionAudioInput]
 
 
+# ast-grep-ignore: no-long-names
 class OpenAIRealtimeTranscriptionSession(TypedDict):
     id: ReadOnly[str]
     object: ReadOnly[Literal["realtime.transcription_session"]]
     type: ReadOnly[Literal["transcription"]]
+    # ast-grep-ignore: no-long-names
     audio: ReadOnly[OpenAIRealtimeTranscriptionAudio]
 
 
@@ -44,6 +51,7 @@ class OpenAIRealtimeTranscriptionSession(TypedDict):
 class OpenAIRealtimeTranscriptionSessionCreated(TypedDict):
     type: ReadOnly[Literal["session.created"]]
     event_id: ReadOnly[str]
+    # ast-grep-ignore: no-long-names
     session: ReadOnly[OpenAIRealtimeTranscriptionSession]
 
 

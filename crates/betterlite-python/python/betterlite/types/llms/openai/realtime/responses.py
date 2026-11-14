@@ -52,6 +52,7 @@ class OpenAIRealtimeResponseTextDone(TypedDict):
     type: Literal["response.text.done", "response.output_text.done"]
 
 
+# ast-grep-ignore: no-long-names
 class OpenAIRealtimeResponseAudioDone(TypedDict):
     content_index: int
     event_id: str
@@ -63,7 +64,7 @@ class OpenAIRealtimeResponseAudioDone(TypedDict):
     ]
 
 
-class OpenAIRealtimeContentPartDone(TypedDict):  # ast-grep-ignore: no-long-names
+class OpenAIRealtimeContentPartDone(TypedDict):
     content_index: int
     event_id: str
     item_id: str

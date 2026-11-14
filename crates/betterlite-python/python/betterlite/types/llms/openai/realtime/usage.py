@@ -1,4 +1,6 @@
-from typing_extensions import NotRequired, ReadOnly, TypedDict
+from typing import NotRequired
+
+from typing_extensions import ReadOnly, TypedDict
 
 
 # ast-grep-ignore: no-long-names

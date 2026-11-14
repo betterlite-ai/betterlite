@@ -43,9 +43,11 @@ class OpenAIRealtimeEventTypes(Enum):
     RESPONSE_AUDIO_DONE = "response.audio.done"
     RESPONSE_OUTPUT_TEXT_DELTA = "response.output_text.delta"
     RESPONSE_OUTPUT_AUDIO_DELTA = "response.output_audio.delta"
+    # ast-grep-ignore: no-long-names
     RESPONSE_OUTPUT_AUDIO_TRANSCRIPT_DELTA = "response.output_audio_transcript.delta"
     RESPONSE_OUTPUT_TEXT_DONE = "response.output_text.done"
     RESPONSE_OUTPUT_AUDIO_DONE = "response.output_audio.done"
+    # ast-grep-ignore: no-long-names
     RESPONSE_OUTPUT_AUDIO_TRANSCRIPT_DONE = "response.output_audio_transcript.done"
     RESPONSE_DONE = "response.done"
     RESPONSE_OUTPUT_ITEM_ADDED = "response.output_item.added"
@@ -53,25 +55,39 @@ class OpenAIRealtimeEventTypes(Enum):
 
 
 OpenAIRealtimeEvents: TypeAlias = (
-    OpenAIRealtimeStreamResponseBaseObject  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeStreamSessionEvents  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeStreamResponseOutputItemAdded  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeResponseContentPartAdded  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeConversationItemCreated  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeConversationItemAdded  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeConversationItemDone  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeConversationCreated  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    OpenAIRealtimeStreamResponseBaseObject
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeStreamSessionEvents
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeStreamResponseOutputItemAdded
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeResponseContentPartAdded
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeConversationItemCreated
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeConversationItemAdded
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeConversationItemDone
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeConversationCreated
     | OpenAIRealtimeResponseDelta
     | OpenAIRealtimeResponseTextDone
+    # ast-grep-ignore: no-long-names
     | OpenAIRealtimeResponseAudioDone
-    | OpenAIRealtimeContentPartDone  # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeContentPartDone
     | OpenAIRealtimeOutputItemDone
-    | OpenAIRealtimeFunctionCallArgumentsDone  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeFunctionCallArgumentsDone
     | OpenAIRealtimeDoneEvent
-    | OpenAIRealtimeInputAudioBufferSpeechEvent  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeInputAudioTranscriptionDelta  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeInputAudioTranscriptionCompleted  # ast-grep-ignore: no-long-names
-    | OpenAIRealtimeTranscriptionSessionCreated  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeInputAudioBufferSpeechEvent
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeInputAudioTranscriptionDelta
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeInputAudioTranscriptionCompleted
+    # ast-grep-ignore: no-long-names
+    | OpenAIRealtimeTranscriptionSessionCreated
     | OpenAIRealtimeErrorEvent
 )
 

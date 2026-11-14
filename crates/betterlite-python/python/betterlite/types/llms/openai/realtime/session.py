@@ -1,7 +1,7 @@
-from typing import Literal, TypeAlias
+from typing import Literal, Required, TypeAlias
 
 from pydantic import JsonValue
-from typing_extensions import Required, TypedDict
+from typing_extensions import TypedDict
 
 REASONING_EFFORT: TypeAlias = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 

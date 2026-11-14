@@ -14,6 +14,7 @@ class ImageGenerationRequestQuality(StrEnum):
     HD = "hd"
 
 
+# ast-grep-ignore: no-long-names
 class OpenAIModerationResult(BaseLiteLLMOpenAIResponseObject):
     categories: dict[str, JsonValue] | None
     category_applied_input_types: dict[str, JsonValue] | None
@@ -21,6 +22,7 @@ class OpenAIModerationResult(BaseLiteLLMOpenAIResponseObject):
     flagged: bool | None
 
 
+# ast-grep-ignore: no-long-names
 class OpenAIModerationResponse(BaseLiteLLMOpenAIResponseObject):
     id: str
     model: str
