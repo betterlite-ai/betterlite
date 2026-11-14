@@ -293,7 +293,7 @@ async fn apply_guardrail_response_input() {
 
 #[tokio::test]
 async fn apply_guardrail_includes_model_in_payload() {
-    let (base, captured, _server) =
+    let (base, request_bytes, _server) =
         serve(StatusCode::OK, r#"{"result": {"transformed": false}}"#).await;
     let guardrail = handler(&base, None);
     let request = GuardrailApiInputs {
@@ -310,7 +310,7 @@ async fn apply_guardrail_includes_model_in_payload() {
         )
         .await
         .expect("the call succeeds");
-    let body = captured(&captured);
+    let body = captured(&request_bytes);
     assert_eq!(body.model, Some("gpt-4o".to_owned()));
     assert_eq!(body.event_type, "input");
     assert_eq!(body.guard_input.messages.len(), 1);
@@ -318,7 +318,7 @@ async fn apply_guardrail_includes_model_in_payload() {
 
 #[tokio::test]
 async fn apply_guardrail_includes_user_id_in_payload() {
-    let (base, captured, _server) =
+    let (base, request_bytes, _server) =
         serve(StatusCode::OK, r#"{"result": {"transformed": false}}"#).await;
     let guardrail = handler(&base, None);
     let mut request_data = BTreeMap::from([(
@@ -337,13 +337,13 @@ async fn apply_guardrail_includes_user_id_in_payload() {
         )
         .await
         .expect("the call succeeds");
-    let body = captured(&captured);
+    let body = captured(&request_bytes);
     assert_eq!(body.user_id, Some("u-1".to_owned()));
 }
 
 #[tokio::test]
 async fn apply_guardrail_includes_user_email_in_extra_info() {
-    let (base, captured, _server) =
+    let (base, request_bytes, _server) =
         serve(StatusCode::OK, r#"{"result": {"transformed": false}}"#).await;
     let guardrail = handler(&base, None);
     let mut request_data = BTreeMap::from([(
@@ -362,7 +362,7 @@ async fn apply_guardrail_includes_user_email_in_extra_info() {
         )
         .await
         .expect("the call succeeds");
-    let body = captured(&captured);
+    let body = captured(&request_bytes);
     assert_eq!(
         body.extra_info,
         Some(BTreeMap::from([(

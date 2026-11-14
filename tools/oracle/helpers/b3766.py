@@ -178,7 +178,7 @@ def apply(args: Input) -> ApplyOutput:
     outcome: AllowOutcome | HttpOutcome | PlainOutcome
     result: Projection | None = None
     try:
-        out = BACK.validate_python(asyncio.run(handler.apply_guardrail(inputs, data, kind)))  # type: ignore[misc, arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536
+        out = BACK.validate_python(asyncio.run(handler.apply_guardrail(inputs, data, kind)))  # type: ignore[misc]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536
     except HTTPException as error:
         outcome = {"tag": "http_error", "status": error.status_code}
     except ValidationError:

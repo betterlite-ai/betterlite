@@ -420,6 +420,12 @@ fn padded_reply(total: usize) -> Vec<u8> {
     reply
 }
 
+fn push_stream_chunk(reply: &mut Vec<u8>) {
+    reply.extend_from_slice(b"61A80\r\n");
+    reply.resize(reply.len() + 400_000, b' ');
+    reply.extend_from_slice(b"\r\n");
+}
+
 #[tokio::test]
 async fn _call_crowdstrike_aidr_guard_reads_a_body_of_exactly_the_limit() {
     let (base, _server) = serve_raw(padded_reply(LIMIT)).await;
@@ -447,11 +453,9 @@ async fn _call_crowdstrike_aidr_guard_rejects_a_declared_length_over_the_limit()
 #[tokio::test]
 async fn _call_crowdstrike_aidr_guard_rejects_a_streamed_body_over_the_limit() {
     let mut reply = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec();
-    for _ in 0..3 {
-        reply.extend_from_slice(b"61A80\r\n");
-        reply.resize(reply.len() + 400_000, b' ');
-        reply.extend_from_slice(b"\r\n");
-    }
+    push_stream_chunk(&mut reply);
+    push_stream_chunk(&mut reply);
+    push_stream_chunk(&mut reply);
     reply.extend_from_slice(b"0\r\n\r\n");
     let (base, _server) = serve_raw(reply).await;
     let guardrail = handler_for(&base, None);

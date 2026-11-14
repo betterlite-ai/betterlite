@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
 
