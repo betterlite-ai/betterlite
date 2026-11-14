@@ -1,0 +1,26 @@
+kind: helper
+name: deepgram-transcription-plain-transcript
+call:
+  deepgram_transcription:
+    env: {}
+    steps:
+      - step: reply
+        body: '{"metadata": {"duration": 12.5, "request_id": "r1"}, "results": {"channels": [{"alternatives": [{"transcript": "hello there", "confidence": 0.5}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 3}, "results": {"channels": [{"detected_language": "de", "alternatives": [{"transcript": "guten tag", "words": [{"word": "guten", "start": 0.5, "end": 1.5, "confidence": 0.5}, {"word": "tag", "start": 1.5, "end": 2}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 3}, "results": {"channels": [{"detected_language": "", "alternatives": [{"transcript": "empty language", "words": []}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 3}, "results": {"channels": [{"alternatives": [{"transcript": null}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 3}, "results": {"channels": [{"alternatives": [{"transcript": "first"}, {"transcript": "second"}]}, {"alternatives": []}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 3}, "results": {"channels": []}}'
+      - step: reply
+        body: '{"metadata": {"duration": 3}, "results": {"channels": [{"alternatives": [{"words": []}]}]}}'
+      - step: reply
+        body: '{"results": {"channels": [{"alternatives": [{"transcript": "no metadata"}]}]}}'
+      - step: reply
+        body: not json
+env: {}
+compare: {ignore: []}
