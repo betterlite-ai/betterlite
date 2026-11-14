@@ -22,7 +22,7 @@ fn ticking_policy(base: &str) -> NomaScanPolicy {
 
 #[tokio::test]
 async fn a_scan_writes_a_standard_logging_record() {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = ticking_policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let user_auth = data(r#"{"user_id": "user-1"}"#);
@@ -72,8 +72,8 @@ async fn a_scan_writes_a_standard_logging_record() {
 
 #[tokio::test]
 async fn the_record_keeps_the_extra_fields_the_provider_sent() {
-    let reply = r#"{"aggregatedScanResult": false, "scanResult": [], "provider": {"id": "abc"}, "extra": null}"#;
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let reply = r#"{"aggregatedScanResult": false, "scanResult": [], "provider": {"id": "abc"}, "extra": {"id": "x"}}"#;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let user_auth = data("{}");
@@ -91,7 +91,7 @@ async fn the_record_keeps_the_extra_fields_the_provider_sent() {
 
 #[tokio::test]
 async fn the_record_goes_into_litellm_metadata_when_present() {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data =
         data(r#"{"messages": [{"role": "user", "content": "hello"}], "litellm_metadata": {}}"#);
@@ -107,7 +107,7 @@ async fn the_record_goes_into_litellm_metadata_when_present() {
 
 #[tokio::test]
 async fn record_mode_falls_back_to_the_configured_event_hook() {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let mut settings = settings();
     settings.api_base = Some(mock.base.clone());
     settings.event_hook = Some(LitellmParamsMode::One(String::from("post_call")));

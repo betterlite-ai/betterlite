@@ -16,7 +16,7 @@ use super::support::{
 #[tokio::test]
 async fn blocked_verdict_returns_a_400_with_the_scan_result() {
     let reply = r#"{"aggregatedScanResult": true, "scanResult": [{"role": "user", "results": {"harmfulContent": {"result": true}}}]}"#;
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let original = request_data.clone();
@@ -53,7 +53,7 @@ async fn blocked_verdict_returns_a_400_with_the_scan_result() {
 #[tokio::test]
 async fn monitor_mode_logs_without_blocking_or_rewriting() {
     let reply = r#"{"aggregatedScanResult": true, "scanResult": [{"role": "user", "results": {"sensitiveData": {"PII": {"result": true}}, "anonymizedContent": {"anonymized": "clean"}}}]}"#;
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let mut settings = monitoring_settings();
     settings.api_base = Some(mock.base.clone());
     let policy = policy_with(settings);
@@ -89,7 +89,7 @@ async fn monitor_mode_logs_without_blocking_or_rewriting() {
 #[tokio::test]
 async fn sensitive_data_anonymizes_the_last_user_message() {
     let reply = r#"{"aggregatedScanResult": true, "scanResult": [{"role": "user", "results": {"sensitiveData": {"PII": {"result": true}}, "anonymizedContent": {"anonymized": "clean"}}}]}"#;
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let mut settings = anonymizing_settings();
     settings.api_base = Some(mock.base.clone());
     let policy = policy_with(settings);
@@ -127,7 +127,7 @@ async fn sensitive_data_anonymizes_the_last_user_message() {
 #[tokio::test]
 async fn another_detector_blocks_despite_anonymized_content() {
     let reply = r#"{"aggregatedScanResult": true, "scanResult": [{"role": "user", "results": {"sensitiveData": {"PII": {"result": true}}, "harmfulContent": {"result": true}, "anonymizedContent": {"anonymized": "clean"}}}]}"#;
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let mut settings = anonymizing_settings();
     settings.api_base = Some(mock.base.clone());
     let policy = policy_with(settings);
@@ -144,7 +144,7 @@ async fn another_detector_blocks_despite_anonymized_content() {
 #[tokio::test]
 async fn sensitive_data_without_an_anonymized_version_blocks() {
     let reply = r#"{"aggregatedScanResult": true, "scanResult": [{"role": "user", "results": {"sensitiveData": {"PII": {"result": true}}}}]}"#;
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let mut settings = anonymizing_settings();
     settings.api_base = Some(mock.base.clone());
     let policy = policy_with(settings);
@@ -161,7 +161,7 @@ async fn sensitive_data_without_an_anonymized_version_blocks() {
 #[tokio::test]
 async fn a_safe_verdict_without_anonymization_keeps_the_message() {
     let reply = r#"{"aggregatedScanResult": false, "scanResult": [{"role": "user", "results": {"anonymizedContent": {"anonymized": "clean"}}}]}"#;
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let original = request_data.clone();
@@ -179,7 +179,7 @@ async fn a_safe_verdict_without_anonymization_keeps_the_message() {
 #[tokio::test]
 async fn anonymization_replaces_every_choice_with_content() {
     let reply = r#"{"aggregatedScanResult": true, "scanResult": [{"role": "assistant", "results": {"sensitiveData": {"PCI": {"result": true}}, "anonymizedContent": {"anonymized": "clean"}}}]}"#;
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let mut settings = anonymizing_settings();
     settings.api_base = Some(mock.base.clone());
     let policy = policy_with(settings);
@@ -251,7 +251,7 @@ async fn anonymization_shape_errors_name_the_field(
     #[case] reply: &str,
     #[case] field: &'static str,
 ) {
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let mut settings = anonymizing_settings();
     settings.api_base = Some(mock.base.clone());
     let policy = policy_with(settings);

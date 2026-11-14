@@ -14,13 +14,12 @@ use crate::noma_scan_policy::{DEFAULT_APPLICATION_ID, NomaScanPolicy, ScanCallCo
 
 use super::support::{
     SAFE_REPLY, USER_MESSAGES, captured, captured_headers, captured_path, context, corpus_answer,
-    data, mock_noma, parts, policy, policy_with, records, request_count, settings, slow_noma,
-    value,
+    data, mock_noma, parts, policy, policy_with, records, request_count, settings, value,
 };
 
 #[tokio::test]
 async fn user_message_check_sends_responses_input_and_context() {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(
         r#"{"messages": [{"role": "system", "content": "be nice"}, {"role": "user", "content": "hello"}], "litellm_call_id": "call-1", "metadata": {"requester_ip_address": "10.0.0.1", "headers": {"x-noma-application-id": "header-app"}}}"#,
@@ -87,7 +86,7 @@ async fn application_id_follows_litellms_precedence(
     #[case] alias: Option<&str>,
     #[case] expected: &str,
 ) {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let mut settings = settings();
     settings.api_base = Some(mock.base.clone());
     settings.application_id = configured.map(str::to_owned);
@@ -137,7 +136,7 @@ async fn headers_follow_the_configured_key_and_call_id(
     #[case] has_authorization: bool,
     #[case] has_request_id: bool,
 ) {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let mut settings = settings();
     settings.api_base = Some(mock.base.clone());
     settings.api_key = api_key.map(|key| secrecy::SecretString::from(key.to_owned()));
@@ -166,7 +165,7 @@ async fn headers_follow_the_configured_key_and_call_id(
 #[case::prefix_without_slash("/prefix")]
 #[tokio::test]
 async fn endpoint_is_joined_like_urljoin(#[case] suffix: &str) {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let base = format!("{}{suffix}", mock.base);
     let policy = policy(&base);
     let mut request_data = data(USER_MESSAGES);
@@ -186,7 +185,7 @@ async fn endpoint_is_joined_like_urljoin(#[case] suffix: &str) {
 #[case::null_contents(r#"{"messages": [{"role": "user", "content": null}]}"#)]
 #[tokio::test]
 async fn requests_without_scannable_messages_skip_the_api(#[case] body: &str) {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(body);
     let user_auth = data("{}");
@@ -204,7 +203,7 @@ async fn requests_without_scannable_messages_skip_the_api(#[case] body: &str) {
 #[case::not_an_object("[]", "shape")]
 #[tokio::test]
 async fn unreadable_answers_are_reported(#[case] reply: &str, #[case] kind: &str) {
-    let mock = mock_noma(StatusCode::OK, reply).await;
+    let mock = mock_noma(StatusCode::OK, reply, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let user_auth = data("{}");
@@ -226,7 +225,7 @@ async fn unreadable_answers_are_reported(#[case] reply: &str, #[case] kind: &str
 #[case::client_error(StatusCode::BAD_REQUEST)]
 #[tokio::test]
 async fn api_status_failures_are_reported_and_write_no_record(#[case] status: StatusCode) {
-    let mock = mock_noma(status, "{}").await;
+    let mock = mock_noma(status, "{}", None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let user_auth = data("{}");
@@ -247,7 +246,7 @@ async fn a_stalled_scan_ends_at_its_deadline(
     #[case] timeout: Option<Duration>,
     #[case] delay: Duration,
 ) {
-    let mock = slow_noma(delay).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, Some(delay)).await;
     let mut settings = settings();
     settings.api_base = Some(mock.base.clone());
     settings.timeout = timeout;
@@ -335,7 +334,7 @@ async fn request_fields_of_the_wrong_type_name_the_field(
     #[case] body: &str,
     #[case] field: &'static str,
 ) {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(body);
     let user_auth = data("{}");
@@ -350,7 +349,7 @@ async fn request_fields_of_the_wrong_type_name_the_field(
 
 #[tokio::test]
 async fn a_message_that_is_not_a_chat_message_is_reported() {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(r#"{"messages": [7]}"#);
     let user_auth = data("{}");
@@ -364,7 +363,7 @@ async fn a_message_that_is_not_a_chat_message_is_reported() {
 
 #[tokio::test]
 async fn a_non_string_user_field_names_the_field() {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let user_auth = data(r#"{"user_email": 7}"#);
@@ -399,7 +398,7 @@ async fn llm_response_check_scans_the_first_nonempty_content(
     #[case] body: &str,
     #[case] expected: &str,
 ) {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let mut model_response = value(body);
@@ -437,7 +436,7 @@ async fn llm_response_check_scans_the_first_nonempty_content(
 #[case::streamed_delta(r#"{"id": "resp-1", "choices": [{"delta": {"content": "hi"}}]}"#)]
 #[tokio::test]
 async fn responses_without_text_are_not_scanned(#[case] body: &str) {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let mut model_response = value(body);
@@ -461,7 +460,7 @@ async fn responses_without_text_are_not_scanned(#[case] body: &str) {
 #[case::id_not_a_string(r#"{"id": 7, "choices": []}"#)]
 #[tokio::test]
 async fn malformed_responses_name_the_field(#[case] body: &str) {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let mut model_response = value(body);
@@ -495,7 +494,7 @@ async fn null_request_fields_fall_through_like_absent_ones(
     #[case] body: &str,
     #[case] extra: &str,
 ) {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(body);
     let user_auth = data(r#"{"user_email": null, "user_id": "user-1"}"#);
@@ -516,7 +515,7 @@ async fn null_request_fields_fall_through_like_absent_ones(
 async fn a_large_scan_answer_within_one_mebibyte_is_read() {
     let padding = "a".repeat(100_000);
     let reply = format!("{{\"aggregatedScanResult\": false, \"padding\": \"{padding}\"}}");
-    let mock = mock_noma(StatusCode::OK, &reply).await;
+    let mock = mock_noma(StatusCode::OK, &reply, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let user_auth = data("{}");
@@ -533,7 +532,7 @@ async fn a_large_scan_answer_within_one_mebibyte_is_read() {
 async fn a_scan_answer_over_one_mebibyte_is_refused() {
     let padding = "a".repeat(1_048_577);
     let reply = format!("{{\"aggregatedScanResult\": false, \"padding\": \"{padding}\"}}");
-    let mock = mock_noma(StatusCode::OK, &reply).await;
+    let mock = mock_noma(StatusCode::OK, &reply, None).await;
     let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let user_auth = data("{}");

@@ -37,7 +37,11 @@ pub(crate) struct MockNoma {
     _server: JoinSet<std::io::Result<()>>,
 }
 
-pub(crate) async fn mock_noma(status: StatusCode, reply: &str) -> MockNoma {
+pub(crate) async fn mock_noma(
+    status: StatusCode,
+    reply: &str,
+    delay: Option<Duration>,
+) -> MockNoma {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let seen_by_handler = Arc::clone(&seen);
     let reply = reply.to_owned();
@@ -50,39 +54,16 @@ pub(crate) async fn mock_noma(status: StatusCode, reply: &str) -> MockNoma {
                 headers,
                 body: bytes.to_vec(),
             });
+            if let Some(delay) = delay {
+                sleep(delay).await;
+            }
             (status, [("content-type", "application/json")], reply)
         }
     };
-    serve(Router::new().fallback(answer), seen).await
-}
-
-pub(crate) async fn slow_noma(delay: Duration) -> MockNoma {
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let seen_by_handler = Arc::clone(&seen);
-    let answer = move |uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let seen = Arc::clone(&seen_by_handler);
-        async move {
-            seen.lock().unwrap().push(Seen {
-                path: uri.path().to_owned(),
-                headers,
-                body: bytes.to_vec(),
-            });
-            sleep(delay).await;
-            (
-                StatusCode::OK,
-                [("content-type", "application/json")],
-                String::from(SAFE_REPLY),
-            )
-        }
-    };
-    serve(Router::new().fallback(answer), seen).await
-}
-
-async fn serve(router: Router, seen: Arc<Mutex<Vec<Seen>>>) -> MockNoma {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
+    server.spawn(axum::serve(listener, Router::new().fallback(answer)).into_future());
     MockNoma {
         base,
         seen,
