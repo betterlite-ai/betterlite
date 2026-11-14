@@ -18,10 +18,10 @@ enum Flow {
     Exit,
 }
 
-struct Session<'a> {
-    client: &'a Client,
-    terminal: &'a mut dyn Terminal,
-    store: &'a mut dyn ConversationStore,
+struct Session<'session> {
+    client: &'session Client,
+    terminal: &'session mut dyn Terminal,
+    store: &'session mut dyn ConversationStore,
     system: Option<String>,
     model: String,
     messages: Vec<Message>,
@@ -46,6 +46,7 @@ pub(super) fn run(
         temperature: args.temperature,
         max_tokens: args.max_tokens,
     };
+    session.fallback();
     session.start()
 }
 
@@ -119,18 +120,14 @@ impl Session<'_> {
             self.terminal.write_line("Chat session ended.")?;
             return Ok(Flow::Exit);
         }
-        if lower == "/help" {
-            history::write_help(self.terminal)?;
-        } else if lower == "/clear" {
-            self.clear()?;
-        } else if lower == "/history" {
-            history::write_history(self.terminal, &self.messages)?;
-        } else if lower.starts_with("/save") {
-            self.save(input)?;
-        } else if lower.starts_with("/load") {
-            self.load(input)?;
-        } else if lower == "/model" {
-            self.switch_model()?;
+        match lower {
+            "/help" => history::write_help(self.terminal)?,
+            "/clear" => self.clear()?,
+            "/history" => history::write_history(self.terminal, &self.messages)?,
+            "/model" => self.switch_model()?,
+            _ if lower.starts_with("/save") => self.save(input)?,
+            _ if lower.starts_with("/load") => self.load(input)?,
+            _ => {}
         }
         Ok(Flow::Continue)
     }

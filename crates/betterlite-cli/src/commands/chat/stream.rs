@@ -15,17 +15,17 @@ const CHAT_COMPLETIONS_PATH: &str = "/chat/completions";
 const STREAM_TIMEOUT: Duration = Duration::from_secs(600);
 const CONTENT_TYPE: (&str, &str) = ("Content-Type", "application/json");
 
-pub(super) struct StreamRequest<'a> {
-    pub(super) model: &'a str,
-    pub(super) messages: &'a [Message],
+pub(super) struct StreamRequest<'request> {
+    pub(super) model: &'request str,
+    pub(super) messages: &'request [Message],
     pub(super) temperature: f64,
     pub(super) max_tokens: Option<i64>,
 }
 
 #[derive(Serialize)]
-struct CompletionsBody<'a> {
-    model: &'a str,
-    messages: &'a [Message],
+struct CompletionsBody<'body> {
+    model: &'body str,
+    messages: &'body [Message],
     stream: bool,
     temperature: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,6 +77,7 @@ pub(super) fn stream_reply(
         .body(body)
         .build()
         .map_err(|source| ChatError::Http(HttpError::Request(source)))?;
+    let _entered = client.runtime.enter();
     let mut response = match client
         .runtime
         .block_on(timeout(STREAM_TIMEOUT, client.http.execute(built)))
