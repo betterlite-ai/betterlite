@@ -690,6 +690,7 @@ fn json_byte_compatibility_accepts_wellformed_utf8(#[case] value: &[u8]) {
 #[rstest]
 #[case::highest_scalar(0x0010_FFFF, None)]
 #[case::above_unicode(0x0011_0000, invalid_first_line())]
+#[case::far_above_unicode(0x0011_0001, invalid_first_line())]
 fn json_byte_compatibility_utf32_limits(
     #[case] scalar: u32,
     #[case] expected: Option<BatchValidationFailure>,
