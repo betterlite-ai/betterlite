@@ -87,7 +87,8 @@ def request(call: Request) -> JsonValue:
     }
     function = call["function"]
     if function == "validate":
-        validated = API.validate_environment(call.get("headers", {}), params)
+        headers = call.get("headers")
+        validated = API.validate_environment({} if headers is None else headers, params)
         return {"headers": OBJECT.validate_python(validated)}
     if function == "create_body":
         return {"body": OBJECT.validate_python(API.transform_create_request(call["name"], params))}
