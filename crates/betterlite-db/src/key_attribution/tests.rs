@@ -599,10 +599,10 @@ fn user_details_skip_empty_ids_and_keep_the_last_row() {
 }
 
 #[derive(Serialize)]
-struct UserWire<'a> {
-    user_id: &'a str,
-    user_email: Option<&'a str>,
-    teams: &'a [&'a str],
+struct UserWire<'input> {
+    user_id: &'input str,
+    user_email: Option<&'input str>,
+    teams: &'input [&'input str],
 }
 
 fn user_table(user_id: &str, email: Option<&str>, teams: &[&str]) -> LiteLLMUserTable {
@@ -916,17 +916,21 @@ async fn postgres_export_filling_recovers_cli_and_hashed_rows_in_order() {
     let projected = fill_missing_api_key_aliases(&store, &rows, &ExportFields::default())
         .await
         .unwrap();
-    for (index, field, expected) in [
-        (0_usize, "api_key_alias", "cli-session-cli-user"),
-        (0_usize, "team_id", "team-a"),
-        (0_usize, "user_email", "cli@example.com"),
-        (1_usize, "api_key_alias", "hashed-alias"),
-    ] {
-        assert_eq!(
-            projected[index].get(field),
-            Some(&JsonData::String(expected.to_owned()))
-        );
-    }
+    let picked = [
+        (0_usize, "api_key_alias"),
+        (0_usize, "team_id"),
+        (0_usize, "user_email"),
+        (1_usize, "api_key_alias"),
+    ]
+    .map(|(index, field)| projected[index].get(field).cloned());
+    let expected = [
+        "cli-session-cli-user",
+        "team-a",
+        "cli@example.com",
+        "hashed-alias",
+    ]
+    .map(|text| Some(JsonData::String(text.to_owned())));
+    assert_eq!(picked, expected);
     assert_eq!(projected[2], rows[2]);
     close(fixture, store).await;
 }
