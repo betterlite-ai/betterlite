@@ -31,43 +31,39 @@ fn remove_thinking_fields(message: &mut ChatMessage) {
 }
 
 fn assistant_text(item: &ContentPart) -> Result<String, HostedVllmChatError> {
-    match item.fields.get(TEXT) {
-        None | Some(Value::Null) => Ok(String::new()),
-        Some(Value::String(text)) => Ok(text.clone()),
-        Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
-            Err(HostedVllmChatError::PartString {
-                part: TEXT,
-                field: TEXT,
-            })
-        }
-    }
-}
-
-fn tool_use_text(item: &ContentPart, field: &'static str) -> Result<String, HostedVllmChatError> {
-    match item.fields.get(field) {
-        Some(Value::String(text)) => Ok(text.clone()),
-        None
-        | Some(
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_),
-        ) => Err(HostedVllmChatError::PartString {
-            part: TOOL_USE,
-            field,
+    let Some(given) = item.fields.get(TEXT) else {
+        return Ok(String::new());
+    };
+    match given {
+        Value::Null => Ok(String::new()),
+        Value::String(text) => Ok(text.clone()),
+        _ => Err(HostedVllmChatError::PartString {
+            part: TEXT,
+            field: TEXT,
         }),
     }
 }
 
+fn tool_use_text(item: &ContentPart, field: &'static str) -> Result<String, HostedVllmChatError> {
+    item.fields
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or(HostedVllmChatError::PartString {
+            part: TOOL_USE,
+            field,
+        })
+}
+
 fn tool_arguments(item: &ContentPart) -> Result<String, HostedVllmChatError> {
-    let given = item
-        .fields
-        .get(INPUT)
+    let given = item.fields.get(INPUT);
+    if let Some(Value::String(text)) = given {
+        return Ok(text.clone());
+    }
+    let value = given
         .cloned()
         .unwrap_or_else(|| Value::Object(Object::new()));
-    match given {
-        Value::String(text) => Ok(text),
-        other => {
-            serde_json::to_string(&other).map_err(|source| HostedVllmChatError::Json { source })
-        }
-    }
+    serde_json::to_string(&value).map_err(|source| HostedVllmChatError::Json { source })
 }
 
 fn assistant_tool_call(item: &ContentPart) -> Result<ToolCall, HostedVllmChatError> {
