@@ -20,10 +20,9 @@ pub enum CapEndpoint {
 #[must_use]
 pub fn parse_output_cap_value(value: &Json) -> Option<i64> {
     match value {
-        Json::Bool(_) => None,
         Json::Number(number) => integer_from_number(number),
         Json::Text(text) => text.trim().parse::<f64>().ok().and_then(truncated_integer),
-        Json::Null | Json::List(_) | Json::Object(_) => None,
+        Json::Bool(_) | Json::Null | Json::List(_) | Json::Object(_) => None,
     }
 }
 
@@ -45,24 +44,21 @@ fn truncated_integer(value: f64) -> Option<i64> {
         return Some(if value < 0.0_f64 { i64::MIN } else { i64::MAX });
     };
     let truncated = decimal.trunc();
-    match truncated.to_i64() {
-        Some(integer) => Some(integer),
-        // Python's int() of a finite float past i64 keeps the value, so a cap that large stays a cap
-        None => Some(if truncated.is_sign_negative() {
-            i64::MIN
-        } else {
-            i64::MAX
-        }),
-    }
+    // Python's int() of a finite float past i64 keeps the value, so a cap that large stays a cap
+    let saturated = if truncated.is_sign_negative() {
+        i64::MIN
+    } else {
+        i64::MAX
+    };
+    Some(truncated.to_i64().unwrap_or(saturated))
 }
 
 #[must_use]
 pub fn no_max_tokens_output_floor(min_configured_tpm_limit: Option<i64>) -> i64 {
     let baseline = DEFAULT_MAX_TOKENS_ESTIMATE.div_euclid(TPM_FLOOR_FRACTION);
-    match min_configured_tpm_limit {
-        None => baseline,
-        Some(limit) => baseline.min(limit.div_euclid(TPM_FLOOR_FRACTION).max(1)),
-    }
+    min_configured_tpm_limit.map_or(baseline, |limit| {
+        baseline.min(limit.div_euclid(TPM_FLOOR_FRACTION).max(1))
+    })
 }
 
 #[must_use]
@@ -82,10 +78,8 @@ pub fn is_embedding_request(data: &RequestData, call_type: Option<&str>) -> bool
     if call_type.is_some() {
         return false;
     }
-    match data.get("input") {
-        Some(input) => !matches!(input, Json::Null),
-        None => false,
-    }
+    data.get("input")
+        .is_some_and(|input| !matches!(input, Json::Null))
 }
 
 #[must_use]
@@ -122,10 +116,7 @@ fn highest_cap(fields: &IndexMap<String, Json>, names: &[&str]) -> Option<i64> {
 }
 
 fn google_config_fields(data: &RequestData) -> Option<&IndexMap<String, Json>> {
-    let config = match data.get("config") {
-        Some(config) => Some(config),
-        None => data.get("generationConfig"),
-    };
+    let config = data.get("config").or_else(|| data.get("generationConfig"));
     match config {
         Some(Json::Object(fields)) => Some(fields),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))

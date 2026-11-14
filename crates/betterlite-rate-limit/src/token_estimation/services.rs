@@ -5,7 +5,7 @@ pub mod genai;
 pub mod responses;
 pub mod tokenizer;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TranslatedChat {
     pub messages: Json,
     pub tools: Option<Json>,

@@ -270,6 +270,22 @@ async fn a_failed_rerank_count_falls_back_to_the_text_length() {
 }
 
 #[tokio::test]
+async fn a_failed_non_rerank_count_does_not_use_the_rerank_text_length() {
+    let data = request(r#"{"prompt":"abcdefgh"}"#);
+    let counter = recording_counter(None);
+    let total = estimate_precise_input_tokens(
+        &no_translation(),
+        &FixedResponses {
+            messages: Vec::new(),
+        },
+        &counter,
+        &estimate_with(&data, Some("completion"), None),
+    )
+    .await;
+    assert_eq!(total, 0);
+}
+
+#[tokio::test]
 async fn a_failed_chat_count_falls_back_to_the_char_estimate() {
     let data = request(r#"{"messages":[{"role":"user","content":"abcdefgh"}]}"#);
     let counter = recording_counter(None);

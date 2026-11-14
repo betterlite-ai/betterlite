@@ -140,10 +140,7 @@ fn selected_fields<'data>(
     Option<&'data Json>,
     Option<&'data Json>,
 ) {
-    let messages = match translated {
-        Some(translated) => Some(&translated.messages),
-        None => data.get("messages"),
-    };
+    let messages = translated.map_or_else(|| data.get("messages"), |chat| Some(&chat.messages));
     match call_family(call_type) {
         CallFamily::Responses | CallFamily::Embedding => (None, None, data.get("input")),
         CallFamily::TextCompletion => (None, data.get("prompt"), None),
@@ -171,15 +168,16 @@ fn counted_input<'request>(
 ) -> CountedInput<'request> {
     let family = call_family(call_type);
     let is_embedding = is_embedding_request(data, call_type);
-    let messages = if let Some(messages) = responses_messages {
-        Some(Cow::Owned(Json::List(messages)))
-    } else if let Some(translated) = translated {
-        Some(Cow::Borrowed(&translated.messages))
-    } else if is_embedding || matches!(family, CallFamily::Rerank | CallFamily::TextCompletion) {
-        None
-    } else {
-        data.get("messages").map(Cow::Borrowed)
-    };
+    let request_messages =
+        if is_embedding || matches!(family, CallFamily::Rerank | CallFamily::TextCompletion) {
+            None
+        } else {
+            data.get("messages").map(Cow::Borrowed)
+        };
+    let messages = responses_messages
+        .map(|list| Cow::Owned(Json::List(list)))
+        .or_else(|| translated.map(|chat| Cow::Borrowed(&chat.messages)))
+        .or(request_messages);
     let text = if matches!(family, CallFamily::Responses) || translated.is_some() {
         None
     } else if is_embedding {
@@ -229,13 +227,13 @@ fn fallback_tokens(
     text: Option<&Json>,
     audio_tokens: i64,
 ) -> i64 {
-    if matches!(family, CallFamily::Rerank) {
-        if let Some(Json::Text(rerank_text)) = text {
-            return i64::try_from(rerank_text.chars().count())
-                .unwrap_or(i64::MAX)
-                .div_euclid(DEFAULT_CHARS_PER_TOKEN)
-                .max(0);
-        }
+    if matches!(family, CallFamily::Rerank)
+        && let Some(Json::Text(rerank_text)) = text
+    {
+        return i64::try_from(rerank_text.chars().count())
+            .unwrap_or(i64::MAX)
+            .div_euclid(DEFAULT_CHARS_PER_TOKEN)
+            .max(0);
     }
     cheap_input_tokens(translation, request).saturating_add(audio_tokens)
 }

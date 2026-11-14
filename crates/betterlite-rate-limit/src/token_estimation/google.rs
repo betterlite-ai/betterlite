@@ -17,10 +17,7 @@ pub fn translate_google_request(
     if !matches!(contents, Json::Object(_) | Json::List(_)) {
         return None;
     }
-    let config = match data.get("config") {
-        Some(config) => object_option(Some(config)),
-        None => object_option(data.get("generationConfig")),
-    };
+    let config = object_option(data.get("config").or_else(|| data.get("generationConfig")));
     let model = match data.get("model") {
         Some(Json::Text(model)) => model.as_str(),
         Some(_) | None => "",
@@ -38,9 +35,9 @@ pub fn translate_google_request(
 }
 
 // the adapter only receives a generation config that is a mapping, and an absent "config" falls back once
-fn object_option(value: Option<&Json>) -> Option<&Json> {
+const fn object_option(value: Option<&Json>) -> Option<&Json> {
     match value {
-        Some(value @ Json::Object(_)) => Some(value),
+        Some(Json::Object(_)) => value,
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
         | None => None,
     }
