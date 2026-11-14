@@ -1,5 +1,3 @@
-use std::future::Future;
-
 use betterlite_http::interactions::agents_create_read::AgentsApiConfig;
 use betterlite_http::interactions::agents_create_read::list_async::async_list_agents;
 use betterlite_http::interactions::agents_create_read::list_sync::list_agents;
@@ -8,20 +6,14 @@ use betterlite_models::decisions::Json;
 use super::errors::{failure, identity_of};
 use super::preparation::{prepare_listing, provider_of};
 use super::{
-    AgentCollection, AgentCollectionError, AgentCollectionFailure, AgentCollectionHandled,
+    AgentAnswer, AgentCollection, AgentCollectionError, AgentCollectionHandled,
     AgentCollectionResult, AgentFailure, AgentListing, DEFAULT_PROVIDER, LIST_ASYNC_FLAG,
 };
 
 pub fn list<'call, Config>(
     collection: AgentCollection<'call, Config>,
-    call: AgentListing<'_>,
-) -> Result<
-    AgentCollectionHandled<
-        Config::ListOutput,
-        impl Future<Output = AgentCollectionResult<Config::ListOutput, Config::Error>> + 'call,
-    >,
-    AgentCollectionFailure<Config::Error>,
->
+    call: &AgentListing<'_>,
+) -> AgentAnswer<'call, Config::ListOutput, Config::Error>
 where
     Config: AgentsApiConfig,
     Config::Error: AgentFailure,
@@ -30,15 +22,15 @@ where
         let named = call.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
         failure(
             AgentCollectionError::Prepare(error),
-            identity_of("", named, false),
+            &identity_of("", named, false),
             collection.redactor,
         )
     })?;
     let identity = identity_of("", provider, false);
-    let prepared = prepare_listing(collection.logging, &call, provider).map_err(|error| {
+    let prepared = prepare_listing(collection.logging, call, provider).map_err(|error| {
         failure(
             AgentCollectionError::Prepare(error),
-            identity_of("", provider, false),
+            &identity,
             collection.redactor,
         )
     })?;
@@ -50,16 +42,16 @@ where
         ..
     } = collection;
     if prepared.is_async {
-        return Ok(AgentCollectionHandled::Pending(async move {
+        return Ok(AgentCollectionHandled::Pending(Box::pin(async move {
             let request = prepared.request();
             async_list_agents(config, clients, records, None, &request)
                 .await
-                .map_err(|error| failure(AgentCollectionError::Request(error), identity, redactor))
-        }));
+                .map_err(|error| failure(AgentCollectionError::Request(error), &identity, redactor))
+        })));
     }
     let request = prepared.request();
     list_agents(config, clients, records, None, &request)
-        .map_err(|error| failure(AgentCollectionError::Request(error), identity, redactor))
+        .map_err(|error| failure(AgentCollectionError::Request(error), &identity, redactor))
         .map(AgentCollectionHandled::Done)
 }
 
@@ -80,7 +72,7 @@ where
         timeout: call.timeout,
         kwargs: &kwargs,
     };
-    match list(collection, delegation)? {
+    match list(collection, &delegation)? {
         AgentCollectionHandled::Done(output) => Ok(output),
         AgentCollectionHandled::Pending(pending) => pending.await,
     }

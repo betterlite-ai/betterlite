@@ -237,7 +237,7 @@ fn create_posts_the_agent_and_returns_the_provider_reply() {
         ..create_call("runner", &kwargs)
     };
 
-    let output = completed(create(fixture.collection(), call).expect("the provider answers"));
+    let output = completed(create(fixture.collection(), &call).expect("the provider answers"));
 
     assert_eq!(output, r#"{"id":"agent-1"}"#);
     let sent = provider.sent();
@@ -273,7 +273,7 @@ fn create_forwards_the_base_agent_and_instructions_to_the_provider() {
         ..create_call("runner", &kwargs)
     };
 
-    completed(create(fixture.collection(), call).expect("the provider answers"));
+    completed(create(fixture.collection(), &call).expect("the provider answers"));
 
     let body = support::sent_body(&provider.sent());
     assert_eq!(
@@ -307,7 +307,7 @@ fn create_keeps_the_base_environment_the_caller_sent() {
         ..create_call("runner", &kwargs)
     };
 
-    completed(create(fixture.collection(), call).expect("the provider answers"));
+    completed(create(fixture.collection(), &call).expect("the provider answers"));
 
     let body = support::sent_body(&provider.sent());
     let Some(JsonValue::Object(sent_environment)) = body.get("base_environment") else {
@@ -321,7 +321,7 @@ fn create_keeps_the_base_environment_the_caller_sent() {
         panic!("the body carries the nested list");
     };
     assert_eq!(items.len(), 3);
-    assert_eq!(items[0], JsonValue::Number(serde_json::Number::from(3)));
+    assert_eq!(items[0], JsonValue::Number(serde_json::Number::from(3_i32)));
     assert_eq!(items[1], JsonValue::Bool(true));
     assert_eq!(items[2], JsonValue::Null);
 }
@@ -341,7 +341,7 @@ fn create_merges_extra_body_over_the_provider_body() {
         ..create_call("runner", &kwargs)
     };
 
-    completed(create(fixture.collection(), call).expect("the provider answers"));
+    completed(create(fixture.collection(), &call).expect("the provider answers"));
 
     let body = support::sent_body(&provider.sent());
     assert_eq!(
@@ -364,7 +364,7 @@ fn create_defaults_the_provider_to_gemini() {
     let mut fixture = Fixture::new();
 
     completed(
-        create(fixture.collection(), create_call("runner", &kwargs)).expect("gemini answers"),
+        create(fixture.collection(), &create_call("runner", &kwargs)).expect("gemini answers"),
     );
 
     assert_eq!(
@@ -391,7 +391,7 @@ fn create_takes_the_provider_argument_over_the_kwarg() {
         ..create_call("runner", &kwargs)
     };
 
-    completed(create(fixture.collection(), call).expect("the argument's provider answers"));
+    completed(create(fixture.collection(), &call).expect("the argument's provider answers"));
 
     assert_eq!(
         fixture.logging.custom_llm_provider.as_deref(),
@@ -408,7 +408,7 @@ fn create_takes_an_explicit_empty_provider_as_given() {
         ..create_call("runner", &kwargs)
     };
 
-    let failure = failure_of(create(fixture.collection(), call));
+    let failure = failure_of(create(fixture.collection(), &call));
 
     let details = bad_request(&failure.class);
     assert_eq!(details.model.as_deref(), Some(""));
@@ -424,7 +424,10 @@ fn create_rejects_a_provider_kwarg_of_the_wrong_type() {
     let kwargs = map(&[("custom_llm_provider", Json::Bool(true))]);
     let mut fixture = Fixture::new();
 
-    let failure = failure_of(create(fixture.collection(), create_call("runner", &kwargs)));
+    let failure = failure_of(create(
+        fixture.collection(),
+        &create_call("runner", &kwargs),
+    ));
 
     let details = bad_request(&failure.class);
     assert_eq!(details.model.as_deref(), Some("runner"));
@@ -446,7 +449,10 @@ fn create_reports_an_unsupported_provider_before_it_sends_anything() {
     ]);
     let mut fixture = Fixture::new();
 
-    let failure = failure_of(create(fixture.collection(), create_call("runner", &kwargs)));
+    let failure = failure_of(create(
+        fixture.collection(),
+        &create_call("runner", &kwargs),
+    ));
 
     let details = bad_request(&failure.class);
     assert_eq!(
@@ -475,7 +481,7 @@ fn create_keeps_running_when_the_async_flag_is_not_true() {
     let mut fixture = Fixture::new();
 
     let output =
-        completed(create(fixture.collection(), create_call("runner", &kwargs)).expect("answers"));
+        completed(create(fixture.collection(), &create_call("runner", &kwargs)).expect("answers"));
 
     assert_eq!(output, "{}");
     let body = support::sent_body(&provider.sent());
@@ -483,7 +489,7 @@ fn create_keeps_running_when_the_async_flag_is_not_true() {
         body.get("api_key"),
         Some(&JsonValue::Text("key-1".to_owned()))
     );
-    assert!(body.get("acreate_agent").is_none());
+    assert!(!body.contains_key("acreate_agent"));
 }
 
 #[tokio::test]
@@ -497,7 +503,7 @@ async fn create_returns_a_pending_call_when_the_async_flag_is_true() {
     let mut fixture = Fixture::new();
 
     let pending_call = pending(
-        create(fixture.collection(), create_call("runner", &kwargs)).expect("the call prepares"),
+        create(fixture.collection(), &create_call("runner", &kwargs)).expect("the call prepares"),
     );
     let output = pending_call.await.expect("the provider answers");
 
@@ -507,7 +513,7 @@ async fn create_returns_a_pending_call_when_the_async_flag_is_true() {
         body.get("api_key"),
         Some(&JsonValue::Text("key-1".to_owned()))
     );
-    assert!(body.get("acreate_agent").is_none());
+    assert!(!body.contains_key("acreate_agent"));
 }
 
 #[tokio::test]
@@ -552,7 +558,7 @@ async fn acreate_awaits_the_create_the_async_entry_starts() {
         body.get("api_key"),
         Some(&JsonValue::Text("key-1".to_owned()))
     );
-    assert!(body.get("acreate_agent").is_none());
+    assert!(!body.contains_key("acreate_agent"));
     assert_eq!(
         fixture.logging.custom_llm_provider.as_deref(),
         Some("gemini")
@@ -570,7 +576,7 @@ fn list_sends_the_page_query_and_returns_the_provider_reply() {
     ]);
     let mut fixture = Fixture::new();
 
-    let output = completed(list(fixture.collection(), list_call(&kwargs)).expect("answers"));
+    let output = completed(list(fixture.collection(), &list_call(&kwargs)).expect("answers"));
 
     assert_eq!(output, r#"{"agents":[]}"#);
     let sent = provider.sent();
@@ -593,7 +599,7 @@ fn list_reports_an_unsupported_provider_with_an_empty_model() {
     let kwargs = map(&[("custom_llm_provider", text("openai"))]);
     let mut fixture = Fixture::new();
 
-    let failure = failure_of(list(fixture.collection(), list_call(&kwargs)));
+    let failure = failure_of(list(fixture.collection(), &list_call(&kwargs)));
 
     let details = bad_request(&failure.class);
     assert_eq!(
@@ -612,7 +618,7 @@ fn list_uses_the_provider_status_to_classify_a_provider_error() {
     let kwargs = map(&[("api_base", text(&provider.url()))]);
     let mut fixture = Fixture::new();
 
-    let failure = failure_of(list(fixture.collection(), list_call(&kwargs)));
+    let failure = failure_of(list(fixture.collection(), &list_call(&kwargs)));
 
     let details = not_found(&failure.class);
     assert_eq!(details.status.0, 404);
@@ -629,7 +635,7 @@ fn list_rejects_a_provider_kwarg_of_the_wrong_type() {
     let kwargs = map(&[("custom_llm_provider", Json::Bool(true))]);
     let mut fixture = Fixture::new();
 
-    let failure = failure_of(list(fixture.collection(), list_call(&kwargs)));
+    let failure = failure_of(list(fixture.collection(), &list_call(&kwargs)));
 
     let details = bad_request(&failure.class);
     assert_eq!(details.model.as_deref(), Some(""));
@@ -647,7 +653,7 @@ fn list_forwards_extra_headers_to_the_provider() {
         ..list_call(&kwargs)
     };
 
-    completed(list(fixture.collection(), call).expect("the provider answers"));
+    completed(list(fixture.collection(), &call).expect("the provider answers"));
 
     let sent = provider.sent();
     assert!(sent.starts_with("GET /v1beta/agents HTTP/1.1"), "{sent}");
@@ -663,7 +669,7 @@ fn list_keeps_running_when_the_async_flag_is_not_true() {
     ]);
     let mut fixture = Fixture::new();
 
-    let output = completed(list(fixture.collection(), list_call(&kwargs)).expect("answers"));
+    let output = completed(list(fixture.collection(), &list_call(&kwargs)).expect("answers"));
 
     assert_eq!(output, "{}");
     let sent = provider.sent();
@@ -681,7 +687,7 @@ async fn list_returns_a_pending_call_when_the_async_flag_is_true() {
     let mut fixture = Fixture::new();
 
     let pending_call =
-        pending(list(fixture.collection(), list_call(&kwargs)).expect("the call prepares"));
+        pending(list(fixture.collection(), &list_call(&kwargs)).expect("the call prepares"));
     let output = pending_call.await.expect("the provider answers");
 
     assert_eq!(output, "{}");
@@ -762,11 +768,11 @@ fn list_keeps_a_transport_timeout_as_a_connection_error() {
         timeout: Some(Duration::from_millis(20)),
         ..create_call("runner", &kwargs)
     };
-    let transport = failure_of(create(fixture.collection(), call)).error;
+    let transport = failure_of(create(fixture.collection(), &call)).error;
 
     let listed = classify(
         transport,
-        identity_of("", "gemini", false),
+        &identity_of("", "gemini", false),
         &fixture.redactor,
     );
 
@@ -782,7 +788,10 @@ fn create_uses_the_provider_status_to_classify_a_provider_error() {
     let kwargs = map(&[("api_base", text(&provider.url()))]);
     let mut fixture = Fixture::new();
 
-    let failure = failure_of(create(fixture.collection(), create_call("runner", &kwargs)));
+    let failure = failure_of(create(
+        fixture.collection(),
+        &create_call("runner", &kwargs),
+    ));
 
     let details = not_found(&failure.class);
     assert_eq!(details.status.0, 404);
@@ -797,7 +806,7 @@ fn create_uses_the_provider_status_to_classify_a_provider_error() {
             .records
             .calls()
             .iter()
-            .all(|call| !call.starts_with("post|"))
+            .all(|recorded| !recorded.starts_with("post|"))
     );
 }
 
@@ -807,7 +816,10 @@ fn create_uses_the_provider_message_to_classify_a_provider_error() {
     let kwargs = map(&[("api_base", text(&provider.url()))]);
     let mut fixture = Fixture::new();
 
-    let failure = failure_of(create(fixture.collection(), create_call("runner", &kwargs)));
+    let failure = failure_of(create(
+        fixture.collection(),
+        &create_call("runner", &kwargs),
+    ));
 
     let details = authentication(&failure.class);
     assert_eq!(details.status.0, 401);
@@ -827,7 +839,7 @@ fn create_reports_a_transport_timeout_as_a_timeout_error() {
         ..create_call("runner", &kwargs)
     };
 
-    let failure = failure_of(create(fixture.collection(), call));
+    let failure = failure_of(create(fixture.collection(), &call));
 
     let details = timed_out(&failure.class);
     assert_eq!(details.original_status.0, 408);
@@ -839,7 +851,7 @@ fn create_reports_a_transport_timeout_as_a_timeout_error() {
             .records
             .calls()
             .iter()
-            .all(|call| !call.starts_with("post|"))
+            .all(|recorded| !recorded.starts_with("post|"))
     );
 }
 
@@ -870,7 +882,10 @@ fn create_reports_a_refused_connection_as_an_api_connection_error() {
     let kwargs = map(&[("api_base", text(&format!("http://{address}")))]);
     let mut fixture = Fixture::new();
 
-    let failure = failure_of(create(fixture.collection(), create_call("runner", &kwargs)));
+    let failure = failure_of(create(
+        fixture.collection(),
+        &create_call("runner", &kwargs),
+    ));
 
     let context = api_connection(&failure.class);
     assert_eq!(failure.class.metadata().status_code, 500);
@@ -889,7 +904,10 @@ fn create_sends_the_collection_request_timeout() {
     let mut fixture = Fixture::new();
     fixture.request_timeout = Duration::from_millis(20);
 
-    let failure = failure_of(create(fixture.collection(), create_call("runner", &kwargs)));
+    let failure = failure_of(create(
+        fixture.collection(),
+        &create_call("runner", &kwargs),
+    ));
 
     let details = timed_out(&failure.class);
     assert_eq!(details.original_status.0, 408);

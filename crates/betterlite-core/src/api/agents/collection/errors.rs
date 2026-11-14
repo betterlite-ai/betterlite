@@ -26,14 +26,14 @@ pub(super) fn identity_of(model: &str, provider: &str, post: bool) -> AgentCallI
 
 pub(super) fn failure<ProviderError>(
     error: AgentCollectionError<ProviderError>,
-    identity: AgentCallIdentity,
+    identity: &AgentCallIdentity,
     redactor: &Redactor,
 ) -> AgentCollectionFailure<ProviderError>
 where
     ProviderError: AgentFailure,
 {
     AgentCollectionFailure {
-        class: class_of(&error, &identity, redactor),
+        class: class_of(&error, identity, redactor),
         error,
     }
 }
@@ -51,7 +51,7 @@ where
             configuration.class()
         }
         AgentCollectionError::Prepare(AgentPreparationError::FieldType { field }) => {
-            field_class(identity, *field)
+            field_class(identity, field)
         }
         AgentCollectionError::Prepare(AgentPreparationError::Logging(source)) => {
             raw_class(identity, &source.to_string(), None, redactor)
@@ -62,7 +62,7 @@ where
         AgentCollectionError::Request(
             AgentRequestError::Client(ClientError::FieldType { field, .. })
             | AgentRequestError::Parameters(ClientError::FieldType { field, .. }),
-        ) => field_class(identity, *field),
+        ) => field_class(identity, field),
         AgentCollectionError::Request(
             AgentRequestError::Client(source) | AgentRequestError::Parameters(source),
         ) => raw_class(identity, &source.to_string(), None, redactor),

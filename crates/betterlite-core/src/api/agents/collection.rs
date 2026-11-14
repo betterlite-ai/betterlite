@@ -5,6 +5,8 @@ mod preparation;
 
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use betterlite_error::error::ErrorClass;
@@ -74,6 +76,16 @@ pub enum AgentCollectionHandled<Output, Pending> {
 
 pub type AgentCollectionResult<Output, ProviderError> =
     Result<Output, AgentCollectionFailure<ProviderError>>;
+
+// the call a sync entry point leaves pending: the boxed future the async flag asked it to start
+pub type AgentPending<'call, Output, Error> =
+    Pin<Box<dyn Future<Output = AgentCollectionResult<Output, Error>> + 'call>>;
+
+// a sync entry point's answer: the result, or the pending call the async flag asked for
+pub type AgentAnswer<'call, Output, Error> = Result<
+    AgentCollectionHandled<Output, AgentPending<'call, Output, Error>>,
+    AgentCollectionFailure<Error>,
+>;
 
 #[derive(Debug, Error)]
 pub enum AgentPreparationError {

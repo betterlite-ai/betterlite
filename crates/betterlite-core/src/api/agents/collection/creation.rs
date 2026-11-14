@@ -1,5 +1,3 @@
-use std::future::Future;
-
 use betterlite_http::interactions::agents_create_read::AgentsApiConfig;
 use betterlite_http::interactions::agents_create_read::create_async::async_create_agent;
 use betterlite_http::interactions::agents_create_read::create_sync::create_agent;
@@ -8,20 +6,14 @@ use betterlite_models::decisions::Json;
 use super::errors::{failure, identity_of};
 use super::preparation::{prepare_creation, provider_of};
 use super::{
-    AgentCollection, AgentCollectionError, AgentCollectionFailure, AgentCollectionHandled,
+    AgentAnswer, AgentCollection, AgentCollectionError, AgentCollectionHandled,
     AgentCollectionResult, AgentCreation, AgentFailure, CREATE_ASYNC_FLAG, DEFAULT_PROVIDER,
 };
 
 pub fn create<'call, Config>(
     collection: AgentCollection<'call, Config>,
-    call: AgentCreation<'_>,
-) -> Result<
-    AgentCollectionHandled<
-        Config::CreateOutput,
-        impl Future<Output = AgentCollectionResult<Config::CreateOutput, Config::Error>> + 'call,
-    >,
-    AgentCollectionFailure<Config::Error>,
->
+    call: &AgentCreation<'_>,
+) -> AgentAnswer<'call, Config::CreateOutput, Config::Error>
 where
     Config: AgentsApiConfig,
     Config::Error: AgentFailure,
@@ -30,15 +22,15 @@ where
         let named = call.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
         failure(
             AgentCollectionError::Prepare(error),
-            identity_of(call.name, named, true),
+            &identity_of(call.name, named, true),
             collection.redactor,
         )
     })?;
     let identity = identity_of(call.name, provider, true);
-    let prepared = prepare_creation(collection.logging, &call, provider).map_err(|error| {
+    let prepared = prepare_creation(collection.logging, call, provider).map_err(|error| {
         failure(
             AgentCollectionError::Prepare(error),
-            identity_of(call.name, provider, true),
+            &identity,
             collection.redactor,
         )
     })?;
@@ -51,16 +43,16 @@ where
         ..
     } = collection;
     if prepared.is_async {
-        return Ok(AgentCollectionHandled::Pending(async move {
+        return Ok(AgentCollectionHandled::Pending(Box::pin(async move {
             let request = prepared.request(request_timeout);
             async_create_agent(config, clients, records, None, &request)
                 .await
-                .map_err(|error| failure(AgentCollectionError::Request(error), identity, redactor))
-        }));
+                .map_err(|error| failure(AgentCollectionError::Request(error), &identity, redactor))
+        })));
     }
     let request = prepared.request(request_timeout);
     create_agent(config, clients, records, None, &request)
-        .map_err(|error| failure(AgentCollectionError::Request(error), identity, redactor))
+        .map_err(|error| failure(AgentCollectionError::Request(error), &identity, redactor))
         .map(AgentCollectionHandled::Done)
 }
 
@@ -86,7 +78,7 @@ where
         timeout: call.timeout,
         kwargs: &kwargs,
     };
-    match create(collection, delegation)? {
+    match create(collection, &delegation)? {
         AgentCollectionHandled::Done(output) => Ok(output),
         AgentCollectionHandled::Pending(pending) => pending.await,
     }

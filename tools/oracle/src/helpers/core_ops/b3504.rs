@@ -93,7 +93,7 @@ fn answer(
                     .block_on(acreate(fixture.collection(), call))
                     .map_err(|error| support::raised(&error));
             }
-            match create(fixture.collection(), call) {
+            match create(fixture.collection(), &call) {
                 Ok(AgentCollectionHandled::Done(value)) => Ok(value),
                 Ok(AgentCollectionHandled::Pending(_pending)) => Err(support::helper_failure(
                     "the create was unexpectedly pending",
@@ -113,7 +113,7 @@ fn answer(
                     .block_on(alist(fixture.collection(), call))
                     .map_err(|error| support::raised(&error));
             }
-            match list(fixture.collection(), call) {
+            match list(fixture.collection(), &call) {
                 Ok(AgentCollectionHandled::Done(value)) => Ok(value),
                 Ok(AgentCollectionHandled::Pending(_pending)) => {
                     Err(support::helper_failure("the list was unexpectedly pending"))
