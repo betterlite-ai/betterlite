@@ -71,15 +71,15 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
     Ok(json!({"calls": outcomes}))
 }
 
-fn outcome(call: &Call) -> Result<Value, Box<HelperError>> {
-    match call {
+fn outcome(entry: &Call) -> Result<Value, Box<HelperError>> {
+    match entry {
         Call::Search(call) => search_outcome(call),
         Call::CreateRequest(call) => create_request_outcome(call),
         Call::CreateResponse(call) => create_response_outcome(call),
     }
 }
 
-fn reply_of(call: &ReplyCall) -> Reply<'_> {
+const fn reply_of(call: &ReplyCall) -> Reply<'_> {
     Reply {
         status: call.status,
         headers: &call.headers,
