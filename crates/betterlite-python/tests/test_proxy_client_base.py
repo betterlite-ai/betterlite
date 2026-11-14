@@ -80,7 +80,7 @@ def empty_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return home
 
 
-@pytest.fixture
+@pytest.fixture(autouse=False)
 def server() -> Iterator[RecordingServer]:
     with RecordingServer() as recording:
         yield recording
