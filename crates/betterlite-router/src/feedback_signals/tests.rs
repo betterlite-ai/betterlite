@@ -115,11 +115,12 @@ fn assert_feedback(
 
 fn assert_response(
     previous: Option<&str>,
-    assistant: &str,
+    assistant: Option<&str>,
+    results: Vec<ToolResult>,
     status: Option<i64>,
     expected: [i64; 7],
 ) {
-    let turn = make_turn(None, Some(assistant), Vec::new(), status);
+    let turn = make_turn(None, assistant, results, status);
     let delta = detect_response_signals(&detector(), previous, &[], &turn);
     assert_eq!(fields(delta), expected);
 }
@@ -151,9 +152,7 @@ fn assert_exhaustion(
         content: content.map(str::to_owned),
         is_error,
     };
-    let turn = make_turn(None, None, vec![result], status);
-    let delta = detect_response_signals(&detector(), None, &[], &turn);
-    assert_eq!(fields(delta), expected);
+    assert_response(None, None, vec![result], status, expected);
 }
 
 fn assert_results(results: &[(&str, bool)], expected: [i64; 7]) {
@@ -181,37 +180,22 @@ fn assert_jaccard(left: &[&str], right: &[&str], expected: f64) {
     );
 }
 
+fn delta_with_one(index: usize) -> SignalDelta {
+    let mut counts = [0; 7];
+    counts[index] = 1;
+    SignalDelta {
+        misalignment: counts[0],
+        stagnation: counts[1],
+        disengagement: counts[2],
+        satisfaction: counts[3],
+        failure: counts[4],
+        r#loop: counts[5],
+        exhaustion: counts[6],
+    }
+}
+
 fn assert_each_field_fires() {
-    let singles = [
-        SignalDelta {
-            misalignment: 1,
-            ..SignalDelta::default()
-        },
-        SignalDelta {
-            stagnation: 1,
-            ..SignalDelta::default()
-        },
-        SignalDelta {
-            disengagement: 1,
-            ..SignalDelta::default()
-        },
-        SignalDelta {
-            satisfaction: 1,
-            ..SignalDelta::default()
-        },
-        SignalDelta {
-            failure: 1,
-            ..SignalDelta::default()
-        },
-        SignalDelta {
-            r#loop: 1,
-            ..SignalDelta::default()
-        },
-        SignalDelta {
-            exhaustion: 1,
-            ..SignalDelta::default()
-        },
-    ];
+    let singles: Vec<SignalDelta> = (0..7).map(delta_with_one).collect();
     assert!(
         singles.iter().all(SignalDelta::any_fired),
         "any_fired must report every counter"
@@ -339,7 +323,7 @@ fn assert_advance_bounds() {
 }
 
 #[derive(Clone, Copy)]
-enum Behavior {
+enum Case {
     Feedback(
         Option<&'static str>,
         Option<&'static str>,
@@ -361,301 +345,291 @@ enum Behavior {
     CreditOnce,
     Threaded,
     AdvanceBounds,
+    BoundaryThreshold(f64, f64, Option<(&'static str, f64)>),
+    BoundaryMisalignment(&'static str, &'static str, bool),
+    BoundaryStagnation(&'static str, &'static str, bool),
+    BoundaryLoop(usize, bool),
+    BoundaryHistory(usize, usize, &'static str),
+    BoundaryGate(&'static str, GatePhase),
+    BoundaryStatus(Option<i64>, bool),
+}
+
+impl Case {
+    fn run(self) {
+        match self {
+            Case::Feedback(previous, current, tool, allow, expected) => {
+                assert_feedback(previous, current, tool, allow, expected);
+            }
+            Case::Response(previous, assistant, status, expected) => {
+                assert_response(previous, Some(assistant), Vec::new(), status, expected);
+            }
+            Case::Loop(history, calls, expected) => assert_loop(history, calls, expected),
+            Case::Exhaustion(content, is_error, status, expected) => {
+                assert_exhaustion(content, is_error, status, expected);
+            }
+            Case::Results(results, expected) => assert_results(results, expected),
+            Case::Tokens(text, expected) => assert_tokens(text, expected),
+            Case::Jaccard(left, right, expected) => assert_jaccard(left, right, expected),
+            Case::Counted => assert_counted(),
+            Case::CreditOnce => assert_credit_once(),
+            Case::Threaded => assert_threaded(),
+            Case::AdvanceBounds => assert_advance_bounds(),
+            Case::BoundaryThreshold(misalignment, stagnation, rejected) => {
+                assert_threshold(misalignment, stagnation, rejected);
+            }
+            Case::BoundaryMisalignment(previous, current, fires) => {
+                assert_misalignment(previous, current, fires);
+            }
+            Case::BoundaryStagnation(previous, current, fires) => {
+                assert_stagnation(previous, current, fires);
+            }
+            Case::BoundaryLoop(repeats, fires) => assert_loop_boundary(repeats, fires),
+            Case::BoundaryHistory(calls, kept, first) => assert_history(calls, kept, first),
+            Case::BoundaryGate(text, phase) => assert_gate(text, phase),
+            Case::BoundaryStatus(status, fires) => {
+                let turn = make_turn(None, None, Vec::new(), status);
+                let delta = detect_response_signals(&detector(), None, &[], &turn);
+                assert_eq!(delta.exhaustion != 0, fires);
+            }
+        }
+    }
 }
 
 #[rstest]
-#[case::misalignment_rephrased(Behavior::Feedback(
+#[case::misalignment_rephrased(Case::Feedback(
     Some("Hello there"),
     Some("hello world"),
     None,
     false,
     MISALIGNED
 ))]
-#[case::misalignment_topic_changed(Behavior::Feedback(
+#[case::misalignment_topic_changed(Case::Feedback(
     Some("hello there"),
     Some("goodbye moon"),
     None,
     false,
     NONE
 ))]
-#[case::misalignment_repeated(Behavior::Feedback(
+#[case::misalignment_repeated(Case::Feedback(
     Some("hello there"),
     Some("hello there"),
     None,
     false,
     NONE
 ))]
-#[case::disengagement_phrase(Behavior::Feedback(
+#[case::disengagement_phrase(Case::Feedback(
     None,
     Some("this isn't working, abort"),
     None,
     false,
     DISENGAGED
 ))]
-#[case::satisfaction_without_allow(Behavior::Feedback(
+#[case::satisfaction_without_allow(Case::Feedback(
     None,
     Some("thanks, that worked"),
     None,
     false,
     NONE
 ))]
-#[case::satisfaction_allowed(Behavior::Feedback(None, Some("nice"), None, true, SATISFIED))]
-#[case::tool_failure(Behavior::Feedback(
+#[case::satisfaction_allowed(Case::Feedback(None, Some("nice"), None, true, SATISFIED))]
+#[case::tool_failure(Case::Feedback(
     None,
     Some("run it"),
     Some(("boom", true)),
     false,
     FAILED
 ))]
-#[case::empty_tool_result_is_not_failure(Behavior::Feedback(
+#[case::empty_tool_result_is_not_failure(Case::Feedback(
     None,
     Some("run it"),
     Some(("", false)),
     false,
     NONE
 ))]
-#[case::stagnation_near_duplicate(Behavior::Response(
+#[case::stagnation_near_duplicate(Case::Response(
     Some("red green blue"),
     "red green yellow",
     None,
     STAGNANT
 ))]
-#[case::stagnation_rewritten(Behavior::Response(
-    Some("red green blue"),
-    "purple orange",
-    None,
-    NONE
-))]
-#[case::exhaustion_status(Behavior::Response(None, "busy", Some(429), EXHAUSTED))]
-#[case::loop_after_repeats(Behavior::Loop(
+#[case::stagnation_rewritten(Case::Response(Some("red green blue"), "purple orange", None, NONE))]
+#[case::exhaustion_status(Case::Response(None, "busy", Some(429), EXHAUSTED))]
+#[case::loop_after_repeats(Case::Loop(
     &["shell({})", "shell({})"], &[("shell", "{}")], LOOPED
 ))]
-#[case::loop_different_signature(Behavior::Loop(
+#[case::loop_different_signature(Case::Loop(
     &["shell({})", "shell({})"], &[("shell", "{\"a\":1}")], NONE
 ))]
-#[case::exhaustion_keyword(Behavior::Exhaustion(
+#[case::exhaustion_keyword(Case::Exhaustion(
     Some("CONTEXT WINDOW is full"),
     false,
     Some(200),
     EXHAUSTED
 ))]
-#[case::tool_error_is_not_exhaustion(Behavior::Exhaustion(Some("boom"), true, Some(200), NONE))]
-#[case::tokens_mixed_text(Behavior::Tokens(
+#[case::tool_error_is_not_exhaustion(Case::Exhaustion(Some("boom"), true, Some(200), NONE))]
+#[case::tokens_mixed_text(Case::Tokens(
     Some("Hello, world! 123"), &["123", "hello", "world"]
 ))]
-#[case::tokens_absent(Behavior::Tokens(None, &[]))]
-#[case::tokens_non_ascii_split(Behavior::Tokens(Some("Café"), &["caf"]))]
-#[case::jaccard_identical(Behavior::Jaccard(&["a", "b"], &["a", "b"], 1.0))]
-#[case::jaccard_disjoint(Behavior::Jaccard(&["a"], &["b"], 0.0))]
-#[case::jaccard_empty(Behavior::Jaccard(&[], &[], 0.0))]
-#[case::jaccard_half(Behavior::Jaccard(&["a", "b", "c"], &["a", "b", "d"], 0.5))]
-#[case::counted(Behavior::Counted)]
-#[case::credit_once(Behavior::CreditOnce)]
-#[case::advance_bounds(Behavior::AdvanceBounds)]
-#[case::satisfaction_not_matched(Behavior::Feedback(None, Some("run it"), None, true, NONE))]
-#[case::absent_user_content(Behavior::Feedback(Some("hello there"), None, None, true, NONE))]
-#[case::exhaustion_absent_content(Behavior::Exhaustion(None, false, None, NONE))]
-#[case::disengagement_cancel(Behavior::Feedback(
+#[case::tokens_absent(Case::Tokens(None, &[]))]
+#[case::tokens_non_ascii_split(Case::Tokens(Some("R\u{e9}sum\u{e9}"), &["r", "sum"]))]
+#[case::jaccard_identical(Case::Jaccard(&["a", "b"], &["a", "b"], 1.0))]
+#[case::jaccard_disjoint(Case::Jaccard(&["a"], &["b"], 0.0))]
+#[case::jaccard_empty(Case::Jaccard(&[], &[], 0.0))]
+#[case::jaccard_half(Case::Jaccard(&["a", "b", "c"], &["a", "b", "d"], 0.5))]
+#[case::counted(Case::Counted)]
+#[case::credit_once(Case::CreditOnce)]
+#[case::advance_bounds(Case::AdvanceBounds)]
+#[case::satisfaction_not_matched(Case::Feedback(None, Some("run it"), None, true, NONE))]
+#[case::absent_user_content(Case::Feedback(Some("hello there"), None, None, true, NONE))]
+#[case::exhaustion_absent_content(Case::Exhaustion(None, false, None, NONE))]
+#[case::disengagement_cancel(Case::Feedback(
     None,
     Some("cancel this run"),
     None,
     false,
     DISENGAGED
 ))]
-#[case::disengagement_manual(Behavior::Feedback(
+#[case::disengagement_manual(Case::Feedback(
     None,
     Some("I'll do it manually"),
     None,
     false,
     DISENGAGED
 ))]
-#[case::exhaustion_status_504(Behavior::Response(None, "busy", Some(504), EXHAUSTED))]
-#[case::exhaustion_keyword_token_limit(Behavior::Exhaustion(
+#[case::exhaustion_status_504(Case::Response(None, "busy", Some(504), EXHAUSTED))]
+#[case::exhaustion_keyword_token_limit(Case::Exhaustion(
     Some("token limit reached"),
     false,
     Some(200),
     EXHAUSTED
 ))]
-#[case::exhaustion_keyword_rate_limit(Behavior::Exhaustion(
+#[case::exhaustion_keyword_rate_limit(Case::Exhaustion(
     Some("rate limit exceeded"),
     false,
     Some(200),
     EXHAUSTED
 ))]
-#[case::exhaustion_keyword_too_many_requests(Behavior::Exhaustion(
+#[case::exhaustion_keyword_too_many_requests(Case::Exhaustion(
     Some("Too Many Requests"),
     false,
     Some(200),
     EXHAUSTED
 ))]
-#[case::exhaustion_keyword_timeout(Behavior::Exhaustion(
+#[case::exhaustion_keyword_timeout(Case::Exhaustion(
     Some("timeout calling the provider"),
     false,
     Some(200),
     EXHAUSTED
 ))]
-#[case::satisfaction_that_worked(Behavior::Feedback(
-    None,
-    Some("that worked"),
-    None,
-    true,
-    SATISFIED
-))]
-#[case::satisfaction_that_did_it(Behavior::Feedback(
-    None,
-    Some("that did it"),
-    None,
-    true,
-    SATISFIED
-))]
-#[case::satisfaction_works_now(Behavior::Feedback(None, Some("works now"), None, true, SATISFIED))]
-#[case::satisfaction_fixed_it(Behavior::Feedback(None, Some("fixed it"), None, true, SATISFIED))]
-#[case::satisfaction_solved_it(Behavior::Feedback(None, Some("solved it"), None, true, SATISFIED))]
-#[case::satisfaction_thank_you(Behavior::Feedback(None, Some("thank you"), None, true, SATISFIED))]
-#[case::satisfaction_thx(Behavior::Feedback(None, Some("thx"), None, true, SATISFIED))]
-#[case::satisfaction_appreciated(Behavior::Feedback(
-    None,
-    Some("appreciated"),
-    None,
-    true,
-    SATISFIED
-))]
-#[case::satisfaction_appreciate_it(Behavior::Feedback(
+#[case::satisfaction_that_worked(Case::Feedback(None, Some("that worked"), None, true, SATISFIED))]
+#[case::satisfaction_that_did_it(Case::Feedback(None, Some("that did it"), None, true, SATISFIED))]
+#[case::satisfaction_works_now(Case::Feedback(None, Some("works now"), None, true, SATISFIED))]
+#[case::satisfaction_fixed_it(Case::Feedback(None, Some("fixed it"), None, true, SATISFIED))]
+#[case::satisfaction_solved_it(Case::Feedback(None, Some("solved it"), None, true, SATISFIED))]
+#[case::satisfaction_thank_you(Case::Feedback(None, Some("thank you"), None, true, SATISFIED))]
+#[case::satisfaction_thx(Case::Feedback(None, Some("thx"), None, true, SATISFIED))]
+#[case::satisfaction_appreciated(Case::Feedback(None, Some("appreciated"), None, true, SATISFIED))]
+#[case::satisfaction_appreciate_it(Case::Feedback(
     None,
     Some("appreciate it"),
     None,
     true,
     SATISFIED
 ))]
-#[case::satisfaction_perfect(Behavior::Feedback(None, Some("perfect"), None, true, SATISFIED))]
-#[case::satisfaction_great(Behavior::Feedback(None, Some("great"), None, true, SATISFIED))]
-#[case::satisfaction_excellent(Behavior::Feedback(None, Some("excellent"), None, true, SATISFIED))]
-#[case::satisfaction_exactly(Behavior::Feedback(None, Some("exactly"), None, true, SATISFIED))]
-#[case::disengagement_forget_it(Behavior::Feedback(
-    None,
-    Some("forget it"),
-    None,
-    false,
-    DISENGAGED
-))]
-#[case::disengagement_never_mind(Behavior::Feedback(
+#[case::satisfaction_perfect(Case::Feedback(None, Some("perfect"), None, true, SATISFIED))]
+#[case::satisfaction_great(Case::Feedback(None, Some("great"), None, true, SATISFIED))]
+#[case::satisfaction_excellent(Case::Feedback(None, Some("excellent"), None, true, SATISFIED))]
+#[case::satisfaction_exactly(Case::Feedback(None, Some("exactly"), None, true, SATISFIED))]
+#[case::disengagement_forget_it(Case::Feedback(None, Some("forget it"), None, false, DISENGAGED))]
+#[case::disengagement_never_mind(Case::Feedback(
     None,
     Some("never mind"),
     None,
     false,
     DISENGAGED
 ))]
-#[case::disengagement_give_up(Behavior::Feedback(None, Some("give up"), None, false, DISENGAGED))]
-#[case::disengagement_talk_to_a_human(Behavior::Feedback(
+#[case::disengagement_give_up(Case::Feedback(None, Some("give up"), None, false, DISENGAGED))]
+#[case::disengagement_talk_to_a_human(Case::Feedback(
     None,
     Some("talk to a human"),
     None,
     false,
     DISENGAGED
 ))]
-#[case::disengagement_stop(Behavior::Feedback(None, Some("stop"), None, false, DISENGAGED))]
-#[case::disengagement_myself(Behavior::Feedback(
+#[case::disengagement_stop(Case::Feedback(None, Some("stop"), None, false, DISENGAGED))]
+#[case::disengagement_myself(Case::Feedback(
     None,
     Some("I'll do it myself"),
     None,
     false,
     DISENGAGED
 ))]
-#[case::disengagement_isnt_working(Behavior::Feedback(
+#[case::disengagement_isnt_working(Case::Feedback(
     None,
     Some("this isn't working"),
     None,
     false,
     DISENGAGED
 ))]
-#[case::disengagement_abort(Behavior::Feedback(None, Some("abort"), None, false, DISENGAGED))]
-#[case::disengagement_talk_to_human(Behavior::Feedback(
+#[case::disengagement_abort(Case::Feedback(None, Some("abort"), None, false, DISENGAGED))]
+#[case::disengagement_talk_to_human(Case::Feedback(
     None,
     Some("talk to human"),
     None,
     false,
     DISENGAGED
 ))]
-#[case::threaded_detectors(Behavior::Threaded)]
-#[case::failure_second_result(Behavior::Results(
+#[case::threaded_detectors(Case::Threaded)]
+#[case::failure_second_result(Case::Results(
     &[("ok", false), ("boom", true)],
     FAILED
 ))]
-#[case::exhaustion_second_result(Behavior::Results(
+#[case::exhaustion_second_result(Case::Results(
     &[("all fine", false), ("context length exceeded", false)],
     EXHAUSTED
 ))]
-#[case::loop_second_call_matches(Behavior::Loop(
+#[case::loop_second_call_matches(Case::Loop(
     &["shell({})", "shell({})"],
     &[("other", "{}"), ("shell", "{}")],
     LOOPED
 ))]
-#[case::satisfaction_capitalized_that_worked(Behavior::Feedback(
+#[case::satisfaction_capitalized_that_worked(Case::Feedback(
     None,
     Some("That worked"),
     None,
     true,
     SATISFIED
 ))]
-#[case::satisfaction_capitalized_thanks(Behavior::Feedback(
+#[case::satisfaction_capitalized_thanks(Case::Feedback(
     None,
     Some("Thanks!"),
     None,
     true,
     SATISFIED
 ))]
-#[case::satisfaction_capitalized_perfect(Behavior::Feedback(
+#[case::satisfaction_capitalized_perfect(Case::Feedback(
     None,
     Some("Perfect"),
     None,
     true,
     SATISFIED
 ))]
-#[case::disengagement_capitalized_cancel(Behavior::Feedback(
+#[case::disengagement_capitalized_cancel(Case::Feedback(
     None,
     Some("CANCEL this run"),
     None,
     false,
     DISENGAGED
 ))]
-#[case::disengagement_is_not(Behavior::Feedback(
+#[case::disengagement_is_not(Case::Feedback(
     None,
     Some("This is not working"),
     None,
     false,
     DISENGAGED
 ))]
-fn feedback_signals_behaviors(#[case] behavior: Behavior) {
-    match behavior {
-        Behavior::Feedback(previous, current, tool, allow, expected) => {
-            assert_feedback(previous, current, tool, allow, expected);
-        }
-        Behavior::Response(previous, assistant, status, expected) => {
-            assert_response(previous, assistant, status, expected);
-        }
-        Behavior::Loop(history, calls, expected) => assert_loop(history, calls, expected),
-        Behavior::Exhaustion(content, is_error, status, expected) => {
-            assert_exhaustion(content, is_error, status, expected);
-        }
-        Behavior::Results(results, expected) => assert_results(results, expected),
-        Behavior::Tokens(text, expected) => assert_tokens(text, expected),
-        Behavior::Jaccard(left, right, expected) => assert_jaccard(left, right, expected),
-        Behavior::Counted => assert_counted(),
-        Behavior::CreditOnce => assert_credit_once(),
-        Behavior::Threaded => assert_threaded(),
-        Behavior::AdvanceBounds => assert_advance_bounds(),
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Boundary {
-    Threshold(f64, f64, Option<(&'static str, f64)>),
-    Misalignment(&'static str, &'static str, bool),
-    Stagnation(&'static str, &'static str, bool),
-    Loop(usize, bool),
-    History(usize, usize, &'static str),
-    Gate(&'static str, GatePhase),
-    Status(Option<i64>, bool),
+fn feedback_signals_behaviors(#[case] case: Case) {
+    case.run();
 }
 
 #[derive(Clone, Copy)]
@@ -695,7 +669,9 @@ fn assert_stagnation(previous: &str, current: &str, fires: bool) {
 }
 
 fn assert_loop_boundary(repeats: usize, fires: bool) {
-    let history: Vec<String> = (0..repeats).map(|_| "shell({})".to_owned()).collect();
+    let history: Vec<String> = std::iter::repeat_with(|| "shell({})".to_owned())
+        .take(repeats)
+        .collect();
     let turn = Turn {
         user_content: None,
         assistant_content: None,
@@ -729,7 +705,7 @@ fn assert_history(calls: usize, kept: usize, first: &str) {
     );
 }
 
-fn assert_gate(phrase: &str, phase: GatePhase) {
+fn assert_gate(text: &str, phase: GatePhase) {
     let (offset, clean_credit, fires) = match phase {
         GatePhase::Before => (2, false, false),
         GatePhase::At => (1, false, true),
@@ -738,82 +714,68 @@ fn assert_gate(phrase: &str, phase: GatePhase) {
     let mut state = state();
     state.turn_count = i64::from(MIN_TURNS_FOR_CLEAN_CREDIT).saturating_sub(offset);
     state.clean_credit_awarded = clean_credit;
-    let turn = make_turn(Some(phrase), None, Vec::new(), None);
+    let turn = make_turn(Some(text), None, Vec::new(), None);
     let delta = apply_turn(&detector(), &mut state, &turn);
     assert_eq!(delta.satisfaction != 0, fires);
 }
 
 #[rstest]
-#[case::threshold_nan(Boundary::Threshold(
+#[case::threshold_nan(Case::BoundaryThreshold(
     f64::NAN, 0.5, Some(("misalignment", f64::NAN))
 ))]
-#[case::threshold_infinite(Boundary::Threshold(
+#[case::threshold_infinite(Case::BoundaryThreshold(
     0.45, f64::INFINITY, Some(("stagnation", f64::INFINITY))
 ))]
-#[case::threshold_finite(Boundary::Threshold(0.45, 0.5, None))]
-#[case::misalignment_at_threshold(Boundary::Misalignment(
+#[case::threshold_finite(Case::BoundaryThreshold(0.45, 0.5, None))]
+#[case::misalignment_at_threshold(Case::BoundaryMisalignment(
     "a1 a2 a3 a4 a5 a6 a7 a8 a9",
     "a1 a2 a3 a4 a5 a6 a7 a8 a9 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11",
     false,
 ))]
-#[case::misalignment_just_below(Boundary::Misalignment(
+#[case::misalignment_just_below(Case::BoundaryMisalignment(
     "alpha beta gamma delta epsilon zeta",
     "alpha beta gamma delta eta theta iota",
     true,
 ))]
-#[case::misalignment_just_above(Boundary::Misalignment(
+#[case::misalignment_just_above(Case::BoundaryMisalignment(
     "p1 p2 p3 p4 p5 q1 q2 q3",
     "p1 p2 p3 p4 p5 r1 r2 r3",
     false,
 ))]
-#[case::misalignment_disjoint(Boundary::Misalignment("hello", "world", false))]
-#[case::misalignment_identical(Boundary::Misalignment("hello there", "hello there", false))]
-#[case::misalignment_empty_current(Boundary::Misalignment("hello", "", false))]
-#[case::stagnation_at_threshold(Boundary::Stagnation("red green blue", "red green yellow", true,))]
-#[case::stagnation_just_below(Boundary::Stagnation(
+#[case::misalignment_disjoint(Case::BoundaryMisalignment("hello", "world", false))]
+#[case::misalignment_identical(Case::BoundaryMisalignment("hello there", "hello there", false))]
+#[case::misalignment_empty_current(Case::BoundaryMisalignment("hello", "", false))]
+#[case::stagnation_at_threshold(Case::BoundaryStagnation(
+    "red green blue",
+    "red green yellow",
+    true,
+))]
+#[case::stagnation_just_below(Case::BoundaryStagnation(
     "alpha beta gamma delta epsilon zeta",
     "alpha beta gamma delta eta theta iota",
     false,
 ))]
-#[case::stagnation_empty(Boundary::Stagnation("", "", false))]
-#[case::stagnation_identical(Boundary::Stagnation("red green blue", "red green blue", true))]
-#[case::loop_one_repeat(Boundary::Loop(1, false))]
-#[case::loop_two_repeats(Boundary::Loop(2, true))]
-#[case::history_at_cap(Boundary::History(
+#[case::stagnation_empty(Case::BoundaryStagnation("", "", false))]
+#[case::stagnation_identical(Case::BoundaryStagnation("red green blue", "red green blue", true))]
+#[case::loop_one_repeat(Case::BoundaryLoop(1, false))]
+#[case::loop_two_repeats(Case::BoundaryLoop(2, true))]
+#[case::history_at_cap(Case::BoundaryHistory(
     TOOL_CALL_HISTORY_MAX,
     TOOL_CALL_HISTORY_MAX,
     "tool0({})",
 ))]
-#[case::history_over_cap(Boundary::History(
+#[case::history_over_cap(Case::BoundaryHistory(
     TOOL_CALL_HISTORY_MAX.saturating_add(1),
     TOOL_CALL_HISTORY_MAX,
     "tool1({})",
 ))]
-#[case::history_empty(Boundary::History(0, 0, ""))]
-#[case::gate_before_threshold(Boundary::Gate("thanks", GatePhase::Before))]
-#[case::gate_at_threshold(Boundary::Gate("thanks", GatePhase::At))]
-#[case::gate_clean_credit(Boundary::Gate("thanks", GatePhase::WithCredit))]
-#[case::status_exhaustion(Boundary::Status(Some(413), true))]
-#[case::status_other(Boundary::Status(Some(500), false))]
-#[case::status_absent(Boundary::Status(None, false))]
-fn feedback_signals_boundaries(#[case] boundary: Boundary) {
-    match boundary {
-        Boundary::Threshold(misalignment, stagnation, rejected) => {
-            assert_threshold(misalignment, stagnation, rejected);
-        }
-        Boundary::Misalignment(previous, current, fires) => {
-            assert_misalignment(previous, current, fires);
-        }
-        Boundary::Stagnation(previous, current, fires) => {
-            assert_stagnation(previous, current, fires);
-        }
-        Boundary::Loop(repeats, fires) => assert_loop_boundary(repeats, fires),
-        Boundary::History(calls, kept, first) => assert_history(calls, kept, first),
-        Boundary::Gate(phrase, phase) => assert_gate(phrase, phase),
-        Boundary::Status(status, fires) => {
-            let turn = make_turn(None, None, Vec::new(), status);
-            let delta = detect_response_signals(&detector(), None, &[], &turn);
-            assert_eq!(delta.exhaustion != 0, fires);
-        }
-    }
+#[case::history_empty(Case::BoundaryHistory(0, 0, ""))]
+#[case::gate_before_threshold(Case::BoundaryGate("thanks", GatePhase::Before))]
+#[case::gate_at_threshold(Case::BoundaryGate("thanks", GatePhase::At))]
+#[case::gate_clean_credit(Case::BoundaryGate("thanks", GatePhase::WithCredit))]
+#[case::status_exhaustion(Case::BoundaryStatus(Some(413), true))]
+#[case::status_other(Case::BoundaryStatus(Some(500), false))]
+#[case::status_absent(Case::BoundaryStatus(None, false))]
+fn feedback_signals_boundaries(#[case] case: Case) {
+    case.run();
 }
