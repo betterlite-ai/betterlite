@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -22,6 +23,7 @@ use betterlite_azure::azure_client_secret::transport::{
     Clock as TokenClock, HttpMethod, HttpRequest, Transport as ClientSecretTransport,
 };
 use betterlite_azure::azure_default_chain::environment::ChainEnvironment;
+use betterlite_azure::azure_default_chain::grant::ChainToken;
 use betterlite_azure::azure_hosted_identity::request::{HostedRequest, HostedTransport};
 use betterlite_azure::azure_managed_identity::environment::ManagedIdentityEnvironment;
 use betterlite_azure::azure_managed_identity::imds::{ImdsRequest, ImdsTransport};
@@ -55,7 +57,7 @@ use tokio::task::JoinSet;
 use super::aws::SdkAwsCredentials;
 use super::azure::{AzureGrantError, AzureGrants, AzureRedisTokens};
 use super::azure_http::AzureHttp;
-use super::azure_production::SdkAzureGrants;
+use super::azure_production::{SdkAzureGrants, TokenCache};
 use super::azure_runtime::{ProductionClock, ProductionHost, ThreadScheduler};
 use super::gcp::{AdcTokenSource, IamTokenError, IamTokenFetcher, decode_iam_token};
 use super::gcp_production::VertexAdcTokenSource;

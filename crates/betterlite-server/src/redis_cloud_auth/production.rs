@@ -21,7 +21,7 @@ use tokio::runtime::Handle;
 use super::aws::load_default_provider;
 use super::azure::AzureGrants;
 use super::azure_http::AzureHttp;
-use super::azure_production::SdkAzureGrants;
+use super::azure_production::{SdkAzureGrants, TokenCache};
 use super::azure_runtime::{ProductionClock, ProductionHost, ThreadScheduler};
 use super::gcp_production::VertexAdcTokenSource;
 use super::{CloudRedisAuthDeps, cloud_redis_auth};
@@ -107,6 +107,8 @@ fn azure_grants(
         authority_host: environment.get("AZURE_AUTHORITY_HOST").cloned(),
         client_secret_settings: config.sections.azure_client_secret.clone(),
         client_secrets: Mutex::new(None),
+        managed_identity_tokens: TokenCache::default(),
+        default_tokens: TokenCache::default(),
     }))
 }
 

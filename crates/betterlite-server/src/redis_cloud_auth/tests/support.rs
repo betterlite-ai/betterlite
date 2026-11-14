@@ -309,13 +309,16 @@ pub struct Reply {
 
 pub struct FakeIo {
     pub replies: Mutex<VecDeque<Reply>>,
+    // each IMDS token request takes the next body, and an empty queue makes the endpoint unreachable
+    pub imds_bodies: Mutex<VecDeque<&'static str>>,
     pub requests: Mutex<Vec<String>>,
 }
 
 impl FakeIo {
-    pub fn new(replies: Vec<Reply>) -> Self {
+    pub fn new(replies: Vec<Reply>, imds_bodies: Vec<&'static str>) -> Self {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
+            imds_bodies: Mutex::new(VecDeque::from(imds_bodies)),
             requests: Mutex::new(Vec::new()),
         }
     }
@@ -374,9 +377,25 @@ impl betterlite_azure::oidc_exchange::transport::Transport for FakeIo {
 impl betterlite_azure::azure_managed_identity::imds::ImdsTransport for FakeIo {
     fn get(
         &self,
-        _request: &betterlite_azure::azure_managed_identity::imds::ImdsRequest,
+        request: &betterlite_azure::azure_managed_identity::imds::ImdsRequest,
     ) -> io::Result<betterlite_azure::azure_managed_identity::imds::ImdsResponse> {
-        Err(io::Error::other("the fixture has no IMDS endpoint"))
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request.url.clone());
+        let body = self
+            .imds_bodies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .ok_or_else(|| io::Error::other("the fixture has no IMDS endpoint"))?;
+        Ok(
+            betterlite_azure::azure_managed_identity::imds::ImdsResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: SecretString::from(body),
+            },
+        )
     }
 }
 

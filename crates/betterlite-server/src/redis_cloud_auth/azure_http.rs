@@ -85,26 +85,6 @@ impl AzureHttp {
             .map_err(io::Error::other)
     }
 
-    fn form_request(&self, request: &HttpRequest) -> io::Result<HttpReply> {
-        // authority discovery is a GET and carries no form, so it sends no body at all
-        let body = match request.method {
-            HttpMethod::Get => RequestBody::Empty,
-            HttpMethod::Post => form_body(&request.form),
-        };
-        let headers = header_map(request.headers.clone())?;
-        let method = request_method(request.method);
-        let query = request.query.clone();
-        let url = &request.url;
-        self.form_exchange(Exchange {
-            method,
-            url,
-            query,
-            headers,
-            body,
-            deadline: TOKEN_TIMEOUT,
-        })
-    }
-
     fn form_exchange(&self, request: Exchange<'_>) -> io::Result<HttpReply> {
         let response = self.exchange(request)?;
         let (status, body) = text_reply(response.status, response.body)?;
@@ -171,20 +151,35 @@ fn secret_headers(headers: Vec<(&'static str, SecretString)>) -> Vec<(String, St
 
 impl ClientSecretTransport for AzureHttp {
     fn send(&self, request: &HttpRequest) -> io::Result<HttpReply> {
-        self.form_request(request)
+        let headers = header_map(request.headers.clone())?;
+        // authority discovery is a GET and carries no form, so it sends no body at all
+        let (method, body) = match request.method {
+            HttpMethod::Get => (Method::GET, RequestBody::Empty),
+            HttpMethod::Post => (Method::POST, form_body(&request.form)),
+        };
+        let reply = self.exchange(Exchange {
+            method,
+            url: &request.url,
+            query: request.query.clone(),
+            headers,
+            body,
+            deadline: TOKEN_TIMEOUT,
+        })?;
+        let (status, body) = text_reply(reply.status, reply.body)?;
+        Ok(HttpReply { status, body })
     }
 }
 
 impl PasswordTransport for AzureHttp {
     fn send(&self, request: &PasswordRequest) -> io::Result<HttpReply> {
-        let secret_request = HttpRequest {
-            method: request.method,
-            url: request.url.clone(),
+        self.form_exchange(Exchange {
+            method: request_method(request.method),
+            url: &request.url,
             query: request.query.clone(),
-            headers: request.headers.clone(),
-            form: request.form.clone(),
-        };
-        ClientSecretTransport::send(self, &secret_request)
+            headers: header_map(request.headers.clone())?,
+            body: form_body(&request.form),
+            deadline: TOKEN_TIMEOUT,
+        })
     }
 }
 
