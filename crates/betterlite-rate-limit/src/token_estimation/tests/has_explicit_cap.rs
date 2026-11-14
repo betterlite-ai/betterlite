@@ -9,7 +9,7 @@ use super::support::request;
 #[case::explicit_zero(r#"{"max_tokens":0}"#, true)]
 #[case::explicit_number(r#"{"max_tokens":10}"#, true)]
 #[case::explicit_text(r#"{"max_tokens":"10"}"#, true)]
-#[case::absent(r#"{}"#, false)]
+#[case::absent("{}", false)]
 #[case::null(r#"{"max_tokens":null}"#, false)]
 #[case::boolean(r#"{"max_tokens":false}"#, false)]
 #[case::unparsable(r#"{"max_tokens":"wide"}"#, false)]

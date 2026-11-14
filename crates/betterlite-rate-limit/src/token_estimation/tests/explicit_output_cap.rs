@@ -35,7 +35,7 @@ fn a_named_call_type_reads_only_two_fields(#[case] body: &str, #[case] expected:
 #[case::above_the_minimum(r#"{"max_output_tokens":100}"#, Some(100))]
 #[case::at_the_minimum(r#"{"max_output_tokens":16}"#, Some(16))]
 #[case::max_tokens_is_ignored(r#"{"max_tokens":100}"#, None)]
-#[case::absent(r#"{}"#, None)]
+#[case::absent("{}", None)]
 fn responses_caps_floors_at_sixteen(#[case] body: &str, #[case] expected: Option<i64>) {
     assert_eq!(
         explicit_output_cap(&request(body), Some("responses")),
