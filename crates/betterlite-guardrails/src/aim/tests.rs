@@ -22,9 +22,9 @@ use tokio::task::{JoinSet, yield_now};
 use super::error::{AimError, CONTENT_POLICY_VIOLATION};
 use super::input;
 use super::output::AimOutput;
-use super::settings::{AimGuardrail, AimHook, AimParams};
+use super::settings::{AimGuardrail, AimHook, AimParams, DEFAULT_TIMEOUT};
 use super::stream::{
-    AimFrameReader, AimFrameWriter, AimSocket, AimSocketConnector, AimStreamChunk,
+    AimFrameReader, AimFrameWriter, AimSocket, AimSocketConnector, AimStreamChunk, CONNECT_TIMEOUT,
     MAX_STREAM_FRAME_BYTES, VerifiedChunk,
 };
 use super::transport::{AimHttpResponse, AimPoster, HttpPoster, MAX_RESPONSE_BYTES};
@@ -37,6 +37,7 @@ struct State {
     posts: Mutex<Vec<(String, HeaderMap, Vec<u8>)>>,
     incoming: Mutex<VecDeque<Option<String>>>,
     sent: Mutex<Vec<String>>,
+    timings: Mutex<Vec<(Duration, Duration)>>,
 }
 
 impl State {
@@ -101,10 +102,15 @@ impl AimSocketConnector for Fake {
         &self,
         url: &str,
         headers: &HeaderMap,
-        _open: Duration,
-        _read: Duration,
+        open: Duration,
+        read: Duration,
     ) -> Result<AimSocket, AimError> {
         self.state.record(url, headers, &[]);
+        self.state
+            .timings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((open, read));
         let half = || Fake {
             state: Arc::clone(&self.state),
             status: self.status,
@@ -716,6 +722,12 @@ async fn aim_guardrail_stream_yields_verified_chunks_in_order() {
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     assert_eq!(posts[0].0, "ws://aim.test/fw/v1/analyze/stream");
+    let timings = fixture
+        .state
+        .timings
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(*timings, vec![(CONNECT_TIMEOUT, Duration::from_secs(30))]);
 }
 
 #[tokio::test]
@@ -788,6 +800,28 @@ async fn aim_guardrail_stream_cancels_the_sender_when_aim_stops_sending_chunks()
 #[test]
 fn aim_guardrail_stream_frame_limit_is_one_mebibyte() {
     assert_eq!(MAX_STREAM_FRAME_BYTES, 1_048_576);
+}
+
+#[tokio::test]
+async fn aim_guardrail_stream_defaults_the_frame_wait_to_the_guardrail_timeout() {
+    let state = Arc::new(State::default());
+    let environment = BTreeMap::from([("AIM_API_KEY".to_owned(), KEY.to_owned())]);
+    let fake = Arc::new(Fake {
+        state: Arc::clone(&state),
+        status: StatusCode::OK,
+        body: Vec::new(),
+    });
+    let poster: Arc<dyn AimPoster> = Arc::clone(&fake);
+    let connector: Arc<dyn AimSocketConnector> = fake;
+    let guardrail =
+        AimGuardrail::new(AimParams::default(), &environment, poster, connector, None).unwrap();
+    let request = data(r#"{"messages": [{"role": "user", "content": "hi"}]}"#);
+    let _stream = guardrail
+        .inspect_output_stream(stream::empty(), &request, None)
+        .await
+        .unwrap();
+    let timings = state.timings.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(*timings, vec![(CONNECT_TIMEOUT, DEFAULT_TIMEOUT)]);
 }
 
 #[test]
