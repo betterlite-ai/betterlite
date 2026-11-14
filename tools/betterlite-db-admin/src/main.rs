@@ -11,6 +11,7 @@ use tokio::runtime::Builder;
 
 use crate::database_views::{DatabaseViewsService, OFFLINE_TIMEOUT};
 use crate::spend_backfills::SpendBackfillsService;
+use crate::spend_partitions::SpendPartitionsService;
 
 mod database_repair;
 mod database_startup;
@@ -36,6 +37,13 @@ fn backend() -> DbAdminBackend {
     backend
         .services
         .insert(Operation::KeyTotalSpendFromLogs, backfills);
+    let partitions: Arc<dyn DbAdminService> = Arc::new(SpendPartitionsService);
+    backend
+        .services
+        .insert(Operation::PartitionSpendLogs, Arc::clone(&partitions));
+    backend
+        .services
+        .insert(Operation::UnpartitionSpendLogs, partitions);
     backend
 }
 
