@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 use std::net::TcpListener;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract as _;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
-use betterlite_guardrails::headroom::headroom_compression::HeadroomGuardrail;
+use betterlite_guardrails::headroom::headroom_compression::{HeadroomGuardrail, HeadroomRuntime};
 use betterlite_guardrails::headroom_settings::{
     HeadroomSettings, UnreachableFallback, resolve_timeout,
 };
@@ -152,7 +152,10 @@ fn resolve_identity(
     (after.map(str::to_owned), after.is_some())
 }
 
-fn text_field<'a>(data: &'a BTreeMap<String, GuardrailValue>, key: &str) -> Option<&'a str> {
+fn text_field<'data>(
+    data: &'data BTreeMap<String, GuardrailValue>,
+    key: &str,
+) -> Option<&'data str> {
     match data.get(key) {
         Some(GuardrailValue::Text(text)) if !text.is_empty() => Some(text.as_str()),
         _ => None,
@@ -184,9 +187,13 @@ fn build_guardrail(
     HeadroomGuardrail::new(
         Some("headroom".to_owned()),
         settings,
-        base_builder(),
-        Box::new(|| Duration::ZERO),
-        Uuid::new_v4,
+        Box::new(|connect: Duration| base_builder().connect_timeout(connect).build()),
+        HeadroomRuntime {
+            clock: Box::new(|| Duration::ZERO),
+            wall: SystemTime::now,
+            new_id: Uuid::new_v4,
+            event_hook: None,
+        },
     )
     .or_config_error()
 }

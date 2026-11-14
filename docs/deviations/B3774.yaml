@@ -6,3 +6,9 @@ deviations:
   - what: A compression response that parses only with Python's JSON extensions (NaN, Infinity) is rejected as a non-JSON response.
     why: serde_json accepts JSON numbers only, while Python's json.loads takes the non-standard literals; a service sending them cannot be read as standard JSON by any strict parser, and betterlite records the documented non-JSON failure instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L638-L646
+  - what: A compression response body larger than 16 MiB is refused and reported through handle_compress_failure.
+    why: LiteLLM reads the whole body with response.text() and has no size limit, so a broken or hostile compression service can exhaust the proxy's memory; the cap matches the shared transport body limit and the failure detail names the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L624-L642
+  - what: A compression response body that is not valid UTF-8 is reported as a non-JSON response with no body preview, whatever the status, where LiteLLM decodes every body as text with replacement characters first.
+    why: httpx decodes with errors="replace" and any charset the service advertises, so LiteLLM reports an error body's text and can parse a reply whose invalid bytes sit inside a JSON string; JSON text is defined as UTF-8, so no working compression service sends such a body, and betterlite refuses the bytes rather than guessing replacements.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L624-L642

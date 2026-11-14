@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
-use reqwest::ClientBuilder;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -31,13 +31,13 @@ const HASH_CACHE_TTL: Duration = Duration::from_secs(900);
 
 pub type Clock = Box<dyn Fn() -> Duration + Send + Sync>;
 
+// reqwest fixes connect_timeout when a client is built, so a new deadline needs a freshly built client
+pub type ClientFactory = Box<dyn Fn(Duration) -> reqwest::Result<reqwest::Client> + Send + Sync>;
+
 #[derive(Debug, Error)]
 pub enum HeadroomError {
     #[error("the Headroom HTTP client could not be built")]
-    Client {
-        #[source]
-        source: reqwest::Error,
-    },
+    Client(#[source] reqwest::Error),
     #[error(transparent)]
     Settings(#[from] HeadroomSettingsError),
     #[error(transparent)]
@@ -86,12 +86,19 @@ impl IssuedHashStore {
     }
 }
 
+pub struct HeadroomRuntime {
+    pub clock: Clock,
+    pub wall: fn() -> SystemTime,
+    pub new_id: fn() -> Uuid,
+    pub event_hook: Option<LitellmParamsMode>,
+}
+
 pub struct HeadroomGuardrail {
-    pub guardrail_name: Option<String>,
-    pub settings: HeadroomSettings,
-    pub client: reqwest::Client,
-    clock: Clock,
-    new_id: fn() -> Uuid,
+    guardrail_name: Option<String>,
+    settings: HeadroomSettings,
+    client: reqwest::Client,
+    client_factory: ClientFactory,
+    runtime: HeadroomRuntime,
     issued: IssuedHashStore,
 }
 
@@ -99,42 +106,35 @@ impl HeadroomGuardrail {
     pub fn new(
         guardrail_name: Option<String>,
         settings: HeadroomSettings,
-        client_builder: ClientBuilder,
-        clock: Clock,
-        new_id: fn() -> Uuid,
+        client_factory: ClientFactory,
+        runtime: HeadroomRuntime,
     ) -> Result<Self, HeadroomError> {
-        let connect = settings.timeout.connect;
-        let client = client_builder
-            .connect_timeout(connect)
-            .build()
-            .map_err(|source| HeadroomError::Client { source })?;
+        let client = client_factory(settings.timeout.connect).map_err(HeadroomError::Client)?;
         Ok(Self {
             guardrail_name,
             settings,
             client,
-            clock,
-            new_id,
+            client_factory,
+            runtime,
             issued: IssuedHashStore::default(),
         })
     }
 
-    pub fn update_in_memory_params(&mut self, timeout: Option<f64>) {
+    pub fn update_in_memory_params(&mut self, timeout: Option<f64>) -> Result<(), HeadroomError> {
         let resolved = resolve_timeout(timeout);
-        tracing::debug!(
-            total = ?resolved.total,
-            connect = ?resolved.connect,
-            "Headroom: compress timeout re-resolved"
-        );
+        let client = (self.client_factory)(resolved.connect).map_err(HeadroomError::Client)?;
         self.settings.timeout = resolved;
+        self.client = client;
+        Ok(())
     }
 
     pub fn has_issued_hashes(&self, call_id: &str) -> Option<BTreeSet<String>> {
-        self.issued
+        let entries = self
+            .issued
             .entries
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(call_id)
-            .map(|issued| issued.hashes.clone())
+            .unwrap_or_else(PoisonError::into_inner);
+        entries.get(call_id).map(|issued| issued.hashes.clone())
     }
 }
 
@@ -146,8 +146,10 @@ impl GuardrailContract for HeadroomGuardrail {
         input_type: GuardrailInputType,
         logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
-        let target: Option<&GuardrailLogTarget> = logging_obj.map(|logging| &*logging);
-        async move { self.apply(inputs, request_data, input_type, target).await }
+        async move {
+            self.apply(inputs, request_data, input_type, logging_obj)
+                .await
+        }
     }
 
     fn get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>> {

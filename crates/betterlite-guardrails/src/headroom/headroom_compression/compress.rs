@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use betterlite_http::proxy::limits::{TransportLimits, read_bounded};
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Number;
@@ -45,15 +46,15 @@ pub(crate) enum CompressError {
 }
 
 #[derive(Serialize)]
-struct CompressPayload<'a> {
-    messages: &'a [JsonValue],
+struct CompressPayload<'payload> {
+    messages: &'payload [JsonValue],
     #[serde(skip_serializing_if = "Option::is_none")]
-    model: Option<&'a str>,
+    model: Option<&'payload str>,
 }
 
-pub(crate) struct CompressRequest<'a> {
-    pub(crate) rows: &'a [JsonValue],
-    pub(crate) model: Option<&'a str>,
+pub(crate) struct CompressRequest<'request> {
+    pub(crate) rows: &'request [JsonValue],
+    pub(crate) model: Option<&'request str>,
 }
 
 impl HeadroomGuardrail {
@@ -76,17 +77,23 @@ impl HeadroomGuardrail {
             .json(&payload)
             .send()
             .await;
-        let response = match sent {
+        let mut response = match sent {
             Ok(response) => response,
             Err(error) => return unreachable(request.rows, &error.to_string(), fallback),
         };
         let status = response.status().as_u16();
-        let text = match response.text().await {
-            Ok(text) => text,
+        let body = match read_bounded(&mut response, TransportLimits::DEFAULT.body_bytes).await {
+            Ok(body) => body,
             Err(error) => return unreachable(request.rows, &error.to_string(), fallback),
         };
+        let Ok(text) = String::from_utf8(body) else {
+            return failure(fallback, request.rows, NON_JSON_ERROR, IndexMap::new())
+                .map_err(CompressError::Failure);
+        };
         if status != 200 {
-            return rejected(status, &text, request.rows, fallback);
+            let detail = build_compress_failure_detail(status, &text);
+            return failure(fallback, request.rows, SERVICE_ERROR, detail)
+                .map_err(CompressError::Failure);
         }
         parse_body(&text, request.rows, fallback).map_err(CompressError::Failure)
     }
@@ -102,21 +109,6 @@ fn unreachable(
         rows,
         UNREACHABLE_ERROR,
         IndexMap::from([("detail".to_owned(), JsonValue::String(error.to_owned()))]),
-    )
-    .map_err(CompressError::Failure)
-}
-
-fn rejected(
-    status: u16,
-    body: &str,
-    rows: &[JsonValue],
-    fallback: UnreachableFallback,
-) -> Result<CompressResult, CompressError> {
-    failure(
-        fallback,
-        rows,
-        SERVICE_ERROR,
-        build_compress_failure_detail(status, body),
     )
     .map_err(CompressError::Failure)
 }
@@ -158,6 +150,16 @@ fn parse_body(
             body_detail(text, BODY_PREVIEW_CHARS),
         );
     };
+    build_result(&body, fields, text, rows, fallback)
+}
+
+fn build_result(
+    body: &JsonValue,
+    fields: &IndexMap<String, JsonValue>,
+    text: &str,
+    rows: &[JsonValue],
+    fallback: UnreachableFallback,
+) -> Result<CompressResult, CompressFailure> {
     let Some(JsonValue::Array(items)) = fields.get(MESSAGES_KEY) else {
         return failure(
             fallback,
@@ -191,7 +193,7 @@ fn parse_body(
         messages: filtered,
         succeeded: true,
         stats: statistics(fields),
-        ccr_hashes: read_ccr_hashes(&body),
+        ccr_hashes: read_ccr_hashes(body),
     };
     Ok(result)
 }

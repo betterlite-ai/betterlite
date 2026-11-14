@@ -136,18 +136,17 @@ fn optional_fallback<L>(
 where
     L: EnvironmentLookup,
 {
-    let Some(resolved) = optional_value(value, path, lookup)? else {
-        return Ok(None);
-    };
-    let fallback = match resolved.as_str() {
-        FAIL_CLOSED => UnreachableFallback::FailClosed,
-        FAIL_OPEN => UnreachableFallback::FailOpen,
-        other => {
-            let source = <serde_saphyr::Error as DeserializeError>::custom(format!(
-                "{path}: invalid unreachable_fallback `{other}`; expected `fail_closed` or `fail_open`"
-            ));
-            return Err(ConfigError::Yaml { source });
-        }
-    };
-    Ok(Some(fallback))
+    match optional_value(value, path, lookup)? {
+        None => Ok(None),
+        Some(resolved) => match resolved.as_str() {
+            FAIL_CLOSED => Ok(Some(UnreachableFallback::FailClosed)),
+            FAIL_OPEN => Ok(Some(UnreachableFallback::FailOpen)),
+            other => {
+                let source = <serde_saphyr::Error as DeserializeError>::custom(format!(
+                    "{path}: invalid unreachable_fallback `{other}`; expected `fail_closed` or `fail_open`"
+                ));
+                Err(ConfigError::Yaml { source })
+            }
+        },
+    }
 }

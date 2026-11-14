@@ -6,7 +6,6 @@ use serde::de::DeserializeOwned;
 
 use super::HeadroomError;
 use super::request_data;
-use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::headroom_messages::{protected_indices, retrieve_call_ids};
 use crate::primitives::json_value::JsonValue;
@@ -49,7 +48,7 @@ pub(crate) fn collect(
 
 pub(crate) fn convert<S, D>(source: &S) -> Result<D, HeadroomError>
 where
-    S: Serialize,
+    S: Serialize + ?Sized,
     D: DeserializeOwned,
 {
     let encoded = serde_json::to_value(source)?;

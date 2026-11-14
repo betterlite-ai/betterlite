@@ -4,8 +4,9 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde_json::Number;
 
 use super::HeadroomGuardrail;
-use super::apply::Compressed;
+use super::apply::{Compressed, UNAVAILABLE_MESSAGE};
 use crate::guardrail_base::GuardrailBase;
+use crate::guardrail_base::inputs::GuardrailLogTarget;
 use crate::guardrail_base::settings::GuardrailSettings;
 use crate::guardrail_records::error::GuardrailSpanError;
 use crate::guardrail_records::metadata::add_guardrail_record;
@@ -33,12 +34,21 @@ impl HeadroomGuardrail {
         &self,
         request_data: &mut BTreeMap<String, GuardrailValue>,
         compressed: &Compressed,
-        status: GuardrailStatus,
-        response: GuardrailValue,
+        log_target: Option<&mut GuardrailLogTarget>,
     ) {
-        // Headroom is created without litellm_params, so only its name differs from the defaults
+        let (status, response) = if compressed.result.succeeded {
+            let stats = guardrail_value(&JsonValue::Object(compressed.result.stats.clone()));
+            (GuardrailStatus::Success, stats)
+        } else {
+            let error = GuardrailValue::Object(BTreeMap::from([(
+                "error".to_owned(),
+                GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
+            )]));
+            (GuardrailStatus::GuardrailFailedToRespond, error)
+        };
         let mut settings = GuardrailSettings::default();
         settings.guardrail_name.clone_from(&self.guardrail_name);
+        settings.event_hook.clone_from(&self.runtime.event_hook);
         let base = GuardrailBase {
             settings,
             mode: None,
@@ -46,7 +56,7 @@ impl HeadroomGuardrail {
         let mut context = GuardrailRecordContext {
             base: &base,
             request_data,
-            log_target: None,
+            log_target,
             sink: &NoSpan,
         };
         let input = GuardrailRecordInput {
