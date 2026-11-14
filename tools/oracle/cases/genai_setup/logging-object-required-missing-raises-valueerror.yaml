@@ -1,0 +1,15 @@
+kind: helper
+name: genai-setup-logging-object-required-missing-raises-valueerror
+call:
+  b3483:
+    setups:
+      - model: gemini/gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: null
+        custom_llm_provider: null
+        tools: null
+        kwargs: {}
+        extra_body: null
+        with_logging: false
+env: {}
+compare: {ignore: []}
