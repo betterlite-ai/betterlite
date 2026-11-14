@@ -15,7 +15,6 @@ const REGION_MINOR_SEVEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\
 const REGION_MINOR_TEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Region Name:* `us-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 10\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const REGION_MINOR_ASIA_FIVE: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Region Name:* `asia-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 5\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const REGION_MAJOR_FOUR: &str = "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Region Name:* `us-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 4\n\n\n*Last Check:* `0.0s ago`\n\n\n";
-const REGION_MAJOR_TEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Region Name:* `us-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 10\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 
 #[rstest]
 #[case::timeout(408)]
@@ -85,7 +84,7 @@ async fn region_takes_the_region_name_before_the_model_region() {
         None,
         None,
     );
-    let mut fixture = Fixture::new(fixture_deployment);
+    let fixture = Fixture::new(fixture_deployment);
     fixture.store.lock().region = Some(region_record(
         "vertex_aiasia-east1",
         vec![500; 4],
@@ -259,9 +258,9 @@ async fn region_ignores_an_unknown_deployment() {
 
 #[tokio::test]
 async fn region_updates_the_last_check_time() {
-    let mut fixture = Fixture::new(vertex_deployment());
+    let fixture = Fixture::new(vertex_deployment());
     let mut previous_record = region_record("vertex_aius-east1", vec![500], &["dep-1"], NONE_SENT);
-    previous_record.last_updated_at = 300.0;
+    previous_record.last_updated_at = 300.0_f64;
     fixture.store.lock().region = Some(previous_record);
     fixture
         .detector()
@@ -280,7 +279,7 @@ async fn region_updates_the_last_check_time() {
 
 #[tokio::test]
 async fn region_never_alerts_while_only_one_deployment_is_recorded() {
-    let mut fixture = Fixture::new(vertex_deployment());
+    let fixture = Fixture::new(vertex_deployment());
     fixture.store.lock().region = Some(region_record(
         "vertex_aius-east1",
         vec![500; 9],
@@ -346,7 +345,7 @@ async fn region_sends_a_minor_alert_when_two_deployments_and_the_threshold_quali
 
 #[tokio::test]
 async fn region_sends_the_minor_alert_above_the_threshold_too() {
-    let mut fixture = Fixture::new(vertex_deployment());
+    let fixture = Fixture::new(vertex_deployment());
     fixture.store.lock().region = Some(region_record(
         "vertex_aius-east1",
         vec![500; 6],
@@ -404,7 +403,7 @@ async fn region_sends_a_major_alert_once_the_minor_one_was_sent() {
 
 #[tokio::test]
 async fn region_keeps_the_major_alert_until_the_minor_one_is_off() {
-    let mut fixture = Fixture::new(vertex_deployment());
+    let fixture = Fixture::new(vertex_deployment());
     fixture.store.lock().region = Some(region_record(
         "vertex_aius-east1",
         vec![500; 9],
@@ -487,7 +486,7 @@ async fn region_returns_a_provider_resolution_error() {
 
 #[tokio::test]
 async fn region_returns_a_cache_read_error() {
-    let mut fixture = Fixture::new(vertex_deployment());
+    let fixture = Fixture::new(vertex_deployment());
     fixture.store.lock().fail_read = true;
     let result = fixture
         .detector()
@@ -499,7 +498,7 @@ async fn region_returns_a_cache_read_error() {
 
 #[tokio::test]
 async fn region_returns_a_cache_write_error() {
-    let mut fixture = Fixture::new(vertex_deployment());
+    let fixture = Fixture::new(vertex_deployment());
     fixture.store.lock().fail_write = true;
     let result = fixture
         .detector()
@@ -511,7 +510,7 @@ async fn region_returns_a_cache_write_error() {
 
 #[tokio::test]
 async fn region_returns_the_error_of_the_final_cache_write() {
-    let mut fixture = Fixture::new(vertex_deployment());
+    let fixture = Fixture::new(vertex_deployment());
     fixture.store.lock().region = Some(region_record(
         "vertex_aius-east1",
         vec![500; 4],

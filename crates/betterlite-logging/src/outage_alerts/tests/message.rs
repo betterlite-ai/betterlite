@@ -80,28 +80,28 @@ fn message_leaves_the_errors_block_empty_without_counts() {
 
 #[rstest]
 #[case::half_a_second(
-    100.5,
-    100.0,
+    100.5_f64,
+    100.0_f64,
     "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Region Name:* `r`\n*Provider:* `p`\n\n\n*Errors:*\n\nAPI Errors: 1\n\n\n*Last Check:* `0.5s ago`\n\n\n"
 )]
 #[case::whole_seconds_keep_a_decimal(
-    5.0,
-    2.0,
+    5.0_f64,
+    2.0_f64,
     "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Region Name:* `r`\n*Provider:* `p`\n\n\n*Errors:*\n\nAPI Errors: 1\n\n\n*Last Check:* `3.0s ago`\n\n\n"
 )]
 #[case::four_decimal_places(
-    0.0002,
-    0.0001,
+    0.0002_f64,
+    0.0001_f64,
     "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Region Name:* `r`\n*Provider:* `p`\n\n\n*Errors:*\n\nAPI Errors: 1\n\n\n*Last Check:* `0.0001s ago`\n\n\n"
 )]
 #[case::ties_round_to_even(
-    10.03125,
-    10.0,
+    10.03125_f64,
+    10.0_f64,
     "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Region Name:* `r`\n*Provider:* `p`\n\n\n*Errors:*\n\nAPI Errors: 1\n\n\n*Last Check:* `0.0312s ago`\n\n\n"
 )]
 #[case::no_elapsed_time(
-    1.0,
-    1.0,
+    1.0_f64,
+    1.0_f64,
     "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Region Name:* `r`\n*Provider:* `p`\n\n\n*Errors:*\n\nAPI Errors: 1\n\n\n*Last Check:* `0.0s ago`\n\n\n"
 )]
 fn message_rounds_the_last_check_to_four_decimals(

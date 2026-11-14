@@ -108,7 +108,9 @@ impl FakeStore {
         if state.fail_read {
             return Err(FakeFailure);
         }
-        Ok(Record::cached(&state).cloned())
+        let cached = Record::cached(&state).cloned();
+        drop(state);
+        Ok(cached)
     }
 
     fn write<Record>(
@@ -127,6 +129,7 @@ impl FakeStore {
         }
         Record::store(&mut state, record.clone());
         Record::push_write(&mut state, key, record, ttl_seconds);
+        drop(state);
         Ok(())
     }
 }

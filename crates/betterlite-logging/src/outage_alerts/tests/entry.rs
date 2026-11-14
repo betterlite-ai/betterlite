@@ -62,11 +62,12 @@ async fn entry_runs_both_detectors_in_order() {
     assert_eq!(state.writes.len(), 2);
     assert!(matches!(state.writes[0], StoreWrite::Deployment { .. }));
     assert!(matches!(state.writes[1], StoreWrite::Region { .. }));
+    drop(state);
 }
 
 #[tokio::test]
 async fn entry_forwards_the_status_code_to_the_deployment_detector() {
-    let mut fixture = Fixture::new(model_deployment());
+    let fixture = Fixture::new(model_deployment());
     fixture.store.lock().deployment = Some(deployment_record(vec![500; 4], NONE_SENT));
     fixture
         .detector()
@@ -90,7 +91,7 @@ async fn entry_forwards_the_status_code_to_the_deployment_detector() {
 
 #[tokio::test]
 async fn entry_forwards_the_status_code_to_the_region_detector() {
-    let mut fixture = Fixture::new(vertex_deployment());
+    let fixture = Fixture::new(vertex_deployment());
     fixture.store.lock().region = Some(region_record(
         "vertex_aius-east1",
         vec![500; 4],

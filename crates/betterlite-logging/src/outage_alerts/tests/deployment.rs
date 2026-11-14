@@ -92,7 +92,7 @@ async fn deployment_stores_the_first_qualifying_error_with_the_outage_ttl(
 
 #[tokio::test]
 async fn deployment_stores_later_updates_without_a_ttl() {
-    let mut fixture = Fixture::new(model_deployment());
+    let fixture = Fixture::new(model_deployment());
     fixture.store.lock().deployment = Some(deployment_record(vec![500], NONE_SENT));
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     let state = fixture.store.lock();
@@ -110,9 +110,9 @@ async fn deployment_stores_later_updates_without_a_ttl() {
 
 #[tokio::test]
 async fn deployment_updates_the_last_check_time() {
-    let mut fixture = Fixture::new(model_deployment());
+    let fixture = Fixture::new(model_deployment());
     let mut previous_record = deployment_record(vec![500], NONE_SENT);
-    previous_record.last_updated_at = 300.0;
+    previous_record.last_updated_at = 300.0_f64;
     fixture.store.lock().deployment = Some(previous_record);
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     let state = fixture.store.lock();
@@ -178,7 +178,7 @@ async fn deployment_sends_a_minor_alert_once_at_the_threshold() {
 
 #[tokio::test]
 async fn deployment_sends_the_minor_alert_above_the_threshold_too() {
-    let mut fixture = Fixture::new(model_deployment());
+    let fixture = Fixture::new(model_deployment());
     fixture.store.lock().deployment = Some(deployment_record(vec![500; 6], NONE_SENT));
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     let sent = fixture.sender.sent();
@@ -212,7 +212,7 @@ async fn deployment_sends_a_major_alert_once_at_the_major_threshold() {
 
 #[tokio::test]
 async fn deployment_keeps_the_major_alert_until_the_minor_one_is_off() {
-    let mut fixture = Fixture::new(model_deployment());
+    let fixture = Fixture::new(model_deployment());
     fixture.store.lock().deployment = Some(deployment_record(vec![500; 9], NONE_SENT));
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     let sent = fixture.sender.sent();
@@ -284,7 +284,7 @@ async fn deployment_uses_an_empty_provider_and_the_unchanged_model_when_resoluti
 
 #[tokio::test]
 async fn deployment_drops_a_cache_read_error() {
-    let mut fixture = Fixture::new(model_deployment());
+    let fixture = Fixture::new(model_deployment());
     fixture.store.lock().fail_read = true;
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     let state = fixture.store.lock();
@@ -298,7 +298,7 @@ async fn deployment_drops_a_cache_read_error() {
 
 #[tokio::test]
 async fn deployment_drops_a_cache_write_error() {
-    let mut fixture = Fixture::new(model_deployment());
+    let fixture = Fixture::new(model_deployment());
     fixture.store.lock().fail_write = true;
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     let state = fixture.store.lock();
@@ -339,4 +339,5 @@ async fn deployment_drops_a_sender_error_without_storing() {
     assert!(fixture.sender.sent().is_empty());
     let state = fixture.store.lock();
     assert!(state.write_attempts.is_empty());
+    drop(state);
 }
