@@ -3,7 +3,6 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use crate::generic_guardrail_contracts::GuardrailToolParam;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 
-use super::INTERVENED_INPUT_FIELDS;
 use super::error::NomaV2Error;
 
 // LiteLLM's _Action: the only three values a Noma scan answer may carry
@@ -38,17 +37,17 @@ pub fn intervene(
     let GuardrailValue::Object(fields) = response else {
         return Ok(inputs);
     };
-    for field in INTERVENED_INPUT_FIELDS {
-        let Some(GuardrailValue::Array(items)) = fields.get(field) else {
-            continue;
-        };
-        match field {
-            "texts" => inputs.texts = Some(text_items(field, items)?),
-            "images" => inputs.images = Some(text_items(field, items)?),
-            "tools" => inputs.tools = Some(tool_items(field, items)?),
-            "tool_calls" => inputs.tool_calls = Some(items.clone()),
-            _other => {}
-        }
+    if let Some(GuardrailValue::Array(items)) = fields.get("texts") {
+        inputs.texts = Some(text_items("texts", items)?);
+    }
+    if let Some(GuardrailValue::Array(items)) = fields.get("images") {
+        inputs.images = Some(text_items("images", items)?);
+    }
+    if let Some(GuardrailValue::Array(items)) = fields.get("tools") {
+        inputs.tools = Some(tool_items("tools", items)?);
+    }
+    if let Some(GuardrailValue::Array(items)) = fields.get("tool_calls") {
+        inputs.tool_calls = Some(items.clone());
     }
     Ok(inputs)
 }

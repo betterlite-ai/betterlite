@@ -53,7 +53,7 @@ pub(super) fn record_scan(
         duration: Some(
             run.ended
                 .duration_since(run.started)
-                .unwrap_or_default()
+                .map_err(|source| NomaV2Error::Clock { source })?
                 .as_secs_f64(),
         ),
         masked_entity_count: None,

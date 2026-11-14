@@ -38,13 +38,25 @@ pub enum NomaV2Error {
         #[source]
         source: InvalidHeaderValue,
     },
+    #[error("the Noma v2 HTTP client could not be built")]
+    Client {
+        #[source]
+        source: reqwest::Error,
+    },
     #[error("the Noma API could not be reached")]
     Transport {
         #[source]
         source: reqwest::Error,
     },
+    #[error("the Noma v2 request timed out")]
+    RequestTimeout {
+        #[source]
+        source: reqwest::Error,
+    },
     #[error("the Noma API returned status {status}")]
     HttpStatus { status: StatusCode },
+    #[error("the Noma v2 response is larger than {limit} bytes")]
+    ResponseTooLarge { limit: usize },
     #[error("the Noma API response is not valid JSON")]
     ResponseJson {
         #[source]
@@ -78,8 +90,15 @@ impl From<GuardrailBaseError> for NomaV2Error {
 }
 
 impl NomaV2Error {
+    // LiteLLM's AsyncHTTPHandler turns httpx.TimeoutException into litellm.Timeout, which carries status 408; every other scan error answers 500.
     #[must_use]
     pub fn into_failure(self) -> GuardrailFailure {
+        if matches!(self, Self::RequestTimeout { .. }) {
+            return GuardrailFailure::Http {
+                status: StatusCode::REQUEST_TIMEOUT.as_u16(),
+                detail: self.to_string(),
+            };
+        }
         GuardrailFailure::Other(self.to_string())
     }
 }

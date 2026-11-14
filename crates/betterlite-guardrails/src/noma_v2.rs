@@ -7,7 +7,7 @@ pub mod records;
 pub mod transport;
 
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
@@ -23,7 +23,9 @@ pub const SCAN_ENDPOINT: &str = "/litellm/guardrail";
 pub const PROVIDER: &str = "noma_v2";
 pub const AUTHORIZATION_PREFIX: &str = "Bearer ";
 pub const SAAS_HOSTNAME: &str = "api.noma.security";
-pub const INTERVENED_INPUT_FIELDS: [&str; 4] = ["texts", "images", "tools", "tool_calls"];
+// LiteLLM's AsyncHTTPHandler falls back to a 600 second total timeout and a 5 second connect timeout
+pub(crate) const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+pub(crate) const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const KEYS_DUPLICATING_SCAN_INPUTS: [&str; 2] = ["messages", "input"];
 pub const LOGGING_DUPLICATE_INPUT_KEYS: [&str; 5] = [
     "messages",
@@ -55,7 +57,7 @@ pub trait CallbackRegistry {
 pub fn initialize_guardrail_v2<E, R>(
     params: &NomaV2Params,
     env: &E,
-    client: reqwest::Client,
+    client_builder: reqwest::ClientBuilder,
     registry: &mut R,
 ) -> Result<Arc<NomaV2Guardrail>, NomaV2Error>
 where
@@ -63,6 +65,10 @@ where
     R: CallbackRegistry,
 {
     let settings = NomaV2Settings::resolve(params, env)?;
+    let client = client_builder
+        .connect_timeout(settings.timeout.unwrap_or(DEFAULT_CONNECT_TIMEOUT))
+        .build()
+        .map_err(|source| NomaV2Error::Client { source })?;
     let base = GuardrailBase::new(guardrail_settings(params), params.strict_modes)?;
     let guardrail = Arc::new(NomaV2Guardrail {
         base,

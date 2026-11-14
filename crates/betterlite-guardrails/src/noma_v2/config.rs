@@ -9,8 +9,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::noma_scan_policy::DEFAULT_API_BASE;
 
-use super::SAAS_HOSTNAME;
 use super::error::NomaV2Error;
+use super::{DEFAULT_REQUEST_TIMEOUT, SAAS_HOSTNAME};
 
 pub const API_KEY_ENV: &str = "NOMA_API_KEY";
 pub const API_BASE_ENV: &str = "NOMA_API_BASE";
@@ -44,6 +44,8 @@ pub struct NomaV2Settings {
     pub monitor_mode: bool,
     pub block_failures: bool,
     pub timeout: Option<Duration>,
+    // The deadline a scan request carries: the configured timeout, or LiteLLM's 600 second fallback
+    pub request_timeout: Duration,
 }
 
 impl NomaV2Params {
@@ -87,7 +89,13 @@ impl NomaV2Settings {
             Some(block) => block,
             None => environment_flag(env, BLOCK_FAILURES_ENV, true)?,
         };
-        let timeout = params.timeout.map(seconds_timeout).transpose()?;
+        let timeout = params
+            .timeout
+            .map(|seconds| {
+                Duration::try_from_secs_f64(seconds)
+                    .map_err(|source| NomaV2Error::Timeout { seconds, source })
+            })
+            .transpose()?;
         if saas_api_base(&api_base) && api_key.is_none() {
             return Err(NomaV2Error::MissingApiKey);
         }
@@ -99,6 +107,7 @@ impl NomaV2Settings {
             monitor_mode,
             block_failures,
             timeout,
+            request_timeout: timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT),
         })
     }
 }
@@ -162,10 +171,6 @@ where
         return Ok(default);
     };
     Ok(betterlite_env::flag(name, &text)?.unwrap_or(default))
-}
-
-fn seconds_timeout(seconds: f64) -> Result<Duration, NomaV2Error> {
-    Duration::try_from_secs_f64(seconds).map_err(|source| NomaV2Error::Timeout { seconds, source })
 }
 
 fn saas_api_base(api_base: &str) -> bool {
