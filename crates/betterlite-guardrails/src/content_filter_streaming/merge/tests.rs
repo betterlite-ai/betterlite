@@ -54,7 +54,18 @@ fn competitor(intent: &str, confidence: f64, signals: &[&str]) -> ContentFilterD
     })
 }
 
-fn competitor_with_evidence(entry_type: &str, entry_key: &str) -> ContentFilterDetection {
+fn competitor_evidence(entries: &[(&str, &str, &str, &str)]) -> ContentFilterDetection {
+    let evidence = entries
+        .iter()
+        .map(
+            |(entry_type, entry_key, entry_value, entry_match)| CompetitorIntentEvidenceEntry {
+                r#type: Some((*entry_type).to_owned()),
+                key: Some((*entry_key).to_owned()),
+                value: Some((*entry_value).to_owned()),
+                r#match: Some((*entry_match).to_owned()),
+            },
+        )
+        .collect();
     ContentFilterDetection::CompetitorIntent(CompetitorIntentDetection {
         r#type: "competitor_intent".to_owned(),
         intent: "airline".to_owned(),
@@ -62,12 +73,7 @@ fn competitor_with_evidence(entry_type: &str, entry_key: &str) -> ContentFilterD
         action_hint: "BLOCK".to_owned(),
         entities: BTreeMap::new(),
         signals: vec!["a".to_owned()],
-        evidence: vec![CompetitorIntentEvidenceEntry {
-            r#type: Some(entry_type.to_owned()),
-            key: Some(entry_key.to_owned()),
-            value: Some("matched".to_owned()),
-            r#match: Some("match".to_owned()),
-        }],
+        evidence,
     })
 }
 
@@ -159,12 +165,26 @@ fn merge_compares_competitor_intent_fields() {
 #[test]
 fn merge_compares_competitor_intent_evidence() {
     let merged = merge_detections(&[
-        competitor_with_evidence("keyword", "signal"),
-        competitor_with_evidence("keyword", "signal"),
-        competitor_with_evidence("phrase", "signal"),
-        competitor_with_evidence("keyword", "other"),
+        competitor_evidence(&[("keyword", "signal", "matched", "match")]),
+        competitor_evidence(&[("keyword", "signal", "matched", "match")]),
+        competitor_evidence(&[("phrase", "signal", "matched", "match")]),
+        competitor_evidence(&[("keyword", "other", "matched", "match")]),
+        competitor_evidence(&[("keyword", "signal", "other", "match")]),
+        competitor_evidence(&[("keyword", "signal", "matched", "other")]),
     ]);
-    assert_eq!(merged.len(), 3);
+    assert_eq!(merged.len(), 5);
+}
+
+#[test]
+fn merge_keeps_competitor_evidence_of_different_lengths_apart() {
+    let merged = merge_detections(&[
+        competitor_evidence(&[("keyword", "signal", "matched", "match")]),
+        competitor_evidence(&[
+            ("keyword", "signal", "matched", "match"),
+            ("phrase", "other", "matched", "match"),
+        ]),
+    ]);
+    assert_eq!(merged.len(), 2);
 }
 
 #[test]
