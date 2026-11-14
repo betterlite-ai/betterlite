@@ -109,11 +109,11 @@ mod content_filter_actions_behavior {
         config
     }
 
-    fn filter_source<'a>(
-        categories: &'a CategoryLoadResult,
-        patterns: &'a [CompiledPattern],
-        blocked_words: &'a [BlockedWord],
-    ) -> ContentFilterSource<'a> {
+    fn filter_source<'source>(
+        categories: &'source CategoryLoadResult,
+        patterns: &'source [CompiledPattern],
+        blocked_words: &'source [BlockedWord],
+    ) -> ContentFilterSource<'source> {
         ContentFilterSource {
             categories,
             patterns,
@@ -180,14 +180,14 @@ mod content_filter_actions_behavior {
         let mut detections = Vec::new();
         handle_conditional_match(&matched, Some(&mut detections)).unwrap();
         assert_eq!(detections.len(), 1);
-        let ContentFilterDetection::CategoryKeyword(detection) = &detections[0] else {
-            panic!("expected a category keyword detection");
+        let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
+            panic!("expected a category keyword record");
         };
-        assert_eq!(detection.r#type, "category_keyword");
-        assert_eq!(detection.category, "child_safety");
-        assert_eq!(detection.keyword, "minor + romantic");
-        assert_eq!(detection.severity, "high");
-        assert_eq!(detection.action, "MASK");
+        assert_eq!(record.r#type, "category_keyword");
+        assert_eq!(record.category, "child_safety");
+        assert_eq!(record.keyword, "minor + romantic");
+        assert_eq!(record.severity, "high");
+        assert_eq!(record.action, "MASK");
     }
 
     #[test]
@@ -202,11 +202,11 @@ mod content_filter_actions_behavior {
         let error = handle_conditional_match(&matched, Some(&mut detections)).unwrap_err();
         assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
         assert_eq!(detections.len(), 1);
-        let ContentFilterDetection::CategoryKeyword(detection) = &detections[0] else {
-            panic!("expected a category keyword detection");
+        let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
+            panic!("expected a category keyword record");
         };
-        assert_eq!(detection.keyword, "minor + romantic");
-        assert_eq!(detection.action, "BLOCK");
+        assert_eq!(record.keyword, "minor + romantic");
+        assert_eq!(record.action, "BLOCK");
     }
 
     #[test]
@@ -217,9 +217,9 @@ mod content_filter_actions_behavior {
             "high",
             ContentFilterAction::Block,
         );
-        let error = handle_conditional_match(&matched, None).unwrap_err();
-        assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
-        let ContentFilterActionError::Blocked { detail } = error else {
+        let failure = handle_conditional_match(&matched, None).unwrap_err();
+        assert_eq!(failure.status_code(), StatusCode::BAD_REQUEST);
+        let ContentFilterActionError::Blocked { detail } = failure else {
             panic!("expected a block error");
         };
         let ContentFilterBlockDetail::Conditional {
@@ -234,7 +234,10 @@ mod content_filter_actions_behavior {
         assert_eq!(category, "child_safety");
         assert_eq!(matched_phrase, "minor + romantic");
         assert_eq!(severity, "high");
-        assert!(error.contains("minor + romantic"));
+        assert_eq!(
+            error,
+            "Content blocked: child_safety conditional match 'minor + romantic' detected (severity: high)"
+        );
     }
 
     #[test]
@@ -296,12 +299,12 @@ mod content_filter_actions_behavior {
         });
         assert_eq!(result.unwrap(), text);
         assert!(logs.contains("MASK action is not supported for conditional categories"));
-        let ContentFilterDetection::CategoryKeyword(detection) = &detections[0] else {
-            panic!("expected a category keyword detection");
+        let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
+            panic!("expected a category keyword record");
         };
-        assert_eq!(detection.keyword, "phrase: put my money to make it grow");
-        assert_eq!(detection.severity, "high");
-        assert_eq!(detection.action, "MASK");
+        assert_eq!(record.keyword, "phrase: put my money to make it grow");
+        assert_eq!(record.severity, "high");
+        assert_eq!(record.action, "MASK");
     }
 
     #[test]
@@ -313,14 +316,14 @@ mod content_filter_actions_behavior {
                 .unwrap();
         assert_eq!(masked, "an [KEYWORD_REDACTED]");
         assert_eq!(detections.len(), 1);
-        let ContentFilterDetection::CategoryKeyword(detection) = &detections[0] else {
-            panic!("expected a category keyword detection");
+        let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
+            panic!("expected a category keyword record");
         };
-        assert_eq!(detection.r#type, "category_keyword");
-        assert_eq!(detection.category, "operational");
-        assert_eq!(detection.keyword, "alert");
-        assert_eq!(detection.severity, "medium");
-        assert_eq!(detection.action, "MASK");
+        assert_eq!(record.r#type, "category_keyword");
+        assert_eq!(record.category, "operational");
+        assert_eq!(record.keyword, "alert");
+        assert_eq!(record.severity, "medium");
+        assert_eq!(record.action, "MASK");
     }
 
     #[test]
@@ -332,20 +335,20 @@ mod content_filter_actions_behavior {
                 .unwrap_err();
         assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
         assert_eq!(detections.len(), 1);
-        let ContentFilterDetection::CategoryKeyword(detection) = &detections[0] else {
-            panic!("expected a category keyword detection");
+        let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
+            panic!("expected a category keyword record");
         };
-        assert_eq!(detection.keyword, "alert");
-        assert_eq!(detection.action, "BLOCK");
+        assert_eq!(record.keyword, "alert");
+        assert_eq!(record.action, "BLOCK");
     }
 
     #[test]
     fn category_keyword_block_error_names_the_keyword_category_and_severity() {
         let matched = matched("alert", "operational", "medium", ContentFilterAction::Block);
-        let error =
+        let failure =
             handle_category_keyword_match(&matched, "an alert", KEYWORD_TAG, None).unwrap_err();
-        assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
-        let ContentFilterActionError::Blocked { detail } = error else {
+        assert_eq!(failure.status_code(), StatusCode::BAD_REQUEST);
+        let ContentFilterActionError::Blocked { detail } = failure else {
             panic!("expected a block error");
         };
         let ContentFilterBlockDetail::CategoryKeyword {
@@ -360,7 +363,10 @@ mod content_filter_actions_behavior {
         assert_eq!(category, "operational");
         assert_eq!(keyword, "alert");
         assert_eq!(severity, "medium");
-        assert!(error.contains("alert"));
+        assert_eq!(
+            error,
+            "Content blocked: operational category keyword 'alert' detected (severity: medium)"
+        );
     }
 
     #[rstest]
@@ -397,12 +403,12 @@ mod content_filter_actions_behavior {
         .unwrap();
         assert_eq!(masked, "[EMAIL_REDACTED]");
         assert_eq!(detections.len(), 1);
-        let ContentFilterDetection::Pattern(detection) = &detections[0] else {
-            panic!("expected a pattern detection");
+        let ContentFilterDetection::Pattern(record) = &detections[0] else {
+            panic!("expected a pattern record");
         };
-        assert_eq!(detection.r#type, "pattern");
-        assert_eq!(detection.pattern_name, "email");
-        assert_eq!(detection.action, "MASK");
+        assert_eq!(record.r#type, "pattern");
+        assert_eq!(record.pattern_name, "email");
+        assert_eq!(record.action, "MASK");
     }
 
     #[test]
@@ -420,28 +426,32 @@ mod content_filter_actions_behavior {
         .unwrap_err();
         assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
         assert_eq!(detections.len(), 1);
-        let ContentFilterDetection::Pattern(detection) = &detections[0] else {
-            panic!("expected a pattern detection");
+        let ContentFilterDetection::Pattern(record) = &detections[0] else {
+            panic!("expected a pattern record");
         };
-        assert_eq!(detection.pattern_name, "email");
-        assert_eq!(detection.action, "BLOCK");
+        assert_eq!(record.pattern_name, "email");
+        assert_eq!(record.action, "BLOCK");
     }
 
     #[test]
     fn pattern_block_error_names_the_pattern() {
         let pattern = regex_pattern("email", "a@b", ContentFilterAction::Block);
         let spans = pattern.find_spans("a@b").unwrap();
-        let error =
+        let failure =
             handle_pattern_match(&pattern, "a@b", &spans, PATTERN_FORMAT, None).unwrap_err();
-        assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
-        let ContentFilterActionError::Blocked { detail } = error else {
+        assert_eq!(failure.status_code(), StatusCode::BAD_REQUEST);
+        let ContentFilterActionError::Blocked { detail } = failure else {
             panic!("expected a block error");
         };
-        let ContentFilterBlockDetail::Pattern { error, pattern } = detail else {
+        let ContentFilterBlockDetail::Pattern {
+            error,
+            pattern: name,
+        } = detail
+        else {
             panic!("expected the pattern detail");
         };
-        assert_eq!(pattern, "email");
-        assert!(error.contains("email"));
+        assert_eq!(name, "email");
+        assert_eq!(error, "Content blocked: email pattern detected");
     }
 
     #[test]
@@ -463,13 +473,13 @@ mod content_filter_actions_behavior {
                 .unwrap();
         assert_eq!(masked, KEYWORD_TAG);
         assert_eq!(detections.len(), 1);
-        let ContentFilterDetection::BlockedWord(detection) = &detections[0] else {
-            panic!("expected a blocked word detection");
+        let ContentFilterDetection::BlockedWord(record) = &detections[0] else {
+            panic!("expected a blocked word record");
         };
-        assert_eq!(detection.r#type, "blocked_word");
-        assert_eq!(detection.keyword, "hunter2");
-        assert_eq!(detection.action, "MASK");
-        assert_eq!(detection.description.as_deref(), Some("password"));
+        assert_eq!(record.r#type, "blocked_word");
+        assert_eq!(record.keyword, "hunter2");
+        assert_eq!(record.action, "MASK");
+        assert_eq!(record.description.as_deref(), Some("password"));
     }
 
     #[test]
@@ -480,29 +490,29 @@ mod content_filter_actions_behavior {
             .unwrap_err();
         assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
         assert_eq!(detections.len(), 1);
-        let ContentFilterDetection::BlockedWord(detection) = &detections[0] else {
-            panic!("expected a blocked word detection");
+        let ContentFilterDetection::BlockedWord(record) = &detections[0] else {
+            panic!("expected a blocked word record");
         };
-        assert_eq!(detection.keyword, "hunter2");
-        assert_eq!(detection.action, "BLOCK");
+        assert_eq!(record.keyword, "hunter2");
+        assert_eq!(record.action, "BLOCK");
     }
 
     #[rstest]
     #[case::with_description(
         Some("do not share it"),
         Some("do not share it"),
-        "content blocked: keyword 'hunter2' detected (do not share it)"
+        "Content blocked: keyword 'hunter2' detected (do not share it)"
     )]
-    #[case::without_description(None, None, "content blocked: keyword 'hunter2' detected")]
+    #[case::without_description(None, None, "Content blocked: keyword 'hunter2' detected")]
     fn blocked_word_block_error_reports_the_optional_description(
         #[case] description: Option<&str>,
         #[case] expected_description: Option<&str>,
         #[case] expected_error: &str,
     ) {
         let word = blocked("hunter2", ContentFilterAction::Block, description);
-        let error = handle_blocked_word_match(&word, "hunter2", KEYWORD_TAG, None).unwrap_err();
-        assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
-        let ContentFilterActionError::Blocked { detail } = error else {
+        let failure = handle_blocked_word_match(&word, "hunter2", KEYWORD_TAG, None).unwrap_err();
+        assert_eq!(failure.status_code(), StatusCode::BAD_REQUEST);
+        let ContentFilterActionError::Blocked { detail } = failure else {
             panic!("expected a block error");
         };
         let ContentFilterBlockDetail::BlockedWord {
@@ -641,24 +651,24 @@ mod content_filter_actions_behavior {
     fn detection_kinds(detections: &[ContentFilterDetection]) -> Vec<(&str, &str, &str)> {
         detections
             .iter()
-            .map(|detection| match detection {
-                ContentFilterDetection::CategoryKeyword(detection) => (
+            .map(|entry| match entry {
+                ContentFilterDetection::CategoryKeyword(record) => (
                     "category_keyword",
-                    detection.keyword.as_str(),
-                    detection.action.as_str(),
+                    record.keyword.as_str(),
+                    record.action.as_str(),
                 ),
-                ContentFilterDetection::Pattern(detection) => (
+                ContentFilterDetection::Pattern(record) => (
                     "pattern",
-                    detection.pattern_name.as_str(),
-                    detection.action.as_str(),
+                    record.pattern_name.as_str(),
+                    record.action.as_str(),
                 ),
-                ContentFilterDetection::BlockedWord(detection) => (
+                ContentFilterDetection::BlockedWord(record) => (
                     "blocked_word",
-                    detection.keyword.as_str(),
-                    detection.action.as_str(),
+                    record.keyword.as_str(),
+                    record.action.as_str(),
                 ),
                 ContentFilterDetection::CompetitorIntent(_) => {
-                    panic!("unexpected competitor intent detection")
+                    panic!("unexpected competitor intent record")
                 }
             })
             .collect()
@@ -745,11 +755,11 @@ mod content_filter_actions_behavior {
         .unwrap_err();
         assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
         assert_eq!(detections.len(), 1);
-        let ContentFilterDetection::CategoryKeyword(detection) = &detections[0] else {
-            panic!("expected a category keyword detection");
+        let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
+            panic!("expected a category keyword record");
         };
-        assert_eq!(detection.keyword, "minor + romantic");
-        assert_eq!(detection.action, "BLOCK");
+        assert_eq!(record.keyword, "minor + romantic");
+        assert_eq!(record.action, "BLOCK");
     }
 
     #[test]
