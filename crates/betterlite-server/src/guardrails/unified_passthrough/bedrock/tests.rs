@@ -10,6 +10,7 @@ use betterlite_core::passthrough_guardrail::errors::PassthroughGuardrailError;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
+use rstest::rstest;
 
 use super::{BedrockPassthroughError, BedrockPassthroughTranslation};
 use crate::guardrails::bedrock_passthrough::event_stream::frames::parse_event_stream;
@@ -58,36 +59,27 @@ fn delta_frame(delta: &str) -> Vec<u8> {
     buffer
 }
 
+#[rstest]
+#[case::neither(SkipFlags::default(), &["be nice", "hello", "tool text"])]
+#[case::system_only(SkipFlags { system: true, tool: false }, &["hello", "tool text"])]
+#[case::tool_only(SkipFlags { system: false, tool: true }, &["be nice", "hello"])]
 #[tokio::test]
-async fn bedrock_converse_input_uses_the_stored_skip_flags() {
+async fn bedrock_converse_input_uses_the_stored_skip_flags(
+    #[case] skip: SkipFlags,
+    #[case] expected: &[&str],
+) {
     let fake = FakeGuardrail::unchanged();
     let mut data = map_body(&converse_input());
-    adapter(SkipFlags::default())
+    adapter(skip)
         .process_input_messages(&mut data, &fake, None)
         .await
         .expect("the guardrail accepts");
     let calls = fake.calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(
-        calls[0].texts,
-        vec![
-            "be nice".to_owned(),
-            "hello".to_owned(),
-            "tool text".to_owned()
-        ]
-    );
+    let texts: Vec<&str> = calls[0].texts.iter().map(String::as_str).collect();
+    assert_eq!(texts, expected);
     assert_eq!(calls[0].model.as_deref(), Some("m"));
     assert_eq!(calls[0].input_type, GuardrailInputType::Request);
-    let skipping = FakeGuardrail::unchanged();
-    let mut skipped_data = map_body(&converse_input());
-    adapter(SkipFlags {
-        system: true,
-        tool: true,
-    })
-    .process_input_messages(&mut skipped_data, &skipping, None)
-    .await
-    .expect("the guardrail accepts");
-    assert_eq!(skipping.calls()[0].texts, vec!["hello".to_owned()]);
 }
 
 #[tokio::test]
