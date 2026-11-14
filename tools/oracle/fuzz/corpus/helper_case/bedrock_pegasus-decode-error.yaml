@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-pegasus-decode-error
+call:
+  bedrock_pegasus:
+    function: pegasus_reply_errors
+    body: '{"message":'
+    status: 400
+    headers: [["x-amzn-bedrock-input-token-count", "1"], ["x-amzn-bedrock-output-token-count", "1"]]
+    model: twelvelabs.pegasus-1-2-v1:0
+    messages: []
+    now: 1600000002.0
+    response: {id: chatcmpl-fuzz-error, choices: [{index: 0, finish_reason: stop, message: {role: assistant, content: null}}]}
+env: {}
+compare: {ignore: []}

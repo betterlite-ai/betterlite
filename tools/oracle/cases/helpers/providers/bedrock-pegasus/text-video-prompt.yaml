@@ -1,0 +1,9 @@
+kind: helper
+name: text-video-prompt
+call:
+  bedrock_pegasus:
+    function: text_video_prompt
+    messages: [{role: system, content: describe the clip}, {content: [{type: text, text: hello}, {type: image_url, image_url: {url: "https://example.invalid/frame.png"}}, plain fragment, {type: video_url, video_url: {url: "https://example.invalid/clip.mp4"}}]}]
+    optional_params: {}
+env: {}
+compare: {ignore: []}

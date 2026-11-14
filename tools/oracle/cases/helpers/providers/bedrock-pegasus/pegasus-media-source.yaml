@@ -1,0 +1,9 @@
+kind: helper
+name: pegasus-media-source
+call:
+  bedrock_pegasus:
+    function: pegasus_media_source
+    messages: []
+    optional_params: {mediaSource: {s3Location: {uri: "s3://bucket/clip.mp4", bucketOwner: "123456789012"}}}
+env: {}
+compare: {ignore: []}

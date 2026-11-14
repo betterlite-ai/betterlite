@@ -1,0 +1,10 @@
+kind: helper
+name: pegasus-options
+call:
+  bedrock_pegasus:
+    function: pegasus_options
+    non_default: {max_tokens: 10, max_completion_tokens: 20, temperature: 0.5, top_p: 0.9, response_format: {json_schema: {schema: {type: object}}}}
+    optional_params: {custom: keep}
+    messages: [{content: hello}]
+env: {}
+compare: {ignore: []}

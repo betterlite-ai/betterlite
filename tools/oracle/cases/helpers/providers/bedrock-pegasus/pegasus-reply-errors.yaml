@@ -1,0 +1,14 @@
+kind: helper
+name: pegasus-reply-errors
+call:
+  bedrock_pegasus:
+    function: pegasus_reply_errors
+    body: '{"message": not json'
+    status: 418
+    headers: [["x-amzn-bedrock-input-token-count", "4"], ["x-amzn-bedrock-output-token-count", "6"]]
+    model: twelvelabs.pegasus-1-2-v1:0
+    messages: []
+    now: 1700000000.0
+    response: {id: chatcmpl-error, choices: [{index: 0, finish_reason: stop, message: {role: assistant, content: null}}]}
+env: {}
+compare: {ignore: []}

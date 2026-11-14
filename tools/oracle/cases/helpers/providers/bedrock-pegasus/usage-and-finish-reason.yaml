@@ -1,0 +1,14 @@
+kind: helper
+name: usage-and-finish-reason
+call:
+  bedrock_pegasus:
+    function: usage_and_finish_reason
+    body: '{"message":"visible","finishReason":"tool_use"}'
+    status: 200
+    headers: [["x-amzn-bedrock-input-token-count", "0"], ["x-amzn-bedrock-output-token-count", "-3"]]
+    model: twelvelabs.pegasus-1-2-v1:0
+    messages: [{role: user, content: describe}]
+    now: 1700000000.9
+    response: {id: chatcmpl-usage, choices: [{index: 0, finish_reason: stop, message: {role: assistant, content: null}}]}
+env: {}
+compare: {ignore: []}
