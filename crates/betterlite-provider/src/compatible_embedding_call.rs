@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use betterlite_config::sections::compatible_embedding_settings::{Globals, Settings};
+use betterlite_config::sections::compatible_embedding_settings::{
+    DEFAULT_COMETAPI_API_BASE, EmbeddingFamily, Globals, Settings,
+};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
@@ -33,11 +35,11 @@ pub enum CompatibleEmbeddingError {
     #[error(transparent)]
     Operation(#[from] OperationError),
     #[error(transparent)]
-    Url(#[source] url::ParseError),
+    Url(url::ParseError),
     #[error(transparent)]
-    Encode(#[source] serde_json::Error),
+    Encode(serde_json::Error),
     #[error(transparent)]
-    Header(#[source] http::Error),
+    Header(http::Error),
     #[error("the embedding endpoint answered with a stream")]
     Streamed,
 }
@@ -60,9 +62,12 @@ pub struct SharedEmbedding<'source> {
 impl SharedEmbedding<'_> {
     #[must_use]
     pub fn handler_call(&self) -> EmbeddingCall {
-        let (api_base, api_key) =
-            self.settings
-                .openai_like_identity(self.globals, self.api_base, self.api_key);
+        let identity = self.settings.identity(
+            EmbeddingFamily::OpenAiLike,
+            self.globals,
+            self.api_base,
+            self.api_key,
+        );
         let mut options = self.optional_params.clone();
         if let Some(headers) = self.headers.filter(|headers| !headers.is_empty()) {
             let extra = headers
@@ -74,8 +79,8 @@ impl SharedEmbedding<'_> {
         EmbeddingCall {
             model: self.model.to_owned(),
             input: self.input.clone(),
-            api_key,
-            api_base,
+            api_key: identity.api_key,
+            api_base: identity.api_base,
             options,
             headers: None,
             custom_endpoint: self.custom_endpoint,
@@ -111,14 +116,21 @@ pub struct CometapiEmbedding<'source> {
 impl CometapiEmbedding<'_> {
     // the branch passes an empty litellm_params map, so nothing from the caller's deployment reaches the request
     pub fn prepared(&self) -> Result<PreparedRequest, CompatibleEmbeddingError> {
-        let (api_base, api_key) =
-            self.settings
-                .cometapi_identity(self.globals, self.api_base, self.api_key);
+        let identity = self.settings.identity(
+            EmbeddingFamily::Cometapi,
+            self.globals,
+            self.api_base,
+            self.api_key,
+        );
+        let api_base = identity
+            .api_base
+            .as_deref()
+            .unwrap_or(DEFAULT_COMETAPI_API_BASE);
         let url =
-            Url::parse(&complete_url(Some(&api_base))).map_err(CompatibleEmbeddingError::Url)?;
+            Url::parse(&complete_url(Some(api_base))).map_err(CompatibleEmbeddingError::Url)?;
         let headers = validate_environment(
             &Headers::new(),
-            api_key.as_ref(),
+            identity.api_key.as_ref(),
             &self.settings.cometapi_credentials,
         );
         let body = transform_embedding_request(self.model, self.input, self.optional_params);

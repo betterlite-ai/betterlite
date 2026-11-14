@@ -99,93 +99,18 @@ fn exposed(value: Option<&SecretString>) -> Option<String> {
     value.map(|secret| secret.expose_secret().to_owned())
 }
 
-#[rstest]
-#[case::environment_takes_over(
-    ENVIRONMENT,
-    None,
-    None,
-    None,
-    None,
-    None,
-    Some("http://env.example/v1"),
-    Some("sk-env")
-)]
-#[case::globals_win(
-    ENVIRONMENT,
-    Some("https://global/v1"),
-    Some("sk-global"),
-    None,
-    None,
-    None,
-    Some("https://global/v1"),
-    Some("sk-global")
-)]
-#[case::openai_like_global_key(
-    ENVIRONMENT,
-    None,
-    None,
-    Some("sk-like"),
-    None,
-    None,
-    Some("http://env.example/v1"),
-    Some("sk-like")
-)]
-#[case::global_api_key_precedes_the_like_key(
-    ENVIRONMENT,
-    Some("https://global/v1"),
-    Some("sk-global"),
-    Some("sk-like"),
-    None,
-    None,
-    Some("https://global/v1"),
-    Some("sk-global")
-)]
-#[case::explicit_empty_key_suppresses(
-    ENVIRONMENT,
-    None,
-    Some("sk-global"),
-    None,
-    None,
-    Some(""),
-    Some("http://env.example/v1"),
-    Some("")
-)]
-#[case::explicit_base_wins(
-    ENVIRONMENT,
-    Some("https://global/v1"),
-    None,
-    None,
-    Some("https://explicit/v1"),
-    None,
-    Some("https://explicit/v1"),
-    Some("sk-env")
-)]
-#[case::nothing_anywhere(&[], None, None, None, None, None, None, None)]
-fn shared_identity_follows_the_pinned_precedence(
-    #[case] environment: &[(&str, &str)],
-    #[case] global_base: Option<&str>,
-    #[case] global_api_key: Option<&str>,
-    #[case] global_like_key: Option<&str>,
-    #[case] explicit_base: Option<&str>,
-    #[case] explicit_key: Option<&str>,
-    #[case] expected_base: Option<&str>,
-    #[case] expected_key: Option<&str>,
-) {
+#[test]
+fn the_handler_call_carries_the_shared_embedding_identity() {
     let input = Json::Text(String::from("a"));
     let options = IndexMap::new();
-    let globals = Globals {
-        api_base: global_base.map(str::to_owned),
-        api_key: global_api_key.map(|text| SecretString::from(text.to_owned())),
-        openai_like_key: global_like_key.map(|text| SecretString::from(text.to_owned())),
-        cometapi_key: None,
-    };
-    let settings = settings(environment);
-    let supplied_key = explicit_key.map(|text| SecretString::from(text.to_owned()));
+    let globals = Globals::default();
+    let settings = settings(ENVIRONMENT);
+    let supplied_key = SecretString::from(String::from("sk-explicit"));
     let embedding = SharedEmbedding {
         model: "m",
         input: &input,
-        api_base: explicit_base,
-        api_key: supplied_key.as_ref(),
+        api_base: Some("https://explicit/v1"),
+        api_key: Some(&supplied_key),
         optional_params: &options,
         headers: None,
         custom_endpoint: false,
@@ -194,9 +119,23 @@ fn shared_identity_follows_the_pinned_precedence(
         globals: &globals,
         settings: &settings,
     };
-    let call = embedding.handler_call();
-    assert_eq!(call.api_base.as_deref(), expected_base);
-    assert_eq!(exposed(call.api_key.as_ref()).as_deref(), expected_key);
+    let explicit = embedding.handler_call();
+    assert_eq!(explicit.api_base.as_deref(), Some("https://explicit/v1"));
+    assert_eq!(
+        exposed(explicit.api_key.as_ref()).as_deref(),
+        Some("sk-explicit")
+    );
+    let inherited = SharedEmbedding {
+        api_base: None,
+        api_key: None,
+        ..embedding
+    }
+    .handler_call();
+    assert_eq!(inherited.api_base.as_deref(), Some("http://env.example/v1"));
+    assert_eq!(
+        exposed(inherited.api_key.as_ref()).as_deref(),
+        Some("sk-env")
+    );
 }
 
 #[rstest]
@@ -331,81 +270,66 @@ fn cometapi_prepared_request_uses_the_configuration_and_no_caller_headers() {
     );
 }
 
-#[rstest]
-#[case::environment(
-    ENVIRONMENT,
-    None,
-    None,
-    None,
-    None,
-    "https://comet.example/v1/embeddings",
-    "Bearer sk-cometapi-env"
-)]
-#[case::default_base_and_no_key(&[], None, None, None, None, "https://api.cometapi.com/v1/embeddings", "Bearer None")]
-#[case::global_cometapi_key(
-    ENVIRONMENT,
-    None,
-    None,
-    Some("sk-cometapi-global"),
-    None,
-    "https://comet.example/v1/embeddings",
-    "Bearer sk-cometapi-global"
-)]
-#[case::general_global_key_loses_to_the_alias(
-    ENVIRONMENT,
-    None,
-    Some("sk-api"),
-    None,
-    None,
-    "https://comet.example/v1/embeddings",
-    "Bearer sk-cometapi-env"
-)]
-#[case::global_base_wins(
-    ENVIRONMENT,
-    Some("https://global/v1"),
-    None,
-    None,
-    None,
-    "https://global/v1/embeddings",
-    "Bearer sk-cometapi-env"
-)]
-#[case::explicit_wins_with_trailing_slash(ENVIRONMENT, Some("https://global/v1"), Some("sk-api"), None, Some(("https://explicit/v1/", "sk-explicit")), "https://explicit/v1/embeddings", "Bearer sk-explicit")]
-fn cometapi_identity_follows_the_pinned_precedence(
-    #[case] environment: &[(&str, &str)],
-    #[case] global_base: Option<&str>,
-    #[case] global_api_key: Option<&str>,
-    #[case] global_cometapi_key: Option<&str>,
-    #[case] explicit: Option<(&str, &str)>,
-    #[case] expected_base: &str,
-    #[case] expected_authorization: &str,
-) {
+#[test]
+fn the_cometapi_request_falls_back_to_its_default_base_and_trims_a_caller_slash() {
     let input = PromptJson::Text(String::from("a"));
     let options = Object::new();
-    let globals = Globals {
-        api_base: global_base.map(str::to_owned),
-        api_key: global_api_key.map(|text| SecretString::from(text.to_owned())),
-        openai_like_key: None,
-        cometapi_key: global_cometapi_key.map(|text| SecretString::from(text.to_owned())),
-    };
-    let settings = settings(environment);
-    let supplied_key = explicit.map(|(_, key)| SecretString::from(key.to_owned()));
-    let embedding = CometapiEmbedding {
+    let bare = settings(&[]);
+    let bare_globals = Globals::default();
+    let request = CometapiEmbedding {
         model: "m",
         input: &input,
         optional_params: &options,
-        api_base: explicit.map(|(base, _)| base),
-        api_key: supplied_key.as_ref(),
+        api_base: None,
+        api_key: None,
         timeout: Duration::from_secs(5),
-        globals: &globals,
-        settings: &settings,
-    };
-    let PreparedRequest::Embedding(chat) = embedding.prepared().unwrap() else {
+        globals: &bare_globals,
+        settings: &bare,
+    }
+    .prepared()
+    .unwrap();
+    let PreparedRequest::Embedding(bare_chat) = request else {
         panic!("the CometAPI embedding is a prepared embedding request");
     };
-    assert_eq!(chat.http.url.as_str(), expected_base);
     assert_eq!(
-        chat.http.headers.get("Authorization").unwrap(),
-        expected_authorization
+        bare_chat.http.url.as_str(),
+        "https://api.cometapi.com/v1/embeddings"
+    );
+    assert_eq!(
+        bare_chat.http.headers.get("Authorization").unwrap(),
+        "Bearer None"
+    );
+
+    let aliased = settings(ENVIRONMENT);
+    let supplied_key = SecretString::from(String::from("sk-explicit"));
+    let aliased_globals = Globals {
+        api_base: Some(String::from("https://global/v1")),
+        api_key: Some(SecretString::from(String::from("sk-api"))),
+        openai_like_key: None,
+        cometapi_key: Some(SecretString::from(String::from("sk-cometapi-global"))),
+    };
+    let request = CometapiEmbedding {
+        model: "m",
+        input: &input,
+        optional_params: &options,
+        api_base: Some("https://explicit/v1/"),
+        api_key: Some(&supplied_key),
+        timeout: Duration::from_secs(5),
+        globals: &aliased_globals,
+        settings: &aliased,
+    }
+    .prepared()
+    .unwrap();
+    let PreparedRequest::Embedding(explicit_chat) = request else {
+        panic!("the CometAPI embedding is a prepared embedding request");
+    };
+    assert_eq!(
+        explicit_chat.http.url.as_str(),
+        "https://explicit/v1/embeddings"
+    );
+    assert_eq!(
+        explicit_chat.http.headers.get("Authorization").unwrap(),
+        "Bearer sk-explicit"
     );
 }
 

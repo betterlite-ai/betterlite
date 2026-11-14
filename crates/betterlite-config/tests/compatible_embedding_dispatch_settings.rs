@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::compatible_embedding_settings::{
-    DEFAULT_COMETAPI_API_BASE, Globals, Settings,
+    DEFAULT_COMETAPI_API_BASE, EmbeddingFamily, Globals, Settings,
 };
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -69,73 +69,64 @@ fn loads_every_environment_alias(
 }
 
 #[rstest]
-#[case::explicit_wins(
+#[case::openai_like_explicit_wins(
+    EmbeddingFamily::OpenAiLike,
     ENVIRONMENT,
     globals(None, None, None, None),
-    Some("http://explicit/v1"),
-    Some("sk-explicit"),
-    Some("http://explicit/v1"),
-    Some("sk-explicit")
+    (Some("http://explicit/v1"), Some("sk-explicit")),
+    (Some("http://explicit/v1"), Some("sk-explicit"))
 )]
-#[case::global_base_and_key_win(
+#[case::openai_like_global_base_and_key_win(
+    EmbeddingFamily::OpenAiLike,
     ENVIRONMENT,
     globals(Some("https://global/v1"), Some("sk-global"), None, None),
-    None,
-    None,
-    Some("https://global/v1"),
-    Some("sk-global")
+    (None, None),
+    (Some("https://global/v1"), Some("sk-global"))
 )]
 #[case::openai_like_global_key(
+    EmbeddingFamily::OpenAiLike,
     ENVIRONMENT,
     globals(None, None, Some("sk-like"), None),
-    None,
-    None,
-    Some("http://openai-like/v1"),
-    Some("sk-like")
+    (None, None),
+    (Some("http://openai-like/v1"), Some("sk-like"))
 )]
-#[case::environment_takes_over(
+#[case::openai_like_environment_takes_over(
+    EmbeddingFamily::OpenAiLike,
     ENVIRONMENT,
     globals(None, None, None, None),
-    None,
-    None,
-    Some("http://openai-like/v1"),
-    Some("sk-openai-like")
+    (None, None),
+    (Some("http://openai-like/v1"), Some("sk-openai-like"))
 )]
-#[case::nothing_anywhere(&[], globals(None, None, None, None), None, None, None, None)]
-#[case::explicit_empty_key_suppresses(
+#[case::openai_like_nothing_anywhere(
+    EmbeddingFamily::OpenAiLike,
+    &[],
+    globals(None, None, None, None),
+    (None, None),
+    (None, None)
+)]
+#[case::openai_like_explicit_empty_key_suppresses(
+    EmbeddingFamily::OpenAiLike,
     ENVIRONMENT,
     globals(None, Some("sk-global"), None, None),
-    None,
-    Some(""),
-    Some("http://openai-like/v1"),
-    Some("")
+    (None, Some("")),
+    (Some("http://openai-like/v1"), Some(""))
 )]
-#[case::explicit_empty_base_is_used_as_given(&[], globals(None, None, None, None), Some(""), None, Some(""), None)]
-fn openai_like_identity_follows_the_pinned_precedence(
-    #[case] environment: &[(&str, &str)],
-    #[case] globals: Globals,
-    #[case] explicit_base: Option<&str>,
-    #[case] explicit_key: Option<&str>,
-    #[case] expected_base: Option<&str>,
-    #[case] expected_key: Option<&str>,
-) {
-    let supplied_key = explicit_key.map(secret);
-    let (base, key) =
-        settings(environment).openai_like_identity(&globals, explicit_base, supplied_key.as_ref());
-    assert_eq!(base.as_deref(), expected_base);
-    assert_eq!(exposed(key.as_ref()).as_deref(), expected_key);
-}
-
-#[rstest]
-#[case::explicit_wins(
+#[case::openai_like_explicit_empty_base_is_used_as_given(
+    EmbeddingFamily::OpenAiLike,
+    &[],
+    globals(None, None, None, None),
+    (Some(""), None),
+    (Some(""), None)
+)]
+#[case::cometapi_explicit_wins(
+    EmbeddingFamily::Cometapi,
     ENVIRONMENT,
     globals(None, None, None, None),
-    Some("https://explicit/v1"),
-    Some("sk-explicit"),
-    "https://explicit/v1",
-    Some("sk-explicit")
+    (Some("https://explicit/v1"), Some("sk-explicit")),
+    (Some("https://explicit/v1"), Some("sk-explicit"))
 )]
-#[case::global_base_and_cometapi_key(
+#[case::cometapi_global_base_and_cometapi_key(
+    EmbeddingFamily::Cometapi,
     ENVIRONMENT,
     globals(
         Some("https://global/v1"),
@@ -143,51 +134,65 @@ fn openai_like_identity_follows_the_pinned_precedence(
         Some("sk-like"),
         Some("sk-cometapi-global")
     ),
-    None,
-    None,
-    "https://global/v1",
-    Some("sk-cometapi-global")
+    (None, None),
+    (Some("https://global/v1"), Some("sk-cometapi-global"))
 )]
 #[case::cometapi_environment(
+    EmbeddingFamily::Cometapi,
     ENVIRONMENT,
     globals(None, None, None, None),
-    None,
-    None,
-    "https://comet.example/v1",
-    Some("sk-cometapi")
+    (None, None),
+    (Some("https://comet.example/v1"), Some("sk-cometapi"))
 )]
-#[case::general_global_key_comes_last(
+#[case::cometapi_general_global_key_comes_last(
+    EmbeddingFamily::Cometapi,
     ENVIRONMENT,
     globals(None, Some("sk-api"), None, None),
-    None,
-    None,
-    "https://comet.example/v1",
-    Some("sk-cometapi")
+    (None, None),
+    (Some("https://comet.example/v1"), Some("sk-cometapi"))
 )]
-#[case::general_global_key_without_environment(&[], globals(None, Some("sk-api"), None, None), None, None, DEFAULT_COMETAPI_API_BASE, Some("sk-api"))]
-#[case::default_base_and_no_key(&[], globals(None, None, None, None), None, None, DEFAULT_COMETAPI_API_BASE, None)]
-#[case::explicit_empty_key_suppresses(
+#[case::cometapi_general_global_key_without_environment(
+    EmbeddingFamily::Cometapi,
+    &[],
+    globals(None, Some("sk-api"), None, None),
+    (None, None),
+    (Some(DEFAULT_COMETAPI_API_BASE), Some("sk-api"))
+)]
+#[case::cometapi_default_base_and_no_key(
+    EmbeddingFamily::Cometapi,
+    &[],
+    globals(None, None, None, None),
+    (None, None),
+    (Some(DEFAULT_COMETAPI_API_BASE), None)
+)]
+#[case::cometapi_explicit_empty_key_suppresses(
+    EmbeddingFamily::Cometapi,
     ENVIRONMENT,
     globals(None, Some("sk-api"), None, Some("sk-cometapi-global")),
-    None,
-    Some(""),
-    "https://comet.example/v1",
-    Some("")
+    (None, Some("")),
+    (Some("https://comet.example/v1"), Some(""))
 )]
-#[case::explicit_empty_base_is_used_as_given(&[], globals(None, None, None, None), Some(""), None, "", None)]
-fn cometapi_identity_follows_the_pinned_precedence(
+#[case::cometapi_explicit_empty_base_is_used_as_given(
+    EmbeddingFamily::Cometapi,
+    &[],
+    globals(None, None, None, None),
+    (Some(""), None),
+    (Some(""), None)
+)]
+fn identity_follows_the_pinned_precedence(
+    #[case] family: EmbeddingFamily,
     #[case] environment: &[(&str, &str)],
     #[case] globals: Globals,
-    #[case] explicit_base: Option<&str>,
-    #[case] explicit_key: Option<&str>,
-    #[case] expected_base: &str,
-    #[case] expected_key: Option<&str>,
+    #[case] supplied: (Option<&str>, Option<&str>),
+    #[case] expected: (Option<&str>, Option<&str>),
 ) {
+    let (explicit_base, explicit_key) = supplied;
+    let (expected_base, expected_key) = expected;
     let supplied_key = explicit_key.map(secret);
-    let (base, key) =
-        settings(environment).cometapi_identity(&globals, explicit_base, supplied_key.as_ref());
-    assert_eq!(base, expected_base);
-    assert_eq!(exposed(key.as_ref()).as_deref(), expected_key);
+    let identity =
+        settings(environment).identity(family, &globals, explicit_base, supplied_key.as_ref());
+    assert_eq!(identity.api_base.as_deref(), expected_base);
+    assert_eq!(exposed(identity.api_key.as_ref()).as_deref(), expected_key);
 }
 
 fn globals(

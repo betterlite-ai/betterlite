@@ -27,46 +27,53 @@ pub struct Settings {
     pub cometapi_api_base: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddingFamily {
+    OpenAiLike,
+    Cometapi,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Identity {
+    pub api_base: Option<String>,
+    pub api_key: Option<SecretString>,
+}
+
 impl Settings {
     // a supplied value wins even when empty; only absence falls through the globals to the env-backed sections
     #[must_use]
-    pub fn openai_like_identity(
+    pub fn identity(
         &self,
+        family: EmbeddingFamily,
         globals: &Globals,
         api_base: Option<&str>,
         api_key: Option<&SecretString>,
-    ) -> (Option<String>, Option<SecretString>) {
-        let base = api_base
+    ) -> Identity {
+        let supplied_base = api_base
             .map(str::to_owned)
-            .or_else(|| globals.api_base.clone())
-            .or_else(|| self.openai_like.api_base.clone());
-        let key = api_key
-            .cloned()
-            .or_else(|| globals.api_key.clone())
-            .or_else(|| globals.openai_like_key.clone())
-            .or_else(|| self.openai_like.api_key.clone());
-        (base, key)
-    }
-
-    // CometAPI puts the general global key last, after its own alias and the environment
-    #[must_use]
-    pub fn cometapi_identity(
-        &self,
-        globals: &Globals,
-        api_base: Option<&str>,
-        api_key: Option<&SecretString>,
-    ) -> (String, Option<SecretString>) {
-        let base = api_base
-            .map(str::to_owned)
-            .or_else(|| globals.api_base.clone())
-            .or_else(|| self.cometapi_api_base.clone())
-            .unwrap_or_else(|| DEFAULT_COMETAPI_API_BASE.to_owned());
-        let key = api_key
-            .cloned()
-            .or_else(|| globals.cometapi_key.clone())
-            .or_else(|| self.cometapi_credentials.api_key.clone())
-            .or_else(|| globals.api_key.clone());
-        (base, key)
+            .or_else(|| globals.api_base.clone());
+        let supplied_key = api_key.cloned();
+        match family {
+            EmbeddingFamily::OpenAiLike => Identity {
+                api_base: supplied_base.or_else(|| self.openai_like.api_base.clone()),
+                api_key: supplied_key
+                    .or_else(|| globals.api_key.clone())
+                    .or_else(|| globals.openai_like_key.clone())
+                    .or_else(|| self.openai_like.api_key.clone()),
+            },
+            // CometAPI puts the general global key last, after its own alias and the environment
+            EmbeddingFamily::Cometapi => Identity {
+                api_base: Some(
+                    supplied_base
+                        .or_else(|| self.cometapi_api_base.clone())
+                        .unwrap_or_else(|| DEFAULT_COMETAPI_API_BASE.to_owned()),
+                ),
+                api_key: supplied_key
+                    .or_else(|| globals.cometapi_key.clone())
+                    .or_else(|| self.cometapi_credentials.api_key.clone())
+                    .or_else(|| globals.api_key.clone()),
+            },
+        }
     }
 }
 

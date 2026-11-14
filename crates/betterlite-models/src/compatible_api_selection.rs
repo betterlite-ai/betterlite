@@ -60,6 +60,7 @@ impl MessagesApiPolicy {
     }
 }
 
+#[must_use]
 pub fn messages_api_policy(
     provider: ProviderId,
     registry: &JSONProviderRegistry,
@@ -94,6 +95,7 @@ impl CompatibleApiPolicy {
     }
 }
 
+#[must_use]
 pub fn embedding_api_policy(provider: ProviderId) -> Option<CompatibleApiPolicy> {
     if provider == ProviderId::Cometapi {
         return Some(CompatibleApiPolicy::CometapiEmbedding);
@@ -101,6 +103,7 @@ pub fn embedding_api_policy(provider: ProviderId) -> Option<CompatibleApiPolicy>
     None
 }
 
+#[must_use]
 pub fn rerank_api_policy(provider: ProviderId) -> Option<CompatibleApiPolicy> {
     if provider == ProviderId::Deepinfra {
         return Some(CompatibleApiPolicy::DeepinfraRerank);
@@ -108,6 +111,7 @@ pub fn rerank_api_policy(provider: ProviderId) -> Option<CompatibleApiPolicy> {
     None
 }
 
+#[must_use]
 pub fn image_generation_api_policy(provider: ProviderId) -> Option<CompatibleApiPolicy> {
     if provider == ProviderId::Aiml {
         return Some(CompatibleApiPolicy::AimlImageGeneration);
