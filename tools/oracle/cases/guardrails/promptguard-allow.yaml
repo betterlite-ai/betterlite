@@ -1,0 +1,20 @@
+kind: helper
+name: promptguard-allow
+call:
+  b8211:
+    api_key: test-key
+    block_on_error: true
+    input_type: request
+    inputs:
+      texts: ["Hello there"]
+      model: gpt-4o
+    answer:
+      status: 200
+      headers: {}
+      body:
+        decision: allow
+        threat_type: null
+        event_id: evt-1
+        confidence: 0.25
+env: {}
+compare: {ignore: []}

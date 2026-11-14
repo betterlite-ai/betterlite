@@ -1,0 +1,31 @@
+kind: helper
+name: promptguard-redact
+call:
+  b8211:
+    api_key: test-key
+    block_on_error: true
+    input_type: request
+    inputs:
+      texts: ["original text"]
+      structured_messages:
+        - {role: user, content: "my email is alice@example.com"}
+        - {role: assistant, content: "noted"}
+        - role: user
+          content:
+            - {type: text, text: "call 555-0100"}
+            - {type: image_url, image_url: {url: "https://img.test/a.png"}}
+            - {type: text, text: ""}
+    answer:
+      status: 200
+      headers: {}
+      body:
+        decision: redact
+        redacted_messages:
+          - {role: user, content: "my email is <EMAIL>"}
+          - {role: assistant, content: "noted <EMAIL>"}
+          - role: user
+            content:
+              - {type: text, text: "call <PHONE>"}
+              - {type: text, text: ""}
+env: {}
+compare: {ignore: []}
