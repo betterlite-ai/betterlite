@@ -18,7 +18,7 @@ pub struct QueryInput<'request> {
     pub litellm_params: &'request Params,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryRequest {
     pub url: String,
     pub body: IndexMap<String, Json>,
@@ -68,7 +68,7 @@ fn split_store_id<'id>(
         ),
     };
     if bucket_name.is_empty() || index_name.is_empty() {
-        return Err(S3VectorsInputError::StoreId.into());
+        return Err(S3VectorsSearchError::from(S3VectorsInputError::StoreId));
     }
     Ok((bucket_name, index_name))
 }

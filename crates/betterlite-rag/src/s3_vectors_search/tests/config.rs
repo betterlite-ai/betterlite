@@ -4,8 +4,8 @@ use rstest::rstest;
 
 use super::support::params;
 use crate::s3_vectors_search::config::{
-    RegionEnvironment, auth_credentials, complete_url, endpoints_by_type, map_openai_params,
-    query_embedding_model, supported_params, validate_environment,
+    RegionEnvironment, SUPPORTED_OPENAI_PARAMS, auth_credentials, complete_url, endpoints_by_type,
+    map_openai_params, query_embedding_model, validate_environment,
 };
 use crate::s3_vectors_search::create::{CreateStep, transform_create_vector_store};
 use crate::s3_vectors_search::error::S3VectorsSearchError;
@@ -20,7 +20,10 @@ fn static_surface_matches_litellm() {
         Some(vec![("POST".to_owned(), "/QueryVectors".to_owned())])
     );
     assert_eq!(endpoints.write, Some(Vec::new()));
-    assert_eq!(supported_params(), [VectorStoreOpenAiParam::MaxNumResults]);
+    assert_eq!(
+        SUPPORTED_OPENAI_PARAMS,
+        [VectorStoreOpenAiParam::MaxNumResults]
+    );
 }
 
 #[test]
@@ -77,8 +80,8 @@ fn validate_environment_compares_header_names_exactly() {
     Some("us-east-2"),
     "us-east-2"
 )]
-#[case::region_name_environment(r"{}", Some("ap-south-1"), None, "ap-south-1")]
-#[case::default(r"{}", None, None, "us-west-2")]
+#[case::region_name_environment("{}", Some("ap-south-1"), None, "ap-south-1")]
+#[case::default("{}", None, None, "us-west-2")]
 fn complete_url_uses_the_region_alone(
     #[case] litellm_params: &str,
     #[case] region_name: Option<&str>,

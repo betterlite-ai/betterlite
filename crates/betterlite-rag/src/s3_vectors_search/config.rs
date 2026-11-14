@@ -32,10 +32,8 @@ pub fn endpoints_by_type() -> VectorStoreIndexEndpoints {
     }
 }
 
-#[must_use]
-pub fn supported_params() -> Vec<VectorStoreOpenAiParam> {
-    vec![VectorStoreOpenAiParam::MaxNumResults]
-}
+pub const SUPPORTED_OPENAI_PARAMS: [VectorStoreOpenAiParam; 1] =
+    [VectorStoreOpenAiParam::MaxNumResults];
 
 // the query request reads max_num_results from the search params, so maxResults is stored and never sent
 #[must_use]

@@ -11,7 +11,7 @@ use tokio::runtime::Builder;
 
 use super::support::params;
 use crate::s3_vectors_search::config::{RegionEnvironment, complete_url};
-use crate::s3_vectors_search::request::{QueryInput, build_query_request};
+use crate::s3_vectors_search::request::{QueryInput, QueryRequest, build_query_request};
 use crate::s3_vectors_search::signing::{SignSearch, sign_search_request};
 
 fn header<'signed>(signed: &'signed AwsSignedRequest, name: &str) -> &'signed str {
@@ -23,19 +23,22 @@ fn header<'signed>(signed: &'signed AwsSignedRequest, name: &str) -> &'signed st
         .unwrap()
 }
 
-fn sign(region: Option<&str>, api_key: Option<&SecretString>) -> AwsSignedRequest {
+fn query_request() -> QueryRequest {
     let litellm_params = params("{}");
     let api_base = complete_url(&litellm_params, RegionEnvironment::default()).unwrap();
-    let query = build_query_request(&QueryInput {
+    build_query_request(&QueryInput {
         vector_store_id: "docs:index-1",
         query_text: "hello",
-        query_vector: &[0.5, 1.0],
+        query_vector: &[0.5_f64, 1.0_f64],
         max_num_results: None,
         api_base: &api_base,
         litellm_params: &litellm_params,
     })
-    .unwrap();
-    let optional_params: BTreeMap<String, Box<RawValue>> = region
+    .unwrap()
+}
+
+fn region_optional_params(region: Option<&str>) -> BTreeMap<String, Box<RawValue>> {
+    region
         .map(|name| {
             (
                 "aws_region_name".to_owned(),
@@ -43,7 +46,20 @@ fn sign(region: Option<&str>, api_key: Option<&SecretString>) -> AwsSignedReques
             )
         })
         .into_iter()
-        .collect();
+        .collect()
+}
+
+fn credentials() -> Credentials {
+    Credentials {
+        access_key_id: SecretString::from("AKIAFIXTUREACCESS0001"),
+        secret_access_key: SecretString::from("fixture-secret-access-key"),
+        session_token: None,
+    }
+}
+
+fn sign(region: Option<&str>, api_key: Option<&SecretString>) -> AwsSignedRequest {
+    let query = query_request();
+    let optional_params = region_optional_params(region);
     let headers = [(
         "Content-Type".to_owned(),
         Some("application/json".to_owned()),
@@ -64,13 +80,7 @@ fn sign(region: Option<&str>, api_key: Option<&SecretString>) -> AwsSignedReques
                 region_inputs: RegionInputs::default(),
                 now,
             },
-            |_settings, _region| {
-                ready(Ok::<Credentials, _>(Credentials {
-                    access_key_id: SecretString::from("AKIAFIXTUREACCESS0001"),
-                    secret_access_key: SecretString::from("fixture-secret-access-key"),
-                    session_token: None,
-                }))
-            },
+            |_settings, _region| ready(Ok::<Credentials, _>(credentials())),
         ))
         .unwrap()
 }

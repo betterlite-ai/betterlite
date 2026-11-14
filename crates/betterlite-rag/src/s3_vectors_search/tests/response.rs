@@ -15,7 +15,7 @@ fn one_score(distance: &str) -> Option<String> {
         r#"{{"vectors": [{{"distance": {distance}, "metadata": {{"source_text": "t"}}}}]}}"#
     );
     let response = decode(&body, None);
-    let results = response.data.unwrap();
+    let results = response.data?;
     results[0].score.as_ref().map(|score| score.0.to_string())
 }
 
@@ -125,7 +125,7 @@ fn the_score_is_one_minus_distance_clamped(#[case] distance: &str, #[case] expec
 fn a_float32_distance_next_to_one_keeps_its_tiny_score() {
     let score = one_score("0.99999994").unwrap();
     let value: f64 = score.parse().unwrap();
-    assert!((5e-8..7e-8).contains(&value), "{score}");
+    assert!((5e-8_f64..7e-8_f64).contains(&value), "{score}");
 }
 
 #[test]
