@@ -33,10 +33,7 @@ pub struct DailyOwnerRow {
 
 pub fn token_rows(rows: &[Row]) -> Result<Vec<TokenDigestRow>, KeyAttributionError> {
     rows.iter()
-        .map(|row| match token_values(row) {
-            Ok(values) => Ok(values),
-            Err(source) => Err(KeyAttributionError::TokenDigest { source }),
-        })
+        .map(|row| token_values(row).map_err(|source| KeyAttributionError::TokenDigest { source }))
         .collect()
 }
 
@@ -51,10 +48,7 @@ fn token_values(row: &Row) -> Result<TokenDigestRow, DriverError> {
 
 pub fn owner_rows(rows: &[Row]) -> Result<Vec<DailyOwnerRow>, KeyAttributionError> {
     rows.iter()
-        .map(|row| match owner_values(row) {
-            Ok(values) => Ok(values),
-            Err(source) => Err(KeyAttributionError::DailyOwner { source }),
-        })
+        .map(|row| owner_values(row).map_err(|source| KeyAttributionError::DailyOwner { source }))
         .collect()
 }
 
@@ -70,10 +64,7 @@ fn value<T>(row: &Row, column: &str) -> Result<T, DriverError>
 where
     T: for<'row> FromSql<'row>,
 {
-    match row.try_get(column) {
-        Ok(value) => Ok(value),
-        Err(driver) => Err(DriverError { driver }),
-    }
+    row.try_get(column).map_err(|driver| DriverError { driver })
 }
 
 #[must_use]
