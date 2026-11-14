@@ -155,22 +155,25 @@ fn tool_config(
             BodyError::Field("include_server_side_tool_invocations", "a boolean")
         })?,
     };
+    let mut config = match params.shift_remove("toolConfig") {
+        None | Some(Json::Null) => Object::new(),
+        Some(Json::Object(fields)) => fields,
+        Some(_) => return Err(BodyError::Field("toolConfig", "an object")),
+    };
     if !can_send {
         return Ok(None);
     }
     let choice = tool_choice.filter(|value| !matches!(value, Json::Null));
-    if !include {
-        return Ok(choice);
+    match choice {
+        Some(Json::Object(fields)) => config.extend(fields),
+        Some(value) if !include => return Ok(Some(value)),
+        Some(_) => return Err(BodyError::Field("tool_choice", "an object")),
+        None => {}
     }
-    let mut config = match choice {
-        Some(Json::Object(fields)) => fields,
-        None | Some(Json::Null) => Object::new(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(BodyError::Field("tool_choice", "an object"));
-        }
-    };
-    config.insert(INCLUDE_SERVER_SIDE.to_owned(), Json::Bool(true));
-    Ok(Some(Json::Object(config)))
+    if include {
+        config.insert(INCLUDE_SERVER_SIDE.to_owned(), Json::Bool(true));
+    }
+    Ok((!config.is_empty()).then_some(Json::Object(config)))
 }
 
 // LiteLLM's fallback for a model without native schema support: the schema becomes a user prompt

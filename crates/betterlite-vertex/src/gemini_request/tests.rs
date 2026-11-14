@@ -487,6 +487,10 @@ fn assert_no_io(harness: &Harness) {
     r#"{"extra_body":{"generationConfig":{"response_mime_type":"application/json","response_json_schema":{"type":"object","title":"json"},"response_schema":{"type":"object","title":"schema"}},"tools":[{"googleMaps":{}}]}}"#,
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"tools":[{"googleMaps":{}}],"generationConfig":{"response_schema":{"type":"object","title":"schema"},"responseFormat":{"text":{"mimeType":"APPLICATION_JSON","schema":{"type":"object","title":"json"}}}}}"#
 )]
+#[case::maps_retrieval_merges_into_tool_config(
+    r#"{"toolConfig":{"retrievalConfig":{"latLng":{"latitude":48.8,"longitude":2.3}},"functionCallingConfig":{"mode":"NONE"}},"tool_choice":{"functionCallingConfig":{"mode":"AUTO"}}}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"toolConfig":{"retrievalConfig":{"latLng":{"latitude":48.8,"longitude":2.3}},"functionCallingConfig":{"mode":"AUTO"}}}"#
+)]
 fn body_cases(#[case] optional_params: &str, #[case] expected: &str) {
     let (harness, result) = run_vertex(optional_params);
     assert_body(&result.expect("the body builds"), expected);
@@ -545,6 +549,11 @@ fn body_cases_without_native_schema(#[case] optional_params: &str, #[case] expec
     false,
     r#"{"cached_content":null}"#,
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"system_instruction":{"parts":[{"text":"rules"}]}}"#
+)]
+#[case::mapped_tool_config_dropped_with_cache(
+    true,
+    r#"{"cached_content":"cached-1","toolConfig":{"retrievalConfig":{"latLng":{"latitude":48.8,"longitude":2.3}}}}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"cachedContent":"cached-1"}"#
 )]
 fn body_cases_with_cache(
     #[case] modify_params: bool,
@@ -661,6 +670,7 @@ fn body_cases_with_system_messages(#[case] system_message: bool, #[case] expecte
     r#"{"tool_choice":"auto","include_server_side_tool_invocations":true}"#,
     "tool_choice"
 )]
+#[case::tool_config_must_be_an_object(r#"{"toolConfig":"auto"}"#, "toolConfig")]
 fn body_cases_errors(#[case] optional_params: &str, #[case] field: &str) {
     let (harness, result) = run_vertex(optional_params);
     let error = result.expect_err("the parameters are refused");
