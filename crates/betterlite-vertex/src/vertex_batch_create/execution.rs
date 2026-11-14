@@ -157,7 +157,7 @@ where
         })
         .await
         .map_err(VertexBatchCreateError::from_transport)?;
-    // the shared client follows no redirect here, and raise_for_status fails on every status outside 2xx
+    // a 3xx with no Location is returned unfollowed, and raise_for_status fails on every status outside 2xx
     if !(200..300).contains(&reply.status) {
         let message = body_text(&reply.body);
         tracing::error!(
