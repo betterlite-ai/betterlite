@@ -1,5 +1,5 @@
 task: B617
 deviations:
-  - what: A Pegasus reply body that is not valid UTF-8 fails with "Error parsing response: the body is not UTF-8" instead of repeating the body text.
-    why: A Rust byte slice cannot be printed as text without inventing replacement characters, and the status and headers on the BedrockError stay the same.
+  - what: 'A Pegasus reply body that is not valid UTF-8 fails with "Error parsing response: the body is not UTF-8" instead of repeating the body text.'
+    why: 'A Rust byte slice cannot be printed as text without inventing replacement characters, and the status and headers on the BedrockError stay the same.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L209-L214
