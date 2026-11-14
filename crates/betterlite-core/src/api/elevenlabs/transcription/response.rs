@@ -1,5 +1,4 @@
 use betterlite_openai::openai_base_config::Object;
-use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use serde_with::rust::double_option;
@@ -7,6 +6,7 @@ use serde_with::rust::double_option;
 use super::error::TranscriptionError;
 
 pub const MAX_REPLY_BYTES: usize = 0x0100_0000;
+const BYTE_ORDER_MARK: &[u8] = &[0xEF, 0xBB, 0xBF];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -41,32 +41,7 @@ struct ProviderReply {
     #[serde(default, with = "double_option")]
     language_code: Option<Option<String>>,
     #[serde(default, with = "double_option")]
-    words: Option<Option<Vec<ProviderWord>>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ProviderWord {
-    #[serde(rename = "type", default)]
-    kind: WordKind,
-    #[serde(default, with = "double_option")]
-    text: Option<Option<String>>,
-    #[serde(default, with = "double_option")]
-    start: Option<Option<Number>>,
-    #[serde(default, with = "double_option")]
-    end: Option<Option<Number>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum WordKind {
-    Text(String),
-    Other(IgnoredAny),
-}
-
-impl Default for WordKind {
-    fn default() -> Self {
-        Self::Other(IgnoredAny)
-    }
+    words: Option<Option<Vec<Object>>>,
 }
 
 pub fn decode_eleven_transcript(
@@ -86,9 +61,11 @@ pub fn decode_eleven_transcript(
         message: source.to_string(),
         raw: raw(),
     };
+    // httpx decodes reply bytes as utf-8-sig, so json.loads skips a leading byte order mark
+    let payload = body.strip_prefix(BYTE_ORDER_MARK).unwrap_or(body);
     // LiteLLM calls .json() once and then .get() on it, so the reply must be one JSON object and nothing else
-    let hidden: Object = serde_json::from_slice(body).map_err(&failed)?;
-    let reply: ProviderReply = serde_json::from_slice(body).map_err(&failed)?;
+    let hidden: Object = serde_json::from_slice(payload).map_err(&failed)?;
+    let reply: ProviderReply = serde_json::from_slice(payload).map_err(&failed)?;
     let words = match reply.words {
         None => None,
         Some(None) => {
@@ -97,17 +74,21 @@ pub fn decode_eleven_transcript(
                 raw: raw(),
             });
         }
-        Some(Some(words)) => Some(
-            words
-                .into_iter()
-                .filter(|word| matches!(&word.kind, WordKind::Text(kind) if kind == "word"))
-                .map(|word| TranscriptWord {
-                    word: word.text.unwrap_or_else(|| Some(String::new())),
-                    start: word.start.unwrap_or_else(|| Some(Number::from(0_u8))),
-                    end: word.end.unwrap_or_else(|| Some(Number::from(0_u8))),
-                })
-                .collect(),
-        ),
+        Some(Some(entries)) => {
+            let mut kept = Vec::new();
+            for entry in entries {
+                if entry.get("type").and_then(|value| value.as_str()) != Some("word") {
+                    continue;
+                }
+                let projected =
+                    project_word(&entry).map_err(|message| TranscriptionError::Reply {
+                        message: message.to_owned(),
+                        raw: raw(),
+                    })?;
+                kept.push(projected);
+            }
+            Some(kept)
+        }
     };
     Ok(ElevenTranscript {
         text: reply.text.unwrap_or_else(|| Some(String::new())),
@@ -118,4 +99,38 @@ pub fn decode_eleven_transcript(
         words,
         hidden,
     })
+}
+
+fn project_word(entry: &Object) -> Result<TranscriptWord, &'static str> {
+    let word = match entry.get("text") {
+        None => Some(String::new()),
+        Some(value) if value.is_null() => None,
+        Some(value) => Some(
+            value
+                .as_str()
+                .ok_or("the word text is not a string")?
+                .to_owned(),
+        ),
+    };
+    let start = match entry.get("start") {
+        None => Some(Number::from(0_u8)),
+        Some(value) if value.is_null() => None,
+        Some(value) => Some(
+            value
+                .as_number()
+                .cloned()
+                .ok_or("the word start is not a number")?,
+        ),
+    };
+    let end = match entry.get("end") {
+        None => Some(Number::from(0_u8)),
+        Some(value) if value.is_null() => None,
+        Some(value) => Some(
+            value
+                .as_number()
+                .cloned()
+                .ok_or("the word end is not a number")?,
+        ),
+    };
+    Ok(TranscriptWord { word, start, end })
 }

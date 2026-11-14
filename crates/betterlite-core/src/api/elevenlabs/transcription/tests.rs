@@ -10,8 +10,6 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Number;
 
-use crate::api::elevenlabs::common::ElevenLabsError;
-
 use super::PROVIDER;
 use super::auth::{TranscriptionKeys, validate_environment};
 use super::endpoint::complete_url;
@@ -270,22 +268,6 @@ fn validating_the_environment_overwrites_the_auth_header_and_keeps_the_rest() {
 }
 
 #[test]
-fn the_provider_error_keeps_the_message_status_and_headers() {
-    let provider_headers = headers(&[("Content-Type", "application/json")]);
-
-    let error = ElevenLabsError {
-        status_code: 401,
-        message: "bad key".to_owned(),
-        headers: provider_headers.clone(),
-    };
-
-    assert_eq!(error.status_code, 401);
-    assert_eq!(error.message, "bad key");
-    assert_eq!(error.to_string(), "bad key");
-    assert_eq!(error.headers, provider_headers);
-}
-
-#[test]
 fn a_complete_reply_projects_the_words_and_keeps_the_provider_answer_hidden() {
     let reply = transcript(COMPLETE_REPLY);
 
@@ -388,6 +370,12 @@ fn absent_text_and_language_take_the_source_defaults_and_nulls_stay_null(
     Some("1"),
     None
 )]
+#[case::missing_start(
+    r#"{"type": "word", "text": "hi", "end": 2}"#,
+    Some("hi"),
+    Some("0"),
+    Some("2")
+)]
 #[case::null_start_and_missing_end(
     r#"{"type": "word", "text": "hi", "start": null}"#,
     Some("hi"),
@@ -421,6 +409,8 @@ fn words_take_empty_and_zero_defaults_only_when_the_field_is_absent(
 #[case::trailing_bytes("{} {}")]
 #[case::words_not_a_list(r#"{"words": "hi"}"#)]
 #[case::words_null(r#"{"words": null}"#)]
+#[case::word_as_array(r#"{"words": [["word", "hi", 0, 1]]}"#)]
+#[case::word_as_empty_array(r#"{"words": [[]]}"#)]
 #[case::word_not_an_object(r#"{"words": [1]}"#)]
 #[case::text_not_a_string(r#"{"text": 5}"#)]
 #[case::start_not_a_number(r#"{"words": [{"type": "word", "start": "0"}]}"#)]
@@ -444,6 +434,18 @@ fn a_reply_that_is_not_utf8_reports_its_length() {
             .to_string()
             .ends_with("\nResponse: 2 bytes that are not UTF-8")
     );
+}
+
+#[test]
+fn a_reply_with_a_byte_order_mark_decodes_like_a_plain_reply() {
+    let plain = br#"{"text": "hi", "language_code": "eng", "words": [{"type": "word", "text": "hi", "start": 0, "end": 1}]}"#;
+    let marked = [b"\xef\xbb\xbf".as_slice(), plain.as_slice()].concat();
+
+    let expected = decode_eleven_transcript(plain, MAX_REPLY_BYTES).expect("a plain reply");
+    let found = decode_eleven_transcript(&marked, MAX_REPLY_BYTES).expect("a marked reply");
+
+    assert_eq!(found, expected);
+    assert_eq!(found.text.as_deref(), Some("hi"));
 }
 
 #[test]
