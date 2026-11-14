@@ -1,6 +1,21 @@
+use betterlite_models::decisions::Json;
+use betterlite_openai::chat::{MessageContent, Role};
 use rstest::rstest;
 
-use super::*;
+use super::{
+    STILL_ACTIVE, SYSTEM_SENTINEL, TAIL_SENTINEL, ask_texts, body, codex_markers, default_markers,
+    encrypted_item, kind_part, one_pair, parts, resolved_ask, resolver, text, text_part,
+};
+use crate::classifier_message_text::asks::{
+    conversation_is_continuing, current_ask_and_system_prompt, human_asks_newest_first,
+    is_reminder_only_turn, json_human_asks_newest_first, newest_turn_ask, newest_turn_is_human_ask,
+};
+use crate::classifier_message_text::encrypted::encrypted_classifier_task;
+use crate::classifier_message_text::error::ClassifierTextError;
+use crate::classifier_message_text::image::inline_image_part;
+use crate::classifier_message_text::markers::reminder_markers_for_request;
+use crate::classifier_message_text::plan::{PLAN_MODE_TOOL_NAME, matched_plan_mode_sentinel};
+use crate::classifier_message_text::text::{human_text, message_text, strip_reminder_blocks};
 
 #[derive(Debug, Clone, Copy)]
 enum Behavior {
@@ -525,24 +540,6 @@ fn assert_inline_image_input_image() {
     );
     let image = inline_image_part(&part).unwrap().unwrap();
     assert_eq!(image.url, "data:image/png;base64,DDDD");
-}
-
-fn encrypted_item() -> Json {
-    body(serde_json::json!({
-        "type": "agent_message",
-        "id": "item-1",
-        "content": [
-            {"type": "input_text", "text": "hello"},
-            {"type": "encrypted_content", "encrypted_content": "blob"},
-            {"type": "tool_result", "content": "dropped"}
-        ]
-    }))
-}
-
-fn resolved_ask() -> Vec<Json> {
-    vec![body(
-        serde_json::json!({"role": "user", "content": [{"type": "text", "text": "hello blob"}]}),
-    )]
 }
 
 fn assert_encrypted_task_kept_content() {

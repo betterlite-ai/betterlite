@@ -3,23 +3,11 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role};
 use indexmap::IndexMap;
-use rstest::rstest;
 
-use crate::classifier_message_text::asks::{
-    ExtractedAsk, conversation_is_continuing, current_ask_and_system_prompt,
-    human_asks_newest_first, is_reminder_only_turn, json_human_asks_newest_first,
-    last_human_ask_index, newest_turn_ask, newest_turn_is_human_ask,
-};
-use crate::classifier_message_text::encrypted::encrypted_classifier_task;
+use crate::classifier_message_text::asks::ExtractedAsk;
 use crate::classifier_message_text::error::ClassifierTextError;
-use crate::classifier_message_text::image::inline_image_part;
 use crate::classifier_message_text::markers::{
-    CODEX_REMINDER_MARKERS, DEFAULT_REMINDER_MARKERS, MarkerPair, is_codex_user_agent,
-    reminder_markers_for_request,
-};
-use crate::classifier_message_text::plan::{PLAN_MODE_TOOL_NAME, matched_plan_mode_sentinel};
-use crate::classifier_message_text::text::{
-    human_text, json_message_text, message_text, strip_reminder_blocks,
+    CODEX_REMINDER_MARKERS, DEFAULT_REMINDER_MARKERS, MarkerPair,
 };
 
 const SYSTEM_SENTINEL: &str = "You are currently running in \"Plan\" mode.";
@@ -60,11 +48,11 @@ fn body<T: serde::Serialize>(value: T) -> Json {
     serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
 }
 
-fn default_markers() -> &'static [MarkerPair<'static>] {
+const fn default_markers() -> &'static [MarkerPair<'static>] {
     DEFAULT_REMINDER_MARKERS
 }
 
-fn codex_markers() -> &'static [MarkerPair<'static>] {
+const fn codex_markers() -> &'static [MarkerPair<'static>] {
     CODEX_REMINDER_MARKERS
 }
 
@@ -72,7 +60,7 @@ fn one_pair<'marker>(open: &'marker str, close: &'marker str) -> Vec<MarkerPair<
     vec![MarkerPair { open, close }]
 }
 
-fn ask_texts(asks: &[crate::classifier_message_text::asks::ExtractedAsk]) -> Vec<&str> {
+fn ask_texts(asks: &[ExtractedAsk]) -> Vec<&str> {
     asks.iter().map(|ask| ask.text.as_str()).collect()
 }
 
@@ -81,6 +69,24 @@ fn resolver(
 ) -> impl FnMut(&Json) -> Result<Vec<Json>, ClassifierTextError> {
     let mut remaining = resolved.into_iter();
     move |_item| Ok(remaining.next().unwrap_or_default())
+}
+
+fn encrypted_item() -> Json {
+    body(serde_json::json!({
+        "type": "agent_message",
+        "id": "item-1",
+        "content": [
+            {"type": "input_text", "text": "hello"},
+            {"type": "encrypted_content", "encrypted_content": "blob"},
+            {"type": "tool_result", "content": "dropped"}
+        ]
+    }))
+}
+
+fn resolved_ask() -> Vec<Json> {
+    vec![body(
+        serde_json::json!({"role": "user", "content": [{"type": "text", "text": "hello blob"}]}),
+    )]
 }
 
 mod behaviors;

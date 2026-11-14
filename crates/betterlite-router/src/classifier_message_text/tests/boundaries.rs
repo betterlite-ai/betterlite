@@ -1,6 +1,22 @@
+use betterlite_models::decisions::Json;
+use betterlite_openai::chat::{MessageContent, Role};
 use rstest::rstest;
 
-use super::*;
+use super::{
+    TAIL_SENTINEL, body, chat, default_markers, encrypted_item, kind_part, one_pair, resolved_ask,
+    resolver, text, text_part,
+};
+use crate::classifier_message_text::asks::{
+    current_ask_and_system_prompt, human_asks_newest_first, last_human_ask_index, newest_turn_ask,
+    newest_turn_is_human_ask,
+};
+use crate::classifier_message_text::encrypted::encrypted_classifier_task;
+use crate::classifier_message_text::error::ClassifierTextError;
+use crate::classifier_message_text::markers::{MarkerPair, is_codex_user_agent};
+use crate::classifier_message_text::plan::{PLAN_MODE_TOOL_NAME, matched_plan_mode_sentinel};
+use crate::classifier_message_text::text::{
+    json_message_text, message_text, strip_reminder_blocks,
+};
 
 #[derive(Debug, Clone, Copy)]
 enum Boundary {
@@ -23,6 +39,8 @@ enum Boundary {
     PlanFunctionNameMismatchSkipsTopLevel,
     PlanSentinelAtNewestAskOnly,
     PlanEmptyPatternMatchesEmptyText,
+    PlanEmptyTextsSkipEmptyPattern,
+    PlanEmptyBodySystemMatchesEmptyPattern,
     PlanBodyMessagesNonListFallsBack,
     PlanNewestAskBeforeAssistant,
     PlanFunctionTypeWithoutObject,
@@ -58,6 +76,10 @@ enum Boundary {
 )]
 #[case::plan_sentinel_at_newest_ask_only(Boundary::PlanSentinelAtNewestAskOnly)]
 #[case::plan_empty_pattern_matches_empty_text(Boundary::PlanEmptyPatternMatchesEmptyText)]
+#[case::plan_empty_texts_skip_empty_pattern(Boundary::PlanEmptyTextsSkipEmptyPattern)]
+#[case::plan_empty_body_system_matches_empty_pattern(
+    Boundary::PlanEmptyBodySystemMatchesEmptyPattern
+)]
 #[case::plan_body_messages_non_list_falls_back(Boundary::PlanBodyMessagesNonListFallsBack)]
 #[case::plan_newest_ask_before_assistant(Boundary::PlanNewestAskBeforeAssistant)]
 #[case::plan_function_type_without_object(Boundary::PlanFunctionTypeWithoutObject)]
@@ -93,6 +115,10 @@ fn classifier_message_text_boundaries(#[case] boundary: Boundary) {
         Boundary::PlanSentinelAtNewestAskOnly => assert_plan_sentinel_at_newest_ask_only(),
         Boundary::PlanEmptyPatternMatchesEmptyText => {
             assert_plan_empty_pattern_matches_empty_text()
+        }
+        Boundary::PlanEmptyTextsSkipEmptyPattern => assert_plan_empty_texts_skip_empty_pattern(),
+        Boundary::PlanEmptyBodySystemMatchesEmptyPattern => {
+            assert_plan_empty_body_system_matches_empty_pattern()
         }
         Boundary::PlanBodyMessagesNonListFallsBack => {
             assert_plan_body_messages_non_list_falls_back();
@@ -166,7 +192,7 @@ fn assert_overlapping_marker_pairs() {
     ];
     assert_eq!(
         strip_reminder_blocks("x <a>1<b>2</b>3</a> y", &crossed),
-        "x 3</a> y"
+        "x y"
     );
 }
 
@@ -279,6 +305,22 @@ fn assert_plan_empty_pattern_matches_empty_text() {
     let patterns = vec![String::new()];
     let result =
         matched_plan_mode_sentinel(None, Some(&messages), &patterns, default_markers()).unwrap();
+    assert_eq!(result.as_deref(), Some(""));
+}
+
+fn assert_plan_empty_texts_skip_empty_pattern() {
+    let messages = [chat(Role::User, None), chat(Role::User, None)];
+    let patterns = vec![String::new()];
+    let result =
+        matched_plan_mode_sentinel(None, Some(&messages), &patterns, default_markers()).unwrap();
+    assert_eq!(result, None);
+}
+
+fn assert_plan_empty_body_system_matches_empty_pattern() {
+    let body = body(serde_json::json!({"system": ""}));
+    let patterns = vec![String::new()];
+    let result =
+        matched_plan_mode_sentinel(Some(&body), None, &patterns, default_markers()).unwrap();
     assert_eq!(result.as_deref(), Some(""));
 }
 
