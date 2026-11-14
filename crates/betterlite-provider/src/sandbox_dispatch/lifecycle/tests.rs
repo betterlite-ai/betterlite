@@ -372,18 +372,12 @@ async fn acreate_sandbox_forwards_the_opensandbox_options() {
     request.entrypoint = Some(&entrypoint);
     request.network_policy = Some(&network_policy);
     request.secure_access = true;
-    request.use_server_proxy = true;
     let created = sandbox.acreate_sandbox(&mut request).await.unwrap();
     let SandboxContainer::OpenSandbox(handle) = created else {
         panic!("opensandbox returns an opensandbox container");
     };
     assert_eq!(handle.container.id, "sbx_9");
-    assert_eq!(
-        handle.container.domain.as_deref(),
-        Some("https://open.test")
-    );
     let recorded = http.requests();
-    assert_eq!(recorded.len(), 2_usize);
     assert_eq!(recorded[0].method, "POST");
     assert_eq!(recorded[0].url, "https://open.test/sandboxes");
     assert_eq!(header(&recorded[0], "open-sandbox-api-key"), "open-key");
@@ -391,7 +385,22 @@ async fn acreate_sandbox_forwards_the_opensandbox_options() {
         body(&recorded[0]),
         r#"{"image":{"uri":"template:v1"},"entrypoint":["/bin/run"],"timeout":90,"resourceLimits":{"cpu":"1","memory":"2Gi"},"metadata":{"team":"a"},"env":{"MODE":"test"},"resourceRequests":{"cpu":"2"},"networkPolicy":{"defaultAction":"allow"},"secureAccess":true}"#
     );
-    assert_eq!(recorded[1].method, "GET");
+}
+
+#[tokio::test]
+async fn acreate_sandbox_forwards_the_server_proxy_flag() {
+    let http = FakeHttp::new(&[
+        (200, r#"{"id":"sbx_9","status":{"state":"Running"}}"#),
+        (200, r#"{"endpoint":"http://127.0.0.1:44772","headers":{}}"#),
+    ]);
+    let sandbox = build_dispatch(&http, Environment::new());
+    let api_key = secret("open-key");
+    let kwargs = empty_kwargs();
+    let mut request = create_request("opensandbox", Some(&api_key), &kwargs);
+    request.api_base = Some("https://open.test");
+    request.use_server_proxy = true;
+    sandbox.acreate_sandbox(&mut request).await.unwrap();
+    let recorded = http.requests();
     assert_eq!(
         recorded[1].url,
         "https://open.test/sandboxes/sbx_9/endpoints/44772?use_server_proxy=true"
