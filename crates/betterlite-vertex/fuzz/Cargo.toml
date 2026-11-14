@@ -78,6 +78,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "studio_agent_payload"
+path = "fuzz_targets/studio_agent_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "studio_file_metadata"
 path = "fuzz_targets/studio_file_metadata.rs"
 test = false
