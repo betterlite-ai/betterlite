@@ -16,6 +16,17 @@ class Transcription(Protocol):
     def get(self, key: str) -> JsonValue: ...
 
 
+class RaisedError(Protocol):
+    @property
+    def status_code(self) -> int: ...
+
+    @property
+    def message(self) -> str: ...
+
+    @property
+    def headers(self) -> dict[str, str] | httpx.Headers | None: ...
+
+
 class Params(TypedDict):
     step: Literal["params"]
     optional: dict[str, JsonValue]
@@ -46,7 +57,14 @@ class Reply(TypedDict):
     body: str
 
 
-Step: TypeAlias = Params | Request | Url | Auth | Reply
+class ErrorClass(TypedDict):
+    step: Literal["error_class"]
+    message: str
+    status_code: int
+    headers: dict[str, str]
+
+
+Step: TypeAlias = Params | Request | Url | Auth | Reply | ErrorClass
 
 
 class Input(TypedDict):
@@ -75,6 +93,19 @@ def reply_answer(step: Reply) -> JsonValue:
         "response": JSON.validate_json(result.model_dump_json(exclude_none=True)),
         "hidden": view.get("_hidden_params"),
     }
+
+
+def error_class_answer(step: ErrorClass) -> JsonValue:
+    error: RaisedError = CONFIG.get_error_class(
+        step["message"], step["status_code"], step["headers"]
+    )
+    return JSON.validate_python(
+        {
+            "status_code": error.status_code,
+            "message": error.message,
+            "headers": JSON.validate_python(error.headers),
+        }
+    )
 
 
 def outcome(step: Step) -> JsonValue:
@@ -109,6 +140,8 @@ def outcome(step: Step) -> JsonValue:
             return JSON.validate_python(headers)
         case "reply":
             return reply_answer(step)
+        case "error_class":
+            return error_class_answer(step)
 
 
 def guarded(step: Step) -> JsonValue:

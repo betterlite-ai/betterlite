@@ -49,6 +49,11 @@ enum Step {
     Reply {
         body: String,
     },
+    ErrorClass {
+        message: String,
+        status_code: u16,
+        headers: BTreeMap<String, String>,
+    },
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -76,11 +81,6 @@ impl AuthorizedAudioFiles for NoFiles {
     }
 }
 
-// LiteLLM raises a ValueError for each of these, so a raised step keeps only that class
-fn raised() -> Value {
-    json!({ "raised": "ValueError" })
-}
-
 fn step(step: &Step, config: &DeepgramTranscriptionConfig) -> Result<Value, Box<HelperError>> {
     match step {
         Step::Params {
@@ -104,7 +104,7 @@ fn step(step: &Step, config: &DeepgramTranscriptionConfig) -> Result<Value, Box<
                 }),
             };
             let Ok(request) = transform_audio_transcription_request(file, &NoFiles) else {
-                return Ok(raised());
+                return Ok(json!({ "raised": "ValueError" }));
             };
             let AudioTranscriptionData::Bytes(data) = request.data else {
                 return Err("the request data is not raw bytes").or_config_error();
@@ -128,9 +128,22 @@ fn step(step: &Step, config: &DeepgramTranscriptionConfig) -> Result<Value, Box<
             let key = api_key.as_deref().map(SecretString::from);
             Ok(json!(config.validate_environment(key.as_ref())))
         }
+        Step::ErrorClass {
+            message,
+            status_code,
+            headers,
+        } => {
+            let error =
+                DeepgramTranscriptionConfig::get_error_class(message, *status_code, headers);
+            Ok(json!({
+                "status_code": error.status_code,
+                "message": error.message,
+                "headers": error.headers,
+            }))
+        }
         Step::Reply { body } => {
             let Ok(transcript) = decode_deepgram_transcript(body.as_bytes()) else {
-                return Ok(raised());
+                return Ok(json!({ "raised": "ValueError" }));
             };
             let mut response = serde_json::to_value(&transcript).or_config_error()?;
             let hidden = response

@@ -1,3 +1,4 @@
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{
     AudioFile, AuthorizedAudioFiles, process_audio_file,
 };
@@ -11,6 +12,7 @@ use serde_json::Value;
 use url::form_urlencoded;
 
 use super::error::DeepgramTranscriptionError;
+use crate::api::deepgram::common::DeepgramException;
 
 pub const SUPPORTED_OPENAI_PARAMS: [&str; 1] = ["language"];
 
@@ -59,8 +61,8 @@ impl DeepgramTranscriptionConfig {
         optional_params: &IndexMap<String, Value>,
     ) -> String {
         let base = api_base.unwrap_or(&self.api_base).trim_end_matches('/');
-        let mut query = form_urlencoded::Serializer::new(String::new());
-        query.append_pair("model", model);
+        let mut pairs = form_urlencoded::Serializer::new(String::new());
+        pairs.append_pair("model", model);
         for (name, value) in optional_params {
             let reserved = RESERVED_PARAMS.contains(&name.as_str())
                 || SUPPORTED_OPENAI_PARAMS.contains(&name.as_str());
@@ -68,13 +70,13 @@ impl DeepgramTranscriptionConfig {
                 continue;
             }
             match value {
-                Value::String(text) => query.append_pair(name, text),
-                Value::Bool(flag) => query.append_pair(name, if *flag { "true" } else { "false" }),
-                other => query.append_pair(name, &other.to_string()),
+                Value::String(text) => pairs.append_pair(name, text),
+                Value::Bool(flag) => pairs.append_pair(name, if *flag { "true" } else { "false" }),
+                other => pairs.append_pair(name, &other.to_string()),
             };
         }
         // Python's quote_plus leaves ~ alone and encodes *, the reverse of form_urlencoded
-        let query = query.finish().replace('*', "%2A").replace("%7E", "~");
+        let query = pairs.finish().replace('*', "%2A").replace("%7E", "~");
         format!("{base}/listen?{query}")
     }
 
@@ -85,5 +87,22 @@ impl DeepgramTranscriptionConfig {
             .or(self.api_key.as_ref())
             .map_or("None", ExposeSecret::expose_secret);
         Headers::from([("Authorization".to_owned(), format!("Token {key}"))])
+    }
+
+    // LiteLLM hands Deepgram's own status, message and headers to the exception unchanged
+    #[must_use]
+    pub fn get_error_class(
+        message: &str,
+        status_code: u16,
+        headers: &Headers,
+    ) -> DeepgramException {
+        DeepgramException {
+            status_code,
+            message: message.to_owned(),
+            headers: headers
+                .iter()
+                .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
+                .collect(),
+        }
     }
 }

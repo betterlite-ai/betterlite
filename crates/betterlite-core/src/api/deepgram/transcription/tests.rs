@@ -1,14 +1,17 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{
     AudioFile, AudioFileError, AudioTuple, AuthorizedAudioFiles, TupleContent,
 };
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
+use betterlite_openai::openai_base_config::Headers;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -21,6 +24,7 @@ use super::request::{
 use super::response::{
     REPLY_MAX_BYTES, Word, decode_deepgram_transcript, reconstruct_diarized_transcript,
 };
+use crate::api::deepgram::common::DeepgramException;
 
 struct NoFiles;
 
@@ -246,6 +250,33 @@ fn validate_environment_builds_the_token_header(
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
         Some(expected)
+    );
+}
+
+#[test]
+fn get_error_class_keeps_the_status_message_and_headers() {
+    let headers = Headers::from([
+        ("content-type".to_owned(), "application/json".to_owned()),
+        ("x-request-id".to_owned(), "req-1".to_owned()),
+    ]);
+
+    let DeepgramException {
+        status_code,
+        message,
+        headers: raised,
+    } = DeepgramTranscriptionConfig::get_error_class("invalid audio", 401, &headers);
+
+    assert_eq!(status_code, 401);
+    assert_eq!(message, "invalid audio");
+    assert_eq!(
+        raised,
+        BTreeMap::from([
+            (
+                "content-type".to_owned(),
+                Json::Text("application/json".to_owned())
+            ),
+            ("x-request-id".to_owned(), Json::Text("req-1".to_owned())),
+        ])
     );
 }
 
@@ -561,19 +592,35 @@ fn corpus_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
+fn expected_corpus_text(name: &str) -> &'static str {
+    match name {
+        "ok-diarized-paragraphs.json" => "\nSpeaker 0: Hello there.\n",
+        "ok-diarized-words.json" => "Speaker 0: Hi,\nSpeaker 1: you\n\nSpeaker 0: ok\n",
+        "ok-null-speaker.json" => "\nSpeaker None: x\n",
+        "ok-plain.json" => "hello there",
+        "ok-speaker-on-second-word.json" => "x",
+        other => panic!("the seed {other} has no expected transcript"),
+    }
+}
+
 #[rstest]
 fn replays_the_deepgram_transcript_corpus(
     #[files("fuzz/corpus/deepgram_transcript/*")] path: PathBuf,
 ) {
+    let name = corpus_name(&path);
     let bytes = fs::read(&path).expect("a corpus file is readable");
     let outcome = decode_deepgram_transcript(&bytes);
 
-    if corpus_name(&path).starts_with("rejected-") {
+    if name.starts_with("rejected-") {
         assert!(matches!(
             outcome,
             Err(DeepgramTranscriptionError::Transform { .. })
         ));
-    } else {
-        assert!(outcome.is_ok(), "{}", corpus_name(&path));
+        return;
     }
+    let transcript = outcome.expect("an ok seed decodes");
+    assert_eq!(
+        transcript.text.as_deref(),
+        Some(expected_corpus_text(&name))
+    );
 }

@@ -12,5 +12,9 @@ call:
     - {step: auth, api_key: null}
     - step: reply
       body: '{"metadata": {"duration": 2}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "words": [{"word": "hi", "start": 0, "end": 1, "speaker": 0}]}]}]}}'
+    - step: error_class
+      message: invalid audio
+      status_code: 401
+      headers: {x-request-id: req-1}
 compare: {ignore: []}
 env: {}
