@@ -60,17 +60,17 @@ impl ScriptedSearches {
     }
 
     fn recorded(&self) -> Vec<String> {
-        self.queries.lock().map_or_else(
-            |poisoned| poisoned.into_inner().clone(),
-            |queries| queries.clone(),
-        )
+        match self.queries.lock() {
+            Ok(entries) => entries.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 
     fn rich_inputs(&self) -> Vec<Option<RichWebSearchInput>> {
-        self.rich.lock().map_or_else(
-            |poisoned| poisoned.into_inner().clone(),
-            |inputs| inputs.clone(),
-        )
+        match self.rich.lock() {
+            Ok(inputs) => inputs.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 }
 
