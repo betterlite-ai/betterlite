@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use betterlite_core::api::agents::collection::creation::{acreate, create};
 use betterlite_core::api::agents::collection::listing::{alist, list};
 use betterlite_core::api::agents::collection::{
-    AgentCollectionHandled, AgentCreation, AgentListing,
+    AgentAnswer, AgentCollectionHandled, AgentCreation, AgentListing,
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -15,6 +15,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 mod gemini;
 mod support;
 
+use gemini::AgentError;
 use support::Fixture;
 use support::server::Server;
 
@@ -63,7 +64,7 @@ impl Helper for Op {
         Ok(support::answer_value(
             &server,
             &wanted_headers(input),
-            result,
+            &result,
             &fixture.logging,
         ))
     }
@@ -93,13 +94,8 @@ fn answer(
                     .block_on(acreate(fixture.collection(), call))
                     .map_err(|error| support::raised(&error));
             }
-            match create(fixture.collection(), &call) {
-                Ok(AgentCollectionHandled::Done(value)) => Ok(value),
-                Ok(AgentCollectionHandled::Pending(_pending)) => Err(support::helper_failure(
-                    "the create was unexpectedly pending",
-                )),
-                Err(error) => Err(support::raised(&error)),
-            }
+            let handled = create(fixture.collection(), &call);
+            finished(handled, "the create was unexpectedly pending")
         }
         Function::List | Function::Alist => {
             let call = AgentListing {
@@ -113,14 +109,20 @@ fn answer(
                     .block_on(alist(fixture.collection(), call))
                     .map_err(|error| support::raised(&error));
             }
-            match list(fixture.collection(), &call) {
-                Ok(AgentCollectionHandled::Done(value)) => Ok(value),
-                Ok(AgentCollectionHandled::Pending(_pending)) => {
-                    Err(support::helper_failure("the list was unexpectedly pending"))
-                }
-                Err(error) => Err(support::raised(&error)),
-            }
+            let handled = list(fixture.collection(), &call);
+            finished(handled, "the list was unexpectedly pending")
         }
+    }
+}
+
+fn finished(
+    answered: AgentAnswer<'_, Value, AgentError>,
+    pending: &'static str,
+) -> Result<Value, Box<HelperError>> {
+    match answered {
+        Ok(AgentCollectionHandled::Done(value)) => Ok(value),
+        Ok(AgentCollectionHandled::Pending(_pending)) => Err(support::helper_failure(pending)),
+        Err(error) => Err(support::raised(&error)),
     }
 }
 

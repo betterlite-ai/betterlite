@@ -154,7 +154,7 @@ pub(crate) fn raised(error: &AgentCollectionFailure<AgentError>) -> Box<HelperEr
 pub(crate) fn answer_value(
     server: &Server,
     extra: &BTreeSet<String>,
-    result: Value,
+    result: &Value,
     logging: &LoggingState,
 ) -> Value {
     json!({

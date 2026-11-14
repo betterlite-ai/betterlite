@@ -141,12 +141,12 @@ fn request_record(sent: &str, extra: &BTreeSet<String>) -> Value {
             name == "content-type" || name == "x-goog-api-key" || extra.contains(name)
         })
         .collect();
-    let body = serde_json::from_str::<Value>(body).unwrap_or_default();
+    let payload = serde_json::from_str::<Value>(body).unwrap_or_default();
     json!({
         "method": method,
         "path": path,
         "query": query,
         "headers": headers,
-        "body": body,
+        "body": payload,
     })
 }

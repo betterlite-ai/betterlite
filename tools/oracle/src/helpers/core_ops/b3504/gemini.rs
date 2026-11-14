@@ -36,8 +36,8 @@ pub(crate) enum AgentError {
 impl AgentFailure for AgentError {
     fn status_code(&self) -> Option<u16> {
         match self {
-            Self::Studio(StudioAgentError::Gemini { status, .. }) => Some(*status),
-            Self::Refused { status, .. } => Some(*status),
+            Self::Studio(StudioAgentError::Gemini { status, .. })
+            | Self::Refused { status, .. } => Some(*status),
             Self::Studio(_) | Self::Params | Self::Shape | Self::Json(_) => None,
         }
     }
@@ -45,7 +45,7 @@ impl AgentFailure for AgentError {
         match self {
             Self::Studio(StudioAgentError::Gemini { body, .. }) => body.clone(),
             Self::Refused { message, .. } => message.clone(),
-            other => other.to_string(),
+            Self::Studio(_) | Self::Params | Self::Shape | Self::Json(_) => self.to_string(),
         }
     }
 }
@@ -153,10 +153,10 @@ fn request_of(
     settings: &Settings,
 ) -> Result<PreparedRequest, AgentError> {
     let params = agent_params(litellm_params)?;
-    let target = match name {
-        Some(agent) => item_target(agent, &params, settings),
-        None => collection_target(&params, settings),
-    };
+    let target = name.map_or_else(
+        || collection_target(&params, settings),
+        |agent| item_target(agent, &params, settings),
+    );
     Ok(PreparedRequest {
         url: target.url,
         params: target
