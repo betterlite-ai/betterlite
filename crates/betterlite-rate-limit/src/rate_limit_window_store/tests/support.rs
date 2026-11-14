@@ -8,7 +8,7 @@ use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::redis_counters::RedisCountersError;
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::Level;
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 
 use crate::limiter_records::{CacheCounterValue, ScriptReply};
@@ -289,7 +289,7 @@ impl LogCapture {
             .finish();
         Self {
             buffer,
-            _guard: tracing::subscriber::set_default(subscriber),
+            _guard: set_default(subscriber),
         }
     }
 
