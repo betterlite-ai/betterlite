@@ -17,3 +17,25 @@ deviations:
       Every provider body carries a size bound so one oversized answer cannot exhaust a worker, and no working
       setup sends an embedding answer anywhere near that size.
     link: ""
+kept_bugs:
+  - what: >-
+      The text embedding facade's async handoff ignores a client the caller supplied, so the call posts through
+      a client the handler builds; the multimodal handoff forwards the same client.
+    why: >-
+      A setup that passes an AsyncHTTPHandler to an async text embedding call works today with the handler's own
+      client, and the task keeps that behavior so the request behaves identically after switching.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/embedding_handler.py#L49-L66
+  - what: >-
+      A sync multimodal reply whose status is not 200 reaches the response transformation, which raises a bare
+      exception, so a 400 or 401 arrives as a 500; the async branch keeps the upstream status.
+    why: >-
+      A setup using multimodalembedding sees a 500 for every sync upstream failure today, so the error it
+      catches stays the same; the status mapping belongs to B1343's transformation, which this task delegates to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/transformation.py#L208-L209
+  - what: >-
+      A sync multimodal call that runs past its timeout surfaces as a 500, where the async branch and the text
+      handler raise the legacy Vertex 408.
+    why: >-
+      The sync branch posts without translating httpx timeouts, so a setup that catches the 500 a slow
+      multimodalembedding call produces keeps catching it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/embedding_handler.py#L126-L130
