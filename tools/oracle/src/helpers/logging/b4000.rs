@@ -14,7 +14,7 @@ use betterlite_logging::azure_storage_logging::token::{
 use betterlite_logging::azure_storage_logging::transport::{
     StorageRequest, StorageResponse, StorageTransport, StorageTransportError,
 };
-use betterlite_logging::callback_logger::CallbackLogger;
+use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::datadog_logging::clock::Clock;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError};
+use crate::helpers::{Helper, HelperResult, OrHelperError as _};
 
 const START_SECONDS: u64 = 1_700_000_000;
 const TOKEN_SUFFIX: &str = "/oauth2/v2.0/token";
@@ -124,14 +124,14 @@ async fn drive(scenario: &Scenario) -> Value {
     for action in &scenario.actions {
         results.push(perform(action, &logger, &clock, &base).await);
     }
-    report(&logger, &transport, endpoints, results)
+    report(&logger, &transport, &endpoints, &results)
 }
 
 fn report(
     logger: &AzureBlobStorageLogger,
     transport: &ScriptedTransport,
-    endpoints: Value,
-    results: Vec<Value>,
+    endpoints: &Value,
+    results: &[Value],
 ) -> Value {
     let queue: Vec<String> = logger
         .queue
@@ -153,13 +153,11 @@ fn report(
 }
 
 fn payload_for(base: &Value, id: &str) -> Result<StandardLoggingPayload, String> {
-    match base.clone() {
-        Value::Object(mut fields) => {
-            let _replaced = fields.insert("id".to_owned(), Value::String(id.to_owned()));
-            serde_json::from_value(Value::Object(fields)).map_err(|error| error.to_string())
-        }
-        _ => Err("the scenario has no payload".to_owned()),
-    }
+    let Some(mut fields) = base.as_object().cloned() else {
+        return Err("the scenario has no payload".to_owned());
+    };
+    let _replaced = fields.insert("id".to_owned(), Value::String(id.to_owned()));
+    serde_json::from_value(Value::Object(fields)).map_err(|error| error.to_string())
 }
 
 async fn perform(
@@ -259,7 +257,7 @@ fn masked_position(url: &str) -> String {
         return url.to_owned();
     };
     let boundary = rest
-        .find(|c: char| !c.is_ascii_digit())
+        .find(|ch: char| !ch.is_ascii_digit())
         .unwrap_or(rest.len());
     let (_position, after) = rest.split_at(boundary);
     format!("{head}?action=flush&position={{bytes}}{after}")
