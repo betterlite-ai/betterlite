@@ -1,0 +1,13 @@
+kind: helper
+name: studio-transcription-reply-seed
+call:
+  studio_transcription:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[{"content":[{"type":"text","text":"hi","annotations":[{"type":"word_info","text":"hi","start_offset":"1s","end_offset":"2s","speaker":""}]}]}]}'
+      - {step: reply, status: 503, headers: [], body: 'not json'}
+      - {step: reply, status: 200, headers: [], body: '{"status":"in_progress"}'}
+env: {}
+compare: {ignore: []}
