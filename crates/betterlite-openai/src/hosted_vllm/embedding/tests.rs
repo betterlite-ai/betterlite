@@ -246,10 +246,10 @@ fn supported_params_are_the_four_litellm_names() {
     EmbeddingInput::Texts(vec![String::from("a"), String::from("b")]),
     r#"["a", "b"]"#
 )]
-#[case(EmbeddingInput::Tokens(vec![1, 2]), r#"[1, 2]"#)]
+#[case(EmbeddingInput::Tokens(vec![1, 2]), "[1, 2]")]
 #[case(
     EmbeddingInput::TokenLists(vec![vec![1, 2], vec![3]]),
-    r#"[[1, 2], [3]]"#
+    "[[1, 2], [3]]"
 )]
 fn requests_always_send_an_input_array(#[case] input: EmbeddingInput, #[case] expected: &str) {
     let body = transform_embedding_request("my-model", &input, &Object::new());
@@ -720,7 +720,7 @@ fn a_null_error_message_with_a_null_code_is_ignored() {
 #[test]
 fn an_empty_error_message_with_a_null_code_is_ignored() {
     let mut body = full_reply();
-    body.as_object_mut().insert(
+    body.as_object_mut().expect("object").insert(
         String::from("error"),
         fixture(r#"{"message": "", "code": null}"#),
     );
