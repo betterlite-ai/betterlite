@@ -270,12 +270,17 @@ def custom_logger_behavior(module):
         {},
         {"_headroom_interception_converted_stream": True},
         {"_headroom_interception_converted_stream": 0},
+        {"_headroom_interception_converted_stream": None},
+        {"_headroom_interception_converted_stream": ""},
         {"_websearch_interception_converted_stream": "x"},
+        {"_compression_interception_converted_stream": 1},
+        {"_code_interpreter_interception_converted_stream": True},
         {"other": 1},
     ]
     return {
         "keys": [key_fn(key) for key in keys],
         "custom": [key_fn("x_y", frozenset({"x_"}))],
+        "empty": [key_fn("_websearch_interception", frozenset())],
         "streams": [stream_fn(param) for param in params],
     }
 
