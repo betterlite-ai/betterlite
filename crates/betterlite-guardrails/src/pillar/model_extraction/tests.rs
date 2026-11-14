@@ -148,6 +148,20 @@ fn a_failed_resolution_prefers_custom_llm_provider_over_the_provider_field() {
 }
 
 #[test]
+fn an_empty_custom_provider_falls_back_to_the_provider_field() {
+    let data = data(&[
+        ("model", text("unknown-model-xyz")),
+        ("custom_llm_provider", text("")),
+        ("provider", text("acme")),
+    ]);
+    let resolved = extract_model_and_provider(&data, &FailingResolver).expect("a model resolves");
+    assert_eq!(
+        resolved,
+        ("unknown-model-xyz".to_owned(), "acme".to_owned())
+    );
+}
+
+#[test]
 fn a_failed_resolution_without_a_declaration_reports_unknown() {
     let data = data(&[("model", text("unknown-model-xyz"))]);
     let resolved = extract_model_and_provider(&data, &FailingResolver).expect("a model resolves");

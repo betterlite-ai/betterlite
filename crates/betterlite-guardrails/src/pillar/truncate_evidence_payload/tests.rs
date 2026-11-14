@@ -137,6 +137,16 @@ fn an_entry_without_evidence_text_is_dropped() {
     assert!(result.was_truncated);
 }
 
+#[rstest]
+#[case::null(GuardrailValue::Null)]
+#[case::number(GuardrailValue::SignedInteger(9))]
+fn an_entry_whose_evidence_is_not_a_string_is_dropped(#[case] evidence: GuardrailValue) {
+    let entry = GuardrailValue::Object([("evidence".to_owned(), evidence)].into_iter().collect());
+    let result = truncate_evidence_payload(&listed(vec![entry]), 5);
+    assert_eq!(result.evidence, listed(Vec::new()));
+    assert!(result.was_truncated);
+}
+
 #[test]
 fn a_later_entry_that_does_not_fit_leaves_the_earlier_ones() {
     let evidence = listed(vec![entry("y", 1), entry(&"z".repeat(200), 2)]);
