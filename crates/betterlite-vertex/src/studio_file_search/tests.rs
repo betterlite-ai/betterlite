@@ -657,6 +657,23 @@ fn decode_search_keeps_a_truthy_context_with_empty_text() {
 }
 
 #[rstest]
+#[case::uri_only(
+    r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{"uri":"files/only"}}]}}]}"#,
+    r#"{"object":"vector_store.search_results.page","search_query":"","data":[{"score":null,"content":[{"text":"","type":"text"}],"file_id":"files/only","filename":null,"attributes":{"uri":"files/only","title":""}}]}"#
+)]
+#[case::title_only(
+    r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{"title":"only.txt"}}]}}]}"#,
+    r#"{"object":"vector_store.search_results.page","search_query":"","data":[{"score":null,"content":[{"text":"","type":"text"}],"file_id":null,"filename":"only.txt","attributes":{"uri":"","title":"only.txt"}}]}"#
+)]
+fn decode_search_keeps_a_context_with_only_one_identifier(
+    #[case] body: &str,
+    #[case] expected: &str,
+) {
+    let record = search_record(decode(Shape::Search, 200, body, "").unwrap());
+    assert_eq!(record, parsed(expected));
+}
+
+#[rstest]
 #[case::empty_object(
     r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{}}]}}]}"#
 )]
