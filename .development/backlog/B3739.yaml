@@ -1,14 +1,14 @@
 id: B3739
 milestone: M6 guardrails
 title: Purview DLP evaluation and text projection
-status: todo
+status: done
 depends_on: [B3738, B909, B732]
 file: tasks/B3739-purview-dlp-evaluation.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py"
 parent: B106
 split_from: B106
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1662

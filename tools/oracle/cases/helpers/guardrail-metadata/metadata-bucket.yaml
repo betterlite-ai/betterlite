@@ -1,0 +1,6 @@
+kind: helper
+name: metadata-bucket
+call:
+  b8994: {"function": "record_scan_id", "request_data": {"metadata": {"guardrail_scan_ids": ["scan-old"]}, "litellm_metadata": {}}, "scan_id": "scan-1", "guardrail_name": null, "provider": "openai_moderation", "stage": "pre_call"}
+env: {}
+compare: {ignore: []}
