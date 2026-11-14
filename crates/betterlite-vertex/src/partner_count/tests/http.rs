@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::str::from_utf8;
+use std::time::Duration;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
@@ -11,9 +12,7 @@ use rstest::rstest;
 use crate::credential_sources::getters::VertexParams;
 use crate::partner_count::call::{PartnerCountOverrides, PartnerCountRequest, count_tokens};
 use crate::partner_count::error::PartnerCountError;
-use crate::partner_count::execute::{
-    COUNT_TOKENS_TIMEOUT, PartnerCountCall, handle_count_tokens_request,
-};
+use crate::partner_count::execute::{PartnerCountCall, handle_count_tokens_request};
 use crate::partner_count::options::PartnerCountOptions;
 use crate::partner_count::plan::DEFAULT_COUNT_TOKENS_LOCATION;
 use crate::partner_count::response::{PartnerCount, TOKENIZER_USED};
@@ -96,7 +95,7 @@ async fn posts_the_count_with_the_stripped_model() {
         request.url,
         count_url("deployment-project", DEFAULT_COUNT_TOKENS_LOCATION)
     );
-    assert_eq!(request.deadline, COUNT_TOKENS_TIMEOUT);
+    assert_eq!(request.deadline, Duration::from_secs(30));
     let authorization = request.headers.get(AUTHORIZATION).unwrap();
     assert_eq!(authorization.to_str().unwrap(), "Bearer minted");
     assert!(authorization.is_sensitive());
@@ -132,6 +131,29 @@ async fn a_non_claude_model_also_defaults_to_us_east5() {
     assert_eq!(
         transport.sent()[0].url,
         "https://us-east5-aiplatform.googleapis.com/v1/projects/proj/locations/us-east5/publishers/mistralai/models/count-tokens:rawPredict"
+    );
+}
+
+#[tokio::test]
+async fn a_custom_api_base_from_the_request_reaches_the_endpoint() {
+    let transport = Script::answering(200, "{}");
+    let options = options(None);
+    let settings = settings(None);
+    let mut request = wrapper_request(
+        &options,
+        &settings,
+        params(Some("proj"), None, None),
+        overrides(None, None, None),
+    );
+    request.api_base = Some("https://proxy.example/v1");
+
+    count_tokens(&transport, &request, &FixedMint)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        transport.sent()[0].url,
+        "https://proxy.example/v1/v1/projects/proj/locations/us-east5/publishers/anthropic/models/count-tokens:rawPredict"
     );
 }
 
@@ -502,6 +524,29 @@ async fn the_count_tokens_location_beats_every_explicit_location() {
     assert_eq!(
         transport.sent()[0].url,
         count_url("proj", "asia-southeast1")
+    );
+}
+
+#[tokio::test]
+async fn the_minted_project_is_used_when_none_is_configured() {
+    let transport = Script::answering(200, "{}");
+    let options = options(None);
+    let settings = settings(None);
+    let mint = RecordingMint::default();
+    let request = wrapper_request(
+        &options,
+        &settings,
+        params(None, None, None),
+        overrides(None, None, None),
+    );
+
+    count_tokens(&transport, &request, &mint).await.unwrap();
+
+    assert_eq!(mint.projects(), vec![None]);
+    assert!(
+        transport.sent()[0]
+            .url
+            .contains("/v1/projects/minted-project/")
     );
 }
 

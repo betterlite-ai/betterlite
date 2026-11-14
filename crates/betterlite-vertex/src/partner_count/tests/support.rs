@@ -100,11 +100,16 @@ impl MintAccessToken for FixedMint {
 #[derive(Default)]
 pub(super) struct RecordingMint {
     seen: Mutex<Vec<Option<String>>>,
+    projects: Mutex<Vec<Option<String>>>,
 }
 
 impl RecordingMint {
     pub(super) fn seen(&self) -> Vec<Option<String>> {
         self.seen.lock().unwrap().clone()
+    }
+
+    pub(super) fn projects(&self) -> Vec<Option<String>> {
+        self.projects.lock().unwrap().clone()
     }
 }
 
@@ -119,6 +124,10 @@ impl MintAccessToken for RecordingMint {
                 .and_then(ConfiguredCredentials::as_text)
                 .map(str::to_owned),
         );
+        self.projects
+            .lock()
+            .unwrap()
+            .push(project.map(str::to_owned));
         Box::pin(ready(Ok(access(project))))
     }
 }
