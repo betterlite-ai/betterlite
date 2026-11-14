@@ -2290,6 +2290,7 @@ dependencies = [
  "lru",
  "mime_guess",
  "nix",
+ "num-traits",
  "percent-encoding",
  "rand 0.10.3",
  "rstest",
