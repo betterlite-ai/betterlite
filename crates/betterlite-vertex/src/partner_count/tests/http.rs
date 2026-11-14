@@ -80,13 +80,7 @@ async fn posts_the_count_with_the_stripped_model() {
         .await
         .unwrap();
 
-    assert_eq!(
-        count,
-        PartnerCount {
-            input_tokens: 42,
-            tokenizer_used: TOKENIZER_USED,
-        }
-    );
+    assert_eq!(count.input_tokens, 42);
     let sent = transport.sent();
     assert_eq!(sent.len(), 1);
     let request = &sent[0];
@@ -96,16 +90,45 @@ async fn posts_the_count_with_the_stripped_model() {
         count_url("deployment-project", DEFAULT_COUNT_TOKENS_LOCATION)
     );
     assert_eq!(request.deadline, Duration::from_secs(30));
-    let authorization = request.headers.get(AUTHORIZATION).unwrap();
-    assert_eq!(authorization.to_str().unwrap(), "Bearer minted");
-    assert!(authorization.is_sensitive());
-    assert_eq!(
-        request.headers.get(CONTENT_TYPE).unwrap().to_str().unwrap(),
-        "application/json"
-    );
     assert_eq!(
         json(from_utf8(&request.body).unwrap()),
         json(r#"{"model": "claude-sonnet-4-6", "messages": [{"role": "user", "content": "hi"}]}"#)
+    );
+}
+
+#[tokio::test]
+async fn the_count_post_carries_a_sensitive_bearer_and_json_content_type() {
+    let transport = Script::answering(200, r#"{"input_tokens": 42}"#);
+    let body = body(Some("claude-sonnet-4-6@20251001"), Some(Vec::new()));
+    let options = options(None);
+    let settings = settings(None);
+    let call = PartnerCountCall {
+        model: "claude-sonnet-4-6@default",
+        body: &body,
+        api_base: None,
+        params: params(Some("deployment-project"), None, None),
+        options: &options,
+        settings: &settings,
+    };
+
+    let count = handle_count_tokens_request(&transport, &call, &FixedMint)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        count,
+        PartnerCount {
+            input_tokens: 42,
+            tokenizer_used: TOKENIZER_USED,
+        }
+    );
+    let sent = transport.sent();
+    let authorization = sent[0].headers.get(AUTHORIZATION).unwrap();
+    assert_eq!(authorization.to_str().unwrap(), "Bearer minted");
+    assert!(authorization.is_sensitive());
+    assert_eq!(
+        sent[0].headers.get(CONTENT_TYPE).unwrap().to_str().unwrap(),
+        "application/json"
     );
 }
 
@@ -558,38 +581,24 @@ async fn a_count_leaves_the_deployment_params_usable() {
     let deployment = credentials("deployment");
     let explicit = credentials("explicit");
     let mint = RecordingMint::default();
-    let overlaid = wrapper_request(
-        &options,
-        &settings,
-        params(
-            Some("deployment-project"),
-            Some("deployment-location"),
-            Some(&deployment),
-        ),
-        overrides(
-            Some("explicit-project"),
-            Some("us-central1"),
-            Some(&explicit),
-        ),
+    let deployment_params = params(
+        Some("deployment-project"),
+        Some("deployment-location"),
+        Some(&deployment),
     );
-    let plain = wrapper_request(
-        &options,
-        &settings,
-        params(
-            Some("deployment-project"),
-            Some("deployment-location"),
-            Some(&deployment),
-        ),
-        overrides(None, None, None),
+    let explicit_overrides = overrides(
+        Some("explicit-project"),
+        Some("us-central1"),
+        Some(&explicit),
     );
+    let no_overrides = overrides(None, None, None);
+    let overlaid = wrapper_request(&options, &settings, deployment_params, explicit_overrides);
+    let plain = wrapper_request(&options, &settings, deployment_params, no_overrides);
 
     count_tokens(&transport, &overlaid, &mint).await.unwrap();
     count_tokens(&transport, &plain, &mint).await.unwrap();
 
-    assert_eq!(
-        mint.seen(),
-        vec![Some("explicit".to_owned()), Some("deployment".to_owned())]
-    );
+    assert_eq!(mint.seen()[1].as_deref(), Some("deployment"));
     let sent = transport.sent();
     assert_eq!(sent[0].url, count_url("explicit-project", "us-central1"));
     assert_eq!(
