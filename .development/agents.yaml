@@ -169,6 +169,7 @@ policy:
   max_review_rounds: 3
   max_blocked_reports: 2
   max_hook_blocks: 6
+  max_upload_backlog_mb: 4
   writable:
     - "{git_common_dir}"
     - "{home}/.cargo/registry"
