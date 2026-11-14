@@ -203,40 +203,25 @@ fn assert_counted() {
     assert_eq!(counters(&state), [2; 7]);
 }
 
+fn assert_credit_turn(state: &mut SessionState, user: &str, assistant: &str, expected: [i64; 7]) {
+    assert_eq!(
+        fields(apply_turn(
+            &detector(),
+            state,
+            &make_turn(Some(user), Some(assistant), Vec::new(), Some(200)),
+        )),
+        expected
+    );
+}
+
 fn assert_credit_once() {
-    let detector = detector();
     let mut state = state();
-    let first = apply_turn(
-        &detector,
-        &mut state,
-        &make_turn(Some("hello there"), Some("hi"), Vec::new(), Some(200)),
-    );
-    assert_eq!(fields(first), NONE);
-    let second = apply_turn(
-        &detector,
-        &mut state,
-        &make_turn(Some("thx"), Some("sure"), Vec::new(), Some(200)),
-    );
-    assert_eq!(fields(second), NONE);
-    let third = apply_turn(
-        &detector,
-        &mut state,
-        &make_turn(Some("nice"), Some("ok"), Vec::new(), Some(200)),
-    );
-    assert_eq!(fields(third), SATISFIED);
+    assert_credit_turn(&mut state, "hello there", "hi", NONE);
+    assert_credit_turn(&mut state, "thx", "sure", NONE);
+    assert_credit_turn(&mut state, "nice", "ok", SATISFIED);
     assert!(state.clean_credit_awarded);
-    let fourth = apply_turn(
-        &detector,
-        &mut state,
-        &make_turn(Some("perfect"), Some("good"), Vec::new(), Some(200)),
-    );
-    assert_eq!(fields(fourth), NONE);
-    let fifth = apply_turn(
-        &detector,
-        &mut state,
-        &make_turn(Some("thanks"), Some("welcome"), Vec::new(), Some(200)),
-    );
-    assert_eq!(fields(fifth), NONE);
+    assert_credit_turn(&mut state, "perfect", "good", NONE);
+    assert_credit_turn(&mut state, "thanks", "welcome", NONE);
     assert_eq!(counters(&state), [0, 0, 0, 1, 0, 0, 0]);
     assert_eq!(state.last_user_content.as_deref(), Some("thanks"));
     assert_eq!(state.last_assistant_content.as_deref(), Some("welcome"));
