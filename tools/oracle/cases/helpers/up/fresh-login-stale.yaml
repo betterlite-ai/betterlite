@@ -1,0 +1,12 @@
+kind: helper
+name: fresh-login-stale
+call:
+  b4577:
+    operation: fresh_login
+    stored:
+      base_url: http://gateway.test:4000
+      key: sk-old
+      timestamp: 1000.0
+    tty: false
+env: {}
+compare: {ignore: []}

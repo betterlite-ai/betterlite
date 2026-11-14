@@ -2839,11 +2839,15 @@ dependencies = [
  "betterlite-guardrails",
  "betterlite-models",
  "betterlite-redact",
+ "betterlite-secrets",
  "pyo3",
  "rstest",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
+ "temp-env",
+ "tempfile",
  "thiserror",
 ]
 
