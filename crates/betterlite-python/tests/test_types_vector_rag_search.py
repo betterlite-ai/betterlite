@@ -858,6 +858,16 @@ def test_names_tool_params() -> None:
         max_num_results=3,
         ranking_options={"score": 0.5},
     )
+    positional = betterlite_stores.VectorStoreToolParams(
+        {"k": [1, 2]},
+        3,
+        {"score": 0.5},
+    )
+    assert positional.to_dict() == {
+        "filters": {"k": [1, 2]},
+        "max_num_results": 3,
+        "ranking_options": {"score": 0.5},
+    }
     assert list(filled.to_dict()) == ["filters", "max_num_results", "ranking_options"]
     assert filled.to_dict() == {
         "filters": {"k": [1, 2]},
