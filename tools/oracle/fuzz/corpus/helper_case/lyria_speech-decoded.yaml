@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-lyria-decoded-seed
+call:
+  vertex_lyria_speech:
+    function: decoded
+    cases:
+      - {model: lyria-002, status: 200, body: '{"predictions": [{"audioContent": "ZkxhQwA="}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"outputs": [{"type": "audio", "data": "QUJD"}]}'}
+env: {}
+compare: {ignore: []}
