@@ -57,6 +57,15 @@ description: >-
   and rejects_bad_arguments in the admin package as well as the existing DB behavior tests.
 scope:
   paths:
+    - "tools/betterlite-db-admin/src/spend_partitions/tests.rs"
+    - "tools/betterlite-db-admin/src/command_shell.rs"
+    - "tools/betterlite-db-admin/**"
+    - "crates/betterlite-db"
+    - "tools/betterlite-db-admin/src/spend_partitions.rs"
+    - "tools/betterlite-db-admin/src/spend_backfills.rs"
+    - "tools/betterlite-db-admin/src/command_shell/tests.rs"
+    - "tools/betterlite-db-admin/src/command_shell/**"
+    - "tools/betterlite-db-admin"
     - crates/betterlite-db/src/database_repair.rs
     - crates/betterlite-db/src/database_repair/**
     - crates/betterlite-db/Cargo.toml

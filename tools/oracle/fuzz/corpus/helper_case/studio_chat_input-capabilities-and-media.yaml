@@ -1,0 +1,22 @@
+kind: helper
+name: studio-chat-input-capabilities-and-media
+call:
+  studio_chat_input:
+    reasoning_models: [gemini-2.5-pro]
+    steps:
+      - op: params
+        model: gemini-2.5-flash-preview-tts
+      - op: params
+        model: gemini-2.0-flash
+      - op: params
+        model: gemini-2.5-pro
+      - op: messages
+        model: gemini-2.5-flash
+        messages:
+          - role: user
+            content:
+              - {type: text, text: read}
+              - type: file
+                file: {file_id: "https://generativelanguage.googleapis.com/v1beta/files/abc123"}
+env: {}
+compare: {ignore: []}

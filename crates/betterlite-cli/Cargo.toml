@@ -47,13 +47,15 @@ soft-canonicalize = "0.5.6"
 strum = { version = "0.28.0", features = ["derive"] }
 subtle.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["time"] }
 toml_edit = "0.25.17"
+unicode-general-category = "1.1.0"
+unicode-width = "0.2.3"
 url = "2.5.8"
 which = "8.0.6"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1.1.5", features = ["process", "stdio"] }
+rustix = { version = "1.1.5", features = ["fs", "process", "stdio"] }
 signal-hook = { version = "0.4.6", default-features = false, features = ["iterator"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -1,0 +1,18 @@
+kind: helper
+name: audio-subtitles-subtitle-thresholds
+call:
+  audio_subtitles:
+    calls:
+      - {function: group, tokens: [{text: "a ", start_ms: 0, end_ms: 1000}, {text: "b", start_ms: 1699, end_ms: 2000}]}
+      - {function: group, tokens: [{text: "a ", start_ms: 0, end_ms: 1000}, {text: "b", start_ms: 1700, end_ms: 2000}]}
+      - {function: group, tokens: [{text: "a ", start_ms: 0, end_ms: 1000}, {text: "b", start_ms: 1000, end_ms: 7000}]}
+      - {function: group, tokens: [{text: "a ", start_ms: 0, end_ms: 1000}, {text: "b", start_ms: 1000, end_ms: 7001}]}
+      - {function: group, tokens: [{text: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ", start_ms: 0, end_ms: 100}, {text: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", start_ms: 100, end_ms: 200}]}
+      - {function: group, tokens: [{text: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ", start_ms: 0, end_ms: 100}, {text: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", start_ms: 100, end_ms: 200}]}
+      - {function: group, tokens: [{text: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", start_ms: 0, end_ms: 100}]}
+      - {function: srt, tokens: [{text: "a", start_ms: 0, end_ms: 100, speaker: "a"}, {text: "b", start_ms: 100, end_ms: 200, speaker: "b"}]}
+      - {function: srt, tokens: [{text: "a", start_ms: 0, end_ms: 100, speaker: "a"}, {text: "b", start_ms: 100, end_ms: 200}]}
+      - {function: srt, tokens: [{text: "a", start_ms: 0, end_ms: 100, speaker: "a"}, {text: "b", start_ms: 100, end_ms: 200}, {text: "c", start_ms: 200, end_ms: 300, speaker: "b"}]}
+      - {function: group, tokens: [{text: ". ", start_ms: 0, end_ms: 100}, {text: "! ", start_ms: 0, end_ms: 100}, {text: "? ", start_ms: 0, end_ms: 100}, {text: "。 ", start_ms: 0, end_ms: 100}, {text: "！ ", start_ms: 0, end_ms: 100}, {text: "？ ", start_ms: 0, end_ms: 100}, {text: "؟ ", start_ms: 0, end_ms: 100}, {text: "۔ ", start_ms: 0, end_ms: 100}, {text: "। ", start_ms: 0, end_ms: 100}, {text: "॥ ", start_ms: 0, end_ms: 100}, {text: "։ ", start_ms: 0, end_ms: 100}, {text: "። ", start_ms: 0, end_ms: 100}, {text: "b", start_ms: 100, end_ms: 200}]}
+env: {}
+compare: {ignore: []}
