@@ -450,67 +450,74 @@ PRINCIPAL: Final = "00000000-0000-0000-0000-00000000000c"
 SECRET: Final[dict[str, JsonValue]] = {"Authorization": "Bearer secret"}
 STAMP: Final = "2026-01-01T00:00:00Z"
 
-FACTS: Final[list[tuple[str, str, JsonValue]]] = [
-    ("defaults", "marketplace_plugins", []),
-    ("defaults", "callback_failures", []),
-    ("defaults", "ui_workers", []),
-    ("redacted", "repr", "RedactedDict(REDACTED)"),
-    ("redacted", "str", "RedactedDict(REDACTED)"),
-    ("redacted", "copy_repr", "RedactedDict(REDACTED)"),
-    ("redacted", "copy_type", "RedactedDict"),
-    ("redacted", "content", SECRET),
-    ("redacted", "copy_content", {**SECRET, "extra": 1}),
-    ("redacted", "original_after_copy_edit", SECRET),
-    ("redacted", "is_dict", True),
+FACTS: Final[list[tuple[str, dict[str, JsonValue]]]] = [
+    ("defaults", {"marketplace_plugins": [], "callback_failures": [], "ui_workers": []}),
+    (
+        "redacted",
+        {
+            "repr": "RedactedDict(REDACTED)",
+            "str": "RedactedDict(REDACTED)",
+            "copy_repr": "RedactedDict(REDACTED)",
+            "copy_type": "RedactedDict",
+            "content": SECRET,
+            "copy_content": {**SECRET, "extra": 1},
+            "original_after_copy_edit": SECRET,
+            "is_dict": True,
+        },
+    ),
     (
         "user_not_found",
-        "text",
-        "User doesn't exist in db. 'user_id'=user-1. Create user via `/user/new` call.",
-    ),
-    ("user_not_found", "is_value_error", True),
-    (
-        "entra",
-        "principal_braces",
-        {"ok": {"tenant_id": TENANT, "client_id": CLIENT, "service_principal_id": PRINCIPAL}},
+        {
+            "text": "User doesn't exist in db. 'user_id'=user-1. Create user via `/user/new` call.",
+            "is_value_error": True,
+        },
     ),
     (
         "entra",
-        "principal_none",
-        {"ok": {"tenant_id": TENANT, "client_id": CLIENT, "service_principal_id": None}},
+        {
+            "principal_braces": {
+                "ok": {"tenant_id": TENANT, "client_id": CLIENT, "service_principal_id": PRINCIPAL}
+            },
+            "principal_none": {
+                "ok": {"tenant_id": TENANT, "client_id": CLIENT, "service_principal_id": None}
+            },
+            "tenant_upper": {
+                "ok": {"tenant_id": TENANT, "client_id": CLIENT, "service_principal_id": None}
+            },
+            "client_upper": {
+                "ok": {"tenant_id": TENANT, "client_id": CLIENT, "service_principal_id": None}
+            },
+            "issuer": f"https://login.microsoftonline.com/{TENANT}/v2.0",
+        },
     ),
-    (
-        "entra",
-        "tenant_upper",
-        {"ok": {"tenant_id": TENANT, "client_id": CLIENT, "service_principal_id": None}},
-    ),
-    (
-        "entra",
-        "client_upper",
-        {"ok": {"tenant_id": TENANT, "client_id": CLIENT, "service_principal_id": None}},
-    ),
-    ("entra", "issuer", f"https://login.microsoftonline.com/{TENANT}/v2.0"),
-    ("budget", "key_entries", {"user_api_key_budget_reset_at": STAMP}),
-    ("budget", "key_by_field", {"budget_reset_at": STAMP}),
     (
         "budget",
-        "org_entries",
-        {"user_api_key_org_spend": 1.5, "user_api_key_org_max_budget": None},
+        {
+            "key_entries": {"user_api_key_budget_reset_at": STAMP},
+            "key_by_field": {"budget_reset_at": STAMP},
+            "org_entries": {"user_api_key_org_spend": 1.5, "user_api_key_org_max_budget": None},
+            "key_invalid": True,
+            "team_invalid": True,
+            "user_invalid": True,
+            "org_invalid": True,
+            "key_empty": True,
+            "org_empty": True,
+        },
     ),
-    ("budget", "key_invalid", True),
-    ("budget", "team_invalid", True),
-    ("budget", "user_invalid", True),
-    ("budget", "org_invalid", True),
-    ("budget", "key_empty", True),
-    ("budget", "org_empty", True),
-    ("gateway", "equal", True),
-    ("gateway", "not_equal", True),
-    ("gateway", "dict_lookup", 1),
-    ("gateway", "dict_miss", None),
-    ("gateway", "set_size", 2),
-    ("gateway", "key_has_dict", False),
-    ("gateway", "counts_unchanged", {"successful_requests": 1, "failed_requests": 2}),
-    ("gateway", "counts_success", {"successful_requests": 2, "failed_requests": 2}),
-    ("gateway", "counts_failure", {"successful_requests": 1, "failed_requests": 3}),
+    (
+        "gateway",
+        {
+            "equal": True,
+            "not_equal": True,
+            "dict_lookup": 1,
+            "dict_miss": None,
+            "set_size": 2,
+            "key_has_dict": False,
+            "counts_unchanged": {"successful_requests": 1, "failed_requests": 2},
+            "counts_success": {"successful_requests": 2, "failed_requests": 2},
+            "counts_failure": {"successful_requests": 1, "failed_requests": 3},
+        },
+    ),
 ]
 
 KINDS: Final[list[tuple[str, str, list[str]]]] = [
@@ -618,14 +625,14 @@ def test_names_behaviour_match(
     assert behaved["ours"][scenario] == theirs
 
 
-@pytest.mark.parametrize(("scenario", "case", "expected"), FACTS)
+@pytest.mark.parametrize(("scenario", "expected"), FACTS)
 def test_names_facts(
     scenario: str,
-    case: str,
-    expected: JsonValue,
+    expected: dict[str, JsonValue],
     behaved: dict[str, dict[str, dict[str, JsonValue]]],
 ) -> None:
-    assert behaved["ours"][scenario][case] == expected
+    ours = behaved["ours"][scenario]
+    assert {case: ours[case] for case in expected} == expected
 
 
 @pytest.mark.parametrize(("scenario", "kind", "cases"), KINDS)
