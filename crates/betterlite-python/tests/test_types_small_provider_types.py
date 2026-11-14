@@ -170,10 +170,9 @@ def schema_view(cls: type) -> dict[str, JsonValue]:
 
 
 def enum_view(cls: type) -> dict[str, JsonValue]:
-    schema: dict[str, JsonValue] = schema_of(cls)
-    members: list[str] = sorted(name for name in dir(cls) if not name.startswith("_"))
+    members: list[str] = [name for name in dir(cls) if not name.startswith("_")]
     view: dict[str, JsonValue] = {
-        "values": text_list(schema_literals(schema)),
+        "values": text_list(schema_literals(schema_of(cls))),
         "members": text_list(members),
     }
     return view
