@@ -84,6 +84,12 @@
           "format": "uint32",
           "minimum": 0
         },
+        "max_upload_backlog_mb": {
+          "description": "Megabytes the machine's TCP connections may hold unsent before a run waits for its seat. Every agent turn uploads its whole context, so runs that start on a full link wait minutes for each turn.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
         "max_worker_attempts": {
           "description": "Fresh worker starts across the whole ladder, runs on another vendor's rung included. Fix turns and runs that hit a usage limit don't count. cargo gate dispatch --grant adds starts on the last rung once these are used.",
           "type": "integer",
@@ -117,6 +123,7 @@
         "max_review_rounds",
         "max_blocked_reports",
         "max_hook_blocks",
+        "max_upload_backlog_mb",
         "writable"
       ]
     },

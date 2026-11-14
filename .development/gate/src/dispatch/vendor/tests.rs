@@ -1,12 +1,16 @@
 #![cfg(test)]
 
+use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::path::Path;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::thread;
 use std::time::{Duration, SystemTime};
 
 use crate::dispatch::seat::Seat;
 use crate::dispatch::vendor::{
     causes, find_vendor, first_in_line, join_line, limit_line, limited, mark, seat_free, take_seat,
+    upload_backlog,
 };
 use crate::spec::agents::{Agents, Vendor};
 use crate::yaml::read_yaml;
@@ -141,15 +145,15 @@ fn an_unreachable_or_logged_out_vendor_is_not_reported_as_a_usage_limit() {
 fn each_run_takes_its_own_seat_up_to_the_vendor_cap() {
     let agents = agents();
     let git = tempfile::tempdir().unwrap();
-    let first = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
-    let second = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    let first = take_seat(git.path(), git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    let second = take_seat(git.path(), git.path(), &agents, &codex(), Seat::Worker).unwrap();
     let seats = git.path().join("betterlite/seats");
     for number in 1_u32..=2_u32 {
         let held = File::open(seats.join(format!("openai-{number}"))).unwrap();
         assert!(held.try_lock().is_err(), "seat {number} is free");
     }
     drop(first);
-    let again = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    let again = take_seat(git.path(), git.path(), &agents, &codex(), Seat::Worker).unwrap();
     drop((second, again));
     assert_eq!(fs::read_dir(&seats).unwrap().count(), 2);
 }
@@ -161,12 +165,12 @@ fn a_worker_also_needs_a_writer_seat_and_a_reviewer_does_not() {
     let mut claude = codex();
     claude.id = "anthropic".to_owned();
     claude.max_writers = Some(1);
-    let worker = take_seat(git.path(), &agents, &claude, Seat::Worker).unwrap();
+    let worker = take_seat(git.path(), git.path(), &agents, &claude, Seat::Worker).unwrap();
     assert!(!seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
     assert!(seat_free(git.path(), &agents, &claude, Seat::Reviewer).unwrap());
     drop(worker);
-    let first = take_seat(git.path(), &agents, &claude, Seat::Reviewer).unwrap();
-    let second = take_seat(git.path(), &agents, &claude, Seat::Reviewer).unwrap();
+    let first = take_seat(git.path(), git.path(), &agents, &claude, Seat::Reviewer).unwrap();
+    let second = take_seat(git.path(), git.path(), &agents, &claude, Seat::Reviewer).unwrap();
     assert!(!seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
     drop((first, second));
     assert!(seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
@@ -184,7 +188,7 @@ fn an_expired_limit_allows_one_probe_instead_of_a_stampede() {
         .unwrap()
         .set_modified(SystemTime::now() - Duration::from_hours(1))
         .unwrap();
-    let probe = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    let probe = take_seat(git.path(), git.path(), &agents, &codex(), Seat::Worker).unwrap();
     assert!(probe.is_some());
     assert!(!seat_free(git.path(), &agents, &codex(), Seat::Worker).unwrap());
     drop(probe);
@@ -208,7 +212,7 @@ fn a_lapsed_network_error_sends_no_probe_ahead() {
         .unwrap()
         .set_modified(SystemTime::now() - Duration::from_mins(2))
         .unwrap();
-    let first = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    let first = take_seat(git.path(), git.path(), &agents, &codex(), Seat::Worker).unwrap();
     assert!(first.is_some());
     assert!(seat_free(git.path(), &agents, &codex(), Seat::Worker).unwrap());
 }
@@ -233,8 +237,55 @@ fn only_the_first_waiter_in_line_tries_for_a_seat() {
 fn a_seat_taken_leaves_no_ticket_behind() {
     let agents = agents();
     let git = tempfile::tempdir().unwrap();
-    let held = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    let held = take_seat(git.path(), git.path(), &agents, &codex(), Seat::Worker).unwrap();
     assert!(held.is_some());
     let line = git.path().join("betterlite/seat-queue/openai-worker");
     assert_eq!(fs::read_dir(&line).unwrap().count(), 0);
+}
+
+const TCP_HEAD: &str = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n";
+
+fn sockets(unsent: &[u32]) -> String {
+    let mut text = TCP_HEAD.to_owned();
+    for (number, bytes) in unsent.iter().enumerate() {
+        writeln!(
+            text,
+            "   {number}: 0200140A:D3A2 3F15AD03:01BB 01 {bytes:08X}:00000000 01:00000014 00000000  1000        0 7{number} 2 0000000000000000 20 4 30 10 -1"
+        )
+        .unwrap();
+    }
+    text
+}
+
+#[test]
+fn the_upload_backlog_adds_every_ipv4_and_ipv6_send_queue() {
+    let net = tempfile::tempdir().unwrap();
+    assert_eq!(upload_backlog(net.path()).unwrap(), 0);
+    fs::write(net.path().join("tcp"), sockets(&[0x10, 0x2000])).unwrap();
+    fs::write(net.path().join("tcp6"), sockets(&[0x0300_0000])).unwrap();
+    assert_eq!(upload_backlog(net.path()).unwrap(), 0x0300_2010);
+}
+
+#[test]
+fn a_run_waits_for_its_seat_while_the_upload_backlog_is_over_the_limit() {
+    let agents = agents();
+    let git = tempfile::tempdir().unwrap();
+    let net = tempfile::tempdir().unwrap();
+    let limit = u64::from(agents.policy.max_upload_backlog_mb) * 1_000_000;
+    let over = u32::try_from(limit + 1).unwrap();
+    fs::write(net.path().join("tcp"), sockets(&[over])).unwrap();
+    let (sender, receiver) = mpsc::channel();
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            let seat =
+                take_seat(git.path(), net.path(), &agents, &codex(), Seat::Reviewer).unwrap();
+            sender.send(seat.is_some()).unwrap();
+        });
+        assert_eq!(
+            receiver.recv_timeout(Duration::from_secs(2)),
+            Err(RecvTimeoutError::Timeout)
+        );
+        fs::write(net.path().join("tcp"), sockets(&[0])).unwrap();
+        assert!(receiver.recv_timeout(Duration::from_secs(15)).unwrap());
+    });
 }

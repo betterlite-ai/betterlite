@@ -82,6 +82,7 @@ pub(crate) fn invoke(
     let invocation = Invocation {
         worktree: places.worktree,
         git_common_dir: places.git_common_dir,
+        net: places.net,
         home: places.home,
         sandbox_settings: &sandbox_settings,
         writable_roots: &writable_roots,
@@ -106,7 +107,14 @@ fn run_on_seat(
     let account = vendor::find_vendor(agents, &runner.vendor)?;
     super::maintenance::check(invocation.git_common_dir, "")?;
     let marker = vendor::marker_time(invocation.git_common_dir, &account.id);
-    let Some(seats) = vendor::take_seat(invocation.git_common_dir, agents, account, seat)? else {
+    let Some(seats) = vendor::take_seat(
+        invocation.git_common_dir,
+        invocation.net,
+        agents,
+        account,
+        seat,
+    )?
+    else {
         return Ok(Run::Limited);
     };
     super::maintenance::check(invocation.git_common_dir, "")?;

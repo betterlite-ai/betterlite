@@ -203,6 +203,11 @@ pub(crate) struct Policy {
     )]
     pub(crate) max_hook_blocks: u32,
     #[schemars(
+        range(min = 1),
+        description = "Megabytes the machine's TCP connections may hold unsent before a run waits for its seat. Every agent turn uploads its whole context, so runs that start on a full link wait minutes for each turn."
+    )]
+    pub(crate) max_upload_backlog_mb: u32,
+    #[schemars(
         description = "Folders a worker may write besides its worktree, like the repository's .git folder and tool caches. {git_common_dir} and {home} expand."
     )]
     pub(crate) writable: Vec<String>,
