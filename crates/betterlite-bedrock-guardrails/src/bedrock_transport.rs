@@ -121,7 +121,7 @@ impl BedrockGuardrail {
             return Err(BedrockGuardrailError::BothApiPaths);
         }
         let mut guardrail = Self::build(init, checks);
-        guardrail.set_streaming_params(streaming);
+        guardrail.set_streaming_params(&streaming);
         warn_about_masking(&guardrail);
         log_initialized(&guardrail);
         Ok(guardrail)
@@ -155,7 +155,7 @@ impl BedrockGuardrail {
         }
     }
 
-    fn set_streaming_params(&mut self, streaming: BedrockGuardrailStreamParams) {
+    const fn set_streaming_params(&mut self, streaming: &BedrockGuardrailStreamParams) {
         self.buffer_until_moderated = streaming.buffer_until_moderated;
         self.streaming_sampling_rate = streaming.streaming_sampling_rate;
         self.streaming_end_of_stream_only = streaming.streaming_end_of_stream_only;
@@ -209,8 +209,8 @@ fn insert_streaming_value(
     key: &str,
     value: Option<GuardrailValue>,
 ) {
-    if let Some(value) = value {
-        extras.insert(key.to_owned(), value);
+    if let Some(present) = value {
+        extras.insert(key.to_owned(), present);
     }
 }
 

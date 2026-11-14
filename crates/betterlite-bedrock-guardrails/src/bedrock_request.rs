@@ -44,11 +44,14 @@ pub struct PrepareInput<'text> {
     pub now: SystemTime,
 }
 
-pub fn prepare_request<T: Serialize>(
+pub fn prepare_request<T>(
     guardrail: &BedrockGuardrail,
     input: PrepareInput<'_>,
     data: &T,
-) -> Result<AwsSignedRequest, PrepareError> {
+) -> Result<AwsSignedRequest, PrepareError>
+where
+    T: Serialize,
+{
     let url = request_url(guardrail, &input)?;
     let body = serde_json::to_vec(data).map_err(PrepareError::Encode)?;
     let headers = request_header_pairs(input.extra_headers);

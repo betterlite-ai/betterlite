@@ -43,12 +43,15 @@ pub trait CredentialSource: Send + Sync {
     ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
 }
 
-pub async fn load_credentials<C: CredentialSource>(
+pub async fn load_credentials<C>(
     guardrail: &BedrockGuardrail,
     bearer_token: Option<&SecretString>,
     environment: RegionEnvironment<'_>,
     source: &C,
-) -> Result<(Option<Credentials>, String), CredentialLoadError> {
+) -> Result<(Option<Credentials>, String), CredentialLoadError>
+where
+    C: CredentialSource,
+{
     let explicit = optional_string(&guardrail.optional_params, "aws_region_name")?;
     let region = non_llm_region_name(
         explicit.as_deref(),

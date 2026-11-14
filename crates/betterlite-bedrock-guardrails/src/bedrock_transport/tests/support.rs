@@ -288,7 +288,10 @@ impl Captured {
 
 struct CaptureLayer(Arc<Mutex<Vec<Entry>>>);
 
-impl<S: Subscriber> Layer<S> for CaptureLayer {
+impl<S> Layer<S> for CaptureLayer
+where
+    S: Subscriber,
+{
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
         let mut visitor = MessageVisitor(String::new());
         event.record(&mut visitor);

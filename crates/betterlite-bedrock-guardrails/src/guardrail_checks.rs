@@ -65,11 +65,14 @@ fn model_checks(
     Ok(checks)
 }
 
-fn insert_check<T: Serialize>(
+fn insert_check<T>(
     checks: &mut BTreeMap<String, GuardrailValue>,
     key: &str,
     value: &T,
-) -> Result<(), BedrockGuardrailError> {
+) -> Result<(), BedrockGuardrailError>
+where
+    T: Serialize,
+{
     let encoded = serde_json::to_value(value).map_err(BedrockGuardrailError::Encode)?;
     let decoded = serde_json::from_value(encoded).map_err(BedrockGuardrailError::Encode)?;
     checks.insert(key.to_owned(), decoded);

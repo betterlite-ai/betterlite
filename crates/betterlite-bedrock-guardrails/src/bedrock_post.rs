@@ -62,17 +62,21 @@ impl GuardrailTransport for ProxiedClient {
     }
 }
 
-pub trait TransportLog {
+pub trait TransportLog: Sync {
     fn guardrail_failed_to_respond(&self, detail: &str);
 }
 
-pub async fn sign_and_post<T: GuardrailTransport, L: TransportLog>(
+pub async fn sign_and_post<T, L>(
     guardrail: &BedrockGuardrail,
     prepared_request: &AwsSignedRequest,
     transport: &T,
     log: &L,
     log_transport_failure: bool,
-) -> Result<UpstreamResponse, PostError> {
+) -> Result<UpstreamResponse, PostError>
+where
+    T: GuardrailTransport,
+    L: TransportLog,
+{
     let request = outbound_request(
         prepared_request,
         guardrail.timeout.unwrap_or(DEFAULT_GUARDRAIL_TIMEOUT),

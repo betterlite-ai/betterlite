@@ -59,7 +59,7 @@ fn aws_parameters() -> OpaqueParams {
 }
 
 fn secret(value: Option<&SecretString>) -> Option<String> {
-    value.map(|secret| secret.expose_secret().clone())
+    value.map(|secret| secret.expose_secret().to_owned())
 }
 
 fn first_call(source: &RecordingCredentials) -> (AwsSettings, String) {
