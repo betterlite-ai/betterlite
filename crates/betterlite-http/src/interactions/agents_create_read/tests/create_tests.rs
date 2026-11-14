@@ -30,9 +30,7 @@ fn create_agent_posts_the_configured_request_and_returns_the_transform() {
     request.timeout = Some(Duration::from_secs(1));
     let mut clients = clients();
     let mut logging = Recorder::default();
-
     let output = create_agent(&config, &mut clients, &mut logging, None, &request).unwrap();
-
     assert_eq!(output, r#"agent-1|200|{"id":"agent-1"}"#);
     let sent = serving.request.join().unwrap();
     assert!(sent.starts_with("POST /v1beta/agents HTTP/1.1"), "{sent}");
@@ -166,9 +164,7 @@ fn create_agent_converts_a_failing_status_through_the_config() {
     let request = support::create_request("agent-1", &params);
     let mut clients = clients();
     let mut logging = Recorder::default();
-
     let error = create_agent(&config, &mut clients, &mut logging, None, &request).unwrap_err();
-
     assert!(
         matches!(
             &error,
