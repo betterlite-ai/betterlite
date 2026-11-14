@@ -1,0 +1,72 @@
+kind: helper
+name: retrieve-tool-not-duplicated
+call:
+  b3774: {
+      "inputs": {
+        "structured_messages": [
+          {
+            "role": "system",
+            "content": "sys"
+          },
+          {
+            "role": "user",
+            "content": "long text"
+          },
+          {
+            "role": "assistant",
+            "content": "answer"
+          },
+          {
+            "role": "user",
+            "content": "now"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "headroom_retrieve",
+              "description": "Retrieve original content that was compressed by Headroom. Call this when you encounter a compression marker containing a hash.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "hash": {
+                    "type": "string",
+                    "description": "The hex hash from the compression marker."
+                  },
+                  "query": {
+                    "type": "string",
+                    "description": "Optional search query for BM25-ranked retrieval."
+                  }
+                },
+                "required": [
+                  "hash"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "input_type": "request",
+      "answer": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "short"
+            }
+          ],
+          "ccr_hashes": [
+            "abcdef123456"
+          ]
+        }
+      }
+    }
+env: {}
+compare:
+  ignore:
+    - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/start_time", why: "The record time is the wall clock at the call"}
+    - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/end_time", why: "The record time is the wall clock at the call"}
+    - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/duration", why: "The duration is measured around the wall clock"}

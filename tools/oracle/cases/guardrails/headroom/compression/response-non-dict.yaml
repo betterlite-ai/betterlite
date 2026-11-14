@@ -1,0 +1,36 @@
+kind: helper
+name: response-non-dict
+call:
+  b3774: {
+      "inputs": {
+        "structured_messages": [
+          {
+            "role": "system",
+            "content": "sys"
+          },
+          {
+            "role": "user",
+            "content": "long text"
+          },
+          {
+            "role": "assistant",
+            "content": "answer"
+          },
+          {
+            "role": "user",
+            "content": "now"
+          }
+        ]
+      },
+      "input_type": "request",
+      "answer": {
+        "status": 200,
+        "headers": {},
+        "body": [
+          1,
+          2
+        ]
+      }
+    }
+env: {}
+compare: {ignore: []}
