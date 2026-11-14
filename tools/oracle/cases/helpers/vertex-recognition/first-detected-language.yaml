@@ -1,0 +1,19 @@
+kind: helper
+name: first-detected-language
+call:
+  vertex_recognition:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[{"alternatives":[{"transcript":"hi"}],"languageCode":null},{"alternatives":[{"transcript":"there"}],"languageCode":""},{"alternatives":[{"transcript":"now"}],"languageCode":"de"}]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[{"alternatives":[{"transcript":"hi"}]}]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[{"alternatives":[{"transcript":"hi"}]},{"alternatives":[{"transcript":"there"}],"languageCode":"fr"}]}'
+env: {}
+compare: {ignore: []}

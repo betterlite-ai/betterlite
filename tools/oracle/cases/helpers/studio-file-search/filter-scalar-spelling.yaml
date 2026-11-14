@@ -1,0 +1,22 @@
+kind: helper
+name: filter-scalar-spelling
+call:
+  studio_file_search:
+    calls:
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: k
+        filters: {genre: drama, year: 2024, score: 2.5, verified: true, missing: null, zero: 0}
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: k
+        filters: {}
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: k
+        filters: {title: 'say "hi"', whole: 1.0}
+env: {}
+compare: {ignore: []}
