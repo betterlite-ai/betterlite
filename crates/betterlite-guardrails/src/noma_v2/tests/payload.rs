@@ -293,6 +293,23 @@ async fn application_id_fallback_skips_an_empty_dynamic_value() {
 }
 
 #[tokio::test]
+async fn application_id_fallback_skips_a_non_object_metadata() {
+    let mock = mock_noma(StatusCode::OK, NONE_REPLY).await;
+    let mut config = settings(&mock.base);
+    config.application_id = None;
+    let sent_data = data(r#"{"litellm_metadata": 5, "metadata": 7}"#);
+    let outcome = scan(
+        &guardrail(config),
+        inputs(),
+        sent_data,
+        GuardrailInputType::Request,
+    )
+    .await;
+    assert!(outcome.result.is_ok());
+    assert_eq!(captured_body(&mock).get("application_id"), None);
+}
+
+#[tokio::test]
 async fn application_id_fallback_skips_a_non_text_dynamic_value() {
     let mock = mock_noma(StatusCode::OK, NONE_REPLY).await;
     let mut config = settings(&mock.base);

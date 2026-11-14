@@ -87,6 +87,18 @@ fn config_from_environment_rejects_an_invalid_boolean() {
 }
 
 #[test]
+fn config_from_environment_reads_every_boolean_spelling() {
+    let env = lookup(&[
+        ("NOMA_API_KEY", "env-key"),
+        ("NOMA_MONITOR_MODE", "yes"),
+        ("NOMA_BLOCK_FAILURES", "off"),
+    ]);
+    let settings = NomaV2Settings::resolve(&params(), &env).unwrap();
+    assert!(settings.monitor_mode);
+    assert!(!settings.block_failures);
+}
+
+#[test]
 fn config_constructor_overrides_environment() {
     let env = lookup(&[
         ("NOMA_API_KEY", "env-key"),
