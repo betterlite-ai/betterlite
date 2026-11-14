@@ -18,8 +18,8 @@ async fn loop_failure_none_after_round_two_returns_the_original_with_all_files()
     );
     let first = tool_use("first", "t1", "litellm_code_execution", "{}");
     let second = tool_use("second", "t2", "litellm_code_execution", "{}");
-    let (result, continuation) = run_loop(&hook, first, vec![Ok(Some(second)), Ok(None)]).await;
-    let result = result.unwrap();
+    let (outcome, continuation) = run_loop(&hook, first, vec![Ok(Some(second)), Ok(None)]).await;
+    let result = outcome.unwrap();
     assert_eq!(marker(&result), "first");
     assert_eq!(generated_names(&result), vec!["a.png", "b.png"]);
     assert_eq!(continuation.requests().len(), 2);
@@ -34,8 +34,8 @@ async fn loop_failure_a_continuation_error_returns_the_original_and_logs_it() {
     let (logs, _guard) = capture();
     let hook = hook(10, vec![outcome_with_file("one", "a.png", "aGk=")]);
     let first = tool_use("first", "t1", "litellm_code_execution", "{}");
-    let (result, _continuation) = run_loop(&hook, first, vec![Err(ScriptedFailure)]).await;
-    let result = result.unwrap();
+    let (outcome, _continuation) = run_loop(&hook, first, vec![Err(ScriptedFailure)]).await;
+    let result = outcome.unwrap();
     assert_eq!(marker(&result), "first");
     assert_eq!(generated_names(&result), vec!["a.png"]);
     assert!(logs.entries().contains(&(

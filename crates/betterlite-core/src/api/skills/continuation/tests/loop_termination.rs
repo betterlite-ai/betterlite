@@ -62,13 +62,13 @@ async fn loop_termination_files_accumulate_across_rounds_and_attach_once_at_the_
     );
     let first = tool_use("first", "t1", "litellm_code_execution", "{}");
     let second = tool_use("second", "t2", "litellm_code_execution", "{}");
-    let (result, continuation) = run_loop(
+    let (outcome, continuation) = run_loop(
         &hook,
         first,
         vec![Ok(Some(second)), Ok(Some(final_answer("last")))],
     )
     .await;
-    let result = result.unwrap();
+    let result = outcome.unwrap();
     assert_eq!(marker(&result), "last");
     assert_eq!(generated_names(&result), vec!["a.png", "b.png"]);
     assert_eq!(continuation.requests().len(), 2);
@@ -107,8 +107,8 @@ async fn loop_termination_the_iteration_limit_bounds_the_rounds_and_warns(
         })
         .collect();
     let first = tool_use("first", "t0", "litellm_code_execution", "{}");
-    let (result, continuation) = run_loop(&hook, first, replies).await;
-    let result = result.unwrap();
+    let (outcome, continuation) = run_loop(&hook, first, replies).await;
+    let result = outcome.unwrap();
     let expected_marker = if rounds == 0 {
         "first".to_owned()
     } else {
@@ -129,9 +129,9 @@ async fn loop_termination_a_final_reply_after_the_last_allowed_round_still_warns
     let (logs, _guard) = capture();
     let hook = hook(1, vec![outcome_with_file("ran", "a.png", "aGk=")]);
     let first = tool_use("first", "t1", "litellm_code_execution", "{}");
-    let (result, _continuation) =
+    let (outcome, _continuation) =
         run_loop(&hook, first, vec![Ok(Some(final_answer("last")))]).await;
-    let result = result.unwrap();
+    let result = outcome.unwrap();
     assert_eq!(marker(&result), "last");
     assert_eq!(generated_names(&result), vec!["a.png"]);
     assert!(logs.entries().contains(&(
