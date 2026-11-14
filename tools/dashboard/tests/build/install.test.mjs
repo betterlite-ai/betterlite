@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { listTree } from "../../bundle.mjs";
+import { listTree } from "../../bundle/inputs.mjs";
 import { installBundle } from "../../install.mjs";
 import { REPO_ROOT, put, scratch } from "./fixtures.mjs";
 

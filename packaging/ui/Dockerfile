@@ -28,6 +28,7 @@ SCRIPT
 FROM compiled AS bundled
 ARG MANIFEST_INPUTS
 COPY --from=tools bundle.mjs patches.mjs /opt/
+COPY --from=tools bundle /opt/bundle
 COPY LICENSE /opt/LiteLLM-LICENSE.txt
 RUN --network=none node /opt/bundle.mjs finalize \
     --exported /work/dashboard/out --app /work/dashboard --license /opt/LiteLLM-LICENSE.txt --bundle /bundle
@@ -37,6 +38,7 @@ COPY --from=bundled /bundle /bundle
 
 FROM application AS checks
 COPY --from=tools bundle.mjs patches.mjs /opt/
+COPY --from=tools bundle /opt/bundle
 COPY --from=checkplan plan.json /opt/plan.json
 COPY --from=checkplan tests/ tests/betterlite/
 RUN --network=none node /opt/bundle.mjs check --plan /opt/plan.json --app /work/dashboard

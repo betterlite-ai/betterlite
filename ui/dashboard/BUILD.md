@@ -26,6 +26,8 @@
 
 The build runs on `$BUILDPLATFORM`: the files do not depend on the target CPU, so one build serves every binary.
 
+`bundle.mjs` is only the command line entrypoint. Its jobs live in `tools/dashboard/bundle/`: `inputs.mjs` holds the cache key, the build id and the BuildKit cache flags, `checks.mjs` the check plan and its runner, `finalize.mjs` the layout check, the notices and the manifest. `patches.mjs` owns patch discovery, record validation and application for both the source intake and the bundle.
+
 ## Bundle contents
 
 `ui/` holds `index.html`, `login/index.html`, every static route of the application, `_next`, the RSC `.txt` payloads with their `__next` segment files, the `public` assets and the `.litellm_ui_ready` marker. The finalize step fails when a page, a payload or a public asset is missing, when the export holds a symlink, or when it holds `logo.png`, `logo_dark.png`, `logo_monogram.png`, `logo_monogram_dark.png` or `cached_logo.jpg`. File modes are normalised to 0644 and directories to 0755.
@@ -36,7 +38,7 @@ The build runs on `$BUILDPLATFORM`: the files do not depend on the target CPU, s
 
 ## Cache key
 
-The key is the SHA-256 of the pinned source archive, each patch and its record, the lock file and `.npmrc` hashes from `source.pin.json`, the builder image digest, `packaging/ui/Dockerfile`, `build.sh`, `bundle.mjs` and the API base. The build id Next.js stamps into the export comes from the archive hash, the patches and the API base, so it does not change when only a build script changes.
+The key is the SHA-256 of the pinned source archive, each patch and its record, the lock file and `.npmrc` hashes from `source.pin.json`, the builder image digest, `packaging/ui/Dockerfile`, `build.sh`, every build tool module (`bundle.mjs`, `patches.mjs` and each file under `bundle/`) and the API base, so editing any module the image runs builds a new bundle. The build id Next.js stamps into the export comes from the archive hash, the patches and the API base, so it does not change when only a build script changes.
 
 ## BuildKit cache in CI
 

@@ -33,6 +33,10 @@ export async function writeRepo(root, overrides = {}) {
     "tools/dashboard/source.pin.json": JSON.stringify(pin),
     "tools/dashboard/build.sh": "#!/usr/bin/env bash\n",
     "tools/dashboard/bundle.mjs": "// bundle\n",
+    "tools/dashboard/patches.mjs": "// patches\n",
+    "tools/dashboard/bundle/inputs.mjs": "// inputs\n",
+    "tools/dashboard/bundle/checks.mjs": "// checks\n",
+    "tools/dashboard/bundle/finalize.mjs": "// finalize\n",
     "packaging/ui/Dockerfile": `ARG UI_BUILD_IMAGE=${PINNED_IMAGE}\nFROM $UI_BUILD_IMAGE\n`,
     "ui/dashboard/patches/10-build.patch": "patch\n",
     "ui/dashboard/patches/10-build.json": JSON.stringify({

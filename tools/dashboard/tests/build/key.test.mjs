@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { bundleInputs, cacheFlags, checkApiBase } from "../../bundle.mjs";
+import { bundleInputs, cacheFlags, checkApiBase } from "../../bundle/inputs.mjs";
 import { PatchError } from "../../patches.mjs";
 import { PINNED_IMAGE, REPO_ROOT, put, scratch, writeRepo } from "./fixtures.mjs";
 
@@ -38,6 +38,9 @@ test("every input the build reads changes the key", async (t) => {
     "the builder image": { "packaging/ui/Dockerfile": `ARG UI_BUILD_IMAGE=node:24@sha256:${"e".repeat(64)}\n` },
     "build.sh": { "tools/dashboard/build.sh": "#!/bin/sh\n" },
     "bundle.mjs": { "tools/dashboard/bundle.mjs": "// changed\n" },
+    "patches.mjs": { "tools/dashboard/patches.mjs": "// changed patches\n" },
+    "a bundle module": { "tools/dashboard/bundle/checks.mjs": "// changed checks\n" },
+    "a new bundle module": { "tools/dashboard/bundle/extra.mjs": "// extra\n" },
     "the pinned archive": {
       "tools/dashboard/source.pin.json": JSON.stringify({
         commit: "c".repeat(40),

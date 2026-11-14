@@ -62,10 +62,12 @@ test("the bundling step has no network and the export holds only /bundle", async
   assert.equal(stage(text, "export"), "FROM scratch AS export\nCOPY --from=bundled /bundle /bundle\n\n");
 });
 
-test("the image copies the module bundle.mjs imports beside it", async () => {
+test("the image copies the modules bundle.mjs imports beside it", async () => {
   const text = await dockerfile();
   for (const name of ["bundled", "checks"]) {
-    assert.match(stage(text, name), /^COPY --from=tools bundle\.mjs patches\.mjs \/opt\/$/m, name);
+    const copy = stage(text, name);
+    assert.match(copy, /^COPY --from=tools bundle\.mjs patches\.mjs \/opt\/$/m, name);
+    assert.match(copy, /^COPY --from=tools bundle \/opt\/bundle$/m, name);
   }
 });
 
@@ -204,7 +206,16 @@ test("the build patch adds no trailing whitespace", async () => {
 });
 
 test("the build never commits or stages anything", async () => {
-  for (const file of ["packaging/ui/Dockerfile", "tools/dashboard/build.sh", "tools/dashboard/bundle.mjs", "tools/dashboard/install.mjs"]) {
+  for (const file of [
+    "packaging/ui/Dockerfile",
+    "tools/dashboard/build.sh",
+    "tools/dashboard/bundle.mjs",
+    "tools/dashboard/bundle/checks.mjs",
+    "tools/dashboard/bundle/finalize.mjs",
+    "tools/dashboard/bundle/inputs.mjs",
+    "tools/dashboard/install.mjs",
+    "tools/dashboard/patches.mjs",
+  ]) {
     const text = await fs.readFile(path.join(REPO_ROOT, file), "utf8");
     assert.equal(/git (add|commit|push)/.test(text), false, file);
   }

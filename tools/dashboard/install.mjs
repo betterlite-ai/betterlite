@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { listTree } from "./bundle.mjs";
+import { listTree } from "./bundle/inputs.mjs";
 import { PatchError } from "./patches.mjs";
 
 async function exists(file) {

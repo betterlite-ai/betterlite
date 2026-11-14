@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { finalize, listTree, treeDigest } from "../../bundle.mjs";
+import { finalize } from "../../bundle/finalize.mjs";
+import { listTree, treeDigest } from "../../bundle/inputs.mjs";
 import { EXPORT_FILES, put, scratch, writeApp, writeExport } from "./fixtures.mjs";
 
 const INPUTS = { key: "f".repeat(64), buildId: "b".repeat(20), apiBase: "", builder: "node@sha256:x", patches: ["10-build.patch"] };

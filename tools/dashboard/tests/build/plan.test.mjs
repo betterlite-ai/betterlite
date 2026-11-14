@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { runChecks, writePlan } from "../../bundle.mjs";
+import { runChecks, writePlan } from "../../bundle/checks.mjs";
 import { put, scratch, writeRepo } from "./fixtures.mjs";
 
 async function setup(t, { extras } = {}) {
