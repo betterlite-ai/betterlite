@@ -473,6 +473,13 @@ def test_names_scim_deviations() -> None:
     assert "properties" not in their_schema
 
 
+def test_names_scim_json_fields() -> None:
+    non_json: dict[str, object] = {"schemas": ["s"], "meta": {"tags": {"x"}}}
+    with pytest.raises(ValidationError):
+        scim.SCIMResource.model_validate(non_json)
+    litellm_scim.SCIMResource.model_validate(non_json)
+
+
 def test_names_scim_user_dump() -> None:
     payload: dict[str, JsonValue] = {
         "schemas": ["s"],
