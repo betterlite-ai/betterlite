@@ -41,15 +41,12 @@ pub fn human_asks_newest_first(
 
 #[must_use]
 pub fn conversation_is_continuing(messages: Option<&[ChatMessage]>) -> bool {
-    match messages {
-        None => true,
-        Some(messages) => {
-            messages.is_empty()
-                || messages
-                    .iter()
-                    .any(|message| message.role == Role::Assistant)
-        }
-    }
+    messages.is_none_or(|messages| {
+        messages.is_empty()
+            || messages
+                .iter()
+                .any(|message| message.role == Role::Assistant)
+    })
 }
 
 pub fn newest_turn_ask(

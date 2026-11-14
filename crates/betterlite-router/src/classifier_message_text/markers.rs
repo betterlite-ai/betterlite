@@ -45,7 +45,7 @@ pub fn is_codex_user_agent(user_agent: &str) -> bool {
 }
 
 #[must_use]
-pub fn reminder_markers_for_request<'request>(
+pub const fn reminder_markers_for_request<'request>(
     configured: Option<&'request [MarkerPair<'request>]>,
     codex_user_agent: bool,
 ) -> &'request [MarkerPair<'request>] {

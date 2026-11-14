@@ -47,10 +47,10 @@ fn url_part(part: &ContentPart) -> Result<Option<String>, ClassifierTextError> {
     if url.is_null() {
         return Ok(None);
     }
-    match url.as_str() {
-        Some(url) => Ok((!url.is_empty()).then(|| url.to_owned())),
-        None => Err(ClassifierTextError::ImageUrlNotString),
-    }
+    url.as_str()
+        .map_or(Err(ClassifierTextError::ImageUrlNotString), |url| {
+            Ok((!url.is_empty()).then(|| url.to_owned()))
+        })
 }
 
 fn anthropic_image_url(part: &ContentPart) -> Option<String> {

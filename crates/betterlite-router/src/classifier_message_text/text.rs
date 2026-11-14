@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::{ContentPart, MessageContent};
+use betterlite_openai::chat::MessageContent;
 
 use crate::classifier_message_text::error::ClassifierTextError;
 use crate::classifier_message_text::markers::MarkerPair;
@@ -120,7 +120,7 @@ fn find_chars(haystack: &[char], needle: &[char], from: usize) -> Option<usize> 
             .iter()
             .skip(*index)
             .take(needle.len())
-            .eq(needle.iter().copied())
+            .eq(needle.iter())
     })
 }
 

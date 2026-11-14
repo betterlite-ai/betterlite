@@ -52,24 +52,8 @@ pub fn matched_plan_mode_sentinel(
     if has_tool_with_name(tools, PLAN_MODE_TOOL_NAME) {
         return Ok(Some(PLAN_MODE_TOOL_NAME.to_owned()));
     }
-    let body_messages = body.and_then(|value| object_field(value, "messages"));
-    let messages: Vec<PlanMessage<'_>> = match body_messages {
-        Some(Json::List(items)) => items
-            .iter()
-            .filter(|item| matches!(item, Json::Object(_)))
-            .map(PlanMessage::Raw)
-            .collect(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
-        | None => resolved_messages
-            .map(|messages| messages.iter().map(PlanMessage::Typed).collect())
-            .unwrap_or_default(),
-    };
-    let patterns: Vec<&str> = PLAN_MODE_SYSTEM_SENTINELS
-        .iter()
-        .chain(PLAN_MODE_TAIL_SENTINELS)
-        .copied()
-        .chain(extra_patterns.iter().map(String::as_str))
-        .collect();
+    let messages = plan_scan_messages(body, resolved_messages);
+    let patterns = plan_scan_patterns(extra_patterns);
     let system = body.and_then(|value| object_field(value, "system"));
     for text in system_scope_texts(system, &messages)? {
         if let Some(pattern) = contained(&patterns, &text) {
@@ -79,11 +63,41 @@ pub fn matched_plan_mode_sentinel(
     let tail_start = plan_last_human_ask_index(&messages, markers)?.unwrap_or(0);
     for message in messages.iter().skip(tail_start) {
         let text = message.text()?;
+        if text.is_empty() {
+            continue;
+        }
         if let Some(pattern) = contained(&patterns, &text) {
             return Ok(Some(pattern.to_owned()));
         }
     }
     Ok(None)
+}
+
+fn plan_scan_messages<'message>(
+    body: Option<&'message Json>,
+    resolved_messages: Option<&'message [ChatMessage]>,
+) -> Vec<PlanMessage<'message>> {
+    let body_messages = body.and_then(|value| object_field(value, "messages"));
+    match body_messages {
+        Some(Json::List(items)) => items
+            .iter()
+            .filter(|item| matches!(item, Json::Object(_)))
+            .map(PlanMessage::Raw)
+            .collect(),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
+        | None => resolved_messages
+            .map(|messages| messages.iter().map(PlanMessage::Typed).collect())
+            .unwrap_or_default(),
+    }
+}
+
+fn plan_scan_patterns(extra_patterns: &[String]) -> Vec<&str> {
+    PLAN_MODE_SYSTEM_SENTINELS
+        .iter()
+        .chain(PLAN_MODE_TAIL_SENTINELS)
+        .copied()
+        .chain(extra_patterns.iter().map(String::as_str))
+        .collect()
 }
 
 // the body's leading system text is rebuilt every request, so a sentinel there is current by construction

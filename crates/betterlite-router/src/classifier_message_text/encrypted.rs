@@ -21,25 +21,10 @@ where
     let Some(Json::List(items)) = input else {
         return Ok(None);
     };
-    if has_messages {
+    if has_messages || items.iter().any(|item| !matches!(item, Json::Object(_))) {
         return Ok(None);
     }
-    if items.iter().any(|item| !matches!(item, Json::Object(_))) {
-        return Ok(None);
-    }
-    let mut current = None;
-    for item in items.iter().rev() {
-        let resolved = resolve_item(item)?;
-        if !resolved.is_empty()
-            && !json_human_asks_newest_first(&resolved, markers)
-                .map_err(E::from)?
-                .is_empty()
-        {
-            current = Some(item);
-            break;
-        }
-    }
-    let Some(current) = current else {
+    let Some(current) = newest_resolved_item(items, &mut resolve_item, markers)? else {
         return Ok(None);
     };
     let Json::Object(fields) = current else {
@@ -51,13 +36,39 @@ where
     let Some(Json::List(parts)) = fields.get("content") else {
         return Ok(None);
     };
-    if parts.iter().any(|part| !matches!(part, Json::Object(_))) {
+    if parts.iter().any(|part| !matches!(part, Json::Object(_))) || !encrypts_content(parts)? {
         return Ok(None);
     }
-    if !encrypts_content(parts)? {
-        return Ok(None);
+    let mut output = fields.clone();
+    output.insert("content".to_owned(), Json::List(kept_content_parts(parts)));
+    Ok(Some(Json::Object(output)))
+}
+
+// the newest input item whose resolved messages carry a human ask is the task the classifier can act on
+fn newest_resolved_item<'item, E, F>(
+    items: &'item [Json],
+    resolve_item: &mut F,
+    markers: &[MarkerPair<'_>],
+) -> Result<Option<&'item Json>, E>
+where
+    E: From<ClassifierTextError>,
+    F: FnMut(&Json) -> Result<Vec<Json>, E>,
+{
+    for item in items.iter().rev() {
+        let resolved = resolve_item(item)?;
+        if !resolved.is_empty()
+            && !json_human_asks_newest_first(&resolved, markers)
+                .map_err(E::from)?
+                .is_empty()
+        {
+            return Ok(Some(item));
+        }
     }
-    let kept: Vec<Json> = parts
+    Ok(None)
+}
+
+fn kept_content_parts(parts: &[Json]) -> Vec<Json> {
+    parts
         .iter()
         .filter(|part| match part {
             Json::Object(part_fields) => matches!(
@@ -67,10 +78,7 @@ where
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => false,
         })
         .cloned()
-        .collect();
-    let mut output = fields.clone();
-    output.insert("content".to_owned(), Json::List(kept));
-    Ok(Some(Json::Object(output)))
+        .collect()
 }
 
 fn encrypts_content(parts: &[Json]) -> Result<bool, ClassifierTextError> {
