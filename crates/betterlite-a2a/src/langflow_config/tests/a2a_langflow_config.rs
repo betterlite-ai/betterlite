@@ -227,6 +227,23 @@ async fn agent_headers_are_not_forwarded() {
 }
 
 #[tokio::test]
+async fn streaming_agent_headers_are_not_forwarded() {
+    let params = langflow_params(None);
+    let message = send_params();
+    let mut call = bridge_call("req-1", &message, &params);
+    let dynamic = BTreeMap::from([("X-Trace".to_owned(), "dynamic".to_owned())]);
+    call.agent_extra_headers = Some(&dynamic);
+    let completion = recorder();
+    let events = collect_events(handle_streaming(&call, &completion, Source::default())).await;
+    assert_eq!(
+        summaries(&events).join("|"),
+        "task:submitted|status:working:false|status:completed:true"
+    );
+    let calls = recorded_calls(&completion);
+    assert!(!calls[0].extra.contains_key("extra_headers"));
+}
+
+#[tokio::test]
 async fn streaming_completion_errors_stay_inside_the_stream() {
     let params = langflow_params(Some(parsed(r#""secret""#)));
     let message = send_params_with_context("conv-1");
