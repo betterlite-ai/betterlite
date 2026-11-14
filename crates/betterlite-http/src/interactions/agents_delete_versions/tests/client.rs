@@ -166,6 +166,7 @@ fn client_uses_the_supplied_sync_client_for_delete() {
     let mut logging = Logging::default();
     let call = call_with_unusable_ssl_verify(serving.address);
     let supplied = BlockingClientBuilder::new()
+        .no_proxy()
         .default_headers(marker_headers())
         .build()
         .unwrap();
@@ -193,6 +194,7 @@ fn client_uses_the_supplied_sync_client_for_versions() {
     let mut logging = Logging::default();
     let call = call_with_unusable_ssl_verify(serving.address);
     let supplied = BlockingClientBuilder::new()
+        .no_proxy()
         .default_headers(marker_headers())
         .build()
         .unwrap();
@@ -220,6 +222,7 @@ async fn client_uses_the_supplied_async_client_for_delete() {
     let mut logging = Logging::default();
     let call = call_with_unusable_ssl_verify(serving.address);
     let supplied = base_builder()
+        .no_proxy()
         .default_headers(marker_headers())
         .build()
         .unwrap();
@@ -248,6 +251,7 @@ async fn client_uses_the_supplied_async_client_for_versions() {
     let mut logging = Logging::default();
     let call = call_with_unusable_ssl_verify(serving.address);
     let supplied = base_builder()
+        .no_proxy()
         .default_headers(marker_headers())
         .build()
         .unwrap();

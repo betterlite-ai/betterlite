@@ -9,8 +9,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::AgentsDeleteVersionsError;
 use super::asynchronous::async_delete_agent;
 use super::support::{
-    Call, Fixture, FixtureError, caller_headers, clients, dead_address, exposed, reply_with_bytes,
-    resolved_timeout,
+    Call, Fixture, FixtureError, caller_headers, clients, dead_address, exposed,
+    failing_environment, reply_with_bytes, resolved_timeout,
 };
 use super::synchronous::delete_agent;
 use crate::interactions::base::tests::support as server;
@@ -368,8 +368,7 @@ fn delete_agent_passes_a_connection_failure_through() {
 
 #[test]
 fn delete_agent_reports_a_failing_environment_without_logging() {
-    let mut fixture = Fixture::default();
-    fixture.fail_environment = true;
+    let fixture = failing_environment();
     let mut clients = clients();
     let mut logging = Logging::default();
     let call = Call::new(dead_address());

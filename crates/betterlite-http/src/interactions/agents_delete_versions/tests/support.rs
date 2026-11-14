@@ -171,6 +171,15 @@ impl Call {
     }
 }
 
+pub(crate) fn failing_environment() -> Fixture {
+    Fixture {
+        calls: Mutex::new(Vec::new()),
+        headers: RequestHeaders::new(),
+        query: Params::new(),
+        fail_environment: true,
+    }
+}
+
 // the value litellm.constants.request_timeout holds when REQUEST_TIMEOUT is unset
 pub(crate) fn default_timeout() -> RequestTimeout {
     RequestTimeout {
