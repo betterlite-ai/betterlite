@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-batch-rows-shuffled-embedding-groups
+call:
+  vertex_batch_rows:
+    operation: regroup
+    rows:
+      - {key: "id#1/3", request: {}, status: "", response: {embedding: {values: [2]}, tokenCount: 4}}
+      - {key: other, request: {}, status: "", response: {embedding: {values: [9]}, tokenCount: 1}}
+      - {key: "id#0/3", request: {}, status: "", response: {embedding: {values: [1]}, usageMetadata: {promptTokenCount: 3}}}
+      - {key: "id#2/3", request: {}, status: "", response: {embedding: {values: [3]}, tokenCount: 5}}
+    model: text-embedding-005
+env: {}
+compare: {ignore: []}

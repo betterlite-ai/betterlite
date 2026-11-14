@@ -1,0 +1,16 @@
+name: dashboard-governance-unknown-log
+config: config
+env: {}
+request: {method: GET, path: /health/liveliness, headers: {}, body: null}
+upstream: []
+database:
+  seed:
+    users: [{user_id: alice}]
+    keys: [{token: sk-alice, user_id: alice}]
+    dashboard:
+      logs:
+        - {request_id: req-1, call_type: acompletion, start_time: '2026-01-04T10:00:00.000', end_time: '2026-01-04T10:00:00.500', key_index: 0}
+    dashboard_governance:
+      guardrail_index:
+        - {request_id: req-2, guardrail_id: gr-pii, start_time: '2026-01-04T10:00:00.000'}
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
