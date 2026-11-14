@@ -12,7 +12,8 @@ use crate::api::chat_agentic_loop::error::AgenticLoopError;
 use crate::api::chat_agentic_loop::safety::SafetyError;
 use crate::api::chat_agentic_loop::tests::support::{
     FakeContinuation, Fixture, RecordingPort, Script, ScriptedCallback, callbacks, capture,
-    fixture, gate, json_map, loop_error, optional_text, overrides, patch, plan, raw, raw_text,
+    fixture, gate, json_map, loop_error, messages, optional_text, overrides, patch, plan, raw,
+    raw_text,
 };
 use crate::api::chat_agentic_loop::{ChatLoopResult, LoopPorts};
 
@@ -285,6 +286,20 @@ async fn a_plan_that_stops_moves_to_the_next_callback() {
     assert_eq!(stopping.records().plan_calls.len(), 1);
     assert!(stopping.records().legacy_calls.is_empty());
     assert_eq!(harness.continuation.call_count(), 0);
+}
+
+#[tokio::test]
+async fn a_stopped_plan_with_a_patch_does_not_run_the_followup() {
+    let fixture = fixture();
+    let stopping = plan_callback(plan(Some(patch(Some(messages()))), None, false, false));
+    let harness = harness();
+    let result = harness
+        .run(&fixture, &callbacks(&[&stopping]))
+        .await
+        .unwrap();
+    assert!(result.is_none());
+    assert_eq!(harness.continuation.call_count(), 0);
+    assert!(stopping.records().cleanup_calls.is_empty());
 }
 
 #[tokio::test]

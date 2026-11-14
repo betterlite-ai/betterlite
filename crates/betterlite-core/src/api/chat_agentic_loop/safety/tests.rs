@@ -51,8 +51,8 @@ fn a_depth_below_the_cap_passes() {
 
 #[test]
 fn json_text_escapes_the_control_characters() {
-    let text = Json::Text("a\"b\\c\n\r\t\u{08}\u{0c}\u{1}".to_owned());
-    assert_eq!(json_text(&text), r#""a\"b\\c\n\r\t\b\f\u0001""#);
+    let text = Json::Text("a\"b\\c\n\r\t\u{08}\u{0c}\u{1} d".to_owned());
+    assert_eq!(json_text(&text), r#""a\"b\\c\n\r\t\b\f\u0001 d""#);
 }
 
 #[test]
