@@ -1,13 +1,14 @@
 #![cfg(test)]
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use betterlite_logging::private_json::files::PrivateFiles;
 use rstest::rstest;
+use rustix::process::getuid;
 use secrecy::ExposeSecret as _;
 use tempfile::TempDir;
 use tokio::runtime::{Builder, Runtime};
@@ -49,7 +50,7 @@ struct Call {
 }
 
 struct FakeFetch {
-    calls: Mutex<Vec<Call>>,
+    calls: RefCell<Vec<Call>>,
     body: Option<&'static str>,
     fails: bool,
 }
@@ -57,7 +58,7 @@ struct FakeFetch {
 impl FakeFetch {
     fn answering(body: Option<&'static str>) -> Self {
         Self {
-            calls: Mutex::new(Vec::new()),
+            calls: RefCell::new(Vec::new()),
             body,
             fails: false,
         }
@@ -71,13 +72,13 @@ impl FakeFetch {
     }
 
     fn count(&self) -> usize {
-        self.calls.lock().unwrap().len()
+        self.calls.borrow().len()
     }
 }
 
 impl SessionFetch for FakeFetch {
     fn fetch(&self, credentials: &Credentials, session_id: &str) -> Result<Fetched, FetchError> {
-        self.calls.lock().unwrap().push(Call {
+        self.calls.borrow_mut().push(Call {
             base_url: credentials.base_url.clone(),
             key: credentials.api_key.expose_secret().to_owned(),
             session_id: session_id.to_owned(),
@@ -101,7 +102,7 @@ struct Harness {
 }
 
 fn own_uid() -> u32 {
-    rustix::process::getuid().as_raw()
+    getuid().as_raw()
 }
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -158,7 +159,7 @@ impl Harness {
         path
     }
 
-    fn models(&self, config_dir: &Path) {
+    fn models(config_dir: &Path) {
         fs::create_dir_all(config_dir.join("cache")).unwrap();
         fs::write(config_dir.join("cache/gateway-models.json"), MODELS).unwrap();
     }
@@ -288,7 +289,7 @@ fn a_found_session_is_asked_for_with_the_trimmed_credentials_and_drawn() {
     let line = harness.run(&input, &CLAUDE_ENV, &fetch);
 
     assert_eq!(line, format!("Routed to: gpt-5{NOTICE}"));
-    let calls = fetch.calls.lock().unwrap();
+    let calls = fetch.calls.into_inner();
     assert_eq!(calls.len(), 1);
     let call = calls.first().unwrap();
     assert_eq!(call.base_url, "http://gateway.test");
@@ -299,7 +300,7 @@ fn a_found_session_is_asked_for_with_the_trimmed_credentials_and_drawn() {
 #[test]
 fn the_found_session_model_is_labelled_from_the_gateway_cache() {
     let harness = Harness::new();
-    harness.models(&harness.path("home/.claude"));
+    Harness::models(&harness.path("home/.claude"));
     let input = claude_payload(&harness.transcript("claude-sonnet-4"), "s1");
     let body = r#"{"router_name":"auto","last_model":"anthropic/claude-opus-4","spend":1.5}"#;
     let fetch = FakeFetch::answering(Some(body));
@@ -312,7 +313,7 @@ fn the_found_session_model_is_labelled_from_the_gateway_cache() {
 #[test]
 fn the_codex_message_labels_the_found_session_model_from_the_gateway_cache() {
     let harness = Harness::new();
-    harness.models(&harness.path("home/.claude"));
+    Harness::models(&harness.path("home/.claude"));
     let body = r#"{"router_name":"auto","last_model":"anthropic/claude-opus-4","spend":1.5}"#;
     let fetch = FakeFetch::answering(Some(body));
 
@@ -443,7 +444,7 @@ fn the_model_cache_is_read_from_the_config_directory(
     #[case] custom: bool,
 ) {
     let harness = Harness::new();
-    harness.models(&harness.path(if custom { "custom" } else { "home/.claude" }));
+    Harness::models(&harness.path(if custom { "custom" } else { "home/.claude" }));
     let input = claude_payload(&harness.transcript("claude-opus-4"), "");
     let custom_dir = harness.path("custom").display().to_string();
     let pairs: Vec<(&str, &str)> = match configured {
@@ -496,7 +497,7 @@ fn the_codex_stop_hook_prints_a_system_message_without_color() {
         line,
         format!(r#"{{"systemMessage":"\nRouted to: gpt-5{NOTICE}"}}"#)
     );
-    let calls = fetch.calls.lock().unwrap();
+    let calls = fetch.calls.into_inner();
     let call = calls.first().unwrap();
     assert_eq!(call.base_url, "http://gateway.test");
     assert_eq!(call.key, "sk-codex");
@@ -593,7 +594,7 @@ fn run_with(
     let home = harness.path("home");
     let temp = harness.path("tmp");
     run(
-        StatuslineArgs::default(),
+        StatuslineArgs,
         &mut StatuslinePorts {
             stdin,
             stdout,
@@ -632,7 +633,7 @@ fn run_reports_a_stdin_that_cannot_be_read() {
 #[test]
 fn run_reports_a_stdout_that_cannot_be_written() {
     let harness = Harness::new();
-    let mut stdin = "garbage".as_bytes();
+    let mut stdin: &[u8] = b"garbage";
 
     let failed = run_with(&mut stdin, &mut Broken, &harness);
 

@@ -88,7 +88,7 @@ fn a_received_answer_is_classified_by_its_status_and_body() {
 #[rstest]
 #[case::transport_error(transport_error())]
 #[case::timeout(HttpError::Timeout)]
-#[case::oversized_body(HttpError::TooLarge { limit: 1_048_576 })]
+#[case::oversized_body(HttpError::TooLarge { limit: 0x0010_0000 })]
 fn a_failed_transport_is_not_an_answer(#[case] failure: HttpError) {
     let fetched = fetched_answer(Err(failure));
 
@@ -118,7 +118,7 @@ fn a_failed_transport_is_not_an_answer(#[case] failure: HttpError) {
 )]
 #[case::non_ascii(
     "http://proxy",
-    "é",
+    "\u{e9}",
     "http://proxy/auto_router/session?session_id=%C3%A9"
 )]
 #[case::empty_session_id("http://proxy", "", "http://proxy/auto_router/session?session_id=")]

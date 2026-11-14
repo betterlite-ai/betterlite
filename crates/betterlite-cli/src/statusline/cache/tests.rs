@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 
 use betterlite_logging::private_json::files::PrivateFiles;
 use rstest::rstest;
+use rustix::process::getuid;
 use secrecy::SecretString;
 use tempfile::TempDir;
 use tokio::runtime::{Builder, Runtime};
@@ -75,7 +76,7 @@ struct Harness {
 }
 
 fn own_uid() -> u32 {
-    rustix::process::getuid().as_raw()
+    getuid().as_raw()
 }
 
 fn credentials(base_url: &str, key: &str) -> Credentials {
@@ -438,7 +439,7 @@ fn a_cache_that_cannot_be_written_does_not_fail_the_lookup() {
     let harness = Harness::new();
     harness.private_directory();
     let blocker = harness.entry_path();
-    fs::create_dir(&blocker).unwrap();
+    fs::create_dir_all(&blocker).unwrap();
     fs::write(blocker.join("occupied"), "x").unwrap();
     let fetch = FakeFetch::answering(Some(VALID_BODY), true);
 

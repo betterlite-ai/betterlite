@@ -43,8 +43,6 @@ pub fn run(_args: StatuslineArgs, ports: &mut StatuslinePorts<'_>) -> Result<(),
         .enable_all()
         .build()
         .map_err(StatuslineError::Runtime)?;
-    let files = PrivateFiles::default();
-    let clock = SystemClock;
     let fetch = HttpFetch {
         runtime: &runtime,
         environment: ports.environment,
@@ -59,8 +57,8 @@ pub fn run(_args: StatuslineArgs, ports: &mut StatuslinePorts<'_>) -> Result<(),
         temp_dir: ports.temp_dir,
         owner_uid,
         fetch: &fetch,
-        clock: &clock,
-        files: &files,
+        clock: &SystemClock,
+        files: &PrivateFiles::default(),
         runtime: &runtime,
     };
     let text = run_statusline(&input, &deps);

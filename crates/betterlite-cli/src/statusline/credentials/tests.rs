@@ -138,9 +138,9 @@ fn credentials_debug_output_hides_the_key() {
 #[case::ideographic_space("a\u{3000}b", "ab")]
 #[case::private_use("a\u{e000}b", "ab")]
 #[case::unassigned("a\u{378}b", "ab")]
-#[case::keeps_cjk("モデル", "モデル")]
+#[case::keeps_cjk("\u{30e2}\u{30c7}\u{30eb}", "\u{30e2}\u{30c7}\u{30eb}")]
 #[case::keeps_combining_mark("e\u{301}", "e\u{301}")]
-#[case::keeps_emoji("a😀b", "a😀b")]
+#[case::keeps_emoji("a\u{1f600}b", "a\u{1f600}b")]
 #[case::empty("", "")]
 fn printable_drops_what_a_terminal_would_act_on(#[case] raw: &str, #[case] expected: &str) {
     assert_eq!(printable(raw), expected);

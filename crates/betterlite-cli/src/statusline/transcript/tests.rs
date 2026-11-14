@@ -222,8 +222,8 @@ fn labelled(models: &str, model: &str) -> String {
 )]
 #[case::models_that_is_not_a_list(r#"{"models":{"id":"claude-x"}}"#, "claude-x", "claude-x")]
 #[case::missing_models(r#"{"other":[]}"#, "claude-x", "claude-x")]
-#[case::not_an_object(r"[1,2]", "claude-x", "claude-x")]
-#[case::not_json(r"{nope", "claude-x", "claude-x")]
+#[case::not_an_object("[1,2]", "claude-x", "claude-x")]
+#[case::not_json("{nope", "claude-x", "claude-x")]
 fn a_model_is_labelled_from_the_gateway_model_cache(
     #[case] models: &str,
     #[case] model: &str,
