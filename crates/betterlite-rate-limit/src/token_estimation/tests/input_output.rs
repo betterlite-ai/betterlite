@@ -98,6 +98,17 @@ fn without_a_call_type_messages_win_over_the_prompt() {
 }
 
 #[test]
+fn without_a_call_type_an_input_field_supplies_the_input_text() {
+    assert_eq!(
+        tokens(r#"{"input":"abcdefgh"}"#, None, None),
+        InputOutputTokens {
+            input_tokens: 2,
+            output_tokens: 0
+        }
+    );
+}
+
+#[test]
 fn an_empty_message_list_falls_back_to_the_prompt() {
     assert_eq!(
         tokens(r#"{"messages":[],"prompt":"abcdefgh"}"#, None, Some(400)),

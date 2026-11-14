@@ -194,10 +194,10 @@ fn counted_input<'request>(
             Some(_) | None => data.get("input").map(Cow::Borrowed),
         }
     };
-    let (tools, tool_choice) = match translated {
-        Some(translated) => (translated.tools.as_ref(), translated.tool_choice.as_ref()),
-        None => (data.get("tools"), data.get("tool_choice")),
-    };
+    let (tools, tool_choice) = translated.map_or_else(
+        || (data.get("tools"), data.get("tool_choice")),
+        |chat| (chat.tools.as_ref(), chat.tool_choice.as_ref()),
+    );
     CountedInput {
         messages,
         text,

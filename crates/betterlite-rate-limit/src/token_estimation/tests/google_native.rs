@@ -80,6 +80,24 @@ fn the_adapter_result_is_returned() {
 }
 
 #[test]
+fn a_single_content_object_is_translated() {
+    let fake = recorder();
+    let translated = translate_google_request(
+        &fake,
+        &request(r#"{"model":"m","contents":{"parts":[{"text":"hi"}]}}"#),
+        Some("generate_content"),
+    );
+    assert_eq!(
+        translated,
+        Some(chat_reply(r#"[{"role":"user","content":"translated"}]"#))
+    );
+    assert_eq!(
+        first_seen(&fake).contents,
+        value(r#"{"parts":[{"text":"hi"}]}"#)
+    );
+}
+
+#[test]
 fn a_config_field_wins_over_the_generation_config() {
     let fake = recorder();
     let _translated = translate_google_request(
