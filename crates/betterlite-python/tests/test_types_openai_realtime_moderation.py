@@ -247,9 +247,26 @@ def shape_of(value):
     return alias_shape(value)
 
 
+SHAPE_DEFAULTS = {
+    "kind": "",
+    "keys": [],
+    "required": [],
+    "defaults": {},
+    "literals": {},
+    "types": {},
+    "members": [],
+    "enum_members": [],
+    "values": [],
+}
+
+
+def complete(shape):
+    return {**SHAPE_DEFAULTS, **shape}
+
+
 def describe(module, names):
     return {
-        name: None if not hasattr(module, name) else shape_of(getattr(module, name))
+        name: None if not hasattr(module, name) else complete(shape_of(getattr(module, name)))
         for name in names
     }
 
@@ -305,7 +322,7 @@ print(json.dumps({
 """
 
 
-class Shape(TypedDict, total=False):
+class Shape(TypedDict):
     kind: str
     keys: list[str]
     required: list[str]
