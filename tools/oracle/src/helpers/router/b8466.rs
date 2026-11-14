@@ -32,6 +32,8 @@ pub(crate) enum Input {
         #[serde(default)]
         model_list: Vec<DeploymentRow>,
         request: JsonObject,
+        #[serde(default)]
+        messages: Vec<Json>,
         compiled: CompiledRow,
     },
 }
@@ -69,6 +71,7 @@ struct HelperPorts {
     deployments: Vec<DeploymentSpec>,
     compiled: CompiledPrompt,
     compile_call: Mutex<Value>,
+    selection: Mutex<Value>,
 }
 
 #[async_trait]
@@ -79,10 +82,16 @@ impl PromptPorts for HelperPorts {
     async fn select_deployment(
         &self,
         model: &str,
-        _messages: &[Json],
-        _specific_deployment: Option<&Json>,
-        _request: &JsonObject,
+        messages: &[Json],
+        specific_deployment: Option<&Json>,
+        request: &JsonObject,
     ) -> Result<DeploymentSpec, NoDeployment> {
+        *self.selection.lock().await = json!({
+            "model": model,
+            "messages": messages,
+            "specific_deployment": specific_deployment,
+            "request_kwargs": scrubbed(request),
+        });
         self.deployments
             .iter()
             .find(|deployment| deployment.model_name == model)
@@ -96,13 +105,8 @@ impl PromptPorts for HelperPorts {
         &self,
         call: CompilePromptCall<'_>,
     ) -> Result<CompiledPrompt, NoDeployment> {
-        let mut request_kwargs = call.request.clone();
-        let mut non_default_params = call.non_default_params.clone();
-        request_kwargs.shift_remove("litellm_logging_obj");
-        for key in ROUTER_ONLY_KEYS {
-            request_kwargs.shift_remove(key);
-            non_default_params.shift_remove(key);
-        }
+        let request_kwargs = scrubbed(call.request);
+        let non_default_params = scrubbed(call.non_default_params);
         *self.compile_call.lock().await = json!({
             "model": call.model,
             "messages": call.messages,
@@ -155,6 +159,7 @@ impl Helper for Op {
                 model,
                 model_list,
                 request,
+                messages,
                 compiled,
             } => {
                 let ports = HelperPorts {
@@ -165,8 +170,9 @@ impl Helper for Op {
                         optional_params: compiled.optional_params.clone(),
                     },
                     compile_call: Mutex::new(Value::Null),
+                    selection: Mutex::new(Value::Null),
                 };
-                let mut request = router_request(model, request);
+                let mut request = router_request(model, messages, request);
                 let handle = Json::Text(LOGGING_HANDLE.to_owned());
                 request.insert("litellm_logging_obj".to_owned(), handle.clone());
                 let runtime = tokio::runtime::Builder::new_current_thread()
@@ -174,7 +180,7 @@ impl Helper for Op {
                     .build()
                     .map_err(|error| value_error(error.to_string()))?;
                 let mut outcome = runtime
-                    .block_on(prompt_factory(model, &[], request, &ports))
+                    .block_on(prompt_factory(model, messages, request, &ports))
                     .map_err(|error| value_error(error.to_string()))?;
                 let logging_kept =
                     outcome.request.shift_remove("litellm_logging_obj") == Some(handle);
@@ -186,6 +192,7 @@ impl Helper for Op {
                     "compile_call": ports.compile_call.into_inner(),
                     "request": outcome.request,
                     "logging_kept": logging_kept,
+                    "selection": ports.selection.into_inner(),
                     "original_function_kept": original_function_kept,
                     "call": outcome.call,
                 }))
@@ -194,11 +201,20 @@ impl Helper for Op {
     }
 }
 
+fn scrubbed(request: &JsonObject) -> JsonObject {
+    let mut kept = request.clone();
+    kept.shift_remove("litellm_logging_obj");
+    for key in ROUTER_ONLY_KEYS {
+        kept.shift_remove(key);
+    }
+    kept
+}
+
 // What Router.acompletion puts in the kwargs before it asks whether the model is a prompt management one.
-fn router_request(model: &str, request: &JsonObject) -> JsonObject {
+fn router_request(model: &str, messages: &[Json], request: &JsonObject) -> JsonObject {
     let mut kwargs = request.clone();
     kwargs.insert("model".to_owned(), Json::Text(model.to_owned()));
-    kwargs.insert("messages".to_owned(), Json::List(Vec::new()));
+    kwargs.insert("messages".to_owned(), Json::List(messages.to_vec()));
     kwargs.insert("stream".to_owned(), Json::Bool(false));
     kwargs.insert(
         "original_function".to_owned(),

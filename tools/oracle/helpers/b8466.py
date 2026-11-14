@@ -26,7 +26,16 @@ class Input(TypedDict, total=False):
     model: str
     model_list: list[dict[str, JsonValue]]
     request: dict[str, JsonValue]
+    messages: list[JsonValue]
     compiled: dict[str, JsonValue]
+
+
+def _scrub(kwargs: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    return {
+        key: value
+        for key, value in kwargs.items()
+        if key not in ROUTER_ONLY_KEYS and key != "litellm_logging_obj"
+    }
 
 
 class CompileCall(TypedDict):
@@ -52,19 +61,11 @@ class _Logging(dict[str, JsonValue]):
         self.compile_call = {
             "model": kwargs["model"],
             "messages": kwargs["messages"],
-            "non_default_params": {
-                key: value
-                for key, value in kwargs["non_default_params"].items()
-                if key not in ROUTER_ONLY_KEYS
-            },
+            "non_default_params": _scrub(kwargs["non_default_params"]),
             "prompt_id": kwargs["prompt_id"],
             "prompt_variables": kwargs["prompt_variables"],
             "prompt_label": kwargs["prompt_label"],
-            "request_kwargs": {
-                key: value
-                for key, value in kwargs["request_kwargs"].items()
-                if key not in ROUTER_ONLY_KEYS and key != "litellm_logging_obj"
-            },
+            "request_kwargs": _scrub(kwargs["request_kwargs"]),
             "injected_for_every_deployment": kwargs["injected_for_every_deployment"],
         }
         return (
@@ -77,6 +78,7 @@ class _Logging(dict[str, JsonValue]):
 class _PromptRouter(Router):
     rows: list[dict[str, JsonValue]]
     captured: dict[str, JsonValue]
+    selection: dict[str, JsonValue]
     factory_reached: bool
 
     @override
@@ -89,6 +91,12 @@ class _PromptRouter(Router):
         specific_deployment: bool | None = False,
     ) -> dict[str, JsonValue]:
         self.factory_reached = True
+        self.selection = {
+            "model": model,
+            "messages": ARRAY.validate_python(messages),
+            "specific_deployment": specific_deployment,
+            "request_kwargs": _scrub(request_kwargs),
+        }
         return next(row for row in self.rows if row.get("model_name") == model)
 
     @override
@@ -111,16 +119,19 @@ async def record_direct_call(**kwargs: JsonValue) -> JsonValue:
     return "direct"
 
 
-def _dispatch(input_value: Input, request: dict[str, JsonValue]) -> _PromptRouter:
+def _dispatch(
+    input_value: Input, request: dict[str, JsonValue], messages: list[JsonValue]
+) -> _PromptRouter:
     DIRECT_CALLS.clear()
     litellm.acompletion = record_direct_call
     rows = ROWS.validate_python(input_value.get("model_list"))
     router = _PromptRouter(model_list=rows)
     router.rows = rows
     router.captured = {}
+    router.selection = {}
     router.factory_reached = False
     model = STRING.validate_python(input_value.get("model"))
-    asyncio.run(router.acompletion(model, [], **request))  # type: ignore[call-overload, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2779-L2802
+    asyncio.run(router.acompletion(model, messages, **request))  # type: ignore[call-overload, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2779-L2802
     return router
 
 
@@ -128,7 +139,8 @@ def _factory_output(input_value: Input) -> dict[str, JsonValue]:
     request = OBJECT.validate_python(input_value.get("request"))
     logging = _Logging(OBJECT.validate_python(input_value.get("compiled")))
     request["litellm_logging_obj"] = logging
-    router = _dispatch(input_value, request)
+    messages = ARRAY.validate_python(input_value.get("messages"))
+    router = _dispatch(input_value, request, messages)
     call = "direct" if DIRECT_CALLS else "with_fallbacks"
     captured = DIRECT_CALLS[0] if DIRECT_CALLS else router.captured
     kept = captured.pop("litellm_logging_obj") is logging
@@ -139,6 +151,7 @@ def _factory_output(input_value: Input) -> dict[str, JsonValue]:
         "compile_call": logging.compile_call,
         "request": captured,
         "logging_kept": kept,
+        "selection": router.selection,
         "original_function_kept": original_function_kept,
         "call": call,
     }
@@ -149,7 +162,7 @@ def _is_prompt_model_output(input_value: Input) -> dict[str, JsonValue]:
         "prompt_id": "probe",
         "litellm_logging_obj": _Logging(PROBE_COMPILED),
     }
-    return {"is_prompt_model": _dispatch(input_value, request).factory_reached}
+    return {"is_prompt_model": _dispatch(input_value, request, []).factory_reached}
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:

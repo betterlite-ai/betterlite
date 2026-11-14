@@ -4,6 +4,7 @@ call:
   b8466:
     check: prompt_factory
     model: litellm_agent/support-bot
+    messages: []
     model_list:
     - model_name: litellm_agent/support-bot
       litellm_params:

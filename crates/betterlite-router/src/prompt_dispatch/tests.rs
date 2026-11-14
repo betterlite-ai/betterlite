@@ -115,6 +115,70 @@ fn is_prompt_model_is_false_when_the_model_is_not_a_string() {
 }
 
 #[test]
+fn known_callbacks_are_the_names_of_litellms_custom_logger_literal_in_order() {
+    assert_eq!(
+        KNOWN_CALLBACKS,
+        [
+            "lago",
+            "openmeter",
+            "logfire",
+            "literalai",
+            "litellm_agent",
+            "dynamic_rate_limiter",
+            "dynamic_rate_limiter_v3",
+            "langsmith",
+            "prometheus",
+            "otel",
+            "datadog",
+            "datadog_metrics",
+            "datadog_llm_observability",
+            "galileo",
+            "braintrust",
+            "arize",
+            "arize_phoenix",
+            "langtrace",
+            "gcs_bucket",
+            "azure_storage",
+            "opik",
+            "argilla",
+            "mlflow",
+            "langfuse",
+            "langfuse_otel",
+            "weave_otel",
+            "pagerduty",
+            "humanloop",
+            "azure_sentinel",
+            "gcs_pubsub",
+            "agentops",
+            "anthropic_cache_control_hook",
+            "generic_api",
+            "resend_email",
+            "sendgrid_email",
+            "smtp_email",
+            "deepeval",
+            "s3_v2",
+            "clickhouse",
+            "pointfive",
+            "zerobus",
+            "aws_sqs",
+            "vector_store_pre_call_hook",
+            "dotprompt",
+            "bitbucket",
+            "gitlab",
+            "cloudzero",
+            "focus",
+            "mavvrik",
+            "vantage",
+            "posthog",
+            "levo",
+            "compression_interception",
+            "newrelic",
+            "signoz",
+        ]
+    );
+}
+
+#[test]
 fn is_prompt_model_reads_the_callback_list_it_is_given() {
     assert!(is_prompt_model(
         &[deployment("mystore/prompt")],
@@ -301,7 +365,7 @@ fn merge_prompt_request_stamps_the_compiled_fields_and_the_identity() {
     assert_eq!(merged.fields.get("model"), Some(&text("gpt-4o")));
     assert_eq!(
         merged.fields.get("messages"),
-        Some(&Json::List(compiled.messages.clone()))
+        Some(&Json::List(compiled.messages))
     );
     assert_eq!(
         merged.fields.get("litellm_logging_obj"),
@@ -360,13 +424,16 @@ fn merge_prompt_request_keeps_original_function_for_a_model_group() {
 #[derive(Default)]
 struct Observation {
     selected: Option<(String, Option<Json>)>,
+    selected_messages: Option<Vec<Json>>,
+    selected_request: Option<JsonObject>,
     updated: bool,
     compile_model: Option<String>,
     compile_messages: Option<Vec<Json>>,
     compile_non_default: Option<JsonObject>,
-    compile_prompt_id: Option<Option<Json>>,
-    compile_variables: Option<Option<Json>>,
-    compile_label: Option<Option<Json>>,
+    compile_request: Option<JsonObject>,
+    compile_prompt_id: Option<Json>,
+    compile_variables: Option<Json>,
+    compile_label: Option<Json>,
     compile_injected: Option<bool>,
     direct: Option<JsonObject>,
     fallbacks: Option<JsonObject>,
@@ -391,12 +458,15 @@ impl PromptPorts for FakePorts {
     async fn select_deployment(
         &self,
         model: &str,
-        _messages: &[Json],
+        messages: &[Json],
         specific_deployment: Option<&Json>,
-        _request: &JsonObject,
+        request: &JsonObject,
     ) -> Result<DeploymentSpec, FakeFailure> {
-        self.observed.lock().unwrap().selected =
-            Some((model.to_owned(), specific_deployment.cloned()));
+        let mut observed = self.observed.lock().unwrap();
+        observed.selected = Some((model.to_owned(), specific_deployment.cloned()));
+        observed.selected_messages = Some(messages.to_vec());
+        observed.selected_request = Some(request.clone());
+        drop(observed);
         Ok(self.deployment.clone())
     }
 
@@ -413,9 +483,10 @@ impl PromptPorts for FakePorts {
         observed.compile_model = Some(call.model.to_owned());
         observed.compile_messages = Some(call.messages.to_vec());
         observed.compile_non_default = Some(call.non_default_params.clone());
-        observed.compile_prompt_id = Some(call.prompt_id.cloned());
-        observed.compile_variables = Some(call.prompt_variables.cloned());
-        observed.compile_label = Some(call.prompt_label.cloned());
+        observed.compile_request = Some(call.request.clone());
+        observed.compile_prompt_id = call.prompt_id.cloned();
+        observed.compile_variables = call.prompt_variables.cloned();
+        observed.compile_label = call.prompt_label.cloned();
         observed.compile_injected = Some(call.injected_for_every_deployment);
         drop(observed);
         Ok(self.compiled.clone())
@@ -480,7 +551,20 @@ fn assert_reference_arguments(observed: &Observation) {
     let (selected_model, specific) = observed.selected.as_ref().unwrap();
     assert_eq!(selected_model, "support-prompt");
     assert_eq!(specific, &Some(Json::Bool(true)));
+    assert_eq!(
+        observed.selected_messages,
+        Some(vec![json_object(&[("role", text("user"))])])
+    );
+    let mut expected_request = object(&[
+        ("litellm_logging_obj", text("handle")),
+        ("custom_provider_param", text("kept")),
+        ("temperature", number(1)),
+        ("original_function", text("acompletion")),
+    ]);
+    assert_eq!(observed.selected_request, Some(expected_request.clone()));
     assert!(observed.updated);
+    expected_request.insert("deployment_marker".to_owned(), Json::Bool(true));
+    assert_eq!(observed.compile_request, Some(expected_request));
     assert_eq!(
         observed.compile_model.as_deref(),
         Some("langfuse/my-prompt")
@@ -491,9 +575,9 @@ fn assert_reference_arguments(observed: &Observation) {
     );
     assert_eq!(
         observed.compile_variables,
-        Some(Some(json_object(&[("name", text("world"))])))
+        Some(json_object(&[("name", text("world"))]))
     );
-    assert_eq!(observed.compile_label, Some(Some(text("production"))));
+    assert_eq!(observed.compile_label, Some(text("production")));
     assert_eq!(
         observed.compile_non_default,
         Some(object(&[
@@ -502,7 +586,7 @@ fn assert_reference_arguments(observed: &Observation) {
             ("deployment_marker", Json::Bool(true)),
         ]))
     );
-    assert_eq!(observed.compile_prompt_id, Some(Some(text("greeting"))));
+    assert_eq!(observed.compile_prompt_id, Some(text("greeting")));
     assert_eq!(observed.compile_injected, Some(true));
     let called = observed.direct.as_ref().unwrap();
     assert!(!called.contains_key("specific_deployment"));
@@ -528,9 +612,8 @@ async fn prompt_factory_sends_a_model_group_through_the_fallbacks() {
         .await
         .unwrap();
     assert_eq!(answer, text("answer"));
-    let observed = ports.observed.lock().unwrap();
-    assert!(observed.direct.is_none());
-    let called = observed.fallbacks.as_ref().unwrap();
+    assert!(ports.observed.lock().unwrap().direct.is_none());
+    let called = ports.observed.lock().unwrap().fallbacks.clone().unwrap();
     assert_eq!(called.get("original_function"), Some(&text("acompletion")));
     assert_eq!(called.get("model"), Some(&text("gpt-4o")));
 }

@@ -4,6 +4,9 @@ call:
   b8466:
     check: prompt_factory
     model: langfuse/my-prompt
+    messages:
+    - role: user
+      content: hello
     model_list:
     - model_name: langfuse/my-prompt
       litellm_params:
