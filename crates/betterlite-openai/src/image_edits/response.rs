@@ -14,7 +14,11 @@ pub fn transform_image_edit_response(
     serde_json::from_slice::<Json>(body).map_err(|_invalid| {
         ImageEditError::OpenAi(OpenAiLikeError {
             status_code: status,
-            message: String::from_utf8_lossy(body).into_owned(),
+            // httpx decodes a body with errors="replace"; this crate names the bytes it cannot read
+            message: str::from_utf8(body).map_or_else(
+                |_invalid| format!("{} bytes that are not UTF-8", body.len()),
+                str::to_owned,
+            ),
         })
     })?;
     decode_image_reply(body, created_seconds).map_err(ImageEditError::Reply)

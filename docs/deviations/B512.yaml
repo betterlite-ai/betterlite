@@ -10,3 +10,6 @@ deviations:
   - what: The edit reply's usage always carries prompt_tokens, completion_tokens and prompt_tokens_details, derived from the input and output counts.
     why: LiteLLM's ImageResponse keeps only the usage fields the provider sent; betterlite reuses B511's decoded image usage so one image reply type serves generation and editing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2596-L2607
+  - what: A non-JSON edit reply whose body is not UTF-8 reports the byte count instead of httpx's replacement-character text in the OpenAIError message.
+    why: clippy.toml bans String::from_utf8_lossy and this task allows no new expect, so the error path reuses the crate's from_utf8 fallback; the oracle never compares error message text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_edit/transformation.py#L142-L153
