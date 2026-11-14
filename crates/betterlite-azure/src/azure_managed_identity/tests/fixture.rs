@@ -7,7 +7,9 @@ use betterlite_config::sections::azure_oidc_exchange::Settings;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::azure_arc_identity::{ArcHost, ArcPlatform, ArcRequest, ArcResponse, ArcTransport};
+use crate::azure_arc_identity::{
+    ArcHost, ArcPlatform, ArcTransport, MetadataRequest, MetadataResponse,
+};
 use crate::azure_certificate::assertion::IdSource;
 use crate::azure_client_secret::transport::Clock;
 use crate::azure_hosted_identity::request::{HostedRequest, HostedResponse, HostedTransport};
@@ -16,8 +18,8 @@ use crate::oidc_exchange::transport::{Clock as OidcClock, HttpReply, Transport a
 
 use super::super::environment::ManagedIdentityEnvironment;
 use super::super::error::ManagedIdentityError;
+use super::super::imds::ImdsTransport;
 use super::super::imds::ProbePolicy;
-use super::super::imds::{ImdsRequest, ImdsResponse, ImdsTransport};
 use super::super::runtime::{ImdsIo, ManagedIdentityIo, Scheduler, TokenFiles, WorkloadIo};
 use super::super::{ManagedIdentityCredential, ManagedIdentityToken};
 
@@ -95,16 +97,16 @@ struct ReplyParts {
 }
 
 impl ReplyParts {
-    fn imds(self) -> ImdsResponse {
-        ImdsResponse {
+    fn imds(self) -> MetadataResponse {
+        MetadataResponse {
             status: self.status,
             headers: self.headers,
             body: SecretString::from(self.body),
         }
     }
 
-    fn arc(self) -> ArcResponse {
-        ArcResponse {
+    fn arc(self) -> MetadataResponse {
+        MetadataResponse {
             status: self.status,
             headers: self.headers,
             body: SecretString::from(self.body),
@@ -185,10 +187,10 @@ impl<T> Script<T> {
 
 pub(super) type RecordingImds = Script<RecordedRequest>;
 pub(super) type RecordingHosted = Script<RecordedHosted>;
-pub(super) type RecordingArc = Script<ArcRequest>;
+pub(super) type RecordingArc = Script<MetadataRequest>;
 
-impl From<&ImdsRequest> for RecordedRequest {
-    fn from(request: &ImdsRequest) -> Self {
+impl From<&MetadataRequest> for RecordedRequest {
+    fn from(request: &MetadataRequest) -> Self {
         Self {
             method: "GET",
             url: request.url.clone(),
@@ -196,15 +198,15 @@ impl From<&ImdsRequest> for RecordedRequest {
             headers: request
                 .headers
                 .iter()
-                .map(|(name, value)| (name.to_lowercase(), value.clone()))
+                .map(|(name, value)| (name.to_lowercase(), value.expose_secret().to_owned()))
                 .collect(),
-            timeout_seconds: request.timeout_seconds,
+            timeout_seconds: request.timeout.as_secs(),
         }
     }
 }
 
 impl ImdsTransport for RecordingImds {
-    fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
+    fn get(&self, request: &MetadataRequest) -> io::Result<MetadataResponse> {
         Ok(self.exchange(RecordedRequest::from(request))?.imds())
     }
 }
@@ -308,13 +310,8 @@ impl HostedTransport for RecordingHosted {
 }
 
 impl ArcTransport for RecordingArc {
-    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
-        let recorded = ArcRequest {
-            url: request.url.clone(),
-            query: request.query.clone(),
-            headers: request.headers.clone(),
-        };
-        Ok(self.exchange(recorded)?.arc())
+    fn get(&self, request: &MetadataRequest) -> io::Result<MetadataResponse> {
+        Ok(self.exchange(request.clone())?.arc())
     }
 }
 
