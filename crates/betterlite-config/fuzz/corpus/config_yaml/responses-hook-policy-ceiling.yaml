@@ -1,0 +1,12 @@
+model_list:
+  - model_name: agentic
+    litellm_params:
+      model: openai/gpt-4o
+      max_agentic_loops: 5
+  - model_name: default
+    litellm_params:
+      model: openai/gpt-4o-mini
+  - model_name: quoted
+    litellm_params:
+      model: anthropic/claude-sonnet
+      max_agentic_loops: ' 4 '

@@ -1,0 +1,36 @@
+kind: helper
+name: deployment-hook-merge
+call:
+  responses_hook_policy:
+    operation: deployment_hook
+    model: gpt-4o
+    input: hello
+    custom_llm_provider: openai
+    optional_params:
+      temperature: 1
+      tools:
+        - type: function
+          function:
+            name: lookup
+    generic_params:
+      api_key: sk-old
+      api_base: https://old.example
+    global_callbacks:
+      - kind: plain
+      - kind: resolved_string
+      - kind: unresolved_string
+      - kind: other
+      - kind: override
+        result:
+          model: null
+          input: []
+          custom_llm_provider: null
+          temperature: 0
+          api_key: sk-new
+    dynamic_callbacks:
+      - kind: override
+        result:
+          temperature: 2
+      - kind: plain
+env: {}
+compare: {ignore: []}

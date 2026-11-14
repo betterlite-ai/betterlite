@@ -1,0 +1,14 @@
+kind: helper
+name: responses_hook_policy-followup-seed
+call:
+  responses_hook_policy:
+    operation: followup
+    request_kwargs: {model: gpt-4o, temperature: 1}
+    patch_kwargs: {temperature: 0}
+    request_params: [model]
+    depth: 0
+    max_loops: 3
+    fingerprints: []
+    fingerprint: first
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: responses_hook_policy-settings-seed
+call:
+  responses_hook_policy:
+    operation: settings
+    probes:
+      - {}
+      - max_agentic_loops: 5
+      - _agentic_loop_depth: '2'
+      - _agentic_loop_fingerprints: ['a']
+env: {}
+compare: {ignore: []}
