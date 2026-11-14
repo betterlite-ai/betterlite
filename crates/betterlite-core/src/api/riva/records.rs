@@ -16,7 +16,8 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 3] =
 pub struct RivaAudioTranscriptionConfig;
 
 impl RivaAudioTranscriptionConfig {
-    pub fn validate_environment(headers: Headers) -> Headers {
+    #[must_use]
+    pub const fn validate_environment(headers: Headers) -> Headers {
         // gRPC auth is built in the call layer, so the source returns the headers untouched
         headers
     }

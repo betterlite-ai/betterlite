@@ -4,10 +4,10 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
 use rust_decimal::Decimal;
 use serde::Serialize;
-use serde_json::{Value, from_value};
+use serde_json::from_value;
 
 use super::error::RecordsError;
-use super::options::{decimal_value, integer_value};
+use super::options::{decimal_at, integer_at};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EndpointingOptions {
@@ -38,13 +38,19 @@ pub enum EndpointingConfig {
 pub(super) fn endpointing_config(
     params: &Object,
 ) -> Result<Option<EndpointingConfig>, RecordsError> {
-    if let Some(Value::Object(explicit)) = params.get("endpointing_config") {
+    if let Some(explicit) = params
+        .get("endpointing_config")
+        .and_then(|value| value.as_object())
+    {
         return explicit_endpointing(explicit).map(Some);
     }
-    let Some(Value::Object(chunking)) = params.get("chunking_strategy") else {
+    let Some(chunking) = params
+        .get("chunking_strategy")
+        .and_then(|value| value.as_object())
+    else {
         return Ok(None);
     };
-    if chunking.get("type").and_then(Value::as_str) != Some("server_vad") {
+    if chunking.get("type").and_then(|value| value.as_str()) != Some("server_vad") {
         return Ok(None);
     }
     derived_endpointing(chunking)
@@ -69,19 +75,20 @@ fn derived_endpointing(chunking: &Object) -> Result<Option<EndpointingConfig>, R
         stop_history: None,
         stop_history_eou: None,
     };
-    if let Some(threshold) = chunking.get("threshold") {
-        let threshold = decimal_value(threshold, "chunking_strategy.threshold")?;
+    if let Some(threshold) = decimal_at(chunking, "threshold", "chunking_strategy.threshold")? {
         endpointing.start_threshold = Some(threshold);
         endpointing.stop_threshold = Some(threshold);
     }
-    if let Some(silence) = chunking.get("silence_duration_ms") {
-        let field = "chunking_strategy.silence_duration_ms";
-        endpointing.stop_history = Some(integer_value(silence, field)?);
-    }
-    if let Some(padding) = chunking.get("prefix_padding_ms") {
-        let field = "chunking_strategy.prefix_padding_ms";
-        endpointing.stop_history_eou = Some(integer_value(padding, field)?);
-    }
+    endpointing.stop_history = integer_at(
+        chunking,
+        "silence_duration_ms",
+        "chunking_strategy.silence_duration_ms",
+    )?;
+    endpointing.stop_history_eou = integer_at(
+        chunking,
+        "prefix_padding_ms",
+        "chunking_strategy.prefix_padding_ms",
+    )?;
     if endpointing.start_threshold.is_none()
         && endpointing.stop_threshold.is_none()
         && endpointing.stop_history.is_none()

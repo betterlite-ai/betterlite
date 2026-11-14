@@ -3,7 +3,7 @@ use betterlite_openai::openai_base_config::Object;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::to_value;
 
 use super::error::RecordsError;
 
@@ -26,8 +26,8 @@ pub struct FinalResult {
 }
 
 #[derive(Debug, Serialize)]
-struct WordEntry<'a> {
-    word: &'a str,
+struct WordEntry<'word> {
+    word: &'word str,
     start: f64,
     end: f64,
 }
@@ -43,14 +43,26 @@ pub fn build_transcription_response(
         joined.push_str(&result.transcript);
     }
     let mut extra = Object::new();
-    extra.insert("task".to_owned(), Value::from(TRANSCRIBE_TASK));
+    let task = to_value(TRANSCRIBE_TASK).map_err(|source| RecordsError::Value {
+        field: "task",
+        source,
+    })?;
+    extra.insert("task".to_owned(), task);
     if response_format == VERBOSE_JSON {
         let words = word_entries(final_results, timestamp_granularities)?;
         if !words.is_empty() {
-            extra.insert("words".to_owned(), Value::Array(words));
+            let listed = to_value(words).map_err(|source| RecordsError::Value {
+                field: "words",
+                source,
+            })?;
+            extra.insert("words".to_owned(), listed);
         }
         if let Some(duration) = duration_seconds {
-            extra.insert("duration".to_owned(), Value::from(duration));
+            let shown = to_value(duration).map_err(|source| RecordsError::Value {
+                field: "duration",
+                source,
+            })?;
+            extra.insert("duration".to_owned(), shown);
         }
     }
     Ok(TranscriptionResponse {
@@ -59,10 +71,10 @@ pub fn build_transcription_response(
     })
 }
 
-fn word_entries(
-    final_results: &[FinalResult],
+fn word_entries<'word>(
+    final_results: &'word [FinalResult],
     timestamp_granularities: Option<&[String]>,
-) -> Result<Vec<Value>, RecordsError> {
+) -> Result<Vec<WordEntry<'word>>, RecordsError> {
     let requested = timestamp_granularities
         .is_some_and(|names| names.iter().any(|name| name == WORD_GRANULARITY));
     if !requested {
@@ -71,17 +83,11 @@ fn word_entries(
     let mut entries = Vec::new();
     for result in final_results {
         for word in &result.words {
-            let entry = WordEntry {
+            entries.push(WordEntry {
                 word: &word.word,
                 start: seconds(word.start_time_ms)?,
                 end: seconds(word.end_time_ms)?,
-            };
-            entries.push(
-                serde_json::to_value(entry).map_err(|source| RecordsError::Value {
-                    field: "words",
-                    source,
-                })?,
-            );
+            });
         }
     }
     Ok(entries)
@@ -89,9 +95,9 @@ fn word_entries(
 
 fn seconds(milliseconds: i64) -> Result<f64, RecordsError> {
     // the source divides by 1000.0; Decimal keeps the intermediate exact
-    let seconds = Decimal::from(milliseconds)
+    let converted = Decimal::from(milliseconds)
         .checked_div(Decimal::from(1_000_u32))
         .and_then(|value| value.to_f64())
         .ok_or(RecordsError::Timing { field: "words" })?;
-    Ok(seconds)
+    Ok(converted)
 }

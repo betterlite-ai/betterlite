@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use rstest::rstest;
-use serde_json::{Number, Value, json};
+use serde_json::Number;
 
 use super::error::RecordsError;
 use super::grpc_status::{
@@ -14,33 +15,33 @@ use super::recognition::transform_request;
 use super::response::{FinalResult, build_transcription_response};
 use super::{RivaAudioTranscriptionConfig, SUPPORTED_OPENAI_PARAMS};
 
-fn params(value: Value) -> Object {
-    let Value::Object(object) = value else {
-        panic!("a test passes a JSON object");
+fn params(text: &str) -> Object {
+    serde_json::from_str(text).expect("a JSON object")
+}
+
+fn payload(text: &str) -> Object {
+    let optional = map_openai_params(&params(text)).expect("mapped params");
+    let request = transform_request(&optional).expect("a request");
+    let data = request.request_data().expect("request data");
+    let AudioTranscriptionData::Object(object) = data.data else {
+        panic!("a Riva request payload is a JSON object");
     };
     object
 }
 
-fn payload(value: Value) -> Value {
-    let optional = map_openai_params(&params(value)).expect("mapped params");
-    let request = transform_request(&optional).expect("a request");
-    let data = request.request_data().expect("request data");
-    serde_json::to_value(data.data).expect("a JSON payload")
-}
-
-fn payload_error(value: Value) -> RecordsError {
-    let optional = map_openai_params(&params(value)).expect("mapped params");
+fn payload_error(text: &str) -> RecordsError {
+    let optional = map_openai_params(&params(text)).expect("mapped params");
     transform_request(&optional).expect_err("a rejected option")
 }
 
 fn response(
-    final_results: Value,
+    final_results: &str,
     response_format: &str,
     duration_seconds: Option<f64>,
     granularities: Option<&[&str]>,
-) -> Value {
+) -> Object {
     let finals: Vec<FinalResult> =
-        serde_json::from_value(final_results).expect("typed final results");
+        serde_json::from_str(final_results).expect("typed final results");
     let names = granularities.map(|names| {
         names
             .iter()
@@ -50,31 +51,40 @@ fn response(
     let built =
         build_transcription_response(&finals, response_format, duration_seconds, names.as_deref())
             .expect("a transcription response");
-    serde_json::to_value(built).expect("a JSON response")
+    let encoded = serde_json::to_value(built).expect("a serializable response");
+    serde_json::from_value(encoded).expect("a JSON response")
 }
 
-fn default_payload() -> Value {
-    json!({
-        "recognition_config": {
-            "language_code": "en-US",
-            "sample_rate_hertz": 16000,
-            "encoding": "LINEAR_PCM",
-            "audio_channel_count": 1,
-            "enable_automatic_punctuation": true,
-            "enable_word_time_offsets": false,
-            "max_alternatives": 1,
-            "model": "",
-            "verbatim_transcripts": false,
-            "profanity_filter": false
-        },
-        "response_format": "json",
-        "timestamp_granularities": null
-    })
+fn endpointing_config(built: &Object) -> &Object {
+    built["recognition_config"]["endpointing_config"]
+        .as_object()
+        .expect("an endpointing config")
+}
+
+fn default_payload() -> Object {
+    params(
+        r#"{
+            "recognition_config": {
+                "language_code": "en-US",
+                "sample_rate_hertz": 16000,
+                "encoding": "LINEAR_PCM",
+                "audio_channel_count": 1,
+                "enable_automatic_punctuation": true,
+                "enable_word_time_offsets": false,
+                "max_alternatives": 1,
+                "model": "",
+                "verbatim_transcripts": false,
+                "profanity_filter": false
+            },
+            "response_format": "json",
+            "timestamp_granularities": null
+        }"#,
+    )
 }
 
 #[test]
 fn recognition_defaults_match_the_source() {
-    assert_eq!(payload(json!({})), default_payload());
+    assert_eq!(payload("{}"), default_payload());
 }
 
 #[test]
@@ -104,7 +114,7 @@ fn maps_bare_language_codes_to_their_bcp47_defaults(
     #[case] language: &str,
     #[case] expected: &str,
 ) {
-    let built = payload(json!({"language": language}));
+    let built = payload(&format!(r#"{{"language": "{language}"}}"#));
     assert_eq!(built["recognition_config"]["language_code"], expected);
 }
 
@@ -115,64 +125,73 @@ fn maps_bare_language_codes_to_their_bcp47_defaults(
 #[case::script_subtag("zh-Hans", "zh-Hans")]
 #[case::unknown_bare("xx", "xx")]
 fn keeps_tagged_and_unknown_languages_verbatim(#[case] language: &str, #[case] expected: &str) {
-    let built = payload(json!({"language": language}));
+    let built = payload(&format!(r#"{{"language": "{language}"}}"#));
     assert_eq!(built["recognition_config"]["language_code"], expected);
 }
 
 #[rstest]
-#[case::empty(json!(""))]
-#[case::number(json!(5))]
-#[case::boolean(json!(true))]
-#[case::list(json!([]))]
-#[case::null(Value::Null)]
-fn empty_and_non_string_languages_become_en_us(#[case] language: Value) {
-    let built = payload(json!({"language": language}));
+#[case::empty("\"\"")]
+#[case::number("5")]
+#[case::boolean("true")]
+#[case::list("[]")]
+#[case::null("null")]
+fn empty_and_non_string_languages_become_en_us(#[case] language: &str) {
+    let built = payload(&format!(r#"{{"language": {language}}}"#));
     assert_eq!(built["recognition_config"]["language_code"], "en-US");
 }
 
 #[test]
 fn map_keeps_every_non_null_input_and_skips_only_nulls() {
-    let optional = map_openai_params(&params(json!({
-        "language": null,
-        "prompt": "words",
-        "temperature": 0,
-        "custom": false,
-        "empty": ""
-    })))
+    let optional = map_openai_params(&params(
+        r#"{"language": null, "prompt": "words", "temperature": 0, "custom": false, "empty": ""}"#,
+    ))
     .expect("mapped params");
     assert_eq!(
         optional,
-        params(json!({"prompt": "words", "temperature": 0, "custom": false, "empty": ""}))
+        params(r#"{"prompt": "words", "temperature": 0, "custom": false, "empty": ""}"#)
     );
     assert!(!optional.contains_key("language"));
     assert!(!optional.contains_key("language_code"));
 }
 
 #[rstest]
-#[case::word(json!(["word"]), true)]
-#[case::segment_and_word(json!(["segment", "word"]), true)]
-#[case::segment(json!(["segment"]), false)]
-#[case::empty(json!([]), false)]
-#[case::capitalised(json!(["Word"]), false)]
+#[case::word(&["word"], true)]
+#[case::segment_and_word(&["segment", "word"], true)]
+#[case::segment(&["segment"], false)]
+#[case::empty(&[], false)]
+#[case::capitalised(&["Word"], false)]
 fn word_granularities_enable_word_time_offsets(
-    #[case] granularities: Value,
+    #[case] granularities: &[&str],
     #[case] expected: bool,
 ) {
-    let built = payload(json!({"timestamp_granularities": granularities.clone()}));
+    let listed = serde_json::to_string(granularities).expect("a granularity list");
+    let built = payload(&format!(r#"{{"timestamp_granularities": {listed}}}"#));
     assert_eq!(
         built["recognition_config"]["enable_word_time_offsets"],
         expected
     );
-    assert_eq!(built["timestamp_granularities"], granularities);
+    let echoed = built["timestamp_granularities"]
+        .as_array()
+        .expect("a granularity list");
+    assert_eq!(echoed.len(), granularities.len());
+    for (name, wanted) in echoed.iter().zip(granularities) {
+        assert_eq!(name.as_str(), Some(*wanted));
+    }
 }
 
 #[rstest]
-#[case::existing_true(json!({"enable_word_time_offsets": true, "timestamp_granularities": ["segment"]}), true)]
-#[case::word_overrides_false(json!({"enable_word_time_offsets": false, "timestamp_granularities": ["word"]}), true)]
-#[case::flag_alone(json!({"enable_word_time_offsets": true}), true)]
-#[case::flag_false_alone(json!({"enable_word_time_offsets": false}), false)]
+#[case::existing_true(
+    r#"{"enable_word_time_offsets": true, "timestamp_granularities": ["segment"]}"#,
+    true
+)]
+#[case::word_overrides_false(
+    r#"{"enable_word_time_offsets": false, "timestamp_granularities": ["word"]}"#,
+    true
+)]
+#[case::flag_alone(r#"{"enable_word_time_offsets": true}"#, true)]
+#[case::flag_false_alone(r#"{"enable_word_time_offsets": false}"#, false)]
 fn other_timestamp_requests_do_not_clear_an_existing_flag(
-    #[case] value: Value,
+    #[case] value: &str,
     #[case] expected: bool,
 ) {
     let built = payload(value);
@@ -184,8 +203,8 @@ fn other_timestamp_requests_do_not_clear_an_existing_flag(
 
 #[test]
 fn a_null_timestamp_granularities_keeps_the_payload_null() {
-    let built = payload(json!({"timestamp_granularities": null}));
-    assert_eq!(built["timestamp_granularities"], Value::Null);
+    let built = payload(r#"{"timestamp_granularities": null}"#);
+    assert!(built["timestamp_granularities"].is_null());
     assert_eq!(
         built["recognition_config"]["enable_word_time_offsets"],
         false
@@ -194,39 +213,39 @@ fn a_null_timestamp_granularities_keeps_the_payload_null() {
 
 #[rstest]
 #[case::complete(
-    json!({"chunking_strategy": {"type": "server_vad", "threshold": 0.5, "silence_duration_ms": 200, "prefix_padding_ms": 300}}),
-    json!({"start_threshold": 0.5, "stop_threshold": 0.5, "stop_history": 200, "stop_history_eou": 300})
+    r#"{"chunking_strategy": {"type": "server_vad", "threshold": 0.5, "silence_duration_ms": 200, "prefix_padding_ms": 300}}"#,
+    r#"{"start_threshold": 0.5, "stop_threshold": 0.5, "stop_history": 200, "stop_history_eou": 300}"#
 )]
 #[case::threshold_only(
-    json!({"chunking_strategy": {"type": "server_vad", "threshold": 0.5}}),
-    json!({"start_threshold": 0.5, "stop_threshold": 0.5})
+    r#"{"chunking_strategy": {"type": "server_vad", "threshold": 0.5}}"#,
+    r#"{"start_threshold": 0.5, "stop_threshold": 0.5}"#
 )]
 #[case::integer_threshold(
-    json!({"chunking_strategy": {"type": "server_vad", "threshold": 1}}),
-    json!({"start_threshold": 1.0, "stop_threshold": 1.0})
+    r#"{"chunking_strategy": {"type": "server_vad", "threshold": 1}}"#,
+    r#"{"start_threshold": 1.0, "stop_threshold": 1.0}"#
 )]
 #[case::silence_only(
-    json!({"chunking_strategy": {"type": "server_vad", "silence_duration_ms": 100}}),
-    json!({"stop_history": 100})
+    r#"{"chunking_strategy": {"type": "server_vad", "silence_duration_ms": 100}}"#,
+    r#"{"stop_history": 100}"#
 )]
 #[case::padding_only(
-    json!({"chunking_strategy": {"type": "server_vad", "prefix_padding_ms": 50}}),
-    json!({"stop_history_eou": 50})
+    r#"{"chunking_strategy": {"type": "server_vad", "prefix_padding_ms": 50}}"#,
+    r#"{"stop_history_eou": 50}"#
 )]
-fn server_vad_chunking_becomes_endpointing(#[case] value: Value, #[case] expected: Value) {
+fn server_vad_chunking_becomes_endpointing(#[case] value: &str, #[case] expected: &str) {
     let built = payload(value);
-    assert_eq!(built["recognition_config"]["endpointing_config"], expected);
+    assert_eq!(endpointing_config(&built), &params(expected));
 }
 
 #[rstest]
-#[case::absent(json!({}))]
-#[case::auto(json!({"chunking_strategy": "auto"}))]
-#[case::null(json!({"chunking_strategy": null}))]
-#[case::empty_server_vad(json!({"chunking_strategy": {"type": "server_vad"}}))]
-#[case::semantic(json!({"chunking_strategy": {"type": "semantic_vad"}}))]
-#[case::text(json!({"chunking_strategy": "fixed"}))]
-#[case::number(json!({"chunking_strategy": 5}))]
-fn chunking_that_derives_nothing_omits_endpointing(#[case] value: Value) {
+#[case::absent("{}")]
+#[case::auto(r#"{"chunking_strategy": "auto"}"#)]
+#[case::null(r#"{"chunking_strategy": null}"#)]
+#[case::empty_server_vad(r#"{"chunking_strategy": {"type": "server_vad"}}"#)]
+#[case::semantic(r#"{"chunking_strategy": {"type": "semantic_vad"}}"#)]
+#[case::text(r#"{"chunking_strategy": "fixed"}"#)]
+#[case::number(r#"{"chunking_strategy": 5}"#)]
+fn chunking_that_derives_nothing_omits_endpointing(#[case] value: &str) {
     let built = payload(value);
     assert!(
         !built["recognition_config"]
@@ -238,51 +257,52 @@ fn chunking_that_derives_nothing_omits_endpointing(#[case] value: Value) {
 
 #[test]
 fn an_explicit_endpointing_mapping_wins_even_when_empty() {
-    let built = payload(json!({
-        "endpointing_config": {},
-        "chunking_strategy": {"type": "server_vad", "threshold": 0.5}
-    }));
-    assert_eq!(built["recognition_config"]["endpointing_config"], json!({}));
+    let built = payload(
+        r#"{"endpointing_config": {}, "chunking_strategy": {"type": "server_vad", "threshold": 0.5}}"#,
+    );
+    assert_eq!(endpointing_config(&built), &params("{}"));
 }
 
 #[test]
 fn an_explicit_endpointing_mapping_is_copied() {
-    let built = payload(json!({
-        "endpointing_config": {"start_threshold": 0.25, "stop_history": 100}
-    }));
+    let built =
+        payload(r#"{"endpointing_config": {"start_threshold": 0.25, "stop_history": 100}}"#);
     assert_eq!(
-        built["recognition_config"]["endpointing_config"],
-        json!({"start_threshold": 0.25, "stop_history": 100})
+        endpointing_config(&built),
+        &params(r#"{"start_threshold": 0.25, "stop_history": 100}"#)
     );
 }
 
 #[test]
 fn an_explicit_endpointing_mapping_keeps_unknown_settings() {
-    let built = payload(json!({
-        "endpointing_config": {"start_threshold": 0.1, "other_setting": "x"}
-    }));
+    let built =
+        payload(r#"{"endpointing_config": {"start_threshold": 0.1, "other_setting": "x"}}"#);
     assert_eq!(
-        built["recognition_config"]["endpointing_config"],
-        json!({"start_threshold": 0.1, "other_setting": "x"})
+        endpointing_config(&built),
+        &params(r#"{"start_threshold": 0.1, "other_setting": "x"}"#)
     );
 }
 
 #[rstest]
-#[case::null(json!({"endpointing_config": null, "chunking_strategy": {"type": "server_vad", "threshold": 0.5}}))]
-#[case::text(json!({"endpointing_config": "x", "chunking_strategy": {"type": "server_vad", "threshold": 0.5}}))]
-fn a_non_mapping_endpointing_falls_back_to_chunking(#[case] value: Value) {
+#[case::null(
+    r#"{"endpointing_config": null, "chunking_strategy": {"type": "server_vad", "threshold": 0.5}}"#
+)]
+#[case::text(
+    r#"{"endpointing_config": "x", "chunking_strategy": {"type": "server_vad", "threshold": 0.5}}"#
+)]
+fn a_non_mapping_endpointing_falls_back_to_chunking(#[case] value: &str) {
     let built = payload(value);
     assert_eq!(
-        built["recognition_config"]["endpointing_config"],
-        json!({"start_threshold": 0.5, "stop_threshold": 0.5})
+        endpointing_config(&built),
+        &params(r#"{"start_threshold": 0.5, "stop_threshold": 0.5}"#)
     );
 }
 
 #[rstest]
-#[case::text(json!({"chunking_strategy": {"type": "server_vad", "threshold": "0.5"}}))]
-#[case::null(json!({"chunking_strategy": {"type": "server_vad", "threshold": null}}))]
-#[case::boolean(json!({"chunking_strategy": {"type": "server_vad", "threshold": true}}))]
-fn a_chunking_threshold_must_be_a_number(#[case] value: Value) {
+#[case::text(r#"{"chunking_strategy": {"type": "server_vad", "threshold": "0.5"}}"#)]
+#[case::null(r#"{"chunking_strategy": {"type": "server_vad", "threshold": null}}"#)]
+#[case::boolean(r#"{"chunking_strategy": {"type": "server_vad", "threshold": true}}"#)]
+fn a_chunking_threshold_must_be_a_number(#[case] value: &str) {
     let error = payload_error(value);
     assert!(matches!(
         error,
@@ -293,12 +313,24 @@ fn a_chunking_threshold_must_be_a_number(#[case] value: Value) {
 }
 
 #[rstest]
-#[case::negative(json!({"chunking_strategy": {"type": "server_vad", "silence_duration_ms": -5}}), "chunking_strategy.silence_duration_ms")]
-#[case::text(json!({"chunking_strategy": {"type": "server_vad", "silence_duration_ms": "200"}}), "chunking_strategy.silence_duration_ms")]
-#[case::fraction(json!({"chunking_strategy": {"type": "server_vad", "silence_duration_ms": 1.5}}), "chunking_strategy.silence_duration_ms")]
-#[case::negative_padding(json!({"chunking_strategy": {"type": "server_vad", "prefix_padding_ms": -1}}), "chunking_strategy.prefix_padding_ms")]
+#[case::negative(
+    r#"{"chunking_strategy": {"type": "server_vad", "silence_duration_ms": -5}}"#,
+    "chunking_strategy.silence_duration_ms"
+)]
+#[case::text(
+    r#"{"chunking_strategy": {"type": "server_vad", "silence_duration_ms": "200"}}"#,
+    "chunking_strategy.silence_duration_ms"
+)]
+#[case::fraction(
+    r#"{"chunking_strategy": {"type": "server_vad", "silence_duration_ms": 1.5}}"#,
+    "chunking_strategy.silence_duration_ms"
+)]
+#[case::negative_padding(
+    r#"{"chunking_strategy": {"type": "server_vad", "prefix_padding_ms": -1}}"#,
+    "chunking_strategy.prefix_padding_ms"
+)]
 fn a_chunking_history_must_be_a_non_negative_integer(
-    #[case] value: Value,
+    #[case] value: &str,
     #[case] field: &'static str,
 ) {
     let error = payload_error(value);
@@ -306,13 +338,13 @@ fn a_chunking_history_must_be_a_non_negative_integer(
 }
 
 #[rstest]
-#[case::named(json!({"riva_model_name": "parakeet"}), "parakeet")]
-#[case::absent(json!({}), "")]
-#[case::api_model_only(json!({"model": "openai/whisper-1"}), "")]
-#[case::empty_name(json!({"riva_model_name": ""}), "")]
-#[case::named_beats_api_model(json!({"riva_model_name": "x", "model": "ignored"}), "x")]
+#[case::named(r#"{"riva_model_name": "parakeet"}"#, "parakeet")]
+#[case::absent("{}", "")]
+#[case::api_model_only(r#"{"model": "openai/whisper-1"}"#, "")]
+#[case::empty_name(r#"{"riva_model_name": ""}"#, "")]
+#[case::named_beats_api_model(r#"{"riva_model_name": "x", "model": "ignored"}"#, "x")]
 fn riva_model_name_is_the_only_recognition_model_source(
-    #[case] value: Value,
+    #[case] value: &str,
     #[case] expected: &str,
 ) {
     let built = payload(value);
@@ -321,33 +353,35 @@ fn riva_model_name_is_the_only_recognition_model_source(
 
 #[test]
 fn recognition_inputs_are_used_as_given() {
-    let built = payload(json!({
-        "sample_rate_hertz": 8000,
-        "encoding": "MULAW",
-        "audio_channel_count": 2,
-        "max_alternatives": 3,
-        "enable_automatic_punctuation": false,
-        "verbatim_transcripts": true,
-        "profanity_filter": true
-    }));
+    let built = payload(
+        r#"{
+            "sample_rate_hertz": 8000,
+            "encoding": "MULAW",
+            "audio_channel_count": 2,
+            "max_alternatives": 3,
+            "enable_automatic_punctuation": false,
+            "verbatim_transcripts": true,
+            "profanity_filter": true
+        }"#,
+    );
     let config = &built["recognition_config"];
-    assert_eq!(config["sample_rate_hertz"], 8000);
+    assert_eq!(config["sample_rate_hertz"], 8000_i32);
     assert_eq!(config["encoding"], "MULAW");
-    assert_eq!(config["audio_channel_count"], 2);
-    assert_eq!(config["max_alternatives"], 3);
+    assert_eq!(config["audio_channel_count"], 2_i32);
+    assert_eq!(config["max_alternatives"], 3_i32);
     assert_eq!(config["enable_automatic_punctuation"], false);
     assert_eq!(config["verbatim_transcripts"], true);
     assert_eq!(config["profanity_filter"], true);
 }
 
 #[rstest]
-#[case::absent(json!({}), "json")]
-#[case::empty(json!({"response_format": ""}), "json")]
-#[case::verbose(json!({"response_format": "verbose_json"}), "verbose_json")]
-#[case::text(json!({"response_format": "text"}), "text")]
-#[case::subtitle(json!({"response_format": "srt"}), "srt")]
+#[case::absent("{}", "json")]
+#[case::empty(r#"{"response_format": ""}"#, "json")]
+#[case::verbose(r#"{"response_format": "verbose_json"}"#, "verbose_json")]
+#[case::text(r#"{"response_format": "text"}"#, "text")]
+#[case::subtitle(r#"{"response_format": "srt"}"#, "srt")]
 fn a_response_format_falls_back_to_json_when_absent_or_empty(
-    #[case] value: Value,
+    #[case] value: &str,
     #[case] expected: &str,
 ) {
     let built = payload(value);
@@ -355,39 +389,45 @@ fn a_response_format_falls_back_to_json_when_absent_or_empty(
 }
 
 #[rstest]
-#[case::response_format(json!({"response_format": 5}), "response_format")]
-#[case::language_code(json!({"language_code": 5}), "language_code")]
-#[case::riva_model_name(json!({"riva_model_name": []}), "riva_model_name")]
-#[case::encoding(json!({"encoding": {}}), "encoding")]
-#[case::sample_rate(json!({"sample_rate_hertz": "16000"}), "sample_rate_hertz")]
-#[case::channels(json!({"audio_channel_count": -1}), "audio_channel_count")]
-#[case::alternatives(json!({"max_alternatives": 1.5}), "max_alternatives")]
-#[case::punctuation(json!({"enable_automatic_punctuation": "yes"}), "enable_automatic_punctuation")]
-#[case::word_offsets(json!({"enable_word_time_offsets": 1}), "enable_word_time_offsets")]
-#[case::verbatim(json!({"verbatim_transcripts": 1}), "verbatim_transcripts")]
-#[case::profanity(json!({"profanity_filter": 0}), "profanity_filter")]
+#[case::response_format(r#"{"response_format": 5}"#, "response_format")]
+#[case::language_code(r#"{"language_code": 5}"#, "language_code")]
+#[case::riva_model_name(r#"{"riva_model_name": []}"#, "riva_model_name")]
+#[case::encoding(r#"{"encoding": {}}"#, "encoding")]
+#[case::sample_rate(r#"{"sample_rate_hertz": "16000"}"#, "sample_rate_hertz")]
+#[case::channels(r#"{"audio_channel_count": -1}"#, "audio_channel_count")]
+#[case::alternatives(r#"{"max_alternatives": 1.5}"#, "max_alternatives")]
+#[case::punctuation(
+    r#"{"enable_automatic_punctuation": "yes"}"#,
+    "enable_automatic_punctuation"
+)]
+#[case::word_offsets(r#"{"enable_word_time_offsets": 1}"#, "enable_word_time_offsets")]
+#[case::verbatim(r#"{"verbatim_transcripts": 1}"#, "verbatim_transcripts")]
+#[case::profanity(r#"{"profanity_filter": 0}"#, "profanity_filter")]
 fn a_recognition_option_of_the_wrong_type_names_the_field(
-    #[case] value: Value,
+    #[case] value: &str,
     #[case] field: &'static str,
 ) {
     let error = payload_error(value);
     let named = match &error {
-        RecordsError::Text { field }
-        | RecordsError::Integer { field }
-        | RecordsError::Boolean { field }
-        | RecordsError::Number { field }
-        | RecordsError::Granularities { field }
-        | RecordsError::Timing { field }
-        | RecordsError::Value { field, .. } => *field,
+        RecordsError::Text { field: named }
+        | RecordsError::Integer { field: named }
+        | RecordsError::Boolean { field: named }
+        | RecordsError::Number { field: named }
+        | RecordsError::Granularities { field: named }
+        | RecordsError::Timing { field: named }
+        | RecordsError::Value { field: named, .. } => *named,
     };
     assert_eq!(named, field);
 }
 
 #[rstest]
-#[case::text(json!({"timestamp_granularities": "word"}), "timestamp_granularities")]
-#[case::number(json!({"timestamp_granularities": [5]}), "timestamp_granularities")]
-#[case::object(json!({"timestamp_granularities": {"word": true}}), "timestamp_granularities")]
-fn a_timestamp_granularity_list_is_required(#[case] value: Value, #[case] field: &'static str) {
+#[case::text(r#"{"timestamp_granularities": "word"}"#, "timestamp_granularities")]
+#[case::number(r#"{"timestamp_granularities": [5]}"#, "timestamp_granularities")]
+#[case::object(
+    r#"{"timestamp_granularities": {"word": true}}"#,
+    "timestamp_granularities"
+)]
+fn a_timestamp_granularity_list_is_required(#[case] value: &str, #[case] field: &'static str) {
     let error = map_openai_params(&params(value)).expect_err("a rejected option");
     assert!(matches!(error, RecordsError::Granularities { field: rejected } if rejected == field));
 }
@@ -402,12 +442,15 @@ fn validate_environment_returns_the_headers_unchanged() {
 }
 
 #[rstest]
-#[case::separated(json!([{"transcript": " Hello "}, {"transcript": "world"}]), "Hello world")]
-#[case::adjacent(json!([{"transcript": "a"}, {"transcript": "b"}]), "ab")]
-#[case::blank_and_spaced(json!([{"transcript": ""}, {"transcript": "  x  "}]), "x")]
-#[case::blank_only(json!([{"transcript": "   "}]), "")]
-#[case::none(json!([]), "")]
-fn final_transcripts_join_without_separators_and_strip(#[case] finals: Value, #[case] text: &str) {
+#[case::separated(
+    r#"[{"transcript": " Hello "}, {"transcript": "world"}]"#,
+    "Hello world"
+)]
+#[case::adjacent(r#"[{"transcript": "a"}, {"transcript": "b"}]"#, "ab")]
+#[case::blank_and_spaced(r#"[{"transcript": ""}, {"transcript": "  x  "}]"#, "x")]
+#[case::blank_only(r#"[{"transcript": "   "}]"#, "")]
+#[case::none("[]", "")]
+fn final_transcripts_join_without_separators_and_strip(#[case] finals: &str, #[case] text: &str) {
     let built = response(finals, "json", None, None);
     assert_eq!(built["text"], text);
 }
@@ -420,7 +463,7 @@ fn final_transcripts_join_without_separators_and_strip(#[case] finals: Value, #[
 #[case::verbose("verbose_json")]
 fn every_response_carries_the_transcribe_task(#[case] response_format: &str) {
     let built = response(
-        json!([{"transcript": "hi"}]),
+        r#"[{"transcript": "hi"}]"#,
         response_format,
         Some(1.0),
         None,
@@ -431,29 +474,31 @@ fn every_response_carries_the_transcribe_task(#[case] response_format: &str) {
 #[test]
 fn verbose_json_lists_requested_word_timings() {
     let built = response(
-        json!([
+        r#"[
             {"transcript": " a", "words": [{"word": "a", "start_time_ms": 1234, "end_time_ms": 2500}]},
             {"transcript": " b c", "words": [
                 {"word": "b", "start_time_ms": 2500, "end_time_ms": 3000},
                 {"word": "", "start_time_ms": -500, "end_time_ms": 0}
             ]}
-        ]),
+        ]"#,
         "verbose_json",
         Some(4.0),
         Some(&["word"][..]),
     );
     assert_eq!(
         built,
-        json!({
-            "text": "a b c",
-            "task": "transcribe",
-            "words": [
-                {"word": "a", "start": 1.234, "end": 2.5},
-                {"word": "b", "start": 2.5, "end": 3.0},
-                {"word": "", "start": -0.5, "end": 0.0}
-            ],
-            "duration": 4.0
-        })
+        params(
+            r#"{
+                "text": "a b c",
+                "task": "transcribe",
+                "words": [
+                    {"word": "a", "start": 1.234, "end": 2.5},
+                    {"word": "b", "start": 2.5, "end": 3.0},
+                    {"word": "", "start": -0.5, "end": 0.0}
+                ],
+                "duration": 4.0
+            }"#
+        )
     );
 }
 
@@ -462,65 +507,57 @@ fn verbose_json_lists_requested_word_timings() {
 #[case::absent(None)]
 fn verbose_json_without_a_word_request_has_no_words(#[case] granularities: Option<&[&str]>) {
     let built = response(
-        json!([{"transcript": "hi", "words": [{"word": "hi", "start_time_ms": 0, "end_time_ms": 100}]}]),
+        r#"[{"transcript": "hi", "words": [{"word": "hi", "start_time_ms": 0, "end_time_ms": 100}]}]"#,
         "verbose_json",
         Some(1.5),
         granularities,
     );
     assert_eq!(
         built,
-        json!({"text": "hi", "task": "transcribe", "duration": 1.5})
+        params(r#"{"text": "hi", "task": "transcribe", "duration": 1.5}"#)
     );
 }
 
 #[test]
 fn verbose_json_with_an_empty_word_list_has_no_words() {
     let built = response(
-        json!([{"transcript": "hi", "words": []}]),
+        r#"[{"transcript": "hi", "words": []}]"#,
         "verbose_json",
         Some(1.5),
         Some(&["word"][..]),
     );
     assert_eq!(
         built,
-        json!({"text": "hi", "task": "transcribe", "duration": 1.5})
+        params(r#"{"text": "hi", "task": "transcribe", "duration": 1.5}"#)
     );
 }
 
 #[rstest]
-#[case::present(Some(0.0), json!(0.0))]
-#[case::absent(None, Value::Null)]
+#[case::present(Some(0.0), r#"{"text": "hi", "task": "transcribe", "duration": 0.0}"#)]
+#[case::absent(None, r#"{"text": "hi", "task": "transcribe"}"#)]
 fn verbose_json_includes_only_a_non_null_duration(
     #[case] duration: Option<f64>,
-    #[case] expected: Value,
+    #[case] expected: &str,
 ) {
-    let built = response(
-        json!([{"transcript": "hi"}]),
-        "verbose_json",
-        duration,
-        None,
-    );
-    assert_eq!(
-        built.get("duration").cloned().unwrap_or(Value::Null),
-        expected
-    );
+    let built = response(r#"[{"transcript": "hi"}]"#, "verbose_json", duration, None);
+    assert_eq!(built, params(expected));
 }
 
 #[test]
 fn plain_formats_drop_words_and_duration() {
     let built = response(
-        json!([{"transcript": "hi", "words": [{"word": "hi", "start_time_ms": 0, "end_time_ms": 100}]}]),
+        r#"[{"transcript": "hi", "words": [{"word": "hi", "start_time_ms": 0, "end_time_ms": 100}]}]"#,
         "json",
         Some(1.5),
         Some(&["word"][..]),
     );
-    assert_eq!(built, json!({"text": "hi", "task": "transcribe"}));
+    assert_eq!(built, params(r#"{"text": "hi", "task": "transcribe"}"#));
 }
 
 #[test]
 fn empty_final_results_yield_an_empty_text() {
-    let built = response(json!([]), "json", None, None);
-    assert_eq!(built, json!({"text": "", "task": "transcribe"}));
+    let built = response("[]", "json", None, None);
+    assert_eq!(built, params(r#"{"text": "", "task": "transcribe"}"#));
 }
 
 fn observation(code: CodeAttribute, details: DetailsAttribute, text: &str) -> GrpcErrorObservation {
@@ -570,7 +607,7 @@ fn every_grpc_status_name_maps_to_its_http_status(#[case] name: &str, #[case] st
 #[case::missing(CodeAttribute::Missing)]
 #[case::not_callable(CodeAttribute::NotCallable)]
 #[case::raises(CodeAttribute::Raises)]
-#[case::numeric_name(returned_code(Json::Number(Number::from(5))))]
+#[case::numeric_name(returned_code(Json::Number(Number::from(5_i32))))]
 #[case::null_name(returned_code(Json::Null))]
 #[case::empty_name(returned_code(Json::Text(String::new())))]
 fn an_unusable_status_name_leaves_the_status_at_500(#[case] code: CodeAttribute) {
@@ -598,7 +635,7 @@ fn an_unknown_status_name_keeps_its_500_and_its_prefix() {
 #[rstest]
 #[case::nonempty(DetailsAttribute::Returns { value: Json::Text("detail".to_owned()) }, "detail")]
 #[case::empty(DetailsAttribute::Returns { value: Json::Text(String::new()) }, "boom")]
-#[case::number(DetailsAttribute::Returns { value: Json::Number(Number::from(5)) }, "boom")]
+#[case::number(DetailsAttribute::Returns { value: Json::Number(Number::from(5_i32)) }, "boom")]
 #[case::null(DetailsAttribute::Returns { value: Json::Null }, "boom")]
 #[case::missing(DetailsAttribute::Missing, "boom")]
 #[case::not_callable(DetailsAttribute::NotCallable, "boom")]

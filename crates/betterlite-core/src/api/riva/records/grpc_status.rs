@@ -61,7 +61,7 @@ pub struct RivaException {
 }
 
 // only a callable code whose name is a string names a status; a nonempty details string wins over str(error)
-fn describe(observation: &GrpcErrorObservation) -> (Option<&str>, &str) {
+const fn describe(observation: &GrpcErrorObservation) -> (Option<&str>, &str) {
     let name = match &observation.code {
         CodeAttribute::Returns {
             name: Json::Text(name),
@@ -96,14 +96,14 @@ fn http_status(name: &str) -> Option<u16> {
 #[must_use]
 pub fn grpc_error_to_exception(observation: &GrpcErrorObservation) -> RivaException {
     let (name, detail) = describe(observation);
-    let name = name.filter(|name| !name.is_empty());
-    let status_code = name
+    let status_name = name.filter(|candidate| !candidate.is_empty());
+    let status_code = status_name
         .and_then(http_status)
         .unwrap_or(DEFAULT_GRPC_HTTP_STATUS);
-    let message = match name {
-        Some(name) => format!("NVIDIA Riva gRPC error ({name}): {detail}"),
-        None => format!("NVIDIA Riva error: {detail}"),
-    };
+    let message = status_name.map_or_else(
+        || format!("NVIDIA Riva error: {detail}"),
+        |status| format!("NVIDIA Riva gRPC error ({status}): {detail}"),
+    );
     RivaException {
         status_code,
         message,
