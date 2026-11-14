@@ -93,9 +93,8 @@ pub struct LangFuseLogger {
 
 // the logger holds trait objects, so Debug prints the project link and the lifecycle flag
 impl fmt::Debug for LangFuseLogger {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("LangFuseLogger")
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LangFuseLogger")
             .field("project_id", &self.project_id)
             .field("stopped", &self.stopped)
             .finish_non_exhaustive()
