@@ -28,8 +28,9 @@ deviations:
       keeps serialization working where LiteLLM's unparametrized generic crashes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L77
   - what: >-
-      The ported models carry no pydantic Field descriptions and no class docstrings, so
-      model_json_schema() has no description keys where LiteLLM's does. The JSON schema extras that
+      The ported models carry no pydantic Field descriptions and no class docstrings, and
+      guardrail_base_init.py drops LiteLLM's module docstring, so model_json_schema() has no
+      description keys where LiteLLM's does. The JSON schema extras that
       drive the UI are kept: the api_base examples, the policy_id and send_user_api_key_alias
       ui_hint and condition, the bool ui_type on the three send_user_api_key flags, and the
       multiselect policy_names options on XecGuardConfigModel.
