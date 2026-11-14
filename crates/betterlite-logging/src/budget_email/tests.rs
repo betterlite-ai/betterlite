@@ -150,9 +150,9 @@ fn budget_event() -> WebhookEvent {
     }
 }
 
-const USER_EMAIL_HTML: &str = "\n            <img src=\"https://litellm-listing.s3.amazonaws.com/litellm_logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" />\n\n            <p> Hi user-1, <br/>\n\n            Your LLM API usage this month has reached your account's <b> monthly budget of $100 </b> <br /> <br />\n\n            API requests will be rejected until either (a) you increase your monthly budget or (b) your monthly usage resets at the beginning of the next calendar month. <br /> <br />\n\n            If you have any questions, please send an email to support@berri.ai <br /> <br />\n\n            Best, <br />\n            The LiteLLM team <br />\n            ";
+const USER_EMAIL_HTML: &str = "\n            <img src=\"https:&#x2f;&#x2f;litellm-listing.s3.amazonaws.com&#x2f;litellm_logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" />\n\n            <p> Hi user-1, <br/>\n\n            Your LLM API usage this month has reached your account's <b> monthly budget of $100 </b> <br /> <br />\n\n            API requests will be rejected until either (a) you increase your monthly budget or (b) your monthly usage resets at the beginning of the next calendar month. <br /> <br />\n\n            If you have any questions, please send an email to support@berri.ai <br /> <br />\n\n            Best, <br />\n            The LiteLLM team <br />\n            ";
 
-const TEAM_EMAIL_HTML: &str = "\n    <img src=\"https://litellm-listing.s3.amazonaws.com/litellm_logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" /> <br/><br/><br/>\n\n    Budget Crossed for Team <b> Alpha </b> <br/> <br/>\n\n    Your Teams LLM API usage has crossed it's <b> budget of $100 </b>, current spend is <b>$12.5</b><br /> <br />\n\n    API requests will be rejected until either (a) you increase your budget or (b) your budget gets reset <br /> <br />\n\n    If you have any questions, please send an email to support@berri.ai <br /> <br />\n\n    Best, <br />\n    The LiteLLM team <br />\n    ";
+const TEAM_EMAIL_HTML: &str = "\n    <img src=\"https:&#x2f;&#x2f;litellm-listing.s3.amazonaws.com&#x2f;litellm_logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" /> <br/><br/><br/>\n\n    Budget Crossed for Team <b> Alpha </b> <br/> <br/>\n\n    Your Teams LLM API usage has crossed it's <b> budget of $100 </b>, current spend is <b>$12.5</b><br /> <br />\n\n    API requests will be rejected until either (a) you increase your budget or (b) your budget gets reset <br /> <br />\n\n    If you have any questions, please send an email to support@berri.ai <br /> <br />\n\n    Best, <br />\n    The LiteLLM team <br />\n    ";
 
 #[rstest]
 #[case::defaults(&[], LITELLM_LOGO_URL, LITELLM_SUPPORT_CONTACT)]
@@ -310,13 +310,38 @@ async fn customized_branding_reaches_the_team_email() {
     assert!(
         delivered[0]
             .html
-            .contains("src=\"https://cdn.example/logo.png\"")
+            .contains("src=\"https:&#x2f;&#x2f;cdn.example&#x2f;logo.png\"")
     );
     assert!(
         delivered[0]
             .html
             .contains("send an email to help@example.com")
     );
+}
+
+#[tokio::test]
+async fn budget_email_values_are_html_escaped() {
+    let hostile = r#"<b>&"'"#;
+    let escaped = "&lt;b&gt;&amp;&quot;&#x27;";
+    let values = environment(&[("EMAIL_SUPPORT_CONTACT", hostile)]);
+    let mut event = budget_event();
+    event.event_group = EntityType::Team;
+    event.user_id = Some(hostile.to_owned());
+    event.team_alias = Some(hostile.to_owned());
+    let sender = recording_sender();
+    let result =
+        send_email_alert_using_smtp(&event, AlertType::BudgetAlerts, &values, None, &sender).await;
+    assert!(!result.unwrap());
+    let delivered = sender.sent();
+    assert_eq!(delivered.len(), 2);
+    let user_html = &delivered[0].html;
+    assert!(user_html.contains(&format!("<p> Hi {escaped}, <br/>")));
+    assert!(user_html.contains(&format!("send an email to {escaped}")));
+    assert!(!user_html.contains(hostile));
+    let team_html = &delivered[1].html;
+    assert!(team_html.contains(&format!("Budget Crossed for Team <b> {escaped} </b>")));
+    assert!(team_html.contains(&format!("send an email to {escaped}")));
+    assert!(!team_html.contains(hostile));
 }
 
 #[tokio::test]
