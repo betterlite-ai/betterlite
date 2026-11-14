@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
@@ -5,9 +7,12 @@ use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::noma_scan_policy::BLOCKED_MESSAGE;
 
 use crate::support::{
-    BLOCKED_REPLY, NONE_REPLY, closed_base, data, field, guardrail, inputs, mock_noma, records,
-    request_count, request_data, scan, settings, text_field, value,
+    BLOCKED_REPLY, NONE_REPLY, closed_base, data, field, guardrail, inputs, mock_noma,
+    mock_noma_after, records, request_count, request_data, scan, settings, text_field, value,
 };
+
+// Hardcoded independently of the guardrail's cap, so a mutation of that constant cannot move the boundary too.
+const SPEC_MAX_RESPONSE_BYTES: usize = 0x0010_0000;
 
 #[tokio::test]
 async fn error_handling() {
@@ -107,6 +112,56 @@ async fn block_failures_false_returns_the_inputs() {
         Some(&GuardrailValue::Text(String::from(
             "the Noma API response is not valid JSON"
         )))
+    );
+}
+
+#[tokio::test]
+async fn a_timed_out_scan_fails_with_status_408() {
+    let mock = mock_noma_after(Duration::from_millis(200), StatusCode::OK, NONE_REPLY).await;
+    let mut config = settings(&mock.base);
+    config.timeout = Some(Duration::from_millis(10));
+    config.request_timeout = Duration::from_millis(10);
+    let outcome = scan(
+        &guardrail(config),
+        inputs(),
+        request_data(),
+        GuardrailInputType::Request,
+    )
+    .await;
+    let Err(GuardrailFailure::Http { status, detail }) = outcome.result else {
+        panic!("the timed out scan was not raised with a status");
+    };
+    assert_eq!(status, 408);
+    assert_eq!(detail, "the Noma v2 request timed out");
+    let record = &records(&outcome.request_data)[0];
+    assert_eq!(
+        text_field(record, "guardrail_status").as_deref(),
+        Some("guardrail_failed_to_respond")
+    );
+}
+
+#[tokio::test]
+async fn a_response_above_the_cap_fails_the_scan() {
+    let reply = " ".repeat(SPEC_MAX_RESPONSE_BYTES + 1);
+    let mock = mock_noma(StatusCode::OK, &reply).await;
+    let outcome = scan(
+        &guardrail(settings(&mock.base)),
+        inputs(),
+        request_data(),
+        GuardrailInputType::Request,
+    )
+    .await;
+    let Err(GuardrailFailure::Other(message)) = outcome.result else {
+        panic!("the oversized response was not refused");
+    };
+    assert_eq!(
+        message,
+        format!("the Noma v2 response is larger than {SPEC_MAX_RESPONSE_BYTES} bytes")
+    );
+    let record = &records(&outcome.request_data)[0];
+    assert_eq!(
+        text_field(record, "guardrail_status").as_deref(),
+        Some("guardrail_failed_to_respond")
     );
 }
 

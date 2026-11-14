@@ -99,6 +99,23 @@ fn config_from_environment_reads_every_boolean_spelling() {
 }
 
 #[test]
+fn config_falls_back_to_litellms_request_timeout() {
+    let env = lookup(&[("NOMA_API_KEY", "env-key")]);
+    let settings = NomaV2Settings::resolve(&params(), &env).unwrap();
+    assert_eq!(settings.timeout, None);
+    assert_eq!(settings.request_timeout, Duration::from_secs(600));
+}
+
+#[test]
+fn config_uses_a_configured_timeout_as_the_request_timeout() {
+    let mut configured = params();
+    configured.timeout = Some(2.5);
+    let env = lookup(&[("NOMA_API_KEY", "env-key")]);
+    let settings = NomaV2Settings::resolve(&configured, &env).unwrap();
+    assert_eq!(settings.request_timeout, Duration::from_millis(2_500));
+}
+
+#[test]
 fn config_constructor_overrides_environment() {
     let env = lookup(&[
         ("NOMA_API_KEY", "env-key"),
@@ -141,13 +158,8 @@ fn config_constructor_overrides_environment() {
 fn initialize_guardrail_v2_registers_the_callback() {
     let mut registry = Registry::default();
     let env = lookup(&[("NOMA_API_KEY", "env-key")]);
-    let guardrail = initialize_guardrail_v2(
-        &params(),
-        &env,
-        base_builder().build().unwrap(),
-        &mut registry,
-    )
-    .unwrap();
+    let guardrail =
+        initialize_guardrail_v2(&params(), &env, base_builder(), &mut registry).unwrap();
     assert_eq!(registry.callbacks.len(), 1);
     assert!(Arc::ptr_eq(&registry.callbacks[0], &guardrail));
     assert_eq!(guardrail.settings.api_base, "https://api.noma.security");
@@ -171,7 +183,7 @@ fn initialize_guardrail_v2_carries_the_default_on_flag_and_timeout() {
     let guardrail = initialize_guardrail_v2(
         &configured,
         &lookup(&[("NOMA_API_KEY", "env-key")]),
-        base_builder().build().unwrap(),
+        base_builder(),
         &mut registry,
     )
     .unwrap();
@@ -183,13 +195,8 @@ fn initialize_guardrail_v2_carries_the_default_on_flag_and_timeout() {
 #[test]
 fn initialize_guardrail_v2_requires_a_saas_api_key() {
     let mut registry = Registry::default();
-    let error = initialize_guardrail_v2(
-        &params(),
-        &empty_env(),
-        base_builder().build().unwrap(),
-        &mut registry,
-    )
-    .unwrap_err();
+    let error = initialize_guardrail_v2(&params(), &empty_env(), base_builder(), &mut registry)
+        .unwrap_err();
     assert!(matches!(error, NomaV2Error::MissingApiKey));
     assert!(registry.callbacks.is_empty());
 }

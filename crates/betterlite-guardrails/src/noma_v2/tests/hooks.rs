@@ -36,7 +36,7 @@ fn an_unsupported_hook_fails_strict_initialization() {
     let error = initialize_guardrail_v2(
         &configured,
         &lookup(&[("NOMA_API_KEY", "env-key")]),
-        base_builder().build().unwrap(),
+        base_builder(),
         &mut registry,
     )
     .unwrap_err();
@@ -53,12 +53,7 @@ fn strict_modes_off_keeps_an_unsupported_hook_with_a_warning() {
     let log = CapturedLog::default();
     let env = lookup(&[("NOMA_API_KEY", "env-key")]);
     let outcome = with_default(log.subscriber(Level::WARN), || {
-        initialize_guardrail_v2(
-            &configured,
-            &env,
-            base_builder().build().unwrap(),
-            &mut registry,
-        )
+        initialize_guardrail_v2(&configured, &env, base_builder(), &mut registry)
     });
     assert!(outcome.is_ok());
     assert!(log.text().contains("LITELLM_STRICT_GUARDRAIL_MODES=false"));

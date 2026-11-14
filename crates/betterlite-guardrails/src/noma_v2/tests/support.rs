@@ -50,6 +50,10 @@ pub(crate) struct MockNoma {
 }
 
 pub(crate) async fn mock_noma(status: StatusCode, reply: &str) -> MockNoma {
+    mock_noma_after(Duration::ZERO, status, reply).await
+}
+
+pub(crate) async fn mock_noma_after(delay: Duration, status: StatusCode, reply: &str) -> MockNoma {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&seen);
     let canned = reply.to_owned();
@@ -62,6 +66,7 @@ pub(crate) async fn mock_noma(status: StatusCode, reply: &str) -> MockNoma {
                 headers,
                 body,
             });
+            tokio::time::sleep(delay).await;
             (status, [("content-type", "application/json")], answer)
         }
     };
@@ -148,6 +153,7 @@ pub(crate) fn settings(base: &str) -> NomaV2Settings {
         monitor_mode: false,
         block_failures: true,
         timeout: None,
+        request_timeout: Duration::from_secs(600),
     }
 }
 
@@ -191,6 +197,21 @@ pub(crate) fn ticking_now() -> SystemTime {
     let tick = TICKS.fetch_add(1, Ordering::Relaxed);
     UNIX_EPOCH
         .checked_add(Duration::from_secs(1_700_000_000_u64.saturating_add(tick)))
+        .unwrap()
+}
+
+static BACKWARDS: AtomicU64 = AtomicU64::new(0);
+
+// The first call reads as later than the second, so the scan records a negative duration
+pub(crate) fn backwards_now() -> SystemTime {
+    let step = BACKWARDS.fetch_add(1, Ordering::Relaxed);
+    let seconds = if step == 0 {
+        1_700_000_100
+    } else {
+        1_700_000_000
+    };
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(seconds))
         .unwrap()
 }
 

@@ -2,10 +2,12 @@ use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
+use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 
 use crate::support::{
-    NONE_REPLY, data, field, guardrail, guardrail_with, guardrail_with_clock, inputs, mock_noma,
-    params, records, request_data, scan, settings, text_field, ticking_now, value,
+    NONE_REPLY, backwards_now, data, field, guardrail, guardrail_with, guardrail_with_clock,
+    inputs, mock_noma, params, records, request_data, scan, settings, text_field, ticking_now,
+    value,
 };
 
 #[tokio::test]
@@ -66,6 +68,23 @@ async fn the_observability_record_carries_the_scan_response_and_duration() {
         field(record, "duration"),
         Some(&GuardrailValue::Decimal(0.0))
     );
+}
+
+#[tokio::test]
+async fn a_backwards_clock_fails_the_record() {
+    let mock = mock_noma(StatusCode::OK, NONE_REPLY).await;
+    let outcome = scan(
+        &guardrail_with_clock(settings(&mock.base), backwards_now),
+        inputs(),
+        request_data(),
+        GuardrailInputType::Request,
+    )
+    .await;
+    let Err(GuardrailFailure::Other(message)) = outcome.result else {
+        panic!("the backwards clock was not refused");
+    };
+    assert_eq!(message, "the system clock is set before the Unix epoch");
+    assert!(records(&outcome.request_data).is_empty());
 }
 
 #[tokio::test]
