@@ -362,11 +362,8 @@ fn builds_one_prompt_instance_and_sample_count_one() {
     let optional = params(&[("response_format", text("wav"))]);
     let request = prepared("lyria-002", &optional, None, None).unwrap();
     assert_eq!(
-        serde_json::to_value(&request.body).unwrap(),
-        serde_json::json!({
-            "instances": [{"prompt": "draw a river"}],
-            "parameters": {"sample_count": 1},
-        })
+        serde_json::to_string(&request.body).unwrap(),
+        r#"{"instances":[{"prompt":"draw a river"}],"parameters":{"sample_count":1}}"#
     );
 }
 
@@ -375,12 +372,8 @@ fn builds_the_interactions_body_with_a_wav_format() {
     let optional = params(&[("response_format", text("wav"))]);
     let request = prepared("lyria-3-pro-preview", &optional, None, None).unwrap();
     assert_eq!(
-        serde_json::to_value(&request.body).unwrap(),
-        serde_json::json!({
-            "model": "lyria-3-pro-preview",
-            "input": "draw a river",
-            "response_format": {"type": "audio", "mime_type": "audio/wav"},
-        })
+        serde_json::to_string(&request.body).unwrap(),
+        r#"{"model":"lyria-3-pro-preview","input":"draw a river","response_format":{"type":"audio","mime_type":"audio/wav"}}"#
     );
 }
 
@@ -389,11 +382,8 @@ fn leaves_the_interactions_format_out_for_mp3() {
     let optional = params(&[("response_format", text("mp3"))]);
     let request = prepared("lyria-3-pro-preview", &optional, None, None).unwrap();
     assert_eq!(
-        serde_json::to_value(&request.body).unwrap(),
-        serde_json::json!({
-            "model": "lyria-3-pro-preview",
-            "input": "draw a river",
-        })
+        serde_json::to_string(&request.body).unwrap(),
+        r#"{"model":"lyria-3-pro-preview","input":"draw a river"}"#
     );
 }
 

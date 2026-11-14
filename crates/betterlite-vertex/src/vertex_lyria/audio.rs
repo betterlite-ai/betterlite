@@ -112,11 +112,7 @@ impl InteractionResponse {
             .filter(|steps| !steps.is_empty())
             .or(self.outputs)
             .unwrap_or_default();
-        let mut found = None;
-        for step in steps {
-            found = last_audio_of_step(step).or(found);
-        }
-        found
+        steps.into_iter().rev().find_map(last_audio_of_step)
     }
 }
 
