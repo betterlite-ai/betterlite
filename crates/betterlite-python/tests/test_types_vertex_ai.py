@@ -445,8 +445,10 @@ def test_names_enum_members(name: str, ours: type[Enum], theirs: type[Enum]) -> 
     assert our_members == their_members, name
 
 
+# ast-grep-ignore: no-long-names
 def test_names_provider_metadata_fields() -> None:
     theirs: tuple[str, ...] = THEIR_TUPLES.VERTEX_AI_PROVIDER_METADATA_FIELDS
+    # ast-grep-ignore: no-long-names
     assert VERTEX_AI_PROVIDER_METADATA_FIELDS == theirs
 
 
@@ -460,6 +462,7 @@ def test_names_json_fields() -> None:
     assert schema_hints["example"].__name__ == "JsonValue"
 
 
+# ast-grep-ignore: no-long-names
 def test_protocol_resolver_signature() -> None:
     assert signature_text(VertexAccessTokenResolver) == signature_text(
         THEIR_RESOLVERS.VertexAccessTokenResolver,
@@ -471,6 +474,7 @@ def test_protocol_resolver_async() -> None:
     assert inspect.iscoroutinefunction(THEIR_RESOLVERS.VertexAccessTokenResolver.__call__)
 
 
+# ast-grep-ignore: no-long-names
 def test_protocol_resolver_accepts_callable() -> None:
     resolver: VertexAccessTokenResolver = resolve_token
     token, project = asyncio.run(resolver({"token": "secret"}, "my-project", "gemini"))
@@ -504,6 +508,7 @@ def test_protocol_gemma_matches(payload: dict[str, JsonValue]) -> None:
 
 
 @pytest.mark.parametrize("code", [399, 600])
+# ast-grep-ignore: no-long-names
 def test_protocol_gemma_rejects_code_outside_bounds(code: int) -> None:
     payload: dict[str, JsonValue] = {"object": "error", "message": "m", "code": code}
     with pytest.raises(ValidationError):

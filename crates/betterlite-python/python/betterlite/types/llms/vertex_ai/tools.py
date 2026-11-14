@@ -44,4 +44,5 @@ class Tools(TypedDict, total=False):
 
 class ToolConfig(TypedDict, total=False):
     functionCallingConfig: FunctionCallingConfig
+    # ast-grep-ignore: no-long-names
     includeServerSideToolInvocations: bool
