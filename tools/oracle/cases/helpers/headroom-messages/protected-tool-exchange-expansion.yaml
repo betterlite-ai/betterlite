@@ -1,0 +1,17 @@
+kind: helper
+name: headroom-messages-protected-tool-exchange-expansion
+call:
+  b3773:
+    function: protected_indices
+    messages:
+      - {role: user, content: question}
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: call-1
+            type: function
+            function: {name: lookup, arguments: "{}"}
+      - {role: tool, tool_call_id: call-1, content: tool result}
+      - {role: user, content: next}
+env: {}
+compare: {ignore: []}
