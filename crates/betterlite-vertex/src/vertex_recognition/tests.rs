@@ -140,6 +140,11 @@ fn invalid_locations_are_rejected(#[case] location: &str) {
     "{}",
     r#"{"response_format": "text"}"#
 )]
+#[case::supported_json(
+    r#"{"response_format": "json"}"#,
+    "{}",
+    r#"{"response_format": "json"}"#
+)]
 #[case::null_format(r#"{"response_format": null}"#, "{}", r#"{"response_format": null}"#)]
 #[case::unsupported_name(r#"{"temperature": 1}"#, "{}", "{}")]
 #[case::overwrites_optional(

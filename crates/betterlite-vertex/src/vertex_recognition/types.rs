@@ -20,14 +20,14 @@ pub struct RecognizeRequest {
     pub content: String,
 }
 // pydantic ignores fields it does not model, so every record keeps the rest of the provider's envelope
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Alternative {
     pub transcript: Option<String>,
     #[serde(flatten)]
     pub native_fields: Object,
 }
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct RecognitionResult {
     pub alternatives: Vec<Alternative>,
@@ -35,14 +35,14 @@ pub struct RecognitionResult {
     #[serde(flatten)]
     pub native_fields: Object,
 }
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ResponseMetadata {
     pub total_billed_duration: Option<String>,
     #[serde(flatten)]
     pub native_fields: Object,
 }
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct RecognizeResponse {
     pub results: Vec<RecognitionResult>,

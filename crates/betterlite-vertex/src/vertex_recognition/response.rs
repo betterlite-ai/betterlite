@@ -17,7 +17,7 @@ pub enum TranscriptionTask {
 }
 
 // the transcriber reads text, task, language and duration; LiteLLM keeps the whole provider reply as hidden params
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct RecognitionResponse {
     pub text: String,
     pub task: TranscriptionTask,

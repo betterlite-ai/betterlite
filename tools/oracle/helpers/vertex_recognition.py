@@ -135,7 +135,7 @@ def guarded(step: Step) -> JsonValue:
                 return request_step(step)
             case "reply":
                 return reply_step(step)
-    except (VertexAIError, UnsupportedParamsError) as error:
+    except (VertexAIError, UnsupportedParamsError) as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L99
         return {"raised": error.status_code}
     except ValueError:
         return {"raised": None}
