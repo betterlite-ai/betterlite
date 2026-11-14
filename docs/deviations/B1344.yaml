@@ -17,6 +17,17 @@ deviations:
       Every provider body carries a size bound so one oversized answer cannot exhaust a worker, and no working
       setup sends an embedding answer anywhere near that size.
     link: ""
+  - what: >-
+      A call's timeout reaches the shared transport as a total deadline, and the connect phase is bounded by the
+      pooled client's connect timeout. LiteLLM builds an httpx client per call, so its connect phase is the
+      call's own timeout, either as the shared total or as httpx.Timeout(timeout, connect=timeout). When no
+      timeout reaches the handler, LiteLLM's per-call default bounds both phases while betterlite takes the
+      deadline from the pooled client's read timeout.
+    why: >-
+      The transport's per-request input carries one deadline and takes connect from the client's limits, so a
+      handler cannot set a per-request connect phase. The value LiteLLM uses is still carried on ClientTimeout
+      and pinned by the plan tests, and the pooled client's limits belong to the task that installs it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/embedding_handler.py#L77
 kept_bugs:
   - what: >-
       The text embedding facade's async handoff ignores a client the caller supplied, so the call posts through
