@@ -1,7 +1,7 @@
 from collections.abc import Callable, Mapping
 from typing import Annotated, Final
 
-from pydantic import AfterValidator, Field, JsonValue, TypeAdapter
+from pydantic import AfterValidator, Field, JsonValue, SkipValidation, TypeAdapter
 
 
 def _validate_positive_router_weights(
@@ -24,7 +24,7 @@ _ROUTER_WEIGHTS_ADAPTER: Final[TypeAdapter[RouterWeights | None]] = TypeAdapter(
     RouterWeights | None
 )
 _ROUTER_SETTINGS_DICT_ADAPTER: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(
-    dict[str, JsonValue]
+    dict[str, SkipValidation[JsonValue]]
 )
 
 validate_router_weights: Final[Callable[[JsonValue], RouterWeights | None]] = (
