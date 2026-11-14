@@ -163,6 +163,25 @@ async fn async_iterator_construction_resolves_the_api_base_from_the_model() {
 }
 
 #[tokio::test]
+async fn async_iterator_construction_swallows_api_base_resolution_errors() {
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(Params::new());
+    let mut iterator = InteractionsStreamIterator::new(
+        FakeAsyncResponse::new(&[]),
+        InteractionsStreamSetup {
+            model: Some("gemini-2.5-flash"),
+            config: &config,
+            logging: &mut logging,
+            litellm_metadata: None,
+            custom_llm_provider: None,
+            api_base: &FailingApiBase,
+        },
+    )
+    .expect("the fixture iterator builds");
+    assert_eq!(iterator.base.hidden_params.api_base, None);
+}
+
+#[tokio::test]
 async fn async_iterator_construction_without_metadata_leaves_model_id_empty() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());

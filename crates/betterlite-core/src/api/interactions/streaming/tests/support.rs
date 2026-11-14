@@ -122,6 +122,20 @@ impl InteractionsApiBase for NoApiBase {
     }
 }
 
+struct FailingApiBase;
+
+impl InteractionsApiBase for FailingApiBase {
+    fn resolve(
+        &self,
+        _model: &str,
+        _params: &ApiBaseParams,
+    ) -> Result<Option<String>, ApiBaseError> {
+        Err(ApiBaseError::InvalidVertexLocation {
+            message: String::new(),
+        })
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("the fixture stream failed")]
 struct FixtureSourceError;
