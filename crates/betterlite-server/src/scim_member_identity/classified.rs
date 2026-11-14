@@ -65,14 +65,14 @@ pub fn admitted_member_ids(
 ) -> Vec<String> {
     let mut admitted: Vec<String> = Vec::new();
     for entry in classified {
-        let member_id = match entry {
+        let admitted_id = match entry {
             ClassifiedGroupMember::Resolved { user_id } => Some(user_id),
             ClassifiedGroupMember::Unknown { value } if created_ids.contains(value) => Some(value),
             ClassifiedGroupMember::Skipped { .. }
             | ClassifiedGroupMember::Ambiguous { .. }
             | ClassifiedGroupMember::Unknown { .. } => None,
         };
-        if let Some(member_id) = member_id
+        if let Some(member_id) = admitted_id
             && !admitted.contains(member_id)
         {
             admitted.push(member_id.clone());
