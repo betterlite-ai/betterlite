@@ -2,10 +2,9 @@ import json
 from typing import TypedDict
 
 import pytest
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 from betterlite import _native
-from betterlite.types.utils import JsonValue
 
 NOTE = "This may be a false positive."
 LONG_VALUE = "x" * 512
@@ -376,7 +375,7 @@ def test_native_records_own() -> None:
         text, json.dumps(record_input), json.dumps(record_context())
     )
     assert first_record(data_json)["guardrail_status"] == "guardrail_flagged"
-    data_json, _ = invocation.finish_success(text, text, json.dumps(record_context()))
+    data_json, _ = invocation.finish_success(data_json, text, json.dumps(record_context()))
     assert first_record(data_json)["guardrail_status"] == "guardrail_flagged"
 
 
