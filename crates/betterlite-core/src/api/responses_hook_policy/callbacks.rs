@@ -104,27 +104,18 @@ fn resolve_callback(
 }
 
 #[must_use]
-pub fn has_pre_call_deployment_hook(
-    lists: &CallbackLists<'_>,
-    resolver: &dyn NamedCallbackResolver,
-) -> bool {
-    custom_logger_callbacks(lists, resolver)
+pub fn has_pre_call_deployment_hook(callbacks: &[PolicyCallback]) -> bool {
+    callbacks
         .iter()
         .any(|registered_callback| registered_callback.overrides_pre_hook)
 }
 
 #[must_use]
-pub fn has_agentic_completion_hook(
-    lists: &CallbackLists<'_>,
-    resolver: &dyn NamedCallbackResolver,
-) -> bool {
-    let callbacks = custom_logger_callbacks(lists, resolver);
-    callbacks.iter().any(|callback| {
-        callback
-            .agentic
-            .as_ref()
-            .is_some_and(|agentic| agentic.overrides().should_run)
-    })
+pub fn has_agentic_completion_hook(callbacks: &[PolicyCallback]) -> bool {
+    callbacks
+        .iter()
+        .filter_map(|callback| callback.agentic.as_ref())
+        .any(|agentic| agentic.overrides().should_run)
 }
 
 pub async fn run_responses_pre_hook<D>(
@@ -136,7 +127,7 @@ pub async fn run_responses_pre_hook<D>(
 where
     D: DeploymentHookDispatcher + ?Sized,
 {
-    if !has_pre_call_deployment_hook(callbacks, resolver) {
+    if !has_pre_call_deployment_hook(&custom_logger_callbacks(callbacks, resolver)) {
         return Ok(original_outcome(request));
     }
     let hook_request = build_hook_input(&request);

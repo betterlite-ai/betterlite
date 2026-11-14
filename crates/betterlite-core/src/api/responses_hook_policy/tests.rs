@@ -239,8 +239,13 @@ fn detection_counts_inherited_and_resolved() {
         global: &plain_global,
         dynamic: &[],
     };
-    assert!(has_pre_call_deployment_hook(&lists, &resolver));
-    assert!(!has_pre_call_deployment_hook(&plain_lists, &resolver));
+    assert!(has_pre_call_deployment_hook(&custom_logger_callbacks(
+        &lists, &resolver
+    )));
+    assert!(!has_pre_call_deployment_hook(&custom_logger_callbacks(
+        &plain_lists,
+        &resolver
+    )));
 }
 
 fn overlay_result() -> IndexMap<String, Json> {
@@ -636,13 +641,17 @@ fn agentic_detection_resolves_strings() {
         global: &global,
         dynamic: &dynamic,
     };
-    assert!(has_agentic_completion_hook(&callbacks, &resolver));
+    assert!(has_agentic_completion_hook(&custom_logger_callbacks(
+        &callbacks, &resolver
+    )));
     let off = [CallbackValue::Object(agentic_policy("off", false))];
     let off_lists = CallbackLists {
         global: &off,
         dynamic: &[],
     };
-    assert!(!has_agentic_completion_hook(&off_lists, &resolver));
+    assert!(!has_agentic_completion_hook(&custom_logger_callbacks(
+        &off_lists, &resolver
+    )));
 }
 
 fn followup_inputs() -> (
