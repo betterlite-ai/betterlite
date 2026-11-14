@@ -20,6 +20,7 @@ use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use http::Method;
 use http::header::HeaderMap;
+use rstest::rstest;
 use secrecy::SecretString;
 use tokio_util::task::TaskTracker;
 
@@ -29,8 +30,8 @@ use crate::google_count_tokens::PROVIDER;
 use crate::google_count_tokens::cleaner::clean_contents;
 use crate::google_count_tokens::decode::{MAX_COUNT_BYTES, decode_google_count};
 use crate::google_count_tokens::error::GoogleCountError;
-use crate::google_count_tokens::studio::{StudioCountInput, count_tokens};
-use crate::google_count_tokens::transport::CountTransport;
+use crate::google_count_tokens::studio::{StudioCountInput, studio_request};
+use crate::google_count_tokens::transport::{CountTransport, count};
 use crate::google_count_tokens::vertex::{VertexCountInput, count_tokens as count_vertex_tokens};
 use crate::studio_identity::NativeParams;
 use crate::token_cache::CredentialCache;
@@ -179,23 +180,20 @@ fn projection_rejects_shapes_litellm_cannot_clean() {
     ));
 }
 
-#[test]
-fn count_projection_never_panics_on_arbitrary_json() {
-    for text in [
-        "null",
-        "0",
-        "false",
-        r#""""#,
-        "[]",
-        "[{}]",
-        r#"[{"parts":[]}]"#,
-        r#"[{"parts":[{}]}]"#,
-        r#"[{"parts":[{"functionResponse":{}}]}]"#,
-        r#"[{"parts":[{"functionResponse":{"parts":[]}}]}]"#,
-        r#"[{"parts":[{"functionResponse":{"scheduling":"SILENT"}}]}]"#,
-    ] {
-        let _result = clean_contents(&json(text));
-    }
+#[rstest]
+#[case::null("null")]
+#[case::number("0")]
+#[case::boolean("false")]
+#[case::text(r#""""#)]
+#[case::empty_list("[]")]
+#[case::record_without_parts("[{}]")]
+#[case::empty_parts(r#"[{"parts":[]}]"#)]
+#[case::part_without_function_response(r#"[{"parts":[{}]}]"#)]
+#[case::empty_function_response(r#"[{"parts":[{"functionResponse":{}}]}]"#)]
+#[case::empty_function_response_parts(r#"[{"parts":[{"functionResponse":{"parts":[]}}]}]"#)]
+#[case::scheduling(r#"[{"parts":[{"functionResponse":{"scheduling":"SILENT"}}]}]"#)]
+fn count_projection_never_panics_on_arbitrary_json(#[case] text: &str) {
+    let _result = clean_contents(&json(text));
 }
 
 #[derive(Clone)]
@@ -248,15 +246,9 @@ impl CountTransport for Script {
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         let body = match request.body {
             RequestBody::Json(bytes) => bytes,
-            RequestBody::Empty
-            | RequestBody::Bytes {
-                content_type: _,
-                data: _,
+            RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
+                Vec::new()
             }
-            | RequestBody::Multipart {
-                boundary: _,
-                parts: _,
-            } => Vec::new(),
         };
         self.requests.lock().unwrap().push(Captured {
             method: request.method,
@@ -307,7 +299,9 @@ async fn http_count_post_body_sends_only_the_cleaned_contents() {
         settings: &settings,
         timeout: Some(Duration::from_millis(1)),
     };
-    let reply = count_tokens(&script, &input, DEADLINE).await.unwrap();
+    let reply = count(&script, studio_request(&input).unwrap(), DEADLINE)
+        .await
+        .unwrap();
     assert_eq!(reply.total_tokens, Some(7));
     assert_eq!(reply.total_billable_characters, Some(3));
     assert_eq!(reply.tokenizer_used.as_deref(), Some("google"));
@@ -357,7 +351,9 @@ async fn http_count_defaults_the_studio_base_and_requests_its_key() {
         settings: &settings,
         timeout: None,
     };
-    count_tokens(&script, &input, DEADLINE).await.unwrap();
+    count(&script, studio_request(&input).unwrap(), DEADLINE)
+        .await
+        .unwrap();
     let sent = script.requests();
     assert_eq!(
         sent[0].url,
@@ -387,7 +383,7 @@ async fn http_count_error_kind_keeps_the_status_and_the_connection_split() {
         timeout: None,
     };
     let failed = Script::replying(500, b"boom");
-    match count_tokens(&failed, &input, DEADLINE).await {
+    match count(&failed, studio_request(&input).unwrap(), DEADLINE).await {
         Err(GoogleCountError::Status { status, body }) => {
             assert_eq!(status, 500);
             assert_eq!(body, "boom");
@@ -395,14 +391,14 @@ async fn http_count_error_kind_keeps_the_status_and_the_connection_split() {
         other => panic!("unexpected result: {other:?}"),
     }
     let rejected = Script::replying(400, b"bad request");
-    match count_tokens(&rejected, &input, DEADLINE).await {
+    match count(&rejected, studio_request(&input).unwrap(), DEADLINE).await {
         Err(error @ GoogleCountError::Status { status: 400, .. }) => {
             assert_eq!(error.status_code(), 400);
         }
         other => panic!("unexpected result: {other:?}"),
     }
     let closed = Script::failing();
-    match count_tokens(&closed, &input, DEADLINE).await {
+    match count(&closed, studio_request(&input).unwrap(), DEADLINE).await {
         Err(error @ GoogleCountError::Connection { .. }) => {
             assert_eq!(error.status_code(), 500);
         }
@@ -410,7 +406,7 @@ async fn http_count_error_kind_keeps_the_status_and_the_connection_split() {
     }
     let created = Script::replying(201, br#"{"totalTokens":2}"#);
     assert_eq!(
-        count_tokens(&created, &input, DEADLINE)
+        count(&created, studio_request(&input).unwrap(), DEADLINE)
             .await
             .unwrap()
             .total_tokens,
@@ -441,7 +437,7 @@ async fn http_count_uses_the_real_client_transport() {
         settings: &settings,
         timeout: None,
     };
-    let error = count_tokens(&client, &input, DEADLINE)
+    let error = count(&client, studio_request(&input).unwrap(), DEADLINE)
         .await
         .expect_err("nothing listens on the chosen port");
     assert!(matches!(error, GoogleCountError::Connection { .. }));

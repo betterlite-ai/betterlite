@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::google_count_tokens::error::GoogleCountError;
 
@@ -10,8 +10,7 @@ const PARTS: &str = "parts";
 // the four names google-genai's FunctionResponseScheduling resolves case-insensitively
 const SCHEDULING: [&str; 4] = ["SCHEDULING_UNSPECIFIED", "SILENT", "WHEN_IDLE", "INTERRUPT"];
 
-// google-genai's FunctionResponse record: camelCase aliases in, snake_case fields out, an id
-// cleared, None dropped, and a field the record does not declare is an error.
+// google-genai's FunctionResponse record: camelCase aliases in, snake_case fields out, None dropped, an undeclared field refused
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct FunctionResponseRecord {
@@ -21,11 +20,7 @@ struct FunctionResponseRecord {
         skip_serializing_if = "Option::is_none"
     )]
     will_continue: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "canonical_scheduling",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     scheduling: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     parts: Option<Vec<Json>>,
@@ -37,24 +32,7 @@ struct FunctionResponseRecord {
     response: Option<IndexMap<String, Json>>,
 }
 
-// google-genai resolves a known scheduling name in any case and keeps an unknown one verbatim
-fn canonical_scheduling<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<String>::deserialize(deserializer)?;
-    Ok(value.map(|text| {
-        let upper = text.to_uppercase();
-        if SCHEDULING.contains(&upper.as_str()) {
-            upper
-        } else {
-            text
-        }
-    }))
-}
-
-// LiteLLM deep-copies the contents, projects every functionResponse through google-genai's
-// FunctionResponse record with its id cleared, and drops the fields that come back None.
+// LiteLLM deep-copies the contents and projects every functionResponse through google-genai's FunctionResponse record
 pub fn clean_contents(contents: &Json) -> Result<Json, GoogleCountError> {
     match contents {
         Json::Null => Ok(Json::Null),
@@ -121,7 +99,7 @@ fn project_function_response(value: &Json) -> Result<Json, GoogleCountError> {
     let mut deserializer = serde_json::Deserializer::from_slice(&encoded);
     let mut record: FunctionResponseRecord = serde_path_to_error::deserialize(&mut deserializer)
         .map_err(|error| GoogleCountError::FunctionResponse {
-            path: if error.path().is_empty() {
+            path: if error.path().iter().next().is_none() {
                 "the request contents".to_owned()
             } else {
                 error.path().to_string()
@@ -129,6 +107,14 @@ fn project_function_response(value: &Json) -> Result<Json, GoogleCountError> {
             source: error.into_inner(),
         })?;
     record.id = None;
+    record.scheduling = record.scheduling.take().map(|text| {
+        let upper = text.to_uppercase();
+        if SCHEDULING.contains(&upper.as_str()) {
+            upper
+        } else {
+            text
+        }
+    });
     let projected = serde_json::to_vec(&record).map_err(|source| GoogleCountError::Json {
         path: "the functionResponse record".to_owned(),
         source,

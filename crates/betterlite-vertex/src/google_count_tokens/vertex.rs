@@ -27,15 +27,17 @@ pub struct VertexCountInput<'request> {
     pub timeout: Option<Duration>,
 }
 
-// LiteLLM's VertexAITokenCounter.validate_environment: B1301 settings and B1303 access tokens,
-// then B1304's count_tokens URL, with only Bearer auth on the request
-pub async fn count_tokens<T: CountTransport>(
+// LiteLLM's VertexAITokenCounter.validate_environment: B1301 settings, B1303 tokens, B1304's count URL, only Bearer auth
+pub async fn count_tokens<T>(
     transport: &T,
     refresh: &CredentialRefresh,
     catalog: &ModelCatalog,
     input: &VertexCountInput<'_>,
     deadline: Duration,
-) -> Result<GoogleCountResponse, GoogleCountError> {
+) -> Result<GoogleCountResponse, GoogleCountError>
+where
+    T: CountTransport,
+{
     let credentials = input.params.safe_get_vertex_ai_credentials(input.settings);
     let configured_project = input.params.safe_get_vertex_ai_project(input.settings);
     let location = input.params.safe_get_vertex_ai_location(input.settings);

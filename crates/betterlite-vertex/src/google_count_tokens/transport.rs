@@ -69,11 +69,14 @@ pub fn header_map(headers: &BTreeMap<String, SecretString>) -> Result<HeaderMap,
     Ok(map)
 }
 
-pub async fn count<T: CountTransport>(
+pub async fn count<T>(
     transport: &T,
     request: CountRequest,
     deadline: Duration,
-) -> Result<GoogleCountResponse, GoogleCountError> {
+) -> Result<GoogleCountResponse, GoogleCountError>
+where
+    T: CountTransport,
+{
     let url = Url::parse(&request.url).map_err(|source| GoogleCountError::Url { source })?;
     let outbound = OutboundRequest {
         method: Method::POST,
