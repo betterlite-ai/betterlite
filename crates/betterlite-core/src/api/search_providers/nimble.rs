@@ -113,7 +113,7 @@ fn error_detail(message: &str) -> String {
     envelope
         .detail
         .filter(|detail| !detail.is_empty())
-        .or_else(|| envelope.message.filter(|message| !message.is_empty()))
+        .or_else(|| envelope.message.filter(|text| !text.is_empty()))
         .unwrap_or_else(|| message.to_owned())
 }
 

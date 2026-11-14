@@ -34,12 +34,9 @@ pub(super) fn search_body(
         }
     }
     body.insert("mode".to_owned(), mode(&mut params));
-    let advanced_settings = advanced_settings(&mut params)?;
-    if !advanced_settings.is_empty() {
-        body.insert(
-            "advanced_settings".to_owned(),
-            JsonValue::Object(advanced_settings),
-        );
+    let settings = advanced_settings(&mut params)?;
+    if !settings.is_empty() {
+        body.insert("advanced_settings".to_owned(), JsonValue::Object(settings));
     }
     // the remaining options merge last: one named search_queries or objective overrides the derived value
     for (name, value) in params {
@@ -52,11 +49,11 @@ pub(super) fn search_body(
 
 // a mode wins over the legacy processor, and an empty mode keeps v1beta's basic tier
 fn mode(params: &mut Object) -> JsonValue {
-    let mode = params.remove("mode").filter(|value| !value.is_null());
-    let processor = params.remove("processor").filter(|value| !value.is_null());
-    let mode = match mode {
-        Some(mode) => mode,
-        None => processor.map_or_else(
+    let caller_mode = params.remove("mode").filter(|value| !value.is_null());
+    let legacy_processor = params.remove("processor").filter(|value| !value.is_null());
+    let resolved_mode = match caller_mode {
+        Some(chosen_mode) => chosen_mode,
+        None => legacy_processor.map_or_else(
             || JsonValue::String("basic".to_owned()),
             |processor| match processor.as_str() {
                 Some("base") => JsonValue::String("basic".to_owned()),
@@ -65,7 +62,7 @@ fn mode(params: &mut Object) -> JsonValue {
             },
         ),
     };
-    match mode {
+    match resolved_mode {
         JsonValue::String(text) if text.is_empty() => JsonValue::String("basic".to_owned()),
         other => other,
     }
