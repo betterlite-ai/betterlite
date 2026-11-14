@@ -1,0 +1,7 @@
+# a 200 download returns the body bytes and asks for the encoded object URL with the bearer token
+kind: helper
+name: gcs-storage-auth-download-returns-bytes-on-200
+call:
+  b3997: {"action": "initialize", "environment": {"GCS_BUCKET_NAME": "env-bucket"}, "object_name": "logs/2026 01/a b.json", "body": "{\"a\": 1}"}
+env: {}
+compare: {ignore: []}

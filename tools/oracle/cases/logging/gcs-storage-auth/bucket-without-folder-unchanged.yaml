@@ -1,0 +1,7 @@
+# a bucket with no folder keeps its name and the object name
+kind: helper
+name: gcs-storage-auth-bucket-without-folder-unchanged
+call:
+  b3997: {"action": "upload", "bucket": "my-bucket", "object_name": "my-object", "payload": "text", "body": "{\"name\": \"obj\", \"bucket\": \"env-bucket\", \"size\": \"12\"}"}
+env: {}
+compare: {ignore: []}

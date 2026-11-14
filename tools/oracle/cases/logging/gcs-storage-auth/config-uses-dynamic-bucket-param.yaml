@@ -1,0 +1,7 @@
+# gcs_bucket_name in the dynamic params wins over GCS_BUCKET_NAME
+kind: helper
+name: gcs-storage-auth-config-uses-dynamic-bucket-param
+call:
+  b3997: {"action": "logging_config", "environment": {"GCS_BUCKET_NAME": "env-bucket"}, "dynamic": {"gcs_bucket_name": "dynamic-bucket"}}
+env: {}
+compare: {ignore: []}
