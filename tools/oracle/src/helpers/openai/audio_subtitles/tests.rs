@@ -78,9 +78,12 @@ fn helper_seeds_cover_token_rendering_and_word_timings() {
 fn helper_runs_the_production_subtitle_renderer() {
     let call = HelperCall {
         operation: "audio_subtitles".to_owned(),
-        input: json!({"calls": [
-            {"function": "srt", "tokens": [{"text": "Hell", "start_ms": 0}, {"text": "o", "end_ms": 1000}]}
-        ]}),
+        input: serde_json::from_str(
+            r#"{"calls": [
+                {"function": "srt", "tokens": [{"text": "Hell", "start_ms": 0}, {"text": "o", "end_ms": 1000}]}
+            ]}"#,
+        )
+        .expect("an audio_subtitles input"),
     };
     let output = invoke(&call);
     assert!(output.ok);
@@ -94,10 +97,13 @@ fn helper_runs_the_production_subtitle_renderer() {
 fn helper_runs_the_production_word_timing_transformer() {
     let call = HelperCall {
         operation: "audio_subtitles".to_owned(),
-        input: json!({"calls": [
-            {"function": "synthesize", "response_format": "srt", "words": [{"word": "Hi", "start": 0, "end": 1}]},
-            {"function": "synthesize", "response_format": "json", "words": []}
-        ]}),
+        input: serde_json::from_str(
+            r#"{"calls": [
+                {"function": "synthesize", "response_format": "srt", "words": [{"word": "Hi", "start": 0, "end": 1}]},
+                {"function": "synthesize", "response_format": "json", "words": []}
+            ]}"#,
+        )
+        .expect("an audio_subtitles input"),
     };
     let output = invoke(&call);
     assert!(output.ok);
