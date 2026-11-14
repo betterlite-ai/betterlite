@@ -48,6 +48,14 @@ pub(crate) enum Plan {
     Fail(GuardrailFailure),
 }
 
+pub(crate) const fn rewrite(index: i64, text: &'static str, holdback: i64) -> Plan {
+    Plan::Rewrite {
+        index,
+        text,
+        holdback,
+    }
+}
+
 struct FakeState {
     plans: VecDeque<Plan>,
     calls: Vec<CallRecord>,
@@ -101,8 +109,8 @@ impl FakeTranslation {
 fn sink_use(sink: Option<&mut StreamTransformSink>) -> SinkUse {
     match sink {
         None => SinkUse::Absent,
-        Some(sink)
-            if sink.mutated_text_per_choice.is_empty() && sink.holdback_per_choice.is_empty() =>
+        Some(held)
+            if held.mutated_text_per_choice.is_empty() && held.holdback_per_choice.is_empty() =>
         {
             SinkUse::Empty
         }
@@ -225,7 +233,12 @@ fn block_summary(
                 |value| serde_json::to_string(value).unwrap_or_default(),
             )
         }
-        _ => "none".to_owned(),
+        GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Http { .. }
+        | GuardrailFailure::HttpObject { .. }
+        | GuardrailFailure::Other(_) => "none".to_owned(),
     };
     format!(
         "started={stream_started};items={};texts={};original={original}",

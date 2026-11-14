@@ -41,9 +41,9 @@ where
         .await?;
     }
     for trailing in trailing_metadata_chunks(responses_so_far.as_slice()) {
-        let trailing = trailing.clone();
-        responses_yielded.push(trailing.clone());
-        outputs.push_back(StreamOutput::Item(trailing));
+        let chunk = trailing.clone();
+        responses_yielded.push(chunk.clone());
+        outputs.push_back(StreamOutput::Item(chunk));
     }
     Ok(())
 }

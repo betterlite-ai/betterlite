@@ -39,7 +39,12 @@ where
                 outputs,
             )
         }
-        other => Err(RoundFailure::Loop(StreamLoopError::Guardrail {
+        other @ (GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Http { .. }
+        | GuardrailFailure::HttpObject { .. }
+        | GuardrailFailure::Other(_)) => Err(RoundFailure::Loop(StreamLoopError::Guardrail {
             source: other,
         })),
     }

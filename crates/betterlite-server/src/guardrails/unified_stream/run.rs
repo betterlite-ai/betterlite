@@ -40,7 +40,7 @@ pub(crate) struct LoopState<'run, T, G, S, E> {
 }
 
 // LiteLLM's _run_incremental_transform_stream: withhold the raw chunks, send the transformed diffs
-#[must_use]
+#[must_use = "the stream does nothing unless it is polled"]
 pub fn incremental_transform_stream<'run, T, G, S, E>(
     params: StreamLoopParams<'run, T, G>,
     source: S,

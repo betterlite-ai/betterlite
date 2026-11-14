@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use crate::guardrails::unified_stream::error::StreamLoopError;
 use crate::guardrails::unified_stream::tests::support::{
     FakeGuardrail, FakeTranslation, Plan, SinkUse, block_texts, collect_outputs, item,
-    modify_response, object, params, synthetic, text_chunk,
+    modify_response, object, params, rewrite, synthetic, text_chunk,
 };
 
 #[tokio::test]
@@ -49,21 +49,9 @@ async fn round_starts_each_round_with_a_fresh_sink() {
 #[tokio::test]
 async fn round_yields_synthetics_in_the_order_they_are_sent() {
     let translation = FakeTranslation::planned(vec![
-        Plan::Rewrite {
-            index: 0,
-            text: "a",
-            holdback: 0,
-        },
-        Plan::Rewrite {
-            index: 0,
-            text: "ab",
-            holdback: 0,
-        },
-        Plan::Rewrite {
-            index: 0,
-            text: "abc",
-            holdback: 0,
-        },
+        rewrite(0, "a", 0),
+        rewrite(0, "ab", 0),
+        rewrite(0, "abc", 0),
         Plan::Fail(GuardrailFailure::Http {
             status: 400,
             detail: "blocked".to_owned(),
@@ -325,19 +313,17 @@ async fn round_reads_the_logging_target_from_request_data() {
     assert!(outputs.is_empty());
     let calls = translation.calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(
-        calls[0].log_target,
-        Some(GuardrailLogTarget {
-            litellm_params: Some(BTreeMap::from([(
-                "a".to_owned(),
-                GuardrailValue::SignedInteger(1),
-            )])),
-            model_call_params: Some(BTreeMap::from([(
-                "b".to_owned(),
-                GuardrailValue::SignedInteger(2),
-            )])),
-        })
-    );
+    let target = GuardrailLogTarget {
+        litellm_params: Some(BTreeMap::from([(
+            "a".to_owned(),
+            GuardrailValue::SignedInteger(1),
+        )])),
+        model_call_params: Some(BTreeMap::from([(
+            "b".to_owned(),
+            GuardrailValue::SignedInteger(2),
+        )])),
+    };
+    assert_eq!(calls[0].log_target, Some(target));
 }
 
 #[tokio::test]

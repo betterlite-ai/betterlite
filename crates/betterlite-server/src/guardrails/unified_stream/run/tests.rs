@@ -8,7 +8,7 @@ use crate::guardrails::unified_stream::error::StreamLoopError;
 use crate::guardrails::unified_stream::tests::support::{
     FakeGuardrail, FakeTranslation, Plan, SinkUse, SourceFailure, block_texts, collect_outputs,
     collect_results, finishing_tool_chunk, item, mixed_tool_chunk, modify_response, params,
-    role_chunk, synthetic, terminator, text_chunk, text_chunk_finishing, tool_chunk,
+    rewrite, role_chunk, synthetic, terminator, text_chunk, text_chunk_finishing, tool_chunk,
 };
 
 #[tokio::test]
@@ -364,22 +364,10 @@ async fn tool_call_passthrough_defers_a_finish_reason_to_the_terminator() {
 #[tokio::test]
 async fn tool_call_passthrough_defers_the_finish_reason_while_text_is_held() {
     let translation = FakeTranslation::planned(vec![
-        Plan::Rewrite {
-            index: 0,
-            text: "abcdef",
-            holdback: 3,
-        },
-        Plan::Rewrite {
-            index: 0,
-            text: "abcdef",
-            holdback: 3,
-        },
+        rewrite(0, "abcdef", 3),
+        rewrite(0, "abcdef", 3),
         Plan::Pass,
-        Plan::Rewrite {
-            index: 0,
-            text: "abcdef",
-            holdback: 3,
-        },
+        rewrite(0, "abcdef", 3),
     ]);
     let guardrail = FakeGuardrail;
     let mut data = BTreeMap::new();
