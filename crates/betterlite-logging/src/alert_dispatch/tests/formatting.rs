@@ -4,6 +4,7 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::super::destination::{AlertDestination, SLACK_WEBHOOK_URL_ENV};
+use super::super::{Alert, AlertLevel};
 use super::*;
 
 #[tokio::test]
@@ -175,4 +176,33 @@ async fn an_unset_proxy_base_url_adds_no_footer() {
         .await;
     let pending = fixture.delivery.queue.pending();
     assert!(!pending[0].payload.text.contains("Proxy URL:"));
+}
+
+#[tokio::test]
+async fn every_level_renders_its_name() {
+    let fixture = slack_fixture();
+    let dispatcher = fixture.dispatcher(
+        Some(vec![AlertDestination::Slack]),
+        vec![AlertType::LlmExceptions],
+    );
+    for (level, expected) in [
+        (AlertLevel::Low, "Level: `Low`"),
+        (AlertLevel::Medium, "Level: `Medium`"),
+        (AlertLevel::High, "Level: `High`"),
+    ] {
+        let alert = Alert {
+            message: "boom",
+            level,
+            alert_type: AlertType::LlmExceptions,
+            alerting_metadata: &fixture.metadata,
+            user_info: None,
+            request_model: None,
+            api_base: None,
+            kwargs: &fixture.kwargs,
+        };
+        assert!(dispatcher.send_alert(alert).await.is_ok());
+        let pending = fixture.delivery.queue.pending();
+        let item = pending.last().expect("the alert is enqueued");
+        assert!(item.payload.text.contains(expected));
+    }
 }

@@ -215,6 +215,12 @@ fn destinations_serialize_to_the_configuration_names() {
 }
 
 #[test]
+fn webhook_environment_variables_use_the_litellm_names() {
+    assert_eq!(SLACK_WEBHOOK_URL_ENV, "SLACK_WEBHOOK_URL");
+    assert_eq!(ALERTING_WEBHOOK_URL_ENV, "ALERTING_WEBHOOK_URL");
+}
+
+#[test]
 fn the_missing_webhook_url_error_names_both_variables() {
     assert_eq!(
         MissingWebhookUrl.to_string(),
