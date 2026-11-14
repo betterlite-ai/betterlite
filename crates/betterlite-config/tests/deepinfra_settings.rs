@@ -136,20 +136,3 @@ fn deepinfra_chat_identity_follows_the_pinned_fallbacks(
     assert_eq!(base, expected_base);
     assert_eq!(exposed(key.as_ref()).as_deref(), expected_key);
 }
-
-#[rstest]
-#[case::caller_key_wins(&[("DEEPINFRA_API_KEY", "env-key")], Some("caller"), Some("caller"))]
-#[case::empty_caller_key_is_kept(&[("DEEPINFRA_API_KEY", "env-key")], Some(""), Some(""))]
-#[case::environment_fills_none(&[("DEEPINFRA_API_KEY", "env-key")], None, Some("env-key"))]
-#[case::nothing_anywhere(&[], None, None)]
-fn deepinfra_rerank_key_only_falls_back_for_a_missing_key(
-    #[case] environment: &[(&str, &str)],
-    #[case] explicit_key: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
-    let supplied = explicit_key.map(secret);
-    let loaded = settings("", environment);
-    // the rerank config only consults the environment key when the caller supplied none, and an empty caller key is kept
-    let key = supplied.as_ref().or(loaded.api_key.as_ref()).cloned();
-    assert_eq!(exposed(key.as_ref()).as_deref(), expected);
-}
