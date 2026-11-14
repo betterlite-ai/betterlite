@@ -7,7 +7,6 @@ use betterlite_mcp::credential_contracts::auth_config::oauth::ClientCredentialsC
 use betterlite_mcp::credential_contracts::errors::{CredError, CredResult};
 use chrono::{DateTime, TimeDelta, Utc};
 use indexmap::IndexMap;
-use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 use tokio::sync::Mutex as AsyncMutex;
@@ -20,18 +19,18 @@ use crate::mcp::outbound_credentials::{
 
 #[derive(Debug, Clone, Copy)]
 pub struct Tunables {
-    pub default_ttl_seconds: f64,
-    pub expiry_skew_seconds: f64,
-    pub min_cache_seconds: f64,
+    pub default_ttl_seconds: u64,
+    pub expiry_skew_seconds: u64,
+    pub min_cache_seconds: u64,
     pub max_locks: usize,
 }
 
 impl Default for Tunables {
     fn default() -> Self {
         Self {
-            default_ttl_seconds: 300.0,
-            expiry_skew_seconds: 60.0,
-            min_cache_seconds: 10.0,
+            default_ttl_seconds: 300,
+            expiry_skew_seconds: 60,
+            min_cache_seconds: 10,
             max_locks: 1024,
         }
     }
@@ -187,11 +186,8 @@ impl ClientCredentialsTokenSource {
             scopes: parse_granted_scopes(body.scope.as_ref()),
             identity_binding_proof: None,
         };
-        let ttl = self.cache_ttl(expires_in);
-        if ttl > 0.0_f64
-            && let Ok(lifetime) = Duration::try_from_secs_f64(ttl)
-        {
-            self.backend.set(key, &token, lifetime).await;
+        if let Some(ttl) = self.cache_ttl(expires_in) {
+            self.backend.set(key, &token, ttl).await;
         }
         Ok(token)
     }
@@ -203,17 +199,14 @@ impl ClientCredentialsTokenSource {
             .unwrap_or(DateTime::<Utc>::MAX_UTC)
     }
 
-    fn cache_ttl(&self, expires_in: Option<i64>) -> f64 {
+    fn cache_ttl(&self, expires_in: Option<i64>) -> Option<Duration> {
         let Some(seconds) = expires_in else {
-            return self.tunables.default_ttl_seconds;
+            return Some(Duration::from_secs(self.tunables.default_ttl_seconds));
         };
-        let Some(lifetime) = seconds.to_f64() else {
-            return 0.0;
-        };
-        // float_arithmetic is denied; a fused multiply-add with -1 is the same subtraction
-        let without_skew = self.tunables.expiry_skew_seconds.mul_add(-1.0, lifetime);
-        without_skew
-            .max(lifetime.min(self.tunables.min_cache_seconds))
-            .max(0.0)
+        let lifetime = Duration::from_secs(u64::try_from(seconds).ok()?);
+        let skew = Duration::from_secs(self.tunables.expiry_skew_seconds);
+        let floor = Duration::from_secs(self.tunables.min_cache_seconds);
+        let ttl = lifetime.saturating_sub(skew).max(lifetime.min(floor));
+        (ttl > Duration::ZERO).then_some(ttl)
     }
 }

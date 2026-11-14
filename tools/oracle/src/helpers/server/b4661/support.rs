@@ -16,20 +16,14 @@ use serde::Deserialize;
 use crate::helpers::HelperError;
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub(crate) struct ConfigSpec {
-    #[serde(default)]
     pub(super) client_id: Option<String>,
-    #[serde(default)]
     pub(super) client_secret: Option<String>,
-    #[serde(default)]
     pub(super) token_url: Option<String>,
-    #[serde(default)]
     pub(super) scopes: Vec<String>,
-    #[serde(default)]
     pub(super) audience: Option<String>,
-    #[serde(default)]
     pub(super) upstream_resource: Option<String>,
-    #[serde(default)]
     pub(super) token_endpoint_auth_method: Option<String>,
 }
 
@@ -128,13 +122,11 @@ impl M2mTokenEndpointPost for ScriptedPost {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((url.to_owned(), recorded));
-        let outcome = self
-            .outcomes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
-        outcome.unwrap_or_else(|| TokenEndpointOutcome::Unreachable {
-            detail: "the case scripted no outcome".to_owned(),
-        })
+        let mut outcomes = self.outcomes.lock().unwrap_or_else(PoisonError::into_inner);
+        outcomes
+            .pop_front()
+            .unwrap_or_else(|| TokenEndpointOutcome::Unreachable {
+                detail: "the case scripted no outcome".to_owned(),
+            })
     }
 }

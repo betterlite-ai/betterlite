@@ -87,8 +87,8 @@ impl Refetch for ScriptedRefetch {
 pub(super) fn run(input: &BearerInput) -> HelperResult {
     let executor = runtime()?;
     let mut scenarios = Vec::with_capacity(input.scenarios.len());
-    for scenario in &input.scenarios {
-        scenarios.push(executor.block_on(scenario_view(scenario))??);
+    for case in &input.scenarios {
+        scenarios.push(executor.block_on(scenario_view(case))?);
     }
     Ok(json!({"scenarios": scenarios}))
 }
@@ -123,7 +123,7 @@ async fn scenario_view(scenario: &ScenarioSpec) -> HelperResult {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
-    let refetched = refetch
+    let asked_tokens = refetch
         .asked
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -131,6 +131,6 @@ async fn scenario_view(scenario: &ScenarioSpec) -> HelperResult {
     Ok(json!({
         "sends": sends,
         "final_status": final_status,
-        "refetched": refetched,
+        "refetched": asked_tokens,
     }))
 }

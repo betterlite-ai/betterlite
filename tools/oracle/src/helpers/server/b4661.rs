@@ -26,7 +26,7 @@ impl Helper for Op {
             Input::Grant { configs } => grant::run(configs),
             Input::Mint(mint) => {
                 let executor = support::runtime()?;
-                executor.block_on(mint::minted(mint))?
+                executor.block_on(mint::minted(mint))
             }
             Input::Bearer(bearer) => bearer::run(bearer),
         }

@@ -252,9 +252,9 @@ async fn concurrent_misses_on_one_server_make_one_grant() {
 async fn the_lock_table_drops_the_oldest_entry_at_max_locks() {
     let post = ScriptedPost::granting(3);
     let tunables = Tunables {
-        default_ttl_seconds: 300.0,
-        expiry_skew_seconds: 60.0,
-        min_cache_seconds: 10.0,
+        default_ttl_seconds: 300,
+        expiry_skew_seconds: 60,
+        min_cache_seconds: 10,
         max_locks: 2,
     };
     let source = ClientCredentialsTokenSource::new(
@@ -417,6 +417,10 @@ async fn a_body_without_a_usable_token_is_misconfigured(#[case] raw: &str) {
     "{\"access_token\":\"tok\",\"expires_in\":71}",
     Duration::from_secs(11)
 )]
+#[case::float_falls_back(
+    "{\"access_token\":\"tok\",\"expires_in\":3600.5}",
+    Duration::from_secs(300)
+)]
 #[tokio::test]
 async fn the_cache_ttl_follows_the_skew_and_the_floor(
     #[case] raw: &str,
@@ -432,7 +436,6 @@ async fn the_cache_ttl_follows_the_skew_and_the_floor(
 #[rstest]
 #[case::zero("{\"access_token\":\"tok\",\"expires_in\":0}")]
 #[case::negative("{\"access_token\":\"tok\",\"expires_in\":-5}")]
-#[case::float("{\"access_token\":\"tok\",\"expires_in\":3600.5}")]
 #[tokio::test]
 async fn a_non_positive_ttl_stores_nothing_but_still_returns_the_token(#[case] raw: &str) {
     let post = ScriptedPost::new(vec![grant(raw)]);
@@ -459,11 +462,12 @@ async fn a_parsed_expires_in_becomes_the_expiry_and_the_response_scope_the_scope
     assert_eq!(token.identity_binding_proof, None);
 }
 
+#[rstest]
+#[case::bool("{\"access_token\":\"tok\",\"expires_in\":true}")]
+#[case::float("{\"access_token\":\"tok\",\"expires_in\":3600.5}")]
 #[tokio::test]
-async fn an_unparsable_expires_in_leaves_the_expiry_absent() {
-    let post = ScriptedPost::new(vec![grant(
-        "{\"access_token\":\"tok\",\"expires_in\":true}",
-    )]);
+async fn an_unparsable_expires_in_leaves_the_expiry_absent(#[case] raw: &str) {
+    let post = ScriptedPost::new(vec![grant(raw)]);
     let backend = Arc::new(RecordingBackend::default());
     let source = source_with(post, Arc::clone(&backend));
     let token = source.get("server", &config()).await.unwrap();

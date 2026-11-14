@@ -1,5 +1,6 @@
 mod tests;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,6 +10,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use http::Method;
 use http::header::{ACCEPT, HeaderMap, HeaderName, HeaderValue};
+use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
@@ -23,6 +25,14 @@ pub enum TokenEndpointOutcome {
     Success { body: TokenResponseBody },
     Denied { status_code: u16, detail: String },
     Unreachable { detail: String },
+}
+
+#[derive(Debug, thiserror::Error)]
+enum GrantRequestError {
+    #[error("the grant header name is not a valid header name")]
+    HeaderName(#[from] InvalidHeaderName),
+    #[error("the grant header value is not a valid header value")]
+    HeaderValue(#[from] InvalidHeaderValue),
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,11 +102,14 @@ impl M2mTokenEndpointPost for HttpGrantPost {
             };
         };
         let origin = parsed.origin().ascii_serialization();
-        let Ok(request) = grant_request(&parsed, form, headers, self.deadline) else {
-            tracing::warn!(upstream = %origin, "OAuth2 client_credentials POST failed: the request could not be built");
-            return TokenEndpointOutcome::Unreachable {
-                detail: "Build".to_owned(),
-            };
+        let request = match grant_request(&parsed, form, headers, self.deadline) {
+            Ok(request) => request,
+            Err(error) => {
+                tracing::warn!(upstream = %origin, error = %error, "OAuth2 grant POST failed");
+                return TokenEndpointOutcome::Unreachable {
+                    detail: "Build".to_owned(),
+                };
+            }
         };
         let sent = match self.client.send(request).await {
             Ok(sent) => sent,
@@ -129,7 +142,7 @@ fn grant_request(
     form: &[(String, SecretString)],
     headers: &[(String, SecretString)],
     deadline: Duration,
-) -> Result<OutboundRequest, ()> {
+) -> Result<OutboundRequest, GrantRequestError> {
     let mut serializer = form_urlencoded::Serializer::new(String::new());
     for (name, value) in form {
         serializer.append_pair(name, value.expose_secret());
@@ -138,9 +151,8 @@ fn grant_request(
     let mut map = HeaderMap::new();
     map.insert(ACCEPT, HeaderValue::from_static(JSON_ACCEPT));
     for (name, value) in headers {
-        let header_name = HeaderName::try_from(name.as_str()).map_err(|_invalid| ())?;
-        let mut header_value =
-            HeaderValue::try_from(value.expose_secret()).map_err(|_invalid| ())?;
+        let header_name = HeaderName::try_from(name.as_str())?;
+        let mut header_value = HeaderValue::try_from(value.expose_secret())?;
         header_value.set_sensitive(true);
         map.insert(header_name, header_value);
     }
@@ -196,9 +208,10 @@ const fn transport_kind(error: &TransportError) -> &'static str {
 
 #[must_use]
 pub fn parse_token_response(bytes: &[u8], status_code: u16) -> TokenEndpointOutcome {
+    let object = serde_json::from_slice::<BTreeMap<String, IgnoredAny>>(bytes).is_ok();
     match serde_json::from_slice::<TokenResponseBody>(bytes) {
-        Ok(body) => TokenEndpointOutcome::Success { body },
-        Err(_error) => TokenEndpointOutcome::Denied {
+        Ok(body) if object => TokenEndpointOutcome::Success { body },
+        _ => TokenEndpointOutcome::Denied {
             status_code,
             detail: NON_OBJECT_DETAIL.to_owned(),
         },

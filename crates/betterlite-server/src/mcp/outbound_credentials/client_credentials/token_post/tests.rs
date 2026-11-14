@@ -208,6 +208,7 @@ async fn a_url_that_does_not_parse_is_unreachable() {
 #[rstest]
 #[case::object("{\"access_token\":\"tok\"}", true)]
 #[case::array("[1,2,3]", false)]
+#[case::string_array("[\"abc\",3600,\"read\"]", false)]
 #[case::string("\"tok\"", false)]
 #[case::null("null", false)]
 #[case::number("7", false)]
