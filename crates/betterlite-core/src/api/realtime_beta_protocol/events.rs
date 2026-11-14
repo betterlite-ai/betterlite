@@ -39,9 +39,8 @@ pub fn translate_event_to_beta(event: Json) -> Result<Option<Json>, BetaProtocol
     if event_type == "conversation.item.done" {
         return Ok(None);
     }
-    let renamed = beta_event_type(event_type);
-    if let Some(renamed) = renamed {
-        fields.insert("type".to_owned(), Json::Text(renamed.to_owned()));
+    if let Some(beta_type) = beta_event_type(event_type) {
+        fields.insert("type".to_owned(), Json::Text(beta_type.to_owned()));
     }
     if let Some(Json::Object(item)) = fields.get("item") {
         let translated = translate_item_content_types(item)?;

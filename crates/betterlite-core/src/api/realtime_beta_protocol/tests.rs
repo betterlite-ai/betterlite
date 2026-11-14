@@ -74,8 +74,8 @@ fn beta_header_detection(
     #[case] expected: bool,
 ) {
     let mut headers = Vec::new();
-    if let Some(pairs) = &pairs {
-        for (name, value) in pairs {
+    if let Some(sent) = &pairs {
+        for (name, value) in sent {
             headers.push(header_pair(name, value, encoding));
         }
     }
@@ -188,6 +188,34 @@ fn beta_session_audio_mapping_modalities_become_output_modalities() {
         .unwrap(),
         parse(r#"{"type": "realtime", "output_modalities": null}"#)
     );
+}
+
+#[test]
+fn beta_session_audio_mapping_keeps_a_nested_audio_block() {
+    let session = parse(
+        r#"{
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
+                    "turn_detection": {"type": "server_vad"}
+                },
+                "output": {"voice": "alloy"}
+            }
+        }"#,
+    );
+    let expected = parse(
+        r#"{
+            "type": "realtime",
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
+                    "turn_detection": {"type": "server_vad"}
+                },
+                "output": {"voice": "alloy"}
+            }
+        }"#,
+    );
+    assert_eq!(remap_beta_session_to_ga(session).unwrap(), expected);
 }
 
 #[test]

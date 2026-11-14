@@ -23,8 +23,8 @@ pub struct HeaderScope<'headers> {
 
 // LiteLLM catches every failure while reading the scope, so a scope the caller could not read is None
 #[must_use]
-pub fn openai_beta_realtime_header(scope: Option<&HeaderScope<'_>>) -> bool {
-    let Some(scope) = scope else {
+pub fn openai_beta_realtime_header(candidate: Option<&HeaderScope<'_>>) -> bool {
+    let Some(scope) = candidate else {
         return false;
     };
     scope.headers.iter().any(|(name, value)| {

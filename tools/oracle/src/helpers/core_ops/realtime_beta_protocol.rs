@@ -13,31 +13,31 @@ type Failure = Box<HelperError>;
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-enum Input {
+pub(crate) enum Input {
     HeaderDetection(HeaderInput),
     SessionRemap(SessionInput),
     GaEventsForBeta(EventsInput),
 }
 
 #[derive(Deserialize)]
-struct HeaderInput {
+pub(crate) struct HeaderInput {
     websockets: Vec<WebSocketInput>,
 }
 
 #[derive(Deserialize)]
-struct WebSocketInput {
+pub(crate) struct WebSocketInput {
     headers: Vec<(String, String)>,
     latin1: bool,
     scope_error: bool,
 }
 
 #[derive(Deserialize)]
-struct SessionInput {
+pub(crate) struct SessionInput {
     sessions: Vec<Json>,
 }
 
 #[derive(Deserialize)]
-struct EventsInput {
+pub(crate) struct EventsInput {
     events: Vec<Json>,
 }
 
