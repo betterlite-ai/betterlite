@@ -589,6 +589,8 @@ def test_internal_user_names_rules() -> None:
 
 def test_internal_bulk_names_rules() -> None:
     one_item = internal_user_endpoints.BulkNewUserItem()
+    assert one_item.json() == one_item.model_dump()
+    assert one_item.fields_set() == set()
     many = internal_user_endpoints.BulkNewUserRequest(
         users=[one_item] * EXPECTED_MAX_BULK_NEW_USERS
     )
