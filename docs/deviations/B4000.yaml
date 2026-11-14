@@ -48,8 +48,8 @@ deviations:
       The client-credentials exchange is written here rather than delegated to B673's get_azure_ad_token_from_entra_id
       port in betterlite-azure::azure_client_secret: the form, the os.environ/ resolution and the tenant token URL are
       built in this module. It posts straight to {authority}/{tenant}/oauth2/v2.0/token and skips azure-identity's
-      instance and tenant discovery, so a host outside azure-identity's known authorities gets the token request
-      without the two discovery requests LiteLLM's ClientSecretCredential sends first.
+      tenant discovery, and for a host outside its known authorities the instance discovery too, so a working setup
+      gets the same token with fewer requests than LiteLLM's ClientSecretCredential makes.
     why: >-
       betterlite-azure depends on betterlite-openai, which depends on betterlite-logging, so importing that provider
       here is a crate cycle. Moving the shared code to a crate both may depend on needs a new workspace crate and an
