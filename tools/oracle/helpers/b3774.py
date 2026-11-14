@@ -69,12 +69,13 @@ class Service:
             raise httpx.ConnectError("the compression service is unreachable", request=request)
         if self.silent:
             raise httpx.ReadTimeout("the compression service timed out", request=request)
+        headers = dict(request.headers.items())
         self.calls.append(
             {
                 "method": request.method,
                 "path": request.url.path,
                 "authorization_present": "authorization" in request.headers,
-                "content_type": request.headers.get("content-type"),
+                "content_type": headers.get("content-type"),
                 "body": JSON.validate_json(request.content),
             }
         )
@@ -83,7 +84,7 @@ class Service:
 
 def state_call_id(data: dict[str, JsonValue]) -> str | None:
     supplied = STATE.validate_python(data).get("litellm_call_id")
-    return supplied if supplied else None
+    return supplied if supplied != "" else None
 
 
 def read_issued(guardrail: HeadroomGuardrail, call_id: str | None) -> JsonValue:
@@ -93,7 +94,8 @@ def read_issued(guardrail: HeadroomGuardrail, call_id: str | None) -> JsonValue:
     if call_id not in issued:
         return None
     hashes, _expiry = issued[call_id]
-    return JSON.validate_python(sorted(hashes))
+    ordered = sorted(hashes)
+    return JSON.validate_python(ordered)
 
 
 def is_uuid(call_id: str | None) -> bool:
@@ -159,7 +161,7 @@ def run(request_input: CompressionInput) -> JsonValue:
         if "detail" in detail:
             detail["detail"] = TRANSPORT_DETAIL
         raised = {"status": error.status_code, "detail": detail}
-    supplied = logging_id if logging_id else None
+    supplied = logging_id if logging_id != "" else None
     before = request_input.get("request_data")
     if supplied is None and before is not None:
         supplied = state_call_id(before)
