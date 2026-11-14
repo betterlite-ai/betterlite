@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
-use std::io::{Error as IoError, ErrorKind, Read, Write as _};
+use std::fmt::Write as _;
+use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
@@ -39,10 +40,10 @@ pub(crate) fn policy(verification: Verification, ca_file: Option<&str>) -> TlsPo
 }
 
 pub(crate) fn reply(status: &str, headers: &[(&str, &str)], body: &str) -> Vec<u8> {
-    let extra: String = headers
-        .iter()
-        .map(|(name, value)| format!("{name}: {value}\r\n"))
-        .collect();
+    let mut extra = String::new();
+    for (name, value) in headers {
+        write!(extra, "{name}: {value}\r\n").unwrap();
+    }
     format!(
         "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n{extra}\r\n{body}",
         body.len()
@@ -103,7 +104,7 @@ pub(crate) fn tls_authority() -> Authority {
 pub(crate) fn spawn_tls_server(
     authority: Authority,
     listener: TcpListener,
-) -> thread::JoinHandle<std::io::Result<String>> {
+) -> thread::JoinHandle<IoResult<String>> {
     thread::Builder::new()
         .spawn(move || authority.answer(&listener))
         .unwrap()
@@ -115,7 +116,7 @@ pub(crate) struct Authority {
 }
 
 impl Authority {
-    fn answer(&self, listener: &TcpListener) -> std::io::Result<String> {
+    fn answer(&self, listener: &TcpListener) -> IoResult<String> {
         let mut stream = accept(listener);
         stream.set_read_timeout(Some(TIMEOUT))?;
         stream.set_write_timeout(Some(TIMEOUT))?;
@@ -140,10 +141,11 @@ impl Authority {
         let connection = accepted
             .into_connection(Arc::new(config))
             .map_err(|(error, _alert)| IoError::other(error))?;
-        let mut stream = StreamOwned::new(connection, stream);
-        let request = read_head(&mut stream)?;
-        stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}")?;
-        stream.flush()?;
+        let mut secured = StreamOwned::new(connection, stream);
+        let request = read_head(&mut secured)?;
+        secured
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}")?;
+        secured.flush()?;
         Ok(request)
     }
 }
@@ -169,7 +171,7 @@ fn accept(listener: &TcpListener) -> TcpStream {
     }
 }
 
-fn read_head<R>(stream: &mut R) -> std::io::Result<String>
+fn read_head<R>(stream: &mut R) -> IoResult<String>
 where
     R: Read,
 {

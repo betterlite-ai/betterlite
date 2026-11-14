@@ -18,7 +18,7 @@ pub fn get_interaction<C>(
     clients: &mut HttpClients,
     logging: &mut Logging,
     supplied: Option<BlockingClient>,
-    request: GetInteractionRequest<'_>,
+    request: &GetInteractionRequest<'_>,
 ) -> Result<C::Output, GetInteractionError<C::Error>>
 where
     C: GetInteractionConfig,
@@ -27,12 +27,12 @@ where
     let client = clients
         .sync_client(request.litellm_params, supplied)
         .map_err(GetInteractionError::Client)?;
-    let (headers, prepared) = prepare(config, logging, &request)?;
+    let (headers, prepared) = prepare(config, logging, request)?;
     let proxy = own_client.then_some(&*clients.proxy);
     let sent = send_blocking(&client, proxy, &prepared, &headers)
         .and_then(finish_blocking)
         .map_err(|failure| handle_failure(config, failure))?;
-    finish(config, logging, sent)
+    finish(config, logging, &sent)
 }
 
 fn send_blocking(

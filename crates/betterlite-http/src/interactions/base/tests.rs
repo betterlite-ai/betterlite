@@ -93,7 +93,9 @@ fn handle_error_converts_a_status_failure_through_the_provider_class() {
             assert_eq!(status_code, 429);
             assert_eq!(message, "slow down");
         }
-        other => panic!("expected the provider class, got {other:?}"),
+        CallFailure::PassedThrough(other) => {
+            panic!("expected the provider class, got {other:?}")
+        }
     }
     assert_eq!(fixture.calls(), vec!["429|slow down|1".to_owned()]);
 }
@@ -154,7 +156,7 @@ fn sync_client_honors_ssl_verify_from_litellm_params() {
         .send();
 
     assert!(outcome.is_ok(), "{outcome:?}");
-    assert!(server.join().unwrap().is_ok());
+    server.join().unwrap().unwrap();
 }
 
 #[test]
@@ -171,7 +173,7 @@ fn sync_client_verifies_a_certificate_without_an_override() {
         .send();
 
     assert!(outcome.is_err(), "the fixture certificate is not trusted");
-    assert!(server.join().unwrap().is_err());
+    server.join().unwrap().unwrap_err();
 }
 
 #[test]
@@ -191,7 +193,7 @@ fn sync_client_keeps_a_policy_that_skips_verification_without_an_override() {
         .send();
 
     assert!(outcome.is_ok(), "{outcome:?}");
-    assert!(server.join().unwrap().is_ok());
+    server.join().unwrap().unwrap();
 }
 
 #[tokio::test]
@@ -210,7 +212,7 @@ async fn async_client_honors_ssl_verify_from_litellm_params() {
         .await;
 
     assert!(outcome.is_ok(), "{outcome:?}");
-    assert!(server.join().unwrap().is_ok());
+    server.join().unwrap().unwrap();
 }
 
 #[test]
@@ -325,7 +327,7 @@ fn a_supplied_async_client_is_returned_before_the_provider_is_read() {
 
     let outcome = async_client(&mut clients, &unknown, Some(supplied));
 
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(clients.async_clients.is_empty());
 }
 
@@ -441,7 +443,7 @@ fn a_proxy_setting_betterlite_can_use_passes(#[case] variables: &[(&str, &str)])
     let policy = support::proxy_policy(variables);
     let url = Url::parse("http://provider.example/x").unwrap();
 
-    assert!(refuse_unusable_proxy(&policy, &url).is_ok());
+    refuse_unusable_proxy(&policy, &url).unwrap();
 }
 
 #[rstest]
@@ -514,12 +516,12 @@ fn query_pairs_carry_the_transformed_params(
     #[case] expected: Vec<(&str, &str)>,
 ) {
     let pairs = query_pairs(&support::params(text)).unwrap();
-    let expected: Vec<(String, String)> = expected
+    let owned: Vec<(String, String)> = expected
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value.to_owned()))
         .collect();
 
-    assert_eq!(pairs, expected);
+    assert_eq!(pairs, owned);
 }
 
 #[rstest]
@@ -580,7 +582,7 @@ fn an_invalid_request_header_is_refused(#[case] name: &str, #[case] value: &str)
     let mut headers = RequestHeaders::new();
     headers.insert(name.to_owned(), SecretString::from(value));
 
-    assert!(request_headers(&headers).is_err());
+    request_headers(&headers).unwrap_err();
 }
 
 #[test]
@@ -623,7 +625,7 @@ fn a_response_header_that_is_not_utf8_decodes_as_iso_8859_1() {
 
     let map = response_headers(&headers);
 
-    assert_eq!(map.get("x-raw").map(String::as_str), Some("ÿ"));
+    assert_eq!(map.get("x-raw").map(String::as_str), Some("\u{ff}"));
 }
 
 #[rstest]

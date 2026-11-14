@@ -120,19 +120,19 @@ where
 {
     match handle_error(config, failure) {
         CallFailure::Provider(error) => GetInteractionError::Provider(error),
-        CallFailure::PassedThrough(failure) => GetInteractionError::Transport(failure),
+        CallFailure::PassedThrough(passed) => GetInteractionError::Transport(passed),
     }
 }
 
 pub(crate) fn finish<C>(
     config: &C,
     logging: &mut Logging,
-    response: UpstreamResponse,
+    response: &UpstreamResponse,
 ) -> Result<C::Output, GetInteractionError<C::Error>>
 where
     C: GetInteractionConfig,
 {
     config
-        .transform_get_response(&response, logging)
+        .transform_get_response(response, logging)
         .map_err(GetInteractionError::Provider)
 }

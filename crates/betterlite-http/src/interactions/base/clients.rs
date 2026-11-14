@@ -39,7 +39,7 @@ pub struct HttpClients {
 
 impl HttpClients {
     #[must_use]
-    pub fn new(tls: TlsPolicy, proxy: Arc<ProxyPolicy>) -> Self {
+    pub const fn new(tls: TlsPolicy, proxy: Arc<ProxyPolicy>) -> Self {
         Self {
             tls,
             proxy,
@@ -123,7 +123,7 @@ fn provider(litellm_params: &Params) -> Result<ProviderId, ClientError> {
     if name.is_empty() {
         return Ok(DEFAULT_PROVIDER);
     }
-    ProviderId::from_str(name).map_err(|_| ClientError::UnknownProvider {
+    ProviderId::from_str(name).map_err(|_unknown| ClientError::UnknownProvider {
         provider: name.clone(),
     })
 }

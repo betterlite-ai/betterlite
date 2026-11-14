@@ -85,8 +85,8 @@ fn header_entry(
     name: &str,
     value: &SecretString,
 ) -> Result<(HeaderName, HeaderValue), RequestFailure> {
-    let value =
+    let header_value =
         HeaderValue::from_str(value.expose_secret()).map_err(RequestFailure::HeaderValue)?;
-    let name = HeaderName::from_str(name).map_err(RequestFailure::HeaderName)?;
-    Ok((name, value))
+    let header_name = HeaderName::from_str(name).map_err(RequestFailure::HeaderName)?;
+    Ok((header_name, header_value))
 }

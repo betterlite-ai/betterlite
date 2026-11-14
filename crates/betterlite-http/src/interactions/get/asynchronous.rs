@@ -19,7 +19,7 @@ pub async fn async_get_interaction<C>(
     clients: &mut HttpClients,
     logging: &mut Logging,
     supplied: Option<Client>,
-    request: GetInteractionRequest<'_>,
+    request: &GetInteractionRequest<'_>,
 ) -> Result<C::Output, GetInteractionError<C::Error>>
 where
     C: GetInteractionConfig,
@@ -27,12 +27,12 @@ where
     let own_client = supplied.is_none();
     let client = async_client_for(clients, request.provider, request.litellm_params, supplied)
         .map_err(GetInteractionError::Client)?;
-    let (headers, prepared) = prepare(config, logging, &request)?;
+    let (headers, prepared) = prepare(config, logging, request)?;
     let proxy = own_client.then_some(&*clients.proxy);
     let response = send_async(&client, proxy, &prepared, &headers)
         .await
         .map_err(|failure| handle_failure(config, failure))?;
-    finish(config, logging, response)
+    finish(config, logging, &response)
 }
 
 async fn send_async(

@@ -1,15 +1,17 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
+use std::io::Error as IoError;
 
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
+use reqwest::header::{InvalidHeaderName, InvalidHeaderValue};
 use secrecy::SecretString;
 use thiserror::Error;
 
 use crate::proxy::limits::{ReadError, TransportLimits};
 use crate::tls::TlsError;
 
-pub(crate) mod clients;
+pub mod clients;
 
 pub(crate) mod transport;
 
@@ -38,6 +40,7 @@ pub struct UpstreamResponse {
 }
 
 // the arguments LiteLLM's pre_call receives as additional_args
+#[derive(Clone, Copy)]
 pub struct PreCallArguments<'call> {
     pub api_base: &'call str,
     pub headers: &'call RequestHeaders,
@@ -112,9 +115,9 @@ pub enum RequestFailure {
     #[error("the request URL is not valid")]
     Url(#[source] url::ParseError),
     #[error("the request header name is not valid")]
-    HeaderName(#[source] reqwest::header::InvalidHeaderName),
+    HeaderName(#[source] InvalidHeaderName),
     #[error("the request header value is not valid")]
-    HeaderValue(#[source] reqwest::header::InvalidHeaderValue),
+    HeaderValue(#[source] InvalidHeaderValue),
     #[error("the proxy for this request uses {scheme}://, and only http:// proxies are supported")]
     UnsupportedProxyScheme { scheme: String },
     #[error("the {name} proxy URL is not valid")]
@@ -126,7 +129,7 @@ pub enum RequestFailure {
     #[error("the response body is larger than {limit} bytes")]
     BodyTooLarge { limit: usize },
     #[error("the response body could not be read")]
-    Body(#[source] std::io::Error),
+    Body(#[source] IoError),
 }
 
 impl From<ReadError> for RequestFailure {
@@ -172,6 +175,14 @@ where
             headers,
             body,
         } => CallFailure::Provider(config.get_error_class(&body, status_code, &headers)),
-        failure => CallFailure::PassedThrough(failure),
+        other @ (RequestFailure::Url(_)
+        | RequestFailure::HeaderName(_)
+        | RequestFailure::HeaderValue(_)
+        | RequestFailure::UnsupportedProxyScheme { .. }
+        | RequestFailure::InvalidProxyUrl { .. }
+        | RequestFailure::QueryValue { .. }
+        | RequestFailure::Transport(_)
+        | RequestFailure::BodyTooLarge { .. }
+        | RequestFailure::Body(_)) => CallFailure::PassedThrough(other),
     }
 }

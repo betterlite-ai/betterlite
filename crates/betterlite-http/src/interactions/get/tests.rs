@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::net::{SocketAddr, TcpListener};
+use std::str::{Utf8Error, from_utf8};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -30,7 +31,7 @@ enum FixtureError {
     #[error("refused with status {0}")]
     Refused(u16),
     #[error("the body is not text")]
-    Body(#[source] std::str::Utf8Error),
+    Body(#[source] Utf8Error),
 }
 
 #[derive(Default)]
@@ -128,7 +129,7 @@ impl GetInteractionConfig for Fixture {
         if self.refuse_status == Some(response.status_code) {
             return Err(FixtureError::Refused(response.status_code));
         }
-        std::str::from_utf8(&response.body)
+        from_utf8(&response.body)
             .map(str::to_owned)
             .map_err(FixtureError::Body)
     }
@@ -211,7 +212,7 @@ fn get_interaction_retrieves_the_interaction_through_the_config() {
     call.extra_headers = caller_headers(&[("x-caller", "c1")]);
 
     let output =
-        get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap();
+        get_interaction(&fixture, &mut clients, &mut logging, None, &call.request()).unwrap();
 
     assert_eq!(output, "{\"id\":\"int_1\"}");
     let sent = serving.request.join().unwrap();
@@ -249,7 +250,7 @@ fn get_interaction_records_the_pre_call_with_the_interaction_id() {
         &mut clients,
         &mut logging,
         None,
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .unwrap();
 
@@ -260,14 +261,7 @@ fn get_interaction_records_the_pre_call_with_the_interaction_id() {
         recorded.api_base,
         format!("http://{}/v1beta/interactions/int_1", serving.address)
     );
-    assert_eq!(
-        recorded
-            .headers
-            .get("x-goog-api-key")
-            .unwrap()
-            .expose_secret(),
-        "key-1"
-    );
+    assert_eq!(recorded.headers["x-goog-api-key"].expose_secret(), "key-1");
     let sent = serving.request.join().unwrap();
     assert!(sent.contains("x-goog-api-key: key-1\r\n"), "{sent}");
 }
@@ -284,7 +278,7 @@ fn get_interaction_takes_the_api_base_from_litellm_params() {
         JsonValue::Text(format!("http://{}/base", serving.address)),
     );
 
-    get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap();
+    get_interaction(&fixture, &mut clients, &mut logging, None, &call.request()).unwrap();
 
     let sent = serving.request.join().unwrap();
     assert!(
@@ -311,7 +305,7 @@ fn get_interaction_sends_no_deadline_of_its_own() {
     call.timeout = Some(Duration::from_millis(1));
 
     let output =
-        get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap();
+        get_interaction(&fixture, &mut clients, &mut logging, None, &call.request()).unwrap();
 
     assert_eq!(output, "{}");
     serving.request.join().unwrap();
@@ -320,8 +314,10 @@ fn get_interaction_sends_no_deadline_of_its_own() {
 #[test]
 fn get_interaction_sends_the_transformed_query_params() {
     let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
-    let mut fixture = Fixture::default();
-    fixture.params = support::params(r#"{"alt": "sse"}"#);
+    let fixture = Fixture {
+        params: support::params(r#"{"alt": "sse"}"#),
+        ..Fixture::default()
+    };
     let mut clients = clients();
     let mut logging = Logging::default();
 
@@ -330,7 +326,7 @@ fn get_interaction_sends_the_transformed_query_params() {
         &mut clients,
         &mut logging,
         None,
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .unwrap();
 
@@ -355,7 +351,7 @@ fn get_interaction_sends_the_caller_headers_to_validate_environment(
     let mut call = Call::new(serving.address);
     call.extra_headers = caller_headers(extra);
 
-    get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap();
+    get_interaction(&fixture, &mut clients, &mut logging, None, &call.request()).unwrap();
 
     let calls = fixture.calls();
     assert_eq!(calls.first().map(String::as_str), Some(expected));
@@ -365,8 +361,10 @@ fn get_interaction_sends_the_caller_headers_to_validate_environment(
 #[test]
 fn get_interaction_passes_a_failing_status_to_the_response_transform() {
     let serving = support::serve_once(support::reply("404 Not Found", &[], "missing"), None);
-    let mut fixture = Fixture::default();
-    fixture.refuse_status = Some(404);
+    let fixture = Fixture {
+        refuse_status: Some(404),
+        ..Fixture::default()
+    };
     let mut clients = clients();
     let mut logging = Logging::default();
 
@@ -375,7 +373,7 @@ fn get_interaction_passes_a_failing_status_to_the_response_transform() {
         &mut clients,
         &mut logging,
         None,
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .unwrap_err();
 
@@ -411,7 +409,7 @@ fn get_interaction_does_not_follow_a_redirect() {
         &mut clients,
         &mut logging,
         None,
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .unwrap();
 
@@ -435,7 +433,7 @@ fn get_interaction_passes_a_transport_failure_through_the_error_handler() {
         &mut clients,
         &mut logging,
         None,
-        Call::new(dead_address()).request(),
+        &Call::new(dead_address()).request(),
     )
     .unwrap_err();
 
@@ -463,7 +461,7 @@ fn get_interaction_passes_an_invalid_url_through_the_error_handler() {
     );
 
     let error =
-        get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap_err();
+        get_interaction(&fixture, &mut clients, &mut logging, None, &call.request()).unwrap_err();
 
     assert!(matches!(
         error,
@@ -490,7 +488,7 @@ fn get_interaction_uses_a_supplied_client() {
         &mut clients,
         &mut logging,
         Some(supplied),
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .unwrap_err();
 
@@ -518,7 +516,7 @@ async fn async_get_interaction_retrieves_the_interaction_through_the_config() {
         &mut clients,
         &mut logging,
         None,
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .await
     .unwrap();
@@ -553,7 +551,7 @@ async fn async_get_interaction_uses_a_supplied_client() {
         &mut clients,
         &mut logging,
         Some(supplied),
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .await
     .unwrap_err();
@@ -575,7 +573,7 @@ async fn async_get_interaction_builds_for_the_provider_its_caller_names() {
     let mut call = Call::new(serving.address);
     call.provider = ProviderId::Openai;
 
-    let output = async_get_interaction(&fixture, &mut clients, &mut logging, None, call.request())
+    let output = async_get_interaction(&fixture, &mut clients, &mut logging, None, &call.request())
         .await
         .unwrap();
 
@@ -596,8 +594,10 @@ async fn async_get_interaction_passes_a_failing_status_to_the_response_transform
         support::reply("500 Internal Server Error", &[], "boom"),
         None,
     );
-    let mut fixture = Fixture::default();
-    fixture.refuse_status = Some(500);
+    let fixture = Fixture {
+        refuse_status: Some(500),
+        ..Fixture::default()
+    };
     let mut clients = clients();
     let mut logging = Logging::default();
 
@@ -606,7 +606,7 @@ async fn async_get_interaction_passes_a_failing_status_to_the_response_transform
         &mut clients,
         &mut logging,
         None,
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .await
     .unwrap_err();
@@ -640,7 +640,7 @@ fn get_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_directly(
     let call = Call::new(dead_address());
 
     let error =
-        get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap_err();
+        get_interaction(&fixture, &mut clients, &mut logging, None, &call.request()).unwrap_err();
 
     assert!(
         matches!(&error, GetInteractionError::Transport(failure) if format!("{failure:?}") == expected),
@@ -664,7 +664,7 @@ fn get_interaction_skips_the_proxy_check_for_a_supplied_client() {
         &mut clients,
         &mut logging,
         Some(supplied),
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .unwrap();
 
@@ -688,7 +688,7 @@ async fn async_get_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecti
     let mut logging = Logging::default();
     let call = Call::new(dead_address());
 
-    let error = async_get_interaction(&fixture, &mut clients, &mut logging, None, call.request())
+    let error = async_get_interaction(&fixture, &mut clients, &mut logging, None, &call.request())
         .await
         .unwrap_err();
 
@@ -714,7 +714,7 @@ async fn async_get_interaction_skips_the_proxy_check_for_a_supplied_client() {
         &mut clients,
         &mut logging,
         Some(supplied),
-        Call::new(serving.address).request(),
+        &Call::new(serving.address).request(),
     )
     .await
     .unwrap();

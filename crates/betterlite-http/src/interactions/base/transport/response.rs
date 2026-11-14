@@ -1,5 +1,6 @@
 use std::collections::btree_map::Entry;
 use std::io::Read;
+use std::str::from_utf8;
 
 use reqwest::header::{HeaderMap, HeaderValue};
 
@@ -26,14 +27,16 @@ pub(crate) fn response_headers(headers: &HeaderMap) -> ResponseHeaders {
 
 // httpx reads header bytes as ascii then utf-8, and falls back to iso-8859-1, so none of them fails
 fn header_text(value: &HeaderValue) -> String {
-    match std::str::from_utf8(value.as_bytes()) {
-        Ok(text) => text.to_owned(),
-        Err(_) => value
-            .as_bytes()
-            .iter()
-            .map(|byte| char::from(*byte))
-            .collect(),
-    }
+    from_utf8(value.as_bytes()).map_or_else(
+        |_invalid| {
+            value
+                .as_bytes()
+                .iter()
+                .map(|byte| char::from(*byte))
+                .collect()
+        },
+        str::to_owned,
+    )
 }
 
 // the response body, read up to the limit so a provider answer cannot grow without bound
