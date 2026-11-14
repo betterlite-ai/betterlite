@@ -7,23 +7,9 @@ use signal_hook::iterator::Signals;
 use super::error::UpError;
 use super::ports::StopSource;
 
+#[derive(Default)]
 pub struct SignalStop {
     signals: Mutex<Option<Signals>>,
-}
-
-impl SignalStop {
-    #[must_use]
-    pub const fn new() -> Self {
-        Self {
-            signals: Mutex::new(None),
-        }
-    }
-}
-
-impl Default for SignalStop {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl StopSource for SignalStop {

@@ -246,10 +246,19 @@ pub(crate) struct ScriptedStop {
     pub(crate) state: Arc<State>,
     pub(crate) settings: PathBuf,
     pub(crate) backup: PathBuf,
+    #[cfg(unix)]
+    pub(crate) real: Option<crate::up::signals::SignalStop>,
+    pub(crate) installed: Mutex<Option<std::sync::mpsc::Sender<()>>>,
 }
 
 impl StopSource for ScriptedStop {
     fn install(&self) -> Result<(), UpError> {
+        #[cfg(unix)]
+        {
+            if let Some(real) = &self.real {
+                real.install()?;
+            }
+        }
         let snapshot = Snapshot {
             settings: json_file(&self.settings),
             backup: json_file(&self.backup),
@@ -262,10 +271,25 @@ impl StopSource for ScriptedStop {
         self.state
             .stopped
             .store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(installed) = self
+            .installed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            let _unused = installed.send(());
+        }
         Ok(())
     }
 
-    fn wait(&self) {}
+    fn wait(&self) {
+        #[cfg(unix)]
+        {
+            if let Some(real) = &self.real {
+                real.wait();
+            }
+        }
+    }
 }
 
 fn ignore_message(_message: &str) {}
@@ -344,10 +368,25 @@ impl World {
                 state,
                 settings: root.join(".claude").join("settings.json"),
                 backup: root.join(".litellm").join("claude_settings_backup.json"),
+                #[cfg(unix)]
+                real: None,
+                installed: Mutex::new(None),
             },
             stdout: Vec::new(),
             stderr: Vec::new(),
         }
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn use_real_signals(&mut self) -> std::sync::mpsc::Receiver<()> {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        self.stop.real = Some(crate::up::signals::SignalStop::default());
+        *self
+            .stop
+            .installed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(sender);
+        receiver
     }
 
     pub(crate) fn home_path(&self) -> &Path {

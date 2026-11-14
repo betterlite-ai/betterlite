@@ -6,6 +6,7 @@ use secrecy::SecretString;
 
 use crate::agent_dispatch::error::AgentDispatchError;
 use crate::agent_launch::Terminal;
+use crate::cli_context::CliContext;
 use crate::pkce_login::{Clock, Entropy, Http, WallClock};
 use crate::settings_backup::probes::{
     KeyResolvedRequest, key_resolved_on_the_way_in, stored_login_is_pkce, usable_login,
@@ -40,7 +41,16 @@ where
     )
     .map_err(|source| UpError::Write { source })?;
     start_login(ports, pkce)?;
-    if !ports.usable_login_for_request(&base_url, now)? {
+    let fresh = ports.key_after_login(&base_url)?;
+    let usable = usable_login(
+        fresh.as_ref(),
+        ports.files,
+        &mut *ports.vault,
+        now,
+        ports.expiration_hours,
+    )
+    .map_err(UpError::Backup)?;
+    if !usable {
         return Err(UpError::LoginProducedNoToken);
     }
     Ok(())
@@ -66,7 +76,7 @@ where
     start_login(ports, false)?;
     let base_url = ports.context.base_url.clone();
     ports
-        .resolved_key(&base_url)?
+        .key_after_login(&base_url)?
         .ok_or_else(|| UpError::Login(AgentDispatchError::LoginProducedNoKey))
 }
 
@@ -75,9 +85,13 @@ where
     H: Http + Send + Sync + 'static,
     W: WallClock + Send + Sync + 'static,
 {
-    fn resolved_key(&mut self, base_url: &str) -> Result<Option<SecretString>, UpError> {
+    fn resolved_key(
+        &mut self,
+        context: &CliContext,
+        base_url: &str,
+    ) -> Result<Option<SecretString>, UpError> {
         key_resolved_on_the_way_in(KeyResolvedRequest {
-            context: self.context,
+            context,
             base_url,
             files: self.files,
             vault: &mut *self.vault,
@@ -89,8 +103,15 @@ where
         .map_err(UpError::Backup)
     }
 
+    // The login stored a fresh token, so read it here; the token-file shortcut still holds the key from before
+    fn key_after_login(&mut self, base_url: &str) -> Result<Option<SecretString>, UpError> {
+        let mut context = self.context.clone();
+        context.api_key_from_token_file = false;
+        self.resolved_key(&context, base_url)
+    }
+
     fn usable_login_for_request(&mut self, base_url: &str, now: f64) -> Result<bool, UpError> {
-        let resolved = self.resolved_key(base_url)?;
+        let resolved = self.resolved_key(self.context, base_url)?;
         usable_login(
             resolved.as_ref(),
             self.files,

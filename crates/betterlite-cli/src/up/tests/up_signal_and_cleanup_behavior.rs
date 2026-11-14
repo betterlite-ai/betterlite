@@ -2,6 +2,10 @@ use secrecy::SecretString;
 
 use super::support::{World, record};
 use crate::up::command::run_up;
+#[cfg(unix)]
+use crate::up::ports::StopSource;
+#[cfg(unix)]
+use crate::up::signals::SignalStop;
 
 const FRESH: f64 = 4_000_000_000.0;
 
@@ -44,4 +48,51 @@ fn up_leaves_stderr_quiet_when_the_restore_works() {
     run_up(&mut ports).expect("the session ran and restored");
     drop(ports);
     assert_eq!(String::from_utf8_lossy(&world.stderr), "");
+}
+
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::sigint(signal_hook::consts::SIGINT)]
+#[case::sigterm(signal_hook::consts::SIGTERM)]
+fn signal_stop_wait_returns_after_a_signal(#[case] signal: i32) {
+    let (installed, ready) = std::sync::mpsc::channel();
+    let waiter = std::thread::spawn(move || {
+        let stop = SignalStop::default();
+        stop.install().expect("the signal watch installed");
+        installed.send(()).expect("the test is listening");
+        stop.wait();
+    });
+    ready.recv().expect("the signal watch installed");
+    std::thread::park_timeout(std::time::Duration::from_millis(100));
+    assert!(!waiter.is_finished(), "wait returned before any signal");
+    let raiser = std::thread::spawn(move || {
+        let _raised = signal_hook::low_level::raise(signal);
+    });
+    waiter.join().expect("the waiter finished");
+    raiser.join().expect("the raiser finished");
+}
+
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::sigint(signal_hook::consts::SIGINT)]
+#[case::sigterm(signal_hook::consts::SIGTERM)]
+fn up_restores_the_settings_after_a_real_signal(#[case] signal: i32) {
+    let mut world = prepared();
+    world.seed(&world.settings_path(), r#"{"model":"opus"}"#);
+    let installed = world.use_real_signals();
+    let raiser = std::thread::spawn(move || {
+        installed.recv().expect("up installed the signal watch");
+        let _raised = signal_hook::low_level::raise(signal);
+    });
+    let mut ports = world.ports();
+    run_up(&mut ports).expect("the session ran and restored");
+    drop(ports);
+    raiser.join().expect("the raiser finished");
+    let text = world.text();
+    assert_eq!(text.matches("Restored ").count(), 1);
+    assert_eq!(text.matches("Nothing to restore.").count(), 0);
+    assert_eq!(
+        super::support::json_file(&world.settings_path()),
+        serde_json::json!({"model": "opus"})
+    );
 }

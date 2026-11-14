@@ -1,9 +1,9 @@
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::support::{World, pkce_record, record};
 use crate::up::command::run_up;
 use crate::up::error::UpError;
-use crate::up::login::ensure_fresh_login;
+use crate::up::login::{ensure_fresh_login, resolve_api_key};
 
 const FRESH: f64 = 4_000_000_000.0;
 
@@ -74,6 +74,53 @@ fn ensure_fresh_login_ignores_an_explicit_api_key() {
     let mut ports = world.ports();
     let error = ensure_fresh_login(&mut ports).expect_err("an explicit key is not a login");
     assert!(matches!(error, UpError::NoFreshLogin { .. }));
+}
+
+#[test]
+fn ensure_fresh_login_reads_the_key_the_login_stored_in_a_token_file_session() {
+    let mut world = World::new(true);
+    world.context.api_key_from_token_file = true;
+    world.login.token = Some(record("sk-login", FRESH, Some(FRESH)));
+    let mut ports = world.ports();
+    ensure_fresh_login(&mut ports).expect("the login supplies a fresh token");
+    drop(ports);
+    assert_eq!(world.login_count(), 1);
+}
+
+#[test]
+fn ensure_fresh_login_rejects_a_login_that_stored_nothing() {
+    let mut world = World::new(true);
+    let mut ports = world.ports();
+    let error = ensure_fresh_login(&mut ports).expect_err("the login stored no token");
+    assert_eq!(error.to_string(), "Login did not produce a usable token.");
+    assert_eq!(world.login_count(), 1);
+}
+
+#[test]
+fn ensure_fresh_login_rejects_a_login_for_another_proxy() {
+    let mut world = World::new(true);
+    let mut token = record("sk-login", FRESH, Some(FRESH));
+    token.base_url = "http://other.test:4000".to_owned();
+    world.login.token = Some(token);
+    let mut ports = world.ports();
+    let error = ensure_fresh_login(&mut ports).expect_err("the login belongs to another proxy");
+    assert_eq!(error.to_string(), "Login did not produce a usable token.");
+}
+
+#[test]
+fn resolve_api_key_reads_the_key_the_login_stored_in_a_token_file_session() {
+    let mut world = World::new(true);
+    world.context.api_key_from_token_file = true;
+    world.login.token = Some(record("sk-login", FRESH, Some(FRESH)));
+    let mut ports = world.ports();
+    let key = resolve_api_key(&mut ports).expect("the login stored a key");
+    drop(ports);
+    assert_eq!(key.expose_secret(), "sk-login");
+    assert_eq!(world.login_count(), 1);
+    assert_eq!(
+        world.text(),
+        "No LiteLLM credentials found; starting login...\n"
+    );
 }
 
 #[test]

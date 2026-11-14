@@ -3,6 +3,7 @@ name: fresh-login-interactive-success
 call:
   b4577:
     operation: fresh_login
+    api_key_from_token_file: true
     tty: true
     login_token:
       base_url: http://gateway.test:4000
