@@ -205,6 +205,7 @@ fn sync_iterator_construction_calls_iter_lines_once() {
         Some("https://sync.test")
     );
     assert_eq!(drain_sync(&mut iterator).len(), 1);
+    assert!(iterator.base.finished);
 }
 
 #[test]
@@ -424,6 +425,20 @@ fn sync_iteration_yields_events_in_order_and_finishes() {
     assert_eq!(ids(&events), vec!["a", "b"]);
     assert!(iterator.base.finished);
     assert!(iterator.next_chunk().is_none());
+}
+
+#[test]
+fn sync_iteration_skips_lines_without_events() {
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(Params::new());
+    let mut iterator = SyncInteractionsStreamIterator::new(
+        FakeSyncResponse::new(&["", "data: not json", r#"data: {"id":"only"}"#]),
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
+    let events = drain_sync(&mut iterator);
+    assert_eq!(ids(&events), vec!["only"]);
+    assert!(iterator.base.finished);
 }
 
 #[test]
