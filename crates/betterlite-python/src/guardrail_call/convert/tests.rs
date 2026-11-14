@@ -17,7 +17,7 @@ use rstest::rstest;
 
 use super::settings::SettingsJson;
 use super::{
-    event_type_from_name, exact_data, exact_value, hook_from_name, is_integer_literal, read,
+    HOOK_NAMES, event_type_from_name, exact_data, exact_value, find, is_integer_literal, read,
     settings_from_text, suppressed_from_text, text_context_from_text,
 };
 use crate::guardrail_call::context::{RecordStep, log_target_from_text, record_call, record_parts};
@@ -340,22 +340,19 @@ fn event_types_reject_an_unknown_name() {
 )]
 #[case("apply_guardrail", GuardrailHookName::ApplyGuardrail)]
 fn hook_names_read_every_wrapper(#[case] name: &str, #[case] hook: GuardrailHookName) {
-    assert_eq!(hook_from_name(name), hook);
+    assert_eq!(find(&HOOK_NAMES, name), Some(hook));
 }
 
 #[test]
-fn hook_names_fall_back_to_no_event_type() {
-    assert_eq!(
-        hook_from_name("async_custom_hook"),
-        GuardrailHookName::StreamingIterator
-    );
+fn hook_names_leave_an_unknown_wrapper_unmatched() {
+    assert_eq!(find(&HOOK_NAMES, "async_custom_hook"), None);
 }
 
 #[test]
 fn hooks_with_an_unknown_name_use_the_configured_mode() {
     let text = r#"{"messages": []}"#;
     let data = body(text);
-    let hook = hook_from_name("async_custom_hook");
+    let hook = GuardrailHookName::StreamingIterator;
     let mut invocation =
         Some(GuardrailInvocation::begin(hook, &data, None, SystemTime::now()).unwrap());
     let context = r#"{

@@ -30,7 +30,7 @@ const EVENT_TYPES: [(&str, GuardrailEventHooks); 8] = [
     ),
 ];
 
-const HOOK_NAMES: [(&str, GuardrailHookName); 6] = [
+pub(crate) const HOOK_NAMES: [(&str, GuardrailHookName); 6] = [
     ("async_pre_call_hook", GuardrailHookName::PreCall),
     ("async_moderation_hook", GuardrailHookName::Moderation),
     (
@@ -48,7 +48,7 @@ const HOOK_NAMES: [(&str, GuardrailHookName); 6] = [
     ("apply_guardrail", GuardrailHookName::ApplyGuardrail),
 ];
 
-fn find<T>(table: &[(&str, T)], name: &str) -> Option<T>
+pub(crate) fn find<T>(table: &[(&str, T)], name: &str) -> Option<T>
 where
     T: Copy,
 {
@@ -160,14 +160,6 @@ pub(crate) fn event_type_from_name(name: &str) -> Result<GuardrailEventHooks, Ca
     find(&EVENT_TYPES, name).ok_or_else(|| CallError::EventType {
         name: name.to_owned(),
     })
-}
-
-// LiteLLM infers the event type from func.__name__ and gives every unknown name no event type and no baseline
-pub(crate) fn hook_from_name(name: &str) -> GuardrailHookName {
-    match find(&HOOK_NAMES, name) {
-        Some(hook) => hook,
-        None => GuardrailHookName::StreamingIterator,
-    }
 }
 
 pub(crate) fn settings_from_text(text: &str) -> Result<GuardrailSettings, CallError> {

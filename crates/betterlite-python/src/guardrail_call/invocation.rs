@@ -5,7 +5,9 @@ use pyo3::prelude::*;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
-use betterlite_guardrails::guardrail_records::invocation::GuardrailInvocation;
+use betterlite_guardrails::guardrail_records::invocation::{
+    GuardrailHookName, GuardrailInvocation,
+};
 
 use super::RecordUpdate;
 use super::context::{RecordStep, record_call};
@@ -26,7 +28,9 @@ impl NativeGuardrailInvocation {
         request_data: &str,
         inputs: Option<&str>,
     ) -> PyResult<Py<Self>> {
-        let selected_hook = convert::hook_from_name(hook);
+        // LiteLLM infers the event type from func.__name__ and gives every unknown name no event type and no baseline
+        let selected_hook = convert::find(&convert::HOOK_NAMES, hook)
+            .unwrap_or(GuardrailHookName::StreamingIterator);
         let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", request_data)?;
         let data = convert::exact_data(raw)?;
         let api_inputs: Option<GuardrailApiInputs> =
