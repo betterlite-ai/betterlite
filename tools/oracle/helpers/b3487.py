@@ -68,11 +68,12 @@ def native_provider(provider: str) -> LlmProviders:
 
 
 def config_of(input_value: Input) -> GenAiConfig:
+    model = input_value["model"]
     selected = ProviderConfigManager.get_provider_google_genai_generate_content_config(
-        input_value["model"], native_provider(input_value["provider"])
+        model, native_provider(input_value["provider"])
     )
     if selected is None:
-        raise ValueError(f"no native GenAI config for {input_value['model']}")
+        raise ValueError(f"no native GenAI config for {model}")
     return selected
 
 
