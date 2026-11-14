@@ -5,6 +5,7 @@ use crate::commands::tests::support::{Answer, TestServer};
 
 use super::super::api::ApiError;
 use super::super::{KeysCommand, KeysError, ListKeys};
+use super::support;
 use super::support::{Fixture, keys_page, list, pretty, query_pairs, table, value};
 
 #[test]

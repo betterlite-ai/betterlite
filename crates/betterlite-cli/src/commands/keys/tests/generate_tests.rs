@@ -5,6 +5,7 @@ use crate::commands::tests::support::{Answer, TestServer};
 
 use super::super::api::ApiError;
 use super::super::{KeysCommand, KeysError, UsageError};
+use super::support;
 use super::support::{Fixture, body_json, generate, pretty, value};
 
 #[test]

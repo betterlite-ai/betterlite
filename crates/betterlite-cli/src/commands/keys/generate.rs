@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::io::Write;
 
 use betterlite_config::sections::settings::JsonValue;
 use http::Method;
@@ -42,11 +41,8 @@ pub(super) fn generate_key(options: &GenerateKey, ports: KeysPorts<'_>) -> Resul
 }
 
 fn generate_body(options: &GenerateKey) -> Result<Vec<u8>, KeysError> {
-    let aliases: Option<BTreeMap<String, String>> = parse_object(
-        options.aliases.as_deref(),
-        "aliases",
-        "a JSON object of strings",
-    )?;
+    let aliases: Option<BTreeMap<String, String>> =
+        parse_object(options.aliases.as_deref(), "aliases")?;
     let body = KeyGenerateBody {
         models: split_commas(options.models.as_deref())
             .map(|parts| parts.into_iter().map(JsonValue::String).collect()),
@@ -62,7 +58,7 @@ fn generate_body(options: &GenerateKey) -> Result<Vec<u8>, KeysError> {
         team_id: options.team_id.clone(),
         user_id: options.user_id.clone(),
         budget_id: options.budget_id.clone(),
-        config: parse_object(options.config.as_deref(), "config", "a JSON object")?,
+        config: parse_object(options.config.as_deref(), "config")?,
     };
     serde_json::to_vec(&body).map_err(KeysError::Json)
 }
@@ -81,17 +77,13 @@ fn parse_spend(spend: Option<Decimal>) -> Result<Option<Number>, UsageError> {
 fn parse_object<T: DeserializeOwned>(
     text: Option<&str>,
     option: &'static str,
-    expected: &'static str,
 ) -> Result<Option<T>, UsageError> {
     let Some(text) = text else {
         return Ok(None);
     };
     let value: JsonValue =
         serde_json::from_str(text).map_err(|source| UsageError::InvalidJson { source })?;
-    let parsed = serde_json::from_value(value).map_err(|source| UsageError::OptionType {
-        option,
-        expected,
-        source,
-    })?;
+    let parsed = serde_json::from_value(value)
+        .map_err(|source| UsageError::OptionType { option, source })?;
     Ok(Some(parsed))
 }

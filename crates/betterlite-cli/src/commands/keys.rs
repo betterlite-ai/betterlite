@@ -1,7 +1,6 @@
 use std::convert::Infallible;
 use std::io::Write;
 
-use betterlite_config::sections::settings::JsonValue;
 use betterlite_redact::secret::Redactor;
 use clap::builder::ValueParser;
 use clap::{Args, Subcommand};
@@ -138,10 +137,9 @@ pub enum UsageError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the --{option} option must hold {expected}")]
+    #[error("the --{option} option has the wrong type: {source}")]
     OptionType {
         option: &'static str,
-        expected: &'static str,
         #[source]
         source: serde_json::Error,
     },
