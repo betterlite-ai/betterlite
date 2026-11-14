@@ -87,16 +87,13 @@ fn image_url(block: &BTreeMap<String, GuardrailValue>) -> Result<ImageUrl, Crowd
 
 #[must_use]
 pub fn extract_text_from_content(content: &GuardrailValue) -> String {
-    match content {
-        GuardrailValue::Text(text) => text.clone(),
-        GuardrailValue::Array(items) => text_parts_joined(items),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Object(_) => String::new(),
+    if let GuardrailValue::Text(text) = content {
+        return text.clone();
     }
+    if let GuardrailValue::Array(items) = content {
+        return text_parts_joined(items);
+    }
+    String::new()
 }
 
 fn text_parts_joined(items: &[GuardrailValue]) -> String {
@@ -129,17 +126,20 @@ fn text_parts_joined(items: &[GuardrailValue]) -> String {
 
 #[must_use]
 pub fn extract_text_from_message(message: &Message) -> String {
-    match &message.content {
-        None => String::new(),
-        Some(MessageContent::Text(text)) => text.clone(),
-        Some(MessageContent::Parts(parts)) => parts
-            .iter()
-            .filter_map(|part| match part {
-                ContentPart::Text(text) => Some(text.text.clone()),
-                ContentPart::ImageUrl(_) => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
+    let Some(content) = &message.content else {
+        return String::new();
+    };
+    match content {
+        MessageContent::Text(text) => text.clone(),
+        MessageContent::Parts(parts) => {
+            let mut texts = Vec::new();
+            for part in parts {
+                if let ContentPart::Text(text) = part {
+                    texts.push(text.text.clone());
+                }
+            }
+            texts.join("\n")
+        }
     }
 }
 

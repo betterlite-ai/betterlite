@@ -104,12 +104,19 @@ fn rate_param(
     nested: Option<&BTreeMap<String, GuardrailValue>>,
     extras: &BTreeMap<String, GuardrailValue>,
 ) -> Result<Option<u64>, CrowdStrikeError> {
-    let rate = match selected(RATE_KEY, nested, extras) {
-        None | Some(GuardrailValue::Null) => return Ok(None),
-        Some(GuardrailValue::SignedInteger(rate)) => u64::try_from(*rate)
+    let Some(value) = selected(RATE_KEY, nested, extras) else {
+        return Ok(None);
+    };
+    let rate = match value {
+        GuardrailValue::Null => return Ok(None),
+        GuardrailValue::SignedInteger(rate) => u64::try_from(*rate)
             .map_err(|_negative| CrowdStrikeError::InvalidParam { name: RATE_KEY })?,
-        Some(GuardrailValue::UnsignedInteger(rate)) => *rate,
-        Some(_wrong) => {
+        GuardrailValue::UnsignedInteger(rate) => *rate,
+        GuardrailValue::Boolean(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => {
             return Err(CrowdStrikeError::InvalidParam { name: RATE_KEY });
         }
     };

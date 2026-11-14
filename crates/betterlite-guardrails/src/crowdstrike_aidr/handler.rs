@@ -57,70 +57,75 @@ pub struct CrowdStrikeAidr {
     pub now: fn() -> SystemTime,
 }
 
+// LiteLLM reads the parameter, then the environment variable, and rejects an empty value from either
+fn required(
+    value: &Option<String>,
+    name: &'static str,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<String, CrowdStrikeError> {
+    value
+        .clone()
+        .filter(|entry| !entry.is_empty())
+        .or_else(|| lookup.lookup(name))
+        .filter(|entry| !entry.is_empty())
+        .ok_or(CrowdStrikeError::MissingEnvironment { name })
+}
+
 impl Settings {
-    pub fn resolve<L: EnvironmentLookup>(
+    pub fn resolve(
         args: &ConstructorArgs,
-        lookup: &L,
+        lookup: &dyn EnvironmentLookup,
     ) -> Result<Self, CrowdStrikeError> {
-        let api_key = args
-            .api_key
-            .clone()
-            .filter(|key| !key.is_empty())
-            .or_else(|| lookup.lookup(API_KEY_ENV))
-            .filter(|key| !key.is_empty())
-            .ok_or(CrowdStrikeError::MissingEnvironment { name: API_KEY_ENV })?;
-        let api_base = args
-            .api_base
-            .clone()
-            .filter(|base| !base.is_empty())
-            .or_else(|| lookup.lookup(API_BASE_ENV))
-            .filter(|base| !base.is_empty())
-            .ok_or(CrowdStrikeError::MissingEnvironment { name: API_BASE_ENV })?;
+        let api_key = required(&args.api_key, API_KEY_ENV, lookup)?;
+        let api_base = required(&args.api_base, API_BASE_ENV, lookup)?;
+        let streaming = StreamingSettings::from_params(args.streaming);
         Ok(Self {
             guardrail_name: args.guardrail_name.clone(),
             api_key: SecretString::from(api_key),
             api_base,
             fail_on_error: args.fail_on_error.unwrap_or(true),
-            streaming: StreamingSettings::from_params(args.streaming),
+            streaming,
             timeout: args.timeout,
             skip: SkipFlags::default(),
         })
     }
 }
 
+fn base_from_settings(settings: &Settings) -> GuardrailBase {
+    GuardrailBase {
+        settings: GuardrailSettings {
+            guardrail_name: settings.guardrail_name.clone(),
+            supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
+            event_hook: None,
+            default_on: false,
+            mask_request_content: false,
+            mask_response_content: false,
+            violation_message_template: None,
+            end_session_after_n_fails: None,
+            on_violation: None,
+            realtime_violation_message: None,
+            on_sensitive_data: None,
+            sensitive_data_route_to_model: None,
+            sticky_session_routing: true,
+            run_in_parallel: false,
+            scan_raw_request: false,
+            only_scan_new_messages: false,
+            timeout: settings.timeout,
+            switches: GuardrailSwitches::default(),
+        },
+        mode: None,
+    }
+}
+
 impl CrowdStrikeAidr {
-    pub fn new<L: EnvironmentLookup>(
+    pub fn new(
         args: &ConstructorArgs,
-        lookup: &L,
+        lookup: &dyn EnvironmentLookup,
         dependencies: Dependencies,
     ) -> Result<Self, CrowdStrikeError> {
-        let settings = Settings::resolve(args, lookup)?;
-        let base = GuardrailBase {
-            settings: GuardrailSettings {
-                guardrail_name: settings.guardrail_name.clone(),
-                supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
-                event_hook: None,
-                default_on: false,
-                mask_request_content: false,
-                mask_response_content: false,
-                violation_message_template: None,
-                end_session_after_n_fails: None,
-                on_violation: None,
-                realtime_violation_message: None,
-                on_sensitive_data: None,
-                sensitive_data_route_to_model: None,
-                sticky_session_routing: true,
-                run_in_parallel: false,
-                scan_raw_request: false,
-                only_scan_new_messages: false,
-                timeout: settings.timeout,
-                switches: GuardrailSwitches::default(),
-            },
-            mode: None,
-        };
-        Ok(Self {
+        Settings::resolve(args, lookup).map(|settings| Self {
+            base: base_from_settings(&settings),
             settings,
-            base,
             client: dependencies.client,
             sink: dependencies.sink,
             now: dependencies.now,

@@ -63,24 +63,23 @@ pub(super) async fn call_or_fail_open(
     logging_obj: Option<&mut GuardrailLogTarget>,
 ) -> Result<GuardResult, CrowdStrikeError> {
     let start_time = (guardrail.now)();
-    match call_guard(guardrail, payload, hook_name).await {
-        Ok(result) => Ok(result),
+    let error = match call_guard(guardrail, payload, hook_name).await {
+        Ok(result) => return Ok(result),
         Err(
             error @ (CrowdStrikeError::Blocked { .. }
             | CrowdStrikeError::MalformedTransformed { .. }),
-        ) => Err(error),
-        Err(error) => {
-            if guardrail.settings.fail_on_error {
-                return Err(error);
-            }
-            tracing::error!(
-                "CrowdStrike AIDR Guardrail failed open | hook_name: {hook_name} error: {error}"
-            );
-            let timing = Timing::between(start_time, (guardrail.now)());
-            record_failure(guardrail, request_data, logging_obj, &error, timing)?;
-            Ok(GuardResult::default())
-        }
+        ) => return Err(error),
+        Err(error) => error,
+    };
+    if guardrail.settings.fail_on_error {
+        return Err(error);
     }
+    tracing::error!(
+        "CrowdStrike AIDR Guardrail failed open | hook_name: {hook_name} error: {error}"
+    );
+    let timing = Timing::between(start_time, (guardrail.now)());
+    record_failure(guardrail, request_data, logging_obj, &error, timing)?;
+    Ok(GuardResult::default())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -172,47 +171,23 @@ pub(super) fn take_bucket(
     request_data: &mut BTreeMap<String, GuardrailValue>,
     key: &str,
 ) -> BTreeMap<String, GuardrailValue> {
-    match request_data.remove(key) {
-        Some(GuardrailValue::Object(fields)) => fields,
-        None
-        | Some(
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_),
-        ) => BTreeMap::new(),
-    }
+    let Some(GuardrailValue::Object(fields)) = request_data.remove(key) else {
+        return BTreeMap::new();
+    };
+    fields
 }
 
 pub(super) fn applied_names(bucket: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
-    match bucket.get("applied_guardrails") {
-        Some(GuardrailValue::Array(items)) => items
-            .iter()
-            .filter_map(|item| match item {
-                GuardrailValue::Text(entry) => Some(entry.clone()),
-                GuardrailValue::Null
-                | GuardrailValue::Boolean(_)
-                | GuardrailValue::SignedInteger(_)
-                | GuardrailValue::UnsignedInteger(_)
-                | GuardrailValue::Decimal(_)
-                | GuardrailValue::Array(_)
-                | GuardrailValue::Object(_) => None,
-            })
-            .collect(),
-        None
-        | Some(
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Object(_),
-        ) => Vec::new(),
+    let Some(GuardrailValue::Array(items)) = bucket.get("applied_guardrails") else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    for item in items {
+        if let GuardrailValue::Text(entry) = item {
+            names.push(entry.clone());
+        }
     }
+    names
 }
 
 pub(super) fn failure(error: &CrowdStrikeError) -> GuardrailFailure {
