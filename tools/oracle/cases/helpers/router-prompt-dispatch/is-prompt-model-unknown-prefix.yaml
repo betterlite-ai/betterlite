@@ -1,0 +1,14 @@
+kind: helper
+name: prompt-dispatch-is-prompt-model-unknown-prefix
+call:
+  b8466:
+    check: is_prompt_model
+    model: openai/my-prompt
+    model_list:
+    - model_name: openai/my-prompt
+      litellm_params:
+        model: openai/my-prompt
+        prompt_id: greeting
+env: {}
+compare:
+  ignore: []
