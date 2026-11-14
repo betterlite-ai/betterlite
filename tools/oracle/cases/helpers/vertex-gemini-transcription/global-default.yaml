@@ -1,0 +1,12 @@
+kind: helper
+name: global-default
+call:
+  vertex_gemini_transcription:
+    steps:
+      - {step: url, api_base: null, location: null, project: my-project, model: vertex_ai/gemini-2.0-flash}
+      - {step: url, api_base: null, location: global, project: my-project, model: vertex_ai/gemini-2.0-flash}
+      - {step: url, api_base: null, location: us-central1, project: my-project, model: vertex_ai/gemini-2.0-flash}
+      - {step: url, api_base: null, location: us, project: my-project, model: vertex_ai/gemini-2.0-flash}
+      - {step: url, api_base: 'https://proxy.example///', location: null, project: my-project, model: vertex_ai/vertex_ai/model}
+env: {}
+compare: {ignore: []}
