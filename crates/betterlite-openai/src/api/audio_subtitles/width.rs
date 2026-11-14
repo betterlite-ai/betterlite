@@ -7,9 +7,9 @@ const CJK_RANGES: [(char, char); 6] = [
     ('\u{31F0}', '\u{31FF}'),
 ];
 
-const CJK_NO_BREAK_BEFORE: &str = "、。，．！？：；・ー…」』）〉》】〕";
+const CJK_NO_BREAK_BEFORE: &str = "\u{3001}\u{3002}\u{ff0c}\u{ff0e}\u{ff01}\u{ff1f}\u{ff1a}\u{ff1b}\u{30fb}\u{30fc}\u{2026}\u{300d}\u{300f}\u{ff09}\u{3009}\u{300b}\u{3011}\u{3015}";
 
-const CJK_NO_BREAK_AFTER: &str = "「『（〈《【〔";
+const CJK_NO_BREAK_AFTER: &str = "\u{300c}\u{300e}\u{ff08}\u{3008}\u{300a}\u{3010}\u{3014}";
 
 // Python's unicodedata.east_asian_width reports W or F for exactly these Unicode 15.1 code points
 const EAST_ASIAN_WIDE: [(char, char); 120] = [

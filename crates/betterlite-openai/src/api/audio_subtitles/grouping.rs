@@ -1,7 +1,8 @@
 use super::width::{is_cjk_word_boundary, is_text_space, text_width};
 use super::{CUE_GAP_MS, CUE_MAX_CHARS, CUE_MAX_DURATION_MS, SubtitleCue, SubtitleToken, Word};
 
-const SENTENCE_END_CHARS: &str = ".!?。！？؟۔।॥։።";
+const SENTENCE_END_CHARS: &str =
+    ".!?\u{3002}\u{ff01}\u{ff1f}\u{61f}\u{6d4}\u{964}\u{965}\u{589}\u{1362}";
 
 #[must_use]
 pub fn starts_new_word(prev: &SubtitleToken, token: &SubtitleToken) -> bool {

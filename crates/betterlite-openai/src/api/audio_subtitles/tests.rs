@@ -1,4 +1,13 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        clippy::non_ascii_literal,
+        reason = "json! fixtures and CJK and RTL fixtures state the input text directly"
+    )
+)]
 
 use rstest::rstest;
 use serde_json::json;

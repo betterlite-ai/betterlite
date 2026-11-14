@@ -32,11 +32,14 @@ enum Seconds {
 }
 
 impl Seconds {
-    fn value(&self) -> Option<f64> {
+    fn value(&self) -> Result<f64, SubtitleTimingError> {
         match self {
-            Self::Number(seconds) => Some(*seconds),
-            Self::Flag(flag) => Some(if *flag { 1.0 } else { 0.0 }),
-            Self::Text(text) => text.trim().parse::<f64>().ok(),
+            Self::Number(number) => Ok(*number),
+            Self::Flag(flag) => Ok(if *flag { 1.0 } else { 0.0 }),
+            Self::Text(text) => text
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| SubtitleTimingError::NotANumber),
         }
     }
 }
@@ -54,25 +57,18 @@ struct WordTimingRecord {
 }
 
 impl WordTimingRecord {
-    fn timing(&self) -> Option<TranscriptionWordTiming> {
-        Some(TranscriptionWordTiming {
+    fn timing(&self) -> Result<TranscriptionWordTiming, SubtitleTimingError> {
+        Ok(TranscriptionWordTiming {
             word: self.word.clone(),
-            start: optional_seconds(&self.start)?,
-            end: optional_seconds(&self.end)?,
+            start: self.start.as_ref().map(Seconds::value).transpose()?,
+            end: self.end.as_ref().map(Seconds::value).transpose()?,
             speaker: self.speaker.clone(),
         })
     }
 }
 
-fn optional_seconds(seconds: &Option<Seconds>) -> Option<Option<f64>> {
-    match seconds {
-        Some(seconds) => seconds.value().map(Some),
-        None => Some(None),
-    }
-}
-
-pub fn seconds_to_ms(seconds: Option<f64>) -> Result<Option<i64>, SubtitleTimingError> {
-    let Some(seconds) = seconds else {
+pub fn seconds_to_ms(maybe_seconds: Option<f64>) -> Result<Option<i64>, SubtitleTimingError> {
+    let Some(seconds) = maybe_seconds else {
         return Ok(None);
     };
     if seconds.is_nan() {
@@ -109,7 +105,7 @@ pub fn parse_word_timings(words: &Value) -> Vec<TranscriptionWordTiming> {
     records
         .iter()
         .map(WordTimingRecord::timing)
-        .collect::<Option<Vec<_>>>()
+        .collect::<Result<Vec<_>, _>>()
         .unwrap_or_default()
 }
 
