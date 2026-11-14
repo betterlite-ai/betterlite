@@ -34,9 +34,7 @@ fn header_cost(response: Option<&ResponseView<'_>>) -> Result<Option<Decimal>, C
         Some(Json::Number(number)) => number.to_string(),
         Some(Json::Text(text)) => text.trim().to_owned(),
         Some(Json::List(_) | Json::Object(_)) => {
-            return Err(ChargeInputError::CostHeader(format!(
-                "{COST_HEADER} must be a number or a numeric string"
-            )));
+            return Err(ChargeInputError::CostHeader(COST_HEADER.to_owned()));
         }
     };
     parse_decimal_lexeme(&text)
