@@ -824,8 +824,9 @@ def test_enum_names() -> None:
 def test_tool_param_names() -> None:
     payload: dict[str, JsonValue] = {"type": "code_interpreter", "container": {"type": "auto"}}
     param = generic_guardrail_api.GuardrailToolParam.model_validate(payload)
+    dumped = TypeAdapter(dict[str, JsonValue]).validate_json(param.model_dump_json())
     assert param.type == "code_interpreter"
-    assert param.model_dump() == payload
+    assert dumped == payload
 
 
 def test_coerce_names(report: FullReport) -> None:
