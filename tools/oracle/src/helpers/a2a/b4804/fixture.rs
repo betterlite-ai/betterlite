@@ -71,9 +71,32 @@ impl<'case> FixtureRuntime<'case> {
     }
 }
 
+type Replies = Iter<IntoIter<Result<String, Failure>>>;
+
+impl FixtureRuntime<'_> {
+    fn buffered_reply(&self) -> Result<HttpResponse, Failure> {
+        let answer = self.answer.ok_or(Failure::Missing("non-streaming"))?;
+        let body = serde_json::to_vec(&answer.body).map_err(Failure::Encode)?;
+        Ok(HttpResponse {
+            status: answer.status,
+            body,
+        })
+    }
+
+    fn streamed_reply(&self) -> Result<StreamedResponse<Replies>, Failure> {
+        let answer = self.stream.ok_or(Failure::Missing("streaming"))?;
+        let items: Vec<Result<String, Failure>> = answer.lines.iter().cloned().map(Ok).collect();
+        Ok(StreamedResponse {
+            status: answer.status,
+            content_type: answer.content_type.clone(),
+            lines: stream::iter(items),
+        })
+    }
+}
+
 impl AgentCoreRuntime for FixtureRuntime<'_> {
     type Error = Failure;
-    type Lines = Iter<IntoIter<Result<String, Failure>>>;
+    type Lines = Replies;
 
     fn complete_url(&self, model: &str, optional_params: &Params) -> Result<String, Self::Error> {
         complete_url(model, &param_map(optional_params)).map_err(Failure::Request)
@@ -126,32 +149,14 @@ impl AgentCoreRuntime for FixtureRuntime<'_> {
         &self,
         _request: &HttpRequest<'_>,
     ) -> impl Future<Output = Result<HttpResponse, Self::Error>> + Send {
-        match self.answer {
-            None => ready(Err(Failure::Missing("non-streaming"))),
-            Some(answer) => ready(
-                serde_json::to_vec(&answer.body)
-                    .map(|body| HttpResponse {
-                        status: answer.status,
-                        body,
-                    })
-                    .map_err(Failure::Encode),
-            ),
-        }
+        ready(self.buffered_reply())
     }
 
     fn post_stream(
         &self,
         _request: &HttpRequest<'_>,
     ) -> impl Future<Output = Result<StreamedResponse<Self::Lines>, Self::Error>> + Send {
-        let Some(answer) = self.stream else {
-            return ready(Err(Failure::Missing("streaming")));
-        };
-        let lines: Vec<Result<String, Failure>> = answer.lines.iter().cloned().map(Ok).collect();
-        ready(Ok(StreamedResponse {
-            status: answer.status,
-            content_type: answer.content_type.clone(),
-            lines: stream::iter(lines),
-        }))
+        ready(self.streamed_reply())
     }
 }
 
