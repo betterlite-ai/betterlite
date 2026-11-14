@@ -344,12 +344,17 @@ async fn a_running_plan_calls_the_continuation_and_the_cleanup() {
             .with_gate(gate(true, json_map(&[("call-1", r#"{"name":"search"}"#)])))
             .with_plan(plan(Some(patch(Some(patched))), None, false, true)),
     ));
-    let harness = harness();
+    let harness = Harness {
+        continuation: FakeContinuation::responding(ChatLoopResult::Response(raw(
+            r#"{"ran":true}"#,
+        ))),
+        port: RecordingPort::default(),
+    };
     let result = harness
         .run(&fixture, &callbacks(&[&callback]))
         .await
         .unwrap();
-    assert_eq!(optional_text(result), "{}");
+    assert_eq!(optional_text(result), r#"{"ran":true}"#);
     let call = first_call(&harness.continuation);
     assert_eq!(call.model, "openai/gpt-4o");
     assert_eq!(
