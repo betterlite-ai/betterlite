@@ -542,7 +542,7 @@ async fn the_minted_project_is_used_when_none_is_configured() {
 
     count_tokens(&transport, &request, &mint).await.unwrap();
 
-    assert_eq!(mint.projects(), vec![None]);
+    assert_eq!(mint.projects(), vec![None::<String>]);
     assert!(
         transport.sent()[0]
             .url
