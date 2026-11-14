@@ -4,9 +4,10 @@ use std::fs;
 use std::path::Path;
 
 use betterlite_secrets::gateway_key::get_litellm_gateway_api_key;
+use pyo3::prelude::*;
 use tempfile::TempDir;
 
-use super::ProxyClientNative;
+use super::{ProxyClientNative, register};
 use super::token::TokenFileStore;
 
 fn store_in(home: &Path) -> TokenFileStore {
@@ -39,6 +40,16 @@ fn leaves_a_plain_sentence_alone() {
         native.redact_text("the server is ready"),
         "the server is ready"
     );
+}
+
+#[test]
+fn register_adds_the_proxy_client_class() {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        assert!(module.hasattr("ProxyClientNative").unwrap());
+    });
 }
 
 #[test]
