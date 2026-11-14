@@ -25,7 +25,8 @@ fn the_limit_comes_from_the_environment() {
         CLIENT_LIMIT_VARIABLE,
         "many",
     )]))
-    .expect_err("a non-number is refused");
+    .err()
+    .expect("a non-number is refused");
     assert!(matches!(refused, LangfuseBudgetError::Limit(_)));
 }
 
