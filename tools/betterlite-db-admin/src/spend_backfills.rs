@@ -31,11 +31,11 @@ const fn plan(command: DbAdminCommand) -> Result<BackfillPlan, DbAdminError> {
         }),
         DbAdminCommand::KeyTotalSpend => Ok(BackfillPlan::KeyTotalSpend),
         DbAdminCommand::KeyTotalSpendFromLogs => Ok(BackfillPlan::KeyTotalSpendFromLogs),
-        other @ (DbAdminCommand::Migrate(_) | DbAdminCommand::DatabaseViews) => {
-            Err(DbAdminError::Unregistered {
-                operation: other.operation().name(),
-            })
-        }
+        other @ (DbAdminCommand::Migrate(_)
+        | DbAdminCommand::DatabaseViews
+        | DbAdminCommand::SpendPartition(_)) => Err(DbAdminError::Unregistered {
+            operation: other.operation().name(),
+        }),
     }
 }
 
