@@ -29,7 +29,7 @@ fn scenario_engine(scenario: &Scenario, effects: &fakes::Effects) -> FakeEngine 
             probe: scenario.writer_read_only.clone(),
             recreate: scenario.recreate.clone(),
             select: scenario.select_one.clone(),
-            bump_on_probe: scenario.bump_writer_generation_on_probe.0,
+            bump_on_probe: scenario.bump_on_probe.0,
         },
         Arc::clone(effects),
     )
@@ -57,7 +57,7 @@ fn scenario_history(
         .map(|repair| (engine.report_handle(repair.target), repair.generation))
         .collect();
     ReconnectHistory {
-        last_attempt: Some(clock.at(last_attempt)),
+        last_attempt: Some(clock.base.checked_add(last_attempt).unwrap_or(clock.base)),
         consecutive_failures: scenario.failures,
         engine_dead: scenario.dead.0,
         failed_repairs,
@@ -102,7 +102,7 @@ pub(super) fn run_scenario(
     scenario: &Scenario,
     runtime: &tokio::runtime::Runtime,
 ) -> Result<Report, Box<crate::helpers::HelperError>> {
-    let effects = fakes::effects();
+    let effects = fakes::Effects::default();
     let engine = scenario_engine(scenario, &effects);
     let clock = ScriptedClock::from_values(&scenario.clock)?;
     let lock = ScriptedLock::new(&scenario.lock, Arc::clone(&effects));
@@ -128,7 +128,9 @@ pub(super) fn run_scenario(
         lock_timeout: scenario.request.lock_timeout_ms.map(Duration::from_millis),
         database_url: database_url.as_ref(),
     };
-    let subscriber = tracing_subscriber::registry().with(Capture::new(Arc::clone(&effects)));
+    let subscriber = tracing_subscriber::registry().with(Capture {
+        effects: Arc::clone(&effects),
+    });
     let result = tracing::subscriber::with_default(subscriber, || {
         runtime.block_on(policy.attempt_db_reconnect(&request, stale.as_ref()))
     });

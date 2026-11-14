@@ -15,7 +15,7 @@ call:
         reader_unavailable: false
         routing: true
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: writable, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -34,7 +34,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: read_only, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -53,7 +53,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: probe_error, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -72,7 +72,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: forced, force: false, force_recreate: true, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -91,7 +91,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: declined, force: true, force_recreate: true, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -110,7 +110,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: escalated, force: true, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -129,7 +129,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: dead
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: dead_failure, force: true, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -148,7 +148,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: missing_url, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -167,7 +167,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: timeout, force: false, force_recreate: false, timeout_ms: 1, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -186,7 +186,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: true
+        bump_on_probe: true
         request: {reason: snapshot, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}
@@ -205,7 +205,7 @@ call:
         reader_unavailable: false
         routing: true
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: writer_failed, force: true, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: {target: writer, generation: 0}
         lock: {mode: free, error: null}
@@ -224,7 +224,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: select_failed, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}

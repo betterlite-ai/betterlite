@@ -17,10 +17,6 @@ pub(super) struct FakeError(pub(super) String);
 
 pub(super) type Effects = Arc<Mutex<Vec<Effect>>>;
 
-pub(super) fn effects() -> Effects {
-    Arc::new(Mutex::new(Vec::new()))
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Database {
     WriterOnly,

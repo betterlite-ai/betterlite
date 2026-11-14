@@ -15,7 +15,7 @@ call:
         reader_unavailable: false
         routing: false
         engine_state: alive
-        bump_writer_generation_on_probe: false
+        bump_on_probe: false
         request: {reason: seed, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
         stale: null
         lock: {mode: free, error: null}

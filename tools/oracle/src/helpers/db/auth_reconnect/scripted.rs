@@ -20,7 +20,7 @@ struct ClockScript {
 
 #[derive(Clone)]
 pub(super) struct ScriptedClock {
-    base: Instant,
+    pub(super) base: Instant,
     script: Arc<Mutex<ClockScript>>,
 }
 
@@ -45,10 +45,6 @@ impl ScriptedClock {
             base: Instant::now(),
             script: Arc::new(Mutex::new(ClockScript { offsets, fallback })),
         })
-    }
-
-    pub(super) fn at(&self, offset: Duration) -> Instant {
-        self.base.checked_add(offset).unwrap_or(self.base)
     }
 }
 
@@ -115,13 +111,7 @@ impl ReconnectLock for ScriptedLock {
 }
 
 pub(super) struct Capture {
-    effects: Effects,
-}
-
-impl Capture {
-    pub(super) const fn new(effects: Effects) -> Self {
-        Self { effects }
-    }
+    pub(super) effects: Effects,
 }
 
 struct Fields(BTreeMap<String, String>);

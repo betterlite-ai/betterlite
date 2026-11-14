@@ -35,7 +35,7 @@ struct Scenario {
     reader_unavailable: bool,
     routing: bool,
     engine_state: EngineStateInput,
-    bump_writer_generation_on_probe: Flag,
+    bump_on_probe: Flag,
     request: RequestInput,
     stale: Option<StaleInput>,
     lock: LockScript,
