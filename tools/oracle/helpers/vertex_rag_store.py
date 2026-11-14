@@ -1,26 +1,56 @@
 from datetime import UTC, datetime
-from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.vertex_ai.vector_stores.rag_api.transformation import VertexVectorStoreConfig
+from litellm.types.utils import LlmProviders
 from litellm.types.vector_stores import (
-    VectorStoreCreateOptionalRequestParams,
+    VectorStoreChunkingStrategy,
     VectorStoreCreateResponse,
-    VectorStoreSearchOptionalRequestParams,
-    VectorStoreSearchResponse,
+    VectorStoreExpirationPolicy,
 )
+from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
 JSON: Final = TypeAdapter(JsonValue)
 OBJECT: Final = TypeAdapter(dict[str, JsonValue])
-# ast-grep-ignore: no-long-names
-SearchOptions: TypeAlias = VectorStoreSearchOptionalRequestParams
-# ast-grep-ignore: no-long-names
-CreateOptions: TypeAlias = VectorStoreCreateOptionalRequestParams
+
+
+class SearchOptions(TypedDict, total=False):
+    filters: dict[str, JsonValue] | None
+    max_num_results: int | None
+    ranking_options: dict[str, JsonValue] | None
+    rewrite_query: bool | None
+
+
+class CreateOptions(TypedDict, total=False):
+    name: str | None
+    file_ids: list[str] | None
+    expires_after: VectorStoreExpirationPolicy | None
+    chunking_strategy: VectorStoreChunkingStrategy | None
+    metadata: dict[str, str] | None
+
+
+class SearchContent(TypedDict, total=False):
+    text: str | None
+    type: str | None
+
+
+class SearchHit(TypedDict, total=False):
+    score: float | None
+    content: list[SearchContent] | None
+    file_id: str | None
+    filename: str | None
+    attributes: dict[str, JsonValue] | None
+
+
+class SearchReply(TypedDict, total=False):
+    object: Literal["vector_store.search_results.page"]
+    search_query: str | None
+    data: list[SearchHit] | None
 
 
 class VertexConfig(Protocol):
@@ -39,7 +69,7 @@ class VertexConfig(Protocol):
     # ast-grep-ignore: no-long-names
     def transform_search_vector_store_response(
         self, response: httpx.Response, litellm_logging_obj: Logging
-    ) -> VectorStoreSearchResponse: ...
+    ) -> SearchReply: ...
 
     # ast-grep-ignore: no-long-names
     def transform_create_vector_store_request(
@@ -55,7 +85,13 @@ class VertexConfig(Protocol):
     ) -> VectorStoreCreateResponse: ...
 
 
-CONFIG: VertexConfig = VertexVectorStoreConfig()
+def config() -> VertexConfig:
+    found = ProviderConfigManager.get_provider_vector_stores_config(
+        provider=LlmProviders.VERTEX_AI, api_type="rag_api"
+    )
+    if found is None:
+        raise ValueError("the Vertex RAG API vector store config is not registered")
+    return found
 
 
 class Reply(TypedDict):
@@ -107,7 +143,7 @@ def search_outcome(call: SearchCall) -> JsonValue:
     logging = logging_object()
     optional = call.get("optional_params")
     litellm_params = call.get("litellm_params")
-    url, body = CONFIG.transform_search_vector_store_request(
+    url, body = config().transform_search_vector_store_request(
         vector_store_id=call["vector_store_id"],
         query=call["query"],
         vector_store_search_optional_params=SearchOptions() if optional is None else optional,
@@ -124,7 +160,7 @@ def search_outcome(call: SearchCall) -> JsonValue:
             content=response["body"].encode(),
         )
         outcome["results"] = JSON.validate_python(
-            CONFIG.transform_search_vector_store_response(reply, logging)
+            config().transform_search_vector_store_response(reply, logging)
         )
     return outcome
 
@@ -135,7 +171,7 @@ def resolve(call: SearchCall | CreateRequestCall | CreateResponseCall) -> JsonVa
     if call["function"] == "create_request":
         optional = call.get("optional_params")
         params = CreateOptions() if optional is None else optional
-        url, body = CONFIG.transform_create_vector_store_request(
+        url, body = config().transform_create_vector_store_request(
             vector_store_create_optional_params=params,
             api_base=call["api_base"],
         )
@@ -143,7 +179,7 @@ def resolve(call: SearchCall | CreateRequestCall | CreateResponseCall) -> JsonVa
     reply = httpx.Response(
         call["status"], headers=call.get("headers"), content=call["body"].encode()
     )
-    return {"created": JSON.validate_python(CONFIG.transform_create_vector_store_response(reply))}
+    return {"created": JSON.validate_python(config().transform_create_vector_store_response(reply))}
 
 
 def run(input_value: Input) -> JsonValue:
