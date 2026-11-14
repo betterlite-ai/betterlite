@@ -1,0 +1,31 @@
+task: B8294
+deviations:
+  - what: >-
+      The follow-up completion call and the fake stream wrap are traits the caller supplies, ChatContinuation and
+      FakeStreamPort, where LiteLLM calls litellm.acompletion and builds a CustomStreamWrapper over a MockResponseIterator
+      itself.
+    why: >-
+      This module must not import its callers, and the family composition owns the recursion and the stream types. The
+      arguments, the order of the calls and the wrap condition are LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L195-L223
+  - what: >-
+      Callbacks arrive as a typed list of AgenticCallback objects, where LiteLLM walks a mixed list and skips entries
+      that are not CustomLogger instances.
+    why: Rust has no such entries, and string callbacks are resolved before this point (B248).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L250-L256
+  - what: >-
+      The post-response hook is not called when the follow-up completion returns a stream; the stream comes back
+      unchanged. LiteLLM calls the hook with whatever the follow-up returned, a CustomStreamWrapper included.
+    why: >-
+      The shared AgenticCallback post hook (B9820) takes a response body, so it cannot carry a stream, and passing a
+      made-up body would change what the hook sees.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L202-L215
+  - what: >-
+      The loop depth is a u32, so a negative number, a number past u32::MAX and a numeric string past i64 are errors
+      that name _agentic_loop_depth; LiteLLM's _coerce_int keeps any Python int. A depth string is read with Rust's
+      signed-integer parser, so surrounding whitespace and underscore separators that Python's int() accepts are
+      rejected as well.
+    why: >-
+      B4110's follow-up input carries the next depth as depth + 1 in a u32, so a value outside that range has no typed
+      counter to become. The loop sets this key itself and always writes a plain small integer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L66-L71
