@@ -19,7 +19,7 @@ call:
             content: hi
         tool_calls: []
         optional_params:
-          max_tokens: 4000
+          max_tokens: 0
           thinking: {budget_tokens: 0}
         kwargs: {}
         searches: []
