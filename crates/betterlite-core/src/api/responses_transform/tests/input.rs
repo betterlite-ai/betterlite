@@ -150,6 +150,10 @@ fn a_content_entry_without_list_content_keeps_the_whole_object() {
         built_input(r#"{"content": "z"}"#),
         value(r#"[{"role": "user", "content": [{"content": "z"}]}]"#)
     );
+    assert_eq!(
+        built_input(r#"{"content": null}"#),
+        value(r#"[{"role": "user", "content": [{"content": null}]}]"#)
+    );
 }
 
 #[test]
