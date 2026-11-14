@@ -334,6 +334,10 @@ fn the_transcript_keeps_present_nulls_on_the_wire() {
     r#"{"words": [{"type": 5}, {"type": true}, {"type": null}, {"type": ["word"]}, {"text": "no type"}]}"#,
     Some(vec![])
 )]
+#[case::non_word_with_bad_fields(
+    r#"{"words": [{"type": "spacing", "text": 5, "start": "x"}]}"#,
+    Some(vec![])
+)]
 fn words_are_present_exactly_when_the_provider_sends_the_field(
     #[case] body: &str,
     #[case] expected: Option<Vec<TranscriptWord>>,

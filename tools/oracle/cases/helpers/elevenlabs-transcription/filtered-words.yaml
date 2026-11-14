@@ -9,5 +9,7 @@ call:
       body: '{"text": "hi", "words": [{"type": "word"}, {"type": "word", "text": "hi"}, {"type": "word", "start": 1}]}'
     - function: transcript
       body: '{"words": [{"type": 5}, {"type": null}, {"type": "WORD"}, {"type": "spacing", "text": " "}]}'
+    - function: transcript
+      body: '{"words": [{"type": "spacing", "text": 5, "start": "x"}]}'
 compare: {ignore: []}
 env: {}
