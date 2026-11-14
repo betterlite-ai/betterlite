@@ -219,6 +219,12 @@ def rerank_behavior(module):
         ),
         "response": response.model_dump(),
         "hidden": response._hidden_params,
+        "access": [
+            response["id"],
+            response.get("missing", "fallback"),
+            "id" in response,
+            "missing" in response,
+        ],
         "truncation": truncation.model_dump(),
         "frozen": outcome(lambda: setattr(truncation, "truncate_prompt_tokens", 3)),
         "result": outcome(
@@ -501,6 +507,7 @@ class RerankBehavior(TypedDict):
     side: Outcome
     response: dict[str, JsonValue]
     hidden: dict[str, JsonValue]
+    access: list[JsonValue]
     truncation: dict[str, JsonValue]
     frozen: Outcome
     result: Outcome
@@ -663,6 +670,7 @@ def test_rerank_names(report: Report) -> None:
     assert "truncation_side" in betterlite["side"]["message"]
     assert "Instance is frozen" in betterlite["frozen"]["message"]
     assert betterlite["hidden"] == {"model_id": "m"}
+    assert betterlite["access"] == ["r1", "fallback", True, False]
     assert "_hidden_params" not in betterlite["response"]
     assert betterlite["result"]["ok"] is True
     assert "relevance_score" in betterlite["result_missing"]["message"]
