@@ -235,6 +235,25 @@ async fn add_treats_a_null_field_as_absent() {
 }
 
 #[tokio::test]
+async fn add_defaults_an_absent_model_and_request_id_to_empty_strings() {
+    let fixture = support::fixture();
+    let data = support::object(&[]);
+    fixture
+        .check
+        .add_hanging_request(Some(&data))
+        .await
+        .expect("the request is added");
+    let stored = fixture
+        .cache
+        .stored("")
+        .expect("the request is cached under the empty id");
+    assert_eq!(stored.request_id, "");
+    assert_eq!(stored.model, "");
+    assert_eq!(stored.api_base, None);
+    assert!(fixture.resolver.calls().is_empty());
+}
+
+#[tokio::test]
 async fn detect_alerts_an_old_request_once() {
     let fixture = support::fixture();
     fixture.cache.seed(support::hanging_record(
