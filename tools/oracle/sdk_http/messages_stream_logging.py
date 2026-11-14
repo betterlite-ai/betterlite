@@ -3,7 +3,7 @@ import json
 import logging
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
-from datetime import datetime
+from datetime import UTC, datetime
 from types import ModuleType
 from typing import Annotated, Literal, Protocol, TypedDict, Unpack
 
@@ -120,7 +120,7 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         self.logging = RecordedLogging()
         self.litellm_logging_obj = self.logging
         self.request_body: dict[str, Json] = body
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(UTC).astimezone().replace(tzinfo=None)
         self.completion_start_time: datetime | None = None
         self.url = f"{api_base}/messages"
         self.client = client
@@ -207,7 +207,7 @@ class CollectStep(StepModel):
         if parts[-1]:
             session.frames.append(parts[-1])
         if self.first_chunk:
-            session.completion_start_time = datetime.now()
+            session.completion_start_time = datetime.now(UTC).astimezone().replace(tzinfo=None)
 class BillStep(StepModel):
     op: Literal["bill"]
     teardown: bool
