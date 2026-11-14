@@ -1,0 +1,13 @@
+kind: probe
+name: satisfaction-credit-once
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      feedback_signals:
+        turns:
+          - {user_content: "hello there", assistant_content: hi, response_status: 200}
+          - {user_content: thx, assistant_content: sure, response_status: 200}
+          - {user_content: nice, assistant_content: ok, response_status: 200}
+          - {user_content: perfect, assistant_content: good, response_status: 200}
+          - {user_content: thanks, assistant_content: welcome, response_status: 200}
