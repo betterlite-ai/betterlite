@@ -3,6 +3,7 @@
 use super::*;
 use rstest::rstest;
 use serde_json::{Value, json};
+use std::f64::consts::LN_2;
 
 fn close(actual: f64, expected: f64) -> bool {
     expected.mul_add(-1.0, actual).abs() < 1e-9
@@ -137,7 +138,7 @@ fn exact_matches_outrank_prefix_only_matches() {
         json!({"content": "authentication_a authentication_b"}),
     ];
     let result = scores("authentication", &messages);
-    assert!(close(result[0], std::f64::consts::LN_2));
+    assert!(close(result[0], LN_2));
     assert!(close(result[1], 0.990_210_257_942_779_1));
     assert!(result[1] > result[0]);
 }
