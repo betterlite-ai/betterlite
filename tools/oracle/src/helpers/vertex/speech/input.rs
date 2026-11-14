@@ -6,13 +6,28 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    AlloyVoice { voices: Vec<Option<SpeechVoice>> },
-    CustomVoiceLanguage { voices: Vec<Option<SpeechVoice>> },
-    AacMapsMp3 { formats: Vec<Option<String>> },
-    SsmlSubstring { cases: Vec<Case> },
-    FullAudioConfig { cases: Vec<Case> },
-    VoiceDictPrecedence { cases: Vec<Case> },
-    DecodedStatus200 { bodies: Vec<String> },
+    AlloyVoice {
+        voices: Vec<Option<SpeechVoice>>,
+    },
+    CustomVoiceLanguage {
+        voices: Vec<Option<SpeechVoice>>,
+    },
+    AacMapsMp3 {
+        formats: Vec<Option<String>>,
+    },
+    SsmlSubstring {
+        cases: Vec<Case>,
+    },
+    FullAudioConfig {
+        cases: Vec<Case>,
+    },
+    VoiceDictPrecedence {
+        cases: Vec<Case>,
+    },
+    #[serde(rename = "decoded_status_200")]
+    DecodedStatus200 {
+        bodies: Vec<String>,
+    },
 }
 
 #[derive(Debug, Default, Deserialize)]
