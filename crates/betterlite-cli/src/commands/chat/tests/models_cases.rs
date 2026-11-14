@@ -126,6 +126,47 @@ fn models_a_model_without_an_id_is_no_selection() {
 }
 
 #[test]
+fn models_whitespace_choice_reprompts_for_a_name() {
+    let server = TestServer::start(vec![
+        Answer::json(200, &support::models_body(&[("gpt-4o", "openai")])),
+        Answer::json(200, &stream_body(&["Hello"])),
+    ]);
+    let args = chat_args(None);
+    let mut store = FakeStore::default();
+
+    let (result, terminal) = run_once(&args, &server, &["   ", "1", "hi"], &mut store);
+
+    result.unwrap();
+    assert!(
+        terminal
+            .stdout
+            .contains("Please enter a valid model name or index"),
+        "{}",
+        terminal.stdout
+    );
+    let requests = server.finish();
+    assert_eq!(chat_body(&requests).model, "gpt-4o");
+}
+
+#[test]
+fn models_skips_an_entry_that_is_not_an_object() {
+    let server = TestServer::start(vec![
+        Answer::json(200, r#"{"data":[7,{"id":"gpt-4o","owned_by":"openai"}]}"#),
+        Answer::json(200, &stream_body(&["Hello"])),
+    ]);
+    let args = chat_args(None);
+    let mut store = FakeStore::default();
+
+    let (result, terminal) = run_once(&args, &server, &["1", "hi"], &mut store);
+
+    result.unwrap();
+    assert!(terminal.stderr.is_empty(), "{}", terminal.stderr);
+    assert!(terminal.stdout.contains("gpt-4o"), "{}", terminal.stdout);
+    let requests = server.finish();
+    assert_eq!(chat_body(&requests).model, "gpt-4o");
+}
+
+#[test]
 fn models_end_of_input_cancels_the_selection() {
     let server = server_with_models(&[("gpt-4o", "openai")]);
     let args = chat_args(None);
