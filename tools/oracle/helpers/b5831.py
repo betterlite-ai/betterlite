@@ -1,6 +1,6 @@
 import contextlib
 import io
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import httpx
@@ -143,6 +143,16 @@ class CostCalculator(Protocol):
 COSTS: CostCalculator = cost_calculator
 
 
+class TextConfig(Protocol):
+    def transform_text_completion_request(  # ast-grep-ignore: no-long-names
+        self,
+        model: str,
+        messages: list[UserMessage],
+        optional_params: dict[str, JsonValue],
+        headers: dict[str, str],
+    ) -> dict[str, JsonValue]: ...
+
+
 class ChatConfig(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
@@ -157,10 +167,7 @@ class ChatConfig(Protocol):
 
 
 CHAT: ChatConfig = TogetherAIChatConfig()
-TextTransform = Callable[
-    [str, list[UserMessage], dict[str, JsonValue], dict[str, str]], dict[str, JsonValue]
-]
-TEXT: TextTransform = TogetherAITextCompletionConfig().transform_text_completion_request
+TEXT: TextConfig = TogetherAITextCompletionConfig()
 
 
 def chat_supported(step: ModelStep) -> JsonValue:
@@ -198,7 +205,9 @@ def completion(step: CompletionStep) -> JsonValue:
         UserMessage(role="user", content=message["content"]) for message in step["messages"]
     ]
     try:
-        request = TEXT(step["model"], messages, step["optional_params"], {})
+        request = TEXT.transform_text_completion_request(
+            step["model"], messages, step["optional_params"], {}
+        )
     except ValueError as error:
         kind = "integers" if INTEGERS in str(error) else "multiple_prompts"
         return {"ok": False, "error": {"kind": kind}}
