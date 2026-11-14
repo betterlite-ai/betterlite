@@ -1,0 +1,20 @@
+task: B8290
+deviations:
+  - what: The initializers return argument structs and register nothing with a callback manager. LiteLLM builds the callback class and adds it to litellm.logging_callback_manager.
+    why: The six callback classes are other tasks' work and registration belongs to B3682. The structs hold the same data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/__init__.py#L66
+  - what: The secret lookup is a SecretLookup trait the caller passes in. LiteLLM calls get_secret_str directly from litellm.secret_managers.main.
+    why: It keeps the secret manager out of this task, and a test fills it from a map.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/__init__.py#L20
+  - what: The Agent 365 ignored-override warning is returned as a list of names and logged by the caller. LiteLLM logs it inside the initializer.
+    why: A pure function stays testable, and the log text is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/__init__.py#L43-L54
+  - what: "An Azure guardrail value with no slash is refused with \"Azure Content Safety: <the whole value> is not a valid guardrail\" (after the guardrail_name check). LiteLLM indexes split(\"/\")[1] and raises IndexError, which aborts the config load."
+    why: A crash on a malformed guardrail value tells the operator nothing; the refusal names the value and skips nothing else.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/__init__.py#L22
+  - what: Model Armor's project_id is copied as the opaque config value (Option<GuardrailValue>) and the initializer never fails. LiteLLM's LitellmParams declares project_id as str | None, so pydantic refuses a non-string at config load.
+    why: The task keeps this initializer infallible, and B3662 keeps project_id outside its typed fields. The value reaches the class unchanged instead of being dropped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L714
+  - what: The Azure and OpenAI extras map copies the fields betterlite's LitellmParams declares. Pydantic mixin defaults that B3662 does not model (version, action, on_flagged, is_detector_server and the other guardrail-specific defaults) are not in it.
+    why: B3662 owns LitellmParams and only the fields it declares exist in betterlite; the extra kwargs those mixins add are never read by the two classes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192

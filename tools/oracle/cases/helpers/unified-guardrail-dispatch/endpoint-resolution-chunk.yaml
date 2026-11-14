@@ -1,0 +1,10 @@
+kind: helper
+name: endpoint-resolution-chunk
+call:
+  b3679:
+    function: endpoint_resolution
+    request_route: null
+    first_item: {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 0, delta: {content: hi}, finish_reason: null}]}
+    entries: [{call_type: completion, translation: OpenAIChatCompletionsHandler, chat_completions: true}]
+env: {}
+compare: {ignore: []}
