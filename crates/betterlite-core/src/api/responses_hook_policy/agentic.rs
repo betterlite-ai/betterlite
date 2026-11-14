@@ -142,6 +142,7 @@ fn float_depth(text: &str) -> Result<i64, AgenticLoopSettingsError> {
         .ok_or(AgenticLoopSettingsError::DepthOutOfRange)
 }
 
+// betterlite_config::agentic_loop_ceiling::whole_number is private, and its ceiling rules reject depths int() accepts
 fn trusted_text_depth(text: &str) -> Result<i64, AgenticLoopSettingsError> {
     let trimmed = text.trim();
     let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
