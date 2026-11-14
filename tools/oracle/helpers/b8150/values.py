@@ -4,7 +4,7 @@ import httpx
 from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue
 
-from .configs import CHAT, EMBEDDING, logging_object
+from .configs import CHAT, EMBEDDING, NoMessages, logging_object
 from .views import (
     REPLY,
     USAGE,
@@ -40,7 +40,7 @@ def embedding_headers_value(call: HeadersCall) -> JsonValue:
     headers: dict[str, JsonValue] = EMBEDDING.validate_environment(
         dict(call["headers"]),
         "m",
-        [],
+        NoMessages(),
         {},
         {},
         call["api_key"],

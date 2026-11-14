@@ -12,6 +12,10 @@ from pydantic import JsonValue
 from .views import CHAT_REPLY, OBJECT
 
 
+class NoMessages(list[AllMessageValues]):
+    pass
+
+
 class ChatConfig(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
