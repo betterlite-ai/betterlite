@@ -152,6 +152,7 @@ async fn websearch_execution_port_forwards_the_caller_kwargs_to_the_search() {
         Some(SearchMetadataValue::Text(text)) if text.as_str() == "yes"
     ));
     assert!(metadata.contains_key("user_api_key_auth"));
+    drop(calls);
 }
 
 #[tokio::test]
@@ -197,4 +198,5 @@ async fn websearch_execution_port_keeps_the_single_query_for_a_plain_provider() 
     let calls = execution.runner.calls.lock().unwrap();
     assert_eq!(calls[0].query, SearchQuery::Single("weather".to_owned()));
     assert!(!calls[0].params.contains_key("objective"));
+    drop(calls);
 }

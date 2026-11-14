@@ -98,9 +98,11 @@ class ChatBuilder(Protocol):
     searches: list[RecordedSearch]
 
     @property
+    # ast-grep-ignore: no-long-names
     def async_build_chat_completion_agentic_loop_plan(self) -> ChatPlan: ...
 
     @property
+    # ast-grep-ignore: no-long-names
     def async_run_chat_completion_agentic_loop(self) -> ChatRun: ...
 
 
@@ -108,6 +110,7 @@ class ResponsesBuilder(Protocol):
     searches: list[RecordedSearch]
 
     @property
+    # ast-grep-ignore: no-long-names
     def async_build_responses_agentic_loop_plan(self) -> ChatPlan: ...
 
 
@@ -128,6 +131,7 @@ class ScriptedLogger(WebSearchInterceptionLogger):
     async def _execute_search(
         self,
         query: str,
+        # ast-grep-ignore: no-loose-types
         kwargs: Mapping[str, object] | None = None,
         rich: RichWebSearchInput | None = None,
     ) -> tuple[str, SearchResponse | None]:
