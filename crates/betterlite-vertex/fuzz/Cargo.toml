@@ -14,6 +14,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-bedrock = { path = "../../betterlite-bedrock" }
 betterlite-models = { path = "../../betterlite-models" }
+betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
 betterlite-vertex = { path = ".." }
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
@@ -44,6 +45,13 @@ bench = false
 [[bin]]
 name = "embedding_data_url"
 path = "fuzz_targets/embedding_data_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "embedding_http"
+path = "fuzz_targets/embedding_http.rs"
 test = false
 doc = false
 bench = false
@@ -121,6 +129,13 @@ bench = false
 [[bin]]
 name = "vertex_gcs_id"
 path = "fuzz_targets/vertex_gcs_id.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_speech_audio"
+path = "fuzz_targets/vertex_speech_audio.rs"
 test = false
 doc = false
 bench = false

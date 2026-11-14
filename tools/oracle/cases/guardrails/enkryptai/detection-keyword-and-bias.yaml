@@ -1,0 +1,17 @@
+kind: helper
+name: detection-keyword-and-bias
+call:
+  b3769:
+    detect:
+      settings: {api_key: key, api_base: "https://api.enkryptai.com"}
+      texts: [share the secret weapon]
+      answer:
+        status: 200
+        headers: {}
+        body:
+          summary: {keyword_detected: 1, bias: 1}
+          details:
+            keyword_detected: {detected_keywords: [secret, weapon]}
+            bias: {bias_detected: true}
+env: {}
+compare: {ignore: []}
