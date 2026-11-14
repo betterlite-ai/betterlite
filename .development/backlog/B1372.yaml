@@ -1,14 +1,14 @@
 id: B1372
 milestone: M3 providers
 title: Create Vertex batches and resolve tuned endpoint models
-status: done
+status: todo
 depends_on: [B1302, B1304, B1305, B1371, B009, B173, B171]
 file: tasks/B1372-vertex-batch-create.yaml
 covers:
   - "litellm/llms/vertex_ai/batches/handler.py"
 parent: B034
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 1741
+pr: null
