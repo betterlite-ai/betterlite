@@ -134,8 +134,8 @@ def server() -> Iterator[RecordingServer]:
 def test_keys_request_list_option(
     server: RecordingServer, options: KeyListOptions, query: str
 ) -> None:
-    lite = LiteKeysClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-    ours = KeysManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    lite = LiteKeysClient(server.url + "/", api_key="sk-test", timeout=TIMEOUT)
+    ours = KeysManagementClient(server.url + "/", api_key="sk-test", timeout=TIMEOUT)
     server.reply(OK, "{}")
     lite.list(**options)
     server.reply(OK, "{}")
@@ -316,6 +316,8 @@ def test_keys_error_denied(server: RecordingServer, operation: str) -> None:
     with pytest.raises(UnauthorizedError) as actual:
         key_call(ours, operation)
     assert str(actual.value) == str(expected.value)
+    assert actual.value.__cause__ is not None
+    assert expected.value.__cause__ is None
 
 
 @pytest.mark.parametrize(
@@ -396,8 +398,8 @@ def test_keys_error_not_object(server: RecordingServer) -> None:
 
 
 def test_credentials_collection(server: RecordingServer) -> None:
-    lite = LiteCredentialsClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-    ours = CredentialsManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    lite = LiteCredentialsClient(server.url + "/", api_key="sk-test", timeout=TIMEOUT)
+    ours = CredentialsManagementClient(server.url + "/", api_key="sk-test", timeout=TIMEOUT)
     server.reply(OK, '{"credentials": []}')
     lite.list()
     server.reply(OK, '{"credentials": []}')
@@ -455,6 +457,8 @@ def test_credentials_denied(server: RecordingServer) -> None:
         with pytest.raises(UnauthorizedError) as actual:
             credential_call(ours, operation, info, values)
         assert str(actual.value) == str(expected.value)
+        assert actual.value.__cause__ is not None
+        assert expected.value.__cause__ is None
         assert server.requests[-1].authorization == "Bearer sk-test"
 
 
