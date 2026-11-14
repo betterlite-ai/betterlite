@@ -100,7 +100,7 @@ fn make_turn(
 
 fn assert_feedback(
     previous: Option<&str>,
-    current: &str,
+    current: Option<&str>,
     tool: Option<(&str, bool)>,
     allow_satisfaction: bool,
     expected: [i64; 7],
@@ -108,7 +108,7 @@ fn assert_feedback(
     let results = tool.map_or_else(Vec::new, |(content, is_error)| {
         vec![tool_result_of(content, is_error)]
     });
-    let turn = make_turn(Some(current), None, results, None);
+    let turn = make_turn(current, None, results, None);
     let delta = detect_user_feedback(&detector(), previous, &turn, allow_satisfaction);
     assert_eq!(fields(delta), expected);
 }
@@ -141,8 +141,17 @@ fn assert_loop(history: &[&str], calls: &[(&str, &str)], expected: [i64; 7]) {
     assert_eq!(fields(delta), expected);
 }
 
-fn assert_exhaustion(content: &str, is_error: bool, status: Option<i64>, expected: [i64; 7]) {
-    let turn = make_turn(None, None, vec![tool_result_of(content, is_error)], status);
+fn assert_exhaustion(
+    content: Option<&str>,
+    is_error: bool,
+    status: Option<i64>,
+    expected: [i64; 7],
+) {
+    let result = ToolResult {
+        content: content.map(str::to_owned),
+        is_error,
+    };
+    let turn = make_turn(None, None, vec![result], status);
     let delta = detect_response_signals(&detector(), None, &[], &turn);
     assert_eq!(fields(delta), expected);
 }
@@ -183,6 +192,7 @@ fn assert_counted() {
     };
     assert!(!SignalDelta::default().any_fired());
     assert!(one.any_fired());
+    assert_eq!(fields(merge_signal_deltas(&[])), NONE);
     assert_eq!(fields(merge_signal_deltas(&[all, all])), [2; 7]);
     let mut state = state();
     assert_eq!(state.last_processed_turn, -1);
@@ -265,7 +275,7 @@ fn assert_advance_bounds() {
 enum Behavior {
     Feedback(
         Option<&'static str>,
-        &'static str,
+        Option<&'static str>,
         Option<(&'static str, bool)>,
         bool,
         [i64; 7],
@@ -276,7 +286,7 @@ enum Behavior {
         &'static [(&'static str, &'static str)],
         [i64; 7],
     ),
-    Exhaustion(&'static str, bool, Option<i64>, [i64; 7]),
+    Exhaustion(Option<&'static str>, bool, Option<i64>, [i64; 7]),
     Tokens(Option<&'static str>, &'static [&'static str]),
     Jaccard(&'static [&'static str], &'static [&'static str], f64),
     Counted,
@@ -287,43 +297,53 @@ enum Behavior {
 #[rstest]
 #[case::misalignment_rephrased(Behavior::Feedback(
     Some("Hello there"),
-    "hello world",
+    Some("hello world"),
     None,
     false,
     MISALIGNED
 ))]
 #[case::misalignment_topic_changed(Behavior::Feedback(
     Some("hello there"),
-    "goodbye moon",
+    Some("goodbye moon"),
     None,
     false,
     NONE
 ))]
 #[case::misalignment_repeated(Behavior::Feedback(
     Some("hello there"),
-    "hello there",
+    Some("hello there"),
     None,
     false,
     NONE
 ))]
 #[case::disengagement_phrase(Behavior::Feedback(
     None,
-    "this isn't working, abort",
+    Some("this isn't working, abort"),
     None,
     false,
     DISENGAGED
 ))]
 #[case::satisfaction_without_allow(Behavior::Feedback(
     None,
-    "thanks, that worked",
+    Some("thanks, that worked"),
     None,
     false,
     NONE
 ))]
-#[case::satisfaction_allowed(Behavior::Feedback(None, "nice", None, true, SATISFIED))]
-#[case::tool_failure(Behavior::Feedback(None, "run it", Some(("boom", true)), false, FAILED))]
+#[case::satisfaction_allowed(Behavior::Feedback(None, Some("nice"), None, true, SATISFIED))]
+#[case::tool_failure(Behavior::Feedback(
+    None,
+    Some("run it"),
+    Some(("boom", true)),
+    false,
+    FAILED
+))]
 #[case::empty_tool_result_is_not_failure(Behavior::Feedback(
-    None, "run it", Some(("", false)), false, NONE
+    None,
+    Some("run it"),
+    Some(("", false)),
+    false,
+    NONE
 ))]
 #[case::stagnation_near_duplicate(Behavior::Response(
     Some("red green blue"),
@@ -345,12 +365,12 @@ enum Behavior {
     &["shell({})", "shell({})"], &[("shell", "{\"a\":1}")], NONE
 ))]
 #[case::exhaustion_keyword(Behavior::Exhaustion(
-    "CONTEXT WINDOW is full",
+    Some("CONTEXT WINDOW is full"),
     false,
     Some(200),
     EXHAUSTED
 ))]
-#[case::tool_error_is_not_exhaustion(Behavior::Exhaustion("boom", true, Some(200), NONE))]
+#[case::tool_error_is_not_exhaustion(Behavior::Exhaustion(Some("boom"), true, Some(200), NONE))]
 #[case::tokens_mixed_text(Behavior::Tokens(
     Some("Hello, world! 123"), &["123", "hello", "world"]
 ))]
@@ -363,7 +383,9 @@ enum Behavior {
 #[case::counted(Behavior::Counted)]
 #[case::credit_once(Behavior::CreditOnce)]
 #[case::advance_bounds(Behavior::AdvanceBounds)]
-#[case::satisfaction_not_matched(Behavior::Feedback(None, "run it", None, true, NONE))]
+#[case::satisfaction_not_matched(Behavior::Feedback(None, Some("run it"), None, true, NONE))]
+#[case::absent_user_content(Behavior::Feedback(Some("hello there"), None, None, true, NONE))]
+#[case::exhaustion_absent_content(Behavior::Exhaustion(None, false, None, NONE))]
 fn feedback_signals_behaviors(#[case] behavior: Behavior) {
     match behavior {
         Behavior::Feedback(previous, current, tool, allow, expected) => {
