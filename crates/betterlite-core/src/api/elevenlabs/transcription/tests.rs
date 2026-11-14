@@ -122,7 +122,7 @@ fn the_form_starts_with_model_id_and_converts_supported_values() {
 #[test]
 fn the_form_drops_reserved_null_and_false_values_the_way_litellm_does() {
     let fields = form_fields(
-        r#"{"model": "other", "OPENAI_TRANSCRIPTION_PARAMS": {}, "diarize": false, "note": "hi", "score": 1e-05, "tags": null}"#,
+        r#"{"model": "other", "OPENAI_TRANSCRIPTION_PARAMS": {}, "diarize": false, "note": "hi", "score": 1e-05, "tags": null, "temperature": null}"#,
     );
 
     assert_eq!(
