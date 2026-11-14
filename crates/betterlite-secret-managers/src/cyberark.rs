@@ -9,7 +9,7 @@ use tokio::time::Instant;
 
 use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretRotation, SecretWrite};
 use crate::secret_contracts::{BaseSecretManager, RotationError, SecretFuture};
-use crate::secret_helpers::read_boolean_text;
+use crate::secret_lookup::text_to_bool;
 use cyberark_auth::{TOKEN_KEY, begin_login, finish_login};
 use cyberark_read::finish_read;
 use error::{CyberArkError, CyberArkInitError};
@@ -67,17 +67,17 @@ impl CyberArkSettings {
             .transpose()?
             .flatten()
             .unwrap_or(DEFAULT_REFRESH_SECONDS);
-        let verify_text = lookup("CYBERARK_SSL_VERIFY").map(String::as_str);
+        let verify_tls = lookup("CYBERARK_SSL_VERIFY")
+            .map(String::as_str)
+            .and_then(text_to_bool)
+            .unwrap_or(true);
         Ok(Self {
             api_base: or_default("CYBERARK_API_BASE", "http://127.0.0.1:8080"),
             account: or_default("CYBERARK_ACCOUNT", "default"),
             username: or_default("CYBERARK_USERNAME", "admin"),
             api_key: api_key.unwrap_or_else(|| SecretString::from("")),
             client_certificate,
-            verify_tls: read_boolean_text("CYBERARK_SSL_VERIFY", verify_text)
-                .ok()
-                .flatten()
-                .unwrap_or(true),
+            verify_tls,
             refresh_interval: Duration::from_secs(refresh_seconds),
         })
     }
