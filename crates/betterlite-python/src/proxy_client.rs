@@ -1,3 +1,5 @@
+use std::env;
+
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
@@ -28,12 +30,13 @@ impl ProxyClientNative {
         self.redactor.redact_string(value)
     }
 
-    fn gateway_api_key(&self, expected_base_url: Option<String>) -> Option<String> {
-        let home = std::env::home_dir()?;
+    #[staticmethod]
+    fn gateway_api_key(expected_base_url: Option<&str>) -> Option<String> {
+        let home = env::home_dir()?;
         let store = TokenFileStore {
             token_file: home.join(".litellm").join("token.json"),
         };
-        get_litellm_gateway_api_key(expected_base_url.as_deref(), &store)
+        get_litellm_gateway_api_key(expected_base_url, &store)
     }
 }
 

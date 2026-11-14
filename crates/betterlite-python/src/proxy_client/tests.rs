@@ -55,9 +55,8 @@ fn register_adds_the_proxy_client_class() {
 #[test]
 fn native_gateway_key_reads_the_token_file_under_home() {
     let home = stored_home(r#"{"base_url": "http://proxy:4000", "key": "sk-stored"}"#);
-    let native = ProxyClientNative::new().unwrap();
     let key = temp_env::with_var("HOME", Some(home.path()), || {
-        native.gateway_api_key(Some("http://proxy:4000".to_owned()))
+        ProxyClientNative::gateway_api_key(Some("http://proxy:4000"))
     });
     assert_eq!(key.as_deref(), Some("sk-stored"));
 }
@@ -65,8 +64,9 @@ fn native_gateway_key_reads_the_token_file_under_home() {
 #[test]
 fn native_gateway_key_is_none_when_home_has_no_token_file() {
     let home = TempDir::new().unwrap();
-    let native = ProxyClientNative::new().unwrap();
-    let key = temp_env::with_var("HOME", Some(home.path()), || native.gateway_api_key(None));
+    let key = temp_env::with_var("HOME", Some(home.path()), || {
+        ProxyClientNative::gateway_api_key(None)
+    });
     assert_eq!(key, None);
 }
 

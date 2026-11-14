@@ -1,8 +1,9 @@
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import Protocol
 
 import pytest
 import requests
@@ -29,7 +30,33 @@ OK = 200
 LEAKY_TEXT = "api_key=sk-abcdefghijklmnop"
 CLOSED_URL = "http://127.0.0.1:1/unreachable"
 
-LiteCall = Callable[[], JsonValue | requests.Request | requests.Response]
+LiteCall = Callable[[], object]
+
+
+class LiteHealth(Protocol):
+    def get_readiness(self) -> Mapping[str, object]: ...
+
+    def get_server_version(self) -> str | None: ...
+
+
+class LiteModelGroups(Protocol):
+    def info(
+        self, *, return_request: bool = False
+    ) -> Sequence[Mapping[str, object]] | requests.Request: ...
+
+
+class LiteUsers(Protocol):
+    def list_users(
+        self, params: dict[str, str] | None = None
+    ) -> Sequence[Mapping[str, object]]: ...
+
+    def get_user(self, user_id: str | None = None) -> Mapping[str, object]: ...
+
+    def get_user_v2(self, user_id: str | None = None) -> Mapping[str, object]: ...
+
+    def create_user(self, user_data: Mapping[str, JsonValue]) -> Mapping[str, object]: ...
+
+    def delete_user(self, user_ids: list[str]) -> Mapping[str, object]: ...
 
 
 @dataclass(frozen=True)
@@ -46,7 +73,7 @@ def empty_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return home
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def server() -> Iterator[RecordingServer]:
     with RecordingServer() as recording:
         yield recording
@@ -103,16 +130,18 @@ def test_transport_sends_query(server: RecordingServer) -> None:
 
 def test_transport_sends_json(server: RecordingServer) -> None:
     url = f"{server.url}/x"
-    reference = partial(requests.request, "POST", url, json={"a": 1}, timeout=TIMEOUT)
-    request = Request(method="POST", url=url, json={"a": 1})
+    body: JsonValue = {"a": 1}
+    reference = partial(requests.request, "POST", url, json=body, timeout=TIMEOUT)
+    request = Request(method="POST", url=url, json=body)
     compare_call(server, reference, partial(send, request, TIMEOUT), None, Reply(OK, "{}"))
 
 
 def test_transport_caller_type(server: RecordingServer) -> None:
     url = f"{server.url}/x"
     headers = {"Content-Type": "application/json; charset=utf-8"}
-    reference = partial(requests.request, "POST", url, json={"a": 1}, headers=dict(headers))
-    request = Request(method="POST", url=url, json={"a": 1}, headers=dict(headers))
+    body: JsonValue = {"a": 1}
+    reference = partial(requests.request, "POST", url, json=body, headers=headers)
+    request = Request(method="POST", url=url, json=body, headers=headers)
     compare_call(server, reference, partial(send, request, TIMEOUT), None, Reply(OK, "{}"))
 
 
@@ -204,9 +233,10 @@ def test_http_client_joins_url(server: RecordingServer) -> None:
 
 def test_http_client_key_override(server: RecordingServer) -> None:
     headers = {"Authorization": "Bearer sk-test"}
-    reference = partial(requests.request, "GET", f"{server.url}/x", headers=dict(headers))
+    caller = {"Authorization": "Bearer caller"}
+    reference = partial(requests.request, "GET", f"{server.url}/x", headers=headers)
     ours = HTTPClient(base_url=server.url, api_key="sk-test", timeout=TIMEOUT)
-    call = partial(ours.request, "GET", "/x", headers={"Authorization": "Bearer caller"})
+    call = partial(ours.request, "GET", "/x", headers=caller)
     compare_call(server, reference, call, {}, Reply(OK, "{}"))
     assert server.requests[0].authorization == "Bearer sk-test"
 
@@ -221,23 +251,25 @@ def test_http_client_no_key(server: RecordingServer) -> None:
 def test_http_client_json_body(server: RecordingServer) -> None:
     url = f"{server.url}/user/new"
     headers = {"Authorization": "Bearer sk-test"}
-    reference = partial(requests.request, "POST", url, json={"user_id": "u1"}, headers=headers)
+    body: JsonValue = {"user_id": "u1"}
+    reference = partial(requests.request, "POST", url, json=body, headers=headers)
     ours = HTTPClient(base_url=server.url, api_key="sk-test", timeout=TIMEOUT)
-    call = partial(ours.request, "POST", "/user/new", json={"user_id": "u1"})
+    call = partial(ours.request, "POST", "/user/new", json=body)
     compare_call(server, reference, call, {"ok": True}, Reply(OK, '{"ok": true}'))
 
 
 def test_http_client_caller_type(server: RecordingServer) -> None:
     headers = {"content-type": "application/json; charset=utf-8"}
-    reference = partial(requests.request, "POST", f"{server.url}/x", json={"a": 1}, headers=headers)
+    body: JsonValue = {"a": 1}
+    reference = partial(requests.request, "POST", f"{server.url}/x", json=body, headers=headers)
     ours = HTTPClient(base_url=server.url, timeout=TIMEOUT)
-    call = partial(ours.request, "POST", "/x", json={"a": 1}, headers=dict(headers))
+    call = partial(ours.request, "POST", "/x", json=body, headers=headers)
     compare_call(server, reference, call, {}, Reply(OK, "{}"))
 
 
 def test_http_client_form_body(server: RecordingServer) -> None:
     data = {"a": "1", "b": "2"}
-    reference = partial(requests.request, "POST", f"{server.url}/x", data=dict(data))
+    reference = partial(requests.request, "POST", f"{server.url}/x", data=data)
     ours = HTTPClient(base_url=server.url, timeout=TIMEOUT)
     call = partial(ours.request, "POST", "/x", data=data)
     compare_call(server, reference, call, {}, Reply(OK, "{}"))
@@ -245,7 +277,7 @@ def test_http_client_form_body(server: RecordingServer) -> None:
 
 def test_http_client_pairs_body(server: RecordingServer) -> None:
     data = [("a", "1"), ("a", "2")]
-    reference = partial(requests.request, "POST", f"{server.url}/x", data=list(data))
+    reference = partial(requests.request, "POST", f"{server.url}/x", data=data)
     ours = HTTPClient(base_url=server.url, timeout=TIMEOUT)
     call = partial(ours.request, "POST", "/x", data=data)
     compare_call(server, reference, call, {}, Reply(OK, "{}"))
@@ -274,7 +306,7 @@ def test_http_client_401_is_http(server: RecordingServer) -> None:
 
 def test_health_readiness(server: RecordingServer) -> None:
     reply = Reply(OK, '{"status": "healthy", "litellm_version": "1.105.1"}')
-    lite = LiteLLMHealthClient(server.url, timeout=TIMEOUT)
+    lite: LiteHealth = LiteLLMHealthClient(server.url, timeout=TIMEOUT)
     ours = HealthManagementClient(server.url, timeout=TIMEOUT)
     expected: JsonValue = {"status": "healthy", "litellm_version": "1.105.1"}
     compare_call(server, lite.get_readiness, ours.get_readiness, expected, reply)
@@ -282,21 +314,21 @@ def test_health_readiness(server: RecordingServer) -> None:
 
 def test_health_server_version(server: RecordingServer) -> None:
     reply = Reply(OK, '{"status": "healthy", "litellm_version": "1.105.1"}')
-    lite = LiteLLMHealthClient(server.url, timeout=TIMEOUT)
+    lite: LiteHealth = LiteLLMHealthClient(server.url, timeout=TIMEOUT)
     ours = HealthManagementClient(server.url, timeout=TIMEOUT)
     compare_call(server, lite.get_server_version, ours.get_server_version, "1.105.1", reply)
 
 
 def test_health_version_absent(server: RecordingServer) -> None:
     reply = Reply(OK, '{"status": "healthy"}')
-    lite = LiteLLMHealthClient(server.url, timeout=TIMEOUT)
+    lite: LiteHealth = LiteLLMHealthClient(server.url, timeout=TIMEOUT)
     ours = HealthManagementClient(server.url, timeout=TIMEOUT)
     compare_call(server, lite.get_server_version, ours.get_server_version, None, reply)
 
 
 def test_model_groups_info(server: RecordingServer) -> None:
     reply = Reply(OK, '{"data": [{"model_group": "gpt-4"}]}')
-    lite = LiteLLMModelGroupsClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    lite: LiteModelGroups = LiteLLMModelGroupsClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     ours = ModelGroupsManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     compare_call(server, lite.info, ours.info, [{"model_group": "gpt-4"}], reply)
 
@@ -311,7 +343,7 @@ def test_model_groups_request(server: RecordingServer) -> None:
 
 
 def test_model_groups_401(server: RecordingServer) -> None:
-    lite = LiteLLMModelGroupsClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    lite: LiteModelGroups = LiteLLMModelGroupsClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     ours = ModelGroupsManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     errors = (LiteLLMUnauthorizedError, UnauthorizedError)
     compare_error(server, lite.info, ours.info, errors, Reply(401, "denied"))
@@ -319,21 +351,21 @@ def test_model_groups_401(server: RecordingServer) -> None:
 
 def test_users_list(server: RecordingServer) -> None:
     reply = Reply(OK, '{"users": [{"user_id": "u1"}]}')
-    lite = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     compare_call(server, lite.list_users, ours.list_users, [{"user_id": "u1"}], reply)
 
 
 def test_users_list_whole(server: RecordingServer) -> None:
     reply = Reply(OK, '{"count": 1}')
-    lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, timeout=TIMEOUT)
     compare_call(server, lite.list_users, ours.list_users, {"count": 1}, reply)
 
 
 def test_users_list_params(server: RecordingServer) -> None:
     params: dict[str, str] = {"page": "2"}
-    lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, timeout=TIMEOUT)
     lite_call = partial(lite.list_users, params=params)
     call = partial(ours.list_users, params=params)
@@ -342,7 +374,7 @@ def test_users_list_params(server: RecordingServer) -> None:
 
 def test_users_get_user(server: RecordingServer) -> None:
     reply = Reply(OK, '{"user_id": "u1"}')
-    lite = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     call = partial(ours.get_user, user_id="u1")
     compare_call(server, partial(lite.get_user, user_id="u1"), call, {"user_id": "u1"}, reply)
@@ -350,7 +382,7 @@ def test_users_get_user(server: RecordingServer) -> None:
 
 def test_users_get_no_query(server: RecordingServer) -> None:
     reply = Reply(OK, '{"user_id": "u1"}')
-    lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, timeout=TIMEOUT)
     compare_call(server, lite.get_user, ours.get_user, {"user_id": "u1"}, reply)
     assert server.requests[0].query == ""
@@ -358,7 +390,7 @@ def test_users_get_no_query(server: RecordingServer) -> None:
 
 def test_users_get_v2(server: RecordingServer) -> None:
     reply = Reply(OK, '{"user_id": "u1"}')
-    lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, timeout=TIMEOUT)
     call = partial(ours.get_user_v2, user_id="u1")
     compare_call(server, partial(lite.get_user_v2, user_id="u1"), call, {"user_id": "u1"}, reply)
@@ -366,7 +398,7 @@ def test_users_get_v2(server: RecordingServer) -> None:
 
 
 def test_users_get_404(server: RecordingServer) -> None:
-    lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, timeout=TIMEOUT)
     errors = (LiteLLMNotFoundError, NotFoundError)
     compare_error(server, lite.get_user, ours.get_user, errors, Reply(404, "user not found"))
@@ -374,37 +406,42 @@ def test_users_get_404(server: RecordingServer) -> None:
 
 def test_users_create(server: RecordingServer) -> None:
     reply = Reply(OK, '{"user_id": "u1"}')
-    lite = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-    call = partial(ours.create_user, {"user_id": "u1"})
-    lite_call = partial(lite.create_user, {"user_id": "u1"})
+    user: Mapping[str, JsonValue] = {"user_id": "u1"}
+    call = partial(ours.create_user, user)
+    lite_call = partial(lite.create_user, user)
     compare_call(server, lite_call, call, {"user_id": "u1"}, reply)
 
 
 def test_users_delete(server: RecordingServer) -> None:
     reply = Reply(OK, '{"deleted": true}')
-    lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, timeout=TIMEOUT)
-    call = partial(ours.delete_user, ["u1", "u2"])
-    lite_call = partial(lite.delete_user, ["u1", "u2"])
+    user_ids = ["u1", "u2"]
+    call = partial(ours.delete_user, user_ids)
+    lite_call = partial(lite.delete_user, user_ids)
     compare_call(server, lite_call, call, {"deleted": True}, reply)
 
 
 def test_users_create_401(server: RecordingServer) -> None:
-    lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, timeout=TIMEOUT)
     errors = (LiteLLMUnauthorizedError, UnauthorizedError)
-    call = partial(ours.create_user, {"user_id": "u1"})
-    lite_call = partial(lite.create_user, {"user_id": "u1"})
+    user: Mapping[str, JsonValue] = {"user_id": "u1"}
+    call = partial(ours.create_user, user)
+    lite_call = partial(lite.create_user, user)
     compare_error(server, lite_call, call, errors, Reply(401, "denied"))
 
 
 def test_users_delete_401(server: RecordingServer) -> None:
-    lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
+    lite: LiteUsers = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
     ours = UsersManagementClient(server.url, timeout=TIMEOUT)
     errors = (LiteLLMUnauthorizedError, UnauthorizedError)
-    call = partial(ours.delete_user, ["u1"])
-    compare_error(server, partial(lite.delete_user, ["u1"]), call, errors, Reply(401, "denied"))
+    user_ids = ["u1"]
+    call = partial(ours.delete_user, user_ids)
+    lite_call = partial(lite.delete_user, user_ids)
+    compare_error(server, lite_call, call, errors, Reply(401, "denied"))
 
 
 def test_bridge_redacts() -> None:
