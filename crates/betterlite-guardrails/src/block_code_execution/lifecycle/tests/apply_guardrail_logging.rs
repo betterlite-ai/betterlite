@@ -8,35 +8,32 @@ use betterlite_guardrails::block_code_execution::registration::{
     DETECTION_METHOD, GUARDRAIL_PROVIDER,
 };
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
-use betterlite_guardrails::guardrail_records::record::{GuardrailRecordMode, GuardrailStatus};
+use betterlite_guardrails::guardrail_records::record::{
+    GuardrailInvocationRecord, GuardrailRecordMode, GuardrailStatus,
+};
 
 use crate::block_code_execution::support::{
     apply_capturing, guardrail, inputs, params, request_data,
 };
 
-#[test]
-fn a_successful_scan_records_the_detection_list() {
+fn named_response_record() -> GuardrailInvocationRecord {
     let mut configured = params();
     configured.guardrail_name = Some("mine".to_owned());
     configured.blocked_languages = Some(vec!["python".to_owned()]);
     let built = guardrail(configured);
     let mut data = request_data();
-    let (_outcome, records) = apply_capturing(
+    let (_outcome, mut records) = apply_capturing(
         &built,
         inputs(&["```rust\nfn main() {}\n```"]),
         &mut data,
         GuardrailInputType::Response,
     );
-    let record = &records[0];
-    assert_eq!(record.guardrail_status, GuardrailStatus::Success);
-    assert_eq!(
-        record.guardrail_provider.as_deref(),
-        Some(GUARDRAIL_PROVIDER)
-    );
-    assert_eq!(
-        record.guardrail_mode,
-        Some(GuardrailRecordMode::Event(GuardrailEventHooks::PostCall))
-    );
+    records.remove(0)
+}
+
+#[test]
+fn a_successful_scan_records_the_detection_list() {
+    let record = named_response_record();
     let GuardrailValue::Array(detections) = &record.guardrail_response else {
         panic!("a scan record carries its detections");
     };
@@ -59,6 +56,20 @@ fn a_successful_scan_records_the_detection_list() {
     assert_eq!(
         detection.get("confidence"),
         Some(&GuardrailValue::Decimal(0.0))
+    );
+}
+
+#[test]
+fn a_successful_scan_records_provider_mode_and_tracing_detail() {
+    let record = named_response_record();
+    assert_eq!(record.guardrail_status, GuardrailStatus::Success);
+    assert_eq!(
+        record.guardrail_provider.as_deref(),
+        Some(GUARDRAIL_PROVIDER)
+    );
+    assert_eq!(
+        record.guardrail_mode,
+        Some(GuardrailRecordMode::Event(GuardrailEventHooks::PostCall))
     );
     assert_eq!(
         record.tracing_detail.detection_method.as_deref(),

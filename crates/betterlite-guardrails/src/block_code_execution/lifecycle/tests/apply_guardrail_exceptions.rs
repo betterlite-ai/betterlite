@@ -71,7 +71,7 @@ fn a_request_block_records_an_intervention() {
         &mut data,
         GuardrailInputType::Request,
     );
-    assert!(matches!(outcome, Err(_)));
+    assert!(matches!(outcome, Err(ApplyGuardrailError::Guardrail(_))));
     assert_eq!(
         records[0].guardrail_status,
         GuardrailStatus::GuardrailIntervened
@@ -126,7 +126,7 @@ fn a_response_block_records_an_intervention() {
         &mut data,
         GuardrailInputType::Response,
     );
-    assert!(matches!(outcome, Err(_)));
+    assert!(matches!(outcome, Err(ApplyGuardrailError::Guardrail(_))));
     assert_eq!(
         records[0].guardrail_status,
         GuardrailStatus::GuardrailIntervened
@@ -143,7 +143,7 @@ fn a_successful_scan_records_success() {
         &mut data,
         GuardrailInputType::Request,
     );
-    assert!(outcome.is_ok());
+    outcome.expect("a scan without code succeeds");
     assert_eq!(records[0].guardrail_status, GuardrailStatus::Success);
 }
 
@@ -163,7 +163,7 @@ fn a_failing_span_sink_does_not_change_the_outcome() {
         &mut context,
         GuardrailInputType::Request,
     );
-    assert!(outcome.is_ok());
+    outcome.expect("a failing sink leaves the outcome alone");
 }
 
 #[test]

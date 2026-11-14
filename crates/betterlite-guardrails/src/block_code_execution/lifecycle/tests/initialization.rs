@@ -113,8 +113,8 @@ fn a_tagged_mode_is_rejected() {
     let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
     let error = initializer_error(outcome);
     assert!(matches!(
-        error,
-        InitializerError::InvalidParam { ref field } if field == "mode"
+        &error,
+        InitializerError::InvalidParam { field } if field == "mode"
     ));
 }
 
@@ -128,8 +128,8 @@ fn a_non_boolean_intent_flag_is_rejected() {
     let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
     let error = initializer_error(outcome);
     assert!(matches!(
-        error,
-        InitializerError::InvalidParam { ref field } if field == "detect_execution_intent"
+        &error,
+        InitializerError::InvalidParam { field } if field == "detect_execution_intent"
     ));
 }
 
@@ -143,8 +143,8 @@ fn a_non_list_blocked_languages_is_rejected() {
     let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
     let error = initializer_error(outcome);
     assert!(matches!(
-        error,
-        InitializerError::InvalidParam { ref field } if field == "blocked_languages"
+        &error,
+        InitializerError::InvalidParam { field } if field == "blocked_languages"
     ));
 }
 
@@ -175,8 +175,8 @@ fn an_out_of_range_confidence_threshold_is_rejected(#[case] threshold: &str) {
     let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
     let error = initializer_error(outcome);
     assert!(matches!(
-        error,
-        InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
+        &error,
+        InitializerError::InvalidParam { field } if field == "confidence_threshold"
     ));
 }
 
@@ -202,8 +202,8 @@ fn a_not_a_number_confidence_threshold_is_rejected() {
     let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
     let error = initializer_error(outcome);
     assert!(matches!(
-        error,
-        InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
+        &error,
+        InitializerError::InvalidParam { field } if field == "confidence_threshold"
     ));
 }
 
@@ -220,8 +220,8 @@ fn a_null_for_a_required_parameter_is_rejected(#[case] key: &str) {
     let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
     let error = initializer_error(outcome);
     assert!(matches!(
-        error,
-        InitializerError::InvalidParam { ref field } if field == key
+        &error,
+        InitializerError::InvalidParam { field } if field == key
     ));
 }
 
@@ -235,8 +235,8 @@ fn an_empty_confidence_threshold_is_rejected() {
     let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
     let error = initializer_error(outcome);
     assert!(matches!(
-        error,
-        InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
+        &error,
+        InitializerError::InvalidParam { field } if field == "confidence_threshold"
     ));
 }
 
@@ -264,7 +264,7 @@ fn an_unreadable_confidence_threshold_is_rejected() {
     let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
     let error = initializer_error(outcome);
     assert!(matches!(
-        error,
-        InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
+        &error,
+        InitializerError::InvalidParam { field } if field == "confidence_threshold"
     ));
 }

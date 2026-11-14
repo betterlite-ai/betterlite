@@ -103,22 +103,22 @@ fn an_unsupported_but_valid_hook_follows_the_strict_modes_flag(
     let result = BlockCodeExecutionGuardrail::new(configured, strict);
     if rejected {
         assert!(matches!(
-            result,
+            &result,
             Err(BlockCodeExecutionError::Base(
-                GuardrailBaseError::UnsupportedEventHook { ref hook, .. }
+                GuardrailBaseError::UnsupportedEventHook { hook, .. }
             )) if hook == "pre_mcp_call"
         ));
     } else {
-        assert!(result.is_ok());
+        result.expect("a lenient guardrail accepts the hook");
     }
 }
 
 #[rstest]
-#[case::below(-2.0, 0.0)]
-#[case::just_below(0.4999, 0.4999)]
-#[case::at_zero(0.0, 0.0)]
-#[case::at_one(1.0, 1.0)]
-#[case::above(3.0, 1.0)]
+#[case::below(-2.0_f64, 0.0_f64)]
+#[case::just_below(0.499_9_f64, 0.499_9_f64)]
+#[case::at_zero(0.0_f64, 0.0_f64)]
+#[case::at_one(1.0_f64, 1.0_f64)]
+#[case::above(3.0_f64, 1.0_f64)]
 fn the_confidence_threshold_is_clamped(#[case] given: f64, #[case] expected: f64) {
     let mut configured = params();
     configured.confidence_threshold = given;

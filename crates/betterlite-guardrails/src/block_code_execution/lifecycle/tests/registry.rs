@@ -51,8 +51,10 @@ fn the_class_registry_maps_the_key_to_the_guardrail_constructor() {
 #[test]
 fn the_class_registry_accepts_a_configured_name() {
     let (_key, class) = GUARDRAIL_CLASS_REGISTRY[0];
-    let mut configured = BlockCodeExecutionParams::default();
-    configured.guardrail_name = Some("custom".to_owned());
+    let configured = BlockCodeExecutionParams {
+        guardrail_name: Some("custom".to_owned()),
+        ..BlockCodeExecutionParams::default()
+    };
     let instance = class(configured, true).expect("the class builds the guardrail");
     assert_eq!(
         instance.base.settings.guardrail_name.as_deref(),
