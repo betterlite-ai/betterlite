@@ -117,6 +117,50 @@ async fn send_client_prefers_the_logging_trace_id() {
 }
 
 #[tokio::test]
+async fn send_client_generates_a_trace_id_for_an_empty_logging_trace() {
+    let (outcome, seen) = with_agent(Reply::Json(buffered_message("hi")), |base| async move {
+        let counter = counter();
+        let pool = pool();
+        let tls = tls();
+        let environment = BTreeMap::new();
+        let ids = || "generated-trace".to_owned();
+        let deps = NativeDeps {
+            http: &pool,
+            environment: &environment,
+            tls: &tls,
+            counter: &counter,
+            trace_ids: &ids,
+        };
+        let completion = recorder();
+        let providers = provider();
+        let mut source = Source::default();
+        let mut bridge = BridgeDeps {
+            completion: &completion,
+            providers: &providers,
+            source: &mut source,
+        };
+        let call = SendCall {
+            a2a_client: None,
+            request: request("hello"),
+            api_base: Some(base),
+            litellm_params: params_with_provider(None),
+            agent_id: None,
+            agent_extra_headers: None,
+        };
+        let mut logging = logging_state(Some(""));
+        asend_message(call, Some(&mut logging), &deps, &mut bridge).await
+    })
+    .await;
+
+    assert!(outcome.is_ok());
+    let posted = posted(&seen);
+    assert_eq!(
+        posted.headers.get("x-litellm-trace-id").map(String::as_str),
+        Some("generated-trace")
+    );
+}
+
+#[tokio::test]
 async fn send_client_lets_agent_headers_override_the_litellm_headers() {
     let (outcome, seen) = with_agent(Reply::Json(buffered_message("hi")), |base| async move {
         let counter = counter();
@@ -237,6 +281,55 @@ async fn stream_client_requires_an_api_base_without_a_client() {
     let result = asend_message_streaming(call, None, deps, &mut bridge).await;
 
     assert!(matches!(result, Err(SendCallError::MissingClient)));
+}
+
+#[tokio::test]
+async fn stream_client_uses_the_provided_client_without_fetching_the_card_again() {
+    let (outcome, seen) = with_agent(Reply::Sse(vec![message_frame("hi")]), |base| async move {
+        let pool = pool();
+        let environment = BTreeMap::new();
+        let settings = A2AClientSettings {
+            base_url: base,
+            timeout: Some(Duration::from_secs(5)),
+            tls: tls(),
+            extra_headers: BTreeMap::new(),
+            streaming: true,
+            relative_card_path: None,
+        };
+        let client = create_a2a_client(&pool, settings, &environment)
+            .await
+            .expect("the test client builds");
+        let mut fixture = StreamFixture::new();
+        let completion = recorder();
+        let providers = provider();
+        let mut source = Source::default();
+        let mut bridge = BridgeDeps {
+            completion: &completion,
+            providers: &providers,
+            source: &mut source,
+        };
+        let (dispatch, _calls) = recording_dispatch();
+        let call = StreamCall {
+            a2a_client: Some(client),
+            request: request("hello"),
+            api_base: None,
+            litellm_params: params_with_provider(None),
+            agent_id: None,
+            metadata: None,
+            proxy_server_request: None,
+            agent_extra_headers: None,
+        };
+        let deps = fixture.deps(dispatch);
+        let events = asend_message_streaming(call, None, deps, &mut bridge)
+            .await
+            .expect("the stream starts");
+        collect_events(events).await
+    })
+    .await;
+
+    assert_eq!(outcome.len(), 1);
+    assert!(outcome[0].is_ok());
+    assert_eq!(card_requests(&seen).len(), 1);
 }
 
 #[tokio::test]
@@ -430,6 +523,7 @@ async fn stream_client_retries_with_the_agent_card_url_and_api_base() {
 #[rstest]
 #[case::from_the_logging_object(Some("logging-trace"), "request-1", "logging-trace")]
 #[case::from_the_request_id(None, "request-1", "request-1")]
+#[case::from_the_request_id_for_an_empty_logging_trace(Some(""), "request-1", "request-1")]
 #[case::generated_for_an_empty_id(None, "", "generated-1")]
 #[tokio::test]
 async fn stream_client_trace_id_fallbacks(
