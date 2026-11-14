@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::io::{Error as IoError, ErrorKind, Read as _, Result as IoResult, Write as _};
+use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
@@ -14,7 +14,7 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_error::error::ErrorClass;
 use betterlite_http::interactions::agents_create_read::AgentsApiConfig;
 use betterlite_http::interactions::agents_delete_versions::{
-    AgentRequest, AgentsConfig, EnvironmentRequest, NamedAgentRequest,
+    AgentsConfig, EnvironmentRequest, NamedAgentRequest,
 };
 use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_http::interactions::base::{
@@ -50,24 +50,15 @@ const RETRY: Duration = Duration::from_millis(10);
 const GET_BODY: &str = r#"{"id": "agent-1"}"#;
 
 // one request the fixture handler recorded, in the order the operation reaches it
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum Seen {
     Environment {
         params: Params,
         headers: Vec<(String, String)>,
     },
-    Get {
-        name: String,
-        api_base: String,
-    },
-    Delete {
-        name: String,
-        api_base: String,
-    },
-    Versions {
-        name: String,
-        api_base: String,
-    },
+    Get,
+    Delete,
+    Versions,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -191,10 +182,7 @@ impl AgentsApiConfig for Config {
         api_base: &str,
         _litellm_params: &Params,
     ) -> Result<PreparedRequest, FixtureError> {
-        Ok(PreparedRequest {
-            url: format!("{api_base}/v1beta/agents"),
-            params: Params::new(),
-        })
+        Ok(prepared(format!("{api_base}/v1beta/agents"), Params::new()))
     }
 
     fn transform_list_response(
@@ -210,14 +198,11 @@ impl AgentsApiConfig for Config {
         api_base: &str,
         _litellm_params: &Params,
     ) -> Result<PreparedRequest, FixtureError> {
-        self.record(Seen::Get {
-            name: name.to_owned(),
-            api_base: api_base.to_owned(),
-        });
-        Ok(PreparedRequest {
-            url: format!("{api_base}/v1beta/agents/{name}"),
-            params: Params::new(),
-        })
+        self.record(Seen::Get);
+        Ok(prepared(
+            format!("{api_base}/v1beta/agents/{name}"),
+            Params::new(),
+        ))
     }
 
     fn transform_get_response(
@@ -251,11 +236,8 @@ impl AgentsConfig for Config {
         &self,
         request: &NamedAgentRequest<'_>,
     ) -> Result<String, FixtureError> {
-        self.record(Seen::Delete {
-            name: request.name.to_owned(),
-            api_base: request.api_base.to_owned(),
-        });
-        Ok(format!("{}/agents/{}", request.api_base, request.name))
+        self.record(Seen::Delete);
+        Ok(named_url(request, ""))
     }
 
     fn transform_delete_response(
@@ -263,27 +245,18 @@ impl AgentsConfig for Config {
         response: &UpstreamResponse,
         name: &str,
     ) -> Result<AgentDeleteResult, FixtureError> {
-        ensure_success(response)?;
-        Ok(AgentDeleteResult {
-            name: name.to_owned(),
-            deleted: Deleted(true),
-            extra: BTreeMap::new(),
-            hidden_params: BTreeMap::new(),
-        })
+        deleted_agent(response, name)
     }
 
     fn transform_versions_request(
         &self,
         request: &NamedAgentRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
-        self.record(Seen::Versions {
-            name: request.name.to_owned(),
-            api_base: request.api_base.to_owned(),
-        });
-        Ok(PreparedRequest {
-            url: format!("{}/agents/{}/versions", request.api_base, request.name),
-            params: page_params(request.litellm_params),
-        })
+        self.record(Seen::Versions);
+        Ok(prepared(
+            named_url(request, "/versions"),
+            page_params(request.litellm_params),
+        ))
     }
 
     fn transform_versions_response(
@@ -320,6 +293,14 @@ struct VersionsWire {
     next_page_token: Option<String>,
 }
 
+fn prepared(url: String, params: Params) -> PreparedRequest {
+    PreparedRequest { url, params }
+}
+
+fn named_url(request: &NamedAgentRequest<'_>, suffix: &str) -> String {
+    format!("{}/agents/{}{suffix}", request.api_base, request.name)
+}
+
 fn agent_response(
     response: &UpstreamResponse,
     name: &str,
@@ -332,6 +313,19 @@ fn agent_response(
         id: Some(id),
         name: Some(surface),
         extra: wire.extra,
+        hidden_params: BTreeMap::new(),
+    })
+}
+
+fn deleted_agent(
+    response: &UpstreamResponse,
+    name: &str,
+) -> Result<AgentDeleteResult, FixtureError> {
+    ensure_success(response)?;
+    Ok(AgentDeleteResult {
+        name: name.to_owned(),
+        deleted: Deleted(true),
+        extra: BTreeMap::new(),
         hidden_params: BTreeMap::new(),
     })
 }
@@ -376,27 +370,25 @@ fn secrets(headers: &RequestHeaders) -> Vec<(String, String)> {
         .collect()
 }
 
-fn environment_params(config: &Config) -> Params {
+fn environment(config: &Config) -> (Params, Vec<(String, String)>) {
     let calls = config.calls();
     let found = calls.iter().rev().find_map(|entry| match entry {
-        Seen::Environment { params, .. } => Some(params.clone()),
-        Seen::Get { .. } | Seen::Delete { .. } | Seen::Versions { .. } => None,
+        Seen::Environment { params, headers } => Some((params.clone(), headers.clone())),
+        Seen::Get | Seen::Delete | Seen::Versions => None,
     });
-    let Some(params) = found else {
+    let Some(environment) = found else {
         panic!("the environment is validated");
     };
+    environment
+}
+
+fn environment_params(config: &Config) -> Params {
+    let (params, _headers) = environment(config);
     params
 }
 
 fn environment_headers(config: &Config) -> Vec<(String, String)> {
-    let calls = config.calls();
-    let found = calls.iter().rev().find_map(|entry| match entry {
-        Seen::Environment { headers, .. } => Some(headers.clone()),
-        Seen::Get { .. } | Seen::Delete { .. } | Seen::Versions { .. } => None,
-    });
-    let Some(headers) = found else {
-        panic!("the environment is validated");
-    };
+    let (_params, headers) = environment(config);
     headers
 }
 
@@ -934,13 +926,19 @@ async fn aget_sends_the_same_request_as_get() {
     let serving = serve(reply(200, GET_BODY));
     let config = fixture();
     let mut harness = Harness::new();
-    let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
+    let call = Call::new("agent-1")
+        .header("x-extra", "yes")
+        .kwarg("api_base", text(&base(serving.address)));
     let output = aget(&config, harness.deps(), &call.request())
         .await
         .expect("the fixture answers");
     assert_eq!(output.id.as_deref(), Some("agent-1"));
     assert_eq!(harness.state.call_type, "get_agent");
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
+    assert_eq!(
+        environment_headers(&config),
+        vec![("x-extra".to_owned(), "yes".to_owned())]
+    );
     assert_eq!(
         request_line(&head_of(serving)),
         "GET /v1beta/agents/agent-1 HTTP/1.1"

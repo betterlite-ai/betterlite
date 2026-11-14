@@ -47,108 +47,115 @@ pub struct AgentItemDeps<'deps> {
     pub redactor: &'deps Redactor,
 }
 
-pub fn get<Config>(
-    config: &Config,
-    deps: AgentItemDeps<'_>,
-    request: &AgentItemRequest<'_>,
-) -> Result<Config::GetOutput, AgentItemFailureError<Config::Error>>
-where
-    Config: AgentsApiConfig,
-    Config::Error: ProviderFailure,
-{
-    let prepared = prepare(request, Operation::Get, deps.logging, deps.redactor)?;
-    let sent = GetAgentRequest {
-        name: request.name,
-        litellm_params: &prepared.params,
-        extra_headers: request.extra_headers.clone(),
-        timeout: request.timeout,
+macro_rules! agent_entries {
+    (read $method:ident, $send:path) => {
+        pub fn $method<Config>(
+            config: &Config,
+            deps: AgentItemDeps<'_>,
+            request: &AgentItemRequest<'_>,
+        ) -> Result<Config::GetOutput, AgentItemFailureError<Config::Error>>
+        where
+            Config: AgentsApiConfig,
+            Config::Error: ProviderFailure,
+        {
+            let AgentItemDeps {
+                clients,
+                logging,
+                http,
+                redactor,
+            } = deps;
+            let prepared = prepare(request, Operation::Get, logging, redactor)?;
+            let sent = GetAgentRequest {
+                name: request.name,
+                litellm_params: &prepared.params,
+                extra_headers: request.extra_headers.clone(),
+                timeout: request.timeout,
+            };
+            let mut recording = AgentHttpLogging(http);
+            let failed = $send(config, clients, &mut recording, None, &sent);
+            outcome(failed, request.name, &prepared.provider, redactor)
+        }
     };
-    let mut recording = AgentHttpLogging(deps.http);
-    let failed = get_agent(config, deps.clients, &mut recording, None, &sent);
-    outcome(failed, request.name, &prepared.provider, deps.redactor)
-}
-
-pub async fn aget<Config>(
-    config: &Config,
-    deps: AgentItemDeps<'_>,
-    request: &AgentItemRequest<'_>,
-) -> Result<Config::GetOutput, AgentItemFailureError<Config::Error>>
-where
-    Config: AgentsApiConfig,
-    Config::Error: ProviderFailure,
-{
-    let prepared = prepare(request, Operation::Get, deps.logging, deps.redactor)?;
-    let sent = GetAgentRequest {
-        name: request.name,
-        litellm_params: &prepared.params,
-        extra_headers: request.extra_headers.clone(),
-        timeout: request.timeout,
+    (aread $method:ident, $send:path) => {
+        pub async fn $method<Config>(
+            config: &Config,
+            deps: AgentItemDeps<'_>,
+            request: &AgentItemRequest<'_>,
+        ) -> Result<Config::GetOutput, AgentItemFailureError<Config::Error>>
+        where
+            Config: AgentsApiConfig,
+            Config::Error: ProviderFailure,
+        {
+            let AgentItemDeps {
+                clients,
+                logging,
+                http,
+                redactor,
+            } = deps;
+            let prepared = prepare(request, Operation::Get, logging, redactor)?;
+            let sent = GetAgentRequest {
+                name: request.name,
+                litellm_params: &prepared.params,
+                extra_headers: request.extra_headers.clone(),
+                timeout: request.timeout,
+            };
+            let mut recording = AgentHttpLogging(http);
+            let failed = $send(config, clients, &mut recording, None, &sent).await;
+            outcome(failed, request.name, &prepared.provider, redactor)
+        }
     };
-    let mut recording = AgentHttpLogging(deps.http);
-    let failed = async_get_agent(config, deps.clients, &mut recording, None, &sent).await;
-    outcome(failed, request.name, &prepared.provider, deps.redactor)
+    (named $method:ident, $operation:ident, $output:ident, $send:path) => {
+        pub fn $method<Config>(
+            config: &Config,
+            deps: AgentItemDeps<'_>,
+            request: &AgentItemRequest<'_>,
+        ) -> Result<Config::$output, AgentItemFailureError<Config::Error>>
+        where
+            Config: AgentsConfig,
+            Config::Error: ProviderFailure,
+        {
+            let AgentItemDeps {
+                clients,
+                logging,
+                http,
+                redactor,
+            } = deps;
+            let prepared = prepare(request, Operation::$operation, logging, redactor)?;
+            let sent = named_request(request, &prepared.params);
+            let failed = $send(config, clients, http, None, &sent);
+            outcome(failed, request.name, &prepared.provider, redactor)
+        }
+    };
+    (anamed $method:ident, $operation:ident, $output:ident, $send:path) => {
+        pub async fn $method<Config>(
+            config: &Config,
+            deps: AgentItemDeps<'_>,
+            request: &AgentItemRequest<'_>,
+        ) -> Result<Config::$output, AgentItemFailureError<Config::Error>>
+        where
+            Config: AgentsConfig,
+            Config::Error: ProviderFailure,
+        {
+            let AgentItemDeps {
+                clients,
+                logging,
+                http,
+                redactor,
+            } = deps;
+            let prepared = prepare(request, Operation::$operation, logging, redactor)?;
+            let sent = named_request(request, &prepared.params);
+            let failed = $send(config, clients, http, None, &sent).await;
+            outcome(failed, request.name, &prepared.provider, redactor)
+        }
+    };
 }
 
-pub fn delete<Config>(
-    config: &Config,
-    deps: AgentItemDeps<'_>,
-    request: &AgentItemRequest<'_>,
-) -> Result<Config::DeleteOutput, AgentItemFailureError<Config::Error>>
-where
-    Config: AgentsConfig,
-    Config::Error: ProviderFailure,
-{
-    let prepared = prepare(request, Operation::Delete, deps.logging, deps.redactor)?;
-    let sent = named_request(request, &prepared.params);
-    let failed = delete_agent(config, deps.clients, deps.http, None, &sent);
-    outcome(failed, request.name, &prepared.provider, deps.redactor)
-}
+agent_entries!(read get, get_agent);
+agent_entries!(aread aget, async_get_agent);
+agent_entries!(named delete, Delete, DeleteOutput, delete_agent);
+agent_entries!(anamed adelete, Delete, DeleteOutput, async_delete_agent);
+agent_entries!(named list_versions, Versions, VersionsOutput, list_agent_versions);
+agent_entries!(anamed alist_versions, Versions, VersionsOutput, async_list_agent_versions);
 
-pub async fn adelete<Config>(
-    config: &Config,
-    deps: AgentItemDeps<'_>,
-    request: &AgentItemRequest<'_>,
-) -> Result<Config::DeleteOutput, AgentItemFailureError<Config::Error>>
-where
-    Config: AgentsConfig,
-    Config::Error: ProviderFailure,
-{
-    let prepared = prepare(request, Operation::Delete, deps.logging, deps.redactor)?;
-    let sent = named_request(request, &prepared.params);
-    let failed = async_delete_agent(config, deps.clients, deps.http, None, &sent).await;
-    outcome(failed, request.name, &prepared.provider, deps.redactor)
-}
-
-pub fn list_versions<Config>(
-    config: &Config,
-    deps: AgentItemDeps<'_>,
-    request: &AgentItemRequest<'_>,
-) -> Result<Config::VersionsOutput, AgentItemFailureError<Config::Error>>
-where
-    Config: AgentsConfig,
-    Config::Error: ProviderFailure,
-{
-    let prepared = prepare(request, Operation::Versions, deps.logging, deps.redactor)?;
-    let sent = named_request(request, &prepared.params);
-    let failed = list_agent_versions(config, deps.clients, deps.http, None, &sent);
-    outcome(failed, request.name, &prepared.provider, deps.redactor)
-}
-
-pub async fn alist_versions<Config>(
-    config: &Config,
-    deps: AgentItemDeps<'_>,
-    request: &AgentItemRequest<'_>,
-) -> Result<Config::VersionsOutput, AgentItemFailureError<Config::Error>>
-where
-    Config: AgentsConfig,
-    Config::Error: ProviderFailure,
-{
-    let prepared = prepare(request, Operation::Versions, deps.logging, deps.redactor)?;
-    let sent = named_request(request, &prepared.params);
-    let failed = async_list_agent_versions(config, deps.clients, deps.http, None, &sent).await;
-    outcome(failed, request.name, &prepared.provider, deps.redactor)
-}
-
-#[cfg(test)]
 #[path = "item/tests/agent_item_calls.rs"]
 mod agent_item_calls;
