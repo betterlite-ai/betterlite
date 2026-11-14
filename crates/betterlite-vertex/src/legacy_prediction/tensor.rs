@@ -42,7 +42,7 @@ impl Tensor {
         let mut tensor = Self::default();
         match value {
             Json::Null => {}
-            Json::Bool(flag) => tensor.int_val.push(if *flag { 1 } else { 0 }),
+            Json::Bool(flag) => tensor.int_val.push(i32::from(*flag)),
             Json::Number(number) => return number_tensor(number),
             Json::Text(text) => tensor.string_val.push(text.clone()),
             Json::List(items) => {
@@ -157,35 +157,38 @@ fn scalars(values: Vec<Json>) -> Result<Json, PredictionError> {
     Ok(Json::List(values))
 }
 
-fn floats(values: &[f64], field: &'static str) -> Result<Json, PredictionError> {
-    let mut rendered = Vec::with_capacity(values.len());
+fn rendered(values: Vec<Option<Number>>, field: &'static str) -> Result<Json, PredictionError> {
+    let mut list = Vec::with_capacity(values.len());
     for value in values {
-        let number = Number::from_f64(*value).ok_or(PredictionError::WrongFieldType { field })?;
-        rendered.push(Json::Number(number));
+        list.push(Json::Number(
+            value.ok_or(PredictionError::WrongFieldType { field })?,
+        ));
     }
-    scalars(rendered)
+    scalars(list)
+}
+
+fn floats(values: &[f64], field: &'static str) -> Result<Json, PredictionError> {
+    rendered(
+        values
+            .iter()
+            .map(|value| Number::from_f64(*value))
+            .collect(),
+        field,
+    )
 }
 
 fn integers64(values: &[String], field: &'static str) -> Result<Json, PredictionError> {
-    let mut rendered = Vec::with_capacity(values.len());
-    for value in values {
-        let number = value
-            .parse::<i64>()
-            .map_err(|_source| PredictionError::WrongFieldType { field })?;
-        rendered.push(Json::Number(Number::from(number)));
-    }
-    scalars(rendered)
+    let numbers = values
+        .iter()
+        .map(|value| value.parse::<i64>().ok().map(Number::from));
+    rendered(numbers.collect(), field)
 }
 
 fn unsigned64(values: &[String]) -> Result<Json, PredictionError> {
-    let mut rendered = Vec::with_capacity(values.len());
-    for value in values {
-        let number = value
-            .parse::<u64>()
-            .map_err(|_source| PredictionError::WrongFieldType { field: "uint64Val" })?;
-        rendered.push(Json::Number(Number::from(number)));
-    }
-    scalars(rendered)
+    let numbers = values
+        .iter()
+        .map(|value| value.parse::<u64>().ok().map(Number::from));
+    rendered(numbers.collect(), "uint64Val")
 }
 
 #[derive(Deserialize)]

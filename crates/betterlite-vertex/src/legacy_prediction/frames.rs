@@ -1,6 +1,16 @@
+use std::mem;
+
 use super::error::PredictionError;
 
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Default)]
+enum FrameState {
+    #[default]
+    Start,
+    Inside,
+    Ended,
+}
 
 // The REST transcoding of a server-streaming RPC sends one JSON array whose objects arrive across reads
 #[derive(Debug, Default)]
@@ -8,9 +18,8 @@ pub struct PredictionFrames {
     level: usize,
     in_string: bool,
     escape_next: bool,
+    state: FrameState,
     current: Vec<u8>,
-    started: bool,
-    ended: bool,
 }
 
 impl PredictionFrames {
@@ -22,7 +31,7 @@ impl PredictionFrames {
         Ok(ready)
     }
 
-    pub fn finish(&self) -> Result<(), PredictionError> {
+    pub const fn finish(&self) -> Result<(), PredictionError> {
         match self.level {
             0 => Ok(()),
             _ => Err(PredictionError::StreamUnfinished),
@@ -30,22 +39,34 @@ impl PredictionFrames {
     }
 
     fn step(&mut self, byte: u8, ready: &mut Vec<Vec<u8>>) -> Result<(), PredictionError> {
-        if !self.started {
-            // the source's first-chunk check: the array must open on the first byte
-            if byte != b'[' {
-                return Err(PredictionError::StreamShape);
+        match self.state {
+            FrameState::Start => self.start(byte),
+            FrameState::Ended => {
+                if byte.is_ascii_whitespace() {
+                    Ok(())
+                } else {
+                    Err(PredictionError::StreamShape)
+                }
             }
-            self.started = true;
-            self.level = 1;
-            return Ok(());
-        }
-        if self.ended {
-            return if byte.is_ascii_whitespace() {
+            FrameState::Inside => {
+                self.inside(byte, ready)?;
+                self.escape_next = byte == b'\\' && !self.escape_next;
                 Ok(())
-            } else {
-                Err(PredictionError::StreamShape)
-            };
+            }
         }
+    }
+
+    const fn start(&mut self, byte: u8) -> Result<(), PredictionError> {
+        // the source's first-chunk check: the array must open on the first byte
+        if byte != b'[' {
+            return Err(PredictionError::StreamShape);
+        }
+        self.state = FrameState::Inside;
+        self.level = 1;
+        Ok(())
+    }
+
+    fn inside(&mut self, byte: u8, ready: &mut Vec<Vec<u8>>) -> Result<(), PredictionError> {
         match byte {
             b'{' => {
                 if self.level == 1 {
@@ -62,7 +83,7 @@ impl PredictionFrames {
                     self.level = self.level.saturating_sub(1);
                 }
                 if !self.in_string && self.level == 1 {
-                    ready.push(std::mem::take(&mut self.current));
+                    ready.push(mem::take(&mut self.current));
                 }
             }
             b'"' => {
@@ -71,27 +92,24 @@ impl PredictionFrames {
                 }
                 self.push_byte(byte)?;
             }
-            b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c => {
-                if self.in_string {
-                    self.push_byte(byte)?;
-                }
-            }
-            b'[' => self.push_byte(byte)?,
+            b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c => self.space(byte)?,
             b']' => {
                 if self.level == 1 {
                     self.level = 0;
-                    self.ended = true;
+                    self.state = FrameState::Ended;
                 } else {
                     self.push_byte(byte)?;
                 }
             }
             _ => self.push_byte(byte)?,
         }
-        self.escape_next = if byte == b'\\' {
-            !self.escape_next
-        } else {
-            false
-        };
+        Ok(())
+    }
+
+    fn space(&mut self, byte: u8) -> Result<(), PredictionError> {
+        if self.in_string {
+            self.push_byte(byte)?;
+        }
         Ok(())
     }
 

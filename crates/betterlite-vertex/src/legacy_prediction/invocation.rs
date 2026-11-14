@@ -32,30 +32,6 @@ pub enum LegacyInvocation {
     },
 }
 
-impl LegacyInvocation {
-    #[must_use]
-    pub fn prompt(&self) -> &str {
-        match self {
-            Self::Chat { prompt, .. }
-            | Self::Text { prompt, .. }
-            | Self::CustomEndpoint { prompt, .. }
-            | Self::PrivateEndpoint { prompt, .. }
-            | Self::Vision { prompt, .. } => prompt,
-        }
-    }
-
-    #[must_use]
-    pub fn model(&self) -> &str {
-        match self {
-            Self::Chat { model, .. }
-            | Self::Text { model, .. }
-            | Self::CustomEndpoint { model, .. }
-            | Self::PrivateEndpoint { model, .. }
-            | Self::Vision { model, .. } => model,
-        }
-    }
-}
-
 pub fn remove_instance_stream(instances: &mut [Json]) {
     let Some(Json::Object(instance)) = instances.first_mut() else {
         return;

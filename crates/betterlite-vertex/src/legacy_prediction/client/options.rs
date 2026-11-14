@@ -132,45 +132,25 @@ pub fn parameters(options: &Extra, call: PredictCall) -> Result<Extra, Predictio
 }
 
 fn convert(name: &str, kind: Parameter, value: &Json) -> Result<Json, PredictionError> {
-    match kind {
-        Parameter::Integer => {
-            if let Json::Number(number) = value
-                && number.as_i64().is_some()
-            {
-                return Ok(Json::Number(number.clone()));
-            }
-            Err(PredictionError::OptionType {
-                name: name.to_owned(),
-            })
+    match (kind, value) {
+        (Parameter::Integer, Json::Number(number)) if number.as_i64().is_some() => {
+            Ok(Json::Number(number.clone()))
         }
-        Parameter::Number => {
-            let Json::Number(number) = value else {
-                return Err(PredictionError::OptionType {
-                    name: name.to_owned(),
-                });
-            };
-            let value = number.as_f64().ok_or_else(|| PredictionError::OptionType {
-                name: name.to_owned(),
-            })?;
-            Number::from_f64(value)
-                .map(Json::Number)
-                .ok_or_else(|| PredictionError::OptionType {
-                    name: name.to_owned(),
-                })
-        }
-        Parameter::Texts => match value {
-            Json::List(items) if items.iter().all(|item| matches!(item, Json::Text(_))) => {
-                Ok(value.clone())
-            }
-            _ => Err(PredictionError::OptionType {
+        (Parameter::Number, Json::Number(number)) => number
+            .as_f64()
+            .and_then(Number::from_f64)
+            .map(Json::Number)
+            .ok_or_else(|| PredictionError::OptionType {
                 name: name.to_owned(),
             }),
-        },
-        Parameter::Object => match value {
-            Json::Object(_fields) => Ok(value.clone()),
-            _ => Err(PredictionError::OptionType {
-                name: name.to_owned(),
-            }),
-        },
+        (Parameter::Texts, Json::List(items))
+            if items.iter().all(|item| matches!(item, Json::Text(_))) =>
+        {
+            Ok(Json::List(items.clone()))
+        }
+        (Parameter::Object, Json::Object(_fields)) => Ok(value.clone()),
+        _ => Err(PredictionError::OptionType {
+            name: name.to_owned(),
+        }),
     }
 }

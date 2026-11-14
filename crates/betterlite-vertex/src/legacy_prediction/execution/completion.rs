@@ -9,9 +9,16 @@ use super::super::client::{EndpointPredictRequest, PredictionClient, PublisherPr
 use super::super::error::PredictionError;
 use super::super::invocation::LegacyInvocation;
 use super::super::projection::{LegacyResult, ProjectionInput, project};
-use super::super::records::{Prediction, ReplyMeta, strip_output_separator};
+use super::super::records::{Prediction, ReplyMeta, TextReply, strip_output_separator};
 use super::LegacyContext;
 use super::scope::{RpcScope, require_custom, resolve_scope};
+
+struct EndpointCall {
+    model: String,
+    prompt: String,
+    endpoint: Option<String>,
+    instances: Vec<Json>,
+}
 
 pub(super) async fn complete_inner<C, Lookup>(
     client: &C,
@@ -25,24 +32,38 @@ where
 {
     prepare_completion(&invocation, context)?;
     let scope = resolve_scope(context, lookup).await?;
-    complete_modes(client, context, scope, invocation).await
-}
-
-async fn complete_modes<C>(
-    client: &C,
-    context: &LegacyContext<'_, '_>,
-    scope: RpcScope,
-    invocation: LegacyInvocation,
-) -> Result<LegacyResult, PredictionError>
-where
-    C: PredictionClient,
-{
     match invocation {
         LegacyInvocation::Chat { .. } | LegacyInvocation::Text { .. } => {
             publisher_completion(client, context, scope, invocation).await
         }
-        LegacyInvocation::CustomEndpoint { .. } | LegacyInvocation::PrivateEndpoint { .. } => {
-            endpoint_completion_call(client, context, scope, invocation).await
+        LegacyInvocation::CustomEndpoint {
+            model,
+            prompt,
+            instances,
+            ..
+        } => {
+            let call = EndpointCall {
+                model,
+                prompt,
+                endpoint: None,
+                instances,
+            };
+            endpoint_completion_call(client, context, scope, call).await
+        }
+        LegacyInvocation::PrivateEndpoint {
+            model,
+            prompt,
+            endpoint,
+            instances,
+            ..
+        } => {
+            let call = EndpointCall {
+                model,
+                prompt,
+                endpoint: Some(endpoint),
+                instances,
+            };
+            endpoint_completion_call(client, context, scope, call).await
         }
         LegacyInvocation::Vision { model, prompt } => {
             projected(context, &model, &prompt, None, None)
@@ -73,7 +94,8 @@ where
                 prompt,
                 options,
             };
-            chat_completion(client, context, request).await
+            let reply = client.send_message_async(&request).await?;
+            text_result(context, &request, reply)
         }
         LegacyInvocation::Text {
             model,
@@ -88,7 +110,8 @@ where
                 prompt,
                 options,
             };
-            text_completion(client, context, request).await
+            let reply = client.predict_async(&request).await?;
+            text_result(context, &request, reply)
         }
         LegacyInvocation::CustomEndpoint { .. }
         | LegacyInvocation::PrivateEndpoint { .. }
@@ -96,35 +119,12 @@ where
     }
 }
 
-async fn chat_completion<C>(
-    client: &C,
+fn text_result(
     context: &LegacyContext<'_, '_>,
-    request: PublisherPredictRequest,
-) -> Result<LegacyResult, PredictionError>
-where
-    C: PredictionClient,
-{
-    let reply = client.send_message_async(&request).await?;
-    let prediction = Prediction::Value(Json::Text(reply.text.clone()));
-    projected(
-        context,
-        &request.model,
-        &request.prompt,
-        Some(&prediction),
-        Some(&reply.meta),
-    )
-}
-
-async fn text_completion<C>(
-    client: &C,
-    context: &LegacyContext<'_, '_>,
-    request: PublisherPredictRequest,
-) -> Result<LegacyResult, PredictionError>
-where
-    C: PredictionClient,
-{
-    let reply = client.predict_async(&request).await?;
-    let prediction = Prediction::Value(Json::Text(reply.text.clone()));
+    request: &PublisherPredictRequest,
+    reply: TextReply,
+) -> Result<LegacyResult, PredictionError> {
+    let prediction = Prediction::Value(Json::Text(reply.text));
     projected(
         context,
         &request.model,
@@ -138,62 +138,44 @@ async fn endpoint_completion_call<C>(
     client: &C,
     context: &LegacyContext<'_, '_>,
     scope: RpcScope,
-    invocation: LegacyInvocation,
+    call: EndpointCall,
 ) -> Result<LegacyResult, PredictionError>
 where
     C: PredictionClient,
 {
-    match invocation {
-        LegacyInvocation::CustomEndpoint {
-            model,
-            prompt,
-            instances,
-            ..
-        } => {
-            let endpoint = format!(
-                "projects/{}/locations/{}/endpoints/{}",
-                scope.project, scope.location, model
-            );
-            let request = EndpointPredictRequest {
-                token: scope.token,
-                location: scope.location,
-                endpoint,
-                instances,
-            };
-            endpoint_completion(client, context, request, &model, &prompt).await
-        }
-        LegacyInvocation::PrivateEndpoint {
-            model,
-            prompt,
-            endpoint,
-            instances,
-            ..
-        } => {
-            let request = EndpointPredictRequest {
-                token: scope.token,
-                location: scope.location,
-                endpoint,
-                instances,
-            };
-            endpoint_completion(client, context, request, &model, &prompt).await
-        }
-        LegacyInvocation::Chat { .. }
-        | LegacyInvocation::Text { .. }
-        | LegacyInvocation::Vision { .. } => Err(PredictionError::MissingPrediction),
-    }
+    let EndpointCall {
+        model,
+        prompt,
+        endpoint,
+        instances,
+    } = call;
+    let endpoint = match endpoint {
+        Some(endpoint) => endpoint,
+        None => format!(
+            "projects/{}/locations/{}/endpoints/{}",
+            scope.project, scope.location, model
+        ),
+    };
+    let request = EndpointPredictRequest {
+        token: scope.token,
+        location: scope.location,
+        endpoint,
+        instances,
+    };
+    endpoint_completion(client, context, &request, &model, &prompt).await
 }
 
 async fn endpoint_completion<C>(
     client: &C,
     context: &LegacyContext<'_, '_>,
-    request: EndpointPredictRequest,
+    request: &EndpointPredictRequest,
     model: &str,
     prompt: &str,
 ) -> Result<LegacyResult, PredictionError>
 where
     C: PredictionClient,
 {
-    let reply = client.predict_endpoint(&request).await?;
+    let reply = client.predict_endpoint(request).await?;
     let Some(prediction) = reply.predictions.first() else {
         return Err(PredictionError::MissingPrediction);
     };

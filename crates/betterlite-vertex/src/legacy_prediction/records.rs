@@ -89,14 +89,19 @@ pub fn decode_legacy_prediction(bytes: &[u8]) -> Result<PredictionsReply, Predic
     })
 }
 
-// The SDK's _parse_text_generation_model_response reads prediction["content"]
-pub fn text_reply(reply: &PredictionsReply) -> Result<TextReply, PredictionError> {
+fn prediction_value(reply: &PredictionsReply) -> Result<&Json, PredictionError> {
     let prediction = first_prediction(reply)?;
     let Prediction::Value(value) = prediction else {
         return Err(PredictionError::WrongFieldType {
             field: "predictions",
         });
     };
+    Ok(value)
+}
+
+// The SDK's _parse_text_generation_model_response reads prediction["content"]
+pub fn text_reply(reply: &PredictionsReply) -> Result<TextReply, PredictionError> {
+    let value = prediction_value(reply)?;
     Ok(TextReply {
         text: text_text(value)?,
         meta: reply.meta.clone(),
@@ -105,12 +110,7 @@ pub fn text_reply(reply: &PredictionsReply) -> Result<TextReply, PredictionError
 
 // The SDK's _parse_chat_prediction_response reads prediction["candidates"] and its safetyAttributes list
 pub fn chat_reply(reply: &PredictionsReply) -> Result<TextReply, PredictionError> {
-    let prediction = first_prediction(reply)?;
-    let Prediction::Value(value) = prediction else {
-        return Err(PredictionError::WrongFieldType {
-            field: "predictions",
-        });
-    };
+    let value = prediction_value(reply)?;
     let candidates = candidates_of(value)?;
     let Some(first) = candidates.first() else {
         return Err(PredictionError::MissingPrediction);

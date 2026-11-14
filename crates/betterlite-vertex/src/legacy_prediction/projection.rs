@@ -7,23 +7,24 @@ use super::error::PredictionError;
 use super::records::{Prediction, ReplyMeta, UsageMetadata, source_string};
 
 // B195 counts tokens, the server's clock supplies created, and B206 maps the finish reason
-pub struct ProjectionServices<'a> {
+pub struct ProjectionServices<'encoding> {
     pub now: u64,
-    pub encoding: &'a dyn LocalEncoding,
+    pub encoding: &'encoding dyn LocalEncoding,
     pub finish_reason: fn(&str) -> FinishReasonMapping,
 }
 
-pub trait LocalEncoding {
+pub trait LocalEncoding: Send + Sync {
     fn encode(&self, text: &str) -> Result<usize, EngineError>;
 }
 
 impl LocalEncoding for Engine {
     fn encode(&self, text: &str) -> Result<usize, EngineError> {
-        Engine::encode(self, text).map(|ids| ids.len())
+        let ids = Engine::encode(self, text)?;
+        Ok(ids.len())
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LegacyMessage {
     Copied(ChatMessage),
     Content(String),
@@ -37,7 +38,7 @@ pub struct LegacyUsage {
     pub total_tokens: i64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LegacyResult {
     pub message: LegacyMessage,
     pub created: u64,
@@ -46,19 +47,19 @@ pub struct LegacyResult {
     pub finish_reason: Option<FinishReason>,
 }
 
-pub struct ProjectionInput<'a> {
-    pub prediction: Option<&'a Prediction>,
-    pub meta: Option<&'a ReplyMeta>,
+pub struct ProjectionInput<'reply> {
+    pub prediction: Option<&'reply Prediction>,
+    pub meta: Option<&'reply ReplyMeta>,
     pub model_is_language: bool,
-    pub prompt: &'a str,
-    pub model: &'a str,
+    pub prompt: &'reply str,
+    pub model: &'reply str,
 }
 
 pub fn project(
     input: &ProjectionInput<'_>,
     services: &ProjectionServices<'_>,
 ) -> Result<LegacyResult, PredictionError> {
-    let message = message_of(input.prediction)?;
+    let message = message_of(input.prediction);
     let (finish_reason, usage) = usage_of(input, &message, services)?;
     Ok(LegacyResult {
         message,
@@ -69,16 +70,16 @@ pub fn project(
     })
 }
 
-fn message_of(prediction: Option<&Prediction>) -> Result<LegacyMessage, PredictionError> {
+fn message_of(prediction: Option<&Prediction>) -> LegacyMessage {
     match prediction {
-        None => Ok(LegacyMessage::Content(String::from("None"))),
-        Some(Prediction::Message(message)) => Ok(LegacyMessage::Copied(message.clone())),
+        None => LegacyMessage::Content(String::from("None")),
+        Some(Prediction::Message(message)) => LegacyMessage::Copied(message.clone()),
         Some(Prediction::Value(value)) => {
             let text = source_string(value);
             if text.is_empty() {
-                Ok(LegacyMessage::Unchanged)
+                LegacyMessage::Unchanged
             } else {
-                Ok(LegacyMessage::Content(text))
+                LegacyMessage::Content(text)
             }
         }
     }
@@ -104,20 +105,32 @@ fn usage_of(
     local_usage(input.prompt, message, services).map(|usage| (None, usage))
 }
 
+fn token_counts(usage: &UsageMetadata) -> Result<(i64, i64), PredictionError> {
+    let prompt_tokens = usage
+        .prompt_token_count
+        .ok_or(PredictionError::MissingUsage {
+            field: "promptTokenCount",
+        })?;
+    let completion_tokens = usage
+        .candidates_token_count
+        .ok_or(PredictionError::MissingUsage {
+            field: "candidatesTokenCount",
+        })?;
+    Ok((prompt_tokens, completion_tokens))
+}
+
 fn language_usage(
     meta: &ReplyMeta,
     services: &ProjectionServices<'_>,
 ) -> Result<(Option<FinishReason>, LegacyUsage), PredictionError> {
-    let candidates = meta
+    let candidate = meta
         .candidates
         .as_ref()
+        .and_then(|candidates| candidates.first())
         .ok_or(PredictionError::MissingField {
             field: "candidates",
         })?;
-    let first = candidates.first().ok_or(PredictionError::MissingField {
-        field: "candidates",
-    })?;
-    let raw = first
+    let raw = candidate
         .finish_reason
         .as_deref()
         .ok_or(PredictionError::MissingField {
@@ -129,16 +142,7 @@ fn language_usage(
         .ok_or(PredictionError::MissingUsage {
             field: "usageMetadata",
         })?;
-    let prompt_tokens = usage
-        .prompt_token_count
-        .ok_or(PredictionError::MissingUsage {
-            field: "promptTokenCount",
-        })?;
-    let completion_tokens = usage
-        .candidates_token_count
-        .ok_or(PredictionError::MissingUsage {
-            field: "candidatesTokenCount",
-        })?;
+    let (prompt_tokens, completion_tokens) = token_counts(usage)?;
     let total_tokens = usage
         .total_token_count
         .ok_or(PredictionError::MissingUsage {
@@ -157,16 +161,7 @@ fn language_usage(
 fn server_usage(
     usage: &UsageMetadata,
 ) -> Result<(Option<FinishReason>, LegacyUsage), PredictionError> {
-    let prompt_tokens = usage
-        .prompt_token_count
-        .ok_or(PredictionError::MissingUsage {
-            field: "promptTokenCount",
-        })?;
-    let completion_tokens = usage
-        .candidates_token_count
-        .ok_or(PredictionError::MissingUsage {
-            field: "candidatesTokenCount",
-        })?;
+    let (prompt_tokens, completion_tokens) = token_counts(usage)?;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
         .ok_or(PredictionError::UsageOverflow)?;
@@ -206,7 +201,7 @@ fn encode(encoding: &dyn LocalEncoding, text: &str) -> Result<i64, PredictionErr
 
 fn content_of(message: &LegacyMessage) -> Result<String, PredictionError> {
     match message {
-        LegacyMessage::Copied(message) => match &message.content {
+        LegacyMessage::Copied(copied) => match &copied.content {
             None => Ok(String::new()),
             Some(MessageContent::Text(text)) => Ok(text.clone()),
             Some(MessageContent::Parts(_parts)) => Err(PredictionError::NonTextContent),

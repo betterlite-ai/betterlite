@@ -16,7 +16,7 @@ pub(super) struct RpcScope {
     pub(super) location: String,
 }
 
-pub(super) fn require_custom(context: &LegacyContext<'_, '_>) -> Result<(), PredictionError> {
+pub(super) const fn require_custom(context: &LegacyContext<'_, '_>) -> Result<(), PredictionError> {
     if context.project.is_some() && context.location.is_some() {
         return Ok(());
     }

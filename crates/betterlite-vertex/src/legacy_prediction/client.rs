@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::slice;
 
 use betterlite_models::decisions::{Extra, Json};
 use futures_util::stream::BoxStream;
@@ -64,9 +63,9 @@ pub struct EndpointPredictRequest {
 }
 
 #[derive(Serialize)]
-struct PredictBody<'body> {
-    instances: &'body [Json],
-    parameters: &'body Extra,
+struct PredictBody {
+    instances: Vec<Json>,
+    parameters: Extra,
 }
 
 #[derive(Serialize)]
@@ -81,24 +80,26 @@ struct StreamingBody {
     parameters: Option<Tensor>,
 }
 
+fn predict_body(instance: Json, parameters: Extra) -> Result<Vec<u8>, PredictionError> {
+    let body = PredictBody {
+        instances: vec![instance],
+        parameters,
+    };
+    serde_json::to_vec(&body).map_err(|source| PredictionError::Serialize { source })
+}
+
 pub fn chat_predict_body(prompt: &str, options: &Extra) -> Result<Vec<u8>, PredictionError> {
-    let instance = chat_instance(prompt);
-    let parameters = parameters(options, PredictCall::Chat)?;
-    serde_json::to_vec(&PredictBody {
-        instances: slice::from_ref(&instance),
-        parameters: &parameters,
-    })
-    .map_err(|source| PredictionError::Serialize { source })
+    predict_body(
+        chat_instance(prompt),
+        parameters(options, PredictCall::Chat)?,
+    )
 }
 
 pub fn text_predict_body(prompt: &str, options: &Extra) -> Result<Vec<u8>, PredictionError> {
-    let instance = text_instance(prompt);
-    let parameters = parameters(options, PredictCall::Text)?;
-    serde_json::to_vec(&PredictBody {
-        instances: slice::from_ref(&instance),
-        parameters: &parameters,
-    })
-    .map_err(|source| PredictionError::Serialize { source })
+    predict_body(
+        text_instance(prompt),
+        parameters(options, PredictCall::Text)?,
+    )
 }
 
 pub fn chat_streaming_body(prompt: &str, options: &Extra) -> Result<Vec<u8>, PredictionError> {
@@ -138,11 +139,11 @@ fn text_instance(prompt: &str) -> Json {
     Json::Object(instance)
 }
 
-fn streaming_body(instance: &Json, parameters: &Extra) -> Result<Vec<u8>, PredictionError> {
-    let parameters = if parameters.is_empty() {
+fn streaming_body(instance: &Json, options: &Extra) -> Result<Vec<u8>, PredictionError> {
+    let parameters = if options.is_empty() {
         None
     } else {
-        Some(Tensor::of_json(&Json::Object(parameters.clone()))?)
+        Some(Tensor::of_json(&Json::Object(options.clone()))?)
     };
     serde_json::to_vec(&StreamingBody {
         inputs: vec![Tensor::of_json(instance)?],

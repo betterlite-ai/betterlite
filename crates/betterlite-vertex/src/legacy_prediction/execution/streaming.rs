@@ -28,7 +28,30 @@ where
 {
     prepare_stream(&invocation, context)?;
     let scope = resolve_scope(context, lookup).await?;
-    let stream = stream_modes(client, context, scope, invocation).await?;
+    let stream = match invocation {
+        LegacyInvocation::Chat { .. } | LegacyInvocation::Text { .. } => {
+            publisher_stream(client, scope, invocation).await?
+        }
+        LegacyInvocation::CustomEndpoint {
+            model, instances, ..
+        } => {
+            let endpoint = endpoint_path(&scope, &model);
+            endpoint_stream(client, scope, endpoint, instances).await?
+        }
+        LegacyInvocation::PrivateEndpoint {
+            mut instances,
+            endpoint,
+            ..
+        } => {
+            remove_instance_stream(&mut instances);
+            endpoint_stream(client, scope, endpoint, instances).await?
+        }
+        LegacyInvocation::Vision { .. } => {
+            return Err(StreamFailure::Prediction(
+                PredictionError::MissingPrediction,
+            ));
+        }
+    };
     Ok(stream
         .map(|item| item.map_err(|source| LegacyPredictionError::Streaming { source }))
         .boxed())
@@ -50,26 +73,6 @@ fn prepare_stream(
         return Err(StreamFailure::Prediction(PredictionError::MissingInstances));
     }
     Ok(())
-}
-
-async fn stream_modes<C>(
-    client: &C,
-    context: &LegacyContext<'_, '_>,
-    scope: RpcScope,
-    invocation: LegacyInvocation,
-) -> Result<PredictionStream, PredictionError>
-where
-    C: PredictionClient,
-{
-    match invocation {
-        LegacyInvocation::Chat { .. } | LegacyInvocation::Text { .. } => {
-            publisher_stream(client, scope, invocation).await
-        }
-        LegacyInvocation::CustomEndpoint { .. } | LegacyInvocation::PrivateEndpoint { .. } => {
-            endpoint_stream(client, scope, invocation).await
-        }
-        LegacyInvocation::Vision { .. } => Err(PredictionError::MissingPrediction),
-    }
 }
 
 async fn publisher_stream<C>(
@@ -119,54 +122,29 @@ where
     }
 }
 
+fn endpoint_path(scope: &RpcScope, model: &str) -> String {
+    format!(
+        "projects/{}/locations/{}/endpoints/{}",
+        scope.project, scope.location, model
+    )
+}
+
 async fn endpoint_stream<C>(
     client: &C,
     scope: RpcScope,
-    invocation: LegacyInvocation,
+    endpoint: String,
+    instances: Vec<Json>,
 ) -> Result<PredictionStream, PredictionError>
 where
     C: PredictionClient,
 {
-    match invocation {
-        LegacyInvocation::CustomEndpoint {
-            model,
-            instances,
-            mut options,
-            ..
-        } => {
-            options.shift_remove("stream");
-            let endpoint = format!(
-                "projects/{}/locations/{}/endpoints/{}",
-                scope.project, scope.location, model
-            );
-            let request = EndpointPredictRequest {
-                token: scope.token,
-                location: scope.location,
-                endpoint,
-                instances,
-            };
-            text_chunks(client, &request).await
-        }
-        LegacyInvocation::PrivateEndpoint {
-            endpoint,
-            mut instances,
-            mut options,
-            ..
-        } => {
-            options.shift_remove("stream");
-            remove_instance_stream(&mut instances);
-            let request = EndpointPredictRequest {
-                token: scope.token,
-                location: scope.location,
-                endpoint,
-                instances,
-            };
-            text_chunks(client, &request).await
-        }
-        LegacyInvocation::Chat { .. }
-        | LegacyInvocation::Text { .. }
-        | LegacyInvocation::Vision { .. } => Err(PredictionError::MissingPrediction),
-    }
+    let request = EndpointPredictRequest {
+        token: scope.token,
+        location: scope.location,
+        endpoint,
+        instances,
+    };
+    text_chunks(client, &request).await
 }
 
 async fn text_chunks<C>(

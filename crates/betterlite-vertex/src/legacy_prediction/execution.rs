@@ -20,11 +20,11 @@ mod streaming;
 
 pub type LegacyChunkStream = BoxStream<'static, Result<LegacyChunk, LegacyPredictionError>>;
 
-pub struct LegacyContext<'a, 'b> {
-    pub project: Option<&'a str>,
-    pub location: Option<&'a str>,
+pub struct LegacyContext<'config, 'encoding> {
+    pub project: Option<&'config str>,
+    pub location: Option<&'config str>,
     pub model_is_language: bool,
-    pub services: &'a ProjectionServices<'b>,
+    pub services: &'config ProjectionServices<'encoding>,
 }
 
 pub(super) enum StreamFailure {
@@ -38,16 +38,12 @@ impl From<PredictionError> for StreamFailure {
     }
 }
 
-pub async fn complete<C, Lookup>(
+pub async fn complete<C: PredictionClient>(
     client: &C,
     invocation: LegacyInvocation,
     context: &LegacyContext<'_, '_>,
-    lookup: Lookup,
-) -> Result<LegacyResult, LegacyPredictionError>
-where
-    C: PredictionClient,
-    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
-{
+    lookup: impl Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
+) -> Result<LegacyResult, LegacyPredictionError> {
     complete_inner(client, invocation, context, lookup)
         .await
         .map_err(|source| LegacyPredictionError::Completion { source })

@@ -43,11 +43,7 @@ impl GooglePredictionClient {
         request: &PublisherPredictRequest,
         body: Vec<u8>,
     ) -> Result<PredictionsReply, PredictionError> {
-        let resource = format!(
-            "projects/{}/locations/{}/publishers/google/models/{}",
-            request.project, request.location, request.model
-        );
-        let url = rpc_url(&request.location, &resource, "predict")?;
+        let url = rpc_url(&request.location, &publisher_resource(request), "predict")?;
         let reply = self.buffered(&request.token, url, body).await?;
         decode_legacy_prediction(&reply)
     }
@@ -58,11 +54,11 @@ impl GooglePredictionClient {
         body: Vec<u8>,
         kind: ChunkKind,
     ) -> Result<PredictionStream, PredictionError> {
-        let resource = format!(
-            "projects/{}/locations/{}/publishers/google/models/{}",
-            request.project, request.location, request.model
-        );
-        let url = rpc_url(&request.location, &resource, "serverStreamingPredict")?;
+        let url = rpc_url(
+            &request.location,
+            &publisher_resource(request),
+            "serverStreamingPredict",
+        )?;
         self.streaming(&request.token, url, body, kind).await
     }
 
@@ -126,8 +122,7 @@ impl PredictionClient for GooglePredictionClient {
         request: &PublisherPredictRequest,
     ) -> Result<TextReply, PredictionError> {
         let body = chat_predict_body(&request.prompt, &request.options)?;
-        let reply = self.publisher_reply(request, body).await?;
-        chat_reply(&reply)
+        chat_reply(&self.publisher_reply(request, body).await?)
     }
 
     async fn predict_async(
@@ -135,8 +130,7 @@ impl PredictionClient for GooglePredictionClient {
         request: &PublisherPredictRequest,
     ) -> Result<TextReply, PredictionError> {
         let body = text_predict_body(&request.prompt, &request.options)?;
-        let reply = self.publisher_reply(request, body).await?;
-        text_reply(&reply)
+        text_reply(&self.publisher_reply(request, body).await?)
     }
 
     async fn predict_endpoint(
@@ -196,6 +190,13 @@ fn auth_headers(token: &SecretString) -> Result<HeaderMap, PredictionError> {
     Ok(headers)
 }
 
+fn publisher_resource(request: &PublisherPredictRequest) -> String {
+    format!(
+        "projects/{}/locations/{}/publishers/google/models/{}",
+        request.project, request.location, request.model
+    )
+}
+
 fn rpc_url(location: &str, resource: &str, method: &str) -> Result<Url, PredictionError> {
     let base = get_vertex_base_url(Some(location))
         .map_err(|source| PredictionError::VertexUrl { source })?;
@@ -232,7 +233,7 @@ struct PredictionChunks {
 impl Stream for PredictionChunks {
     type Item = Result<LegacyChunk, PredictionError>;
 
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         loop {
             if let Some(item) = this.pending.pop_front() {
@@ -241,29 +242,27 @@ impl Stream for PredictionChunks {
             if this.finished {
                 return Poll::Ready(None);
             }
-            match this.body.as_mut().poll_next(context) {
+            let bytes = match this.body.as_mut().poll_next(cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(None) => {
                     this.finished = true;
-                    if let Err(error) = this.frames.finish() {
-                        return Poll::Ready(Some(Err(error)));
-                    }
+                    return Poll::Ready(this.frames.finish().err().map(Err));
                 }
                 Poll::Ready(Some(Err(source))) => {
                     this.finished = true;
                     return Poll::Ready(Some(Err(PredictionError::Read { source })));
                 }
-                Poll::Ready(Some(Ok(bytes))) => match this.frames.push(&bytes) {
-                    Ok(objects) => {
-                        for object in objects {
-                            this.pending.push_back(chunk_of(this.kind, &object));
-                        }
-                    }
-                    Err(error) => {
-                        this.finished = true;
-                        return Poll::Ready(Some(Err(error)));
-                    }
-                },
+                Poll::Ready(Some(Ok(bytes))) => bytes,
+            };
+            let objects = match this.frames.push(&bytes) {
+                Ok(objects) => objects,
+                Err(error) => {
+                    this.finished = true;
+                    return Poll::Ready(Some(Err(error)));
+                }
+            };
+            for object in objects {
+                this.pending.push_back(chunk_of(this.kind, &object));
             }
         }
     }
