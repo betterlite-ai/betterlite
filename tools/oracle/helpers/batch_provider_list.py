@@ -52,7 +52,7 @@ class Request(BaseModel):
     max_retries: int | None = None
     vertex_project: str | None = None
     vertex_location: str | None = None
-    vertex_credentials: str | None = None
+    vertex_credentials: str | dict[str, JsonValue] | None = None
     azure_ad_token: str | None = None
     tenant_id: str | None = None
     client_id: str | None = None
