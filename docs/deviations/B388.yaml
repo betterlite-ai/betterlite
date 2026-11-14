@@ -6,3 +6,6 @@ deviations:
   - what: A header or metadata tier is read only from JSON numbers and ASCII digit strings with an optional sign; Python's int() also coerces booleans and accepts Unicode digits and digit separators.
     why: docs/compatibility.md stops parity at the declared types, so a boolean or an exotic digit string counts as Python duck typing rather than a supported tier value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/adaptive_router.py#L296-L307
+  - what: An unknown key under adaptive_router_config or model_info.adaptive_router_preferences fails the config load instead of being ignored.
+    why: Rule no-silent-drops requires an error that names the key; pydantic's BaseModel ignores extras, so a misspelled weight or strength would otherwise leave the adaptive router misconfigured without a message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1221-L1245
