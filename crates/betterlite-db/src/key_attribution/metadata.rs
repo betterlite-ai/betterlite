@@ -55,18 +55,15 @@ pub fn cli_metadata(
 ) -> BTreeMap<String, KeyMetadata> {
     candidates
         .iter()
-        .filter(|(_, user_id)| details.contains_key(*user_id))
-        .map(|(key, user_id)| {
-            (
-                key.clone(),
-                KeyMetadata {
+        .filter_map(|(key, user_id)| {
+            details.contains_key(user_id).then(|| {
+                let meta = KeyMetadata {
                     key_alias: Some(key.clone()),
-                    team_id: None,
                     user_id: Some(user_id.clone()),
-                    user_email: None,
-                    key_exists: None,
-                },
-            )
+                    ..KeyMetadata::default()
+                };
+                (key.clone(), meta)
+            })
         })
         .collect()
 }
@@ -158,20 +155,11 @@ pub fn needed_user_ids(recovered: &BTreeMap<String, KeyMetadata>) -> BTreeSet<St
         .collect()
 }
 
-#[must_use]
 pub fn attach_details(
-    recovered: &BTreeMap<String, KeyMetadata>,
+    recovered: &mut BTreeMap<String, KeyMetadata>,
     details: &BTreeMap<String, UserDetails>,
-) -> BTreeMap<String, KeyMetadata> {
-    if details.is_empty() {
-        return recovered.clone();
-    }
-    let mut attached = BTreeMap::new();
+) {
     for (api_key, meta) in recovered {
-        attached.insert(
-            api_key.clone(),
-            meta_with_user_details(api_key, meta, details),
-        );
+        *meta = meta_with_user_details(api_key, meta, details);
     }
-    attached
 }

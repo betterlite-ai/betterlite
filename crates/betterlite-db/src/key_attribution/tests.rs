@@ -250,7 +250,9 @@ fn needed_user_ids_collect_each_user_once() {
 #[test]
 fn attach_details_preserves_entries_without_details() {
     let recovered = BTreeMap::from([("a".to_owned(), meta_with(Some("user")))]);
-    assert_eq!(attach_details(&recovered, &BTreeMap::new()), recovered);
+    let mut attached = recovered.clone();
+    attach_details(&mut attached, &BTreeMap::new());
+    assert_eq!(attached, recovered);
 }
 
 #[test]

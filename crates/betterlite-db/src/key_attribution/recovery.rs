@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::budget_permission_rows::JsonData;
+use crate::postgres_store::diagnostics::DriverError;
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::repository::Repository;
 use crate::postgres_store::rows::KeyColumn;
@@ -18,7 +19,7 @@ use super::queries::{
     ACTIVE_TOKEN_DIGEST_SQL, DAILY_USER_SPEND_OWNER_SQL, DELETED_TOKEN_DIGEST_SQL,
 };
 use super::rows::{
-    daily_owners, digest_keys, owner_rows, token_metadata, token_rows, unresolved_digests,
+    daily_owners, digest_keys, owner_values, token_metadata, token_values, unresolved_digests,
 };
 
 pub async fn recover_double_hashed_keys(
@@ -51,7 +52,16 @@ async fn reverse_hash_metadata(
     }
     .await;
     match loaded {
-        Ok(rows) => Ok(token_metadata(&token_rows(&rows)?, wanted)),
+        Ok(rows) => {
+            let digests = rows
+                .iter()
+                .map(token_values)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|driver| KeyAttributionError::TokenDigest {
+                    source: DriverError { driver },
+                })?;
+            Ok(token_metadata(&digests, wanted))
+        }
         Err(error) => {
             tracing::warn!(
                 keys = wanted.len(),
@@ -81,7 +91,14 @@ pub async fn recover_daily_spend_owners(
             );
         })
         .unwrap_or_default();
-    Ok(daily_owners(&owner_rows(&rows)?, keys))
+    let owners = rows
+        .iter()
+        .map(owner_values)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|driver| KeyAttributionError::DailyOwner {
+            source: DriverError { driver },
+        })?;
+    Ok(daily_owners(&owners, keys))
 }
 
 pub async fn recover_cli_session_keys(
@@ -89,10 +106,7 @@ pub async fn recover_cli_session_keys(
     missing_keys: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, KeyMetadata>, KeyAttributionError> {
     let candidates = cli_candidates(missing_keys);
-    if candidates.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    let user_ids: BTreeSet<String> = candidates.values().cloned().collect();
+    let user_ids = candidates.values().cloned().collect();
     let details = details_for_user_ids(store, &user_ids).await?;
     Ok(cli_metadata(&candidates, &details))
 }
@@ -103,7 +117,9 @@ pub async fn attach_user_details(
 ) -> Result<BTreeMap<String, KeyMetadata>, KeyAttributionError> {
     let needing = needed_user_ids(recovered);
     let details = details_for_user_ids(store, &needing).await?;
-    Ok(attach_details(recovered, &details))
+    let mut attached = recovered.clone();
+    attach_details(&mut attached, &details);
+    Ok(attached)
 }
 
 async fn details_for_user_ids(

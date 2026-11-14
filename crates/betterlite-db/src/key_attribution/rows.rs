@@ -4,9 +4,6 @@ use betterlite_models::key_digest::is_valid_sha256_hash;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Row;
 
-use crate::postgres_store::diagnostics::DriverError;
-
-use super::error::KeyAttributionError;
 use super::metadata::{KeyMetadata, unanimous};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,17 +27,7 @@ pub struct DailyOwnerRow {
     pub last_owner: Option<String>,
 }
 
-pub fn token_rows(rows: &[Row]) -> Result<Vec<TokenDigestRow>, KeyAttributionError> {
-    rows.iter()
-        .map(|row| {
-            token_values(row).map_err(|driver| KeyAttributionError::TokenDigest {
-                source: DriverError { driver },
-            })
-        })
-        .collect()
-}
-
-fn token_values(row: &Row) -> Result<TokenDigestRow, tokio_postgres::Error> {
+pub fn token_values(row: &Row) -> Result<TokenDigestRow, tokio_postgres::Error> {
     Ok(TokenDigestRow {
         digest: row.try_get("digest")?,
         key_alias: row.try_get("key_alias")?,
@@ -49,18 +36,7 @@ fn token_values(row: &Row) -> Result<TokenDigestRow, tokio_postgres::Error> {
     })
 }
 
-pub fn owner_rows(rows: &[Row]) -> Result<Vec<DailyOwnerRow>, KeyAttributionError> {
-    let mut owners = Vec::with_capacity(rows.len());
-    for row in rows {
-        let owner = owner_values(row).map_err(|driver| KeyAttributionError::DailyOwner {
-            source: DriverError { driver },
-        })?;
-        owners.push(owner);
-    }
-    Ok(owners)
-}
-
-fn owner_values(row: &Row) -> Result<DailyOwnerRow, tokio_postgres::Error> {
+pub fn owner_values(row: &Row) -> Result<DailyOwnerRow, tokio_postgres::Error> {
     Ok(DailyOwnerRow {
         hashed_api_key: row.try_get("api_key")?,
         first_owner: row.try_get("first_owner")?,

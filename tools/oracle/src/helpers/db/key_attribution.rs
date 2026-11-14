@@ -44,6 +44,8 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let details = user_details(&input.users);
+        let mut attached = input.attach_metadata.clone();
+        attach_details(&mut attached, &details);
         let output = Output {
             digest: digest_flags(input),
             cli: cli_metadata(&cli_candidates(&input.cli_keys), &details),
@@ -53,7 +55,7 @@ impl crate::helpers::Helper for Op {
                 &input.double_hashed_keys,
             ),
             daily_owners: daily_owners(&input.daily_owner_rows, &input.daily_keys),
-            attached: attach_details(&input.attach_metadata, &details),
+            attached,
             export: fill_export(input, &details),
         };
         serde_json::to_value(output).map_err(|error| {
@@ -107,9 +109,9 @@ fn fill_export(
     );
     let mut recovered = from_session;
     recovered.extend(from_double);
-    let attached = attach_details(&recovered, details);
-    if attached.is_empty() {
+    attach_details(&mut recovered, details);
+    if recovered.is_empty() {
         return input.export_rows.clone();
     }
-    project_rows(&input.export_rows, &attached, &input.export_fields)
+    project_rows(&input.export_rows, &recovered, &input.export_fields)
 }
