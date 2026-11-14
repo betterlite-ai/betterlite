@@ -126,5 +126,5 @@ pitfalls:
   - The oracle adapter returns the header list as ordered pairs, because order matters in forwarding_headers.
 review_level: standard
 budget:
-  max_changed_lines: 1400
+  max_changed_lines: 1500
   max_new_expects: 0

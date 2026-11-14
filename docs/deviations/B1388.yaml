@@ -1,0 +1,11 @@
+task: B1388
+deviations:
+  - what: get_complete_url without an api_base returns VertexUrlError::LocationRequired or ProjectRequired when the location or project is absent, where LiteLLM's f-string writes the literal None into the projects/locations path.
+    why: projects/None/locations/None is a URL no working Vertex setup relies on; failing at construction names the missing setting instead of sending a request that cannot succeed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py#L145-L153
+  - what: A bare corpus id with no configured project or location returns VertexUrlError::ProjectRequired or LocationRequired, where LiteLLM writes the literal None into the ragCorpora path.
+    why: projects/None/locations/None/ragCorpora/id cannot be routed, and the error names the missing setting instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py#L176-L185
+  - what: A createTime of true or false becomes 1 or 0 in created_at, and one outside the i64 range becomes 0, where LiteLLM's bool isinstance int keeps the bool and a Python int of any size.
+    why: created_at is an int, and a bool or an out-of-range integer in it is a provider bug no setup can rely on; the response keeps an int as its declared type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py#L319-L331

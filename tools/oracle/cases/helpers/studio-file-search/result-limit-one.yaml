@@ -1,0 +1,31 @@
+kind: helper
+name: result-limit-one
+call:
+  studio_file_search:
+    calls:
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: k
+        max_num_results: 0
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: k
+        max_num_results: 1
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: k
+        max_num_results: 100
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: k
+        max_num_results: -2
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: k
+env: {}
+compare: {ignore: []}
