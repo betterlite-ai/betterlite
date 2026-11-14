@@ -22,10 +22,10 @@ async fn teams_alerts_are_enqueued_before_slack_digest_admission() {
         Some(vec![AlertDestination::MsTeams, AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     let pending = fixture.delivery.queue.pending();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].url.expose_secret(), "https://hooks/teams");
@@ -52,10 +52,10 @@ async fn digest_mode_records_the_first_message_and_suppresses_the_slack_item() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("first", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert!(fixture.delivery.queue.pending().is_empty());
     let entries = fixture.digest_entries();
     assert_eq!(entries.len(), 1);
@@ -80,19 +80,15 @@ async fn a_repeated_digest_alert_updates_only_the_count_and_last_time() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    assert!(
-        dispatcher
-            .send_alert(fixture.alert("first", AlertType::LlmExceptions))
-            .await
-            .is_ok()
-    );
+    dispatcher
+        .send_alert(fixture.alert("first", AlertType::LlmExceptions))
+        .await
+        .unwrap();
     fixture.clock.set(time(12, 0, 7));
-    assert!(
-        dispatcher
-            .send_alert(fixture.alert("second", AlertType::LlmExceptions))
-            .await
-            .is_ok()
-    );
+    dispatcher
+        .send_alert(fixture.alert("second", AlertType::LlmExceptions))
+        .await
+        .unwrap();
     let entries = fixture.digest_entries();
     assert_eq!(entries.len(), 1);
     let entry = entries
@@ -127,10 +123,10 @@ async fn digest_buckets_are_keyed_by_type_model_and_api_base() {
         api_base: Some("https://api.example"),
         kwargs: &kwargs,
     };
-    assert!(dispatcher.send_alert(alert).await.is_ok());
+    dispatcher.send_alert(alert).await.unwrap();
     alert.message = "two";
     alert.api_base = Some("https://other.example");
-    assert!(dispatcher.send_alert(alert).await.is_ok());
+    dispatcher.send_alert(alert).await.unwrap();
     let entries = fixture.digest_entries();
     assert_eq!(entries.len(), 2);
     assert!(entries.contains_key("llm_exceptions:gpt-4:https://api.example"));

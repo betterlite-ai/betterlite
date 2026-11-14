@@ -1,3 +1,4 @@
+use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_config::sections::alert_settings::types::AlertType;
@@ -132,7 +133,7 @@ async fn a_teams_only_configuration_flushes_when_the_queue_is_full() {
     assert!(fixture.delivery.queue.pending().is_empty());
     assert_eq!(fixture.delivery.delivery.request_count(), 1);
     let requests = fixture.delivery.delivery.take_requests();
-    let body = std::str::from_utf8(&requests[0].body).expect("the teams payload is UTF-8");
+    let body = from_utf8(&requests[0].body).expect("the teams payload is UTF-8");
     assert!(body.contains("AdaptiveCard"));
 }
 
@@ -143,10 +144,10 @@ async fn the_first_send_starts_the_periodic_flush() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert_eq!(fixture.delivery.delivery.request_count(), 0);
     yield_now().await;
     advance(Duration::from_secs(DEFAULT_FLUSH_INTERVAL_SECONDS)).await;

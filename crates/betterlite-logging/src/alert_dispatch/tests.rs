@@ -6,8 +6,9 @@ mod formatting;
 mod routing;
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::mem;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -90,12 +91,15 @@ impl FakeDelivery {
 impl Delivery for FakeDelivery {
     type Error = FakeError;
 
-    async fn post(&self, request: PostRequest) -> Result<PostResponse, FakeError> {
+    fn post(
+        &self,
+        request: PostRequest,
+    ) -> impl Future<Output = Result<PostResponse, FakeError>> + Send {
         self.requests.lock().unwrap().push(request);
-        Ok(PostResponse {
+        ready(Ok(PostResponse {
             status: 200,
             body: Vec::new(),
-        })
+        }))
     }
 }
 
@@ -129,7 +133,10 @@ impl FakeSink {
     }
 
     fn record(&self, call: SinkCall, fail: bool) -> Result<(), FakeSinkError> {
-        self.calls.lock().unwrap().push(call);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
         if fail {
             return Err(FakeSinkError);
         }

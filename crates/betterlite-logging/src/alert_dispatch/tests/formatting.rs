@@ -27,12 +27,10 @@ async fn alert_messages_carry_the_type_level_timestamp_and_message() {
 async fn assert_report_message(alert_type: AlertType, message: &str) {
     let fixture = slack_fixture();
     let dispatcher = fixture.dispatcher(Some(vec![AlertDestination::Slack]), vec![alert_type]);
-    assert!(
-        dispatcher
-            .send_alert(fixture.alert(message, alert_type))
-            .await
-            .is_ok()
-    );
+    dispatcher
+        .send_alert(fixture.alert(message, alert_type))
+        .await
+        .unwrap();
     let pending = fixture.delivery.queue.pending();
     assert_eq!(
         pending[0].payload.text,
@@ -54,7 +52,7 @@ async fn new_model_added_omits_the_level_and_timestamp() {
 async fn kwargs_are_appended_as_raw_key_value_pairs() {
     let mut fixture = slack_fixture();
     fixture.kwargs.insert(
-        "🪢 Langfuse Trace".to_owned(),
+        "\u{1faa2} Langfuse Trace".to_owned(),
         Json::Text("https://trace.example".to_owned()),
     );
     let dispatcher = fixture.dispatcher(
@@ -69,16 +67,17 @@ async fn kwargs_are_appended_as_raw_key_value_pairs() {
         pending[0]
             .payload
             .text
-            .contains("\n\n🪢 Langfuse Trace: `https://trace.example`\n\n")
+            .contains("\n\n\u{1faa2} Langfuse Trace: `https://trace.example`\n\n")
     );
 }
 
 #[tokio::test]
 async fn alerting_metadata_is_appended_under_its_header() {
     let mut fixture = slack_fixture();
-    fixture
-        .metadata
-        .insert("deprecated_count".to_owned(), Json::Number(Number::from(3)));
+    fixture.metadata.insert(
+        "deprecated_count".to_owned(),
+        Json::Number(Number::from(3_i32)),
+    );
     fixture
         .metadata
         .insert("team".to_owned(), Json::Text("alpha".to_owned()));
@@ -105,12 +104,13 @@ async fn the_message_orders_the_header_kwargs_metadata_and_footer() {
         512,
     );
     fixture.kwargs.insert(
-        "🪢 Langfuse Trace".to_owned(),
+        "\u{1faa2} Langfuse Trace".to_owned(),
         Json::Text("https://trace.example".to_owned()),
     );
-    fixture
-        .metadata
-        .insert("deprecated_count".to_owned(), Json::Number(Number::from(3)));
+    fixture.metadata.insert(
+        "deprecated_count".to_owned(),
+        Json::Number(Number::from(3_i32)),
+    );
     fixture
         .metadata
         .insert("team".to_owned(), Json::Text("alpha".to_owned()));
@@ -118,20 +118,20 @@ async fn the_message_orders_the_header_kwargs_metadata_and_footer() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     let pending = fixture.delivery.queue.pending();
     assert_eq!(
         pending[0].payload.text,
-        "Alert type: `llm_exceptions`\nLevel: `High`\nTimestamp: `12:00:00`\n\nMessage: boom\n\n🪢 Langfuse Trace: `https://trace.example`\n\n\n\n*Alerting Metadata*: \ndeprecated_count: `3`\n\n\n\n*Alerting Metadata*: \nteam: `alpha`\n\n\n\nProxy URL: `https://proxy.example`"
+        "Alert type: `llm_exceptions`\nLevel: `High`\nTimestamp: `12:00:00`\n\nMessage: boom\n\n\u{1faa2} Langfuse Trace: `https://trace.example`\n\n\n\n*Alerting Metadata*: \ndeprecated_count: `3`\n\n\n\n*Alerting Metadata*: \nteam: `alpha`\n\n\n\nProxy URL: `https://proxy.example`"
     );
 }
 
 #[rstest]
 #[case::text(Json::Text("alpha".to_owned()), "name: `alpha`")]
-#[case::number(Json::Number(Number::from(3)), "name: `3`")]
+#[case::number(Json::Number(Number::from(3_i32)), "name: `3`")]
 #[case::boolean(Json::Bool(true), "name: `True`")]
 #[case::null(Json::Null, "name: `None`")]
 #[case::list(
@@ -233,7 +233,7 @@ async fn every_level_renders_its_name(#[case] level: AlertLevel, #[case] expecte
         api_base: None,
         kwargs: &fixture.kwargs,
     };
-    assert!(dispatcher.send_alert(alert).await.is_ok());
+    dispatcher.send_alert(alert).await.unwrap();
     let pending = fixture.delivery.queue.pending();
     let item = pending.last().expect("the alert is enqueued");
     assert!(item.payload.text.contains(expected));

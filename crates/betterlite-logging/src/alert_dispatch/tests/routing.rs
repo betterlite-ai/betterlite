@@ -37,10 +37,10 @@ async fn a_single_slack_webhook_url_enqueues_one_item() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     let pending = fixture.delivery.queue.pending();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].url.expose_secret(), "https://hooks/slack");
@@ -66,10 +66,10 @@ async fn a_webhook_url_list_enqueues_one_item_per_url() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     let pending = fixture.delivery.queue.pending();
     let urls: Vec<&str> = pending
         .iter()
@@ -90,10 +90,10 @@ async fn the_per_type_mapping_wins_over_the_default_and_the_environment() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     let pending = fixture.delivery.queue.pending();
     assert_eq!(pending[0].url.expose_secret(), "https://hooks/type");
 }
@@ -106,10 +106,10 @@ async fn the_default_webhook_url_wins_over_the_environment() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     let pending = fixture.delivery.queue.pending();
     assert_eq!(pending[0].url.expose_secret(), "https://hooks/def");
 }
@@ -120,12 +120,10 @@ async fn assert_single_slack_alert(environment: &[(&str, &str)], expected: &str)
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    assert!(
-        dispatcher
-            .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-            .await
-            .is_ok()
-    );
+    dispatcher
+        .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
+        .await
+        .unwrap();
     let pending = fixture.delivery.queue.pending();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].url.expose_secret(), expected);
@@ -240,10 +238,10 @@ async fn an_empty_per_type_webhook_url_list_is_used_as_given() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert!(fixture.delivery.queue.pending().is_empty());
     assert_eq!(fixture.delivery.delivery.request_count(), 0);
 }
@@ -252,10 +250,10 @@ async fn an_empty_per_type_webhook_url_list_is_used_as_given() {
 async fn an_unset_alerting_drops_the_alert_without_raising() {
     let fixture = slack_fixture();
     let dispatcher = fixture.dispatcher(None, vec![AlertType::LlmExceptions]);
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert!(fixture.delivery.queue.pending().is_empty());
     assert!(fixture.sink.calls().is_empty());
 }
@@ -264,10 +262,10 @@ async fn an_unset_alerting_drops_the_alert_without_raising() {
 async fn an_empty_alerting_drops_the_alert_without_raising() {
     let fixture = slack_fixture();
     let dispatcher = fixture.dispatcher(Some(Vec::new()), vec![AlertType::LlmExceptions]);
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert!(fixture.delivery.queue.pending().is_empty());
 }
 
@@ -282,10 +280,10 @@ async fn destinations_without_slack_or_teams_drop_the_alert() {
         ]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert!(fixture.delivery.queue.pending().is_empty());
     assert!(fixture.sink.calls().is_empty());
 }
@@ -297,10 +295,10 @@ async fn an_unselected_alert_type_is_dropped_without_enqueuing() {
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmTooSlow],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert!(fixture.delivery.queue.pending().is_empty());
 }
 
@@ -311,10 +309,10 @@ async fn a_teams_alert_is_enqueued_with_the_teams_format() {
         Some(vec![AlertDestination::MsTeams]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     let pending = fixture.delivery.queue.pending();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].url.expose_secret(), "https://hooks/teams");
@@ -328,10 +326,10 @@ async fn a_teams_alert_without_a_webhook_url_is_dropped_without_raising() {
         Some(vec![AlertDestination::MsTeams]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert!(fixture.delivery.queue.pending().is_empty());
 }
 
@@ -345,15 +343,15 @@ async fn a_budget_alert_sends_to_the_webhook_when_only_webhook_is_configured() {
         Some(vec![AlertDestination::Webhook]),
         vec![AlertType::BudgetAlerts],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(alert_with_event(
             AlertType::BudgetAlerts,
             &event,
             &metadata,
             &kwargs,
         ))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert_eq!(
         fixture.sink.calls(),
         vec![SinkCall::Webhook("budget_crossed".to_owned())]
@@ -371,15 +369,15 @@ async fn a_budget_alert_sends_to_the_webhook_before_email() {
         Some(vec![AlertDestination::Webhook, AlertDestination::Email]),
         vec![AlertType::BudgetAlerts],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(alert_with_event(
             AlertType::BudgetAlerts,
             &event,
             &metadata,
             &kwargs,
         ))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert_eq!(
         fixture.sink.calls(),
         vec![
@@ -399,15 +397,15 @@ async fn a_budget_alert_sends_to_the_webhook_even_when_its_type_is_not_selected(
         Some(vec![AlertDestination::Webhook, AlertDestination::Slack]),
         Vec::new(),
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(alert_with_event(
             AlertType::BudgetAlerts,
             &event,
             &metadata,
             &kwargs,
         ))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert_eq!(
         fixture.sink.calls(),
         vec![SinkCall::Webhook("budget_crossed".to_owned())]
@@ -422,10 +420,10 @@ async fn a_budget_alert_without_user_info_skips_the_webhook_and_email() {
         Some(vec![AlertDestination::Webhook, AlertDestination::Email]),
         vec![AlertType::BudgetAlerts],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(fixture.alert("budget crossed", AlertType::BudgetAlerts))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert!(fixture.sink.calls().is_empty());
 }
 
@@ -443,7 +441,7 @@ async fn a_non_budget_alert_never_reaches_the_budget_sink() {
         ]),
         vec![AlertType::LlmExceptions],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(Alert {
             message: "boom",
             level: AlertLevel::High,
@@ -454,8 +452,8 @@ async fn a_non_budget_alert_never_reaches_the_budget_sink() {
             api_base: None,
             kwargs: &kwargs,
         })
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert!(fixture.sink.calls().is_empty());
     assert_eq!(fixture.delivery.queue.pending().len(), 1);
 }
@@ -470,15 +468,15 @@ async fn a_budget_alert_still_enqueues_a_slack_alert_when_slack_is_configured() 
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::BudgetAlerts],
     );
-    let sent = dispatcher
+    dispatcher
         .send_alert(alert_with_event(
             AlertType::BudgetAlerts,
             &event,
             &metadata,
             &kwargs,
         ))
-        .await;
-    assert!(sent.is_ok());
+        .await
+        .unwrap();
     assert_eq!(fixture.delivery.queue.pending().len(), 1);
 }
 
