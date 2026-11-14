@@ -22,7 +22,10 @@ pub enum ChirpEvent {
     TurnDiscarded { billed_seconds: f64 },
 }
 
-pub fn decode_chirp_command(message: &[u8]) -> Result<ChirpCommand, serde_json::Error> {
-    let command: ChirpCommand = serde_json::from_slice(message)?;
-    Ok(command)
+impl TryFrom<&[u8]> for ChirpCommand {
+    type Error = serde_json::Error;
+
+    fn try_from(message: &[u8]) -> Result<Self, Self::Error> {
+        serde_json::from_slice(message)
+    }
 }

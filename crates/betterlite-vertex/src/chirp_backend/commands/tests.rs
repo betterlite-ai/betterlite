@@ -5,12 +5,13 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use super::{ChirpCommand, ChirpEvent, decode_chirp_command};
+use super::{ChirpCommand, ChirpEvent};
 
 #[test]
 fn decodes_a_configure_command() {
-    let command = decode_chirp_command(
-        br#"{"kind":"configure","model":"chirp_2","language_codes":["en-US","fr-FR"],"sample_rate_hertz":16000}"#,
+    let command = ChirpCommand::try_from(
+        br#"{"kind":"configure","model":"chirp_2","language_codes":["en-US","fr-FR"],"sample_rate_hertz":16000}"#
+            .as_slice(),
     )
     .expect("a valid configure command");
     assert_eq!(
@@ -28,7 +29,7 @@ fn decodes_a_configure_command() {
 #[case::discard_turn(br#"{"kind":"discard_turn"}"#, ChirpCommand::DiscardTurn {})]
 fn decodes_a_unit_command(#[case] message: &[u8], #[case] expected: ChirpCommand) {
     assert_eq!(
-        decode_chirp_command(message).expect("a valid command"),
+        ChirpCommand::try_from(message).expect("a valid command"),
         expected
     );
 }
@@ -46,12 +47,13 @@ fn decodes_a_unit_command(#[case] message: &[u8], #[case] expected: ChirpCommand
 #[case::trailing_data(br#"{"kind":"finish_turn"} {"kind":"finish_turn"}"#)]
 #[case::empty(b"")]
 fn rejects_an_invalid_command(#[case] message: &[u8]) {
-    assert!(decode_chirp_command(message).is_err());
+    assert!(ChirpCommand::try_from(message).is_err());
 }
 
 #[test]
 fn rejects_a_command_that_is_not_utf8() {
-    assert!(decode_chirp_command(&[0x7b, 0xff, 0x7d]).is_err());
+    let message: &[u8] = &[0x7b, 0xff, 0x7d];
+    assert!(ChirpCommand::try_from(message).is_err());
 }
 
 #[test]
@@ -82,7 +84,7 @@ fn replays_the_chirp_command_corpus(#[files("fuzz/corpus/chirp_command/*")] path
     );
     let bytes = fs::read(&path).expect("the corpus file is readable");
     assert_eq!(
-        decode_chirp_command(&bytes).is_ok(),
+        ChirpCommand::try_from(bytes.as_slice()).is_ok(),
         accepted,
         "{} decodes the way LiteLLM's command adapter does",
         path.display()

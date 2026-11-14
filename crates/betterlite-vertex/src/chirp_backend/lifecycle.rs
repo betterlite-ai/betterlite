@@ -8,7 +8,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
-use crate::chirp_backend::commands::{ChirpCommand, ChirpEvent, decode_chirp_command};
+use crate::chirp_backend::commands::{ChirpCommand, ChirpEvent};
+use crate::chirp_backend::error::ChirpBackendError;
 use crate::chirp_backend::policy::{self, NORMAL_CLOSURE_CODE};
 use crate::chirp_backend::pump::{Link, run_pump};
 use crate::chirp_stream::client::{ClientFuture, SpeechStreamingClient};
@@ -90,7 +91,8 @@ impl ChirpBackend {
 
     pub async fn send(&mut self, text: &str) -> Result<(), ChirpBackendError> {
         self.ensure_open()?;
-        let command = decode_chirp_command(text.as_bytes()).map_err(ChirpBackendError::Command)?;
+        let command =
+            ChirpCommand::try_from(text.as_bytes()).map_err(ChirpBackendError::Command)?;
         self.send_command(command).await
     }
 
