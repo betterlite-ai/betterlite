@@ -1,0 +1,16 @@
+kind: helper
+name: audio-case
+call:
+  studio_transcription:
+    steps:
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: 'héllo wörld', optional: {}}
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[],"usage":{"total_tokens":10,"total_input_tokens":2,"total_output_tokens":8,"input_tokens_by_modality":[{"modality":"audio","tokens":5},{"modality":"Audio","tokens":3},{"modality":"text","tokens":1}]}}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[{"content":[{"type":"text","text":"w","annotations":[{"type":"word_info","text":"w","start_offset":"1s","speaker":""}]}]}]}'
+env: {}
+compare: {ignore: []}
