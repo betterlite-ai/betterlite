@@ -1,0 +1,23 @@
+task: B3121
+deviations:
+  - what: count_prompt_tokens counts through the injected TokenCounter protocol and an injected count-tokens transport instead of importing Anthropic's counting internals.
+    why: Inversion of control keeps the provider transport and the counting policy injectable, and the oracle-less module tests can assert the exact native count request without a network. The request shape, the /count_tokens URL and the 15-second budget stay LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L521-L546
+  - what: UnsupportedPredictionTarget is an enum whose four variants carry the LiteLLM reason strings through reason(), instead of a dataclass holding a string literal.
+    why: A typed error lets a caller branch on the recovery path and keeps the wire reason exact; the strings in reason() are the ones LiteLLM puts in its observation reasons.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L600-L607
+  - what: cache_scope hashes the whole scope tuple in one digest instead of keeping its components in separate fields.
+    why: A single digest keeps observations consistent and never exposes the provider key beside the scope; the serialized tuple and its sha256 are identical to LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L448-L455
+  - what: The native messages URL builder is injected through the MessagesUrl trait instead of calling AnthropicMessagesConfig.get_complete_url from inside _messages_url.
+    why: betterlite-anthropic cannot depend on the gateway crate that owns the native request URL, so the caller injects the builder. AnthropicSettings implements the trait with the same base resolution and /v1/messages suffix rule as LiteLLM's get_complete_url.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L232-L244
+  - what: Thinking cache preservation is an injected ThinkingCacheSupport decision asked only when the plan holds a thinking block, instead of a direct supports_thinking_cache_preservation call.
+    why: The capability itself is owned by the model metadata resolution tasks (B174, B2219, B2220) and can fetch metadata; injecting it keeps that lookup out of this module and keeps LiteLLM's short-circuit, since the delegate is only asked when a thinking block exists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L555-L557
+  - what: resolve_baseline_target carries LiteLLM's resolve_baseline_prediction_target; the Rust name drops "prediction" to stay inside the project's 30-character identifier limit.
+    why: The project rule bans identifiers past 30 characters, and the LiteLLM name is 34. The behavior, arguments and configured-endpoint handling are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L614-L615
+  - what: A deployment option of the wrong JSON type (a non-string model, api_key, api_base or custom_llm_provider) resolves as that field's unsupported target instead of failing at LiteLLM_Params construction.
+    why: The resolver reads the deployment's litellm_params as JSON, so a malformed value has to be refused here; LiteLLM never reaches this function with one because its pydantic model rejects it first. Refusing the field's part keeps native prediction off a deployment it cannot describe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L618-L643

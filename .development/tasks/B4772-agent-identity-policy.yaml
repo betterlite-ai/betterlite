@@ -15,6 +15,7 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-auth/src/agent_identity*"
     - crates/betterlite-auth/src/agent_identity.rs
     - crates/betterlite-auth/src/agent_identity/**
     - crates/betterlite-auth/src/agent_identity/tests.rs
@@ -23,6 +24,7 @@ scope:
     - crates/betterlite-auth/src/agent_policy/tests.rs
     - crates/betterlite-auth/src/agent_identity/tests/**
     - crates/betterlite-auth/src/agent_policy/tests/**
+    - crates/betterlite-core/src/api/request_destination/model.rs
   lint_tables: false
 
 references:

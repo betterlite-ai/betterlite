@@ -1,7 +1,7 @@
 id: B9090
 milestone: M10 admin ui
 title: Fetch and verify the pinned MIT dashboard without vendoring its source tree
-status: todo
+status: done
 depends_on: []
 file: tasks/B9090-dashboard-source-intake.yaml
 covers:
@@ -15,7 +15,7 @@ covers:
   - "ui/litellm-dashboard/src/hooks/{use-safe-layout-effect,useSyntaxTheme,useSyntaxTheme.test,useUrlTab,useUrlTab.test,useVisitedTabs}.*"
 parent: B144
 split_from: B144
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1591
