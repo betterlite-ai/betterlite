@@ -183,6 +183,7 @@ fn retrieval_options_map_onto_the_vertex_names() {
 #[case("{}", r#"{"text":"hello"}"#)]
 #[case(r#"{"rewrite_query":true}"#, r#"{"text":"hello"}"#)]
 #[case(r#"{"max_num_results":null}"#, r#"{"text":"hello"}"#)]
+#[case(r#"{"filters":null,"ranking_options":null}"#, r#"{"text":"hello"}"#)]
 #[case(
     r#"{"max_num_results":2}"#,
     r#"{"text":"hello","rag_retrieval_config":{"top_k":2}}"#
@@ -206,7 +207,8 @@ fn only_a_retrieval_option_takes_the_config_into_the_body(
     })
     .unwrap();
     let body = serde_json::to_value(&call.body).unwrap();
-    assert_eq!(serde_json::to_string(&body["query"]).unwrap(), expected);
+    let expected_query: Json = serde_json::from_str(expected).unwrap();
+    assert_eq!(body["query"], serde_json::to_value(expected_query).unwrap());
 }
 
 #[rstest]
@@ -362,8 +364,10 @@ fn a_default_score_writes_a_decimal_point() {
 
 #[rstest]
 #[case("{}")]
+#[case(" \n{}")]
 #[case(r#"{"contexts":null}"#)]
 #[case(r#"{"contexts":{}}"#)]
+#[case(r#"{"contexts":{"contexts":null}}"#)]
 #[case(r#"{"contexts":{"contexts":[]}}"#)]
 fn a_reply_without_contexts_is_an_empty_page(#[case] body: &str) {
     let value = serde_json::to_value(search_response(body)).unwrap();
@@ -582,6 +586,7 @@ fn the_created_name_reads_only_the_snake_case_display_name(
 #[case(r#"{"name":"corpus"}"#, "corpus")]
 #[case(r#"{"name":"projects/p/locations/l/ragCorpora/corpus"}"#, "corpus")]
 #[case(r#"{"name":"a/b/"}"#, "")]
+#[case(r#"{"name":null}"#, "")]
 #[case("{}", "")]
 fn the_corpus_id_is_the_last_resource_name_segment(#[case] body: &str, #[case] expected: &str) {
     assert_eq!(corpus_response(body).id.as_deref(), Some(expected));
