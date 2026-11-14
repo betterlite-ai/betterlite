@@ -65,8 +65,12 @@ impl PromptCache {
     }
 
     pub fn insert(&self, cache_key: String, prompt_client: PromptManagementClient) {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        drop(entries.put(cache_key, prompt_client));
+        drop(
+            self.entries
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .put(cache_key, prompt_client),
+        );
     }
 
     pub fn clear_cache(&self) {
