@@ -44,7 +44,7 @@ class Config(Protocol):
     ) -> ReplyData: ...
 
 
-CONFIG: Final[Config] = VertexAIAudioTranscriptionConfig()
+CONFIG: Config = VertexAIAudioTranscriptionConfig()
 
 
 class Params(TypedDict):

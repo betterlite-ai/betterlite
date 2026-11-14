@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::str::from_utf8;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
@@ -11,7 +12,6 @@ use betterlite_openai::reasoning_models::DropParams;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::json;
 
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::vertex_recognition::error::VertexRecognitionError;
@@ -46,10 +46,6 @@ fn reply(status: u16, body: &str) -> UpstreamResponse {
 fn answer(status: u16, body: &str) -> Object {
     let decoded = decode_vertex_recognition(&reply(status, body)).unwrap();
     serde_json::from_value(serde_json::to_value(decoded).unwrap()).unwrap()
-}
-
-fn drops(global: bool, request: bool) -> DropParams {
-    DropParams { global, request }
 }
 
 #[rstest]
@@ -157,7 +153,11 @@ fn map_openai_params_cases(
     #[case] optional: &str,
     #[case] expected: &str,
 ) {
-    let mapped = map_openai_params(&object(non_default), &object(optional), drops(false, false));
+    let mapped = map_openai_params(
+        &object(non_default),
+        &object(optional),
+        DropParams::default(),
+    );
     assert_eq!(mapped.unwrap(), object(expected));
 }
 
@@ -166,7 +166,7 @@ fn an_unsupported_response_format_is_rejected_without_drop_params() {
     let error = map_openai_params(
         &object(r#"{"response_format": "srt"}"#),
         &Object::new(),
-        drops(false, false),
+        DropParams::default(),
     )
     .unwrap_err();
     assert!(matches!(
@@ -181,7 +181,7 @@ fn an_unsupported_response_format_leaves_a_supplied_option_too() {
     let error = map_openai_params(
         &Object::new(),
         &object(r#"{"response_format": "vtt"}"#),
-        drops(false, false),
+        DropParams::default(),
     )
     .unwrap_err();
     assert!(matches!(
@@ -191,8 +191,14 @@ fn an_unsupported_response_format_leaves_a_supplied_option_too() {
 }
 
 #[rstest]
-#[case::request_drop(drops(false, true))]
-#[case::global_drop(drops(true, false))]
+#[case::request_drop(DropParams {
+    global: false,
+    request: true,
+})]
+#[case::global_drop(DropParams {
+    global: true,
+    request: false,
+})]
 fn drop_params_removes_the_unsupported_response_format(#[case] policy: DropParams) {
     let mapped = map_openai_params(
         &object(r#"{"response_format": "srt", "language": "en"}"#),
@@ -254,16 +260,8 @@ fn recognize_request_languages(#[case] language: Option<Json>, #[case] expected:
 fn the_request_matches_the_recognize_body() {
     let request = recognize_request("vertex_ai/gemini-2.0-flash", &audio(), None);
     assert_eq!(
-        serde_json::to_value(request).unwrap(),
-        json!({
-            "config": {
-                "model": "gemini-2.0-flash",
-                "languageCodes": ["auto"],
-                "features": {"enableAutomaticPunctuation": true},
-                "autoDecodingConfig": {},
-            },
-            "content": "YXVkaW8=",
-        })
+        serde_json::to_string(&request).unwrap(),
+        r#"{"config":{"model":"gemini-2.0-flash","languageCodes":["auto"],"features":{"enableAutomaticPunctuation":true},"autoDecodingConfig":{}},"content":"YXVkaW8="}"#
     );
 }
 
@@ -310,23 +308,24 @@ fn extra_provider_fields_are_ignored_and_stored() {
     let body = r#"{"results":[{"alternatives":[{"transcript":"hi","confidence":0.5}],"resultEndTime":"1.5s"}],"requestId":"r1","metadata":{"totalBilledDuration":"2s","model":"m"}}"#;
     let value = answer(200, body);
     assert_eq!(value["text"], "hi");
-    assert_eq!(value["duration"], json!(2.0));
+    assert_eq!(value["duration"].to_string(), "2.0");
     let decoded = decode_vertex_recognition(&reply(200, body)).unwrap();
+    let request_id = decoded.metadata.native_fields.get("requestId");
     assert_eq!(
-        decoded.metadata.native_fields.get("requestId"),
-        Some(&json!("r1"))
+        request_id.map(ToString::to_string).as_deref(),
+        Some(r#""r1""#)
     );
     let result = &decoded.metadata.results[0];
+    let end_time = result.native_fields.get("resultEndTime");
     assert_eq!(
-        result.native_fields.get("resultEndTime"),
-        Some(&json!("1.5s"))
+        end_time.map(ToString::to_string).as_deref(),
+        Some(r#""1.5s""#)
     );
-    assert_eq!(
-        result.alternatives[0].native_fields.get("confidence"),
-        Some(&json!(0.5))
-    );
+    let confidence = result.alternatives[0].native_fields.get("confidence");
+    assert_eq!(confidence.map(ToString::to_string).as_deref(), Some("0.5"));
     let metadata = decoded.metadata.metadata.unwrap();
-    assert_eq!(metadata.native_fields.get("model"), Some(&json!("m")));
+    let model = metadata.native_fields.get("model");
+    assert_eq!(model.map(ToString::to_string).as_deref(), Some(r#""m""#));
 }
 
 #[test]
@@ -343,7 +342,7 @@ fn a_null_results_field_is_a_shape_error() {
 fn a_reply_over_the_size_limit_is_refused() {
     let at_limit = format!("{{}}{}", " ".repeat(MAX_RESPONSE_BYTES - 2));
     assert_eq!(at_limit.len(), MAX_RESPONSE_BYTES);
-    assert!(decode_vertex_recognition(&reply(200, &at_limit)).is_ok());
+    decode_vertex_recognition(&reply(200, &at_limit)).unwrap();
     let error = decode_vertex_recognition(&reply(200, &format!("{at_limit} "))).unwrap_err();
     assert!(matches!(
         error,
@@ -370,10 +369,9 @@ fn the_response_hides_the_provider_envelope() {
     let decoded = decode_vertex_recognition(&reply(200, body)).unwrap();
     assert_eq!(decoded.task, TranscriptionTask::Transcribe);
     assert_eq!(decoded.metadata.results.len(), 1);
-    let rendered = serde_json::to_value(&decoded).unwrap();
     assert_eq!(
-        rendered,
-        json!({"text": "hi", "task": "transcribe", "language": "en", "duration": 1.0})
+        serde_json::to_string(&decoded).unwrap(),
+        r#"{"text":"hi","task":"transcribe","language":"en","duration":1.0}"#
     );
 }
 
@@ -400,7 +398,7 @@ fn the_malformed_duration_is_omitted() {
     let body = r#"{"results":[],"metadata":{"totalBilledDuration":"2ms"}}"#;
     assert!(answer(200, body).get("duration").is_none());
     let valid = r#"{"results":[],"metadata":{"totalBilledDuration":"2.5s"}}"#;
-    assert_eq!(answer(200, valid)["duration"], json!(2.5));
+    assert_eq!(answer(200, valid)["duration"].to_string(), "2.5");
 }
 
 #[rstest]
@@ -414,7 +412,7 @@ fn replays_the_vertex_recognition_corpus(
         body: bytes.clone(),
     };
     drop(decode_vertex_recognition(&reply));
-    if let Ok(text) = std::str::from_utf8(&bytes) {
-        drop(parse_duration_seconds(Some(text)));
+    if let Ok(text) = from_utf8(&bytes) {
+        assert!(parse_duration_seconds(Some(text)).is_none() || text.ends_with('s'));
     }
 }
