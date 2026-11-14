@@ -6,7 +6,7 @@ call:
     xai_key: seed-key
     generic_key: null
     steps:
-      - {step: auth, api_key: null, use_xai_oauth: false, headers: {}, oauth: null}
+      - {step: auth, api_key: null, use_xai_oauth: false, headers: {}}
       - step: event
         event:
           type: response.completed

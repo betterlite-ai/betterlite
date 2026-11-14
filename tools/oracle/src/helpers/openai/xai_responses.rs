@@ -47,7 +47,6 @@ pub(crate) enum Step {
         use_xai_oauth: bool,
         #[serde(default)]
         headers: BTreeMap<String, String>,
-        oauth: Option<String>,
     },
     Reply {
         status: u16,
@@ -60,17 +59,14 @@ pub(crate) enum Step {
     Capability,
 }
 
-struct OauthFixture {
-    token: Option<String>,
-}
+// the case env points the token store at a path that never exists, so this login always fails
+struct OauthFixture;
 
 impl OauthAccess for OauthFixture {
     fn access_token(&mut self) -> impl Future<Output = Result<SecretString, XaiOauthError>> + Send {
-        let outcome = match self.token.take() {
-            Some(token) => Ok(SecretString::from(token)),
-            None => Err(XaiOauthError::LoginRequired),
-        };
-        ready(outcome)
+        ready(Err::<SecretString, XaiOauthError>(
+            XaiOauthError::LoginRequired,
+        ))
     }
 }
 
@@ -78,10 +74,6 @@ struct Silent;
 
 impl LogSink for Silent {
     fn emit(&self, _record: LogRecord) {}
-}
-
-fn env_value(env: &BTreeMap<String, String>, name: &str) -> Option<String> {
-    env.get(name).filter(|value| !value.is_empty()).cloned()
 }
 
 fn identity_settings(
@@ -92,14 +84,27 @@ fn identity_settings(
     Settings {
         xai_key: xai_key.map(SecretString::from),
         generic_api_key: generic_key.map(SecretString::from),
-        environment_key: env_value(env, "XAI_API_KEY").map(SecretString::from),
-        api_base: env_value(env, "XAI_API_BASE"),
+        environment_key: env
+            .get("XAI_API_KEY")
+            .filter(|value| !value.is_empty())
+            .cloned()
+            .map(SecretString::from),
+        api_base: env
+            .get("XAI_API_BASE")
+            .filter(|value| !value.is_empty())
+            .cloned(),
     }
 }
 
 fn oauth_base(env: &BTreeMap<String, String>) -> String {
-    env_value(env, "XAI_OAUTH_API_BASE")
-        .or_else(|| env_value(env, "XAI_API_BASE"))
+    env.get("XAI_OAUTH_API_BASE")
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .or_else(|| {
+            env.get("XAI_API_BASE")
+                .filter(|value| !value.is_empty())
+                .cloned()
+        })
         .unwrap_or_else(|| String::from(DEFAULT_OAUTH_BASE))
 }
 

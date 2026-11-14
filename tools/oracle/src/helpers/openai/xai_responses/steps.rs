@@ -85,12 +85,9 @@ fn auth_step(
     api_key: Option<&str>,
     use_xai_oauth: bool,
     headers: &BTreeMap<String, String>,
-    oauth: Option<&str>,
 ) -> HelperResult {
     let key = api_key.map(SecretString::from);
-    let mut fixture = OauthFixture {
-        token: oauth.map(str::to_owned),
-    };
+    let mut fixture = OauthFixture;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .map_err(|error| failure(error.to_string(), None))?;
@@ -142,14 +139,7 @@ pub(super) fn run_step(
             api_key,
             use_xai_oauth,
             headers,
-            oauth,
-        } => auth_step(
-            settings,
-            api_key.as_deref(),
-            *use_xai_oauth,
-            headers,
-            oauth.as_deref(),
-        ),
+        } => auth_step(settings, api_key.as_deref(), *use_xai_oauth, headers),
         Step::Reply { status, body, now } => reply_step(*status, body, *now),
         Step::Event { event } => {
             let bytes =

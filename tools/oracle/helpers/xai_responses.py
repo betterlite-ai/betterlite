@@ -2,14 +2,11 @@ import os
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Final, Literal, Protocol, Required, TypeAlias, TypedDict
-from unittest.mock import patch
 
 import httpx
 import litellm
 import openai
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.xai import oauth as xai_oauth
-from litellm.llms.xai.oauth import XAIOAuthAuthenticator, XAIOAuthError
 from litellm.llms.xai.responses.transformation import XAIResponsesAPIConfig
 from litellm.types.llms.openai import (
     ResponsesAPIOptionalRequestParams as RequestParams,
@@ -18,7 +15,6 @@ from litellm.types.llms.openai import ResponsesAPIStreamingResponse
 from litellm.types.router import GenericLiteLLMParams
 from openai.types.responses.response_text_config_param import ResponseTextConfigParam
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
 
 CONFIG: Final[XAIResponsesAPIConfig] = XAIResponsesAPIConfig.__new__(
     XAIResponsesAPIConfig
@@ -70,13 +66,13 @@ EVENT: Final[TypeAdapter[EventView]] = TypeAdapter(EventView)
 
 class PromptView(TypedDict, total=False):
     id: Required[str]
-    variables: dict[str, object] | None
+    variables: dict[str, JsonValue] | None
     version: str | None
 
 
 # the case supplies these Any-carrying RequestParams fields, so their types are narrowed here
 class ToolParams(RequestParams, total=False):
-    metadata: dict[str, object] | None
+    metadata: dict[str, JsonValue] | None
     text: ResponseTextConfigParam | None
     prompt: PromptView | None
 
@@ -99,7 +95,6 @@ class Auth(TypedDict):
     api_key: str | None
     use_xai_oauth: bool
     headers: dict[str, str]
-    oauth: str | None
 
 
 class Reply(TypedDict):
@@ -126,17 +121,6 @@ class Input(TypedDict):
     xai_key: str | None
     generic_key: str | None
     steps: list[Step]
-
-
-class OauthFixture(XAIOAuthAuthenticator):
-    token: str = ""
-
-    # the fixture never reads the token store the real method would
-    @override
-    def get_access_token(self) -> str:
-        if not OauthFixture.token:
-            raise XAIOAuthError("fixture failure")
-        return OauthFixture.token
 
 
 def logging_object() -> Logging:
@@ -184,15 +168,12 @@ def auth_value(config: ResponsesConfig, step: Auth) -> JsonValue:
         api_key=step["api_key"], use_xai_oauth=step["use_xai_oauth"]
     )
     given = dict(step["headers"])
-    token = step["oauth"]
-    OauthFixture.token = "" if token is None else token
-    with patch.object(xai_oauth, "XAIOAuthAuthenticator", OauthFixture):
-        try:
-            headers = config.validate_environment(given, "grok-4", params)
-        except openai.AuthenticationError as error:
-            return {"raised": error.status_code}
-        except ValueError:
-            return {"raised": None}
+    try:
+        headers = config.validate_environment(given, "grok-4", params)
+    except openai.AuthenticationError as error:
+        return {"raised": error.status_code}
+    except ValueError:
+        return {"raised": None}
     return JSON.validate_python(headers)
 
 
@@ -238,7 +219,13 @@ def step_value(step: Step) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    for name in ("XAI_API_KEY", "XAI_API_BASE", "XAI_OAUTH_API_BASE"):
+    for name in (
+        "XAI_API_KEY",
+        "XAI_API_BASE",
+        "XAI_OAUTH_API_BASE",
+        "XAI_OAUTH_AUTH_FILE",
+        "XAI_OAUTH_TOKEN_DIR",
+    ):
         os.environ.pop(name, None)
     os.environ.update(input_value["env"])
     litellm.xai_key = input_value["xai_key"]
