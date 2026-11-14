@@ -193,6 +193,28 @@ fn cli_metadata_without_a_team_still_needs_user_details() {
 }
 
 #[test]
+fn an_empty_metadata_email_still_needs_user_details() {
+    let meta = KeyMetadata {
+        user_email: Some(String::new()),
+        team_id: Some("team".to_owned()),
+        ..meta_with(Some("user"))
+    };
+    assert_eq!(
+        user_id_needing_details("sk-key", &meta),
+        Some("user".to_owned())
+    );
+}
+
+#[test]
+fn an_ordinary_key_without_a_team_never_needs_details() {
+    let meta = KeyMetadata {
+        user_email: Some("meta@example.com".to_owned()),
+        ..meta_with(Some("user"))
+    };
+    assert_eq!(user_id_needing_details("sk-key", &meta), None);
+}
+
+#[test]
 fn needed_user_ids_collect_each_user_once() {
     let recovered = BTreeMap::from([
         ("a".to_owned(), meta_with(Some("user"))),
@@ -415,6 +437,67 @@ fn falsey_metadata_values_keep_the_row_value() {
         projected.get("team_id"),
         Some(&JsonData::String("row-team".to_owned()))
     );
+}
+
+#[test]
+fn empty_recovered_alias_and_team_keep_the_row_values() {
+    let row = row(&[
+        ("api_key", JsonData::String("key".to_owned())),
+        ("api_key_alias", JsonData::String("row-alias".to_owned())),
+        ("team_id", JsonData::String("row-team".to_owned())),
+    ]);
+    let recovered = BTreeMap::from([(
+        "key".to_owned(),
+        KeyMetadata {
+            key_alias: Some(String::new()),
+            team_id: Some(String::new()),
+            ..KeyMetadata::default()
+        },
+    )]);
+    let projected = row_with_recovered_fields(&row, &recovered, &ExportFields::default());
+    assert_eq!(
+        projected.get("api_key_alias"),
+        Some(&JsonData::String("row-alias".to_owned()))
+    );
+    assert_eq!(
+        projected.get("team_id"),
+        Some(&JsonData::String("row-team".to_owned()))
+    );
+}
+
+#[rstest]
+#[case::false_flag(JsonData::Bool(false), false)]
+#[case::true_flag(JsonData::Bool(true), true)]
+#[case::zero(JsonData::Number(serde_json::Number::from(0)), false)]
+#[case::nonzero(JsonData::Number(serde_json::Number::from(1)), true)]
+#[case::empty_list(JsonData::Array(Vec::new()), false)]
+#[case::filled_list(JsonData::Array(vec![JsonData::Null]), true)]
+#[case::empty_object(JsonData::Object(BTreeMap::new()), false)]
+#[case::filled_object(
+    JsonData::Object(BTreeMap::from([("k".to_owned(), JsonData::Null)])),
+    true
+)]
+#[case::empty_text(JsonData::String(String::new()), false)]
+#[case::filled_text(JsonData::String("row@example.com".to_owned()), true)]
+fn row_email_wins_only_when_it_is_truthy(#[case] email: JsonData, #[case] row_wins: bool) {
+    let row = row(&[
+        ("api_key", JsonData::String("key".to_owned())),
+        ("user_email", email.clone()),
+    ]);
+    let recovered = BTreeMap::from([(
+        "key".to_owned(),
+        KeyMetadata {
+            user_email: Some("recovered@example.com".to_owned()),
+            ..KeyMetadata::default()
+        },
+    )]);
+    let projected = row_with_recovered_fields(&row, &recovered, &ExportFields::default());
+    let expected = if row_wins {
+        email
+    } else {
+        JsonData::String("recovered@example.com".to_owned())
+    };
+    assert_eq!(projected.get("user_email"), Some(&expected));
 }
 
 #[test]
