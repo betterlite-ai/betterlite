@@ -80,6 +80,7 @@ fn the_adapter_reports_multipart_form_data() {
 #[case::core("stable-image-core", "/v2beta/stable-image/generate/core")]
 #[case::uppercase("STABILITY/Stable-Image-Core", "/v2beta/stable-image/generate/core")]
 #[case::sd3_family("sd3.5-large-turbo", DEFAULT_GENERATION_ENDPOINT)]
+#[case::first_match_wins("sd3-stable-image-ultra", DEFAULT_GENERATION_ENDPOINT)]
 #[case::substring("my-stable-image-ultra-clone", "/v2beta/stable-image/generate/ultra")]
 #[case::embedded_provider_prefix(
     "models/stability/stable-image-core",
@@ -207,9 +208,14 @@ fn the_factory_loads_the_stability_environment() {
     );
 }
 
-#[test]
-fn a_known_size_maps_to_its_aspect_ratio() {
-    let non_default = params(&[("size", text("1024x1024"))]);
+#[rstest]
+#[case::square("1024x1024", "1:1")]
+#[case::landscape("1792x1024", "16:9")]
+#[case::portrait("1024x1792", "9:16")]
+#[case::small_square("512x512", "1:1")]
+#[case::tiny_square("256x256", "1:1")]
+fn a_known_size_maps_to_its_aspect_ratio(#[case] size: &str, #[case] expected: &str) {
+    let non_default = params(&[("size", text(size))]);
 
     let mapped = StabilityImageGenerationConfig::map_openai_params(
         &non_default,
@@ -221,7 +227,7 @@ fn a_known_size_maps_to_its_aspect_ratio() {
 
     assert_eq!(
         mapped.get("aspect_ratio"),
-        Some(&Json::Text("1:1".to_owned()))
+        Some(&Json::Text(expected.to_owned()))
     );
     assert!(!mapped.contains_key("size"));
 }
@@ -564,6 +570,10 @@ fn a_present_errors_key_fails_with_the_upstream_status() {
     .expect_err("the reply reports an error");
 
     assert_eq!(error.status(), 503);
+    assert_eq!(
+        error.headers().get("x-request-id").map(String::as_str),
+        Some("req")
+    );
     assert!(matches!(error, StabilityReplyError::Upstream { .. }));
 }
 
@@ -584,6 +594,10 @@ fn an_unparsable_reply_keeps_the_upstream_status() {
         .expect_err("the body is not JSON");
 
     assert_eq!(error.status(), 502);
+    assert_eq!(
+        error.headers().get("x-request-id").map(String::as_str),
+        Some("req")
+    );
     assert!(matches!(error, StabilityReplyError::Malformed { .. }));
 }
 
@@ -593,6 +607,10 @@ fn a_non_object_reply_keeps_the_upstream_status() {
         .expect_err("the body is not an object");
 
     assert_eq!(error.status(), 201);
+    assert_eq!(
+        error.headers().get("x-request-id").map(String::as_str),
+        Some("req")
+    );
     assert!(matches!(error, StabilityReplyError::NotObject { .. }));
 }
 
