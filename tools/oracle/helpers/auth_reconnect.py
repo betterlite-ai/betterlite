@@ -260,7 +260,10 @@ class ScriptedLock(asyncio.Lock):
     async def acquire(self) -> Literal[True]:
         self.effects.append({"effect": "lock_acquire"})
         if self.mode == "error":
-            raise RuntimeError(self.error or "the reconnect lock is unavailable")
+            message = self.error
+            if message is None:
+                message = "the reconnect lock is unavailable"
+            raise RuntimeError(message)
         if self.mode == "busy":
             await asyncio.sleep(3600)
         return await super().acquire()
