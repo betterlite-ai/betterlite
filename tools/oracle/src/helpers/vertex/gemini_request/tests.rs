@@ -23,7 +23,7 @@ fn seeds_decode_the_gemini_request_input(#[case] name: &str) {
         "{name} names the right operation"
     );
     let input: super::ops::Input =
-        serde_json::from_value(case.call.input.clone()).expect("the seed input has the shape");
+        serde_json::from_value(case.call.input).expect("the seed input has the shape");
     assert!(!input.model.is_empty(), "{name} names a model");
     assert!(!input.messages.is_empty(), "{name} carries messages");
 }

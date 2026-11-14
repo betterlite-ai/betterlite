@@ -82,6 +82,6 @@ def run(input_value: Case) -> JsonObject:
         vertex_auth_header=None,
     )
     return {
-        "body": JSON_OBJECT.validate_python(dict(request)),
-        "litellm_params": JSON_OBJECT.validate_python(dict(litellm_params)),
+        "body": JSON_OBJECT.validate_python(request),
+        "litellm_params": JSON_OBJECT.validate_python(litellm_params),
     }

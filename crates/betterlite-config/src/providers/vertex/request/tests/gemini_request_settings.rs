@@ -11,6 +11,7 @@ use betterlite_vertex::gemini_request::body::{BodyInput, transform};
 use betterlite_vertex::model_policy::capabilities::{
     CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
 };
+use tokio::runtime::Builder;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
@@ -75,7 +76,7 @@ fn body(modify_params: bool) -> Object {
         modify_params,
         schema_template: None,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .expect("a fixture runtime");
     runtime
