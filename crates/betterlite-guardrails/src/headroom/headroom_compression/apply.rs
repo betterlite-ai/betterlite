@@ -22,8 +22,8 @@ pub(crate) const UNAVAILABLE_MESSAGE: &str =
     "headroom compression unavailable; request forwarded uncompressed";
 
 pub(super) struct Compressed {
-    messages: Messages,
-    result: CompressResult,
+    pub(super) messages: Messages,
+    pub(super) result: CompressResult,
     pub(super) started: f64,
     pub(super) ended: f64,
 }
