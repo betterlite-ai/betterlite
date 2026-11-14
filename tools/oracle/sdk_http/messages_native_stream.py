@@ -8,7 +8,8 @@ import httpx
 from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.llms.anthropic.pass_through.messages import streaming_iterator
 from litellm.types.passthrough_endpoints.pass_through_endpoints import EndpointType
-from pydantic import BaseModel, ConfigDict, JsonValue as Json
+from pydantic import BaseModel, ConfigDict
+from pydantic import JsonValue as Json
 from typing_extensions import override
 
 from messages_stream_logging import RecordedLogging, Recorder, RouteCall, Work, install
@@ -96,6 +97,7 @@ class Dispatcher(Recorder):
     def bind(self, logging_obj: RecordedLogging, recorder: RelayRecorder) -> None:
         self.by_logging[id(logging_obj)] = recorder
 
+    @override
     def _route_streaming_logging_to_handler(  # ast-grep-ignore: no-long-names
         self, **call: Unpack[RouteCall]
     ) -> Work:
@@ -121,7 +123,7 @@ class Dispatcher(Recorder):
 
 class RelayHook:
     def __init__(self) -> None:
-        self.calls: list[str] = []
+        self.calls: list[Json] = []
         self.fired = asyncio.Event()
 
     async def __call__(self, exc: Exception) -> None:
@@ -168,7 +170,7 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         self.relay = self.async_sse_wrapper(self.source)
         self.recorder = RelayRecorder()
         self.hook = RelayHook()
-        self.callback_args: list[int] = []
+        self.callback_args: list[Json] = []
         self.logging.set_failure_hook(self.hook)
 
     async def start(self) -> None:
@@ -210,20 +212,21 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
                 await self.gate.idle.wait()
 
     async def run(self, step: RelayStep) -> Json:
-        if step.op == "read":
-            return await self.read()
-        if step.op == "release":
-            self.gate.release(step.count)
-        elif step.op == "detach":
-            await self.detach()
-        elif step.op == "finish":
-            self.gate.finish()
-        elif step.op == "fail":
-            self.gate.fail()
-        elif step.op == "arm":
-            self.arm()
-        elif step.op == "wait":
-            await self.wait(step.until)
+        match step.op:
+            case "read":
+                return await self.read()
+            case "release":
+                self.gate.release(step.count)
+            case "detach":
+                await self.detach()
+            case "finish":
+                self.gate.finish()
+            case "fail":
+                self.gate.fail()
+            case "arm":
+                self.arm()
+            case "wait":
+                await self.wait(step.until)
         return None
 
     def observe(self) -> Json:
