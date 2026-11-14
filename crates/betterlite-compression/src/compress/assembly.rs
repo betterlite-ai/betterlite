@@ -45,7 +45,7 @@ where
         .count_messages(model, &messages)
         .await
         .map_err(CompressError::Counting)?;
-    let compression_ratio = compression_ratio(prepared.original_tokens, compressed_tokens);
+    let compression_ratio = compression_ratio(prepared.original_tokens, compressed_tokens)?;
     Ok(CompressedResult {
         messages,
         original_tokens: prepared.original_tokens,
@@ -57,15 +57,20 @@ where
     })
 }
 
-fn compression_ratio(original_tokens: usize, compressed_tokens: usize) -> f64 {
+fn compression_ratio(
+    original_tokens: usize,
+    compressed_tokens: usize,
+) -> Result<f64, CompressError> {
     if original_tokens == 0 {
-        return 0.0;
+        return Ok(0.0);
     }
     let compressed =
         u32::try_from(compressed_tokens).map_or_else(|_| f64::from(u32::MAX), f64::from);
     let original = u32::try_from(original_tokens).map_or_else(|_| f64::from(u32::MAX), f64::from);
-    // Python's round() breaks a tie to even, so 0.03125 keeps 0.0312
-    ((1.0 - compressed / original) * 10_000.0).round_ties_even() / 10_000.0
+    // Python rounds the double's exact value, ties to even: 0.03125 stays 0.0312
+    format!("{:.4}", 1.0 - compressed / original)
+        .parse()
+        .map_err(CompressError::Ratio)
 }
 
 fn assemble_messages(

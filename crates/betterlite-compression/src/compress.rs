@@ -58,7 +58,7 @@ pub struct CompressRequest<'request> {
     pub messages: &'request [Value],
     pub model: &'request str,
     pub call_type: &'request str,
-    pub compression_trigger: Option<usize>,
+    pub compression_trigger: usize,
     pub compression_target: Option<usize>,
 }
 
@@ -75,6 +75,8 @@ pub enum CompressError {
     Normalization(#[from] CompressionError),
     #[error("the token count could not be computed")]
     Counting(#[source] CountError),
+    #[error("the compression ratio could not be read back from its decimal form")]
+    Ratio(#[source] std::num::ParseFloatError),
     #[error(transparent)]
     RetrievalTools(#[from] RetrievalToolError),
 }
@@ -172,10 +174,7 @@ where
         .count_messages(request.model, &original_messages)
         .await
         .map_err(CompressError::Counting)?;
-    let compression_trigger = request
-        .compression_trigger
-        .unwrap_or(DEFAULT_COMPRESSION_TRIGGER);
-    if original_tokens <= compression_trigger {
+    if original_tokens <= request.compression_trigger {
         return Ok(Preparation::Skipped(skipped_result(
             original_messages,
             original_tokens,
@@ -195,7 +194,7 @@ where
             normalized_messages,
             original_messages,
             original_tokens,
-            compression_trigger,
+            compression_trigger: request.compression_trigger,
             query,
         },
         bm25_scores,
