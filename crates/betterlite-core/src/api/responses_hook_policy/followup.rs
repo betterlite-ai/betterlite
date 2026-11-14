@@ -16,8 +16,7 @@ pub struct AgenticFollowupInput<'a> {
     pub fingerprint: &'a str,
 }
 
-// request kwargs first, the patch over them, then the trusted bookkeeping last; a request param is
-// never repeated, and an existing key keeps the position it first had
+// request kwargs, then the patch over them, then the trusted bookkeeping, with request params dropped
 pub fn build_agentic_followup_kwargs(
     input: &AgenticFollowupInput<'_>,
 ) -> Result<IndexMap<String, Json>, AgenticFollowupKwargsError> {

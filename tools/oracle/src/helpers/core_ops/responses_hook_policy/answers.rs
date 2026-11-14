@@ -5,9 +5,10 @@ use betterlite_core::api::responses_hook_policy::followup::{
     AgenticFollowupInput, build_agentic_followup_kwargs,
 };
 use betterlite_core::api::responses_hook_policy::safety::{
-    can_replace_turn_with_terminal_response, check_agentic_loop_safety, fingerprint_agentic_tools,
-    is_refused_tool_use_block, refused_agentic_tool_identifiers,
+    can_finalize_turn, check_agentic_loop_safety, is_refused_tool_use_block, refused_tool_ids,
+    sort_json_keys,
 };
+use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
@@ -16,7 +17,9 @@ use super::{Input, failure};
 
 pub(super) fn settings_answer(input: &Input) -> Value {
     let Input::Settings { probes } = input else {
-        return error_value("InvalidInput", "expected a settings input");
+        return json!({
+            "error": { "class": "InvalidInput", "message": "expected a settings input" },
+        });
     };
     let answers: Vec<Value> = probes.iter().map(settings_probe).collect();
     json!({ "probes": answers })
@@ -32,7 +35,7 @@ fn settings_probe(kwargs: &IndexMap<String, Json>) -> Value {
             },
         }),
         Err(error) => json!({
-            "error": error_value(error.python_class(), &error.to_string()),
+            "error": { "class": error.python_class(), "message": error.to_string() },
         }),
     }
 }
@@ -49,21 +52,24 @@ pub(super) fn safety_answer(input: &Input) -> Value {
         api_surface,
     } = input
     else {
-        return error_value("InvalidInput", "expected a safety input");
+        return json!({
+            "error": { "class": "InvalidInput", "message": "expected a safety input" },
+        });
     };
-    let refused = refused_agentic_tool_identifiers(tool_calls);
+    let refused = refused_tool_ids(tool_calls);
     let ids: Vec<&String> = refused.ids.iter().collect();
     let names: Vec<&String> = refused.names.iter().collect();
     let matched: Vec<bool> = blocks
         .iter()
         .map(|block| is_refused_tool_use_block(block, &refused.ids, &refused.names))
         .collect();
+    let canonical = sort_json_keys(tool_calls);
     json!({
-        "fingerprint": fingerprint_agentic_tools(tool_calls),
+        "fingerprint": python_json::dumps(&canonical),
         "safety": safety_probe(tool_calls, fingerprints, *depth, *max_loops, model),
         "refused": { "ids": ids, "names": names },
         "blocks": matched,
-        "terminal": can_replace_turn_with_terminal_response(*stream, api_surface),
+        "terminal": can_finalize_turn(*stream, *api_surface),
     })
 }
 
@@ -77,7 +83,7 @@ fn safety_probe(
     match check_agentic_loop_safety(tool_calls, fingerprints, depth, max_loops, model) {
         Ok(checked) => json!({ "fingerprint": checked }),
         Err(error) => json!({
-            "error": error_value(error.python_class(), &error.to_string()),
+            "error": { "class": "AgenticLoopSafetyError", "message": error.to_string() },
         }),
     }
 }
@@ -111,8 +117,4 @@ pub(super) fn followup_answer(input: &Input) -> crate::helpers::HelperResult {
     let kwargs = build_agentic_followup_kwargs(&agentic)
         .map_err(|error| failure("AgenticFollowupKwargsError", error.to_string()))?;
     Ok(json!(kwargs))
-}
-
-fn error_value(class: &str, message: &str) -> Value {
-    json!({ "class": class, "message": message })
 }

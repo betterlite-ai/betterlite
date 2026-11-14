@@ -3,9 +3,9 @@ mod answers;
 use async_trait::async_trait;
 use betterlite_core::api::responses_hook_policy::callbacks::{
     CallbackLists, CallbackValue, DeploymentHookDispatcher, NamedCallbackResolver, PolicyCallback,
-    ResponsesHookOutcome, ResponsesHookRequest, run_sync_responses_pre_call_deployment_hook,
+    ResponsesHookOutcome, ResponsesHookRequest, run_responses_pre_hook,
 };
-use betterlite_core::api::responses_hook_policy::error::DeploymentHookError;
+use betterlite_core::api::responses_hook_policy::safety::ApiSurface;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use indexmap::IndexMap;
@@ -25,7 +25,7 @@ enum Input {
         generic_params: IndexMap<String, Json>,
         global_callbacks: Vec<CallbackSpec>,
         #[serde(default)]
-        dynamic_callbacks: Option<Vec<CallbackSpec>>,
+        dynamic_callbacks: Vec<CallbackSpec>,
     },
     Settings {
         probes: Vec<IndexMap<String, Json>>,
@@ -38,7 +38,7 @@ enum Input {
         model: String,
         blocks: Vec<Json>,
         stream: bool,
-        api_surface: String,
+        api_surface: ApiSurface,
     },
     Followup {
         request_kwargs: IndexMap<String, Json>,
@@ -95,14 +95,15 @@ fn deployment_hook(input: &Input) -> crate::helpers::HelperResult {
             "expected a deployment_hook input".to_owned(),
         ));
     };
-    let global = callback_values(global_callbacks);
-    let dynamic = dynamic_callbacks.as_deref().map(callback_values);
+    let global: Vec<CallbackValue> = global_callbacks.iter().map(callback_value).collect();
+    let dynamic: Vec<CallbackValue> = dynamic_callbacks.iter().map(callback_value).collect();
     let lists = CallbackLists {
         global: &global,
-        dynamic: dynamic.as_deref(),
+        dynamic: &dynamic,
     };
     let resolver = NamedCallbacks;
-    let dispatcher = ScriptedDispatcher::new(global_callbacks);
+    let replacements = global_callbacks.iter().map(scripted_result).collect();
+    let dispatcher = ScriptedDispatcher { replacements };
     let request = hook_request(
         model,
         hook_input,
@@ -110,9 +111,8 @@ fn deployment_hook(input: &Input) -> crate::helpers::HelperResult {
         optional_params,
         generic_params,
     );
-    let outcome =
-        run_sync_responses_pre_call_deployment_hook(request, &lists, &resolver, &dispatcher)
-            .map_err(|error| failure("DeploymentHookError", error.to_string()))?;
+    let outcome = run_responses_pre_hook(request, &lists, &resolver, &dispatcher)
+        .map_err(|error| failure("DeploymentHookError", error.to_string()))?;
     Ok(deployment_json(&outcome))
 }
 
@@ -135,7 +135,7 @@ fn hook_request(
 fn policy(name: &str, overrides: bool) -> PolicyCallback {
     PolicyCallback {
         name: name.to_owned(),
-        overrides_pre_call_deployment_hook: overrides,
+        overrides_pre_hook: overrides,
         agentic: None,
     }
 }
@@ -161,21 +161,9 @@ fn callback_value(spec: &CallbackSpec) -> CallbackValue {
     }
 }
 
-fn callback_values(specs: &[CallbackSpec]) -> Vec<CallbackValue> {
-    specs.iter().map(callback_value).collect()
-}
-
-// stands in for B157's dispatcher: every global object runs in order and a non-null result
-// replaces the request, while string, non-logger and dynamic entries never execute
+// stands in for B157's dispatcher: global objects run in order, a non-null result replaces the request
 struct ScriptedDispatcher {
     replacements: Vec<Option<IndexMap<String, Json>>>,
-}
-
-impl ScriptedDispatcher {
-    fn new(globals: &[CallbackSpec]) -> Self {
-        let replacements = globals.iter().map(scripted_result).collect();
-        Self { replacements }
-    }
 }
 
 fn scripted_result(spec: &CallbackSpec) -> Option<IndexMap<String, Json>> {
@@ -190,11 +178,13 @@ fn scripted_result(spec: &CallbackSpec) -> Option<IndexMap<String, Json>> {
 
 #[async_trait]
 impl DeploymentHookDispatcher for ScriptedDispatcher {
+    type Error = std::convert::Infallible;
+
     async fn pre_call_deployment_hook(
         &self,
         request: IndexMap<String, Json>,
         _call_type: &str,
-    ) -> Result<Option<IndexMap<String, Json>>, DeploymentHookError> {
+    ) -> Result<Option<IndexMap<String, Json>>, Self::Error> {
         let mut modified = request;
         for replacement in &self.replacements {
             if let Some(result) = replacement {
@@ -212,14 +202,10 @@ fn deployment_json(outcome: &ResponsesHookOutcome) -> Value {
         "custom_llm_provider": outcome.custom_llm_provider,
         "optional_params": outcome.optional_params,
         "generic_params": {
-            "api_key": field_or_null(&outcome.generic_params, "api_key"),
-            "api_base": field_or_null(&outcome.generic_params, "api_base"),
+            "api_key": outcome.generic_params.get("api_key").unwrap_or(&Json::Null),
+            "api_base": outcome.generic_params.get("api_base").unwrap_or(&Json::Null),
         },
     })
-}
-
-fn field_or_null<'fields>(fields: &'fields IndexMap<String, Json>, name: &str) -> &'fields Json {
-    fields.get(name).unwrap_or(&Json::Null)
 }
 
 pub(super) fn failure(class: &str, message: String) -> Box<HelperError> {

@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use betterlite_context::agentic_callback::{AgenticCallback, AgenticOverrides};
+use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
@@ -13,15 +14,13 @@ use super::agentic::get_agentic_loop_settings;
 use super::callbacks::{
     CallbackLists, CallbackValue, DeploymentHookDispatcher, NamedCallbackResolver, PolicyCallback,
     ResponsesHookOutcome, ResponsesHookRequest, custom_logger_callbacks,
-    has_agentic_completion_hook, has_pre_call_deployment_hook,
-    run_sync_responses_pre_call_deployment_hook,
+    has_agentic_completion_hook, has_pre_call_deployment_hook, run_responses_pre_hook,
 };
 use super::error::{AgenticFollowupKwargsError, AgenticLoopSafetyError, DeploymentHookError};
 use super::followup::{AgenticFollowupInput, build_agentic_followup_kwargs};
-use super::python_value::text_repr;
 use super::safety::{
-    RefusedToolIdentifiers, can_replace_turn_with_terminal_response, check_agentic_loop_safety,
-    fingerprint_agentic_tools, is_refused_tool_use_block, refused_agentic_tool_identifiers,
+    ApiSurface, RefusedToolIdentifiers, can_finalize_turn, check_agentic_loop_safety,
+    is_refused_tool_use_block, refused_tool_ids, sort_json_keys,
 };
 
 #[derive(Default)]
@@ -32,16 +31,33 @@ struct ScriptedDispatcher {
 
 #[async_trait]
 impl DeploymentHookDispatcher for ScriptedDispatcher {
+    type Error = std::convert::Infallible;
+
     async fn pre_call_deployment_hook(
         &self,
         request: IndexMap<String, Json>,
         call_type: &str,
-    ) -> Result<Option<IndexMap<String, Json>>, DeploymentHookError> {
+    ) -> Result<Option<IndexMap<String, Json>>, Self::Error> {
         self.calls
             .lock()
             .unwrap()
             .push((request, call_type.to_owned()));
         Ok(self.result.clone())
+    }
+}
+
+struct FailingDispatcher;
+
+#[async_trait]
+impl DeploymentHookDispatcher for FailingDispatcher {
+    type Error = std::io::Error;
+
+    async fn pre_call_deployment_hook(
+        &self,
+        _request: IndexMap<String, Json>,
+        _call_type: &str,
+    ) -> Result<Option<IndexMap<String, Json>>, Self::Error> {
+        Err(std::io::Error::other("deployment hook crashed"))
     }
 }
 
@@ -105,7 +121,7 @@ fn map(entries: Vec<(&str, Json)>) -> IndexMap<String, Json> {
 fn policy(name: &str, overrides: bool) -> PolicyCallback {
     PolicyCallback {
         name: name.to_owned(),
-        overrides_pre_call_deployment_hook: overrides,
+        overrides_pre_hook: overrides,
         agentic: None,
     }
 }
@@ -119,7 +135,7 @@ fn agentic_policy(name: &str, should_run: bool) -> PolicyCallback {
     });
     PolicyCallback {
         name: name.to_owned(),
-        overrides_pre_call_deployment_hook: false,
+        overrides_pre_hook: false,
         agentic: Some(agentic),
     }
 }
@@ -133,7 +149,12 @@ fn hook_request() -> ResponsesHookRequest {
             ("temperature", integer(1)),
             ("tools", list(Vec::new())),
         ]),
-        generic_params: map(vec![("api_key", text("old"))]),
+        generic_params: map(vec![
+            ("api_key", text("old")),
+            ("temperature", integer(9)),
+            ("custom_llm_provider", Json::Null),
+            ("input", text("generic")),
+        ]),
     }
 }
 
@@ -146,7 +167,12 @@ fn original_outcome() -> ResponsesHookOutcome {
             ("temperature", integer(1)),
             ("tools", list(Vec::new())),
         ]),
-        generic_params: map(vec![("api_key", text("old"))]),
+        generic_params: map(vec![
+            ("api_key", text("old")),
+            ("temperature", integer(9)),
+            ("custom_llm_provider", Json::Null),
+            ("input", text("generic")),
+        ]),
     }
 }
 
@@ -154,9 +180,9 @@ async fn hook_outcome(dispatcher: &ScriptedDispatcher, overrides: bool) -> Respo
     let global = [CallbackValue::Object(policy("a", overrides))];
     let callbacks = CallbackLists {
         global: &global,
-        dynamic: None,
+        dynamic: &[],
     };
-    run_sync_responses_pre_call_deployment_hook(
+    run_responses_pre_hook(
         hook_request(),
         &callbacks,
         &FixedResolver::default(),
@@ -164,6 +190,22 @@ async fn hook_outcome(dispatcher: &ScriptedDispatcher, overrides: bool) -> Respo
     )
     .await
     .unwrap()
+}
+
+async fn hook_error(dispatcher: &FailingDispatcher) -> DeploymentHookError {
+    let global = [CallbackValue::Object(policy("a", true))];
+    let callbacks = CallbackLists {
+        global: &global,
+        dynamic: &[],
+    };
+    run_responses_pre_hook(
+        hook_request(),
+        &callbacks,
+        &FixedResolver::default(),
+        dispatcher,
+    )
+    .await
+    .unwrap_err()
 }
 
 fn detection_counts_inherited_and_resolved() {
@@ -184,7 +226,7 @@ fn detection_counts_inherited_and_resolved() {
     };
     let callbacks = CallbackLists {
         global: &global,
-        dynamic: Some(&dynamic),
+        dynamic: &dynamic,
     };
     let callbacks = custom_logger_callbacks(&callbacks, &resolver);
     let names: Vec<&str> = callbacks
@@ -195,11 +237,11 @@ fn detection_counts_inherited_and_resolved() {
     let plain_global = [CallbackValue::Object(plain)];
     let plain_lists = CallbackLists {
         global: &plain_global,
-        dynamic: None,
+        dynamic: &[],
     };
     let all = CallbackLists {
         global: &global,
-        dynamic: Some(&dynamic),
+        dynamic: &dynamic,
     };
     assert!(has_pre_call_deployment_hook(&all, &resolver));
     assert!(!has_pre_call_deployment_hook(&plain_lists, &resolver));
@@ -238,9 +280,23 @@ async fn deployment_hook_merge() {
     let calls = dispatcher.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].1, "responses");
+    assert_eq!(calls[0].0.get("api_key"), Some(&text("old")));
     assert_eq!(calls[0].0.get("temperature"), Some(&integer(1)));
     assert_eq!(calls[0].0.get("model"), Some(&text("gpt-4o")));
+    assert_eq!(calls[0].0.get("input"), Some(&text("hello")));
     assert_eq!(calls[0].0.get("custom_llm_provider"), Some(&text("openai")));
+    drop(calls);
+    deployment_hook_failure().await;
+}
+
+async fn deployment_hook_failure() {
+    let error = hook_error(&FailingDispatcher).await;
+    assert_eq!(
+        error.to_string(),
+        "the deployment hook failed: deployment hook crashed"
+    );
+    let source = std::error::Error::source(&error).unwrap();
+    assert_eq!(source.to_string(), "deployment hook crashed");
 }
 
 #[tokio::test]
@@ -347,14 +403,6 @@ fn agentic_ceiling_and_depth() {
     rejected_ceilings();
     depth_cases();
     fingerprint_cases();
-    repr_cases();
-}
-
-fn repr_cases() {
-    assert_eq!(text_repr("it's"), "\"it's\"");
-    assert_eq!(text_repr("a \"b\""), "'a \"b\"'");
-    assert_eq!(text_repr("it's \"x\""), "'it\\'s \"x\"'");
-    assert_eq!(text_repr("\u{1}"), "'\\x01'");
 }
 
 fn depth_cases() {
@@ -413,6 +461,11 @@ fn depth_cases() {
     assert_eq!(
         malformed.to_string(),
         "invalid literal for int() with base 10: 'three'"
+    );
+    let quoted = get_agentic_loop_settings(&depth_kwargs(text("it's \"x\""))).unwrap_err();
+    assert_eq!(
+        quoted.to_string(),
+        "invalid literal for int() with base 10: 'it\\'s \"x\"'"
     );
     let wrong = get_agentic_loop_settings(&depth_kwargs(list(vec![integer(1)]))).unwrap_err();
     assert_eq!(wrong.python_class(), "TypeError");
@@ -484,17 +537,17 @@ fn refused_identity() {
         object(vec![("call_id", text("c")), ("name", integer(2))]),
         text("not a call"),
     ]);
-    let refused = refused_agentic_tool_identifiers(&calls);
+    let refused = refused_tool_ids(&calls);
     assert_eq!(
         refused.ids,
         BTreeSet::from(["a".to_owned(), "c".to_owned()])
     );
     assert_eq!(refused.names, BTreeSet::from(["lookup".to_owned()]));
     let wrapped = object(vec![("tool_calls", calls)]);
-    assert_eq!(refused_agentic_tool_identifiers(&wrapped), refused);
+    assert_eq!(refused_tool_ids(&wrapped), refused);
     let unrelated = object(vec![("other", integer(1))]);
     assert_eq!(
-        refused_agentic_tool_identifiers(&unrelated),
+        refused_tool_ids(&unrelated),
         RefusedToolIdentifiers::default()
     );
 }
@@ -521,22 +574,22 @@ fn block_matching() {
     assert!(!is_refused_tool_use_block(&text("x"), &ids, &names));
 }
 
+fn fingerprint(tools: &Json) -> String {
+    python_json::dumps(&sort_json_keys(tools))
+}
+
 fn fingerprints_and_safety() {
-    let tool = object(vec![("name", text("x")), ("id", text("a"))]);
-    let reordered = object(vec![("id", text("a")), ("name", text("x"))]);
-    assert_eq!(
-        fingerprint_agentic_tools(&tool),
-        r#"[{"id": "a", "name": "x"}]"#.to_owned()
-    );
-    assert_eq!(
-        fingerprint_agentic_tools(&tool),
-        fingerprint_agentic_tools(&reordered)
-    );
-    let fingerprint = fingerprint_agentic_tools(&tool);
-    let repeated =
-        check_agentic_loop_safety(&tool, &[text(&fingerprint)], 3, 3, "gpt-4o").unwrap_err();
+    let tool = list(vec![object(vec![("name", text("x")), ("id", text("a"))])]);
+    let reordered = list(vec![object(vec![("id", text("a")), ("name", text("x"))])]);
+    assert_eq!(fingerprint(&tool), r#"[{"id": "a", "name": "x"}]"#);
+    assert_eq!(fingerprint(&tool), fingerprint(&reordered));
+    let seen = [text(&fingerprint(&tool))];
+    let repeated = check_agentic_loop_safety(&tool, &seen, 3, 3, "gpt-4o").unwrap_err();
     assert_eq!(repeated, AgenticLoopSafetyError::RepeatedFingerprint);
-    assert_eq!(repeated.python_class(), "AgenticLoopSafetyError");
+    assert_eq!(
+        repeated.to_string(),
+        "Agentic loop detected repeated tool-call fingerprint; aborting rerun"
+    );
     let exhausted = check_agentic_loop_safety(&tool, &[], 3, 3, "gpt-4o").unwrap_err();
     assert_eq!(
         exhausted,
@@ -551,20 +604,14 @@ fn fingerprints_and_safety() {
     );
     assert_eq!(
         check_agentic_loop_safety(&tool, &[], 2, 3, "gpt-4o").unwrap(),
-        fingerprint
+        fingerprint(&tool)
     );
 }
 
 fn terminal_surface() {
-    assert!(can_replace_turn_with_terminal_response(
-        false,
-        "anthropic_messages"
-    ));
-    assert!(!can_replace_turn_with_terminal_response(
-        true,
-        "anthropic_messages"
-    ));
-    assert!(!can_replace_turn_with_terminal_response(false, "responses"));
+    assert!(can_finalize_turn(false, ApiSurface::AnthropicMessages));
+    assert!(!can_finalize_turn(true, ApiSurface::AnthropicMessages));
+    assert!(!can_finalize_turn(false, ApiSurface::Responses));
 }
 
 #[test]
@@ -587,13 +634,13 @@ fn agentic_detection_resolves_strings() {
     };
     let callbacks = CallbackLists {
         global: &global,
-        dynamic: Some(&dynamic),
+        dynamic: &dynamic,
     };
     assert!(has_agentic_completion_hook(&callbacks, &resolver));
     let off = [CallbackValue::Object(agentic_policy("off", false))];
     let off_lists = CallbackLists {
         global: &off,
-        dynamic: None,
+        dynamic: &[],
     };
     assert!(!has_agentic_completion_hook(&off_lists, &resolver));
 }

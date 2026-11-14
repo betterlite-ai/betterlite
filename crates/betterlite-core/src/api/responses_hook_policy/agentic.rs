@@ -2,13 +2,13 @@ use betterlite_config::agentic_loop_ceiling::{
     AgenticLoopCeilingError, AgenticLoopValue, DEFAULT_MAX_AGENTIC_LOOPS,
     validated_max_agentic_loops,
 };
+use betterlite_logging::analytics::python;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use num_traits::ToPrimitive as _;
 use serde_json::Number;
 
 use super::error::AgenticLoopSettingsError;
-use super::python_value::{python_repr, text_repr};
 
 const CEILING_FIELD: &str = "litellm_params.max_agentic_loops";
 
@@ -44,7 +44,7 @@ fn agentic_ceiling(value: &Json) -> Result<u32, AgenticLoopSettingsError> {
         // the shared validator has no list or object arm, and neither spells a ceiling
         Json::List(_) | Json::Object(_) => {
             return Err(AgenticLoopSettingsError::CeilingNotInteger {
-                literal: python_repr(value),
+                literal: python::repr(value)?,
             });
         }
     };
@@ -56,7 +56,7 @@ fn agentic_ceiling(value: &Json) -> Result<u32, AgenticLoopSettingsError> {
         }
         Err(AgenticLoopCeilingError::NotWholeNumber { .. }) => {
             Err(AgenticLoopSettingsError::CeilingNotInteger {
-                literal: python_repr(value),
+                literal: python::repr(value)?,
             })
         }
     }
@@ -146,17 +146,15 @@ fn trusted_text_depth(text: &str) -> Result<i64, AgenticLoopSettingsError> {
     let trimmed = text.trim();
     let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
     if !digits.split('_').all(|part| !part.is_empty()) {
-        return Err(invalid_depth_literal(text));
+        return Err(AgenticLoopSettingsError::DepthInvalidLiteral {
+            literal: python::repr(text)?,
+        });
     }
     match trimmed.replace('_', "").parse::<i64>() {
         Ok(value) => Ok(value),
-        Err(_) => Err(invalid_depth_literal(text)),
-    }
-}
-
-fn invalid_depth_literal(text: &str) -> AgenticLoopSettingsError {
-    AgenticLoopSettingsError::DepthInvalidLiteral {
-        literal: text_repr(text),
+        Err(_) => Err(AgenticLoopSettingsError::DepthInvalidLiteral {
+            literal: python::repr(text)?,
+        }),
     }
 }
 

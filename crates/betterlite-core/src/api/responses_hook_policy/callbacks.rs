@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_context::agentic_callback::AgenticCallback;
+use betterlite_logging::analytics::python::FormatError;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -13,12 +14,11 @@ use super::python_value::python_str;
 
 pub const RESPONSES_CALL_TYPE: &str = "responses";
 
-// the source compares the callback class's method against CustomLogger's own; a registration that
-// carries an override, inherited or not, records that here
+// an override, inherited or not, is recorded here because the source compares the class's method
 #[derive(Clone)]
 pub struct PolicyCallback {
     pub name: String,
-    pub overrides_pre_call_deployment_hook: bool,
+    pub overrides_pre_hook: bool,
     pub agentic: Option<Arc<dyn AgenticCallback>>,
 }
 
@@ -32,7 +32,7 @@ pub enum CallbackValue {
 #[derive(Clone, Copy)]
 pub struct CallbackLists<'a> {
     pub global: &'a [CallbackValue],
-    pub dynamic: Option<&'a [CallbackValue]>,
+    pub dynamic: &'a [CallbackValue],
 }
 
 pub trait NamedCallbackResolver: Send + Sync {
@@ -43,11 +43,13 @@ pub trait NamedCallbackResolver: Send + Sync {
 // B157's deployment-hook dispatcher behind a typed port; None is the source's null hook result
 #[async_trait]
 pub trait DeploymentHookDispatcher: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
     async fn pre_call_deployment_hook(
         &self,
         request: IndexMap<String, Json>,
         call_type: &str,
-    ) -> Result<Option<IndexMap<String, Json>>, DeploymentHookError>;
+    ) -> Result<Option<IndexMap<String, Json>>, Self::Error>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,11 +71,11 @@ pub struct ResponsesHookOutcome {
 }
 
 #[must_use]
-pub fn responses_api_optional_request_param_names() -> BTreeSet<String> {
-    let names = RESPONSES_OPTIONAL_PARAMS
+pub fn optional_param_names() -> BTreeSet<String> {
+    RESPONSES_OPTIONAL_PARAMS
         .split_whitespace()
-        .map(str::to_owned);
-    names.collect()
+        .map(str::to_owned)
+        .collect()
 }
 
 // global callbacks come first, then the dynamic ones, with duplicates kept and non-loggers skipped
@@ -85,7 +87,7 @@ pub fn custom_logger_callbacks(
     lists
         .global
         .iter()
-        .chain(lists.dynamic.unwrap_or(&[]))
+        .chain(lists.dynamic)
         .filter_map(|value| resolve_callback(value, resolver))
         .collect()
 }
@@ -107,9 +109,7 @@ pub fn has_pre_call_deployment_hook(
     resolver: &dyn NamedCallbackResolver,
 ) -> bool {
     let callbacks = custom_logger_callbacks(lists, resolver);
-    callbacks
-        .iter()
-        .any(|callback| callback.overrides_pre_call_deployment_hook)
+    callbacks.iter().any(|callback| callback.overrides_pre_hook)
 }
 
 #[must_use]
@@ -126,23 +126,29 @@ pub fn has_agentic_completion_hook(
     })
 }
 
-pub async fn run_sync_responses_pre_call_deployment_hook(
+pub async fn run_responses_pre_hook<D>(
     request: ResponsesHookRequest,
     callbacks: &CallbackLists<'_>,
     resolver: &dyn NamedCallbackResolver,
-    dispatcher: &dyn DeploymentHookDispatcher,
-) -> Result<ResponsesHookOutcome, DeploymentHookError> {
+    dispatcher: &D,
+) -> Result<ResponsesHookOutcome, DeploymentHookError>
+where
+    D: DeploymentHookDispatcher + ?Sized,
+{
     if !has_pre_call_deployment_hook(callbacks, resolver) {
         return Ok(original_outcome(request));
     }
     let hook_request = build_hook_input(&request);
     let Some(modified) = dispatcher
         .pre_call_deployment_hook(hook_request, RESPONSES_CALL_TYPE)
-        .await?
+        .await
+        .map_err(|source| DeploymentHookError::Failed {
+            source: Box::new(source),
+        })?
     else {
         return Ok(original_outcome(request));
     };
-    Ok(split(modified, request))
+    split(modified, request).map_err(|source| DeploymentHookError::Render { source })
 }
 
 fn build_hook_input(request: &ResponsesHookRequest) -> IndexMap<String, Json> {
@@ -157,8 +163,11 @@ fn build_hook_input(request: &ResponsesHookRequest) -> IndexMap<String, Json> {
     input
 }
 
-fn split(modified: IndexMap<String, Json>, request: ResponsesHookRequest) -> ResponsesHookOutcome {
-    let optional_names = responses_api_optional_request_param_names();
+fn split(
+    modified: IndexMap<String, Json>,
+    request: ResponsesHookRequest,
+) -> Result<ResponsesHookOutcome, FormatError> {
+    let optional_names = optional_param_names();
     let mut optional_params = request.optional_params;
     let mut generic_params = request.generic_params;
     for (key, value) in &modified {
@@ -168,18 +177,20 @@ fn split(modified: IndexMap<String, Json>, request: ResponsesHookRequest) -> Res
             generic_params.insert(key.clone(), value.clone());
         }
     }
-    let model = modified.get("model").map_or(request.model, python_str);
+    let model = modified
+        .get("model")
+        .map_or(Ok(request.model), python_str)?;
     let input = modified.get("input").cloned().unwrap_or(request.input);
     let custom_llm_provider = modified
         .get("custom_llm_provider")
-        .map_or(request.custom_llm_provider, python_str);
-    ResponsesHookOutcome {
+        .map_or(Ok(request.custom_llm_provider), python_str)?;
+    Ok(ResponsesHookOutcome {
         model,
         input,
         custom_llm_provider,
         optional_params,
         generic_params,
-    }
+    })
 }
 
 fn original_outcome(request: ResponsesHookRequest) -> ResponsesHookOutcome {

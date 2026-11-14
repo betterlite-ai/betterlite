@@ -1,6 +1,7 @@
+use betterlite_logging::analytics::python::FormatError;
 use thiserror::Error;
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum AgenticLoopSettingsError {
     #[error("litellm_params.max_agentic_loops must be an integer, got {literal}")]
     CeilingNotInteger { literal: String },
@@ -20,6 +21,11 @@ pub enum AgenticLoopSettingsError {
     DepthOutOfRange,
     #[error("'{type_name}' object is not iterable")]
     FingerprintsNotIterable { type_name: &'static str },
+    #[error("the rejected value could not be rendered as Python text")]
+    Render {
+        #[from]
+        source: FormatError,
+    },
 }
 
 impl AgenticLoopSettingsError {
@@ -28,7 +34,8 @@ impl AgenticLoopSettingsError {
         match self {
             Self::CeilingNotInteger { .. }
             | Self::DepthWrongType { .. }
-            | Self::FingerprintsNotIterable { .. } => "TypeError",
+            | Self::FingerprintsNotIterable { .. }
+            | Self::Render { .. } => "TypeError",
             Self::CeilingBelowMinimum { .. }
             | Self::DepthInvalidLiteral { .. }
             | Self::DepthNan
@@ -47,21 +54,22 @@ pub enum AgenticLoopSafetyError {
     MaxLoopsExceeded { max_loops: u32, model: String },
 }
 
-impl AgenticLoopSafetyError {
-    #[must_use]
-    pub const fn python_class(&self) -> &'static str {
-        "AgenticLoopSafetyError"
-    }
-}
-
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AgenticFollowupKwargsError {
     #[error("the agentic loop depth is too large to advance")]
     DepthOverflow,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum DeploymentHookError {
-    #[error("{message}")]
-    Failed { message: String },
+    #[error("the deployment hook failed: {source}")]
+    Failed {
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error("the hook result could not be rendered as Python text: {source}")]
+    Render {
+        #[source]
+        source: FormatError,
+    },
 }

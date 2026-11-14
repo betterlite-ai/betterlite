@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde::Deserialize;
 
 use super::error::AgenticLoopSafetyError;
 
@@ -13,12 +14,7 @@ pub struct RefusedToolIdentifiers {
 }
 
 #[must_use]
-pub fn fingerprint_agentic_tools(tools: &Json) -> String {
-    let sorted = sort_json_keys(tools);
-    python_json::dumps(&sorted)
-}
-
-fn sort_json_keys(value: &Json) -> Json {
+pub fn sort_json_keys(value: &Json) -> Json {
     match value {
         Json::Object(object) => {
             let sorted: BTreeMap<&str, Json> = object
@@ -43,7 +39,8 @@ pub fn check_agentic_loop_safety(
     max_loops: u32,
     model: &str,
 ) -> Result<String, AgenticLoopSafetyError> {
-    let fingerprint = fingerprint_agentic_tools(tool_calls);
+    let canonical = sort_json_keys(tool_calls);
+    let fingerprint = python_json::dumps(&canonical);
     let repeated = fingerprints
         .iter()
         .any(|seen| matches!(seen, Json::Text(text) if text == &fingerprint));
@@ -60,7 +57,7 @@ pub fn check_agentic_loop_safety(
 }
 
 #[must_use]
-pub fn refused_agentic_tool_identifiers(tool_calls: &Json) -> RefusedToolIdentifiers {
+pub fn refused_tool_ids(tool_calls: &Json) -> RefusedToolIdentifiers {
     let calls = match tool_calls {
         Json::Object(object) => object.get("tool_calls"),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
@@ -114,10 +111,17 @@ pub fn is_refused_tool_use_block(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiSurface {
+    AnthropicMessages,
+    Responses,
+}
+
 #[must_use]
-pub const fn can_replace_turn_with_terminal_response(stream: bool, api_surface: &str) -> bool {
+pub const fn can_finalize_turn(stream: bool, api_surface: ApiSurface) -> bool {
     match api_surface {
-        "anthropic_messages" => !stream,
-        _ => false,
+        ApiSurface::AnthropicMessages => !stream,
+        ApiSurface::Responses => false,
     }
 }
