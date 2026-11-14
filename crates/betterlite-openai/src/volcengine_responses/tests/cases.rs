@@ -7,7 +7,7 @@ use betterlite_models::decisions::Json;
 
 use crate::openai_base_config::{Headers, Object};
 use crate::response_events::event_decode::DecodedStreamResponse;
-use crate::response_events::{RawResponse, ReplyBody};
+use crate::response_events::{RawResponse, ReplyBody, ResponsesReply};
 use crate::volcengine_common::VolcEngineError;
 use crate::volcengine_responses::error::VolcengineResponsesError;
 use crate::volcengine_responses::params::{
@@ -28,11 +28,17 @@ fn object(text: &str) -> Object {
     serde_json::from_str(text).unwrap()
 }
 
+fn json(text: &str) -> Value {
+    serde_json::from_str(text).unwrap()
+}
+
 fn event(text: &str) -> IndexMap<String, Json> {
     let parsed: Json = serde_json::from_str(text).unwrap();
     match parsed {
         Json::Object(fields) => fields,
-        _other => panic!("expected an object event"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("expected an object event")
+        }
     }
 }
 
@@ -74,10 +80,7 @@ fn wire_reply<'text>(
     }
 }
 
-fn transformed(
-    text: &str,
-    status: u16,
-) -> Result<crate::response_events::ResponsesReply, VolcEngineError> {
+fn transformed(text: &str, status: u16) -> Result<ResponsesReply, VolcEngineError> {
     let redactor = support::redactor();
     let silent = support::Silent;
     let env = support::environment(&redactor, &silent);
@@ -146,7 +149,7 @@ fn key_lookup_takes_the_first_nonempty_source_in_order() {
         volcengine: Some(&volcengine),
     };
     let headers = validate_environment(&Headers::new(), sources).unwrap();
-    assert_eq!(headers.get("Authorization").unwrap(), "Bearer params-key");
+    assert_eq!(&headers["Authorization"], "Bearer params-key");
 }
 
 #[test]
@@ -159,7 +162,7 @@ fn key_lookup_falls_back_to_the_volcengine_key() {
         volcengine: Some(&volcengine),
     };
     let headers = validate_environment(&Headers::new(), sources).unwrap();
-    assert_eq!(headers.get("Authorization").unwrap(), "Bearer volc-key");
+    assert_eq!(&headers["Authorization"], "Bearer volc-key");
 }
 
 #[test]
@@ -188,8 +191,8 @@ fn environment_headers_put_the_volcengine_defaults_first() {
         volcengine: None,
     };
     let headers = validate_environment(&extra, sources).unwrap();
-    assert_eq!(headers.get("Content-Type").unwrap(), "application/json");
-    assert_eq!(headers.get("Authorization").unwrap(), "Custom");
+    assert_eq!(&headers["Content-Type"], "application/json");
+    assert_eq!(&headers["Authorization"], "Custom");
 }
 
 const NO_SOURCES: BaseSources<'static> = BaseSources {
@@ -281,8 +284,8 @@ fn stream_event_adds_an_empty_output_to_a_response() {
 #[test]
 fn stream_event_fills_missing_integers_with_zero() {
     let decoded = stream(r#"{"type":"response.output_text.delta","item_id":"i","delta":"d"}"#);
-    assert_eq!(decoded["output_index"], 0);
-    assert_eq!(decoded["content_index"], 0);
+    assert_eq!(decoded["output_index"], 0_i32);
+    assert_eq!(decoded["content_index"], 0_i32);
 }
 
 #[test]
@@ -315,7 +318,7 @@ fn stream_event_fills_a_reasoning_part() {
 #[test]
 fn stream_event_fills_a_nullable_field_with_null() {
     let decoded = stream(r#"{"type":"response.output_item.added"}"#);
-    assert_eq!(decoded["output_index"], 0);
+    assert_eq!(decoded["output_index"], 0_i32);
     assert!(decoded.get("item").is_none() || decoded["item"].is_null());
 }
 
@@ -324,9 +327,9 @@ fn stream_event_recurses_into_a_nested_usage() {
     let decoded = stream(
         r#"{"type":"response.completed","response":{"id":"r","created_at":1,"output":[],"usage":{"input_tokens":3}}}"#,
     );
-    assert_eq!(decoded["response"]["usage"]["input_tokens"], 3);
-    assert_eq!(decoded["response"]["usage"]["output_tokens"], 0);
-    assert_eq!(decoded["response"]["usage"]["total_tokens"], 0);
+    assert_eq!(decoded["response"]["usage"]["input_tokens"], 3_i32);
+    assert_eq!(decoded["response"]["usage"]["output_tokens"], 0_i32);
+    assert_eq!(decoded["response"]["usage"]["total_tokens"], 0_i32);
 }
 
 #[rstest]
@@ -360,14 +363,14 @@ fn stream_event_fills_every_integer_its_event_declares(
 ) {
     let decoded = stream(text);
     for name in integers {
-        assert_eq!(decoded[*name], 0, "{name}");
+        assert_eq!(decoded[*name], 0_i32, "{name}");
     }
 }
 
 #[test]
 fn stream_event_gives_an_output_item_done_its_declared_default_sequence() {
     let decoded = stream(r#"{"type":"response.output_item.done","item":{"type":"message"}}"#);
-    assert_eq!(decoded["sequence_number"], 1);
+    assert_eq!(decoded["sequence_number"], 1_i32);
 }
 
 #[test]
@@ -396,7 +399,7 @@ fn stream_event_rejects_an_event_without_a_string_type() {
 fn stream_event_keeps_an_unknown_event_generic() {
     let decoded = stream(r#"{"type":"response.custom.thing","extra":1}"#);
     assert_eq!(decoded["type"], "response.custom.thing");
-    assert_eq!(decoded["extra"], 1);
+    assert_eq!(decoded["extra"], 1_i32);
 }
 
 #[test]
@@ -456,7 +459,7 @@ fn delete_reply_keeps_the_fields_as_sent_when_validation_fails() {
     match transform_resource_reply(ReplyOperation::Delete, &reply).unwrap() {
         ResourceReply::Body(body) => assert_eq!(
             serde_json::to_value(*body).unwrap(),
-            serde_json::json!({"deleted": true})
+            json(r#"{"deleted":true}"#)
         ),
         ResourceReply::Response(_typed) => panic!("expected a body"),
     }
@@ -473,7 +476,7 @@ fn delete_reply_returns_the_validated_record() {
     match transform_resource_reply(ReplyOperation::Delete, &reply).unwrap() {
         ResourceReply::Body(body) => assert_eq!(
             serde_json::to_value(*body).unwrap(),
-            serde_json::json!({"id": "resp_1", "object": "response", "deleted": true, "extra": 1})
+            json(r#"{"id":"resp_1","object":"response","deleted":true,"extra":1}"#)
         ),
         ResourceReply::Response(_typed) => panic!("expected a body"),
     }
@@ -486,7 +489,7 @@ fn input_items_reply_stays_raw() {
     match transform_resource_reply(ReplyOperation::InputItems, &reply).unwrap() {
         ResourceReply::Body(body) => assert_eq!(
             serde_json::to_value(*body).unwrap(),
-            serde_json::json!({"data": [], "object": "list"})
+            json(r#"{"data":[],"object":"list"}"#)
         ),
         ResourceReply::Response(_typed) => panic!("expected a body"),
     }
@@ -496,6 +499,8 @@ fn input_items_reply_stays_raw() {
 
 #[test]
 fn capabilities_never_fake_a_stream_over_a_websocket() {
-    assert!(!SHOULD_FAKE_STREAM);
-    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+    const {
+        assert!(!SHOULD_FAKE_STREAM);
+        assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+    }
 }
