@@ -60,12 +60,12 @@ fn resolve_ceiling<L>(value: Option<RawNumber>, path: &str, lookup: &L) -> Resul
 where
     L: EnvironmentLookup,
 {
-    let value = match value {
+    let number = match value {
         None => return Ok(DEFAULT_MAX_AGENTIC_LOOPS),
         Some(RawNumber::Text(text)) => RawNumber::Text(resolve_string(text, path, lookup)?),
         Some(other) => other,
     };
-    let parsed = match value {
+    let parsed = match number {
         RawNumber::Integer(integer) => AgenticLoopValue::Integer(integer),
         RawNumber::Float(float) => AgenticLoopValue::Float(float),
         RawNumber::Boolean(flag) => AgenticLoopValue::Boolean(flag),
