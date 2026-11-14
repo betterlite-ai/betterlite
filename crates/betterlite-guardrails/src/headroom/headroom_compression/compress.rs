@@ -7,6 +7,7 @@ use serde_json::Number;
 use thiserror::Error;
 
 use super::HeadroomGuardrail;
+use crate::headroom::text::lossy_text;
 use crate::headroom_failure::{
     CompressFailure, CompressResult, build_compress_failure_detail, handle_compress_failure,
     read_ccr_hashes,
@@ -93,18 +94,6 @@ pub(crate) async fn call_compress(
             .map_err(CompressError::Failure);
     }
     parse_body(&body, &text, request.rows, fallback).map_err(CompressError::Failure)
-}
-
-// httpx's response.text: UTF-8 with errors="replace", so each invalid sequence reads as one U+FFFD
-fn lossy_text(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len());
-    for chunk in bytes.utf8_chunks() {
-        text.push_str(chunk.valid());
-        if !chunk.invalid().is_empty() {
-            text.push(char::REPLACEMENT_CHARACTER);
-        }
-    }
-    text
 }
 
 fn unreachable(

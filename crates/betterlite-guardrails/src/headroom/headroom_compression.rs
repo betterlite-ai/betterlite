@@ -97,8 +97,8 @@ pub struct HeadroomRuntime {
 
 pub struct HeadroomGuardrail {
     guardrail_name: Option<String>,
-    settings: HeadroomSettings,
-    client: reqwest::Client,
+    pub(crate) settings: HeadroomSettings,
+    pub(crate) client: reqwest::Client,
     client_factory: ClientFactory,
     runtime: HeadroomRuntime,
     issued: IssuedHashStore,
@@ -137,6 +137,14 @@ impl HeadroomGuardrail {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         entries.get(call_id).map(|issued| issued.hashes.clone())
+    }
+
+    // the hashes a request may retrieve are the ones its own compression call issued before the cache entry expired
+    pub(crate) fn valid_hashes(&self, call_id: Option<&str>) -> BTreeSet<String> {
+        self.issued.prune_expired((self.runtime.clock)());
+        call_id
+            .and_then(|identifier| self.has_issued_hashes(identifier))
+            .unwrap_or_default()
     }
 
     pub(crate) async fn apply(
