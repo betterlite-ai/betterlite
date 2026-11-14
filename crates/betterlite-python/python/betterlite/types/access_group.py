@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+
 class AccessGroupCreateRequest(BaseModel):
     access_group_name: str
     description: str | None = None

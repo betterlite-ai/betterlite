@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Annotated, ClassVar, Final, Literal, TypeAlias
+from typing import Annotated, ClassVar, Final, Literal, Required, TypeAlias
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -11,9 +11,10 @@ from pydantic import (
     PrivateAttr,
     field_validator,
 )
-from typing_extensions import ReadOnly, Required, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.llms.base import LiteLLMPydanticObjectBase
+
 
 class AgentProvider(TypedDict, total=False):
     organization: str
