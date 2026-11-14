@@ -1,0 +1,27 @@
+kind: helper
+name: max-tokens-thinking-bump
+call:
+  b4118:
+    cases:
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls: []
+        optional_params:
+          max_tokens: 2000
+          thinking: {budget_tokens: 2000}
+        kwargs: {}
+        searches: []
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls: []
+        optional_params:
+          max_tokens: 1000
+          thinking: {budget_tokens: 1500.5}
+        kwargs: {}
+        searches: []
+env: {}
+compare: {ignore: []}
