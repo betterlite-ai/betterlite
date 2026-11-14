@@ -30,9 +30,8 @@ impl Default for MantleResponsesConfig {
 }
 
 impl fmt::Debug for MantleResponsesConfig {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("MantleResponsesConfig")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MantleResponsesConfig")
             .field("use_openai_path", &self.use_openai_path)
             .finish_non_exhaustive()
     }

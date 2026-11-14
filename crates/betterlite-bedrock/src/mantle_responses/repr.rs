@@ -15,7 +15,7 @@ pub(crate) fn repr_json(value: &Json) -> String {
         Json::Object(fields) => {
             let rendered: Vec<String> = fields
                 .iter()
-                .map(|(key, value)| format!("{}: {}", quoted_string(key), repr_json(value)))
+                .map(|(key, field)| format!("{}: {}", quoted_string(key), repr_json(field)))
                 .collect();
             format!("{{{}}}", rendered.join(", "))
         }

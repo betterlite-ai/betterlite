@@ -24,8 +24,6 @@ use super::capture::{Fixture, Warnings};
 use super::input::{AuthCase, ErrorProbe, HoistCase, Input, MapCase, UrlCase};
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
-const MODEL_NAME_INPUT: &str = "hello";
-
 pub(super) fn run(input: &Input) -> HelperResult {
     let warnings = Warnings::default();
     let _guard = set_default(tracing_subscriber::registry().with(warnings.clone()));
@@ -34,8 +32,11 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::ResponseOptions { cases }
         | Input::UnsupportedParams400 { cases }
         | Input::UnsupportedParamsWarnDrop { cases }
-        | Input::ToolFilter { cases } => map_cases(&warnings, cases),
-        Input::ModelName { cases } => model_name_cases(&warnings, cases),
+        | Input::ToolFilter { cases } => map_cases(&warnings, cases, None),
+        Input::ModelName { cases } => {
+            let input = ResponsesInput::Text("hello".to_owned());
+            map_cases(&warnings, cases, Some(&input))
+        }
         Input::ResponseAuth { cases } | Input::ProjectHeader { cases } => auth_cases(cases),
         Input::InputHoisting { cases } => hoist_cases(&warnings, cases),
     }
@@ -82,7 +83,7 @@ fn map_outcome(
     let options = ResponsesOptions {
         provider: CUSTOM_LLM_PROVIDER,
         model: case.model.clone(),
-        params: serde_json::from_value(case.params.clone())?,
+        params: serde_json::from_value(Value::Object(case.params.clone()))?,
     };
     warnings.clear();
     let mapped = runtime.block_on(map_openai_params(
@@ -104,48 +105,30 @@ fn attach_warnings(value: &mut Value, warnings: Vec<String>) {
     }
 }
 
-fn run_map(runtime: &tokio::runtime::Runtime, case: &MapCase, warnings: &Warnings) -> HelperResult {
-    let mut value = match map_outcome(runtime, case, warnings)? {
-        Ok(params) => json!({"params": serde_json::to_value(params)?}),
-        Err(error) => json!({"error": {"status": error.status_code()}}),
-    };
-    attach_warnings(&mut value, warnings.take());
-    Ok(value)
+fn body_value(model: &str, input: &ResponsesInput, params: &Object) -> HelperResult {
+    Ok(
+        match transform_responses_request(model, input, params, None) {
+            Ok(body) => json!({"body": serde_json::to_value(body)?}),
+            Err(error) => json!({"error": {"status": error.status_code()}}),
+        },
+    )
 }
 
-fn map_cases(warnings: &Warnings, cases: &[MapCase]) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-    let mut results = Vec::with_capacity(cases.len());
-    for case in cases {
-        results.push(run_map(&runtime, case, warnings)?);
-    }
-    Ok(json!({"results": results}))
-}
-
-fn run_body(
-    runtime: &tokio::runtime::Runtime,
-    case: &MapCase,
+fn map_cases(
     warnings: &Warnings,
+    cases: &[MapCase],
+    body_input: Option<&ResponsesInput>,
 ) -> HelperResult {
-    let mut value = match map_outcome(runtime, case, warnings)? {
-        Ok(params) => {
-            let input = ResponsesInput::Text(MODEL_NAME_INPUT.to_owned());
-            match transform_responses_request(&case.model, &input, &params, None) {
-                Ok(body) => json!({"body": serde_json::to_value(body)?}),
-                Err(error) => json!({"error": {"status": error.status_code()}}),
-            }
-        }
-        Err(error) => json!({"error": {"status": error.status_code()}}),
-    };
-    attach_warnings(&mut value, warnings.take());
-    Ok(value)
-}
-
-fn model_name_cases(warnings: &Warnings, cases: &[MapCase]) -> HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread().build()?;
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
-        results.push(run_body(&runtime, case, warnings)?);
+        let mut value = match (map_outcome(&runtime, case, warnings)?, body_input) {
+            (Err(error), _) => json!({"error": {"status": error.status_code()}}),
+            (Ok(params), Some(input)) => body_value(&case.model, input, &params)?,
+            (Ok(params), None) => json!({"params": serde_json::to_value(params)?}),
+        };
+        attach_warnings(&mut value, warnings.take());
+        results.push(value);
     }
     Ok(json!({"results": results}))
 }
@@ -211,13 +194,8 @@ fn hoist_cases(warnings: &Warnings, cases: &[HoistCase]) -> HelperResult {
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
         let request: ResponsesInput = serde_json::from_value(case.input.clone())?;
-        let params: Object = serde_json::from_value(case.params.clone())?;
         warnings.clear();
-        let body = transform_responses_request(&case.model, &request, &params, None);
-        let mut value = match body {
-            Ok(body) => json!({"body": serde_json::to_value(body)?}),
-            Err(error) => json!({"error": {"status": error.status_code()}}),
-        };
+        let mut value = body_value(&case.model, &request, &case.params)?;
         attach_warnings(&mut value, warnings.take());
         results.push(value);
     }

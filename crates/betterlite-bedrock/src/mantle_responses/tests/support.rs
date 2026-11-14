@@ -13,6 +13,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use tokio::runtime::Builder;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
@@ -20,6 +21,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::aws_settings::credential_cache::CredentialCache;
 use crate::mantle_inputs::records::MantleGlobals;
+use crate::mantle_responses::auth::{EnvironmentParams, validate_environment};
 use crate::mantle_responses::config::{CUSTOM_LLM_PROVIDER, MantleResponsesConfig};
 use crate::mantle_responses::error::MantleResponsesError;
 use crate::mantle_responses::options::map_openai_params;
@@ -122,6 +124,15 @@ pub(super) fn header(headers: &IndexMap<String, String>, name: &str) -> Option<S
     headers.get(name).cloned()
 }
 
+pub(super) fn authorization(
+    params: EnvironmentParams<'_>,
+    globals: &MantleGlobals,
+) -> Option<String> {
+    let mut caller = headers();
+    validate_environment(&mut caller, params, globals);
+    header(&caller, "Authorization")
+}
+
 pub(super) fn map_with(
     settings: &MantleResponsesConfig,
     model: &str,
@@ -131,25 +142,29 @@ pub(super) fn map_with(
     let options = ResponsesOptions {
         provider: CUSTOM_LLM_PROVIDER,
         model: model.to_owned(),
-        params: serde_json::from_str(params).expect("fixture params"),
+        params: serde_json::from_str(params).map_err(MantleResponsesError::Encode)?,
     };
     let mut capabilities = Capabilities;
     let mut bundled = BundledReasoningModels::default();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("runtime");
     let drop_params = DropParams {
         global: false,
         request: drop_request,
     };
-    runtime.block_on(map_openai_params(
+    block_on(map_openai_params(
         settings,
         &mut capabilities,
         &options,
         drop_params,
         &mut bundled,
     ))
+}
+
+fn block_on<F: Future>(future: F) -> F::Output {
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the fixture runtime builds")
+        .block_on(future)
 }
 
 pub(super) fn map(
@@ -206,14 +221,13 @@ impl Visit for Recorded {
 
 impl Messages {
     pub(super) fn at(&self, level: Level) -> Vec<String> {
-        let messages = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut found = Vec::new();
-        for (kind, text) in messages.iter() {
-            if *kind == level {
-                found.push(text.clone());
-            }
-        }
-        found
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter(|(kind, _)| *kind == level)
+            .map(|(_, text)| text.clone())
+            .collect()
     }
 }
 

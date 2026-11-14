@@ -64,11 +64,11 @@ fn precedence_cases() {
     );
     let explicit = support::secret("explicit-fixture-key");
     let mut override_headers = support::headers();
-    let params = EnvironmentParams {
+    let override_params = EnvironmentParams {
         api_key: Some(&explicit),
         project_id: None,
     };
-    validate_environment(&mut override_headers, params, &globals);
+    validate_environment(&mut override_headers, override_params, &globals);
     assert_eq!(
         support::header(&override_headers, AUTHORIZATION).as_deref(),
         Some("Bearer explicit-fixture-key")
@@ -129,6 +129,8 @@ fn error_class_cases() {
 
 fn capability_cases() {
     assert_eq!(CUSTOM_LLM_PROVIDER, ProviderId::BedrockMantle);
-    assert!(!SUPPORTS_NATIVE_FILE_SEARCH);
-    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+    assert_eq!(
+        [SUPPORTS_NATIVE_FILE_SEARCH, SUPPORTS_NATIVE_WEBSOCKET],
+        [false, false]
+    );
 }

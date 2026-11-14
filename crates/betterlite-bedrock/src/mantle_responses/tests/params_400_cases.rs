@@ -15,10 +15,10 @@ pub(super) fn unsupported_params_400() {
 }
 
 fn message_of(error: &MantleResponsesError) -> String {
-    match error {
-        MantleResponsesError::UnsupportedParams { message } => message.clone(),
-        other => panic!("expected an unsupported params error, got {other:?}"),
-    }
+    let MantleResponsesError::UnsupportedParams { message } = error else {
+        panic!("expected an unsupported params error, got {error:?}");
+    };
+    message.clone()
 }
 
 fn tier_cases() {

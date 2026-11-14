@@ -1,5 +1,4 @@
 use betterlite_openai::reasoning_models::DropParams;
-use betterlite_prompts::arguments::json::Object;
 use tracing::Level;
 
 use crate::mantle_responses::error::MantleResponsesError;
@@ -11,147 +10,109 @@ const MODEL: &str = "openai.gpt-oss-120b";
 
 const TIER_WARNING: &str = "Bedrock Mantle Responses API: dropping unsupported service_tier 'flex' (supported: ['auto', 'default']).";
 
+const DROPPING: DropParams = DropParams {
+    global: false,
+    request: true,
+};
+
+const REJECTING: DropParams = DropParams {
+    global: false,
+    request: false,
+};
+
+const GLOBAL: DropParams = DropParams {
+    global: true,
+    request: false,
+};
+
 const SUMMARY_WARNING: &str = "Bedrock Mantle Responses API: dropping unsupported reasoning.summary 'concise' (supported: ['auto']).";
 
 pub(super) fn unsupported_params_warn_drop() {
-    tier_cases();
-    summary_cases();
+    dropped_cases();
     error_cases();
     standard_path_cases();
     repr_cases();
 }
 
-fn drop_tier(params: &Object) -> Object {
-    drop_unsupported_tier(
-        params,
-        DropParams {
-            global: false,
-            request: true,
-        },
-    )
-    .expect("the tier drops")
-}
-
-fn drop_summary(params: &Object) -> Object {
-    drop_unsupported_summary(
-        &support::config(true),
-        params,
-        MODEL,
-        DropParams {
-            global: false,
-            request: true,
-        },
-    )
-    .expect("the summary drops")
-}
-
-fn tier_cases() {
+fn dropped_cases() {
     let (messages, _guard) = support::capture();
-    let params = support::object(r#"{"service_tier": "flex", "temperature": 0.5}"#);
-    let original = params.clone();
-    let dropped = drop_tier(&params);
-    assert_eq!(dropped, support::object(r#"{"temperature": 0.5}"#));
-    assert_eq!(params, original);
-    assert_eq!(messages.at(Level::WARN), vec![TIER_WARNING.to_owned()]);
-    let numeric = support::object(r#"{"service_tier": 3}"#);
-    assert_eq!(drop_tier(&numeric), support::object("{}"));
-    let boolean = support::object(r#"{"service_tier": true}"#);
-    assert_eq!(drop_tier(&boolean), support::object("{}"));
-    assert_eq!(
-        messages.at(Level::WARN),
-        vec![
-            TIER_WARNING.to_owned(),
-            "Bedrock Mantle Responses API: dropping unsupported service_tier 3 (supported: ['auto', 'default']).".to_owned(),
-            "Bedrock Mantle Responses API: dropping unsupported service_tier True (supported: ['auto', 'default']).".to_owned(),
-        ]
-    );
-}
-
-fn summary_cases() {
-    let (messages, _guard) = support::capture();
-    let params = support::object(r#"{"reasoning": {"summary": "concise", "effort": "high"}}"#);
-    let original = params.clone();
-    let dropped = drop_summary(&params);
-    assert_eq!(
-        dropped,
-        support::object(r#"{"reasoning": {"effort": "high"}}"#)
-    );
-    assert_eq!(params, original);
-    assert_eq!(messages.at(Level::WARN), vec![SUMMARY_WARNING.to_owned()]);
-    let only = support::object(r#"{"reasoning": {"summary": "concise"}}"#);
-    assert_eq!(drop_summary(&only), support::object("{}"));
-    let numeric = support::object(r#"{"reasoning": {"summary": 5}, "temperature": 0.5}"#);
-    assert_eq!(
-        drop_summary(&numeric),
-        support::object(r#"{"temperature": 0.5}"#)
-    );
-    assert_eq!(
-        messages.at(Level::WARN),
-        vec![
-            SUMMARY_WARNING.to_owned(),
-            SUMMARY_WARNING.to_owned(),
-            "Bedrock Mantle Responses API: dropping unsupported reasoning.summary 5 (supported: ['auto']).".to_owned(),
-        ]
-    );
+    let cases = [
+        (
+            r#"{"service_tier": "flex", "temperature": 0.5}"#,
+            r#"{"temperature": 0.5}"#,
+            TIER_WARNING,
+        ),
+        (
+            r#"{"service_tier": 3}"#,
+            "{}",
+            "Bedrock Mantle Responses API: dropping unsupported service_tier 3 (supported: ['auto', 'default']).",
+        ),
+        (
+            r#"{"service_tier": true}"#,
+            "{}",
+            "Bedrock Mantle Responses API: dropping unsupported service_tier True (supported: ['auto', 'default']).",
+        ),
+        (
+            r#"{"reasoning": {"summary": "concise", "effort": "high"}}"#,
+            r#"{"reasoning": {"effort": "high"}}"#,
+            SUMMARY_WARNING,
+        ),
+        (
+            r#"{"reasoning": {"summary": "concise"}}"#,
+            "{}",
+            SUMMARY_WARNING,
+        ),
+        (
+            r#"{"reasoning": {"summary": 5}, "temperature": 0.5}"#,
+            r#"{"temperature": 0.5}"#,
+            "Bedrock Mantle Responses API: dropping unsupported reasoning.summary 5 (supported: ['auto']).",
+        ),
+    ];
+    for (index, (source, expected, warning)) in cases.into_iter().enumerate() {
+        let params = support::object(source);
+        let original = params.clone();
+        let tiered = drop_unsupported_tier(&params, DROPPING).expect("the tier drops");
+        let dropped = drop_unsupported_summary(&support::config(true), &tiered, MODEL, DROPPING)
+            .expect("the summary drops");
+        assert_eq!(dropped, support::object(expected), "params {source}");
+        assert_eq!(params, original, "params {source}");
+        let warned = messages.at(Level::WARN);
+        assert_eq!(warned.len(), index + 1, "params {source}");
+        assert_eq!(warned.last().map(String::as_str), Some(warning));
+    }
 }
 
 fn error_cases() {
     let (messages, _guard) = support::capture();
     let params = support::object(r#"{"service_tier": "flex"}"#);
-    let error = drop_unsupported_tier(
-        &params,
-        DropParams {
-            global: false,
-            request: false,
-        },
-    )
-    .expect_err("the tier is rejected");
+    let error = drop_unsupported_tier(&params, REJECTING).expect_err("the tier is rejected");
     let MantleResponsesError::UnsupportedParams { message } = &error else {
         panic!("expected an unsupported params error");
     };
     assert!(message.starts_with("bedrock_mantle does not support service_tier='flex';"));
-    let global = drop_unsupported_tier(
-        &params,
-        DropParams {
-            global: true,
-            request: false,
-        },
-    )
-    .expect("the global switch drops it");
+    let global = drop_unsupported_tier(&params, GLOBAL).expect("the global switch drops it");
     assert_eq!(global, support::object("{}"));
+    assert_eq!(messages.at(Level::WARN), vec![TIER_WARNING.to_owned()]);
+    summary_error_case();
+}
+
+fn summary_error_case() {
     let reasoning = support::object(r#"{"reasoning": {"summary": "concise"}}"#);
-    let summary = drop_unsupported_summary(
-        &support::config(true),
-        &reasoning,
-        MODEL,
-        DropParams {
-            global: false,
-            request: false,
-        },
-    )
-    .expect_err("the summary is rejected");
-    let MantleResponsesError::UnsupportedParams { message } = &summary else {
+    let error = drop_unsupported_summary(&support::config(true), &reasoning, MODEL, REJECTING)
+        .expect_err("the summary is rejected");
+    let MantleResponsesError::UnsupportedParams { message } = &error else {
         panic!("expected an unsupported params error");
     };
     assert!(message.starts_with(
         "bedrock_mantle does not support reasoning.summary='concise' for 'openai.gpt-oss-120b';"
     ));
-    assert_eq!(messages.at(Level::WARN), vec![TIER_WARNING.to_owned()]);
 }
 
 fn standard_path_cases() {
     let (messages, _guard) = support::capture();
     let params = support::object(r#"{"reasoning": {"summary": "concise"}}"#);
-    let kept = drop_unsupported_summary(
-        &support::config(false),
-        &params,
-        MODEL,
-        DropParams {
-            global: false,
-            request: false,
-        },
-    )
-    .expect("the standard path keeps every summary");
+    let kept = drop_unsupported_summary(&support::config(false), &params, MODEL, REJECTING)
+        .expect("the standard path keeps every summary");
     assert_eq!(kept, params);
     assert!(messages.at(Level::WARN).is_empty());
 }
@@ -161,10 +122,11 @@ fn repr_cases() {
     let cases = [
         (r#"{"service_tier": "it's"}"#, r#""it's""#),
         (r#"{"service_tier": "a'b\"c"}"#, r#"'a\'b"c'"#),
-        (r#"{"service_tier": "x\\y\n\t\r"}"#, r#"'x\\y\n\t\r'"#),
+        (r#"{"service_tier": "x\\y\n\t\r"}"#, r"'x\\y\n\t\r'"),
     ];
     for (source, shown) in cases {
-        assert_eq!(drop_tier(&support::object(source)), support::object("{}"));
+        let dropped = drop_unsupported_tier(&support::object(source), DROPPING);
+        assert_eq!(dropped.expect("the tier drops"), support::object("{}"));
         let warned = messages.at(Level::WARN).pop().expect("a warning");
         assert_eq!(
             warned,

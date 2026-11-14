@@ -125,20 +125,9 @@ pub(crate) fn drop_unsupported_summary(
     model: &str,
     drop_params: DropParams,
 ) -> Result<Object, MantleResponsesError> {
-    if !config.use_openai_path {
-        return Ok(params.clone());
-    }
-    let Some(Json::Object(reasoning)) = params.get("reasoning") else {
+    let Some((reasoning, summary)) = unsupported_summary(config, params) else {
         return Ok(params.clone());
     };
-    let Some(summary) = reasoning.get("summary") else {
-        return Ok(params.clone());
-    };
-    let supported =
-        matches!(summary, Json::Text(name) if SUPPORTED_SUMMARIES.contains(&name.as_str()));
-    if supported || matches!(summary, Json::Null) {
-        return Ok(params.clone());
-    }
     if !drop_params.global && !drop_params.request {
         return Err(MantleResponsesError::UnsupportedParams {
             message: format!(
@@ -156,12 +145,11 @@ pub(crate) fn drop_unsupported_summary(
         repr_json(summary),
         SUPPORTED_SUMMARIES_REPR
     );
-    let mut stripped = Object::new();
-    for (key, value) in reasoning {
-        if key.as_str() != "summary" {
-            stripped.insert(key.clone(), value.clone());
-        }
-    }
+    let stripped: Object = reasoning
+        .iter()
+        .filter(|(key, _)| key.as_str() != "summary")
+        .map(|(key, field)| (key.clone(), field.clone()))
+        .collect();
     let mut updated = params.clone();
     if stripped.is_empty() {
         updated.shift_remove("reasoning");
@@ -169,6 +157,25 @@ pub(crate) fn drop_unsupported_summary(
         updated.insert("reasoning".to_owned(), Json::Object(stripped));
     }
     Ok(updated)
+}
+
+fn unsupported_summary<'params>(
+    config: &MantleResponsesConfig,
+    params: &'params Object,
+) -> Option<(&'params Object, &'params Json)> {
+    if !config.use_openai_path {
+        return None;
+    }
+    let Some(Json::Object(reasoning)) = params.get("reasoning") else {
+        return None;
+    };
+    let summary = reasoning.get("summary")?;
+    let supported =
+        matches!(summary, Json::Text(name) if SUPPORTED_SUMMARIES.contains(&name.as_str()));
+    if supported || matches!(summary, Json::Null) {
+        return None;
+    }
+    Some((reasoning, summary))
 }
 
 fn filter_mapped_tools(params: Object) -> Result<Object, MantleResponsesError> {
@@ -180,7 +187,11 @@ fn filter_mapped_tools(params: Object) -> Result<Object, MantleResponsesError> {
     }
     let listed = match raw_tools {
         Json::List(entries) => entries,
-        single => vec![single],
+        single @ (Json::Null
+        | Json::Bool(_)
+        | Json::Number(_)
+        | Json::Text(_)
+        | Json::Object(_)) => vec![single],
     };
     let filtered = filter_unsupported_tools(&listed)?;
     let mut updated = params;

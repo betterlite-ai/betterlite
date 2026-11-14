@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -42,8 +43,8 @@ pub(crate) struct UrlCase {
 #[serde(deny_unknown_fields)]
 pub(crate) struct MapCase {
     pub(super) model: String,
-    #[serde(default = "empty_object")]
-    pub(super) params: Value,
+    #[serde(default)]
+    pub(super) params: serde_json::Map<String, Value>,
     #[serde(default)]
     pub(super) drop_params: bool,
     #[serde(default)]
@@ -79,10 +80,6 @@ pub(crate) struct ErrorProbe {
 pub(crate) struct HoistCase {
     pub(super) model: String,
     pub(super) input: Value,
-    #[serde(default = "empty_object")]
-    pub(super) params: Value,
-}
-
-fn empty_object() -> Value {
-    Value::Object(serde_json::Map::new())
+    #[serde(default)]
+    pub(super) params: Object,
 }

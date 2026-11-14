@@ -161,9 +161,9 @@ fn error_cases() {
     assert!(matches!(&error, MantleResponsesError::Input(_)));
     assert_eq!(error.status_code(), None);
     let tools = support::object(r#"{"tools": {"type": "function"}}"#);
-    let error = transform_responses_request(MODEL, &request, &tools, None)
+    let refused = transform_responses_request(MODEL, &request, &tools, None)
         .expect_err("a non-list tools entry is refused");
-    assert!(matches!(&error, MantleResponsesError::Input(_)));
-    assert_eq!(error.status_code(), Some(400));
+    assert!(matches!(&refused, MantleResponsesError::Input(_)));
+    assert_eq!(refused.status_code(), Some(400));
     assert!(messages.at(Level::WARN).is_empty());
 }

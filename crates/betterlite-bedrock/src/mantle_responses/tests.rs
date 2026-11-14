@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use betterlite_models::identity::provider_id::ProviderId;
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use crate::mantle_responses::auth::{EnvironmentParams, validate_environment};
 use crate::mantle_responses::config::{
@@ -67,23 +67,10 @@ fn mantle_responses_credential_identity_isolation() {
     first_globals.mantle_api_key = Some(support::secret("first-fixture-key"));
     let mut second_globals = support::globals();
     second_globals.aws_bearer_token = Some(support::secret("second-fixture-key"));
-    let mut first_headers = support::headers();
-    let mut second_headers = support::headers();
-    validate_environment(
-        &mut first_headers,
-        EnvironmentParams::default(),
-        &first_globals,
-    );
-    validate_environment(
-        &mut second_headers,
-        EnvironmentParams::default(),
-        &second_globals,
-    );
-    let first = support::header(&first_headers, "Authorization");
-    let second = support::header(&second_headers, "Authorization");
+    let first = support::authorization(EnvironmentParams::default(), &first_globals);
+    let second = support::authorization(EnvironmentParams::default(), &second_globals);
     assert_eq!(first.as_deref(), Some("Bearer first-fixture-key"));
     assert_eq!(second.as_deref(), Some("Bearer second-fixture-key"));
-    assert_ne!(first, second);
     let first_cache = support::credential_cache();
     let second_cache = support::credential_cache();
     assert!(!Arc::ptr_eq(&first_cache, &second_cache));
@@ -92,20 +79,17 @@ fn mantle_responses_credential_identity_isolation() {
     assert!(!format!("{first_config:?}").contains("second-fixture-key"));
     assert!(!format!("{second_config:?}").contains("first-fixture-key"));
     let shared = support::secret("shared-fixture-key");
-    let mut shared_headers = support::headers();
-    validate_environment(
-        &mut shared_headers,
-        EnvironmentParams {
-            api_key: Some(&shared),
-            project_id: None,
-        },
-        &second_globals,
-    );
+    let params = EnvironmentParams {
+        api_key: Some(&shared),
+        project_id: None,
+    };
     assert_eq!(
-        support::header(&shared_headers, "Authorization").as_deref(),
+        support::authorization(params, &second_globals).as_deref(),
         Some("Bearer shared-fixture-key")
     );
-    assert!(!first_headers.contains_key("OpenAI-Project"));
+    let mut untouched = support::headers();
+    validate_environment(&mut untouched, EnvironmentParams::default(), &first_globals);
+    assert!(!untouched.contains_key("OpenAI-Project"));
 }
 
 #[test]
@@ -119,37 +103,35 @@ fn mantle_responses_secret_safe_failure() {
         api_key: Some(&api_key),
         project_id: None,
     };
-    let mut headers = support::headers();
-    validate_environment(&mut headers, params, &globals);
     assert_eq!(
-        support::header(&headers, "Authorization").as_deref(),
+        support::authorization(params, &globals).as_deref(),
         Some("Bearer fixture-mantle-key")
     );
     let failure = support::map("openai.gpt-oss-120b", r#"{"service_tier": "flex"}"#, false)
         .expect_err("a flex tier is rejected");
-    let region = complete_url(
-        &support::config(true),
-        CompleteUrlParams {
-            api_base: None,
-            aws_region_name: Some("US-EAST-1"),
-        },
-        &globals,
-    )
-    .expect_err("an unknown region is rejected");
+    let region_params = CompleteUrlParams {
+        api_base: None,
+        aws_region_name: Some("US-EAST-1"),
+    };
+    let region = complete_url(&support::config(true), region_params, &globals)
+        .expect_err("an unknown region is rejected");
     let config = support::config(true);
     let rendered = format!("{params:?} {globals:?} {config:?} {failure} {failure:?} {region}");
     assert!(rendered.contains("MantleResponsesConfig { use_openai_path: true, .. }"));
     assert!(!rendered.contains(secrets[0]));
     assert!(!rendered.contains(secrets[1]));
     assert_eq!(CUSTOM_LLM_PROVIDER, ProviderId::BedrockMantle);
-    assert!(DEFAULT_USE_OPENAI_PATH);
-    assert!(!SUPPORTS_NATIVE_FILE_SEARCH);
-    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
     assert_eq!(
-        globals
-            .mantle_api_key
-            .as_ref()
-            .map(|key| key.expose_secret()),
-        Some(secrets[0])
+        [
+            DEFAULT_USE_OPENAI_PATH,
+            SUPPORTS_NATIVE_FILE_SEARCH,
+            SUPPORTS_NATIVE_WEBSOCKET
+        ],
+        [true, false, false]
     );
+    let exposed = globals
+        .mantle_api_key
+        .as_ref()
+        .map(ExposeSecret::expose_secret);
+    assert_eq!(exposed, Some(secrets[0]));
 }

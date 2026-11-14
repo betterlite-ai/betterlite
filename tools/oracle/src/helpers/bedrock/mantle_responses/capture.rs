@@ -66,8 +66,11 @@ impl Warnings {
     }
 
     pub(super) fn take(&self) -> Vec<String> {
-        let mut messages = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *messages)
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain(..)
+            .collect()
     }
 }
 

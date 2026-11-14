@@ -5,36 +5,11 @@ use super::support;
 const MODEL: &str = "openai.gpt-oss-120b";
 
 pub(super) fn mantle_response_options() {
-    absent_tier_cases();
-    supported_tier_cases();
+    mapped_table_cases();
     unhashable_tier_cases();
     case_sensitive_cases();
     summary_cases();
     standard_path_cases();
-    parent_mapping_cases();
-}
-
-fn absent_tier_cases() {
-    let params = support::object(r#"{"temperature": 0.5}"#);
-    assert_eq!(
-        support::mapped(MODEL, r#"{"temperature": 0.5}"#, false),
-        params
-    );
-    assert_eq!(
-        support::mapped(MODEL, r#"{"service_tier": null}"#, false),
-        support::object(r#"{"service_tier": null}"#)
-    );
-}
-
-fn supported_tier_cases() {
-    assert_eq!(
-        support::mapped(MODEL, r#"{"service_tier": "auto"}"#, false),
-        support::object(r#"{"service_tier": "auto"}"#)
-    );
-    assert_eq!(
-        support::mapped(MODEL, r#"{"service_tier": "default"}"#, false),
-        support::object(r#"{"service_tier": "default"}"#)
-    );
 }
 
 fn case_sensitive_cases() {
@@ -104,13 +79,29 @@ fn standard_path_cases() {
     );
 }
 
-fn parent_mapping_cases() {
-    assert_eq!(
-        support::mapped(MODEL, r#"{"max_output_tokens": 8}"#, false),
-        support::object(r#"{"max_output_tokens": 16}"#)
-    );
-    assert_eq!(
-        support::mapped(MODEL, r#"{"max_output_tokens": 64}"#, false),
-        support::object(r#"{"max_output_tokens": 64}"#)
-    );
+fn mapped_table_cases() {
+    let cases = [
+        (r#"{"temperature": 0.5}"#, r#"{"temperature": 0.5}"#),
+        (r#"{"service_tier": null}"#, r#"{"service_tier": null}"#),
+        (r#"{"service_tier": "auto"}"#, r#"{"service_tier": "auto"}"#),
+        (
+            r#"{"service_tier": "default"}"#,
+            r#"{"service_tier": "default"}"#,
+        ),
+        (
+            r#"{"max_output_tokens": 8}"#,
+            r#"{"max_output_tokens": 16}"#,
+        ),
+        (
+            r#"{"max_output_tokens": 64}"#,
+            r#"{"max_output_tokens": 64}"#,
+        ),
+    ];
+    for (params, expected) in cases {
+        assert_eq!(
+            support::mapped(MODEL, params, false),
+            support::object(expected),
+            "params {params}"
+        );
+    }
 }

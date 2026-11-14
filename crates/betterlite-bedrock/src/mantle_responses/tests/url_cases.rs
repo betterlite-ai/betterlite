@@ -70,12 +70,12 @@ fn configured_base_cases() {
     );
     let mut overridden = support::globals();
     overridden.mantle_api_base = Some("https://mantle-proxy.example.com".to_owned());
-    let params = CompleteUrlParams {
+    let explicit = CompleteUrlParams {
         api_base: Some("https://explicit.example.com/v1/"),
         aws_region_name: None,
     };
     assert_eq!(
-        complete_url(&support::config(false), params, &overridden).expect("explicit base"),
+        complete_url(&support::config(false), explicit, &overridden).expect("explicit base"),
         "https://explicit.example.com/v1/responses"
     );
 }
@@ -143,20 +143,24 @@ fn host_cases() {
         complete(&config, Some("https://bedrock-mantle.example.com"), None),
         "https://bedrock-mantle.example.com/openai/v1/responses"
     );
+    host_edge_cases(&config);
+}
+
+fn host_edge_cases(config: &MantleResponsesConfig) {
     for custom in [
         "https://bedrock-mantle..api.aws",
         "https://bedrock-mantle.a.b.api.aws",
         "https://bedrock-mantle.eu-west-1.api.aws.example.com",
     ] {
         assert_eq!(
-            complete(&config, Some(custom), None),
+            complete(config, Some(custom), None),
             format!("{custom}/openai/v1/responses"),
             "base {custom}"
         );
     }
     assert_eq!(
         complete(
-            &config,
+            config,
             Some("https://bedrock-mantle.eu-west-1.api.aws\n"),
             None
         ),
@@ -164,7 +168,7 @@ fn host_cases() {
     );
     assert_eq!(
         complete(
-            &config,
+            config,
             Some("https://bedrock-mantle.eu-west-1.api.aws/left\nover"),
             None
         ),
@@ -185,20 +189,20 @@ fn region_cases() {
     );
     let mut bearer = support::globals();
     bearer.aws_region_name = Some("ap-south-1".to_owned());
-    let params = CompleteUrlParams {
+    let named = CompleteUrlParams {
         api_base: None,
         aws_region_name: Some("sa-east-1"),
     };
     assert_eq!(
-        complete_url(&support::config(true), params, &bearer).expect("explicit region"),
+        complete_url(&support::config(true), named, &bearer).expect("explicit region"),
         "https://bedrock-mantle.sa-east-1.api.aws/openai/v1/responses"
     );
-    let params = CompleteUrlParams {
+    let from_host = CompleteUrlParams {
         api_base: Some("https://bedrock-mantle.us-east-2.api.aws"),
         aws_region_name: None,
     };
     assert_eq!(
-        complete_url(&support::config(true), params, &bearer).expect("host region"),
+        complete_url(&support::config(true), from_host, &bearer).expect("host region"),
         "https://bedrock-mantle.us-east-2.api.aws/openai/v1/responses"
     );
     let invalid = CompleteUrlParams {

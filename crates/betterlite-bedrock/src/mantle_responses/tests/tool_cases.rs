@@ -50,8 +50,8 @@ fn drop_cases() {
     let duplicate = support::items(
         r#"[{"type": "web_search_preview"}, {"type": "web_search_preview"}, {"type": "code_interpreter"}]"#,
     );
-    let filtered = filter_unsupported_tools(&duplicate).expect("the list filters");
-    assert!(filtered.is_empty());
+    let emptied = filter_unsupported_tools(&duplicate).expect("the list filters");
+    assert!(emptied.is_empty());
     assert_eq!(
         messages.at(Level::WARN),
         vec![
@@ -63,10 +63,17 @@ fn drop_cases() {
 
 fn pass_through_cases() {
     let (messages, _guard) = support::capture();
-    let scalars = support::items(r#"[7, "text", null, [1], {"nested": true}]"#);
+    let scalars = support::items(r#"[7, "text", null, [1]]"#);
     let filtered = filter_unsupported_tools(&scalars).expect("non-objects pass");
     assert_eq!(filtered, scalars);
     assert!(messages.at(Level::WARN).is_empty());
+    let typeless = support::items(r#"[{"nested": true}]"#);
+    let dropped = filter_unsupported_tools(&typeless).expect("objects without a type drop");
+    assert!(dropped.is_empty());
+    assert_eq!(
+        messages.at(Level::WARN),
+        vec!["Bedrock Mantle Responses API: dropping unsupported tool type(s) ['None'] (supported: ['custom', 'function', 'mcp', 'namespace', 'tool_search', 'web_search']).".to_owned()]
+    );
 }
 
 fn mapped_cases() {
@@ -86,6 +93,10 @@ fn mapped_cases() {
             "Bedrock Mantle Responses API: dropping unsupported tool type(s) ['web_search_preview'] (supported: ['custom', 'function', 'mcp', 'namespace', 'tool_search', 'web_search']).".to_owned(),
         ]
     );
+    mapped_shape_cases();
+}
+
+fn mapped_shape_cases() {
     assert_eq!(
         support::mapped(MODEL, r#"{"tools": []}"#, false),
         support::object(r#"{"tools": []}"#)
