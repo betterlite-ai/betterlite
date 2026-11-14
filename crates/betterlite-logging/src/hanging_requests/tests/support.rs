@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::mem::take;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -125,7 +125,7 @@ impl ApiBaseResolver for FixedResolver {
     ) -> Result<Option<String>, ApiBaseError> {
         self.calls
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .push((model.to_owned(), params.clone()));
         self.answer.clone()
     }
