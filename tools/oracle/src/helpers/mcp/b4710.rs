@@ -147,12 +147,12 @@ fn plaintext_value(
             Ok(decoded.map_or(JsonValue::Null, secret_map_value))
         }
         "env_vars" => {
-            let parsed: JsonValue = serde_json::from_str(text)?;
-            let JsonValue::Array(mut entries) = parsed else {
-                return Ok(parsed);
-            };
-            decrypt_stored_env_var_values(&mut entries, cipher);
-            Ok(JsonValue::Array(entries))
+            let mut parsed =
+                serde_json::from_str::<JsonValue>(text).map_err(McpEncodingError::Json)?;
+            if let JsonValue::Array(entries) = &mut parsed {
+                decrypt_stored_env_var_values(entries, cipher);
+            }
+            Ok(parsed)
         }
         _ => serde_json::from_str(text).map_err(McpEncodingError::Json),
     }
