@@ -1,0 +1,5 @@
+task: B9440
+deviations:
+  - what: A Model Armor credentials value that is valid JSON but not a credential document fails when the token source is built, where LiteLLM parses the same value on the guardrail's first scan.
+    why: The token source decodes the value once with B1301's decoder at construction, so the decode error reaches the guardrail build instead of make_model_armor_request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L294-L302

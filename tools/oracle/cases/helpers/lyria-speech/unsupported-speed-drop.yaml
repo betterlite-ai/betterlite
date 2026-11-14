@@ -1,0 +1,22 @@
+kind: helper
+name: lyria-unsupported-speed-drop
+call:
+  vertex_lyria_speech:
+    function: mapped
+    cases:
+      - {model: lyria-002, params: {speed: 1.5}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {instructions: whisper}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {speed: 1.5, instructions: whisper}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {speed: 1.5}, voice: null, drop_params: true, global_drop_params: false}
+      - {model: lyria-002, params: {instructions: whisper}, voice: null, drop_params: false, global_drop_params: true}
+      - {model: lyria-002, params: {speed: 1.5, instructions: whisper, response_format: wav}, voice: null, drop_params: true, global_drop_params: false}
+      - {model: lyria-002, params: {speed: 0}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {speed: null}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {speed: null, instructions: whisper}, voice: null, drop_params: true, global_drop_params: false}
+      - {model: lyria-002, params: {response_format: wav, temperature: 0.5}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {instructions: whisper}, voice: alloy, drop_params: true, global_drop_params: false}
+      - {model: lyria-002, params: {speed: 4, response_format: mp3}, voice: null, drop_params: true, global_drop_params: false}
+      - {model: lyria-002, params: {speed: 1.5}, voice: {name: custom}, drop_params: true, global_drop_params: false}
+      - {model: vertex_ai/lyria-002, params: {speed: 1.5}, voice: alloy, drop_params: true, global_drop_params: false}
+env: {}
+compare: {ignore: []}
