@@ -10,7 +10,7 @@
     node tools/dashboard/install.mjs --bundle target/dashboard/dist --bin <path to betterlite>
     bash tools/dashboard/check-build.sh
 
-`key` prints the cache key and needs neither Docker nor the network. `build` writes `target/dashboard/dist` (`ui/` and `manifest.json`) and skips the work when the manifest in `dist` already carries the current key. `--rebuild` ignores the manifest. `--source-repo <checkout>` and `--out <directory>` go to the source intake and the work directory.
+`key` prints the cache key and needs neither Docker nor the network. `build` writes `target/dashboard/dist` (`ui/` and `manifest.json`) and skips the work when the manifest in `dist` already carries the current key. `--rebuild` ignores the manifest and runs the compile and finalize stages again without their layer cache, so `check-build.sh` compares two real builds. `--source-repo <checkout>` and `--out <directory>` go to the source intake and the work directory.
 
 `check-build.sh` runs two clean builds with `--rebuild`, compares their path, mode and content digests and a deterministic tar, checks the notices and every output kind, installs the bundle beside a temporary executable and proves stale chunks disappear. It needs Docker with buildx; when the CLI is missing, as in the gate's task container, which carries the host's socket but no client, it installs `docker-cli` and `docker-buildx` from the distribution first.
 

@@ -162,6 +162,37 @@ test("a bundle that is stale, unfinished or forced is not reused", async (t) => 
   }
 });
 
+async function stubBuildTools(t) {
+  const { root, bin } = await stubDocker(t);
+  await put(bin, "node", `#!/bin/sh\ncase "$*" in\n  *source.mjs*) exit 0 ;;\nesac\nexec ${JSON.stringify(process.execPath)} "$@"\n`);
+  await fs.chmod(path.join(bin, "node"), 0o755);
+  return { root, bin, log: path.join(root, "docker.log") };
+}
+
+test("the build hands the API base to the image, empty by default", async (t) => {
+  const { root, bin, log } = await stubBuildTools(t);
+  const plain = runBuildSh(["build", "--out", path.join(root, "plain")], { path: bin });
+  assert.equal(plain.status, 99, plain.stderr);
+  assert.match(await fs.readFile(log, "utf8"), /--build-arg API_BASE=( |$)/);
+  await fs.rm(log);
+  const based = runBuildSh(["build", "--api-base", "https://api.example.test", "--out", path.join(root, "based")], { path: bin });
+  assert.equal(based.status, 99, based.stderr);
+  assert.match(await fs.readFile(log, "utf8"), /--build-arg API_BASE=https:\/\/api\.example\.test( |$)/);
+});
+
+test("a rebuild runs the compile and finalize stages without the layer cache", async (t) => {
+  const { root, bin, log } = await stubBuildTools(t);
+  const plain = runBuildSh(["build", "--out", path.join(root, "plain")], { path: bin });
+  assert.equal(plain.status, 99, plain.stderr);
+  assert.equal((await fs.readFile(log, "utf8")).includes("--no-cache-filter"), false);
+  await fs.rm(log);
+  const forced = runBuildSh(["build", "--rebuild", "--out", path.join(root, "forced")], { path: bin });
+  assert.equal(forced.status, 99, forced.stderr);
+  const forcedLog = await fs.readFile(log, "utf8");
+  assert.match(forcedLog, /--no-cache-filter compiled( |$)/);
+  assert.match(forcedLog, /--no-cache-filter bundled( |$)/);
+});
+
 async function addedLines(name) {
   const patch = await fs.readFile(path.join(REPO_ROOT, "ui/dashboard/patches", name), "utf8");
   return patch.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++"));

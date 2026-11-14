@@ -78,11 +78,15 @@ build() {
     return
   fi
   local build_id inputs
+  local cache_args=()
+  if [[ ${rebuild} == true ]]; then
+    cache_args=(--no-cache-filter compiled --no-cache-filter bundled)
+  fi
   build_id="$(node "${bundle_tool}" build-id "${bundle_args[@]}")"
   inputs="$(node "${bundle_tool}" inputs "${bundle_args[@]}")"
   prepare_source
   rm -rf "${work}/export"
-  buildx --target export --build-arg "BUILD_ID=${build_id}" --build-arg "API_BASE=${api_base}" \
+  buildx --target export "${cache_args[@]}" --build-arg "BUILD_ID=${build_id}" --build-arg "API_BASE=${api_base}" \
     --build-arg "MANIFEST_INPUTS=${inputs}" --output "type=local,dest=${work}/export" "${work}/source"
   rm -rf "${dist}"
   mv "${work}/export/bundle" "${dist}"

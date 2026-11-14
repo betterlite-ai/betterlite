@@ -40,6 +40,7 @@ archive_digest() {
 # the build sees these, so any that reaches the output is a leak
 export LITELLM_MASTER_KEY=sk-sentinel-master-4e1f DATABASE_URL=postgres://sentinel:pw-9c2d@db.invalid/bl PROXY_ADMIN_ID=sentinel-admin-77ab
 
+# --rebuild also skips the compile and finalize layer caches, so these are two real compiles
 bash "${tools}/build.sh" build --rebuild "$@" 2>&1 | tee "${scratch}/build.log"
 cp -a "${dist}" "${scratch}/first"
 bash "${tools}/build.sh" build --rebuild "$@" 2>&1 | tee -a "${scratch}/build.log"
