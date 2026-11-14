@@ -1,0 +1,27 @@
+kind: helper
+name: audio-subtitles-subtitle-rendering
+call:
+  audio_subtitles:
+    calls:
+      - {function: srt, tokens: [{text: "Hel", start_ms: 0}, {text: "lo", end_ms: 1000}]}
+      - {function: vtt, tokens: [{text: "Hel", start_ms: 0}, {text: "lo", end_ms: 1000}]}
+      - {function: srt, tokens: []}
+      - {function: vtt, tokens: []}
+      - {function: srt, tokens: [{text: "Hi", end_ms: 100}]}
+      - {function: vtt, tokens: [{text: "Hi", end_ms: 100}]}
+      - {function: group, tokens: [{text: "X", start_ms: -1, end_ms: -2}]}
+      - {function: srt, tokens: [{text: "X", start_ms: -1, end_ms: -2}]}
+      - {function: vtt, tokens: [{text: "X", start_ms: -1, end_ms: -2}]}
+      - {function: group, tokens: [{text: "X", start_ms: 5}]}
+      - {function: group, tokens: [{text: "X", start_ms: 5, end_ms: 2}]}
+      - {function: srt, tokens: [{text: "X", start_ms: 360000000, end_ms: 360000000}]}
+      - {function: srt, tokens: [{text: "A. ", start_ms: 0, end_ms: 100}, {text: " B", start_ms: 200, end_ms: 300}]}
+      - {function: srt, tokens: [{text: "  Hi  ", start_ms: 0, end_ms: 100}]}
+      - {function: group, tokens: [{text: "Hi", start_ms: 0, end_ms: 100}, {text: " there"}, {text: ""}, {text: " friend", start_ms: 200, end_ms: 300}]}
+      - {function: srt, tokens: [{text: "", start_ms: 5}, {text: "Hi", start_ms: 0, end_ms: 1}]}
+      - {function: group, tokens: [{text: "Hel", start_ms: 5}, {text: "lo", end_ms: 9}]}
+      - {function: group, tokens: [{text: "Hel"}, {text: "lo", start_ms: 3}]}
+      - {function: srt, tokens: [{text: "a ", start_ms: 0, end_ms: 100, speaker: 1}, {text: "b", start_ms: 100, end_ms: 200, speaker: 1}]}
+      - {function: group, tokens: [{text: "a ", start_ms: 0, end_ms: 100, speaker: 1}, {text: "b", start_ms: 100, end_ms: 200, speaker: "1"}]}
+env: {}
+compare: {ignore: []}

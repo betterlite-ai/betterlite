@@ -2290,6 +2290,7 @@ dependencies = [
  "lru",
  "mime_guess",
  "nix",
+ "num-traits",
  "percent-encoding",
  "rand 0.10.3",
  "rstest",
@@ -2864,6 +2865,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-secret-managers",
  "hex",
+ "indexmap 2.14.2",
  "percent-encoding",
  "redis",
  "rstest",
@@ -2874,7 +2876,16 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tracing",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-rag-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-rag",
+ "libfuzzer-sys",
 ]
 
 [[package]]
