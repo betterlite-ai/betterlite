@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{HashMap, VecDeque};
+use std::iter;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -228,7 +229,7 @@ async fn concurrent_misses_on_one_server_make_one_grant() {
         Arc::new(RecordingBackend::default()),
     ));
     let mut tasks = JoinSet::new();
-    let handles: Vec<_> = std::iter::repeat_with(|| {
+    let handles: Vec<_> = iter::repeat_with(|| {
         let task_source = Arc::clone(&source);
         tasks.spawn(async move { task_source.get("server", &config()).await })
     })

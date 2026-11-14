@@ -18,7 +18,7 @@ call:
       - {server_id: text}
       - {server_id: float}
       - {server_id: truthy}
-      - {server_id: null}
+      - {server_id: 'null'}
       - {server_id: underscored}
       - {server_id: words}
 env: {}

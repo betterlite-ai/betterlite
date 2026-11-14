@@ -208,7 +208,7 @@ const fn transport_kind(error: &TransportError) -> &'static str {
 
 #[must_use]
 pub fn parse_token_response(bytes: &[u8], status_code: u16) -> TokenEndpointOutcome {
-    let object = serde_json::from_slice::<BTreeMap<String, IgnoredAny>>(bytes).is_ok();
+    let object = serde_json::from_slice::<BTreeMap<String, Option<IgnoredAny>>>(bytes).is_ok();
     match serde_json::from_slice::<TokenResponseBody>(bytes) {
         Ok(body) if object => TokenEndpointOutcome::Success { body },
         _ => TokenEndpointOutcome::Denied {
