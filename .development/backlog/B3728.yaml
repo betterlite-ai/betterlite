@@ -1,7 +1,7 @@
 id: B3728
 milestone: M6 guardrails
 title: Azure Content Safety transport and legacy hooks
-status: todo
+status: done
 depends_on: [B173, B219, B905]
 file: tasks/B3728-azure-content-safety-base.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/hooks/azure_content_safety.py"
 parent: B106
 split_from: B106
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1593
