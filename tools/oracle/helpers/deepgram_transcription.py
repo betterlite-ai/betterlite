@@ -1,3 +1,4 @@
+import base64
 import os
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
@@ -149,7 +150,7 @@ def request_answer(step: Request) -> JsonValue:
         model="", audio_file=audio, optional_params={}, litellm_params={}
     )
     return {
-        "data": JSON.validate_python(list(BYTES.validate_python(result.data))),
+        "data": base64.b64encode(BYTES.validate_python(result.data)).decode(),
         "files": JSON.validate_python(result.files),
         "content_type": result.content_type,
     }

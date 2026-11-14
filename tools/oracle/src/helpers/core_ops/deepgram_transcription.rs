@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::io::{self, Read};
 use std::path::Path;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_core::api::deepgram::transcription::request::{
     DeepgramTranscriptionConfig, SUPPORTED_OPENAI_PARAMS, map_openai_params, raw_audio_request,
 };
@@ -92,27 +94,7 @@ fn step(step: &Step, config: &DeepgramTranscriptionConfig) -> Result<Value, Box<
             audio,
             filename,
             content,
-        } => {
-            let bytes = content.as_bytes();
-            let file = match audio {
-                AudioKind::Bytes => AudioFile::Bytes(bytes),
-                AudioKind::Tuple => AudioFile::Tuple(AudioTuple {
-                    filename,
-                    content: Some(TupleContent::Bytes(bytes)),
-                }),
-            };
-            let Ok(request) = raw_audio_request(file, &NoFiles) else {
-                return Ok(json!({ "raised": "ValueError" }));
-            };
-            let AudioTranscriptionData::Bytes(data) = request.data else {
-                return Err("the request data is not raw bytes").or_config_error();
-            };
-            Ok(json!({
-                "data": data,
-                "files": request.files,
-                "content_type": request.content_type,
-            }))
-        }
+        } => request_answer(*audio, filename, content),
         Step::Url {
             model,
             api_base,
@@ -130,26 +112,59 @@ fn step(step: &Step, config: &DeepgramTranscriptionConfig) -> Result<Value, Box<
             message,
             status_code,
             headers,
-        } => {
-            let error =
-                DeepgramTranscriptionConfig::get_error_class(message, *status_code, headers);
-            Ok(json!({
-                "status_code": error.status_code,
-                "message": error.message,
-                "headers": error.headers,
-            }))
-        }
-        Step::Reply { body } => {
-            let Ok(transcript) = decode_deepgram_transcript(body.as_bytes()) else {
-                return Ok(json!({ "raised": "ValueError" }));
-            };
-            let mut response = serde_json::to_value(&transcript).or_config_error()?;
-            let hidden = response
-                .as_object_mut()
-                .and_then(|fields| fields.remove("hidden_params"));
-            Ok(json!({ "response": response, "hidden": hidden }))
-        }
+        } => Ok(error_class_answer(message, *status_code, headers)),
+        Step::Reply { body } => reply_answer(body),
     }
+}
+
+fn error_class_answer(
+    message: &str,
+    status_code: u16,
+    headers: &BTreeMap<String, String>,
+) -> Value {
+    let error = DeepgramTranscriptionConfig::get_error_class(message, status_code, headers);
+    json!({
+        "status_code": error.status_code,
+        "message": error.message,
+        "headers": error.headers,
+    })
+}
+
+fn request_answer(
+    audio: AudioKind,
+    filename: &str,
+    content: &str,
+) -> Result<Value, Box<HelperError>> {
+    let bytes = content.as_bytes();
+    let file = match audio {
+        AudioKind::Bytes => AudioFile::Bytes(bytes),
+        AudioKind::Tuple => AudioFile::Tuple(AudioTuple {
+            filename,
+            content: Some(TupleContent::Bytes(bytes)),
+        }),
+    };
+    let Ok(request) = raw_audio_request(file, &NoFiles) else {
+        return Ok(json!({ "raised": "ValueError" }));
+    };
+    let AudioTranscriptionData::Bytes(data) = request.data else {
+        return Err("the request data is not raw bytes").or_config_error();
+    };
+    Ok(json!({
+        "data": BASE64.encode(data),
+        "files": request.files,
+        "content_type": request.content_type,
+    }))
+}
+
+fn reply_answer(body: &str) -> Result<Value, Box<HelperError>> {
+    let Ok(transcript) = decode_deepgram_transcript(body.as_bytes()) else {
+        return Ok(json!({ "raised": "ValueError" }));
+    };
+    let mut response = serde_json::to_value(&transcript).or_config_error()?;
+    let hidden = response
+        .as_object_mut()
+        .and_then(|fields| fields.remove("hidden_params"));
+    Ok(json!({ "response": response, "hidden": hidden }))
 }
 
 pub(crate) struct Op;
