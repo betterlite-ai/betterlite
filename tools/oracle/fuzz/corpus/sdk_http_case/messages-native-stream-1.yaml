@@ -1,0 +1,22 @@
+kind: sdk_http
+name: messages-native-stream-corpus
+env: {}
+call:
+  messages_native_stream:
+    body: {model: claude, max_tokens: 1, messages: []}
+    queue_maxsize: 4
+    max_detached_stream_drains: 1
+    steps:
+      - {op: start, stream: a}
+      - {op: release, stream: a, count: 2}
+      - {op: read, stream: a}
+      - {op: finish, stream: a}
+      - {op: detach, stream: a}
+      - {op: wait, stream: a, until: idle}
+      - {op: settle}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"type": "message_stop"}'
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

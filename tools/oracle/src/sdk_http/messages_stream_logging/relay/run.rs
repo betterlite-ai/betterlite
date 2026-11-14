@@ -1,0 +1,62 @@
+use std::sync::Arc;
+
+use betterlite_core::api::messages_native_stream::registry::StreamRegistry;
+use indexmap::IndexMap;
+
+use super::super::Http;
+use super::super::recording::Warnings;
+use super::Session;
+use super::call::{MessagesNativeStreamCall, Observation, RelayStep, StepOutcome};
+use super::state::wait_true;
+use crate::sdk_http::error::SdkHttpError;
+
+pub(super) struct Run<'run> {
+    pub(super) call: &'run MessagesNativeStreamCall,
+    pub(super) http: &'run Http<'run>,
+    pub(super) registry: Arc<StreamRegistry>,
+    pub(super) warnings: Warnings,
+    pub(super) sessions: IndexMap<String, Session>,
+}
+
+impl Run<'_> {
+    pub(super) async fn apply(&mut self, step: &RelayStep) -> Result<StepOutcome, SdkHttpError> {
+        match step {
+            RelayStep::Settle => Ok(StepOutcome {
+                frame: None,
+                observation: Some(self.settle().await?),
+            }),
+            RelayStep::Start { stream } => {
+                let session =
+                    Session::start(self.call, self.http, Arc::clone(&self.registry)).await?;
+                self.sessions.insert(stream.clone(), session);
+                Ok(StepOutcome::default())
+            }
+            _ => {
+                let session = self.sessions.get_mut(step.stream()).ok_or_else(|| {
+                    SdkHttpError::Invalid("the step names an unknown stream".to_owned())
+                })?;
+                Ok(StepOutcome {
+                    frame: session.apply(step).await?,
+                    observation: None,
+                })
+            }
+        }
+    }
+
+    // Billing for every stream is parked or queued by its pump; the worker is drained once all ran
+    async fn settle(&self) -> Result<Observation, SdkHttpError> {
+        for session in self.sessions.values() {
+            wait_true(&session.state.recorded).await;
+            session.worker.flush().await;
+        }
+        let streams = self
+            .sessions
+            .iter()
+            .map(|(name, session)| session.observe().map(|seen| (name.clone(), seen)))
+            .collect::<Result<IndexMap<_, _>, _>>()?;
+        Ok(Observation {
+            warnings: self.warnings.take()?,
+            streams,
+        })
+    }
+}

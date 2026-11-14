@@ -1,0 +1,8 @@
+task: B979
+deviations:
+  - what: A queue maxsize of zero or less stops startup with "ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE must be greater than 0".
+    why: LiteLLM hands the value to asyncio.Queue, where zero or less means an unbounded queue; the bounded-inputs rule forbids an unbounded relay, and a positive default keeps working setups compatible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L503-L505
+  - what: Retained encoded billing output past 16MiB or 65536 chunks fails with 502/bad_gateway/stream/stream_buffer_too_large; a started Anthropic stream emits api_error "Messages stream exceeded its retained-output limit" and closes upstream.
+    why: The bounded queue bounds queued chunks, not the separate collected_chunks list, so LiteLLM's retained billing bytes grow without limit; B1087's limits bound them and the task records the deviation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L628-L665

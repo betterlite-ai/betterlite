@@ -256,7 +256,7 @@ impl Session {
 }
 
 // The deferred callback awaits the parked futures in the order LiteLLM hands them over
-async fn await_parked(parked: Vec<LoggingFuture>) -> Result<(), ReportedFailure> {
+pub(super) async fn await_parked(parked: Vec<LoggingFuture>) -> Result<(), ReportedFailure> {
     for future in parked {
         future.await?;
     }

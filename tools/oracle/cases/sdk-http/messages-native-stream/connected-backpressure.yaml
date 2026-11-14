@@ -1,0 +1,37 @@
+kind: sdk_http
+name: connected-backpressure
+env:
+  ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE: "2"
+  ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS: "100"
+call:
+  messages_native_stream:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    queue_maxsize: 2
+    max_detached_stream_drains: 100
+    steps:
+      - {op: start, stream: a}
+      - {op: release, stream: a, count: 3}
+      - {op: finish, stream: a}
+      - {op: read, stream: a}
+      - {op: read, stream: a}
+      - {op: read, stream: a}
+      - {op: read, stream: a}
+      - {op: read, stream: a}
+      - {op: settle}
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "a"}}'
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "b"}}'
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "c"}}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

@@ -10,6 +10,7 @@ use betterlite_provider::api::vector_store_contracts::config::Params;
 use crate::case::{Compare, UpstreamAnswer};
 use error::SdkHttpError;
 use messages_stream_logging::call::MessagesStreamLoggingCall;
+use messages_stream_logging::relay::call::MessagesNativeStreamCall;
 use result::SdkResult;
 
 pub(crate) mod anthropic_beta_config;
@@ -68,6 +69,7 @@ pub enum SdkHttpCall {
     AnthropicBetaConfig(AnthropicBetaConfigCall),
     MessagesHeaderStream(MessagesHeaderStreamCall),
     MessagesStreamLogging(MessagesStreamLoggingCall),
+    MessagesNativeStream(MessagesNativeStreamCall),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -234,6 +236,13 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
             if !matches!(stream.body, Json::Object(_)) {
                 return Err(SdkHttpError::Invalid(
                     "the Messages header stream body must be an object".to_owned(),
+                ));
+            }
+        }
+        SdkHttpCall::MessagesNativeStream(relay) => {
+            if relay.queue_maxsize == 0 {
+                return Err(SdkHttpError::Invalid(
+                    "the relay queue maxsize must be greater than 0".to_owned(),
                 ));
             }
         }

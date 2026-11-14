@@ -1,0 +1,47 @@
+kind: sdk_http
+name: global-detached-drain-cap
+env:
+  ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE: "4"
+  ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS: "1"
+call:
+  messages_native_stream:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    queue_maxsize: 4
+    max_detached_stream_drains: 1
+    steps:
+      - {op: start, stream: a}
+      - {op: release, stream: a, count: 1}
+      - {op: read, stream: a}
+      - {op: detach, stream: a}
+      - {op: release, stream: a, count: 1}
+      - {op: wait, stream: a, until: idle}
+      - {op: start, stream: b}
+      - {op: release, stream: b, count: 1}
+      - {op: read, stream: b}
+      - {op: detach, stream: b}
+      - {op: release, stream: b, count: 1}
+      - {op: wait, stream: b, until: parked}
+      - {op: finish, stream: a}
+      - {op: settle}
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "a"}}'
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "b"}}'
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "c"}}'
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "d"}}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
