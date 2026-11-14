@@ -1,0 +1,28 @@
+kind: helper
+name: vertex-fine-tuning-zero-hyperparameters
+call:
+  vertex_fine_tuning:
+    operation: request
+    calls:
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {n_epochs: 0, learning_rate_multiplier: 0.0, batch_size: 4}
+        original_hyperparameters: {adapter_size: ""}
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {n_epochs: null, learning_rate_multiplier: null, batch_size: auto}
+        original_hyperparameters: {}
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {}
+        original_hyperparameters: {adapter_size: null}
+      - data:
+          model: m
+          training_file: gs://b/train.jsonl
+          hyperparameters: {n_epochs: "", learning_rate_multiplier: ""}
+        original_hyperparameters: {}
+env: {}
+compare: {ignore: []}

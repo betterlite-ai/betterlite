@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use betterlite_db::migration_deploy::DeployError;
 use betterlite_db::migration_ledger::connection::ConnectionError;
 use betterlite_db::spend_backfills::BackfillError;
+use betterlite_db::spend_partitions::{SpendPartitionError, SpendPartitionOperation};
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 
@@ -50,6 +51,16 @@ pub enum Operation {
         long_about = "Rebuild resetting keys' total_spend from LiteLLM_SpendLogs.\n\nRun key-total-spend first; this is its optional follow-up. Coverage is bounded by spend-log retention. Run it while the proxy is idle or with traffic paused, because queued spend-log batches would be missing from the rebuilt sum."
     )]
     KeyTotalSpendFromLogs,
+    #[command(
+        about = "Convert LiteLLM_SpendLogs into a startTime range-partitioned table offline",
+        long_about = "Convert LiteLLM_SpendLogs into a startTime range-partitioned table, following db_scripts/partition_spend_logs.sql.\n\nRun it with the proxy idle or traffic paused, and test on a staging copy with a backup first. Postgres cannot convert a populated table in place: the old rows stay in LiteLLM_SpendLogs_legacy, no rows are copied, and the new table starts empty. Afterwards enable use_spend_logs_partitioning and a maximum_spend_logs_retention_period separately in general_settings, and keep SPEND_LOG_PARTITION_INTERVAL consistent with the partitions you create later. To roll back, run unpartition-spend-logs and disable use_spend_logs_partitioning."
+    )]
+    PartitionSpendLogs,
+    #[command(
+        about = "Convert a partitioned LiteLLM_SpendLogs back to the plain table offline",
+        long_about = "Convert a partitioned LiteLLM_SpendLogs back into the plain table of the default LiteLLM schema, following db_scripts/unpartition_spend_logs.sql.\n\nRun it during a low-traffic window and take a backup first: every surviving row is copied, and duplicate request_id values at different startTime values collapse to one arbitrary row. Afterwards disable use_spend_logs_partitioning, or remove it, so retention returns to DELETE-based cleanup."
+    )]
+    UnpartitionSpendLogs,
 }
 
 impl Operation {
@@ -61,6 +72,15 @@ impl Operation {
             Self::DailyToolSpend { .. } => "daily-tool-spend",
             Self::KeyTotalSpend => "key-total-spend",
             Self::KeyTotalSpendFromLogs => "key-total-spend-from-logs",
+            Self::PartitionSpendLogs => "partition-spend-logs",
+            Self::UnpartitionSpendLogs => "unpartition-spend-logs",
+        }
+    }
+
+    const fn of_spend_partition(operation: SpendPartitionOperation) -> Self {
+        match operation {
+            SpendPartitionOperation::Partition => Self::PartitionSpendLogs,
+            SpendPartitionOperation::Unpartition => Self::UnpartitionSpendLogs,
         }
     }
 
@@ -83,6 +103,12 @@ impl Operation {
             }
             Self::KeyTotalSpend => DbAdminCommand::KeyTotalSpend,
             Self::KeyTotalSpendFromLogs => DbAdminCommand::KeyTotalSpendFromLogs,
+            Self::PartitionSpendLogs => {
+                DbAdminCommand::SpendPartition(SpendPartitionOperation::Partition)
+            }
+            Self::UnpartitionSpendLogs => {
+                DbAdminCommand::SpendPartition(SpendPartitionOperation::Unpartition)
+            }
         }
     }
 }
@@ -104,17 +130,19 @@ pub enum DbAdminCommand {
     DailyToolSpend(DailyToolSpendOptions),
     KeyTotalSpend,
     KeyTotalSpendFromLogs,
+    SpendPartition(SpendPartitionOperation),
 }
 
 impl DbAdminCommand {
     #[must_use]
-    pub const fn operation(self) -> Operation {
+    pub const fn operation(&self) -> Operation {
         match self {
             Self::Migrate(_) => Operation::Migrate,
             Self::DatabaseViews => Operation::DatabaseViews,
             Self::DailyToolSpend(_) => DAILY_TOOL_SPEND_KEY,
             Self::KeyTotalSpend => Operation::KeyTotalSpend,
             Self::KeyTotalSpendFromLogs => Operation::KeyTotalSpendFromLogs,
+            Self::SpendPartition(operation) => Operation::of_spend_partition(*operation),
         }
     }
 }
@@ -155,6 +183,11 @@ pub enum DbAdminError {
         #[source]
         source: SpendBackfillError,
     },
+    #[error("{source}")]
+    SpendPartition {
+        #[source]
+        source: SpendPartitionAdminError,
+    },
 }
 
 impl From<BackfillError> for DbAdminError {
@@ -163,6 +196,28 @@ impl From<BackfillError> for DbAdminError {
             source: SpendBackfillError::Backfill { source },
         }
     }
+}
+
+impl From<SpendPartitionError> for DbAdminError {
+    fn from(source: SpendPartitionError) -> Self {
+        Self::SpendPartition {
+            source: SpendPartitionAdminError::Conversion { source },
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SpendPartitionAdminError {
+    #[error("the partition database connection could not be opened: {source}")]
+    Connection {
+        #[source]
+        source: ConnectionError,
+    },
+    #[error("{source}")]
+    Conversion {
+        #[source]
+        source: SpendPartitionError,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
