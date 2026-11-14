@@ -31,6 +31,7 @@ use super::config::provider_config_for;
 use super::error::GenAiSetupError;
 use super::logging::mark_async_entrypoint;
 use super::merge::merge_native_request_fields;
+use super::params::VertexCredentials;
 use super::setup::SetupRequest;
 use super::setup::setup_generate_content_call;
 
@@ -45,6 +46,7 @@ struct FixtureError {
 #[derive(Debug, PartialEq, Eq)]
 struct TransformedRequest {
     model: String,
+    tools: Option<Json>,
     generation_config: Object,
     system_instruction: Option<Json>,
 }
@@ -93,6 +95,7 @@ impl GenerateContentProviderConfig for FixtureConfig {
             .expect("the fixture lock is not poisoned")
             .push(TransformedRequest {
                 model: request.model.to_owned(),
+                tools: request.tools.cloned(),
                 generation_config: request.generation_config.clone(),
                 system_instruction: request.system_instruction.cloned(),
             });
@@ -109,6 +112,9 @@ impl GenerateContentProviderConfig for FixtureConfig {
             "generationConfig".to_owned(),
             Json::Object(request.generation_config.clone()),
         );
+        if let Some(tools) = request.tools {
+            body.insert("tools".to_owned(), tools.clone());
+        }
         if let Some(instruction) = request.system_instruction {
             body.insert("systemInstruction".to_owned(), instruction.clone());
         }
@@ -157,6 +163,7 @@ fn setup_request<'request>(
     model: &'request str,
     contents: &'request Json,
     config: Option<&'request Object>,
+    tools: Option<&'request Json>,
     kwargs: &'request Object,
 ) -> SetupRequest<'request> {
     SetupRequest {
@@ -164,7 +171,7 @@ fn setup_request<'request>(
         contents,
         config,
         custom_llm_provider: None,
-        tools: None,
+        tools,
         kwargs,
     }
 }
@@ -244,7 +251,7 @@ fn provider_dispatch_selects_gemini_config_for_the_gemini_provider() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = Object::new();
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the gemini setup succeeds");
@@ -277,7 +284,7 @@ fn provider_dispatch_selects_vertex_config_for_a_native_vertex_model() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = Object::new();
-    let request = setup_request("vertex_ai/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("vertex_ai/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the vertex setup succeeds");
@@ -315,6 +322,7 @@ fn provider_dispatch_falls_back_to_the_adapter_for_vertex_partner_models() {
         "vertex_ai/claude-sonnet-4",
         &contents,
         Some(&config),
+        None,
         &kwargs,
     );
     let mut state = logging();
@@ -351,7 +359,7 @@ fn provider_dispatch_falls_back_to_the_adapter_for_other_providers() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = Object::new();
-    let request = setup_request("anthropic/claude-sonnet-4", &contents, None, &kwargs);
+    let request = setup_request("anthropic/claude-sonnet-4", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the adapter fallback succeeds");
@@ -395,7 +403,7 @@ fn native_fields_extracts_only_the_present_listed_fields() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = native_kwargs();
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the gemini setup succeeds");
@@ -427,7 +435,7 @@ fn native_fields_follow_the_config_field_list() {
         ("labels", Json::Object(object(&[("team", text("x"))]))),
         ("customField", Json::Null),
     ]);
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the gemini setup succeeds");
@@ -438,6 +446,40 @@ fn native_fields_follow_the_config_field_list() {
             ("customField", Json::Null),
         ])
     );
+}
+
+#[test]
+fn provider_dispatch_keeps_the_params_the_handlers_read() {
+    let fixture = Fixture::new();
+    let resolution = fixture.resolution();
+    let gemini = FixtureConfig::for_fields(&FIELDS);
+    let vertex = FixtureConfig::for_fields(&FIELDS);
+    let configs = provider_configs(&gemini, &vertex);
+    let contents = text("hello");
+    let kwargs = object(&[
+        ("max_retries", Json::Number(3.into())),
+        ("vertex_project", text("project-1")),
+        ("vertex_location", text("us-central1")),
+        ("vertex_credentials", text("creds.json")),
+        ("ssl_verify", Json::Bool(false)),
+        ("tpm", Json::Number(7.into())),
+    ]);
+    let request = setup_request("vertex_ai/gemini-2.5-flash", &contents, None, None, &kwargs);
+    let mut state = logging();
+    let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
+        .expect("the vertex setup succeeds");
+    let params = &result.litellm_params;
+    assert_eq!(params.max_retries, Some(3));
+    assert_eq!(params.vertex_project.as_deref(), Some("project-1"));
+    assert_eq!(params.vertex_location.as_deref(), Some("us-central1"));
+    assert_eq!(
+        params.vertex_credentials,
+        Some(VertexCredentials::Path("creds.json".to_owned()))
+    );
+    assert_eq!(params.ssl_verify, Some(Json::Bool(false)));
+    assert_eq!(params.extra.get("tpm"), Some(&Json::Number(7.into())));
+    assert!(!params.extra.contains_key("vertex_project"));
+    assert!(!params.extra.contains_key("max_retries"));
 }
 
 #[test]
@@ -491,7 +533,7 @@ fn mock_string_response_raises_when_stream_is_defaulted() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = object(&[("mock_response", text("hi"))]);
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let error = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .err()
@@ -511,7 +553,7 @@ fn mock_string_response_proceeds_when_stream_is_true() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = object(&[("mock_response", text("hi")), ("stream", Json::Bool(true))]);
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("a streaming call skips the mock guard");
@@ -537,7 +579,7 @@ fn mock_response_of_another_type_is_not_rejected() {
         "mock_response",
         Json::Object(object(&[("text", text("hi"))])),
     )]);
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("only a string mock response is rejected");
@@ -552,7 +594,7 @@ fn logging_is_required_for_the_native_path() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = Object::new();
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let error = setup_generate_content_call(&request, &configs, None, &resolution)
         .err()
         .expect("the native path requires a logging object");
@@ -576,7 +618,7 @@ fn logging_is_required_for_the_adapter_path() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = Object::new();
-    let request = setup_request("vertex_ai/claude-sonnet-4", &contents, None, &kwargs);
+    let request = setup_request("vertex_ai/claude-sonnet-4", &contents, None, None, &kwargs);
     let error = setup_generate_content_call(&request, &configs, None, &resolution)
         .err()
         .expect("the adapter path requires a logging object");
@@ -600,7 +642,13 @@ fn logging_update_records_model_optional_params_and_call_metadata() {
     let contents = text("hello");
     let config = object(&[("responseMimeType", text("application/json"))]);
     let kwargs = object(&[("litellm_call_id", text("call-9"))]);
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, Some(&config), &kwargs);
+    let request = setup_request(
+        "gemini/gemini-2.5-flash",
+        &contents,
+        Some(&config),
+        None,
+        &kwargs,
+    );
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the gemini setup succeeds");
@@ -623,6 +671,21 @@ fn logging_update_records_model_optional_params_and_call_metadata() {
         result.logging.model_call_details.get("custom_llm_provider"),
         Some(&DecisionJson::Text("gemini".to_owned()))
     );
+}
+
+#[test]
+fn logging_update_records_the_resolved_provider() {
+    let fixture = Fixture::new();
+    let resolution = fixture.resolution();
+    let gemini = FixtureConfig::for_fields(&FIELDS);
+    let vertex = FixtureConfig::for_fields(&FIELDS);
+    let configs = provider_configs(&gemini, &vertex);
+    let contents = text("hello");
+    let kwargs = Object::new();
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
+    let mut state = logging();
+    let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
+        .expect("the gemini setup succeeds");
     assert_eq!(
         result.logging.custom_llm_provider.as_deref(),
         Some("gemini")
@@ -639,7 +702,7 @@ fn logging_update_carries_kwargs_metadata() {
     let contents = text("hello");
     let metadata = object(&[("user_id", text("u-1"))]);
     let kwargs = object(&[("metadata", Json::Object(metadata.clone()))]);
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the gemini setup succeeds");
@@ -661,7 +724,7 @@ fn logging_skips_the_adapter_path() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = Object::new();
-    let request = setup_request("vertex_ai/claude-sonnet-4", &contents, None, &kwargs);
+    let request = setup_request("vertex_ai/claude-sonnet-4", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the adapter fallback succeeds");
@@ -704,8 +767,48 @@ fn request_body_is_the_transformed_request() {
     let contents = text("hello");
     let config = object(&[("temperature", text("caller-value"))]);
     let instruction = Json::Object(object(&[("parts", Json::List(vec![text("be brief")]))]));
+    let declaration = Json::Object(object(&[("functionDeclarations", Json::List(vec![]))]));
+    let tools = Json::List(vec![declaration]);
     let kwargs = object(&[("systemInstruction", instruction.clone())]);
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, Some(&config), &kwargs);
+    let request = setup_request(
+        "gemini/gemini-2.5-flash",
+        &contents,
+        Some(&config),
+        Some(&tools),
+        &kwargs,
+    );
+    let mut state = logging();
+    let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
+        .expect("the gemini setup succeeds");
+    let Json::Object(body) = result.request_body else {
+        panic!("the fixture builds an object");
+    };
+    let model = text("gemini-2.5-flash");
+    let generation_config = Json::Object(config.clone());
+    assert_eq!(body.get("fixture"), Some(&Json::Bool(true)));
+    assert_eq!(body.get("model"), Some(&model));
+    assert_eq!(body.get("generationConfig"), Some(&generation_config));
+    assert_eq!(body.get("tools"), Some(&tools));
+    assert_eq!(body.get("systemInstruction"), Some(&instruction));
+    let transformed = gemini.transformed.lock().expect("the fixture lock");
+    let recorded = &transformed[0];
+    assert_eq!(recorded.model, "gemini-2.5-flash");
+    assert_eq!(recorded.tools, Some(tools));
+    assert_eq!(recorded.generation_config, config);
+    assert_eq!(recorded.system_instruction, Some(instruction));
+}
+
+#[test]
+fn request_body_reads_the_snake_case_system_instruction() {
+    let fixture = Fixture::new();
+    let resolution = fixture.resolution();
+    let gemini = FixtureConfig::for_fields(&FIELDS);
+    let vertex = FixtureConfig::for_fields(&FIELDS);
+    let configs = provider_configs(&gemini, &vertex);
+    let contents = text("hello");
+    let instruction = Json::Object(object(&[("parts", Json::List(vec![text("be brief")]))]));
+    let kwargs = object(&[("system_instruction", instruction.clone())]);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the gemini setup succeeds");
@@ -713,24 +816,42 @@ fn request_body_is_the_transformed_request() {
         .request_body
         .as_object()
         .expect("the fixture builds an object");
-    assert_eq!(body.get("fixture"), Some(&Json::Bool(true)));
-    assert_eq!(
-        body.get("model"),
-        Some(&Json::Text("gemini-2.5-flash".to_owned()))
-    );
-    assert_eq!(
-        body.get("generationConfig"),
-        Some(&Json::Object(config.clone()))
-    );
     assert_eq!(body.get("systemInstruction"), Some(&instruction));
     let transformed = gemini
         .transformed
         .lock()
         .expect("the fixture lock is not poisoned");
-    let recorded = &transformed[0];
-    assert_eq!(recorded.model, "gemini-2.5-flash");
-    assert_eq!(recorded.generation_config, config);
-    assert_eq!(recorded.system_instruction, Some(instruction));
+    assert_eq!(transformed[0].system_instruction, Some(instruction));
+}
+
+#[test]
+fn request_body_prefers_the_camel_case_system_instruction() {
+    let fixture = Fixture::new();
+    let resolution = fixture.resolution();
+    let gemini = FixtureConfig::for_fields(&FIELDS);
+    let vertex = FixtureConfig::for_fields(&FIELDS);
+    let configs = provider_configs(&gemini, &vertex);
+    let contents = text("hello");
+    let camel = Json::Object(object(&[("parts", Json::List(vec![text("camel")]))]));
+    let snake = Json::Object(object(&[("parts", Json::List(vec![text("snake")]))]));
+    let kwargs = object(&[
+        ("systemInstruction", camel.clone()),
+        ("system_instruction", snake),
+    ]);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
+    let mut state = logging();
+    let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
+        .expect("the gemini setup succeeds");
+    let body = result
+        .request_body
+        .as_object()
+        .expect("the fixture builds an object");
+    assert_eq!(body.get("systemInstruction"), Some(&camel));
+    let transformed = gemini
+        .transformed
+        .lock()
+        .expect("the fixture lock is not poisoned");
+    assert_eq!(transformed[0].system_instruction, Some(camel));
 }
 
 #[test]
@@ -742,7 +863,7 @@ fn request_body_is_built_while_unread_kwargs_stay_unvalidated() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = object(&[("tpm", text("many")), ("drop_params", text("maybe"))]);
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("only the fields the setup reads are validated");
@@ -762,7 +883,7 @@ fn request_body_is_empty_for_the_adapter_path() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = Object::new();
-    let request = setup_request("vertex_ai/claude-sonnet-4", &contents, None, &kwargs);
+    let request = setup_request("vertex_ai/claude-sonnet-4", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .expect("the adapter fallback succeeds");
@@ -785,7 +906,7 @@ fn request_body_surfaces_a_transform_failure() {
     let configs = provider_configs(&failing, &vertex);
     let contents = text("hello");
     let kwargs = Object::new();
-    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let error = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
         .err()

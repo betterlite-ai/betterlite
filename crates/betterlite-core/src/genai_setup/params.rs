@@ -10,7 +10,14 @@ pub struct RequestFieldError {
     pub expected: &'static str,
 }
 
-// The GenericLiteLLMParams fields this setup reads; kwargs carries the rest through untouched.
+// CredentialLiteLLMParams declares vertex_credentials as a path string or a service-account object
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VertexCredentials {
+    Path(String),
+    ServiceAccount(Object),
+}
+
+// The GenericLiteLLMParams fields this setup models; extra keeps the rest the way extra="allow" does, so the handlers still see every kwarg.
 #[derive(Debug, Clone)]
 pub struct GenerateContentLiteLLMParams {
     pub api_base: Option<String>,
@@ -20,7 +27,27 @@ pub struct GenerateContentLiteLLMParams {
     pub max_retries: Option<i64>,
     pub organization: Option<String>,
     pub mock_response: Option<Json>,
+    pub vertex_project: Option<String>,
+    pub vertex_location: Option<String>,
+    pub vertex_credentials: Option<VertexCredentials>,
+    pub ssl_verify: Option<Json>,
+    pub extra: Object,
 }
+
+// the kwargs this struct models, which therefore never land in extra
+const MODELED: [&str; 11] = [
+    "api_base",
+    "api_key",
+    "api_version",
+    "custom_llm_provider",
+    "max_retries",
+    "organization",
+    "mock_response",
+    "vertex_project",
+    "vertex_location",
+    "vertex_credentials",
+    "ssl_verify",
+];
 
 impl GenerateContentLiteLLMParams {
     pub fn from_kwargs(kwargs: &Object) -> Result<Self, RequestFieldError> {
@@ -29,24 +56,14 @@ impl GenerateContentLiteLLMParams {
             api_key: optional_string(kwargs, "api_key")?.map(SecretString::from),
             api_version: optional_string(kwargs, "api_version")?,
             custom_llm_provider: optional_string(kwargs, "custom_llm_provider")?,
-            max_retries: match kwargs.get("max_retries") {
-                None | Some(Json::Null) => None,
-                Some(Json::Number(number)) => Some(number.as_i64().ok_or(RequestFieldError {
-                    field: "max_retries",
-                    expected: "an integer",
-                })?),
-                Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-                    return Err(RequestFieldError {
-                        field: "max_retries",
-                        expected: "an integer",
-                    });
-                }
-            },
+            max_retries: optional_integer(kwargs, "max_retries")?,
             organization: optional_string(kwargs, "organization")?,
-            mock_response: match kwargs.get("mock_response") {
-                None | Some(Json::Null) => None,
-                Some(value) => Some(value.clone()),
-            },
+            mock_response: optional_value(kwargs, "mock_response"),
+            vertex_project: optional_string(kwargs, "vertex_project")?,
+            vertex_location: optional_string(kwargs, "vertex_location")?,
+            vertex_credentials: vertex_credentials(kwargs)?,
+            ssl_verify: optional_value(kwargs, "ssl_verify"),
+            extra: remaining_kwargs(kwargs),
         })
     }
 }
@@ -66,4 +83,55 @@ pub fn optional_string(
             })
         }
     }
+}
+
+fn optional_integer(
+    kwargs: &Object,
+    field: &'static str,
+) -> Result<Option<i64>, RequestFieldError> {
+    match kwargs.get(field) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Number(number)) => match number.as_i64() {
+            Some(value) => Ok(Some(value)),
+            None => Err(RequestFieldError {
+                field,
+                expected: "an integer",
+            }),
+        },
+        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(RequestFieldError {
+                field,
+                expected: "an integer",
+            })
+        }
+    }
+}
+
+// absent and null both take the default, and any other value is kept as written
+fn optional_value(kwargs: &Object, field: &'static str) -> Option<Json> {
+    match kwargs.get(field) {
+        None | Some(Json::Null) => None,
+        Some(value) => Some(value.clone()),
+    }
+}
+
+fn vertex_credentials(kwargs: &Object) -> Result<Option<VertexCredentials>, RequestFieldError> {
+    match kwargs.get("vertex_credentials") {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(path)) => Ok(Some(VertexCredentials::Path(path.clone()))),
+        Some(Json::Object(account)) => Ok(Some(VertexCredentials::ServiceAccount(account.clone()))),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => Err(RequestFieldError {
+            field: "vertex_credentials",
+            expected: "a string or an object",
+        }),
+    }
+}
+
+// extra="allow": every kwarg the struct does not model stays on the record for the call handlers
+fn remaining_kwargs(kwargs: &Object) -> Object {
+    kwargs
+        .iter()
+        .filter(|(name, _)| !MODELED.contains(&name.as_str()))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
 }
