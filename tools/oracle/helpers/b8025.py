@@ -16,7 +16,7 @@ Headers: TypeAlias = dict[str, str]
 Environment: TypeAlias = dict[str, str]
 Provider: TypeAlias = Literal["nimble", "parallel_ai"]
 Url: TypeAlias = Callable[[str | None, Params], str]
-TransformRequest: TypeAlias = Callable[[str | list[str], Params], object]  # ast-grep-ignore: no-loose-types
+TransformRequest: TypeAlias = Callable[[str | list[str], Params], object]  # ast-grep-ignore
 TransformReply: TypeAlias = Callable[[httpx.Response, Logging], BaseModel]
 ErrorClass: TypeAlias = Callable[[str, int, Headers], Exception]
 
@@ -28,7 +28,7 @@ ENVIRONMENT: Final = (
     "PARALLEL_API_KEY",
     "PARALLEL_AI_API_BASE",
 )
-# LiteLLM's own class carries Any through its constructor, so the catch names the base class through a typed alias
+# LiteLLM's class carries Any in its constructor, so the catch names it through a typed alias
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
