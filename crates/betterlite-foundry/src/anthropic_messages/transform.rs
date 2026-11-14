@@ -1,7 +1,7 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 
 // Azure AI Foundry accepts only type and ttl on cache_control, so a block's scope goes
-pub fn transform_anthropic_messages_request(request: &mut Object) {
+pub fn transform_request(request: &mut Object) {
     if let Some(Json::List(system)) = request.get_mut("system") {
         remove_scope(system);
     }

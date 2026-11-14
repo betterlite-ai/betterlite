@@ -16,10 +16,10 @@ use serde::Deserialize;
 use thiserror::Error;
 
 use super::environment::{
-    EnvironmentRequest, Headers, ParamsKey, TokenSource, validate_anthropic_messages_environment,
+    EnvironmentRequest, Headers, ParamsKey, TokenSource, validate_environment,
 };
 use super::environment_error::EnvironmentError;
-use super::transform::transform_anthropic_messages_request;
+use super::transform::transform_request;
 use super::url::get_complete_url;
 use super::{CUSTOM_LLM_PROVIDER, SHOULD_STRIP_BILLING_METADATA};
 
@@ -182,12 +182,10 @@ fn fixture_request<'data>(
 
 // "dict_absent", "dict_null", "dict:KEY", "typed" and "typed:KEY" name the shape LiteLLM received
 fn environment(call: EnvironmentCall) -> Outcome {
-    let spec = call.params.unwrap_or_else(|| "dict_absent".to_owned());
-    let (shape, value) = spec
-        .split_once(':')
-        .map_or((spec.as_str(), None), |(name, text)| {
-            (name, Some(SecretString::from(text)))
-        });
+    let spec = call.params.as_deref().unwrap_or("dict_absent");
+    let (shape, value) = spec.split_once(':').map_or((spec, None), |(name, text)| {
+        (name, Some(SecretString::from(text)))
+    });
     let params_key = match (shape, value.as_ref()) {
         ("dict_absent", None) => ParamsKey::DictAbsent,
         ("dict_null", None) => ParamsKey::DictNull,
@@ -205,15 +203,16 @@ fn environment(call: EnvironmentCall) -> Outcome {
         configured.as_ref(),
         &credentials,
     );
-    match validate_anthropic_messages_environment(request, fixture_betas) {
+    match validate_environment(request, fixture_betas) {
         Ok((headers, api_base)) => Outcome {
             headers: Some(headers),
             api_base,
             error: None,
         },
         Err(error) => Outcome {
+            headers: None,
+            api_base: None,
             error: Some(error.to_string()),
-            ..Outcome::default()
         },
     }
 }
@@ -391,14 +390,14 @@ fn anthropic_messages_cases(#[case] source: &str) {
             mut request,
             expected,
         } => {
-            transform_anthropic_messages_request(&mut request);
+            transform_request(&mut request);
             assert_eq!(request, expected);
         }
         Scenario::Projection {
             mut request,
             expected,
         } => {
-            transform_anthropic_messages_request(&mut request);
+            transform_request(&mut request);
             let actual = Projection {
                 custom_llm_provider: CUSTOM_LLM_PROVIDER.to_owned(),
                 should_strip_billing_metadata: SHOULD_STRIP_BILLING_METADATA,
@@ -421,15 +420,27 @@ fn key_of(outcome: &Outcome, name: &str) -> Option<String> {
 fn anthropic_messages_credential_identity_isolation() {
     let from_header = environment(EnvironmentCall {
         headers: BTreeMap::from([("api-key".to_owned(), "identity-a-key".to_owned())]),
-        ..EnvironmentCall::default()
+        params: None,
+        argument_key: None,
+        configured_key: None,
+        token: None,
+        api_base: None,
     });
     let from_argument = environment(EnvironmentCall {
+        headers: BTreeMap::new(),
+        params: None,
         argument_key: Some("identity-b-key".to_owned()),
-        ..EnvironmentCall::default()
+        configured_key: None,
+        token: None,
+        api_base: None,
     });
     let from_token = environment(EnvironmentCall {
+        headers: BTreeMap::new(),
+        params: None,
+        argument_key: None,
+        configured_key: None,
         token: Some("identity-c-token".to_owned()),
-        ..EnvironmentCall::default()
+        api_base: None,
     });
     let anonymous = environment(EnvironmentCall::default());
     assert_eq!(
@@ -449,8 +460,12 @@ fn anthropic_messages_credential_identity_isolation() {
     assert_eq!(key_of(&anonymous, "x-api-key"), None);
     assert_eq!(key_of(&anonymous, "Authorization"), None);
     let repeated = environment(EnvironmentCall {
+        headers: BTreeMap::new(),
+        params: None,
         argument_key: Some("identity-b-key".to_owned()),
-        ..EnvironmentCall::default()
+        configured_key: None,
+        token: None,
+        api_base: None,
     });
     assert_eq!(repeated, from_argument);
 }
@@ -478,29 +493,29 @@ fn secret_request<'data>(
 #[test]
 fn anthropic_messages_secret_safe_failure() {
     let secret = SecretString::from(SENTINEL);
-    for params_key in [ParamsKey::Dict(&secret), ParamsKey::Typed(Some(&secret))] {
-        assert!(!format!("{params_key:?}").contains(SENTINEL));
-    }
+    let dict_key = ParamsKey::Dict(&secret);
+    let typed_key = ParamsKey::Typed(Some(&secret));
+    assert!(!format!("{dict_key:?}").contains(SENTINEL));
+    assert!(!format!("{typed_key:?}").contains(SENTINEL));
     let credentials = settings(None, Some(SENTINEL));
     let failing_betas = BTreeMap::from([("fail-betas".to_owned(), "1".to_owned())]);
-    let beta_error = validate_anthropic_messages_environment(
+    let beta_error = validate_environment(
         secret_request(&credentials, failing_betas, Some(&secret)),
         fixture_betas,
     )
     .unwrap_err();
     assert!(matches!(beta_error, EnvironmentError::Betas(BetaFailure)));
-    let source_error = validate_anthropic_messages_environment(
+    let source_error = validate_environment(
         secret_request(&credentials, Headers::new(), None),
         fixture_betas,
     )
     .unwrap_err();
     assert!(matches!(source_error, EnvironmentError::Token(_)));
     let missing = get_complete_url(None, None).unwrap_err();
-    for text in [
-        format!("{beta_error} {beta_error:?}"),
-        format!("{source_error} {source_error:?}"),
-        format!("{missing} {missing:?}"),
-    ] {
-        assert!(!text.contains(SENTINEL));
-    }
+    let beta_text = format!("{beta_error} {beta_error:?}");
+    let source_text = format!("{source_error} {source_error:?}");
+    let missing_text = format!("{missing} {missing:?}");
+    assert!(!beta_text.contains(SENTINEL));
+    assert!(!source_text.contains(SENTINEL));
+    assert!(!missing_text.contains(SENTINEL));
 }

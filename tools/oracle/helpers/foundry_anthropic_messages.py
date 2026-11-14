@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import litellm
@@ -15,6 +16,15 @@ from typing_extensions import override
 JsonObject: TypeAlias = dict[str, Json]
 MODEL: Final = "claude-sonnet-4-5"
 NO_PARAMS: Final[JsonObject] = {}
+EnvironmentReply: TypeAlias = tuple[JsonObject, str | None]
+ValidateEnvironment: TypeAlias = Callable[
+    [JsonObject, str, list[Json], JsonObject, JsonObject, str | None, str | None],
+    EnvironmentReply,
+]
+TransformRequest: TypeAlias = Callable[
+    [str, list[JsonObject], JsonObject, GenericLiteLLMParams, JsonObject],
+    JsonObject,
+]
 
 
 class Config(Protocol):
@@ -32,28 +42,18 @@ class Config(Protocol):
         litellm_params: JsonObject,
     ) -> str: ...
 
+    @property
     def validate_anthropic_messages_environment(  # ast-grep-ignore: no-long-names
         self,
-        headers: JsonObject,
-        model: str,
-        messages: list[Json],
-        optional_params: JsonObject,
-        litellm_params: JsonObject,
-        api_key: str | None = None,
-        api_base: str | None = None,
-    ) -> tuple[JsonObject, str | None]: ...
+    ) -> ValidateEnvironment: ...
 
+    @property
     def transform_anthropic_messages_request(  # ast-grep-ignore: no-long-names
         self,
-        model: str,
-        messages: list[JsonObject],
-        anthropic_messages_optional_request_params: JsonObject,  # ast-grep-ignore: no-long-names
-        litellm_params: GenericLiteLLMParams,
-        headers: JsonObject,
-    ) -> JsonObject: ...
+    ) -> TransformRequest: ...
 
 
-# B961 owns the parent request transform and system normalization, so the seam hands back what it was given
+# B961 owns the parent transform and system normalization, so the seam hands back its input
 class Seam(AnthropicMessagesConfig):
     @override
     def transform_anthropic_messages_request(  # ast-grep-ignore: no-long-names
@@ -64,7 +64,7 @@ class Seam(AnthropicMessagesConfig):
         litellm_params: GenericLiteLLMParams,
         headers: JsonObject,
     ) -> JsonObject:
-        return anthropic_messages_optional_request_params
+        return anthropic_messages_optional_request_params  # ast-grep-ignore: no-long-names
 
     @override
     def _normalize_system_role_messages(  # ast-grep-ignore: no-long-names

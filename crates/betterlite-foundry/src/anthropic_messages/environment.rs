@@ -51,16 +51,15 @@ fn explicit_key<'data>(
 ) -> Option<&'data SecretString> {
     let usable = argument.filter(|key| !key.expose_secret().is_empty());
     match params_key {
-        ParamsKey::DictAbsent => usable,
         ParamsKey::DictNull => None,
         ParamsKey::Dict(key) => Some(key),
         ParamsKey::Typed(Some(key)) if !key.expose_secret().is_empty() => Some(key),
-        ParamsKey::Typed(_) => usable,
+        ParamsKey::DictAbsent | ParamsKey::Typed(_) => usable,
     }
 }
 
 // The beta step is a closure because betterlite-foundry cannot depend on betterlite-core
-pub fn validate_anthropic_messages_environment<B, U>(
+pub fn validate_environment<B, U>(
     request: EnvironmentRequest<'_>,
     update_betas: U,
 ) -> Result<(Headers, Option<String>), EnvironmentError<B>>

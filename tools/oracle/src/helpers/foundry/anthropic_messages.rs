@@ -8,10 +8,10 @@ use betterlite_core::api::anthropic_beta_filter::native_injection::{
     NativeRequest, inject_native_betas,
 };
 use betterlite_foundry::anthropic_messages::environment::{
-    EnvironmentRequest, ParamsKey, TokenSource, validate_anthropic_messages_environment,
+    EnvironmentRequest, ParamsKey, TokenSource, validate_environment,
 };
 use betterlite_foundry::anthropic_messages::environment_error::EnvironmentError;
-use betterlite_foundry::anthropic_messages::transform::transform_anthropic_messages_request;
+use betterlite_foundry::anthropic_messages::transform::transform_request;
 use betterlite_foundry::anthropic_messages::url::get_complete_url;
 use betterlite_foundry::anthropic_messages::{CUSTOM_LLM_PROVIDER, SHOULD_STRIP_BILLING_METADATA};
 use betterlite_prompts::arguments::json::Object;
@@ -60,7 +60,7 @@ fn url(api_bases: &[Option<String>], environment: &BTreeMap<String, String>) -> 
 
 fn transform(request: &Object) -> Object {
     let mut body = request.clone();
-    transform_anthropic_messages_request(&mut body);
+    transform_request(&mut body);
     body
 }
 
@@ -152,7 +152,7 @@ fn environment_answer(step: &EnvironmentStep) -> Result<Value, Box<HelperError>>
         optional_params: &step.optional_params,
         messages: &step.messages,
     };
-    let (headers, api_base) = validate_anthropic_messages_environment(request, |updated| {
+    let (headers, api_base) = validate_environment(request, |updated| {
         inject_native_betas(updated.into_iter().collect(), &native)
             .map(|merged| merged.into_iter().collect())
     })
