@@ -30,7 +30,9 @@ pub fn resolve_scim_user_role(
     admin_group: Option<&str>,
     default_role: UserRole,
 ) -> Option<UserRole> {
-    let admin = admin_group?;
+    let Some(admin) = admin_group else {
+        return None;
+    };
     Some(role_from_groups(groups, admin, default_role))
 }
 
