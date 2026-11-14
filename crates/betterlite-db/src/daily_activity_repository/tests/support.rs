@@ -5,9 +5,10 @@ use super::super::database::{DailyActivityDatabase, DailyRowFilter, DatabaseFutu
 use super::super::rows::records::{DeletedVerificationTokenRow, VerificationTokenRow};
 use super::super::rows::{DatabaseRow, DatabaseValue, RowError};
 use crate::budget_permission_rows::JsonData;
+use crate::daily_activity_contracts::identifiers::DailyActivityTable;
 use crate::daily_activity_contracts::{
-    DailyActivityProxyReads, DailyActivityScope, DailyActivityScopeInput, DailyActivityTable,
-    KeyMetadataRow, SpendLogsWindow, SqlQuery,
+    DailyActivityProxyReads, DailyActivityScope, DailyActivityScopeInput, KeyMetadataRow,
+    SpendLogsWindow, SqlQuery,
 };
 use crate::postgres_store::errors::DbError;
 use chrono::{DateTime, NaiveDateTime, Utc};

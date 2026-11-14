@@ -1,5 +1,6 @@
 use super::{DailyRowFilter, bind_params, render_filters};
-use crate::daily_activity_contracts::{DailyActivityRow, DailyActivityTable, SqlParameter};
+use crate::daily_activity_contracts::identifiers::DailyActivityTable;
+use crate::daily_activity_contracts::{DailyActivityRow, SqlParameter};
 use crate::daily_activity_repository::rows::RowError;
 use crate::daily_activity_repository::rows::records::daily_activity_row;
 use crate::postgres_store::errors::{DbError, backend};

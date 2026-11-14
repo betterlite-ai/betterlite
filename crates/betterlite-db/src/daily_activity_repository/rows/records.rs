@@ -35,7 +35,7 @@ pub fn verification_token_row(row: &Row) -> Result<VerificationTokenRow, RowErro
         .map_err(|source| RowError::Decode { source })?;
     let metadata = match metadata_text {
         None => None,
-        Some(text) => Some(json_object(&text, "metadata")?),
+        Some(text) => json_object(&text, "metadata")?,
     };
     Ok(VerificationTokenRow {
         token: column!(row, "token"),
@@ -46,21 +46,20 @@ pub fn verification_token_row(row: &Row) -> Result<VerificationTokenRow, RowErro
     })
 }
 
-fn json_object(text: &str, column: &str) -> Result<BTreeMap<String, JsonData>, RowError> {
+fn json_object(text: &str, column: &str) -> Result<Option<BTreeMap<String, JsonData>>, RowError> {
     let value = serde_json::from_str::<JsonData>(text).map_err(|source| RowError::Json {
         column: column.to_owned(),
         source,
     })?;
     match value {
-        JsonData::Object(fields) => Ok(fields),
-        JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Array(_) => Err(RowError::ColumnType {
-            column: column.to_owned(),
-            expected: "a JSON object",
-        }),
+        JsonData::Object(fields) => Ok(Some(fields)),
+        JsonData::Null => Ok(None),
+        JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Array(_) => {
+            Err(RowError::ColumnType {
+                column: column.to_owned(),
+                expected: "a JSON object",
+            })
+        }
     }
 }
 

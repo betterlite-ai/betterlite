@@ -5,9 +5,8 @@ use super::rows::records::{
     verification_token_row,
 };
 use super::rows::{DatabaseRow, RowError};
-use crate::daily_activity_contracts::{
-    DailyActivityRow, DailyActivityTable, SqlParameter, SqlQuery,
-};
+use crate::daily_activity_contracts::identifiers::DailyActivityTable;
+use crate::daily_activity_contracts::{DailyActivityRow, SqlParameter, SqlQuery};
 use crate::postgres_store::errors::{DbError, backend};
 use deadpool_postgres::Client;
 use std::future::Future;

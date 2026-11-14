@@ -4,7 +4,7 @@ use super::support::{
     DailyCall, FakeDatabase, FakeReads, RawReply, capture_logs, count, entity_row, grouping_row,
     key_spend_row, repository, scope, text_row, with_column, without,
 };
-use crate::daily_activity_contracts::DailyActivityTable;
+use crate::daily_activity_contracts::identifiers::DailyActivityTable;
 use crate::daily_activity_repository::DailyActivityRepositoryError;
 use crate::daily_activity_repository::database::DailyRowFilter;
 use crate::daily_activity_repository::rows::DatabaseValue;

@@ -3,7 +3,8 @@
 use super::support::{
     FakeDatabase, FakeFailure, FakeReads, RawReply, export_row, repository, scope, without,
 };
-use crate::daily_activity_contracts::{DailyActivityTable, ExportRow, ExportType};
+use crate::daily_activity_contracts::identifiers::DailyActivityTable;
+use crate::daily_activity_contracts::{ExportRow, ExportType};
 use crate::daily_activity_repository::export::next_cursor;
 use rust_decimal::Decimal;
 
