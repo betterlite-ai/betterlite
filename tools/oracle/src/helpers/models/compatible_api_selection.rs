@@ -64,7 +64,7 @@ impl Helper for Op {
         let reports = input
             .calls
             .iter()
-            .map(|call| answer(call).map_or(Value::Null, Value::String))
+            .map(|call| answer(call).map(|report| report.map_or(Value::Null, Value::String)))
             .collect::<Result<Vec<_>, Box<HelperError>>>()?;
         Ok(Value::Array(reports))
     }
