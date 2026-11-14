@@ -858,6 +858,20 @@ fn enkryptai_config_accepts_the_unused_detection_fields() {
 }
 
 #[test]
+fn enkryptai_config_treats_an_empty_policy_name_as_unset() {
+    let source = "guardrails:\n  - guardrail_name: guard\n    litellm_params:\n      guardrail: enkryptai\n      api_key: key\n      policy_name: ''\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect("config");
+    assert_eq!(
+        config.sections.enkryptai_detection.guardrails[0].policy_name,
+        None
+    );
+}
+
+#[test]
 fn enkryptai_config_never_shows_the_api_key_in_debug() {
     let lookup = BTreeMap::from([("ENKRYPTAI_API_KEY".to_owned(), "super-secret".to_owned())]);
     let source =
