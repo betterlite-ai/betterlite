@@ -2998,8 +2998,10 @@ dependencies = [
 name = "betterlite-roi"
 version = "0.1.0"
 dependencies = [
+ "betterlite-models",
  "caseless",
  "chrono",
+ "hex",
  "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
@@ -3007,7 +3009,9 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "thiserror",
+ "tokio",
  "unicode-normalization",
 ]
 
