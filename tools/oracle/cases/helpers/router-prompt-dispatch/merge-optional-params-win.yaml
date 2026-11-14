@@ -1,0 +1,31 @@
+kind: helper
+name: prompt-dispatch-merge-optional-params-win
+call:
+  b8466:
+    check: prompt_factory
+    model: langfuse/my-prompt
+    messages: []
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        temperature: 0.1
+        timeout: 30
+    - model_name: gpt-4o-mini
+      litellm_params:
+        model: openai/gpt-4o-mini
+        api_key: sk-test
+    request:
+      temperature: 0.5
+      seed: 7
+      prompt_id: request-id
+    compiled:
+      model: gpt-4o-mini
+      messages:
+      - role: user
+        content: compiled
+      optional_params:
+        temperature: 0.9
+env: {}
+compare:
+  ignore: []
