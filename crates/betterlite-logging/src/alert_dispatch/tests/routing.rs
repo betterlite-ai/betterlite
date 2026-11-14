@@ -163,6 +163,20 @@ async fn an_empty_slack_webhook_url_falls_back_to_the_alerting_url() {
 }
 
 #[tokio::test]
+async fn an_empty_alerting_webhook_url_raises() {
+    let fixture = fixture(&[(ALERTING_WEBHOOK_URL_ENV, "")], 512);
+    let dispatcher = fixture.dispatcher(
+        Some(vec![AlertDestination::Slack]),
+        vec![AlertType::LlmExceptions],
+    );
+    let sent = dispatcher
+        .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
+        .await;
+    assert!(matches!(sent, Err(SendAlertError::MissingWebhookUrl(_))));
+    assert!(fixture.delivery.queue.pending().is_empty());
+}
+
+#[tokio::test]
 async fn a_missing_webhook_url_raises_when_neither_variable_is_set() {
     let fixture = fixture(&[], 512);
     let dispatcher = fixture.dispatcher(
