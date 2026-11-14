@@ -56,7 +56,7 @@ pub enum VertexEmbeddingCallError {
     },
 }
 
-// The text and async multimodal branches turn a timeout into Vertex's legacy 408; the sync multimodal branch maps its own errors
+// Every embedding branch turns a transport timeout into Vertex's legacy 408 and any other transport failure into a 500
 impl From<PostError> for VertexEmbeddingCallError {
     fn from(source: PostError) -> Self {
         match source {
@@ -70,7 +70,7 @@ impl From<PostError> for VertexEmbeddingCallError {
 }
 
 impl VertexEmbeddingCallError {
-    // LiteLLM keeps an upstream status on the text and async multimodal branches; the sync multimodal reply goes through the transformation's 500
+    // LiteLLM raises every branch's HTTP failure with the upstream status, the sync multimodal post through httpx's raise_for_status included
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
