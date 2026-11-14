@@ -2,8 +2,9 @@
 
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
 use axum::body::Bytes;
@@ -20,8 +21,9 @@ use crate::crowdstrike_aidr::models::{
     EventType, GuardInput, GuardPayload, Message, MessageContent,
 };
 use crate::crowdstrike_streaming::StreamingParams;
-use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailToolParam};
 use crate::guardrail_base::contract::GuardrailContract as _;
+use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::guardrail_records::error::GuardrailSpanError;
 use crate::guardrail_records::record::{GuardrailInvocationRecord, GuardrailSpanSink};
@@ -183,6 +185,46 @@ async fn _call_or_fail_open_fail_open() {
             "guardrail_failed_to_respond".to_owned()
         ))
     );
+    let Some(GuardrailValue::Object(response)) = entry.get("guardrail_response") else {
+        panic!("the record keeps the error as an object");
+    };
+    assert!(matches!(
+        response.get("error"),
+        Some(GuardrailValue::Text(text)) if text.contains("status 500")
+    ));
+}
+
+static TICKS: AtomicU64 = AtomicU64::new(0);
+
+fn ticking_clock() -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(100 + 5 * TICKS.fetch_add(1, Ordering::SeqCst))
+}
+
+#[tokio::test]
+async fn _call_or_fail_open_records_the_failure_timing() {
+    let (base, _captured, _server) = serve(StatusCode::INTERNAL_SERVER_ERROR, "oops").await;
+    let mut guardrail = handler(&base, Some(false));
+    guardrail.now = ticking_clock;
+    let mut request_data = BTreeMap::new();
+    call_or_fail_open(&guardrail, &payload(), "test", &mut request_data, None)
+        .await
+        .expect("fail_on_error false fails open");
+    let Some(GuardrailValue::Object(bucket)) = request_data.get("metadata") else {
+        panic!("the fail-open call records guardrail information");
+    };
+    let Some(GuardrailValue::Array(records)) = bucket.get("standard_logging_guardrail_information")
+    else {
+        panic!("the record sits in the standard logging list");
+    };
+    let Some(GuardrailValue::Object(entry)) = records.first() else {
+        panic!("the record is an object");
+    };
+    assert_eq!(
+        entry.get("start_time"),
+        Some(&GuardrailValue::Decimal(100.0))
+    );
+    assert_eq!(entry.get("end_time"), Some(&GuardrailValue::Decimal(105.0)));
+    assert_eq!(entry.get("duration"), Some(&GuardrailValue::Decimal(5.0)));
 }
 
 #[tokio::test]
@@ -335,7 +377,10 @@ async fn apply_guardrail_returns_inputs_unchanged() {
     let (base, _captured, _server) =
         serve(StatusCode::OK, r#"{"result": {"transformed": false}}"#).await;
     let guardrail = handler(&base, None);
-    let request = inputs();
+    let request = GuardrailApiInputs {
+        model: Some("gpt-4o".to_owned()),
+        ..inputs()
+    };
     let mut request_data = BTreeMap::new();
     let output = guardrail
         .apply_guardrail(
@@ -392,4 +437,159 @@ async fn apply_guardrail_without_a_request_body_skips_the_applied_list() {
         .await
         .expect("the call succeeds");
     assert!(!request_data.contains_key("metadata"));
+}
+
+fn applied_bucket(names: &[&str], keep: &str) -> GuardrailValue {
+    GuardrailValue::Object(BTreeMap::from([
+        (
+            "applied_guardrails".to_owned(),
+            GuardrailValue::Array(
+                names
+                    .iter()
+                    .map(|name| GuardrailValue::Text((*name).to_owned()))
+                    .collect(),
+            ),
+        ),
+        ("keep".to_owned(), GuardrailValue::Text(keep.to_owned())),
+    ]))
+}
+
+#[tokio::test]
+async fn apply_guardrail_lists_the_applied_name_once_in_litellm_metadata() {
+    let (base, _captured, _server) =
+        serve(StatusCode::OK, r#"{"result": {"transformed": false}}"#).await;
+    let guardrail = handler(&base, None);
+    let mut seen = BTreeMap::from([
+        ("messages".to_owned(), GuardrailValue::Array(Vec::new())),
+        (
+            "litellm_metadata".to_owned(),
+            applied_bucket(&["cs-aidr"], "a"),
+        ),
+        ("metadata".to_owned(), applied_bucket(&[], "b")),
+    ]);
+    guardrail
+        .apply_guardrail(inputs(), &mut seen, GuardrailInputType::Request, None)
+        .await
+        .expect("the call succeeds");
+    assert_eq!(
+        seen.get("litellm_metadata"),
+        Some(&applied_bucket(&["cs-aidr"], "a"))
+    );
+    assert_eq!(seen.get("metadata"), Some(&applied_bucket(&[], "b")));
+    let mut other = BTreeMap::from([
+        ("messages".to_owned(), GuardrailValue::Array(Vec::new())),
+        ("metadata".to_owned(), applied_bucket(&["other"], "c")),
+    ]);
+    guardrail
+        .apply_guardrail(inputs(), &mut other, GuardrailInputType::Request, None)
+        .await
+        .expect("the call succeeds");
+    assert_eq!(
+        other.get("metadata"),
+        Some(&applied_bucket(&["other", "cs-aidr"], "c"))
+    );
+}
+
+#[tokio::test]
+async fn apply_guardrail_carries_non_empty_tools_and_tool_calls() {
+    let (base, _captured, _server) = serve(
+        StatusCode::OK,
+        r#"{"result": {"transformed": true, "guard_output": {"messages": [{"role": "user", "content": "masked"}]}}}"#,
+    )
+    .await;
+    let guardrail = handler(&base, None);
+    let tools = vec![GuardrailToolParam {
+        tool_type: "function".to_owned(),
+        extra: BTreeMap::new(),
+    }];
+    let calls = vec![GuardrailValue::Text("call".to_owned())];
+    let mut request_data = BTreeMap::new();
+    let kept = guardrail
+        .apply_guardrail(
+            GuardrailApiInputs {
+                tools: Some(tools.clone()),
+                tool_calls: Some(calls.clone()),
+                ..inputs()
+            },
+            &mut request_data,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .expect("the call succeeds");
+    assert_eq!(kept.tools, Some(tools));
+    assert_eq!(kept.tool_calls, Some(calls));
+    let dropped = guardrail
+        .apply_guardrail(
+            GuardrailApiInputs {
+                tools: Some(Vec::new()),
+                tool_calls: Some(Vec::new()),
+                ..inputs()
+            },
+            &mut request_data,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .expect("the call succeeds");
+    assert_eq!(dropped.tools, None);
+    assert_eq!(dropped.tool_calls, None);
+}
+
+#[tokio::test]
+async fn apply_guardrail_maps_failures_to_http_errors() {
+    let (blocked, _captured, _first) =
+        serve(StatusCode::OK, r#"{"result": {"blocked": true}}"#).await;
+    let mut request_data = BTreeMap::new();
+    let failure = handler(&blocked, None)
+        .apply_guardrail(
+            inputs(),
+            &mut request_data,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .expect_err("a block fails the call");
+    let GuardrailFailure::HttpObject { status, detail } = failure else {
+        panic!("a block is an http object");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(
+        detail.get("guardrail_name"),
+        Some(&GuardrailValue::Text("cs-aidr".to_owned()))
+    );
+    let (malformed, _captured, _second) = serve(
+        StatusCode::OK,
+        r#"{"result": {"transformed": true, "guard_output": "nope"}}"#,
+    )
+    .await;
+    let failure = handler(&malformed, None)
+        .apply_guardrail(
+            inputs(),
+            &mut request_data,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .expect_err("a malformed transformed reply fails the call");
+    let GuardrailFailure::HttpObject { status, detail } = failure else {
+        panic!("a malformed transformed reply is an http object");
+    };
+    assert_eq!(status, 500);
+    assert_eq!(detail.get("guardrail_name"), Some(&GuardrailValue::Null));
+    let (broken, _captured, _third) = serve(StatusCode::INTERNAL_SERVER_ERROR, "oops").await;
+    let failure = handler(&broken, None)
+        .apply_guardrail(
+            inputs(),
+            &mut request_data,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .expect_err("a server error fails the closed call");
+    let GuardrailFailure::Http { status, detail } = failure else {
+        panic!("a server error is a plain http failure");
+    };
+    assert_eq!(status, 500);
+    assert!(detail.contains("status 500"));
 }
