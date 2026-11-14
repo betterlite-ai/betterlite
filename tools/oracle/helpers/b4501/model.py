@@ -3,7 +3,7 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict
 from litellm.proxy.lens.models import Job, Lens, Worker
 from pydantic import JsonValue, TypeAdapter
 
-# LiteLLM's Database protocol declares its query arguments as object, so a narrower type would not satisfy it
+# LiteLLM's Database protocol takes object arguments, so a narrower type breaks it
 SqlArgument: TypeAlias = object
 
 
