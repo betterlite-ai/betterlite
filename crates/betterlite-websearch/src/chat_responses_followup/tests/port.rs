@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 use std::future::{Future, ready};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use betterlite_context::agentic_loop_plan::JsonMap;
 use betterlite_openai::search::provider::SearchQuery;
@@ -139,7 +139,7 @@ fn kwargs(value: serde_json::Value) -> JsonMap {
 
 #[tokio::test]
 async fn websearch_execution_port_forwards_the_caller_kwargs_to_the_search() {
-    let execution = execution();
+    let execution = Arc::new(execution());
     let kwargs = kwargs(json!({"metadata": {"user_api_key_auth": {"team_id": "team_1"}}}));
     let result = SearchExecutor::execute_search(&execution, "weather", &kwargs, None).await;
     assert!(matches!(result, SearchResult::Succeeded { .. }));
@@ -158,6 +158,7 @@ async fn websearch_execution_port_forwards_the_caller_kwargs_to_the_search() {
 async fn websearch_execution_port_reports_a_failed_search() {
     let mut execution = execution();
     execution.runner.outcome = Err(unclassified("provider down".to_owned()));
+    let execution = Arc::new(execution);
     let result =
         SearchExecutor::execute_search(&execution, "weather", &kwargs(json!({})), None).await;
     assert!(matches!(result, SearchResult::Failed(failure) if failure.message == "provider down"));
@@ -167,6 +168,7 @@ async fn websearch_execution_port_reports_a_failed_search() {
 async fn websearch_execution_port_forwards_the_rich_input_to_a_rich_provider() {
     let mut execution = execution();
     execution.capabilities.rich = true;
+    let execution = Arc::new(execution);
     let rich = RichWebSearchInput {
         objective: Some("find the forecast".to_owned()),
         search_queries: Some(vec!["weather".to_owned(), "forecast".to_owned()]),
@@ -184,7 +186,7 @@ async fn websearch_execution_port_forwards_the_rich_input_to_a_rich_provider() {
 
 #[tokio::test]
 async fn websearch_execution_port_keeps_the_single_query_for_a_plain_provider() {
-    let execution = execution();
+    let execution = Arc::new(execution());
     let rich = RichWebSearchInput {
         objective: Some("find the forecast".to_owned()),
         search_queries: Some(vec!["weather".to_owned(), "forecast".to_owned()]),

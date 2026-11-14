@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use betterlite_context::agentic_loop_plan::{JsonMap, get_text};
 use futures_util::future::join_all;
@@ -117,7 +119,7 @@ fn hook_kwargs(kwargs: &JsonMap) -> Result<SearchHookKwargs, SearchFailure> {
 
 #[async_trait]
 impl<Search, Grants, Metadata, Capabilities> SearchExecutor
-    for WebSearchExecution<Search, Grants, Metadata, Capabilities>
+    for Arc<WebSearchExecution<Search, Grants, Metadata, Capabilities>>
 where
     Search: SearchRunner,
     Grants: SearchToolGrants,
@@ -135,7 +137,9 @@ where
             Ok(hook_kwargs) => hook_kwargs,
             Err(failure) => return SearchResult::Failed(failure),
         };
-        match Self::execute_search(self, query, Some(&hook_kwargs), rich.as_ref()).await {
+        match WebSearchExecution::execute_search(self, query, Some(&hook_kwargs), rich.as_ref())
+            .await
+        {
             Ok((text, response)) => SearchResult::Succeeded { text, response },
             Err(failure) => SearchResult::Failed(failure),
         }
