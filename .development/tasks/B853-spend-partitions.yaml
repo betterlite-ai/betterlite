@@ -58,6 +58,8 @@ description: >-
   these native DB operations without introducing a server dependency or a second command package.
 scope:
   paths:
+    - "tools/betterlite-db-admin/src/spend_backfills.rs"
+    - "tools/betterlite-db-admin/src/command_shell/tests.rs"
     - crates/betterlite-db/src/spend_partitions.rs
     - crates/betterlite-db/src/spend_partitions/**
     - crates/betterlite-db/Cargo.toml

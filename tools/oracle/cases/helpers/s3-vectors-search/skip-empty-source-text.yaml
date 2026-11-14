@@ -1,0 +1,38 @@
+kind: helper
+name: skip_empty_source_text
+call:
+  b7812:
+    calls:
+      - call: response
+        input:
+          status: 200
+          headers: {}
+          query: the query
+          body: >-
+            {"vectors": [
+              {"distance": 0.5, "metadata": {"source_text": "first"}},
+              {"distance": 0.5, "metadata": {"source_text": ""}},
+              {"distance": 0.5, "metadata": {"source_text": null}},
+              {"distance": 0.5, "metadata": {}},
+              {"distance": 0.5, "metadata": null},
+              {"distance": 0.5},
+              {"distance": 0.5, "metadata": {"source_text": "last", "chunk_index": 4}}
+            ]}
+      - call: response
+        input:
+          status: 200
+          headers: {}
+          body: '{"vectors": []}'
+      - call: response
+        input:
+          status: 200
+          headers: {}
+          body: '{"vectors": null}'
+      - call: response
+        input:
+          status: 200
+          headers: {}
+          query: kept
+          body: '{}'
+env: {}
+compare: {ignore: []}

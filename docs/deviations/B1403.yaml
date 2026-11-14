@@ -1,0 +1,8 @@
+task: B1403
+deviations:
+  - what: A tools value that is not a list is answered with a 400 that says the tools value is not a list.
+    why: The pinned code iterates the value and calls filter_value_from_dict on each element, so a string or a number ends in an AttributeError or TypeError and a 500. A malformed request is the caller's mistake, so betterlite answers 400 and names the problem.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/chat/transformation.py#L190-L195
+  - what: A tools list with an entry that is not an object is answered with a 400 that says the tool entry is not an object.
+    why: The pinned code passes each entry to filter_value_from_dict without a type check, so a string or a number entry raises an AttributeError and answers 500. betterlite answers 400 and names the problem.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/chat/transformation.py#L192-L195
