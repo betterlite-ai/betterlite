@@ -1,5 +1,5 @@
 import os
-from typing import Final, Literal, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 from litellm.llms.deepgram.audio_transcription.transformation import (
@@ -10,6 +10,10 @@ from pydantic import JsonValue, TypeAdapter
 CONFIG: Final = DeepgramAudioTranscriptionConfig()
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 BYTES: Final[TypeAdapter[bytes]] = TypeAdapter(bytes)
+
+
+class Transcription(Protocol):
+    def get(self, key: str) -> JsonValue: ...
 
 
 class Params(TypedDict):
@@ -66,9 +70,10 @@ def request_answer(step: Request) -> JsonValue:
 def reply_answer(step: Reply) -> JsonValue:
     raw = httpx.Response(200, content=step["body"].encode())
     result = CONFIG.transform_audio_transcription_response(raw_response=raw)
+    view: Transcription = result
     return {
         "response": JSON.validate_json(result.model_dump_json(exclude_none=True)),
-        "hidden": JSON.validate_python(result.get("_hidden_params")),
+        "hidden": view.get("_hidden_params"),
     }
 
 
