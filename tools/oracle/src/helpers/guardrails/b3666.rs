@@ -3,7 +3,7 @@ mod scan;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_identity::item::{GuardrailFlag, GuardrailValue};
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
@@ -23,10 +23,10 @@ const FIXED_TOKEN: &str = "fixed-token";
 pub(crate) struct Settings {
     guardrail_name: Option<String>,
     event_hook: Option<LitellmParamsMode>,
-    default_on: bool,
-    only_scan_new_messages: bool,
-    mask_request_content: bool,
-    mask_response_content: bool,
+    default_on: GuardrailFlag,
+    only_scan_new_messages: GuardrailFlag,
+    mask_request_content: GuardrailFlag,
+    mask_response_content: GuardrailFlag,
 }
 
 #[derive(Debug, Deserialize)]
