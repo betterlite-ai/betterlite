@@ -178,6 +178,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-11-14: every LiteLLM bug, leak or other code issue a task fixes gets a row in docs/deviations/<ID>.yaml with a link to the LiteLLM line at the pinned commit, and both reviewers report a fix without one (Max, after B3700's unbounded streamed buffer). A bug a working setup relies on is still copied, as owned-behavior-is-built says.
 - 2026-11-14: a product bug found outside the task that owns the code becomes a fix task in the backlog the same day, under milestone R2 bug fixes, instead of a note that waits ([#1868](https://github.com/betterlite-ai/betterlite/pull/1868) turned the five open ones into B9954 to B9958) (Max).
 - 2026-11-14: a LiteLLM bug a working setup relies on is still copied, and the task lists it under kept_bugs in docs/deviations/<ID>.yaml with the LiteLLM line, so the bugs betterlite keeps are written down where the differences are. The gate checks each entry has an https link, and both reviewers report a copied bug the list misses (Max).
+- 2026-11-14: a run whose reviewer hit its 45 minute timeout reruns by itself after a pause that doubles from 30 minutes, six times at most, and parks only after that (Max). 97 ready tasks sat parked from the night before (331 of 753 reviews from 00:00 timed out, 4 of 253 after 08:00), and the feeder never restarts a task that has a journal, so the pool drained to 13 flows by 21:44.
 
 ## Writing a task
 
