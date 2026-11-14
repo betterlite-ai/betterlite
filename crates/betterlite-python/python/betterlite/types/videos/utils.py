@@ -101,7 +101,8 @@ def decode_video_id_with_provider(encoded_video_id: str) -> DecodedVideoId:
 
 def extract_original_video_id(encoded_video_id: str) -> str:
     decoded: Final = decode_video_id_with_provider(encoded_video_id)
-    return decoded["video_id"]
+    found: Final = decoded.get("video_id")
+    return encoded_video_id if found is None else found
 
 
 # ast-grep-ignore: no-long-names

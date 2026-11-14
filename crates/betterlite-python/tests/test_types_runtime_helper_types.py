@@ -440,8 +440,7 @@ def prompt_results(package):
             "owner": staging_dump["prompt_info"].get("owner"),
         },
         "db_spec": db_spec.model_dump(mode="json"),
-        "response": response.model_dump(mode="json"),
-        "listing": listing.model_dump(mode="json"),
+        "response": response.model_dump(mode="json"), "listing": listing.model_dump(mode="json"),
         "missing_params": validation_report(module.PromptSpec, {"prompt_id": "p4"}),
         "missing_prompt_id": validation_report(module.PromptSpec, {"litellm_params": params}),
         "bad_prompt_type": validation_report(
@@ -472,8 +471,7 @@ def settings_results(package):
         replica_regions=["us-west-2"],
     )
     return {
-        "empty": empty.model_dump(mode="json"),
-        "full": full.model_dump(mode="json"),
+        "empty": empty.model_dump(mode="json"), "full": full.model_dump(mode="json"),
         "systems": {member.name: member.value for member in module.KeyManagementSystem},
         "credentials": [member.value for member in settings_module.AzureCredentialType],
     }
@@ -508,9 +506,8 @@ def video_model_results(package):
             "count": len(response["data"]), "get_missing": response.get("missing"),
             "has_data": "data" in response,
         },
-        "missing_key": missing_key,
+        "missing_key": missing_key, "json_exclude_none": video.json(exclude_none=True),
         "extra_ignored": "bogus_field" in extra.model_dump(mode="json"),
-        "json_exclude_none": video.json(exclude_none=True),
         "default_character_object": character.object,
     }
 
@@ -649,6 +646,10 @@ class ValidationNames(TypedDict):
     details: list[JsonValue]
 
 
+class ErrorLocName(TypedDict):
+    loc: list[str | int]
+
+
 class PromptExtrasNames(TypedDict):
     prompt_directory: str | None
     owner: str | None
@@ -784,11 +785,10 @@ def report() -> Report:
         capture_output=True,
         text=True,
     )
-    parsed: Report = TypeAdapter(Report).validate_json(completed.stdout)
-    return parsed
+    return TypeAdapter(Report).validate_json(completed.stdout)
 
 
-def test_module_names_match_litellm(report: Report) -> None:
+def test_module_names_match(report: Report) -> None:
     modules = report["modules"]
     assert tuple(sorted(modules)) == MODULE_KEYS
     for key in MODULE_KEYS:
@@ -800,7 +800,7 @@ def test_module_names_match_litellm(report: Report) -> None:
         assert entry["betterlite"] == entry["litellm"]
 
 
-def test_behaviour_names_match_litellm(report: Report) -> None:
+def test_behaviour_names_match(report: Report) -> None:
     behaviour = report["behaviour"]
     assert tuple(sorted(behaviour["betterlite"])) == EXPECTED_SECTIONS
     assert behaviour["betterlite"] == behaviour["litellm"]
@@ -861,7 +861,7 @@ def test_tinyfish_endpoint_names(report: Report) -> None:
     assert endpoints == TINYFISH_ENDPOINTS
 
 
-def test_daily_activity_scope_names(report: Report) -> None:
+def test_daily_scope_names(report: Report) -> None:
     scopes = report["behaviour"]["betterlite"]["scopes"]
     assert scopes[0] == {
         "entity_id_field": "user_id",
@@ -918,9 +918,8 @@ def test_prompt_spec_names(report: Report) -> None:
 
 
 def test_key_management_names(report: Report) -> None:
-    settings = TypeAdapter(SettingsNames).validate_python(
-        report["behaviour"]["betterlite"]["settings"],
-    )
+    view = report["behaviour"]["betterlite"]["settings"]
+    settings = TypeAdapter(SettingsNames).validate_python(view)
     assert settings["empty"]["access_mode"] == "read_only"
     assert settings["empty"]["store_virtual_keys"] is False
     assert settings["empty"]["prefix_for_stored_virtual_keys"] == "litellm/"
@@ -964,15 +963,18 @@ def test_usage_per_chunk_names() -> None:
     assert chunk["cache_read_input_tokens"] == 0
     assert chunk["cost"] is None
     assert chunk["speed"] is None
+    empty: Final[dict[str, JsonValue]] = {}
     with pytest.raises(ValidationError) as incomplete:
-        adapter.validate_python({})
-    missing = {str(error["loc"]) for error in incomplete.value.errors()}
+        adapter.validate_python(empty)
+    errors: Final = TypeAdapter(list[ErrorLocName]).validate_json(incomplete.value.json())
+    assert len(errors) == 12
+    missing = {str(tuple(error["loc"])) for error in errors}
     assert "('prompt_tokens',)" in missing
     assert "('completion_tokens_details',)" in missing
     assert "('speed',)" in missing
 
 
-def test_protocol_names_are_structural() -> None:
+def test_protocol_names_structural() -> None:
     resource_row: ManagedResourceRow = _StubRow()
     file_row: ManagedFileRow = _StubRow()
     object_row: ManagedObjectRow = _StubRow()
