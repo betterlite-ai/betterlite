@@ -88,4 +88,14 @@ call:
             completion_tokens: 1
             total_tokens: 2
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /value/0/message/reasoning_content
+      why: >-
+        The shared chat reply has no reasoning_content field, so betterlite
+        drops the thinking text LiteLLM puts on the client's message
+        (docs/deviations/B1409.yaml).
+    - pointer: /value/2/message/reasoning_content
+      why: >-
+        The thinking-only reply loses its reasoning text for the same reason
+        (docs/deviations/B1409.yaml).

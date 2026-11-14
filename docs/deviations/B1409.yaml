@@ -1,0 +1,6 @@
+task: B1409
+deviations:
+  - what: A non-streaming Mistral reply whose content list carries a thinking block keeps the last text block as content but never sends message.reasoning_content, while LiteLLM sets that field from the last thinking block.
+    why: The shared chat reply type (ChatResponse and AssistantMessage, owned by B004) has no reasoning_content field, so the reasoning text the Mistral decoder extracts is dropped when the reply is converted for the client; extending that type is outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/chat/transformation.py#L539
+kept_bugs: []

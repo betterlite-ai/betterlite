@@ -124,24 +124,31 @@ fn reply_value(reply: &Value) -> Result<Value, Box<HelperError>> {
         },
     )
     .map_err(failure)?;
-    let choice = converted.response.choices.first();
-    let content = choice.and_then(|value| value.message.content.clone());
+    let response = serde_json::to_value(&converted.response).map_err(failure)?;
+    let choice = response.pointer("/choices/0");
+    let content = pointer(choice, "/message/content");
     Ok(json!({
         "message": {
             "content": content,
-            "reasoning_content": decoded
-                .value
-                .pointer("/choices/0/message/reasoning_content")
-                .cloned()
-                .unwrap_or(Value::Null),
+            "reasoning_content": pointer(choice, "/message/reasoning_content"),
         },
         "response": {
-            "model": converted.response.model,
-            "finish_reason": choice.and_then(|value| value.finish_reason.clone()),
+            "model": pointer(Some(&response), "/model"),
+            "finish_reason": pointer(choice, "/finish_reason"),
             "content": content,
-            "tool_calls": choice.and_then(|value| value.message.tool_calls.as_ref().map(Vec::len)),
+            "tool_calls": choice
+                .and_then(|value| value.pointer("/message/tool_calls"))
+                .and_then(Value::as_array)
+                .map(Vec::len),
         },
     }))
+}
+
+fn pointer(target: Option<&Value>, path: &str) -> Value {
+    target
+        .and_then(|value| value.pointer(path))
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn chunk_value(chunk: &Value) -> Result<Value, Box<HelperError>> {
