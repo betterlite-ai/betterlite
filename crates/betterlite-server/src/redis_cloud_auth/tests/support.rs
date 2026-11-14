@@ -190,9 +190,7 @@ impl RecordingGrants {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-}
 
-impl RecordingGrants {
     fn grant(&self, call: GrantCall) -> Result<SecretString, AzureGrantError> {
         let kind = match call {
             GrantCall::ClientSecret { .. } => "client secret",

@@ -251,17 +251,24 @@ impl ImdsTransport for AzureHttp {
 
 impl ArcTransport for AzureHttp {
     fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
-        let query = request
-            .query
-            .iter()
-            .map(|(name, value)| ((*name).to_owned(), value.clone()))
-            .collect();
-        let headers = header_map(secret_headers(request.headers.clone()))?;
-        let reply = self.metadata_get(&request.url, query, headers, METADATA_TIMEOUT)?;
+        let MetadataReply {
+            status,
+            headers,
+            body,
+        } = self.metadata_get(
+            &request.url,
+            request
+                .query
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+            header_map(secret_headers(request.headers.clone()))?,
+            METADATA_TIMEOUT,
+        )?;
         Ok(ArcResponse {
-            status: reply.status,
-            headers: reply.headers,
-            body: reply.body,
+            status,
+            headers,
+            body,
         })
     }
 }

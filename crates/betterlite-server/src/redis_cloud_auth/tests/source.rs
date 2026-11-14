@@ -123,7 +123,11 @@ async fn source_aws_maps_a_fetch_failure_to_the_credential_error() {
     let error = run_blocking(move || source.fetch()).await.err().unwrap();
     match error {
         RedisCredentialError::Fetch(cause) => {
-            assert!(cause.to_string().contains("failed to resolve AWS credentials"));
+            assert!(
+                cause
+                    .to_string()
+                    .contains("failed to resolve AWS credentials")
+            );
         }
     }
 }
