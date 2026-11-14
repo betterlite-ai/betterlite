@@ -1,0 +1,15 @@
+kind: helper
+name: oci-chat-sse-split-reads-and-done
+call:
+  b5843:
+    function: stream
+    reads:
+      - "event: ping\n: comment\n\n"
+      - "data: {\"message\": {\"content\": [{\"type\": \"TEXT\", \"text\": \"a\"}]}}\n"
+      - "data: {\"message\": {\"content\": [{\"type\": \"TEXT\", \"text\": \"b\"}]}, \"finish"
+      - "Reason\": \"stop\"}\n"
+      - "data: {\"index\": 0, \"message\": {\"content\": []}}\n"
+      - "data: [DONE]\n"
+      - "data: {\"message\": {\"content\": [{\"type\": \"TEXT\", \"text\": \"end\"}]}}"
+env: {}
+compare: {ignore: []}

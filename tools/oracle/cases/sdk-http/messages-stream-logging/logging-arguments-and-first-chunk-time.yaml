@@ -1,0 +1,34 @@
+kind: sdk_http
+name: logging-arguments-and-first-chunk-time
+env: {}
+call:
+  messages_stream_logging:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    steps:
+      - {op: collect, first_chunk: false}
+      - {op: bill, teardown: false}
+      - {op: collect, first_chunk: true}
+      - {op: bill, teardown: false}
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "message_start", "message": {"content": []}}'
+      - '{"type": "message_stop"}'
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "message_start", "message": {"content": []}}'
+      - '{"type": "content_block_delta", "delta": {"text": "hi"}}'
+      - '{"type": "message_stop"}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

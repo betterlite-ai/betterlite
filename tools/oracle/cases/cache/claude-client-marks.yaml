@@ -1,0 +1,81 @@
+kind: helper
+name: cache-claude-client-marks
+call:
+  b4125:
+    operation: messages_injection
+    probes:
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello, cache_control: {type: ephemeral, ttl: 1h}}]
+        system: be nice
+        params: {}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: [{type: text, text: hello, cache_control: {type: ephemeral}}]}]
+        system: be nice
+        params: {}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: [{type: text, text: hello, prompt_cache_breakpoint: {mode: explicit}}]}]
+        system: be nice
+        params: {}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: [{type: text, text: be nice, cache_control: {type: ephemeral}}]
+        params: {}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: be nice
+        params: {}
+        tools: [{type: custom, name: lookup, cache_control: {type: ephemeral}}]
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: be nice
+        params: {cache_control: {type: ephemeral}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: be nice
+        params: {extra_body: {cache_control: {type: ephemeral}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: be nice
+        params: {extra_body: {tools: [{type: custom, name: lookup, cache_control: {type: ephemeral}}]}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello, cache_control: null}]
+        system: be nice
+        params: {cache_control: null}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+env: {}
+compare: {ignore: []}
