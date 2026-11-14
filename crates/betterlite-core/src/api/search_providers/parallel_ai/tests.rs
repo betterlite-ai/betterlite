@@ -9,7 +9,6 @@ use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
     HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
 };
-use betterlite_openai::search::records::SearchResponse;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
@@ -26,10 +25,6 @@ fn load(environment: &[(&str, &str)]) -> ParallelAiSearch {
     ParallelAiSearch::load(&lookup)
 }
 
-fn key(text: &str) -> SecretString {
-    SecretString::from(text)
-}
-
 fn headers(entries: &[(&str, &str)]) -> Headers {
     entries
         .iter()
@@ -37,22 +32,13 @@ fn headers(entries: &[(&str, &str)]) -> Headers {
         .collect()
 }
 
-fn params(text: &str) -> Object {
-    serde_json::from_str(text).unwrap()
-}
-
-fn serialized(body: &SearchBody) -> String {
-    serde_json::to_string(body).unwrap()
-}
-
 fn string_body(options: &str) -> SearchBody {
     load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &params(options))
+        .transform_search_request(
+            &SearchQuery::Single("rust".to_owned()),
+            &serde_json::from_str::<Object>(options).unwrap(),
+        )
         .unwrap()
-}
-
-fn decode(text: &str) -> Result<SearchResponse, ParallelAiReplyError> {
-    decode_parallel_ai_reply(text.as_bytes())
 }
 
 #[test]
@@ -132,7 +118,7 @@ fn caller_key_skips_the_trust_check() {
     let prepared = search
         .prepare_headers(
             Headers::new(),
-            Some(&key("ai-caller")),
+            Some(&SecretString::from("ai-caller")),
             Some("https://evil.test/v1/search"),
         )
         .unwrap();
@@ -146,7 +132,7 @@ fn caller_key_skips_the_trust_check() {
 fn empty_caller_key_falls_back_to_the_server_key() {
     let search = load(&[("PARALLEL_API_KEY", "legacy-server")]);
     let prepared = search
-        .prepare_headers(Headers::new(), Some(&key("")), None)
+        .prepare_headers(Headers::new(), Some(&SecretString::from("")), None)
         .unwrap();
     assert_eq!(
         prepared.get("x-api-key").map(String::as_str),
@@ -238,7 +224,8 @@ fn trait_hooks_shape_headers_and_url() {
     );
     let keyless = load(&[]).validate_environment(headers(&[("X-Trace", "1")]), None, None);
     assert_eq!(keyless, headers(&[("X-Trace", "1")]));
-    let caller_key = search.validate_environment(Headers::new(), Some(&key("ai-caller")), None);
+    let caller_key =
+        search.validate_environment(Headers::new(), Some(&SecretString::from("ai-caller")), None);
     assert_eq!(
         caller_key.get("x-api-key").map(String::as_str),
         Some("ai-caller")
@@ -299,7 +286,7 @@ fn sign_request_rejects_an_untrusted_base() {
 #[test]
 fn body_maps_a_string_query_to_queries_and_objective() {
     assert_eq!(
-        serialized(&string_body("{}")),
+        serde_json::to_string(&string_body("{}")).unwrap(),
         r#"{"search_queries":["rust"],"objective":"rust","mode":"basic"}"#
     );
 }
@@ -309,11 +296,11 @@ fn body_maps_a_list_query_without_objective() {
     let body = load(&[])
         .transform_search_request(
             &SearchQuery::Multiple(vec!["rust".to_owned(), "search".to_owned()]),
-            &params("{}"),
+            &serde_json::from_str::<Object>("{}").unwrap(),
         )
         .unwrap();
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"search_queries":["rust","search"],"mode":"basic"}"#
     );
 }
@@ -331,7 +318,7 @@ fn body_maps_a_list_query_without_objective() {
 #[case::empty_mode_beats_processor(r#"{"mode":"","processor":"pro"}"#, "basic")]
 fn body_maps_mode_and_processor(#[case] options: &str, #[case] mode: &str) {
     assert_eq!(
-        serialized(&string_body(options)),
+        serde_json::to_string(&string_body(options)).unwrap(),
         format!(r#"{{"search_queries":["rust"],"objective":"rust","mode":"{mode}"}}"#)
     );
 }
@@ -342,7 +329,7 @@ fn body_collects_advanced_settings_in_source_order() {
         r#"{"max_results":5,"country":"us","location":"de","max_chars_per_result":120,"fetch_policy":{"max_age_seconds":60},"search_domain_filter":["news.test"],"include_domains":["mine.test"],"exclude_domains":["spam.test"],"after_date":"2024-01-01","advanced_settings":{"max_results":9,"session":"s1"}}"#,
     );
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"search_queries":["rust"],"objective":"rust","mode":"basic","advanced_settings":{"excerpt_settings":{"max_chars_per_result":120},"fetch_policy":{"max_age_seconds":60},"location":"de","max_results":9,"session":"s1","source_policy":{"after_date":"2024-01-01","exclude_domains":["spam.test"],"include_domains":["mine.test"]}}}"#
     );
 }
@@ -353,7 +340,7 @@ fn body_callers_advanced_settings_replace_derived_keys() {
         r#"{"search_domain_filter":["news.test"],"advanced_settings":{"source_policy":{"exclude_domains":["z.test"]}}}"#,
     );
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"search_queries":["rust"],"objective":"rust","mode":"basic","advanced_settings":{"source_policy":{"exclude_domains":["z.test"]}}}"#
     );
 }
@@ -362,7 +349,7 @@ fn body_callers_advanced_settings_replace_derived_keys() {
 fn body_keeps_null_advanced_values() {
     let body = string_body(r#"{"max_results":null,"search_domain_filter":null}"#);
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"search_queries":["rust"],"objective":"rust","mode":"basic","advanced_settings":{"max_results":null,"source_policy":{"include_domains":null}}}"#
     );
 }
@@ -371,7 +358,7 @@ fn body_keeps_null_advanced_values() {
 fn body_location_wins_over_country() {
     let body = string_body(r#"{"country":"us","location":"de"}"#);
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"search_queries":["rust"],"objective":"rust","mode":"basic","advanced_settings":{"location":"de"}}"#
     );
 }
@@ -380,7 +367,7 @@ fn body_location_wins_over_country() {
 fn body_include_domains_wins_over_the_filter() {
     let body = string_body(r#"{"search_domain_filter":["a.test"],"include_domains":["b.test"]}"#);
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"search_queries":["rust"],"objective":"rust","mode":"basic","advanced_settings":{"source_policy":{"include_domains":["b.test"]}}}"#
     );
 }
@@ -391,7 +378,7 @@ fn body_drops_max_tokens_per_page_and_the_usage_key() {
         r#"{"max_tokens_per_page":100,"_parallel_ai_usage":[{"count":1}],"session_id":"s1"}"#,
     );
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"search_queries":["rust"],"objective":"rust","mode":"basic","session_id":"s1"}"#
     );
 }
@@ -400,7 +387,7 @@ fn body_drops_max_tokens_per_page_and_the_usage_key() {
 fn body_merges_remaining_options_last() {
     let body = string_body(r#"{"search_queries":["mine"],"objective":"mine","client_model":"m"}"#);
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"search_queries":["mine"],"objective":"mine","mode":"basic","client_model":"m"}"#
     );
 }
@@ -410,7 +397,7 @@ fn body_merges_remaining_options_last() {
 #[case::missing_advanced_settings("{}")]
 fn body_accepts_a_missing_advanced_settings(#[case] options: &str) {
     assert_eq!(
-        serialized(&string_body(options)),
+        serde_json::to_string(&string_body(options)).unwrap(),
         r#"{"search_queries":["rust"],"objective":"rust","mode":"basic"}"#
     );
 }
@@ -421,7 +408,10 @@ fn body_accepts_a_missing_advanced_settings(#[case] options: &str) {
 #[case::text(r#"{"advanced_settings":"x"}"#)]
 fn body_rejects_a_non_object_advanced_settings(#[case] options: &str) {
     let error = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &params(options))
+        .transform_search_request(
+            &SearchQuery::Single("rust".to_owned()),
+            &serde_json::from_str::<Object>(options).unwrap(),
+        )
         .unwrap_err();
     assert!(matches!(
         error,
@@ -433,8 +423,9 @@ fn body_rejects_a_non_object_advanced_settings(#[case] options: &str) {
 
 #[test]
 fn reply_projects_results_extras_and_usage() {
-    let response = decode(
-        r#"{"search_id":"s1","session_id":"ss1","results":[{"url":"https://a.test","title":"A","publish_date":"2024-05-01","excerpts":["one","two"]},{"url":"https://b.test","title":"B"}],"usage":[{"name":"sku_search","count":2}],"warnings":[{"type":"notice","message":"m"}]}"#,
+    let response = decode_parallel_ai_reply(
+        r#"{"search_id":"s1","session_id":"ss1","results":[{"url":"https://a.test","title":"A","publish_date":"2024-05-01","excerpts":["one","two"]},{"url":"https://b.test","title":"B"}],"usage":[{"name":"sku_search","count":2}],"warnings":[{"type":"notice","message":"m"}]}"#
+            .as_bytes(),
     )
     .unwrap();
     assert_eq!(response.object.0, "search");
@@ -451,20 +442,27 @@ fn reply_projects_results_extras_and_usage() {
     assert_eq!(response.results[0].date.as_deref(), Some("2024-05-01"));
     assert_eq!(
         response.results[0].extra,
-        params(r#"{"excerpts":["one","two"]}"#)
+        serde_json::from_str::<Object>(r#"{"excerpts":["one","two"]}"#).unwrap()
     );
     assert_eq!(response.results[1].snippet, "");
     assert_eq!(response.results[1].date, None);
-    assert_eq!(response.results[1].extra, params(r#"{"excerpts":[]}"#));
+    assert_eq!(
+        response.results[1].extra,
+        serde_json::from_str::<Object>(r#"{"excerpts":[]}"#).unwrap()
+    );
     assert_eq!(
         response.extra,
-        params(
+        serde_json::from_str::<Object>(
             r#"{"search_id":"s1","session_id":"ss1","parallel_usage":[{"name":"sku_search","count":2}],"warnings":[{"type":"notice","message":"m"}]}"#
         )
+        .unwrap()
     );
     assert_eq!(
         response.hidden_params,
-        params(r#"{"_parallel_ai_usage":[{"name":"sku_search","count":2}]}"#)
+        serde_json::from_str::<Object>(
+            r#"{"_parallel_ai_usage":[{"name":"sku_search","count":2}]}"#
+        )
+        .unwrap()
     );
 }
 
@@ -472,25 +470,28 @@ fn reply_projects_results_extras_and_usage() {
 #[case::empty_reply("{}")]
 #[case::empty_results(r#"{"results":[]}"#)]
 fn reply_defaults_missing_members_to_empty(#[case] body: &str) {
-    let response = decode(body).unwrap();
+    let response = decode_parallel_ai_reply(body.as_bytes()).unwrap();
     assert!(response.results.is_empty());
     assert!(response.extra.is_empty());
 }
 
 #[test]
 fn reply_stores_a_null_usage_key() {
-    let response = decode(r#"{"usage":null,"results":[]}"#).unwrap();
+    let response = decode_parallel_ai_reply(r#"{"usage":null,"results":[]}"#.as_bytes()).unwrap();
     assert_eq!(
         response.hidden_params,
-        params(r#"{"_parallel_ai_usage":null}"#)
+        serde_json::from_str::<Object>(r#"{"_parallel_ai_usage":null}"#).unwrap()
     );
     assert!(!response.extra.contains_key("parallel_usage"));
 }
 
 #[test]
 fn reply_keeps_empty_warnings_and_a_null_usage_absent() {
-    let response = decode(r#"{"warnings":[],"results":[]}"#).unwrap();
-    assert_eq!(response.extra, params(r#"{"warnings":[]}"#));
+    let response = decode_parallel_ai_reply(r#"{"warnings":[],"results":[]}"#.as_bytes()).unwrap();
+    assert_eq!(
+        response.extra,
+        serde_json::from_str::<Object>(r#"{"warnings":[]}"#).unwrap()
+    );
 }
 
 #[rstest]
@@ -498,9 +499,13 @@ fn reply_keeps_empty_warnings_and_a_null_usage_absent() {
 #[case::null_excerpts(r#"{"excerpts":null}"#)]
 #[case::missing_excerpts("{}")]
 fn reply_projects_empty_excerpts(#[case] result: &str) {
-    let response = decode(&format!(r#"{{"results":[{result}]}}"#)).unwrap();
+    let response =
+        decode_parallel_ai_reply(format!(r#"{{"results":[{result}]}}"#).as_bytes()).unwrap();
     assert_eq!(response.results[0].snippet, "");
-    assert_eq!(response.results[0].extra, params(r#"{"excerpts":[]}"#));
+    assert_eq!(
+        response.results[0].extra,
+        serde_json::from_str::<Object>(r#"{"excerpts":[]}"#).unwrap()
+    );
 }
 
 #[rstest]
@@ -523,7 +528,7 @@ fn reply_projects_empty_excerpts(#[case] result: &str) {
 #[case::invalid_json("not json")]
 #[case::trailing_bytes(r#"{"results":[]}x"#)]
 fn reply_rejects_a_shape_the_source_would_fail(#[case] body: &str) {
-    assert!(decode(body).is_err(), "{body}");
+    assert!(decode_parallel_ai_reply(body.as_bytes()).is_err(), "{body}");
 }
 
 #[test]

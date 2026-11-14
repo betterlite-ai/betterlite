@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 
 use crate::sections::Sections;
 
@@ -13,10 +13,6 @@ fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect()
-}
-
-fn exposed(api_key: Option<SecretString>) -> Option<String> {
-    api_key.as_ref().map(|key| key.expose_secret().to_owned())
 }
 
 #[test]
@@ -34,7 +30,10 @@ fn parallel_ai_search_settings_read_the_environment() {
         ("PARALLEL_AI_API_BASE", "https://proxy.test"),
     ]));
 
-    assert_eq!(exposed(api_key), Some("ai-key".to_owned()));
+    assert_eq!(
+        api_key.as_ref().map(|key| key.expose_secret().to_owned()),
+        Some("ai-key".to_owned())
+    );
     assert_eq!(api_base, "https://proxy.test");
 }
 
@@ -43,7 +42,10 @@ fn parallel_ai_search_settings_read_the_legacy_key() {
     let (api_key, api_base) =
         Sections::parallel_ai_search_settings(&lookup(&[("PARALLEL_API_KEY", "legacy-key")]));
 
-    assert_eq!(exposed(api_key), Some("legacy-key".to_owned()));
+    assert_eq!(
+        api_key.as_ref().map(|key| key.expose_secret().to_owned()),
+        Some("legacy-key".to_owned())
+    );
     assert_eq!(api_base, DEFAULT_API_BASE);
 }
 
@@ -54,7 +56,10 @@ fn parallel_ai_search_settings_prefer_the_ai_key() {
         ("PARALLEL_API_KEY", "legacy-key"),
     ]));
 
-    assert_eq!(exposed(api_key), Some("ai-key".to_owned()));
+    assert_eq!(
+        api_key.as_ref().map(|key| key.expose_secret().to_owned()),
+        Some("ai-key".to_owned())
+    );
 }
 
 #[test]
@@ -76,5 +81,8 @@ fn parallel_ai_search_settings_fall_through_one_empty_key() {
         ("PARALLEL_API_KEY", "legacy-key"),
     ]));
 
-    assert_eq!(exposed(api_key), Some("legacy-key".to_owned()));
+    assert_eq!(
+        api_key.as_ref().map(|key| key.expose_secret().to_owned()),
+        Some("legacy-key".to_owned())
+    );
 }

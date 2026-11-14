@@ -9,12 +9,11 @@ use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
     HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
 };
-use betterlite_openai::search::records::SearchResponse;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::error::NimbleSearchError;
-use super::reply::{NimbleReplyError, decode_nimble_reply};
+use super::reply::decode_nimble_reply;
 use super::request::SearchBody;
 use super::{NIMBLE_API_BASE, NIMBLE_DOCS_URL, NimbleSearch};
 
@@ -26,10 +25,6 @@ fn load(environment: &[(&str, &str)]) -> NimbleSearch {
     NimbleSearch::load(&lookup)
 }
 
-fn key(text: &str) -> SecretString {
-    SecretString::from(text)
-}
-
 fn headers(entries: &[(&str, &str)]) -> Headers {
     entries
         .iter()
@@ -37,21 +32,12 @@ fn headers(entries: &[(&str, &str)]) -> Headers {
         .collect()
 }
 
-fn params(text: &str) -> Object {
-    serde_json::from_str(text).unwrap()
-}
-
-fn serialized(body: &SearchBody) -> String {
-    serde_json::to_string(body).unwrap()
-}
-
-fn decode(text: &str) -> Result<SearchResponse, NimbleReplyError> {
-    decode_nimble_reply(text.as_bytes())
-}
-
 fn single_body(options: &str) -> SearchBody {
     load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &params(options))
+        .transform_search_request(
+            &SearchQuery::Single("rust".to_owned()),
+            &serde_json::from_str::<Object>(options).unwrap(),
+        )
         .unwrap()
 }
 
@@ -122,7 +108,7 @@ fn caller_key_skips_the_trust_check() {
     let prepared = search
         .prepare_headers(
             Headers::new(),
-            Some(&key("nimble-caller")),
+            Some(&SecretString::from("nimble-caller")),
             Some("https://evil.test/search"),
         )
         .unwrap();
@@ -136,7 +122,7 @@ fn caller_key_skips_the_trust_check() {
 fn empty_caller_key_falls_back_to_the_server_key() {
     let search = load(&[("NIMBLE_API_KEY", "nimble-server")]);
     let prepared = search
-        .prepare_headers(Headers::new(), Some(&key("")), None)
+        .prepare_headers(Headers::new(), Some(&SecretString::from("")), None)
         .unwrap();
     assert_eq!(
         prepared.get("Authorization").map(String::as_str),
@@ -222,12 +208,17 @@ fn trait_hooks_shape_headers_and_url() {
     );
     let keyless = load(&[]).validate_environment(headers(&[("X-Trace", "1")]), None, None);
     assert_eq!(keyless, headers(&[("X-Trace", "1")]));
-    let empty_caller_key = search.validate_environment(Headers::new(), Some(&key("")), None);
+    let empty_caller_key =
+        search.validate_environment(Headers::new(), Some(&SecretString::from("")), None);
     assert_eq!(
         empty_caller_key.get("Authorization").map(String::as_str),
         Some("Bearer nimble-env")
     );
-    let caller_key = search.validate_environment(Headers::new(), Some(&key("nimble-caller")), None);
+    let caller_key = search.validate_environment(
+        Headers::new(),
+        Some(&SecretString::from("nimble-caller")),
+        None,
+    );
     assert_eq!(
         caller_key.get("Authorization").map(String::as_str),
         Some("Bearer nimble-caller")
@@ -281,7 +272,7 @@ fn sign_request_reports_a_missing_key() {
 #[test]
 fn sign_request_sends_the_caller_key_to_an_untrusted_base() {
     let search = load(&[("NIMBLE_API_KEY", "nimble-server")]);
-    let caller = key("nimble-caller");
+    let caller = SecretString::from("nimble-caller");
     let params = Object::new();
     let body = single_body("{}");
     let request = outbound("https://evil.test/search", Some(&caller), &params, &body);
@@ -311,13 +302,14 @@ fn body_keeps_the_source_key_order() {
     let body = load(&[])
         .transform_search_request(
             &SearchQuery::Multiple(vec!["rust".to_owned(), "search".to_owned()]),
-            &params(
+            &serde_json::from_str::<Object>(
                 r#"{"location":"us","max_results":5,"country":"us","search_domain_filter":["news.test","-spam.test","","-","docs.test"],"max_tokens_per_page":100}"#,
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"include_domains":["news.test","docs.test"],"exclude_domains":["spam.test"],"location":"us","query":"rust search","max_results":5,"country":"US"}"#
     );
 }
@@ -328,7 +320,7 @@ fn body_caller_domains_beat_the_derived_ones() {
         r#"{"search_domain_filter":["news.test","-spam.test"],"include_domains":["mine.test"],"exclude_domains":["other.test"]}"#,
     );
     assert_eq!(
-        serialized(&body),
+        serde_json::to_string(&body).unwrap(),
         r#"{"include_domains":["mine.test"],"exclude_domains":["other.test"],"query":"rust"}"#
     );
 }
@@ -336,7 +328,7 @@ fn body_caller_domains_beat_the_derived_ones() {
 #[test]
 fn body_caller_query_does_not_beat_the_query() {
     assert_eq!(
-        serialized(&single_body(r#"{"query":"mine"}"#)),
+        serde_json::to_string(&single_body(r#"{"query":"mine"}"#)).unwrap(),
         r#"{"query":"rust"}"#
     );
 }
@@ -357,7 +349,10 @@ fn body_caller_query_does_not_beat_the_query() {
     r#"{"exclude_domains":["b.test"],"query":"rust"}"#
 )]
 fn body_splits_the_domain_filter(#[case] options: &str, #[case] expected: &str) {
-    assert_eq!(serialized(&single_body(options)), expected);
+    assert_eq!(
+        serde_json::to_string(&single_body(options)).unwrap(),
+        expected
+    );
 }
 
 #[rstest]
@@ -370,7 +365,10 @@ fn body_splits_the_domain_filter(#[case] options: &str, #[case] expected: &str) 
 #[case::country_number_is_absent(r#"{"country":7}"#, r#"{"query":"rust"}"#)]
 #[case::empty_country_stays_empty(r#"{"country":""}"#, r#"{"query":"rust","country":""}"#)]
 fn body_maps_max_results_and_country(#[case] options: &str, #[case] expected: &str) {
-    assert_eq!(serialized(&single_body(options)), expected);
+    assert_eq!(
+        serde_json::to_string(&single_body(options)).unwrap(),
+        expected
+    );
 }
 
 #[rstest]
@@ -381,14 +379,15 @@ fn body_maps_max_results_and_country(#[case] options: &str, #[case] expected: &s
 #[case::nulls_are_absent(r#"{"content":null,"description":null}"#, "")]
 #[case::empty_description_is_empty(r#"{"description":""}"#, "")]
 fn reply_projects_the_snippet(#[case] result: &str, #[case] snippet: &str) {
-    let response = decode(&format!(r#"{{"results":[{result}]}}"#)).unwrap();
+    let response = decode_nimble_reply(format!(r#"{{"results":[{result}]}}"#).as_bytes()).unwrap();
     assert_eq!(response.results[0].snippet, snippet);
 }
 
 #[test]
 fn reply_projects_title_url_and_keeps_the_order() {
-    let response = decode(
-        r#"{"results":[{"title":"A","url":"https://a.test"},{"title":null,"url":null},{"title":"C","url":"https://c.test"}]}"#,
+    let response = decode_nimble_reply(
+        r#"{"results":[{"title":"A","url":"https://a.test"},{"title":null,"url":null},{"title":"C","url":"https://c.test"}]}"#
+            .as_bytes(),
     )
     .unwrap();
     assert_eq!(response.object.0, "search");
@@ -432,7 +431,7 @@ fn reply_projects_title_url_and_keeps_the_order() {
 #[case::null_additional_data(r#"{"additional_data":null}"#, None)]
 #[case::missing_additional_data("{}", None)]
 fn reply_reads_the_publish_date(#[case] result: &str, #[case] date: Option<&str>) {
-    let response = decode(&format!(r#"{{"results":[{result}]}}"#)).unwrap();
+    let response = decode_nimble_reply(format!(r#"{{"results":[{result}]}}"#).as_bytes()).unwrap();
     assert_eq!(response.results[0].date.as_deref(), date);
 }
 
@@ -447,9 +446,9 @@ fn reply_reads_the_publish_date(#[case] result: &str, #[case] date: Option<&str>
 #[case::null(r#"{"additional_data":null}"#, None)]
 #[case::missing("{}", None)]
 fn reply_keeps_additional_data_as_an_extra(#[case] result: &str, #[case] expected: Option<&str>) {
-    let response = decode(&format!(r#"{{"results":[{result}]}}"#)).unwrap();
+    let response = decode_nimble_reply(format!(r#"{{"results":[{result}]}}"#).as_bytes()).unwrap();
     let expected_extra = expected.map_or_else(Object::new, |value| {
-        params(&format!(r#"{{"additional_data":{value}}}"#))
+        serde_json::from_str::<Object>(&format!(r#"{{"additional_data":{value}}}"#)).unwrap()
     });
     assert_eq!(response.results[0].extra, expected_extra);
 }
@@ -463,6 +462,7 @@ fn reply_keeps_additional_data_as_an_extra(#[case] result: &str, #[case] expecte
 #[case::top_level_text(r#""x""#)]
 #[case::null_result(r#"{"results":[null]}"#)]
 #[case::list_result(r#"{"results":[[]]}"#)]
+#[case::array_result(r#"{"results":[["T","https://x.test"]]}"#)]
 #[case::numeric_title(r#"{"results":[{"title":7}]}"#)]
 #[case::numeric_url(r#"{"results":[{"url":7}]}"#)]
 #[case::numeric_content(r#"{"results":[{"content":7}]}"#)]
@@ -470,16 +470,16 @@ fn reply_keeps_additional_data_as_an_extra(#[case] result: &str, #[case] expecte
 #[case::invalid_json("not json")]
 #[case::trailing_bytes(r#"{"results":[]}x"#)]
 fn reply_rejects_a_shape_the_source_would_fail(#[case] body: &str) {
-    assert!(decode(body).is_err(), "{body}");
+    assert!(decode_nimble_reply(body.as_bytes()).is_err(), "{body}");
 }
 
 #[test]
 fn a_schema_failure_raises_through_the_error_class() {
     let search = load(&[]);
-    let headers = headers(&[("X-Trace", "1")]);
+    let traced = headers(&[("X-Trace", "1")]);
     let response = ProviderResponse {
         status_code: 422,
-        headers: &headers,
+        headers: &traced,
         text: r#"{"unexpected":true}"#,
     };
     match search.transform_search_response(&response).unwrap_err() {
