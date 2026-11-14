@@ -18,9 +18,11 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 
 [dev-dependencies]
-mutants = "0.0.4"
+betterlite-config = { path = "../betterlite-config" }
+betterlite-http = { path = "../betterlite-http" }
+betterlite-models = { path = "../betterlite-models" }
 rstest = "=0.27.0"
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
 
 [lints]
 workspace = true
