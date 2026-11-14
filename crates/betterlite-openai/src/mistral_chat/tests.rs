@@ -140,6 +140,12 @@ fn empty_predicate_reads_assistant_field_names_on_every_role() {
     assert!(!is_empty_assistant_message(&prompt(
         json!({"role": "assistant", "content": "", "cache_control": {"type": "ephemeral"}})
     )));
+    assert!(!is_empty_assistant_message(&prompt(
+        json!({"role": "tool", "content": "", "name": "lookup"})
+    )));
+    assert!(is_empty_assistant_message(&prompt(
+        json!({"role": "assistant", "content": "", "tool_calls": null})
+    )));
 }
 
 #[test]
