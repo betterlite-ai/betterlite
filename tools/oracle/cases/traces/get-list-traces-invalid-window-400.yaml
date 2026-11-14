@@ -17,7 +17,4 @@ call:
           kind: invalid_cursor
           message: "Invalid trace cursor"
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error messages, as the repository policy records
+compare: {ignore: []}

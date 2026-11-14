@@ -14,7 +14,4 @@ call:
       get_span:
         value: null
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error messages, as the repository policy records
+compare: {ignore: []}

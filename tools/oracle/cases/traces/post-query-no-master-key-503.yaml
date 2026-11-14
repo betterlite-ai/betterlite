@@ -10,7 +10,4 @@ call:
     auth: {user_role: proxy_admin, team_id: team-1, token: hash-1, org_id: org-1}
     tracing: true
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error messages, as the repository policy records
+compare: {ignore: []}

@@ -15,7 +15,4 @@ call:
       list_traces:
         value: {data: [], next_cursor: next-cursor}
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error messages, as the repository policy records
+compare: {ignore: []}

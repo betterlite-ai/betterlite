@@ -10,8 +10,5 @@ call:
     auth: {user_role: internal_user, project_id: project-1, token: hash-1}
     tracing: true
     master_key: "sk-master"
-    script:
-      query:
-        value: '{"scope": {"kind": "key", "team_id": "", "api_key_hash": "hash-1"}}'
 env: {}
 compare: {ignore: []}

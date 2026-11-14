@@ -10,11 +10,5 @@ call:
     auth: {user_role: internal_user}
     tracing: true
     master_key: "sk-master"
-    script:
-      query:
-        value: '{"ok": true}'
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error messages, as the repository policy records
+compare: {ignore: []}
