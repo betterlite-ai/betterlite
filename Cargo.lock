@@ -1810,6 +1810,7 @@ dependencies = [
  "hex",
  "hyper",
  "indexmap 2.14.2",
+ "jiff",
  "jsonwebtoken",
  "lru",
  "mime_guess",
