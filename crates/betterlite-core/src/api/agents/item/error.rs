@@ -135,15 +135,8 @@ where
     AgentItemError<Provider>: From<Carried>,
     Provider: ProviderFailure,
 {
-    match sent {
-        Ok(output) => Ok(output),
-        Err(carried) => Err(failure(
-            AgentItemError::from(carried),
-            name,
-            Some(provider),
-            redactor,
-        )),
-    }
+    let wrap = |error| failure(error, name, Some(provider), redactor);
+    sent.map_err(|carried| wrap(AgentItemError::from(carried)))
 }
 
 // docs/compatibility.md rejects a value outside the declared type with a 400 naming the field
@@ -169,16 +162,9 @@ fn provider_exception<Provider>(
 where
     Provider: ProviderFailure,
 {
-    let message = carried.message();
     RawException {
-        model: name.to_owned(),
-        custom_llm_provider: provider.unwrap_or_default().to_owned(),
-        error_str: message.clone(),
         status_code: Some(carried.status_code()),
-        status_code_is_synthesized: false,
-        message: Some(message),
-        body: None,
-        exception_type: String::new(),
+        ..exception(carried.message(), name, provider)
     }
 }
 
@@ -191,15 +177,21 @@ fn item_exception<Provider>(
 where
     Provider: ProviderFailure,
 {
-    let text = error.to_string();
+    RawException {
+        exception_type: "ValueError".to_owned(),
+        ..exception(error.to_string(), name, provider)
+    }
+}
+
+fn exception(message: String, name: &str, provider: Option<&str>) -> RawException {
     RawException {
         model: name.to_owned(),
         custom_llm_provider: provider.unwrap_or_default().to_owned(),
-        error_str: text.clone(),
+        error_str: message.clone(),
         status_code: None,
         status_code_is_synthesized: false,
-        message: Some(text),
+        message: Some(message),
         body: None,
-        exception_type: "ValueError".to_owned(),
+        exception_type: String::new(),
     }
 }

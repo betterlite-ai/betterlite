@@ -73,12 +73,14 @@ where
         .iter()
         .map(|(name, value)| (name.clone(), value_of(value)))
         .collect();
+    let mut optional_params = IndexMap::new();
+    optional_params.insert("name".to_owned(), Json::Text(request.name.to_owned()));
     let call = AgentLoggingCall {
         kwargs: &kwargs,
         model: request.name,
         custom_llm_provider: &provider,
         call_type: operation.call_type(),
-        optional_params: name_param(request.name),
+        optional_params,
     };
     make_logging_obj(logging, call)
         .map_err(|error| rejected(AgentItemError::Logging(error), Some(provider.as_str())))?;
@@ -118,13 +120,6 @@ fn value_of(value: &Json) -> JsonValue {
                 .collect(),
         ),
     }
-}
-
-// _make_logging_obj's optional_params for every one of the three calls
-fn name_param(name: &str) -> IndexMap<String, Json> {
-    let mut params = IndexMap::new();
-    params.insert("name".to_owned(), Json::Text(name.to_owned()));
-    params
 }
 
 // the named-agent request that delete and list_versions share
