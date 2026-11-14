@@ -9,3 +9,6 @@ deviations:
   - what: "The iterator constructor takes the shared get_api_base context through an InteractionsApiBase seam instead of reading process-global model aliases and provider settings."
     why: "betterlite forbids globals; the context is injected where the request is wired. SharedApiBase calls betterlite-models' get_api_base, and a resolution failure falls back to None the way LiteLLM swallows it."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_api_base.py#L84-L86
+  - what: "The iterators accept the upstream response through the InteractionsAsyncResponse and InteractionsSyncResponse traits, which expose headers, aiter_lines and iter_lines, instead of an httpx.Response."
+    why: "betterlite has no httpx; the workspace HTTP client and a buffered body both feed the same iterator through the trait, and line splitting and header processing stay with B005 and B206."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L141
