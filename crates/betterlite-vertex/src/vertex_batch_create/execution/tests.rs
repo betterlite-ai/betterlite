@@ -495,7 +495,7 @@ async fn an_error_body_keeps_the_text_before_its_first_invalid_byte(
 
 #[tokio::test]
 async fn the_lookup_deadline_covers_the_whole_get() {
-    let server = stalled_server(None).await;
+    let server = stalled_server(Some(STALLED_BODY_HEAD)).await;
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
     );
@@ -516,7 +516,10 @@ async fn the_lookup_deadline_covers_the_whole_get() {
         deadline: Duration::from_millis(200),
         ..base(&input)
     };
-    let error = run(&transport, &safe, &request).await.unwrap_err();
+    let error = timeout(Duration::from_secs(5), run(&transport, &safe, &request))
+        .await
+        .expect("the request deadline ends the body read")
+        .unwrap_err();
     assert!(matches!(error, VertexBatchCreateError::LookupTimeout));
     assert_eq!(error.status_code(), 500);
     assert!(transport.requests().is_empty());
