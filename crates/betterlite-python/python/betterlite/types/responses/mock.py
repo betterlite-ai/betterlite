@@ -1,7 +1,8 @@
 from typing import Final
 
-from betterlite.types.responses.api_response import ResponsesAPIResponse
 from pydantic import JsonValue
+
+from betterlite.types.responses.api_response import ResponsesAPIResponse
 
 DEFAULT_RESPONSE_TEXT: Final = (
     "In a peaceful grove beneath a silver moon, a unicorn named Lumina discovered a hidden pool "
