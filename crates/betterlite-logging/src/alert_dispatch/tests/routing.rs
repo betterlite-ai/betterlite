@@ -177,6 +177,30 @@ async fn a_missing_webhook_url_raises_when_neither_variable_is_set() {
 }
 
 #[test]
+fn destinations_serialize_to_the_configuration_names() {
+    let names: Vec<String> = [
+        AlertDestination::Slack,
+        AlertDestination::Email,
+        AlertDestination::MsTeams,
+        AlertDestination::Sentry,
+        AlertDestination::Webhook,
+    ]
+    .iter()
+    .map(|destination| serde_json::to_string(destination).expect("a destination serializes"))
+    .collect();
+    assert_eq!(
+        names,
+        [
+            "\"slack\"",
+            "\"email\"",
+            "\"ms_teams\"",
+            "\"sentry\"",
+            "\"webhook\""
+        ]
+    );
+}
+
+#[test]
 fn the_missing_webhook_url_error_names_both_variables() {
     assert_eq!(
         MissingWebhookUrl.to_string(),
@@ -463,6 +487,36 @@ async fn a_webhook_failure_stops_the_email_and_slack_dispatch() {
     assert_eq!(
         fixture.sink.calls(),
         vec![SinkCall::Webhook("budget_crossed".to_owned())]
+    );
+    assert!(fixture.delivery.queue.pending().is_empty());
+}
+
+#[tokio::test]
+async fn an_email_failure_is_returned_after_the_webhook_call() {
+    let mut fixture = slack_fixture();
+    fixture.sink.fail_email = true;
+    let event = budget_event();
+    let metadata = IndexMap::new();
+    let kwargs = IndexMap::new();
+    let dispatcher = fixture.dispatcher(
+        Some(vec![AlertDestination::Webhook, AlertDestination::Email]),
+        vec![AlertType::BudgetAlerts],
+    );
+    let sent = dispatcher
+        .send_alert(alert_with_event(
+            AlertType::BudgetAlerts,
+            &event,
+            &metadata,
+            &kwargs,
+        ))
+        .await;
+    assert!(matches!(sent, Err(SendAlertError::Budget(_))));
+    assert_eq!(
+        fixture.sink.calls(),
+        vec![
+            SinkCall::Webhook("budget_crossed".to_owned()),
+            SinkCall::Email("budget_crossed".to_owned(), AlertType::BudgetAlerts),
+        ]
     );
     assert!(fixture.delivery.queue.pending().is_empty());
 }
