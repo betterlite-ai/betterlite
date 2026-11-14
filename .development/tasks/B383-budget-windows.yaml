@@ -23,6 +23,10 @@ description: 'Implement ProviderBudget, DeploymentBudget, TagBudget and BudgetWi
   Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B020 and B326 call this service.'
 scope:
   paths:
+  - "crates/betterlite-config/src/sections/session_token_codec.rs"
+  - "crates/betterlite-config/src/sections/alert_settings/args.rs"
+  - "crates/betterlite-config/src/resolve.rs"
+  - "crates/betterlite-config/src"
   - crates/betterlite-router/src/budget_windows.rs
   - crates/betterlite-router/src/budget_windows/**
   - crates/betterlite-server/src/routing/budget_windows.rs

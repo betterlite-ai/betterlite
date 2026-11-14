@@ -1,0 +1,15 @@
+kind: helper
+name: hosted-vllm-embedding-headers
+call:
+  b8150:
+    function: "embedding_headers"
+    calls:
+      - {headers: {}, api_key: "secret", env: {}}
+      - {headers: {}, api_key: null, env: {HOSTED_VLLM_API_KEY: "env-key"}}
+      - {headers: {}, api_key: null, env: {}}
+      - {headers: {}, api_key: "", env: {HOSTED_VLLM_API_KEY: "env-key"}}
+      - {headers: {}, api_key: "fake-api-key", env: {}}
+      - {headers: {Content-Type: "text/plain"}, api_key: "secret", env: {}}
+      - {headers: {content-type: "text/plain"}, api_key: null, env: {}}
+env: {}
+compare: {ignore: []}
