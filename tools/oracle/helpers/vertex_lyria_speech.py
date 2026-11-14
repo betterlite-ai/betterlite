@@ -7,6 +7,7 @@ from litellm.llms.vertex_ai.text_to_speech.transformation import (
     VertexAILyriaTextToSpeechConfig,
 )
 from litellm.types.llms.vertex_ai import VERTEX_CREDENTIALS_TYPES
+from openai import BadRequestError
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -122,7 +123,7 @@ def mapping_view(case: MappingCase) -> JsonValue:
             drop_params=case["drop_params"],
             kwargs={},
         )
-    except (ValueError, litellm.UnsupportedParamsError):
+    except (ValueError, BadRequestError):
         return FAILED
     else:
         return {
@@ -161,7 +162,7 @@ def prepared_view(case: PreparedCase) -> JsonValue:
             litellm_params=litellm_params,
             headers=headers,
         )
-    except (ValueError, litellm.UnsupportedParamsError):
+    except (ValueError, BadRequestError):
         return FAILED
     else:
         return {
