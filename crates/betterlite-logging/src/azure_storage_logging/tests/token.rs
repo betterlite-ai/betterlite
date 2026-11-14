@@ -264,6 +264,29 @@ async fn an_unresolved_os_environ_reference_keeps_litellms_error() {
     assert!(fixture.transport.calls().is_empty());
 }
 
+#[tokio::test]
+async fn an_empty_os_environ_reference_counts_as_unset() {
+    let variables = [
+        ("AZURE_STORAGE_ACCOUNT_NAME", "acct"),
+        ("AZURE_STORAGE_FILE_SYSTEM", "logs"),
+        ("AZURE_STORAGE_TENANT_ID", "os.environ/STORAGE_TENANT"),
+        ("AZURE_STORAGE_CLIENT_ID", "client-1"),
+        ("AZURE_STORAGE_CLIENT_SECRET", "secret-1"),
+        ("STORAGE_TENANT", ""),
+    ];
+    let fixture = fixture(&variables, &[]);
+    let error = fixture
+        .logger
+        .set_valid_azure_ad_token()
+        .await
+        .expect_err("the tenant reference is empty");
+    assert_eq!(
+        error.to_string(),
+        "tenant_id, client_id, and client_secret must be provided"
+    );
+    assert!(fixture.transport.calls().is_empty());
+}
+
 #[rstest]
 fn replays_the_azure_storage_token_response_corpus(
     #[files("fuzz/corpus/azure_storage_token_response/*")] path: PathBuf,
