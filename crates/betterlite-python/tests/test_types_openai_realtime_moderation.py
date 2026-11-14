@@ -127,12 +127,11 @@ from typing_extensions import is_typeddict
 import betterlite.types.llms.openai.realtime as ours
 import litellm.types.llms.openai as theirs
 
-# these classes belong to the core and chat parts, which this part types as JSON mappings
+# these classes belong to the chat part, which this part types as JSON mappings
 MAPPED_REFS = {
     "ChatCompletionResponseMessage",
     "ChatCompletionUsageBlock",
     "OpenAIChatCompletionLogprobsContent",
-    "OpenAIErrorBody",
 }
 
 EVENT_SAMPLES = [

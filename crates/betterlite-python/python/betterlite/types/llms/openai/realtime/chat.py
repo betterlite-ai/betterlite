@@ -3,6 +3,8 @@ from typing import Literal, Required, TypeAlias
 from pydantic import JsonValue
 from typing_extensions import TypedDict
 
+from betterlite.types.llms.openai.core.batches import OpenAIErrorBody
+
 
 class OpenAIChatCompletionLogprobs(TypedDict, total=False):
     content: list[dict[str, JsonValue]]
@@ -30,7 +32,7 @@ class OpenAIChatCompletionResponse(TypedDict, total=False):
 class OpenAIBatchResponse(TypedDict, total=False):
     status_code: int
     request_id: str
-    body: OpenAIChatCompletionResponse | dict[str, JsonValue]
+    body: OpenAIChatCompletionResponse | OpenAIErrorBody
 
 
 class OpenAIBatchResult(TypedDict, total=False):
