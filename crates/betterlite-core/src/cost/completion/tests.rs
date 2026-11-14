@@ -9,11 +9,13 @@ use betterlite_models::tool_signals::response::{
 use betterlite_models::usage_sum::Usage as SumUsage;
 use indexmap::IndexMap;
 use rstest::rstest;
+use std::time::{Duration, UNIX_EPOCH};
 
 use self::rig::{
     Recorded, Refusing, Stored, args, chat_usage, chat_view, dec, map, number, rig, searching,
 };
-use super::error::CompletionCostError;
+use super::error::{ChargeInputError, CompletionCostError};
+use super::reading;
 use crate::cost::prepare::ResponseView;
 use crate::cost::prepare::error::PrepareError;
 use crate::cost::realtime::RealtimeBilling;
@@ -214,6 +216,56 @@ async fn the_router_fee_needs_azure_ai_and_a_router_shaped_hidden_model(
     assert_eq!(fees.is_some(), expected == "0.021");
 }
 
+#[rstest]
+#[case::router_named_logging_model("azure_ai/model-router-x", "{}", "0.021")]
+#[case::router_named_hidden_model_beats_a_plain_logging_one(
+    "gpt-4o",
+    r#"{"model":"azure_ai/model-router-x"}"#,
+    "0.021"
+)]
+#[case::router_named_logging_model_beats_a_plain_hidden_one(
+    "azure_ai/model-router-x",
+    r#"{"model":"gpt-4o"}"#,
+    "0.021"
+)]
+#[case::plain_logging_and_hidden_models("gpt-4o", r#"{"model":"gpt-4o"}"#, "0.02")]
+#[tokio::test]
+async fn the_logging_model_names_the_fee_unless_a_router_hidden_model_replaces_it(
+    #[case] logging: &str,
+    #[case] hidden: &str,
+    #[case] expected: &str,
+) {
+    let usage = chat_usage(10, 5);
+    let hidden = map(hidden);
+    let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
+    let mut call = args(Some(&view));
+    call.billing.custom_llm_provider = Some("azure_ai");
+    call.charge.logging.model = Some(logging);
+    let charge = rig(&[("gpt-4o", GPT), ("model_router", ROUTED)])
+        .charge(&call, None::<&mut Stored>)
+        .await
+        .unwrap();
+    assert_eq!(charge, dec(expected));
+}
+
+#[tokio::test]
+async fn a_router_shaped_priced_model_owes_no_extra_fee() {
+    let usage = chat_usage(10, 5);
+    let view = chat_view(&usage, Some("model-router-x"), None);
+    let mut call = args(Some(&view));
+    call.billing.model = Some("model-router-x");
+    call.billing.custom_llm_provider = Some("azure_ai");
+    let charge = rig(&[
+        ("model-router-x", GPT),
+        ("azure_ai/model-router-x", GPT),
+        ("model_router", ROUTED),
+    ])
+    .charge(&call, None::<&mut Stored>)
+    .await
+    .unwrap();
+    assert_eq!(charge, dec("0.02"));
+}
+
 #[tokio::test]
 async fn a_setter_failure_never_replaces_the_charge() {
     let usage = chat_usage(10, 5);
@@ -275,4 +327,48 @@ async fn websocket_partitions_are_priced_apart_and_summed() {
     let recorded = stored.0.unwrap();
     assert_eq!(recorded.input_cost, dec("0.004"));
     assert_eq!(recorded.output_cost, dec("0.002"));
+}
+
+#[tokio::test]
+async fn a_realtime_session_is_priced_from_its_own_stream_not_the_token_stage() {
+    let record = RealtimeBilling {
+        results: vec![map(
+            r#"{"type":"session.created","session":{"model":"gpt-4o"}}"#,
+        )],
+        usage: SumUsage {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+            ..SumUsage::default()
+        },
+        service_tier: None,
+    };
+    let usage = chat_usage(10, 5);
+    let view = ResponseView::Realtime {
+        record: &record,
+        usage: &usage,
+    };
+    let mut call = args(Some(&view));
+    call.billing.call_type = Some(CallType::PrivateArealtime);
+    let mut stored = Stored::default();
+    let charge = rig(&[("gpt-4o", GPT)])
+        .charge(&call, Some(&mut stored))
+        .await
+        .unwrap();
+    assert_eq!(charge, dec("0.02"));
+    // The token stage records the pre-adjustment cost, the realtime stream does not.
+    assert!(stored.0.unwrap().original_cost.is_none());
+}
+
+#[test]
+fn the_clock_reading_is_a_utc_moment_and_never_before_the_epoch() {
+    let mut later = || UNIX_EPOCH + Duration::new(1_700_000_000, 5);
+    let moment = reading(&mut later).unwrap();
+    assert_eq!(moment.timestamp(), 1_700_000_000);
+    assert_eq!(moment.timestamp_subsec_nanos(), 5);
+    let mut earlier = || UNIX_EPOCH - Duration::from_secs(1);
+    assert!(matches!(
+        reading(&mut earlier),
+        Err(ChargeInputError::Clock)
+    ));
 }
