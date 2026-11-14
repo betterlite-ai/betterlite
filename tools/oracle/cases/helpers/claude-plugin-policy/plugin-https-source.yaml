@@ -1,0 +1,33 @@
+kind: helper
+name: plugin-https-source
+call:
+  claude_plugin_policy:
+    calls:
+      - function: validate_source
+        source:
+          source: archive
+          url: "https://bucket.s3.amazonaws.com/plugins/plugin-name.zip"
+      - function: validate_source
+        source:
+          source: archive
+          url: "https://host/plugin.zip"
+          sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      - function: validate_source
+        source:
+          source: archive
+          url: "HTTPS://host/plugin.zip"
+          sha256: "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"
+      - function: validate_source
+        source:
+          source: archive
+          url: "https://user:secret@host/plugin.zip"
+      - function: validate_source
+        source:
+          source: archive
+          url: " https://host/plugin.zip"
+      - function: validate_source
+        source:
+          source: archive
+          url: "https:/\t/host/plugin.zip"
+env: {}
+compare: {ignore: []}

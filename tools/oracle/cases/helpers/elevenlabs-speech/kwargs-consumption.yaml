@@ -1,0 +1,20 @@
+kind: helper
+name: elevenlabs-speech-kwargs-consumption
+call:
+  elevenlabs_speech:
+    calls:
+    - {function: map_params, voice: alloy, optional_params: {instructions: whisper, stability: null, seed: 3}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {seed: 1, stability: 2}, kwargs: {extra_body: {seed: 3, language_code: null, style: 4}}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {extra_body: text}}
+    - {function: map_params, voice: alloy, optional_params: {seed: 1}, kwargs: {extra_body: {seed: 3}, seed: 9, language_code: en}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {voice: kept}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {model: kept}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {response_format: kept}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {output_format: kept}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {user: kept}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {api_key: kept}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {metadata: kept}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {seed: null, __elevenlabs_voice_id__: stale}}
+    - {function: map_params, voice: null, optional_params: {voice_id: lily, response_format: mp3, instructions: x}, kwargs: {}}
+compare: {ignore: []}
+env: {}
