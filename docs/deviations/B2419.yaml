@@ -1,5 +1,8 @@
 task: B2419
 deviations:
+  - what: An invalid per-deployment max_agentic_loops is rejected when the config loads, while LiteLLM validates it per request and only once the agentic path runs.
+    why: Betterlite decodes model_list into typed settings at boot, so a bad ceiling fails the load instead of letting every request to that model fail later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5211-L5219
   - what: An explicit max_agentic_loops ceiling is stored as u32 and must be at least 1; values above u32::MAX are rejected as not a whole number.
     why: Betterlite's ceiling feeds a bounded loop counter, so Python's arbitrary-precision integer has no Rust counterpart.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_loop_settings.py#L20-L50
