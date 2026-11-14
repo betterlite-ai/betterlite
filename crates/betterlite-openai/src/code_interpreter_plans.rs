@@ -1,1 +1,25 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        reason = "json! fixtures state the plan and hook shapes the tests compare; the macro builds its map through Into::into"
+    )
+)]
 
+pub mod chat_plan;
+pub mod configuration;
+pub mod dispatch;
+pub mod error;
+pub mod error_handling;
+pub mod extraction;
+pub mod followup;
+pub mod gate;
+pub mod initialization;
+pub mod plan;
+pub mod pre_call;
+pub mod provider;
+pub mod records;
+pub mod request;
+pub mod responses_plan;
+
+include!("code_interpreter_plans/tests/support.rs");

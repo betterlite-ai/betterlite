@@ -1045,6 +1045,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -1055,6 +1056,8 @@ version = "0.0.0"
 dependencies = [
  "betterlite-a2a",
  "betterlite-core",
+ "futures-executor",
+ "futures-util",
  "libfuzzer-sys",
  "serde_json",
 ]
@@ -1461,7 +1464,14 @@ name = "betterlite-compression"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-anthropic",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-prompts",
  "betterlite-semantic",
+ "betterlite-tokenizer",
+ "indexmap 2.14.2",
  "regex",
  "rstest",
  "serde_json",
@@ -1490,6 +1500,7 @@ dependencies = [
  "insta",
  "netrc-rs",
  "percent-encoding",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1501,6 +1512,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_with",
  "shellexpand",
+ "soft-canonicalize",
  "strum",
  "tempfile",
  "thiserror",
@@ -2946,6 +2958,7 @@ dependencies = [
  "betterlite-tokenizer",
  "crc16",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "rust_decimal",
  "serde",
@@ -3563,6 +3576,7 @@ dependencies = [
  "betterlite-prompts",
  "futures-util",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "serde",
  "serde_json",

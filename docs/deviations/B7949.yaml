@@ -1,0 +1,5 @@
+task: B7949
+deviations:
+  - what: UiDiscoveryEndpoints.workers is a Field(default_factory=list) where LiteLLM writes a bare [] default, so its JSON schema carries no default for the field.
+    why: The repo's RUF012 rule rejects an annotated mutable class default; the validated default is the same empty list and model_dump output is identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/discovery_endpoints/ui_discovery_endpoints.py#L15
