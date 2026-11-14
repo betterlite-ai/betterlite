@@ -3,9 +3,13 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use tokio::task::yield_now;
+
 use super::super::RelayLimits;
 use super::super::registry::StreamRegistry;
-use super::support::{Frame, Harness, arm_deferred, frame, pump_of, read, settle};
+use super::support::{
+    Frame, Harness, arm_deferred, frame, pump_of, read, release_and_read, settle,
+};
 use crate::api::messages_stream_logging::SseChunk;
 
 fn limits(queue_maxsize: usize) -> RelayLimits {
@@ -30,10 +34,16 @@ async fn a_disconnect_dispatches_the_parked_callback_once() {
     let registry = Arc::new(StreamRegistry::default());
     let (harness, mut relay) = Harness::start(limits(3), Arc::clone(&registry));
     let deferred = arm_deferred(&harness);
-    harness.script.release(SseChunk::Bytes(frame("one"))).await;
-    assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
-    harness.script.release(SseChunk::Bytes(frame(STOP))).await;
-    assert_eq!(read(&mut relay).await, Frame::Chunk(STOP.to_owned()));
+    let one = SseChunk::Bytes(frame("one"));
+    let stop = SseChunk::Bytes(frame(STOP));
+    assert_eq!(
+        release_and_read(&harness, &mut relay, one).await,
+        Frame::Chunk("one".to_owned())
+    );
+    assert_eq!(
+        release_and_read(&harness, &mut relay, stop).await,
+        Frame::Chunk(STOP.to_owned())
+    );
     let pump = pump_of(&harness);
     harness.script.finish().await;
     pump.wait().await;
@@ -56,7 +66,7 @@ async fn a_sentinel_that_loses_to_detach_dispatches_in_the_pump() {
     let pump = pump_of(&harness);
     harness.script.finish().await;
     while !harness.parked() {
-        tokio::task::yield_now().await;
+        yield_now().await;
     }
     // detaching on the queue keeps the relay alive, so only the pump can dispatch the park
     relay.queue.detach();

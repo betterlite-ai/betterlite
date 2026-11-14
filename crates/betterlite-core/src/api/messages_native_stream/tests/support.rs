@@ -25,6 +25,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, Duration as Seconds, FixedOffset};
 use indexmap::IndexMap;
 use tokio::sync::{Notify, Semaphore, mpsc};
+use tokio::task::yield_now;
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 
@@ -92,9 +93,10 @@ impl ScriptHandle {
     }
 
     pub(super) fn try_release(&self, chunk: SseChunk) {
-        if self.commands.try_send(Command::Chunk(chunk)).is_err() {
-            panic!("the script channel has room");
-        }
+        assert!(
+            self.commands.try_send(Command::Chunk(chunk)).is_ok(),
+            "the script channel has room"
+        );
     }
 
     pub(super) async fn await_delivery(&self) {
@@ -272,7 +274,6 @@ pub(super) struct Harness {
     pub(super) slots: Arc<StreamSlots>,
     pub(super) logging_obj: Arc<StreamLoggingObject>,
     pub(super) worker: Arc<LoggingWorker<LoggingJob>>,
-    pub(super) registry: Arc<StreamRegistry>,
     pub(super) script: ScriptHandle,
     pub(super) closed: Arc<AtomicBool>,
     pub(super) pump: Arc<TaskTracker>,
@@ -318,7 +319,6 @@ impl Harness {
             slots,
             logging_obj,
             worker,
-            registry,
             script,
             closed,
             pump: handle.pump,
@@ -517,6 +517,17 @@ pub(super) fn pump_of(harness: &Harness) -> Arc<TaskTracker> {
     Arc::clone(&harness.pump)
 }
 
+// The pump claims a drain slot on another worker thread, so the test waits for that claim
+pub(super) async fn wait_for_drains(registry: &StreamRegistry, expected: usize) {
+    for _ in 0..1000 {
+        if registry.sizes().detached_drains == expected {
+            return;
+        }
+        yield_now().await;
+    }
+    assert_eq!(registry.sizes().detached_drains, expected);
+}
+
 pub(super) fn frame(text: &str) -> Vec<u8> {
     text.as_bytes().to_vec()
 }
@@ -538,6 +549,15 @@ pub(super) async fn read(relay: &mut ClientRelay<Recorder, ProviderError>) -> Fr
         Ok(None) => Frame::End,
         Err(error) => Frame::Error(error.to_string()),
     }
+}
+
+pub(super) async fn release_and_read(
+    harness: &Harness,
+    relay: &mut ClientRelay<Recorder, ProviderError>,
+    chunk: SseChunk,
+) -> Frame {
+    harness.script.release(chunk).await;
+    read(relay).await
 }
 
 #[derive(Clone, Default)]

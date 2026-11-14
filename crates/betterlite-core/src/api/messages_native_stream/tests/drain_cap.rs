@@ -7,7 +7,7 @@ use tokio_util::task::TaskTracker;
 
 use super::super::RelayLimits;
 use super::super::registry::{RegistrySizes, StreamRegistry};
-use super::support::{Frame, Harness, capture_warnings, frame, pump_of, read};
+use super::support::{Frame, Harness, capture_warnings, frame, pump_of, read, wait_for_drains};
 use crate::api::messages_stream_logging::SseChunk;
 
 const CAP_WARNING: &str = "async_sse_wrapper: detached-drain cap (1) reached; billing 2 partial chunks and aborting the upstream stream to stop provider billing";
@@ -49,7 +49,7 @@ async fn a_held_slot_caps_the_second_drain(
     let pump_holder = pump_of(&holder);
     drop(relay_holder);
     holder.script.release(SseChunk::Bytes(frame("a2"))).await;
-    assert_eq!(registry.sizes().detached_drains, 1);
+    wait_for_drains(registry, 1).await;
     let (drainer, mut relay_drainer) = Harness::start(limits(1), Arc::clone(registry));
     drainer.script.release(SseChunk::Bytes(frame("d1"))).await;
     assert_eq!(
@@ -120,7 +120,7 @@ async fn a_later_stream_claims_the_released_slot(registry: &Arc<StreamRegistry>)
     let pump = pump_of(&claimer);
     drop(relay_claimer);
     claimer.script.release(SseChunk::Bytes(frame("c2"))).await;
-    assert_eq!(registry.sizes().detached_drains, 1);
+    wait_for_drains(registry, 1).await;
     claimer.script.finish().await;
     pump.wait().await;
     claimer.worker.flush().await;

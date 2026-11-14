@@ -5,11 +5,12 @@ use std::sync::atomic::Ordering;
 use std::task::Poll;
 
 use futures_util::poll;
+use tokio::task::yield_now;
 
-use super::super::RelayLimits;
 use super::super::queue::QueueItem;
 use super::super::registry::StreamRegistry;
-use super::support::{Frame, Harness, frame, pump_of, queue_of, read, settle};
+use super::super::{ClientRelay, RelayLimits};
+use super::support::{Frame, Harness, Recorder, frame, pump_of, queue_of, read, settle};
 use crate::api::messages_sse_events::render::incomplete_error_sse_event;
 use crate::api::messages_stream_logging::SseChunk;
 
@@ -32,33 +33,45 @@ async fn connected_backpressure() {
 async fn two_queued_chunks_hold_the_third_pull() {
     let registry = Arc::new(StreamRegistry::default());
     let (harness, mut relay) = Harness::start(limits(2), Arc::clone(&registry));
+    release_three_chunks(&harness).await;
+    harness.script.try_release(SseChunk::Bytes(frame("four")));
+    // a pump with room reaches the fourth command; this one stays parked on the full queue
+    yield_now().await;
+    assert_eq!(harness.script.pulls(), 3);
+    drain_four_chunks(&harness, &mut relay).await;
+    let incomplete = String::from_utf8(incomplete_error_sse_event()).expect("the event is UTF-8");
+    assert_eq!(read(&mut relay).await, Frame::Chunk(incomplete));
+    assert_eq!(read(&mut relay).await, Frame::End);
+    finish_and_assert_billing(&harness).await;
+    settle(&harness, relay).await;
+    assert_eq!(registry.sizes().live_pumps, 0);
+}
+
+async fn release_three_chunks(harness: &Harness) {
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     harness.script.release(SseChunk::Bytes(frame("two"))).await;
     harness
         .script
         .release(SseChunk::Bytes(frame("three")))
         .await;
-    harness.script.try_release(SseChunk::Bytes(frame("four")));
-    // a pump with room reaches the fourth command; this one stays parked on the full queue
-    tokio::task::yield_now().await;
-    assert_eq!(harness.script.pulls(), 3);
-    assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
+}
+
+async fn drain_four_chunks(harness: &Harness, relay: &mut ClientRelay<Recorder, ProviderError>) {
+    assert_eq!(read(relay).await, Frame::Chunk("one".to_owned()));
     harness.script.await_delivery().await;
-    assert_eq!(read(&mut relay).await, Frame::Chunk("two".to_owned()));
-    assert_eq!(read(&mut relay).await, Frame::Chunk("three".to_owned()));
-    assert_eq!(read(&mut relay).await, Frame::Chunk("four".to_owned()));
+    assert_eq!(read(relay).await, Frame::Chunk("two".to_owned()));
+    assert_eq!(read(relay).await, Frame::Chunk("three".to_owned()));
+    assert_eq!(read(relay).await, Frame::Chunk("four".to_owned()));
+}
+
+async fn finish_and_assert_billing(harness: &Harness) {
     harness.script.finish().await;
-    let incomplete = String::from_utf8(incomplete_error_sse_event()).expect("the event is UTF-8");
-    assert_eq!(read(&mut relay).await, Frame::Chunk(incomplete));
-    assert_eq!(read(&mut relay).await, Frame::End);
     harness.worker.flush().await;
     assert_eq!(harness.ran(), 1);
     assert_eq!(
         harness.routed_frames(),
         ["one", "two", "three", "four"].map(frame).to_vec()
     );
-    settle(&harness, relay).await;
-    assert_eq!(registry.sizes().live_pumps, 0);
 }
 
 async fn disconnect_resolves_a_blocked_enqueue() {

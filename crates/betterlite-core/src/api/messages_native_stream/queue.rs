@@ -50,9 +50,9 @@ impl<E> ClientQueue<E> {
                 let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
                 (state.items.pop_front(), state.closed)
             };
-            if let Some(item) = item {
+            if let Some(queued) = item {
                 self.space.notify_one();
-                return Some(item);
+                return Some(queued);
             }
             if closed {
                 return None;
@@ -88,6 +88,7 @@ impl<E> ClientQueue<E> {
             return Err(item);
         }
         state.items.push_back(item);
+        drop(state);
         Ok(())
     }
 

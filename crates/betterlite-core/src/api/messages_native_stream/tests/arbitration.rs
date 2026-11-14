@@ -6,10 +6,12 @@ use betterlite_logging::passthrough_stream_logging::types::EndpointType;
 use betterlite_models::decisions::Json;
 use futures_util::poll;
 
-use super::super::RelayLimits;
 use super::super::queue::QueueItem;
 use super::super::registry::StreamRegistry;
-use super::support::{Frame, Harness, ProviderError, arm_hook, frame, pump_of, queue_of, read};
+use super::super::{ClientRelay, RelayLimits, StreamFailureCall};
+use super::support::{
+    Frame, Harness, ProviderError, Recorder, arm_hook, frame, pump_of, queue_of, read,
+};
 use crate::api::messages_stream_logging::SseChunk;
 
 fn limits(queue_maxsize: usize) -> RelayLimits {
@@ -40,10 +42,7 @@ async fn a_connected_client_gets_the_original_exception() {
     let registry = Arc::new(StreamRegistry::default());
     let (harness, mut relay) = Harness::start(limits(8), Arc::clone(&registry));
     let hook = arm_hook(&harness);
-    harness.script.release(SseChunk::Bytes(frame("one"))).await;
-    assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
-    harness.script.release(SseChunk::Bytes(frame("two"))).await;
-    assert_eq!(read(&mut relay).await, Frame::Chunk("two".to_owned()));
+    forward_two_chunks(&harness, &mut relay).await;
     let pump = pump_of(&harness);
     harness.script.fail(busy()).await;
     assert_eq!(
@@ -55,17 +54,36 @@ async fn a_connected_client_gets_the_original_exception() {
     harness.worker.flush().await;
     assert_eq!(hook.calls(), Vec::<String>::new());
     assert_eq!(harness.billed(), 0);
+    assert_the_failure_record(&harness);
+    assert_eq!(registry.sizes().live_pumps, 0);
+}
+
+async fn forward_two_chunks(harness: &Harness, relay: &mut ClientRelay<Recorder, ProviderError>) {
+    harness.script.release(SseChunk::Bytes(frame("one"))).await;
+    assert_eq!(read(relay).await, Frame::Chunk("one".to_owned()));
+    harness.script.release(SseChunk::Bytes(frame("two"))).await;
+    assert_eq!(read(relay).await, Frame::Chunk("two".to_owned()));
+}
+
+fn assert_the_failure_record(harness: &Harness) {
     let failures = harness.failures();
     assert_eq!(failures.len(), 1);
-    assert_eq!(failures[0].failure.kind, "RateLimitError");
-    assert_eq!(failures[0].failure.message, "busy");
-    assert_eq!(failures[0].endpoint, EndpointType::Anthropic);
-    assert_eq!(failures[0].raw_bytes, vec![frame("one"), frame("two")]);
+    assert_the_failure_identity(&failures[0]);
+    assert_the_failure_payload(&failures[0]);
+}
+
+fn assert_the_failure_identity(call: &StreamFailureCall) {
+    assert_eq!(call.failure.kind, "RateLimitError");
+    assert_eq!(call.failure.message, "busy");
+    assert_eq!(call.endpoint, EndpointType::Anthropic);
+}
+
+fn assert_the_failure_payload(call: &StreamFailureCall) {
+    assert_eq!(call.raw_bytes, vec![frame("one"), frame("two")]);
     assert_eq!(
-        failures[0].request_body.get("model"),
+        call.request_body.get("model"),
         Some(&Json::Text("claude".to_owned()))
     );
-    assert_eq!(registry.sizes().live_pumps, 0);
 }
 
 // detach_first decides whether the failure is queued before the client goes away

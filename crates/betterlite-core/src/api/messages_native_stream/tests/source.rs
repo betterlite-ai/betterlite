@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 
 use async_trait::async_trait;
 
-use super::super::MessagesChunkSource;
+use super::super::MessagesChunkSource as _;
 use super::support::{ProviderError, frame};
 use crate::api::messages_sse_events::stream::{
     MessagesProviderStream, MessagesStreamHiddenParams, MessagesStreamingResponse,

@@ -5,9 +5,11 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::super::RelayLimits;
 use super::super::registry::StreamRegistry;
-use super::support::{Frame, Harness, at, frame, read, settle};
+use super::super::{ClientRelay, RelayLimits};
+use super::support::{
+    Frame, Harness, ProviderError, Recorder, at, frame, read, release_and_read, settle,
+};
 use crate::api::messages_sse_events::render::incomplete_error_sse_event;
 use crate::api::messages_stream_logging::SseChunk;
 
@@ -41,8 +43,23 @@ async fn normal_terminal_and_incomplete() {
 async fn forwards_raw_bytes_and_encodes_dicts() {
     let (harness, mut relay) = Harness::start(limits(), Arc::new(StreamRegistry::default()));
     let ping = "event: ping\ndata: {\"type\": \"ping\"}\n\n";
-    harness.script.release(SseChunk::Bytes(frame(ping))).await;
-    assert_eq!(read(&mut relay).await, Frame::Chunk(ping.to_owned()));
+    let chunk = SseChunk::Bytes(frame(ping));
+    assert_eq!(
+        release_and_read(&harness, &mut relay, chunk).await,
+        Frame::Chunk(ping.to_owned())
+    );
+    forward_encoded_chunks(&harness, &mut relay).await;
+    harness.script.finish().await;
+    let incomplete = String::from_utf8(incomplete_error_sse_event()).expect("the event is UTF-8");
+    assert_eq!(read(&mut relay).await, Frame::Chunk(incomplete));
+    assert_eq!(read(&mut relay).await, Frame::End);
+    settle(&harness, relay).await;
+}
+
+async fn forward_encoded_chunks(
+    harness: &Harness,
+    relay: &mut ClientRelay<Recorder, ProviderError>,
+) {
     let delta = mapping(vec![
         ("type", Json::Text("content_block_delta".to_owned())),
         (
@@ -54,24 +71,21 @@ async fn forwards_raw_bytes_and_encodes_dicts() {
         ),
     ]);
     harness.script.release(delta).await;
-    match read(&mut relay).await {
+    match read(relay).await {
         Frame::Chunk(encoded) => {
             assert!(encoded.starts_with("event: content_block_delta\ndata: {"));
             assert!(encoded.contains("\"text\": \"hi\""));
         }
-        other => panic!("the mapping is encoded, got {other:?}"),
+        other @ (Frame::End | Frame::Error(_)) => panic!("the mapping is encoded, got {other:?}"),
     }
     let untyped = mapping(vec![("content", Json::Text("x".to_owned()))]);
     harness.script.release(untyped).await;
-    match read(&mut relay).await {
+    match read(relay).await {
         Frame::Chunk(encoded) => assert!(encoded.starts_with("event: message\ndata: {")),
-        other => panic!("the mapping without a type becomes a message event, got {other:?}"),
+        other @ (Frame::End | Frame::Error(_)) => {
+            panic!("the mapping without a type becomes a message event, got {other:?}")
+        }
     }
-    harness.script.finish().await;
-    let incomplete = String::from_utf8(incomplete_error_sse_event()).expect("the event is UTF-8");
-    assert_eq!(read(&mut relay).await, Frame::Chunk(incomplete));
-    assert_eq!(read(&mut relay).await, Frame::End);
-    settle(&harness, relay).await;
 }
 
 async fn a_raw_message_stop_suppresses_the_incomplete_event() {
@@ -93,7 +107,9 @@ async fn a_forwarded_mapping_that_ends_the_stream(chunk: SseChunk) -> String {
     harness.script.release(chunk).await;
     let encoded = match read(&mut relay).await {
         Frame::Chunk(encoded) => encoded,
-        other => panic!("the terminal mapping forwards, got {other:?}"),
+        other @ (Frame::End | Frame::Error(_)) => {
+            panic!("the terminal mapping forwards, got {other:?}")
+        }
     };
     harness.script.finish().await;
     assert_eq!(read(&mut relay).await, Frame::End);
