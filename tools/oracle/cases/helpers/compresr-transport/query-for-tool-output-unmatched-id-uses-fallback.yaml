@@ -1,0 +1,6 @@
+kind: helper
+name: query-for-tool-output-unmatched-id-uses-fallback
+call:
+  compresr_transport: {"function": "query_for_target", "messages": [{"role": "user", "content": "Weather?"}, {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}]}, {"role": "tool", "tool_call_id": "call_9", "content": "sunny"}], "target_idx": 2, "fallback": "Weather?"}
+env: {}
+compare: {ignore: []}
