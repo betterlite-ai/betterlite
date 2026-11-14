@@ -80,7 +80,7 @@ fn trusted_depth(value: Option<&Json>) -> Result<i64, AgenticLoopSettingsError> 
     let Some(value) = value else {
         return Ok(0);
     };
-    if is_falsy(value) {
+    if is_empty_or_zero(value) {
         return Ok(0);
     }
     match value {
@@ -94,7 +94,7 @@ fn trusted_depth(value: Option<&Json>) -> Result<i64, AgenticLoopSettingsError> 
     }
 }
 
-fn is_falsy(value: &Json) -> bool {
+fn is_empty_or_zero(value: &Json) -> bool {
     match value {
         Json::Null => true,
         Json::Bool(flag) => !*flag,
@@ -163,7 +163,7 @@ fn fingerprint_history(value: Option<&Json>) -> Result<Vec<Json>, AgenticLoopSet
     let Some(value) = value else {
         return Ok(Vec::new());
     };
-    if is_falsy(value) {
+    if is_empty_or_zero(value) {
         return Ok(Vec::new());
     }
     match value {

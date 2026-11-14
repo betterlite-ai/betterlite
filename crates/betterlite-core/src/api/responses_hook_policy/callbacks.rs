@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use crate::api::responses_parameters::requested::RESPONSES_OPTIONAL_PARAMS;
 
 use super::error::DeploymentHookError;
-use super::python_value::python_str;
+use super::python_value::rendered_text;
 
 pub const RESPONSES_CALL_TYPE: &str = "responses";
 
@@ -171,11 +171,11 @@ fn split(
     }
     let model = modified
         .get("model")
-        .map_or(Ok(request.model), python_str)?;
+        .map_or(Ok(request.model), rendered_text)?;
     let input = modified.get("input").cloned().unwrap_or(request.input);
     let custom_llm_provider = modified
         .get("custom_llm_provider")
-        .map_or(Ok(request.custom_llm_provider), python_str)?;
+        .map_or(Ok(request.custom_llm_provider), rendered_text)?;
     Ok(ResponsesHookOutcome {
         model,
         input,

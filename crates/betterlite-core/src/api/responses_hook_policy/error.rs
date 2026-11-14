@@ -30,7 +30,7 @@ pub enum AgenticLoopSettingsError {
 
 impl AgenticLoopSettingsError {
     #[must_use]
-    pub const fn python_class(&self) -> &'static str {
+    pub const fn error_class(&self) -> &'static str {
         match self {
             Self::CeilingNotInteger { .. }
             | Self::DepthWrongType { .. }

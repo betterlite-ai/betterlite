@@ -69,7 +69,7 @@ class ScriptedCallback(CustomLogger):
         self.result = result
 
     @override
-    async def async_pre_call_deployment_hook(  # ast-grep-ignore: no-long-names
+    async def async_pre_call_deployment_hook(
         self,
         # ast-grep-ignore: no-loose-types
         _kwargs: dict[str, object],

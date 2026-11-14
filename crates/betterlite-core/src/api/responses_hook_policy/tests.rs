@@ -130,7 +130,10 @@ fn agentic_policy(name: &str, should_run: bool) -> PolicyCallback {
     let agentic: Arc<dyn AgenticCallback> = Arc::new(StaticAgentic {
         overrides: AgenticOverrides {
             should_run,
-            ..AgenticOverrides::default()
+            run_loop: false,
+            build_plan: false,
+            post_response: false,
+            cleanup: false,
         },
     });
     PolicyCallback {
@@ -263,7 +266,7 @@ async fn deployment_hook_merge() {
     detection_counts_inherited_and_resolved();
     let dispatcher = ScriptedDispatcher {
         result: Some(overlay_result()),
-        ..ScriptedDispatcher::default()
+        calls: Mutex::new(Vec::new()),
     };
     let outcome = hook_outcome(&dispatcher, true).await;
     assert_eq!(outcome.model, "None");
@@ -306,7 +309,7 @@ async fn deployment_hook_failure() {
 async fn deployment_hook_merge_preserves_missing_and_skips_without_override() {
     let partial = ScriptedDispatcher {
         result: Some(map(vec![("model", text("m"))])),
-        ..ScriptedDispatcher::default()
+        calls: Mutex::new(Vec::new()),
     };
     let outcome = hook_outcome(&partial, true).await;
     assert_eq!(outcome.model, "m");
@@ -323,7 +326,7 @@ async fn deployment_hook_merge_preserves_missing_and_skips_without_override() {
 
     let unrun = ScriptedDispatcher {
         result: Some(overlay_result()),
-        ..ScriptedDispatcher::default()
+        calls: Mutex::new(Vec::new()),
     };
     assert_eq!(hook_outcome(&unrun, false).await, original_outcome());
     assert!(unrun.calls.lock().unwrap().is_empty());
@@ -384,11 +387,11 @@ fn rejected_ceilings() {
     ];
     for (value, message) in not_integers {
         let error = get_agentic_loop_settings(&ceiling_kwargs(Some(value))).unwrap_err();
-        assert_eq!(error.python_class(), "TypeError");
+        assert_eq!(error.error_class(), "TypeError");
         assert_eq!(error.to_string(), message);
     }
     let below = get_agentic_loop_settings(&ceiling_kwargs(Some(integer(0)))).unwrap_err();
-    assert_eq!(below.python_class(), "ValueError");
+    assert_eq!(below.error_class(), "ValueError");
     assert_eq!(
         below.to_string(),
         "litellm_params.max_agentic_loops must be at least 1, got 0"
@@ -460,7 +463,7 @@ fn depth_cases() {
         0
     );
     let malformed = get_agentic_loop_settings(&depth_kwargs(text("three"))).unwrap_err();
-    assert_eq!(malformed.python_class(), "ValueError");
+    assert_eq!(malformed.error_class(), "ValueError");
     assert_eq!(
         malformed.to_string(),
         "invalid literal for int() with base 10: 'three'"
@@ -470,8 +473,14 @@ fn depth_cases() {
         quoted.to_string(),
         "invalid literal for int() with base 10: 'it\\'s \"x\"'"
     );
+    let empty_part = get_agentic_loop_settings(&depth_kwargs(text("1__0"))).unwrap_err();
+    assert_eq!(empty_part.error_class(), "ValueError");
+    assert_eq!(
+        empty_part.to_string(),
+        "invalid literal for int() with base 10: '1__0'"
+    );
     let wrong = get_agentic_loop_settings(&depth_kwargs(list(vec![integer(1)]))).unwrap_err();
-    assert_eq!(wrong.python_class(), "TypeError");
+    assert_eq!(wrong.error_class(), "TypeError");
     assert_eq!(
         wrong.to_string(),
         "int() argument must be a string, a bytes-like object or a real number, not 'list'"

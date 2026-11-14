@@ -35,7 +35,7 @@ fn settings_probe(kwargs: &IndexMap<String, Json>) -> Value {
             },
         }),
         Err(error) => json!({
-            "error": { "class": error.python_class(), "message": error.to_string() },
+            "error": { "class": error.error_class(), "message": error.to_string() },
         }),
     }
 }
