@@ -215,6 +215,29 @@ async fn request_files_records_the_guardrail_name_once() {
 }
 
 #[tokio::test]
+async fn request_files_replaces_a_non_list_applied_guardrails_value() {
+    let (endpoint, _requests, _server) = serve(vec![(StatusCode::OK, CLEAN.to_owned())]).await;
+    let transport = transport(&endpoint, true);
+    let mut request_data = slots();
+    request_data.metadata = Some(MetadataMap::from([(
+        "applied_guardrails".to_owned(),
+        Json::Text("not-a-list".to_owned()),
+    )]));
+    let result = scan_request_files(
+        &messages(&pdf_attachment()),
+        &mut request_data,
+        &transport,
+        &settings(Some("armor"), true, false),
+    )
+    .await;
+    assert!(result.is_ok());
+    assert_eq!(
+        metadata(&request_data).get("applied_guardrails"),
+        Some(&Json::List(vec![Json::Text("armor".to_owned())]))
+    );
+}
+
+#[tokio::test]
 async fn request_files_without_a_guardrail_name_still_creates_the_bucket() {
     let (endpoint, _requests, _server) = serve(vec![(StatusCode::OK, CLEAN.to_owned())]).await;
     let transport = transport(&endpoint, true);
