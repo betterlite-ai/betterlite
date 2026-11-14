@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
 use rstest::rstest;
+use serde_json::Value;
 
 use super::support::{json, reply_headers};
 use crate::s3_vectors_search::error::S3VectorsSearchError;
@@ -16,7 +17,14 @@ fn one_score(distance: &str) -> Option<String> {
     );
     let response = decode(&body, None);
     let results = response.data?;
-    results[0].score.as_ref().map(|score| score.0.to_string())
+    let wire = serde_json::to_value(&results[0]).unwrap();
+    match &wire["score"] {
+        Value::Null => {
+            assert!(wire.as_object().unwrap().contains_key("score"));
+            None
+        }
+        score => Some(score.to_string()),
+    }
 }
 
 #[test]
@@ -131,7 +139,9 @@ fn a_float32_distance_next_to_one_keeps_its_tiny_score() {
 #[test]
 fn an_absent_distance_gives_no_score() {
     let response = decode(r#"{"vectors": [{"metadata": {"source_text": "t"}}]}"#, None);
-    assert!(response.data.unwrap()[0].score.is_none());
+    let wire = serde_json::to_value(&response.data.unwrap()[0]).unwrap();
+    assert!(wire.as_object().unwrap().contains_key("score"));
+    assert_eq!(wire["score"], Value::Null);
 }
 
 #[rstest]

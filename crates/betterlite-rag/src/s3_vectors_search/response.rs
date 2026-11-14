@@ -8,7 +8,7 @@ use betterlite_openai::api::vector_store_records::records::vector::{
 use betterlite_provider::api::vector_store_contracts::config::Headers;
 use betterlite_provider::api::vector_store_contracts::error::BaseLlmException;
 use indexmap::IndexMap;
-use serde_json::Number;
+use serde_json::{Number, Value};
 
 use super::error::S3VectorsSearchError;
 
@@ -64,8 +64,13 @@ fn search_result(
     };
     let attributes = serde_json::to_value(Json::Object(metadata.clone()))
         .map_err(|source| reply.error(source.to_string()))?;
+    let score = score(reply, index, fields.get("distance"))?;
+    let mut extra = BTreeMap::new();
+    if score.is_none() {
+        extra.insert("score".to_owned(), Value::Null);
+    }
     Ok(Some(VectorStoreSearchResult {
-        score: score(reply, index, fields.get("distance"))?,
+        score,
         content: Some(vec![VectorStoreResultContent {
             text: Some(hit.source_text),
             type_name: Some("text".to_owned()),
@@ -74,7 +79,7 @@ fn search_result(
         file_id: Some(format!("s3-vectors-chunk-{}", hit.chunk_index)),
         filename: Some(hit.filename),
         attributes: Some(attributes),
-        extra: BTreeMap::new(),
+        extra,
     }))
 }
 

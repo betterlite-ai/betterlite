@@ -81,7 +81,6 @@ fn request_value(call: &RequestCall) -> Option<Value> {
     }))
 }
 
-// LiteLLM sets score to None on a hit without a distance, and the record leaves the key out
 fn response_value(call: &ResponseCall) -> Option<Value> {
     let response = decode_s3_vectors_search(
         call.status,
@@ -90,13 +89,5 @@ fn response_value(call: &ResponseCall) -> Option<Value> {
         call.query.as_deref(),
     )
     .ok()?;
-    let mut value = serde_json::to_value(response).ok()?;
-    let results = value.get_mut("data")?.as_array_mut()?;
-    for result in results {
-        result
-            .as_object_mut()?
-            .entry("score")
-            .or_insert(Value::Null);
-    }
-    Some(value)
+    serde_json::to_value(response).ok()
 }
