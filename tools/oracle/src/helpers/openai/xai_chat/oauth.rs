@@ -21,10 +21,9 @@ impl OauthTokens for Oauth {
     fn access_token(&mut self) -> impl Future<Output = Result<SecretString, XaiOauthError>> + Send {
         let token = self.token;
         async move {
-            match token {
-                Some(value) => Ok(SecretString::from(String::from(value))),
-                None => Err(XaiOauthError::LoginRequired),
-            }
+            token
+                .map(|value| SecretString::from(String::from(value)))
+                .ok_or(XaiOauthError::LoginRequired)
         }
     }
 }

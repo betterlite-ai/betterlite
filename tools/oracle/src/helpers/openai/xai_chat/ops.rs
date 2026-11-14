@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use super::logs::Warnings;
 use super::oauth::{CapabilityLookup, identity, oauth};
-use super::{CHAT_FAILURE, STREAM_FAILURE, Settings, failure};
+use super::{CHAT_FAILURE, STREAM_FAILURE, Settings, Step, failure};
 use crate::helpers::HelperResult;
 
 pub(super) struct Run<'request> {
@@ -31,6 +31,39 @@ pub(super) struct Run<'request> {
 }
 
 impl Run<'_> {
+    pub(super) fn step(&self, step: &Step) -> HelperResult {
+        match step {
+            Step::Supported {
+                model,
+                supports_reasoning,
+            } => Ok(self.supported(model, *supports_reasoning)),
+            Step::Map {
+                model,
+                supports_reasoning,
+                params,
+                optional_params,
+            } => Self::mapped(model, *supports_reasoning, params, optional_params),
+            Step::Request {
+                model,
+                messages,
+                optional_params,
+            } => Self::requested(model, messages, optional_params),
+            Step::Environment {
+                model,
+                headers,
+                api_key,
+                use_xai_oauth,
+            } => self.environment(model, headers, api_key.as_ref(), *use_xai_oauth),
+            Step::Url {
+                api_base,
+                api_key,
+                use_xai_oauth,
+            } => Ok(self.url(api_base.as_deref(), api_key.as_ref(), *use_xai_oauth)),
+            Step::Reply { body } => Self::reply(body),
+            Step::Chunk { chunk } => Self::chunk(chunk),
+        }
+    }
+
     pub(super) fn supported(&self, model: &str, supports_reasoning: Option<bool>) -> Value {
         let mut lookup = CapabilityLookup {
             outcome: supports_reasoning,
@@ -42,7 +75,6 @@ impl Run<'_> {
     }
 
     pub(super) fn mapped(
-        &self,
         model: &str,
         supports_reasoning: bool,
         params: &[(String, Json)],
@@ -56,7 +88,6 @@ impl Run<'_> {
     }
 
     pub(super) fn requested(
-        &self,
         model: &str,
         messages: &[ChatMessage],
         optional_params: &Object,
@@ -94,7 +125,6 @@ impl Run<'_> {
         use_xai_oauth: bool,
     ) -> HelperResult {
         let settings = identity(self.settings);
-        let mut authenticator = oauth(self.settings, None);
         let resolved = self
             .runtime
             .block_on(validate_environment(Environment {
@@ -103,7 +133,7 @@ impl Run<'_> {
                 settings: &settings,
                 model,
                 use_xai_oauth,
-                oauth: &mut authenticator,
+                oauth: &mut oauth(self.settings, None),
             }))
             .map_err(|error| failure(CHAT_FAILURE, Some(error.status_code()), error))?;
         Ok(json!({ "headers": resolved }))
@@ -130,7 +160,7 @@ impl Run<'_> {
         })
     }
 
-    pub(super) fn reply(&self, body: &str) -> HelperResult {
+    pub(super) fn reply(body: &str) -> HelperResult {
         let converted = transform_response(&ReplyInput {
             body: body.as_bytes(),
         })
@@ -160,7 +190,7 @@ impl Run<'_> {
         }))
     }
 
-    pub(super) fn chunk(&self, raw: &Value) -> HelperResult {
+    pub(super) fn chunk(raw: &Value) -> HelperResult {
         let mut chunk = raw.clone();
         let reply = parse_chunk(&mut chunk, Uuid::nil, || 0)
             .map_err(|error| failure(STREAM_FAILURE, None, error))?;

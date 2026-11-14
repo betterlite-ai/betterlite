@@ -112,36 +112,7 @@ impl Helper for Op {
         };
         let mut results = Vec::with_capacity(input.steps.len());
         for step in &input.steps {
-            results.push(match step {
-                Step::Supported {
-                    model,
-                    supports_reasoning,
-                } => run.supported(model, *supports_reasoning),
-                Step::Map {
-                    model,
-                    supports_reasoning,
-                    params,
-                    optional_params,
-                } => run.mapped(model, *supports_reasoning, params, optional_params)?,
-                Step::Request {
-                    model,
-                    messages,
-                    optional_params,
-                } => run.requested(model, messages, optional_params)?,
-                Step::Environment {
-                    model,
-                    headers,
-                    api_key,
-                    use_xai_oauth,
-                } => run.environment(model, headers, api_key.as_ref(), *use_xai_oauth)?,
-                Step::Url {
-                    api_base,
-                    api_key,
-                    use_xai_oauth,
-                } => run.url(api_base.as_deref(), api_key.as_ref(), *use_xai_oauth),
-                Step::Reply { body } => run.reply(body)?,
-                Step::Chunk { chunk } => run.chunk(chunk)?,
-            });
+            results.push(run.step(step)?);
         }
         Ok(Value::Array(results))
     }
