@@ -1,0 +1,14 @@
+kind: helper
+name: response-parsing-missing-fields
+call:
+  b3769:
+    detect:
+      settings: {api_key: key, api_base: "https://api.enkryptai.com"}
+      texts: [hello]
+      answer:
+        status: 200
+        headers: {}
+        body:
+          summary: {bias: 0}
+env: {}
+compare: {ignore: []}

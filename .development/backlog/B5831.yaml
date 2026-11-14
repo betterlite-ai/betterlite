@@ -1,14 +1,14 @@
 id: B5831
 milestone: M3 providers
 title: Together AI provider
-status: todo
+status: done
 depends_on: [B668, B503, B2221, B2237, B1013, B171]
 file: tasks/B5831-together-ai-provider.yaml
 covers:
   - "litellm/llms/together_ai/**"
 parent: B041
 split_from: B041
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1620

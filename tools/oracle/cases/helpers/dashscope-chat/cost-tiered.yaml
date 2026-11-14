@@ -1,0 +1,60 @@
+kind: helper
+name: cost-tiered
+call:
+  b8170:
+    steps:
+      - kind: cost
+        model_info:
+          input_cost_per_token: 9
+          output_cost_per_token: 9
+          tiered_pricing:
+            - {range: [0, 100], input_cost_per_token: 1, output_cost_per_token: 2, cache_read_input_token_cost: 0, cache_creation_input_token_cost: 0}
+            - {range: [100, 100000], input_cost_per_token: 3, output_cost_per_token: 4, output_cost_per_reasoning_token: 5, cache_read_input_token_cost: 0.5, cache_creation_input_token_cost: 0.25}
+        usage: {prompt_tokens: 100, completion_tokens: 50, cached_tokens: 10, cache_creation_tokens: 5, reasoning_tokens: 20}
+        current_time: "2024-06-16T12:00:00Z"
+      - kind: cost
+        model_info:
+          input_cost_per_token: 9
+          output_cost_per_token: 9
+          tiered_pricing:
+            - {range: [0, 100], input_cost_per_token: 1, output_cost_per_token: 2, cache_read_input_token_cost: 0, cache_creation_input_token_cost: 0}
+            - {range: [100, 100000], input_cost_per_token: 3, output_cost_per_token: 4, output_cost_per_reasoning_token: 5, cache_read_input_token_cost: 0.5, cache_creation_input_token_cost: 0.25}
+        usage: {prompt_tokens: 150, completion_tokens: 50, cached_tokens: 10, cache_creation_tokens: 5, reasoning_tokens: 20}
+        current_time: "2024-06-16T12:00:00Z"
+      - kind: cost
+        model_info:
+          input_cost_per_token: 9
+          output_cost_per_token: 7
+          output_cost_per_reasoning_token: 0.5
+          tiered_pricing:
+            - {range: [0, 100000], input_cost_per_token: 1}
+        usage: {prompt_tokens: 100, completion_tokens: 50, cached_tokens: 10, cache_creation_tokens: 5, reasoning_tokens: 20}
+        current_time: "2024-06-16T12:00:00Z"
+      - kind: cost
+        model_info:
+          input_cost_per_token: 9
+          output_cost_per_token: 7
+          output_cost_per_reasoning_token: 0.5
+          tiered_pricing:
+            - {range: [0, 100000], input_cost_per_token: 1, output_cost_per_token: 4}
+        usage: {prompt_tokens: 100, completion_tokens: 50, cached_tokens: 10, cache_creation_tokens: 5, reasoning_tokens: 20}
+        current_time: "2024-06-16T12:00:00Z"
+      - kind: cost
+        model_info:
+          input_cost_per_token: 9
+          output_cost_per_token: 7
+          tiered_pricing:
+            - {range: [0, 100000], input_cost_per_token: 1, output_cost_per_token: 4, output_cost_per_reasoning_token: 5}
+        usage: {prompt_tokens: 100, completion_tokens: 50, cached_tokens: 10, cache_creation_tokens: 5, reasoning_tokens: 20}
+        current_time: "2024-06-16T12:00:00Z"
+      - kind: cost
+        model_info:
+          input_cost_per_token: 9
+          output_cost_per_token: 9
+          tiered_pricing:
+            - {range: [0, 10], input_cost_per_token: 1, output_cost_per_token: 2}
+            - {range: [10, 20], input_cost_per_token: 3, output_cost_per_token: 4}
+        usage: {prompt_tokens: 100, completion_tokens: 50, cached_tokens: 10, cache_creation_tokens: 5, reasoning_tokens: 20}
+        current_time: "2024-06-16T12:00:00Z"
+env: {}
+compare: {ignore: []}
