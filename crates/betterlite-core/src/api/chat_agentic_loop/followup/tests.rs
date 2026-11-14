@@ -7,11 +7,13 @@ use rstest::rstest;
 use super::execute;
 use crate::api::chat_agentic_loop::error::ChatCallError;
 use crate::api::chat_agentic_loop::tests::support::{
-    FakeContinuation, FollowupParts, Script, ScriptedCallback, StopError, call_error, capture,
-    empty_stream, first_call, followup_parts, json_map, messages, metadata_of, overrides, patch,
-    plan, raw, raw_text, response_text, tool_messages,
+    FakeContinuation, FollowupParts, MODEL_RESPONSE, Script, ScriptedCallback, StopError,
+    call_error, capture, empty_stream, first_call, followup_parts, json_map, messages, metadata_of,
+    overrides, patch, plan, raw, raw_text, response_text, tool_messages,
 };
 use crate::api::chat_agentic_loop::{ChatLoopResult, LoggingHandle};
+
+const HOOKED_RESPONSE: &str = r#"{"id":"chatcmpl-hooked","object":"chat.completion","created":1,"model":"gpt-4o","choices":[]}"#;
 
 async fn run(parts: &FollowupParts) -> Result<ChatLoopResult, ChatCallError<StopError>> {
     execute(&parts.followup()).await
@@ -247,7 +249,7 @@ async fn a_post_hook_error_keeps_the_followup_response_and_logs_the_call_id() {
     ));
     let (logs, _guard) = capture();
     let result = run(&parts).await.unwrap();
-    assert_eq!(response_text(result), r#"{"followup":true}"#);
+    assert_eq!(response_text(result), MODEL_RESPONSE);
     assert_eq!(
         logs.messages(),
         [
@@ -268,7 +270,7 @@ async fn the_post_hook_log_names_an_unknown_call_id_without_a_logging_object() {
     let result = execute(&parts.followup_with(LoggingHandle::Absent))
         .await
         .unwrap();
-    assert_eq!(response_text(result), r#"{"followup":true}"#);
+    assert_eq!(response_text(result), MODEL_RESPONSE);
     assert!(logs.messages()[0].contains("[call_id=unknown model=gpt-4o]"));
 }
 
@@ -279,7 +281,7 @@ async fn the_post_hook_is_skipped_without_the_override() {
         Script::default().with_post(raw(r#"{"hooked":true}"#)),
     ));
     let result = run(&parts).await.unwrap();
-    assert_eq!(response_text(result), r#"{"followup":true}"#);
+    assert_eq!(response_text(result), MODEL_RESPONSE);
     assert!(parts.callback.records().post_calls.is_empty());
 }
 
@@ -293,7 +295,7 @@ async fn the_cleanup_hook_runs_and_its_error_is_swallowed() {
     ));
     let (logs, _guard) = capture();
     let result = run(&parts).await.unwrap();
-    assert_eq!(response_text(result), r#"{"followup":true}"#);
+    assert_eq!(response_text(result), MODEL_RESPONSE);
     let records = parts.callback.records();
     assert_eq!(records.cleanup_calls.len(), 1);
     assert_eq!(
@@ -378,12 +380,12 @@ async fn the_followup_wraps_only_with_the_flag_at_depth_zero(
         assert_eq!(response_text(result), r#"{"fake_stream":true}"#);
         let records = parts.port.records();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].response, r#"{"followup":true}"#);
+        assert_eq!(records[0].response, MODEL_RESPONSE);
         assert_eq!(records[0].model, "gpt-4o");
         assert_eq!(records[0].provider, "openai");
         assert!(records[0].has_logging);
     } else {
-        assert_eq!(response_text(result), r#"{"followup":true}"#);
+        assert_eq!(response_text(result), MODEL_RESPONSE);
         assert!(parts.port.records().is_empty());
     }
 }
@@ -395,11 +397,11 @@ async fn the_fake_stream_wrap_sees_the_hooked_response() {
     parts.callback = Arc::new(ScriptedCallback::new(
         Script::default()
             .with_overrides(overrides(false, false, true))
-            .with_post(raw(r#"{"hooked":true}"#)),
+            .with_post(raw(HOOKED_RESPONSE)),
     ));
     let result = run(&parts).await.unwrap();
     assert_eq!(response_text(result), r#"{"fake_stream":true}"#);
-    assert_eq!(parts.port.records()[0].response, r#"{"hooked":true}"#);
+    assert_eq!(parts.port.records()[0].response, HOOKED_RESPONSE);
 }
 
 #[tokio::test]

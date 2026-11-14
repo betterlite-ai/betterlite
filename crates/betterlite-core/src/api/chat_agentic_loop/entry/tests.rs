@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use betterlite_context::agentic_callback::AgenticCallback;
-use betterlite_context::agentic_loop_plan::AgenticLoopPlan;
+use betterlite_context::agentic_loop_plan::{AgenticLoopPlan, FollowupMessage};
 use serde_json::value::RawValue;
 
 use super::maybe_run_chat_agentic_loop;
@@ -12,8 +12,8 @@ use crate::api::chat_agentic_loop::error::AgenticLoopError;
 use crate::api::chat_agentic_loop::safety::SafetyError;
 use crate::api::chat_agentic_loop::tests::support::{
     FakeContinuation, Fixture, RecordingPort, Script, ScriptedCallback, callbacks, capture,
-    fixture, gate, json_map, loop_error, messages, optional_text, overrides, patch, plan, raw,
-    raw_text,
+    first_call, fixture, gate, json_map, loop_error, messages, optional_text, overrides, patch,
+    plan, raw, raw_text,
 };
 use crate::api::chat_agentic_loop::{ChatLoopResult, LoopPorts};
 
@@ -203,6 +203,7 @@ async fn the_depth_cap_error_ends_the_call() {
 async fn a_legacy_callback_returns_its_result_as_is() {
     let mut fixture = fixture();
     fixture.kwargs = json_map(&[("_code_interpreter_interception_converted_stream", "true")]);
+    fixture.optional_params = json_map(&[("temperature", "0.2")]);
     let callback = Arc::new(ScriptedCallback::new(
         Script::default()
             .with_overrides(overrides(true, false, false))
@@ -234,7 +235,13 @@ async fn a_legacy_callback_returns_its_result_as_is() {
         raw_text(&legacy.kwargs, "_agentic_loop_api_surface").as_deref(),
         Some("\"chat_completions\"")
     );
-    assert!(legacy.optional_params.is_empty());
+    assert_eq!(
+        legacy
+            .optional_params
+            .get("temperature")
+            .map(|value| value.get()),
+        Some("0.2")
+    );
     assert_eq!(harness.continuation.call_count(), 0);
     assert!(harness.port.records().is_empty());
 }
@@ -281,7 +288,8 @@ async fn a_terminating_plan_returns_the_original_response() {
 
 #[tokio::test]
 async fn a_plan_that_stops_moves_to_the_next_callback() {
-    let fixture = fixture();
+    let mut fixture = fixture();
+    fixture.optional_params = json_map(&[("temperature", "0.2")]);
     let stopping = plan_callback(plan(None, None, false, false));
     let next = legacy_callback(Some(raw(r#"{"second":true}"#)));
     let harness = harness();
@@ -296,6 +304,13 @@ async fn a_plan_that_stops_moves_to_the_next_callback() {
     assert_eq!(
         records.plan_calls[0].messages,
         [r#"{"role":"user","content":"what is the weather"}"#.to_owned()]
+    );
+    assert_eq!(
+        records.plan_calls[0]
+            .optional_params
+            .get("temperature")
+            .map(|value| value.get()),
+        Some("0.2")
     );
     assert!(records.legacy_calls.is_empty());
     assert_eq!(harness.continuation.call_count(), 0);
@@ -313,6 +328,56 @@ async fn a_stopped_plan_with_a_patch_does_not_run_the_followup() {
     assert!(result.is_none());
     assert_eq!(harness.continuation.call_count(), 0);
     assert!(stopping.records().cleanup_calls.is_empty());
+}
+
+#[tokio::test]
+async fn a_running_plan_calls_the_continuation_and_the_cleanup() {
+    let mut fixture = fixture();
+    fixture.kwargs = json_map(&[("user", "\"u-1\"")]);
+    fixture.optional_params = json_map(&[("temperature", "0.2")]);
+    let patched = vec![FollowupMessage(raw(
+        r#"{"role":"user","content":"patched"}"#,
+    ))];
+    let callback = Arc::new(ScriptedCallback::new(
+        Script::default()
+            .with_overrides(overrides(true, true, false))
+            .with_gate(gate(true, json_map(&[("call-1", r#"{"name":"search"}"#)])))
+            .with_plan(plan(Some(patch(Some(patched))), None, false, true)),
+    ));
+    let harness = harness();
+    let result = harness
+        .run(&fixture, &callbacks(&[&callback]))
+        .await
+        .unwrap();
+    assert_eq!(optional_text(result), "{}");
+    let call = first_call(&harness.continuation);
+    assert_eq!(call.model, "openai/gpt-4o");
+    assert_eq!(
+        call.messages[0].0.get(),
+        r#"{"role":"user","content":"patched"}"#
+    );
+    assert_eq!(
+        raw_text(&call.kwargs, "_agentic_loop_depth").as_deref(),
+        Some("1")
+    );
+    assert_eq!(
+        raw_text(&call.kwargs, "_agentic_loop_fingerprints").as_deref(),
+        Some(r#"["{\"call-1\":{\"name\":\"search\"}}"]"#)
+    );
+    let records = callback.records();
+    assert_eq!(
+        records.plan_calls[0]
+            .optional_params
+            .get("temperature")
+            .map(|value| value.get()),
+        Some("0.2")
+    );
+    let cleanup = &records.cleanup_calls[0];
+    assert_eq!(
+        raw_text(&cleanup.kwargs, "user").as_deref(),
+        Some("\"u-1\"")
+    );
+    assert!(cleanup.kwargs.get("_agentic_loop_api_surface").is_none());
 }
 
 #[tokio::test]

@@ -39,6 +39,9 @@ pub(crate) fn raw_text(map: &JsonMap, key: &str) -> Option<String> {
     map.get(key).map(|value| value.get().to_owned())
 }
 
+pub(crate) const MODEL_RESPONSE: &str =
+    r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o","choices":[]}"#;
+
 pub(crate) fn messages() -> Vec<FollowupMessage> {
     vec![FollowupMessage(raw(
         r#"{"role":"user","content":"what is the weather"}"#,
@@ -576,9 +579,7 @@ pub(crate) struct Fixture {
 
 pub(crate) fn fixture() -> Fixture {
     Fixture {
-        response: raw(
-            r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o","choices":[]}"#,
-        ),
+        response: raw(MODEL_RESPONSE),
         messages: messages(),
         optional_params: JsonMap::new(),
         kwargs: JsonMap::new(),
@@ -637,9 +638,7 @@ pub(crate) fn followup_parts() -> FollowupParts {
             fingerprints: Vec::new(),
         },
         callback: Arc::new(ScriptedCallback::new(Script::default())),
-        continuation: FakeContinuation::responding(ChatLoopResult::Response(raw(
-            r#"{"followup":true}"#,
-        ))),
+        continuation: FakeContinuation::responding(ChatLoopResult::Response(raw(MODEL_RESPONSE))),
         port: RecordingPort::default(),
         fingerprint: "fingerprint-1",
         model: "gpt-4o",

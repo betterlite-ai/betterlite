@@ -5,13 +5,10 @@ use rstest::rstest;
 use super::FakeStreamPort;
 use crate::api::chat_agentic_loop::entry::maybe_run_chat_agentic_loop;
 use crate::api::chat_agentic_loop::tests::support::{
-    FakeContinuation, RecordingPort, callbacks, empty_stream, fixture, json_map, logging,
-    optional_text, raw, response_text,
+    FakeContinuation, MODEL_RESPONSE, RecordingPort, callbacks, empty_stream, fixture, json_map,
+    logging, optional_text, raw, response_text,
 };
 use crate::api::chat_agentic_loop::{ChatLoopResult, LoggingHandle, LoopPorts};
-
-const MODEL_RESPONSE: &str =
-    r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o","choices":[]}"#;
 
 #[test]
 fn a_stream_stays_a_stream() {
