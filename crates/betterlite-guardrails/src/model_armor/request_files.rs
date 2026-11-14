@@ -100,7 +100,7 @@ fn check_unscannable<E: StdError + Send + Sync + 'static>(
         return Ok(());
     }
     metadata.insert(STATUS_KEY.to_owned(), Json::Text(BLOCKED.to_owned()));
-    Err(unscannable_block_error::<E>(&reason))
+    Err(unscannable_block_error(&reason))
 }
 
 async fn scan_attachment<T: ArmorTokens>(
@@ -111,7 +111,7 @@ async fn scan_attachment<T: ArmorTokens>(
 ) -> Result<(), ScanError<T::Error>> {
     let length = attachment.file_bytes.len();
     if length > MAX_FILE_SIZE_BYTES {
-        return oversize::<T::Error>(metadata, length, settings.fail_on_error);
+        return oversize(metadata, length, settings.fail_on_error);
     }
     let response = match transport
         .make_model_armor_request(
@@ -150,7 +150,7 @@ fn oversize<E: StdError + Send + Sync + 'static>(
         return Ok(());
     }
     metadata.insert(STATUS_KEY.to_owned(), Json::Text(BLOCKED.to_owned()));
-    Err(unscannable_block_error::<E>(&reason))
+    Err(unscannable_block_error(&reason))
 }
 
 fn record_response<T: ArmorTokens>(

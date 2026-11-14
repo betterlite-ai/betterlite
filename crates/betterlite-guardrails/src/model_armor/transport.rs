@@ -81,9 +81,7 @@ impl<T: ArmorTokens> ModelArmorTransport<T> {
         file: Option<(&[u8], ByteDataType)>,
     ) -> Result<ArmorResponse, ArmorCallError<T::Error>> {
         if self.template_id.is_none() {
-            return Err(ArmorCallError::<T::Error>::from(
-                TransportError::<T::Error>::MissingTemplate,
-            ));
+            return Err(ArmorCallError::from(TransportError::MissingTemplate));
         }
         let (access_token, resolved_project_id) = self
             .tokens
@@ -96,7 +94,7 @@ impl<T: ArmorTokens> ModelArmorTransport<T> {
         let body = request_body::<T::Error>(content, source, file)?;
         self.log_request(&url, &body, file);
         let text = self.post(&url, &body, &access_token).await?;
-        parse_response::<T::Error>(&text)
+        parse_response(&text)
     }
 
     fn log_request(&self, url: &str, body: &SanitizeBody, file: Option<(&[u8], ByteDataType)>) {
@@ -154,7 +152,7 @@ impl<T: ArmorTokens> ModelArmorTransport<T> {
     fn api_error(&self, status: StatusCode, text: &str) -> ArmorCallError<T::Error> {
         let detail = build_api_error_detail(status.as_u16(), text, self.sanitize_error_detail);
         tracing::error!(status = status.as_u16(), detail = %detail, "Model Armor API error");
-        ArmorCallError::<T::Error>::from(ModelArmorAPIError { detail })
+        ArmorCallError::from(ModelArmorAPIError { detail })
     }
 }
 
@@ -168,15 +166,15 @@ fn request_body<E: StdError + Send + Sync + 'static>(
     }
     match content {
         Some(content) => Ok(text_body(content, source)),
-        None => Err(ArmorCallError::<E>::from(TransportError::<E>::NoContent)),
+        None => Err(ArmorCallError::from(TransportError::NoContent)),
     }
 }
 
 fn request_error<E: StdError + Send + Sync + 'static>(source: reqwest::Error) -> ArmorCallError<E> {
     if source.is_timeout() {
-        ArmorCallError::<E>::from(TransportError::<E>::Timeout(source))
+        ArmorCallError::from(TransportError::Timeout(source))
     } else {
-        ArmorCallError::<E>::from(TransportError::<E>::Request(source))
+        ArmorCallError::from(TransportError::Request(source))
     }
 }
 
