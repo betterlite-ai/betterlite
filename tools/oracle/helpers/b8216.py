@@ -92,7 +92,7 @@ class Handler:
 
 
 def build(settings: Settings) -> Guardrail:
-    return ZscalerAIGuard(
+    return ZscalerAIGuard(  # pyright: ignore[reportReturnType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py#L148-L154
         api_key=settings["api_key"],
         api_base=settings["api_base"],
         policy_id=settings["policy_id"],
