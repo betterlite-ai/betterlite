@@ -55,7 +55,7 @@ fn header_secrecy() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), false);
     let planned = for_call(&call, None).unwrap();
-    let debug = format!("{:?}", planned);
+    let debug = format!("{planned:?}");
     assert!(debug.contains("Authorization"));
     assert!(!debug.contains(TOKEN));
     let run = run(
@@ -69,7 +69,7 @@ fn header_secrecy() {
     let Err(error) = run.result else {
         panic!("a 201 is rejected");
     };
-    assert!(!format!("{:?}", error).contains(TOKEN));
+    assert!(!format!("{error:?}").contains(TOKEN));
     assert!(!error.to_string().contains(TOKEN));
 }
 
