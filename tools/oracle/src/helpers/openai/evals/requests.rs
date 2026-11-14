@@ -1,6 +1,6 @@
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_openai::evals::openai::OpenAiEvalsConfig;
-use betterlite_openai::evals::transformation::BaseEvalsAPIConfig;
+use betterlite_openai::evals::transformation::BaseEvalsAPIConfig as _;
 use betterlite_openai::evals::types::{CreateEvalRequest, CreateRunRequest, UpdateEvalRequest};
 use betterlite_openai::openai_base_config::Object;
 use serde_json::{Value, json};

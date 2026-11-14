@@ -4,7 +4,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_openai::evals::openai::OpenAiEvalsConfig;
 use betterlite_openai::evals::transformation::{
-    BaseEvalsAPIConfig, EvalsHttpResponse, EvalsRequestContext,
+    BaseEvalsAPIConfig as _, EvalsHttpResponse, EvalsRequestContext,
 };
 use betterlite_openai::openai_base_config::Object;
 use secrecy::SecretString;
