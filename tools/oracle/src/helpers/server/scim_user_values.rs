@@ -69,7 +69,7 @@ impl Helper for Op {
             teams: data.teams,
             active: data.active,
             metadata,
-            user_role: role.map(|resolved| resolved.to_string()),
+            user_role: role.map(ToString::to_string),
         })
         .map_err(failure)
     }
