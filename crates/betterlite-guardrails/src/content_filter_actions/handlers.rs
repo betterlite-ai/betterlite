@@ -48,7 +48,7 @@ enum Matched<'matched> {
     },
 }
 
-impl<'matched> Matched<'matched> {
+impl Matched<'_> {
     const fn action(&self) -> ContentFilterAction {
         match self {
             Self::Conditional { found, .. } | Self::CategoryKeyword { found, .. } => found.action,
@@ -187,11 +187,11 @@ fn blocked_word_detail(word: &BlockedWord) -> ContentFilterBlockDetail {
 }
 
 fn blocked_word_message(word: &BlockedWord) -> String {
-    match &word.description {
-        Some(description) => format!(
-            "Content blocked: keyword '{}' detected ({description})",
-            word.keyword
-        ),
-        None => format!("Content blocked: keyword '{}' detected", word.keyword),
-    }
+    let Some(description) = &word.description else {
+        return format!("Content blocked: keyword '{}' detected", word.keyword);
+    };
+    format!(
+        "Content blocked: keyword '{}' detected ({description})",
+        word.keyword
+    )
 }
