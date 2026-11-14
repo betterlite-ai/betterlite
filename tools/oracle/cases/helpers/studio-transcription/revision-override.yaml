@@ -1,0 +1,12 @@
+kind: helper
+name: revision-override
+call:
+  studio_transcription:
+    steps:
+      - step: environment
+        headers: [[Content-Type, text/plain], [x-goog-api-key, caller-key], [Api-Revision, '2020-01-01'], [X-Caller, kept]]
+        api_key: real-key
+      - {step: environment, headers: [], api_key: null}
+      - {step: environment, headers: [], api_key: env-key}
+env: {}
+compare: {ignore: []}
