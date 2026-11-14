@@ -1,0 +1,36 @@
+kind: helper
+name: cli_only_team_and_email_precedence
+call:
+  key_attribution:
+    digest_values: []
+    cli_keys:
+      - cli-session-u1
+      - cli-session-u2
+      - cli-session-u3
+      - cli-session-u4
+      - cli-session-nobody
+    double_hashed_keys: []
+    daily_keys: []
+    users:
+      - {user_id: u1, user_email: u1@example.com, teams: [team-a]}
+      - {user_id: u2, user_email: '', teams: [team-b]}
+      - {user_id: u3, user_email: u3@example.com, teams: [team-a, team-b]}
+      - {user_id: u4, user_email: null, teams: []}
+    active_token_rows: []
+    deleted_token_rows: []
+    daily_owner_rows: []
+    attach_metadata:
+      cli-session-u1: {user_id: u1}
+      sk-u1: {user_id: u1}
+      cli-session-u2: {user_id: u2}
+      cli-session-u3: {user_id: u3}
+      cli-session-u4: {user_id: u4, key_alias: alias-u4}
+      sk-complete: {user_id: u1, user_email: meta@example.com, team_id: meta-team}
+      cli-session-missing-user: {user_id: nobody}
+      sk-empty-user: {user_id: ''}
+      sk-no-user: {key_alias: alias-only, key_exists: true}
+      sk-empty-values: {user_id: u1, user_email: '', team_id: ''}
+    export_rows: []
+    export_fields: {api_key: api_key, alias: api_key_alias, team_id: team_id, user_email: user_email}
+env: {}
+compare: {ignore: []}
