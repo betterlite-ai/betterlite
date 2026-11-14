@@ -475,8 +475,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "text_request"
+path = "fuzz_targets/text_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "openai_response_resources"
 path = "fuzz_targets/openai_response_resources.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text_response"
+path = "fuzz_targets/text_response.rs"
 test = false
 doc = false
 bench = false
