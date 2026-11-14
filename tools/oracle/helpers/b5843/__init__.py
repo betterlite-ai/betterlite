@@ -21,15 +21,6 @@ DATA_PREFIX = "data:"
 STREAM_MODEL = "meta.llama"
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-LOGGING = Logging(
-    model=STREAM_MODEL,
-    messages=[],
-    stream=True,
-    call_type="completion",
-    start_time=dt.datetime.now(tz=dt.UTC),
-    litellm_call_id="oci-chat-stream",
-    function_id="oci-chat-stream",
-)
 
 
 class ExchangeCall(TypedDict):
@@ -152,19 +143,22 @@ def exchange_call(
     return {"body": recorder.bodies[-1]}
 
 
-def response_result(call: ResponseCall) -> JsonValue:
+def response_result(call: ResponseCall, logging_obj: Logging) -> JsonValue:
     raw_response = httpx.Response(call["status"], json=call["body"])
     if raw_response.is_error:
         return {"status": raw_response.status_code}
-    response = OCIChatConfig().transform_response(
+    request_data: dict[str, JsonValue] = {}
+    optional_params: dict[str, JsonValue] = {}
+    litellm_params: dict[str, JsonValue] = {}
+    response = OCIChatConfig().transform_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L595-L608
         model=call["model"],
         raw_response=raw_response,
         model_response=ModelResponse(),
-        logging_obj=LOGGING,
-        request_data={},
-        messages=[],
-        optional_params={},
-        litellm_params={},
+        logging_obj=logging_obj,
+        request_data=request_data,
+        messages=[],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L602
+        optional_params=optional_params,
+        litellm_params=litellm_params,
         encoding=None,
     )
     dumped = RESPONSE_DUMP.validate_json(response.model_dump_json())
@@ -176,11 +170,11 @@ def response_result(call: ResponseCall) -> JsonValue:
     }
 
 
-def stream_items(reads: list[str]) -> list[JsonValue]:
+def stream_items(reads: list[str], logging_obj: Logging) -> list[JsonValue]:
     wrapper = OCIStreamWrapper(
         completion_stream=iter(()),
         model=STREAM_MODEL,
-        logging_obj=LOGGING,
+        logging_obj=logging_obj,
         custom_llm_provider="oci",
     )
     items: list[JsonValue] = []
@@ -205,6 +199,15 @@ def stream_items(reads: list[str]) -> list[JsonValue]:
 
 
 def run(input_value: Call) -> JsonValue:
+    logging_obj = Logging(
+        model=STREAM_MODEL,
+        messages=[],
+        stream=True,
+        call_type="completion",
+        start_time=dt.datetime.now(tz=dt.UTC),
+        litellm_call_id="oci-chat-stream",
+        function_id="oci-chat-stream",
+    )
     match input_value["function"]:
         case "supported":
             return supported_params(input_value["models"])
@@ -223,6 +226,8 @@ def run(input_value: Call) -> JsonValue:
                 ]
             }
         case "response":
-            return {"calls": [response_result(call) for call in input_value["responses"]]}
+            return {
+                "calls": [response_result(call, logging_obj) for call in input_value["responses"]]
+            }
         case "stream":
-            return {"items": stream_items(input_value["reads"])}
+            return {"items": stream_items(input_value["reads"], logging_obj)}
