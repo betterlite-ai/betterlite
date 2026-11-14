@@ -35,7 +35,7 @@ class CredentialHandler(Protocol):
     ) -> object: ...
 
 
-CREDENTIAL_HANDLER: Final[CredentialHandler] = clientside_credential_handler
+CREDENTIAL_HANDLER: CredentialHandler = clientside_credential_handler
 JSON_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 OPTIONAL_TEXT: Final = TypeAdapter(str | None)
 
@@ -190,13 +190,7 @@ def model_entry(spec: CachedInput) -> dict[str, object]:
     }
 
 
-async def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
-    router = Router(
-        model_list=[model_entry(spec)],
-        default_max_parallel_requests=spec.default_max_parallel_requests,
-    )
-    completions: Completions = router
-    cache: CacheReader = router.cache
+async def observe_lookups(spec: CachedInput, completions: Completions, cache: CacheReader) -> list[CachedObservation]:
     key = f"{spec.model_id}_max_parallel_requests_client"
     observations: list[CachedObservation] = []
     previous: object | None = None
@@ -215,6 +209,14 @@ async def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
         )
         previous = cached
     return observations
+
+
+def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
+    router = Router(
+        model_list=[model_entry(spec)],
+        default_max_parallel_requests=spec.default_max_parallel_requests,
+    )
+    return asyncio.run(observe_lookups(spec, router, router.cache))
 
 
 def request_kwargs(fields: RequestFields) -> dict[str, object]:
@@ -257,6 +259,6 @@ class DeploymentClients(Operation):
                 for case in self.calculate
             ],
             limits=[limit_steps(spec) for spec in self.limits],
-            cached=[asyncio.run(cached_lookups(spec)) for spec in self.cached],
+            cached=[cached_lookups(spec) for spec in self.cached],
             credentials=[credential_lookup(spec) for spec in self.credentials],
         )

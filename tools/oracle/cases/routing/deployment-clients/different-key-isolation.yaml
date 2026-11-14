@@ -2,7 +2,7 @@ kind: probe
 name: deployment-clients-different-key-isolation
 probes:
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
-    samples: []
+    samples: [0, 0, 0, 0]
     operation:
       deployment_clients:
         calculate: []

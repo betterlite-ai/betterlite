@@ -170,39 +170,26 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
     let mut held: Vec<DeploymentSlot> = Vec::new();
     let mut observations = Vec::new();
     for step in &input.steps {
-        match step {
-            LimitStep::Acquire => {
-                let error = acquire_once(&limit, &mut held);
-                observations.push(LimitObservation {
-                    kind: String::from("acquire"),
-                    in_flight: limit.in_flight.load(Ordering::SeqCst),
-                    error,
-                    failed: false,
-                });
-            }
+        let (kind, error, failed) = match step {
+            LimitStep::Acquire => ("acquire", acquire_once(&limit, &mut held), false),
             LimitStep::Release => {
                 drop(held.pop());
-                observations.push(LimitObservation {
-                    kind: String::from("release"),
-                    in_flight: limit.in_flight.load(Ordering::SeqCst),
-                    error: None,
-                    failed: false,
-                });
+                ("release", None, false)
             }
             LimitStep::EnterExit { fail } => {
                 let outcome = limit.with_slot(|| if *fail { Err(()) } else { Ok(()) });
-                let (error, failed) = match outcome {
-                    Ok(inner) => (None, inner.is_err()),
-                    Err(exceeded) => (Some(limit_error(exceeded)), false),
-                };
-                observations.push(LimitObservation {
-                    kind: String::from("enter_exit"),
-                    in_flight: limit.in_flight.load(Ordering::SeqCst),
-                    error,
-                    failed,
-                });
+                match outcome {
+                    Ok(inner) => ("enter_exit", None, inner.is_err()),
+                    Err(exceeded) => ("enter_exit", Some(limit_error(exceeded)), false),
+                }
             }
-        }
+        };
+        observations.push(LimitObservation {
+            kind: kind.to_owned(),
+            in_flight: limit.in_flight.load(Ordering::SeqCst),
+            error,
+            failed,
+        });
     }
     observations
 }

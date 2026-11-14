@@ -25,7 +25,7 @@ const SCOPED_CREDENTIAL_PARAMS: [(&str, CredentialFamily); 11] = [
 ];
 
 impl CredentialFamily {
-    fn prefixes(self) -> &'static [&'static str] {
+    const fn prefixes(self) -> &'static [&'static str] {
         match self {
             Self::Aws => &["bedrock", "sagemaker"],
             Self::Vertex => &["vertex_ai"],

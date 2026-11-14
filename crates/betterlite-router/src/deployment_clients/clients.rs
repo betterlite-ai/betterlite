@@ -63,15 +63,15 @@ pub struct CachedClients {
     clients: Mutex<BTreeMap<String, Timed<CachedClient>>>,
 }
 
-pub struct ClientLookup<'a> {
-    pub model_id: &'a str,
+pub struct ClientLookup<'lookup> {
+    pub model_id: &'lookup str,
     pub stream: bool,
-    pub api_key: Option<&'a SecretString>,
+    pub api_key: Option<&'lookup SecretString>,
 }
 
-pub struct ClientDeployment<'a> {
-    pub model_group: &'a str,
-    pub api_base: &'a str,
+pub struct ClientDeployment<'deployment> {
+    pub model_group: &'deployment str,
+    pub api_base: &'deployment str,
 }
 
 impl CachedClients {
@@ -119,6 +119,7 @@ impl CachedClients {
                 },
             );
         }
+        drop(limits);
         LimitLookup {
             limit,
             initialized: true,

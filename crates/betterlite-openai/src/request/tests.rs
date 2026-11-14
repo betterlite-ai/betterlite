@@ -56,18 +56,18 @@ fn the_request_fallbacks_override_is_read_typed_and_never_forwarded() {
 
 #[test]
 fn a_request_api_key_is_accepted_and_returns_as_a_secret_string() {
-    let (_request, key) =
+    let (_request, parsed) =
         ChatRequest::parse_with_api_key(br#"{"model":"m","messages":[],"api_key":"sk-caller"}"#)
             .unwrap();
-    let key = key.expect("the request key");
+    let key = parsed.expect("the request key");
     assert_eq!(key.expose_secret(), "sk-caller");
     assert!(!format!("{key:?}").contains("sk-caller"));
-    let (_absent, none) =
+    let (_absent, absent_key) =
         ChatRequest::parse_with_api_key(br#"{"model":"m","messages":[]}"#).unwrap();
-    assert!(none.is_none());
-    let (_null, none) =
+    assert!(absent_key.is_none());
+    let (_null, null_key) =
         ChatRequest::parse_with_api_key(br#"{"model":"m","messages":[],"api_key":null}"#).unwrap();
-    assert!(none.is_none());
+    assert!(null_key.is_none());
 }
 
 #[test]

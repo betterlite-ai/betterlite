@@ -58,12 +58,12 @@ fn an_id_beats_a_name_and_a_name_beats_a_wildcard() {
     let by_name = spec("shared", "d2", &[("api_key", text("sk-name"))], &[]);
     let wildcard = spec("openai/*", "d3", &[("api_key", text("sk-wild"))], &[]);
     let catalog = catalog(&[by_name, wildcard, by_id]);
-    let chosen = credential_deployment(&catalog, "d1", None).expect("by id");
-    assert_eq!(chosen.id(), Some("d1"));
-    let chosen = credential_deployment(&catalog, "shared", None).expect("by name");
-    assert_eq!(chosen.id(), Some("d2"));
-    let chosen = credential_deployment(&catalog, "openai/gpt-4o", None).expect("wildcard");
-    assert_eq!(chosen.id(), Some("d3"));
+    let by_id_pick = credential_deployment(&catalog, "d1", None).expect("by id");
+    assert_eq!(by_id_pick.id(), Some("d1"));
+    let by_name_pick = credential_deployment(&catalog, "shared", None).expect("by name");
+    assert_eq!(by_name_pick.id(), Some("d2"));
+    let wildcard_pick = credential_deployment(&catalog, "openai/gpt-4o", None).expect("wildcard");
+    assert_eq!(wildcard_pick.id(), Some("d3"));
 }
 
 #[test]
@@ -95,12 +95,13 @@ fn a_team_wildcard_shadows_a_global_one() {
         ],
     );
     let catalog = catalog(&[global, team]);
-    let chosen = credential_deployment(&catalog, "openai/gpt-4o", Some("team-a")).expect("team");
-    assert_eq!(chosen.id(), Some("t1"));
-    let chosen = credential_deployment(&catalog, "openai/gpt-4o", Some("team-b")).expect("global");
-    assert_eq!(chosen.id(), Some("g1"));
-    let chosen = credential_deployment(&catalog, "openai/gpt-4o", None).expect("global");
-    assert_eq!(chosen.id(), Some("g1"));
+    let own_team = credential_deployment(&catalog, "openai/gpt-4o", Some("team-a")).expect("team");
+    assert_eq!(own_team.id(), Some("t1"));
+    let other_team =
+        credential_deployment(&catalog, "openai/gpt-4o", Some("team-b")).expect("global");
+    assert_eq!(other_team.id(), Some("g1"));
+    let no_team = credential_deployment(&catalog, "openai/gpt-4o", None).expect("global");
+    assert_eq!(no_team.id(), Some("g1"));
 }
 
 #[test]

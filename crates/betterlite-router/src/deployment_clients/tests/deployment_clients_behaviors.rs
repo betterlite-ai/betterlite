@@ -394,7 +394,14 @@ fn the_request_update_writes_metadata_and_tags() {
         ]
     );
     assert_eq!(context.model_info.get("id"), Some(&text("d1")));
-    context.update(&DeploymentView {
+}
+
+#[test]
+fn a_second_update_adds_no_tag_twice_and_writes_a_null_api_base() {
+    let info = JsonObject::new();
+    let tags = vec![String::from("deployment-tag")];
+    let mut context = RequestContext::default();
+    let view = DeploymentView {
         model_name: "gpt",
         model: "openai/gpt-4o",
         api_base: None,
@@ -403,7 +410,9 @@ fn the_request_update_writes_metadata_and_tags() {
         credential_name: Some("team-key"),
         tools: &[],
         tool_choice: None,
-    });
+    };
+    context.update(&view);
+    context.update(&view);
     assert_eq!(context.tags.len(), 2);
     assert_eq!(context.metadata.get("api_base"), Some(&Json::Null));
 }
@@ -460,16 +469,24 @@ fn the_provider_call_gets_model_and_provider() {
         ],
         &[],
     );
-    let catalog = catalog(&[built]);
-    let credentials =
-        provider_credentials(&catalog, "d1", None, &std::collections::BTreeMap::new())
-            .expect("lookup")
-            .expect("credentials");
+    let built_catalog = catalog(&[built]);
+    let credentials = provider_credentials(
+        &built_catalog,
+        "d1",
+        None,
+        &std::collections::BTreeMap::new(),
+    )
+    .expect("lookup")
+    .expect("credentials");
     assert_eq!(credentials.get("model"), Some(&text("openai/gpt-4o")));
     assert_eq!(
         credentials.get("custom_llm_provider"),
         Some(&text("openai"))
     );
+}
+
+#[test]
+fn a_prefixed_model_names_its_provider() {
     let prefixed = spec(
         "claude",
         "d2",
@@ -477,7 +494,7 @@ fn the_provider_call_gets_model_and_provider() {
         &[],
     );
     let prefixed_catalog = catalog(&[prefixed]);
-    let credentials = provider_credentials(
+    let prefixed_credentials = provider_credentials(
         &prefixed_catalog,
         "d2",
         None,
@@ -486,7 +503,7 @@ fn the_provider_call_gets_model_and_provider() {
     .expect("lookup")
     .expect("credentials");
     assert_eq!(
-        credentials.get("custom_llm_provider"),
+        prefixed_credentials.get("custom_llm_provider"),
         Some(&text("anthropic"))
     );
 }

@@ -22,5 +22,5 @@ probes:
         credentials: []
 compare:
   ignore:
-    - pointer: /output/deployment_clients/limits/0/steps/2/error/message
+    - pointer: /output/deployment_clients/limits/0/2/error/message
       why: betterlite writes its own message, the status, code, type and rate limit dimension are the parity point

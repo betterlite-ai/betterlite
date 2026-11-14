@@ -53,7 +53,7 @@ impl Drop for DeploymentSlot {
 
 impl MaxParallelRequestsLimit {
     #[must_use]
-    pub fn new(max_parallel_requests: i64, model_id: String, model_group: String) -> Self {
+    pub const fn new(max_parallel_requests: i64, model_id: String, model_group: String) -> Self {
         Self {
             max_parallel_requests,
             model_id,
@@ -72,7 +72,7 @@ impl MaxParallelRequestsLimit {
             .map(|_| DeploymentSlot {
                 limit: Arc::clone(self),
             })
-            .map_err(|_| MaxParallelRequestsExceeded {
+            .map_err(|_in_flight| MaxParallelRequestsExceeded {
                 model_group: self.model_group.clone(),
                 model_id: self.model_id.clone(),
                 max_parallel_requests: self.max_parallel_requests,
@@ -102,12 +102,13 @@ pub fn calculate_parallel_limit(
     max_parallel_requests
         .or(rpm)
         .or_else(|| {
-            tpm.map(
-                |tokens| match tokens.saturating_mul(REQUESTS_PER_TPM_UNIT) / TPM_PER_REQUEST {
-                    0 => 1,
-                    calculated => calculated,
-                },
-            )
+            tpm.map(|tokens| {
+                tokens
+                    .saturating_mul(REQUESTS_PER_TPM_UNIT)
+                    .checked_div(TPM_PER_REQUEST)
+                    .filter(|calculated| *calculated != 0)
+                    .unwrap_or(1)
+            })
         })
         .or(default_max_parallel_requests)
 }

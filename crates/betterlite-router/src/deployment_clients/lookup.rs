@@ -95,14 +95,13 @@ pub fn credential_deployment<'catalog>(
             let indices = catalog
                 .team_index
                 .get(&(team.to_owned(), model_id.to_owned()))?;
-            indices.first().and_then(|index| catalog.models.get(*index))
+            let index = indices.first()?;
+            catalog.models.get(*index)
         })
         .or_else(|| {
             let matched = wildcard_model_id(catalog, model_id, team_id)?;
-            catalog
-                .id_index
-                .get(&matched)
-                .and_then(|index| catalog.models.get(*index))
+            let index = catalog.id_index.get(&matched)?;
+            catalog.models.get(*index)
         })?;
     if matches!(deployment.model_info.get("blocked"), Some(Json::Bool(true))) {
         return None;
@@ -117,24 +116,19 @@ fn wildcard_model_id(
     team_id: Option<&str>,
 ) -> Option<String> {
     if let Some(patterns) = team_id.and_then(|team| catalog.team_pattern_routers.get(team)) {
-        return patterns
-            .router
-            .route(model_id, None)
-            .and_then(|matched| matched.into_iter().next())
-            .and_then(|candidate| candidate.model_id);
+        let first = patterns.router.route(model_id, None)?.into_iter().next()?;
+        return first.model_id;
     }
     let matched = catalog.pattern_router.route(model_id, None)?;
-    matched
-        .into_iter()
-        .find(|candidate| {
-            candidate
-                .model_id
-                .as_deref()
-                .and_then(|id| catalog.id_index.get(id))
-                .and_then(|index| catalog.models.get(*index))
-                .is_some_and(|deployment| usable_by_team(deployment, team_id))
-        })
-        .and_then(|candidate| candidate.model_id)
+    let usable = matched.into_iter().find(|candidate| {
+        candidate
+            .model_id
+            .as_deref()
+            .and_then(|id| catalog.id_index.get(id))
+            .and_then(|index| catalog.models.get(*index))
+            .is_some_and(|deployment| usable_by_team(deployment, team_id))
+    })?;
+    usable.model_id
 }
 
 // get_deployment_credentials: the credentials of an exact deployment id, and nothing for a paused one.
@@ -168,19 +162,17 @@ pub fn provider_credentials(
     let params = &deployment.litellm_params;
     let mut credentials = credential_params(params)?;
     if let Some(Json::Text(name)) = params.get("litellm_credential_name") {
-        let values = stored.get(name).filter(|values| !values.is_empty());
-        match values {
-            Some(values) => {
-                credentials.extend(
-                    values
-                        .iter()
-                        .map(|(key, value)| (key.clone(), value.clone())),
-                );
-            }
-            None => tracing::warn!(
+        if let Some(values) = stored.get(name).filter(|entry| !entry.is_empty()) {
+            credentials.extend(
+                values
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone())),
+            );
+        } else {
+            tracing::warn!(
                 credential = %name,
                 "a deployment names a stored credential that the credential list does not hold"
-            ),
+            );
         }
     }
     let model = match params.get("model") {

@@ -13,15 +13,15 @@ pub fn merged_tools(deployment: &[Json], request: &[Json]) -> Option<Vec<Json>> 
     Some(tools)
 }
 
-pub struct DeploymentView<'a> {
-    pub model_name: &'a str,
-    pub model: &'a str,
-    pub api_base: Option<&'a Json>,
-    pub model_info: &'a JsonObject,
-    pub tags: &'a [String],
-    pub credential_name: Option<&'a str>,
-    pub tools: &'a [Json],
-    pub tool_choice: Option<&'a Json>,
+pub struct DeploymentView<'view> {
+    pub model_name: &'view str,
+    pub model: &'view str,
+    pub api_base: Option<&'view Json>,
+    pub model_info: &'view JsonObject,
+    pub tags: &'view [String],
+    pub credential_name: Option<&'view str>,
+    pub tools: &'view [Json],
+    pub tool_choice: Option<&'view Json>,
 }
 
 // The parts of a call's kwargs this update owns: the metadata bucket, the top-level model_info, tags and tools.
@@ -60,7 +60,7 @@ impl RequestContext {
             "deployment_model_name".to_owned(),
             Json::Text(deployment.model_name.to_owned()),
         );
-        self.model_info = deployment.model_info.clone();
+        self.model_info.clone_from(deployment.model_info);
         let credential_tag = deployment
             .credential_name
             .map(|name| format!("Credential: {name}"));
