@@ -1,4 +1,4 @@
-use crate::snowflake::tests::support::{SequenceIds, WordCounter, parsed};
+use crate::snowflake::tests::support::{SequenceIds, WordCounter, answer};
 
 use super::{SnowflakeChunk, SnowflakeStreamingHandler, get_model_response_iterator};
 
@@ -8,7 +8,7 @@ fn handler() -> SnowflakeStreamingHandler<(), (), WordCounter> {
 }
 
 fn openai(source: &str) -> super::OpenAiStreamChunk {
-    let SnowflakeChunk::OpenAi(chunk) = handler().chunk_parser(&parsed(source)).unwrap() else {
+    let SnowflakeChunk::OpenAi(chunk) = handler().chunk_parser(&answer(source)).unwrap() else {
         panic!("the chunk routed to the Anthropic parser");
     };
     chunk
@@ -87,7 +87,7 @@ fn a_chunk_with_choices_and_a_type_takes_the_openai_path() {
 fn an_anthropic_event_takes_the_anthropic_parser() {
     let mut parser = handler();
     let started = parser
-        .chunk_parser(&parsed(
+        .chunk_parser(&answer(
             r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Hello"}}"#,
         ))
         .unwrap();
@@ -96,7 +96,7 @@ fn an_anthropic_event_takes_the_anthropic_parser() {
     };
     assert_eq!(start.choices[0].delta.content, "Hello");
     let changed = parser
-        .chunk_parser(&parsed(
+        .chunk_parser(&answer(
             r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}"#,
         ))
         .unwrap();
@@ -110,7 +110,7 @@ fn an_anthropic_event_takes_the_anthropic_parser() {
 fn a_malformed_choices_field_is_an_error_naming_the_field() {
     let mut parser = handler();
     let error = parser
-        .chunk_parser(&parsed(r#"{"choices":{"index":0}}"#))
+        .chunk_parser(&answer(r#"{"choices":{"index":0}}"#))
         .unwrap_err();
     assert_eq!(error.to_string(), "the stream chunk choices must be a list");
 }
@@ -119,7 +119,7 @@ fn a_malformed_choices_field_is_an_error_naming_the_field() {
 fn a_non_string_content_is_an_error_naming_the_field() {
     let mut parser = handler();
     let error = parser
-        .chunk_parser(&parsed(r#"{"choices":[{"delta":{"content":5}}]}"#))
+        .chunk_parser(&answer(r#"{"choices":[{"delta":{"content":5}}]}"#))
         .unwrap_err();
     assert_eq!(
         error.to_string(),

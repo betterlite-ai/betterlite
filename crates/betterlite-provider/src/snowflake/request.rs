@@ -39,12 +39,15 @@ struct RequestParts<'call> {
     extra_body: Object,
 }
 
-pub async fn transform_request<Source: Fetcher>(
+pub async fn transform_request<Source>(
     model: &str,
     messages: &[Message],
     optional_params: Object,
     fetcher: &Source,
-) -> Result<Object, RequestError> {
+) -> Result<Object, RequestError>
+where
+    Source: Fetcher,
+{
     let mut params = optional_params;
     let stream = match params.shift_remove("stream") {
         Some(value) if value.is_truthy() => value,
@@ -68,12 +71,15 @@ pub async fn transform_request<Source: Fetcher>(
 }
 
 // LiteLLM inlines remote media only for the Claude dialect; the OpenAI body keeps the URLs as sent
-pub async fn async_transform_request<Source: Fetcher>(
+pub async fn async_transform_request<Source>(
     model: &str,
     messages: &[Message],
     optional_params: Object,
     fetcher: &Source,
-) -> Result<Object, RequestError> {
+) -> Result<Object, RequestError>
+where
+    Source: Fetcher,
+{
     if !is_claude_model(model) {
         return transform_request(model, messages, optional_params, fetcher).await;
     }
@@ -108,11 +114,14 @@ fn openai_body(parts: &RequestParts<'_>, mut params: Object) -> Object {
     body
 }
 
-async fn claude_body<Source: Fetcher>(
+async fn claude_body<Source>(
     parts: &RequestParts<'_>,
     mut params: Object,
     fetcher: &Source,
-) -> Result<Object, RequestError> {
+) -> Result<Object, RequestError>
+where
+    Source: Fetcher,
+{
     let passthrough = params
         .shift_remove("system")
         .filter(|value| !matches!(value, Json::Null));
@@ -122,7 +131,8 @@ async fn claude_body<Source: Fetcher>(
         let Some(Json::List(tools)) = params.get("tools") else {
             return Err(RequestError::List { field: "tools" });
         };
-        params.insert("tools".to_owned(), Json::List(transform_tools(tools)?));
+        let transformed = transform_tools(tools)?;
+        params.insert("tools".to_owned(), Json::List(transformed));
     }
     if let Some(tool_choice) = params.get("tool_choice").cloned() {
         params.insert(

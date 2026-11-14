@@ -45,5 +45,7 @@ def run_step(chat: ChatView, embed: EmbeddingView, handler: StreamHandler, step:
 
 def run(input_value: Input) -> JsonValue:
     chat, embed = cast("Pair", (SnowflakeConfig(), SnowflakeEmbeddingConfig()))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L69
-    handler = chat.get_model_response_iterator(streaming_response=None, sync_stream=False, json_mode=False)
+    handler = chat.get_model_response_iterator(
+        streaming_response=None, sync_stream=False, json_mode=False
+    )
     return {"steps": [run_step(chat, embed, handler, step) for step in input_value["steps"]]}

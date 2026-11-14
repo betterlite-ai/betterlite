@@ -6,10 +6,13 @@ use betterlite_prompts::message_content::{Content, ContentPart};
 
 use super::{Fetcher, MessageError, part_json};
 
-pub async fn convert_image_url_blocks<Source: Fetcher>(
+pub async fn convert_image_url_blocks<Source>(
     content: Option<&Content>,
     fetcher: &Source,
-) -> Result<Json, MessageError> {
+) -> Result<Json, MessageError>
+where
+    Source: Fetcher,
+{
     let Some(Content::Parts(parts)) = content else {
         return Ok(super::content_json(content));
     };
@@ -25,10 +28,10 @@ pub async fn convert_image_url_blocks<Source: Fetcher>(
     Ok(Json::List(converted))
 }
 
-async fn convert_block<Source: Fetcher>(
-    part: &ContentPart,
-    fetcher: &Source,
-) -> Result<Object, MessageError> {
+async fn convert_block<Source>(part: &ContentPart, fetcher: &Source) -> Result<Object, MessageError>
+where
+    Source: Fetcher,
+{
     let Some(image_url) = part.fields.get("image_url") else {
         return Ok(part_json(part).as_object().cloned().unwrap_or_default());
     };

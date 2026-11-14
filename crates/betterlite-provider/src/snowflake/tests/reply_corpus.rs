@@ -1,6 +1,7 @@
 use std::fs;
 use std::str;
 
+use betterlite_models::decisions::Json as AnswerJson;
 use betterlite_prompts::arguments::json::Json;
 
 use super::support::{SequenceIds, WordCounter, parsed};
@@ -41,7 +42,7 @@ fn replays_the_snowflake_reply_corpus() {
             let _openai = transform_response_openai(&input, &Silent);
             let _claude = transform_response_claude(&input, &Silent, &WordCounter);
             let _embedding = transform_embedding_response("snowflake/model", body);
-            if let Ok(chunk) = serde_json::from_str::<Json>(body) {
+            if let Ok(chunk) = serde_json::from_str::<AnswerJson>(body) {
                 let _parsed = handler.chunk_parser(&chunk);
             }
         })

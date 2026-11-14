@@ -86,18 +86,18 @@ fn embedding_supported_params_are_the_base_list() {
 #[test]
 fn map_openai_params_copies_supported_keys_and_ignores_the_rest() {
     let non_default = object(&[
-        ("temperature", Json::Number(Number::from(0.5))),
+        ("temperature", Json::Number(Number::from_f64(0.5).unwrap())),
         ("tool_choice", text("auto")),
         ("unsupported", text("dropped")),
         ("response_format", text("json_object")),
     ]);
-    let mut optional = object(&[("top_p", Json::Number(Number::from(0.9)))]);
+    let mut optional = object(&[("top_p", Json::Number(Number::from_f64(0.9).unwrap()))]);
     map_openai_params(&non_default, &mut optional, "snowflake/mistral-large");
     assert_eq!(
         optional,
         object(&[
-            ("top_p", Json::Number(Number::from(0.9))),
-            ("temperature", Json::Number(Number::from(0.5))),
+            ("top_p", Json::Number(Number::from_f64(0.9).unwrap())),
+            ("temperature", Json::Number(Number::from_f64(0.5).unwrap())),
             ("tool_choice", text("auto")),
         ])
     );

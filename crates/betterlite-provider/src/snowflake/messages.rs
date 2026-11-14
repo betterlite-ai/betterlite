@@ -34,10 +34,13 @@ pub struct SplitMessages {
     pub conversation: Vec<Json>,
 }
 
-pub async fn extract_system_and_messages<Source: Fetcher>(
+pub async fn extract_system_and_messages<Source>(
     messages: &[Message],
     fetcher: &Source,
-) -> Result<SplitMessages, MessageError> {
+) -> Result<SplitMessages, MessageError>
+where
+    Source: Fetcher,
+{
     let mut system = Vec::new();
     let mut conversation = Vec::new();
     for message in messages {
@@ -177,11 +180,14 @@ fn tool_input(arguments: Option<&Json>) -> Json {
     serde_json::from_str(text).unwrap_or_else(|_| Json::Object(Object::new()))
 }
 
-async fn tool_turn<Source: Fetcher>(
+async fn tool_turn<Source>(
     message: &Message,
     fetcher: &Source,
     conversation: &mut Vec<Json>,
-) -> Result<(), MessageError> {
+) -> Result<(), MessageError>
+where
+    Source: Fetcher,
+{
     let tool_call_id = match message.provider_specific_fields.get("tool_call_id") {
         Some(Json::Text(id)) => id.clone(),
         None | Some(_) => String::new(),
@@ -235,11 +241,14 @@ fn append_tool_result(conversation: &mut Vec<Json>, block: Object) {
     conversation.push(object_turn("user", Json::List(vec![Json::Object(block)])));
 }
 
-async fn other_turn<Source: Fetcher>(
+async fn other_turn<Source>(
     role: &str,
     message: &Message,
     fetcher: &Source,
-) -> Result<Json, MessageError> {
+) -> Result<Json, MessageError>
+where
+    Source: Fetcher,
+{
     let content = image::convert_image_url_blocks(message.content.as_ref(), fetcher).await?;
     Ok(object_turn(role, content))
 }

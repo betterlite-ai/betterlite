@@ -1,9 +1,8 @@
 use std::sync::Mutex;
 
-use betterlite_models::decisions::Json as AnswerJson;
 use betterlite_prompts::arguments::json::Json;
 
-use crate::snowflake::tests::support::{WordCounter, parsed};
+use crate::snowflake::tests::support::{WordCounter, answer, parsed};
 
 use super::{
     PostCall, PostCallLogger, ResponseInput, transform_response_claude, transform_response_openai,
@@ -33,10 +32,6 @@ impl PostCallLogger for Recorder {
             original_response: serde_json::from_str(&encoded).unwrap(),
         });
     }
-}
-
-fn answer(source: &str) -> AnswerJson {
-    serde_json::from_str(source).unwrap()
 }
 
 fn claude_body(stop_reason: Option<&str>) -> String {

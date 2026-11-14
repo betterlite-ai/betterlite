@@ -6,9 +6,8 @@ use betterlite_anthropic::response_content::wire::{
 use betterlite_anthropic::response_content::{
     AnthropicContentReply, ResponseContentError, project_response,
 };
-use betterlite_anthropic::usage::{
-    AnthropicUsage, ReasoningTokenCounter, UsageError, calculate_usage,
-};
+use betterlite_anthropic::usage::error::UsageError;
+use betterlite_anthropic::usage::{AnthropicUsage, ReasoningTokenCounter, calculate_usage};
 use betterlite_models::decisions::Json as AnswerJson;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_prompts::arguments::json::Json;

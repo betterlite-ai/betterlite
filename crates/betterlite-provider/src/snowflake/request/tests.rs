@@ -24,7 +24,7 @@ async fn the_openai_body_keeps_litellms_key_order() {
         "snowflake/mistral-large",
         &turns,
         params(&[
-            ("temperature", Json::Number(Number::from(0.5))),
+            ("temperature", Json::Number(Number::from_f64(0.5).unwrap())),
             ("stream", Json::Bool(true)),
             ("max_tokens", Json::Number(Number::from(5))),
             ("extra_body", parsed(r#"{"top_k":3}"#)),
@@ -122,7 +122,10 @@ async fn extra_body_overrides_the_body_keys_before_it() {
     .unwrap();
     assert_eq!(body["stream"], Json::Bool(true));
     assert_eq!(body["model"], Json::Text("override".to_owned()));
-    assert_eq!(body["temperature"], Json::Number(Number::from(0.1)));
+    assert_eq!(
+        body["temperature"],
+        Json::Number(Number::from_f64(0.1).unwrap())
+    );
 }
 
 #[tokio::test]

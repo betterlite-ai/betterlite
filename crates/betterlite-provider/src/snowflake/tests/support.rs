@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
+use betterlite_models::decisions::Json as AnswerJson;
 use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
@@ -112,6 +113,10 @@ impl IdSource for SequenceIds {
 }
 
 pub fn parsed(source: &str) -> Json {
+    serde_json::from_str(source).unwrap()
+}
+
+pub fn answer(source: &str) -> AnswerJson {
     serde_json::from_str(source).unwrap()
 }
 

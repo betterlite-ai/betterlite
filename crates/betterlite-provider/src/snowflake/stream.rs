@@ -8,7 +8,7 @@ use betterlite_anthropic::stream_state::state::StreamState as AnthropicState;
 use betterlite_anthropic::stream_state::state::{IdSource, StreamOptions};
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_context::provider_message_primitives::StreamState as BaseStreamState;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
 use thiserror::Error;
@@ -108,9 +108,7 @@ where
         &mut self,
         chunk: &Json,
     ) -> Result<SnowflakeChunk, StreamError<Counter::Failure>> {
-        let has_choices = chunk
-            .as_object()
-            .is_some_and(|fields| fields.contains_key("choices"));
+        let has_choices = matches!(chunk, Json::Object(fields) if fields.contains_key("choices"));
         if has_choices {
             return Ok(SnowflakeChunk::OpenAi(parse_openai_chunk(chunk)?));
         }
@@ -119,9 +117,11 @@ where
 }
 
 fn parse_openai_chunk(chunk: &Json) -> Result<OpenAiStreamChunk, OpenAiChunkError> {
-    let fields = chunk.as_object().ok_or(OpenAiChunkError::Message(
-        "a stream chunk must be an object",
-    ))?;
+    let Json::Object(fields) = chunk else {
+        return Err(OpenAiChunkError::Message(
+            "a stream chunk must be an object",
+        ));
+    };
     let choices = match fields.get("choices") {
         None | Some(Json::Null) => return Ok(OpenAiStreamChunk::default()),
         Some(Json::List(items)) => items.as_slice(),
@@ -134,10 +134,10 @@ fn parse_openai_chunk(chunk: &Json) -> Result<OpenAiStreamChunk, OpenAiChunkErro
     let Some(first) = choices.first() else {
         return Ok(OpenAiStreamChunk::default());
     };
-    let choice = first
-        .as_object()
-        .ok_or(OpenAiChunkError::Message("a choice must be an object"))?;
-    let empty_delta = Object::new();
+    let Json::Object(choice) = first else {
+        return Err(OpenAiChunkError::Message("a choice must be an object"));
+    };
+    let empty_delta = IndexMap::new();
     let delta = match choice.get("delta") {
         None | Some(Json::Null) => &empty_delta,
         Some(Json::Object(delta)) => delta,
@@ -170,10 +170,10 @@ fn tool_use(tool_calls: Option<&Json>) -> Result<Option<StreamToolUse>, OpenAiCh
     let Some(first) = calls.first() else {
         return Ok(None);
     };
-    let call = first
-        .as_object()
-        .ok_or(OpenAiChunkError::Message("a tool call must be an object"))?;
-    let empty_function = Object::new();
+    let Json::Object(call) = first else {
+        return Err(OpenAiChunkError::Message("a tool call must be an object"));
+    };
+    let empty_function = IndexMap::new();
     let function = match call.get("function") {
         None | Some(Json::Null) => &empty_function,
         Some(Json::Object(function)) => function,

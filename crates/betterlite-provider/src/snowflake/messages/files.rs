@@ -20,12 +20,15 @@ pub enum FileBlockError {
     Pending,
 }
 
-pub async fn tool_result_from_parts<Source: Fetcher>(
+pub async fn tool_result_from_parts<Source>(
     parts: &[ContentPart],
     tool_call_id: &str,
     cache_control: Option<Json>,
     fetcher: &Source,
-) -> Result<Object, MessageError> {
+) -> Result<Object, MessageError>
+where
+    Source: Fetcher,
+{
     let prefetched = prefetch_file_data(parts, fetcher).await?;
     let mut fields = Object::from_iter([(
         "tool_call_id".to_owned(),
@@ -46,10 +49,13 @@ pub async fn tool_result_from_parts<Source: Fetcher>(
 }
 
 // LiteLLM fetches a remote file_data synchronously; B223 is async, so the URL is fetched here
-async fn prefetch_file_data<Source: Fetcher>(
+async fn prefetch_file_data<Source>(
     parts: &[ContentPart],
     fetcher: &Source,
-) -> Result<Vec<ContentPart>, FileBlockError> {
+) -> Result<Vec<ContentPart>, FileBlockError>
+where
+    Source: Fetcher,
+{
     let mut prefetched = Vec::with_capacity(parts.len());
     for part in parts {
         let mut copied = part.clone();
@@ -57,11 +63,11 @@ async fn prefetch_file_data<Source: Fetcher>(
             && let Some(Json::Text(data)) = file.get("file_data")
             && data.starts_with("http")
         {
-            let fetched = fetcher
+            let data_url = fetcher
                 .convert_url(data)
                 .await
                 .map_err(FileBlockError::Fetch)?;
-            file.insert("file_data".to_owned(), Json::Text(fetched));
+            file.insert("file_data".to_owned(), Json::Text(data_url));
         }
         prefetched.push(copied);
     }
@@ -72,7 +78,10 @@ struct RemoteFileBlocks<'call, Source> {
     fetcher: &'call Source,
 }
 
-impl<Source: Fetcher> FileBlocks for RemoteFileBlocks<'_, Source> {
+impl<Source> FileBlocks for RemoteFileBlocks<'_, Source>
+where
+    Source: Fetcher,
+{
     type Failure = FileBlockError;
 
     fn file_block(&self, element: &Object) -> Result<Object, Self::Failure> {
