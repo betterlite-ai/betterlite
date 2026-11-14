@@ -419,6 +419,28 @@ async fn a_trailing_slash_on_the_api_base_does_not_double_the_path() {
 }
 
 #[tokio::test]
+async fn a_configured_timeout_bounds_the_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let mut server = JoinSet::new();
+    server.spawn(async move {
+        let router = Router::new().fallback(|| async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            "{}"
+        });
+        let _served = axum::serve(listener, router).await;
+    });
+    let mut built = settings(&format!("http://{address}"));
+    built.timeout = Duration::from_millis(50);
+    built.fallback = UnreachableFallback::FailOpen;
+    let outcome = configured(built)
+        .compress(&[target("context", "query")])
+        .await
+        .expect("outcome");
+    assert_eq!(outcome, CompressOutcome::Uncompressed);
+}
+
+#[tokio::test]
 async fn fail_closed_raises_a_502_for_an_upstream_error() {
     let (base, recorded, _server) = serve(500, r#"{"error":"upstream secret detail"}"#).await;
     let error = transport(&base)
