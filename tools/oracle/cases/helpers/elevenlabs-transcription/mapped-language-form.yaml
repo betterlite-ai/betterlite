@@ -1,0 +1,12 @@
+kind: helper
+name: elevenlabs-transcription-mapped-language-form
+call:
+  elevenlabs_transcription:
+    calls:
+    - {function: map_params, non_default: {language: en, temperature: 0}, optional_params: {}}
+    - {function: map_params, non_default: {language: null, temperature: 0.2}, optional_params: {}}
+    - {function: map_params, non_default: {prompt: x, response_format: json, timestamp_granularities: [word]}, optional_params: {language_code: fr, temperature: 0.1, custom: 1}}
+    - {function: map_params, non_default: {language: de}, optional_params: {language_code: fr}}
+    - {function: request, model: scribe_v1, filename: clip.wav, content: RIFF, optional_params: {language_code: en, temperature: 0}}
+compare: {ignore: []}
+env: {}

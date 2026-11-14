@@ -1,0 +1,32 @@
+kind: helper
+name: skill-object-permission
+call:
+  claude_plugin_policy:
+    calls:
+      - function: visibility
+        caller: {user_role: internal_user, key_skills: [alpha, beta], team_skills: [beta, gamma]}
+        plugins:
+          - {name: alpha, enabled: false}
+          - {name: beta, enabled: false}
+          - {name: gamma, enabled: false}
+          - {name: delta, enabled: true}
+      - function: visibility
+        caller: {user_role: internal_user, key_skills: null, team_skills: [gamma]}
+        plugins:
+          - {name: gamma, enabled: false}
+          - {name: delta, enabled: false}
+      - function: visibility
+        caller: null
+        plugins:
+          - {name: delta, enabled: true}
+          - {name: gamma, enabled: false}
+      - function: visibility
+        caller: {user_role: proxy_admin, key_skills: [alpha], team_skills: null}
+        plugins:
+          - {name: gamma, enabled: false}
+      - function: visibility
+        caller: {user_role: internal_user, key_skills: [], team_skills: [beta]}
+        plugins:
+          - {name: beta, enabled: false}
+env: {}
+compare: {ignore: []}

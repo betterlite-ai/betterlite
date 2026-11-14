@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-recognition-reply
+call:
+  vertex_recognition:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[{"alternatives":[{"transcript":"seed"}],"languageCode":"en"}],"metadata":{"totalBilledDuration":"2.5s"}}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":null}'
+env: {}
+compare: {ignore: []}

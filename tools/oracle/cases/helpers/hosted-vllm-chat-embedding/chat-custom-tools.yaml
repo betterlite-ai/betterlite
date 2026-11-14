@@ -1,0 +1,67 @@
+kind: helper
+name: hosted-vllm-chat-custom-tools
+call:
+  b8150:
+    function: "chat_map"
+    calls:
+      - model: "my-model"
+        params:
+          tools:
+            - type: "custom"
+              custom:
+                name: "lookup"
+                description: "looks things up"
+                input_schema:
+                  type: "object"
+                  properties:
+                    q: {type: "string"}
+        preset: {}
+      - model: "my-model"
+        params:
+          tools:
+            - {type: "function", function: {name: "kept", parameters: {type: "object"}}}
+            - {type: "custom", custom: {input_schema: {type: "object", properties: {}}}}
+        preset: {}
+      - model: "my-model"
+        params:
+          tools:
+            - type: "custom"
+              name: "outer"
+              description: "outer description"
+              input_schema: {type: "object", properties: {}}
+        preset: {}
+      - model: "my-model"
+        params:
+          tools:
+            - type: "function"
+              function:
+                name: "strict_tool"
+                strict: true
+                parameters:
+                  type: "object"
+                  additionalProperties: false
+                  properties:
+                    nested:
+                      type: "object"
+                      additionalProperties: false
+                      strict: true
+        preset: {}
+      - model: "my-model"
+        params:
+          tools:
+            - {type: "custom"}
+            - {type: "custom", custom: {"name": "", "description": "", "input_schema": {}}}
+            - {type: "custom", custom: {name: "named", description: "kept", input_schema: {type: "object"}}}
+        preset: {}
+      - model: "my-model"
+        params:
+          tools:
+            - {type: "custom", name: "n", description: "", input_schema: {}}
+            - type: "custom"
+              custom: {name: "", description: "", input_schema: {}}
+              name: "outer"
+              description: "outer description"
+              input_schema: {type: "object", properties: {}}
+        preset: {}
+env: {}
+compare: {ignore: []}

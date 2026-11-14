@@ -1,0 +1,30 @@
+kind: helper
+name: supported-params-reasoning-models
+call:
+  b5831:
+    model_cost:
+      together_ai/together-b5831-reasoner: {litellm_provider: together_ai, mode: chat, supports_reasoning: true}
+      together_ai/together-b5831-plain: {litellm_provider: together_ai, mode: chat}
+    chat_supported:
+    - {model: openai/gpt-oss-120b}
+    - {model: openai/gpt-oss-20b}
+    - {model: MiniMaxAI/MiniMax-M3}
+    - {model: Qwen/Qwen3.5-9B}
+    - {model: Qwen/Qwen3.6-Plus}
+    - {model: deepseek-ai/DeepSeek-V4-Pro}
+    - {model: moonshotai/Kimi-K3}
+    - {model: nvidia/nemotron-3-ultra-550b-a55b}
+    - {model: zai-org/GLM-5.2}
+    - {model: deepseek-ai/DeepSeek-V4-Pro-plus}
+    - {model: together-b5831-reasoner}
+    - {model: together-b5831-plain}
+    chat_map: []
+    chat_messages: []
+    completion: []
+    rerank_requests: []
+    rerank_responses: []
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []
