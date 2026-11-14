@@ -17,7 +17,6 @@ call:
       api_base: https://old.example
     global_callbacks:
       - kind: plain
-      - kind: resolved_string
       - kind: unresolved_string
       - kind: other
       - kind: override

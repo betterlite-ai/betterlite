@@ -3,7 +3,7 @@ mod answers;
 use async_trait::async_trait;
 use betterlite_core::api::responses_hook_policy::callbacks::{
     CallbackLists, CallbackValue, DeploymentHookDispatcher, NamedCallbackResolver, PolicyCallback,
-    ResponsesHookOutcome, ResponsesHookRequest, run_responses_pre_hook,
+    RESPONSES_CALL_TYPE, ResponsesHookOutcome, ResponsesHookRequest, run_responses_pre_hook,
 };
 use betterlite_core::api::responses_hook_policy::safety::ApiSurface;
 use betterlite_models::decisions::Json;
@@ -16,7 +16,7 @@ use answers::{followup_answer, safety_answer, settings_answer};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
-enum Input {
+pub(crate) enum Input {
     DeploymentHook {
         model: String,
         input: Json,
@@ -53,13 +53,12 @@ enum Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-enum CallbackSpec {
+pub(crate) enum CallbackSpec {
     Override {
         #[serde(default)]
         result: Option<IndexMap<String, Json>>,
     },
     Plain,
-    ResolvedString,
     UnresolvedString,
     Other,
 }
@@ -156,11 +155,9 @@ fn policy(name: &str, overrides: bool) -> PolicyCallback {
 struct NamedCallbacks;
 
 impl NamedCallbackResolver for NamedCallbacks {
-    fn resolve(&self, name: &str) -> Option<PolicyCallback> {
-        match name {
-            "datadog" => Some(policy("datadog", true)),
-            _ => None,
-        }
+    // a fresh LiteLLM process holds no logger instance that a name could resolve to
+    fn resolve(&self, _name: &str) -> Option<PolicyCallback> {
+        None
     }
 }
 
@@ -168,13 +165,12 @@ fn callback_value(spec: &CallbackSpec) -> CallbackValue {
     match spec {
         CallbackSpec::Override { .. } => CallbackValue::Object(policy("override", true)),
         CallbackSpec::Plain => CallbackValue::Object(policy("plain", false)),
-        CallbackSpec::ResolvedString => CallbackValue::Named("datadog".to_owned()),
         CallbackSpec::UnresolvedString => CallbackValue::Named("langfuse".to_owned()),
         CallbackSpec::Other => CallbackValue::Other,
     }
 }
 
-// stands in for B157's dispatcher: global objects run in order, a non-null result replaces the request
+// stands in for B157's dispatcher: global objects run in order, each non-null result updating the request
 struct ScriptedDispatcher {
     replacements: Vec<Option<IndexMap<String, Json>>>,
 }
@@ -182,10 +178,7 @@ struct ScriptedDispatcher {
 fn scripted_result(spec: &CallbackSpec) -> Option<IndexMap<String, Json>> {
     match spec {
         CallbackSpec::Override { result } => result.clone(),
-        CallbackSpec::Plain
-        | CallbackSpec::ResolvedString
-        | CallbackSpec::UnresolvedString
-        | CallbackSpec::Other => None,
+        CallbackSpec::Plain | CallbackSpec::UnresolvedString | CallbackSpec::Other => None,
     }
 }
 
@@ -196,12 +189,15 @@ impl DeploymentHookDispatcher for ScriptedDispatcher {
     async fn pre_call_deployment_hook(
         &self,
         request: IndexMap<String, Json>,
-        _call_type: &str,
+        call_type: &str,
     ) -> Result<Option<IndexMap<String, Json>>, Self::Error> {
         let mut modified = request;
-        for replacement in &self.replacements {
-            if let Some(result) = replacement {
-                modified.clone_from(result);
+        // the scripted callback answers only the responses call type, as the source's callback does
+        if call_type == RESPONSES_CALL_TYPE {
+            for replacement in &self.replacements {
+                if let Some(result) = replacement {
+                    modified.extend(result.clone());
+                }
             }
         }
         Ok(Some(modified))

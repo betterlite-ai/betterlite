@@ -1,10 +1,14 @@
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Literal, Required, TypedDict
 
 import litellm
 from litellm.integrations.custom_logger import CustomLogger
-from litellm.litellm_core_utils import litellm_logging
 from litellm.litellm_core_utils.agentic_followup_kwargs import build_agentic_followup_kwargs
+from litellm.litellm_core_utils.agentic_loop_settings import (
+    DEFAULT_MAX_AGENTIC_LOOPS,
+    validated_max_agentic_loops,
+)
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.types.integrations.custom_logger import AgenticLoopSafetyError
@@ -14,10 +18,16 @@ from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+MERGE: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+FOLLOWUP: TypeAdapter[Mapping[str, JsonValue]] = TypeAdapter(Mapping[str, JsonValue])
+
+CEILING_FIELD = "litellm_params.max_agentic_loops"
+
+CallbackEntry = CustomLogger | Literal["langfuse"] | Callable[[], None]
 
 
 class CallbackSpec(TypedDict, total=False):
-    kind: Required[Literal["override", "plain", "resolved_string", "unresolved_string", "other"]]
+    kind: Required[Literal["override", "plain", "unresolved_string", "other"]]
     result: dict[str, JsonValue]
 
 
@@ -65,23 +75,18 @@ Input = DeploymentCase | SettingsCase | SafetyCase | FollowupCase
 
 class ScriptedCallback(CustomLogger):
     def __init__(self, result: dict[str, JsonValue] | None) -> None:
-        super().__init__()
         self.result = result
 
     @override
     async def async_pre_call_deployment_hook(
         self,
         # ast-grep-ignore: no-loose-types
-        _kwargs: dict[str, object],
-        _call_type: CallTypes | None,
+        kwargs: dict[str, object],
+        call_type: CallTypes | None,
     ) -> dict[str, JsonValue] | None:
-        return self.result
-
-
-def resolve_compatible(name: str) -> CustomLogger | None:
-    if name == "datadog":
-        return ScriptedCallback(None)
-    return None
+        if call_type is not CallTypes.responses or self.result is None:
+            return None
+        return MERGE.validate_python({**kwargs, **self.result})
 
 
 class HookHandler(BaseLLMHTTPHandler):
@@ -115,13 +120,6 @@ class HookHandler(BaseLLMHTTPHandler):
             },
         }
 
-    def loop_settings(
-        self,
-        # ast-grep-ignore: no-loose-types
-        kwargs: dict[str, object],
-    ) -> tuple[int, int, list[str]]:
-        return self._get_agentic_loop_settings(kwargs)
-
     def tool_fingerprint(self, tool_calls: JsonValue) -> str:
         return self._fingerprint_agentic_tools(tool_calls)
 
@@ -146,104 +144,62 @@ class HookHandler(BaseLLMHTTPHandler):
         return self._can_replace_turn_with_terminal_response(stream, api_surface)
 
 
-# ast-grep-ignore: no-loose-types
-def object_map(values: dict[str, JsonValue]) -> dict[str, object]:
-    # ast-grep-ignore: no-loose-types
-    params: dict[str, object] = {}
-    for key, value in values.items():
-        params[key] = value
-    return params
+# stands in for a callback that is neither a logger nor a resolvable name
+def other_probe() -> None: ...
 
 
-def callback_of(spec: CallbackSpec) -> CustomLogger:
-    kind = spec["kind"]
-    if kind == "override":
-        return ScriptedCallback(spec.get("result"))
-    if kind == "plain":
-        return CustomLogger()
-    raise ValueError(f"unsupported dynamic callback kind {kind}")
-
-
-def install_global(specs: list[CallbackSpec]) -> None:
+def callbacks_from(specs: list[CallbackSpec]) -> list[CallbackEntry]:
+    callbacks: list[CallbackEntry] = []
     for spec in specs:
         kind = spec["kind"]
         if kind == "override":
-            litellm.callbacks.append(ScriptedCallback(spec.get("result")))
+            callbacks.append(ScriptedCallback(spec.get("result")))
         elif kind == "plain":
-            litellm.callbacks.append(CustomLogger())
-        elif kind == "resolved_string":
-            litellm.callbacks.append("datadog")
+            callbacks.append(CustomLogger())
         elif kind == "unresolved_string":
-            litellm.callbacks.append("langfuse")
+            callbacks.append("langfuse")
         else:
-            litellm.callbacks.append(CustomLogger)
-
-
-def install_dynamic(logging_obj: Logging, specs: list[CallbackSpec] | None) -> None:
-    if specs is None:
-        logging_obj.dynamic_success_callbacks = None
-        return
-    if not specs:
-        logging_obj.dynamic_success_callbacks = []
-        return
-    first = callback_of(specs[0])
-    if len(specs) > 1:
-        logging_obj.dynamic_success_callbacks = [first, callback_of(specs[1])]
-        return
-    logging_obj.dynamic_success_callbacks = [first]
+            callbacks.append(other_probe)
+    return callbacks
 
 
 def deployment_answer(case: DeploymentCase) -> JsonValue:
-    saved = list(litellm.callbacks)
-    saved_resolver = litellm_logging.get_custom_logger_compatible_class
-    litellm.callbacks.clear()
-    litellm_logging.get_custom_logger_compatible_class = resolve_compatible
-    try:
-        install_global(case["global_callbacks"])
-        logging_obj = Logging(
-            model=case["model"],
-            messages=None,
-            stream=False,
-            call_type="responses",
-            start_time=datetime(2026, 1, 1, tzinfo=UTC),
-            litellm_call_id="call-1",
-            function_id="fn-1",
-        )
-        install_dynamic(logging_obj, case["dynamic_callbacks"])
-        litellm_params = GenericLiteLLMParams(
-            api_key=case["generic_params"].get("api_key"),
-            api_base=case["generic_params"].get("api_base"),
-        )
-        return HookHandler().deployment_outcome(
-            case,
-            object_map(case["optional_params"]),
-            litellm_params,
-            logging_obj,
-        )
-    finally:
-        litellm.callbacks.clear()
-        litellm.callbacks.extend(saved)
-        litellm_logging.get_custom_logger_compatible_class = saved_resolver
+    litellm.callbacks = [*callbacks_from(case["global_callbacks"])]
+    logging_obj = Logging(
+        model=case["model"],
+        messages=None,
+        stream=False,
+        call_type="responses",
+        start_time=datetime(2026, 1, 1, tzinfo=UTC),
+        litellm_call_id="call-1",
+        function_id="fn-1",
+    )
+    dynamic = case["dynamic_callbacks"]
+    if dynamic is not None:
+        logging_obj.dynamic_success_callbacks = [*callbacks_from(dynamic)]
+    litellm_params = GenericLiteLLMParams(
+        api_key=case["generic_params"].get("api_key"),
+        api_base=case["generic_params"].get("api_base"),
+    )
+    return HookHandler().deployment_outcome(
+        case,
+        {**case["optional_params"]},
+        litellm_params,
+        logging_obj,
+    )
 
 
 def settings_answer(case: SettingsCase) -> JsonValue:
-    handler = HookHandler()
-    answers = [settings_probe(handler, probe) for probe in case["probes"]]
+    answers: list[JsonValue] = [settings_probe(probe) for probe in case["probes"]]
     return {"probes": answers}
 
 
-def settings_probe(handler: HookHandler, probe: dict[str, JsonValue]) -> JsonValue:
+def settings_probe(probe: dict[str, JsonValue]) -> JsonValue:
     try:
-        depth, max_loops, fingerprints = handler.loop_settings(object_map(probe))
+        ceiling = validated_max_agentic_loops(probe.get("max_agentic_loops"), CEILING_FIELD)
     except (TypeError, ValueError) as error:
         return {"error": {"class": type(error).__name__, "message": str(error)}}
-    return {
-        "settings": {
-            "depth": depth,
-            "max_loops": max_loops,
-            "fingerprints": JSON.validate_python(fingerprints),
-        }
-    }
+    return {"max_loops": DEFAULT_MAX_AGENTIC_LOOPS if ceiling is None else ceiling}
 
 
 def safety_answer(case: SafetyCase) -> JsonValue:
@@ -279,7 +235,7 @@ def followup_answer(case: FollowupCase) -> JsonValue:
         fingerprints=case["fingerprints"],
         fingerprint=case["fingerprint"],
     )
-    return JSON.validate_python(dict(result))
+    return JSON.validate_python(FOLLOWUP.validate_python(result))
 
 
 def run(input_value: Input) -> JsonValue:

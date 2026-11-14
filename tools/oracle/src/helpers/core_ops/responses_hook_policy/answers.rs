@@ -27,13 +27,7 @@ pub(super) fn settings_answer(input: &Input) -> Value {
 
 fn settings_probe(kwargs: &IndexMap<String, Json>) -> Value {
     match get_agentic_loop_settings(kwargs) {
-        Ok(settings) => json!({
-            "settings": {
-                "depth": settings.depth,
-                "max_loops": settings.max_loops,
-                "fingerprints": settings.fingerprints,
-            },
-        }),
+        Ok(settings) => json!({ "max_loops": settings.max_loops }),
         Err(error) => json!({
             "error": { "class": error.error_class(), "message": error.to_string() },
         }),
