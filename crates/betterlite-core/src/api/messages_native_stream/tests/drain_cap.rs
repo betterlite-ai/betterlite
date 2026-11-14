@@ -64,18 +64,23 @@ async fn a_held_slot_caps_the_second_drain(
     (a, pump_a)
 }
 
-async fn a_cap_hit_stream_bills_and_aborts(registry: &Arc<StreamRegistry>) {
-    let (b, mut relay_b) = Harness::start(limits(1), Arc::clone(registry));
-    b.script.release(SseChunk::Bytes(frame("b1"))).await;
-    assert_eq!(read(&mut relay_b).await, Frame::Chunk("b1".to_owned()));
-    let pump = pump_of(&relay_b);
-    drop(relay_b);
-    b.script.release(SseChunk::Bytes(frame("b2"))).await;
+// A disconnect whose next chunk cannot claim a drain slot bills and aborts upstream
+async fn a_disconnect_beyond_the_cap(registry: &Arc<StreamRegistry>, cap: usize) {
+    let (harness, mut relay) = Harness::start(limits(cap), Arc::clone(registry));
+    harness.script.release(SseChunk::Bytes(frame("one"))).await;
+    assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
+    let pump = pump_of(&relay);
+    drop(relay);
+    harness.script.release(SseChunk::Bytes(frame("two"))).await;
     pump.wait().await;
-    b.worker.flush().await;
-    assert!(b.closed.load(Ordering::SeqCst));
-    assert_eq!(b.routed_frames(), vec![frame("b1"), frame("b2")]);
-    assert_eq!(b.ran(), 1);
+    harness.worker.flush().await;
+    assert!(harness.closed.load(Ordering::SeqCst));
+    assert_eq!(harness.routed_frames(), vec![frame("one"), frame("two")]);
+    assert_eq!(harness.ran(), 1);
+}
+
+async fn a_cap_hit_stream_bills_and_aborts(registry: &Arc<StreamRegistry>) {
+    a_disconnect_beyond_the_cap(registry, 1).await;
     assert_eq!(registry.sizes().live_pumps, 1);
 }
 
@@ -119,16 +124,6 @@ async fn a_later_stream_claims_the_released_slot(registry: &Arc<StreamRegistry>)
 }
 
 async fn a_zero_cap_bills_every_disconnect(registry: &Arc<StreamRegistry>) {
-    let (z, mut relay_z) = Harness::start(limits(0), Arc::clone(registry));
-    z.script.release(SseChunk::Bytes(frame("z1"))).await;
-    assert_eq!(read(&mut relay_z).await, Frame::Chunk("z1".to_owned()));
-    let pump = pump_of(&relay_z);
-    drop(relay_z);
-    z.script.release(SseChunk::Bytes(frame("z2"))).await;
-    pump.wait().await;
-    z.worker.flush().await;
-    assert!(z.closed.load(Ordering::SeqCst));
-    assert_eq!(z.routed_frames(), vec![frame("z1"), frame("z2")]);
-    assert_eq!(z.ran(), 1);
+    a_disconnect_beyond_the_cap(registry, 0).await;
     assert_eq!(registry.sizes().detached_drains, 0);
 }

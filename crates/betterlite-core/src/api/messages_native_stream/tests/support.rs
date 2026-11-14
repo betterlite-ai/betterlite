@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -41,7 +41,7 @@ use crate::api::messages_stream_logging::seams::{
     StreamSeams,
 };
 use crate::api::messages_stream_logging::slots::{
-    DeferredCallback, DetachedFailureHook, HookFailure, PostCallFailureHook, StreamSlots,
+    DeferredCallback, Fields, HookFailure, PostCallFailureHook, StreamSlots,
 };
 use crate::api::messages_stream_logging::{SseChunk, StreamDeps};
 
@@ -278,6 +278,13 @@ pub(super) struct Harness {
 }
 
 impl Harness {
+    pub(super) fn fields(&self) -> MutexGuard<'_, Fields> {
+        self.slots
+            .fields
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
     pub(super) fn start(
         limits: RelayLimits,
         registry: Arc<StreamRegistry>,
@@ -452,12 +459,7 @@ pub(super) fn arm_deferred(harness: &Harness) -> Deferred {
             Ok(())
         })
     });
-    harness
-        .slots
-        .fields
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .deferred_callback = Some(callback);
+    harness.fields().deferred_callback = Some(callback);
     Deferred { calls }
 }
 
@@ -466,6 +468,14 @@ pub(super) struct Hook {
 }
 
 impl Hook {
+    fn armed(harness: &Harness) -> Self {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        harness.fields().detached_failure_hook = Some(Arc::new(RecordingHook {
+            calls: Arc::clone(&calls),
+        }));
+        Self { calls }
+    }
+
     pub(super) fn calls(&self) -> Vec<String> {
         self.calls
             .lock()
@@ -490,17 +500,7 @@ impl PostCallFailureHook for RecordingHook {
 }
 
 pub(super) fn arm_hook(harness: &Harness) -> Hook {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let hook: Arc<dyn DetachedFailureHook> = Arc::new(RecordingHook {
-        calls: Arc::clone(&calls),
-    });
-    harness
-        .slots
-        .fields
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .detached_failure_hook = Some(hook);
-    Hook { calls }
+    Hook::armed(harness)
 }
 
 pub(super) async fn settle(relay: ClientRelay<Recorder, ProviderError>) {

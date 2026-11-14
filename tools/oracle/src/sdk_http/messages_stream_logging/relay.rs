@@ -145,23 +145,7 @@ impl Session {
                 "a read follows the stream's detach".to_owned(),
             ));
         };
-        Ok(match relay.next_client_chunk().await {
-            Ok(Some(bytes)) => FrameRead {
-                chunk: Some(String::from_utf8(bytes).map_err(SdkHttpError::FrameUtf8)?),
-                end: Flag(false),
-                error: None,
-            },
-            Ok(None) => FrameRead {
-                chunk: None,
-                end: Flag(true),
-                error: None,
-            },
-            Err(error) => FrameRead {
-                chunk: None,
-                end: Flag(false),
-                error: Some(error.as_ref().to_string()),
-            },
-        })
+        frame_read(relay.next_client_chunk().await)
     }
 
     fn arm(&self) {
@@ -228,6 +212,29 @@ impl Session {
             closed: Flag(self.gate.closed.load(Ordering::SeqCst)),
         })
     }
+}
+
+// A relay read becomes the frame the oracle records: a chunk, the end, or the provider's error
+fn frame_read(
+    chunk: Result<Option<Vec<u8>>, Arc<ReportedFailure>>,
+) -> Result<FrameRead, SdkHttpError> {
+    Ok(match chunk {
+        Ok(Some(bytes)) => FrameRead {
+            chunk: Some(String::from_utf8(bytes).map_err(SdkHttpError::FrameUtf8)?),
+            end: Flag(false),
+            error: None,
+        },
+        Ok(None) => FrameRead {
+            chunk: None,
+            end: Flag(true),
+            error: None,
+        },
+        Err(error) => FrameRead {
+            chunk: None,
+            end: Flag(false),
+            error: Some(error.as_ref().to_string()),
+        },
+    })
 }
 
 async fn gate_source(

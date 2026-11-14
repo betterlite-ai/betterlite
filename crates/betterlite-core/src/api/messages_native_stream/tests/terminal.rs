@@ -87,27 +87,31 @@ async fn a_raw_message_stop_suppresses_the_incomplete_event() {
     settle(relay).await;
 }
 
-async fn a_mapping_message_stop_suppresses_the_incomplete_event() {
+// A terminal-looking mapping finishes the stream without an incomplete event
+async fn a_forwarded_mapping_that_ends_the_stream(chunk: SseChunk) -> String {
     let (harness, mut relay) = Harness::start(limits(), Arc::new(StreamRegistry::default()));
-    harness
-        .script
-        .release(mapping(vec![(
-            "type",
-            Json::Text("message_stop".to_owned()),
-        )]))
-        .await;
-    match read(&mut relay).await {
-        Frame::Chunk(encoded) => assert!(encoded.starts_with("event: message_stop\ndata: ")),
-        other => panic!("the stop mapping forwards, got {other:?}"),
-    }
+    harness.script.release(chunk).await;
+    let encoded = match read(&mut relay).await {
+        Frame::Chunk(encoded) => encoded,
+        other => panic!("the terminal mapping forwards, got {other:?}"),
+    };
     harness.script.finish().await;
     assert_eq!(read(&mut relay).await, Frame::End);
     settle(relay).await;
+    encoded
+}
+
+async fn a_mapping_message_stop_suppresses_the_incomplete_event() {
+    let encoded = a_forwarded_mapping_that_ends_the_stream(mapping(vec![(
+        "type",
+        Json::Text("message_stop".to_owned()),
+    )]))
+    .await;
+    assert!(encoded.starts_with("event: message_stop\ndata: "));
 }
 
 async fn an_error_body_suppresses_the_incomplete_event() {
-    let (harness, mut relay) = Harness::start(limits(), Arc::new(StreamRegistry::default()));
-    let error = mapping(vec![
+    let encoded = a_forwarded_mapping_that_ends_the_stream(mapping(vec![
         ("type", Json::Text("error".to_owned())),
         (
             "error",
@@ -116,18 +120,10 @@ async fn an_error_body_suppresses_the_incomplete_event() {
                 ("message".to_owned(), Json::Text("busy".to_owned())),
             ])),
         ),
-    ]);
-    harness.script.release(error).await;
-    match read(&mut relay).await {
-        Frame::Chunk(encoded) => {
-            assert!(encoded.starts_with("event: error\ndata: {"));
-            assert!(encoded.contains("\"overloaded_error\""));
-        }
-        other => panic!("the error body forwards, got {other:?}"),
-    }
-    harness.script.finish().await;
-    assert_eq!(read(&mut relay).await, Frame::End);
-    settle(relay).await;
+    ]))
+    .await;
+    assert!(encoded.starts_with("event: error\ndata: {"));
+    assert!(encoded.contains("\"overloaded_error\""));
 }
 
 async fn eof_emits_the_incomplete_event_without_billing_it() {

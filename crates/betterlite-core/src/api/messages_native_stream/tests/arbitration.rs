@@ -69,32 +69,32 @@ async fn a_connected_client_gets_the_original_exception() {
     assert_eq!(registry.sizes().live_pumps, 0);
 }
 
-async fn a_queued_exception_fires_the_hook_once_after_detach() {
+// detach_first decides whether the failure is queued before the client goes away
+async fn a_failure_after_one_chunk(detach_first: bool) {
     let (harness, mut relay) = Harness::start(limits(8), Arc::new(StreamRegistry::default()));
     let hook = arm_hook(&harness);
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
     let pump = pump_of(&relay);
-    harness.script.fail(busy()).await;
-    drop(relay);
+    if detach_first {
+        drop(relay);
+        harness.script.fail(busy()).await;
+    } else {
+        harness.script.fail(busy()).await;
+        drop(relay);
+    }
     pump.wait().await;
     assert_eq!(hook.calls(), vec!["RateLimitError(busy)".to_owned()]);
     assert_eq!(harness.failures().len(), 1);
     assert_eq!(harness.billed(), 0);
 }
 
+async fn a_queued_exception_fires_the_hook_once_after_detach() {
+    a_failure_after_one_chunk(false).await;
+}
+
 async fn an_already_detached_exception_fires_the_hook_once() {
-    let (harness, mut relay) = Harness::start(limits(8), Arc::new(StreamRegistry::default()));
-    let hook = arm_hook(&harness);
-    harness.script.release(SseChunk::Bytes(frame("one"))).await;
-    assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
-    let pump = pump_of(&relay);
-    drop(relay);
-    harness.script.fail(busy()).await;
-    pump.wait().await;
-    assert_eq!(hook.calls(), vec!["RateLimitError(busy)".to_owned()]);
-    assert_eq!(harness.failures().len(), 1);
-    assert_eq!(harness.billed(), 0);
+    a_failure_after_one_chunk(true).await;
 }
 
 async fn the_scan_matches_identity_not_text() {
