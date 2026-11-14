@@ -1,0 +1,13 @@
+kind: helper
+name: agents-collection-list-async-delegates-to-sync
+call:
+  b3504:
+    function: alist
+    kwargs: {}
+    reply:
+      status: 200
+      body:
+        agents:
+          - id: async-agent
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: agents-collection-create-async-delegates-to-sync
+call:
+  b3504:
+    function: acreate
+    name: async-agent
+    base_agent: waverunner
+    kwargs: {}
+    reply:
+      status: 200
+      body:
+        id: async-agent
+        base_agent: waverunner
+env: {}
+compare: {ignore: []}
