@@ -3,13 +3,13 @@ import datetime as dt
 import inspect
 import json
 import threading
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar, Final, Literal, NotRequired, TypedDict
+from typing import ClassVar, Final, Literal, NotRequired, Protocol, TypedDict
 from urllib.parse import urlsplit
 
 import litellm
-from litellm.interactions.agents import acreate, alist, create, list as list_agents
+from litellm.interactions import agents as agents_api
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.agents import AgentCreateResponse, AgentListResponse
 from pydantic import JsonValue, TypeAdapter
@@ -24,6 +24,24 @@ CALL_TYPES: Final[dict[str, str]] = {
     "list": "list_agents",
     "alist": "list_agents",
 }
+
+
+class AgentsApi(Protocol):
+    # LiteLLM annotates no **kwargs on these entry points, so the view fixes only the return type
+    @property
+    def create(self) -> Callable[..., AgentCreateResponse | Awaitable[AgentCreateResponse]]: ...
+
+    @property
+    def acreate(self) -> Callable[..., Awaitable[AgentCreateResponse]]: ...
+
+    @property
+    def list(self) -> Callable[..., AgentListResponse | Awaitable[AgentListResponse]]: ...
+
+    @property
+    def alist(self) -> Callable[..., Awaitable[AgentListResponse]]: ...
+
+
+AGENTS_API: AgentsApi = agents_api
 
 
 class Reply(TypedDict):
@@ -129,18 +147,14 @@ def extra_names(call: Call) -> frozenset[str]:
     return frozenset(name.lower() for name in headers)
 
 
-def agent_name(call: Call) -> str:
-    name = call.get("name")
-    if name is None:
-        raise ValueError("a create call carries the name of the agent to create")
-    return name
-
-
 def answer(call: Call, logging_obj: Logging, kwargs: dict[str, JsonValue]) -> JsonValue:
     if call["function"] in ("create", "acreate"):
+        name = call.get("name")
+        if name is None:
+            raise ValueError("a create call carries the name of the agent to create")
         if call["function"] == "create":
-            created: AgentCreateResponse | Awaitable[AgentCreateResponse] = create(
-                name=agent_name(call),
+            created: AgentCreateResponse | Awaitable[AgentCreateResponse] = AGENTS_API.create(
+                name=name,
                 base_agent=call.get("base_agent"),
                 instructions=call.get("instructions"),
                 base_environment=call.get("base_environment"),
@@ -152,8 +166,8 @@ def answer(call: Call, logging_obj: Logging, kwargs: dict[str, JsonValue]) -> Js
                 **kwargs,
             )
         else:
-            created = acreate(
-                name=agent_name(call),
+            created = AGENTS_API.acreate(
+                name=name,
                 base_agent=call.get("base_agent"),
                 instructions=call.get("instructions"),
                 base_environment=call.get("base_environment"),
@@ -166,7 +180,7 @@ def answer(call: Call, logging_obj: Logging, kwargs: dict[str, JsonValue]) -> Js
             )
         return JSON.validate_json(asyncio.run(resolve_created(created)).model_dump_json())
     if call["function"] == "list":
-        listed: AgentListResponse | Awaitable[AgentListResponse] = list_agents(
+        listed: AgentListResponse | Awaitable[AgentListResponse] = AGENTS_API.list(
             custom_llm_provider=call.get("custom_llm_provider"),
             extra_headers=call.get("extra_headers"),
             timeout=None,
@@ -174,7 +188,7 @@ def answer(call: Call, logging_obj: Logging, kwargs: dict[str, JsonValue]) -> Js
             **kwargs,
         )
     else:
-        listed = alist(
+        listed = AGENTS_API.alist(
             custom_llm_provider=call.get("custom_llm_provider"),
             extra_headers=call.get("extra_headers"),
             timeout=None,
@@ -205,8 +219,4 @@ def run(input_value: Call) -> JsonValue:
         result = answer(input_value, logging_obj, kwargs)
     finally:
         server.close()
-    return {
-        "requests": server.requests,
-        "result": result,
-        "model": logging_obj.model,
-    }
+    return {"requests": server.requests, "result": result, "model": logging_obj.model}
