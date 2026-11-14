@@ -24,18 +24,18 @@ fn merge_language_hints(non_default: &Object, optional: &mut Object) -> Result<(
             field: LANGUAGE,
             source,
         })?;
-    let Some(language) = language.filter(|language| !language.is_empty()) else {
+    let Some(requested) = language.filter(|value| !value.is_empty()) else {
         return Ok(());
     };
     let existing = language_hints(optional)?;
     if existing.is_empty() {
-        return write_hints(optional, &[language]);
+        return write_hints(optional, &[requested]);
     }
-    if existing.contains(&language) {
+    if existing.contains(&requested) {
         return Ok(());
     }
     let mut merged = Vec::new();
-    merged.push(language);
+    merged.push(requested);
     merged.extend(existing);
     write_hints(optional, &merged)
 }

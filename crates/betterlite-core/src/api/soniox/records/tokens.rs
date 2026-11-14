@@ -18,6 +18,16 @@ pub(super) enum FloatMilliseconds {
     NotFinite,
 }
 
+impl FloatMilliseconds {
+    fn seconds(self) -> Option<f64> {
+        match self {
+            Self::Exact(milliseconds) => milliseconds.checked_div(Decimal::ONE_THOUSAND)?.to_f64(),
+            Self::Approximate(milliseconds) => Some(milliseconds.div(1_000.0_f64)),
+            Self::NotFinite => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum SpeakerValue {
@@ -107,7 +117,7 @@ impl SonioxToken {
         }
     }
 
-    pub fn joined_text(&self) -> Result<&str, RecordsError> {
+    pub const fn joined_text(&self) -> Result<&str, RecordsError> {
         match self.text.as_ref() {
             None => Ok(""),
             Some(Some(JsonValue::Text(text))) => Ok(text.as_str()),
@@ -124,41 +134,43 @@ pub fn render_soniox_tokens(tokens: &[SonioxToken]) -> String {
     let mut current_speaker: Option<&SpeakerValue> = None;
     let mut current_language: Option<&str> = None;
     for token in tokens {
-        let mut text = token.text_string();
         let speaker = token
             .speaker
             .as_ref()
-            .filter(|speaker| current_speaker != Some(*speaker));
-        if let Some(speaker) = speaker {
+            .filter(|previous| current_speaker != Some(*previous));
+        if let Some(next) = speaker {
             if current_speaker.is_some() {
                 parts.push(String::from("\n\n"));
             }
-            current_speaker = Some(speaker);
+            current_speaker = Some(next);
             current_language = None;
-            parts.push(format!("Speaker {}:", speaker.label()));
+            parts.push(format!("Speaker {}:", next.label()));
         }
         let language = token
             .language
             .as_deref()
-            .filter(|language| current_language != Some(*language));
-        if let Some(language) = language {
-            current_language = Some(language);
-            let prefix = if token.translation_status.as_deref() == Some(TRANSLATION_STATUS) {
-                "[Translation] "
-            } else {
-                ""
-            };
-            parts.push(format!("\n{prefix}[{language}] "));
-            text = text
-                .trim_start_matches(is_whitespace_or_separator)
-                .to_owned();
-        }
+            .filter(|previous| current_language != Some(*previous));
+        let Some(next) = language else {
+            parts.push(token.text_string());
+            continue;
+        };
+        current_language = Some(next);
+        let prefix = if token.translation_status.as_deref() == Some(TRANSLATION_STATUS) {
+            "[Translation] "
+        } else {
+            ""
+        };
+        parts.push(format!("\n{prefix}[{next}] "));
+        let text = token
+            .text_string()
+            .trim_start_matches(is_whitespace_or_separator)
+            .to_owned();
         parts.push(text);
     }
     parts.concat()
 }
 
-fn is_whitespace_or_separator(character: char) -> bool {
+const fn is_whitespace_or_separator(character: char) -> bool {
     if character.is_whitespace() {
         return true;
     }
@@ -202,13 +214,10 @@ pub(super) fn float_milliseconds(value: &JsonValue) -> Option<FloatMilliseconds>
 
 #[must_use]
 pub(super) fn seconds_value(quantity: FloatMilliseconds) -> Option<JsonValue> {
-    let seconds = match quantity {
-        FloatMilliseconds::Exact(milliseconds) => {
-            milliseconds.checked_div(Decimal::ONE_THOUSAND)?.to_f64()?
-        }
-        FloatMilliseconds::Approximate(milliseconds) => milliseconds.div(1_000.0_f64),
-        FloatMilliseconds::NotFinite => return Some(JsonValue::Null),
-    };
+    if matches!(quantity, FloatMilliseconds::NotFinite) {
+        return Some(JsonValue::Null);
+    }
+    let seconds = quantity.seconds()?;
     Number::from_f64(seconds).map(JsonValue::Number)
 }
 
@@ -222,14 +231,21 @@ fn milliseconds_from_text(text: &str) -> Option<FloatMilliseconds> {
     if !parsed.is_finite() {
         return Some(FloatMilliseconds::NotFinite);
     }
+    // Decimal rounds at scale 28 without failing, so require the exact float division
     let exact = cleaned
         .parse::<Decimal>()
         .ok()
-        .filter(|number| number.checked_div(Decimal::ONE_THOUSAND).is_some());
-    Some(match exact {
-        Some(number) => FloatMilliseconds::Exact(number),
-        None => FloatMilliseconds::Approximate(parsed),
-    })
+        .filter(|number| number.to_f64() == Some(parsed))
+        .filter(|number| {
+            number
+                .checked_div(Decimal::ONE_THOUSAND)
+                .and_then(|seconds| seconds.to_f64())
+                == Some(parsed.div(1_000.0_f64))
+        });
+    Some(exact.map_or(
+        FloatMilliseconds::Approximate(parsed),
+        FloatMilliseconds::Exact,
+    ))
 }
 
 // float() takes an underscore only between two digits
@@ -240,7 +256,7 @@ fn underscores_join_digits(text: &str) -> bool {
             return true;
         }
         let before = index.checked_sub(1).and_then(|before| bytes.get(before));
-        let after = bytes.get(index + 1);
+        let after = index.checked_add(1).and_then(|after| bytes.get(after));
         before.is_some_and(u8::is_ascii_digit) && after.is_some_and(u8::is_ascii_digit)
     })
 }

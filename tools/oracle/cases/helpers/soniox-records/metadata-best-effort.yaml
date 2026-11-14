@@ -37,6 +37,14 @@ call:
         transcript: {text: hi}
     - function: response
       payload:
+        transcription: {audio_duration_ms: 1e-28}
+        transcript: {text: hi}
+    - function: response
+      payload:
+        transcription: {audio_duration_ms: 2.5e-28}
+        transcript: {text: hi}
+    - function: response
+      payload:
         transcription: {audio_duration_ms: null}
         transcript: {text: hi}
     - function: response
@@ -99,6 +107,10 @@ call:
     - function: response
       payload:
         transcript: {tokens: [{text: a, start_ms: 1e30}]}
+      response_format: verbose_json
+    - function: response
+      payload:
+        transcript: {tokens: [{text: a, start_ms: 1e-28}]}
       response_format: verbose_json
     - function: response
       payload:

@@ -10,8 +10,8 @@ pub fn resolve_api_key(
     explicit: Option<&str>,
     environment: Option<&SecretString>,
 ) -> Option<SecretString> {
-    if let Some(explicit) = explicit.filter(|value| !value.is_empty()) {
-        return Some(SecretString::from(explicit.to_owned()));
+    if let Some(resolved) = explicit.filter(|value| !value.is_empty()) {
+        return Some(SecretString::from(resolved.to_owned()));
     }
     environment.cloned()
 }

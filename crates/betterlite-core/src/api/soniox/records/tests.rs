@@ -730,7 +730,14 @@ fn verbose_json_accumulates_metadata_with_the_text() {
     assert_eq!(
         built_object(payload, Some(VERBOSE_JSON)),
         object(
-            r#"{"text": "\n[en] a", "usage": null, "task": "transcribe", "duration": 1.5, "language": "en"}"#
+            r#"{
+            "text": "\n[en] a",
+            "usage": null,
+            "task": "transcribe",
+            "duration": 1.5,
+            "language": "en",
+            "words": [{"word": "a"}]
+        }"#
         )
     );
 }

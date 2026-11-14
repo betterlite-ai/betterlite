@@ -84,7 +84,7 @@ impl TranscriptView {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct SonioxTranscriptionResponse {
     pub text: Option<String>,
     pub usage: Option<Object>,
@@ -160,10 +160,10 @@ fn set_duration(
     let Some(value) = transcription.get("audio_duration_ms") else {
         return Ok(());
     };
-    let Ok(value) = from_value::<JsonValue>(value.clone()) else {
+    let Ok(stored) = from_value::<JsonValue>(value.clone()) else {
         return Ok(());
     };
-    let Some(quantity) = float_milliseconds(&value) else {
+    let Some(quantity) = float_milliseconds(&stored) else {
         return Ok(());
     };
     let Some(shown) = seconds_value(quantity) else {
@@ -187,8 +187,8 @@ fn set_language(
     }
     let mut seen: Vec<&str> = Vec::new();
     for token in tokens {
-        let language = token.language.as_deref().filter(|value| !value.is_empty());
-        let Some(language) = language else {
+        let candidate = token.language.as_deref().filter(|value| !value.is_empty());
+        let Some(language) = candidate else {
             continue;
         };
         if !seen.contains(&language) {
@@ -243,10 +243,10 @@ fn set_words(
 }
 
 fn word_seconds(timing: Option<&JsonValue>) -> Result<Option<JsonValue>, RecordsError> {
-    let Some(timing) = timing else {
+    let Some(reading) = timing else {
         return Ok(None);
     };
-    let Some(quantity) = float_milliseconds(timing) else {
+    let Some(quantity) = float_milliseconds(reading) else {
         return Err(RecordsError::Timing { field: WORDS_FIELD });
     };
     let Some(seconds) = seconds_value(quantity) else {
