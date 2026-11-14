@@ -213,23 +213,21 @@ def keyword_problem(method: inspect.Signature, keywords: tuple[str, ...]) -> str
     return ""
 
 
-def readme_calls(blocks: list[str]) -> list[ReadmeCall]:
-    calls: list[ReadmeCall] = []
-    for block in blocks:
-        for node in ast.walk(ast.parse(block)):
-            match node:
-                case ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Attribute(value=ast.Name(id="client"), attr=resource),
-                        attr=method,
-                    ),
-                    keywords=keywords,
-                ):
-                    names = [keyword.arg for keyword in keywords if keyword.arg is not None]
-                    calls.append(ReadmeCall(resource, method, tuple(names)))
-                case ast.AST():
-                    pass
-    return calls
+def readme_calls(blocks: list[str]) -> Iterator[ReadmeCall]:
+    nodes = (node for block in blocks for node in ast.walk(ast.parse(block)))
+    for node in nodes:
+        match node:
+            case ast.Call(
+                func=ast.Attribute(
+                    value=ast.Attribute(value=ast.Name(id="client"), attr=resource),
+                    attr=method,
+                ),
+                keywords=keywords,
+            ):
+                names = [keyword.arg for keyword in keywords if keyword.arg is not None]
+                yield ReadmeCall(resource, method, tuple(names))
+            case ast.AST():
+                pass
 
 
 def test_client_attributes(server: RecordingServer) -> None:
@@ -322,7 +320,7 @@ def test_readme_examples() -> None:
     assert "litellm.proxy.client" not in text
     methods = client_signatures(Client(BASE_URL))
     blocks = [match.group(1) for match in PYTHON_FENCE.finditer(text)]
-    calls = readme_calls(blocks)
+    calls = list(readme_calls(blocks))
     assert calls
     for call in calls:
         name = f"client.{call.resource}.{call.method}"
