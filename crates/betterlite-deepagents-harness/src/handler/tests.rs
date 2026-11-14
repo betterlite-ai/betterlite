@@ -799,9 +799,11 @@ async fn turn_passes_thread_id_recursion_limit_and_usage_callback() {
         BASE_RECURSION_LIMIT.saturating_add(2_u32.saturating_mul(DEEPAGENTS_STEPS_PER_TURN));
     assert_eq!(config.recursion_limit, expected_limit);
     assert!(config.usage_callback.is_some());
+    let cost_models = plan.cost_models.lock().unwrap();
+    assert_eq!(cost_models.len(), 1);
     assert_eq!(
-        plan.cost_models.lock().unwrap().as_slice(),
-        [Some("openai/gpt-4o".to_owned())]
+        cost_models.first().unwrap().as_deref(),
+        Some("openai/gpt-4o")
     );
     let state_configs = plan.state_configs.lock().unwrap();
     assert_eq!(state_configs.first().unwrap().thread_id, "session-1");
