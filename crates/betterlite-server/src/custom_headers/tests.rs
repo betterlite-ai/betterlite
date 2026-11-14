@@ -45,6 +45,14 @@ fn header(headers: &HeaderMap, name: &str) -> Option<String> {
     json!({"hidden_params": {"litellm_call_id": ""}, "request_data": {"litellm_call_id": "request"}}),
     Some("request")
 )]
+#[case::empty_array_hidden_falls_through(
+    json!({"hidden_params": {"litellm_call_id": []}, "request_data": {"litellm_call_id": "request"}}),
+    Some("request")
+)]
+#[case::empty_object_hidden_falls_through(
+    json!({"hidden_params": {"litellm_call_id": {}}, "request_data": {"litellm_call_id": "request"}}),
+    Some("request")
+)]
 #[case::number_is_text(json!({"hidden_params": {"litellm_call_id": 7}}), Some("7"))]
 #[case::nowhere(json!({}), None)]
 fn call_id_comes_from_the_first_source(#[case] input: JsonValue, #[case] expected: Option<&str>) {
@@ -122,6 +130,15 @@ fn api_base_drops_the_query_string(#[case] api_base: JsonValue, #[case] expected
     Some("3.0"),
     Some("4.0")
 )]
+#[case::flag_off_without_hidden_response_ms(
+    json!({
+        "read_timing_from_logging": false,
+        "hidden_params": {"litellm_overhead_time_ms": 4.0},
+        "logging": {"response_timing_metrics": {"_response_ms": 7.0, "litellm_overhead_time_ms": 1.0}}
+    }),
+    None,
+    Some("4.0")
+)]
 #[case::no_logging_view(
     json!({"hidden_params": {"_response_ms": 3.0, "litellm_overhead_time_ms": 4.0}}),
     Some("3.0"),
@@ -173,6 +190,18 @@ fn an_empty_breakdown_leaves_the_part_headers_out() {
     let headers = build(json!({"logging": {"call_type": "completion", "cost_breakdown": {}}}));
     assert_eq!(header(&headers, "x-litellm-response-cost-original"), None);
     assert_eq!(header(&headers, "x-litellm-response-cost-tool-usage"), None);
+}
+
+#[test]
+fn an_empty_breakdown_still_zero_splits_a_non_inference_call() {
+    let headers = build(json!({
+        "response_cost": 0.0,
+        "logging": {"call_type": "get_responses", "cost_breakdown": {}}
+    }));
+    assert_eq!(
+        header(&headers, "x-litellm-response-cost-original").as_deref(),
+        Some("0.0")
+    );
 }
 
 #[rstest]
@@ -496,6 +525,11 @@ fn extra_pairs_replace_the_headers_before_them() {
     );
     assert_eq!(header(&headers, "x-litellm-cache-key"), None);
     assert_eq!(header(&headers, "x-custom").as_deref(), Some("False"));
+    let cleared = build(json!({
+        "cache_key": "key-1",
+        "extra": [["x-litellm-cache-key", "new"], ["x-litellm-cache-key", null]]
+    }));
+    assert_eq!(header(&cleared, "x-litellm-cache-key"), None);
 }
 
 #[rstest]
@@ -520,6 +554,13 @@ fn timeout_is_python_float_text() {
         header(&headers, "x-litellm-timeout").as_deref(),
         Some("30.0")
     );
+}
+
+#[test]
+fn a_float_number_uses_python_float_text() {
+    let headers = build(json!({"extra": [["x-small", 0.00001], ["x-big", 1e16]]}));
+    assert_eq!(header(&headers, "x-small").as_deref(), Some("1e-05"));
+    assert_eq!(header(&headers, "x-big").as_deref(), Some("1e+16"));
 }
 
 #[test]
