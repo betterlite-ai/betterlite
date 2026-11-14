@@ -480,6 +480,7 @@ def test_names_scim_absent_blocks() -> None:
 
 
 def test_names_scim_deviations() -> None:
+    assert scim.LiteLLM_UserScimMetadata.__name__ == "UserScimMetadata"
     email: dict[str, JsonValue] = {"value": "not-an-email"}
     assert not rejects(scim.SCIMUserEmail, email)
     assert rejects(litellm_scim.SCIMUserEmail, email)
@@ -654,6 +655,10 @@ def test_names_team_deviations() -> None:
 
 
 def test_names_sso_deviations() -> None:
+    assert (
+        sso.LiteLLM_UpperboundKeyGenerateParams.__name__ == "UpperboundKeyGenerateParams"
+    )
+    assert sso.AccessControl_UI_AccessMode.__name__ == "UIAccessMode"
     permissions: dict[str, JsonValue] = {"team_member_permissions": ["/bogus"]}
     assert not rejects(sso.DefaultTeamSSOParams, permissions)
     assert rejects(litellm_sso.DefaultTeamSSOParams, permissions)
