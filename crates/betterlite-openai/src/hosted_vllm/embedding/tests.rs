@@ -735,18 +735,19 @@ fn a_zero_error_message_with_a_null_code_is_ignored() {
     );
 }
 
-#[test]
-fn an_empty_container_or_false_error_message_is_ignored() {
-    for message in [json!([]), json!({}), json!(false)] {
-        let mut body = full_reply();
-        body.as_object_mut()
-            .expect("object")
-            .insert(String::from("error"), json!({"message": message}));
-        assert_eq!(
-            reply(body).expect("reply").get("model"),
-            Some(&json!("my-model"))
-        );
-    }
+#[rstest]
+#[case::empty_list(json!([]))]
+#[case::empty_object(json!({}))]
+#[case::false_flag(json!(false))]
+fn an_empty_container_or_false_error_message_is_ignored(#[case] message: Value) {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"message": message}));
+    assert_eq!(
+        reply(body).expect("reply").get("model"),
+        Some(&json!("my-model"))
+    );
 }
 
 #[rstest]
