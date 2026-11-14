@@ -1,0 +1,51 @@
+kind: probe
+name: context-limit-filter
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: big, max_input_tokens: 1000}
+          - {model_name: gpt, model: "openai/gpt-4o", id: small, max_input_tokens: 3}
+          - {model_name: gpt, model: "openai/gpt-4o", id: open}
+        lookups:
+          - model: gpt
+            messages: [{role: user, content: "hello world"}]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: edge, max_input_tokens: 9}
+          - {model_name: gpt, model: "openai/gpt-4o", id: below, max_input_tokens: 8}
+        lookups:
+          - model: gpt
+            messages: [{role: user, content: "hello world"}]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: four, max_input_tokens: 4}
+          - {model_name: gpt, model: "openai/gpt-4o", id: five, max_input_tokens: 5}
+        lookups:
+          - model: gpt
+            messages: [{role: user, content: "hello world"}]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: one, max_input_tokens: 1}
+        lookups:
+          - {model: gpt}
+compare: {ignore: []}

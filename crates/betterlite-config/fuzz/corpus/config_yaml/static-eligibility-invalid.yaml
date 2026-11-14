@@ -1,0 +1,2 @@
+router_settings:
+  enable_pre_call_checks: not-a-flag
