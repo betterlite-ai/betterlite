@@ -75,7 +75,7 @@ pub(super) struct IamState {
 pub(super) struct IamServer {
     pub base: String,
     pub seen: Arc<Mutex<Vec<Seen>>>,
-    _tasks: JoinSet<()>,
+    pub _tasks: JoinSet<()>,
 }
 
 async fn record_iam(
@@ -192,6 +192,29 @@ impl RecordingGrants {
     }
 }
 
+impl RecordingGrants {
+    fn grant(&self, call: GrantCall) -> Result<SecretString, AzureGrantError> {
+        let kind = match call {
+            GrantCall::ClientSecret { .. } => "client secret",
+            GrantCall::ManagedIdentity { .. } => "managed identity",
+            GrantCall::Default { .. } => "default",
+        };
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
+        self.token.map_or_else(
+            || {
+                Err(AzureGrantError::Grant {
+                    kind,
+                    message: "the test grant refuses".to_owned(),
+                })
+            },
+            |token| Ok(SecretString::from(token)),
+        )
+    }
+}
+
 impl AzureGrants for RecordingGrants {
     fn client_secret(
         &self,
@@ -200,24 +223,11 @@ impl AzureGrants for RecordingGrants {
         _client_secret: &SecretString,
         scope: &str,
     ) -> Result<SecretString, AzureGrantError> {
-        let call = GrantCall::ClientSecret {
+        self.grant(GrantCall::ClientSecret {
             tenant_id: tenant_id.to_owned(),
             client_id: client_id.to_owned(),
             scope: scope.to_owned(),
-        };
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call);
-        self.token.map_or_else(
-            || {
-                Err(AzureGrantError::Grant {
-                    kind: "client secret",
-                    message: "the test grant refuses".to_owned(),
-                })
-            },
-            |token| Ok(SecretString::from(token)),
-        )
+        })
     }
 
     fn managed_identity(
@@ -225,23 +235,10 @@ impl AzureGrants for RecordingGrants {
         client_id: &str,
         scope: &str,
     ) -> Result<SecretString, AzureGrantError> {
-        let call = GrantCall::ManagedIdentity {
+        self.grant(GrantCall::ManagedIdentity {
             client_id: client_id.to_owned(),
             scope: scope.to_owned(),
-        };
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call);
-        self.token.map_or_else(
-            || {
-                Err(AzureGrantError::Grant {
-                    kind: "managed identity",
-                    message: "the test grant refuses".to_owned(),
-                })
-            },
-            |token| Ok(SecretString::from(token)),
-        )
+        })
     }
 
     fn default_credential(&self, scope: &str) -> Result<SecretString, AzureGrantError> {

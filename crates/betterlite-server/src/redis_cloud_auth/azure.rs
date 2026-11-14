@@ -46,6 +46,41 @@ pub struct AzureRedisTokens {
     pub grants: Arc<dyn AzureGrants>,
 }
 
+impl AzureRedisTokens {
+    fn client_secret_token(&self, scope: &str) -> Result<SecretString, AzureGrantError> {
+        let tenant_id =
+            self.settings
+                .tenant_id
+                .as_ref()
+                .ok_or(AzureGrantError::MissingSettings {
+                    kind: "client secret",
+                    fields: "tenant_id",
+                })?;
+        let client_id =
+            self.settings
+                .client_id
+                .as_ref()
+                .ok_or(AzureGrantError::MissingSettings {
+                    kind: "client secret",
+                    fields: "client_id",
+                })?;
+        let client_secret =
+            self.settings
+                .client_secret
+                .as_ref()
+                .ok_or(AzureGrantError::MissingSettings {
+                    kind: "client secret",
+                    fields: "client_secret",
+                })?;
+        self.grants.client_secret(
+            tenant_id.expose_secret(),
+            client_id.expose_secret(),
+            client_secret,
+            scope,
+        )
+    }
+}
+
 impl AzureTokenFetcher for AzureRedisTokens {
     type Error = AzureGrantError;
 
@@ -56,32 +91,7 @@ impl AzureTokenFetcher for AzureRedisTokens {
     ) -> Result<AzureToken, Self::Error> {
         let token =
             match credential {
-                AzureCredential::ClientSecret => {
-                    let tenant_id = self.settings.tenant_id.as_ref().ok_or(
-                        AzureGrantError::MissingSettings {
-                            kind: "client secret",
-                            fields: "tenant_id",
-                        },
-                    )?;
-                    let client_id = self.settings.client_id.as_ref().ok_or(
-                        AzureGrantError::MissingSettings {
-                            kind: "client secret",
-                            fields: "client_id",
-                        },
-                    )?;
-                    let client_secret = self.settings.client_secret.as_ref().ok_or(
-                        AzureGrantError::MissingSettings {
-                            kind: "client secret",
-                            fields: "client_secret",
-                        },
-                    )?;
-                    self.grants.client_secret(
-                        tenant_id.expose_secret(),
-                        client_id.expose_secret(),
-                        client_secret,
-                        scope,
-                    )?
-                }
+                AzureCredential::ClientSecret => self.client_secret_token(scope)?,
                 AzureCredential::ManagedIdentity => {
                     let client_id = self.settings.client_id.as_ref().ok_or(
                         AzureGrantError::MissingSettings {

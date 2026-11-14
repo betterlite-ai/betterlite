@@ -24,7 +24,7 @@ async fn aws_a_provider_failure_maps_to_the_credentials_error() {
         .await
         .unwrap_err();
     assert!(matches!(error, ElastiCacheSigningError::Credentials { .. }));
-    assert!(error.to_string().contains("no credentials in the test"));
+    assert!(error.to_string().contains("failed to resolve AWS credentials"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

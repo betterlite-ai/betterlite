@@ -85,11 +85,40 @@ impl AzureHttp {
             .map_err(io::Error::other)
     }
 
+    fn metadata_get(
+        &self,
+        url: &str,
+        query: Vec<(String, String)>,
+        headers: HeaderMap,
+        deadline: Duration,
+    ) -> io::Result<MetadataReply> {
+        let response = self.exchange(Exchange {
+            method: Method::GET,
+            url,
+            query,
+            headers,
+            body: RequestBody::Empty,
+            deadline,
+        })?;
+        let (status, body) = text_reply(response.status, response.body)?;
+        Ok(MetadataReply {
+            status,
+            headers: header_pairs(&response.headers),
+            body,
+        })
+    }
+
     fn form_exchange(&self, request: Exchange<'_>) -> io::Result<HttpReply> {
         let response = self.exchange(request)?;
         let (status, body) = text_reply(response.status, response.body)?;
         Ok(HttpReply { status, body })
     }
+}
+
+struct MetadataReply {
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: SecretString,
 }
 
 fn header_map(headers: Vec<(String, String)>) -> io::Result<HeaderMap> {
@@ -206,19 +235,16 @@ impl OidcTransport for AzureHttp {
 
 impl ImdsTransport for AzureHttp {
     fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
-        let response = self.exchange(Exchange {
-            method: Method::GET,
-            url: &request.url,
-            query: request.query.clone(),
-            headers: header_map(request.headers.clone())?,
-            body: RequestBody::Empty,
-            deadline: Duration::from_secs(request.timeout_seconds),
-        })?;
-        let (status, body) = text_reply(response.status, response.body)?;
+        let reply = self.metadata_get(
+            &request.url,
+            request.query.clone(),
+            header_map(request.headers.clone())?,
+            Duration::from_secs(request.timeout_seconds),
+        )?;
         Ok(ImdsResponse {
-            status,
-            headers: header_pairs(&response.headers),
-            body,
+            status: reply.status,
+            headers: reply.headers,
+            body: reply.body,
         })
     }
 }
@@ -230,20 +256,12 @@ impl ArcTransport for AzureHttp {
             .iter()
             .map(|(name, value)| ((*name).to_owned(), value.clone()))
             .collect();
-        let response = self.exchange(Exchange {
-            method: Method::GET,
-            url: &request.url,
-            query,
-            headers: header_map(secret_headers(request.headers.clone()))?,
-            body: RequestBody::Empty,
-            deadline: METADATA_TIMEOUT,
-        })?;
-        let (status, body) = text_reply(response.status, response.body)?;
-        let headers = header_pairs(&response.headers);
+        let headers = header_map(secret_headers(request.headers.clone()))?;
+        let reply = self.metadata_get(&request.url, query, headers, METADATA_TIMEOUT)?;
         Ok(ArcResponse {
-            status,
-            headers,
-            body,
+            status: reply.status,
+            headers: reply.headers,
+            body: reply.body,
         })
     }
 }

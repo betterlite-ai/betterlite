@@ -113,12 +113,16 @@ impl KeptProvider {
     fn lend<C, W, T>(&self, create: C, work: W) -> T
     where
         C: FnOnce() -> ProviderCache,
-        W: FnOnce(ProviderCache) -> (ProviderCache, T),
+        W: FnOnce(ProviderCache) -> (Mutex<ProviderCache>, T),
     {
         let mut slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
         let cache = slot.take().unwrap_or_else(create);
         let (returned, result) = work(cache);
-        *slot = Some(returned);
+        *slot = Some(
+            returned
+                .into_inner()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
         drop(slot);
         result
     }
@@ -164,11 +168,7 @@ impl<H: AzureIo> SdkAzureGrants<H> {
                     authority_host: self.authority_host.clone(),
                 };
                 let result = fetch(&native);
-                let returned = native
-                    .client_secrets
-                    .into_inner()
-                    .unwrap_or_else(PoisonError::into_inner);
-                (returned, result)
+                (native.client_secrets, result)
             },
         )
     }
