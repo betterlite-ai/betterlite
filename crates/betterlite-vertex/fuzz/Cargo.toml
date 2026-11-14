@@ -108,6 +108,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "studio_file_search"
+path = "fuzz_targets/studio_file_search.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "studio_interaction"
 path = "fuzz_targets/studio_interaction.rs"
 test = false
