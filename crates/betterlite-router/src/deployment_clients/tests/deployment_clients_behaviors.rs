@@ -476,11 +476,15 @@ fn the_provider_call_gets_model_and_provider() {
         &[("model", text("anthropic/claude-sonnet-5"))],
         &[],
     );
-    let catalog = catalog(&[prefixed]);
-    let credentials =
-        provider_credentials(&catalog, "d2", None, &std::collections::BTreeMap::new())
-            .expect("lookup")
-            .expect("credentials");
+    let prefixed_catalog = catalog(&[prefixed]);
+    let credentials = provider_credentials(
+        &prefixed_catalog,
+        "d2",
+        None,
+        &std::collections::BTreeMap::new(),
+    )
+    .expect("lookup")
+    .expect("credentials");
     assert_eq!(
         credentials.get("custom_llm_provider"),
         Some(&text("anthropic"))

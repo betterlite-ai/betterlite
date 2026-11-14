@@ -30,13 +30,15 @@ impl ChatRequest {
     }
 
     fn reject_unsupported(&self) -> Result<(), RequestError> {
-        match self.passthrough.keys().find(|name| {
-            LITELLM_REQUEST_KEYS
-                .split(' ')
-                .any(|known| known == name.as_str())
-        }) {
-            Some(name) => Err(RequestError::Unsupported { name: name.clone() }),
-            None => Ok(()),
-        }
+        self.passthrough
+            .keys()
+            .find(|name| {
+                LITELLM_REQUEST_KEYS
+                    .split(' ')
+                    .any(|known| known == name.as_str())
+            })
+            .map_or(Ok(()), |name| {
+                Err(RequestError::Unsupported { name: name.clone() })
+            })
     }
 }

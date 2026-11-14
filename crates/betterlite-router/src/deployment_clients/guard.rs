@@ -27,6 +27,7 @@ impl MaxParallelRequestsExceeded {
     pub const LLM_PROVIDER: &'static str = "";
 }
 
+#[derive(Debug)]
 pub struct MaxParallelRequestsLimit {
     pub max_parallel_requests: i64,
     pub model_id: String,

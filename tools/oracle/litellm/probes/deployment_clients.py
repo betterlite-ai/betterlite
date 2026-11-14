@@ -17,7 +17,7 @@ from typing_extensions import override
 
 from probes.protocol import Operation, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 
 JSON_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 OPTIONAL_TEXT: Final = TypeAdapter(str | None)

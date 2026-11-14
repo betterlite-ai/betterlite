@@ -86,7 +86,7 @@ fn the_request_api_key_never_stays_on_the_request() {
 fn a_plain_parse_still_refuses_a_request_api_key() {
     let error =
         ChatRequest::parse(br#"{"model":"m","messages":[],"api_key":"sk-caller"}"#).unwrap_err();
-    assert!(matches!(error, RequestError::Unsupported { name } if name == "api_key"));
+    assert!(matches!(&error, RequestError::Unsupported { name } if name == "api_key"));
     assert!(!error.to_string().contains("sk-caller"));
 }
 
