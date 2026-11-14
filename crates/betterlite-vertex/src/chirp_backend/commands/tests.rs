@@ -25,8 +25,8 @@ fn decodes_a_configure_command() {
 }
 
 #[rstest]
-#[case::finish_turn(br#"{"kind":"finish_turn"}"#, ChirpCommand::FinishTurn {})]
-#[case::discard_turn(br#"{"kind":"discard_turn"}"#, ChirpCommand::DiscardTurn {})]
+#[case::finish_turn(br#"{"kind":"finish_turn"}"#, ChirpCommand::FinishTurn)]
+#[case::discard_turn(br#"{"kind":"discard_turn"}"#, ChirpCommand::DiscardTurn)]
 fn decodes_a_unit_command(#[case] message: &[u8], #[case] expected: ChirpCommand) {
     assert_eq!(
         ChirpCommand::try_from(message).expect("a valid command"),

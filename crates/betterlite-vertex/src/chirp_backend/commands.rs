@@ -10,8 +10,8 @@ pub enum ChirpCommand {
         language_codes: Vec<String>,
         sample_rate_hertz: i32,
     },
-    FinishTurn {},
-    DiscardTurn {},
+    FinishTurn,
+    DiscardTurn,
 }
 
 #[derive(Debug, Serialize)]

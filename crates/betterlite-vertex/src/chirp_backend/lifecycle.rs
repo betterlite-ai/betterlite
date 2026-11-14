@@ -149,8 +149,8 @@ impl ChirpBackend {
                     .map_err(ChirpBackendError::Encode)?;
                 self.link(Link::Event(event)).await
             }
-            ChirpCommand::FinishTurn {} => self.finish_turn().await,
-            ChirpCommand::DiscardTurn {} => self.discard_turn().await,
+            ChirpCommand::FinishTurn => self.finish_turn().await,
+            ChirpCommand::DiscardTurn => self.discard_turn().await,
         }
     }
 
