@@ -7,8 +7,9 @@ use super::super::destination::{
     ALERTING_WEBHOOK_URL_ENV, AlertDestination, MissingWebhookUrl, SLACK_WEBHOOK_URL_ENV,
 };
 use super::super::{Alert, AlertLevel, SendAlertError};
-use super::*;
+use super::{SinkCall, budget_event, fixture, slack_fixture};
 use crate::alert_teams::MS_TEAMS_WEBHOOK_URL_ENV;
+use crate::budget_email::event::WebhookEvent;
 
 fn alert_with_event<'alert>(
     alert_type: AlertType,

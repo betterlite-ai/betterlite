@@ -5,7 +5,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::destination::{AlertDestination, SLACK_WEBHOOK_URL_ENV};
 use super::super::{Alert, AlertLevel, SendAlertError};
-use super::*;
+use super::{digest_fixture, time};
 use crate::alert_teams::MS_TEAMS_WEBHOOK_URL_ENV;
 
 #[tokio::test]

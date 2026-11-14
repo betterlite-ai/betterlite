@@ -5,7 +5,7 @@ use serde_json::Number;
 
 use super::super::destination::{AlertDestination, SLACK_WEBHOOK_URL_ENV};
 use super::super::{Alert, AlertLevel};
-use super::*;
+use super::{fixture, slack_fixture};
 
 #[tokio::test]
 async fn alert_messages_carry_the_type_level_timestamp_and_message() {
@@ -93,6 +93,40 @@ async fn alerting_metadata_is_appended_under_its_header() {
     let text = &pending[0].payload.text;
     assert!(text.contains("\n\n*Alerting Metadata*: \ndeprecated_count: `3`\n\n"));
     assert!(text.contains("\n\n*Alerting Metadata*: \nteam: `alpha`\n\n"));
+}
+
+#[tokio::test]
+async fn the_message_orders_the_header_kwargs_metadata_and_footer() {
+    let mut fixture = fixture(
+        &[
+            (SLACK_WEBHOOK_URL_ENV, "https://hooks/slack"),
+            ("PROXY_BASE_URL", "https://proxy.example"),
+        ],
+        512,
+    );
+    fixture.kwargs.insert(
+        "🪢 Langfuse Trace".to_owned(),
+        Json::Text("https://trace.example".to_owned()),
+    );
+    fixture
+        .metadata
+        .insert("deprecated_count".to_owned(), Json::Number(Number::from(3)));
+    fixture
+        .metadata
+        .insert("team".to_owned(), Json::Text("alpha".to_owned()));
+    let dispatcher = fixture.dispatcher(
+        Some(vec![AlertDestination::Slack]),
+        vec![AlertType::LlmExceptions],
+    );
+    let sent = dispatcher
+        .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
+        .await;
+    assert!(sent.is_ok());
+    let pending = fixture.delivery.queue.pending();
+    assert_eq!(
+        pending[0].payload.text,
+        "Alert type: `llm_exceptions`\nLevel: `High`\nTimestamp: `12:00:00`\n\nMessage: boom\n\n🪢 Langfuse Trace: `https://trace.example`\n\n\n\n*Alerting Metadata*: \ndeprecated_count: `3`\n\n\n\n*Alerting Metadata*: \nteam: `alpha`\n\n\n\nProxy URL: `https://proxy.example`"
+    );
 }
 
 #[rstest]
