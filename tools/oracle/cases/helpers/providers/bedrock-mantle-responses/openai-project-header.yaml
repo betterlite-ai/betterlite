@@ -1,0 +1,17 @@
+kind: helper
+name: openai-project-header
+call:
+  bedrock_mantle_responses:
+    openai_project_header:
+      cases:
+        - project_id: configured-project
+          headers: {OpenAI-Project: caller-project}
+        - project_id: ''
+          headers: {OpenAI-Project: caller-project}
+        - api_key: fixture-key
+          project_id: configured-project
+        - project_id: configured-project
+          headers: {openai-project: lower-case-project}
+        - {}
+env: {}
+compare: {ignore: []}
