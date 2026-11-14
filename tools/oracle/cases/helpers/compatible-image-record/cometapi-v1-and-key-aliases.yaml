@@ -1,0 +1,32 @@
+kind: helper
+name: compatible-image-record-cometapi-v1-and-key-aliases
+call:
+  compatible_image_record:
+    function: request
+    requests:
+      - host: cometapi
+        model: any-model
+        prompt: a cat
+        optional_params: {size: "512"}
+        api_key: null
+        api_base: "https://proxy.example/v1"
+        env: {COMETAPI_API_KEY: alternative}
+        reply: {status: 200, headers: {}, body: '{"data":[]}'}
+      - host: cometapi
+        model: any-model
+        prompt: a cat
+        optional_params: {}
+        api_key: explicit
+        api_base: null
+        env: {COMETAPI_KEY: primary, COMETAPI_API_KEY: alternative, COMETAPI_BASE_URL: "https://first.example", COMETAPI_API_BASE: "https://second.example"}
+        reply: {status: 200, headers: {}, body: '{"data":[]}'}
+      - host: cometapi
+        model: any-model
+        prompt: a cat
+        optional_params: {}
+        api_key: null
+        api_base: null
+        env: {COMETAPI_KEY: "", COMETAPI_API_KEY: alternative, COMETAPI_BASE_URL: "https://first.example//"}
+        reply: {status: 200, headers: {}, body: '{"data":[]}'}
+env: {}
+compare: {ignore: []}

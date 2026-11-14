@@ -2294,6 +2294,7 @@ dependencies = [
 name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",

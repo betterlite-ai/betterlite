@@ -1,0 +1,28 @@
+kind: helper
+name: compatible-image-record-aiml-openai-and-flux-options
+call:
+  compatible_image_record:
+    function: options
+    options:
+      - host: aiml
+        model: flux-pro/v1.1
+        non_default_params: {n: 2, response_format: b64_json, size: "1024x768"}
+        optional_params: {}
+        drop_params: false
+      - host: aiml
+        model: openai/gpt-image-2
+        non_default_params: {n: 1, quality: high, background: opaque, output_compression: 70}
+        optional_params: {}
+        drop_params: false
+      - host: aiml
+        model: OpenAI/gpt-image-2
+        non_default_params: {quality: high}
+        optional_params: {}
+        drop_params: false
+      - host: aiml
+        model: openai/
+        non_default_params: {}
+        optional_params: {}
+        drop_params: false
+env: {}
+compare: {ignore: []}
