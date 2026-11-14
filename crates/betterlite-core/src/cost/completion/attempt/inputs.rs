@@ -11,7 +11,7 @@ use rust_decimal::Decimal;
 use crate::cost::call_price::CallPriceInput;
 use crate::cost::completion::args::CompletionArgs;
 use crate::cost::completion::error::{ChargeInputError, CompletionCostError};
-use crate::cost::completion::usage::pricing_usage;
+use crate::cost::completion::usage::pricing::pricing_usage;
 use crate::cost::context::ocr::ocr_info;
 use crate::cost::context::pricing::PricingQuery;
 use crate::cost::prepare::{AttemptBilling, PreparedBilling};

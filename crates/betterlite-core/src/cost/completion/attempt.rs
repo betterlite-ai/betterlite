@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::SystemTime;
 
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_models::billed_tokens::TokenTypeCostBreakdown;
@@ -6,6 +7,7 @@ use betterlite_models::tool_fees::billing::BuiltInToolRequest;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
+use super::Round;
 use super::args::{CompletionArgs, CostCalculator};
 use super::breakdown::{BreakdownRequest, token_type_breakdown};
 use super::error::CompletionCostError;
@@ -14,7 +16,9 @@ use crate::cost::call_price::{CallPriceEnv, call_price};
 use crate::cost::context::storage::store_cost_breakdown;
 use crate::cost::image_dispatch::policy::ImagePricePolicy;
 use crate::cost::prepare::{AttemptOutcome, PreparedBilling, PreparedBillingAttempt};
-use crate::cost::special::request::TokenStage;
+use crate::cost::special::policy::ModelResolver;
+use crate::cost::special::request::{RealtimeSession, SpecialOutcome, TokenStage};
+use crate::cost::special::special_charge;
 use adjust::{Adjusted, adjust};
 use extras::{additional_fees, checked_total};
 use inputs::{Attempt, Owned, price_input};
@@ -197,4 +201,51 @@ where
     let final_cost = charge.adjusted.final_cost;
     record_breakdown(services, &attempt, &owned, charge, target)?;
     Ok(final_cost)
+}
+
+// One candidate name: B1689 may finish the charge early, a failed preparation is raised as it is, and anything else goes to the token stage.
+pub(super) fn one_attempt<Resolver, ImagePolicy, Inference, Target, Clock>(
+    services: &CostCalculator<'_, Resolver, ImagePolicy, Inference>,
+    round: &Round<'_>,
+    attempt: PreparedBillingAttempt,
+    clock: &mut Clock,
+    mut target: Option<&mut Target>,
+) -> Result<Decimal, CompletionCostError<ImagePolicy::Error>>
+where
+    Resolver: ModelResolver,
+    ImagePolicy: ImagePricePolicy,
+    Target: CostBreakdownTarget,
+    Clock: FnMut() -> SystemTime,
+{
+    let realtime = round.session.map(|(results, usage)| RealtimeSession {
+        results,
+        usage: Some(usage),
+    });
+    let request =
+        round
+            .args
+            .charge
+            .special_request(round.billing, round.prepared, round.moment, realtime);
+    match special_charge(
+        &services.special,
+        &request,
+        attempt,
+        clock,
+        target.as_deref_mut(),
+    )? {
+        SpecialOutcome::Charged(charge) => Ok(charge),
+        // special_charge hands an attempt back unchanged only when its preparation failed.
+        SpecialOutcome::Failed(failed) => match failed.outcome {
+            AttemptOutcome::Failed(error) => Err(CompletionCostError::Prepare(error)),
+            AttemptOutcome::Ready(_) => Err(CompletionCostError::NoCandidates),
+        },
+        SpecialOutcome::Continue(stage) => attempt_charge(
+            services,
+            round.args,
+            round.prepared,
+            *stage,
+            round.moment,
+            target,
+        ),
+    }
 }

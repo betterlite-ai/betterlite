@@ -43,7 +43,6 @@ use crate::cost::image_dispatch::policy::{ImagePricePolicy, ImageResponseView, I
 use crate::cost::prepare::{
     BillingTokenCounter, CompletionBillingInput, DictionaryResponse, ResponseView, TypedResponse,
 };
-use crate::cost::response::response_cost_calculator;
 use crate::cost::special::policy::{ModelResolver, SpecialPricePolicy};
 use crate::cost::special::replicate::ReplicateStamps;
 use crate::cost::special::request::{
@@ -103,16 +102,6 @@ pub fn dictionary_view(usage: &Usage) -> ResponseView<'_> {
         usage: BillingUsage::Chat(usage),
         service_tier: None,
     })
-}
-
-pub fn priced(fields: &[(&str, &str)]) -> PriceRecord {
-    fields
-        .iter()
-        .map(|(key, value)| {
-            let found = Number::from_str(value).expect("the fixture is a number");
-            ((*key).to_owned(), Scalar::Number(found))
-        })
-        .collect()
 }
 
 struct Catalog(BTreeMap<String, PriceRecord>);
@@ -300,7 +289,16 @@ pub fn rig(prices: &[(&str, &[(&str, &str)])]) -> Rig {
         catalog: Catalog(
             prices
                 .iter()
-                .map(|(key, fields)| ((*key).to_owned(), priced(fields)))
+                .map(|(key, fields)| {
+                    let record: PriceRecord = fields
+                        .iter()
+                        .map(|(name, value)| {
+                            let found = Number::from_str(value).expect("the fixture is a number");
+                            ((*name).to_owned(), Scalar::Number(found))
+                        })
+                        .collect();
+                    ((*key).to_owned(), record)
+                })
                 .collect(),
         ),
         tools: Tools(None),
@@ -391,26 +389,6 @@ impl Rig {
     {
         let context = self.context();
         completion_cost(&self.services(&context), args, &mut clock, target).await
-    }
-
-    pub async fn respond<Target>(
-        &self,
-        args: &CompletionArgs<'_>,
-        cache_hit: Option<bool>,
-        target: Option<&mut Target>,
-    ) -> Result<Decimal, CompletionCostError<Infallible>>
-    where
-        Target: CostBreakdownTarget,
-    {
-        let context = self.context();
-        response_cost_calculator(
-            &self.services(&context),
-            args,
-            cache_hit,
-            &mut clock,
-            target,
-        )
-        .await
     }
 }
 

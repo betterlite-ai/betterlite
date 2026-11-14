@@ -9,7 +9,8 @@ use indexmap::IndexMap;
 use serde_json::Number;
 use std::collections::BTreeMap;
 
-use super::{logging_usage, pricing_usage};
+use super::logging_usage;
+use super::pricing::pricing_usage;
 use crate::cost::completion::tests::rig::dec;
 
 fn count(value: i64) -> Json {
