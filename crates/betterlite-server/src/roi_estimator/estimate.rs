@@ -2,17 +2,20 @@ use betterlite_models::model_capability_predicates::CapabilityPredicates;
 use betterlite_roi::estimator::evidence::metadata_evidence;
 use betterlite_roi::estimator::extraction::{first_json_object, mask_value_constants};
 use betterlite_roi::estimator::json::json_dumps_text;
+use betterlite_roi::estimator::models::EstimatorModel;
 use betterlite_roi::estimator::models::{
     MAX_EVIDENCE_CHARS, REASONING_MAX_CHARS, RESPONSE_CONTRACT, ROICompletionChoice,
     ROICompletionMessage, ROICompletionMetadata, ROICompletionRequest, ROICompletionResponse,
     ROICompletionRole, ROIResponseFormat, ROIResponseFormatType, ReasoningEffort,
 };
-use betterlite_roi::estimator::options::estimator_options;
+use betterlite_roi::estimator::options::{configured_models, estimator_options};
 use betterlite_roi::estimator::result::ROIEstimatorResult;
 use betterlite_roi::records::{ROIEstimate, ROIEstimateStatus, ROIPullEvidence};
+use betterlite_roi::settings::ROISettings;
+use serde_json::value::RawValue;
 
 use super::error::{CompletionFailure, EstimatorError};
-use super::{CompletionObject, Estimator};
+use super::{CompletionCaller, Estimator};
 
 pub(crate) const INCOMPLETE_METADATA_REASON: &str =
     "GitHub did not provide all file or commit metadata. It was not sent for estimation.";
@@ -20,6 +23,18 @@ pub(crate) const OVERSIZED_EVIDENCE_REASON: &str =
     "This PR exceeds the estimator's input limit. It was not truncated or scored.";
 
 impl Estimator {
+    pub fn new(
+        settings: ROISettings,
+        complete: CompletionCaller,
+        models: Option<&[EstimatorModel]>,
+    ) -> Self {
+        Self {
+            models: configured_models(&settings, models),
+            settings,
+            complete,
+        }
+    }
+
     pub async fn estimate<Predicates>(
         &self,
         pull: &ROIPullEvidence,
@@ -57,7 +72,7 @@ impl Estimator {
             .map_err(|source| EstimatorError {
                 source: CompletionFailure::Callback { source },
             })?;
-        estimate_from_completion(value, &self.settings.estimator_model)
+        estimate_from_completion(&value, &self.settings.estimator_model)
     }
 
     fn completion_request(
@@ -91,7 +106,7 @@ impl Estimator {
     }
 }
 
-fn finished_choice(value: CompletionObject) -> Result<ROICompletionChoice, EstimatorError> {
+fn finished_choice(value: &RawValue) -> Result<ROICompletionChoice, EstimatorError> {
     let response: ROICompletionResponse =
         serde_json::from_str(value.get()).map_err(|source| EstimatorError {
             source: CompletionFailure::Response { source },
@@ -111,10 +126,7 @@ fn finished_choice(value: CompletionObject) -> Result<ROICompletionChoice, Estim
     Ok(choice)
 }
 
-fn estimate_from_completion(
-    value: CompletionObject,
-    model: &str,
-) -> Result<ROIEstimate, EstimatorError> {
+fn estimate_from_completion(value: &RawValue, model: &str) -> Result<ROIEstimate, EstimatorError> {
     let choice = finished_choice(value)?;
     let content = choice
         .message
