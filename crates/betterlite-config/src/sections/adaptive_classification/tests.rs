@@ -107,9 +107,7 @@ model_list:
     assert_eq!(preferences.strengths, Vec::<String>::new());
 }
 
-#[test]
-fn environment_references_resolve_once_at_load() {
-    let source = "\
+const ENVIRONMENT_ROUTER: &str = "\
 model_list:
   - model_name: router
     litellm_params:
@@ -124,8 +122,11 @@ model_list:
         quality_tier: os.environ/TIER
         strengths: [os.environ/STRENGTH]
 ";
+
+#[test]
+fn environment_references_resolve_once_at_load() {
     let resolved = settings(
-        source,
+        ENVIRONMENT_ROUTER,
         &[
             ("FAST", "fast"),
             ("SMART", "smart"),

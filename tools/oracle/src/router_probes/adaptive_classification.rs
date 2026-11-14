@@ -114,11 +114,8 @@ fn selected_fields(payload: &Payload, kind: Kind) -> Result<Fields, OperationErr
                 }
             }
             Ok(Fields {
-                types: None,
-                tiers: None,
                 routers: Some(routers),
-                preferences: None,
-                invalid: None,
+                ..Fields::default()
             })
         }
         Kind::Preferences => {
@@ -133,11 +130,8 @@ fn selected_fields(payload: &Payload, kind: Kind) -> Result<Fields, OperationErr
                 }
             }
             Ok(Fields {
-                types: None,
-                tiers: None,
-                routers: None,
                 preferences: Some(preferences),
-                invalid: None,
+                ..Fields::default()
             })
         }
     }
