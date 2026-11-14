@@ -1,13 +1,8 @@
+from litellm.types.vector_stores import (
+    VectorStoreSearchOptionalRequestParams as OptionalParams,
+)
 from pydantic import JsonValue
 from typing_extensions import NotRequired, TypedDict
-
-
-class OptionalParams(TypedDict, total=False):
-    filters: dict[str, JsonValue] | None
-    max_num_results: int | None
-    ranking_options: dict[str, JsonValue] | None
-    rewrite_query: bool | None
-    top_k: int
 
 
 class SearchScenario(TypedDict):

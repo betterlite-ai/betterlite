@@ -24,7 +24,7 @@ call:
         - vector_store_id: store/with?literal
           query: q
           api_base: https://foundry-search.example
-          optional_params: {top_k: null}
+          optional_params: {}
           litellm_params:
             litellm_embedding_model: openai/text-embedding-3-small
             azure_search_vector_field: ""

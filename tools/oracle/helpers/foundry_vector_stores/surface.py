@@ -92,7 +92,7 @@ def logging_fixture() -> Logging:
         messages="",
         stream=False,
         call_type="vector_store_search",
-        start_time=dt.datetime.now(dt.UTC),
+        start_time=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
         litellm_call_id="foundry-vector-stores",
         function_id="foundry-vector-stores",
     )
