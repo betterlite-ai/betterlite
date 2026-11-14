@@ -47,6 +47,10 @@ description: >-
 
 scope:
   paths:
+    - "tools/oracle/src/helpers/websearch/b4115.rs"
+    - "tools/oracle/src/helpers/mod.rs"
+    - "tools/oracle/helpers/b4115.py"
+    - "tools/oracle/cases"
     - crates/betterlite-server/src/guardrails/a2a_translation.rs
     - crates/betterlite-server/src/guardrails/a2a_translation/**
     - tools/oracle/cases/helpers/a2a-guardrail-translation/**
