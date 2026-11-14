@@ -651,13 +651,10 @@ def test_config_names_match(ours: type[BaseModel], theirs: type[BaseModel]) -> N
     assert ours.model_config.get("from_attributes") == theirs.model_config.get("from_attributes")
 
 
-@pytest.mark.parametrize(("ours", "theirs"), RECORD_PAIRS)
-def test_record_names_match(ours: SchemaSource, theirs: SchemaSource) -> None:
-    assert ours.json_schema() == theirs.json_schema()
-
-
-def test_constant_names_match() -> None:
+def test_record_names_match() -> None:
     assert roi_calculator.DEFAULT_PROMPT == LiteLLMRoi.DEFAULT_PROMPT
+    for ours, theirs in RECORD_PAIRS:
+        assert ours.json_schema() == theirs.json_schema()
 
 
 @pytest.mark.parametrize("payload", [{}, {"identity_map": {"User": "u@example.com"}}])
