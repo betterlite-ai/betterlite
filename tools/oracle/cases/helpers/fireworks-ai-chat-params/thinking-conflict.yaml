@@ -1,0 +1,10 @@
+kind: helper
+name: fireworks-ai-chat-params-thinking-conflict
+call:
+  b6071:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/thinker", model_info: {litellm_provider: fireworks_ai, supports_reasoning: true}}
+    steps:
+      - {op: map_params, model: "thinker", non_default_params: {thinking: {type: "enabled"}, reasoning_effort: "high"}}
+env: {}
+compare: {ignore: []}
