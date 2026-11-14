@@ -389,6 +389,7 @@ OUTAGE_ALERT_TTL_DEFAULT: Final = 1 * 60
 CHECK_INTERVAL_MINIMUM: Final = 60
 CHECK_INTERVAL_BELOW_MINIMUM: Final = 59
 
+
 @pytest.fixture(scope="module")
 def described() -> Report:
     completed = subprocess.run(
