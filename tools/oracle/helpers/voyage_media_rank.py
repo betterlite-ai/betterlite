@@ -64,7 +64,9 @@ class MultimodalConfig(Protocol):
 
 class RerankConfig(Protocol):
     @property
-    def get_supported_cohere_rerank_params(self) -> Callable[[str], list[JsonValue]]: ...
+    def get_supported_cohere_rerank_params(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> Callable[[str], list[JsonValue]]: ...
 
     @property
     def map_cohere_rerank_params(
