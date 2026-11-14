@@ -28,9 +28,9 @@ async fn the_message_appends_the_user_info_block() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one budget alert");
+    let sent_alert = sent.first().expect("one budget alert");
     assert_eq!(
-        alert.message,
+        sent_alert.message,
         "User Budget: Budget Crossed\n Total Budget:`100`\n\n*spend:* `100`\n*max_budget:* `100`\n*user_id:* `user-1`\n*event_group:* `user`\n"
     );
 }
@@ -46,12 +46,12 @@ async fn the_alert_carries_the_high_level_budget_type_and_event() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one budget alert");
-    assert_eq!(alert.level, AlertLevel::High);
-    assert_eq!(alert.alert_type, AlertType::BudgetAlerts);
-    assert!(alert.metadata.is_empty());
-    assert!(alert.kwargs.is_empty());
-    let event = alert
+    let sent_alert = sent.first().expect("one budget alert");
+    assert_eq!(sent_alert.level, AlertLevel::High);
+    assert_eq!(sent_alert.alert_type, AlertType::BudgetAlerts);
+    assert!(sent_alert.metadata.is_empty());
+    assert!(sent_alert.kwargs.is_empty());
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");

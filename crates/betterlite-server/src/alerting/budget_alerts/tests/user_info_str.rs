@@ -39,8 +39,7 @@ fn a_missing_field_is_skipped() {
     assert!(text.contains("*team_id:* `team-1`\n"));
 }
 
-#[test]
-fn every_field_renders_in_the_litellm_order() {
+fn all_fields() -> CallInfo {
     let mut info = call_info(decimal("300"));
     info.max_budget = Some(decimal("1000"));
     info.soft_budget = Some(decimal("500"));
@@ -63,6 +62,12 @@ fn every_field_renders_in_the_litellm_order() {
             vec!["a@example.com".to_owned(), "b@example.com".to_owned()],
         ),
     ]));
+    info
+}
+
+#[test]
+fn every_field_renders_in_the_litellm_order() {
+    let info = all_fields();
 
     assert_eq!(
         get_user_info_str(&info),

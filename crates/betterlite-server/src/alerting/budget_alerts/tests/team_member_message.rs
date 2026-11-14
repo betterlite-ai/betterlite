@@ -23,13 +23,13 @@ async fn a_team_member_key_alert_is_labelled_team_member() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one team member alert");
+    let sent_alert = sent.first().expect("one team member alert");
     assert!(
-        alert
+        sent_alert
             .message
             .starts_with("Team Member Budget: Budget Crossed\n Total Budget:`100`\n\n")
     );
-    let event = alert
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");
@@ -56,8 +56,8 @@ async fn the_label_override_applies_to_any_budget_type() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one team member alert");
-    let event = alert
+    let sent_alert = sent.first().expect("one team member alert");
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");
@@ -81,8 +81,8 @@ async fn any_other_group_keeps_the_budget_type_label() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one budget alert");
-    let event = alert
+    let sent_alert = sent.first().expect("one budget alert");
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");

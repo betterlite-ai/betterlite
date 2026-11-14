@@ -21,12 +21,12 @@ async fn exactly_five_percent_left_is_a_five_percent_alert() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one threshold alert");
+    let sent_alert = sent.first().expect("one threshold alert");
     assert_eq!(
-        alert.message,
+        sent_alert.message,
         "User Budget: 5% or less of budget remaining\n\n*spend:* `95`\n*max_budget:* `100`\n*user_id:* `user-1`\n*event_group:* `user`\n"
     );
-    let event = alert
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");
@@ -46,8 +46,8 @@ async fn just_under_five_percent_left_is_a_five_percent_alert() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one threshold alert");
-    let event = alert
+    let sent_alert = sent.first().expect("one threshold alert");
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");
@@ -70,8 +70,8 @@ async fn just_over_five_percent_left_is_a_fifteen_percent_alert() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one threshold alert");
-    let event = alert
+    let sent_alert = sent.first().expect("one threshold alert");
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");

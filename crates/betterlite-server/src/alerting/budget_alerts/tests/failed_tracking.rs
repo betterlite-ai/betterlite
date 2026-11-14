@@ -40,13 +40,13 @@ async fn the_model_failure_alert_has_no_user_info() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one failure alert");
-    assert_eq!(alert.message, "Failed Tracking Cost for no cost found");
-    assert_eq!(alert.level, AlertLevel::High);
-    assert_eq!(alert.alert_type, AlertType::FailedTrackingSpend);
-    assert!(alert.user_info.is_none());
-    assert!(alert.metadata.is_empty());
-    assert!(alert.kwargs.is_empty());
+    let sent_alert = sent.first().expect("one failure alert");
+    assert_eq!(sent_alert.message, "Failed Tracking Cost for no cost found");
+    assert_eq!(sent_alert.level, AlertLevel::High);
+    assert_eq!(sent_alert.alert_type, AlertType::FailedTrackingSpend);
+    assert!(sent_alert.user_info.is_none());
+    assert!(sent_alert.metadata.is_empty());
+    assert!(sent_alert.kwargs.is_empty());
 }
 
 #[tokio::test]
@@ -90,8 +90,8 @@ async fn a_configured_ttl_is_used_for_the_model_cache() {
 
     assert!(result.is_ok());
     let writes = alerts.cache.writes();
-    let write = writes.first().expect("one cache write");
-    assert_eq!(write.ttl_seconds, 120);
+    let recorded = writes.first().expect("one cache write");
+    assert_eq!(recorded.ttl_seconds, 120);
 }
 
 #[tokio::test]

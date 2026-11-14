@@ -21,12 +21,12 @@ async fn spend_equal_to_the_budget_crosses_it() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one budget alert");
+    let sent_alert = sent.first().expect("one budget alert");
     assert_eq!(
-        alert.message,
+        sent_alert.message,
         "User Budget: Budget Crossed\n Total Budget:`100`\n\n*spend:* `100`\n*max_budget:* `100`\n*user_id:* `user-1`\n*event_group:* `user`\n"
     );
-    let event = alert
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");
@@ -46,8 +46,8 @@ async fn spend_above_the_budget_crosses_it() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one budget alert");
-    let event = alert
+    let sent_alert = sent.first().expect("one budget alert");
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");
@@ -71,12 +71,12 @@ async fn a_crossed_soft_budget_is_reported_before_the_budget_crossing() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one budget alert");
+    let sent_alert = sent.first().expect("one budget alert");
     assert_eq!(
-        alert.message,
+        sent_alert.message,
         "User Budget: Total Soft Budget:`50`Budget Crossed\n Total Budget:`100`\n\n*spend:* `120`\n*max_budget:* `100`\n*soft_budget:* `50`\n*user_id:* `user-1`\n*event_group:* `user`\n"
     );
-    let event = alert
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");
@@ -97,8 +97,8 @@ async fn an_uncrossed_soft_budget_leaves_the_budget_message_alone() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one budget alert");
-    let event = alert
+    let sent_alert = sent.first().expect("one budget alert");
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");

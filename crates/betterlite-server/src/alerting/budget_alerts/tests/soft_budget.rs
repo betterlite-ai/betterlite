@@ -20,12 +20,12 @@ async fn spend_equal_to_the_soft_budget_sends_a_soft_budget_alert() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one soft budget alert");
+    let sent_alert = sent.first().expect("one soft budget alert");
     assert_eq!(
-        alert.message,
+        sent_alert.message,
         "Soft Budget Crossed: Total Soft Budget:`50`\n\n*spend:* `50`\n*soft_budget:* `50`\n*event_group:* `key`\n"
     );
-    let event = alert
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");
@@ -66,8 +66,8 @@ async fn spend_above_the_soft_budget_sends_a_soft_budget_alert() {
 
     assert!(result.is_ok());
     let sent = sender.alerts.entries();
-    let alert = sent.first().expect("one soft budget alert");
-    let event = alert
+    let sent_alert = sent.first().expect("one soft budget alert");
+    let event = sent_alert
         .user_info
         .as_ref()
         .expect("the webhook event is attached");

@@ -23,9 +23,9 @@ async fn the_default_ttl_is_one_day() {
 
     assert!(result.is_ok());
     let writes = alerts.cache.writes();
-    let write = writes.first().expect("one cache write");
-    assert_eq!(write.ttl_seconds, 86_400);
-    assert_eq!(write.value, "SENT");
+    let recorded = writes.first().expect("one cache write");
+    assert_eq!(recorded.ttl_seconds, 86_400);
+    assert_eq!(recorded.value, "SENT");
 }
 
 #[tokio::test]
@@ -40,8 +40,8 @@ async fn a_configured_ttl_is_used() {
 
     assert!(result.is_ok());
     let writes = alerts.cache.writes();
-    let write = writes.first().expect("one cache write");
-    assert_eq!(write.ttl_seconds, 120);
+    let recorded = writes.first().expect("one cache write");
+    assert_eq!(recorded.ttl_seconds, 120);
 }
 
 #[tokio::test]

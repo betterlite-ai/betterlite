@@ -69,18 +69,19 @@ pub(super) fn budget_alert(
     } else {
         alert_type.get_event_message().to_owned()
     };
-    let event = (kind == BudgetAlertKind::ProjectedLimitExceeded)
+    let projected_event = (kind == BudgetAlertKind::ProjectedLimitExceeded)
         .then_some(WebhookEventType::ProjectedLimitExceeded);
     if user_info.max_budget.is_none() && user_info.soft_budget.is_none() {
         return None;
     }
-    let (event, event_message) = get_event_and_event_message(event, user_info, event_message);
-    let event = event?;
-    let webhook_event = budget_webhook_event(user_info, event, event_message.clone());
+    let (event, resolved_message) =
+        get_event_and_event_message(projected_event, user_info, event_message);
+    let resolved_event = event?;
+    let webhook_event = budget_webhook_event(user_info, resolved_event, resolved_message.clone());
     Some(BudgetAlertRequest {
-        event,
+        event: resolved_event,
         id,
-        message: format!("{event_message}\n\n{user_info_str}"),
+        message: format!("{resolved_message}\n\n{user_info_str}"),
         webhook_event,
     })
 }
@@ -179,7 +180,7 @@ pub(super) fn get_user_info_str(user_info: &CallInfo) -> String {
 }
 
 fn field<T: Display>(text: &mut String, name: &str, value: Option<T>) {
-    if let Some(value) = value {
-        let _ignored = writeln!(text, "*{name}:* `{value}`");
+    if let Some(displayable) = value {
+        let _ignored = writeln!(text, "*{name}:* `{displayable}`");
     }
 }

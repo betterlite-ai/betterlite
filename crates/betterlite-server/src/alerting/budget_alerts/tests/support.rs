@@ -208,6 +208,6 @@ pub(super) async fn written_key(kind: BudgetAlertKind, info: &CallInfo) -> Strin
     let result = alerts.budget_alerts(kind, info).await;
     assert!(result.is_ok());
     let writes = alerts.cache.writes();
-    let write = writes.first().expect("one cache write");
-    write.key.clone()
+    let recorded = writes.first().expect("one cache write");
+    recorded.key.clone()
 }
