@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use chrono::DateTime;
 
+use crate::azure_arc_identity::{MetadataRequest, MetadataResponse};
+
 use super::error::ManagedIdentityError;
-use super::imds::{ImdsRequest, ImdsResponse};
 use super::runtime::ImdsIo;
 
 #[derive(Debug, Clone, Copy)]
@@ -44,7 +45,7 @@ impl Counters {
     }
 }
 
-fn header<'response>(response: &'response ImdsResponse, name: &str) -> Option<&'response str> {
+fn header<'response>(response: &'response MetadataResponse, name: &str) -> Option<&'response str> {
     response
         .headers
         .iter()
@@ -65,7 +66,7 @@ fn parse_delay(value: &str, now: i64) -> Duration {
     })
 }
 
-fn retry_after(response: &ImdsResponse, now: i64) -> Option<Duration> {
+fn retry_after(response: &MetadataResponse, now: i64) -> Option<Duration> {
     if let Some(value) = header(response, "retry-after") {
         return Some(parse_delay(value, now));
     }
@@ -76,7 +77,7 @@ fn retry_after(response: &ImdsResponse, now: i64) -> Option<Duration> {
 }
 
 // a Retry-After header makes any error status retryable, even once the total reached zero
-fn is_retry(response: &ImdsResponse, total: i64) -> bool {
+fn is_retry(response: &MetadataResponse, total: i64) -> bool {
     if response.status < 400 {
         return false;
     }
@@ -104,9 +105,9 @@ fn sleep(io: &ImdsIo<'_>, delay: Duration) {
 // the IMDS policy picks its backoff factor from the last response and keeps it for later connection errors
 pub fn send(
     io: &ImdsIo<'_>,
-    request: &ImdsRequest,
+    request: &MetadataRequest,
     budget: RetryBudget,
-) -> Result<ImdsResponse, ManagedIdentityError> {
+) -> Result<MetadataResponse, ManagedIdentityError> {
     let mut counters = Counters {
         total: i64::from(budget.total),
         connect: i64::from(budget.connect),
