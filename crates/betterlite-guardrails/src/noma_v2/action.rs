@@ -1,6 +1,6 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use serde::de::DeserializeOwned;
 
-use crate::generic_guardrail_contracts::GuardrailToolParam;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 
 use super::error::NomaV2Error;
@@ -37,13 +37,13 @@ pub fn intervene(
         return Ok(inputs);
     };
     if let Some(GuardrailValue::Array(items)) = fields.get("texts") {
-        inputs.texts = Some(converted("texts", items, text_value)?);
+        inputs.texts = Some(converted("texts", items)?);
     }
     if let Some(GuardrailValue::Array(items)) = fields.get("images") {
-        inputs.images = Some(converted("images", items, text_value)?);
+        inputs.images = Some(converted("images", items)?);
     }
     if let Some(GuardrailValue::Array(items)) = fields.get("tools") {
-        inputs.tools = Some(converted("tools", items, tool_value)?);
+        inputs.tools = Some(converted("tools", items)?);
     }
     if let Some(GuardrailValue::Array(items)) = fields.get("tool_calls") {
         inputs.tool_calls = Some(items.clone());
@@ -51,29 +51,19 @@ pub fn intervene(
     Ok(inputs)
 }
 
-fn converted<T>(
-    field: &'static str,
-    items: &[GuardrailValue],
-    convert: fn(&GuardrailValue) -> Option<T>,
-) -> Result<Vec<T>, NomaV2Error> {
+fn converted<T>(field: &'static str, items: &[GuardrailValue]) -> Result<Vec<T>, NomaV2Error>
+where
+    T: DeserializeOwned,
+{
     let mut values = Vec::with_capacity(items.len());
     for item in items {
-        let Some(value) = convert(item) else {
+        let Ok(encoded) = serde_json::to_value(item) else {
+            return Err(NomaV2Error::Intervention { field });
+        };
+        let Ok(value) = serde_json::from_value(encoded) else {
             return Err(NomaV2Error::Intervention { field });
         };
         values.push(value);
     }
     Ok(values)
-}
-
-fn text_value(item: &GuardrailValue) -> Option<String> {
-    if let GuardrailValue::Text(text) = item {
-        return Some(text.clone());
-    }
-    None
-}
-
-fn tool_value(item: &GuardrailValue) -> Option<GuardrailToolParam> {
-    let encoded = serde_json::to_value(item).ok()?;
-    serde_json::from_value(encoded).ok()
 }
