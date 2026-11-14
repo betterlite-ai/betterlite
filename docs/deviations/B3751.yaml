@@ -1,0 +1,8 @@
+task: B3751
+deviations:
+  - what: Akto guardrail errors carry betterlite's own wording, with LiteLLM's status codes and the 503 for a fail-closed unreachable service unchanged.
+    why: Error messages are betterlite's own per rule errors-match-litellm; clients branch on the status and code, not the wording.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L375-L379
+  - what: An Akto response body larger than 1 MiB is refused as an unreachable service instead of being parsed.
+    why: Every inbound body has a size cap, and an unbounded read is a free denial of service; the response is treated like the other malformed answers that reach handle_unreachable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L336-L347
