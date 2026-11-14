@@ -3,6 +3,7 @@ use secrecy::SecretString;
 use super::support::{World, record};
 use crate::settings_backup::report::restore_and_report;
 use crate::up::command::run_up;
+use crate::up::error::UpError;
 
 const FRESH: f64 = 4_000_000_000.0;
 
@@ -75,6 +76,16 @@ fn up_records_the_original_settings_in_the_backup_before_patching() {
         patched.pointer("/statusLine/command"),
         Some(&serde_json::json!("/opt/betterlite statusline"))
     );
+}
+
+#[test]
+fn up_reports_when_the_settings_directory_cannot_be_created() {
+    let mut world = prepared(None);
+    std::fs::write(world.home_path().join(".claude"), "not a directory")
+        .expect("a file where the settings directory goes");
+    let mut ports = world.ports();
+    let error = run_up(&mut ports).expect_err("the settings directory cannot be created");
+    assert!(matches!(error, UpError::SettingsDirectory { .. }));
 }
 
 #[test]

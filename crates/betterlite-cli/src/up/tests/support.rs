@@ -23,7 +23,7 @@ use crate::sso_polling::transport::PollTransport;
 use crate::token_records::error::TokenRecordError;
 use crate::token_records::record::CliTokenRecord;
 use crate::up::error::UpError;
-use crate::up::ports::{LoginAttempt, LoginLauncher, StopSource, UpPorts};
+use crate::up::ports::{FlowLogin, LoginAttempt, LoginLauncher, StopSource, UpPorts};
 
 pub(crate) const SERVER: &str = "http://gateway.test:4000";
 const CLOCK_SECONDS: i64 = 2_000_000_000;
@@ -224,10 +224,19 @@ impl KeyProbe for RecordingProbe {
 pub(crate) struct ScriptedLogin {
     pub(crate) token: Option<CliTokenRecord>,
     pub(crate) state: Arc<State>,
+    pub(crate) real: bool,
 }
 
-impl<H, E, W> LoginLauncher<H, E, W> for ScriptedLogin {
-    fn start(&mut self, _attempt: LoginAttempt<'_, H, E, W>) -> Result<(), LoginError> {
+impl<H, E, W> LoginLauncher<H, E, W> for ScriptedLogin
+where
+    H: Http + PollTransport + Send + Sync + 'static,
+    E: Entropy,
+    W: Clock + WallClock + Send + Sync + 'static,
+{
+    fn start(&mut self, attempt: LoginAttempt<'_, H, E, W>) -> Result<(), LoginError> {
+        if self.real {
+            return FlowLogin.start(attempt);
+        }
         *self
             .state
             .record
@@ -363,6 +372,7 @@ impl World {
             login: ScriptedLogin {
                 token: None,
                 state: Arc::clone(&state),
+                real: false,
             },
             stop: ScriptedStop {
                 state,

@@ -4,6 +4,7 @@ use super::support::{World, record};
 use crate::up::command::run_up;
 #[cfg(unix)]
 use crate::up::ports::StopSource;
+use crate::up::restore::RestoreOnce;
 #[cfg(unix)]
 use crate::up::signals::SignalStop;
 
@@ -48,6 +49,40 @@ fn up_leaves_stderr_quiet_when_the_restore_works() {
     run_up(&mut ports).expect("the session ran and restored");
     drop(ports);
     assert_eq!(String::from_utf8_lossy(&world.stderr), "");
+}
+
+#[test]
+fn dropping_the_restore_guard_restores_the_settings() {
+    let world = prepared();
+    world.seed(
+        &world.settings_path(),
+        r#"{"env":{"ANTHROPIC_AUTH_TOKEN":"sk-live"}}"#,
+    );
+    world.seed(
+        &world.backup_path(),
+        r#"{"existed": true, "content": {"model": "opus"}}"#,
+    );
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    {
+        let _guard = RestoreOnce {
+            home: world.home_path(),
+            files: &world.private_files,
+            stdout: &mut stdout,
+            stderr: &mut stderr,
+            done: std::sync::atomic::AtomicBool::new(false),
+        };
+    }
+    assert_eq!(
+        super::support::json_file(&world.settings_path()),
+        serde_json::json!({"model": "opus"})
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&stdout)
+            .matches("Restored ")
+            .count(),
+        1
+    );
 }
 
 #[cfg(unix)]
