@@ -38,8 +38,8 @@ async fn round_starts_each_round_with_a_fresh_sink() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("a", Some("assistant"), None)),
-            item(synthetic("b", None, None)),
+            Ok(item(synthetic("a", Some("assistant"), None))),
+            Ok(item(synthetic("b", None, None))),
         ]
     );
     let sinks: Vec<SinkUse> = translation.calls().iter().map(|call| call.sink).collect();
@@ -82,12 +82,12 @@ async fn round_yields_synthetics_in_the_order_they_are_sent() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("a", Some("assistant"), None)),
-            item(synthetic("b", None, None)),
-            item(synthetic("c", None, None)),
-            item(GuardrailValue::Text(
+            Ok(item(synthetic("a", Some("assistant"), None))),
+            Ok(item(synthetic("b", None, None))),
+            Ok(item(synthetic("c", None, None))),
+            Ok(item(GuardrailValue::Text(
                 "status=400;items=3;texts=a|b|c".to_owned(),
-            )),
+            ))),
         ]
     );
 }
@@ -132,7 +132,10 @@ async fn block_round_after_output_uses_the_yielded_items() {
     ]))
     .unwrap();
     assert_eq!(outputs.len(), 2);
-    assert_eq!(outputs[0], item(synthetic("a", Some("assistant"), None)));
+    assert_eq!(
+        outputs[0],
+        Ok(item(synthetic("a", Some("assistant"), None)))
+    );
     assert_eq!(
         block_texts(&outputs),
         vec![format!("started=true;items=1;texts=a;original={original}")]
@@ -197,10 +200,10 @@ async fn http_error_round_sends_the_stream_error_items() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("a", Some("assistant"), None)),
-            item(GuardrailValue::Text(
+            Ok(item(synthetic("a", Some("assistant"), None))),
+            Ok(item(GuardrailValue::Text(
                 "status=400;items=1;texts=a".to_owned()
-            )),
+            ))),
         ]
     );
 }
@@ -253,10 +256,10 @@ async fn http_error_round_with_object_detail_sends_the_stream_error_items() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("a", Some("assistant"), None)),
-            item(GuardrailValue::Text(
+            Ok(item(synthetic("a", Some("assistant"), None))),
+            Ok(item(GuardrailValue::Text(
                 "status=403;items=1;texts=a".to_owned()
-            )),
+            ))),
         ]
     );
 }
@@ -284,10 +287,10 @@ async fn http_error_underflow_in_a_round_sends_the_transform_error() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("abc", Some("assistant"), None)),
-            item(GuardrailValue::Text(
+            Ok(item(synthetic("abc", Some("assistant"), None))),
+            Ok(item(GuardrailValue::Text(
                 "status=400;items=1;texts=abc".to_owned()
-            )),
+            ))),
         ]
     );
 }

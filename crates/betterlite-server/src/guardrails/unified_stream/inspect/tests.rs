@@ -24,7 +24,7 @@ async fn block_inspection_sends_the_block_after_the_yielded_items() {
     .await;
     let original = serde_json::to_string(&GuardrailValue::Array(vec![tool_chunk()])).unwrap();
     assert_eq!(outputs.len(), 2);
-    assert_eq!(outputs[0], item(tool_chunk()));
+    assert_eq!(outputs[0], Ok(item(tool_chunk())));
     assert_eq!(
         block_texts(&outputs),
         vec![format!("started=true;items=1;texts=;original={original}")]
@@ -49,7 +49,7 @@ async fn http_error_inspection_leaves_the_stream() {
     assert_eq!(
         outputs,
         vec![
-            item(tool_chunk()),
+            Ok(item(tool_chunk())),
             Err(StreamLoopError::Guardrail {
                 source: GuardrailFailure::Http {
                     status: 400,

@@ -414,8 +414,8 @@ pub(crate) fn modify_response(original_response: Option<GuardrailValue>) -> Guar
     }))
 }
 
-pub(crate) fn item(value: GuardrailValue) -> Result<StreamOutput, StreamLoopError> {
-    Ok(StreamOutput::Item(value))
+pub(crate) const fn item(value: GuardrailValue) -> StreamOutput {
+    StreamOutput::Item(value)
 }
 
 pub(crate) fn block_texts(outputs: &[Result<StreamOutput, StreamLoopError>]) -> Vec<String> {

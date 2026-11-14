@@ -40,8 +40,8 @@ async fn sampling_rounds_run_at_the_sampling_interval() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("ab", Some("assistant"), None)),
-            item(synthetic("cd", None, None)),
+            Ok(item(synthetic("ab", Some("assistant"), None))),
+            Ok(item(synthetic("cd", None, None))),
         ]
     );
     let calls = translation.calls();
@@ -78,8 +78,8 @@ async fn sampling_skips_a_chunk_with_a_finish_reason() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("a", Some("assistant"), None)),
-            item(synthetic("b", None, Some("stop"))),
+            Ok(item(synthetic("a", Some("assistant"), None))),
+            Ok(item(synthetic("b", None, Some("stop")))),
         ]
     );
     let calls = translation.calls();
@@ -108,7 +108,7 @@ async fn sampling_end_of_stream_only_never_samples_before_the_end() {
     .await;
     assert_eq!(
         outputs,
-        vec![item(synthetic("abc", Some("assistant"), None))]
+        vec![Ok(item(synthetic("abc", Some("assistant"), None)))]
     );
     let calls = translation.calls();
     assert_eq!(calls.len(), 1);
@@ -154,8 +154,8 @@ async fn tool_call_flushes_text_before_the_passthrough() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("he", Some("assistant"), None)),
-            item(tool_chunk()),
+            Ok(item(synthetic("he", Some("assistant"), None))),
+            Ok(item(tool_chunk())),
         ]
     );
     let calls = translation.calls();
@@ -178,7 +178,7 @@ async fn tool_call_without_text_does_not_flush() {
         vec![tool_chunk()],
     )
     .await;
-    assert_eq!(outputs, vec![item(tool_chunk())]);
+    assert_eq!(outputs, vec![Ok(item(tool_chunk()))]);
     let calls = translation.calls();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].sink, SinkUse::Absent);
@@ -206,8 +206,8 @@ async fn tool_call_passthrough_strips_text_from_the_same_chunk() {
     assert_eq!(
         outputs,
         vec![
-            item(tool_chunk()),
-            item(synthetic("secret", Some("assistant"), None)),
+            Ok(item(tool_chunk())),
+            Ok(item(synthetic("secret", Some("assistant"), None))),
         ]
     );
     let calls = translation.calls();
@@ -236,8 +236,8 @@ async fn tool_call_inspection_gets_a_deep_clone() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("hi", Some("assistant"), None)),
-            item(tool_chunk()),
+            Ok(item(synthetic("hi", Some("assistant"), None))),
+            Ok(item(tool_chunk())),
         ]
     );
     let calls = translation.calls();
@@ -257,5 +257,8 @@ async fn tool_call_passthrough_defers_a_finish_reason_to_the_terminator() {
         vec![mixed_tool_chunk("done", Some("stop"))],
     )
     .await;
-    assert_eq!(outputs, vec![item(tool_chunk()), item(terminator("stop"))]);
+    assert_eq!(
+        outputs,
+        vec![Ok(item(tool_chunk())), Ok(item(terminator("stop")))]
+    );
 }

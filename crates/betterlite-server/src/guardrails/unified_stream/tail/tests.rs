@@ -35,8 +35,8 @@ async fn tail_forces_holdback_to_zero_on_the_final_round() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("abc", Some("assistant"), None)),
-            item(synthetic("def", None, None)),
+            Ok(item(synthetic("abc", Some("assistant"), None))),
+            Ok(item(synthetic("def", None, None))),
         ]
     );
 }
@@ -59,8 +59,8 @@ async fn tail_replays_trailing_metadata_after_the_final_round() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("hi", Some("assistant"), None)),
-            item(metadata_chunk()),
+            Ok(item(synthetic("hi", Some("assistant"), None))),
+            Ok(item(metadata_chunk())),
         ]
     );
 }
@@ -83,8 +83,8 @@ async fn tail_replays_metadata_seen_before_text_too() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("hi", Some("assistant"), None)),
-            item(metadata_chunk()),
+            Ok(item(synthetic("hi", Some("assistant"), None))),
+            Ok(item(metadata_chunk())),
         ]
     );
 }
@@ -100,7 +100,7 @@ async fn tail_without_a_reference_chunk_only_replays_metadata() {
         vec![metadata_chunk()],
     )
     .await;
-    assert_eq!(outputs, vec![item(metadata_chunk())]);
+    assert_eq!(outputs, vec![Ok(item(metadata_chunk()))]);
     assert!(translation.calls().is_empty());
 }
 
@@ -123,8 +123,8 @@ async fn tail_does_not_use_a_metadata_chunk_as_the_reference() {
     assert_eq!(
         outputs,
         vec![
-            item(synthetic("ab", Some("assistant"), None)),
-            item(metadata_chunk()),
+            Ok(item(synthetic("ab", Some("assistant"), None))),
+            Ok(item(metadata_chunk())),
         ]
     );
 }
