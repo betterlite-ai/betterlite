@@ -89,7 +89,7 @@ fn scim_role_settings_extract_carries_external_id_groups_and_directory_blocks() 
     );
     assert_eq!(data.sso_user_id.as_deref(), Some("sso-1"));
     assert_eq!(data.teams, ["t1", "t2"]);
-    assert_eq!(data.active, Some(false));
+    assert!(!data.active);
     assert_eq!(data.entitlements.unwrap().len(), 1);
     assert!(data.roles.unwrap().is_empty());
     assert_eq!(data.enterprise.unwrap().department.as_deref(), Some("ops"));
@@ -102,7 +102,7 @@ fn scim_role_settings_extract_without_groups_or_blocks_leaves_them_empty() {
     assert!(data.entitlements.is_none());
     assert!(data.roles.is_none());
     assert!(data.enterprise.is_none());
-    assert_eq!(data.active, Some(true));
+    assert!(data.active);
 }
 
 #[test]

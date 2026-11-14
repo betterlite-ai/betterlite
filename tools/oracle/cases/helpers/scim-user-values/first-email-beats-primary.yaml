@@ -1,0 +1,29 @@
+kind: helper
+name: first-email-beats-primary
+call:
+  scim_user_values:
+    user:
+      schemas:
+        - urn:ietf:params:scim:schemas:core:2.0:User
+      userName: alice
+      externalId: sso-alice
+      name:
+        givenName: Alice
+        familyName: Adams
+      emails:
+        - value: alice@first.example
+        - value: alice@primary.example
+          primary: true
+      "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":
+        employeeNumber: E-42
+        department: Ops
+        manager:
+          value: boss-1
+          displayName: Boss
+          $ref: https://idp.example/Users/boss-1
+    admin_group: null
+    default_role: null
+    active: null
+env: {}
+compare:
+  ignore: []

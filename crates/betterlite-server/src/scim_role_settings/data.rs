@@ -10,7 +10,7 @@ pub struct ScimUserData {
     pub teams: Vec<String>,
     pub given_name: Option<String>,
     pub family_name: Option<String>,
-    pub active: Option<bool>,
+    pub active: bool,
     pub enterprise: Option<EnterpriseUser>,
     pub entitlements: Option<Vec<DirectoryAttribute>>,
     pub roles: Option<Vec<DirectoryAttribute>>,
@@ -36,7 +36,7 @@ pub fn extract_scim_user_data(user: &User) -> ScimUserData {
         given_name: scim_name.and_then(|name| name.given_name.clone()),
         family_name: scim_name.and_then(|name| name.family_name.clone()),
         // the SCIMUser model defaults active to true, so an extraction always knows the value
-        active: Some(active_value(user.active)),
+        active: active_value(user.active),
         enterprise: user.enterprise.clone(),
         entitlements: user.entitlements.clone(),
         roles: user.roles.clone(),
