@@ -444,6 +444,31 @@ def test_names_scim_wire_dumps() -> None:
         )
 
 
+def test_names_scim_dump_overrides() -> None:
+    resource_type: dict[str, JsonValue] = {
+        "id": "User",
+        "name": "User",
+        "endpoint": "/Users",
+        "schema_": "urn:ietf:params:scim:schemas:core:2.0:User",
+        "meta": {"resourceType": "ResourceType"},
+    }
+    our_resource_type = scim.SCIMResourceType.model_validate(resource_type)
+    their_resource_type = litellm_scim.SCIMResourceType.model_validate(resource_type)
+    assert our_resource_type.model_dump() == their_resource_type.model_dump()
+    assert our_resource_type.model_dump(by_alias=False) == their_resource_type.model_dump(
+        by_alias=False
+    )
+    assert "schemaExtensions" not in our_resource_type.model_dump()
+    our_extension = scim.SCIMSchemaExtension(schema_="urn:e", required=False)
+    their_extension = litellm_scim.SCIMSchemaExtension(schema_="urn:e", required=False)
+    assert our_extension.model_dump() == their_extension.model_dump()
+    assert "schema" in our_extension.model_dump()
+    our_attribute = scim.SCIMSchemaAttribute(name="a", type="string")
+    their_attribute = litellm_scim.SCIMSchemaAttribute(name="a", type="string")
+    assert our_attribute.model_dump() == their_attribute.model_dump()
+    assert "subAttributes" not in our_attribute.model_dump()
+
+
 def test_names_scim_absent_blocks() -> None:
     payload: dict[str, JsonValue] = {"schemas": ["s"], "userName": "alice"}
     our_dump = scim.SCIMUser.model_validate(payload).model_dump(by_alias=True)
