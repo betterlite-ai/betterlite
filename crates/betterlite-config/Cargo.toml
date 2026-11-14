@@ -41,6 +41,7 @@ url = "2.5.8"
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-vertex = { path = "../betterlite-vertex" }
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
