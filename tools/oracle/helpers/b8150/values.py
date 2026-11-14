@@ -1,18 +1,15 @@
 import os
 
 import httpx
-import litellm
-from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue
 
-from .configs import CHAT, EMBEDDING, Recorder, logging_object
+from .configs import CHAT, EMBEDDING, logging_object
 from .views import (
     REPLY,
     USAGE,
     HeadersCall,
     MapCall,
-    MessagesCall,
     RequestCall,
     ResponseCall,
     SupportedCall,
@@ -36,18 +33,6 @@ def chat_map_value(call: MapCall) -> JsonValue:
         dict(call["params"]), optional, call["model"], drop_params=False
     )
     return mapped
-
-
-def chat_messages_value(call: MessagesCall) -> JsonValue:
-    recorder = Recorder()
-    litellm.completion(
-        model=f"hosted_vllm/{call['model']}",
-        messages=call["messages"],
-        api_base="http://hosted-vllm.invalid",
-        api_key="k",
-        client=HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle))),
-    )
-    return recorder.body["messages"]
 
 
 def embedding_headers_value(call: HeadersCall) -> JsonValue:

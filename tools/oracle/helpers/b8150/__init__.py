@@ -1,15 +1,30 @@
+import httpx
+import litellm
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from pydantic import JsonValue
 
+from .configs import Recorder
 from .values import (
     chat_map_value,
-    chat_messages_value,
     chat_supported_value,
     embedding_headers_value,
     embedding_request_value,
     embedding_response_value,
     embedding_url_value,
 )
-from .views import INPUT, Input
+from .views import INPUT, Input, MessagesCall
+
+
+def chat_messages_value(call: MessagesCall) -> JsonValue:
+    recorder = Recorder()
+    litellm.completion(
+        model=f"hosted_vllm/{call['model']}",
+        messages=call["messages"],
+        api_base="http://hosted-vllm.invalid",
+        api_key="k",
+        client=HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle))),
+    )
+    return recorder.body["messages"]
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:

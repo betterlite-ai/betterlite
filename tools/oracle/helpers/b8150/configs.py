@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
-from typing import Never, Protocol
+from typing import Protocol
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.hosted_vllm.chat.transformation import HostedVLLMChatConfig
 from litellm.llms.hosted_vllm.embedding.transformation import HostedVLLMEmbeddingConfig
-from litellm.types.llms.openai import AllEmbeddingInputValues
+from litellm.types.llms.openai import AllEmbeddingInputValues, AllMessageValues
 from litellm.types.utils import CallTypes, EmbeddingResponse
 from pydantic import JsonValue
 
@@ -30,7 +30,7 @@ class EmbeddingConfig(Protocol):
         self,
         _headers: dict[str, str],
         _model: str,
-        _messages: list[Never],
+        _messages: list[AllMessageValues],
         _optional_params: dict[str, JsonValue],
         _litellm_params: dict[str, JsonValue],
         _api_key: str | None = None,
@@ -46,6 +46,7 @@ class EmbeddingConfig(Protocol):
         _optional_params: dict[str, JsonValue],
         _litellm_params: dict[str, JsonValue],
         /,
+        *,
         stream: bool | None = None,
     ) -> str: ...
 
