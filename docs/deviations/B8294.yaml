@@ -24,8 +24,17 @@ deviations:
       The loop depth is a u32, so a negative number, a number past u32::MAX and a numeric string past i64 are errors
       that name _agentic_loop_depth; LiteLLM's _coerce_int keeps any Python int. A depth string is read with Rust's
       signed-integer parser, so surrounding whitespace and underscore separators that Python's int() accepts are
-      rejected as well.
+      rejected as well. A JSON boolean is not an integer here and means depth zero, where Python's bool is an int
+      subclass and int(True) is 1.
     why: >-
       B4110's follow-up input carries the next depth as depth + 1 in a u32, so a value outside that range has no typed
-      counter to become. The loop sets this key itself and always writes a plain small integer.
+      counter to become. The loop sets this key itself and always writes a plain small integer, and the task text
+      reads a depth that is an integer or a string of digits, with every other shape meaning zero.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L66-L71
+  - what: >-
+      A tools value in optional_params that is not a list fails with "optional_params.tools must be a list" before the
+      gate. LiteLLM takes whatever value sits under tools and hands it to the gate and the safety check.
+    why: >-
+      The shared AgenticCall and AgenticGate types (B9820) declare tools as a list of messages, and the chat
+      completion request declares tools as a list, so another shape is a malformed request and no callback can carry it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L252
