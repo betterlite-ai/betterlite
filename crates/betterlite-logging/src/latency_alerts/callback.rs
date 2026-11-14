@@ -23,8 +23,7 @@ pub async fn slow_response_callback(
     check: &AlertingHangingRequestCheck,
     request: &SlowResponseRequest<'_>,
 ) -> Result<(), SlowResponseError> {
-    let settings_source: &dyn RequestAlertSettingsSource = &check.settings;
-    let settings = settings_source.current();
+    let settings = check.settings.current();
     if !settings.alerting_configured {
         return Ok(());
     }

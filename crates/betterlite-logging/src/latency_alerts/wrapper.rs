@@ -11,8 +11,7 @@ pub async fn response_taking_too_long(
     check: &AlertingHangingRequestCheck,
     request_data: Option<&IndexMap<String, Json>>,
 ) -> Result<(), HangingRequestError> {
-    let settings_source: &dyn RequestAlertSettingsSource = &check.settings;
-    let settings = settings_source.current();
+    let settings = check.settings.current();
     if !settings.alerting_configured {
         return Ok(());
     }
