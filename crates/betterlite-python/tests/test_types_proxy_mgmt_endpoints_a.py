@@ -466,6 +466,15 @@ def test_customer_names() -> None:
     assert customer_endpoints.CustomerResponse.model_validate(
         spend_payload
     ).spend == SPEND_AMOUNT
+    unknown_column: dict[str, JsonValue] = {
+        "user_id": "u",
+        "blocked": False,
+        "unknown_column": "x",
+    }
+    filtered = customer_endpoints.CustomerResponse.model_validate(unknown_column)
+    assert filtered.model_dump() == {"user_id": "u", "blocked": False, **CUSTOMER_RESPONSE}
+    assert filtered.json() == filtered.model_dump()
+    assert filtered.fields_set() == {"user_id", "blocked"}
     deleted = customer_endpoints.DeleteCustomersResponse(
         deleted_customers=2,
         message="deleted",
@@ -568,6 +577,17 @@ def test_internal_user_names_rules() -> None:
     forbidden: dict[str, JsonValue] = {"user_ids": ["u"], "extra": True}
     with pytest.raises(ValidationError, match="extra"):
         _ = internal_user_endpoints.BulkDeleteUserRequest.model_validate(forbidden)
+    response_payload: dict[str, JsonValue] = {
+        "data": [{"user_id": "u", "success": True}],
+    }
+    deleted = internal_user_endpoints.BulkDeleteUsersResponse.model_validate(
+        response_payload
+    )
+    assert deleted.data[0].user_id == "u"
+    assert deleted.data[0].teams_removed == ()
+
+
+def test_internal_bulk_names_rules() -> None:
     one_item = internal_user_endpoints.BulkNewUserItem()
     many = internal_user_endpoints.BulkNewUserRequest(
         users=[one_item] * EXPECTED_MAX_BULK_NEW_USERS
@@ -609,14 +629,25 @@ def test_internal_user_names_rules() -> None:
     request_payload: dict[str, JsonValue] = {"users": [{}], "bogus": 1}
     with pytest.raises(ValidationError, match="bogus"):
         _ = internal_user_endpoints.BulkNewUserRequest.model_validate(request_payload)
-    response_payload: dict[str, JsonValue] = {
-        "data": [{"user_id": "u", "success": True}],
+    bulk_item = internal_user_endpoints.BulkNewUserItem
+    empty_budget: dict[str, JsonValue] = {"max_budget": ""}
+    kept_budget: dict[str, JsonValue] = {"max_budget": SPEND_AMOUNT}
+    assert bulk_item.model_validate(empty_budget).max_budget is None
+    assert bulk_item.model_validate(kept_budget).max_budget == SPEND_AMOUNT
+    team_payload: dict[str, JsonValue] = {"teams": [{"team_id": "t"}]}
+    team_row = bulk_item.model_validate(team_payload).model_dump()["teams"]
+    assert team_row == [
+        {"team_id": "t", "max_budget_in_team": None, "user_role": "user"}
+    ]
+    empty_window: dict[str, JsonValue] = {"budget_limits": [{}]}
+    with pytest.raises(ValidationError, match="budget_limits"):
+        _ = bulk_item.model_validate(empty_window)
+    permission_payload: dict[str, JsonValue] = {
+        "object_permission": {"models": ["m"], "bogus": 1}
     }
-    deleted = internal_user_endpoints.BulkDeleteUsersResponse.model_validate(
-        response_payload
-    )
-    assert deleted.data[0].user_id == "u"
-    assert deleted.data[0].teams_removed == ()
+    permission = bulk_item.model_validate(permission_payload).object_permission
+    assert permission is not None
+    assert "bogus" not in permission.model_dump()
 
 
 def test_key_mgmt_names() -> None:
@@ -751,6 +782,11 @@ def test_key_mgmt_names_rules() -> None:
     }
     with pytest.raises(ValidationError, match="operation"):
         _ = keys.CustomKeyPolicyRequest.model_validate(bad_operation)
+    item_payload: dict[str, JsonValue] = {"key": "k", "spend": 0}
+    item = keys.BulkUpdateKeyRequestItem.model_validate(item_payload)
+    assert item.model_dump(exclude_unset=True) == {"key": "k"}
+    assert policy.json() == policy.model_dump()
+    assert policy.fields_set() == {"operation", "existing_key", "effective_key", "request"}
 
 
 def test_management_v1_names() -> None:
