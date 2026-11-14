@@ -260,7 +260,7 @@ mod lifecycle_tests {
 
     use super::support;
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn flush_drains_the_channel() {
         let services = support::services(&[], 10);
         let request = support::request("pk-flush", "sk-flush");
@@ -285,6 +285,35 @@ mod lifecycle_tests {
         assert!(recording.spans().is_empty());
         assert!(logger.flush().await);
         assert!(!recording.spans().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failed_export_makes_the_flush_report_failure() {
+        let services = support::services(&[], 10);
+        let request = support::request("pk-flush-fail", "sk-flush-fail");
+        let _probe = support::seed(&services, &request, support::Rejecting);
+        let logger = LangFuseLogger::new(&services, &request)
+            .await
+            .expect("the logger builds");
+        let payload = support::payload(support::TRACE_ID);
+        let response = support::response();
+        let params = support::optional_params();
+        let litellm_params = support::litellm_params();
+        let call = support::call(
+            &payload,
+            &response,
+            &params,
+            &litellm_params,
+            support::start(),
+        );
+        let (log, guard) = support::capture_log();
+        logger.log_event_on_langfuse(&call).await;
+        assert!(!logger.flush().await);
+        assert!(
+            log.contents()
+                .contains("the langfuse export channel did not drain before the flush deadline")
+        );
+        drop(guard);
     }
 
     #[tokio::test(start_paused = true)]
@@ -315,6 +344,7 @@ mod lifecycle_tests {
             .expect("the logger builds");
         release_langfuse_tracing(&probe, CHANNEL_RETIRE_GRACE).await;
         logger.stop();
+        yield_now().await;
         yield_now().await;
         advance(Duration::from_secs(60)).await;
         yield_now().await;
@@ -404,9 +434,9 @@ mod event_dispatch_tests {
     }
 
     #[tokio::test]
-    async fn the_span_carries_header_metadata_and_sanitized_params() {
+    async fn the_span_carries_header_metadata_and_input() {
         let services = support::services(&[], 10);
-        let request = support::request("pk-span", "sk-span");
+        let request = support::request("pk-span-input", "sk-span-input");
         let (exporter, recording) = support::recording();
         let _probe = support::seed(&services, &request, exporter);
         let logger = LangFuseLogger::new(&services, &request)
@@ -436,7 +466,33 @@ mod event_dispatch_tests {
         ));
         assert_eq!(input.get("messages"), payload.messages.as_ref());
         assert!(input.contains_key("tools"));
+        assert!(!input.contains_key("functions"));
         assert!(!input.contains_key("secret_fields"));
+    }
+
+    #[tokio::test]
+    async fn the_span_carries_sanitized_parameters() {
+        let services = support::services(&[], 10);
+        let request = support::request("pk-span-params", "sk-span-params");
+        let (exporter, recording) = support::recording();
+        let _probe = support::seed(&services, &request, exporter);
+        let logger = LangFuseLogger::new(&services, &request)
+            .await
+            .expect("the logger builds");
+        let payload = support::payload(support::TRACE_ID);
+        let response = support::response();
+        let params = support::optional_params();
+        let litellm_params = support::litellm_params();
+        let call = support::call(
+            &payload,
+            &response,
+            &params,
+            &litellm_params,
+            support::start(),
+        );
+        logger.log_event_on_langfuse(&call).await;
+        assert!(logger.flush().await);
+        let spans = recording.spans();
         let parameters = support::object(support::attribute_json(
             &spans,
             "langfuse.observation.model.parameters",
@@ -447,6 +503,35 @@ mod event_dispatch_tests {
             parameters.get("custom"),
             Some(&Json::Text(r#"{"nested":1}"#.to_owned()))
         );
+    }
+
+    #[tokio::test]
+    async fn the_span_carries_the_litellm_params_metadata_in_debug_mode() {
+        let services = support::services(&[], 10);
+        let request = support::request("pk-span-debug", "sk-span-debug");
+        let (exporter, recording) = support::recording();
+        let _probe = support::seed(&services, &request, exporter);
+        let logger = LangFuseLogger::new(&services, &request)
+            .await
+            .expect("the logger builds");
+        let payload = support::payload(support::TRACE_ID);
+        let response = support::response();
+        let params = support::optional_params();
+        let litellm_params = support::debug_litellm_params();
+        let call = support::call(
+            &payload,
+            &response,
+            &params,
+            &litellm_params,
+            support::start(),
+        );
+        logger.log_event_on_langfuse(&call).await;
+        assert!(logger.flush().await);
+        let spans = recording.spans();
+        let passed =
+            support::attribute_text(&spans, "langfuse.trace.metadata.metadata_passed_to_litellm")
+                .expect("the debug metadata carries the litellm_params metadata");
+        assert!(passed.contains(r#""user_api_key_alias":"alias-1""#));
     }
 
     #[tokio::test]

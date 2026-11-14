@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::mem::size_of;
+
 use crate::langfuse_handler::LangFuseHandler;
 use crate::langfuse_logger::langfuse::{
     LangFuseLogger, LangfuseLoggedEvent, LangfuseLoggingConfig,
@@ -23,7 +25,7 @@ fn type_definitions() {
     assert!(config.langfuse_public_key.is_none());
     assert!(config.langfuse_host.is_none());
     assert!(config.langfuse_environment.is_none());
-    assert_eq!(std::mem::size_of::<LangFuseHandler>(), 0);
+    assert_eq!(size_of::<LangFuseHandler>(), 0);
     assert_send_sync::<LangFuseLogger>();
     assert_send_sync::<LangFuseHandler>();
 }

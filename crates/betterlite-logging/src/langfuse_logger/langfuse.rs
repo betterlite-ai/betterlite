@@ -12,7 +12,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::langfuse_assembly::{
-    AssemblyRuntime, AssemblySettings, Masker, assemble_generation_trace,
+    AssemblyRuntime, AssemblySettings, GenerationTrace, Masker, assemble_generation_trace,
 };
 use crate::langfuse_channels::{
     CHANNEL_RETIRE_GRACE, DEFAULT_FLUSH_TIMEOUT_MILLIS, LangfuseChannelRequest, LangfuseTracing,
@@ -170,6 +170,10 @@ impl LangFuseLogger {
             output.as_ref(),
             optional_params,
         );
+        self.assemble_event(&trace).await
+    }
+
+    async fn assemble_event(&self, trace: &GenerationTrace<'_>) -> LangfuseLoggedEvent {
         let generator = RequestedIdGenerator::default();
         let runtime = AssemblyRuntime {
             tracer: &self.tracing.tracer,
@@ -182,8 +186,7 @@ impl LangFuseLogger {
             update_trace_keys: self.assembly.update_trace_keys,
             redact_user_api_key_info: self.assembly.redact_user_api_key_info,
         };
-        let (trace_id, generation_id) =
-            assemble_generation_trace(&trace, &runtime, &settings).await;
+        let (trace_id, generation_id) = assemble_generation_trace(trace, &runtime, &settings).await;
         LangfuseLoggedEvent {
             trace_id: trace_id.as_ref().map(ToString::to_string),
             generation_id,

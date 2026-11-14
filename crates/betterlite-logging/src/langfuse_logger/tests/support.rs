@@ -9,12 +9,13 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::langfuse_settings::Settings;
 use betterlite_config::types::ProxyTrust;
+use betterlite_env::EnvError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::error::OTelSdkResult;
+use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
 use opentelemetry_sdk::trace::{SpanData, SpanExporter};
 use secrecy::SecretString;
 use tokio::runtime::Handle;
@@ -138,7 +139,7 @@ impl LangfuseClientBuilder for FailingBuilder {
         _config: LangfuseClientConfig,
     ) -> Result<LangfuseApiClient, LangfuseClientError> {
         Err(LangfuseClientError::Proxy {
-            source: betterlite_env::EnvError::Number {
+            source: EnvError::Number {
                 name: "HTTPS_PROXY".to_owned(),
             },
         })
@@ -178,11 +179,14 @@ pub(crate) fn environment_request() -> LangfuseLoggerRequest<'static> {
 }
 
 // put the export channel the logger will look up under its own key, backed by a recorder
-pub(crate) fn seed(
+pub(crate) fn seed<E>(
     services: &LangfuseServices,
     request: &LangfuseLoggerRequest<'_>,
-    exporter: Recording,
-) -> LangfuseTracing {
+    exporter: E,
+) -> LangfuseTracing
+where
+    E: SpanExporter + 'static,
+{
     let credentials = resolve_credentials(&services.settings, request.credentials);
     let environment = resolve_environment(&services.settings, request.environment)
         .expect("the environment resolves");
@@ -230,6 +234,7 @@ pub(crate) fn optional_params() -> IndexMap<String, Json> {
         serde_json::from_str(r#"[{"type":"function","function":{"name":"lookup"}}]"#)
             .expect("the tools fixture parses"),
     );
+    params.insert("functions".to_owned(), Json::Null);
     params.insert(
         "secret_fields".to_owned(),
         Json::List(vec![Json::Text("authorization".to_owned())]),
@@ -249,6 +254,16 @@ pub(crate) fn litellm_params() -> Json {
         }"#,
     )
     .expect("the litellm_params fixture parses")
+}
+
+pub(crate) fn debug_litellm_params() -> Json {
+    serde_json::from_str(
+        r#"{
+            "metadata": {"user_api_key_alias": "alias-1", "debug_langfuse": "true"},
+            "proxy_server_request": {"headers": {"langfuse_trace_name": "from-header"}}
+        }"#,
+    )
+    .expect("the debug litellm_params fixture parses")
 }
 
 pub(crate) fn start() -> DateTime<Utc> {
@@ -377,6 +392,17 @@ impl SpanExporter for Recording {
 
     fn set_resource(&mut self, _resource: &Resource) {
         self.state.installed.fetch_add(1, Ordering::AcqRel);
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Rejecting;
+
+impl SpanExporter for Rejecting {
+    fn export(&self, _batch: Vec<SpanData>) -> impl Future<Output = OTelSdkResult> + Send {
+        ready(Err(OTelSdkError::InternalFailure(
+            "the collector refused the batch".to_owned(),
+        )))
     }
 }
 

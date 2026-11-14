@@ -205,6 +205,17 @@ mod environment_deduplication {
     }
 
     #[test]
+    fn an_environment_matching_an_invalid_deployment_value_is_dropped() {
+        let settings = common::settings(&[("LANGFUSE_TRACING_ENVIRONMENT", "Invalid Env")]);
+        let params = dynamic(vec![("langfuse_environment", text("Invalid Env"))]);
+        assert_eq!(
+            LangFuseHandler::meaningful_dynamic_environment(&settings, &params)
+                .expect("the environment resolves"),
+            None
+        );
+    }
+
+    #[test]
     fn an_environment_matching_the_invalid_fallback_is_dropped() {
         let settings = common::settings(&[("LANGFUSE_TRACING_ENVIRONMENT", "Invalid Env")]);
         let params = dynamic(vec![("langfuse_environment", text("default"))]);
