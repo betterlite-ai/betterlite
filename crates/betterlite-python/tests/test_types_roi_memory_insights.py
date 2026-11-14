@@ -131,6 +131,8 @@ def describe_typeddict(typed_dict):
 
 def describe_module(package, module_name):
     module = importlib.import_module(package + "." + module_name)
+    # a package such as betterlite's roi_calculator defines its names in submodules
+    owner = module.__name__ + "."
     classes = {}
     aliases = {}
     for name in dir(module):
@@ -138,11 +140,11 @@ def describe_module(package, module_name):
             continue
         value = getattr(module, name)
         if isinstance(value, type) and issubclass(value, BaseModel):
-            if value.__module__ == module.__name__:
+            if (value.__module__ + ".").startswith(owner):
                 classes[name] = describe_model(value)
             continue
         if typing_extensions.is_typeddict(value):
-            if value.__module__ == module.__name__:
+            if (value.__module__ + ".").startswith(owner):
                 classes[name] = describe_typeddict(value)
             continue
         if typing.get_origin(value) is typing.Literal:
