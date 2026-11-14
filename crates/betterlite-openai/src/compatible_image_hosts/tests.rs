@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Error as IoError;
 use std::path::PathBuf;
 use std::str::FromStr as _;
 use std::sync::Mutex;

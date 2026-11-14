@@ -108,21 +108,7 @@ fn options_value(call: &OptionsCall) -> Value {
 }
 
 fn request_value(call: &RequestCall) -> Value {
-    let Ok(config) = (ConfigLoader {
-        lookup: call.env.clone(),
-    })
-    .load("") else {
-        return json!({"ok": false, "status": null, "value": null});
-    };
-    let settings: Settings = config.sections.compatible_image_credentials;
-    let url = complete_url(call.host, &settings, call.api_base.as_deref());
-    let key = call.api_key.as_deref().map(SecretString::from);
-    let Ok(headers) =
-        validate_environment(call.host, &settings, key.as_ref(), &ImageHeaders::new())
-    else {
-        return json!({"ok": false, "status": null, "value": null});
-    };
-    let Ok(body) = request_body(call.host, &call.model, &call.prompt, &call.optional_params) else {
+    let Some((url, headers, body)) = prepared_request(call) else {
         return json!({"ok": false, "status": null, "value": null});
     };
     let reply = ImageHttpResponse {
@@ -134,35 +120,52 @@ fn request_value(call: &RequestCall) -> Value {
         return json!({"ok": false, "status": reply.status_code, "value": null});
     }
     match decode_compatible_image_reply(call.host, &reply, ImageResponse::default()) {
-        Ok(response) => {
-            let data: Vec<Value> = response
-                .data
-                .iter()
-                .flatten()
-                .map(|image| {
-                    json!({
-                        "url": image.url,
-                        "b64_json": image.b64_json,
-                        "revised_prompt": image.revised_prompt,
-                    })
-                })
-                .collect();
-            json!({
-                "ok": true,
-                "status": null,
-                "value": {
-                    "url": url,
-                    "headers": {
-                        "authorization": header(&headers, "authorization"),
-                        "content-type": header(&headers, "content-type"),
-                    },
-                    "body": body,
-                    "reply": {"data": data},
+        Ok(response) => json!({
+            "ok": true,
+            "status": null,
+            "value": {
+                "url": url,
+                "headers": {
+                    "authorization": header(&headers, "authorization"),
+                    "content-type": header(&headers, "content-type"),
                 },
-            })
-        }
+                "body": body,
+                "reply": {"data": image_values(&response)},
+            },
+        }),
         Err(error) => json!({"ok": false, "status": error.status(), "value": null}),
     }
+}
+
+fn prepared_request(call: &RequestCall) -> Option<(String, ImageHeaders, ImageParams)> {
+    let Ok(config) = (ConfigLoader {
+        lookup: call.env.clone(),
+    })
+    .load("") else {
+        return None;
+    };
+    let settings: Settings = config.sections.compatible_image_credentials;
+    let url = complete_url(call.host, &settings, call.api_base.as_deref());
+    let key = call.api_key.as_deref().map(SecretString::from);
+    let headers =
+        validate_environment(call.host, &settings, key.as_ref(), &ImageHeaders::new()).ok()?;
+    let body = request_body(call.host, &call.model, &call.prompt, &call.optional_params).ok()?;
+    Some((url, headers, body))
+}
+
+fn image_values(response: &ImageResponse) -> Vec<Value> {
+    response
+        .data
+        .iter()
+        .flatten()
+        .map(|image| {
+            json!({
+                "url": image.url,
+                "b64_json": image.b64_json,
+                "revised_prompt": image.revised_prompt,
+            })
+        })
+        .collect()
 }
 
 fn header(headers: &ImageHeaders, name: &str) -> Value {
