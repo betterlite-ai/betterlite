@@ -1,0 +1,26 @@
+task: B3733
+deviations:
+  - what: A missing template_id returns TransportError::MissingTemplate before the token is fetched or a request is sent. LiteLLM formats the URL with the text "None" and lets Google answer with a 404.
+    why: A request to a URL built from None can only fail and spends a token fetch. The error still follows fail_on_error exactly like a Model Armor API error does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L309-L313
+  - what: The mime of a filename comes from the mime_guess crate, not from Python's mimetypes module, which also reads the host's /etc/mime.types.
+    why: The Python answer depends on the machine, so no fixed table matches it. Both give application/pdf, text/csv and text/plain for .pdf, .csv and .txt, the extensions the oracle cases use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/file_scanning.py#L215-L219
+  - what: Pydantic's block validation is replaced by serde structs that accept the same declared field types (optional strings, required `file` or `source` object) and skip a part that does not fit.
+    why: Python's duck typing beyond the declared types is not copied (docs/compatibility.md).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/file_scanning.py#L152-L156
+  - what: The resolved project id is kept in a Mutex<Option<String>> inside the transport instead of a std::sync::OnceLock<String>, with the same first-wins rule and the same configured-id precedence.
+    why: The workspace denies std::sync::OnceLock because it is process-global state; the transport carries the same value as an instance field, so one guardrail's resolution never leaks into another.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L304-L306
+  - what: An absent project id with no resolved id renders an empty path segment, where LiteLLM's f-string renders the text "None".
+    why: LiteLLM never sends that request successfully either; betterlite refuses it earlier with MissingTemplate only when the template is absent, and an empty segment is still a 404.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L311
+  - what: A request with neither content nor a file returns TransportError::NoContent, where LiteLLM raises a ValueError.
+    why: The typed error keeps the failure in the fail_on_error path B3734 maps, instead of an exception class no caller of this crate can match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L320-L321
+  - what: The response body is read with a 1 MiB cap and must be UTF-8; a larger or non-UTF-8 answer is a typed TransportError::Body or TransportError::ResponseText, where LiteLLM reads the whole body and decodes it leniently through response.text.
+    why: A sanitize answer carries findings, not a document, so a megabyte is already far beyond a real answer, and a typed failure keeps a hostile upstream from exhausting memory or smuggling mangled text into an error detail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L351-L362
+  - what: A non-list applied_guardrails value is replaced by a one-name list; LiteLLM calls .append on it and raises AttributeError for a value that is not a list.
+    why: The bucket is shared request metadata that another guardrail may have written; replacing a wrong-typed value keeps the scan running instead of failing the request on metadata betterlite itself never wrote.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599
