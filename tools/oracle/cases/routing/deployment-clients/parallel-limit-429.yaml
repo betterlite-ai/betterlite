@@ -1,0 +1,26 @@
+kind: probe
+name: deployment-clients-parallel-limit-429
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_clients:
+        calculate: []
+        limits:
+          - max_parallel_requests: 2
+            model_id: d1
+            model_group: gpt
+            steps:
+              - {kind: acquire}
+              - {kind: acquire}
+              - {kind: acquire}
+              - {kind: release}
+              - {kind: acquire}
+              - {kind: release}
+              - {kind: release}
+        cached: []
+        credentials: []
+compare:
+  ignore:
+    - pointer: /output/deployment_clients/limits/0/2/error/message
+      why: betterlite writes its own message, the status, code, type and rate limit dimension are the parity point
