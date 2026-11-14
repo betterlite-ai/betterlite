@@ -1,19 +1,6 @@
 from typing import Literal, TypeAlias, TypedDict
 
-from litellm.proxy.management_endpoints.scim.scim_v2 import (  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L487-L851
-    _admitted_member_ids,
-    _AmbiguousMember,
-    _json_object_fields,
-    _member_value,
-    _normalized_member_type,
-    _partition_classified_members,
-    _PartitionedMembers,
-    _ResolvedUserMember,
-    _roster_entries_named_by,
-    _SkippedGroupMember,
-    _team_metadata_has_scim_provenance,
-    _UnknownMember,
-)
+from litellm.proxy.management_endpoints.scim.scim_v2 import _admitted_member_ids, _AmbiguousMember, _json_object_fields, _member_value, _normalized_member_type, _partition_classified_members, _PartitionedMembers, _ResolvedUserMember, _roster_entries_named_by, _SkippedGroupMember, _team_metadata_has_scim_provenance, _UnknownMember  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L487-L851
 from litellm.types.proxy.management_endpoints.scim_v2 import SCIMMember
 from pydantic import JsonValue, TypeAdapter
 
@@ -71,16 +58,6 @@ class Input(TypedDict):
     removals: list[RemovalInput]
 
 
-def member_answers(members: list[MemberInput]) -> list[JsonValue]:
-    answers: list[JsonValue] = []
-    for member in members:
-        record = SCIMMember(value=member["value"], type=member["type"])
-        answers.append(
-            {"value": _member_value(record), "type": _normalized_member_type(record)}
-        )
-    return answers
-
-
 def metadata_answers(metadata: list[JsonValue]) -> list[JsonValue]:
     return [
         {
@@ -121,30 +98,32 @@ def partition_answer(partition: _PartitionedMembers) -> JsonValue:
     return _JSON.validate_python(answer)
 
 
-def roster_answers(removals: list[RemovalInput]) -> list[JsonValue]:
-    answers: list[JsonValue] = []
-    for removal in removals:
-        roster = frozenset(removal["roster"])
+def run(input_value: Input) -> JsonValue:
+    members: list[JsonValue] = []
+    for member in input_value["members"]:
+        record = SCIMMember(value=member["value"], type=member["type"])
+        members.append(
+            {"value": _member_value(record), "type": _normalized_member_type(record)}
+        )
+    roster: list[JsonValue] = []
+    for removal in input_value["removals"]:
+        roster_ids = frozenset(removal["roster"])
         entries = list(
             _roster_entries_named_by(
-                removal["value"], roster, tuple(removal["resolved"])
+                removal["value"], roster_ids, tuple(removal["resolved"])
             )
         )
-        answers.append(
+        roster.append(
             {"value": removal["value"], "entries": _JSON.validate_python(entries)}
         )
-    return answers
-
-
-def run(input_value: Input) -> JsonValue:
     classified = classified_entries(input_value["entries"])
     admitted = list(
         _admitted_member_ids(classified, frozenset(input_value["created_ids"]))
     )
     return {
-        "members": member_answers(input_value["members"]),
+        "members": members,
         "metadata": metadata_answers(input_value["metadata"]),
         "partition": partition_answer(_partition_classified_members(classified)),
         "admitted": _JSON.validate_python(admitted),
-        "roster": roster_answers(input_value["removals"]),
+        "roster": roster,
     }
