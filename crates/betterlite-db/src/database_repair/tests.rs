@@ -319,6 +319,22 @@ fn csv_absent_team_column_leaves_team_unset() {
 }
 
 #[test]
+fn csv_null_or_empty_team_cell_is_unset() {
+    let data = csv_data(&[
+        &[("token", "tok-empty"), ("team_id", "")],
+        &[("token", "tok-null"), ("team_id", "NULL")],
+        &[("token", "tok-team"), ("team_id", "team-a")],
+    ]);
+    let decoded = decode_verification_csv(data.as_bytes()).unwrap();
+    let empty = decoded.rows[0].outcome.as_ref().unwrap();
+    assert_eq!(empty.team_id, None);
+    let null = decoded.rows[1].outcome.as_ref().unwrap();
+    assert_eq!(null.team_id, None);
+    let team = decoded.rows[2].outcome.as_ref().unwrap();
+    assert_eq!(team.team_id.as_deref(), Some("team-a"));
+}
+
+#[test]
 fn csv_absent_token_column_fails_each_row() {
     let decoded = decode_verification_csv(b"spend\ntok-1\n").unwrap();
     let error = decoded.rows[0].outcome.as_ref().unwrap_err();
