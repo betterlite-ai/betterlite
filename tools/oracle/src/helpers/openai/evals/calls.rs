@@ -49,14 +49,16 @@ fn probe_values(
 }
 
 pub(super) fn params_object(params: Option<&LitellmParams>) -> Result<Object, Box<HelperError>> {
-    let Some(params) = params else {
+    let Some(provided) = params else {
         return Ok(Object::new());
     };
-    match serde_json::to_value(params).map_err(|error| invalid_input(error.to_string()))? {
+    match serde_json::to_value(provided).map_err(|error| invalid_input(error.to_string()))? {
         Value::Object(fields) => Ok(fields),
-        _ => Err(invalid_input(String::from(
-            "litellm_params is not an object",
-        ))),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            Err(invalid_input(String::from(
+                "litellm_params is not an object",
+            )))
+        }
     }
 }
 
@@ -133,7 +135,7 @@ fn auth_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
     let params = params_object(probe.litellm_params.as_ref())?;
     let headers = probe.headers.clone().unwrap_or_default();
     let validated = evals_config(probe)?.validate_environment(headers, Some(&params));
-    let body = validated.map(|headers| json!({"headers": headers}));
+    let body = validated.map(|sent| json!({"headers": sent}));
     Ok(outcome(body))
 }
 
