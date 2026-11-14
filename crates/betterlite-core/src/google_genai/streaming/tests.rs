@@ -355,6 +355,18 @@ fn sync_stream_skips_blank_lines_that_open_no_event() {
 }
 
 #[test]
+fn sync_stream_resets_the_event_size_after_each_event() {
+    let mut stream = GoogleGenAiStream::new(
+        vec![Ok(body(&["data: a", "", "data: b", ""]))].into_iter(),
+        metadata(GenAiProvider::Gemini),
+        SMALL_LINE_LIMIT,
+    );
+    let events = sync_events(&mut stream);
+    assert_eq!(events, [b"data: a\n\n".to_vec(), b"data: b\n\n".to_vec()]);
+    assert!(stream.next().is_none());
+}
+
+#[test]
 fn sync_stream_emits_the_event_left_open_at_end_of_input() {
     let mut stream = sync_stream(vec![b"data: {\"a\":1}\n\ndata: {\"b\":2}".to_vec()]);
     let events = sync_events(&mut stream);
@@ -765,7 +777,8 @@ async fn async_stream_returns_the_end_before_the_completion_log_finishes() {
         started: Mutex::new(Some(started_tx)),
         done: Mutex::new(Some(done_tx)),
     });
-    let logging = logging_with_gemini(handler, Arc::clone(&calls), Arc::new(Notify::new()));
+    let dispatched = Arc::new(Notify::new());
+    let logging = logging_with_gemini(handler, Arc::clone(&calls), Arc::clone(&dispatched));
     let mut stream = async_stream(
         vec![body(&["data: a", ""])],
         metadata(GenAiProvider::Gemini),
@@ -780,6 +793,9 @@ async fn async_stream_returns_the_end_before_the_completion_log_finishes() {
     assert!(done_rx.try_recv().is_err(), "the handler is still blocked");
     drop(stream);
     gate.open();
+    timeout(Duration::from_secs(5), dispatched.notified())
+        .await
+        .expect("the success dispatch runs after the stream was dropped");
     done_rx
         .await
         .expect("the completion log finished after the stream was dropped");
