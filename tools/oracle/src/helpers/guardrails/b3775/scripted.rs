@@ -115,7 +115,7 @@ fn serve(
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {
             Ok((stream, _peer)) => handle(stream, script, seen),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => thread::sleep(POLL),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => thread::park_timeout(POLL),
             Err(_error) => break,
         }
     }
@@ -191,7 +191,7 @@ fn respond(mut stream: TcpStream, reply: Reply) {
             let _shutdown = stream.shutdown(Shutdown::Both);
         }
         Reply::Timeout => {
-            thread::sleep(Duration::from_millis(TIMEOUT_MILLIS));
+            thread::park_timeout(Duration::from_millis(TIMEOUT_MILLIS));
             answer(&mut stream, 200, &json!({"access_token": "late"}));
         }
         Reply::Answer { status, body } => answer(&mut stream, status, &body),
