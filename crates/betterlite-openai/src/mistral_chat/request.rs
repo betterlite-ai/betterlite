@@ -89,9 +89,9 @@ fn prepared_messages(messages: &[ChatMessage]) -> Result<Prepared, MistralChatEr
         .collect::<Result<Vec<_>, _>>()?;
     let converted = convert_message_content_lists(&mut prompt);
     let mut cleaned = Vec::with_capacity(converted.len());
-    for message in converted {
-        let message = handle_name_in_message(message);
-        let message = handle_tool_call_message(message);
+    for mut message in converted {
+        message = handle_name_in_message(message);
+        message = handle_tool_call_message(message);
         if is_empty_assistant_message(&message) {
             continue;
         }
@@ -143,22 +143,21 @@ pub fn maybe_add_reasoning_prompt(
         .iter()
         .position(|message| message.role == Role::System)
     else {
-        updated.insert(0, reasoning_system_message());
+        updated.insert(
+            0,
+            ChatMessage {
+                role: Role::System,
+                content: Some(MessageContent::Text(REASONING_SYSTEM_PROMPT.to_owned())),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+                passthrough: IndexMap::new(),
+            },
+        );
         return updated;
     };
     prepend_reasoning_prompt(&mut updated, index);
     updated
-}
-
-fn reasoning_system_message() -> ChatMessage {
-    ChatMessage {
-        role: Role::System,
-        content: Some(MessageContent::Text(REASONING_SYSTEM_PROMPT.to_owned())),
-        name: None,
-        tool_calls: None,
-        tool_call_id: None,
-        passthrough: IndexMap::new(),
-    }
 }
 
 fn prepend_reasoning_prompt(messages: &mut [ChatMessage], index: usize) {
