@@ -6,7 +6,10 @@ use betterlite_core::passthrough_guardrail::errors::PassthroughGuardrailError;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
-use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
+use betterlite_guardrails::guardrail_translation::{
+    BaseTranslation, TranslationCall, transform_user_key_metadata,
+};
+use betterlite_models::decisions::Json;
 use thiserror::Error;
 
 use crate::guardrails::bedrock_passthrough::event_stream::hook::{
@@ -30,28 +33,31 @@ pub enum BedrockPassthroughError {
     Endpoint(#[from] PassthroughGuardrailError<GuardrailFailure>),
 }
 
-// LiteLLM builds this handler per request from the guardrail's skip flags and user metadata
+// LiteLLM builds this handler per route from the guardrail's skip flags and the endpoint's settings
 pub struct BedrockPassthroughTranslation<G, H> {
     pub(crate) guardrail: PhantomData<fn() -> G>,
     pub(crate) skip_system: bool,
     pub(crate) skip_tool: bool,
-    pub(crate) user_metadata: BTreeMap<String, GuardrailValue>,
+    pub(crate) guardrail_name: Option<String>,
+    pub(crate) passthrough_guardrails_config: Option<Json>,
     pub(crate) hook: H,
 }
 
 impl<G, H> BedrockPassthroughTranslation<G, H> {
-    // B3680 reads the values off the guardrail and the user key; this adapter never reads config
+    // B3680 supplies the values from the guardrail and the endpoint; this adapter never reads config
     #[must_use]
     pub const fn new(
         hook: H,
         skip: SkipFlags,
-        user_metadata: BTreeMap<String, GuardrailValue>,
+        guardrail_name: Option<String>,
+        passthrough_guardrails_config: Option<Json>,
     ) -> Self {
         Self {
             guardrail: PhantomData,
             skip_system: skip.system,
             skip_tool: skip.tool,
-            user_metadata,
+            guardrail_name,
+            passthrough_guardrails_config,
             hook,
         }
     }
@@ -86,9 +92,12 @@ where
             Routed::Handled => Ok(()),
             Routed::Generic => {
                 // ast-grep-ignore: no-long-names
-                PassthroughEndpointTranslation::<G>::default()
-                    .process_input_messages(data, guardrail, logging_obj)
-                    .await?;
+                PassthroughEndpointTranslation::<G>::new(
+                    self.guardrail_name.clone(),
+                    self.passthrough_guardrails_config.clone(),
+                )
+                .process_input_messages(data, guardrail, logging_obj)
+                .await?;
                 Ok(())
             }
         }
@@ -111,7 +120,7 @@ where
             &mut response,
             guardrail,
             logging.as_deref_mut(),
-            self.user_metadata.clone(),
+            transform_user_key_metadata(user_api_key_dict),
             request_data.as_deref(),
         )
         .await?;
@@ -126,10 +135,13 @@ where
                     deliver_ended_stream_rewrites,
                 };
                 // ast-grep-ignore: no-long-names
-                PassthroughEndpointTranslation::<G>::default()
-                    .process_output_response(response, guardrail, forwarded)
-                    .await
-                    .map_err(BedrockPassthroughError::Endpoint)
+                PassthroughEndpointTranslation::<G>::new(
+                    self.guardrail_name.clone(),
+                    self.passthrough_guardrails_config.clone(),
+                )
+                .process_output_response(response, guardrail, forwarded)
+                .await
+                .map_err(BedrockPassthroughError::Endpoint)
             }
         }
     }

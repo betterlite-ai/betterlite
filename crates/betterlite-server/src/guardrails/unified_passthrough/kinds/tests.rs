@@ -1,8 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
 use betterlite_guardrails::llm_passthrough_dispatch::{
     PASSTHROUGH_TRANSLATION_KINDS, PassthroughTranslationKind,
@@ -16,17 +13,14 @@ use crate::guardrails::unified_passthrough::tests::{FakeGuardrail, TestHook};
 
 #[test]
 fn the_provider_list_holds_the_bedrock_adapter_under_its_key() {
-    let metadata = BTreeMap::from([(
-        "user_api_key_user_id".to_owned(),
-        GuardrailValue::Text("u1".to_owned()),
-    )]);
     let bedrock = BedrockPassthroughTranslation::<FakeGuardrail, TestHook>::new(
         TestHook::echoing(),
         SkipFlags {
             system: true,
             tool: false,
         },
-        metadata.clone(),
+        Some("g1".to_owned()),
+        None,
     );
     let providers = passthrough_provider_list(bedrock);
     assert_eq!(providers.len(), 1);
@@ -34,7 +28,8 @@ fn the_provider_list_holds_the_bedrock_adapter_under_its_key() {
     assert_eq!(key.as_str(), "bedrock");
     assert!(adapter.skip_system);
     assert!(!adapter.skip_tool);
-    assert_eq!(adapter.user_metadata, metadata);
+    assert_eq!(adapter.guardrail_name.as_deref(), Some("g1"));
+    assert!(adapter.passthrough_guardrails_config.is_none());
 }
 
 #[rstest]

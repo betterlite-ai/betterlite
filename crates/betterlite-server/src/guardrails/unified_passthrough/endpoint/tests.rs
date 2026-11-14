@@ -2,19 +2,13 @@
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::passthrough_guardrail::errors::PassthroughGuardrailError;
-use betterlite_core::passthrough_guardrail::traits::{
-    PassthroughGuardrail, PassthroughLogging, PassthroughPolicy,
-};
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
 use betterlite_models::decisions::Json;
 
-use super::{
-    PassthroughEndpointTranslation, PassthroughGuardrailBridge, PassthroughLogTarget,
-    PassthroughPolicyBridge,
-};
+use super::PassthroughEndpointTranslation;
 use crate::guardrails::unified_passthrough::tests::{
     FakeGuardrail, json_value, map_body, response_call,
 };
@@ -182,39 +176,23 @@ async fn endpoint_default_methods_keep_the_base_behavior() {
     assert!(adapter.build_stream_error_items(&failure, None).is_none());
 }
 
-#[test]
-fn endpoint_bridge_reports_no_guardrail_name_or_config() {
+#[tokio::test]
+async fn endpoint_input_sends_only_the_configured_request_fields() {
     let fake = FakeGuardrail::unchanged();
-    let bridge = PassthroughGuardrailBridge { guardrail: &fake };
-    assert!(bridge.guardrail_name().is_none());
-    let mut logging = GuardrailLogTarget::default();
-    let target = PassthroughLogTarget {
-        logging: &mut logging,
-    };
-    assert!(target.passthrough_guardrails_config().is_none());
-}
-
-#[test]
-fn endpoint_policy_bridge_reads_settings_fields_and_user_metadata() {
-    let config: Json = serde_json::from_str(
-        r#"{"g1": {"request_fields": ["query"], "response_fields": ["output"]}}"#,
-    )
-    .expect("valid JSON fixture");
-    let found = PassthroughPolicy::get_settings(&PassthroughPolicyBridge, &config, "g1")
-        .expect("the configured settings");
-    assert_eq!(found.request_fields, Some(vec!["query".to_owned()]));
-    assert_eq!(found.response_fields, Some(vec!["output".to_owned()]));
-    let payload: Json =
-        serde_json::from_str(r#"{"query": "hello", "output": "bye"}"#).expect("valid JSON fixture");
-    let expressions = vec!["query".to_owned(), "output".to_owned()];
+    let config: Json = serde_json::from_str(r#"{"g1": {"request_fields": ["query"]}}"#)
+        .expect("valid JSON fixture");
+    let mut data = map_body(r#"{"model": "m", "query": "hello", "secret": "hide"}"#);
+    let mut log_target = GuardrailLogTarget::default();
+    Adapter::new(Some("g1".to_owned()), Some(config))
+        .process_input_messages(&mut data, &fake, Some(&mut log_target))
+        .await
+        .expect("the guardrail accepts");
+    let calls = fake.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].texts, vec!["hello".to_owned()]);
+    assert_eq!(calls[0].model.as_deref(), Some("m"));
     assert_eq!(
-        PassthroughPolicy::extract_fields(&PassthroughPolicyBridge, &payload, &expressions),
-        "hello\nbye"
-    );
-    let user_key = map_body(r#"{"user_id": "u1"}"#);
-    let metadata = PassthroughPolicy::user_key_metadata(&PassthroughPolicyBridge, Some(&user_key));
-    assert_eq!(
-        metadata.get("user_api_key_user_id"),
-        Some(&GuardrailValue::Text("u1".to_owned()))
+        data.get("secret"),
+        Some(&GuardrailValue::Text("hide".to_owned()))
     );
 }

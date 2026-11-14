@@ -23,13 +23,33 @@ use betterlite_models::decisions::Json;
 
 // ast-grep-ignore: no-long-names
 pub struct PassthroughEndpointTranslation<G> {
+    guardrail_name: Option<String>,
+    passthrough_guardrails_config: Option<Json>,
     pub guardrail: PhantomData<fn() -> G>,
+}
+
+// ast-grep-ignore: no-long-names
+impl<G> PassthroughEndpointTranslation<G> {
+    // B3680 supplies the guardrail's name and the endpoint's passthrough_guardrails_config
+    #[must_use]
+    pub const fn new(
+        guardrail_name: Option<String>,
+        passthrough_guardrails_config: Option<Json>,
+    ) -> Self {
+        Self {
+            guardrail_name,
+            passthrough_guardrails_config,
+            guardrail: PhantomData,
+        }
+    }
 }
 
 // ast-grep-ignore: no-long-names
 impl<G: GuardrailContract> Default for PassthroughEndpointTranslation<G> {
     fn default() -> Self {
         Self {
+            guardrail_name: None,
+            passthrough_guardrails_config: None,
             guardrail: PhantomData,
         }
     }
@@ -50,8 +70,14 @@ impl<G: GuardrailContract> BaseTranslation for PassthroughEndpointTranslation<G>
         guardrail: &Self::Guardrail,
         logging_obj: Option<&mut Self::LogTarget>,
     ) -> Result<(), Self::Failure> {
-        let bridge = PassthroughGuardrailBridge { guardrail };
-        let mut target = logging_obj.map(|logging| PassthroughLogTarget { logging });
+        let bridge = PassthroughGuardrailBridge {
+            guardrail,
+            guardrail_name: self.guardrail_name.as_deref(),
+        };
+        let mut target = logging_obj.map(|logging| PassthroughLogTarget {
+            logging,
+            config: self.passthrough_guardrails_config.as_ref(),
+        });
         PassThroughEndpointHandler::process_input_messages(
             data,
             &bridge,
@@ -67,10 +93,14 @@ impl<G: GuardrailContract> BaseTranslation for PassthroughEndpointTranslation<G>
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> Result<GuardrailValue, Self::Failure> {
-        let bridge = PassthroughGuardrailBridge { guardrail };
-        let mut target = call
-            .logging_obj
-            .map(|logging| PassthroughLogTarget { logging });
+        let bridge = PassthroughGuardrailBridge {
+            guardrail,
+            guardrail_name: self.guardrail_name.as_deref(),
+        };
+        let mut target = call.logging_obj.map(|logging| PassthroughLogTarget {
+            logging,
+            config: self.passthrough_guardrails_config.as_ref(),
+        });
         PassThroughEndpointHandler::process_output_response(
             response,
             &bridge,
@@ -88,6 +118,7 @@ impl<G: GuardrailContract> BaseTranslation for PassthroughEndpointTranslation<G>
 // G cannot get a PassthroughGuardrail impl from here, so the bridge carries it to B3573's handler
 struct PassthroughGuardrailBridge<'state, G> {
     guardrail: &'state G,
+    guardrail_name: Option<&'state str>,
 }
 
 impl<'state, G: GuardrailContract> PassthroughGuardrail for PassthroughGuardrailBridge<'state, G> {
@@ -95,7 +126,7 @@ impl<'state, G: GuardrailContract> PassthroughGuardrail for PassthroughGuardrail
     type LogTarget = PassthroughLogTarget<'state>;
 
     fn guardrail_name(&self) -> Option<&str> {
-        None
+        self.guardrail_name
     }
 
     async fn apply_guardrail(
@@ -134,14 +165,15 @@ impl<'state, G: GuardrailContract> PassthroughGuardrail for PassthroughGuardrail
     }
 }
 
-// the unified path's log target has no passthrough config, so B3573 skips field targeting
+// B3680 supplies the endpoint's passthrough_guardrails_config; the unified log target carries none
 struct PassthroughLogTarget<'logging> {
     logging: &'logging mut GuardrailLogTarget,
+    config: Option<&'logging Json>,
 }
 
 impl PassthroughLogging for PassthroughLogTarget<'_> {
     fn passthrough_guardrails_config(&self) -> Option<&Json> {
-        None
+        self.config
     }
 }
 

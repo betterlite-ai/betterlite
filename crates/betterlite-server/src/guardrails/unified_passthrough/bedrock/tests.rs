@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
 use aws_smithy_eventstream::frame::write_message_to;
 use aws_smithy_types::event_stream::{Header, HeaderValue, Message};
 use aws_smithy_types::str_bytes::StrBytes;
@@ -10,6 +8,7 @@ use betterlite_core::passthrough_guardrail::errors::PassthroughGuardrailError;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::{BedrockPassthroughError, BedrockPassthroughTranslation};
@@ -26,7 +25,7 @@ type BedrockAdapter = BedrockPassthroughTranslation<FakeGuardrail, TestHook>;
 const CONVERSE: &str = "https://bedrock-runtime.us-east-1.amazonaws.com/model/m/converse";
 
 fn adapter(skip: SkipFlags) -> BedrockAdapter {
-    BedrockPassthroughTranslation::new(TestHook::echoing(), skip, BTreeMap::new())
+    BedrockPassthroughTranslation::new(TestHook::echoing(), skip, None, None)
 }
 
 fn refusal() -> GuardrailFailure {
@@ -83,6 +82,27 @@ async fn bedrock_converse_input_uses_the_stored_skip_flags(
 }
 
 #[tokio::test]
+async fn bedrock_generic_input_uses_the_configured_request_fields() {
+    let fake = FakeGuardrail::unchanged();
+    let config: Json = serde_json::from_str(r#"{"g1": {"request_fields": ["prompt"]}}"#)
+        .expect("valid JSON fixture");
+    let adapter = BedrockAdapter::new(
+        TestHook::echoing(),
+        SkipFlags::default(),
+        Some("g1".to_owned()),
+        Some(config),
+    );
+    let mut data = map_body(
+        r#"{"endpoint": "https://x/model/m/invoke", "model": "m", "prompt": "hello", "secret": "hide"}"#,
+    );
+    adapter
+        .process_input_messages(&mut data, &fake, None)
+        .await
+        .expect("the guardrail accepts");
+    assert_eq!(fake.calls()[0].texts, vec!["hello".to_owned()]);
+}
+
+#[tokio::test]
 async fn bedrock_converse_input_writes_the_guardrailed_texts_back() {
     let fake = FakeGuardrail::rewriting(&["HELLO"]);
     let mut data = map_body(&format!(
@@ -121,20 +141,20 @@ async fn bedrock_generic_input_runs_the_endpoint_wrapper() {
 }
 
 #[tokio::test]
-async fn bedrock_converse_output_uses_the_stored_user_metadata() {
+async fn bedrock_converse_output_uses_the_caller_key_metadata() {
     let fake = FakeGuardrail::rewriting(&["HELLO"]);
+    let user_key = map_body(r#"{"user_id": "u1", "_internal": "x", "empty": null}"#);
     let metadata = map_body(r#"{"user_api_key_user_id": "u1"}"#);
-    let adapter = BedrockAdapter::new(TestHook::echoing(), SkipFlags::default(), metadata.clone());
     let response = json_value(
         r#"{"output": {"message": {"role": "assistant", "content": [{"text": "hello"}]}}}"#,
     );
     let mut request_data = map_body(&format!(r#"{{"endpoint": "{CONVERSE}", "model": "m"}}"#));
     let caller_data = request_data.clone();
-    let returned = adapter
+    let returned = adapter(SkipFlags::default())
         .process_output_response(
             response,
             &fake,
-            response_call(Some(&mut request_data), None, None),
+            response_call(Some(&mut request_data), Some(&user_key), None),
         )
         .await
         .expect("the guardrail accepts");
@@ -155,6 +175,26 @@ async fn bedrock_converse_output_uses_the_stored_user_metadata() {
             r#"{"output": {"message": {"role": "assistant", "content": [{"text": "HELLO"}]}}}"#
         )
     );
+}
+
+#[tokio::test]
+async fn bedrock_converse_output_without_a_key_adds_no_metadata() {
+    let fake = FakeGuardrail::unchanged();
+    let response = json_value(r#"{"output": {"message": {"content": [{"text": "hi"}]}}}"#);
+    let mut request_data = map_body(&format!(r#"{{"endpoint": "{CONVERSE}"}}"#));
+    let caller_data = request_data.clone();
+    adapter(SkipFlags::default())
+        .process_output_response(
+            response,
+            &fake,
+            response_call(Some(&mut request_data), None, None),
+        )
+        .await
+        .expect("the guardrail accepts");
+    let calls = fake.calls();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].request_data.get("litellm_metadata").is_none());
+    assert_eq!(request_data, caller_data);
 }
 
 #[tokio::test]
@@ -269,7 +309,8 @@ async fn bedrock_event_stream_runs_the_stored_hook() {
     let adapter = BedrockAdapter::new(
         TestHook::replacing("HELLO"),
         SkipFlags::default(),
-        BTreeMap::new(),
+        None,
+        None,
     );
     let output = adapter
         .de_anonymize_event_stream(&body, &key, &data)
