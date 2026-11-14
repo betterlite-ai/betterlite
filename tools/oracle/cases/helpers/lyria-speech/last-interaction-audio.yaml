@@ -5,6 +5,7 @@ call:
     function: decoded
     cases:
       - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "audio", "data": "QUJD", "mime_type": "audio/mp3"}, {"type": "audio", "data": "WFk=", "mime_type": "audio/wav"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "audio", "data": "QUJD", "mime_type": "audio/wav"}, {"type": "text", "data": "WFk="}, {"type": "model_output", "content": []}]}'}
       - {model: lyria-3-pro-preview, status: 200, body: '{"outputs": [{"type": "audio", "data": "QUJD"}]}'}
       - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "model_output", "content": [{"type": "text", "data": "aGVsbG8="}, {"type": "audio", "data": "QUJD", "mime_type": "audio/wav"}]}]}'}
       - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "model_output", "content": [{"type": "audio", "data": "QUJD", "mime_type": "audio/mp3"}, {"type": "audio", "data": "ZkxhQwA="}]}]}'}

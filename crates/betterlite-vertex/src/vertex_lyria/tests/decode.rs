@@ -245,6 +245,18 @@ fn keeps_the_steps_when_they_carry_no_audio() {
 }
 
 #[test]
+fn keeps_an_earlier_audio_step_when_the_later_steps_have_none() {
+    let body = r#"{"steps": [
+        {"type": "audio", "data": "QUJD", "mime_type": "audio/wav"},
+        {"type": "text", "data": "WFk="},
+        {"type": "model_output", "content": []}
+    ]}"#;
+    let audio = decode("lyria-3-pro-preview", body).unwrap();
+    assert_eq!(audio.bytes.as_slice(), b"ABC");
+    assert_eq!(audio.content_type.as_deref(), Some("audio/wav"));
+}
+
+#[test]
 fn descends_the_content_of_a_model_output_step() {
     let body = r#"{"steps": [{
         "type": "model_output",
