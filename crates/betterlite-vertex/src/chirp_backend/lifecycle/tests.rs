@@ -597,7 +597,7 @@ async fn discard_suppresses_old_events() {
     harness.send_text(DISCARD).await;
     let marker = timeout(Duration::from_secs(5), harness.backend.recv())
         .await
-        .expect("the discard marker reaches the caller while the stream is still relaying")
+        .expect("the discard marker reaches the caller before the second stream's channel closes")
         .expect("the marker is delivered");
     assert_eq!(
         marker, r#"{"kind":"turn_discarded","billed_seconds":0.75}"#,
@@ -839,7 +839,7 @@ async fn close_closes_a_stream_still_waiting_in_the_link_queue() {
     harness.backend.close().await;
     wait_for(&harness.recorder.closed, 2).await;
     assert_eq!(
-        harness.recorder.closed(),
+        harness.recorder.closed.load(Ordering::SeqCst),
         2,
         "close reaches the relayed stream and the one still in the link queue"
     );
