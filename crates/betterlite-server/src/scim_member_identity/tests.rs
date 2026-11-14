@@ -17,10 +17,13 @@ use super::classified::{
     partition_classified_members, roster_entries_named_by,
 };
 use super::error::ScimMemberIdentityError;
-use super::lookups::MemberResolver;
+use super::lookups::{
+    accounts_named_by_member_value, is_scim_managed_team, users_named_by_member_value,
+};
 use super::member_value::{
     json_object_fields, member_value, metadata_has_scim_provenance, normalized_member_type,
 };
+use super::resolver::MemberResolver;
 use crate::scim_records::group::{Member, MemberKind};
 
 fn json_data(text: &str) -> JsonData {
@@ -299,31 +302,26 @@ fn assert_no_database(error: &ScimMemberIdentityError) {
 async fn scim_member_identity_users_named_by_member_value_trims_and_folds_case() {
     let (fixture, pool) = database().await;
     let store = store(&pool);
-    let resolver = MemberResolver { store: &store };
     assert_eq!(
-        resolver
-            .users_named_by_member_value(" sub-1 ", Some(2))
+        users_named_by_member_value(&store, " sub-1 ", Some(2))
             .await
             .unwrap(),
         strings(&["u1"])
     );
     assert_eq!(
-        resolver
-            .users_named_by_member_value(" ann@example.com ", Some(2))
+        users_named_by_member_value(&store, " ann@example.com ", Some(2))
             .await
             .unwrap(),
         strings(&["u1", "u2"])
     );
     assert!(
-        resolver
-            .users_named_by_member_value("nobody", Some(2))
+        users_named_by_member_value(&store, "nobody", Some(2))
             .await
             .unwrap()
             .is_empty()
     );
     assert_eq!(
-        resolver
-            .users_named_by_member_value("bob@example.com", None)
+        users_named_by_member_value(&store, "bob@example.com", None)
             .await
             .unwrap(),
         strings(&["u3"])
@@ -335,15 +333,12 @@ async fn scim_member_identity_users_named_by_member_value_trims_and_folds_case()
 async fn scim_member_identity_users_named_by_member_value_bounds_the_scan() {
     let (fixture, pool) = database().await;
     let store = store(&pool);
-    let resolver = MemberResolver { store: &store };
-    let bounded = resolver
-        .users_named_by_member_value("ann@example.com", Some(1))
+    let bounded = users_named_by_member_value(&store, "ann@example.com", Some(1))
         .await
         .unwrap();
     assert_eq!(bounded.len(), 1);
     assert_eq!(
-        resolver
-            .users_named_by_member_value("ann@example.com", None)
+        users_named_by_member_value(&store, "ann@example.com", None)
             .await
             .unwrap(),
         strings(&["u1", "u2"])
@@ -355,21 +350,16 @@ async fn scim_member_identity_users_named_by_member_value_bounds_the_scan() {
 async fn scim_member_identity_accounts_named_by_member_value_reads_a_keyed_row() {
     let (fixture, pool) = database().await;
     let store = store(&pool);
-    let resolver = MemberResolver { store: &store };
     assert_eq!(
-        resolver
-            .accounts_named_by_member_value("zzz")
-            .await
-            .unwrap(),
+        accounts_named_by_member_value(&store, "zzz").await.unwrap(),
         strings(&["zzz", "aa", "bb"])
     );
     assert_eq!(
-        resolver.accounts_named_by_member_value("u3").await.unwrap(),
+        accounts_named_by_member_value(&store, "u3").await.unwrap(),
         strings(&["u3"])
     );
     assert_eq!(
-        resolver
-            .accounts_named_by_member_value("shared")
+        accounts_named_by_member_value(&store, "shared")
             .await
             .unwrap(),
         strings(&["shared", "u_other"])
@@ -587,20 +577,18 @@ async fn scim_member_identity_every_lookup_without_a_database_is_a_500() {
     let missing = PostgresStore { pool: None };
     let resolver = MemberResolver { store: &missing };
     assert_no_database(
-        &resolver
-            .users_named_by_member_value("u1", Some(2))
+        &users_named_by_member_value(&missing, "u1", Some(2))
             .await
             .err()
             .unwrap(),
     );
     assert_no_database(
-        &resolver
-            .accounts_named_by_member_value("u1")
+        &accounts_named_by_member_value(&missing, "u1")
             .await
             .err()
             .unwrap(),
     );
-    assert_no_database(&resolver.is_scim_managed_team("team").await.err().unwrap());
+    assert_no_database(&is_scim_managed_team(&missing, "team").await.err().unwrap());
     assert_no_database(
         &resolver
             .classify_group_member(&member("u1", None))

@@ -1,8 +1,12 @@
 use std::collections::BTreeSet;
 
+use betterlite_db::postgres_store::session::PostgresStore;
+
 use super::classified::{ClassifiedGroupMember, SkipReason, roster_entries_named_by};
 use super::error::ScimMemberIdentityError;
-use super::lookups::MemberResolver;
+use super::lookups::{
+    accounts_named_by_member_value, is_scim_managed_team, users_named_by_member_value,
+};
 use super::member_value::{member_value, normalized_member_type};
 use crate::scim_records::group::Member;
 
@@ -11,6 +15,10 @@ fn skipped_member(value: &str, reason: SkipReason) -> ClassifiedGroupMember {
         value: value.to_owned(),
         reason,
     }
+}
+
+pub struct MemberResolver<'database> {
+    pub store: &'database PostgresStore,
 }
 
 impl MemberResolver<'_> {
@@ -23,7 +31,7 @@ impl MemberResolver<'_> {
         if member_type.as_deref() == Some("group") {
             return Ok(skipped_member(value, SkipReason::NestedGroup));
         }
-        let named = self.accounts_named_by_member_value(value).await?;
+        let named = accounts_named_by_member_value(self.store, value).await?;
         if named.iter().any(|found| found == value) {
             // the keyed row still loses to an account that shares the value as an identity
             if named.iter().any(|other| other != value) {
@@ -38,7 +46,7 @@ impl MemberResolver<'_> {
         if member_type.as_deref().is_some_and(|kind| kind != "user") {
             return Ok(skipped_member(value, SkipReason::NonUserType));
         }
-        if member_type.is_none() && self.is_scim_managed_team(value).await? {
+        if member_type.is_none() && is_scim_managed_team(self.store, value).await? {
             return Ok(skipped_member(value, SkipReason::ExistingTeam));
         }
         match named.as_slice() {
@@ -66,7 +74,7 @@ impl MemberResolver<'_> {
         }
         let mut matched: Vec<(String, Vec<String>)> = Vec::new();
         for value in written {
-            let resolved = self.users_named_by_member_value(value, None).await?;
+            let resolved = users_named_by_member_value(self.store, value, None).await?;
             matched.push((
                 value.to_owned(),
                 roster_entries_named_by(value, roster, &resolved),
