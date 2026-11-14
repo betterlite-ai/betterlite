@@ -151,7 +151,6 @@ pub fn serialize_scan_metadata_header(
 }
 
 // LiteLLM's get_logging_caching_headers: metadata first, then litellm_metadata over it by key
-#[must_use]
 pub fn logging_caching_headers(
     request_data: &RequestData,
 ) -> Result<Vec<(String, String)>, GuardrailMetadataError> {

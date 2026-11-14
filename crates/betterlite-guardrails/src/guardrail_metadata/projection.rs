@@ -3,10 +3,9 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::{
-    APPLIED_GUARDRAILS_KEY, APPLIED_POLICIES_KEY, GuardrailMetadataError, MAX_SCAN_METADATA_LENGTH,
-    PILLAR_FLAGGED_KEY, PILLAR_RESPONSE_HEADERS_KEY, POLICY_SOURCES_KEY, SCAN_IDS_KEY,
-    SCAN_METADATA_KEY, SEMANTIC_SIMILARITY_KEY, TRUSTED_PILLAR_HEADERS_KEY,
-    serialize_scan_metadata_header,
+    GuardrailMetadataError, MAX_SCAN_METADATA_LENGTH, PILLAR_FLAGGED_KEY,
+    PILLAR_RESPONSE_HEADERS_KEY, POLICY_SOURCES_KEY, SCAN_METADATA_KEY, SEMANTIC_SIMILARITY_KEY,
+    TRUSTED_PILLAR_HEADERS_KEY, serialize_scan_metadata_header,
 };
 
 pub(super) type Metadata<'data> = BTreeMap<&'data str, &'data GuardrailValue>;
@@ -38,10 +37,10 @@ fn absent_or(
     field: &'static str,
     expected: &'static str,
 ) -> MetadataResult<()> {
-    match value {
-        GuardrailValue::Null => Ok(()),
-        _ => Err(GuardrailMetadataError::NotTyped { field, expected }),
+    if matches!(value, GuardrailValue::Null) {
+        return Ok(());
     }
+    Err(GuardrailMetadataError::NotTyped { field, expected })
 }
 
 fn text_list(
@@ -75,7 +74,7 @@ pub(super) fn joined_header(
     header: &'static str,
     empty: EmptyList,
 ) -> MetadataResult<Option<Header>> {
-    let Some(names) = text_list(merged.get(key), key)? else {
+    let Some(names) = text_list(merged.get(key).copied(), key)? else {
         return Ok(None);
     };
     if names.is_empty() && empty == EmptyList::Omit {
@@ -147,7 +146,10 @@ fn similarity_text(merged: &Metadata<'_>) -> MetadataResult<Option<String>> {
         GuardrailValue::Decimal(number) => Ok(Some(number_text(*number, SEMANTIC_SIMILARITY_KEY)?)),
         GuardrailValue::SignedInteger(number) => Ok(Some(number.to_string())),
         GuardrailValue::UnsignedInteger(number) => Ok(Some(number.to_string())),
-        _ => Err(GuardrailMetadataError::NotTyped {
+        GuardrailValue::Boolean(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => Err(GuardrailMetadataError::NotTyped {
             field: SEMANTIC_SIMILARITY_KEY,
             expected: "a number",
         }),
@@ -192,12 +194,7 @@ pub(super) fn pillar_headers(merged: &Metadata<'_>) -> MetadataResult<Vec<Header
             continue;
         }
         let GuardrailValue::Text(text) = value else {
-            let GuardrailValue::Null = value else {
-                return Err(GuardrailMetadataError::NotTyped {
-                    field: PILLAR_RESPONSE_HEADERS_KEY,
-                    expected: "a map of strings",
-                });
-            };
+            absent_or(value, PILLAR_RESPONSE_HEADERS_KEY, "a map of strings")?;
             continue;
         };
         headers.push((name.clone(), text.clone()));

@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
-use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::content_filter::risk_scoring::GuardrailStatus;
 use crate::guardrail_metadata::{RequestData, ScanEntry, logging_caching_headers, record_scan_id};
@@ -21,10 +22,12 @@ pub(super) fn value(source: &str) -> GuardrailValue {
     serde_json::from_str(source).unwrap()
 }
 
-pub(super) fn assert_json<T: Serialize>(actual: &T, expected: &str) {
-    let actual = serde_json::to_value(actual).unwrap();
-    let expected = serde_json::from_str(expected).unwrap();
-    assert_eq!(actual, expected);
+pub(super) fn assert_json<T>(actual: &T, expected: &str)
+where
+    T: DeserializeOwned + Debug + PartialEq,
+{
+    let expected: T = serde_json::from_str(expected).unwrap();
+    assert_eq!(*actual, expected);
 }
 
 pub(super) fn headers(request_data: &RequestData) -> Vec<(String, String)> {
