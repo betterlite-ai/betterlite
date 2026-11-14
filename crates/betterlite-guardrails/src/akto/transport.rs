@@ -23,13 +23,19 @@ pub struct GuardrailVerdict {
     pub reason: String,
 }
 
-pub(super) fn build_query_params(guardrails: bool, ingest_data: bool) -> BTreeMap<String, String> {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AktoCallFlags {
+    pub guardrails: bool,
+    pub ingest_data: bool,
+}
+
+pub(super) fn build_query_params(flags: AktoCallFlags) -> BTreeMap<String, String> {
     let mut params =
         BTreeMap::from([("akto_connector".to_owned(), AKTO_CONNECTOR_NAME.to_owned())]);
-    if guardrails {
+    if flags.guardrails {
         params.insert("guardrails".to_owned(), "true".to_owned());
     }
-    if ingest_data {
+    if flags.ingest_data {
         params.insert("ingest_data".to_owned(), "true".to_owned());
     }
     params
@@ -48,8 +54,7 @@ pub fn prepare_headers(api_key: &SecretString) -> Result<HeaderMap, AktoError> {
 impl AktoMirroring {
     pub async fn send_request(
         &self,
-        guardrails: bool,
-        ingest_data: bool,
+        flags: AktoCallFlags,
         payload: &AktoPayload,
     ) -> Result<AktoAnswer, AktoError> {
         let endpoint = format!("{}{HTTP_PROXY_PATH}", self.base_url);
@@ -57,7 +62,7 @@ impl AktoMirroring {
         let response = self
             .client
             .post(endpoint)
-            .query(&build_query_params(guardrails, ingest_data))
+            .query(&build_query_params(flags))
             .headers(prepare_headers(&self.api_key)?)
             .timeout(self.timeout)
             .body(body)
@@ -89,13 +94,8 @@ impl AktoMirroring {
         verdict_from(&parsed)
     }
 
-    pub async fn fire_and_forget_request(
-        &self,
-        guardrails: bool,
-        ingest_data: bool,
-        payload: &AktoPayload,
-    ) {
-        match self.send_request(guardrails, ingest_data, payload).await {
+    pub async fn fire_and_forget_request(&self, flags: AktoCallFlags, payload: &AktoPayload) {
+        match self.send_request(flags, payload).await {
             Ok(answer) if answer.status == StatusCode::OK => {}
             Ok(answer) => tracing::error!(
                 status = answer.status.as_u16(),
@@ -123,8 +123,7 @@ fn verdict_from(value: &GuardrailValue) -> Result<GuardrailVerdict, AktoError> {
         return Ok(allowed_default());
     };
     let allowed = match guardrails.get("Allowed") {
-        None => true,
-        Some(GuardrailValue::Null) => false,
+        None | Some(GuardrailValue::Null) => true,
         Some(GuardrailValue::Boolean(flag)) => *flag,
         Some(_) => {
             return Err(AktoError::ResponseField {

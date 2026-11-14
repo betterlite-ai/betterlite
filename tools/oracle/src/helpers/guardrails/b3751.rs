@@ -6,7 +6,6 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::akto_mirroring::UnreachableFallback;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::akto::AktoMirroring;
-use betterlite_guardrails::akto::error::AktoError;
 use betterlite_guardrails::akto::payload::AktoInputs;
 use betterlite_guardrails::akto::transport::AktoAnswer;
 use reqwest::StatusCode;
@@ -34,7 +33,7 @@ impl crate::helpers::Helper for Op {
             }
             "payload" => wire::build_payload(input),
             "response" => parse_response(input),
-            "unreachable" => unreachable(input),
+            "unreachable" => wire::unreachable(input),
             "send" => wire::send(input, false),
             "fire_and_forget" => wire::send(input, true),
             _ => Self::not_built("b3751"),
@@ -80,7 +79,7 @@ pub(super) struct InputsInput {
 #[serde(default)]
 pub(super) struct AnswerInput {
     pub(super) status: Option<u16>,
-    pub(super) body: Option<GuardrailValue>,
+    pub(super) body: Option<Value>,
     pub(super) raw_body: Option<String>,
 }
 
@@ -88,9 +87,9 @@ pub(super) fn failure(class: &str, status: Option<u16>, message: String) -> Box<
     Box::new(HelperError {
         class: class.to_owned(),
         status,
-        error_type: None,
-        param: None,
-        code: None,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
         message,
     })
 }
@@ -164,7 +163,7 @@ fn source(settings: &SettingsInput) -> String {
     )
 }
 
-fn fallback_name(fallback: UnreachableFallback) -> &'static str {
+const fn fallback_name(fallback: UnreachableFallback) -> &'static str {
     match fallback {
         UnreachableFallback::FailClosed => "fail_closed",
         UnreachableFallback::FailOpen => "fail_open",
@@ -190,30 +189,4 @@ fn answer_body(input: &Input) -> Result<String, Box<HelperError>> {
             .map_err(|error| failure("JsonError", None, error.to_string())),
         None => Ok(String::new()),
     }
-}
-
-fn unreachable(input: &Input) -> crate::helpers::HelperResult {
-    let guardrail = settings(input)?;
-    let error = malformed_response_error()?;
-    match guardrail.handle_unreachable(akto_inputs(input), &error) {
-        Ok(_inputs) => Ok(json!({"passthrough": inputs_json(input)})),
-        Err(error) => Err(failure(
-            "HTTPException",
-            Some(error.status_code().as_u16()),
-            error.to_string(),
-        )),
-    }
-}
-
-fn malformed_response_error() -> Result<AktoError, Box<HelperError>> {
-    let source = serde_json::from_str::<GuardrailValue>("not json")
-        .err()
-        .ok_or_else(|| {
-            failure(
-                "AktoError",
-                None,
-                "the malformed response parsed".to_owned(),
-            )
-        })?;
-    Ok(AktoError::ResponseJson { source })
 }

@@ -38,6 +38,7 @@ pub struct AktoPayload {
     #[serde(rename = "is_pending")]
     pub is_pending: String,
     pub source: String,
+    pub direction: Option<String>,
     #[serde(rename = "process_id")]
     pub process_id: Option<String>,
     #[serde(rename = "socket_id")]
@@ -62,16 +63,8 @@ impl AktoMirroring {
         let request_body = build_request_body(inputs, request_data);
         let request_headers = build_request_headers(request_data);
         let tag = build_tag_metadata(request_data);
-        let (response_payload, response_headers) = if include_response {
-            let headers =
-                BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]);
-            (
-                double_encode(&build_response_body(inputs, request_data))?,
-                serde_json::to_string(&headers).map_err(|source| AktoError::Encode { source })?,
-            )
-        } else {
-            (String::from("{}"), String::from("{}"))
-        };
+        let (response_payload, response_headers) =
+            response_encoding(inputs, request_data, include_response)?;
         let tag_text =
             serde_json::to_string(&tag).map_err(|source| AktoError::Encode { source })?;
         let status = status_code.to_string();
@@ -103,6 +96,21 @@ impl AktoMirroring {
             context_source: "AGENTIC".to_owned(),
         })
     }
+}
+
+fn response_encoding(
+    inputs: &AktoInputs,
+    request_data: &BTreeMap<String, GuardrailValue>,
+    include_response: bool,
+) -> Result<(String, String), AktoError> {
+    if !include_response {
+        return Ok((String::from("{}"), String::from("{}")));
+    }
+    let headers = BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]);
+    Ok((
+        double_encode(&build_response_body(inputs, request_data))?,
+        serde_json::to_string(&headers).map_err(|source| AktoError::Encode { source })?,
+    ))
 }
 
 fn double_encode<T>(body: &T) -> Result<String, AktoError>
@@ -210,22 +218,14 @@ fn build_request_headers(
 }
 
 fn build_tag_metadata(request_data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, String> {
-    let ids = [
-        (
-            "user_id",
-            metadata_value(request_data, "user_api_key_user_id"),
-        ),
-        (
-            "team_id",
-            metadata_value(request_data, "user_api_key_team_id"),
-        ),
-    ];
     let mut tag = BTreeMap::from([("gen-ai".to_owned(), "Gen AI".to_owned())]);
-    tag.extend(
-        ids.into_iter()
-            .filter_map(|(name, value)| Some((name.to_owned(), value?)))
-            .filter(|(_, value)| !value.is_empty()),
-    );
+    for name in ["user_id", "team_id"] {
+        let value =
+            metadata_value(request_data, &format!("user_api_key_{name}")).unwrap_or_default();
+        if !value.is_empty() {
+            tag.insert(name.to_owned(), value);
+        }
+    }
     tag
 }
 
@@ -277,14 +277,8 @@ fn extract_client_ip(request_data: &BTreeMap<String, GuardrailValue>) -> String 
 fn value_text(value: &GuardrailValue) -> String {
     match value {
         GuardrailValue::Null => String::new(),
-        GuardrailValue::Boolean(flag) => flag.to_string(),
-        GuardrailValue::SignedInteger(number) => number.to_string(),
-        GuardrailValue::UnsignedInteger(number) => number.to_string(),
-        GuardrailValue::Decimal(number) => number.to_string(),
         GuardrailValue::Text(text) => text.clone(),
-        GuardrailValue::Array(_) | GuardrailValue::Object(_) => {
-            serde_json::to_string(value).unwrap_or_default()
-        }
+        other => serde_json::to_string(other).unwrap_or_default(),
     }
 }
 

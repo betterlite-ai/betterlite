@@ -3,11 +3,14 @@ use std::collections::BTreeMap;
 use betterlite_guardrails::akto::AktoMirroring;
 use betterlite_guardrails::akto::error::AktoError;
 use betterlite_guardrails::akto::payload::AktoPayload;
-use betterlite_guardrails::akto::transport::AktoAnswer;
+use betterlite_guardrails::akto::transport::{AktoAnswer, AktoCallFlags};
 use serde_json::{Value, json};
 
 use super::Input;
+use super::akto_inputs;
 use super::failure;
+use super::inputs_json;
+use super::settings;
 use crate::case::UpstreamAnswer;
 use crate::helpers::HelperError;
 use crate::mock::MockProvider;
@@ -16,25 +19,42 @@ use crate::routing_mock_scripts::MockScript;
 use crate::routing_mock_scripts::ProviderCall;
 
 pub(super) fn build_payload(input: &Input) -> crate::helpers::HelperResult {
-    let guardrail = super::settings(input)?;
-    let payload = guardrail
+    let guardrail = settings(input)?;
+    let payload = payload_of(input, &guardrail)?;
+    normalize(payload)
+}
+
+// the wall clock is compared by shape, not by value, so a stamped time reads as a placeholder
+fn normalized_time(time: String) -> String {
+    if time.chars().all(|character| character.is_ascii_digit()) {
+        String::from("<millis>")
+    } else {
+        time
+    }
+}
+
+fn payload_of(input: &Input, guardrail: &AktoMirroring) -> Result<AktoPayload, Box<HelperError>> {
+    guardrail
         .build_akto_payload(
-            &super::akto_inputs(input),
+            &akto_inputs(input),
             &input.request_data,
             input.status_code.unwrap_or(200),
             input.include_response,
         )
-        .map_err(|error| failure("AktoError", None, error.to_string()))?;
-    normalize(payload)
+        .map_err(|error| failure("AktoError", None, error.to_string()))
 }
 
 pub(super) fn normalize(payload: AktoPayload) -> crate::helpers::HelperResult {
-    let request_headers = parse_json(&payload.request_headers)?;
-    let response_headers = parse_json(&payload.response_headers)?;
+    let request_headers: Value = serde_json::from_str(&payload.request_headers)
+        .map_err(|error| failure("JsonError", None, error.to_string()))?;
+    let response_headers: Value = serde_json::from_str(&payload.response_headers)
+        .map_err(|error| failure("JsonError", None, error.to_string()))?;
     let request_payload = decode_encoded(&payload.request_payload, false)?;
     let response_payload = decode_encoded(&payload.response_payload, true)?;
-    let tag = parse_json(&payload.tag)?;
-    let metadata = parse_json(&payload.metadata)?;
+    let tag: Value = serde_json::from_str(&payload.tag)
+        .map_err(|error| failure("JsonError", None, error.to_string()))?;
+    let metadata: Value = serde_json::from_str(&payload.metadata)
+        .map_err(|error| failure("JsonError", None, error.to_string()))?;
     Ok(json!({
         "path": payload.path,
         "requestHeaders": request_headers,
@@ -44,11 +64,7 @@ pub(super) fn normalize(payload: AktoPayload) -> crate::helpers::HelperResult {
         "responsePayload": response_payload,
         "ip": payload.ip,
         "destIp": payload.dest_ip,
-        "time": if payload.time.chars().all(|character| character.is_ascii_digit()) {
-            String::from("<millis>")
-        } else {
-            payload.time
-        },
+        "time": normalized_time(payload.time),
         "statusCode": payload.status_code,
         "type": payload.request_type,
         "status": payload.status,
@@ -67,13 +83,10 @@ pub(super) fn normalize(payload: AktoPayload) -> crate::helpers::HelperResult {
     }))
 }
 
-fn parse_json(encoded: &str) -> Result<Value, Box<HelperError>> {
-    serde_json::from_str(encoded).map_err(|error| failure("JsonError", None, error.to_string()))
-}
-
 // the request payload is always double encoded; the empty response payload is a bare object
 fn decode_encoded(encoded: &str, response_payload: bool) -> Result<Value, Box<HelperError>> {
-    let outer = parse_json(encoded)?;
+    let outer = serde_json::from_str(encoded)
+        .map_err(|error| failure("JsonError", None, error.to_string()))?;
     if response_payload && outer.get("body").is_none() {
         return Ok(outer);
     }
@@ -84,27 +97,32 @@ fn decode_encoded(encoded: &str, response_payload: bool) -> Result<Value, Box<He
             "the encoded payload has no inner body".to_owned(),
         ));
     };
-    parse_json(inner)
+    serde_json::from_str(inner).map_err(|error| failure("JsonError", None, error.to_string()))
 }
 
 pub(super) fn send(input: &Input, fire_and_forget: bool) -> crate::helpers::HelperResult {
-    let mut guardrail = super::settings(input)?;
+    let mut guardrail = settings(input)?;
     let mock = MockProvider::start(script(&input.answer)?)
         .map_err(|error| failure("MockError", None, error.to_string()))?;
     guardrail.base_url.clone_from(&mock.base_url);
-    let payload = guardrail
-        .build_akto_payload(
-            &super::akto_inputs(input),
-            &input.request_data,
-            input.status_code.unwrap_or(200),
-            input.include_response,
-        )
-        .map_err(|error| failure("AktoError", None, error.to_string()))?;
+    let payload = payload_of(input, &guardrail)?;
     let answer = deliver(&guardrail, input, &payload, fire_and_forget)?;
     let calls = mock
         .finish()
         .map_err(|error| failure("MockError", None, error.to_string()))?;
     report(&calls, answer)
+}
+
+pub(super) fn unreachable(input: &Input) -> crate::helpers::HelperResult {
+    let handled = settings(input)?.handle_unreachable(akto_inputs(input), &AktoError::Unreachable);
+    if let Err(error) = handled {
+        return Err(failure(
+            "HTTPException",
+            Some(error.status_code().as_u16()),
+            error.to_string(),
+        ));
+    }
+    Ok(json!({"passthrough": inputs_json(input)}))
 }
 
 fn deliver(
@@ -113,24 +131,20 @@ fn deliver(
     payload: &AktoPayload,
     fire_and_forget: bool,
 ) -> Result<Option<Result<AktoAnswer, AktoError>>, Box<HelperError>> {
-    let guardrails = input.guardrails.unwrap_or(false);
-    let ingest_data = input.ingest_data.unwrap_or(false);
+    let flags = AktoCallFlags {
+        guardrails: input.guardrails.unwrap_or(false),
+        ingest_data: input.ingest_data.unwrap_or(false),
+    };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("RuntimeError", None, error.to_string()))?;
     Ok(runtime.block_on(async {
         if fire_and_forget {
-            guardrail
-                .fire_and_forget_request(guardrails, ingest_data, payload)
-                .await;
+            guardrail.fire_and_forget_request(flags, payload).await;
             None
         } else {
-            Some(
-                guardrail
-                    .send_request(guardrails, ingest_data, payload)
-                    .await,
-            )
+            Some(guardrail.send_request(flags, payload).await)
         }
     }))
 }

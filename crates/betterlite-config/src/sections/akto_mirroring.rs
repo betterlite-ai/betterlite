@@ -89,56 +89,52 @@ impl Entry {
     where
         L: EnvironmentLookup,
     {
-        let prefix = format!("guardrails.{index}.litellm_params");
-        let parameters = self.litellm_params;
-        let base_path = format!("{prefix}.akto_base_url");
-        let supplied_base = required_value(
-            parameters.akto_base_url,
-            "AKTO_GUARDRAIL_API_BASE",
-            &base_path,
+        self.litellm_params.resolve(
+            self.guardrail_name,
+            &format!("guardrails.{index}.litellm_params"),
             lookup,
-        )?;
-        let api_base = supplied_base.trim_end_matches('/').to_owned();
-        if api_base.is_empty() {
-            return Err(ConfigError::MissingEnvironment {
-                variable: "AKTO_GUARDRAIL_API_BASE".to_owned(),
-                path: base_path,
-            });
-        }
-        let api_key = SecretString::from(required_value(
-            parameters
-                .akto_api_key
-                .map(|key| key.expose_secret().to_owned()),
-            "AKTO_API_KEY",
-            &format!("{prefix}.akto_api_key"),
-            lookup,
-        )?);
-        let account_id = optional_value(
-            parameters.akto_account_id,
+        )
+    }
+}
+
+impl Parameters {
+    fn resolve<L>(
+        self,
+        guardrail_name: Option<String>,
+        prefix: &str,
+        lookup: &L,
+    ) -> Result<Configured, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let (api_base, api_key) =
+            resolve_connection(self.akto_base_url, self.akto_api_key, prefix, lookup)?;
+        let account_id = resolve_value(
+            self.akto_account_id,
             "AKTO_ACCOUNT_ID",
-            DEFAULT_ACCOUNT_ID,
+            Some(DEFAULT_ACCOUNT_ID),
             &format!("{prefix}.akto_account_id"),
             lookup,
         )?;
-        let vxlan_id = optional_value(
-            parameters.akto_vxlan_id,
+        let vxlan_id = resolve_value(
+            self.akto_vxlan_id,
             "AKTO_VXLAN_ID",
-            DEFAULT_VXLAN_ID,
+            Some(DEFAULT_VXLAN_ID),
             &format!("{prefix}.akto_vxlan_id"),
             lookup,
         )?;
         let unreachable_fallback = resolve_fallback(
-            parameters.unreachable_fallback.as_deref(),
+            self.unreachable_fallback.as_deref(),
             &format!("{prefix}.unreachable_fallback"),
             lookup,
         )?;
         let timeout = resolve_timeout(
-            parameters.guardrail_timeout,
+            self.guardrail_timeout,
             &format!("{prefix}.guardrail_timeout"),
             lookup,
         )?;
         Ok(Configured {
-            guardrail_name: self.guardrail_name.unwrap_or_default(),
+            guardrail_name: guardrail_name.unwrap_or_default(),
             api_base,
             api_key,
             account_id,
@@ -149,34 +145,44 @@ impl Entry {
     }
 }
 
-fn required_value<L>(
-    configured: Option<String>,
-    variable: &str,
-    path: &str,
+// LiteLLM strips trailing slashes from the base URL and reads both values from the environment
+fn resolve_connection<L>(
+    base: Option<String>,
+    key: Option<SecretString>,
+    prefix: &str,
     lookup: &L,
-) -> Result<String, ConfigError>
+) -> Result<(String, SecretString), ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let missing = || ConfigError::MissingEnvironment {
-        variable: variable.to_owned(),
-        path: path.to_owned(),
-    };
-    let candidate = configured
-        .filter(|value| !value.is_empty())
-        .or_else(|| lookup.lookup(variable))
-        .ok_or_else(missing)?;
-    let resolved = resolve_string(candidate, path, lookup)?;
-    if resolved.is_empty() {
-        return Err(missing());
+    let base_path = format!("{prefix}.akto_base_url");
+    let supplied_base = resolve_value(base, "AKTO_GUARDRAIL_API_BASE", None, &base_path, lookup)?;
+    let api_base = supplied_base.trim_end_matches('/').to_owned();
+    if api_base.is_empty() {
+        return Err(missing_environment("AKTO_GUARDRAIL_API_BASE", &base_path));
     }
-    Ok(resolved)
+    let key_text = key.map(|key| key.expose_secret().to_owned());
+    let api_key = SecretString::from(resolve_value(
+        key_text,
+        "AKTO_API_KEY",
+        None,
+        &format!("{prefix}.akto_api_key"),
+        lookup,
+    )?);
+    Ok((api_base, api_key))
 }
 
-fn optional_value<L>(
+fn missing_environment(variable: &str, path: &str) -> ConfigError {
+    ConfigError::MissingEnvironment {
+        variable: variable.to_owned(),
+        path: path.to_owned(),
+    }
+}
+
+fn resolve_value<L>(
     configured: Option<String>,
     variable: &str,
-    default: &str,
+    default: Option<&str>,
     path: &str,
     lookup: &L,
 ) -> Result<String, ConfigError>
@@ -187,11 +193,15 @@ where
         .filter(|value| !value.is_empty())
         .or_else(|| lookup.lookup(variable));
     let Some(text) = candidate else {
-        return Ok(default.to_owned());
+        return default
+            .map(str::to_owned)
+            .ok_or_else(|| missing_environment(variable, path));
     };
     let resolved = resolve_string(text, path, lookup)?;
     if resolved.is_empty() {
-        return Ok(default.to_owned());
+        return default
+            .map(str::to_owned)
+            .ok_or_else(|| missing_environment(variable, path));
     }
     Ok(resolved)
 }

@@ -7,6 +7,7 @@ mod transport;
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::akto_mirroring::{Configured, UnreachableFallback};
@@ -20,7 +21,7 @@ use tracing_subscriber::fmt;
 use super::AktoMirroring;
 use super::error::AktoError;
 use super::payload::{AktoInputs, AktoPayload};
-use super::transport::{AktoAnswer, build_query_params, prepare_headers};
+use super::transport::{AktoAnswer, AktoCallFlags, build_query_params, prepare_headers};
 
 fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())
@@ -557,7 +558,7 @@ fn akto_guardrail_payload_uses_the_answer_as_the_response_body() {
 #[case::missing_allowed(r#"{"data":{"guardrailsResult":{"Reason":"why"}}}"#, true, "why")]
 #[case::null_allowed(
     r#"{"data":{"guardrailsResult":{"Allowed":null,"Reason":""}}}"#,
-    false,
+    true,
     ""
 )]
 #[case::missing_reason(r#"{"data":{"guardrailsResult":{"Allowed":false}}}"#, false, "")]
@@ -730,7 +731,10 @@ fn akto_guardrail_query_params_follow_the_flags(
     #[case] guardrails_param: Option<&str>,
     #[case] ingest_param: Option<&str>,
 ) {
-    let params = build_query_params(guardrails, ingest_data);
+    let params = build_query_params(AktoCallFlags {
+        guardrails,
+        ingest_data,
+    });
     assert_eq!(
         params.get("akto_connector").map(String::as_str),
         Some("litellm")

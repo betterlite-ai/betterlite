@@ -15,7 +15,7 @@ use super::{fixed_clock, guardrail, guardrail_at, inputs, log_path, log_to};
 use crate::akto::AktoMirroring;
 use crate::akto::error::AktoError;
 use crate::akto::payload::AktoPayload;
-use crate::akto::transport::AktoAnswer;
+use crate::akto::transport::{AktoAnswer, AktoCallFlags};
 
 struct Recorded {
     path: String,
@@ -96,7 +96,13 @@ async fn send_to_body(body: String) -> AktoAnswer {
         .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
         .expect("payload");
     guardrail
-        .send_request(true, false, &payload)
+        .send_request(
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: false,
+            },
+            &payload,
+        )
         .await
         .expect("answer")
 }
@@ -126,7 +132,13 @@ async fn akto_guardrail_send_request_refuses_a_body_over_the_limit() {
         .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
         .expect("payload");
     let error = guardrail
-        .send_request(true, false, &payload)
+        .send_request(
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: false,
+            },
+            &payload,
+        )
         .await
         .expect_err("response too large");
     assert!(
@@ -144,7 +156,13 @@ async fn akto_guardrail_send_request_posts_the_mirroring_payload() {
         .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
         .expect("payload");
     let answer = guardrail
-        .send_request(true, false, &payload)
+        .send_request(
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: false,
+            },
+            &payload,
+        )
         .await
         .expect("answer");
     assert_eq!(answer.status, StatusCode::OK);
@@ -170,7 +188,13 @@ async fn akto_guardrail_send_request_parses_the_verdict_after_sending() {
         .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
         .expect("payload");
     let answer = guardrail
-        .send_request(false, true, &payload)
+        .send_request(
+            AktoCallFlags {
+                guardrails: false,
+                ingest_data: true,
+            },
+            &payload,
+        )
         .await
         .expect("answer");
     let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
@@ -202,7 +226,13 @@ async fn akto_guardrail_fire_and_forget_swallows_an_error_status() {
     {
         let _guard = log_to(&path);
         guardrail
-            .fire_and_forget_request(true, true, &payload)
+            .fire_and_forget_request(
+                AktoCallFlags {
+                    guardrails: true,
+                    ingest_data: true,
+                },
+                &payload,
+            )
             .await;
     }
     let written = fs::read_to_string(&path).expect("log contents");
@@ -223,7 +253,13 @@ async fn akto_guardrail_fire_and_forget_sends_the_request() {
     {
         let _guard = log_to(&path);
         guardrail
-            .fire_and_forget_request(true, true, &payload)
+            .fire_and_forget_request(
+                AktoCallFlags {
+                    guardrails: true,
+                    ingest_data: true,
+                },
+                &payload,
+            )
             .await;
     }
     let recorded = captures.lock().expect("captures").pop().expect("request");
@@ -247,7 +283,13 @@ async fn akto_guardrail_fire_and_forget_swallows_a_transport_error() {
         .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
         .expect("payload");
     guardrail
-        .fire_and_forget_request(true, true, &payload)
+        .fire_and_forget_request(
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: true,
+            },
+            &payload,
+        )
         .await;
 }
 
@@ -263,7 +305,13 @@ async fn akto_guardrail_tracks_background_ingest_tasks_until_they_finish() {
     let background = guardrail.clone();
     guardrail.tasks.spawn(async move {
         background
-            .fire_and_forget_request(true, true, &payload)
+            .fire_and_forget_request(
+                AktoCallFlags {
+                    guardrails: true,
+                    ingest_data: true,
+                },
+                &payload,
+            )
             .await;
     });
     assert_eq!(guardrail.tasks.len(), 1);
