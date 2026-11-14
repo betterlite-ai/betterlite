@@ -1,5 +1,6 @@
 import asyncio
-from typing import Literal, TypedDict
+from collections.abc import Awaitable, Iterator
+from typing import Literal, Protocol, TypedDict
 
 import litellm
 from litellm.llms.vertex_ai.vertex_ai_non_gemini import TextStreamer
@@ -8,6 +9,14 @@ from litellm.llms.vertex_ai.vertex_ai_non_gemini import TextStreamer
 litellm.suppress_debug_info = True
 
 Step = Literal["sync", "async"]
+
+
+class WordStream(Protocol):
+    def __iter__(self) -> Iterator[str]: ...
+
+    def __next__(self) -> str: ...
+
+    def __anext__(self) -> Awaitable[str]: ...
 
 
 class Input(TypedDict):
@@ -21,7 +30,7 @@ class Answer(TypedDict):
     trace: list[str]
 
 
-def sync_next(streamer: TextStreamer) -> str:
+def sync_next(streamer: WordStream) -> str:
     try:
         word = next(streamer)
     except StopIteration:
@@ -29,7 +38,7 @@ def sync_next(streamer: TextStreamer) -> str:
     return word
 
 
-async def async_next(streamer: TextStreamer) -> str:
+async def async_next(streamer: WordStream) -> str:
     try:
         word = await anext(streamer)
     except StopAsyncIteration:
@@ -37,7 +46,7 @@ async def async_next(streamer: TextStreamer) -> str:
     return word
 
 
-async def traced(streamer: TextStreamer, steps: list[Step]) -> list[str]:
+async def traced(streamer: WordStream, steps: list[Step]) -> list[str]:
     trace: list[str] = []
     for step in steps:
         if step == "sync":
@@ -47,12 +56,22 @@ async def traced(streamer: TextStreamer, steps: list[Step]) -> list[str]:
     return trace
 
 
-async def collected_async(streamer: TextStreamer) -> list[str]:
-    return [word async for word in streamer]
+async def collected_async(streamer: WordStream) -> list[str]:
+    words: list[str] = []
+    while True:
+        try:
+            words.append(await anext(streamer))
+        except StopAsyncIteration:
+            break
+    return words
 
 
 def run(input_value: Input) -> Answer:
-    words = list(TextStreamer(input_value["text"]))
-    async_words = asyncio.run(collected_async(TextStreamer(input_value["text"])))
-    trace = asyncio.run(traced(TextStreamer(input_value["text"]), input_value["steps"]))
-    return {"words": words, "asyncWords": async_words, "trace": trace}
+    streamer: WordStream = TextStreamer(input_value["text"])
+    async_streamer: WordStream = TextStreamer(input_value["text"])
+    traced_streamer: WordStream = TextStreamer(input_value["text"])
+    return {
+        "words": list(streamer),
+        "asyncWords": asyncio.run(collected_async(async_streamer)),
+        "trace": asyncio.run(traced(traced_streamer, input_value["steps"])),
+    }
