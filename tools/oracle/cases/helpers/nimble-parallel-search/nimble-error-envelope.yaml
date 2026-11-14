@@ -1,0 +1,39 @@
+kind: helper
+name: nimble-error-envelope
+call:
+  b8025:
+    provider: nimble
+    calls:
+      - operation: error_class
+        message: '{"detail": "the query field is required."}'
+        status: 400
+        headers:
+          content-type: application/json
+      - operation: error_class
+        message: '{"success": "false", "task_id": "t1", "message": "collection failed"}'
+        status: 429
+      - operation: error_class
+        message: '{"detail": "", "message": "fallback message"}'
+        status: 400
+      - operation: error_class
+        message: '{"detail": null, "message": "only message"}'
+        status: 422
+      - operation: error_class
+        message: '{"detail": "trailing. . "}'
+        status: 500
+      - operation: error_class
+        message: <html>bad gateway</html>
+        status: 502
+      - operation: error_class
+        message: '{"unexpected": 1}'
+        status: 500
+      - operation: reply
+        status: 503
+        body:
+          results: null
+      - operation: reply
+        status: 200
+        body:
+          results: {}
+env: {}
+compare: {ignore: []}

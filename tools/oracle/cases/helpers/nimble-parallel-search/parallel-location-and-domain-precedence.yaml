@@ -1,0 +1,44 @@
+kind: helper
+name: parallel-location-and-domain-precedence
+call:
+  b8025:
+    provider: parallel_ai
+    calls:
+      - operation: request
+        query: rust
+        optional_params:
+          max_results: 9
+          country: de
+          location: fr
+          max_chars_per_result: 120
+          fetch_policy:
+            max_age_seconds: 60
+          search_domain_filter: [filter.test]
+          include_domains: [include.test]
+          exclude_domains: [exclude.test]
+          after_date: "2024-01-01"
+          advanced_settings:
+            max_results: 20
+            location: us
+            source_policy:
+              after_date: "2023-01-01"
+      - operation: request
+        query: rust
+        optional_params:
+          country: de
+      - operation: request
+        query: rust
+        optional_params:
+          country: it
+          location: ""
+      - operation: request
+        query: rust
+        optional_params:
+          max_results: null
+          advanced_settings: {}
+      - operation: request
+        query: rust
+        optional_params:
+          advanced_settings: {}
+env: {}
+compare: {ignore: []}

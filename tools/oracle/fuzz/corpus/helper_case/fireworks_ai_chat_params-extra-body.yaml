@@ -1,0 +1,12 @@
+kind: helper
+name: fireworks-ai-chat-params-seed-extra-body
+call:
+  b6071:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/reasoner", model_info: {litellm_provider: fireworks_ai, supports_reasoning: true}}
+    steps:
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {truncate_prompt_tokens: 8, nvext: true, chat_template_kwargs: {enable_thinking: false}, custom: 1}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {guided_choice: ["a"], chat_template_kwargs: {reasoning_budget: 4}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: "plain", temperature: 1}}
+env: {}
+compare: {ignore: []}

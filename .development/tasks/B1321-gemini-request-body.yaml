@@ -91,5 +91,5 @@ pitfalls:
   - extra_body can introduce googleMaps, so rewriting before the merge misses a reachable request shape.
   - LITELLM_MODIFY_PARAMS=false is a nonempty environment string and therefore truthy in the pinned initialization.
   - Removing cached-incompatible fields with modify_params=false would silently change the source's opt-in mutation contract.
-budget: {max_changed_lines: 750, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

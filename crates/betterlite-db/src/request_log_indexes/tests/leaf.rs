@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use tokio::join;
+use tokio::time::sleep;
 
 use crate::migration_ledger::lock::MIGRATION_LOCK_KEY;
 use crate::request_log_index_catalog::catalog::IndexState;
@@ -251,29 +254,60 @@ async fn assert_built_not_adopted(
     );
 }
 
-// A read-only transaction pins the snapshot, so the concurrent build times out and leaves its index invalid
+// A read-only transaction pins the snapshot, so the concurrent build waits for it and a cancel then leaves its index invalid
 async fn leave_invalid_equivalent(test: &PostgresTest, name: &str) {
-    let (mut holder, mut drivers) = test.another_client().await;
+    let (mut holder, mut holder_drivers) = test.another_client().await;
     let pin = holder.transaction().await.unwrap();
     pin.query(&format!("SELECT * FROM \"{SPEND_LOGS}\""), &[])
         .await
         .unwrap();
-    test.client
-        .batch_execute("SET statement_timeout = '100ms'")
+    let (watcher, mut watcher_drivers) = test.another_client().await;
+    let builder: i32 = test
+        .client
+        .query_one("SELECT pg_backend_pid()", &[])
         .await
-        .unwrap();
-    test.client
-        .batch_execute(&format!(
-            "CREATE INDEX CONCURRENTLY \"{name}\" ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\")"
-        ))
-        .await
-        .unwrap_err();
-    test.client
-        .batch_execute("SET statement_timeout = 0")
-        .await
-        .unwrap();
+        .unwrap()
+        .get(0);
+    let statement = format!(
+        "CREATE INDEX CONCURRENTLY \"{name}\" ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\")"
+    );
+    let (built, ()) = join!(
+        test.client.batch_execute(&statement),
+        cancel_when_waiting_for_snapshots(&watcher, builder)
+    );
+    built.unwrap_err();
     pin.rollback().await.unwrap();
-    drivers.shutdown().await;
+    holder_drivers.shutdown().await;
+    watcher_drivers.shutdown().await;
+}
+
+async fn cancel_when_waiting_for_snapshots(watcher: &tokio_postgres::Client, builder: i32) {
+    let started = Instant::now();
+    loop {
+        let waiting: bool = watcher
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_progress_create_index \
+                 WHERE pid = $1 AND phase = 'waiting for old snapshots')",
+                &[&builder],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        if waiting {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(60),
+            "the concurrent build never waited for the pinned snapshot"
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
+    let cancelled: bool = watcher
+        .query_one("SELECT pg_cancel_backend($1)", &[&builder])
+        .await
+        .unwrap()
+        .get(0);
+    assert!(cancelled);
 }
 
 #[tokio::test]
