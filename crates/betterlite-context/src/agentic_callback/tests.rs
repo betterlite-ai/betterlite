@@ -118,9 +118,9 @@ impl CallFixture {
         }
     }
 
-    fn loop_call(&self) -> AgenticLoopCall<'_> {
+    fn loop_call<'call>(&'call self, tools: &'call JsonMap) -> AgenticLoopCall<'call> {
         AgenticLoopCall {
-            tools: &self.gate_tools,
+            tools,
             model: "anthropic/claude-sonnet-4-5",
             messages: &self.messages,
             response: &self.response,
@@ -184,7 +184,7 @@ async fn defaults_match_custom_logger() {
     assert!(!gate.run);
     assert!(gate.tools.is_empty());
 
-    let loop_call = fixture.loop_call();
+    let loop_call = fixture.loop_call(&fixture.gate_tools);
     let plan = callback.build_agentic_loop_plan(&loop_call).await.unwrap();
     assert!(!plan.run_agentic_loop);
     assert!(plan.request_patch.is_none());
@@ -246,7 +246,7 @@ async fn overrides_results_reach_the_trait_object() {
     );
 
     let plan = callback
-        .build_agentic_loop_plan(&fixture.loop_call())
+        .build_agentic_loop_plan(&fixture.loop_call(&gate.tools))
         .await
         .unwrap();
     assert!(plan.run_agentic_loop);
