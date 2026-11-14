@@ -1,14 +1,14 @@
 id: B4501
 milestone: M8 platform
 title: Persist Lens jobs and worker credentials
-status: todo
+status: done
 depends_on: [B4500, B709, B714]
 file: tasks/B4501-lens-repository.yaml
 covers:
   - "litellm/proxy/lens/repository.py"
 parent: B132
 split_from: B132
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1726
