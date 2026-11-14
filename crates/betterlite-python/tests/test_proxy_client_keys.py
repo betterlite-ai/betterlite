@@ -328,7 +328,7 @@ class FailureCase(NamedTuple):
             DENIED_BODY,
             LiteUnauthorizedError,
             UnauthorizedError,
-            True,
+            keeps_cause=True,
         ),
         FailureCase(
             "delete",
@@ -336,7 +336,7 @@ class FailureCase(NamedTuple):
             DENIED_BODY,
             LiteUnauthorizedError,
             UnauthorizedError,
-            True,
+            keeps_cause=True,
         ),
         FailureCase(
             "list",
@@ -344,7 +344,7 @@ class FailureCase(NamedTuple):
             DENIED_BODY,
             LiteUnauthorizedError,
             UnauthorizedError,
-            True,
+            keeps_cause=True,
         ),
         FailureCase(
             "info",
@@ -352,7 +352,7 @@ class FailureCase(NamedTuple):
             DENIED_BODY,
             LiteUnauthorizedError,
             UnauthorizedError,
-            False,
+            keeps_cause=False,
         ),
         FailureCase(
             "info",
@@ -360,7 +360,7 @@ class FailureCase(NamedTuple):
             BOOM_BODY,
             requests.exceptions.HTTPError,
             HTTPError,
-            False,
+            keeps_cause=False,
         ),
     ],
 )
