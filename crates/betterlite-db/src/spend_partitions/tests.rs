@@ -123,7 +123,7 @@ impl ExecutesSpendPartitionSteps for Scripted {
             Behavior::Fail(label) => step.label == label,
             Behavior::FailBoth(label) => step.label == label || step.sql == ROLLBACK_SQL,
         };
-        Box::pin(async move { if failed { Err(driver_error()) } else { Ok(0) } })
+        Box::pin(async move { if failed { Err(driver_error()) } else { Ok(()) } })
     }
 }
 

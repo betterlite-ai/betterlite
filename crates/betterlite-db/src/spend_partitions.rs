@@ -58,7 +58,7 @@ const ROLLBACK_STEP: SpendPartitionStep = SpendPartitionStep {
 };
 
 pub type SpendPartitionFuture<'executor> =
-    Pin<Box<dyn Future<Output = Result<u64, PostgresError>> + Send + 'executor>>;
+    Pin<Box<dyn Future<Output = Result<(), PostgresError>> + Send + 'executor>>;
 
 pub trait ExecutesSpendPartitionSteps {
     fn execute_spend_partition_step(&self, step: SpendPartitionStep) -> SpendPartitionFuture<'_>;
@@ -66,7 +66,8 @@ pub trait ExecutesSpendPartitionSteps {
 
 impl ExecutesSpendPartitionSteps for Client {
     fn execute_spend_partition_step(&self, step: SpendPartitionStep) -> SpendPartitionFuture<'_> {
-        Box::pin(async move { self.execute(step.sql, &[]).await })
+        // the simple protocol runs each statement exactly as psql does, and ROLLBACK still parses inside an aborted block
+        Box::pin(async move { self.batch_execute(step.sql).await })
     }
 }
 
