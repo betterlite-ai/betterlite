@@ -1,0 +1,25 @@
+kind: helper
+name: agents-collection-create-async-delegates-to-sync
+call:
+  b3504:
+    function: acreate
+    name: async-agent
+    base_agent: waverunner
+    instructions: You are a helpful assistant.
+    base_environment:
+      type: remote
+      sources:
+        - name: repository
+    kwargs: {}
+    extra_headers:
+      x-goog-user-project: demo-project
+    extra_body:
+      labels:
+        team: core
+    reply:
+      status: 200
+      body:
+        id: async-agent
+        base_agent: waverunner
+env: {}
+compare: {ignore: []}
