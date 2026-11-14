@@ -1,0 +1,14 @@
+kind: helper
+name: prompt-dispatch-is-prompt-model-one-deployment
+call:
+  b8466:
+    check: is_prompt_model
+    model: langfuse/my-prompt
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: greeting
+env: {}
+compare:
+  ignore: []
