@@ -21,7 +21,7 @@ pub struct NativeReply {
 impl NativeReply {
     // LiteLLM leaves a reply alone when choices is truthy, so absent, null and an empty array are repaired
     #[must_use]
-    pub fn has_choices(&self) -> bool {
+    pub const fn has_choices(&self) -> bool {
         match &self.choices {
             None => false,
             Some(Json::List(choices)) => !choices.is_empty(),
@@ -37,35 +37,65 @@ pub fn transform_parsed_response(mut reply: NativeReply) -> Result<NativeReply, 
     if reply.has_choices() {
         return Ok(reply);
     }
-    let mut content = String::new();
-    let mut tool_calls = Vec::new();
-    let mut thinking_blocks = None;
-    if let Some(Json::List(blocks)) = reply.fields.get("content") {
-        let response = AnthropicCompletionResponse {
-            content: blocks.clone(),
-            fields: IndexMap::new(),
-        };
-        let projected = project_response(&response, None)?;
-        content = projected.content;
-        tool_calls = projected.tool_calls;
-        thinking_blocks = projected.thinking_blocks;
-    } else if let Some(Json::Text(text)) = reply.fields.get("content") {
-        content.clone_from(text);
+    let (content, tool_calls, thinking_blocks) = native_content(&reply)?;
+    let reason = choice_finish_reason(&content, &tool_calls, &reply);
+    let choice = assistant_choice(content, &tool_calls, thinking_blocks, reason);
+    reply.choices = Some(Json::List(vec![Json::Object(choice)]));
+    if let Some(Json::Object(usage)) = reply.fields.get_mut("usage") {
+        normalize_usage(usage)?;
     }
-    let mapped = if let Some(Json::Text(reason)) = reply.fields.get("stop_reason") {
-        finish_reason_for(reason)
-    } else {
+    Ok(reply)
+}
+
+// text, tool calls and thinking come from the content blocks through B578's extraction
+fn native_content(
+    reply: &NativeReply,
+) -> Result<(String, Vec<AnthropicToolCall>, Option<Vec<Json>>), CopilotChatError> {
+    match reply.fields.get("content") {
+        Some(Json::List(blocks)) => {
+            let response = AnthropicCompletionResponse {
+                content: blocks.clone(),
+                fields: IndexMap::new(),
+            };
+            let projected = project_response(&response, None)?;
+            Ok((
+                projected.content,
+                projected.tool_calls,
+                projected.thinking_blocks,
+            ))
+        }
+        Some(Json::Text(text)) => Ok((text.clone(), Vec::new(), None)),
+        None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {
+            Ok((String::new(), Vec::new(), None))
+        }
+    }
+}
+
+// a tool call outranks the stop reason, and the stop reason outranks whether any text came back
+fn choice_finish_reason(
+    content: &str,
+    tool_calls: &[AnthropicToolCall],
+    reply: &NativeReply,
+) -> &'static str {
+    if !tool_calls.is_empty() {
+        return "tool_calls";
+    }
+    let mapped = match reply.fields.get("stop_reason") {
+        Some(Json::Text(reason)) => finish_reason_for(reason),
         None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            None
+        }
     };
-    let finish_reason = if !tool_calls.is_empty() {
-        "tool_calls"
-    } else if let Some(known) = mapped {
-        known
-    } else if content.is_empty() {
-        "length"
-    } else {
-        "stop"
-    };
+    mapped.unwrap_or(if content.is_empty() { "length" } else { "stop" })
+}
+
+fn assistant_choice(
+    content: String,
+    tool_calls: &[AnthropicToolCall],
+    thinking_blocks: Option<Vec<Json>>,
+    finish_reason: &'static str,
+) -> IndexMap<String, Json> {
     let mut message = IndexMap::new();
     message.insert(String::from("role"), Json::Text(String::from("assistant")));
     // a tool-only reply has null content, an empty reply keeps an empty string
@@ -86,19 +116,14 @@ pub fn transform_parsed_response(mut reply: NativeReply) -> Result<NativeReply, 
     if let Some(blocks) = thinking_blocks.filter(|blocks| !blocks.is_empty()) {
         message.insert(String::from("thinking_blocks"), Json::List(blocks));
     }
-    let choice = IndexMap::from([
+    IndexMap::from([
         (String::from("index"), Json::Number(Number::from(0_u8))),
         (String::from("message"), Json::Object(message)),
         (
             String::from("finish_reason"),
             Json::Text(String::from(finish_reason)),
         ),
-    ]);
-    reply.choices = Some(Json::List(vec![Json::Object(choice)]));
-    if let Some(Json::Object(usage)) = reply.fields.get_mut("usage") {
-        normalize_usage(usage)?;
-    }
-    Ok(reply)
+    ])
 }
 
 fn finish_reason_for(stop_reason: &str) -> Option<&'static str> {
