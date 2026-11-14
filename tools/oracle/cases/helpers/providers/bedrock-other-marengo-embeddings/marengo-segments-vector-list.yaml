@@ -1,0 +1,19 @@
+kind: helper
+name: marengo-segments-vector-list
+call:
+  bedrock_other_marengo_embeddings:
+    marengo_segments_vector_list:
+      model: twelvelabs.marengo-embed-2-7-v1:0
+      input: [one, two]
+      inference: {}
+      replies:
+        - data:
+            - embedding: [1, 2]
+            - embedding: null
+          embedding: [9.0]
+        - embedding: []
+          embeddings:
+            - embedding: [3.5]
+env: {}
+compare:
+  ignore: []

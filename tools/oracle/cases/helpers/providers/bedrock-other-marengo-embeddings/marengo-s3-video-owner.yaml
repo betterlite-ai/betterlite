@@ -1,0 +1,19 @@
+kind: helper
+name: marengo-s3-video-owner
+call:
+  bedrock_other_marengo_embeddings:
+    marengo_s3_video_owner:
+      model: twelvelabs.marengo-embed-2-7-v1:0
+      input: [s3://bucket/clip.mp4]
+      inference:
+        inputType: video
+        bucketOwner: "123456789012"
+        startSec: 1.5
+      async_invoke_route: true
+      model_id: async_invoke/twelvelabs.marengo-embed-2-7-v1:0
+      output_s3_uri: s3://out/bucket
+      replies:
+        - invocationArn: arn:aws:bedrock:us-east-1:1:async-invoke/abc
+env: {}
+compare:
+  ignore: []
