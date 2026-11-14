@@ -188,6 +188,29 @@ fn verbose_words_need_a_nonempty_token_list() {
 }
 
 #[test]
+fn token_numbers_beyond_i64_leave_the_subtitle_and_speaker_domain() {
+    assert_eq!(
+        srt(&tokens(
+            r#"[{"text": "x", "start_ms": 18446744073709551616, "end_ms": 18446744073709551616}]"#
+        )),
+        ""
+    );
+
+    let payload = SonioxTranscriptPayload::try_from(object(
+        r#"{"transcript": {"tokens": [{"text": "a", "speaker": 18446744073709551616}]}}"#,
+    ))
+    .expect("a payload");
+    let error = build_response_from_payload(&payload, None, None).expect_err("a speaker error");
+    assert!(matches!(
+        error,
+        RecordsError::Value {
+            field: "transcript",
+            ..
+        }
+    ));
+}
+
+#[test]
 fn verbose_words_render_even_when_the_transcript_text_wins() {
     let payload = r#"{"transcript": {"text": "T", "tokens": [{"text": "a", "start_ms": 1}]}}"#;
     assert_eq!(
