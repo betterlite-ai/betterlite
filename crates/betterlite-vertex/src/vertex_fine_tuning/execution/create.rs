@@ -58,7 +58,6 @@ where
         make_lookup(request.credentials, request.project),
     )
     .await?;
-    // B1304 prepares the token and URL; only its auth header is used, since the POST target is the tuningJobs URL
     let prepared = get_token_and_url(
         request.catalog,
         &TokenUrlInput {
@@ -81,13 +80,16 @@ where
     post_tuning_job(transport, request, &prepared, &access.project, body).await
 }
 
-async fn post_tuning_job<T: TuningTransport>(
+async fn post_tuning_job<T>(
     transport: &T,
     request: &TuningCreateRequest<'_>,
     prepared: &EndpointTarget,
     project: &str,
     body: Vec<u8>,
-) -> Result<FineTuneJob, TuningExecutionError> {
+) -> Result<FineTuneJob, TuningExecutionError>
+where
+    T: TuningTransport,
+{
     let Some(location) = request.location else {
         return Err(TuningExecutionError::VertexUrl(
             VertexUrlError::LocationRequired,

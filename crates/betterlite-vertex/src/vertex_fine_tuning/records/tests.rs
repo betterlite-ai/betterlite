@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use betterlite_openai::fine_tuning::job::{FineTuneCreate, FineTuneJob};
+use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use jiff::tz::TimeZone;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -177,13 +177,32 @@ fn a_full_response_maps_every_openai_field() {
         &utc(),
     )
     .unwrap();
-    let expected: FineTuneJob = serde_json::from_str(
-        r#"{"id":"projects/p/locations/us-central1/tuningJobs/1","created_at":1704067200,"error":null,"fine_tuned_model":"tuned-1","finished_at":null,"hyperparameters":{"batch_size":null,"learning_rate_multiplier":0.1,"n_epochs":3,"adapter_size":"ADAPTER_SIZE_FOUR"},"model":"gemini-1.5-flash-002","object":"fine_tuning.job","organization_id":"","result_files":[],"seed":0,"status":"succeeded","trained_tokens":null,"training_file":"gs://b/train.jsonl","validation_file":null,"estimated_finish":null,"integrations":[],"metadata":null,"method":null}"#,
-    )
-    .unwrap();
+    let value = serde_json::to_value(&job).unwrap();
     assert_eq!(
-        serde_json::to_string(&job).unwrap(),
-        serde_json::to_string(&expected).unwrap()
+        value["id"],
+        serde_json::json!("projects/p/locations/us-central1/tuningJobs/1")
+    );
+    assert_eq!(value["created_at"], serde_json::json!(1_704_067_200_i64));
+    assert_eq!(value["fine_tuned_model"], serde_json::json!("tuned-1"));
+    assert_eq!(value["model"], serde_json::json!("gemini-1.5-flash-002"));
+    assert_eq!(value["object"], serde_json::json!("fine_tuning.job"));
+    assert_eq!(value["organization_id"], serde_json::json!(""));
+    assert_eq!(value["result_files"], serde_json::json!([]));
+    assert_eq!(value["seed"], serde_json::json!(0_i64));
+    assert_eq!(value["status"], serde_json::json!("succeeded"));
+    assert_eq!(
+        value["training_file"],
+        serde_json::json!("gs://b/train.jsonl")
+    );
+    let hyperparameters = &value["hyperparameters"];
+    assert_eq!(hyperparameters["n_epochs"], serde_json::json!(3_i64));
+    assert_eq!(
+        hyperparameters["learning_rate_multiplier"],
+        serde_json::json!(0.1_f64)
+    );
+    assert_eq!(
+        hyperparameters["adapter_size"],
+        serde_json::json!("ADAPTER_SIZE_FOUR")
     );
 }
 

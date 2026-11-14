@@ -37,6 +37,5 @@ fn local_created_at(text: &str, local: &LocalTimeContext) -> Option<i64> {
                 .map(|date| date.to_datetime(civil::Time::midnight()))
         })
         .ok()?;
-    // CPython keeps microseconds, and the shared decoder applies the injected zone the way mktime does
     decode_vertex_timestamp(format!("{datetime:.6}Z").as_bytes(), local).ok()
 }

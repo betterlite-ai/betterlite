@@ -58,7 +58,6 @@ pub trait TuningTransport: Send + Sync {
 }
 
 impl TuningTransport for ProxiedClient {
-    // LiteLLM's httpx handlers follow redirects, so the tuning POST re-checks each hop too
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
         self.send_following(request)
             .await?

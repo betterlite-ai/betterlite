@@ -108,7 +108,6 @@ fn openai_record(
     Ok(OpenAiTuningJob {
         id: response.name.clone().unwrap_or_default(),
         created_at: created_at(response.create_time.as_deref(), local),
-        // LiteLLM's .get(..., "") keeps a missing name as "" but passes an explicit null through
         fine_tuned_model: response
             .tuned_model_display_name
             .or_if_absent(String::new()),
@@ -125,7 +124,6 @@ fn openai_record(
             Some("JOB_STATE_SUCCEEDED") => JobStatus::Succeeded,
             Some("JOB_STATE_FAILED") => JobStatus::Failed,
             Some("JOB_STATE_CANCELLED") => JobStatus::Cancelled,
-            // LiteLLM starts at queued, so pending, null and every state it does not know stay there
             _ => JobStatus::Queued,
         },
         training_file: spec

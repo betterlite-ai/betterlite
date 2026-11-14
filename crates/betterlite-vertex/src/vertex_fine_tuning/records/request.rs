@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use super::TuningRecordError;
 
-// LiteLLM reads adapter_size from the caller's original hyperparameters dict, not the coerced model
 #[derive(Debug, Clone, Deserialize)]
 pub struct OriginalHyperparameters {
     pub adapter_size: Option<String>,
@@ -85,11 +84,14 @@ struct Given {
     is_text: bool,
 }
 
-fn hyperparameter<T: Default + PartialEq>(
+fn hyperparameter<T>(
     candidate: Option<Given>,
     field: &'static str,
     parse: fn(&str) -> Option<T>,
-) -> Result<Option<T>, TuningRecordError> {
+) -> Result<Option<T>, TuningRecordError>
+where
+    T: Default + PartialEq,
+{
     let Some(entry) = candidate.filter(|present| !present.text.is_empty()) else {
         return Ok(None);
     };
