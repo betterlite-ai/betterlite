@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_config::sections::vertex_credential_sources::credential_source::{
     ConfiguredCredentials, CredentialSource,
 };
-use betterlite_guardrails::model_armor::transport::tokens::ArmorTokens;
+use betterlite_guardrails::model_armor::transport::tokens::ArmorTokens as _;
 use betterlite_vertex::credential_sources::error::CredentialSourceError;
 use betterlite_vertex::credential_sources::sdk::{CredentialClock, SystemClock};
 use betterlite_vertex::token_cache::error::CredentialCacheError;
