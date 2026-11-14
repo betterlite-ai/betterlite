@@ -32,10 +32,10 @@ CLASS_COUNTS: Final = {
     "proxy.guardrails.guardrail_hooks.zscaler_ai_guard": 1,
     "guardrail_base_init": 1,
 }
-DUMP_COUNT: Final = 19
+DUMP_COUNT: Final = 20
 NORMALIZATION_COUNT: Final = 4
 REJECTION_COUNT: Final = 14
-WARNING_COUNT: Final = 8
+WARNING_COUNT: Final = 10
 UI_COUNT: Final = 5
 ABSTRACT_COUNT: Final = 9
 DESCRIBE_SCRIPT = """
@@ -131,6 +131,12 @@ SAMPLES = [
         TYPESAFE,
         "TypeSafeGuardrailOptionalParams",
         {"relevance_threshold": 0.5, "min_chars_to_evaluate": 10, "max_result_chars_in_state": 100},
+    ),
+    (
+        "typesafe.params.bounds",
+        TYPESAFE,
+        "TypeSafeGuardrailOptionalParams",
+        {"relevance_threshold": 0.0, "min_chars_to_evaluate": 0, "max_result_chars_in_state": 1},
     ),
     ("typesafe.config.default", TYPESAFE, "TypeSafeGuardrailConfigModel", {}),
     (
@@ -311,10 +317,24 @@ WARNINGS = [
         {},
     ),
     (
+        "zscaler.default_base",
+        ZSCALER,
+        "ZscalerAIGuardConfigModel",
+        {},
+        {},
+    ),
+    (
         "zscaler.execute.zero_policy",
         ZSCALER,
         "ZscalerAIGuardConfigModel",
         {"api_base": "https://gw/v1/detection/execute-policy", "policy_id": 0},
+        {},
+    ),
+    (
+        "zscaler.execute.min_policy",
+        ZSCALER,
+        "ZscalerAIGuardConfigModel",
+        {"api_base": "https://gw/v1/detection/execute-policy", "policy_id": 1},
         {},
     ),
     (
@@ -734,10 +754,12 @@ def test_warning_names(report: FullReport) -> None:
     ours = report["betterlite"]["warnings"]
     assert len(theirs) == WARNING_COUNT
     assert ours == theirs
+    assert ours["zscaler.default_base"]
     assert ours["zscaler.execute.no_policy"]
     assert ours["zscaler.resolve.no_alias"]
     assert ours["zscaler.env.policy_invalid"][0].endswith(": eleven")
     assert ours["zscaler.execute.policy"] == []
+    assert ours["zscaler.execute.min_policy"] == []
     assert ours["zscaler.resolve.alias"] == []
     assert ours["zscaler.env.policy"] == []
 
