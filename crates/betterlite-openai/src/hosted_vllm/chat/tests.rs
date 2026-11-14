@@ -410,6 +410,45 @@ fn a_video_file_data_item_becomes_a_video_url() {
 }
 
 #[test]
+fn a_video_file_data_item_without_a_format_becomes_a_video_url() {
+    let output = transformed(json!([{
+        "role": "user",
+        "content": [{
+            "type": "file",
+            "file": {"file_data": "data:video/mp4;base64,AAAA"},
+        }],
+    }]));
+    assert_eq!(
+        output.get(0).and_then(|message| message.get("content")),
+        Some(&json!([{
+            "type": "video_url",
+            "video_url": {"url": "data:video/mp4;base64,AAAA"},
+        }]))
+    );
+}
+
+#[test]
+fn a_file_id_wins_over_file_data_for_the_video_url() {
+    let output = transformed(json!([{
+        "role": "user",
+        "content": [{
+            "type": "file",
+            "file": {
+                "file_id": "clip.mp4",
+                "file_data": "data:video/mp4;base64,AAAA",
+            },
+        }],
+    }]));
+    assert_eq!(
+        output.get(0).and_then(|message| message.get("content")),
+        Some(&json!([{
+            "type": "video_url",
+            "video_url": {"url": "clip.mp4"},
+        }]))
+    );
+}
+
+#[test]
 fn a_video_file_id_item_becomes_a_video_url() {
     let output = transformed(json!([{
         "role": "user",
@@ -515,6 +554,27 @@ fn assistant_tool_use_blocks_become_tool_calls() {
 }
 
 #[test]
+fn assistant_tool_use_with_an_object_input_encodes_it_as_json() {
+    let output = transformed(json!([{
+        "role": "assistant",
+        "content": [{
+            "type": "tool_use",
+            "id": "call_1",
+            "name": "lookup",
+            "input": {"q": "x"},
+        }],
+    }]));
+    assert_eq!(
+        output.get(0).and_then(|message| message.get("tool_calls")),
+        Some(&json!([{
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "lookup", "arguments": "{\"q\":\"x\"}"},
+        }]))
+    );
+}
+
+#[test]
 fn assistant_tool_use_without_input_sends_an_empty_object() {
     let output = transformed(json!([{
         "role": "assistant",
@@ -548,6 +608,39 @@ fn assistant_tool_calls_dedupe_by_existing_ids() {
             "type": "function",
             "function": {"name": "first", "arguments": "{}"},
         }]))
+    );
+}
+
+#[test]
+fn assistant_tool_calls_append_new_calls_to_existing_ones() {
+    let output = transformed(json!([{
+        "role": "assistant",
+        "content": [{
+            "type": "tool_use",
+            "id": "call_2",
+            "name": "lookup",
+            "input": "{\"q\":\"x\"}",
+        }],
+        "tool_calls": [{
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "first", "arguments": "{}"},
+        }],
+    }]));
+    assert_eq!(
+        output.get(0).and_then(|message| message.get("tool_calls")),
+        Some(&json!([
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "first", "arguments": "{}"},
+            },
+            {
+                "id": "call_2",
+                "type": "function",
+                "function": {"name": "lookup", "arguments": "{\"q\":\"x\"}"},
+            },
+        ]))
     );
 }
 

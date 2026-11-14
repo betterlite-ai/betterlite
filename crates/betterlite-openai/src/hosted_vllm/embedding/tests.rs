@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
 
 use rstest::rstest;
 use secrecy::SecretString;
@@ -272,24 +274,23 @@ fn an_optional_param_can_override_the_input() {
     assert_eq!(body.get("input"), Some(&json!("overridden")));
 }
 
-fn full_decoded() -> Value {
-    json!({
-        "object": "list",
-        "model": "my-model",
-        "data": [{"object": "embedding", "embedding": [0.5, 0.25], "index": 0}],
-        "usage": {
-            "prompt_tokens": 2,
-            "completion_tokens": 0,
-            "completion_tokens_details": null,
-            "prompt_tokens_details": null,
-            "total_tokens": 2,
-        },
-    })
-}
-
 #[test]
 fn a_full_reply_decodes_unchanged() {
-    assert_eq!(reply(full_reply()).expect("reply"), full_decoded());
+    assert_eq!(
+        reply(full_reply()).expect("reply"),
+        json!({
+            "object": "list",
+            "model": "my-model",
+            "data": [{"object": "embedding", "embedding": [0.5, 0.25], "index": 0}],
+            "usage": {
+                "prompt_tokens": 2,
+                "completion_tokens": 0,
+                "completion_tokens_details": null,
+                "prompt_tokens_details": null,
+                "total_tokens": 2,
+            },
+        })
+    );
 }
 
 #[test]
@@ -302,6 +303,18 @@ fn a_reply_without_object_defaults_it_to_list() {
     assert_eq!(
         reply(body).expect("reply").get("object"),
         Some(&json!("list"))
+    );
+}
+
+#[test]
+fn a_reply_keeps_its_object_value() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("object"), json!("embedding_list"));
+    assert_eq!(
+        reply(body).expect("reply").get("object"),
+        Some(&json!("embedding_list"))
     );
 }
 
@@ -499,4 +512,12 @@ fn non_provider_errors_report_status_500() {
     assert_eq!(missing.status_code(), 500);
     let shape = transform_embedding_response(b"{}", &mut |_text| {}).expect_err("reply must fail");
     assert_eq!(shape.status_code(), 500);
+}
+
+#[rstest]
+fn replays_the_hosted_vllm_embedding_reply_corpus(
+    #[files("fuzz/corpus/hosted_vllm_embedding_reply/*")] path: PathBuf,
+) {
+    let bytes = fs::read(path).expect("corpus file");
+    let _reply = transform_embedding_response(&bytes, &mut |_text| {});
 }
