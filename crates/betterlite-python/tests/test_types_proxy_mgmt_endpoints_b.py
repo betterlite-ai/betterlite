@@ -440,6 +440,20 @@ def test_names_scim_absent_blocks() -> None:
     assert scim.SCIM_ENTERPRISE_USER_SCHEMA not in our_dump
 
 
+def test_names_scim_deviations() -> None:
+    email: dict[str, JsonValue] = {"value": "not-an-email"}
+    assert not rejects(scim.SCIMUserEmail, email)
+    assert rejects(litellm_scim.SCIMUserEmail, email)
+    assert "user_name" in scim.SCIMUser.model_fields
+    assert "userName" in litellm_scim.SCIMUser.model_fields
+    our_schema: dict[str, JsonValue] = scim.SCIMUser.model_json_schema(mode="serialization")
+    their_schema: dict[str, JsonValue] = litellm_scim.SCIMUser.model_json_schema(
+        mode="serialization"
+    )
+    assert "properties" in our_schema
+    assert "properties" not in their_schema
+
+
 def test_names_scim_user_dump() -> None:
     payload: dict[str, JsonValue] = {
         "schemas": ["s"],
@@ -542,6 +556,19 @@ def test_names_team_deviations() -> None:
     budget_patch: dict[str, JsonValue] = {"user_id": "u", "budget_duration": "bogus"}
     assert not rejects(team.TeamMemberBudgetPatch, budget_patch)
     assert rejects(litellm_team.TeamMemberBudgetPatch, budget_patch)
+    permissions: dict[str, JsonValue] = {"permissions": ["/bogus"]}
+    assert not rejects(team.BulkUpdateTeamMemberPermissionsRequest, permissions)
+    assert rejects(litellm_team.BulkUpdateTeamMemberPermissionsRequest, permissions)
+    member: dict[str, JsonValue] = {
+        "team_id": "t",
+        "members_with_roles": [{"user_id": "u", "role": "user"}],
+    }
+    our_member = team.TeamListItem.model_validate(member).model_dump()
+    their_member = litellm_team.TeamListItem.model_validate(member).model_dump()
+    assert our_member["members_with_roles"] == [{"user_id": "u", "role": "user"}]
+    assert their_member["members_with_roles"] == [
+        {"user_id": "u", "user_email": None, "role": "user"}
+    ]
 
 
 def test_names_sso_deviations() -> None:
