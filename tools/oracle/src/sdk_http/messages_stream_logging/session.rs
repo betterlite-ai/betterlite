@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use betterlite_core::api::messages_stream_logging::seams::{
-    LoggingFuture, LoggingJob, RouteStreamingLogging,
+    LoggingFuture, LoggingJob, ReportedFailure, RouteStreamingLogging,
 };
 use betterlite_core::api::messages_stream_logging::slots::{Fields, StreamSlots};
 use betterlite_core::api::messages_stream_logging::{
@@ -162,12 +162,7 @@ impl Session {
             args.lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(parked.len());
-            Box::pin(async move {
-                for future in parked {
-                    future.await?;
-                }
-                Ok(())
-            })
+            Box::pin(await_parked(parked))
         }));
     }
 
@@ -258,6 +253,14 @@ impl Session {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(())
     }
+}
+
+// The deferred callback awaits the parked futures in the order LiteLLM hands them over
+async fn await_parked(parked: Vec<LoggingFuture>) -> Result<(), ReportedFailure> {
+    for future in parked {
+        future.await?;
+    }
+    Ok(())
 }
 
 fn convert(chunk: &ChunkSpec) -> Result<String, SdkHttpError> {

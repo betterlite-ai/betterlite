@@ -90,10 +90,10 @@ pub(crate) async fn send(
     })
 }
 
-pub(super) fn outbound<B: Serialize + ?Sized>(
-    api_base: &str,
-    body: &B,
-) -> Result<OutboundRequest, SdkHttpError> {
+pub(super) fn outbound<B>(api_base: &str, body: &B) -> Result<OutboundRequest, SdkHttpError>
+where
+    B: Serialize + ?Sized,
+{
     let url = Url::parse(&format!("{api_base}/messages"))
         .map_err(|source| SdkHttpError::Url(Box::new(source)))?;
     let encoded = serde_json::to_vec(body).map_err(SdkHttpError::Serialize)?;
