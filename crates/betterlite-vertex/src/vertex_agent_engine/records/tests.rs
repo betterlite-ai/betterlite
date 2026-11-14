@@ -3,7 +3,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use betterlite_models::decisions::{Extra, Json};
+use betterlite_models::decisions::Extra;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, Message};
 use betterlite_tokenizer::count::error::CountError;
 use rstest::rstest;
@@ -32,7 +33,7 @@ fn message(role: &str, content: &str) -> Message {
         role: role.to_owned(),
         content: Some(Content::Text(content.to_owned())),
         name: None,
-        provider_specific_fields: Extra::new(),
+        provider_specific_fields: Object::new(),
     }
 }
 
@@ -96,10 +97,19 @@ fn the_supported_openai_params_are_user_only() {
 }
 
 #[rstest]
-#[case::user(r#"{"user":"ada"}"#, r#"{"user_id":"ada"}"#)]
-#[case::other(r#"{"temperature":0.5}"#, r#"{"temperature":0.5}"#)]
-fn map_openai_params_copies_user_to_user_id(#[case] non_default: &str, #[case] expected: &str) {
-    let mapped = map_openai_params(&params(non_default), Extra::new());
+#[case::user(r#"{"user":"ada"}"#, "{}", r#"{"user_id":"ada"}"#)]
+#[case::other(r#"{"temperature":0.5}"#, "{}", "{}")]
+#[case::kept(
+    r#"{"user":"ada"}"#,
+    r#"{"session_id":"s"}"#,
+    r#"{"session_id":"s","user_id":"ada"}"#
+)]
+fn map_openai_params_copies_user_to_user_id(
+    #[case] non_default: &str,
+    #[case] optional: &str,
+    #[case] expected: &str,
+) {
+    let mapped = map_openai_params(&params(non_default), params(optional));
     assert_eq!(mapped, params(expected));
 }
 
@@ -259,6 +269,21 @@ fn the_state_delta_fallback_takes_the_first_non_empty_string() {
 }
 
 #[test]
+fn a_snapshot_of_the_wrong_shape_is_skipped_not_failed() {
+    let text_content = body_of(&[r#"{"content":"none","actions":{"state_delta":{"k":"delta"}}}"#]);
+    let text_answer = decode_vertex_agent_buffer(200, &text_content, MODEL).unwrap();
+    assert_eq!(text_answer.content, "delta");
+    let numeric_text =
+        body_of(&[r#"{"content":{"parts":[{"text":5}]},"actions":{"state_delta":{"k":"delta"}}}"#]);
+    let numeric_answer = decode_vertex_agent_buffer(200, &numeric_text, MODEL).unwrap();
+    assert_eq!(numeric_answer.content, "");
+    let list_state =
+        body_of(&[r#"{"content":{"parts":[{}]},"actions":{"state_delta":["delta"]}}"#]);
+    let list_answer = decode_vertex_agent_buffer(200, &list_state, MODEL).unwrap();
+    assert_eq!(list_answer.content, "");
+}
+
+#[test]
 fn malformed_and_data_prefixed_lines_are_ignored() {
     let ignored = body_of(&[
         r#"data: {"content":{"parts":[{"text":"sse"}]}}"#,
@@ -271,8 +296,8 @@ fn malformed_and_data_prefixed_lines_are_ignored() {
         r#"data: {"content":{"parts":[{"text":"sse"}]}}"#,
         r#"{"content":{"parts":[{"text":"real"}]}}"#,
     ]);
-    let answer = decode_vertex_agent_buffer(200, &mixed, MODEL).unwrap();
-    assert_eq!(answer.content, "real");
+    let mixed_answer = decode_vertex_agent_buffer(200, &mixed, MODEL).unwrap();
+    assert_eq!(mixed_answer.content, "real");
 }
 
 #[test]
@@ -295,9 +320,15 @@ fn a_non_utf8_body_fails_with_the_raw_status() {
 #[tokio::test]
 async fn the_usage_counts_with_gpt_3_5_turbo_whatever_the_agent_model() {
     let messages = [message("user", "hi")];
-    let answer = transform_response(200, b"", MODEL, &messages, &FixedCounter)
-        .await
-        .unwrap();
+    let answer = transform_response(
+        200,
+        br#"{"content":{"parts":[{"text":"hi"}]}}"#,
+        MODEL,
+        &messages,
+        &FixedCounter,
+    )
+    .await
+    .unwrap();
     let usage = answer.usage.unwrap();
     assert_eq!(usage.prompt_tokens, 3);
     assert_eq!(usage.completion_tokens, 5);
