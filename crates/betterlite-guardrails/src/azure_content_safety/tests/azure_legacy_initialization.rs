@@ -81,7 +81,9 @@ fn keeps_the_sdk_transport_defaults() {
 fn keeps_the_api_key_out_of_the_debug_output() {
     let hook = legacy("http://127.0.0.1:1", None);
     assert_eq!(hook.api_key.expose_secret(), "azure-key");
-    assert!(!format!("{hook:?}").contains("azure-key"));
+    let shown = format!("{hook:?}");
+    assert!(shown.contains("http://127.0.0.1:1"));
+    assert!(!shown.contains("azure-key"));
 }
 
 #[test]
