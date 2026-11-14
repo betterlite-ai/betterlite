@@ -42,12 +42,6 @@ class Extras(TypedDict):
     page_token: NotRequired[str | None]
 
 
-class RequestWire(TypedDict):
-    method: str | None
-    path: str | None
-    headers: dict[str, str]
-
-
 # the agents SDK's public entry points: a sync one answers its model, async ones a coroutine
 class AgentsItemSdk(Protocol):
     def get(
@@ -257,9 +251,8 @@ def run(input_value: Input) -> JsonValue:
         outcome["request"] = {"method": None, "path": None, "headers": {}}
     else:
         method, path, headers = captured
-        outcome["request"] = JSON.validate_python(
-            RequestWire(method=method, path=path, headers=headers)
-        )
+        wire = {"method": method, "path": path, "headers": headers}
+        outcome["request"] = JSON.validate_python(wire)
     details: dict[str, JsonValue] = log.model_call_details
     outcome["logging"] = {
         "model": details.get("model"),
