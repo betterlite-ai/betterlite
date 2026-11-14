@@ -13,6 +13,7 @@ use crate::secret_codec::general_settings;
 use crate::sections::{RawSections, Sections};
 use crate::types::{Config, GeneralSettings, LiteLlmSettings, ProxyTrust, RouterSettings};
 mod deployment;
+pub mod startup;
 use deployment::convert_deployment;
 pub trait EnvironmentLookup {
     fn lookup(&self, name: &str) -> Option<String>;
