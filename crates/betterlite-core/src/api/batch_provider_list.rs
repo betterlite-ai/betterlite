@@ -43,7 +43,7 @@ impl From<String> for BatchListProvider {
         let matched = known
             .into_iter()
             .find(|provider| provider.name() == name.as_str());
-        matched.unwrap_or_else(|| Self::Other(name))
+        matched.unwrap_or(Self::Other(name))
     }
 }
 
