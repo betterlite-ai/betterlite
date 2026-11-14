@@ -290,16 +290,11 @@ fn the_transcript_serializes_the_hidden_answer_out_of_the_response() {
         r#"{"text": "hi", "language_code": "eng", "words": [{"text": "hi", "start": 0, "end": 1, "type": "word"}]}"#,
     );
 
-    let rendered = serde_json::to_value(&reply).expect("a serialized transcript");
+    let rendered = serde_json::to_string(&reply).expect("a serialized transcript");
 
     assert_eq!(
         rendered,
-        serde_json::json!({
-            "text": "hi",
-            "task": "transcribe",
-            "language": "eng",
-            "words": [{"word": "hi", "start": 0, "end": 1}],
-        })
+        r#"{"text":"hi","task":"transcribe","language":"eng","words":[{"word":"hi","start":0,"end":1}]}"#
     );
 }
 
@@ -309,16 +304,11 @@ fn the_transcript_keeps_present_nulls_on_the_wire() {
         r#"{"text": null, "language_code": null, "words": [{"type": "word", "text": null, "start": null, "end": null}]}"#,
     );
 
-    let rendered = serde_json::to_value(&reply).expect("a serialized transcript");
+    let rendered = serde_json::to_string(&reply).expect("a serialized transcript");
 
     assert_eq!(
         rendered,
-        serde_json::json!({
-            "text": null,
-            "task": "transcribe",
-            "language": null,
-            "words": [{"word": null, "start": null, "end": null}],
-        })
+        r#"{"text":null,"task":"transcribe","language":null,"words":[{"word":null,"start":null,"end":null}]}"#
     );
 }
 
@@ -424,7 +414,9 @@ fn malformed_replies_fail_with_the_raw_response_text(#[case] body: &str) {
 
     match error {
         TranscriptionError::Reply { raw, .. } => assert_eq!(raw, body),
-        other => panic!("unexpected error: {other}"),
+        other @ (TranscriptionError::ApiKeyRequired
+        | TranscriptionError::ReplyTooLarge { .. }
+        | TranscriptionError::FormValue { .. }) => panic!("unexpected error: {other}"),
     }
 }
 

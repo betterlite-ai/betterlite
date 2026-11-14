@@ -1,7 +1,6 @@
 use betterlite_openai::openai_base_config::Object;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
-use serde_with::rust::double_option;
 use thiserror::Error;
 
 use super::error::TranscriptionError;
@@ -15,7 +14,7 @@ pub enum TranscriptTask {
     Transcribe,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TranscriptWord {
     pub word: Option<String>,
     pub start: Option<Number>,
@@ -37,12 +36,9 @@ pub struct ElevenTranscript {
 // an absent key takes LiteLLM's .get() default while a present null stays null
 #[derive(Debug, Deserialize)]
 struct ProviderReply {
-    #[serde(default, with = "double_option")]
-    text: Option<Option<String>>,
-    #[serde(default, with = "double_option")]
-    language_code: Option<Option<String>>,
-    #[serde(default, with = "double_option")]
-    words: Option<Option<Vec<Object>>>,
+    text: Option<String>,
+    language_code: Option<String>,
+    words: Option<Vec<Object>>,
 }
 
 #[derive(Debug, Error)]
@@ -71,19 +67,30 @@ pub fn decode_eleven_transcript(
         serde_json::from_slice(payload).map_err(|source| reply_error(body, source.to_string()))?;
     let reply: ProviderReply =
         serde_json::from_slice(payload).map_err(|source| reply_error(body, source.to_string()))?;
+    // a present key wins over serde's None, so the null-versus-absent split reads the raw object
     let words = match reply.words {
+        None if hidden.contains_key("words") => {
+            return Err(reply_error(body, WordError::NotList.to_string()));
+        }
         None => None,
-        Some(None) => return Err(reply_error(body, WordError::NotList.to_string())),
-        Some(Some(entries)) => {
+        Some(entries) => {
             Some(project_words(&entries).map_err(|source| reply_error(body, source.to_string()))?)
         }
     };
+    let text = if hidden.contains_key("text") {
+        reply.text
+    } else {
+        Some(String::new())
+    };
+    let language = if hidden.contains_key("language_code") {
+        reply.language_code
+    } else {
+        Some("unknown".to_owned())
+    };
     Ok(ElevenTranscript {
-        text: reply.text.unwrap_or_else(|| Some(String::new())),
+        text,
         task: TranscriptTask::Transcribe,
-        language: reply
-            .language_code
-            .unwrap_or_else(|| Some("unknown".to_owned())),
+        language,
         words,
         hidden,
     })
