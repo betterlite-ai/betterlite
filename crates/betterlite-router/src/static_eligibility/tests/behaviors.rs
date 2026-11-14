@@ -443,6 +443,27 @@ fn a_missing_token_count_still_drops_an_unsupported_parameter() {
     assert!(result.deployments.is_empty());
 }
 
+// A provider list that names other params but not response_format still drops the candidate.
+#[test]
+fn a_supported_list_without_response_format_drops_the_candidate() {
+    let support = Support {
+        resolves: true,
+        supported: Some(vec!["temperature".to_owned()]),
+    };
+    let facts = RequestFacts {
+        response_format: true,
+        ..message_facts("hi")
+    };
+    let result = run(
+        pool(vec![spec("gpt", "partial", "openai/gpt-4o", "")]),
+        &facts,
+        true,
+        &support,
+    )
+    .unwrap();
+    assert!(result.deployments.is_empty());
+}
+
 fn params_keeps_an_unresolved_provider() {
     let facts = RequestFacts {
         response_format: true,
