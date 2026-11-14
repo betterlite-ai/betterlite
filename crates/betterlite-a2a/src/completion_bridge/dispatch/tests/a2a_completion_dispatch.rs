@@ -288,6 +288,8 @@ async fn streaming_accumulates_choice_zero_text() {
 
 #[rstest]
 #[case::empty_content(vec![chunk("")])]
+#[case::missing_delta(vec![parsed_chunk(r#"{"choices":[{}]}"#)])]
+#[case::missing_content(vec![parsed_chunk(r#"{"choices":[{"delta":{}}]}"#)])]
 #[case::no_choices(vec![parsed_chunk("{}")])]
 #[case::empty_choices(vec![parsed_chunk(r#"{"choices":[]}"#)])]
 #[case::no_chunks(Vec::new())]
