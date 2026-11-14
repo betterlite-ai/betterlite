@@ -384,6 +384,49 @@ async fn send_client_retries_with_the_agent_card_url_and_api_base() {
     assert!(posted(&seen).body.contains("\"method\":\"SendMessage\""));
 }
 
+#[tokio::test]
+async fn stream_client_retries_with_the_agent_card_url_and_api_base() {
+    let (outcome, seen) = with_agent_advertising_a_dead_port(
+        Reply::Sse(vec![message_frame("retried")]),
+        |base| async move {
+            let mut fixture = StreamFixture::new();
+            let completion = recorder();
+            let providers = provider();
+            let mut source = Source::default();
+            let mut bridge = BridgeDeps {
+                completion: &completion,
+                providers: &providers,
+                source: &mut source,
+            };
+            let (dispatch, _calls) = recording_dispatch();
+            let call = StreamCall {
+                a2a_client: None,
+                request: request("hello"),
+                api_base: Some(base),
+                litellm_params: params_with_provider(None),
+                agent_id: None,
+                metadata: None,
+                proxy_server_request: None,
+                agent_extra_headers: None,
+            };
+            let deps = fixture.deps(dispatch);
+            let events = asend_message_streaming(call, None, deps, &mut bridge)
+                .await
+                .expect("the stream starts");
+            collect_events(events).await
+        },
+    )
+    .await;
+
+    assert_eq!(outcome.len(), 1);
+    assert!(outcome[0].is_ok());
+    assert_eq!(
+        seen.iter().filter(|entry| entry.path == "/").count(),
+        1,
+        "the advertised agent only saw the retried message"
+    );
+}
+
 #[rstest]
 #[case::from_the_logging_object(Some("logging-trace"), "request-1", "logging-trace")]
 #[case::from_the_request_id(None, "request-1", "request-1")]
