@@ -21,6 +21,6 @@ deviations:
   - what: The fingerprint's json.dumps(default=str) and except-return str(tools) fallbacks are not modeled; trusted tool values are serialized as JSON.
     why: Betterlite's trusted tool-call values are Json by construction, so the non-JSON branches of the source cannot be reached.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5300-L5304
-  - what: A deployment hook that raises is reported as a DeploymentHookError whose message prefixes "the deployment hook failed: " and keeps the callback error as its source; LiteLLM lets the callback's exception propagate unchanged.
+  - what: A deployment hook that raises is reported as a DeploymentHookError whose message names the failed deployment hook and keeps the callback error as its source; LiteLLM lets the callback's exception propagate unchanged.
     why: The deployment hook is an injected typed port, so its failure has to be a Rust error the merge code can report instead of an arbitrary Python exception.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2439-L2449
