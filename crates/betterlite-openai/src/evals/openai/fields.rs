@@ -11,7 +11,7 @@ use crate::openai_base_config::Object;
 
 pub(super) const EVALS_API_BASE: &str = "https://api.openai.com";
 
-pub(super) fn present(value: Option<&str>) -> Option<&str> {
+pub(super) const fn present(value: Option<&str>) -> Option<&str> {
     match value {
         Some(text) if !text.is_empty() => Some(text),
         _ => None,
@@ -54,14 +54,14 @@ pub(super) fn context_api_base<'call>(context: &EvalsRequestContext<'call>) -> &
     .unwrap_or(EVALS_API_BASE)
 }
 
-fn order_text(order: EvalOrder) -> &'static str {
+const fn order_text(order: EvalOrder) -> &'static str {
     match order {
         EvalOrder::Asc => "asc",
         EvalOrder::Desc => "desc",
     }
 }
 
-fn order_by_text(order_by: EvalOrderBy) -> &'static str {
+const fn order_by_text(order_by: EvalOrderBy) -> &'static str {
     match order_by {
         EvalOrderBy::CreatedAt => "created_at",
         EvalOrderBy::UpdatedAt => "updated_at",
