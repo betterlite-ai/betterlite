@@ -105,14 +105,10 @@ def json_value(value: JsonValue | httpx.Timeout) -> JsonValue:
 
 
 def azure_params(value: JsonValue) -> JsonValue:
-    if value is None:
-        return None
     match value:
         case dict() as fields:
-            return {name: fields[name] for name in AZURE_PARAM_KEYS if name in fields}
-        case bool() as flag:
-            return flag
-        case int() | float() | str() | list():
+            return {name: fields.get(name) for name in AZURE_PARAM_KEYS}
+        case None | bool() | int() | float() | str() | list():
             return None
 
 
