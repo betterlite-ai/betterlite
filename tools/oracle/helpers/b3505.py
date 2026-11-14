@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Final, Literal, NotRequired, Protocol, TypedDict, Unpack
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, TypeVar, Unpack
 
 import httpx
 import litellm
@@ -143,32 +143,15 @@ class Answering(BaseHTTPRequestHandler):
         self.answer()
 
 
-def as_created(
-    result: AgentCreateResponse | Awaitable[AgentCreateResponse],
-) -> AgentCreateResponse:
+Response = TypeVar("Response")
+
+
+def settled(result: Response | Awaitable[Response]) -> Response:
     match result:
-        case AgentCreateResponse():
-            return result
         case Awaitable():
-            raise ValueError("the sync get returned a coroutine")
-
-
-def as_removed(result: AgentDeleteResult | Awaitable[AgentDeleteResult]) -> AgentDeleteResult:
-    match result:
-        case AgentDeleteResult():
+            raise ValueError("the sync SDK call returned a coroutine")
+        case object():
             return result
-        case Awaitable():
-            raise ValueError("the sync delete returned a coroutine")
-
-
-def as_versions(
-    result: AgentVersionsResponse | Awaitable[AgentVersionsResponse],
-) -> AgentVersionsResponse:
-    match result:
-        case AgentVersionsResponse():
-            return result
-        case Awaitable():
-            raise ValueError("the sync list_versions returned a coroutine")
 
 
 def measure(sdk: AgentsItemSdk, input_value: Input, extras: Extras) -> dict[str, JsonValue]:
@@ -179,10 +162,10 @@ def measure(sdk: AgentsItemSdk, input_value: Input, extras: Extras) -> dict[str,
         case "get":
             # a name keeps the defaulted dict-lookup rule from matching the agents read
             get_agent = sdk.get
-            agent = as_created(get_agent(name, provider, headers, **extras))
+            agent = settled(get_agent(name, provider, headers, **extras))
             return {"response": {"id": agent.id, "name": agent.name}}
         case "delete":
-            removed = as_removed(sdk.delete(name, provider, headers, **extras))
+            removed = settled(sdk.delete(name, provider, headers, **extras))
             return {"response": {"name": removed.name, "deleted": removed.deleted}}
         case "aget":
             agent = asyncio.run(sdk.aget(name, provider, headers, **extras))
@@ -193,7 +176,7 @@ def measure(sdk: AgentsItemSdk, input_value: Input, extras: Extras) -> dict[str,
         case "list_versions":
             extras["page_size"] = input_value.get("page_size")
             extras["page_token"] = input_value.get("page_token")
-            versions = as_versions(sdk.list_versions(name, provider, headers, **extras))
+            versions = settled(sdk.list_versions(name, provider, headers, **extras))
             return {"response": JSON.validate_json(versions.model_dump_json())}
         case "alist_versions":
             extras["page_size"] = input_value.get("page_size")

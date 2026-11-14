@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::agents::provider::{
-    AgentCreateResponse, AgentDeleteResult, AgentVersionsResponse, Deleted,
+    AgentCreateResponse, AgentDeleteResult, AgentVersionsResponse,
 };
 use betterlite_core::api::agents::item::error::ProviderFailure;
 use betterlite_http::interactions::agents_create_read::AgentsApiConfig;
@@ -14,7 +14,9 @@ use betterlite_http::interactions::base::{
 use secrecy::ExposeSecret as _;
 use thiserror::Error;
 
-use super::records::{VersionsWire, agent_response, ensure_success, gemini_headers, page_params};
+use super::records::{
+    VersionsWire, agent_response, deleted_agent, ensure_success, gemini_headers, page_params,
+};
 
 #[derive(Debug, Error)]
 #[error("{message}")]
@@ -31,6 +33,28 @@ impl ProviderFailure for FixtureError {
     fn message(&self) -> String {
         self.message.clone()
     }
+}
+
+// the prepared request the Gemini agents config answers, and the named-agent path both operations hang off
+fn prepared(url: String) -> PreparedRequest {
+    PreparedRequest {
+        url,
+        params: Params::new(),
+    }
+}
+
+fn paged(url: String, params: &Params) -> PreparedRequest {
+    PreparedRequest {
+        url,
+        params: page_params(params),
+    }
+}
+
+fn named_url(request: &NamedAgentRequest<'_>, suffix: &str) -> String {
+    format!(
+        "{}/v1beta/agents/{}{suffix}",
+        request.api_base, request.name
+    )
 }
 
 // the Gemini agents config's transforms; the provider itself is another task's, so the fixture stands in for it
@@ -94,10 +118,7 @@ impl AgentsApiConfig for FixtureConfig {
         api_base: &str,
         _litellm_params: &Params,
     ) -> Result<PreparedRequest, FixtureError> {
-        Ok(PreparedRequest {
-            url: format!("{api_base}/v1beta/agents"),
-            params: Params::new(),
-        })
+        Ok(prepared(format!("{api_base}/v1beta/agents")))
     }
 
     fn transform_list_response(
@@ -113,10 +134,7 @@ impl AgentsApiConfig for FixtureConfig {
         api_base: &str,
         _litellm_params: &Params,
     ) -> Result<PreparedRequest, FixtureError> {
-        Ok(PreparedRequest {
-            url: format!("{api_base}/v1beta/agents/{name}"),
-            params: Params::new(),
-        })
+        Ok(prepared(format!("{api_base}/v1beta/agents/{name}")))
     }
 
     fn transform_get_response(
@@ -148,10 +166,7 @@ impl AgentsConfig for FixtureConfig {
         &self,
         request: &NamedAgentRequest<'_>,
     ) -> Result<String, FixtureError> {
-        Ok(format!(
-            "{}/v1beta/agents/{}",
-            request.api_base, request.name
-        ))
+        Ok(named_url(request, ""))
     }
 
     fn transform_delete_response(
@@ -159,26 +174,17 @@ impl AgentsConfig for FixtureConfig {
         response: &UpstreamResponse,
         name: &str,
     ) -> Result<AgentDeleteResult, FixtureError> {
-        ensure_success(response)?;
-        Ok(AgentDeleteResult {
-            name: name.to_owned(),
-            deleted: Deleted(true),
-            extra: BTreeMap::new(),
-            hidden_params: BTreeMap::new(),
-        })
+        deleted_agent(response, name)
     }
 
     fn transform_versions_request(
         &self,
         request: &NamedAgentRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
-        Ok(PreparedRequest {
-            url: format!(
-                "{}/v1beta/agents/{}/versions",
-                request.api_base, request.name
-            ),
-            params: page_params(request.litellm_params),
-        })
+        Ok(paged(
+            named_url(request, "/versions"),
+            request.litellm_params,
+        ))
     }
 
     fn transform_versions_response(

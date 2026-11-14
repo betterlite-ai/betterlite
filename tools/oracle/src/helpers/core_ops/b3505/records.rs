@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::agents::json::AgentJson;
-use betterlite_core::agents::provider::AgentCreateResponse;
+use betterlite_core::agents::provider::{AgentCreateResponse, AgentDeleteResult, Deleted};
 use betterlite_http::interactions::base::{Params, RequestHeaders, UpstreamResponse};
 use betterlite_models::controls::json_value::JsonValue;
 use secrecy::SecretString;
@@ -39,6 +39,20 @@ pub(super) fn agent_response(
         id: Some(id),
         name: Some(surface),
         extra: wire.extra,
+        hidden_params: BTreeMap::new(),
+    })
+}
+
+// LiteLLM's delete transform answers the name it was given and deleted=true once the call succeeded
+pub(super) fn deleted_agent(
+    response: &UpstreamResponse,
+    name: &str,
+) -> Result<AgentDeleteResult, FixtureError> {
+    ensure_success(response)?;
+    Ok(AgentDeleteResult {
+        name: name.to_owned(),
+        deleted: Deleted(true),
+        extra: BTreeMap::new(),
         hidden_params: BTreeMap::new(),
     })
 }
