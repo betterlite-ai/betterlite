@@ -12,6 +12,7 @@ use betterlite_models::decisions::Json;
 use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use reqwest::Response;
+use serde::Serialize;
 use url::Url;
 
 use super::MessagesHeaderStreamCall;
@@ -89,7 +90,10 @@ pub(crate) async fn send(
     })
 }
 
-fn outbound(api_base: &str, body: &Json) -> Result<OutboundRequest, SdkHttpError> {
+pub(super) fn outbound<B>(api_base: &str, body: &B) -> Result<OutboundRequest, SdkHttpError>
+where
+    B: Serialize + ?Sized,
+{
     let url = Url::parse(&format!("{api_base}/messages"))
         .map_err(|source| SdkHttpError::Url(Box::new(source)))?;
     let encoded = serde_json::to_vec(body).map_err(SdkHttpError::Serialize)?;
