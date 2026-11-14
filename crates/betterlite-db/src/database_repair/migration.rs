@@ -106,8 +106,9 @@ pub(super) async fn read_verification_csv(path: &Path) -> Result<Vec<u8>, Import
     let file = tokio::fs::File::open(path)
         .await
         .map_err(ImportError::Read)?;
+    let mut limited = file.take(limit);
     let mut bytes = Vec::new();
-    file.take(limit)
+    limited
         .read_to_end(&mut bytes)
         .await
         .map_err(ImportError::Read)?;
