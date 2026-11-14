@@ -12,7 +12,7 @@ use betterlite_vertex::studio_agents::error::StudioAgentError;
 use betterlite_vertex::studio_agents::headers::AgentHeaders;
 use betterlite_vertex::studio_agents::headers::validate_environment;
 use betterlite_vertex::studio_agents::request::{AgentParams, BaseEnvironment, create_agent_body};
-use betterlite_vertex::studio_agents::urls::{collection_target, item_target};
+use betterlite_vertex::studio_agents::urls::{AgentTarget, collection_target, item_target};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::Value;
@@ -109,8 +109,7 @@ impl AgentsApiConfig for GeminiConfig {
         name: &str,
         litellm_params: &Params,
     ) -> Result<Params, AgentError> {
-        let body = create_agent_body(name, &agent_params(litellm_params)?);
-        Ok(serde_json::from_value(serde_json::to_value(body)?)?)
+        create_request(name, litellm_params)
     }
 
     fn transform_create_response(
@@ -118,10 +117,7 @@ impl AgentsApiConfig for GeminiConfig {
         response: &UpstreamResponse,
         name: &str,
     ) -> Result<Value, AgentError> {
-        match decoded(response, AgentOperation::Create, name)? {
-            AgentPayload::Agent(agent) => Ok(serde_json::to_value(agent)?),
-            AgentPayload::Agents(_) | AgentPayload::Versions(_) => Err(AgentError::Shape),
-        }
+        agent_value(response, AgentOperation::Create, name)
     }
 
     fn transform_list_request(
@@ -129,15 +125,7 @@ impl AgentsApiConfig for GeminiConfig {
         _api_base: &str,
         litellm_params: &Params,
     ) -> Result<PreparedRequest, AgentError> {
-        let target = collection_target(&agent_params(litellm_params)?, &self.settings);
-        Ok(PreparedRequest {
-            url: target.url,
-            params: target
-                .query
-                .into_iter()
-                .map(|(name, value)| (name, JsonValue::Text(value)))
-                .collect(),
-        })
+        collection_request(litellm_params, &self.settings)
     }
 
     fn transform_list_response(&self, response: &UpstreamResponse) -> Result<Value, AgentError> {
@@ -153,11 +141,7 @@ impl AgentsApiConfig for GeminiConfig {
         _api_base: &str,
         litellm_params: &Params,
     ) -> Result<PreparedRequest, AgentError> {
-        let target = item_target(name, &agent_params(litellm_params)?, &self.settings);
-        Ok(PreparedRequest {
-            url: target.url,
-            params: Params::new(),
-        })
+        item_request(name, litellm_params, &self.settings)
     }
 
     fn transform_get_response(
@@ -165,10 +149,53 @@ impl AgentsApiConfig for GeminiConfig {
         response: &UpstreamResponse,
         name: &str,
     ) -> Result<Value, AgentError> {
-        match decoded(response, AgentOperation::Get, name)? {
-            AgentPayload::Agent(agent) => Ok(serde_json::to_value(agent)?),
-            AgentPayload::Agents(_) | AgentPayload::Versions(_) => Err(AgentError::Shape),
-        }
+        agent_value(response, AgentOperation::Get, name)
+    }
+}
+
+// the provider reply a create or get call carries, for the two operations whose payload is one agent
+fn agent_value(
+    response: &UpstreamResponse,
+    operation: AgentOperation,
+    name: &str,
+) -> Result<Value, AgentError> {
+    match decoded(response, operation, name)? {
+        AgentPayload::Agent(agent) => serde_json::to_value(agent).map_err(AgentError::from),
+        AgentPayload::Agents(_) | AgentPayload::Versions(_) => Err(AgentError::Shape),
+    }
+}
+
+fn create_request(name: &str, litellm_params: &Params) -> Result<Params, AgentError> {
+    let body = create_agent_body(name, &agent_params(litellm_params)?);
+    Ok(serde_json::from_value(serde_json::to_value(body)?)?)
+}
+
+fn collection_request(
+    litellm_params: &Params,
+    settings: &Settings,
+) -> Result<PreparedRequest, AgentError> {
+    let target = collection_target(&agent_params(litellm_params)?, settings);
+    Ok(target_request(target))
+}
+
+fn item_request(
+    name: &str,
+    litellm_params: &Params,
+    settings: &Settings,
+) -> Result<PreparedRequest, AgentError> {
+    let target = item_target(name, &agent_params(litellm_params)?, settings);
+    Ok(target_request(target))
+}
+
+// the request a target builds: the URL's page query becomes the prepared params, and a get target has none
+fn target_request(target: AgentTarget) -> PreparedRequest {
+    PreparedRequest {
+        url: target.url,
+        params: target
+            .query
+            .into_iter()
+            .map(|(name, value)| (name, JsonValue::Text(value)))
+            .collect(),
     }
 }
 

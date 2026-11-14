@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use betterlite_core::api::agents::collection::creation::{acreate, create};
+use betterlite_core::api::agents::collection::listing::{alist, list};
 use betterlite_core::api::agents::collection::{
-    AgentCollectionHandled, AgentCreation, AgentListing, acreate, alist, create, list,
+    AgentCollectionHandled, AgentCreation, AgentListing,
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -13,7 +15,8 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 mod gemini;
 mod support;
 
-use support::{Fixture, Server};
+use support::Fixture;
+use support::server::Server;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
