@@ -338,6 +338,24 @@ async fn round_reads_the_logging_target_from_request_data() {
 }
 
 #[tokio::test]
+async fn other_round_failure_leaves_the_stream() {
+    let translation =
+        FakeTranslation::planned(vec![Plan::Fail(GuardrailFailure::Other("boom".to_owned()))]);
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let mut loop_params = params(&translation, &guardrail, &mut data, &keys);
+    loop_params.sampling_rate = 1;
+    let outputs = collect_outputs(loop_params, vec![text_chunk("a")]).await;
+    assert_eq!(
+        outputs,
+        vec![Err(StreamLoopError::Guardrail {
+            source: GuardrailFailure::Other("boom".to_owned()),
+        })]
+    );
+}
+
+#[tokio::test]
 async fn round_without_a_logging_target_passes_none() {
     let translation = FakeTranslation::planned(vec![Plan::Pass]);
     let guardrail = FakeGuardrail;
