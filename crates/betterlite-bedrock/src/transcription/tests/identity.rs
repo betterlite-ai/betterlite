@@ -119,4 +119,7 @@ fn transcription_secret_safe_failure() {
     for secret in SECRETS {
         assert!(!rendered.contains(secret), "{secret}");
     }
+    let call_text = format!("{call:?}");
+    assert!(call_text.contains("TranscriptionCall"), "{call_text}");
+    assert!(call_text.contains("aws_access_key_id"), "{call_text}");
 }

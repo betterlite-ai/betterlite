@@ -1,6 +1,5 @@
 use betterlite_openai::api::audio_file_input::AudioFileError;
 
-use crate::credentials::error::CredentialError;
 use crate::signing::error::SigningError;
 
 #[derive(Debug, thiserror::Error)]
@@ -24,8 +23,6 @@ pub enum TranscriptionError {
     NonTextContent,
     #[error("the Converse request does not encode")]
     Encode(#[source] serde_json::Error),
-    #[error(transparent)]
-    Credentials(#[from] CredentialError),
     #[error(transparent)]
     Signing(#[from] SigningError),
 }

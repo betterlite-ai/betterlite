@@ -8,7 +8,6 @@ use super::error::TranscriptionError;
 use super::params::{Params, text_param};
 use super::url::{bedrock_model_id_and_region, resolve_region};
 use crate::aws_settings::sources::Credentials;
-use crate::credentials::AwsCredentialResolver;
 use crate::signing::json_post::{JsonPost, sign_aws_json_post};
 use crate::signing::request::AwsSignedRequest;
 
@@ -104,18 +103,6 @@ pub fn validate_environment(
         headers,
         region: resolve_region(model_region, params, env),
         credentials: credential_source(params, env),
-    }
-}
-
-pub async fn resolve_credentials(
-    source: &CredentialSource,
-    resolver: &AwsCredentialResolver<'_>,
-) -> Result<Credentials, TranscriptionError> {
-    match source {
-        CredentialSource::HostSupplied(credentials) => Ok(Credentials::clone(credentials)),
-        CredentialSource::Chain(settings) => Ok(resolver
-            .resolve_credentials(settings, settings.region_name.as_deref())
-            .await?),
     }
 }
 
