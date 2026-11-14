@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-stream-tools-then-stop
+call:
+  gemini_stream:
+    fragments:
+      - '{"responseId":"f1","candidates":[{"content":{"parts":[{"functionCall":{"id":"call_1","name":"lookup","args":{}}}]}}]}'
+      - '{"responseId":"f1","candidates":[{"content":{"parts":[{"functionCall":{"id":"call_2","name":"forecast","args":{}}}]}}]}'
+      - '{"responseId":"f1","candidates":[{"content":{"parts":[{"text":""}]},"finishReason":"STOP"}]}'
+    legacy_function: false
+    headers: {}
+env: {}
+compare: {ignore: []}

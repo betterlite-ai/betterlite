@@ -15,10 +15,12 @@ cargo-fuzz = true
 betterlite-bedrock = { path = "../../betterlite-bedrock" }
 betterlite-models = { path = "../../betterlite-models" }
 betterlite-vertex = { path = ".." }
+http = "1.5.0"
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
+uuid = { version = "1.28.0", default-features = false }
 
 [[bin]]
 name = "cache_created"
@@ -121,6 +123,13 @@ bench = false
 [[bin]]
 name = "vertex_gcs_id"
 path = "fuzz_targets/vertex_gcs_id.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_stream"
+path = "fuzz_targets/vertex_stream.rs"
 test = false
 doc = false
 bench = false

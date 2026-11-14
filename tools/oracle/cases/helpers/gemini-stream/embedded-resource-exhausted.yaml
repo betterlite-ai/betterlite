@@ -1,0 +1,11 @@
+kind: helper
+name: gemini-stream-embedded-resource-exhausted
+call:
+  gemini_stream:
+    fragments:
+      - '{"responseId":"e1","candidates":[{"content":{"parts":[{"text":"partial"}]}}]}'
+      - '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"quota exceeded"}}'
+    legacy_function: false
+    headers: {}
+env: {}
+compare: {ignore: []}

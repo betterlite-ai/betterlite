@@ -1,0 +1,17 @@
+task: B1315
+deviations:
+  - what: The accumulated fragment buffer is capped at 16 MiB of retained bytes, where LiteLLM appends without a limit.
+    why: Rule bounded-inputs caps every read from a provider. The ceiling is the pooled transport's reply cap, and a Gemini chunk that never closes is malformed input a working setup does not send.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/json_fragment_accumulator.py#L31-L35"
+  - what: A fragment whose bytes are not UTF-8 answers Utf8, where httpx hands LiteLLM replacement characters.
+    why: A replacement character would silently corrupt the model's text, and a working Gemini setup sends UTF-8.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L3355-L3372"
+  - what: A fragment that is a complete JSON value but not an object answers NotAnObject, where LiteLLM splats it into its response type and an uncaught TypeError escapes as HTTP 500.
+    why: Rules owned-behavior-is-built and typed-wire make a wrong-typed value an error that names what was expected, and a working Gemini setup sends objects.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L3245"
+  - what: An embedded error code that is a float, or an integer outside the u16 range, becomes 500, where LiteLLM truncates a float with int() and keeps any integer.
+    why: betterlite's error carries a u16 status, so a value it cannot represent falls back to 500 like a non-coercible code. A working setup does not send these.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L3116-L3122"
+  - what: After a fragment or decode error the stream adapter ends, where LiteLLM's iterator reads the next fragment on a later call.
+    why: A stream that raised is finished for its consumer, and decoding on from a half-read buffer would emit chunks out of order.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L3347-L3362"

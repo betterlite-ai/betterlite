@@ -1,0 +1,2 @@
+{"responseId":"m1","candidates":[{"groundingMetadata":{"webSearchQueries":["q"]}},{"safetyRatings":[{"category":"X"}]}]}
+data: {"responseId":"m2","promptFeedback":{"blockReason":"SAFETY"}}
