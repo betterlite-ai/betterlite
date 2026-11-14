@@ -117,10 +117,10 @@ impl Helper for Op {
             }
             Input::PricingQualityAlias {
                 model,
-                catalog,
+                catalog: entries,
                 qualities,
             } => {
-                let catalog = catalog_from(catalog)?;
+                let catalog = catalog_from(entries)?;
                 Ok(quality_outcome(model, &catalog, qualities))
             }
             Input::MalformedSizeKept { sizes } => Ok(size_outcomes(sizes)),
@@ -135,13 +135,14 @@ fn generic_base_outcome(
     model: &str,
     cases: &[MappingCase],
 ) -> Value {
-    let settings = settings(environment);
+    let (api_key, api_base) = Sections::fal_image_environment(environment);
+    let settings = FalImageSettings { api_key, api_base };
     let mut urls = Vec::new();
-    for api_base in api_bases {
+    for explicit_base in api_bases {
         for candidate in models {
             urls.push(json!({
-                "generic": settings.complete_url(api_base.as_deref(), ""),
-                "gpt": gpt_complete_url(&settings, api_base.as_deref(), candidate),
+                "generic": settings.complete_url(explicit_base.as_deref(), ""),
+                "gpt": gpt_complete_url(&settings, explicit_base.as_deref(), candidate),
             }));
         }
     }
@@ -153,7 +154,8 @@ fn generic_base_outcome(
 }
 
 fn key_scheme_outcome(environment: &Environment, cases: &[KeyCase]) -> Value {
-    let settings = settings(environment);
+    let (api_key, api_base) = Sections::fal_image_environment(environment);
+    let settings = FalImageSettings { api_key, api_base };
     let outcomes: Vec<Value> = cases
         .iter()
         .map(|case| key_outcome(case, &settings))
@@ -176,11 +178,6 @@ fn size_outcomes(sizes: &[Json]) -> Value {
         .map(|size| json!(map_gpt_image_size(size)))
         .collect();
     json!({"sizes": mapped})
-}
-
-fn settings(environment: &Environment) -> FalImageSettings {
-    let (api_key, api_base) = Sections::fal_image_environment(environment);
-    FalImageSettings { api_key, api_base }
 }
 
 fn generic_outcome(case: &MappingCase, model: &str) -> Value {
