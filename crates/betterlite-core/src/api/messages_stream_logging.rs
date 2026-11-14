@@ -33,11 +33,11 @@ pub struct StreamDeps<S> {
 }
 
 pub struct MessagesStreamLogging<S> {
-    pub deps: StreamDeps<S>,
-    pub logging_obj: Arc<StreamLoggingObject>,
-    pub request_body: IndexMap<String, Json>,
-    pub start_time: DateTime<FixedOffset>,
-    pub completion_start_time: Option<DateTime<FixedOffset>>,
+    deps: StreamDeps<S>,
+    logging_obj: Arc<StreamLoggingObject>,
+    request_body: IndexMap<String, Json>,
+    start_time: DateTime<FixedOffset>,
+    completion_start_time: Option<DateTime<FixedOffset>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +58,21 @@ pub enum ChunkError {
 }
 
 impl<S: StreamSeams> MessagesStreamLogging<S> {
+    // The LiteLLM iterator's __init__ stamps the start time as it builds the stream
+    pub fn new(
+        deps: StreamDeps<S>,
+        litellm_logging_obj: Arc<StreamLoggingObject>,
+        request_body: IndexMap<String, Json>,
+    ) -> Self {
+        Self {
+            start_time: deps.clock.now(),
+            deps,
+            logging_obj: litellm_logging_obj,
+            request_body,
+            completion_start_time: None,
+        }
+    }
+
     // B979's pump calls this for every chunk; only the first one stamps the time
     pub fn record_first_chunk(&mut self) {
         if self.completion_start_time.is_none() {

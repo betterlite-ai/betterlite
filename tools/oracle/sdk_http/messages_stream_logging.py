@@ -118,11 +118,9 @@ class SingleChunk(AsyncIterator[bytes | dict[str, Json]]):
 
 class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
     def __init__(self, body: dict[str, Json], api_base: str, client: httpx.AsyncClient) -> None:
-        self.logging = RecordedLogging()
-        self.litellm_logging_obj = self.logging
-        self.request_body: dict[str, Json] = body
-        self.start_time = datetime.now(UTC).astimezone().replace(tzinfo=None)
-        self.completion_start_time: datetime | None = None
+        logging_obj = RecordedLogging()
+        super().__init__(logging_obj, body)
+        self.logging = logging_obj
         self.url = f"{api_base}/messages"
         self.client = client
         self.supplied: RecordedLogging | None = None

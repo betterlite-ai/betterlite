@@ -184,13 +184,8 @@ impl Harness {
             }),
             success_handler: Arc::clone(&handler),
         };
-        let stream = MessagesStreamLogging {
-            start_time: deps.clock.now(),
-            deps,
-            logging_obj: Arc::clone(&logging_obj),
-            request_body: request_body.clone(),
-            completion_start_time: None,
-        };
+        let stream =
+            MessagesStreamLogging::new(deps, Arc::clone(&logging_obj), request_body.clone());
         Self {
             seams,
             worker,

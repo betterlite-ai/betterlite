@@ -19,6 +19,13 @@ fn mapping(text: &str) -> IndexMap<String, Json> {
     serde_json::from_str(text).expect("the fixture is a JSON object")
 }
 
+#[tokio::test]
+async fn construction_stamps_the_start_time() {
+    let harness = Harness::new(None);
+    assert_eq!(harness.stream.start_time, base_time());
+    assert!(harness.stream.completion_start_time.is_none());
+}
+
 #[rstest]
 #[case::first_chunk_seen(true, 2, Some(1))]
 #[case::no_first_chunk(false, 1, None)]
