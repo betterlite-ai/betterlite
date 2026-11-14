@@ -201,7 +201,8 @@ async fn the_depth_cap_error_ends_the_call() {
 
 #[tokio::test]
 async fn a_legacy_callback_returns_its_result_as_is() {
-    let fixture = fixture();
+    let mut fixture = fixture();
+    fixture.kwargs = json_map(&[("_code_interpreter_interception_converted_stream", "true")]);
     let callback = Arc::new(ScriptedCallback::new(
         Script::default()
             .with_overrides(overrides(true, false, false))
@@ -230,6 +231,7 @@ async fn a_legacy_callback_returns_its_result_as_is() {
     );
     assert!(legacy.optional_params.is_empty());
     assert_eq!(harness.continuation.call_count(), 0);
+    assert!(harness.port.records().is_empty());
 }
 
 #[tokio::test]
