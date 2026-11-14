@@ -1,0 +1,26 @@
+kind: helper
+name: volcengine-responses-urls
+call:
+  b8176:
+    steps:
+      - kind: url
+      - kind: url
+        api_base: "https://ark.example.test/"
+      - kind: url
+        api_base: "https://ark.example.test/responses/"
+      - kind: url
+        api_base: "https://ark.example.test/api/v3"
+      - kind: url
+        api_base: ""
+        global_base: "https://global.test"
+        volcengine_base: "https://volc.test"
+        ark_base: "https://ark.test"
+      - kind: url
+        volcengine_base: "https://volc.test"
+        ark_base: "https://ark.test"
+      - kind: url
+        ark_base: "https://ark.test"
+      - kind: url
+        api_base: "https://ark.example.test/api/v3/responses"
+env: {}
+compare: {ignore: []}
