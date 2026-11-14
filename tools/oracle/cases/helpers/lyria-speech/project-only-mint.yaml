@@ -1,0 +1,16 @@
+kind: helper
+name: lyria-project-only-mint
+call:
+  vertex_lyria_speech:
+    function: prepared
+    cases:
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: '', location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {}, voice: null, drop_params: false, global_drop_params: false, project: '', location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: team-project, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {}, voice: null, drop_params: false, global_drop_params: false, project: team-project, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: '', api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-9, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+env: {}
+compare: {ignore: []}
