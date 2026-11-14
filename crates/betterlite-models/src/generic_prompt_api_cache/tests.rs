@@ -148,15 +148,19 @@ fn clear_cache_makes_the_next_compile_fetch_again() {
     assert_eq!(requests.lock().unwrap().len(), 2);
 }
 
-#[test]
-fn a_thousand_and_first_insert_keeps_one_thousand_entries_and_drops_the_first_key() {
-    let cache = PromptCache::default();
-    for index in 0..1001 {
+fn insert_prompts(cache: &PromptCache, range: std::ops::Range<usize>) {
+    for index in range {
         cache.insert(
             PromptCache::get_cache_key(Some(&format!("prompt-{index}")), None, None),
             PromptManagementClient::default(),
         );
     }
+}
+
+#[test]
+fn a_thousand_and_first_insert_keeps_one_thousand_entries_and_drops_the_first_key() {
+    let cache = PromptCache::default();
+    insert_prompts(&cache, 0..1001);
     let entries = cache.entries.lock().unwrap();
     assert_eq!(entries.len(), 1000);
     assert!(!entries.contains(&PromptCache::get_cache_key(Some("prompt-0"), None, None)));
@@ -165,12 +169,7 @@ fn a_thousand_and_first_insert_keeps_one_thousand_entries_and_drops_the_first_ke
 #[test]
 fn a_read_just_before_the_cache_fills_keeps_that_key_and_drops_the_least_recently_used() {
     let cache = PromptCache::default();
-    for index in 0..1000 {
-        cache.insert(
-            PromptCache::get_cache_key(Some(&format!("prompt-{index}")), None, None),
-            PromptManagementClient::default(),
-        );
-    }
+    insert_prompts(&cache, 0..1000);
     let read = cache
         .common_caching_logic(Some("prompt-0"), None, None, None)
         .unwrap();
