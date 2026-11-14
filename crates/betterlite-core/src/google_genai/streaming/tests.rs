@@ -474,6 +474,28 @@ fn sync_stream_refuses_a_long_line_inside_one_read() {
 }
 
 #[test]
+fn sync_stream_stops_at_an_over_limit_line_before_reading_more() {
+    let chunks: Vec<Result<Vec<u8>, HttpError>> =
+        vec![Ok(b"data: 0123456789".to_vec()), Err(HttpError::Timeout)];
+    let mut stream = GoogleGenAiStream::new(
+        chunks.into_iter(),
+        metadata(GenAiProvider::Gemini),
+        SMALL_LINE_LIMIT,
+    );
+    let failure = stream
+        .next()
+        .expect("the limit error")
+        .expect_err("the open line is refused");
+    assert!(matches!(
+        failure,
+        GenAiStreamError::Lines(AlephAlphaError::LineTooLong {
+            limit: SMALL_LINE_LIMIT
+        })
+    ));
+    assert!(stream.next().is_none());
+}
+
+#[test]
 fn sync_stream_refuses_a_line_exactly_at_the_limit_as_an_event() {
     let mut stream = GoogleGenAiStream::new(
         vec![Ok(body(&["data: 012", ""]))].into_iter(),
