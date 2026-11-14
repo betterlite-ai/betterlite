@@ -1,0 +1,9 @@
+kind: helper
+name: a2a-request-id
+call:
+  b3679:
+    function: a2a_request_id
+    responses_so_far: ["not json", "{\"id\": \"req-9\"}"]
+    request_data: {}
+env: {}
+compare: {ignore: []}
