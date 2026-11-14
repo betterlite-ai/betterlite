@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::error::EvalsError;
 use super::openai::OpenAiEvalsConfig;
-use super::transformation::{BaseEvalsAPIConfig, EvalsHttpResponse, EvalsRequestContext};
+use super::transformation::{BaseEvalsAPIConfig as _, EvalsHttpResponse, EvalsRequestContext};
 use super::types::{
     CreateEvalRequest, CreateRunRequest, ListEvalsParams, ListRunsParams, UpdateEvalRequest,
 };
@@ -42,15 +42,15 @@ fn header<'headers>(headers: &'headers Headers, name: &str) -> &'headers str {
     headers.get(name).unwrap()
 }
 
-fn assert_json_failure<T>(result: Result<T, EvalsError>) {
+fn assert_json_failure<T>(result: &Result<T, EvalsError>) {
     assert!(matches!(result, Err(EvalsError::ReplyJson { .. })));
 }
 
-fn assert_model_failure<T>(result: Result<T, EvalsError>) {
+fn assert_model_failure<T>(result: &Result<T, EvalsError>) {
     assert!(matches!(result, Err(EvalsError::ReplyModel { .. })));
 }
 
-fn case_create_eval() {
+fn create_eval_drops_only_top_level_nulls() {
     let config = OpenAiEvalsConfig::default();
     let params = Object::new();
     let headers = Headers::from([("X-Unused".to_owned(), "kept".to_owned())]);
@@ -68,6 +68,13 @@ fn case_create_eval() {
             r#"{"data_source_config":{"type":"custom","item_schema":{"role":"string","required":false,"count":0,"note":null,"tags":[]},"include_sample_schema":false},"testing_criteria":[{"type":"llm_as_judge","model":"gpt-4o"},{"type":"custom","function_id":"fn-1"},{"type":"ground_truth","metric":"f1_score"}],"metadata":{"team":"ml","flag":false,"count":0,"tags":[],"note":null}}"#
         )
     );
+}
+
+fn create_eval_keeps_empty_values() {
+    let config = OpenAiEvalsConfig::default();
+    let params = Object::new();
+    let headers = Headers::new();
+    let context = request_context(&params, &headers);
     let request: CreateEvalRequest = serde_json::from_str(
         r#"{"name":"","data_source_config":{"type":"logs"},"testing_criteria":[],"metadata":{}}"#,
     )
@@ -83,7 +90,7 @@ fn case_create_eval() {
     );
 }
 
-fn case_update_eval() {
+fn update_eval_drops_only_top_level_nulls() {
     let config = OpenAiEvalsConfig::default();
     let params = Object::new();
     let headers = Headers::from([
@@ -102,6 +109,13 @@ fn case_update_eval() {
         Value::Object(body),
         value(r#"{"metadata":{"a":1,"b":null}}"#)
     );
+}
+
+fn update_eval_keeps_name() {
+    let config = OpenAiEvalsConfig::default();
+    let params = Object::new();
+    let headers = Headers::from([("X-Custom".to_owned(), "kept".to_owned())]);
+    let context = request_context(&params, &headers);
     let request: UpdateEvalRequest = serde_json::from_str(r#"{"name":"renamed"}"#).unwrap();
     let (url, sent, body) = config
         .transform_update_eval_request("eval-2", &request, "https://fixture.test", &context)
@@ -111,7 +125,7 @@ fn case_update_eval() {
     assert_eq!(Value::Object(body), value(r#"{"name":"renamed"}"#));
 }
 
-fn case_create_run_body() {
+fn create_run_body_keeps_api_base_suffix() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
     let params: Object = object(r#"{"api_base":"https://runs.test/v1"}"#);
@@ -130,8 +144,13 @@ fn case_create_run_body() {
             r#"{"data_source":{"type":"inline","samples":[{"input":null,"ok":false,"count":0}]},"metadata":{"run":1,"note":null}}"#
         )
     );
-    let empty = Object::new();
-    let context = request_context(&empty, &headers);
+}
+
+fn create_run_body_defaults_base_for_empty_params() {
+    let config = OpenAiEvalsConfig::default();
+    let headers = Headers::new();
+    let params = Object::new();
+    let context = request_context(&params, &headers);
     let request: CreateRunRequest = serde_json::from_str(r#"{"data_source":{}}"#).unwrap();
     let (url, body) = config
         .transform_create_run_request("eval/4", &request, &context)
@@ -141,12 +160,15 @@ fn case_create_run_body() {
 }
 
 fn case_eval_create_update() {
-    case_create_eval();
-    case_update_eval();
-    case_create_run_body();
+    create_eval_drops_only_top_level_nulls();
+    create_eval_keeps_empty_values();
+    update_eval_drops_only_top_level_nulls();
+    update_eval_keeps_name();
+    create_run_body_keeps_api_base_suffix();
+    create_run_body_defaults_base_for_empty_params();
 }
 
-fn case_eval_list_pagination() {
+fn list_evals_forwards_truthy_params() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
     let params: Object = object(r#"{"api_base":"https://evals.test/base"}"#);
@@ -165,6 +187,11 @@ fn case_eval_list_pagination() {
             r#"{"limit":5,"after":"eval_5","before":"eval_9","order":"asc","order_by":"updated_at"}"#
         )
     );
+}
+
+fn list_evals_drops_falsy_params() {
+    let config = OpenAiEvalsConfig::default();
+    let headers = Headers::new();
     let params: Object = object(r#"{"api_base":""}"#);
     let context = request_context(&params, &headers);
     let list: ListEvalsParams =
@@ -175,6 +202,11 @@ fn case_eval_list_pagination() {
         .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/evals");
     assert_eq!(Value::Object(query), value("{}"));
+}
+
+fn list_evals_ignores_unknown_keys_and_null_base() {
+    let config = OpenAiEvalsConfig::default();
+    let headers = Headers::new();
     let params: Object = object(r#"{"api_base":null}"#);
     let context = request_context(&params, &headers);
     let list: ListEvalsParams = serde_json::from_str(r#"{"limit":2,"model":"o3"}"#).unwrap();
@@ -183,6 +215,13 @@ fn case_eval_list_pagination() {
         .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/evals");
     assert_eq!(Value::Object(query), value(r#"{"limit":2}"#));
+}
+
+fn list_evals_with_no_params_carries_no_query() {
+    let config = OpenAiEvalsConfig::default();
+    let headers = Headers::new();
+    let params = Object::new();
+    let context = request_context(&params, &headers);
     let list: ListEvalsParams = serde_json::from_str("{}").unwrap();
     let (_, query) = config
         .transform_list_evals_request(&list, &context)
@@ -190,7 +229,14 @@ fn case_eval_list_pagination() {
     assert_eq!(Value::Object(query), value("{}"));
 }
 
-fn case_eval_get_delete_cancel() {
+fn case_eval_list_pagination() {
+    list_evals_forwards_truthy_params();
+    list_evals_drops_falsy_params();
+    list_evals_ignores_unknown_keys_and_null_base();
+    list_evals_with_no_params_carries_no_query();
+}
+
+fn get_eval_encodes_id_and_keeps_headers() {
     let config = OpenAiEvalsConfig::default();
     let params = Object::new();
     let headers = Headers::from([("X-Kept".to_owned(), "yes".to_owned())]);
@@ -200,6 +246,11 @@ fn case_eval_get_delete_cancel() {
         .unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/eval%2F1");
     assert_eq!(sent, headers);
+}
+
+fn delete_eval_uses_caller_headers() {
+    let config = OpenAiEvalsConfig::default();
+    let params = Object::new();
     let empty = Headers::new();
     let context = request_context(&params, &empty);
     let (url, sent) = config
@@ -207,6 +258,11 @@ fn case_eval_get_delete_cancel() {
         .unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/ev.al-1");
     assert_eq!(sent, empty);
+}
+
+fn cancel_eval_appends_cancel_with_empty_body() {
+    let config = OpenAiEvalsConfig::default();
+    let params = Object::new();
     let cancel_headers = Headers::from([("X-Kept".to_owned(), "cancel".to_owned())]);
     let context = request_context(&params, &cancel_headers);
     let (url, sent, body) = config
@@ -215,10 +271,17 @@ fn case_eval_get_delete_cancel() {
     assert_eq!(url, "https://fixture.test/v1/evals/ev%20al/cancel");
     assert_eq!(sent, cancel_headers);
     assert_eq!(Value::Object(body), value("{}"));
-    let (url, _) = config
+}
+
+fn eval_id_segments_are_checked() {
+    let config = OpenAiEvalsConfig::default();
+    let params = Object::new();
+    let empty = Headers::new();
+    let context = request_context(&params, &empty);
+    let (plain_url, _) = config
         .transform_get_eval_request("", "https://fixture.test", &context)
         .unwrap();
-    assert_eq!(url, "https://fixture.test/v1/evals");
+    assert_eq!(plain_url, "https://fixture.test/v1/evals");
     assert!(matches!(
         config.transform_get_eval_request(".", "https://fixture.test", &context),
         Err(EvalsError::PathSegment { .. })
@@ -227,16 +290,23 @@ fn case_eval_get_delete_cancel() {
         config.transform_delete_eval_request("..", "https://fixture.test", &context),
         Err(EvalsError::PathSegment { .. })
     ));
-    let (url, _, _) = config
+    let (escaped_url, _, _) = config
         .transform_cancel_eval_request("a b/c?d#e", "https://fixture.test", &context)
         .unwrap();
     assert_eq!(
-        url,
+        escaped_url,
         "https://fixture.test/v1/evals/a%20b%2Fc%3Fd%23e/cancel"
     );
 }
 
-fn case_run_create_data_source() {
+fn case_eval_get_delete_cancel() {
+    get_eval_encodes_id_and_keeps_headers();
+    delete_eval_uses_caller_headers();
+    cancel_eval_appends_cancel_with_empty_body();
+    eval_id_segments_are_checked();
+}
+
+fn create_run_dataset_body_uses_default_base() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
     let params = Object::new();
@@ -255,6 +325,11 @@ fn case_run_create_data_source() {
             r#"{"data_source":{"type":"dataset","dataset_id":"ds-1","extra":null,"flags":[false,0,[]]}}"#
         )
     );
+}
+
+fn create_run_inline_body_uses_api_base() {
+    let config = OpenAiEvalsConfig::default();
+    let headers = Headers::new();
     let params: Object = object(r#"{"api_base":"https://runs.test"}"#);
     let context = request_context(&params, &headers);
     let request: CreateRunRequest = serde_json::from_str(
@@ -271,6 +346,11 @@ fn case_run_create_data_source() {
             r#"{"data_source":{"type":"inline","samples":[{"input":null,"ok":false,"count":0}]},"name":"run one","metadata":{"k":"v","n":null}}"#
         )
     );
+}
+
+fn create_run_empty_base_and_id_checks() {
+    let config = OpenAiEvalsConfig::default();
+    let headers = Headers::new();
     let params: Object = object(r#"{"api_base":""}"#);
     let context = request_context(&params, &headers);
     let request: CreateRunRequest = serde_json::from_str(r#"{"data_source":{}}"#).unwrap();
@@ -284,7 +364,13 @@ fn case_run_create_data_source() {
     ));
 }
 
-fn case_run_list_pagination() {
+fn case_run_create_data_source() {
+    create_run_dataset_body_uses_default_base();
+    create_run_inline_body_uses_api_base();
+    create_run_empty_base_and_id_checks();
+}
+
+fn list_runs_forwards_truthy_params_without_order_by() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
     let params: Object = object(r#"{"api_base":"https://runs.test"}"#);
@@ -301,12 +387,24 @@ fn case_run_list_pagination() {
         Value::Object(query),
         value(r#"{"limit":3,"after":"r1","before":"r9","order":"desc"}"#)
     );
+}
+
+fn list_runs_drops_falsy_params() {
+    let config = OpenAiEvalsConfig::default();
+    let headers = Headers::new();
+    let params: Object = object(r#"{"api_base":"https://runs.test"}"#);
+    let context = request_context(&params, &headers);
     let list: ListRunsParams =
         serde_json::from_str(r#"{"limit":0,"after":"","before":""}"#).unwrap();
     let (_, query) = config
         .transform_list_runs_request("eval-2", &list, &context)
         .unwrap();
     assert_eq!(Value::Object(query), value("{}"));
+}
+
+fn list_runs_keeps_v1_base_and_checks_id() {
+    let config = OpenAiEvalsConfig::default();
+    let headers = Headers::new();
     let params: Object = object(r#"{"api_base":"https://runs.test/v1"}"#);
     let context = request_context(&params, &headers);
     let list: ListRunsParams = serde_json::from_str("{}").unwrap();
@@ -320,7 +418,13 @@ fn case_run_list_pagination() {
     ));
 }
 
-fn case_run_get_cancel_delete() {
+fn case_run_list_pagination() {
+    list_runs_forwards_truthy_params_without_order_by();
+    list_runs_drops_falsy_params();
+    list_runs_keeps_v1_base_and_checks_id();
+}
+
+fn get_run_encodes_both_ids() {
     let config = OpenAiEvalsConfig::default();
     let params = Object::new();
     let headers = Headers::from([("X-Kept".to_owned(), "a".to_owned())]);
@@ -330,6 +434,11 @@ fn case_run_get_cancel_delete() {
         .unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/eval%2F1/runs/run%201");
     assert_eq!(sent, headers);
+}
+
+fn delete_run_sends_empty_body() {
+    let config = OpenAiEvalsConfig::default();
+    let params = Object::new();
     let empty = Headers::new();
     let context = request_context(&params, &empty);
     let (url, sent, body) = config
@@ -338,6 +447,13 @@ fn case_run_get_cancel_delete() {
     assert_eq!(url, "https://fixture.test/v1/evals/eval-1/runs/run-1");
     assert_eq!(sent, empty);
     assert_eq!(Value::Object(body), value("{}"));
+}
+
+fn cancel_run_appends_cancel_with_empty_body() {
+    let config = OpenAiEvalsConfig::default();
+    let params = Object::new();
+    let empty = Headers::new();
+    let context = request_context(&params, &empty);
     let (url, sent, body) = config
         .transform_cancel_run_request("eval-1", "run/1", "https://fixture.test", &context)
         .unwrap();
@@ -347,6 +463,13 @@ fn case_run_get_cancel_delete() {
     );
     assert_eq!(sent, empty);
     assert_eq!(Value::Object(body), value("{}"));
+}
+
+fn run_id_segments_are_checked() {
+    let config = OpenAiEvalsConfig::default();
+    let params = Object::new();
+    let empty = Headers::new();
+    let context = request_context(&params, &empty);
     assert!(matches!(
         config.transform_get_run_request("eval-1", ".", "https://fixture.test", &context),
         Err(EvalsError::PathSegment { .. })
@@ -357,42 +480,49 @@ fn case_run_get_cancel_delete() {
     ));
 }
 
+fn case_run_get_cancel_delete() {
+    get_run_encodes_both_ids();
+    delete_run_sends_empty_body();
+    cancel_run_appends_cancel_with_empty_body();
+    run_id_segments_are_checked();
+}
+
 fn malformed_json_body_replies() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
     assert_json_failure(
-        config.transform_create_eval_response(&reply(
+        &config.transform_create_eval_response(&reply(
             r#"{"id": "eval-1", "created_at": 1"#,
             &headers,
         )),
     );
-    assert_json_failure(config.transform_get_eval_response(&reply("not json", &headers)));
-    assert_json_failure(config.transform_cancel_run_response(&reply("", &headers)));
+    assert_json_failure(&config.transform_get_eval_response(&reply("not json", &headers)));
+    assert_json_failure(&config.transform_cancel_run_response(&reply("", &headers)));
     assert_json_failure(
-        config.transform_delete_run_response(&reply(r#"{"run_id": "run-1""#, &headers)),
+        &config.transform_delete_run_response(&reply(r#"{"run_id": "run-1""#, &headers)),
     );
 }
 
 fn malformed_model_replies() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
-    assert_model_failure(config.transform_list_evals_response(&reply(
+    assert_model_failure(&config.transform_list_evals_response(&reply(
         r#"{"object": "list", "data": [{"object": "eval"}]}"#,
         &headers,
     )));
-    assert_model_failure(config.transform_update_eval_response(&reply(r#"{"id": 5}"#, &headers)));
+    assert_model_failure(&config.transform_update_eval_response(&reply(r#"{"id": 5}"#, &headers)));
     assert_model_failure(
-        config.transform_delete_eval_response(&reply(r#"{"eval_id": "eval-1"}"#, &headers)),
+        &config.transform_delete_eval_response(&reply(r#"{"eval_id": "eval-1"}"#, &headers)),
     );
-    assert_model_failure(config.transform_cancel_eval_response(&reply(
+    assert_model_failure(&config.transform_cancel_eval_response(&reply(
         r#"{"id": "eval-1", "status": "queued"}"#,
         &headers,
     )));
-    assert_model_failure(config.transform_create_run_response(&reply("[]", &headers)));
+    assert_model_failure(&config.transform_create_run_response(&reply("[]", &headers)));
     assert_model_failure(
-        config.transform_list_runs_response(&reply(r#"{"data": [{"id": "run-1"}]}"#, &headers)),
+        &config.transform_list_runs_response(&reply(r#"{"data": [{"id": "run-1"}]}"#, &headers)),
     );
-    assert_model_failure(config.transform_get_run_response(&reply(
+    assert_model_failure(&config.transform_get_run_response(&reply(
         r#"{"id": "run-1", "status": "unknown", "created_at": 1, "data_source": {}, "eval_id": "e"}"#,
         &headers,
     )));
@@ -403,7 +533,7 @@ fn case_malformed_json_error() {
     malformed_model_replies();
 }
 
-fn case_eval_auth_required() {
+fn auth_prefers_explicit_call_key() {
     let params: Object = object(r#"{"api_key":"sk-explicit"}"#);
     let headers = Headers::from([
         ("Authorization".to_owned(), "Bearer old".to_owned()),
@@ -418,24 +548,40 @@ fn case_eval_auth_required() {
     assert_eq!(header(&sent, "Authorization"), "Bearer sk-explicit");
     assert_eq!(header(&sent, "Content-Type"), "application/json");
     assert_eq!(header(&sent, "X-Existing"), "1");
-    let sent = config.validate_environment(Headers::new(), None).unwrap();
-    assert_eq!(header(&sent, "Authorization"), "Bearer sk-global");
+}
+
+fn auth_falls_back_through_sources() {
+    let config = OpenAiEvalsConfig {
+        api_key: Some(SecretString::from("sk-global")),
+        openai_key: Some(SecretString::from("sk-openai")),
+        env_api_key: Some(SecretString::from("sk-env")),
+    };
+    let from_global = config.validate_environment(Headers::new(), None).unwrap();
+    assert_eq!(header(&from_global, "Authorization"), "Bearer sk-global");
     let openai_only = OpenAiEvalsConfig {
         api_key: None,
         openai_key: Some(SecretString::from("sk-openai")),
         env_api_key: Some(SecretString::from("sk-env")),
     };
-    let sent = openai_only
+    let from_openai = openai_only
         .validate_environment(Headers::new(), None)
         .unwrap();
-    assert_eq!(header(&sent, "Authorization"), "Bearer sk-openai");
+    assert_eq!(header(&from_openai, "Authorization"), "Bearer sk-openai");
     let env_only = OpenAiEvalsConfig {
         api_key: None,
         openai_key: None,
         env_api_key: Some(SecretString::from("sk-env")),
     };
-    let sent = env_only.validate_environment(Headers::new(), None).unwrap();
-    assert_eq!(header(&sent, "Authorization"), "Bearer sk-env");
+    let from_env = env_only.validate_environment(Headers::new(), None).unwrap();
+    assert_eq!(header(&from_env, "Authorization"), "Bearer sk-env");
+}
+
+fn auth_treats_empty_values_as_unset() {
+    let config = OpenAiEvalsConfig {
+        api_key: Some(SecretString::from("sk-global")),
+        openai_key: Some(SecretString::from("sk-openai")),
+        env_api_key: None,
+    };
     let empty_params: Object = object(r#"{"api_key":""}"#);
     let sent = config
         .validate_environment(Headers::new(), Some(&empty_params))
@@ -446,14 +592,20 @@ fn case_eval_auth_required() {
         openai_key: Some(SecretString::from("sk-openai")),
         env_api_key: None,
     };
-    let sent = blank_secret
+    let from_openai = blank_secret
         .validate_environment(Headers::new(), None)
         .unwrap();
-    assert_eq!(header(&sent, "Authorization"), "Bearer sk-openai");
+    assert_eq!(header(&from_openai, "Authorization"), "Bearer sk-openai");
     assert!(matches!(
         OpenAiEvalsConfig::default().validate_environment(Headers::new(), None),
         Err(EvalsError::ApiKeyRequired)
     ));
+}
+
+fn case_eval_auth_required() {
+    auth_prefers_explicit_call_key();
+    auth_falls_back_through_sources();
+    auth_treats_empty_values_as_unset();
 }
 
 fn case_eval_url_literal_append() {
@@ -522,8 +674,7 @@ fn evals_cases(#[case] case: u8) {
     }
 }
 
-#[test]
-fn openai_evals_credential_identity_isolation() {
+fn credential_identity_stays_with_its_config() {
     let identity_a = OpenAiEvalsConfig {
         api_key: Some(SecretString::from("key-a")),
         openai_key: Some(SecretString::from("openai-key-a")),
@@ -548,11 +699,19 @@ fn openai_evals_credential_identity_isolation() {
         .validate_environment(Headers::new(), None)
         .unwrap();
     assert_eq!(again_a, headers_a);
+}
+
+fn call_params_override_without_mutating_config() {
+    let identity = OpenAiEvalsConfig {
+        api_key: Some(SecretString::from("key-a")),
+        openai_key: Some(SecretString::from("openai-key-a")),
+        env_api_key: None,
+    };
     let call_a: Object = object(r#"{"api_key":"call-a"}"#);
     let call_b: Object = object(r#"{"api_key":"call-b"}"#);
     assert_eq!(
         header(
-            &identity_a
+            &identity
                 .validate_environment(Headers::new(), Some(&call_a))
                 .unwrap(),
             "Authorization"
@@ -561,13 +720,19 @@ fn openai_evals_credential_identity_isolation() {
     );
     assert_eq!(
         header(
-            &identity_a
+            &identity
                 .validate_environment(Headers::new(), Some(&call_b))
                 .unwrap(),
             "Authorization"
         ),
         "Bearer call-b"
     );
+}
+
+#[test]
+fn openai_evals_credential_identity_isolation() {
+    credential_identity_stays_with_its_config();
+    call_params_override_without_mutating_config();
 }
 
 #[test]
