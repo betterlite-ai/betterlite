@@ -631,6 +631,25 @@ fn a_generic_event_is_left_alone() {
     assert!(matches!(decoded, DecodedStreamResponse::Generic(_)));
 }
 
+// LiteLLM raises AttributeError when a terminal payload fails its model and stays a dict
+#[test]
+fn a_lax_terminal_event_keeps_its_fields_as_sent() {
+    let mut decoded = event(json!({
+        "type": "response.completed",
+        "response": {"usage": {"cost_in_usd_ticks": 5_000_000_000_i64}},
+    }));
+    restate_event_usage(&mut decoded);
+    let DecodedStreamResponse::Lax { fields, .. } = decoded else {
+        panic!("an incomplete terminal payload decodes as lax");
+    };
+    assert_eq!(
+        fields.get("response"),
+        Some(&ticks(
+            json!({"usage": {"cost_in_usd_ticks": 5_000_000_000_i64}})
+        ))
+    );
+}
+
 #[test]
 fn the_xai_responses_capability_is_not_native_websocket() {
     assert!(!SUPPORTS_NATIVE_WEBSOCKET);
