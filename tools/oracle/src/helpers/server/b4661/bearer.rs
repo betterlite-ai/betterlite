@@ -128,9 +128,5 @@ async fn scenario_view(scenario: &ScenarioSpec) -> HelperResult {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
-    Ok(json!({
-        "sends": sends,
-        "final_status": final_status,
-        "refetched": asked_tokens,
-    }))
+    Ok(json!({"sends": sends, "final_status": final_status, "refetched": asked_tokens}))
 }
