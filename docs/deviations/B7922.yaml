@@ -1,0 +1,14 @@
+task: B7922
+deviations:
+  - what: "Fields LiteLLM types as a bare dict, list or object (the realtime session fields, the response objects, the moderation dictionaries) are typed with dict[str, JsonValue], list[JsonValue] or JsonValue."
+    why: "The repo bans Any and unparameterized containers in annotations, and these fields carry JSON payloads whose shape LiteLLM leaves open."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1935-L2007"
+  - what: "OpenAIChatCompletionLogprobs.content, .refusal, OpenAIChatCompletionChoices.message, OpenAIChatCompletionResponse.usage and OpenAIBatchResponse.body are typed as JSON values where LiteLLM names OpenAIChatCompletionLogprobsContent, ChatCompletionResponseMessage, ChatCompletionUsageBlock and OpenAIErrorBody."
+    why: "Those four classes sit outside this task's line range in the core and chat parts of the package, which are built by B7920 and B7921; typing these fields structurally keeps this module importable on its own."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L2402-L2438"
+  - what: "ImageGenerationRequestQuality subclasses enum.StrEnum instead of (str, Enum)."
+    why: "Ruff UP042 rejects the two-base form, and the members and values stay the same. str() of a member returns its value, where (str, Enum) returns the member name."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L2368-L2374"
+  - what: "OpenAIVideoObject subclasses the wheel's ResponseObject, so it accepts extra fields and json() returns standard JSON text, where LiteLLM's class subclasses pydantic.BaseModel and its json() returns a model_dump dict."
+    why: "Every ported model under betterlite.types shares the ResponseObject base; the fields, required keys, defaults and model_dump of the declared input match LiteLLM."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L2522-L2576"
