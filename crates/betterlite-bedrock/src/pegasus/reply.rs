@@ -41,7 +41,7 @@ where
             format!("Error parsing response: {raw}, error: {source}"),
         )
     })?;
-    tracing::debug!("twelvelabs pegasus response: {raw}");
+    tracing::debug!("twelvelabs pegasus response: {record:?}");
     let Field::Mapping(fields) = &record else {
         return Err(PegasusError::ReplyNotObject);
     };

@@ -13,19 +13,12 @@ pub struct BedrockFailure {
 
 #[derive(Debug, Error)]
 pub enum PegasusError {
-    #[error("the response body is not valid JSON")]
-    Decode {
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("the response body is not a JSON object")]
     ReplyNotObject,
     #[error("the response message field is not a string")]
     MessageNotString,
     #[error("the response finishReason field cannot be mapped")]
     FinishReasonNotMappable,
-    #[error("the response content could not be set")]
-    ContentNotSet,
     #[error("the response token count header {name} is not an integer")]
     TokenCountHeader {
         name: &'static str,
