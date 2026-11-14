@@ -171,6 +171,43 @@ fn assert_jaccard(left: &[&str], right: &[&str], expected: f64) {
     );
 }
 
+fn assert_each_field_fires() {
+    let singles = [
+        SignalDelta {
+            misalignment: 1,
+            ..SignalDelta::default()
+        },
+        SignalDelta {
+            stagnation: 1,
+            ..SignalDelta::default()
+        },
+        SignalDelta {
+            disengagement: 1,
+            ..SignalDelta::default()
+        },
+        SignalDelta {
+            satisfaction: 1,
+            ..SignalDelta::default()
+        },
+        SignalDelta {
+            failure: 1,
+            ..SignalDelta::default()
+        },
+        SignalDelta {
+            r#loop: 1,
+            ..SignalDelta::default()
+        },
+        SignalDelta {
+            exhaustion: 1,
+            ..SignalDelta::default()
+        },
+    ];
+    assert!(
+        singles.iter().all(SignalDelta::any_fired),
+        "any_fired must report every counter"
+    );
+}
+
 fn assert_counted() {
     let one = SignalDelta {
         misalignment: 1,
@@ -192,6 +229,7 @@ fn assert_counted() {
     };
     assert!(!SignalDelta::default().any_fired());
     assert!(one.any_fired());
+    assert_each_field_fires();
     assert_eq!(fields(merge_signal_deltas(&[])), NONE);
     assert_eq!(fields(merge_signal_deltas(&[all, all])), [2; 7]);
     let mut state = state();
@@ -228,6 +266,39 @@ fn assert_credit_once() {
     assert_eq!(state.turn_count, 5);
     assert_eq!(state.last_processed_turn, 5);
     assert_eq!(state.terminal_status, Some(200));
+}
+
+fn assert_threaded() {
+    let mut state = state();
+    let first = make_turn(
+        Some("hello there"),
+        Some("red green blue"),
+        Vec::new(),
+        None,
+    );
+    assert_eq!(fields(apply_turn(&detector(), &mut state, &first)), NONE);
+    let second = make_turn(
+        Some("hello world"),
+        Some("red green yellow"),
+        Vec::new(),
+        None,
+    );
+    assert_eq!(
+        fields(apply_turn(&detector(), &mut state, &second)),
+        [1, 1, 0, 0, 0, 0, 0]
+    );
+    let third = make_turn(
+        Some("unrelated text"),
+        Some("purple orange"),
+        Vec::new(),
+        None,
+    );
+    assert_eq!(fields(apply_turn(&detector(), &mut state, &third)), NONE);
+    assert_eq!(state.last_user_content.as_deref(), Some("unrelated text"));
+    assert_eq!(
+        state.last_assistant_content.as_deref(),
+        Some("purple orange")
+    );
 }
 
 fn assert_advance_bounds() {
@@ -276,6 +347,7 @@ enum Behavior {
     Jaccard(&'static [&'static str], &'static [&'static str], f64),
     Counted,
     CreditOnce,
+    Threaded,
     AdvanceBounds,
 }
 
@@ -410,6 +482,74 @@ enum Behavior {
     Some(200),
     EXHAUSTED
 ))]
+#[case::satisfaction_that_worked(Behavior::Feedback(
+    None,
+    Some("that worked"),
+    None,
+    true,
+    SATISFIED
+))]
+#[case::satisfaction_that_did_it(Behavior::Feedback(
+    None,
+    Some("that did it"),
+    None,
+    true,
+    SATISFIED
+))]
+#[case::satisfaction_works_now(Behavior::Feedback(None, Some("works now"), None, true, SATISFIED))]
+#[case::satisfaction_fixed_it(Behavior::Feedback(None, Some("fixed it"), None, true, SATISFIED))]
+#[case::satisfaction_solved_it(Behavior::Feedback(None, Some("solved it"), None, true, SATISFIED))]
+#[case::satisfaction_thank_you(Behavior::Feedback(None, Some("thank you"), None, true, SATISFIED))]
+#[case::satisfaction_thx(Behavior::Feedback(None, Some("thx"), None, true, SATISFIED))]
+#[case::satisfaction_appreciated(Behavior::Feedback(
+    None,
+    Some("appreciated"),
+    None,
+    true,
+    SATISFIED
+))]
+#[case::satisfaction_appreciate_it(Behavior::Feedback(
+    None,
+    Some("appreciate it"),
+    None,
+    true,
+    SATISFIED
+))]
+#[case::satisfaction_perfect(Behavior::Feedback(None, Some("perfect"), None, true, SATISFIED))]
+#[case::satisfaction_great(Behavior::Feedback(None, Some("great"), None, true, SATISFIED))]
+#[case::satisfaction_excellent(Behavior::Feedback(None, Some("excellent"), None, true, SATISFIED))]
+#[case::satisfaction_exactly(Behavior::Feedback(None, Some("exactly"), None, true, SATISFIED))]
+#[case::disengagement_forget_it(Behavior::Feedback(
+    None,
+    Some("forget it"),
+    None,
+    false,
+    DISENGAGED
+))]
+#[case::disengagement_never_mind(Behavior::Feedback(
+    None,
+    Some("never mind"),
+    None,
+    false,
+    DISENGAGED
+))]
+#[case::disengagement_give_up(Behavior::Feedback(None, Some("give up"), None, false, DISENGAGED))]
+#[case::disengagement_talk_to_a_human(Behavior::Feedback(
+    None,
+    Some("talk to a human"),
+    None,
+    false,
+    DISENGAGED
+))]
+#[case::disengagement_stop(Behavior::Feedback(None, Some("stop"), None, false, DISENGAGED))]
+#[case::disengagement_myself(Behavior::Feedback(
+    None,
+    Some("I'll do it myself"),
+    None,
+    false,
+    DISENGAGED
+))]
+#[case::threaded_detectors(Behavior::Threaded)]
 fn feedback_signals_behaviors(#[case] behavior: Behavior) {
     match behavior {
         Behavior::Feedback(previous, current, tool, allow, expected) => {
@@ -426,6 +566,7 @@ fn feedback_signals_behaviors(#[case] behavior: Behavior) {
         Behavior::Jaccard(left, right, expected) => assert_jaccard(left, right, expected),
         Behavior::Counted => assert_counted(),
         Behavior::CreditOnce => assert_credit_once(),
+        Behavior::Threaded => assert_threaded(),
         Behavior::AdvanceBounds => assert_advance_bounds(),
     }
 }
@@ -535,7 +676,7 @@ fn assert_gate(phrase: &str, phase: GatePhase) {
 ))]
 #[case::threshold_finite(Boundary::Threshold(0.45, 0.5, None))]
 #[case::misalignment_at_threshold(Boundary::Misalignment(
-    "a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20",
+    "a1 a2 a3 a4 a5 a6 a7 a8 a9",
     "a1 a2 a3 a4 a5 a6 a7 a8 a9 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11",
     false,
 ))]
