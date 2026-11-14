@@ -371,6 +371,7 @@ fn a_structured_timeout_without_a_read_value_uses_the_default() {
 
 #[rstest]
 #[case::text("not-a-number")]
+#[case::digit_separator("1_0")]
 #[case::nan("nan")]
 #[case::infinity("inf")]
 fn an_invalid_timeout_text_is_rejected(#[case] text: &str) {
