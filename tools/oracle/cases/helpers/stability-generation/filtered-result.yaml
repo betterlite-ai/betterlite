@@ -1,0 +1,14 @@
+kind: helper
+name: stability-generation-filtered-result
+call:
+  stability_generation:
+    calls:
+      - function: response
+        status: 200
+        headers:
+          x-request-id: abc
+        body: '{"image":"abc","finish_reason":"CONTENT_FILTERED"}'
+        created: 7
+        data: []
+env: {}
+compare: {ignore: []}

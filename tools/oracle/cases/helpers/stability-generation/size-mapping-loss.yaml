@@ -1,0 +1,34 @@
+kind: helper
+name: stability-generation-size-mapping-loss
+call:
+  stability_generation:
+    calls:
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          size: 1024x1024
+        optional_params: {}
+        drop_params: false
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          size: 512x512
+        optional_params:
+          aspect_ratio: "3:2"
+        drop_params: false
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          size: 999x999
+        optional_params: {}
+        drop_params: false
+      - function: request
+        prompt: a cat
+        optional_params:
+          size: 999x999
+      - function: request
+        prompt: a cat
+        optional_params:
+          aspect_ratio: "16:9"
+env: {}
+compare: {ignore: []}
