@@ -131,7 +131,12 @@ fn handle(stream: TcpStream, script: &Mutex<Script>, seen: &Mutex<Vec<Seen>>) {
         return;
     };
     let headers = read_headers(&mut reader);
-    read_body(&mut reader, &headers);
+    let length = headers
+        .get("content-length")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    let mut body = vec![0_u8; length];
+    let _read = reader.read_exact(&mut body);
     let authorization = headers.get("authorization").cloned();
     if let Ok(mut recorder) = seen.lock() {
         recorder.push(Seen {
@@ -174,15 +179,6 @@ fn read_headers(reader: &mut BufReader<TcpStream>) -> BTreeMap<String, String> {
         }
     }
     headers
-}
-
-fn read_body(reader: &mut BufReader<TcpStream>, headers: &BTreeMap<String, String>) {
-    let length = headers
-        .get("content-length")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(0);
-    let mut body = vec![0_u8; length];
-    let _read = reader.read_exact(&mut body);
 }
 
 fn respond(mut stream: TcpStream, reply: Reply) {

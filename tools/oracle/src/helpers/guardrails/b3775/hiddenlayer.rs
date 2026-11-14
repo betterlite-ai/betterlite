@@ -150,6 +150,9 @@ fn classify(error: &HiddenlayerError) -> Value {
             json!({"kind": "invalid_response"})
         }
         HiddenlayerError::Jwt(JwtError::Decode { .. }) => json!({"kind": "token_decode"}),
+        HiddenlayerError::Jwt(JwtError::Body { .. } | JwtError::TooLarge { .. }) => {
+            json!({"kind": "token_body"})
+        }
         HiddenlayerError::Transport { .. } => json!({"kind": "detection_transport"}),
         HiddenlayerError::Body { .. } => json!({"kind": "detection_body"}),
         HiddenlayerError::Status { status, .. } => {
