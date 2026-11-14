@@ -63,3 +63,11 @@ deviations:
       The definition of done names keys, required keys, Literal values, Enum members and field defaults;
       the prose is documentation for LiteLLM's OpenAPI page and betterlite serves its own schema.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L143-L148
+  - what: >-
+      systemone_choice_key takes value as a keyword-only argument, so the positional call
+      systemone_choice_key(some_value) that works on LiteLLM raises TypeError here.
+    why: >-
+      The argument is typed str | bool and the FBT001 boolean trap rule rejects a boolean-typed
+      positional argument; this task allows no suppressions, and gateway_requests.py and
+      model_groups.py make their boolean arguments keyword-only the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L206-L209

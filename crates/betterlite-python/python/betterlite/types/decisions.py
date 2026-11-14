@@ -1,8 +1,8 @@
 from collections.abc import Mapping, Sequence
-from typing import Annotated, ClassVar, Final, Literal, Self, TypeAlias
+from typing import Annotated, ClassVar, Final, Literal, Required, Self, TypeAlias
 
 from pydantic import ConfigDict, Field, JsonValue, PrivateAttr, model_validator, with_config
-from typing_extensions import ReadOnly, Required, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.llms.base import LiteLLMPydanticObjectBase
 
@@ -148,7 +148,7 @@ class OpenAIChoiceOption(LiteLLMPydanticObjectBase):
     value: str | bool
     description: str | None = None
 
-def systemone_choice_key(value: str | bool) -> str:
+def systemone_choice_key(*, value: str | bool) -> str:
     if value is True:
         return "true"
     if value is False:
@@ -164,7 +164,9 @@ class OpenAIChoiceQuestion(LiteLLMPydanticObjectBase):
 
     @model_validator(mode="after")
     def require_unique_systemone_keys(self) -> Self:
-        keys: Final = frozenset(systemone_choice_key(option.value) for option in self.choices)
+        keys: Final = frozenset(
+            systemone_choice_key(value=option.value) for option in self.choices
+        )
         if len(keys) != len(self.choices):
             raise ValueError(
                 "Choice values must be unique, and a boolean cannot share its text with a "
