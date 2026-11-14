@@ -79,11 +79,11 @@ impl ClientKey {
         ] {
             match part {
                 Some(value) => {
-                    hasher.update([1]);
+                    hasher.update([1_u8]);
                     hasher.update(value.as_bytes());
-                    hasher.update([0]);
+                    hasher.update([0_u8]);
                 }
-                None => hasher.update([2]),
+                None => hasher.update([2_u8]),
             }
         }
         hasher.update(request.flush_interval.to_le_bytes());
