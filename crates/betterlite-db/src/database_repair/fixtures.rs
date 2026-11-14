@@ -102,6 +102,7 @@ impl RepairCase {
             .get("team_id")
     }
 
+    #[must_use]
     pub async fn token_row(&self, token: &str) -> Row {
         self.client
             .query_opt(TOKEN_ROW_SQL, &[&token])
@@ -110,6 +111,7 @@ impl RepairCase {
             .expect("the token row")
     }
 
+    #[must_use]
     pub async fn token_present(&self, token: &str) -> bool {
         self.client
             .query_one(TOKEN_EXISTS_SQL, &[&token])
