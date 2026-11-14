@@ -98,6 +98,19 @@ fn converts_a_native_tool_when_the_provider_comes_from_the_model_name() {
 }
 
 #[test]
+fn the_top_level_provider_wins_over_the_model_prefix() {
+    let request = object(
+        r#"{"custom_llm_provider":"openai","model":"bedrock/claude","tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,
+    );
+    assert_eq!(
+        logger(&["bedrock"])
+            .async_pre_call_deployment_hook(&request, None)
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
 fn converts_a_native_tool_when_the_provider_is_nested_in_litellm_params() {
     let request = object(
         r#"{"model":"claude","litellm_params":{"custom_llm_provider":"bedrock"},"tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,
