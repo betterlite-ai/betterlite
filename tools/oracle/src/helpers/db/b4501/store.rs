@@ -99,7 +99,7 @@ pub(crate) fn build(seed: &Seed, conflicts: u32) -> Result<Store, Box<HelperErro
     Ok(store)
 }
 
-pub(crate) fn snapshot(store: &Store, result: Value, transform_calls: u32) -> Value {
+pub(crate) fn snapshot(store: &Store, result: &Value, transform_calls: u32) -> Value {
     let lenses: Vec<Value> = store
         .lenses
         .iter()

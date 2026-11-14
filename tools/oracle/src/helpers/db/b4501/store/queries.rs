@@ -34,13 +34,13 @@ impl Store {
         let texts: Vec<&str> = (0..args.len())
             .filter_map(|index| text_argument(args, index))
             .collect();
-        match texts.as_slice() {
-            &[worker_id, token_hash, data] => self.insert_worker(worker_id, token_hash, data),
-            &[now, worker_id] if query.contains("{last_seen}") => {
+        match *texts.as_slice() {
+            [worker_id, token_hash, data] => self.insert_worker(worker_id, token_hash, data),
+            [now, worker_id] if query.contains("{last_seen}") => {
                 self.patch_worker(worker_id, "last_seen", Value::String(now.to_owned()));
             }
-            &[data, worker_id] => self.replace_worker(worker_id, data),
-            &[worker_id] => self.patch_worker(worker_id, "revoked", Value::Bool(true)),
+            [data, worker_id] => self.replace_worker(worker_id, data),
+            [worker_id] => self.patch_worker(worker_id, "revoked", Value::Bool(true)),
             _ => return 0,
         }
         1
@@ -153,7 +153,7 @@ impl Store {
             },
         );
         for (job_id, job) in displaced {
-            self.runs.entry(job_id).or_insert(StoredRun {
+            self.runs.entry(job_id).or_insert_with(|| StoredRun {
                 lens_id: lens_id.to_owned(),
                 data: job,
             });

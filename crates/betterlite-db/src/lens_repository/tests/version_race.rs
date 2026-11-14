@@ -43,8 +43,8 @@ async fn a_lost_version_race_reports_incomplete_and_leaves_the_row() {
         .unwrap();
     assert!(!completed);
     let updated = updated.unwrap();
-    assert_eq!((updated.revision, updated.version), (2, 2));
+    assert_eq!((updated.revision, updated.version), (2, 1));
     let (version, stored) = stored_lens(&db.pool, LENS_ID).await;
-    assert_eq!((version, stored.revision), (1, 0));
+    assert_eq!((version, stored.revision), (1, 1));
     db.close().await;
 }

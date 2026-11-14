@@ -104,10 +104,15 @@ pub(crate) enum Transform {
 }
 
 impl Call {
-    pub(crate) fn conflicts(&self) -> u32 {
+    pub(crate) const fn conflicts(&self) -> u32 {
         match self {
             Self::Update { conflicts, .. } => *conflicts,
-            _ => 0,
+            Self::Jobs { .. }
+            | Self::Job { .. }
+            | Self::SaveWorker { .. }
+            | Self::SetWorkerBilling { .. }
+            | Self::RevokeWorker { .. }
+            | Self::Heartbeat { .. } => 0,
         }
     }
 }

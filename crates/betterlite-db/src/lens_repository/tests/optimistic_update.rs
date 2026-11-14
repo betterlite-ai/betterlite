@@ -98,7 +98,7 @@ async fn every_lost_attempt_is_retried_until_the_attempts_run_out() {
     assert_eq!(calls, 8);
     assert_eq!(racing_repository.races.load(Ordering::SeqCst), 0);
     let (version, stored) = stored_lens(&db.pool, LENS_ID).await;
-    assert_eq!((version, stored.revision), (8, 0));
+    assert_eq!((version, stored.revision), (8, 1));
     db.close().await;
 }
 

@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::lens_repository::repository::LensRepository;
@@ -39,7 +40,7 @@ pub(crate) async fn run(input: &Input) -> HelperResult {
         | Call::Heartbeat { .. } => (worker_call(&repository, &input.call).await?, 0),
     };
     let guard = store.lock().unwrap_or_else(PoisonError::into_inner);
-    Ok(snapshot(&guard, result, transform_calls))
+    Ok(snapshot(&guard, &result, transform_calls))
 }
 
 async fn update_call(
@@ -55,7 +56,7 @@ async fn update_call(
             lens_id,
             |lens| {
                 calls = calls.saturating_add(1);
-                apply(lens, transform)
+                Ok::<Lens, Infallible>(apply(lens, transform))
             },
             attempts,
             changed_only,
@@ -98,16 +99,11 @@ async fn worker_call(
     }
 }
 
-fn apply(mut lens: Lens, transform: &Transform) -> Result<Lens, String> {
+fn apply(mut lens: Lens, transform: &Transform) -> Lens {
     match transform {
-        Transform::Unchanged => Ok(lens),
-        Transform::SetRevision { revision } => {
-            lens.revision = *revision;
-            Ok(lens)
-        }
-        Transform::DropJob { job_id } => {
-            lens.jobs.retain(|job| job.id != *job_id);
-            Ok(lens)
-        }
+        Transform::Unchanged => {}
+        Transform::SetRevision { revision } => lens.revision = *revision,
+        Transform::DropJob { job_id } => lens.jobs.retain(|job| job.id != *job_id),
     }
+    lens
 }
