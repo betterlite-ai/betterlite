@@ -1,6 +1,6 @@
 use betterlite_models::model_capability_predicates::CapabilityPredicates;
 use betterlite_roi::estimator::evidence::metadata_evidence;
-use betterlite_roi::estimator::extraction::first_json_object;
+use betterlite_roi::estimator::extraction::{first_json_object, mask_value_constants};
 use betterlite_roi::estimator::json::json_dumps_text;
 use betterlite_roi::estimator::models::{
     MAX_EVIDENCE_CHARS, REASONING_MAX_CHARS, RESPONSE_CONTRACT, ROICompletionChoice,
@@ -124,8 +124,9 @@ fn estimate_from_completion(value: Value, model: &str) -> Result<ROIEstimate, Es
     let object = first_json_object(content).map_err(|source| EstimatorError {
         source: CompletionFailure::Extraction { source },
     })?;
+    let masked = mask_value_constants(object);
     let result: ROIEstimatorResult =
-        serde_json::from_str(object).map_err(|source| EstimatorError {
+        serde_json::from_str(&masked).map_err(|source| EstimatorError {
             source: CompletionFailure::Estimate { source },
         })?;
     Ok(ROIEstimate {

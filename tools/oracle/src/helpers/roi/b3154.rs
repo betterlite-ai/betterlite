@@ -7,7 +7,7 @@ use betterlite_models::model_capability_predicates::{
 };
 use betterlite_roi::estimator::cache::cache_context;
 use betterlite_roi::estimator::evidence::metadata_evidence;
-use betterlite_roi::estimator::extraction::first_json_object;
+use betterlite_roi::estimator::extraction::{first_json_object, mask_value_constants};
 use betterlite_roi::estimator::models::{EstimatorModel, ROICompletionRequest};
 use betterlite_roi::estimator::options::{configured_models, estimator_options};
 use betterlite_roi::estimator::result::ROIEstimatorResult;
@@ -221,7 +221,8 @@ fn validate(input: &Input) -> HelperResult {
         .ok_or_else(|| helper_error("ValueError", "validate_result needs raw JSON".to_owned()))?;
     let object =
         first_json_object(raw).map_err(|error| helper_error("ValueError", error.to_string()))?;
-    let result: ROIEstimatorResult = serde_json::from_str(object)
+    let masked = mask_value_constants(object);
+    let result: ROIEstimatorResult = serde_json::from_str(&masked)
         .map_err(|error| helper_error("ValueError", error.to_string()))?;
     Ok(json!({"hours": result.hours, "reasoning": result.reasoning}))
 }

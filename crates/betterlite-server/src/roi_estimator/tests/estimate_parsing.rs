@@ -51,6 +51,27 @@ async fn estimate_keeps_the_last_value_of_a_repeated_hours_key() {
 }
 
 #[rstest]
+#[case::nan_hours(r#"{"hours": NaN, "hours": 2, "reasoning": "x"}"#)]
+#[case::negative_infinity_hours(r#"{"hours": -Infinity, "hours": 2, "reasoning": "x"}"#)]
+#[case::infinity_reasoning(r#"{"hours": 2, "reasoning": Infinity, "reasoning": "x"}"#)]
+#[tokio::test]
+async fn estimate_keeps_the_last_value_past_a_python_constant(#[case] content: &str) {
+    let estimate = run_estimate(ok_response(content)).await.unwrap();
+    assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
+    assert_eq!(estimate.hours, Some(2.0));
+    assert_eq!(estimate.reasoning, "x");
+}
+
+#[rstest]
+#[case::nan(r#"{"hours": 2, "hours": NaN, "reasoning": "x"}"#)]
+#[case::infinity(r#"{"hours": 2, "hours": Infinity, "reasoning": "x"}"#)]
+#[case::negative_infinity(r#"{"hours": 2, "hours": -Infinity, "reasoning": "x"}"#)]
+#[tokio::test]
+async fn estimate_rejects_a_reply_whose_last_hours_is_a_python_constant(#[case] content: &str) {
+    assert!(run_estimate(ok_response(content)).await.is_err());
+}
+
+#[rstest]
 #[case::null(json!({
     "choices": [{"finish_reason": null, "message": {"content": r#"{"hours": 1, "reasoning": "x"}"#}}],
 }))]

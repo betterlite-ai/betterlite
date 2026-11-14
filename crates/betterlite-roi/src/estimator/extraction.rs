@@ -5,11 +5,11 @@ use thiserror::Error;
 pub const MAX_REPLY_BYTES: usize = 0x0010_0000;
 const SCAN_BUDGET: usize = MAX_REPLY_BYTES.saturating_mul(16);
 
-// same-length stand-ins so serde locates the object Python's raw_decode would accept
+// same-length stand-ins; all three parse as finite negative numbers, which validate_hours rejects
 const MASKED_CONSTANTS: [(&str, &str); 3] = [
-    ("NaN", "0e0"),
-    ("Infinity", "1e000000"),
-    ("-Infinity", "-1e000000"),
+    ("NaN", "-1 "),
+    ("Infinity", "-1000000"),
+    ("-Infinity", "-10000000"),
 ];
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -62,25 +62,62 @@ fn failure_offset(tail: &str, line: usize, column: usize) -> usize {
 }
 
 fn mask_constants(content: &str) -> String {
-    let bytes = content.as_bytes();
-    let mut masked = bytes.to_vec();
-    for (token, stand_in) in MASKED_CONSTANTS {
+    let bytes = content.as_bytes().to_vec();
+    let mut masked = content.to_owned();
+    for (token, _) in MASKED_CONSTANTS {
         for (index, _) in content.match_indices(token) {
-            let end = index.saturating_add(token.len());
-            let opens = index
-                .checked_sub(1)
-                .and_then(|previous| bytes.get(previous))
-                .is_none_or(|byte| b" \t\n\r{[,:".contains(byte));
-            let closes = bytes
-                .get(end)
-                .is_none_or(|byte| b" \t\n\r}],".contains(byte));
-            if opens
-                && closes
-                && let Some(slot) = masked.get_mut(index..end)
-            {
-                slot.copy_from_slice(stand_in.as_bytes());
-            }
+            mask_at(&bytes, &mut masked, index);
         }
     }
-    String::from_utf8_lossy(&masked).into_owned()
+    masked
+}
+
+// the typed parse masks only value positions, so a constant written inside reasoning text stays as it is
+pub fn mask_value_constants(content: &str) -> String {
+    let bytes = content.as_bytes().to_vec();
+    let mut masked = content.to_owned();
+    let mut index = 0;
+    let mut in_string = false;
+    while let Some(&byte) = bytes.get(index) {
+        if in_string {
+            if byte == b'\\' {
+                index = index.saturating_add(2);
+                continue;
+            }
+            if byte == b'"' {
+                in_string = false;
+            }
+            index = index.saturating_add(1);
+            continue;
+        }
+        if byte == b'"' {
+            in_string = true;
+            index = index.saturating_add(1);
+            continue;
+        }
+        let end = mask_at(&bytes, &mut masked, index).unwrap_or(index);
+        index = end.max(index.saturating_add(1));
+    }
+    masked
+}
+
+fn mask_at(bytes: &[u8], masked: &mut String, index: usize) -> Option<usize> {
+    let (token, stand_in) = MASKED_CONSTANTS.into_iter().find(|(token, _)| {
+        bytes
+            .get(index..)
+            .is_some_and(|tail| tail.starts_with(token.as_bytes()))
+    })?;
+    let end = index.saturating_add(token.len());
+    let opens = index
+        .checked_sub(1)
+        .and_then(|previous| bytes.get(previous))
+        .is_none_or(|byte| b" \t\n\r{[,:".contains(byte));
+    let closes = bytes
+        .get(end)
+        .is_none_or(|byte| b" \t\n\r}],".contains(byte));
+    if !opens || !closes {
+        return None;
+    }
+    masked.replace_range(index..end, stand_in);
+    Some(end)
 }
