@@ -305,7 +305,7 @@ async fn tools_that_are_not_tool_definitions_are_rejected(#[case] optional: &str
     assert!(
         refusal
             .message
-            .starts_with("`tools` is not a list of OpenAI tool definitions")
+            .starts_with("the OCI chat request does not fit a list of OpenAI tool definitions: ")
     );
 }
 
