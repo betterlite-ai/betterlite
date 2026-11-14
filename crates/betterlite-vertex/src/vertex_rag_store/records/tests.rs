@@ -41,7 +41,7 @@ fn params<'text>(project: Option<&'text str>, location: Option<&'text str>) -> V
 
 fn utc() -> LocalTimeContext {
     LocalTimeContext {
-        zone: TimeZone::UTC,
+        zone: TimeZone::get("UTC").unwrap(),
     }
 }
 
@@ -552,8 +552,11 @@ fn a_create_time_takes_an_integer_an_iso_string_or_zero(#[case] body: &str, #[ca
 #[case(r#"{"labels":{"a":"b"}}"#, r#"{"a":"b"}"#)]
 fn only_a_labels_object_becomes_the_metadata(#[case] body: &str, #[case] expected: &str) {
     let value = serde_json::to_value(corpus_response(body)).unwrap();
-    let expected: Json = serde_json::from_str(expected).unwrap();
-    assert_eq!(value["metadata"], serde_json::to_value(expected).unwrap());
+    let expected_metadata: Json = serde_json::from_str(expected).unwrap();
+    assert_eq!(
+        value["metadata"],
+        serde_json::to_value(expected_metadata).unwrap()
+    );
 }
 
 #[test]

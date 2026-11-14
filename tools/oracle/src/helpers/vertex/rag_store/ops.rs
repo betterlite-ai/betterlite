@@ -100,8 +100,8 @@ fn search_outcome(call: &SearchCall) -> Result<Value, Box<HelperError>> {
         headers: &response.headers,
         body: response.body.as_bytes(),
     };
-    let results = transform_search_response(&reply, &logging).or_value_error()?;
-    let results = serde_json::to_value(&results).or_value_error()?;
+    let decoded = transform_search_response(&reply, &logging).or_value_error()?;
+    let results = serde_json::to_value(&decoded).or_value_error()?;
     Ok(json!({"url": request.url, "body": body, "results": results}))
 }
 
@@ -140,7 +140,7 @@ fn vertex_params(fields: &BTreeMap<String, Json>) -> VertexParams<'_> {
 
 fn text<'fields>(fields: &'fields BTreeMap<String, Json>, name: &str) -> Option<&'fields str> {
     match fields.get(name) {
-        Some(Json::Text(value)) => Some(value),
+        Some(Json::Text(value)) => Some(value.as_str()),
         _ => None,
     }
 }

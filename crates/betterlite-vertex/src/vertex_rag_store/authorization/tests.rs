@@ -5,6 +5,7 @@ use std::future::ready;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::BaseVectorStoreAuthCredentials;
 use secrecy::SecretString;
 use serde_json::json;
@@ -193,7 +194,7 @@ fn a_non_text_auth_header_names_the_header() {
     let credentials = BaseVectorStoreAuthCredentials {
         headers: Some(BTreeMap::from([(
             "Authorization".to_owned(),
-            serde_json::to_value(betterlite_models::decisions::Json::Null).unwrap(),
+            serde_json::to_value(Json::Null).unwrap(),
         )])),
         query_params: None,
         extra: BTreeMap::new(),

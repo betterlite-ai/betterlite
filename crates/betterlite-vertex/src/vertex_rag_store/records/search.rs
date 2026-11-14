@@ -56,10 +56,9 @@ pub fn transform_search_request(
         .logging
         .insert("query".to_owned(), Json::Text(text.clone()));
     let body = search_body(text, corpus, request.optional_params)?;
-    Ok(SearchCall {
-        url: request.api_base.to_owned() + RETRIEVE_CONTEXTS_SUFFIX,
-        body,
-    })
+    let mut url = request.api_base.to_owned();
+    url.push_str(RETRIEVE_CONTEXTS_SUFFIX);
+    Ok(SearchCall { url, body })
 }
 
 fn corpus_path(

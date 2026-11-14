@@ -188,8 +188,7 @@ pub fn decode_vertex_rag_corpus(
 // Python keeps a bool as an int, a float and any other type fall to zero, and an ISO string goes through B1384
 fn create_time(value: &Json, local: &LocalTimeContext) -> i64 {
     match value {
-        Json::Bool(true) => 1,
-        Json::Bool(false) => 0,
+        Json::Bool(flag) => i64::from(*flag),
         Json::Number(number) => number.as_i64().unwrap_or_default(),
         Json::Text(text) => created_at(Some(text), local),
         Json::Null | Json::List(_) | Json::Object(_) => 0,

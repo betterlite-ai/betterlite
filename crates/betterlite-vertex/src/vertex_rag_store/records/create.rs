@@ -51,8 +51,10 @@ pub fn transform_create_request(
         ),
         Some(_) => return Err(VertexRagStoreError::ParamType("metadata", "an object")),
     };
+    let mut url = api_base.to_owned();
+    url.push_str(CORPUS_SUFFIX);
     Ok(CreateCall {
-        url: api_base.to_owned() + CORPUS_SUFFIX,
+        url,
         body: CreateBody {
             display_name,
             description: CORPUS_DESCRIPTION,
