@@ -13,9 +13,9 @@ use super::super::registry::StreamRegistry;
 use super::support::{Frame, Harness, ProviderError, arm_hook, frame, pump_of, queue_of, read};
 use crate::api::messages_stream_logging::SseChunk;
 
-fn limits() -> RelayLimits {
+fn limits(queue_maxsize: usize) -> RelayLimits {
     RelayLimits {
-        queue_maxsize: 8,
+        queue_maxsize,
         max_detached_stream_drains: 100,
     }
 }
@@ -34,11 +34,12 @@ async fn upstream_exception_arbitration() {
     an_already_detached_exception_fires_the_hook_once().await;
     the_scan_matches_identity_not_text().await;
     a_missing_hook_is_harmless().await;
+    a_refused_failure_enqueue_fires_the_hook().await;
 }
 
 async fn a_connected_client_gets_the_original_exception() {
     let registry = Arc::new(StreamRegistry::default());
-    let (harness, mut relay) = Harness::start(limits(), Arc::clone(&registry));
+    let (harness, mut relay) = Harness::start(limits(8), Arc::clone(&registry));
     let hook = arm_hook(&harness);
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
@@ -69,7 +70,7 @@ async fn a_connected_client_gets_the_original_exception() {
 }
 
 async fn a_queued_exception_fires_the_hook_once_after_detach() {
-    let (harness, mut relay) = Harness::start(limits(), Arc::new(StreamRegistry::default()));
+    let (harness, mut relay) = Harness::start(limits(8), Arc::new(StreamRegistry::default()));
     let hook = arm_hook(&harness);
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
@@ -83,7 +84,7 @@ async fn a_queued_exception_fires_the_hook_once_after_detach() {
 }
 
 async fn an_already_detached_exception_fires_the_hook_once() {
-    let (harness, mut relay) = Harness::start(limits(), Arc::new(StreamRegistry::default()));
+    let (harness, mut relay) = Harness::start(limits(8), Arc::new(StreamRegistry::default()));
     let hook = arm_hook(&harness);
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
@@ -115,7 +116,7 @@ async fn the_scan_matches_identity_not_text() {
 }
 
 async fn a_missing_hook_is_harmless() {
-    let (harness, mut relay) = Harness::start(limits(), Arc::new(StreamRegistry::default()));
+    let (harness, mut relay) = Harness::start(limits(8), Arc::new(StreamRegistry::default()));
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
     let pump = pump_of(&relay);
@@ -123,5 +124,18 @@ async fn a_missing_hook_is_harmless() {
     harness.script.fail(busy()).await;
     pump.wait().await;
     assert_eq!(harness.failures().len(), 1);
+    assert_eq!(harness.billed(), 0);
+}
+
+// the queue stays full while the client is connected, so this enqueue only loses to the detach
+async fn a_refused_failure_enqueue_fires_the_hook() {
+    let (harness, mut relay) = Harness::start(limits(1), Arc::new(StreamRegistry::default()));
+    let hook = arm_hook(&harness);
+    harness.script.release(SseChunk::Bytes(frame("one"))).await;
+    let pump = pump_of(&relay);
+    harness.script.fail(busy()).await;
+    drop(relay);
+    pump.wait().await;
+    assert_eq!(hook.calls(), vec!["RateLimitError(busy)".to_owned()]);
     assert_eq!(harness.billed(), 0);
 }
