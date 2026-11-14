@@ -3,6 +3,7 @@ from typing import Protocol
 
 import litellm.types.llms.openai as litellm_openai  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1
 import litellm.types.responses.main as litellm_responses  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L1
+import openai.types.responses.response_reasoning_item as openai_reasoning
 import pytest
 from litellm.responses.main import mock_responses_api_response as litellm_mock_response  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L105
 from pydantic import JsonValue, ValidationError
@@ -18,7 +19,9 @@ from betterlite.types.responses import (
     OutputFunctionToolCall,
     OutputImageGenerationCall,
     OutputText,
+    RawResponseOutputItem,
     ResponseAPIUsage,
+    ResponseReasoningItem,
     ResponsesAPIResponse,
     ResponsesAPIStatus,
     ResponsesToolUsage,
@@ -332,6 +335,31 @@ def test_output_item_generic() -> None:
     assert ours.content == [OutputText(**TEXT_VALUES)]
 
 
+def test_output_item_reasoning() -> None:
+    values: dict[str, JsonValue] = {
+        **REASONING_ITEM,
+        "summary": [{"type": "summary_text", "text": "why"}],
+    }
+    ours = ResponseReasoningItem.model_validate(values)
+    reference = openai_reasoning.ResponseReasoningItem.model_validate(values)
+    assert_same("reasoning", reference, ours)
+    assert ours.type == "reasoning"
+    assert ours.content is None
+
+
+def test_output_item_raw() -> None:
+    values: dict[str, JsonValue] = {
+        "type": "message", "id": "msg_1", "status": "completed", "role": "assistant",
+        "content": [{"type": "output_text", "text": "hi"}, "plain"],
+    }
+    ours = RawResponseOutputItem.model_validate(values)
+    texts: list[str | None] = [content.text for content in ours.content]
+    expected: list[str | None] = ["hi"]
+    assert ours.model_dump() == values
+    assert ours.type == "message"
+    assert texts == expected
+
+
 def test_output_item_required() -> None:
     with pytest.raises(ValidationError):
         OutputText(text="hi")
@@ -487,7 +515,44 @@ def test_api_response_nulls() -> None:
         {"type": "reasoning", "id": "rs_1", "summary": [], "kept": None},
         OTHER_ITEM,
     ]
-    assert ours.output == output
+    without_none = as_mapping(ours.model_dump(exclude_none=True))
+    filtered_output: list[JsonValue] = [
+        {"type": "reasoning", "id": "rs_1", "summary": []},
+        {"type": "note", "id": "note_1"},
+    ]
+    assert without_none["output"] == filtered_output
+    assert [item.model_dump() for item in ours.output] == output
+
+
+def test_api_response_reasoning_raw() -> None:
+    malformed: dict[str, JsonValue] = {
+        "type": "reasoning",
+        "summary": [],
+        "status": None,
+        "content": None,
+        "encrypted_content": None,
+    }
+    values: dict[str, JsonValue] = {
+        "id": "resp_1", "created_at": 1, "output": [malformed],
+    }
+    ours = as_mapping(ResponsesAPIResponse(**values).model_dump())["output"]
+    reference = as_mapping(reference_response(values).model_dump())["output"]
+    kept: list[JsonValue] = [malformed]
+    dropped: list[JsonValue] = [{"type": "reasoning", "summary": []}]
+    assert ours == kept
+    assert reference == dropped
+
+
+def test_api_response_incomplete() -> None:
+    values: dict[str, JsonValue] = {
+        "id": "resp_1", "created_at": 1, "output": [], "incomplete_details": {},
+    }
+    ours = as_mapping(ResponsesAPIResponse(**values).model_dump())
+    reference = as_mapping(reference_response(values).model_dump())
+    empty: dict[str, JsonValue] = {}
+    absent_reason: dict[str, JsonValue] = {"reason": None}
+    assert ours["incomplete_details"] == empty
+    assert reference["incomplete_details"] == absent_reason
 
 
 def test_api_response_dump_json() -> None:
