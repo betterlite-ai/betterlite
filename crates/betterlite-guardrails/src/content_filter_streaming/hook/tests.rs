@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::content_category::loading::CategoryLoadResult;
 use betterlite_config::sections::content_filter_records::{
@@ -21,6 +21,7 @@ use crate::content_filter::risk_scoring::GuardrailStatus;
 use crate::content_filter_actions::ContentFilterSource;
 use crate::content_filter_actions::error::ContentFilterBlockDetail;
 use crate::content_filter_streaming::error::StreamFilterError;
+use crate::content_filter_streaming::logging::log_stream_record;
 use crate::content_filter_streaming::plan::streamed_scan_plan;
 use crate::content_filter_streaming::state::StreamedChoiceState;
 use crate::guardrail_records::error::GuardrailRecordError;
@@ -421,6 +422,44 @@ async fn hook_masks_a_blocked_word_in_the_chunk_it_arrives() {
     assert!(seconds > 0.0);
 }
 
+#[test]
+fn hook_logs_the_accumulated_scan_time_as_the_duration() {
+    let categories = CategoryLoadResult::default();
+    let source = ContentFilterSource {
+        categories: &categories,
+        patterns: &[],
+        blocked_words: &[],
+        pattern_redaction_format: "[{pattern_name}_REDACTED]",
+        keyword_redaction_tag: "[KEYWORD_REDACTED]",
+    };
+    let scan = StreamScan {
+        source: &source,
+        plan: streamed_scan_plan(&source),
+        states: IndexMap::new(),
+        scan_time: Duration::from_millis(250),
+    };
+    let mut request_data = BTreeMap::new();
+    let mut call = StreamFilterCall {
+        user_api_key_dict: None,
+        request_data: &mut request_data,
+        log_target: None,
+    };
+    log_stream_record(
+        &stream_settings(),
+        &scan,
+        &mut call,
+        GuardrailStatus::Success,
+        SystemTime::now(),
+    )
+    .expect("the record is written");
+    let run = StreamRun {
+        chunks: Vec::new(),
+        request_data,
+        outcome: Ok(()),
+    };
+    assert_eq!(float_field(record(&run), &["duration"]), Some(0.25));
+}
+
 #[tokio::test]
 async fn hook_logs_the_configured_policy_template() {
     let mut case = stream_case(vec![chunk(vec![choice(
@@ -614,6 +653,26 @@ async fn hook_keeps_detections_that_left_the_buffer_and_ones_from_another_choice
     assert_eq!(detections.len(), 2);
     assert_eq!(text_field(&detections[0], &["keyword"]), Some("alpha"));
     assert_eq!(text_field(&detections[1], &["keyword"]), Some("beta"));
+    assert_eq!(
+        int_field(record, &["masked_entity_count", "blocked_word"]),
+        Some(2)
+    );
+}
+
+#[tokio::test]
+async fn hook_logs_one_detection_per_choice_for_the_same_masked_word() {
+    let content = format!("secret{}", "x".repeat(60));
+    let mut case = stream_case(vec![chunk(vec![
+        choice(Some(0), Some(content.as_str()), Some("stop")),
+        choice(Some(1), Some(content.as_str()), Some("stop")),
+    ])]);
+    case.blocked_words = vec![masked_word("secret")];
+    let run = run_stream(&case).await;
+    let record = record(&run);
+    let detections = response_detections(record);
+    assert_eq!(detections.len(), 2);
+    assert_eq!(text_field(&detections[0], &["keyword"]), Some("secret"));
+    assert_eq!(text_field(&detections[1], &["keyword"]), Some("secret"));
     assert_eq!(
         int_field(record, &["masked_entity_count", "blocked_word"]),
         Some(2)
