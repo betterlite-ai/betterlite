@@ -77,13 +77,8 @@ class EmbeddingConfig(Protocol):
     ) -> EmbeddingResponse: ...
 
 
-class EmbeddingFactory(Protocol):
-    def __call__(self) -> EmbeddingConfig: ...
-
-
 CHAT: ChatConfig = HostedVLLMChatConfig()
-EMBEDDING_FACTORY: EmbeddingFactory = HostedVLLMEmbeddingConfig
-EMBEDDING: EmbeddingConfig = EMBEDDING_FACTORY()
+EMBEDDING: EmbeddingConfig = HostedVLLMEmbeddingConfig()
 
 
 class Recorder:
