@@ -1,9 +1,8 @@
 import math
 import re
-
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, NotRequired
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -15,7 +14,7 @@ from pydantic import (
     StrictInt,
     field_validator,
 )
-from typing_extensions import NotRequired, ReadOnly, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 DEFAULT_PROMPT = (
     "Estimate how many hours it would take an engineer to complete the work in this pull request "
