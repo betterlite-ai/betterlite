@@ -17,6 +17,8 @@ from betterlite.types.proxy.guardrails.guardrail_hooks import (
 from betterlite.types.proxy.guardrails.guardrail_hooks.azure import (
     azure_prompt_shield,
     azure_text_moderation,
+)
+from betterlite.types.proxy.guardrails.guardrail_hooks.azure import (
     base as azure_base,
 )
 
@@ -614,8 +616,12 @@ def test_covered_names(report: FullReport, module_name: str) -> None:
 def test_member_names(report: FullReport, module_name: str) -> None:
     theirs = report["litellm"]["modules"][module_name]
     ours = report["betterlite"]["modules"][module_name]
-    aliases = ALIAS_NAMES[module_name] if module_name in ALIAS_NAMES else ()
-    constants = CONSTANT_NAMES[module_name] if module_name in CONSTANT_NAMES else ()
+    aliases: tuple[str, ...] = ()
+    if module_name in ALIAS_NAMES:
+        aliases = ALIAS_NAMES[module_name]
+    constants: tuple[str, ...] = ()
+    if module_name in CONSTANT_NAMES:
+        constants = CONSTANT_NAMES[module_name]
     assert set(theirs["aliases"]) == set(aliases), module_name
     assert set(theirs["constants"]) == set(constants), module_name
     assert ours["aliases"] == theirs["aliases"], module_name
@@ -728,6 +734,7 @@ def test_ui_friendly_names() -> None:
 
 def test_description_names() -> None:
     assert aim.AimGuardrailConfigModel.model_fields["api_key"].description is None
+    assert aim.AimGuardrailConfigModel.model_fields["api_base"].description is None
 
 
 def test_constant_names() -> None:
@@ -780,8 +787,9 @@ def test_required_names() -> None:
         "optional_params"
     ]
     assert field.is_required()
+    missing: dict[str, JsonValue] = {}
     with pytest.raises(ValidationError):
-        azure_text_moderation.AzureContentSafetyTextModerationConfigModel.model_validate({})
+        azure_text_moderation.AzureContentSafetyTextModerationConfigModel.model_validate(missing)
 
 
 def test_inherited_names() -> None:
@@ -803,16 +811,19 @@ def test_generic_base_names() -> None:
 
 
 def test_optional_params_names() -> None:
-    config = aim.AimGuardrailConfigModel.model_validate({"optional_params": {"extra": 1}})
+    payload: dict[str, JsonValue] = {"optional_params": {"extra": 1}}
+    config = aim.AimGuardrailConfigModel.model_validate(payload)
     assert config.model_dump()["optional_params"] == {}
 
 
 def test_extra_field_names() -> None:
-    config = aim.AimGuardrailConfigModel.model_validate({"unknown_knob": True})
+    payload: dict[str, JsonValue] = {"unknown_knob": True}
+    config = aim.AimGuardrailConfigModel.model_validate(payload)
     assert config.model_dump()["unknown_knob"] is True
 
 
 def test_rule_names() -> None:
-    rule = cisco_ai_defense.CiscoAIDefenseRule.model_validate({"rule_name": "PII"})
+    payload: dict[str, JsonValue] = {"rule_name": "PII"}
+    rule = cisco_ai_defense.CiscoAIDefenseRule.model_validate(payload)
     assert rule.rule_name == "PII"
     assert rule.entity_types is None

@@ -8,7 +8,7 @@ from betterlite.types.utils.base import ResponseObject
 T = TypeVar("T", bound=BaseModel)
 
 
-class GuardrailConfigModel(ResponseObject, Generic[T], ABC):
+class GuardrailConfigModel(ResponseObject, ABC, Generic[T]):
     optional_params: T | None = None
 
     @staticmethod
