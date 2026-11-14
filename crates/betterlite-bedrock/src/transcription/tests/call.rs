@@ -173,6 +173,17 @@ async fn host_supplied_call_signs_and_decodes_the_reply() {
         header(request, "content-type").as_deref(),
         Some("application/json")
     );
+    assert!(binding.credentials.asked.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn host_supplied_call_sends_the_transcription_body() {
+    let binding = native(200, REPLY.as_bytes());
+    let options = params(HOSTED);
+    let call = call(&options, None);
+    binding.atranscribe(&arguments(&call, None)).await.unwrap();
+    let sent = binding.transport.sent();
+    let request = &sent[0];
     let RequestBody::Json(body) = &request.body else {
         panic!("a JSON body is expected");
     };
@@ -186,7 +197,6 @@ async fn host_supplied_call_signs_and_decodes_the_reply() {
             .unwrap()
             .contains(r#""bytes":"QQ==""#)
     );
-    assert!(binding.credentials.asked.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
