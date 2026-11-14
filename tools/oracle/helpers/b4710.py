@@ -239,7 +239,7 @@ def captured_payload(table: RecordingTable) -> dict[str, JsonValue]:
 def prepare_create(value: PrepareCreate) -> JsonValue:
     table = RecordingTable()
     request = TypeAdapter(NewMCPServerRequest).validate_python(value["request"])
-    minted = value["request"].get("server_id") is None
+    minted = "server_id" not in value["request"] or value["request"]["server_id"] is None
     try:
         asyncio.run(create_mcp_server(FakeClient(table), request, "tester"))
     except CapturedWriteError:
