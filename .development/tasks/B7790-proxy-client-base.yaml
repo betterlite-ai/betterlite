@@ -80,6 +80,7 @@ scope:
   - crates/betterlite-python/src/proxy_client/**
   - crates/betterlite-python/python/betterlite/_native_proxy_client.pyi
   - crates/betterlite-python/python/betterlite/proxy/__init__.py
+  - crates/betterlite-python/python/betterlite/proxy/client/__init__.py
   - crates/betterlite-python/python/betterlite/proxy/client/_transport.py
   - crates/betterlite-python/python/betterlite/proxy/client/_bridge.py
   - crates/betterlite-python/python/betterlite/proxy/client/exceptions.py
