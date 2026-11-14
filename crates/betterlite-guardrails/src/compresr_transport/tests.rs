@@ -449,6 +449,17 @@ async fn fail_open_forwards_the_request_uncompressed_after_an_upstream_error() {
 }
 
 #[tokio::test]
+async fn fail_open_forwards_the_request_uncompressed_when_the_service_is_unreachable() {
+    let mut built = settings("http://127.0.0.1:0");
+    built.fallback = UnreachableFallback::FailOpen;
+    let outcome = configured(built)
+        .compress(&[target("context", "query")])
+        .await
+        .expect("outcome");
+    assert_eq!(outcome, CompressOutcome::Uncompressed);
+}
+
+#[tokio::test]
 async fn fail_open_treats_an_unreadable_body_as_a_failed_compression() {
     let (base, _recorded, _server) = serve(200, "{not json").await;
     let mut built = settings(&base);
