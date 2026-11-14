@@ -232,11 +232,11 @@ fn message_params(context_id: Option<&str>) -> MessageSendParams {
         metadata: None,
         extra: BTreeMap::new(),
     };
-    if let Some(context_id) = context_id {
-        params.message.extra.insert(
-            "contextId".to_owned(),
-            AgentJson::String(context_id.to_owned()),
-        );
+    if let Some(id) = context_id {
+        params
+            .message
+            .extra
+            .insert("contextId".to_owned(), AgentJson::String(id.to_owned()));
     }
     params
 }

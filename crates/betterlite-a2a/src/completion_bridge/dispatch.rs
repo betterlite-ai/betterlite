@@ -122,7 +122,7 @@ where
         Err(error) => return M::failed(CompletionError::Params(error)),
     };
     match config {
-        Some(config) => M::provider(providers, config, call).await,
+        Some(selected) => M::provider(providers, selected, call).await,
         None => M::direct(call, completion, source).await,
     }
 }
@@ -186,10 +186,7 @@ where
         }
         yield Ok(stream_event(&ctx, COMPLETED_STATUS, &mut source));
     }
-    .map(|event| {
-        let event = event?;
-        serde_json::to_value(event).map_err(CompletionError::Encode)
-    })
+    .map(|event| serde_json::to_value(event?).map_err(CompletionError::Encode))
     .boxed()
 }
 

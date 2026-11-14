@@ -75,7 +75,7 @@ where
         .boxed()
 }
 
-fn scoped_call<'call>(
+const fn scoped_call<'call>(
     call: &'call BridgeCall<'_>,
     merged: &'call BTreeMap<String, AgentJson>,
 ) -> BridgeCall<'call> {
