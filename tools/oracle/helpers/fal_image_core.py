@@ -37,6 +37,7 @@ class MappingConfig(Protocol):
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
+        *,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
@@ -147,7 +148,9 @@ def mapping_outcome(config: MappingConfig, model: str, case: MappingCase) -> Jso
     non_default = dict(case["non_default"])
     optional = dict(case["optional"])
     try:
-        mapped = config.map_openai_params(non_default, optional, model, case["drop_params"])
+        mapped = config.map_openai_params(
+            non_default, optional, model, drop_params=case["drop_params"]
+        )
     except ValueError:
         return JSON.validate_python({"error": {"status": None}})
     return JSON.validate_python({"params": PARAMS.validate_python(mapped)})
