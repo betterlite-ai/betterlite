@@ -225,6 +225,7 @@ def rerank_behavior(module):
             "id" in response,
             "missing" in response,
         ],
+        "difference": [outcome(lambda: response["missing"])],
         "truncation": truncation.model_dump(),
         "frozen": outcome(lambda: setattr(truncation, "truncate_prompt_tokens", 3)),
         "result": outcome(
@@ -511,6 +512,7 @@ class RerankBehavior(TypedDict):
     response: dict[str, JsonValue]
     hidden: dict[str, JsonValue]
     access: list[JsonValue]
+    difference: list[JsonValue]
     truncation: dict[str, JsonValue]
     frozen: Outcome
     result: Outcome
@@ -664,7 +666,11 @@ def test_rerank_names(report: Report) -> None:
         report["behavior"]["rerank"]["betterlite"]
     )
     litellm = TypeAdapter(RerankBehavior).validate_python(report["behavior"]["rerank"]["litellm"])
-    assert betterlite == litellm
+    shared_betterlite = {
+        field: value for field, value in betterlite.items() if field != "difference"
+    }
+    shared_litellm = {field: value for field, value in litellm.items() if field != "difference"}
+    assert shared_betterlite == shared_litellm
     assert betterlite["request"]["top_n"] == RERANK_TOP_N
     assert betterlite["request"]["truncation_side"] == "left"
     assert betterlite["request"]["documents"] == ["a", {"text": "b"}]
@@ -675,6 +681,10 @@ def test_rerank_names(report: Report) -> None:
     assert "Instance is frozen" in betterlite["frozen"]["message"]
     assert betterlite["hidden"] == {"model_id": "m"}
     assert betterlite["access"] == ["r1", "fallback", True, False]
+    missing_betterlite = TypeAdapter(Outcome).validate_python(betterlite["difference"][0])
+    assert missing_betterlite["error"] == "AttributeError"
+    missing_litellm = TypeAdapter(Outcome).validate_python(litellm["difference"][0])
+    assert missing_litellm["error"] == "KeyError"
     assert "_hidden_params" not in betterlite["response"]
     assert betterlite["result"]["ok"] is True
     assert "relevance_score" in betterlite["result_missing"]["message"]
