@@ -176,10 +176,10 @@ fn dashscope_chat_keeps_cache_control_for_messages_and_tools() {
     )
     .expect("the cached messages");
     let optional_params: Object = serde_json::from_str(
-        r#"{"tools":[{"type":"function","function":{"name":"f","parameters":{"type":"object","properties":{"name":{"type":"string","pattern":"\\p{L}+"}}},"cache_control":{"type":"ephemeral"}}]}"#,
+        r#"{"tools":[{"type":"function","function":{"name":"f","parameters":{"type":"object","properties":{"name":{"type":"string","pattern":"\\p{L}+"}}}},"cache_control":{"type":"ephemeral"}}]}"#,
     )
     .expect("the cached tools");
-    let environment = BTreeMap::new();
+    let environment: BTreeMap<String, String> = BTreeMap::new();
     let input = TransformInput {
         model: "qwen-plus",
         messages: &messages,
