@@ -1,9 +1,21 @@
+mod input;
+mod ops;
+mod tests;
+
+use crate::helpers::{Helper, HelperResult};
+use serde_json::json;
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = input::Calls;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("bedrock_other_transcription")
+    fn run(input: &Self::Input) -> HelperResult {
+        let calls = input
+            .calls
+            .iter()
+            .map(ops::run_call)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(json!({"calls": calls}))
     }
 }
