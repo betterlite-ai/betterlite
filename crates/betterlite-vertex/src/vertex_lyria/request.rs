@@ -131,23 +131,23 @@ fn predict_url_at(
 ) -> Result<String, VertexLyriaError> {
     let base = get_api_base(api_base, Some(location)).map_err(VertexLyriaError::ApiBase)?;
     let base_model = model.strip_prefix("vertex_ai/").unwrap_or(model);
-    let project =
+    let encoded_project =
         encode_segment(project, "project").map_err(|source| VertexLyriaError::Segment {
             field: "project",
             source,
         })?;
-    let location =
+    let encoded_location =
         encode_segment(location, "location").map_err(|source| VertexLyriaError::Segment {
             field: "location",
             source,
         })?;
-    let model =
+    let encoded_model =
         encode_segment(base_model, "model").map_err(|source| VertexLyriaError::Segment {
             field: "model",
             source,
         })?;
     Ok(format!(
-        "{}/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:predict",
+        "{}/v1/projects/{encoded_project}/locations/{encoded_location}/publishers/google/models/{encoded_model}:predict",
         base.trim_end_matches('/')
     ))
 }
