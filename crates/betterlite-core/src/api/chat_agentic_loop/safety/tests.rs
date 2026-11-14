@@ -4,17 +4,25 @@ use betterlite_context::agentic_loop_plan::JsonMap;
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
-use super::{SafetyError, check_loop_safety, json_text};
+use super::{SafetyError, check_loop_safety, sorted_json_text};
 use crate::api::chat_agentic_loop::tests::support::json_map;
 
 fn tools() -> JsonMap {
-    json_map(&[("b", r#"{"name":"b"}"#), ("a", "[1,2]")])
+    json_map(&[
+        ("b", r#"{"name":"b"}"#),
+        ("a", "[1,2]"),
+        ("listed", r#"[{"b":1,"a":2}]"#),
+        ("nested", r#"{"z":{"y":1,"x":2},"a":3}"#),
+    ])
 }
 
 #[test]
 fn the_fingerprint_is_sorted_key_json() {
     let fingerprint = check_loop_safety(&tools(), &[], 0, 3, "gpt-4o").unwrap();
-    assert_eq!(fingerprint, r#"{"a":[1,2],"b":{"name":"b"}}"#);
+    assert_eq!(
+        fingerprint,
+        r#"{"a":[1,2],"b":{"name":"b"},"listed":[{"a":2,"b":1}],"nested":{"a":3,"z":{"x":2,"y":1}}}"#
+    );
 }
 
 #[test]
@@ -50,23 +58,23 @@ fn a_depth_below_the_cap_passes() {
 }
 
 #[test]
-fn json_text_escapes_the_control_characters() {
+fn the_text_escapes_control_characters() {
     let text = Json::Text("a\"b\\c\n\r\t\u{08}\u{0c}\u{1} d".to_owned());
-    assert_eq!(json_text(&text), r#""a\"b\\c\n\r\t\b\f\u0001 d""#);
+    assert_eq!(sorted_json_text(&text), r#""a\"b\\c\n\r\t\b\f\u0001 d""#);
 }
 
 #[test]
-fn json_text_renders_every_shape() {
-    assert_eq!(json_text(&Json::Null), "null");
-    assert_eq!(json_text(&Json::Bool(true)), "true");
-    assert_eq!(json_text(&Json::Bool(false)), "false");
-    assert_eq!(json_text(&Json::Number(Number::from(7))), "7");
+fn the_text_renders_every_shape() {
+    assert_eq!(sorted_json_text(&Json::Null), "null");
+    assert_eq!(sorted_json_text(&Json::Bool(true)), "true");
+    assert_eq!(sorted_json_text(&Json::Bool(false)), "false");
+    assert_eq!(sorted_json_text(&Json::Number(Number::from(7))), "7");
     assert_eq!(
-        json_text(&Json::Number(Number::from_f64(1.5).unwrap())),
+        sorted_json_text(&Json::Number(Number::from_f64(1.5).unwrap())),
         "1.5"
     );
     assert_eq!(
-        json_text(&Json::List(vec![Json::Bool(false), Json::Null])),
+        sorted_json_text(&Json::List(vec![Json::Bool(false), Json::Null])),
         "[false,null]"
     );
     let object = Json::Object(
@@ -77,5 +85,5 @@ fn json_text_renders_every_shape() {
         .into_iter()
         .collect(),
     );
-    assert_eq!(json_text(&object), r#"{"a":true,"z":null}"#);
+    assert_eq!(sorted_json_text(&object), r#"{"a":true,"z":null}"#);
 }

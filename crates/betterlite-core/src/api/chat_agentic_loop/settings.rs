@@ -10,7 +10,7 @@ use serde_json::from_str;
 use serde_json::value::RawValue;
 use thiserror::Error;
 
-use super::safety::json_text;
+use super::safety::sorted_json_text;
 use super::{
     AGENTIC_LOOP_DEPTH_KEY, AGENTIC_LOOP_FINGERPRINTS_KEY, HEADROOM_CONVERTED_STREAM_KEY,
     MAX_AGENTIC_LOOPS_KEY,
@@ -104,7 +104,7 @@ fn read_fingerprints(kwargs: &JsonMap) -> Vec<String> {
 fn fingerprint_text(value: &Json) -> String {
     match value {
         Json::Text(text) => text.clone(),
-        other => json_text(other),
+        other => sorted_json_text(other),
     }
 }
 

@@ -1,5 +1,6 @@
 use betterlite_context::agentic_loop_plan::JsonMap;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde_json::from_str;
 use thiserror::Error;
 
@@ -34,29 +35,8 @@ pub(crate) fn check_loop_safety(
 }
 
 // json.dumps(..., sort_keys=True, default=str) in compact form; the spaces json.dumps adds are not part of the contract
-pub(crate) fn json_text(value: &Json) -> String {
-    match value {
-        Json::Null => String::from("null"),
-        Json::Bool(flag) => flag.to_string(),
-        Json::Number(number) => number.to_string(),
-        Json::Text(text) => quote(text),
-        Json::List(items) => {
-            let parts: Vec<String> = items.iter().map(json_text).collect();
-            format!("[{}]", parts.join(","))
-        }
-        Json::Object(entries) => {
-            let mut parts: Vec<(&str, String)> = entries
-                .iter()
-                .map(|(key, value)| (key.as_str(), json_text(value)))
-                .collect();
-            parts.sort_unstable_by_key(|(key, _)| *key);
-            let fields: Vec<String> = parts
-                .iter()
-                .map(|(key, value)| format!("{}:{value}", quote(key)))
-                .collect();
-            format!("{{{}}}", fields.join(","))
-        }
-    }
+pub(crate) fn sorted_json_text(value: &Json) -> String {
+    serde_json::to_string(&sorted_json(value)).unwrap_or_default()
 }
 
 fn fingerprint_tools(tool_calls: &JsonMap) -> String {
@@ -71,27 +51,21 @@ fn fingerprint_tools(tool_calls: &JsonMap) -> String {
             )
         })
         .collect();
-    json_text(&Json::Object(fields))
+    sorted_json_text(&Json::Object(fields))
 }
 
-fn quote(text: &str) -> String {
-    let mut quoted = String::from("\"");
-    for character in text.chars() {
-        match character {
-            '"' => quoted.push_str("\\\""),
-            '\\' => quoted.push_str("\\\\"),
-            '\n' => quoted.push_str("\\n"),
-            '\r' => quoted.push_str("\\r"),
-            '\t' => quoted.push_str("\\t"),
-            '\u{08}' => quoted.push_str("\\b"),
-            '\u{0c}' => quoted.push_str("\\f"),
-            control if control < ' ' => {
-                let escape = format!("\\u{:04x}", u32::from(control));
-                quoted.push_str(&escape);
-            }
-            other => quoted.push(other),
+// json.dumps(sort_keys=True) sorts every nested object too, so the same call set fingerprints the same however it was built
+fn sorted_json(value: &Json) -> Json {
+    match value {
+        Json::Object(fields) => {
+            let mut sorted: IndexMap<String, Json> = fields
+                .iter()
+                .map(|(key, field)| (key.clone(), sorted_json(field)))
+                .collect();
+            sorted.sort_keys();
+            Json::Object(sorted)
         }
+        Json::List(items) => Json::List(items.iter().map(sorted_json).collect()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => value.clone(),
     }
-    quoted.push('"');
-    quoted
 }
