@@ -1,0 +1,5 @@
+task: B1310
+deviations:
+  - what: A config document that sets litellm_settings.vertex_ai_safety_settings is still rejected by ConfigLoader as an unknown key. The key parses through the loader's own parse_view into the typed settings from the tests tree only, and the runtime wiring reads nothing from it yet.
+    why: The section registry in crates/betterlite-config/src/sections.rs is outside this task's scope and has no stub for the key, and the providers module chain is private, so an unregistered section cannot compile without dead-code and unreachable-pub errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L598-L598
