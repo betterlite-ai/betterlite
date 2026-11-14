@@ -80,5 +80,5 @@ pitfalls:
   - Endpoint resolution selects deployedModels[0] rather than searching for any nonempty deployed model.
   - A custom /v1 base swallows the default version segment, while an arbitrary mount path retains it.
   - The create wrapper's timeout and max_retries do not reach either HTTP call at this pin.
-budget: {max_changed_lines: 750, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard
