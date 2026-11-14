@@ -125,9 +125,10 @@ impl SearchExecutor for ScriptedSearch {
         _kwargs: &JsonMap,
         _rich: Option<RichWebSearchInput>,
     ) -> SearchResult {
-        if let Ok(mut queries) = self.queries.lock() {
-            queries.push(query.to_owned());
-        }
+        self.queries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(query.to_owned());
         let queued = self
             .scripts
             .lock()
