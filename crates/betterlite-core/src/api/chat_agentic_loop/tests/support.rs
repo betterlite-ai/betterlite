@@ -546,8 +546,8 @@ impl AgenticCallback for ScriptedCallback {
 
 pub(crate) fn callbacks(items: &[&Arc<ScriptedCallback>]) -> Vec<Arc<dyn AgenticCallback>> {
     let mut collected: Vec<Arc<dyn AgenticCallback>> = Vec::with_capacity(items.len());
-    for item in items {
-        let callback: Arc<ScriptedCallback> = Arc::clone(*item);
+    for item in items.iter().copied() {
+        let callback = Arc::clone(item);
         collected.push(callback);
     }
     collected
