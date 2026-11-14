@@ -3,13 +3,12 @@ use std::time::Duration;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 
 use super::support::{
-    Call, Fixture, FixtureError, api_key_header, async_handler, clients, dead_address,
+    Call, Fixture, FixtureError, api_key_header, async_handler, build_handler, dead_address,
     serve_with_body, sync_handler,
 };
-use crate::interactions::base::Logging;
 use crate::interactions::base::RequestFailure;
 use crate::interactions::base::tests::support as base;
-use crate::interactions::lifecycle::{InteractionsHttpHandler, LifecycleError};
+use crate::interactions::lifecycle::LifecycleError;
 
 #[test]
 fn cancel_interaction_posts_the_transformed_body_as_json() {
@@ -79,6 +78,32 @@ fn cancel_interaction_turns_a_failing_status_into_the_error_class() {
 }
 
 #[test]
+fn cancel_interaction_turns_a_3xx_answer_into_the_error_class() {
+    let serving = serve_with_body(
+        base::reply("300 Multiple Choices", &[], "{\"status\":\"cancelled\"}"),
+        None,
+    );
+    let fixture = Fixture::default();
+    let mut handler = sync_handler(&fixture);
+
+    let error = handler
+        .cancel_interaction(&Call::new(serving.address).request())
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        LifecycleError::Provider(FixtureError::Refused(300))
+    ));
+    assert!(
+        fixture
+            .calls()
+            .iter()
+            .all(|call| !call.starts_with("cancel_response|"))
+    );
+    serving.request.join().unwrap();
+}
+
+#[test]
 fn cancel_interaction_sends_the_given_timeout() {
     let serving = base::serve_once(
         base::reply("200 OK", &[], "{}"),
@@ -124,8 +149,7 @@ fn cancel_interaction_uses_a_supplied_client() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
     let fixture = Fixture::default();
     let supplied = BlockingClientBuilder::new().build().unwrap();
-    let mut handler =
-        InteractionsHttpHandler::new(&fixture, clients(), Logging::default(), Some(supplied));
+    let mut handler = build_handler(&fixture, Some(supplied));
 
     let output = handler
         .cancel_interaction(&Call::new(serving.address).request())
@@ -182,6 +206,30 @@ async fn async_cancel_interaction_posts_the_transformed_body_as_json() {
         received.head
     );
     assert_eq!(received.body, r#"{"action":"cancel","reason":"user"}"#);
+}
+
+#[tokio::test]
+async fn async_cancel_interaction_sends_the_given_timeout() {
+    let serving = base::serve_once(
+        base::reply("200 OK", &[], "{}"),
+        Some(Duration::from_millis(500)),
+    );
+    let fixture = Fixture::default();
+    let mut handler = async_handler(&fixture);
+    let mut call = Call::new(serving.address);
+    call.timeout = Some(Duration::from_millis(50));
+    call.request_timeout = Duration::from_secs(10);
+
+    let error = handler
+        .async_cancel_interaction(&call.request())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
+    ));
+    serving.request.join().unwrap();
 }
 
 #[tokio::test]

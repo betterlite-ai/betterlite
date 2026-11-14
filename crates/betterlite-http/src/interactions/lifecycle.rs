@@ -20,7 +20,6 @@ pub mod synchronous;
 
 pub(crate) mod tests;
 
-// the arguments one lifecycle call carries beside the handler's config, clients and logging
 pub struct LifecycleRequest<'request> {
     pub interaction_id: &'request str,
     pub litellm_params: &'request Params,
@@ -31,7 +30,6 @@ pub struct LifecycleRequest<'request> {
     pub request_timeout: Duration,
 }
 
-// LiteLLM's InteractionsHTTPHandler: the provider contracts, the client cache and the pre-call log
 pub struct InteractionsHttpHandler<'config, C, ClientType> {
     pub config: &'config C,
     pub clients: HttpClients,
@@ -40,23 +38,6 @@ pub struct InteractionsHttpHandler<'config, C, ClientType> {
     pub supplied: Option<ClientType>,
 }
 
-impl<'config, C, ClientType> InteractionsHttpHandler<'config, C, ClientType> {
-    pub const fn new(
-        config: &'config C,
-        clients: HttpClients,
-        logging: Logging,
-        supplied: Option<ClientType>,
-    ) -> Self {
-        Self {
-            config,
-            clients,
-            logging,
-            supplied,
-        }
-    }
-}
-
-// one operation's HTTP client, with the proxy policy only a client this crate built has to refuse
 pub(crate) struct Outbound<ClientType> {
     pub(crate) client: ClientType,
     pub(crate) proxy: Option<Arc<ProxyPolicy>>,
@@ -111,13 +92,10 @@ where
     Transport(RequestFailure),
 }
 
-// the error both operations end with: the provider's own class, or the failure that never reached it
 pub type Fault<C> = LifecycleError<<C as ErrorClasses>::Error>;
 
-// a delete's answer, transformed by the provider contract
 pub type DeleteResult<C> = Result<<C as InteractionLifecycleConfig>::DeleteOutput, Fault<C>>;
 
-// a cancel's answer, transformed by the provider contract
 pub type CancelResult<C> = Result<<C as InteractionLifecycleConfig>::CancelOutput, Fault<C>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,7 +104,6 @@ pub(crate) enum Operation {
     Cancel,
 }
 
-// validate_environment, the request transform and the pre-call record both operations share
 pub(crate) fn prepare<C>(
     config: &C,
     logging: &mut Logging,
@@ -178,13 +155,13 @@ where
     }
 }
 
-// httpx's raise_for_status makes a 4xx or 5xx answer the provider's error class, with its body as the message
+// httpx's raise_for_status passes only a 2xx answer through; every other status becomes the provider's error class with its body as the message
 pub(crate) fn check_status(
     status_code: u16,
     headers: ResponseHeaders,
     body: Vec<u8>,
 ) -> Result<UpstreamResponse, RequestFailure> {
-    if (400..=599).contains(&status_code) {
+    if !(200..=299).contains(&status_code) {
         let message = body_text(&body);
         return Err(RequestFailure::Status {
             status_code,

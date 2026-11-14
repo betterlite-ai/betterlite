@@ -8,7 +8,7 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::support::{
-    Call, Fixture, FixtureError, api_key_header, async_handler, caller_headers, clients,
+    Call, Fixture, FixtureError, api_key_header, async_handler, build_handler, caller_headers,
     dead_address, serve_with_body, sync_handler,
 };
 use crate::interactions::base::clients::HttpClients;
@@ -241,15 +241,19 @@ fn delete_interaction_does_not_follow_a_redirect() {
     let fixture = Fixture::default();
     let mut handler = sync_handler(&fixture);
 
-    let output = handler
+    let error = handler
         .delete_interaction(&Call::new(serving.address).request())
-        .unwrap();
+        .unwrap_err();
 
-    assert_eq!(output, "");
+    assert!(matches!(
+        error,
+        LifecycleError::Provider(FixtureError::Refused(302))
+    ));
     assert!(
         fixture
             .calls()
-            .contains(&"delete_response|302|int_1|int_1|-".to_owned())
+            .iter()
+            .all(|call| !call.starts_with("delete_response|"))
     );
     serving.request.join().unwrap();
 }
@@ -321,8 +325,7 @@ fn delete_interaction_uses_a_supplied_client() {
         .timeout(Duration::from_millis(20))
         .build()
         .unwrap();
-    let mut handler =
-        InteractionsHttpHandler::new(&fixture, clients(), Logging::default(), Some(supplied));
+    let mut handler = build_handler(&fixture, Some(supplied));
 
     let output = handler
         .delete_interaction(&Call::new(serving.address).request())
@@ -361,15 +364,15 @@ fn delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_direct
     #[case] expected: &str,
 ) {
     let fixture = Fixture::default();
-    let mut handler = InteractionsHttpHandler::new(
-        &fixture,
-        HttpClients::new(
+    let mut handler = InteractionsHttpHandler {
+        config: &fixture,
+        clients: HttpClients::new(
             base::policy(Verification::Enabled, None),
             base::proxy_policy(&[("HTTP_PROXY", proxy)]),
         ),
-        Logging::default(),
-        None,
-    );
+        logging: Logging::default(),
+        supplied: None,
+    };
 
     let error = handler
         .delete_interaction(&Call::new(dead_address()).request())
@@ -386,15 +389,15 @@ fn delete_interaction_skips_the_proxy_check_for_a_supplied_client() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
     let fixture = Fixture::default();
     let supplied = BlockingClientBuilder::new().build().unwrap();
-    let mut handler = InteractionsHttpHandler::new(
-        &fixture,
-        HttpClients::new(
+    let mut handler = InteractionsHttpHandler {
+        config: &fixture,
+        clients: HttpClients::new(
             base::policy(Verification::Enabled, None),
             base::proxy_policy(&[("HTTP_PROXY", "https://127.0.0.1:1")]),
         ),
-        Logging::default(),
-        Some(supplied),
-    );
+        logging: Logging::default(),
+        supplied: Some(supplied),
+    };
 
     let output = handler
         .delete_interaction(&Call::new(serving.address).request())
@@ -490,6 +493,30 @@ async fn async_delete_interaction_turns_a_failing_status_into_the_error_class() 
 }
 
 #[tokio::test]
+async fn async_delete_interaction_sends_the_given_timeout() {
+    let serving = base::serve_once(
+        base::reply("200 OK", &[], "{}"),
+        Some(Duration::from_millis(500)),
+    );
+    let fixture = Fixture::default();
+    let mut handler = async_handler(&fixture);
+    let mut call = Call::new(serving.address);
+    call.timeout = Some(Duration::from_millis(50));
+    call.request_timeout = Duration::from_secs(10);
+
+    let error = handler
+        .async_delete_interaction(&call.request())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
+    ));
+    serving.request.join().unwrap();
+}
+
+#[tokio::test]
 async fn async_delete_interaction_falls_back_to_the_request_timeout() {
     let serving = base::serve_once(
         base::reply("200 OK", &[], "{}"),
@@ -520,8 +547,7 @@ async fn async_delete_interaction_uses_a_supplied_client() {
         .timeout(Duration::from_millis(20))
         .build()
         .unwrap();
-    let mut handler =
-        InteractionsHttpHandler::new(&fixture, clients(), Logging::default(), Some(supplied));
+    let mut handler = build_handler(&fixture, Some(supplied));
 
     let output = handler
         .async_delete_interaction(&Call::new(serving.address).request())

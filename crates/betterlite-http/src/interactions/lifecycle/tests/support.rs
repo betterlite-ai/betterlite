@@ -215,16 +215,28 @@ pub(super) fn clients() -> HttpClients {
     )
 }
 
+pub(super) fn build_handler<'config, ClientType>(
+    fixture: &'config Fixture,
+    supplied: Option<ClientType>,
+) -> InteractionsHttpHandler<'config, Fixture, ClientType> {
+    InteractionsHttpHandler {
+        config: fixture,
+        clients: clients(),
+        logging: Logging::default(),
+        supplied,
+    }
+}
+
 pub(super) fn sync_handler<'config>(
     fixture: &'config Fixture,
 ) -> InteractionsHttpHandler<'config, Fixture, BlockingClient> {
-    InteractionsHttpHandler::new(fixture, clients(), Logging::default(), None)
+    build_handler(fixture, None)
 }
 
 pub(super) fn async_handler<'config>(
     fixture: &'config Fixture,
 ) -> InteractionsHttpHandler<'config, Fixture, reqwest::Client> {
-    InteractionsHttpHandler::new(fixture, clients(), Logging::default(), None)
+    build_handler(fixture, None)
 }
 
 pub(super) fn dead_address() -> SocketAddr {
