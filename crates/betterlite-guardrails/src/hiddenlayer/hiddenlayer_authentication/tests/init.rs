@@ -8,7 +8,7 @@ use secrecy::SecretString;
 
 use super::super::error::HiddenlayerError;
 use super::super::settings::{
-    DEFAULT_API_BASE, DEFAULT_AUTH_TIMEOUT, DEFAULT_AUTH_URL, HiddenlayerCredentials,
+    DEFAULT_API_BASE, DEFAULT_AUTH_TIMEOUT, DEFAULT_AUTH_URL, HiddenlayerCredentials, resolve,
 };
 use super::super::token::JwtError;
 use super::super::{HiddenlayerAuth, is_saas};
@@ -204,6 +204,39 @@ fn an_empty_environment_value_is_unset() {
     ]);
     let error = failure(&HiddenlayerCredentials::default(), &env, &script);
     assert!(matches!(error, HiddenlayerError::MissingApiId));
+}
+
+#[test]
+fn an_empty_environment_secret_is_unset() {
+    let env = BTreeMap::from([
+        (
+            "HIDDENLAYER_API_BASE".to_owned(),
+            "http://127.0.0.1:9".to_owned(),
+        ),
+        ("HIDDENLAYER_CLIENT_SECRET".to_owned(), String::new()),
+    ]);
+    let settings = resolve(&HiddenlayerCredentials::default(), &env).unwrap();
+    assert!(settings.api_key.is_none());
+}
+
+#[test]
+fn an_empty_environment_auth_url_is_unset() {
+    let script = support::tokens(&["token-1"]);
+    let env = BTreeMap::from([
+        (
+            "HIDDENLAYER_API_BASE".to_owned(),
+            "https://api.hiddenlayer.ai".to_owned(),
+        ),
+        ("HIDDENLAYER_AUTH_URL".to_owned(), String::new()),
+        ("HIDDENLAYER_CLIENT_ID".to_owned(), "client".to_owned()),
+        ("HIDDENLAYER_CLIENT_SECRET".to_owned(), "secret".to_owned()),
+    ]);
+    let auth = build(&HiddenlayerCredentials::default(), &env, &script).unwrap();
+    assert!(support::has_token(&auth));
+    assert_eq!(
+        script.requests()[0].url,
+        format!("{DEFAULT_AUTH_URL}/oauth2/token?grant_type=client_credentials")
+    );
 }
 
 #[test]
