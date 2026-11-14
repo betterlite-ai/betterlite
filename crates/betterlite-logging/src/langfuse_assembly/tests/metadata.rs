@@ -38,13 +38,11 @@ fn denied_steering_keys_never_reach_the_clean_metadata() {
 
 #[test]
 fn the_payload_prompt_management_metadata_rides_along() {
-    let inputs = Inputs {
-        payload: Some(payload(
-            r#"{"prompt_management_metadata": {"prompt_id": "p-1", "prompt_integration": "langfuse"}}"#,
-        )),
-        ..Inputs::default()
-    };
-    let clean = cleaned(&inputs);
+    let mut case = fixture();
+    case.inputs.payload = Some(payload(
+        r#"{"prompt_management_metadata": {"prompt_id": "p-1", "prompt_integration": "langfuse"}}"#,
+    ));
+    let clean = cleaned(&case.inputs);
     assert_eq!(
         clean.fields.get("prompt_management_metadata"),
         Some(&value(
