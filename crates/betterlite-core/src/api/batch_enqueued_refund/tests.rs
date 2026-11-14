@@ -583,7 +583,9 @@ async fn local_refund_with_a_negative_ttl_fails_in_the_store() {
     let outcome = service
         .run(&BatchEnqueuedRefundInput::Refund { reservation })
         .await;
-    assert!(matches!(outcome, Err(BatchEnqueuedRefundError::Store(_))));
+    let error = outcome.expect_err("the negative ttl is rejected");
+    assert!(matches!(error, BatchEnqueuedRefundError::Store(_)));
+    assert!(std::error::Error::source(&error).is_some());
 }
 
 #[tokio::test]
@@ -595,7 +597,9 @@ async fn local_pop_with_a_broken_clock_fails_in_the_cache() {
             batch_id: "batch-1".to_owned(),
         })
         .await;
-    assert!(matches!(outcome, Err(BatchEnqueuedRefundError::Cache(_))));
+    let error = outcome.expect_err("the broken clock is rejected");
+    assert!(matches!(error, BatchEnqueuedRefundError::Cache(_)));
+    assert!(std::error::Error::source(&error).is_some());
 }
 
 #[tokio::test]

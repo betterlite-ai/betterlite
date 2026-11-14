@@ -67,9 +67,9 @@ pub struct PostCallOutcome {
 #[derive(Debug, Error)]
 pub enum BatchEnqueuedRefundError {
     #[error("the local enqueued-token store failed")]
-    Store(Box<BatchEnqueuedReserveError>),
+    Store(#[source] Box<BatchEnqueuedReserveError>),
     #[error("the local enqueued-token cache failed")]
-    Cache(Box<CacheError>),
+    Cache(#[source] Box<CacheError>),
     #[error("the enqueued-token reservation record could not be encoded")]
     Encode {
         #[source]
