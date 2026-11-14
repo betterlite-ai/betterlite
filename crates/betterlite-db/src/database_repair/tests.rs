@@ -199,15 +199,15 @@ fn csv_too_deep_cell_fails_only_its_row() {
     let decoded = decode_verification_csv(data.as_bytes()).unwrap();
     assert_eq!(decoded.rows.len(), 3);
     assert_eq!(
-        decoded.rows[0].outcome.as_ref().unwrap().token.as_deref(),
-        Some("tok-before")
+        decoded.rows[0].outcome.as_ref().unwrap().token.as_str(),
+        "tok-before"
     );
     let error = decoded.rows[1].outcome.as_ref().unwrap_err();
     assert!(matches!(error, RowError::TooDeep { name } if *name == "config"));
     assert_eq!(decoded.rows[1].token.as_deref(), Some("tok-deep"));
     assert_eq!(
-        decoded.rows[2].outcome.as_ref().unwrap().token.as_deref(),
-        Some("tok-after")
+        decoded.rows[2].outcome.as_ref().unwrap().token.as_str(),
+        "tok-after"
     );
 }
 
@@ -221,8 +221,8 @@ fn csv_failed_rows_keep_their_error_and_other_rows() {
     let decoded = decode_verification_csv(data.as_bytes()).unwrap();
     assert_eq!(decoded.rows.len(), 3);
     assert_eq!(
-        decoded.rows[0].outcome.as_ref().unwrap().token.as_deref(),
-        Some("tok-1")
+        decoded.rows[0].outcome.as_ref().unwrap().token.as_str(),
+        "tok-1"
     );
     assert!(matches!(
         decoded.rows[1].outcome,
@@ -232,8 +232,8 @@ fn csv_failed_rows_keep_their_error_and_other_rows() {
         })
     ));
     assert_eq!(
-        decoded.rows[2].outcome.as_ref().unwrap().token.as_deref(),
-        Some("tok-3")
+        decoded.rows[2].outcome.as_ref().unwrap().token.as_str(),
+        "tok-3"
     );
     assert_eq!(decoded.rows[1].token.as_deref(), Some("tok-2"));
 }
@@ -422,8 +422,8 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
     ));
     let at_limit = decode_verification_csv(json_depth_csv(MAX_JSON_DEPTH).as_bytes()).unwrap();
     assert_eq!(
-        at_limit.rows[0].outcome.as_ref().unwrap().token.as_deref(),
-        Some("tok-1")
+        at_limit.rows[0].outcome.as_ref().unwrap().token.as_str(),
+        "tok-1"
     );
     let over_limit =
         decode_verification_csv(json_depth_csv(MAX_JSON_DEPTH + 1).as_bytes()).unwrap();
