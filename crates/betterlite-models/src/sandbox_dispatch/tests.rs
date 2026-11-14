@@ -116,3 +116,26 @@ fn sandbox_tools_that_is_not_a_list_is_an_error(#[case] source: &str) {
 fn an_empty_list_reads_as_no_entries() {
     assert!(parsed("[]").is_empty());
 }
+
+#[test]
+fn configs_that_differ_in_one_field_are_not_equal() {
+    let base = SandboxToolConfig {
+        name: Some("tools".to_owned()),
+        provider: Some("e2b".to_owned()),
+        api_key: Some(SecretString::from("os.environ/E2B_API_KEY")),
+        api_base: Some("https://e2b.test".to_owned()),
+    };
+    let mut renamed = base.clone();
+    renamed.name = Some("other".to_owned());
+    assert_ne!(base, renamed);
+    let mut unprovided = base.clone();
+    unprovided.provider = None;
+    assert_ne!(base, unprovided);
+    let mut rekeyed = base.clone();
+    rekeyed.api_key = Some(SecretString::from("os.environ/OTHER_API_KEY"));
+    assert_ne!(base, rekeyed);
+    let mut rebased = base.clone();
+    rebased.api_base = None;
+    assert_ne!(base, rebased);
+    assert_eq!(base, base.clone());
+}

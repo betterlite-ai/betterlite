@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use betterlite_config::loader::EnvironmentLookup;
-use betterlite_models::sandbox::{CodeExecutionResult, ContainerHandle};
+use betterlite_models::sandbox::CodeExecutionResult;
 
 use crate::e2b::{
     CreateSandbox as E2bCreate, DeleteSandbox as E2bDelete, E2bSandbox, RunCode as E2bRun,
@@ -95,8 +95,15 @@ fn e2b_create(request: &CreateSandbox<'_>) -> E2bCreate<'_> {
 }
 
 fn e2b_run(request: &RunCode<'_>) -> AdapterResult<E2bRun<'_>> {
+    let SandboxContainerRef::Container(sandbox) = request.container else {
+        return Err(SandboxLifecycleError::ContainerHandleRequired { provider: "e2b" });
+    };
+    let container = match sandbox {
+        SandboxContainer::E2b(handle) => handle,
+        SandboxContainer::OpenSandbox(handle) => &handle.container,
+    };
     Ok(E2bRun {
-        container: e2b_container(request.container)?,
+        container,
         code: request.code,
         env_vars: request.env_vars,
     })
@@ -107,16 +114,6 @@ fn e2b_delete(request: &DeleteSandbox<'_>) -> E2bDelete<'_> {
         container: e2b_ref(request.container),
         api_key: request.call.api_key,
         api_base: request.api_base,
-    }
-}
-
-fn e2b_container(container: SandboxContainerRef<'_>) -> AdapterResult<&ContainerHandle> {
-    let SandboxContainerRef::Container(sandbox) = container else {
-        return Err(SandboxLifecycleError::ContainerHandleRequired { provider: "e2b" });
-    };
-    match sandbox {
-        SandboxContainer::E2b(handle) => Ok(handle),
-        SandboxContainer::OpenSandbox(handle) => Ok(&handle.container),
     }
 }
 
@@ -171,7 +168,9 @@ fn open_delete(request: &DeleteSandbox<'_>) -> OpenDelete<'_> {
     let options = OpenOptions {
         api_key: request.call.api_key,
         api_base: request.api_base,
-        ..OpenOptions::default()
+        use_server_proxy: false,
+        ready_timeout: None,
+        poll_interval: None,
     };
     OpenDelete {
         container: open_container(request.container),

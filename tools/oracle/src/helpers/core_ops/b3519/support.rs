@@ -200,16 +200,9 @@ pub(crate) fn secrets() -> SecretLookup {
 }
 
 pub(crate) fn container_value(container: &SandboxContainer) -> serde_json::Value {
-    match container {
-        SandboxContainer::E2b(handle) => serde_json::json!({
-            "id": handle.id,
-            "provider": handle.provider,
-            "domain": handle.domain,
-        }),
-        SandboxContainer::OpenSandbox(handle) => serde_json::json!({
-            "id": handle.container.id,
-            "provider": handle.container.provider,
-            "domain": handle.container.domain,
-        }),
-    }
+    let handle = match container {
+        SandboxContainer::E2b(handle) => handle,
+        SandboxContainer::OpenSandbox(handle) => &handle.container,
+    };
+    serde_json::json!({"id": handle.id, "provider": handle.provider, "domain": handle.domain})
 }

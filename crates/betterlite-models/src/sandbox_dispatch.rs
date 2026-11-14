@@ -85,12 +85,7 @@ pub fn sandbox_tool_entries(
         let mut params = match fields.shift_remove("litellm_params") {
             None | Some(SandboxToolValue::Null) => IndexMap::new(),
             Some(SandboxToolValue::Mapping(params)) => params,
-            Some(
-                SandboxToolValue::Boolean(_)
-                | SandboxToolValue::Number(_)
-                | SandboxToolValue::Text(_)
-                | SandboxToolValue::List(_),
-            ) => {
+            Some(_) => {
                 return Err(SandboxToolEntryError::ParamsNotMapping { path: params_path });
             }
         };
@@ -112,12 +107,7 @@ fn text_field(
     match fields.shift_remove(name) {
         None | Some(SandboxToolValue::Null) => Ok(None),
         Some(SandboxToolValue::Text(text)) => Ok(Some(text)),
-        Some(
-            SandboxToolValue::Boolean(_)
-            | SandboxToolValue::Number(_)
-            | SandboxToolValue::List(_)
-            | SandboxToolValue::Mapping(_),
-        ) => Err(SandboxToolEntryError::FieldNotText {
+        Some(_) => Err(SandboxToolEntryError::FieldNotText {
             path: format!("{path}.{name}"),
         }),
     }

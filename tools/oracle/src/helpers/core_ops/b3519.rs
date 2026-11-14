@@ -4,7 +4,7 @@ mod support;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
-use betterlite_models::sandbox_dispatch::{SandboxToolConfig, SandboxToolEntry};
+use betterlite_models::sandbox_dispatch::{SandboxToolValue, sandbox_tool_entries};
 use betterlite_provider::e2b::E2bSandbox;
 use betterlite_provider::opensandbox::helpers::OpenSandbox;
 use betterlite_provider::sandbox_dispatch::lifecycle::SandboxDispatch;
@@ -56,21 +56,8 @@ fn build_dispatch(http: &FakeHttp, environment: Environment) -> Dispatch {
 }
 
 fn registry_answer(input: &RegistryInput) -> HelperResult {
-    let entries = input
-        .tools
-        .iter()
-        .map(|tool| {
-            let params = tool.litellm_params.as_ref();
-            SandboxToolEntry::Configured(SandboxToolConfig {
-                name: tool.sandbox_tool_name.clone(),
-                provider: params.and_then(|params| params.sandbox_provider.clone()),
-                api_key: params
-                    .and_then(|params| params.api_key.clone())
-                    .map(SecretString::from),
-                api_base: params.and_then(|params| params.api_base.clone()),
-            })
-        })
-        .collect::<Vec<_>>();
+    let entries = sandbox_tool_entries(SandboxToolValue::List(input.tools.clone()))
+        .map_err(|error| helper_error("SandboxToolEntryError", error))?;
     let mut registry = SandboxToolRegistry::default();
     registry
         .register(&entries, &secrets(), &input.environment)

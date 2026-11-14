@@ -5,7 +5,6 @@ from typing import Final, Literal, Protocol, Required, TypedDict
 import httpx
 from litellm.constants import OPEN_SANDBOX_DEFAULT_LANGUAGE
 from litellm.llms.base_llm.sandbox.transformation import (
-    BaseSandboxConfig,
     CodeExecutionResult,
     ContainerHandle,
 )
@@ -15,7 +14,6 @@ from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue, TypeAdapter
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-DEFAULT_STATUS: Final = 200
 
 
 class Reply(TypedDict, total=False):
@@ -34,11 +32,11 @@ class Input(TypedDict, total=False):
     allow_internet_access: bool | None
     api_key: str | None
     api_base: str | None
-    metadata: dict[str, str] | None
-    env_vars: dict[str, str] | None
-    resource_limits: dict[str, str] | None
-    resource_requests: dict[str, str] | None
-    entrypoint: list[str] | None
+    metadata: dict[str, JsonValue] | None
+    env_vars: dict[str, JsonValue] | None
+    resource_limits: dict[str, JsonValue] | None
+    resource_requests: dict[str, JsonValue] | None
+    entrypoint: list[JsonValue] | None
     network_policy: dict[str, JsonValue] | None
     secure_access: bool | None
     use_server_proxy: bool | None
@@ -48,32 +46,6 @@ class Input(TypedDict, total=False):
     language: str | None
     container: str
     replies: list[Reply]
-
-
-class ToolFields(TypedDict):
-    sandbox_provider: str
-    api_key: str | None
-    api_base: str | None
-
-
-class HandleFields(TypedDict):
-    id: str
-    provider: str
-    domain: str | None
-
-
-class ResultFields(TypedDict):
-    stdout: str
-    stderr: str
-    results: list[dict[str, JsonValue]]
-    error: dict[str, JsonValue] | None
-    execution_count: int | None
-    object: str
-
-
-TOOL: Final[TypeAdapter[ToolFields]] = TypeAdapter(ToolFields)
-HANDLE: Final[TypeAdapter[HandleFields]] = TypeAdapter(HandleFields)
-RESULT: Final[TypeAdapter[ResultFields]] = TypeAdapter(ResultFields)
 
 
 class _Response(httpx.Response):
@@ -99,12 +71,12 @@ class _Handler:
 
     def _next(self) -> _Response:
         if not self._replies:
-            return _Response(DEFAULT_STATUS, "")
+            return _Response(200, "")
         reply = self._replies.pop(0) if len(self._replies) > 1 else self._replies[0]
         status = reply.get("status")
         body = reply.get("body")
         return _Response(
-            DEFAULT_STATUS if status is None else status,
+            200 if status is None else status,
             "" if body is None else body,
         )
 
@@ -147,18 +119,7 @@ class SandboxConfig(Protocol):
         timeout: int | None = None,
         allow_internet_access: bool | None = None,
         api_key: str | None = None,
-        api_base: str | None = None,
-        metadata: dict[str, str] | None = None,
-        env_vars: dict[str, str] | None = None,
-        resource_limits: dict[str, str] | None = None,
-        resource_requests: dict[str, str] | None = None,
-        entrypoint: list[str] | None = None,
-        network_policy: dict[str, JsonValue] | None = None,
-        secure_access: bool | None = None,
-        use_server_proxy: bool | None = None,
-        ready_timeout: float | None = None,
-        poll_interval: float | None = None,
-        client: _Handler | None = None,
+        **kwargs: JsonValue | _Handler,
     ) -> ContainerHandle: ...
 
     async def arun_code(
@@ -167,13 +128,7 @@ class SandboxConfig(Protocol):
         container: ContainerHandle | str,
         code: str,
         api_key: str | None = None,
-        api_base: str | None = None,
-        env_vars: dict[str, str] | None = None,
-        language: str | None = None,
-        use_server_proxy: bool | None = None,
-        ready_timeout: float | None = None,
-        poll_interval: float | None = None,
-        client: _Handler | None = None,
+        **kwargs: JsonValue | _Handler,
     ) -> CodeExecutionResult: ...
 
     async def adelete_sandbox(
@@ -181,8 +136,7 @@ class SandboxConfig(Protocol):
         *,
         container: ContainerHandle | str,
         api_key: str | None = None,
-        api_base: str | None = None,
-        client: _Handler | None = None,
+        **kwargs: JsonValue | _Handler,
     ) -> bool: ...
 
 
@@ -205,13 +159,6 @@ def config_for(provider: str) -> SandboxConfig:
 def handler_for(input_value: Input) -> _Handler:
     replies = input_value.get("replies")
     return _Handler([] if replies is None else replies)
-
-
-def handle_value(handle: ContainerHandle) -> JsonValue:
-    fields = HANDLE.validate_json(handle.model_dump_json())
-    return JSON.validate_python(
-        {"id": fields["id"], "provider": fields["provider"], "domain": fields["domain"]}
-    )
 
 
 def create_sandbox(
@@ -247,10 +194,7 @@ def registry_answer(input_value: Input) -> JsonValue:
     TOOLS.register_sandbox_tools(tools)
     resolved: dict[str, JsonValue] = {}
     for name in names:
-        found = TOOLS.resolve_sandbox_tool(name)
-        resolved[name] = (
-            None if found is None else JSON.validate_python(TOOL.validate_python(found))
-        )
+        resolved[name] = TOOLS.resolve_sandbox_tool(name)
     return JSON.validate_python({"resolved": resolved})
 
 
@@ -261,7 +205,10 @@ def create_answer(input_value: Input) -> JsonValue:
     handler = handler_for(input_value)
     handle = create_sandbox(config_for(provider), input_value, handler)
     return JSON.validate_python(
-        {"requests": handler.requests, "handle": handle_value(handle)}
+        {
+            "requests": handler.requests,
+            "handle": JSON.validate_json(handle.model_dump_json()),
+        }
     )
 
 
@@ -288,22 +235,21 @@ def create_and_run_answer(input_value: Input) -> JsonValue:
             client=handler,
         )
     )
-    fields = RESULT.validate_json(result.model_dump_json())
     return JSON.validate_python(
         {
             "requests": handler.requests,
-            "handle": handle_value(handle),
-            "result": fields,
+            "handle": JSON.validate_json(handle.model_dump_json()),
+            "result": JSON.validate_json(result.model_dump_json()),
         }
     )
 
 
 def delete_answer(input_value: Input) -> JsonValue:
+    handler = handler_for(input_value)
     provider = input_value.get("provider")
     container = input_value.get("container")
     if provider is None or container is None:
         raise ValueError("the delete operation needs a provider and a container id")
-    handler = handler_for(input_value)
     deleted = asyncio.run(
         config_for(provider).adelete_sandbox(
             container=container,

@@ -10,7 +10,6 @@ mod tests;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
-    #[serde(default)]
     sandbox_tools: Option<Vec<SandboxToolValue>>,
 }
 

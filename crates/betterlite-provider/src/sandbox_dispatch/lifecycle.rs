@@ -22,24 +22,27 @@ where
         &self,
         request: &mut CreateSandbox<'_>,
     ) -> Result<SandboxContainer, SandboxLifecycleError> {
-        let adapter = self.adapter(&mut request.call, "create_sandbox")?;
-        adapter.create(request).await
+        self.adapter(&mut request.call, "create_sandbox")?
+            .create(request)
+            .await
     }
 
     pub async fn arun_code(
         &self,
         request: &mut RunCode<'_>,
     ) -> Result<CodeExecutionResult, SandboxLifecycleError> {
-        let adapter = self.adapter(&mut request.call, "run_code")?;
-        adapter.run(request).await
+        self.adapter(&mut request.call, "run_code")?
+            .run(request)
+            .await
     }
 
     pub async fn adelete_sandbox(
         &self,
         request: &mut DeleteSandbox<'_>,
     ) -> Result<bool, SandboxLifecycleError> {
-        let adapter = self.adapter(&mut request.call, "delete_sandbox")?;
-        adapter.delete(request).await
+        self.adapter(&mut request.call, "delete_sandbox")?
+            .delete(request)
+            .await
     }
 
     fn adapter<'adapter>(
