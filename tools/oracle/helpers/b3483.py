@@ -62,7 +62,7 @@ MODELED_PARAMS: frozenset[str] = frozenset(
 )
 
 
-MERGE, SETUP = g._merge_native_request_fields, g.GenerateContentHelper.setup_generate_content_call  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L91-L98
+MERGE, SETUP = g._merge_native_request_fields, g.GenerateContentHelper.setup_generate_content_call  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L91-L98
 
 
 def make_logging() -> Logging:

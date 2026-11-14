@@ -169,12 +169,12 @@ fn setup_answer(call: &SetupCall, fixture: &Fixture) -> HelperResult {
     };
     let result = setup_generate_content_call(&request, &configs, logging.as_mut(), &resolution)
         .or_value_error()?;
-    answer(call, result)
+    answer(call, &result)
 }
 
 fn answer(
     call: &SetupCall,
-    result: GenerateContentSetupResult<'_, '_, NativeConfig>,
+    result: &GenerateContentSetupResult<'_, '_, NativeConfig>,
 ) -> HelperResult {
     let native = serde_json::to_value(&result.native_request_fields)?;
     let merged =
