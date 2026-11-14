@@ -124,8 +124,8 @@ class RawOutputContent(ResponseObject):
 def _content_items(value: JsonValue | None) -> list[RawOutputContent]:
     items: list[RawOutputContent] = []
     match value:
-        case list() as entries:
-            for entry in entries:
+        case list():
+            for entry in value:
                 match entry:
                     case dict():
                         items.append(RawOutputContent.model_validate(entry))
