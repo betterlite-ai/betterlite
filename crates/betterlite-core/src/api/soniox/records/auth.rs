@@ -9,14 +9,11 @@ pub const MISSING_KEY: &str = "Missing Soniox API key. Set the SONIOX_API_KEY en
 pub fn resolve_api_key(
     explicit: Option<&str>,
     environment: Option<&SecretString>,
-) -> Option<String> {
+) -> Option<SecretString> {
     if let Some(explicit) = explicit.filter(|value| !value.is_empty()) {
-        return Some(explicit.to_owned());
+        return Some(SecretString::from(explicit.to_owned()));
     }
-    environment
-        .map(ExposeSecret::expose_secret)
-        .filter(|value| !value.is_empty())
-        .cloned()
+    environment.cloned()
 }
 
 #[must_use]
@@ -32,7 +29,8 @@ pub fn validate_environment(
     explicit_key: Option<&str>,
     environment_key: Option<&SecretString>,
 ) -> Result<Headers, SonioxException> {
-    let Some(key) = resolve_api_key(explicit_key, environment_key) else {
+    let resolved = resolve_api_key(explicit_key, environment_key);
+    let Some(key) = resolved.filter(|key| !key.expose_secret().is_empty()) else {
         return Err(SonioxException {
             message: MISSING_KEY.to_owned(),
             status_code: 401,
@@ -40,20 +38,10 @@ pub fn validate_environment(
         });
     };
     let mut merged = Headers::new();
-    merged.insert("Authorization".to_owned(), format!("Bearer {key}"));
+    merged.insert(
+        "Authorization".to_owned(),
+        format!("Bearer {}", key.expose_secret()),
+    );
     merged.extend(headers);
     Ok(merged)
-}
-
-#[must_use]
-pub fn soniox_exception(
-    message: &str,
-    status_code: i64,
-    headers: Option<Headers>,
-) -> SonioxException {
-    SonioxException {
-        message: message.to_owned(),
-        status_code,
-        headers,
-    }
 }

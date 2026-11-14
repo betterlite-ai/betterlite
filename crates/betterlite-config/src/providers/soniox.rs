@@ -9,8 +9,7 @@ const API_KEY_VAR: &str = "SONIOX_API_KEY";
 const API_BASE_VAR: &str = "SONIOX_API_BASE";
 
 impl LiteLlmParams {
-    // get_secret_str reads true or false as unset, an empty base falls back to the public API,
-    // and the resolved base loses its trailing slashes the way the source strips them
+    // get_secret_str reads true and false as unset, so both variables need the same filter
     #[must_use]
     pub fn soniox_record_settings(
         lookup: &dyn EnvironmentLookup,

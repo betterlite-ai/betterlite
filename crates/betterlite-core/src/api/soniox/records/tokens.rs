@@ -1,6 +1,3 @@
-use betterlite_openai::api::audio_subtitles::render::{
-    render_subtitle_tokens_as_srt, render_subtitle_tokens_as_vtt,
-};
 use betterlite_openai::api::audio_subtitles::{Speaker, SubtitleToken};
 use serde::Deserialize;
 
@@ -142,19 +139,7 @@ fn is_python_whitespace(character: char) -> bool {
     matches!(character, '\u{1c}'..='\u{1f}')
 }
 
-#[must_use]
-pub fn render_soniox_tokens_as_srt(tokens: &[SonioxToken]) -> String {
-    let subtitle_tokens = subtitle_tokens(tokens);
-    render_subtitle_tokens_as_srt(&subtitle_tokens)
-}
-
-#[must_use]
-pub fn render_soniox_tokens_as_vtt(tokens: &[SonioxToken]) -> String {
-    let subtitle_tokens = subtitle_tokens(tokens);
-    render_subtitle_tokens_as_vtt(&subtitle_tokens)
-}
-
-fn subtitle_tokens(tokens: &[SonioxToken]) -> Vec<SubtitleToken> {
+pub(super) fn subtitle_tokens(tokens: &[SonioxToken]) -> Vec<SubtitleToken> {
     let mut kept: Vec<SubtitleToken> = Vec::new();
     for token in tokens {
         if token.is_translation() {

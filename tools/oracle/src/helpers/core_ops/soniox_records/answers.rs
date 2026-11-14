@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_config::types::LiteLlmParams;
 use betterlite_core::api::soniox::records::SUPPORTED_OPENAI_PARAMS;
-use betterlite_core::api::soniox::records::auth::{
-    resolve_api_base, soniox_exception, validate_environment,
-};
+use betterlite_core::api::soniox::records::auth::{resolve_api_base, validate_environment};
+use betterlite_core::api::soniox::records::error::SonioxException;
 use betterlite_core::api::soniox::records::params::map_openai_params;
 use betterlite_core::api::soniox::records::response::{
     SonioxTranscriptPayload, build_response_from_payload,
@@ -73,7 +72,11 @@ fn url_answer(api_base: Option<&str>, environment: &BTreeMap<String, String>) ->
 }
 
 fn error_answer(message: &str, status_code: i64) -> Value {
-    let error = soniox_exception(message, status_code, None);
+    let error = SonioxException {
+        message: message.to_owned(),
+        status_code,
+        headers: None,
+    };
     json!({ "status": error.status_code, "message": error.message })
 }
 

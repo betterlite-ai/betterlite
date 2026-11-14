@@ -1,22 +1,21 @@
 #![cfg(test)]
 
+use betterlite_openai::api::audio_subtitles::render::{
+    render_subtitle_tokens_as_srt, render_subtitle_tokens_as_vtt,
+};
 use betterlite_openai::openai_base_config::{Headers, Object};
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{from_value, to_value};
 
-use super::auth::{
-    MISSING_KEY, resolve_api_base, resolve_api_key, soniox_exception, validate_environment,
-};
-use super::error::RecordsError;
+use super::auth::{MISSING_KEY, resolve_api_base, resolve_api_key, validate_environment};
+use super::error::{RecordsError, SonioxException};
 use super::params::map_openai_params;
 use super::response::{
     SonioxTranscriptPayload, SonioxTranscriptionResponse, TRANSCRIBE_TASK, VERBOSE_JSON,
     build_response_from_payload,
 };
-use super::tokens::{
-    SonioxToken, render_soniox_tokens, render_soniox_tokens_as_srt, render_soniox_tokens_as_vtt,
-};
+use super::tokens::{SonioxToken, render_soniox_tokens, subtitle_tokens};
 use super::{
     SONIOX_DEFAULT_ATTEMPTS, SONIOX_DEFAULT_CLEANUP, SONIOX_DEFAULT_POLL_INTERVAL,
     SONIOX_HANDLER_ONLY_PARAMS, SONIOX_MAX_ATTEMPTS, SONIOX_MAX_POLL_INTERVAL,
@@ -29,6 +28,14 @@ fn object(text: &str) -> Object {
 
 fn tokens(text: &str) -> Vec<SonioxToken> {
     serde_json::from_str(text).expect("typed tokens")
+}
+
+fn srt(tokens: &[SonioxToken]) -> String {
+    render_subtitle_tokens_as_srt(&subtitle_tokens(tokens))
+}
+
+fn vtt(tokens: &[SonioxToken]) -> String {
+    render_subtitle_tokens_as_vtt(&subtitle_tokens(tokens))
 }
 
 fn mapped(non_default: &str, optional: &str) -> Object {
@@ -271,7 +278,8 @@ fn unrelated_optional_params_stay_in_place() {
 fn explicit_keys_precede_the_environment() {
     let environment = secret("env-key");
     assert_eq!(
-        resolve_api_key(Some("explicit"), Some(&environment)),
+        resolve_api_key(Some("explicit"), Some(&environment))
+            .map(|key| key.expose_secret().to_owned()),
         Some("explicit".to_owned())
     );
 }
@@ -280,17 +288,15 @@ fn explicit_keys_precede_the_environment() {
 fn an_empty_explicit_key_falls_back_to_the_environment() {
     let environment = secret("env-key");
     assert_eq!(
-        resolve_api_key(Some(""), Some(&environment)),
+        resolve_api_key(Some(""), Some(&environment)).map(|key| key.expose_secret().to_owned()),
         Some("env-key".to_owned())
     );
 }
 
 #[test]
-fn empty_keys_resolve_to_nothing() {
-    let environment = secret("");
-    assert_eq!(resolve_api_key(Some(""), Some(&environment)), None);
-    assert_eq!(resolve_api_key(None, Some(&environment)), None);
-    assert_eq!(resolve_api_key(None, None), None);
+fn empty_keys_without_the_environment_resolve_to_nothing() {
+    assert!(resolve_api_key(Some(""), None).is_none());
+    assert!(resolve_api_key(None, None).is_none());
 }
 
 #[test]
@@ -331,10 +337,13 @@ fn a_missing_key_is_a_401_with_the_source_message() {
 #[test]
 fn empty_keys_are_missing_keys() {
     let environment = secret("");
-    let error = validate_environment(Headers::new(), Some(""), Some(&environment))
+    let explicit = validate_environment(Headers::new(), Some(""), Some(&environment))
+        .expect_err("a missing Soniox key");
+    let inherited = validate_environment(Headers::new(), None, Some(&environment))
         .expect_err("a missing Soniox key");
 
-    assert_eq!(error.status_code, 401);
+    assert_eq!(explicit.status_code, 401);
+    assert_eq!(inherited.status_code, 401);
 }
 
 #[test]
@@ -355,7 +364,11 @@ fn an_explicit_base_precedes_the_environment_and_loses_slashes() {
 
 #[test]
 fn errors_keep_their_message_status_and_headers() {
-    let error = soniox_exception("boom", 429, Some(headers(&[("X-A", "1")])));
+    let error = SonioxException {
+        message: "boom".to_owned(),
+        status_code: 429,
+        headers: Some(headers(&[("X-A", "1")])),
+    };
 
     assert_eq!(error.message, "boom");
     assert_eq!(error.status_code, 429);
@@ -510,7 +523,7 @@ fn null_speakers_and_languages_are_ignored() {
 #[test]
 fn srt_renders_timed_tokens() {
     assert_eq!(
-        render_soniox_tokens_as_srt(&tokens(
+        srt(&tokens(
             r#"[{"text": "Hel", "start_ms": 0, "end_ms": 500}, {"text": "lo", "start_ms": 500, "end_ms": 1000}]"#
         )),
         "1\n00:00:00,000 --> 00:00:01,000\nHello\n"
@@ -520,13 +533,13 @@ fn srt_renders_timed_tokens() {
 #[test]
 fn translation_tokens_are_dropped_from_subtitles() {
     assert_eq!(
-        render_soniox_tokens_as_srt(&tokens(
+        srt(&tokens(
             r#"[{"text": " hola", "start_ms": 5, "language": "es", "translation_status": "translation"}]"#
         )),
         ""
     );
     assert_eq!(
-        render_soniox_tokens_as_vtt(&tokens(
+        vtt(&tokens(
             r#"[{"text": " hola", "start_ms": 5, "language": "es", "translation_status": "translation"}]"#
         )),
         "WEBVTT\n"
@@ -536,7 +549,7 @@ fn translation_tokens_are_dropped_from_subtitles() {
 #[test]
 fn mixed_subtitles_keep_only_the_original_language() {
     assert_eq!(
-        render_soniox_tokens_as_srt(&tokens(
+        srt(&tokens(
             r#"[
                 {"text": "Hi", "start_ms": 0, "end_ms": 500},
                 {"text": " hola", "start_ms": 500, "end_ms": 900, "translation_status": "translation"}
@@ -549,7 +562,7 @@ fn mixed_subtitles_keep_only_the_original_language() {
 #[test]
 fn a_null_translation_status_keeps_the_token() {
     assert_eq!(
-        render_soniox_tokens_as_srt(&tokens(
+        srt(&tokens(
             r#"[{"text": "Hi", "start_ms": 0, "end_ms": 500, "translation_status": null}]"#
         )),
         "1\n00:00:00,000 --> 00:00:00,500\nHi\n"
@@ -559,7 +572,7 @@ fn a_null_translation_status_keeps_the_token() {
 #[test]
 fn boolean_timings_are_python_integers() {
     assert_eq!(
-        render_soniox_tokens_as_srt(&tokens(
+        srt(&tokens(
             r#"[{"text": "X", "start_ms": true, "end_ms": false}]"#
         )),
         "1\n00:00:00,001 --> 00:00:00,000\nX\n"
@@ -568,20 +581,14 @@ fn boolean_timings_are_python_integers() {
 
 #[test]
 fn untimed_tokens_render_no_srt_but_the_vtt_header() {
-    assert_eq!(
-        render_soniox_tokens_as_srt(&tokens(r#"[{"text": "X"}]"#)),
-        ""
-    );
-    assert_eq!(
-        render_soniox_tokens_as_vtt(&tokens(r#"[{"text": "X"}]"#)),
-        "WEBVTT\n"
-    );
+    assert_eq!(srt(&tokens(r#"[{"text": "X"}]"#)), "");
+    assert_eq!(vtt(&tokens(r#"[{"text": "X"}]"#)), "WEBVTT\n");
 }
 
 #[test]
 fn a_boolean_speaker_does_not_split_a_cue_from_one() {
     assert_eq!(
-        render_soniox_tokens_as_srt(&tokens(
+        srt(&tokens(
             r#"[
                 {"text": "a", "start_ms": 0, "end_ms": 100, "speaker": true},
                 {"text": "b", "start_ms": 150, "end_ms": 250, "speaker": 1}
@@ -594,7 +601,7 @@ fn a_boolean_speaker_does_not_split_a_cue_from_one() {
 #[test]
 fn a_text_speaker_splits_a_cue_from_a_number() {
     assert_eq!(
-        render_soniox_tokens_as_srt(&tokens(
+        srt(&tokens(
             r#"[
                 {"text": "a", "start_ms": 0, "end_ms": 100, "speaker": "1"},
                 {"text": "b", "start_ms": 150, "end_ms": 250, "speaker": 1}

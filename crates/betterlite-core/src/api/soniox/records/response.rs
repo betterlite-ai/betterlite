@@ -1,3 +1,6 @@
+use betterlite_openai::api::audio_subtitles::render::{
+    render_subtitle_tokens_as_srt, render_subtitle_tokens_as_vtt,
+};
 use betterlite_openai::api::audio_subtitles::{SRT_RESPONSE_FORMAT, VTT_RESPONSE_FORMAT};
 use betterlite_openai::openai_base_config::Object;
 use rust_decimal::Decimal;
@@ -6,10 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{from_value, to_value};
 
 use super::error::RecordsError;
-use super::tokens::{
-    Milliseconds, SonioxToken, render_soniox_tokens, render_soniox_tokens_as_srt,
-    render_soniox_tokens_as_vtt,
-};
+use super::tokens::{Milliseconds, SonioxToken, render_soniox_tokens, subtitle_tokens};
 
 pub const TRANSCRIBE_TASK: &str = "transcribe";
 pub const VERBOSE_JSON: &str = "verbose_json";
@@ -117,10 +117,10 @@ pub fn build_response_from_payload(
 
 fn response_text(translated: &TranscriptView, response_format: Option<&str>) -> String {
     if response_format == Some(SRT_RESPONSE_FORMAT) && !translated.tokens.is_empty() {
-        return render_soniox_tokens_as_srt(&translated.tokens);
+        return render_subtitle_tokens_as_srt(&subtitle_tokens(&translated.tokens));
     }
     if response_format == Some(VTT_RESPONSE_FORMAT) && !translated.tokens.is_empty() {
-        return render_soniox_tokens_as_vtt(&translated.tokens);
+        return render_subtitle_tokens_as_vtt(&subtitle_tokens(&translated.tokens));
     }
     plain_text(translated)
 }
