@@ -1,10 +1,10 @@
 import operator
 from os import PathLike
-from typing import Literal, get_args, get_origin, get_type_hints
+from typing import ClassVar, Literal, Protocol, get_args, get_origin, get_type_hints
 
 import litellm.types.llms.openai as litellm_openai
 import pytest
-from pydantic import JsonValue, ValidationError
+from pydantic import BaseModel, JsonValue, ValidationError
 from typing_extensions import TypeForm
 
 import betterlite.types.llms.openai.core.batches as core_batches
@@ -26,6 +26,191 @@ from betterlite.types.llms.openai.core.chat_blocks import (
 )
 from betterlite.types.llms.openai.core.messages import AllMessageValues, ToolMessageContentPart
 from betterlite.types.llms.openai.core.threads import AttachmentTool
+
+
+class TypedDictClass(Protocol):
+    __required_keys__: ClassVar[frozenset[str]]
+    __optional_keys__: ClassVar[frozenset[str]]
+
+
+class OurTypedDicts(Protocol):
+    BinaryResponseSummary: core_binary.BinaryResponseSummary
+    ToolResourcesCodeInterpreter: core_threads.ToolResourcesCodeInterpreter
+    # ast-grep-ignore: no-long-names
+    ToolResourcesFileSearchVectorStore: core_threads.ToolResourcesFileSearchVectorStore
+    ToolResourcesFileSearch: core_threads.ToolResourcesFileSearch
+    # ast-grep-ignore: no-long-names
+    OpenAICreateThreadParamsToolResources: core_threads.OpenAICreateThreadParamsToolResources
+    FileSearchToolParam: core_threads.FileSearchToolParam
+    CodeInterpreterToolParam: core_threads.CodeInterpreterToolParam
+    Attachment: core_threads.Attachment
+    ImageFileObject: core_threads.ImageFileObject
+    ImageURLObject: core_threads.ImageURLObject
+    ImageURLListItem: core_threads.ImageURLListItem
+    MessageContentTextObject: core_threads.MessageContentTextObject
+    MessageContentImageFileObject: core_threads.MessageContentImageFileObject
+    MessageContentImageURLObject: core_threads.MessageContentImageURLObject
+    MessageData: core_threads.MessageData
+    FileExpiresAfter: core_files.FileExpiresAfter
+    CreateFileRequest: core_files.CreateFileRequest
+    FileContentRequest: core_files.FileContentRequest
+    CreateBatchRequest: core_batches.CreateBatchRequest
+    LiteLLMBatchCreateRequest: core_batches.LiteLLMBatchCreateRequest
+    RetrieveBatchRequest: core_batches.RetrieveBatchRequest
+    CancelBatchRequest: core_batches.CancelBatchRequest
+    ListBatchRequest: core_batches.ListBatchRequest
+    OpenAIErrorBody: core_batches.OpenAIErrorBody
+    ChatCompletionAudioDelta: core_chat_blocks.ChatCompletionAudioDelta
+    # ast-grep-ignore: no-long-names
+    ChatCompletionToolCallFunctionChunk: core_chat_blocks.ChatCompletionToolCallFunctionChunk
+    # ast-grep-ignore: no-long-names
+    ChatCompletionAssistantToolCall: core_chat_blocks.ChatCompletionAssistantToolCall
+    ChatCompletionToolCallChunk: core_chat_blocks.ChatCompletionToolCallChunk
+    # ast-grep-ignore: no-long-names
+    ChatCompletionDeltaToolCallChunk: core_chat_blocks.ChatCompletionDeltaToolCallChunk
+    ChatCompletionCachedContent: core_chat_blocks.ChatCompletionCachedContent
+    PromptCacheBreakpoint: core_chat_blocks.PromptCacheBreakpoint
+    PromptCacheOptions: core_chat_blocks.PromptCacheOptions
+    ChatCompletionThinkingBlock: core_chat_blocks.ChatCompletionThinkingBlock
+    # ast-grep-ignore: no-long-names
+    ChatCompletionRedactedThinkingBlock: core_chat_blocks.ChatCompletionRedactedThinkingBlock
+    # ast-grep-ignore: no-long-names
+    ChatCompletionReasoningSummaryTextBlock: (
+        core_chat_blocks.ChatCompletionReasoningSummaryTextBlock
+    )
+    ChatCompletionReasoningItem: core_chat_blocks.ChatCompletionReasoningItem
+    # ast-grep-ignore: no-long-names
+    WebSearchOptionsUserLocationApproximate: (
+        core_chat_blocks.WebSearchOptionsUserLocationApproximate
+    )
+    WebSearchOptionsUserLocation: core_chat_blocks.WebSearchOptionsUserLocation
+    WebSearchOptions: core_chat_blocks.WebSearchOptions
+    FileSearchTool: core_chat_blocks.FileSearchTool
+    # ast-grep-ignore: no-long-names
+    ChatCompletionAnnotationURLCitation: core_chat_blocks.ChatCompletionAnnotationURLCitation
+    ChatCompletionAnnotation: core_chat_blocks.ChatCompletionAnnotation
+    OpenAIChatCompletionTextObject: core_chat_blocks.OpenAIChatCompletionTextObject
+    ChatCompletionTextObject: core_chat_blocks.ChatCompletionTextObject
+    ChatCompletionImageUrlObject: core_chat_blocks.ChatCompletionImageUrlObject
+    ChatCompletionImageObject: core_chat_blocks.ChatCompletionImageObject
+    ChatCompletionVideoUrlObject: core_chat_blocks.ChatCompletionVideoUrlObject
+    ChatCompletionVideoObject: core_chat_blocks.ChatCompletionVideoObject
+    DocumentObject: core_chat_blocks.DocumentObject
+    CitationsObject: core_chat_blocks.CitationsObject
+    ChatCompletionDocumentObject: core_chat_blocks.ChatCompletionDocumentObject
+    ChatCompletionFileObjectFile: core_chat_blocks.ChatCompletionFileObjectFile
+    ChatCompletionFileObject: core_chat_blocks.ChatCompletionFileObject
+    # ast-grep-ignore: no-long-names
+    OpenAIChatCompletionUserMessage: core_messages.OpenAIChatCompletionUserMessage
+    # ast-grep-ignore: no-long-names
+    OpenAITextCompletionUserMessage: core_messages.OpenAITextCompletionUserMessage
+    ChatCompletionUserMessage: core_messages.ChatCompletionUserMessage
+    # ast-grep-ignore: no-long-names
+    OpenAIChatCompletionAssistantMessage: core_messages.OpenAIChatCompletionAssistantMessage
+    ChatCompletionAssistantMessage: core_messages.ChatCompletionAssistantMessage
+    # ast-grep-ignore: no-long-names
+    ChatCompletionToolReferenceObject: core_messages.ChatCompletionToolReferenceObject
+    ChatCompletionToolMessage: core_messages.ChatCompletionToolMessage
+    ChatCompletionFunctionMessage: core_messages.ChatCompletionFunctionMessage
+    # ast-grep-ignore: no-long-names
+    OpenAIChatCompletionSystemMessage: core_messages.OpenAIChatCompletionSystemMessage
+    # ast-grep-ignore: no-long-names
+    OpenAIChatCompletionDeveloperMessage: core_messages.OpenAIChatCompletionDeveloperMessage
+    ChatCompletionSystemMessage: core_messages.ChatCompletionSystemMessage
+    ChatCompletionDeveloperMessage: core_messages.ChatCompletionDeveloperMessage
+    GenericChatCompletionMessage: core_messages.GenericChatCompletionMessage
+
+
+class LiteLLMTypedDicts(Protocol):
+    BinaryResponseSummary: litellm_openai.BinaryResponseSummary
+    ToolResourcesCodeInterpreter: litellm_openai.ToolResourcesCodeInterpreter
+    # ast-grep-ignore: no-long-names
+    ToolResourcesFileSearchVectorStore: litellm_openai.ToolResourcesFileSearchVectorStore
+    ToolResourcesFileSearch: litellm_openai.ToolResourcesFileSearch
+    # ast-grep-ignore: no-long-names
+    OpenAICreateThreadParamsToolResources: litellm_openai.OpenAICreateThreadParamsToolResources
+    FileSearchToolParam: litellm_openai.FileSearchToolParam
+    CodeInterpreterToolParam: litellm_openai.CodeInterpreterToolParam
+    Attachment: litellm_openai.Attachment
+    ImageFileObject: litellm_openai.ImageFileObject
+    ImageURLObject: litellm_openai.ImageURLObject
+    ImageURLListItem: litellm_openai.ImageURLListItem
+    MessageContentTextObject: litellm_openai.MessageContentTextObject
+    MessageContentImageFileObject: litellm_openai.MessageContentImageFileObject
+    MessageContentImageURLObject: litellm_openai.MessageContentImageURLObject
+    MessageData: litellm_openai.MessageData
+    FileExpiresAfter: litellm_openai.FileExpiresAfter
+    CreateFileRequest: litellm_openai.CreateFileRequest
+    FileContentRequest: litellm_openai.FileContentRequest
+    CreateBatchRequest: litellm_openai.CreateBatchRequest
+    LiteLLMBatchCreateRequest: litellm_openai.LiteLLMBatchCreateRequest
+    RetrieveBatchRequest: litellm_openai.RetrieveBatchRequest
+    CancelBatchRequest: litellm_openai.CancelBatchRequest
+    ListBatchRequest: litellm_openai.ListBatchRequest
+    OpenAIErrorBody: litellm_openai.OpenAIErrorBody
+    ChatCompletionAudioDelta: litellm_openai.ChatCompletionAudioDelta
+    # ast-grep-ignore: no-long-names
+    ChatCompletionToolCallFunctionChunk: litellm_openai.ChatCompletionToolCallFunctionChunk
+    # ast-grep-ignore: no-long-names
+    ChatCompletionAssistantToolCall: litellm_openai.ChatCompletionAssistantToolCall
+    ChatCompletionToolCallChunk: litellm_openai.ChatCompletionToolCallChunk
+    # ast-grep-ignore: no-long-names
+    ChatCompletionDeltaToolCallChunk: litellm_openai.ChatCompletionDeltaToolCallChunk
+    ChatCompletionCachedContent: litellm_openai.ChatCompletionCachedContent
+    PromptCacheBreakpoint: litellm_openai.PromptCacheBreakpoint
+    PromptCacheOptions: litellm_openai.PromptCacheOptions
+    ChatCompletionThinkingBlock: litellm_openai.ChatCompletionThinkingBlock
+    # ast-grep-ignore: no-long-names
+    ChatCompletionRedactedThinkingBlock: litellm_openai.ChatCompletionRedactedThinkingBlock
+    # ast-grep-ignore: no-long-names
+    ChatCompletionReasoningSummaryTextBlock: litellm_openai.ChatCompletionReasoningSummaryTextBlock
+    ChatCompletionReasoningItem: litellm_openai.ChatCompletionReasoningItem
+    # ast-grep-ignore: no-long-names
+    WebSearchOptionsUserLocationApproximate: litellm_openai.WebSearchOptionsUserLocationApproximate
+    WebSearchOptionsUserLocation: litellm_openai.WebSearchOptionsUserLocation
+    WebSearchOptions: litellm_openai.WebSearchOptions
+    FileSearchTool: litellm_openai.FileSearchTool
+    # ast-grep-ignore: no-long-names
+    ChatCompletionAnnotationURLCitation: litellm_openai.ChatCompletionAnnotationURLCitation
+    ChatCompletionAnnotation: litellm_openai.ChatCompletionAnnotation
+    OpenAIChatCompletionTextObject: litellm_openai.OpenAIChatCompletionTextObject
+    ChatCompletionTextObject: litellm_openai.ChatCompletionTextObject
+    ChatCompletionImageUrlObject: litellm_openai.ChatCompletionImageUrlObject
+    ChatCompletionImageObject: litellm_openai.ChatCompletionImageObject
+    ChatCompletionVideoUrlObject: litellm_openai.ChatCompletionVideoUrlObject
+    ChatCompletionVideoObject: litellm_openai.ChatCompletionVideoObject
+    DocumentObject: litellm_openai.DocumentObject
+    CitationsObject: litellm_openai.CitationsObject
+    ChatCompletionDocumentObject: litellm_openai.ChatCompletionDocumentObject
+    ChatCompletionFileObjectFile: litellm_openai.ChatCompletionFileObjectFile
+    ChatCompletionFileObject: litellm_openai.ChatCompletionFileObject
+    # ast-grep-ignore: no-long-names
+    OpenAIChatCompletionUserMessage: litellm_openai.OpenAIChatCompletionUserMessage
+    # ast-grep-ignore: no-long-names
+    OpenAITextCompletionUserMessage: litellm_openai.OpenAITextCompletionUserMessage
+    ChatCompletionUserMessage: litellm_openai.ChatCompletionUserMessage
+    # ast-grep-ignore: no-long-names
+    OpenAIChatCompletionAssistantMessage: litellm_openai.OpenAIChatCompletionAssistantMessage
+    ChatCompletionAssistantMessage: litellm_openai.ChatCompletionAssistantMessage
+    # ast-grep-ignore: no-long-names
+    ChatCompletionToolReferenceObject: litellm_openai.ChatCompletionToolReferenceObject
+    ChatCompletionToolMessage: litellm_openai.ChatCompletionToolMessage
+    ChatCompletionFunctionMessage: litellm_openai.ChatCompletionFunctionMessage
+    # ast-grep-ignore: no-long-names
+    OpenAIChatCompletionSystemMessage: litellm_openai.OpenAIChatCompletionSystemMessage
+    # ast-grep-ignore: no-long-names
+    OpenAIChatCompletionDeveloperMessage: litellm_openai.OpenAIChatCompletionDeveloperMessage
+    ChatCompletionSystemMessage: litellm_openai.ChatCompletionSystemMessage
+    ChatCompletionDeveloperMessage: litellm_openai.ChatCompletionDeveloperMessage
+    GenericChatCompletionMessage: litellm_openai.GenericChatCompletionMessage
+
+
+class OurFileTypes(Protocol):
+    file_types: FileTypes
+
+
+class LiteLLMFileTypes(Protocol):
+    file_types: litellm_openai.FileTypes
 
 
 def literal_values(annotation: TypeForm[JsonValue] | None) -> tuple[str, ...]:
@@ -60,333 +245,62 @@ def check_file_content_forms(
     assert operator.is_(theirs[2], PathLike)
 
 
+def check_model_literals(ours: type[BaseModel], theirs: type[BaseModel]) -> None:
+    ours_fields = ours.model_fields
+    theirs_fields = theirs.model_fields
+    assert ours_fields.keys() == theirs_fields.keys()
+    for key in ours_fields.keys() & theirs_fields.keys():
+        ours_annotation: TypeForm[JsonValue] | None = ours_fields[key].annotation
+        theirs_annotation: TypeForm[JsonValue] | None = theirs_fields[key].annotation
+        assert literal_values(ours_annotation) == literal_values(theirs_annotation)
+
+
 def test_names_typed_dicts() -> None:
-    typed_dicts = (
-        (
-            core_binary.BinaryResponseSummary,
-            litellm_openai.BinaryResponseSummary,
-        ),
-        (
-            core_threads.ToolResourcesCodeInterpreter,
-            litellm_openai.ToolResourcesCodeInterpreter,
-        ),
-        (
-            core_threads.ToolResourcesFileSearchVectorStore,
-            litellm_openai.ToolResourcesFileSearchVectorStore,
-        ),
-        (
-            core_threads.ToolResourcesFileSearch,
-            litellm_openai.ToolResourcesFileSearch,
-        ),
-        (
-            core_threads.OpenAICreateThreadParamsToolResources,
-            litellm_openai.OpenAICreateThreadParamsToolResources,
-        ),
-        (
-            core_threads.FileSearchToolParam,
-            litellm_openai.FileSearchToolParam,
-        ),
-        (
-            core_threads.CodeInterpreterToolParam,
-            litellm_openai.CodeInterpreterToolParam,
-        ),
-        (
-            core_threads.Attachment,
-            litellm_openai.Attachment,
-        ),
-        (
-            core_threads.ImageFileObject,
-            litellm_openai.ImageFileObject,
-        ),
-        (
-            core_threads.ImageURLObject,
-            litellm_openai.ImageURLObject,
-        ),
-        (
-            core_threads.ImageURLListItem,
-            litellm_openai.ImageURLListItem,
-        ),
-        (
-            core_threads.MessageContentTextObject,
-            litellm_openai.MessageContentTextObject,
-        ),
-        (
-            core_threads.MessageContentImageFileObject,
-            litellm_openai.MessageContentImageFileObject,
-        ),
-        (
-            core_threads.MessageContentImageURLObject,
-            litellm_openai.MessageContentImageURLObject,
-        ),
-        (
-            core_threads.MessageData,
-            litellm_openai.MessageData,
-        ),
-        (
-            core_files.FileExpiresAfter,
-            litellm_openai.FileExpiresAfter,
-        ),
-        (
-            core_files.CreateFileRequest,
-            litellm_openai.CreateFileRequest,
-        ),
-        (
-            core_files.FileContentRequest,
-            litellm_openai.FileContentRequest,
-        ),
-        (
-            core_batches.CreateBatchRequest,
-            litellm_openai.CreateBatchRequest,
-        ),
-        (
-            core_batches.LiteLLMBatchCreateRequest,
-            litellm_openai.LiteLLMBatchCreateRequest,
-        ),
-        (
-            core_batches.RetrieveBatchRequest,
-            litellm_openai.RetrieveBatchRequest,
-        ),
-        (
-            core_batches.CancelBatchRequest,
-            litellm_openai.CancelBatchRequest,
-        ),
-        (
-            core_batches.ListBatchRequest,
-            litellm_openai.ListBatchRequest,
-        ),
-        (
-            core_batches.OpenAIErrorBody,
-            litellm_openai.OpenAIErrorBody,
-        ),
-        (
-            core_chat_blocks.ChatCompletionAudioDelta,
-            litellm_openai.ChatCompletionAudioDelta,
-        ),
-        (
-            core_chat_blocks.ChatCompletionToolCallFunctionChunk,
-            litellm_openai.ChatCompletionToolCallFunctionChunk,
-        ),
-        (
-            core_chat_blocks.ChatCompletionAssistantToolCall,
-            litellm_openai.ChatCompletionAssistantToolCall,
-        ),
-        (
-            core_chat_blocks.ChatCompletionToolCallChunk,
-            litellm_openai.ChatCompletionToolCallChunk,
-        ),
-        (
-            core_chat_blocks.ChatCompletionDeltaToolCallChunk,
-            litellm_openai.ChatCompletionDeltaToolCallChunk,
-        ),
-        (
-            core_chat_blocks.ChatCompletionCachedContent,
-            litellm_openai.ChatCompletionCachedContent,
-        ),
-        (
-            core_chat_blocks.PromptCacheBreakpoint,
-            litellm_openai.PromptCacheBreakpoint,
-        ),
-        (
-            core_chat_blocks.PromptCacheOptions,
-            litellm_openai.PromptCacheOptions,
-        ),
-        (
-            core_chat_blocks.ChatCompletionThinkingBlock,
-            litellm_openai.ChatCompletionThinkingBlock,
-        ),
-        (
-            core_chat_blocks.ChatCompletionRedactedThinkingBlock,
-            litellm_openai.ChatCompletionRedactedThinkingBlock,
-        ),
-        (
-            core_chat_blocks.ChatCompletionReasoningSummaryTextBlock,
-            litellm_openai.ChatCompletionReasoningSummaryTextBlock,
-        ),
-        (
-            core_chat_blocks.ChatCompletionReasoningItem,
-            litellm_openai.ChatCompletionReasoningItem,
-        ),
-        (
-            core_chat_blocks.WebSearchOptionsUserLocationApproximate,
-            litellm_openai.WebSearchOptionsUserLocationApproximate,
-        ),
-        (
-            core_chat_blocks.WebSearchOptionsUserLocation,
-            litellm_openai.WebSearchOptionsUserLocation,
-        ),
-        (
-            core_chat_blocks.WebSearchOptions,
-            litellm_openai.WebSearchOptions,
-        ),
-        (
-            core_chat_blocks.FileSearchTool,
-            litellm_openai.FileSearchTool,
-        ),
-        (
-            core_chat_blocks.ChatCompletionAnnotationURLCitation,
-            litellm_openai.ChatCompletionAnnotationURLCitation,
-        ),
-        (
-            core_chat_blocks.ChatCompletionAnnotation,
-            litellm_openai.ChatCompletionAnnotation,
-        ),
-        (
-            core_chat_blocks.OpenAIChatCompletionTextObject,
-            litellm_openai.OpenAIChatCompletionTextObject,
-        ),
-        (
-            core_chat_blocks.ChatCompletionTextObject,
-            litellm_openai.ChatCompletionTextObject,
-        ),
-        (
-            core_chat_blocks.ChatCompletionImageUrlObject,
-            litellm_openai.ChatCompletionImageUrlObject,
-        ),
-        (
-            core_chat_blocks.ChatCompletionImageObject,
-            litellm_openai.ChatCompletionImageObject,
-        ),
-        (
-            core_chat_blocks.ChatCompletionVideoUrlObject,
-            litellm_openai.ChatCompletionVideoUrlObject,
-        ),
-        (
-            core_chat_blocks.ChatCompletionVideoObject,
-            litellm_openai.ChatCompletionVideoObject,
-        ),
-        (
-            core_chat_blocks.DocumentObject,
-            litellm_openai.DocumentObject,
-        ),
-        (
-            core_chat_blocks.CitationsObject,
-            litellm_openai.CitationsObject,
-        ),
-        (
-            core_chat_blocks.ChatCompletionDocumentObject,
-            litellm_openai.ChatCompletionDocumentObject,
-        ),
-        (
-            core_chat_blocks.ChatCompletionFileObjectFile,
-            litellm_openai.ChatCompletionFileObjectFile,
-        ),
-        (
-            core_chat_blocks.ChatCompletionFileObject,
-            litellm_openai.ChatCompletionFileObject,
-        ),
-        (
-            core_messages.OpenAIChatCompletionUserMessage,
-            litellm_openai.OpenAIChatCompletionUserMessage,
-        ),
-        (
-            core_messages.OpenAITextCompletionUserMessage,
-            litellm_openai.OpenAITextCompletionUserMessage,
-        ),
-        (
-            core_messages.ChatCompletionUserMessage,
-            litellm_openai.ChatCompletionUserMessage,
-        ),
-        (
-            core_messages.OpenAIChatCompletionAssistantMessage,
-            litellm_openai.OpenAIChatCompletionAssistantMessage,
-        ),
-        (
-            core_messages.ChatCompletionAssistantMessage,
-            litellm_openai.ChatCompletionAssistantMessage,
-        ),
-        (
-            core_messages.ChatCompletionToolReferenceObject,
-            litellm_openai.ChatCompletionToolReferenceObject,
-        ),
-        (
-            core_messages.ChatCompletionToolMessage,
-            litellm_openai.ChatCompletionToolMessage,
-        ),
-        (
-            core_messages.ChatCompletionFunctionMessage,
-            litellm_openai.ChatCompletionFunctionMessage,
-        ),
-        (
-            core_messages.OpenAIChatCompletionSystemMessage,
-            litellm_openai.OpenAIChatCompletionSystemMessage,
-        ),
-        (
-            core_messages.OpenAIChatCompletionDeveloperMessage,
-            litellm_openai.OpenAIChatCompletionDeveloperMessage,
-        ),
-        (
-            core_messages.ChatCompletionSystemMessage,
-            litellm_openai.ChatCompletionSystemMessage,
-        ),
-        (
-            core_messages.ChatCompletionDeveloperMessage,
-            litellm_openai.ChatCompletionDeveloperMessage,
-        ),
-        (
-            core_messages.GenericChatCompletionMessage,
-            litellm_openai.GenericChatCompletionMessage,
-        ),
-    )
-    for pair in typed_dicts:
-        assert pair[0].__required_keys__ == pair[1].__required_keys__
-        assert pair[0].__optional_keys__ == pair[1].__optional_keys__
+    ours: dict[str, type[TypedDictClass]] = get_type_hints(OurTypedDicts)
+    theirs: dict[str, type[TypedDictClass]] = get_type_hints(LiteLLMTypedDicts)
+    assert ours.keys() == theirs.keys()
+    for name in ours.keys() & theirs.keys():
+        ours_handle = ours[name]
+        theirs_handle = theirs[name]
+        assert ours_handle.__required_keys__ == theirs_handle.__required_keys__
+        assert ours_handle.__optional_keys__ == theirs_handle.__optional_keys__
         ours_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(
-            pair[0], include_extras=True
+            ours_handle, include_extras=True
         )
         theirs_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(
-            pair[1], include_extras=True
+            theirs_handle, include_extras=True
         )
+        assert ours_hints.keys() == theirs_hints.keys()
         for key in ours_hints.keys() & theirs_hints.keys():
             assert literal_values(ours_hints[key]) == literal_values(theirs_hints[key])
-    literal_aliases = (
-        (
-            core_batches.BatchJobStatus,
-            litellm_openai.BatchJobStatus,
-        ),
-        (
-            core_files.CREATE_FILE_REQUESTS_PURPOSE,
-            litellm_openai.CREATE_FILE_REQUESTS_PURPOSE,
-        ),
-        (
-            core_files.OpenAIFilesPurpose,
-            litellm_openai.OpenAIFilesPurpose,
-        ),
-        (
-            core_files.OpenAICreateFileRequestOptionalParams,
-            litellm_openai.OpenAICreateFileRequestOptionalParams,
-        ),
-        (
-            core_messages.ValidUserMessageContentTypesLiteral,
-            litellm_openai.ValidUserMessageContentTypesLiteral,
-        ),
-        (
-            core_messages.ValidAssistantMessageContentTypesLiteral,
-            litellm_openai.ValidAssistantMessageContentTypesLiteral,
-        ),
-        (
-            core_messages.ValidChatCompletionMessageContentTypesLiteral,
-            litellm_openai.ValidChatCompletionMessageContentTypesLiteral,
-        ),
+
+
+def test_names_literal_aliases() -> None:
+    assert core_batches.BatchJobStatus == litellm_openai.BatchJobStatus
+    assert core_files.CREATE_FILE_REQUESTS_PURPOSE == litellm_openai.CREATE_FILE_REQUESTS_PURPOSE
+    assert core_files.OpenAIFilesPurpose == litellm_openai.OpenAIFilesPurpose
+    assert (
+        core_files.OpenAICreateFileRequestOptionalParams
+        == litellm_openai.OpenAICreateFileRequestOptionalParams
     )
-    for pair in literal_aliases:
-        assert pair[0] == pair[1]
+    assert (
+        core_messages.ValidUserMessageContentTypesLiteral
+        == litellm_openai.ValidUserMessageContentTypesLiteral
+    )
+    assert (
+        core_messages.ValidAssistantMessageContentTypesLiteral
+        == litellm_openai.ValidAssistantMessageContentTypesLiteral
+    )
+    assert (
+        core_messages.ValidChatCompletionMessageContentTypesLiteral
+        == litellm_openai.ValidChatCompletionMessageContentTypesLiteral
+    )
 
 
 def test_names_model_literals() -> None:
-    models = (
-        (core_files.OpenAIFileObject, litellm_openai.OpenAIFileObject),
-        (core_files.BatchGuardrailRecord, litellm_openai.BatchGuardrailRecord),
-        (core_files.FileListPage, litellm_openai.FileListPage),
-    )
-    for ours, theirs in models:
-        ours_fields = ours.model_fields
-        theirs_fields = theirs.model_fields
-        for key in ours_fields.keys() & theirs_fields.keys():
-            ours_annotation: TypeForm[JsonValue] | None = ours_fields[key].annotation
-            theirs_annotation: TypeForm[JsonValue] | None = (
-                theirs_fields[key].annotation
-            )
-            assert literal_values(ours_annotation) == literal_values(theirs_annotation)
+    check_model_literals(core_files.OpenAIFileObject, litellm_openai.OpenAIFileObject)
+    check_model_literals(core_files.BatchGuardrailRecord, litellm_openai.BatchGuardrailRecord)
+    check_model_literals(core_files.FileListPage, litellm_openai.FileListPage)
 
 
 def test_names_audio_object_keys() -> None:
@@ -423,8 +337,10 @@ def test_names_shared_aliases() -> None:
     _message: AllMessageValues = user_message
     assert EmbeddingInput == litellm_openai.EmbeddingInput
     assert AllPromptValues == litellm_openai.AllPromptValues
-    ours_members: tuple[TypeForm[JsonValue], ...] = get_args(FileTypes)
-    theirs_members: tuple[TypeForm[JsonValue], ...] = get_args(litellm_openai.FileTypes)
+    ours_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(OurFileTypes)
+    theirs_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(LiteLLMFileTypes)
+    ours_members: tuple[TypeForm[JsonValue], ...] = get_args(ours_hints["file_types"])
+    theirs_members: tuple[TypeForm[JsonValue], ...] = get_args(theirs_hints["file_types"])
     assert len(ours_members) == len(theirs_members) + 1
     check_file_content_forms(ours_members[:4], theirs_members[:3])
     for ours_tuple, theirs_tuple in zip(ours_members[4:], theirs_members[3:], strict=True):
@@ -461,7 +377,8 @@ def test_models_file_and_page_dump() -> None:
         expires_at=20,
         status_details="ok",
     )
-    assert ours.model_dump() == theirs.model_dump()
+    theirs_dump: dict[str, JsonValue] = theirs.model_dump()
+    assert ours.model_dump() == theirs_dump
     assert ours.json() == ours.model_dump()
     defaults = core_files.OpenAIFileObject(
         id="file_1",
@@ -479,15 +396,18 @@ def test_models_file_and_page_dump() -> None:
         object="file",
         purpose="assistants",
     )
-    assert defaults.model_dump() == reference_defaults.model_dump()
+    reference_defaults_dump: dict[str, JsonValue] = reference_defaults.model_dump()
+    assert defaults.model_dump() == reference_defaults_dump
     page = core_files.FileListPage()
     reference_page = litellm_openai.FileListPage()
-    assert page.model_dump() == reference_page.model_dump()
+    reference_page_dump: dict[str, JsonValue] = reference_page.model_dump()
+    assert page.model_dump() == reference_page_dump
     filled_page = core_files.FileListPage(first_id="a", last_id="b", has_more=True)
     reference_filled_page = litellm_openai.FileListPage(
         first_id="a", last_id="b", has_more=True
     )
-    assert filled_page.model_dump() == reference_filled_page.model_dump()
+    reference_filled_page_dump: dict[str, JsonValue] = reference_filled_page.model_dump()
+    assert filled_page.model_dump() == reference_filled_page_dump
     extra_payload: dict[str, JsonValue] = {
         "id": "file_1",
         "bytes": 7,
@@ -497,10 +417,11 @@ def test_models_file_and_page_dump() -> None:
         "purpose": "batch",
         "bogus_field": 1,
     }
-    extra = core_files.OpenAIFileObject(**extra_payload)
-    reference_extra = litellm_openai.OpenAIFileObject(**extra_payload)
+    extra = core_files.OpenAIFileObject.model_validate(extra_payload)
+    reference_extra = litellm_openai.OpenAIFileObject.model_validate(extra_payload)
     assert "bogus_field" in extra.model_dump()
-    assert "bogus_field" not in reference_extra.model_dump()
+    reference_extra_dump: dict[str, JsonValue] = reference_extra.model_dump()
+    assert "bogus_field" not in reference_extra_dump
 
 
 # ast-grep-ignore: no-long-names
@@ -526,7 +447,8 @@ def test_models_file_object_guardrail_field() -> None:
     field = core_files.BATCH_GUARDRAIL_RESPONSE_FIELD
     assert field not in absent.model_dump()
     assert field not in absent.model_dump_json()
-    assert absent.model_dump() == reference_absent.model_dump()
+    reference_absent_dump: dict[str, JsonValue] = reference_absent.model_dump()
+    assert absent.model_dump() == reference_absent_dump
     ours_record = core_files.BatchGuardrailRecord(
         line=1, custom_id="c1", action="redacted", guardrail=None,
     )
@@ -539,8 +461,10 @@ def test_models_file_object_guardrail_field() -> None:
     theirs_report = litellm_openai.BatchGuardrailReport(
         submitted_records=1, modified_records=(theirs_record,),
     )
-    assert ours_record.model_dump() == theirs_record.model_dump()
-    assert ours_report.model_dump() == theirs_report.model_dump()
+    theirs_record_dump: dict[str, JsonValue] = theirs_record.model_dump()
+    theirs_report_dump: dict[str, JsonValue] = theirs_report.model_dump()
+    assert ours_record.model_dump() == theirs_record_dump
+    assert ours_report.model_dump() == theirs_report_dump
     present = core_files.OpenAIFileObject(
         id="file_1",
         bytes=7,
@@ -560,23 +484,27 @@ def test_models_file_object_guardrail_field() -> None:
         litellm_batch_guardrail=theirs_report,
     )
     assert field in present.model_dump()
-    assert present.model_dump() == reference_present.model_dump()
+    reference_present_dump: dict[str, JsonValue] = reference_present.model_dump()
+    assert present.model_dump() == reference_present_dump
     page = core_files.FileListPage(data=[present])
     reference_page = litellm_openai.FileListPage(data=[reference_present])
-    assert page.model_dump() == reference_page.model_dump()
+    reference_page_dump: dict[str, JsonValue] = reference_page.model_dump()
+    assert page.model_dump() == reference_page_dump
 
 
 def test_models_thread_dump() -> None:
     ours = core_threads.Thread(id="thread_1", created_at=10, object="thread")
     theirs = litellm_openai.Thread(id="thread_1", created_at=10, object="thread")
-    assert ours.model_dump() == theirs.model_dump()
+    theirs_dump: dict[str, JsonValue] = theirs.model_dump()
+    assert ours.model_dump() == theirs_dump
     ours_metadata = core_threads.Thread(
         id="thread_1", created_at=10, object="thread", metadata={"key": "value"}
     )
     theirs_metadata = litellm_openai.Thread(
         id="thread_1", created_at=10, object="thread", metadata={"key": "value"}
     )
-    assert ours_metadata.model_dump() == theirs_metadata.model_dump()
+    theirs_metadata_dump: dict[str, JsonValue] = theirs_metadata.model_dump()
+    assert ours_metadata.model_dump() == theirs_metadata_dump
 
 
 # ast-grep-ignore: no-long-names
