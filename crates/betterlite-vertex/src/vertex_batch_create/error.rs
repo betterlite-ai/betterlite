@@ -1,4 +1,5 @@
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::user_url::error::UserUrlError;
 use thiserror::Error;
 
 use crate::endpoint_target::error::EndpointTargetError;
@@ -48,6 +49,13 @@ pub enum VertexBatchCreateError {
         #[source]
         source: TransportError,
     },
+    #[error("the tuned endpoint lookup was refused: {source}")]
+    Lookup {
+        #[source]
+        source: UserUrlError,
+    },
+    #[error("the tuned endpoint lookup ran past its deadline")]
+    LookupTimeout,
     #[error("Failed to resolve fine-tuned Vertex endpoint '{model}': {message}")]
     EndpointStatus {
         status: u16,
@@ -85,6 +93,8 @@ impl VertexBatchCreateError {
             | Self::Url { .. }
             | Self::Encode { .. }
             | Self::Transport { .. }
+            | Self::Lookup { .. }
+            | Self::LookupTimeout
             | Self::PayloadTooLarge { .. }
             | Self::Decode { .. } => 500,
         }

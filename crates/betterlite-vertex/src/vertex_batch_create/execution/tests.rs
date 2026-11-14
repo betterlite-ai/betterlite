@@ -6,21 +6,27 @@ mod support;
 use std::collections::BTreeMap;
 use std::error::Error as _;
 use std::future::ready;
+use std::io;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::str::from_utf8;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::tls::Verification;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
+use betterlite_http::user_url::fetch::UserUrlFetcher;
+use betterlite_http::user_url::validate::{Resolve, UrlValidator};
 use betterlite_openai::api::batch_records::CreateBatchRequest;
 use betterlite_openai::batches::records::BatchObject;
 use http::Method;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use jiff::tz::TimeZone;
 use rstest::rstest;
-use serde_json::Value;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -31,7 +37,9 @@ use super::{
 use crate::cache_lookup::transport::CacheTransport;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::vertex_batch_create::error::VertexBatchCreateError;
-use support::{Gated, JOB, Reply, Scripted, access, reply, stalling_server};
+use crate::vertex_batch_create::fetch::{ProtectedGet, SafeGet};
+use crate::vertex_batch_records::types::VertexAIBatchPredictionJob;
+use support::{Gated, JOB, Reply, Scripted, access, reply, reply_bytes, stalling_server};
 
 const TUNED: &str = "gs://bucket/endpoints/222/file.jsonl";
 const PUBLISHER: &str = "gs://bucket/publishers/google/models/gemini-pro/file.jsonl";
@@ -66,19 +74,36 @@ fn base(create: &CreateBatchRequest) -> BatchCreateRequest<'_> {
     }
 }
 
-async fn run<Transport: CacheTransport>(
+async fn run<Transport, Fetch>(
     transport: &Transport,
+    fetcher: &Fetch,
     request: &BatchCreateRequest<'_>,
-) -> Result<BatchObject, VertexBatchCreateError> {
+) -> Result<BatchObject, VertexBatchCreateError>
+where
+    Transport: CacheTransport,
+    Fetch: ProtectedGet,
+{
     let prepared = prepare_batch_create(request, ready(access("tokproj"))).await?;
     let local = LocalTimeContext {
         zone: TimeZone::get("UTC").unwrap(),
     };
-    execute_batch_create(transport, prepared, &local).await
+    execute_batch_create(transport, fetcher, prepared, &local).await
 }
 
-fn json(bytes: &[u8]) -> Value {
-    serde_json::from_slice(bytes).unwrap()
+fn job_body(body: &[u8]) -> VertexAIBatchPredictionJob {
+    serde_json::from_slice(body).unwrap()
+}
+
+struct BlockedResolver;
+
+#[async_trait]
+impl Resolve for BlockedResolver {
+    async fn resolve(&self, _host: &str, _port: u16) -> io::Result<Vec<SocketAddr>> {
+        Ok(vec![SocketAddr::from((
+            Ipv4Addr::new(169, 254, 169, 254),
+            443,
+        ))])
+    }
 }
 
 #[tokio::test]
@@ -105,7 +130,9 @@ async fn custom_endpoint_before_auth() {
 #[tokio::test]
 async fn endpoint_lookup_before_create() {
     let transport = Scripted::new(vec![reply(200, DEPLOYED), reply(200, JOB)]);
-    let object = run(&transport, &base(&create(TUNED))).await.unwrap();
+    let object = run(&transport, &transport, &base(&create(TUNED)))
+        .await
+        .unwrap();
     let seen = transport.requests();
     let calls: Vec<(Method, String)> = seen
         .iter()
@@ -136,19 +163,45 @@ async fn endpoint_lookup_before_create() {
 }
 
 #[tokio::test]
+async fn endpoint_lookup_is_ssrf_checked() {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
+    );
+    let client =
+        ProxiedClient::build(base_builder(), &policy, TransportLimits::DEFAULT).expect("a client");
+    let allowed: Vec<String> = Vec::new();
+    let validator = UrlValidator::new(BlockedResolver, &allowed, &Verification::Enabled);
+    let urls = UserUrlFetcher {
+        validator,
+        validation: true,
+    };
+    let safe = SafeGet {
+        urls: &urls,
+        client: &client,
+    };
+    let transport = Scripted::new(Vec::new());
+    let error = run(&transport, &safe, &base(&create(TUNED)))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, VertexBatchCreateError::Lookup { .. }));
+    assert_eq!(error.status_code(), 500);
+    assert!(error.to_string().contains("blocked address"));
+    assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
 async fn deployed_model_replacement() {
     let transport = Scripted::new(vec![reply(200, DEPLOYED), reply(200, JOB)]);
-    run(&transport, &base(&create(TUNED))).await.unwrap();
-    let body = json(&transport.requests()[1].body);
+    run(&transport, &transport, &base(&create(TUNED)))
+        .await
+        .unwrap();
+    let job = job_body(&transport.requests()[1].body);
+    assert_eq!(job.model, "projects/proj/locations/us-central1/models/9");
     assert_eq!(
-        body["model"],
-        "projects/proj/locations/us-central1/models/9"
-    );
-    assert_eq!(
-        body["displayName"],
+        job.display_name,
         "litellm-vertex-batch-00000000-0000-0000-0000-000000000000"
     );
-    assert_eq!(body["inputConfig"]["gcsSource"]["uris"][0], TUNED);
+    assert_eq!(job.input_config.gcs_source.uris[0], TUNED);
 }
 
 #[rstest]
@@ -167,7 +220,9 @@ async fn deployed_model_replacement() {
 #[tokio::test]
 async fn first_deployed_model_only(#[case] endpoint: &str) {
     let transport = Scripted::new(vec![reply(200, endpoint)]);
-    let error = run(&transport, &base(&create(TUNED))).await.unwrap_err();
+    let error = run(&transport, &transport, &base(&create(TUNED)))
+        .await
+        .unwrap_err();
     assert!(matches!(
         error,
         VertexBatchCreateError::NoDeployedModel { .. }
@@ -186,7 +241,9 @@ async fn first_deployed_model_only(#[case] endpoint: &str) {
 #[tokio::test]
 async fn lookup_status_propagation(#[case] status: u16) {
     let transport = Scripted::new(vec![reply(status, "no endpoint here")]);
-    let error = run(&transport, &base(&create(TUNED))).await.unwrap_err();
+    let error = run(&transport, &transport, &base(&create(TUNED)))
+        .await
+        .unwrap_err();
     assert!(matches!(
         error,
         VertexBatchCreateError::EndpointStatus { .. }
@@ -203,6 +260,7 @@ async fn lookup_status_propagation(#[case] status: u16) {
 async fn async_no_blocking() {
     let (open, gate) = oneshot::channel();
     let transport = Gated::new(gate);
+    let fetcher = Scripted::new(Vec::new());
     let input = create(PUBLISHER);
     let request = base(&input);
     let released = async {
@@ -213,7 +271,7 @@ async fn async_no_blocking() {
         open.send(()).unwrap();
     };
     let (result, ()) = timeout(Duration::from_secs(5), async {
-        tokio::join!(run(&transport, &request), released)
+        tokio::join!(run(&transport, &fetcher, &request), released)
     })
     .await
     .unwrap();
@@ -230,16 +288,13 @@ async fn timeout_not_forwarded() {
         max_retries: Some(9),
         ..base(&input)
     };
-    run(&transport, &request).await.unwrap();
-    let deadlines: Vec<Duration> = transport
-        .requests()
-        .iter()
-        .map(|call| call.deadline)
-        .collect();
+    run(&transport, &transport, &request).await.unwrap();
+    let seen = transport.requests();
+    let deadlines: Vec<Duration> = seen.iter().map(|call| call.deadline).collect();
     assert_eq!(deadlines, vec![DEFAULT_CLIENT_DEADLINE; 2]);
-    let body = json(&transport.requests()[1].body);
-    assert!(body.get("timeout").is_none());
-    assert!(body.get("maxRetries").is_none());
+    let body = from_utf8(&seen[1].body).unwrap();
+    assert!(!body.contains("\"timeout\""));
+    assert!(!body.contains("\"maxRetries\""));
 }
 
 #[tokio::test]
@@ -250,7 +305,7 @@ async fn client_deadline_reaches_both_requests() {
         deadline: Duration::from_secs(42),
         ..base(&input)
     };
-    run(&transport, &request).await.unwrap();
+    run(&transport, &transport, &request).await.unwrap();
     let deadlines: Vec<Duration> = transport
         .requests()
         .iter()
@@ -262,12 +317,15 @@ async fn client_deadline_reaches_both_requests() {
 #[tokio::test]
 async fn publisher_skips_resolution() {
     let transport = Scripted::new(vec![reply(200, JOB)]);
-    run(&transport, &base(&create(PUBLISHER))).await.unwrap();
+    let fetcher = Scripted::new(Vec::new());
+    run(&transport, &fetcher, &base(&create(PUBLISHER)))
+        .await
+        .unwrap();
     let seen = transport.requests();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].method, Method::POST);
     assert_eq!(
-        json(&seen[0].body)["model"],
+        job_body(&seen[0].body).model,
         "publishers/google/models/gemini-pro"
     );
 }
@@ -295,13 +353,14 @@ async fn project_and_location_defaults(
     #[case] expected: &str,
 ) {
     let transport = Scripted::new(vec![reply(200, JOB)]);
+    let fetcher = Scripted::new(Vec::new());
     let input = create(PUBLISHER);
     let request = BatchCreateRequest {
         project,
         location,
         ..base(&input)
     };
-    run(&transport, &request).await.unwrap();
+    run(&transport, &fetcher, &request).await.unwrap();
     assert_eq!(transport.requests()[0].url, expected);
 }
 
@@ -314,7 +373,7 @@ async fn token_project_names_the_tuned_endpoint() {
         location: Some("europe-west4"),
         ..base(&input)
     };
-    run(&transport, &request).await.unwrap();
+    run(&transport, &transport, &request).await.unwrap();
     assert_eq!(
         transport.requests()[0].url,
         "https://europe-west4-aiplatform.googleapis.com/v1/projects/tokproj/locations/europe-west4/endpoints/222"
@@ -345,7 +404,7 @@ async fn custom_base_urls(#[case] base_url: &str, #[case] lookup: &str, #[case] 
         api_base: Some(base_url),
         ..base(&input)
     };
-    run(&transport, &request).await.unwrap();
+    run(&transport, &transport, &request).await.unwrap();
     let urls: Vec<String> = transport.requests().into_iter().map(|c| c.url).collect();
     assert_eq!(urls, vec![lookup.to_owned(), post.to_owned()]);
 }
@@ -357,7 +416,8 @@ async fn custom_base_urls(#[case] base_url: &str, #[case] lookup: &str, #[case] 
 #[tokio::test]
 async fn create_status_is_preserved(#[case] status: u16, #[case] body: &str) {
     let transport = Scripted::new(vec![reply(status, body)]);
-    let error = run(&transport, &base(&create(PUBLISHER)))
+    let fetcher = Scripted::new(Vec::new());
+    let error = run(&transport, &fetcher, &base(&create(PUBLISHER)))
         .await
         .unwrap_err();
     assert!(matches!(error, VertexBatchCreateError::Http { .. }));
@@ -366,9 +426,65 @@ async fn create_status_is_preserved(#[case] status: u16, #[case] body: &str) {
 }
 
 #[tokio::test]
+async fn a_status_below_400_is_not_a_create_failure() {
+    let transport = Scripted::new(vec![reply(399, JOB)]);
+    let fetcher = Scripted::new(Vec::new());
+    let object = run(&transport, &fetcher, &base(&create(PUBLISHER)))
+        .await
+        .unwrap();
+    assert_eq!(object.id, "777");
+}
+
+#[rstest]
+#[case::create(PUBLISHER, vec![reply_bytes(400, b"bad \xff job")], "bad ")]
+#[case::lookup(TUNED, vec![reply_bytes(404, b"gone \xfe")], "gone ")]
+#[tokio::test]
+async fn an_error_body_keeps_the_text_before_its_first_invalid_byte(
+    #[case] input: &str,
+    #[case] replies: Vec<Reply>,
+    #[case] kept: &str,
+) {
+    let transport = Scripted::new(replies);
+    let error = run(&transport, &transport, &base(&create(input)))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().ends_with(&format!(": {kept}")));
+}
+
+#[tokio::test]
+async fn the_lookup_deadline_covers_the_whole_get() {
+    let server = stalling_server().await;
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
+    );
+    let client =
+        ProxiedClient::build(base_builder(), &policy, TransportLimits::DEFAULT).expect("a client");
+    let urls = UserUrlFetcher {
+        validator: UrlValidator::new(BlockedResolver, &[], &Verification::Enabled),
+        validation: false,
+    };
+    let safe = SafeGet {
+        urls: &urls,
+        client: &client,
+    };
+    let transport = Scripted::new(Vec::new());
+    let input = create(TUNED);
+    let request = BatchCreateRequest {
+        api_base: Some(&server.base),
+        deadline: Duration::from_millis(200),
+        ..base(&input)
+    };
+    let error = run(&transport, &safe, &request).await.unwrap_err();
+    assert!(matches!(error, VertexBatchCreateError::LookupTimeout));
+    assert_eq!(error.status_code(), 500);
+    assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
 async fn transport_failure_is_a_500() {
     let transport = Scripted::new(vec![Reply::Failure]);
-    let error = run(&transport, &base(&create(PUBLISHER)))
+    let fetcher = Scripted::new(Vec::new());
+    let error = run(&transport, &fetcher, &base(&create(PUBLISHER)))
         .await
         .unwrap_err();
     assert!(matches!(error, VertexBatchCreateError::Transport { .. }));
@@ -387,12 +503,13 @@ async fn a_stalled_provider_is_a_408() {
         ..TransportLimits::DEFAULT
     };
     let client = ProxiedClient::build(base_builder(), &policy, limits).expect("a fixture client");
+    let fetcher = Scripted::new(Vec::new());
     let input = create(PUBLISHER);
     let request = BatchCreateRequest {
         api_base: Some(&server.base),
         ..base(&input)
     };
-    let error = run(&client, &request).await.unwrap_err();
+    let error = run(&client, &fetcher, &request).await.unwrap_err();
     assert!(matches!(error, VertexBatchCreateError::Timeout { .. }));
     assert_eq!(error.status_code(), 408);
 }
@@ -400,8 +517,9 @@ async fn a_stalled_provider_is_a_408() {
 #[tokio::test]
 async fn missing_input_file_is_not_a_provider_error() {
     let transport = Scripted::new(Vec::new());
+    let fetcher = Scripted::new(Vec::new());
     let input = CreateBatchRequest::default();
-    let error = run(&transport, &base(&input)).await.unwrap_err();
+    let error = run(&transport, &fetcher, &base(&input)).await.unwrap_err();
     assert!(matches!(error, VertexBatchCreateError::Records { .. }));
     assert_eq!(error.status_code(), 500);
     assert!(transport.requests().is_empty());

@@ -7,7 +7,8 @@ use std::time::Duration;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use http::{HeaderMap, Method};
+use http::Method;
+use http::header::HeaderMap;
 use secrecy::SecretString;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
@@ -15,19 +16,25 @@ use tokio::task::JoinSet;
 use crate::cache_lookup::transport::CacheTransport;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
+use crate::vertex_batch_create::error::VertexBatchCreateError;
+use crate::vertex_batch_create::fetch::ProtectedGet;
 
 pub(super) const JOB: &str = r#"{"name":"projects/1/locations/us-central1/batchPredictionJobs/777","state":"JOB_STATE_PENDING","createTime":"2024-01-01T00:00:00.000000Z","inputConfig":{"gcsSource":{"uris":["gs://bucket/file.jsonl"]}}}"#;
 
 #[derive(Clone)]
 pub(super) enum Reply {
-    Status { status: u16, body: String },
+    Status { status: u16, body: Vec<u8> },
     Failure,
 }
 
 pub(super) fn reply(status: u16, body: &str) -> Reply {
+    reply_bytes(status, body.as_bytes())
+}
+
+pub(super) fn reply_bytes(status: u16, body: &[u8]) -> Reply {
     Reply::Status {
         status,
-        body: body.to_owned(),
+        body: body.to_vec(),
     }
 }
 
@@ -38,21 +45,6 @@ pub(super) struct Recorded {
     pub headers: HeaderMap,
     pub body: Vec<u8>,
     pub deadline: Duration,
-}
-
-fn record(request: OutboundRequest) -> Recorded {
-    let body = if let RequestBody::Json(bytes) = request.body {
-        bytes
-    } else {
-        Vec::new()
-    };
-    Recorded {
-        method: request.method,
-        url: request.url.to_string(),
-        headers: request.headers,
-        body,
-        deadline: request.deadline,
-    }
 }
 
 pub(super) fn access(project: &str) -> Result<AccessToken, CredentialCacheError> {
@@ -78,6 +70,11 @@ impl Scripted {
     pub(super) fn requests(&self) -> Vec<Recorded> {
         self.requests.lock().unwrap().clone()
     }
+
+    fn record(&self, call: Recorded) -> Reply {
+        self.requests.lock().unwrap().push(call);
+        self.replies.lock().unwrap().pop_front().unwrap()
+    }
 }
 
 impl CacheTransport for Scripted {
@@ -85,15 +82,52 @@ impl CacheTransport for Scripted {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.requests.lock().unwrap().push(record(request));
-        let reply = self.replies.lock().unwrap().pop_front().unwrap();
+        let body = if let RequestBody::Json(bytes) = request.body {
+            bytes
+        } else {
+            Vec::new()
+        };
+        let reply = self.record(Recorded {
+            method: request.method,
+            url: request.url.to_string(),
+            headers: request.headers,
+            body,
+            deadline: request.deadline,
+        });
         ready(match reply {
             Reply::Status { status, body } => Ok(UpstreamResponse {
                 status,
                 headers: HeaderMap::new(),
-                body: body.into_bytes(),
+                body,
             }),
             Reply::Failure => Err(TransportError::Closed),
+        })
+    }
+}
+
+impl ProtectedGet for Scripted {
+    fn get(
+        &self,
+        url: &str,
+        headers: &HeaderMap,
+        deadline: Duration,
+    ) -> impl Future<Output = Result<UpstreamResponse, VertexBatchCreateError>> + Send {
+        let reply = self.record(Recorded {
+            method: Method::GET,
+            url: url.to_owned(),
+            headers: headers.clone(),
+            body: Vec::new(),
+            deadline,
+        });
+        ready(match reply {
+            Reply::Status { status, body } => Ok(UpstreamResponse {
+                status,
+                headers: HeaderMap::new(),
+                body,
+            }),
+            Reply::Failure => Err(VertexBatchCreateError::from_transport(
+                TransportError::Closed,
+            )),
         })
     }
 }

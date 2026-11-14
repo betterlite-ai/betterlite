@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -22,6 +23,7 @@ use crate::vertex_batch_records::types::{
 };
 
 use super::error::VertexBatchCreateError;
+use super::fetch::ProtectedGet;
 use super::payload::{VertexEndpointResponse, decode_vertex_batch_payload};
 use super::target::{collection_url, endpoint_resolution_url};
 
@@ -71,16 +73,7 @@ where
     let access = lookup
         .await
         .map_err(|source| VertexBatchCreateError::Credentials { source })?;
-    let mut authorization =
-        HeaderValue::from_str(&format!("Bearer {}", access.token.expose_secret()))
-            .map_err(|source| VertexBatchCreateError::Header { source })?;
-    authorization.set_sensitive(true);
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("application/json; charset=utf-8"),
-    );
-    headers.insert(AUTHORIZATION, authorization);
+    let headers = bearer_headers(&access)?;
     // LiteLLM's `vertex_project or project_id` and `vertex_location or "us-central1"` treat an empty string as unset
     let project = request
         .project
@@ -109,12 +102,39 @@ where
     })
 }
 
-pub async fn execute_batch_create<Transport: CacheTransport>(
+fn bearer_headers(access: &AccessToken) -> Result<HeaderMap, VertexBatchCreateError> {
+    let mut authorization =
+        HeaderValue::from_str(&format!("Bearer {}", access.token.expose_secret()))
+            .map_err(|source| VertexBatchCreateError::Header { source })?;
+    authorization.set_sensitive(true);
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    headers.insert(AUTHORIZATION, authorization);
+    Ok(headers)
+}
+
+pub async fn execute_batch_create<Transport, Fetch>(
     transport: &Transport,
+    fetcher: &Fetch,
     mut prepared: PreparedBatchCreate,
     local: &LocalTimeContext,
-) -> Result<BatchObject, VertexBatchCreateError> {
-    prepared.job.model = resolve_model(transport, &prepared).await?;
+) -> Result<BatchObject, VertexBatchCreateError>
+where
+    Transport: CacheTransport,
+    Fetch: ProtectedGet,
+{
+    prepared.job.model = resolve_model(fetcher, &prepared).await?;
+    let created = post_batch_job(transport, prepared).await?;
+    to_batch_object(&created, local).map_err(|source| VertexBatchCreateError::Records { source })
+}
+
+async fn post_batch_job<Transport: CacheTransport>(
+    transport: &Transport,
+    prepared: PreparedBatchCreate,
+) -> Result<VertexBatchPredictionResponse, VertexBatchCreateError> {
     let collection = collection_url(
         prepared.api_base.as_deref(),
         &prepared.project,
@@ -134,8 +154,9 @@ pub async fn execute_batch_create<Transport: CacheTransport>(
         })
         .await
         .map_err(VertexBatchCreateError::from_transport)?;
-    if !(200..300).contains(&reply.status) {
-        let message = String::from_utf8_lossy(&reply.body).into_owned();
+    // httpx's raise_for_status ends the call on a 4xx or 5xx and returns every other status
+    if reply.status >= 400 {
+        let message = body_text(&reply.body);
         tracing::error!(
             "Vertex AI batch create failed: status={}, body={}",
             reply.status,
@@ -146,13 +167,22 @@ pub async fn execute_batch_create<Transport: CacheTransport>(
             message,
         });
     }
-    let created: VertexBatchPredictionResponse = decode_vertex_batch_payload(&reply.body)?;
-    to_batch_object(&created, local).map_err(|source| VertexBatchCreateError::Records { source })
+    decode_vertex_batch_payload(&reply.body)
+}
+
+// httpx decodes response.text leniently, so a body that is not UTF-8 keeps the text before its first invalid byte
+fn body_text(body: &[u8]) -> String {
+    match from_utf8(body) {
+        Ok(text) => text.to_owned(),
+        Err(invalid) => from_utf8(body.get(..invalid.valid_up_to()).unwrap_or_default())
+            .unwrap_or_default()
+            .to_owned(),
+    }
 }
 
 // the v1 batch API only takes Model resources, so an endpoint resource is swapped for the first deployed model it lists
-async fn resolve_model<Transport: CacheTransport>(
-    transport: &Transport,
+async fn resolve_model<Fetch: ProtectedGet>(
+    fetcher: &Fetch,
     prepared: &PreparedBatchCreate,
 ) -> Result<String, VertexBatchCreateError> {
     let model = &prepared.job.model;
@@ -161,22 +191,14 @@ async fn resolve_model<Transport: CacheTransport>(
     }
     let endpoint =
         endpoint_resolution_url(prepared.api_base.as_deref(), model, &prepared.location)?;
-    let reply = transport
-        .send(OutboundRequest {
-            method: Method::GET,
-            url: Url::parse(&endpoint).map_err(|source| VertexBatchCreateError::Url { source })?,
-            query: Vec::new(),
-            headers: prepared.headers.clone(),
-            body: RequestBody::Empty,
-            deadline: prepared.deadline,
-        })
-        .await
-        .map_err(VertexBatchCreateError::from_transport)?;
+    let reply = fetcher
+        .get(&endpoint, &prepared.headers, prepared.deadline)
+        .await?;
     if reply.status != 200 {
         return Err(VertexBatchCreateError::EndpointStatus {
             status: reply.status,
             model: model.clone(),
-            message: String::from_utf8_lossy(&reply.body).into_owned(),
+            message: body_text(&reply.body),
         });
     }
     let described: VertexEndpointResponse = decode_vertex_batch_payload(&reply.body)?;
