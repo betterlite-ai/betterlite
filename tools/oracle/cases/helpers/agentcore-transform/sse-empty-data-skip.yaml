@@ -1,0 +1,14 @@
+kind: helper
+name: agentcore-transform-sse-empty-data-skip
+call:
+  b4804:
+    {
+      "function": "parse_sse",
+      "lines": [
+        "data:",
+        "data:   ",
+        "data: {\"ok\": true}"
+      ]
+    }
+env: {}
+compare: {ignore: []}
