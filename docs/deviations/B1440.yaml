@@ -1,0 +1,11 @@
+task: B1440
+deviations:
+  - what: Selection answers a closed policy identity instead of constructing LiteLLM's config class; the route tasks build it.
+    why: Rule closed-sets-are-enums keeps the choice typed, and the config classes belong to provider crates this one cannot import.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9113-L9148
+  - what: litellm.api_base, litellm.api_key, litellm.openai_like_key and litellm.cometapi_key are fields of an injected Globals record.
+    why: Rule inject-dependencies forbids process-wide state; the config crate loads the env aliases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6613-L6644
+  - what: A CometAPI embedding reply is decoded through B010's prepared execution, so it carries the caller's model.
+    why: The typed EmbeddingResponse needs a model, and B010's decode gives the caller's model precedence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L111-L130

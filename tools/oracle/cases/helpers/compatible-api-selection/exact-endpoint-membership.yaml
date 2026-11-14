@@ -1,0 +1,38 @@
+kind: helper
+name: exact-endpoint-membership
+call:
+  compatible_api_selection:
+    - family: responses
+      provider: groq
+      model: llama-3.1-70b
+      identity: name
+      native: null
+      providers:
+        - provider: groq
+          supported_endpoints: ["/v1/responses/v2", "/v1/chat/completions"]
+    - family: responses
+      provider: mistral
+      model: mistral-large
+      identity: enum
+      native: null
+      providers:
+        - provider: mistral
+          supported_endpoints: ["/v1/responses"]
+    - family: messages
+      provider: groq
+      model: groq-llama
+      identity: name
+      native: null
+      providers:
+        - provider: groq
+          supported_endpoints: ["/v1/messages/v2"]
+    - family: messages
+      provider: mistral
+      model: mistral-large
+      identity: name
+      native: null
+      providers:
+        - provider: mistral
+          supported_endpoints: ["/v1/messages"]
+env: {}
+compare: {ignore: []}
