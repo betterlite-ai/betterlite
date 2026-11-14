@@ -50,4 +50,8 @@ fn a_path_segment_is_percent_encoded_for_the_url() {
         storage_url("https://h", &["logs", "a/b.json"]),
         "https://h/logs/a/b.json"
     );
+    assert_eq!(
+        storage_url("https://h", &["logs", "a%2Fb.json"]),
+        "https://h/logs/a%252Fb.json"
+    );
 }
