@@ -72,8 +72,14 @@ impl WireUsage {
 
 // XAIChatConfig.transform_response: the parent reply, the finish repair, then B1402's three usage steps
 pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, XaiChatError> {
-    let raw: Value =
+    let mut raw: Value =
         serde_json::from_slice(input.body).map_err(|source| XaiChatError::Decode { source })?;
+    // LiteLLM reads usage only from a non-null object, so a null block counts as none
+    if let Some(fields) = raw.as_object_mut()
+        && fields.get("usage").is_some_and(Value::is_null)
+    {
+        fields.remove("usage");
+    }
     let mut response: ChatResponse =
         serde_json::from_value(raw.clone()).map_err(|source| XaiChatError::Decode { source })?;
     // the parent's Choices maps "" to "stop" before XAIChatConfig tests for "", so that repair never fires
@@ -85,11 +91,14 @@ pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, XaiChatError>
             .is_some_and(|calls| !calls.is_empty());
         let finish_reason = choice.finish_reason.as_deref();
         let (mapped, native) = choice_finish_reason(finish_reason);
-        choice.finish_reason = Some(if calls && finish_reason == Some("stop") {
-            String::from("tool_calls")
-        } else {
-            mapped
-        });
+        // an absent or null finish_reason defaults to stop before the tool_calls rewrite
+        choice.finish_reason = Some(
+            if calls && finish_reason.is_none_or(|reason| reason == "stop") {
+                String::from("tool_calls")
+            } else {
+                mapped
+            },
+        );
         choice.provider_specific_fields = native;
     }
     let mut usage = usage_from_parent(&response.usage)?;

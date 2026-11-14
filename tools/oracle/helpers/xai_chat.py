@@ -129,7 +129,7 @@ class UsageView(TypedDict):
 
 class ReplyView(TypedDict):
     choices: list[ChoiceView]
-    usage: UsageView
+    usage: NotRequired[UsageView]
 
 
 class StreamChoiceView(TypedDict):
@@ -244,7 +244,9 @@ def reply_step(step: ReplyStep) -> JsonValue:
         reading["provider_specific_fields"] = {} if fields is None else fields
         reading["tool_calls"] = 0 if calls is None else len(calls)
         choices.append(reading)
-    return {"choices": choices, "usage": usage_view(view["usage"])}
+    zero: UsageView = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    usage = view.get("usage")
+    return {"choices": choices, "usage": usage_view(zero if usage is None else usage)}
 
 
 def chunk_step(step: ChunkStep) -> JsonValue:
@@ -256,10 +258,8 @@ def chunk_step(step: ChunkStep) -> JsonValue:
     choices: list[JsonValue] = [
         {"index": c["index"], "finish_reason": c.get("finish_reason")} for c in view["choices"]
     ]
-    usage: JsonValue = None
-    if "usage" in view:
-        parsed_usage = view["usage"]
-        usage = None if parsed_usage is None else usage_view(parsed_usage)
+    parsed_usage = view.get("usage")
+    usage = None if parsed_usage is None else usage_view(parsed_usage)
     return {"choices": choices, "usage": usage}
 
 

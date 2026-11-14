@@ -12,7 +12,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret, SecretString};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -28,6 +28,7 @@ use super::{
     DEFAULT_API_BASE, Environment, OauthTokens, PROVIDER, UrlInput, complete_url, provider_info,
     validate_environment,
 };
+use crate::chat::response::ChatUsage;
 use crate::chat::{ChatMessage, MessageContent, Role};
 use crate::chat_content::{ChatContent, RefuseDownloads};
 use crate::openai_base_config::Headers;
@@ -359,6 +360,7 @@ async fn oauth_is_skipped_when_a_key_resolves() {
 #[case::lowercase(&[("content-type", "text/plain")], "content-type", "text/plain")]
 #[case::capitalized(&[("Content-Type", "text/plain")], "Content-Type", "text/plain")]
 #[case::absent(&[], "Content-Type", "application/json")]
+#[case::stale_authorization(&[("Authorization", "Bearer stale")], "Content-Type", "application/json")]
 #[tokio::test]
 async fn oauth_replaces_authorization_and_keeps_content_type_casing(
     #[case] pairs: &[(&str, &str)],
@@ -525,6 +527,46 @@ fn a_stop_finish_with_tool_calls_becomes_tool_calls() {
     );
 }
 
+#[rstest]
+#[case::null(r#","finish_reason":null"#)]
+#[case::absent("")]
+fn a_tool_call_reply_without_a_finish_reason_is_tool_calls(#[case] finish: &str) {
+    let body = STOP_WITH_CALLS.replace(r#","finish_reason":"stop""#, finish);
+    assert_eq!(
+        reply(&body).response.choices[0].finish_reason.as_deref(),
+        Some("tool_calls")
+    );
+}
+
+#[rstest]
+#[case::null(r#","finish_reason":null"#)]
+#[case::absent("")]
+fn a_reply_without_a_finish_reason_or_calls_is_stop(#[case] finish: &str) {
+    let body = format!(
+        r#"{{"id":"c","object":"chat.completion","created":1,"model":"grok-4","choices":[{{"index":0,"message":{{"role":"assistant","content":"hi"}}{finish}}}],"usage":{{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}}"#
+    );
+    let converted = reply(&body);
+    assert_eq!(
+        converted.response.choices[0].finish_reason.as_deref(),
+        Some("stop")
+    );
+    assert!(
+        converted.response.choices[0]
+            .provider_specific_fields
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_null_usage_block_is_answered_with_zero_usage() {
+    let converted = reply(include_str!(
+        "../../fuzz/corpus/xai_chat_reply/null-usage-no-choices.json"
+    ));
+    assert_eq!(converted.response.usage, ChatUsage::default());
+    assert_eq!(converted.usage.tokens.total_tokens, 0);
+    assert_eq!(converted.usage.cost, None);
+}
+
 #[test]
 fn reply_usage_is_folded_normalized_and_restated() {
     let converted = reply(TOOL_REPLY);
@@ -604,8 +646,8 @@ fn a_null_usage_chunk_gains_one_empty_choice() {
     assert_eq!(reply.choices[0].finish_reason, None);
     assert_eq!(reply.usage, None);
     assert_eq!(
-        parsed["choices"].to_string(),
-        r#"[{"index":0,"delta":{},"finish_reason":null}]"#
+        parsed["choices"],
+        json!([{"index": 0, "delta": {}, "finish_reason": null}])
     );
 }
 

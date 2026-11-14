@@ -13,5 +13,14 @@ call:
       - kind: reply
         model: grok-4
         body: '{"id":"c3","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"t2","type":"function","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}'
+      - kind: reply
+        model: grok-4
+        body: '{"id":"c4","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"t3","type":"function","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":null}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}'
+      - kind: reply
+        model: grok-4
+        body: '{"id":"c5","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"t3","type":"function","function":{"name":"lookup","arguments":"{}"}}]}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}'
+      - kind: reply
+        model: grok-4
+        body: '{"id":"c6","object":"chat.completion","created":1,"model":"grok-4","choices":[],"usage":null}'
 env: {}
 compare: {ignore: []}
