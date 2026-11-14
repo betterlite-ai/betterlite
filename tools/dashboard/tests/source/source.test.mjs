@@ -8,6 +8,7 @@ import { test } from "node:test";
 
 import { fileURLToPath } from "node:url";
 
+import { listPatches, readPatchFiles } from "../../patches.mjs";
 import { compareTrees, verifyRepeat } from "../../source/cli.mjs";
 import { prepare } from "../../source.mjs";
 import { createFixture, exists, git, hashBytes, hashText, singleLinePatch, writePatchPair } from "./fixture.mjs";
@@ -465,6 +466,35 @@ test("a patch without its adjacent record is rejected", async (t) => {
   await rejected(
     prepare({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, outDir: fixture.paths.outDir, patchesDir: fixture.paths.patchesDir }),
     "patch-record",
+  );
+});
+
+test("the patch listing holds only patch files and an absent directory is empty", async (t) => {
+  const fixture = await createFixture(t);
+  assert.deepEqual(await listPatches(fixture.paths.patchesDir), []);
+  await writePatchPair(fixture.paths.patchesDir, "20-b.patch", "second\n", []);
+  await writePatchPair(fixture.paths.patchesDir, "10-a.patch", "first\n", []);
+  await fs.writeFile(path.join(fixture.paths.patchesDir, "notes.txt"), "ignored\n");
+  await fs.mkdir(path.join(fixture.paths.patchesDir, "30-dir.patch"));
+  assert.deepEqual(await listPatches(fixture.paths.patchesDir), ["10-a.patch", "20-b.patch"]);
+});
+
+test("patch files come back with their raw bytes and parsed targets", async (t) => {
+  const fixture = await createFixture(t);
+  const target = "ui/litellm-dashboard/next.config.mjs";
+  const targets = [{ path: target, preimage: hashText(fixture.files[target]), postimage: hashText("export default {};\n") }];
+  const patchText = singleLinePatch(target, fixture.files[target], "export default {};\n");
+  await writePatchPair(fixture.paths.patchesDir, "10-first.patch", patchText, targets);
+  const files = await readPatchFiles(fixture.paths.patchesDir);
+  assert.equal(files.length, 1);
+  assert.equal(files[0].name, "10-first.patch");
+  assert.equal(files[0].patch.toString("utf8"), patchText);
+  assert.equal(files[0].record.toString("utf8"), `${JSON.stringify({ targets }, null, 2)}\n`);
+  assert.deepEqual(files[0].targets, targets);
+  await fs.rm(path.join(fixture.paths.patchesDir, "10-first.json"));
+  await assert.rejects(
+    readPatchFiles(fixture.paths.patchesDir),
+    (error) => error.code === "patch-record" && /10-first\.json record/.test(error.message),
   );
 });
 
