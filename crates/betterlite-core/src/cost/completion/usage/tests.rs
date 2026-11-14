@@ -7,6 +7,7 @@ use betterlite_models::usage_sum::{
 };
 use indexmap::IndexMap;
 use serde_json::Number;
+use std::collections::BTreeMap;
 
 use super::{logging_usage, pricing_usage};
 use crate::cost::completion::tests::rig::dec;
@@ -26,16 +27,33 @@ fn the_logging_usage_keeps_only_the_counters_a_partition_set() {
         completion_tokens: 5,
         total_tokens: 15,
         prompt_tokens_details: Some(PromptTokensDetails {
-            cached_tokens: Some(3),
-            audio_length_seconds: Some(dec("1.5")),
+            text_tokens: None,
+            audio_tokens: None,
+            image_tokens: None,
+            video_tokens: None,
+            web_search_requests: None,
+            google_maps_grounding_requests: None,
+            tool_use_tokens: None,
+            character_count: None,
+            image_count: None,
             video_length_seconds: Some(dec("2.5")),
-            ..PromptTokensDetails::default()
+            audio_length_seconds: Some(dec("1.5")),
+            query_count: None,
+            cache_write_tokens: None,
+            cache_creation_tokens: None,
+            cached_tokens: Some(3),
+            cached_tokens_details: None,
         }),
         completion_tokens_details: Some(CompletionTokensDetails {
+            text_tokens: None,
+            audio_tokens: None,
+            image_tokens: None,
+            video_tokens: None,
             reasoning_tokens: Some(2),
-            ..CompletionTokensDetails::default()
+            accepted_prediction_tokens: None,
+            rejected_prediction_tokens: None,
         }),
-        ..PricingUsage::default()
+        numeric_extras: BTreeMap::new(),
     };
     let projected = logging_usage(&usage).unwrap();
     assert_eq!(
@@ -59,11 +77,29 @@ fn the_logging_usage_keeps_only_the_counters_a_partition_set() {
 #[test]
 fn a_length_alone_still_opens_the_prompt_details() {
     let usage = PricingUsage {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
         prompt_tokens_details: Some(PromptTokensDetails {
+            text_tokens: None,
+            audio_tokens: None,
+            image_tokens: None,
+            video_tokens: None,
+            web_search_requests: None,
+            google_maps_grounding_requests: None,
+            tool_use_tokens: None,
+            character_count: None,
+            image_count: None,
+            video_length_seconds: None,
             audio_length_seconds: Some(dec("4")),
-            ..PromptTokensDetails::default()
+            query_count: None,
+            cache_write_tokens: None,
+            cache_creation_tokens: None,
+            cached_tokens: None,
+            cached_tokens_details: None,
         }),
-        ..PricingUsage::default()
+        completion_tokens_details: None,
+        numeric_extras: BTreeMap::new(),
     };
     let prompt = logging_usage(&usage)
         .unwrap()
@@ -76,9 +112,12 @@ fn a_length_alone_still_opens_the_prompt_details() {
 #[test]
 fn empty_details_project_to_nothing() {
     let usage = PricingUsage {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
         prompt_tokens_details: Some(PromptTokensDetails::default()),
         completion_tokens_details: Some(CompletionTokensDetails::default()),
-        ..PricingUsage::default()
+        numeric_extras: BTreeMap::new(),
     };
     let projected = logging_usage(&usage).unwrap();
     assert!(projected.prompt_tokens_details.is_none());

@@ -10,6 +10,7 @@ use betterlite_models::tool_signals::response::{
 use betterlite_models::usage_sum::Usage as SumUsage;
 use indexmap::IndexMap;
 use rstest::rstest;
+use std::collections::BTreeMap;
 use std::time::{Duration, UNIX_EPOCH};
 
 use self::rig::{
@@ -388,7 +389,9 @@ async fn a_realtime_session_is_priced_from_its_own_stream_not_the_token_stage() 
             prompt_tokens: 10,
             completion_tokens: 5,
             total_tokens: 15,
-            ..SumUsage::default()
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
+            numeric_extras: BTreeMap::new(),
         },
         service_tier: None,
     };

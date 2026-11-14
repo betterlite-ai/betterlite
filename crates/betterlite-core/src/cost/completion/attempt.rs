@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
+use betterlite_models::billed_tokens::TokenTypeCostBreakdown;
 use betterlite_models::tool_fees::billing::BuiltInToolRequest;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -83,21 +84,15 @@ where
     })
 }
 
-// Hands the breakdown to the logging target; a failing setter never replaces the charge, but a failing token-type computation fails the attempt.
-fn record_breakdown<Resolver, ImagePolicy, Inference, Target>(
+// The token-type breakdown is computed only for a priced usage block with a model name; every other attempt records none.
+fn token_breakdown<Resolver, ImagePolicy, Inference>(
     services: &CostCalculator<'_, Resolver, ImagePolicy, Inference>,
     attempt: &Attempt<'_>,
     owned: &Owned,
-    charge: Charge,
-    target: Option<&mut Target>,
-) -> Result<(), CompletionCostError<ImagePolicy::Error>>
+) -> Result<Option<TokenTypeCostBreakdown>, CompletionCostError<ImagePolicy::Error>>
 where
     ImagePolicy: ImagePricePolicy,
-    Target: CostBreakdownTarget,
 {
-    let Some(target) = target else {
-        return Ok(());
-    };
     let breakdown = if attempt.prepared.cost_usage.is_some() && !attempt.model.is_empty() {
         let request = BreakdownRequest {
             model: attempt.model,
@@ -113,6 +108,25 @@ where
     } else {
         None
     };
+    Ok(breakdown)
+}
+
+// Hands the breakdown to the logging target; a failing setter never replaces the charge, but a failing token-type computation fails the attempt.
+fn record_breakdown<Resolver, ImagePolicy, Inference, Target>(
+    services: &CostCalculator<'_, Resolver, ImagePolicy, Inference>,
+    attempt: &Attempt<'_>,
+    owned: &Owned,
+    charge: Charge,
+    target: Option<&mut Target>,
+) -> Result<(), CompletionCostError<ImagePolicy::Error>>
+where
+    ImagePolicy: ImagePricePolicy,
+    Target: CostBreakdownTarget,
+{
+    let Some(target) = target else {
+        return Ok(());
+    };
+    let breakdown = token_breakdown(services, attempt, owned)?;
     let inputs = &attempt.args.charge;
     let adjusted = charge.adjusted;
     store_cost_breakdown(
