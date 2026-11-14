@@ -764,23 +764,26 @@ def test_member_names(report: FullReport, module_name: str) -> None:
 
 
 def test_dump_names(report: FullReport) -> None:
-    theirs = report["litellm"]["dumps"]
-    ours = report["betterlite"]["dumps"]
-    assert len(theirs) == DUMP_COUNT
-    assert ours == theirs
-    assert '"schema_version": "1"' in ours["straiker.request.full"]
-    assert '"turn_id": "turn-1"' in ours["straiker.response.configured"]
-    assert '"blocked_by": ["policy", "tone"]' in ours["straiker.response.configured"]
+    assert len(report["litellm"]["dumps"]) == DUMP_COUNT
+    assert report["betterlite"]["dumps"] == report["litellm"]["dumps"]
+    straiker_dumps = report["betterlite"]["dumps"]
+    assert '"schema_version": "1"' in straiker_dumps["straiker.request.full"]
+    assert '"turn_id": "turn-1"' in straiker_dumps["straiker.response.configured"]
+    assert '"blocked_by": ["policy", "tone"]' in straiker_dumps["straiker.response.configured"]
 
 
 def test_rejection_names(report: FullReport) -> None:
     theirs = report["litellm"]["rejections"]
     ours = report["betterlite"]["rejections"]
-    assert len(theirs) == REJECTION_COUNT
+    assert len(ours) == REJECTION_COUNT
     assert ours == theirs
-    assert ours["panw.timeout_high"]
-    assert ours["straiker.api_key_missing"]
-    assert ours["straiker.unreachable"]
+    assert ours["panw.timeout_high"] == [
+        ["less_than_equal", "Input should be less than or equal to 60", "('timeout',)"],
+    ]
+    assert ours["straiker.api_key_empty"] == [
+        ["string_too_short", "String should have at least 1 character", "('api_key',)"],
+    ]
+    assert ours["straiker.api_key_missing"] == [["missing", "Field required", "('api_key',)"]]
 
 
 def test_ui_names(report: FullReport) -> None:
