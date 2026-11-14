@@ -133,27 +133,16 @@ async fn sync_embedding(
     clients: &MultimodalClients<'_>,
 ) -> Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError> {
     // A supplied client keeps its own timeouts; the call's timeout only reaches a client LiteLLM builds
-    let (post, client_timeout) = match clients.caller {
-        Some(caller) => (caller, ClientTimeout::HandlerDefault),
-        None => (
-            clients.pooled,
-            multimodal_timeout(timeout, ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT)),
-        ),
-    };
-    logging::request(&request.url, model, request.body.len());
-    // The sync branch never checks the status itself, so every transport failure is its generic 500
-    let reply = post
-        .post(PostRequest {
-            url: &request.url,
-            headers: &request.headers,
-            body: &request.body,
-            timeout: client_timeout,
-        })
-        .await
-        .map_err(|source| VertexEmbeddingCallError::Transport { source })?;
-    logging::answer(model, &reply);
-    transform_response(reply.status, &reply.body, &request.payload, model)
-        .map_err(VertexEmbeddingCallError::Multimodal)
+    let (post, client_timeout) = clients.caller.map_or_else(
+        || {
+            (
+                clients.pooled,
+                multimodal_timeout(timeout, ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT)),
+            )
+        },
+        |supplied| (supplied, ClientTimeout::HandlerDefault),
+    );
+    post_prepared(request, model, post, client_timeout).await
 }
 
 pub async fn async_multimodal_embedding(
@@ -163,13 +152,25 @@ pub async fn async_multimodal_embedding(
     caller: Option<&dyn EmbeddingPost>,
     pooled: &dyn EmbeddingPost,
 ) -> Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError> {
-    let (post, client_timeout) = match caller {
-        Some(caller) => (caller, ClientTimeout::HandlerDefault),
-        None => (
-            pooled,
-            multimodal_timeout(timeout, ClientTimeout::HandlerDefault),
-        ),
-    };
+    let (post, client_timeout) = caller.map_or_else(
+        || {
+            (
+                pooled,
+                multimodal_timeout(timeout, ClientTimeout::HandlerDefault),
+            )
+        },
+        |supplied| (supplied, ClientTimeout::HandlerDefault),
+    );
+    post_prepared(request, model, post, client_timeout).await
+}
+
+// Both branches post the same request, and httpx's raise_for_status keeps the status a sync reply carries too
+async fn post_prepared(
+    request: &MultimodalRequest,
+    model: &str,
+    post: &dyn EmbeddingPost,
+    client_timeout: ClientTimeout,
+) -> Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError> {
     logging::request(&request.url, model, request.body.len());
     let reply = post
         .post(PostRequest {

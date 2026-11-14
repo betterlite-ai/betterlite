@@ -20,6 +20,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tracing::subscriber::set_default;
 
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::decode::{RESPONSE_BODY_LIMIT, decode_vertex_embedding};
@@ -201,7 +202,9 @@ enum Branch {
 }
 
 #[rstest]
-#[case::sync_client_error(Branch::Sync, 400, 500)]
+#[case::sync_client_error(Branch::Sync, 400, 400)]
+#[case::sync_unauthorized(Branch::Sync, 401, 401)]
+#[case::sync_rate_limited(Branch::Sync, 429, 429)]
 #[case::async_client_error(Branch::Async, 400, 400)]
 #[case::sync_server_error(Branch::Sync, 500, 500)]
 #[case::async_server_error(Branch::Async, 500, 500)]
@@ -383,10 +386,10 @@ async fn execution_text_timeout_is_a_408(#[case] aembedding: bool) {
 }
 
 #[rstest]
-#[case::sync(false, 500)]
-#[case::async_handoff(true, 408)]
+#[case::sync(false)]
+#[case::async_handoff(true)]
 #[tokio::test]
-async fn execution_multimodal_timeout_boundaries(#[case] aembedding: bool, #[case] expected: u16) {
+async fn execution_multimodal_timeout_boundaries(#[case] aembedding: bool) {
     let input = json(r#""hello""#);
     let optional = extra("{}");
     let mut call = multimodal_call(MULTIMODAL_MODEL, &input, &optional, &NO_HEADERS);
@@ -400,7 +403,9 @@ async fn execution_multimodal_timeout_boundaries(#[case] aembedding: bool, #[cas
     let error = multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
         .await
         .unwrap_err();
-    assert_eq!(error.status_code(), expected);
+    assert!(matches!(error, VertexEmbeddingCallError::Timeout));
+    assert_eq!(error.status_code(), 408);
+    assert_eq!(error.to_string(), "Timeout error occurred.");
 }
 
 #[tokio::test]
@@ -512,7 +517,7 @@ async fn execution_cancelled_call_drops_the_post() {
         text_embedding(&call, &catalog(), &text_auth(&fixture), &clients),
     )
     .await;
-    assert!(elapsed.is_err());
+    elapsed.unwrap_err();
     assert!(dropped.load(Ordering::SeqCst));
 }
 
@@ -534,7 +539,7 @@ async fn execution_logs_no_credentials() {
         pooled: recorder.as_ref(),
         caller: None,
     };
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     text_embedding(&call, &catalog(), &text_auth(&fixture), &clients)
         .await
         .unwrap();
@@ -691,7 +696,7 @@ fn request_is_complete(received: &[u8]) -> bool {
 #[test]
 fn execution_decodes_a_vertex_answer_at_the_limit() {
     let at_limit = valid_string_body(RESPONSE_BODY_LIMIT);
-    assert!(decode_vertex_embedding(&at_limit).is_ok());
+    decode_vertex_embedding(&at_limit).unwrap();
 }
 
 #[test]
