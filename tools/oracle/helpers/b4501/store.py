@@ -1,10 +1,9 @@
-from types import MappingProxyType
-
 from litellm.proxy.lens.models import Job, Lens, Worker
 from pydantic import JsonValue
 
 from .model import (
     Seed,
+    SqlArgument,
     StoredLens,
     StoredRun,
     StoredWorker,
@@ -12,7 +11,9 @@ from .model import (
     count_row,
     dump,
     dump_mapping,
+    revised,
 )
+
 
 def order_of(entry: tuple[str, str, JsonValue]) -> tuple[str, str]:
     created_at, job_id, _data = entry
@@ -44,7 +45,7 @@ class Store:
                     "data": dump_mapping(worker),
                 }
 
-    async def query_raw(self, query: str, *args: object) -> list[dict[str, JsonValue]]:
+    async def query_raw(self, query: str, *args: SqlArgument) -> list[dict[str, JsonValue]]:
         if query.startswith("WITH previous"):
             return self.rewrite(args)
         if "LiteLLM_LensWorker" in query:
@@ -58,7 +59,7 @@ class Store:
             return []
         return [{"data": dump(row["lens"])}]
 
-    def single_job(self, args: tuple[object, ...]) -> list[dict[str, JsonValue]]:
+    def single_job(self, args: tuple[SqlArgument, ...]) -> list[dict[str, JsonValue]]:
         job_id = str(args[1])
         found = self.runs.get(job_id)
         if found is not None and found["lens_id"] == str(args[0]):
@@ -70,7 +71,7 @@ class Store:
                     return [{"data": dump(job)}]
         return []
 
-    async def execute_raw(self, query: str, *args: object) -> int:
+    async def execute_raw(self, query: str, *args: SqlArgument) -> int:
         if query.startswith('INSERT INTO "LiteLLM_LensWorker"'):
             worker = Worker.model_validate_json(str(args[2]))
             self.workers[str(args[0])] = {"token_hash": str(args[1]), "data": dump_mapping(worker)}
@@ -86,7 +87,7 @@ class Store:
             row["data"]["last_seen"] = str(args[0])
         return 1
 
-    def rewrite(self, args: tuple[object, ...]) -> list[dict[str, JsonValue]]:
+    def rewrite(self, args: tuple[SqlArgument, ...]) -> list[dict[str, JsonValue]]:
         data = str(args[0])
         lens_id = str(args[1])
         version = int(str(args[2]))
@@ -96,9 +97,7 @@ class Store:
             if raced is not None:
                 next_version = raced["version"] + 1
                 raced["version"] = next_version
-                raced["lens"] = raced["lens"].model_copy(
-                    update=MappingProxyType({"version": next_version})
-                )
+                raced["lens"] = revised(raced["lens"], "version", next_version)
         row = self.lenses.get(lens_id)
         if row is None or row["version"] != version:
             return [count_row(0)]
@@ -123,7 +122,7 @@ class Store:
         entries.sort(key=order_of, reverse=True)
         return [{"data": entry[2]} for entry in entries[offset : offset + 50]]
 
-    def bill_worker(self, args: tuple[object, ...]) -> list[dict[str, JsonValue]]:
+    def bill_worker(self, args: tuple[SqlArgument, ...]) -> list[dict[str, JsonValue]]:
         row = self.workers.get(str(args[1]))
         if row is None or row["data"].get("revoked") is True:
             return []
@@ -139,12 +138,12 @@ def apply(lens: Lens, transform: Transform) -> Lens:
         revision = transform.get("revision")
         if revision is None:
             raise ValueError("set_revision needs a revision")
-        return lens.model_copy(update=MappingProxyType({"revision": revision}))
+        return revised(lens, "revision", revision)
     job_id = transform.get("job_id")
     if job_id is None:
         raise ValueError("drop_job needs a job_id")
-    kept = tuple(job for job in lens.jobs if job.id != job_id)
-    return lens.model_copy(update=MappingProxyType({"jobs": kept}))
+    kept = [dump(job) for job in lens.jobs if job.id != job_id]
+    return revised(lens, "jobs", kept)
 
 
 class CountingTransform:

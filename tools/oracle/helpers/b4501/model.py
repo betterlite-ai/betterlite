@@ -1,7 +1,10 @@
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.proxy.lens.models import Job, Lens, Worker
 from pydantic import JsonValue, TypeAdapter
+
+# LiteLLM's Database protocol declares its query arguments as object, so a narrower type would not satisfy it
+SqlArgument: TypeAlias = object
 
 
 class LensSeed(TypedDict):
@@ -88,7 +91,7 @@ def dump(model: Lens | Job | Worker) -> JsonValue:
     return TypeAdapter(JsonValue).validate_json(text)
 
 
-def dump_mapping(model: Worker) -> dict[str, JsonValue]:
+def dump_mapping(model: Lens | Job | Worker) -> dict[str, JsonValue]:
     text = model.model_dump_json()
     return TypeAdapter(dict[str, JsonValue]).validate_json(text)
 
@@ -96,3 +99,9 @@ def dump_mapping(model: Worker) -> dict[str, JsonValue]:
 def count_row(count: int) -> dict[str, JsonValue]:
     row: dict[str, JsonValue] = {"data": count}
     return row
+
+
+def revised(lens: Lens, field: str, value: JsonValue) -> Lens:
+    data = dump_mapping(lens)
+    data[field] = value
+    return Lens.model_validate(data)
