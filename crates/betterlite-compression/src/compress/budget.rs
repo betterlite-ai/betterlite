@@ -140,16 +140,6 @@ fn candidate_units(
     request: &BudgetSelectionRequest<'_>,
     kept_indices: &BTreeSet<usize>,
 ) -> Vec<CandidateUnit> {
-    let mut candidates = single_message_units(request, kept_indices);
-    candidates.extend(span_units(request, kept_indices));
-    candidates.sort_by(|left, right| right.score.total_cmp(&left.score));
-    candidates
-}
-
-fn single_message_units(
-    request: &BudgetSelectionRequest<'_>,
-    kept_indices: &BTreeSet<usize>,
-) -> Vec<CandidateUnit> {
     let span_indices: BTreeSet<usize> = request
         .tool_exchange_spans
         .iter()
@@ -162,37 +152,45 @@ fn single_message_units(
             continue;
         }
         candidates.push(CandidateUnit {
-            score: request.combined_scores.get(index).copied().unwrap_or(0.0),
+            score: unit_score(request.combined_scores, &[index]),
             indices: vec![index],
             can_truncate: true,
         });
     }
-    candidates
-}
-
-fn span_units(
-    request: &BudgetSelectionRequest<'_>,
-    kept_indices: &BTreeSet<usize>,
-) -> Vec<CandidateUnit> {
-    let mut candidates: Vec<CandidateUnit> = Vec::new();
     for span in request.tool_exchange_spans {
         let mut indices = span.clone();
         indices.sort_unstable();
         if indices.iter().any(|index| kept_indices.contains(index)) {
             continue;
         }
-        let score = indices
-            .iter()
-            .filter_map(|index| request.combined_scores.get(*index).copied())
-            .reduce(f64::max)
-            .unwrap_or(0.0);
         candidates.push(CandidateUnit {
-            score,
+            score: unit_score(request.combined_scores, &indices),
             indices,
             can_truncate: false,
         });
     }
+    candidates.sort_by(|left, right| right.score.total_cmp(&left.score));
     candidates
+}
+
+fn unit_score(combined_scores: &[f64], indices: &[usize]) -> f64 {
+    indices
+        .iter()
+        .filter_map(|index| combined_scores.get(*index).copied())
+        .reduce(f64::max)
+        .unwrap_or(0.0)
+}
+
+fn message_text<'request>(
+    request: &'request BudgetSelectionRequest<'_>,
+    index: usize,
+) -> &'request str {
+    request
+        .normalized_messages
+        .get(index)
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
 }
 
 async fn count_indices_tokens<Tokenizer>(
@@ -205,27 +203,11 @@ where
 {
     let mut total = 0_usize;
     for index in indices {
-        total = total.saturating_add(count_message_text(request, counter, *index).await?);
+        let tokens = counter
+            .count_text(request.model, message_text(request, *index))
+            .await
+            .map_err(CompressError::Counting)?;
+        total = total.saturating_add(tokens);
     }
     Ok(total)
-}
-
-async fn count_message_text<Tokenizer>(
-    request: &BudgetSelectionRequest<'_>,
-    counter: &Tokenizer,
-    index: usize,
-) -> Result<usize, CompressError>
-where
-    Tokenizer: TokenCounter,
-{
-    let text = request
-        .normalized_messages
-        .get(index)
-        .and_then(|message| message.get("content"))
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    counter
-        .count_text(request.model, text)
-        .await
-        .map_err(CompressError::Counting)
 }
