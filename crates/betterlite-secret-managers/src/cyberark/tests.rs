@@ -227,6 +227,7 @@ pub(super) fn capture_logs() -> (LogBuffer, DefaultGuard) {
 #[case::true_upper(Some("TRUE"), true)]
 #[case::unset(None, true)]
 #[case::empty(Some(""), true)]
+#[case::blank(Some("   "), true)]
 #[case::zero(Some("0"), true)]
 #[case::no(Some("no"), true)]
 #[case::off(Some("off"), true)]
