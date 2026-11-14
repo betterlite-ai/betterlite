@@ -259,6 +259,16 @@ mod content_filter_actions_behavior {
     }
 
     #[test]
+    fn blocked_match_logs_the_block_message() {
+        let pattern = regex_pattern("email", "a@b", ContentFilterAction::Block);
+        let spans = pattern.find_spans("a@b").unwrap();
+        let (outcome, logs) =
+            with_logs(|| handle_pattern_match(&pattern, "a@b", &spans, PATTERN_FORMAT, None));
+        assert_eq!(outcome.unwrap_err().status_code(), StatusCode::BAD_REQUEST);
+        assert!(logs.contains("Content blocked: email pattern detected"));
+    }
+
+    #[test]
     fn only_a_block_is_a_bad_request() {
         let matching = ContentFilterActionError::Matching(ContentFilterMatchingError::Keyword(
             regex::Error::Syntax("invalid".to_owned()),
