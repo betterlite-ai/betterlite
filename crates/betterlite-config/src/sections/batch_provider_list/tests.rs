@@ -38,7 +38,7 @@ enum Field {
 }
 
 fn exposed(value: &Option<SecretString>) -> Option<String> {
-    value.as_ref().map(|text| text.expose_secret().clone())
+    value.as_ref().map(|text| text.expose_secret().to_owned())
 }
 
 fn value(settings: &Settings, field: Field) -> Option<String> {
