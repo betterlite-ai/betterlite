@@ -1,6 +1,8 @@
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::vector_stores::environment::{AuthCredentials, Headers, Params, auth_credentials};
+use crate::vector_stores::environment::{
+    AuthCredentials, Headers, Params, auth_credentials, complete_url,
+};
 use crate::vector_stores::error::AzureSearchError;
 
 fn params(text: &str) -> Params {
@@ -27,9 +29,13 @@ fn foundry_vector_store_credential_identity_isolation() {
     let second = identity("fixture-identity-two");
     assert_eq!(header_value(&first, "api-key"), "fixture-identity-one");
     assert_eq!(header_value(&second, "api-key"), "fixture-identity-two");
-    assert_ne!(first.headers, second.headers);
+    assert_ne!(
+        header_value(&first, "api-key"),
+        header_value(&second, "api-key")
+    );
     let repeated = identity("fixture-identity-one");
-    assert_eq!(repeated, first);
+    assert_eq!(header_value(&repeated, "api-key"), "fixture-identity-one");
+    assert_eq!(repeated.headers.len(), first.headers.len());
     assert!(
         !repeated
             .headers

@@ -19,7 +19,7 @@ const JSON_CONTENT_TYPE: &str = "application/json";
 const SERVICE_DOMAIN: &str = ".search.windows.net";
 
 // the typed auth record holds header values as untyped JSON, so this leaf keeps the key in a secret instead
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct AuthCredentials {
     pub headers: Headers,
 }

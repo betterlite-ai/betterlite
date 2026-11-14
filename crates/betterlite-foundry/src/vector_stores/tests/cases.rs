@@ -120,7 +120,7 @@ fn store_type_endpoints() {
         ]))
     );
     assert_eq!(endpoints.write, Some(pairs(&[("POST", "/docs/index")])));
-    let routes = endpoints
+    let mut routes = endpoints
         .read
         .iter()
         .flatten()

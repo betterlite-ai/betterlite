@@ -5,6 +5,7 @@ use betterlite_openai::api::vector_store_records::records::score::Score;
 use betterlite_openai::api::vector_store_records::records::vector::{
     VectorStoreResultContent, VectorStoreSearchResponse, VectorStoreSearchResult,
 };
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use super::error::AzureSearchError;
@@ -95,7 +96,7 @@ fn search_result(
 // an absent or null field takes its default, which is the empty string for the id and the content
 fn text_field(
     reply: &AzureSearchStoreReply<'_>,
-    fields: &indexmap::IndexMap<String, Json>,
+    fields: &IndexMap<String, Json>,
     name: &'static str,
 ) -> Result<String, AzureSearchError> {
     match fields.get(name) {
@@ -107,7 +108,7 @@ fn text_field(
 
 fn score_field(
     reply: &AzureSearchStoreReply<'_>,
-    fields: &indexmap::IndexMap<String, Json>,
+    fields: &IndexMap<String, Json>,
 ) -> Result<Score, AzureSearchError> {
     match fields.get(SCORE_FIELD) {
         None | Some(Json::Null) => Ok(Score(Decimal::ZERO)),
