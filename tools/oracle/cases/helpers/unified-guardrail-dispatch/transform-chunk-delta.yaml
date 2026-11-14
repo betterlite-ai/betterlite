@@ -1,0 +1,14 @@
+kind: helper
+name: transform-chunk-delta
+call:
+  b3679:
+    function: transform_chunk
+    reference_chunk: {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: []}
+    mutated: [[0, "Hello world"]]
+    emitted: [[0, "Hello"]]
+    holdback: []
+    reasons: []
+    held: []
+    is_final: false
+env: {}
+compare: {ignore: []}

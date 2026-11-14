@@ -26,6 +26,7 @@ use crate::dynamic_callbacks::filters::get_combined_callback_list;
 use crate::exporter_options::failure_counter::CallbackFailureCounter;
 use crate::exporter_options::redaction::ResponseStamp;
 use crate::fields::payload::StandardLoggingPayload;
+use crate::logging_metadata::params::metadata_from_litellm_params;
 use crate::logging_state::LoggingState;
 use crate::logging_state::correlation::{CorrelationContext, restore_correlation_context};
 use crate::logging_state::events::{
@@ -199,6 +200,7 @@ fn callback_event(
     Some(Arc::new(LoggerEvent {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(Json::Object(state.callback_dynamic_params.clone())),
+        litellm_metadata: Arc::new(metadata_from_litellm_params(&state.litellm_params)),
         stream: state.stream == Some(true),
         guardrail_snapshot: plan.prepared.guardrail_snapshot.clone(),
     }))
