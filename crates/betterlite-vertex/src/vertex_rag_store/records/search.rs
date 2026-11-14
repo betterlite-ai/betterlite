@@ -82,11 +82,9 @@ fn corpus_path(
 }
 
 // an explicit zero max_num_results is kept, while None and null leave the key out
-fn search_body(
-    text: String,
-    corpus: String,
+fn retrieval_config(
     params: &BTreeMap<String, Json>,
-) -> Result<Json, VertexRagStoreError> {
+) -> Result<IndexMap<String, Json>, VertexRagStoreError> {
     let mut config = IndexMap::new();
     match params.get("max_num_results") {
         None | Some(Json::Null) => {}
@@ -113,6 +111,15 @@ fn search_body(
             Some(_) => return Err(VertexRagStoreError::ParamType(field, "an object")),
         }
     }
+    Ok(config)
+}
+
+fn search_body(
+    text: String,
+    corpus: String,
+    params: &BTreeMap<String, Json>,
+) -> Result<Json, VertexRagStoreError> {
+    let config = retrieval_config(params)?;
     let mut query = IndexMap::from([("text".to_owned(), Json::Text(text))]);
     if !config.is_empty() {
         query.insert("rag_retrieval_config".to_owned(), Json::Object(config));
