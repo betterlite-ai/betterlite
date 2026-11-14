@@ -15,7 +15,7 @@ use super::*;
 #[case::trailing_underscore(r#""1_""#, None)]
 #[case::underscore_before_exponent(r#""1_e5""#, None)]
 #[case::infinite(r#""inf""#, Some("null"))]
-#[case::big("1e30", Some("1e27"))]
+#[case::big("1e30", Some("1e+27"))]
 #[case::tiny("1e-30", Some("1e-33"))]
 #[case::tiny_at_decimal_scale("1e-28", Some("9.999999999999999e-32"))]
 #[case::tiny_rounded_by_decimal("2.5e-28", Some("2.5e-31"))]
@@ -122,7 +122,7 @@ fn verbose_words_accept_boolean_timings() {
 #[test]
 fn verbose_words_take_a_timing_beyond_decimal_range() {
     let payload = r#"{"transcript": {"tokens": [{"text": "a", "start_ms": 1e30}]}}"#;
-    let expected = r#"{"text": "a", "usage": null, "task": "transcribe", "words": [{"word": "a", "start": 1e27}]}"#;
+    let expected = r#"{"text": "a", "usage": null, "task": "transcribe", "words": [{"word": "a", "start": 1e+27}]}"#;
     assert_eq!(built_object(payload, Some(VERBOSE_JSON)), object(expected));
 }
 
