@@ -1,0 +1,12 @@
+task: B513
+deviations:
+  - what: >-
+      A reply whose created is missing, null or zero keeps the shared decoder's rule (the supplied clock, and zero
+      stays zero), where LiteLLM's ImagesResponse requires created and its ImageResponse replaces a zero.
+    why: this slice reuses B511's image reply decoder instead of adding a second image JSON parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L192-L196
+  - what: >-
+      An optional parameter named image reports missing data instead of replacing the uploaded image as LiteLLM's
+      image plus optional params dict merge does.
+    why: the upload is a typed ImageFile part here, so a JSON option cannot take its place.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/transformation.py#L32-L44

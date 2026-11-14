@@ -1,7 +1,7 @@
 id: B513
 milestone: M3 providers
 title: OpenAI image variation requests
-status: todo
+status: done
 depends_on: [B511, B173, B171, B668, B249, B2230]
 file: tasks/B513-openai-image-variations.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/openai/image_variations/transformation.py"
 parent: B024
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1707
