@@ -1,0 +1,25 @@
+kind: probe
+name: window-start-and-reset
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      budget_windows:
+        deployments:
+          - {model_id: d1, max_budget: "10", budget_duration: 1d}
+        provider_budget_config:
+          openai: {budget_limit: "100", time_period: 1d}
+        tag_budget_config:
+          team: {max_budget: "5", budget_duration: 1d}
+        steps:
+          - {kind: build}
+          - {kind: init, start_time_key: "provider_budget_start_time:openai", spend_key: "provider_spend:openai:1d"}
+          - {kind: start, model_id: d1, start_time_key: "deployment_budget_start_time:d1", current_time: "1000"}
+          - {kind: reset, model_id: d1, spend_key: "deployment_spend:d1:1d", start_time_key: "deployment_budget_start_time:d1", current_time: "1700000000", response_cost: "1.25", ttl_seconds: 60}
+compare:
+  expected_difference:
+    - pointer: /output/budget_windows/steps/0/tags
+      reference: null
+      rust: ["team"]
+      why: LiteLLM refuses the limiter when tag budgets are configured without its paid tier, and betterlite ships tag budgets under MIT.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L915-L935
