@@ -1,33 +1,33 @@
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read as _};
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles};
 use rust_decimal::Decimal;
+#[cfg(unix)]
 use rustix::fs::{Mode, OFlags, open};
 use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
+use serde_json::value::{Number, RawValue};
 use sha2::{Digest as _, Sha256};
 use tokio::runtime::Runtime;
 
 use super::credentials::Credentials;
 use super::fetch::SessionFetch;
 use super::fetch::error::FetchError;
-use super::session::{Session, decimal};
+use super::session::Session;
+use super::wire::decimal;
 
 const TTL_SECONDS: u32 = 5;
-const GROUP_AND_OTHER_BITS: u32 = 0o077;
 const MILLISECOND_SCALE: u32 = 3;
 
 pub trait Clock {
     fn now_millis(&self) -> i64;
 }
-
 pub struct SystemClock;
-
 impl Clock for SystemClock {
     fn now_millis(&self) -> i64 {
         SystemTime::now()
@@ -45,20 +45,16 @@ struct Stored<'stored> {
     fetched_at: Decimal,
     session: Option<&'stored Session>,
 }
-
 #[derive(Deserialize)]
 struct Entry<'entry> {
-    #[serde(borrow)]
-    fetched_at: &'entry RawValue,
+    fetched_at: Number,
     #[serde(borrow)]
     session: Option<&'entry RawValue>,
 }
-
 enum Lookup {
     Fresh(Option<Session>),
     Stale,
 }
-
 pub struct SessionCache<'cache> {
     pub directory: &'cache Path,
     pub owner_uid: u32,
@@ -67,8 +63,7 @@ pub struct SessionCache<'cache> {
     pub clock: &'cache dyn Clock,
 }
 
-#[must_use]
-pub fn cache_path(directory: &Path, credentials: &Credentials, session_id: &str) -> PathBuf {
+pub(crate) fn cache_path(directory: &Path, credentials: &Credentials, session_id: &str) -> PathBuf {
     let mut identity = Sha256::new();
     identity.update(credentials.base_url.as_bytes());
     identity.update(b"\n");
@@ -92,30 +87,37 @@ impl SessionCache<'_> {
             return false;
         }
         // lstat, so a link to a directory is not a directory here
-        fs::symlink_metadata(self.directory).is_ok_and(|found| {
-            found.is_dir()
-                && found.uid() == self.owner_uid
-                && found.mode() & GROUP_AND_OTHER_BITS == 0
-        })
+        let Ok(found) = fs::symlink_metadata(self.directory) else {
+            return false;
+        };
+        // Windows has no uids or POSIX mode bits, and per-user temp directories already
+        #[cfg(unix)]
+        if found.uid() != self.owner_uid || found.mode() & 0o077 != 0 {
+            return false;
+        }
+        found.is_dir()
     }
-
-    // O_NOFOLLOW refuses an entry that was swapped for a link
+    // O_NOFOLLOW refuses an entry that was swapped for a link; Windows has no such flag
     fn lookup(&self, path: &Path) -> Lookup {
         if !self.directory_is_private() {
             return Lookup::Stale;
         }
-        let Ok(descriptor) = open(path, OFlags::RDONLY.union(OFlags::NOFOLLOW), Mode::empty())
-        else {
+        #[cfg(unix)]
+        let opened =
+            open(path, OFlags::RDONLY.union(OFlags::NOFOLLOW), Mode::empty()).map(File::from);
+        #[cfg(not(unix))]
+        let opened = File::open(path);
+        let Ok(mut file) = opened else {
             return Lookup::Stale;
         };
         let mut raw = Vec::new();
-        if File::from(descriptor).read_to_end(&mut raw).is_err() {
+        if file.read_to_end(&mut raw).is_err() {
             return Lookup::Stale;
         }
         let Ok(entry) = serde_json::from_slice::<Entry<'_>>(&raw) else {
             return Lookup::Stale;
         };
-        let Some(fetched_at) = decimal(entry.fetched_at) else {
+        let Some(fetched_at) = decimal(&entry.fetched_at) else {
             return Lookup::Stale;
         };
         let now = Decimal::new(self.clock.now_millis(), MILLISECOND_SCALE);
@@ -128,7 +130,6 @@ impl SessionCache<'_> {
             Some(_) | None => Lookup::Stale,
         }
     }
-
     // Staged beside the entry and renamed into place, so a refresh reading it never sees a torn write
     fn store(&self, path: &Path, session: Option<&Session>) {
         let stored = Stored {
@@ -153,7 +154,7 @@ impl SessionCache<'_> {
 }
 
 // An answer the gateway settled (a session, or a 4xx) is kept for the TTL; a failed lookup is retried at once
-pub fn load_session(
+pub(crate) fn load_session(
     cache: &SessionCache<'_>,
     credentials: &Credentials,
     session_id: &str,

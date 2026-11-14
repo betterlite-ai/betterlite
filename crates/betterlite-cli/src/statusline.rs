@@ -19,10 +19,9 @@ pub mod fetch;
 pub mod render;
 pub mod session;
 pub mod transcript;
-
+mod wire;
 #[derive(Args, Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StatuslineArgs;
-
 pub struct StatuslinePorts<'ports> {
     pub stdin: &'ports mut dyn Read,
     pub stdout: &'ports mut dyn Write,
@@ -48,11 +47,15 @@ pub fn run(_args: StatuslineArgs, ports: &mut StatuslinePorts<'_>) -> Result<(),
         runtime: &runtime,
         environment: ports.environment,
     };
+    #[cfg(unix)]
+    let owner_uid = Some(rustix::process::getuid().as_raw());
+    #[cfg(not(unix))]
+    let owner_uid = None;
     let deps = Dependencies {
         environment: ports.environment,
         home_dir: ports.home_dir,
         temp_dir: ports.temp_dir,
-        owner_uid: rustix::process::getuid().as_raw(),
+        owner_uid,
         fetch: &fetch,
         clock: &clock,
         files: &files,

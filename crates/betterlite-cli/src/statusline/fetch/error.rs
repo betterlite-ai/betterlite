@@ -1,6 +1,5 @@
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
-
 // What stops a lookup before the proxy is asked; the status line then shows only the fallback text
 #[derive(Debug, thiserror::Error)]
 pub enum FetchError {

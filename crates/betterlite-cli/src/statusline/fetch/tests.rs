@@ -1,17 +1,41 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::error::HttpError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
+use http::HeaderMap;
+use http::header::ACCEPT;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::runtime::Builder;
+use url::Url;
 
 use super::error::FetchError;
-use super::{HttpFetch, SessionFetch as _, classify, session_url};
+use super::{
+    ACCEPT_JSON, Fetched, HttpFetch, REQUEST_TIMEOUT, SessionFetch as _, classify, fetched_answer,
+    proxy_environment, session_url,
+};
 use crate::statusline::credentials::Credentials;
 use crate::statusline::session::Session;
 
 const VALID_BODY: &str = r#"{"router_name":"auto","last_model":"gpt-5","spend":1.5}"#;
+
+fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+fn transport_error() -> HttpError {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
+    HttpError::Request(client.client.get("not a url").build().unwrap_err())
+}
 
 #[rstest]
 #[case::ok(200, VALID_BODY, true, true)]
@@ -45,6 +69,30 @@ fn a_valid_answer_carries_its_session() {
 
     assert_eq!(fetched.session, Session::from_json(VALID_BODY.as_bytes()));
     assert_eq!(fetched.session.unwrap().router_name, "auto");
+}
+
+#[test]
+fn a_received_answer_is_classified_by_its_status_and_body() {
+    let answer = UpstreamResponse {
+        status: 200,
+        headers: HeaderMap::new(),
+        body: VALID_BODY.as_bytes().to_vec(),
+    };
+
+    let fetched = fetched_answer(Ok(answer));
+
+    assert_eq!(fetched, classify(200, VALID_BODY.as_bytes()));
+    assert!(fetched.definitive);
+}
+
+#[rstest]
+#[case::transport_error(transport_error())]
+#[case::timeout(HttpError::Timeout)]
+#[case::oversized_body(HttpError::TooLarge { limit: 1_048_576 })]
+fn a_failed_transport_is_not_an_answer(#[case] failure: HttpError) {
+    let fetched = fetched_answer(Err(failure));
+
+    assert_eq!(fetched, Fetched::default());
 }
 
 #[rstest]
@@ -121,11 +169,63 @@ fn a_key_that_cannot_be_a_header_is_an_error_before_any_request() {
 }
 
 #[test]
-fn a_proxy_setting_that_cannot_be_read_is_an_error_before_any_request() {
-    let environment =
-        BTreeMap::from([("DISABLE_AIOHTTP_TRUST_ENV".to_owned(), "maybe".to_owned())]);
+fn the_request_sends_the_bearer_key_accept_json_and_a_three_second_timeout() {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
+    let url = session_url("http://proxy", "abc").unwrap();
 
-    let failed = failing_lookup("http://127.0.0.1:9", "key", &environment);
+    let request = session_request!(client, url, "sk-key").unwrap();
 
-    assert!(matches!(failed, FetchError::Proxy(_)));
+    assert_eq!(
+        request.url().as_str(),
+        "http://proxy/auto_router/session?session_id=abc"
+    );
+    assert_eq!(request.timeout(), Some(&REQUEST_TIMEOUT));
+    assert_eq!(request.headers()["authorization"], "Bearer sk-key");
+    assert_eq!(request.headers()["accept"], "application/json");
+}
+
+#[rstest]
+#[case::a_trust_env_flag_does_not_disable_the_proxy(
+    &[
+        ("HTTPS_PROXY", "http://egress.test:3128"),
+        ("DISABLE_AIOHTTP_TRUST_ENV", "true"),
+    ],
+    true
+)]
+#[case::a_flag_that_cannot_be_read_is_not_read(
+    &[
+        ("HTTPS_PROXY", "http://egress.test:3128"),
+        ("DISABLE_AIOHTTP_TRUST_ENV", "maybe"),
+        ("AIOHTTP_TRUST_ENV", "maybe"),
+    ],
+    true
+)]
+#[case::no_proxy_still_bypasses(
+    &[
+        ("HTTPS_PROXY", "http://egress.test:3128"),
+        ("NO_PROXY", "gateway.test"),
+    ],
+    false
+)]
+#[case::only_proxy_variables_are_passed_on(
+    &[
+        ("HTTPS_PROXY", "http://egress.test:3128"),
+        ("LITELLM_TRUST_ENV", "maybe"),
+    ],
+    true
+)]
+fn the_proxy_comes_from_the_urllib_variables_alone(
+    #[case] pairs: &[(&str, &str)],
+    #[case] routed: bool,
+) {
+    let environment = environment(pairs);
+    let policy =
+        ProxyPolicy::resolve(&ProxyTrust::default(), &proxy_environment(&environment)).unwrap();
+    let url = Url::parse("https://gateway.test/auto_router/session").unwrap();
+
+    assert_eq!(
+        matches!(policy.route(&url), Some(ProxyRoute::Forward(_))),
+        routed
+    );
 }

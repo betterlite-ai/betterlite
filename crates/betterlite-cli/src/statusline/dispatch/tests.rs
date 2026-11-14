@@ -13,7 +13,7 @@ use tempfile::TempDir;
 use tokio::runtime::{Builder, Runtime};
 use url::ParseError;
 
-use super::{Dependencies, run_statusline};
+use super::{Dependencies, cache_directory_name, run_statusline};
 use crate::statusline::cache::Clock;
 use crate::statusline::credentials::Credentials;
 use crate::statusline::error::StatuslineError;
@@ -139,7 +139,7 @@ impl Harness {
                 environment: &vars,
                 home_dir: &home,
                 temp_dir: &temp,
-                owner_uid: own_uid(),
+                owner_uid: Some(own_uid()),
                 fetch,
                 clock: &FixedClock,
                 files: &self.files,
@@ -294,6 +294,48 @@ fn a_found_session_is_asked_for_with_the_trimmed_credentials_and_drawn() {
     assert_eq!(call.base_url, "http://gateway.test");
     assert_eq!(call.key, "sk-claude");
     assert_eq!(call.session_id, "s1");
+}
+
+#[test]
+fn the_found_session_model_is_labelled_from_the_gateway_cache() {
+    let harness = Harness::new();
+    harness.models(&harness.path("home/.claude"));
+    let input = claude_payload(&harness.transcript("claude-sonnet-4"), "s1");
+    let body = r#"{"router_name":"auto","last_model":"anthropic/claude-opus-4","spend":1.5}"#;
+    let fetch = FakeFetch::answering(Some(body));
+
+    let line = harness.run(&input, &CLAUDE_ENV, &fetch);
+
+    assert_eq!(line, format!("Routed to: Opus Four{NOTICE}"));
+}
+
+#[test]
+fn the_codex_message_labels_the_found_session_model_from_the_gateway_cache() {
+    let harness = Harness::new();
+    harness.models(&harness.path("home/.claude"));
+    let body = r#"{"router_name":"auto","last_model":"anthropic/claude-opus-4","spend":1.5}"#;
+    let fetch = FakeFetch::answering(Some(body));
+
+    let line = harness.run(
+        r#"{"hook_event_name":"Stop","session_id":"s9"}"#,
+        &CODEX_ENV,
+        &fetch,
+    );
+
+    assert_eq!(
+        line,
+        format!(r#"{{"systemMessage":"\nRouted to: Opus Four{NOTICE}"}}"#)
+    );
+}
+
+#[rstest]
+#[case::with_a_uid(Some(1000), "litellm-statusline-1000")]
+#[case::without_a_uid(None, "litellm-statusline")]
+fn the_cache_directory_is_named_the_way_litellm_names_it(
+    #[case] owner_uid: Option<u32>,
+    #[case] expected: &str,
+) {
+    assert_eq!(cache_directory_name(owner_uid), expected);
 }
 
 #[test]

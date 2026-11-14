@@ -18,14 +18,12 @@ const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[90m";
 const ROUTER_COLOR: &str = "\x1b[38;2;79;70;229m";
 const BASELINE_COLOR: &str = "\x1b[38;2;217;119;87m";
-
 struct Comparison<'model> {
     spend: Decimal,
     baseline: Decimal,
     baseline_model: &'model str,
     coverage: String,
 }
-
 enum Verdict<'model> {
     Hidden,
     Unavailable,
@@ -33,8 +31,7 @@ enum Verdict<'model> {
 }
 
 // The model the user typed, or its display name from the gateway's model cache, with a model's bare id prettified
-#[must_use]
-pub fn baseline_label(model: &str, config_dir: &Path) -> String {
+pub(crate) fn baseline_label(model: &str, config_dir: &Path) -> String {
     let labelled = model_label(model, config_dir);
     let bare = model.rsplit_once('/').map_or(model, |(_, tail)| tail);
     if labelled != bare {
@@ -55,7 +52,6 @@ pub fn baseline_label(model: &str, config_dir: &Path) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
-
 // Combining marks take no column and East Asian wide characters take two
 fn display_width(label: &str) -> usize {
     label
@@ -75,7 +71,6 @@ fn display_width(label: &str) -> usize {
         })
         .sum()
 }
-
 fn paint(use_color: bool, code: &str, text: &str) -> String {
     if use_color {
         format!("{code}{text}{RESET}")
@@ -83,7 +78,6 @@ fn paint(use_color: bool, code: &str, text: &str) -> String {
         text.to_owned()
     }
 }
-
 fn bar(fraction: Decimal, color: &str, use_color: bool) -> Option<String> {
     let filled = fraction
         .clamp(Decimal::ZERO, Decimal::ONE)
@@ -98,7 +92,6 @@ fn bar(fraction: Decimal, color: &str, use_color: bool) -> Option<String> {
         format!("{full}{empty}")
     })
 }
-
 // Which of LiteLLM's branches applies: nothing to compare, savings that cannot be told, or a comparison to draw
 fn verdict(session: &Session) -> Verdict<'_> {
     let Some(baseline) = session.baseline_spend else {
@@ -132,7 +125,6 @@ fn verdict(session: &Session) -> Verdict<'_> {
         _ => Verdict::Unavailable,
     }
 }
-
 struct Chart {
     peak: Decimal,
     label_width: usize,
@@ -190,8 +182,7 @@ fn comparison_lines(
     ))
 }
 
-#[must_use]
-pub fn render(
+pub(crate) fn render(
     model: &str,
     session: Option<&Session>,
     config_dir: &Path,

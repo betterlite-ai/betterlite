@@ -14,16 +14,13 @@ pub enum Agent {
     ClaudeCode,
     Codex,
 }
-
 #[derive(Debug)]
 pub struct Credentials {
     pub base_url: String,
     pub api_key: SecretString,
 }
-
 // An apiKeyHelper or keyring is never consulted: a status line reruns on every keystroke
-#[must_use]
-pub fn resolve_credentials(
+pub(crate) fn resolve_credentials(
     environment: &BTreeMap<String, String>,
     agent: Agent,
 ) -> Option<Credentials> {
@@ -44,16 +41,13 @@ pub fn resolve_credentials(
         api_key: SecretString::from(api_key.to_owned()),
     })
 }
-
 fn first_value<'env>(environment: &'env BTreeMap<String, String>, keys: &[&str]) -> &'env str {
     keys.iter()
         .find_map(|key| environment.get(*key).filter(|value| !value.is_empty()))
         .map_or("", String::as_str)
 }
-
 // A control character in a label could redraw the screen or set the clipboard, so only printable text survives
-#[must_use]
-pub fn printable(text: &str) -> String {
+pub(crate) fn printable(text: &str) -> String {
     text.chars()
         .filter(|character| {
             *character == ' '

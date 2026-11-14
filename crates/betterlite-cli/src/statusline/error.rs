@@ -1,7 +1,6 @@
 use std::io;
 
 use super::fetch::error::FetchError;
-
 #[derive(Debug, thiserror::Error)]
 pub enum StatuslineError {
     #[error("cannot read the hook payload from stdin: {0}")]

@@ -13,7 +13,6 @@ const SYNTHETIC_MODEL: &str = "<synthetic>";
 const ASSISTANT_TYPE: &str = "assistant";
 const MODEL_CACHE_DIRECTORY: &str = "cache";
 const MODEL_CACHE_FILE: &str = "gateway-models.json";
-
 #[derive(Deserialize)]
 struct Line {
     #[serde(rename = "type")]
@@ -24,17 +23,14 @@ struct Line {
     agent_id: Option<String>,
     message: Option<Message>,
 }
-
 #[derive(Deserialize)]
 struct Message {
     model: Option<String>,
 }
-
 #[derive(Deserialize)]
 struct ModelCache {
     models: Vec<CacheEntry>,
 }
-
 // An entry that is not an object with a string id and display_name is skipped, the rest of the file still counts
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -42,10 +38,8 @@ enum CacheEntry {
     Listed { id: String, display_name: String },
     Unlisted(IgnoredAny),
 }
-
 // A missing or unreadable file, or no qualifying line in the last 4 MiB, is no model at all
-#[must_use]
-pub fn latest_transcript_model(path: &Path) -> Option<String> {
+pub(crate) fn latest_transcript_model(path: &Path) -> Option<String> {
     let mut file = File::open(path).ok()?;
     let size = file.seek(SeekFrom::End(0)).ok()?;
     let _start = file
@@ -69,8 +63,7 @@ fn line_model(line: &[u8]) -> Option<String> {
     (!model.is_empty() && model != SYNTHETIC_MODEL).then_some(model)
 }
 
-#[must_use]
-pub fn model_label(model: &str, config_dir: &Path) -> String {
+pub(crate) fn model_label(model: &str, config_dir: &Path) -> String {
     let bare = model.rsplit_once('/').map_or(model, |(_, tail)| tail);
     let path = config_dir
         .join(MODEL_CACHE_DIRECTORY)

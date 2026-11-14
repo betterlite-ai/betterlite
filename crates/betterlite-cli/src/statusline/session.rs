@@ -1,14 +1,9 @@
-use std::collections::BTreeMap;
-
 use rust_decimal::Decimal;
-use serde::Serialize;
-use serde_json::value::RawValue;
+use serde::{Deserialize, Serialize};
+use serde_json::Number;
 
 use super::credentials::printable;
-
-const BASELINE_KEY: &str = "baseline_spend";
-const ESTIMATED_BASELINE_KEY: &str = "savings_estimated_baseline_spend";
-const NULL: &str = "null";
+use super::wire::{Wire, text};
 
 // Field names are the ones LiteLLM's script writes into its cache, so both read each other's entries
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -26,63 +21,65 @@ pub struct Session {
     pub savings_estimated_actual_spend: Option<Decimal>,
 }
 
+#[derive(Deserialize)]
+struct Payload {
+    router_name: Option<Wire<String>>,
+    last_model: Option<Wire<String>>,
+    spend: Option<Wire<Number>>,
+    #[serde(rename = "savings_estimated_baseline_spend")]
+    #[serde(default, deserialize_with = "present_baseline")]
+    estimated_baseline: Option<Wire<Number>>,
+    baseline_spend: Option<Wire<Number>>,
+    baseline_model: Option<Wire<String>>,
+    turns: Option<Wire<Number>>,
+    savings_estimated_turns: Option<Wire<Number>>,
+    savings_estimated_actual_spend: Option<Wire<Number>>,
+}
+// A present baseline key counts even as null and hides the plain one, so the field keeps a null apart from an absent key
+fn present_baseline<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Wire<Number>>, D::Error> {
+    Wire::<Number>::deserialize(deserializer).map(Some)
+}
 impl Session {
     // The proxy's answer is trusted only once its labels and money fields pass; anything else is no session
-    #[must_use]
-    pub fn from_json(body: &[u8]) -> Option<Self> {
-        let fields: BTreeMap<String, &RawValue> = serde_json::from_slice(body).ok()?;
-        let router_name = text(&fields, "router_name");
-        let last_model = text(&fields, "last_model");
+    pub(crate) fn from_json(body: &[u8]) -> Option<Self> {
+        let payload: Payload = serde_json::from_slice(body).ok()?;
+        let router_name = printable(text(payload.router_name.as_ref()));
+        let last_model = printable(text(payload.last_model.as_ref()));
         if router_name.is_empty() || last_model.is_empty() {
             return None;
         }
-        let spend = decimal(fields.get("spend")?)?;
+        let spend = payload.spend.as_ref()?.amount()?;
         // the estimated key wins whenever it is present, even as null
-        let baseline = fields
-            .get(ESTIMATED_BASELINE_KEY)
-            .or_else(|| fields.get(BASELINE_KEY));
+        let baseline = payload
+            .estimated_baseline
+            .as_ref()
+            .or(payload.baseline_spend.as_ref());
         let baseline_spend = match baseline {
-            Some(raw) if raw.get() != NULL => Some(decimal(raw)?),
-            _ => None,
+            None | Some(Wire::Null) => None,
+            Some(found) => Some(found.amount()?),
         };
         Some(Self {
             router_name,
             last_model,
             spend,
             baseline_spend,
-            baseline_model: Some(text(&fields, "baseline_model")).filter(|name| !name.is_empty()),
-            turns: fields.get("turns").and_then(|raw| raw.get().parse().ok()),
+            baseline_model: Some(printable(text(payload.baseline_model.as_ref())))
+                .filter(|name| !name.is_empty()),
+            turns: payload.turns.as_ref().and_then(Wire::count),
             // present but invalid counts as zero estimated turns, absent or null as unknown
-            savings_estimated_turns: fields
-                .get("savings_estimated_turns")
-                .filter(|raw| raw.get() != NULL)
-                .map(|raw| raw.get().parse().unwrap_or(0)),
-            savings_estimated_actual_spend: fields
-                .get("savings_estimated_actual_spend")
-                .and_then(|raw| decimal(*raw))
+            savings_estimated_turns: match payload.savings_estimated_turns.as_ref() {
+                None | Some(Wire::Null) => None,
+                Some(found) => Some(found.count().unwrap_or(0)),
+            },
+            savings_estimated_actual_spend: payload
+                .savings_estimated_actual_spend
+                .as_ref()
+                .and_then(Wire::amount)
                 .filter(|amount| *amount >= Decimal::ZERO),
         })
     }
-}
-
-fn text(fields: &BTreeMap<String, &RawValue>, key: &str) -> String {
-    fields
-        .get(key)
-        .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok())
-        .map_or_else(String::new, |value| printable(&value))
-}
-
-// Only a JSON number counts: a string, a boolean or null is not money, and one too large for Decimal is not finite
-#[must_use]
-pub fn decimal(raw: &RawValue) -> Option<Decimal> {
-    let literal = raw.get();
-    if !literal.starts_with(|first: char| first == '-' || first.is_ascii_digit()) {
-        return None;
-    }
-    literal
-        .parse::<Decimal>()
-        .or_else(|_| Decimal::from_scientific(literal))
-        .ok()
 }
 
 mod tests;
