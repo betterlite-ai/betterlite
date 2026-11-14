@@ -1,6 +1,5 @@
 use betterlite_prompts::error::FactoryError;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 use crate::cache_create::error::CacheCreateError;
@@ -12,16 +11,13 @@ pub enum BodyError {
     History(#[from] HistoryError),
     #[error(transparent)]
     Prompt(#[from] FactoryError),
-    #[error("`{field}` must be {expected}")]
-    Field {
-        field: &'static str,
-        expected: &'static str,
-    },
+    #[error("`{0}` must be {1}")]
+    Field(&'static str, &'static str),
     #[error("a request body value could not be converted")]
     Encode(#[source] serde_json::Error),
 }
 
-// the cache endpoint request and the body build fail on their own terms, and the caller maps either
+// the cache request and the body build fail on their own terms; the caller maps either
 #[derive(Debug, Error)]
 pub enum RequestError {
     #[error(transparent)]

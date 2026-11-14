@@ -43,13 +43,15 @@ use secrecy::SecretString;
 use tokio::runtime::{Builder, Runtime};
 use tokio::time::Instant;
 
+use crate::cache_create::orchestration::CacheCreateRequest;
+use crate::cache_lookup::target::CacheProvider;
 use crate::cache_lookup::transport::CacheTransport;
 use crate::gemini_history::error::HistoryError;
 use crate::gemini_request::body::Transformed;
 use crate::gemini_request::error::{BodyError, RequestError};
-use crate::gemini_request::orchestration::{
-    CallRequest, transform_request_body, transform_request_body_async,
-};
+use crate::gemini_request::orchestration::CallRequest;
+use crate::gemini_request::orchestration::async_media::transform_request_body_async;
+use crate::gemini_request::orchestration::transform_request_body;
 use crate::model_policy::capabilities::{
     CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
 };
@@ -301,35 +303,47 @@ impl Harness {
             supports: input.supports,
         };
         let request = CallRequest {
-            provider: input.provider,
-            model: &input.model,
-            messages: &input.messages,
+            cache: CacheCreateRequest {
+                provider: cache_provider(input.provider),
+                model: &input.model,
+                messages: &input.messages,
+                api_base: None,
+                project: Some("project"),
+                location: Some("us-central1"),
+                auth_token: Some(&auth_token),
+                gemini_api_key: None,
+                extra_headers: &extra_headers,
+                deadline: Duration::from_secs(5),
+                cached_content: None,
+                disable_transform: false,
+                now: Timestamp::from_second(NOW_SECOND).expect("fixture clock"),
+                minimum_token_override: None,
+                counter: &self.counter,
+                catalog: self.catalog.as_ref(),
+                capabilities: &lookup,
+                fetcher: &self.fetcher,
+            },
             optional_params: &input.optional_params,
             litellm_params: &input.litellm_params,
             modify_params: input.modify_params,
             schema_template: None,
-            api_base: None,
-            project: Some("project"),
-            location: Some("us-central1"),
-            auth_token: Some(&auth_token),
-            gemini_api_key: None,
-            extra_headers: &extra_headers,
-            deadline: Duration::from_secs(5),
-            disable_transform: false,
-            now: Timestamp::from_second(NOW_SECOND).expect("fixture clock"),
-            minimum_token_override: None,
-            counter: &self.counter,
-            catalog: self.catalog.as_ref(),
             capabilities: &lookup,
-            fetcher: &self.fetcher,
         };
         self.runtime.block_on(async {
             if asynchronous {
-                transform_request_body_async(&self.transport, &request, &self.hooks).await
+                transform_request_body_async(&self.transport, request, &self.hooks).await
             } else {
-                transform_request_body(&self.transport, &request, &self.hooks).await
+                transform_request_body(&self.transport, request, &self.hooks).await
             }
         })
+    }
+}
+
+const fn cache_provider(provider: VertexCapabilityProvider) -> CacheProvider {
+    match provider {
+        VertexCapabilityProvider::VertexAi => CacheProvider::Vertex,
+        VertexCapabilityProvider::VertexAiBeta => CacheProvider::VertexBeta,
+        VertexCapabilityProvider::Gemini => CacheProvider::Gemini,
     }
 }
 
@@ -362,6 +376,18 @@ fn vertex_input(model: &str, messages: &str, optional_params: &str) -> RequestIn
 
 fn assert_body(transformed: &Transformed, expected: &str) {
     assert_eq!(Json::Object(transformed.body.clone()), parse_json(expected));
+}
+
+fn run_vertex(optional_params: &str) -> (Harness, Result<Transformed, RequestError>) {
+    let harness = Harness::new();
+    let input = vertex_input("gemini-2.5-pro", USER_MESSAGES, optional_params);
+    let result = harness.run(&input);
+    (harness, result)
+}
+
+fn assert_no_io(harness: &Harness) {
+    assert_eq!(harness.fetcher.calls(), 0);
+    assert_eq!(harness.transport.calls(), 0);
 }
 
 #[rstest]
@@ -405,6 +431,26 @@ fn assert_body(transformed: &Transformed, expected: &str) {
     r#"{"output_config":{"thinking_config":{"thinking_budget":5}},"temperature":0.1}"#,
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"temperature":0.1}}"#
 )]
+#[case::tools_null(
+    r#"{"tools":null}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#
+)]
+#[case::empty_tools_are_sent(
+    r#"{"tools":[]}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"tools":[]}"#
+)]
+#[case::tool_choice_null(
+    r#"{"tool_choice":null}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#
+)]
+#[case::string_tool_choice_passes_through(
+    r#"{"tool_choice":"auto"}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"toolConfig":"auto"}"#
+)]
+#[case::safety_settings_null(
+    r#"{"safety_settings":null}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#
+)]
 #[case::generation_config_keeps_the_supplied_spelling(
     r#"{"top_p":0.9,"topP":0.8,"unknown_param":"x","max_tokens":16,"responseFormat":{"text":{"mimeType":"TEXT"}}}"#,
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"top_p":0.9,"topP":0.8,"responseFormat":{"text":{"mimeType":"TEXT"}}}}"#
@@ -434,12 +480,9 @@ fn assert_body(transformed: &Transformed, expected: &str) {
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"toolConfig":{"functionCallingConfig":{"mode":"NONE"}}}"#
 )]
 fn body_cases(#[case] optional_params: &str, #[case] expected: &str) {
-    let harness = Harness::new();
-    let input = vertex_input("gemini-2.5-pro", USER_MESSAGES, optional_params);
-    let transformed = harness.run(&input).expect("the body builds");
-    assert_body(&transformed, expected);
-    assert_eq!(harness.fetcher.calls(), 0);
-    assert_eq!(harness.transport.calls(), 0);
+    let (harness, result) = run_vertex(optional_params);
+    assert_body(&result.expect("the body builds"), expected);
+    assert_no_io(&harness);
 }
 
 #[rstest]
@@ -606,13 +649,15 @@ fn body_cases_with_system_messages(#[case] system_message: bool, #[case] expecte
 )]
 #[case::extra_body_must_be_an_object(r#"{"extra_body":"x"}"#, "extra_body")]
 #[case::cached_content_must_be_a_string(r#"{"cached_content":5}"#, "cached_content")]
+#[case::tool_choice_must_be_an_object(
+    r#"{"tool_choice":"auto","include_server_side_tool_invocations":true}"#,
+    "tool_choice"
+)]
 fn body_cases_errors(#[case] optional_params: &str, #[case] field: &str) {
-    let harness = Harness::new();
-    let input = vertex_input("gemini-2.5-pro", USER_MESSAGES, optional_params);
-    let error = harness.run(&input).expect_err("the parameters are refused");
+    let (harness, result) = run_vertex(optional_params);
+    let error = result.expect_err("the parameters are refused");
     assert!(error.to_string().contains(field), "{error}");
-    assert_eq!(harness.fetcher.calls(), 0);
-    assert_eq!(harness.transport.calls(), 0);
+    assert_no_io(&harness);
 }
 
 fn media_input(provider: VertexCapabilityProvider, messages: &str) -> RequestInput {
