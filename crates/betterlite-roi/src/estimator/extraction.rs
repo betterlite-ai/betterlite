@@ -20,6 +20,7 @@ pub enum ExtractionError {
     ScanBudget,
 }
 
+// B394's extractor is pub(super) outside this task's scope, so the estimator mirrors its scan
 pub fn first_json_object(content: &str) -> Result<&str, ExtractionError> {
     if content.len() > MAX_REPLY_BYTES {
         return Err(ExtractionError::TooLarge {
