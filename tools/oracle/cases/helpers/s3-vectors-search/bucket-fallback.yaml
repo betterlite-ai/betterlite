@@ -1,0 +1,31 @@
+kind: helper
+name: bucket_fallback
+call:
+  b7812:
+    calls:
+      - call: request
+        input:
+          vector_store_id: idx
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1, vector_bucket_name: fallback}
+      - call: request
+        input:
+          vector_store_id: "a:b:c"
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1}
+      - call: request
+        input:
+          vector_store_id: "a:b"
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1, vector_bucket_name: ignored}
+      - call: request
+        input:
+          vector_store_id: "a:b"
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1, vector_bucket_name: 12}
+env: {}
+compare: {ignore: []}
