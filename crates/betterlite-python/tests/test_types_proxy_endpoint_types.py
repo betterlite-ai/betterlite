@@ -281,6 +281,7 @@ def test_redacted_dict_names() -> None:
     their_copy = their_redacted.copy()
     our_copy = our_redacted.copy()
     assert repr(our_copy) == repr(their_copy)
+    assert dict(our_copy) == dict(their_copy) == {"Authorization": "Bearer secret"}
     our_copy["x"] = 1
     assert "x" not in our_redacted
 
@@ -289,6 +290,8 @@ def test_error_names_the_user() -> None:
     their_error = litellm_auth_checks.UserNotFoundError("user-1")
     our_error = auth_checks.UserNotFoundError("user-1")
     assert str(our_error) == str(their_error)
+    assert isinstance(our_error, ValueError)
+    assert isinstance(their_error, ValueError)
 
 
 def test_budget_snapshot_names() -> None:
@@ -346,6 +349,19 @@ def test_entra_identity_names() -> None:
     assert our_config.issuer == their_config.issuer
     assert our_config.tenant_id == their_config.tenant_id
     assert our_config.client_id == their_config.client_id
+    with_principal: dict[str, JsonValue] = {
+        **values,
+        "service_principal_id": "{00000000-0000-0000-0000-00000000000C}",
+    }
+    their_principal = litellm_agent_identity.EntraIdentityConfig.model_validate(with_principal)
+    our_principal = agent_identity.EntraIdentityConfig.model_validate(with_principal)
+    assert our_principal.service_principal_id == their_principal.service_principal_id
+    assert our_principal.service_principal_id == "00000000-0000-0000-0000-00000000000c"
+    without_principal: dict[str, JsonValue] = {**values, "service_principal_id": None}
+    their_without = litellm_agent_identity.EntraIdentityConfig.model_validate(without_principal)
+    our_without = agent_identity.EntraIdentityConfig.model_validate(without_principal)
+    assert our_without.service_principal_id is None
+    assert their_without.service_principal_id is None
     invalid: dict[str, JsonValue] = {**values, "tenant_id": "nope"}
     with pytest.raises(ValidationError) as their_error:
         litellm_agent_identity.EntraIdentityConfig.model_validate(invalid)
@@ -370,3 +386,16 @@ def test_error_names_match() -> None:
     with pytest.raises(ValidationError) as our_vantage:
         vantage.VantageInitRequest(api_key=" ", integration_token="token")
     assert str(our_vantage.value) == str(their_vantage.value)
+    with pytest.raises(ValidationError) as their_blank_key:
+        litellm_vantage.VantageSettingsUpdate(api_key=" ")
+    with pytest.raises(ValidationError) as our_blank_key:
+        vantage.VantageSettingsUpdate(api_key=" ")
+    assert str(our_blank_key.value) == str(their_blank_key.value)
+    with pytest.raises(ValidationError) as their_blank_token:
+        litellm_vantage.VantageSettingsUpdate(integration_token="")
+    with pytest.raises(ValidationError) as our_blank_token:
+        vantage.VantageSettingsUpdate(integration_token="")
+    assert str(our_blank_token.value) == str(their_blank_token.value)
+    their_unset = litellm_vantage.VantageSettingsUpdate(api_key=None)
+    our_unset = vantage.VantageSettingsUpdate(api_key=None)
+    assert our_unset.model_dump() == their_unset.model_dump()
