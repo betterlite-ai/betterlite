@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::time::Duration;
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
@@ -9,8 +11,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::AgentsDeleteVersionsError;
 use super::asynchronous::async_delete_agent;
 use super::support::{
-    Call, Fixture, FixtureError, caller_headers, clients, dead_address, exposed,
-    failing_environment, reply_with_bytes, resolved_timeout,
+    Call, Fixture, FixtureError, assert_provider_refusal, caller_headers, clients, dead_address,
+    exposed, failing_environment, recorded_error, reply_with_bytes, resolved_timeout,
 };
 use super::synchronous::delete_agent;
 use crate::interactions::base::tests::support as server;
@@ -298,24 +300,17 @@ fn delete_agent_returns_the_provider_error_for_a_failing_status() {
     )
     .unwrap_err();
 
-    assert!(
-        matches!(
-            error,
-            AgentsDeleteVersionsError::Provider(FixtureError::Refused(404))
-        ),
-        "{error:?}"
-    );
+    assert_provider_refusal(&error, 404);
     let calls = fixture.calls();
     assert_eq!(
-        calls
-            .iter()
-            .find(|call| call.starts_with("error|"))
-            .map(String::as_str),
+        recorded_error(&calls),
         Some("error|404|missing|7"),
         "{calls:?}"
     );
     assert!(
-        !calls.iter().any(|call| call.starts_with("delete_response")),
+        !calls
+            .iter()
+            .any(|record| record.starts_with("delete_response")),
         "{calls:?}"
     );
     assert!(logging.model_call_details.is_empty());
@@ -349,7 +344,7 @@ fn delete_agent_passes_a_connection_failure_through() {
         !fixture
             .calls()
             .iter()
-            .any(|call| call.starts_with("error|"))
+            .any(|record| record.starts_with("error|"))
     );
 }
 
@@ -529,18 +524,12 @@ async fn async_delete_agent_returns_the_provider_error_for_a_failing_status() {
     .await
     .unwrap_err();
 
-    assert!(
-        matches!(
-            error,
-            AgentsDeleteVersionsError::Provider(FixtureError::Refused(500))
-        ),
-        "{error:?}"
-    );
+    assert_provider_refusal(&error, 500);
     assert!(
         !fixture
             .calls()
             .iter()
-            .any(|call| call.starts_with("delete_response"))
+            .any(|record| record.starts_with("delete_response"))
     );
     assert!(logging.model_call_details.is_empty());
     serving.request.join().unwrap();

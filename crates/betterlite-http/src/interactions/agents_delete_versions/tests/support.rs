@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::Mutex;
@@ -9,7 +11,9 @@ use betterlite_models::controls::json_value::JsonValue;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 
-use super::{AgentRequest, AgentsConfig, EnvironmentRequest, NamedAgentRequest};
+use super::{
+    AgentRequest, AgentsConfig, AgentsDeleteVersionsError, EnvironmentRequest, NamedAgentRequest,
+};
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::tests::support as fixture;
 use crate::interactions::base::{
@@ -44,6 +48,22 @@ impl Fixture {
             Ok(calls) => calls.clone(),
             Err(_poisoned) => Vec::new(),
         }
+    }
+
+    fn agent_url(&self, kind: &str, request: &NamedAgentRequest<'_>) -> String {
+        self.record(format!(
+            "{kind}_request|{}|{}|{}",
+            request.name,
+            request.api_base,
+            request.litellm_params.len()
+        ));
+        format!("{}/v1beta/agents/{}", request.api_base, request.name)
+    }
+
+    fn reply_summary(&self, kind: &str, name: &str, response: &UpstreamResponse) -> String {
+        self.record(format!("{kind}_response|{name}|{}", response.status_code));
+        let size = response.body.len();
+        format!("{kind}|{name}|{}|{size}", response.status_code)
     }
 }
 
@@ -85,16 +105,7 @@ impl AgentsConfig for Fixture {
         &self,
         request: &NamedAgentRequest<'_>,
     ) -> Result<String, FixtureError> {
-        self.record(format!(
-            "delete_request|{}|{}|{}",
-            request.name,
-            request.api_base,
-            request.litellm_params.len()
-        ));
-        Ok(format!(
-            "{}/v1beta/agents/{}",
-            request.api_base, request.name
-        ))
+        Ok(self.agent_url("delete", request))
     }
 
     fn transform_delete_response(
@@ -102,26 +113,16 @@ impl AgentsConfig for Fixture {
         response: &UpstreamResponse,
         name: &str,
     ) -> Result<String, FixtureError> {
-        self.record(format!("delete_response|{name}|{}", response.status_code));
-        let size = response.body.len();
-        Ok(format!("delete|{name}|{}|{size}", response.status_code))
+        Ok(self.reply_summary("delete", name, response))
     }
 
     fn transform_versions_request(
         &self,
         request: &NamedAgentRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
-        self.record(format!(
-            "versions_request|{}|{}|{}",
-            request.name,
-            request.api_base,
-            request.litellm_params.len()
-        ));
+        let url = format!("{}/versions", self.agent_url("versions", request));
         Ok(PreparedRequest {
-            url: format!(
-                "{}/v1beta/agents/{}/versions",
-                request.api_base, request.name
-            ),
+            url,
             params: self.query.clone(),
         })
     }
@@ -131,10 +132,28 @@ impl AgentsConfig for Fixture {
         response: &UpstreamResponse,
         name: &str,
     ) -> Result<String, FixtureError> {
-        self.record(format!("versions_response|{name}|{}", response.status_code));
-        let size = response.body.len();
-        Ok(format!("versions|{name}|{}|{size}", response.status_code))
+        Ok(self.reply_summary("versions", name, response))
     }
+}
+
+pub(crate) fn assert_provider_refusal(
+    error: &AgentsDeleteVersionsError<FixtureError>,
+    status: u16,
+) {
+    assert!(
+        matches!(
+            error,
+            AgentsDeleteVersionsError::Provider(FixtureError::Refused(code)) if *code == status
+        ),
+        "{error:?}"
+    );
+}
+
+pub(crate) fn recorded_error(calls: &[String]) -> Option<&str> {
+    calls
+        .iter()
+        .find(|record| record.starts_with("error|"))
+        .map(String::as_str)
 }
 
 pub(crate) struct Call {

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::net::SocketAddr;
 
 use betterlite_models::controls::json_value::JsonValue;
@@ -7,7 +9,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use super::AgentsDeleteVersionsError;
 use super::asynchronous::{async_delete_agent, async_list_agent_versions};
-use super::support::{Call, Fixture, clients, dead_address};
+use super::support::{Call, Fixture, FixtureError, clients, dead_address};
 use super::synchronous::{delete_agent, list_agent_versions};
 use crate::interactions::base::ClientError;
 use crate::interactions::base::Logging;
@@ -28,6 +30,19 @@ fn call_with_unusable_ssl_verify(address: SocketAddr) -> Call {
     call.params
         .insert("ssl_verify".to_owned(), JsonValue::Text("yes".to_owned()));
     call
+}
+
+fn assert_unusable_ssl_verify(error: &AgentsDeleteVersionsError<FixtureError>) {
+    assert!(
+        matches!(
+            error,
+            AgentsDeleteVersionsError::Client(ClientError::FieldType {
+                field: "ssl_verify",
+                ..
+            })
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -54,26 +69,8 @@ fn client_resolves_the_sync_client_through_the_base_module() {
     )
     .unwrap_err();
 
-    assert!(
-        matches!(
-            deleted,
-            AgentsDeleteVersionsError::Client(ClientError::FieldType {
-                field: "ssl_verify",
-                ..
-            })
-        ),
-        "{deleted:?}"
-    );
-    assert!(
-        matches!(
-            listed,
-            AgentsDeleteVersionsError::Client(ClientError::FieldType {
-                field: "ssl_verify",
-                ..
-            })
-        ),
-        "{listed:?}"
-    );
+    assert_unusable_ssl_verify(&deleted);
+    assert_unusable_ssl_verify(&listed);
     assert!(clients.sync_clients.is_empty());
 }
 
@@ -103,26 +100,8 @@ async fn client_resolves_the_async_client_through_the_base_module() {
     .await
     .unwrap_err();
 
-    assert!(
-        matches!(
-            deleted,
-            AgentsDeleteVersionsError::Client(ClientError::FieldType {
-                field: "ssl_verify",
-                ..
-            })
-        ),
-        "{deleted:?}"
-    );
-    assert!(
-        matches!(
-            listed,
-            AgentsDeleteVersionsError::Client(ClientError::FieldType {
-                field: "ssl_verify",
-                ..
-            })
-        ),
-        "{listed:?}"
-    );
+    assert_unusable_ssl_verify(&deleted);
+    assert_unusable_ssl_verify(&listed);
     assert!(clients.async_clients.is_empty());
 }
 

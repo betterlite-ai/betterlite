@@ -36,6 +36,19 @@ pub struct AgentRequest<'request> {
     pub request_timeout: RequestTimeout,
 }
 
+#[derive(Clone, Copy)]
+enum CallKind {
+    Delete,
+    Versions,
+}
+
+struct PreparedCall {
+    method: CallKind,
+    headers: RequestHeaders,
+    target: PreparedRequest,
+    timeout: Option<Duration>,
+}
+
 pub trait AgentsConfig: ErrorClasses {
     type DeleteOutput;
     type VersionsOutput;
@@ -89,22 +102,12 @@ where
     },
 }
 
-struct DeleteCall {
-    headers: RequestHeaders,
-    target: PreparedRequest,
-    timeout: Duration,
-}
-
-struct VersionCall {
-    headers: RequestHeaders,
-    prepared: PreparedRequest,
-}
-
-fn prepare_delete<C>(
+fn prepare<C>(
     config: &C,
     logging: &mut Logging,
     request: &AgentRequest<'_>,
-) -> Result<DeleteCall, AgentsDeleteVersionsError<C::Error>>
+    method: CallKind,
+) -> Result<PreparedCall, AgentsDeleteVersionsError<C::Error>>
 where
     C: AgentsConfig,
 {
@@ -115,50 +118,45 @@ where
         })
         .map_err(AgentsDeleteVersionsError::Provider)?;
     let base = api_base(request.litellm_params).map_err(AgentsDeleteVersionsError::Parameters)?;
-    let url = config
-        .transform_delete_request(&NamedAgentRequest {
-            name: request.name,
-            api_base: base,
-            litellm_params: request.litellm_params,
-        })
-        .map_err(AgentsDeleteVersionsError::Provider)?;
-    record_pre_call(logging, request.name, &url, &headers);
-    let timeout = deletion_timeout(request.timeout, request.request_timeout)?;
-    let target = PreparedRequest {
-        url,
-        params: Params::new(),
+    let named = NamedAgentRequest {
+        name: request.name,
+        api_base: base,
+        litellm_params: request.litellm_params,
     };
-    Ok(DeleteCall {
+    let target = request_target(config, &named, method)?;
+    record_pre_call(logging, request.name, &target.url, &headers);
+    // LiteLLM's GET for the versions list passes no deadline, so the client's own applies
+    let timeout = match method {
+        CallKind::Delete => Some(deletion_timeout(request.timeout, request.request_timeout)?),
+        CallKind::Versions => None,
+    };
+    Ok(PreparedCall {
+        method,
         headers,
         target,
         timeout,
     })
 }
 
-fn prepare_versions<C>(
+fn request_target<C>(
     config: &C,
-    logging: &mut Logging,
-    request: &AgentRequest<'_>,
-) -> Result<VersionCall, AgentsDeleteVersionsError<C::Error>>
+    named: &NamedAgentRequest<'_>,
+    method: CallKind,
+) -> Result<PreparedRequest, AgentsDeleteVersionsError<C::Error>>
 where
     C: AgentsConfig,
 {
-    let headers = config
-        .validate_environment(&EnvironmentRequest {
-            headers: &request.extra_headers,
-            litellm_params: request.litellm_params,
-        })
-        .map_err(AgentsDeleteVersionsError::Provider)?;
-    let base = api_base(request.litellm_params).map_err(AgentsDeleteVersionsError::Parameters)?;
-    let prepared = config
-        .transform_versions_request(&NamedAgentRequest {
-            name: request.name,
-            api_base: base,
-            litellm_params: request.litellm_params,
-        })
-        .map_err(AgentsDeleteVersionsError::Provider)?;
-    record_pre_call(logging, request.name, &prepared.url, &headers);
-    Ok(VersionCall { headers, prepared })
+    match method {
+        CallKind::Delete => Ok(PreparedRequest {
+            url: config
+                .transform_delete_request(named)
+                .map_err(AgentsDeleteVersionsError::Provider)?,
+            params: Params::new(),
+        }),
+        CallKind::Versions => config
+            .transform_versions_request(named)
+            .map_err(AgentsDeleteVersionsError::Provider),
+    }
 }
 
 // LiteLLM logs an empty api key here, since the provider key travels in the headers
@@ -172,36 +170,6 @@ fn record_pre_call(logging: &mut Logging, name: &str, url: &str, headers: &Reque
             headers,
         },
     );
-}
-
-fn finish_delete<C>(
-    config: &C,
-    logging: &mut Logging,
-    response: &UpstreamResponse,
-    name: &str,
-) -> Result<C::DeleteOutput, AgentsDeleteVersionsError<C::Error>>
-where
-    C: AgentsConfig,
-{
-    record_post_call(logging, response);
-    config
-        .transform_delete_response(response, name)
-        .map_err(AgentsDeleteVersionsError::Provider)
-}
-
-fn finish_versions<C>(
-    config: &C,
-    logging: &mut Logging,
-    response: &UpstreamResponse,
-    name: &str,
-) -> Result<C::VersionsOutput, AgentsDeleteVersionsError<C::Error>>
-where
-    C: AgentsConfig,
-{
-    record_post_call(logging, response);
-    config
-        .transform_versions_response(response, name)
-        .map_err(AgentsDeleteVersionsError::Provider)
 }
 
 fn handle_failure<C>(config: &C, failure: RequestFailure) -> AgentsDeleteVersionsError<C::Error>
@@ -265,18 +233,14 @@ where
     })
 }
 
-#[cfg(test)]
 #[path = "agents_delete_versions/tests/client.rs"]
 mod client_tests;
 
-#[cfg(test)]
 #[path = "agents_delete_versions/tests/delete.rs"]
 mod delete_tests;
 
-#[cfg(test)]
 #[path = "agents_delete_versions/tests/support.rs"]
 mod support;
 
-#[cfg(test)]
 #[path = "agents_delete_versions/tests/versions.rs"]
 mod versions_tests;

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::time::Duration;
 
 use betterlite_models::controls::json_value::JsonValue;
@@ -8,8 +10,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::AgentsDeleteVersionsError;
 use super::asynchronous::async_list_agent_versions;
 use super::support::{
-    Call, Fixture, FixtureError, caller_headers, clients, dead_address, exposed,
-    failing_environment, resolved_timeout,
+    Call, Fixture, FixtureError, assert_provider_refusal, caller_headers, clients, dead_address,
+    exposed, failing_environment, recorded_error, resolved_timeout,
 };
 use super::synchronous::list_agent_versions;
 use crate::interactions::base::tests::support as server;
@@ -171,26 +173,17 @@ fn versions_returns_the_provider_error_for_a_failing_status() {
     )
     .unwrap_err();
 
-    assert!(
-        matches!(
-            error,
-            AgentsDeleteVersionsError::Provider(FixtureError::Refused(404))
-        ),
-        "{error:?}"
-    );
+    assert_provider_refusal(&error, 404);
     let calls = fixture.calls();
     assert_eq!(
-        calls
-            .iter()
-            .find(|call| call.starts_with("error|"))
-            .map(String::as_str),
+        recorded_error(&calls),
         Some("error|404|missing|7"),
         "{calls:?}"
     );
     assert!(
         !calls
             .iter()
-            .any(|call| call.starts_with("versions_response")),
+            .any(|record| record.starts_with("versions_response")),
         "{calls:?}"
     );
     assert!(logging.pre_call.is_some());
@@ -225,7 +218,7 @@ fn versions_passes_a_connection_failure_through() {
         !fixture
             .calls()
             .iter()
-            .any(|call| call.starts_with("error|"))
+            .any(|record| record.starts_with("error|"))
     );
 }
 
@@ -366,18 +359,12 @@ async fn async_versions_returns_the_provider_error_for_a_failing_status() {
     .await
     .unwrap_err();
 
-    assert!(
-        matches!(
-            error,
-            AgentsDeleteVersionsError::Provider(FixtureError::Refused(500))
-        ),
-        "{error:?}"
-    );
+    assert_provider_refusal(&error, 500);
     assert!(
         !fixture
             .calls()
             .iter()
-            .any(|call| call.starts_with("versions_response"))
+            .any(|record| record.starts_with("versions_response"))
     );
     assert!(logging.model_call_details.is_empty());
     serving.request.join().unwrap();
