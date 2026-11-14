@@ -222,6 +222,12 @@ def scenario_scim_json():
     return {"set_meta": attempts(lambda: module.SCIMResource.model_validate(payload))}
 
 
+def scenario_scim_serialization():
+    module = load("management_endpoints.scim_v2")
+    schema = TypeAdapter(module.SCIMUser).json_schema(mode="serialization")
+    return {"has_properties": "properties" in schema}
+
+
 def scenario_scim_user_dump():
     module = load("management_endpoints.scim_v2")
     payload = {
@@ -472,6 +478,7 @@ SCENARIOS = {
     "scim_deviations": scenario_scim_deviations,
     "scim_email": scenario_scim_email,
     "scim_json": scenario_scim_json,
+    "scim_serialization": scenario_scim_serialization,
     "scim_user_dump": scenario_scim_user_dump,
     "scim_coercions": scenario_scim_coercions,
     "scim_patches": scenario_scim_patches,
@@ -568,6 +575,13 @@ TEAM_MODELS: Final[tuple[str, ...]] = (
     "TeamUserSpendResponse",
 )
 
+AUTO_ROUTER_MODELS: Final[tuple[str, ...]] = (
+    "AutoRouterPresetTiers",
+    "AutoRouterPresetConfig",
+    "AutoRouterPresetRecord",
+    "ComplexityScorerDefaults",
+)
+
 SSO_MODELS: Final[tuple[str, ...]] = (
     "LiteLLM_UpperboundKeyGenerateParams",
     "AccessControl_UI_AccessMode",
@@ -635,6 +649,7 @@ SCENARIOS: Final[tuple[str, ...]] = (
     "scim_deviations",
     "scim_email",
     "scim_json",
+    "scim_serialization",
     "scim_user_dump",
     "scim_coercions",
     "scim_patches",
@@ -766,7 +781,7 @@ def test_names_sso_typed_dicts(probe: dict[str, dict[str, JsonValue]]) -> None:
     }
 
 
-def test_names_sso_descriptions(probe: dict[str, dict[str, JsonValue]]) -> None:
+def test_names_descriptions(probe: dict[str, dict[str, JsonValue]]) -> None:
     ours = OBJECT.validate_python(probe["ours"]["descriptions"])
     reference = OBJECT.validate_python(probe["theirs"]["descriptions"])
     ours_sso = OBJECT.validate_python(ours[SSO])
@@ -775,6 +790,13 @@ def test_names_sso_descriptions(probe: dict[str, dict[str, JsonValue]]) -> None:
         ours_entry = OBJECT.validate_python(ours_sso[name])
         reference_entry = OBJECT.validate_python(reference_sso[name])
         assert ours_entry == reference_entry, name
+    ours_public = OBJECT.validate_python(ours[PUBLIC])
+    reference_public = OBJECT.validate_python(reference[PUBLIC])
+    for name in AUTO_ROUTER_MODELS:
+        ours_entry = OBJECT.validate_python(ours_public[name])
+        reference_entry = OBJECT.validate_python(reference_public[name])
+        assert ours_entry["root"] is None, name
+        assert reference_entry["root"] is not None, name
 
 
 def test_names_scim_constants(probe: dict[str, dict[str, JsonValue]]) -> None:
@@ -835,6 +857,13 @@ def test_names_scim_email(probe: dict[str, dict[str, JsonValue]]) -> None:
         "Alice@EXAMPLE.COM": "Alice@example.com",
         "  bob@x.io ": "bob@x.io",
     }
+
+
+def test_names_scim_serialization(probe: dict[str, dict[str, JsonValue]]) -> None:
+    ours = scenario_entries(probe, "ours", "scim_serialization")
+    reference = scenario_entries(probe, "theirs", "scim_serialization")
+    assert ours["has_properties"] is True
+    assert reference["has_properties"] is False
 
 
 def test_names_scim_json_fields(probe: dict[str, dict[str, JsonValue]]) -> None:
