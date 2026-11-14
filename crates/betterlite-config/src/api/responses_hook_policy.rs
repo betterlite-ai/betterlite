@@ -57,11 +57,11 @@ impl Section for Raw {
     }
 }
 
-fn resolve_ceiling<L>(value: Option<RawNumber>, path: &str, lookup: &L) -> Result<u32, ConfigError>
+fn resolve_ceiling<L>(raw: Option<RawNumber>, path: &str, lookup: &L) -> Result<u32, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let Some(value) = value else {
+    let Some(value) = raw else {
         return Ok(DEFAULT_MAX_AGENTIC_LOOPS);
     };
     let parsed = match value {
