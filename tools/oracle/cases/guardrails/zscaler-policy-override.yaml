@@ -1,0 +1,25 @@
+kind: helper
+name: zscaler-policy-override
+call:
+  b8216:
+    settings:
+      api_base: "http://zscaler.test/v1/detection/execute-policy"
+      api_key: oracle-key
+      policy_id: 42
+      send_user_api_key_alias: true
+      send_user_api_key_user_id: true
+      send_user_api_key_team_id: true
+      timeout: 5.0
+    inputs: {texts: [hello]}
+    request_data:
+      metadata:
+        zguard_policy_id: 7
+        user_api_key_metadata: {zguard_policy_id: 8}
+        team_metadata: {zguard_policy_id: 9}
+        user_api_key_user_id: user-1
+        user_api_key_team_id: team-1
+      litellm_metadata: {user_api_key_key_alias: key-alias}
+    input_type: request
+    answer: {status: 200, headers: {}, body: {statusCode: 200, action: ALLOW}}
+env: {}
+compare: {ignore: []}

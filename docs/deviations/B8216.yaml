@@ -1,0 +1,8 @@
+task: B8216
+deviations:
+  - what: The initializer returns ZscalerArgs and registers nothing.
+    why: B3682 owns the registry and the callback registration, as with B3681.
+    link: ""
+  - what: A missing api_key sends an empty bearer token ("Bearer ").
+    why: LiteLLM formats a missing key with Python's str text and sends "Bearer None"; docs/compatibility.md does not carry Python str text over, and no working setup can authenticate without a key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py#L265-L269
