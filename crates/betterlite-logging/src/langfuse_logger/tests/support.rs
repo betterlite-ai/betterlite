@@ -107,38 +107,34 @@ pub(crate) fn proxied() -> ProxiedClient {
 }
 
 pub(crate) fn services(variables: &[(&str, &str)], limit: usize) -> LangfuseServices {
-    services_with(variables, LangfuseClientBudget::new(limit), real_builder())
+    services_with(
+        variables,
+        LangfuseClientBudget::new(limit),
+        real_builder(),
+        None,
+    )
 }
 
 pub(crate) fn services_with(
     variables: &[(&str, &str)],
     budget: LangfuseClientBudget,
     clients: Arc<dyn LangfuseClientBuilder>,
+    id_generator: Option<Arc<dyn IdGenerator>>,
 ) -> LangfuseServices {
-    services_with_generator(
-        variables,
-        budget,
-        clients,
-        Arc::new(RequestedIdGenerator::default()),
-    )
-}
-
-pub(crate) fn services_with_generator(
-    variables: &[(&str, &str)],
-    budget: LangfuseClientBudget,
-    clients: Arc<dyn LangfuseClientBuilder>,
-    id_generator: Arc<dyn IdGenerator>,
-) -> LangfuseServices {
-    let lookup = lookup(variables);
+    let environment = lookup(variables);
+    let generator: Arc<dyn IdGenerator> = match id_generator {
+        Some(supplied) => supplied,
+        None => Arc::new(RequestedIdGenerator::default()),
+    };
     LangfuseServices {
         settings: settings(variables),
-        environment: Arc::new(lookup),
+        environment: Arc::new(environment),
         http: proxied(),
         budget,
         tasks: TaskTracker::new(),
         runtime: Handle::current(),
         assembly: AssemblyDefaults::default(),
-        id_generator,
+        id_generator: generator,
         clients,
     }
 }
@@ -266,24 +262,19 @@ pub(crate) fn optional_params() -> IndexMap<String, Json> {
     params
 }
 
-pub(crate) fn litellm_params() -> Json {
-    serde_json::from_str(
-        r#"{
-            "metadata": {"user_api_key_alias": "alias-1"},
-            "proxy_server_request": {"headers": {"langfuse_trace_name": "from-header"}}
-        }"#,
-    )
-    .expect("the litellm_params fixture parses")
-}
-
-pub(crate) fn debug_litellm_params() -> Json {
-    serde_json::from_str(
+pub(crate) fn litellm_params(debug: bool) -> Json {
+    let source = if debug {
         r#"{
             "metadata": {"user_api_key_alias": "alias-1", "debug_langfuse": "true"},
             "proxy_server_request": {"headers": {"langfuse_trace_name": "from-header"}}
-        }"#,
-    )
-    .expect("the debug litellm_params fixture parses")
+        }"#
+    } else {
+        r#"{
+            "metadata": {"user_api_key_alias": "alias-1"},
+            "proxy_server_request": {"headers": {"langfuse_trace_name": "from-header"}}
+        }"#
+    };
+    serde_json::from_str(source).expect("the litellm_params fixture parses")
 }
 
 pub(crate) fn start() -> DateTime<Utc> {

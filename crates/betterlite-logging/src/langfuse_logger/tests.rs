@@ -97,6 +97,7 @@ mod initialization_tests {
             &[],
             LangfuseClientBudget::new(1),
             Arc::new(support::FailingBuilder),
+            None,
         );
         let request = support::request("pk-failing", "sk-failing");
         let (exporter, recording) = support::recording();
@@ -219,7 +220,7 @@ mod budget_enforcement {
     async fn a_failed_client_build_does_not_hold_a_slot() {
         let budget = LangfuseClientBudget::new(1);
         let failing =
-            support::services_with(&[], budget.clone(), Arc::new(support::FailingBuilder));
+            support::services_with(&[], budget.clone(), Arc::new(support::FailingBuilder), None);
         let error = LangFuseLogger::new(&failing, &support::request("pk-slot", "sk-slot"))
             .await
             .err()
@@ -229,6 +230,7 @@ mod budget_enforcement {
             &[("LANGFUSE_MOCK", "true")],
             budget,
             support::real_builder(),
+            None,
         );
         LangFuseLogger::new(&mock, &support::request("pk-slot-2", "sk-slot-2"))
             .await
@@ -272,7 +274,7 @@ mod lifecycle_tests {
         let payload = support::payload(support::TRACE_ID);
         let response = support::response();
         let params = support::optional_params();
-        let litellm_params = support::litellm_params();
+        let litellm_params = support::litellm_params(false);
         let call = support::call(
             &payload,
             &response,
@@ -298,7 +300,7 @@ mod lifecycle_tests {
         let payload = support::payload(support::TRACE_ID);
         let response = support::response();
         let params = support::optional_params();
-        let litellm_params = support::litellm_params();
+        let litellm_params = support::litellm_params(false);
         let call = support::call(
             &payload,
             &response,
@@ -386,7 +388,7 @@ mod lifecycle_tests {
         let payload = support::payload(support::TRACE_ID);
         let response = support::failed_response();
         let params = support::optional_params();
-        let litellm_params = support::litellm_params();
+        let litellm_params = support::litellm_params(false);
         let call = support::call(
             &payload,
             &response,
@@ -423,7 +425,7 @@ mod event_dispatch_tests {
         let payload = support::payload(support::TRACE_ID);
         let response = support::response();
         let params = support::optional_params();
-        let litellm_params = support::litellm_params();
+        let litellm_params = support::litellm_params(false);
         let call = support::call(
             &payload,
             &response,
@@ -438,11 +440,11 @@ mod event_dispatch_tests {
 
     #[tokio::test]
     async fn an_empty_trace_id_is_drawn_from_the_injected_generator() {
-        let services = support::services_with_generator(
+        let services = support::services_with(
             &[],
             LangfuseClientBudget::new(10),
             support::real_builder(),
-            Arc::new(support::FixedIds),
+            Some(Arc::new(support::FixedIds)),
         );
         let request = support::request("pk-fixed", "sk-fixed");
         let (exporter, _recording) = support::recording();
@@ -453,7 +455,7 @@ mod event_dispatch_tests {
         let payload = support::payload("");
         let response = support::response();
         let params = support::optional_params();
-        let litellm_params = support::litellm_params();
+        let litellm_params = support::litellm_params(false);
         let call = support::call(
             &payload,
             &response,
@@ -478,7 +480,7 @@ mod event_dispatch_tests {
         let payload = support::payload(support::TRACE_ID);
         let response = support::response();
         let params = support::optional_params();
-        let litellm_params = support::litellm_params();
+        let litellm_params = support::litellm_params(false);
         let call = support::call(
             &payload,
             &response,
@@ -515,7 +517,7 @@ mod event_dispatch_tests {
         let payload = support::payload(support::TRACE_ID);
         let response = support::response();
         let params = support::optional_params();
-        let litellm_params = support::litellm_params();
+        let litellm_params = support::litellm_params(false);
         let call = support::call(
             &payload,
             &response,
@@ -550,7 +552,7 @@ mod event_dispatch_tests {
         let payload = support::payload(support::TRACE_ID);
         let response = support::response();
         let params = support::optional_params();
-        let litellm_params = support::debug_litellm_params();
+        let litellm_params = support::litellm_params(true);
         let call = support::call(
             &payload,
             &response,
@@ -579,7 +581,7 @@ mod event_dispatch_tests {
         let payload = support::payload(support::TRACE_ID);
         let response = support::failed_response();
         let params = support::optional_params();
-        let litellm_params = support::litellm_params();
+        let litellm_params = support::litellm_params(false);
         let call = support::call(
             &payload,
             &response,
