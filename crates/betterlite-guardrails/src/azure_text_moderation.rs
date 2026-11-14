@@ -6,8 +6,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use crate::azure_content_safety::api_version::resolve_api_version;
-use crate::azure_content_safety::base::{AzureGuardrailBase, DEFAULT_TIMEOUT};
+use crate::azure_content_safety::base::AzureGuardrailBase;
 use crate::azure_content_safety::legacy_wire::TextCategory;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::contract::GuardrailContract;
@@ -16,12 +15,10 @@ use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 
 pub mod config;
 pub mod error;
-pub mod hooks;
-pub mod submission;
-pub mod thresholds;
+pub mod guardrail;
 pub mod wire;
 
-use config::{DEFAULT_CATEGORIES, OptionalParams};
+use config::OptionalParams;
 use error::AzureTextModerationError;
 use wire::BodyOptionalParams;
 
@@ -45,56 +42,22 @@ pub struct AzureTextModerationParams {
     pub optional_params: OptionalParams,
 }
 
-impl AzureTextModerationGuardrail {
-    pub fn new(params: AzureTextModerationParams, client: reqwest::Client) -> Self {
-        let optional_params = params.optional_params;
-        Self {
-            base: AzureGuardrailBase {
-                async_handler: client,
-                api_key: params.api_key,
-                api_base: params.api_base,
-                api_version: resolve_api_version(params.api_version.as_deref()).to_owned(),
-                timeout: params.timeout.unwrap_or(DEFAULT_TIMEOUT),
-            },
-            severity_threshold: optional_params.severity_threshold,
-            severity_threshold_by_category: optional_params.severity_threshold_by_category,
-            optional_params_request_body: BodyOptionalParams {
-                categories: optional_params
-                    .categories
-                    .unwrap_or_else(|| DEFAULT_CATEGORIES.to_vec()),
-                blocklist_names: optional_params.blocklist_names,
-                halt_on_blocklist_hit: optional_params.halt_on_blocklist_hit.unwrap_or_default(),
-                output_type: optional_params.output_type.unwrap_or_default(),
-            },
-        }
-    }
-
-    async fn scan_texts(&self, texts: &[String]) -> Result<(), AzureTextModerationError> {
-        for text in texts.iter().filter(|text| !text.is_empty()) {
-            self.async_make_request(text).await?;
-        }
-        Ok(())
-    }
-}
-
 impl GuardrailContract for AzureTextModerationGuardrail {
-    fn apply_guardrail(
+    async fn apply_guardrail(
         &self,
         mut inputs: GuardrailApiInputs,
         _request_data: &mut BTreeMap<String, GuardrailValue>,
         _input_type: GuardrailInputType,
         _logging_obj: Option<&mut GuardrailLogTarget>,
-    ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
-        async move {
-            let Some(texts) = inputs.texts.take() else {
-                return Ok(inputs);
-            };
-            if let Err(error) = self.scan_texts(&texts).await {
-                return Err(guardrail_failure(error));
-            }
-            inputs.texts = Some(texts);
-            Ok(inputs)
+    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
+        let Some(texts) = inputs.texts.take() else {
+            return Ok(inputs);
+        };
+        if let Err(error) = self.scan_texts(&texts).await {
+            return Err(guardrail_failure(error));
         }
+        inputs.texts = Some(texts);
+        Ok(inputs)
     }
 
     fn get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>> {
@@ -105,15 +68,20 @@ impl GuardrailContract for AzureTextModerationGuardrail {
 
 fn guardrail_failure(error: AzureTextModerationError) -> GuardrailFailure {
     let status = error.status_code().as_u16();
-    if matches!(error, AzureTextModerationError::Violation { .. }) {
-        return GuardrailFailure::HttpObject {
+    match error {
+        violation @ AzureTextModerationError::Violation { .. } => GuardrailFailure::HttpObject {
             status,
-            detail: IndexMap::from([("error".to_owned(), GuardrailValue::Text(error.to_string()))]),
-        };
-    }
-    GuardrailFailure::Http {
-        status,
-        detail: error.to_string(),
+            detail: IndexMap::from([(
+                "error".to_owned(),
+                GuardrailValue::Text(violation.to_string()),
+            )]),
+        },
+        other @ (AzureTextModerationError::ContentSafety(_)
+        | AzureTextModerationError::NoChunks
+        | AzureTextModerationError::Frame { .. }) => GuardrailFailure::Http {
+            status,
+            detail: other.to_string(),
+        },
     }
 }
 

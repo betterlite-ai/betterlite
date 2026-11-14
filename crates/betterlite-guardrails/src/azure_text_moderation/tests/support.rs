@@ -144,7 +144,9 @@ pub(crate) fn violation(error: AzureTextModerationError) -> (String, i64, i64) {
             threshold,
             severity,
         } => (category, threshold, severity),
-        other => panic!("expected a violation, got {other:?}"),
+        other @ (AzureTextModerationError::ContentSafety(_)
+        | AzureTextModerationError::NoChunks
+        | AzureTextModerationError::Frame { .. }) => panic!("expected a violation, got {other:?}"),
     }
 }
 

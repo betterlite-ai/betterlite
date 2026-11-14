@@ -2,7 +2,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
 use super::support::{guardrail, params};
 use crate::azure_text_moderation::SUPPORTED_EVENT_HOOKS;
-use crate::guardrail_base::contract::GuardrailContract;
+use crate::guardrail_base::contract::GuardrailContract as _;
 
 #[test]
 fn lists_pre_call_then_post_call() {

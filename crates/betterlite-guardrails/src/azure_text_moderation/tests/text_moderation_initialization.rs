@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
+use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::support::{guardrail, guardrail_from, params, threshold_map};

@@ -11,7 +11,7 @@ use crate::azure_text_moderation::config::OptionalParams;
 use crate::azure_text_moderation::error::AzureTextModerationError;
 use crate::azure_text_moderation::wire::OutputType;
 use crate::generic_guardrail_contracts::GuardrailInputType;
-use crate::guardrail_base::contract::GuardrailContract;
+use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::failure::GuardrailFailure;
 
 const DEFAULT_BODY: &str = r#"{"text":"hello","categories":["Hate","Sexual","SelfHarm","Violence"],"blocklistNames":null,"haltOnBlocklistHit":false,"outputType":"FourSeverityLevels"}"#;
@@ -76,7 +76,7 @@ async fn splits_a_long_text_and_returns_the_last_response() {
     let sent = sent_texts(&server.seen.lock().unwrap());
     assert_eq!(sent.len(), 2);
     assert_eq!(sent.first().unwrap().len(), 10_000);
-    assert_eq!(sent.get(1).unwrap().len(), 1);
+    assert_eq!(sent[1].len(), 1);
 }
 
 #[tokio::test]
@@ -177,7 +177,14 @@ async fn apply_guardrail_maps_a_violation_to_the_litellm_detail() {
         .unwrap_err();
     let (status, detail) = match error {
         GuardrailFailure::HttpObject { status, detail } => (status, detail),
-        other => panic!("expected an HttpObject failure, got {other:?}"),
+        other @ (GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Http { .. }
+        | GuardrailFailure::Other(_)) => {
+            panic!("expected an HttpObject failure, got {other:?}")
+        }
     };
     assert_eq!(status, 400);
     assert_eq!(detail.len(), 1);
@@ -205,7 +212,12 @@ async fn apply_guardrail_maps_a_transport_error_to_http() {
         .unwrap_err();
     let (status, detail) = match error {
         GuardrailFailure::Http { status, detail } => (status, detail),
-        other => panic!("expected an Http failure, got {other:?}"),
+        other @ (GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::HttpObject { .. }
+        | GuardrailFailure::Other(_)) => panic!("expected an Http failure, got {other:?}"),
     };
     assert_eq!(status, 503);
     assert!(detail.contains("503"));
