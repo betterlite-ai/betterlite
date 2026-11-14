@@ -1,0 +1,18 @@
+kind: helper
+name: openai-evals-eval-url-literal-append
+call:
+  openai_evals:
+    eval_url_literal_append:
+      probes:
+        - {endpoint: evals, api_base: null, eval_id: null}
+        - {endpoint: evals, api_base: '', eval_id: null}
+        - {endpoint: evals, api_base: 'https://x.test/', eval_id: null}
+        - {endpoint: evals, api_base: 'https://x.test/v1', eval_id: null}
+        - {endpoint: evals, api_base: 'https://x.test/base?q=1', eval_id: null}
+        - {endpoint: evals, api_base: null, eval_id: eval/1}
+        - {endpoint: evals, api_base: null, eval_id: 'x y'}
+        - {endpoint: runs, api_base: null, eval_id: null}
+        - {endpoint: evals, api_base: null, eval_id: '.'}
+        - {endpoint: evals, api_base: null, eval_id: ''}
+env: {}
+compare: {ignore: []}

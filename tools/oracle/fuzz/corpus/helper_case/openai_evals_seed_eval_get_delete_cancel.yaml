@@ -1,0 +1,11 @@
+kind: helper
+name: openai-evals-seed-eval-get-delete-cancel
+call:
+  openai_evals:
+    eval_get_delete_cancel:
+      probes:
+        - operation: get
+          eval_id: eval-1
+          api_base: https://api.openai.com
+env: {}
+compare: {ignore: []}

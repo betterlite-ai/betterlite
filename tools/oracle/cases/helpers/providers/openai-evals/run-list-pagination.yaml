@@ -1,0 +1,18 @@
+kind: helper
+name: openai-evals-run-list-pagination
+call:
+  openai_evals:
+    run_list_pagination:
+      probes:
+        - eval_id: eval-1
+          list_runs_params: {limit: 3, after: r1, before: r9, order: desc, order_by: created_at}
+          litellm_params: {api_base: 'https://runs.test'}
+        - eval_id: eval-2
+          list_runs_params: {limit: 0, after: '', before: ''}
+        - eval_id: eval/2
+          list_runs_params: {}
+          litellm_params: {api_base: 'https://runs.test/v1'}
+        - eval_id: ''
+          list_runs_params: {}
+env: {}
+compare: {ignore: []}
