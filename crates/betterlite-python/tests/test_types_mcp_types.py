@@ -19,8 +19,8 @@ import betterlite.types.mcp.headers as betterlite_headers
 import betterlite.types.mcp.hooks as betterlite_hooks
 import betterlite.types.mcp.models as betterlite_models
 import betterlite.types.mcp_server.mcp_server_manager as betterlite_manager
-import betterlite.types.mcp_server.server_metadata as betterlite_metadata
 import betterlite.types.mcp_server.mcp_toolset as betterlite_toolset
+import betterlite.types.mcp_server.server_metadata as betterlite_metadata
 import betterlite.types.mcp_server.tool_registry as betterlite_registry
 
 LITELLM_MCP_NAMES: Final = {
