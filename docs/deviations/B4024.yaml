@@ -3,6 +3,9 @@ deviations:
   - what: A Slack webhook URL list configured empty stays empty; send_alert neither raises nor falls back to SLACK_WEBHOOK_URL or ALERTING_WEBHOOK_URL, and no alert is enqueued.
     why: LiteLLM only treats None as a missing webhook and keeps an empty list, so an explicit empty list is a configured destination that sends nowhere. betterlite preserves that behavior for compatibility.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1543-L1552
+  - what: An empty ALERTING_WEBHOOK_URL counts as unset, so a Slack alert with no webhook configured raises instead of enqueuing to an empty URL.
+    why: LiteLLM's `os.getenv("SLACK_WEBHOOK_URL") or os.getenv("ALERTING_WEBHOOK_URL")` only treats None as missing, so an empty ALERTING_WEBHOOK_URL resolves to the empty string and is enqueued. betterlite reads every env string with an empty value counting as unset, as docs/compatibility.md states.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1549-L1552
   - what: The alert message timestamp comes from the injected clock in UTC rather than Python's local datetime.now().
     why: betterlite has no local timezone database wired for this module, and every other injected clock in the crate returns UTC, so a host outside UTC sees the timestamp in UTC. It also lets the message format be tested at a fixed time.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1480
