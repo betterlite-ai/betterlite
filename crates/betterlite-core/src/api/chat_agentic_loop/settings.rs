@@ -10,7 +10,7 @@ use serde_json::from_str;
 use serde_json::value::RawValue;
 use thiserror::Error;
 
-use super::safety::sorted_json_text;
+use super::safety::sorted_json;
 use super::{
     AGENTIC_LOOP_DEPTH_KEY, AGENTIC_LOOP_FINGERPRINTS_KEY, HEADROOM_CONVERTED_STREAM_KEY,
     MAX_AGENTIC_LOOPS_KEY,
@@ -33,6 +33,8 @@ pub enum SettingsError {
     NotNumber { value: String },
     #[error("_agentic_loop_depth is out of range: {value}")]
     OutOfRange { value: String },
+    #[error("could not render the agentic loop fingerprint: {0}")]
+    Fingerprint(String),
     #[error(transparent)]
     Ceiling(#[from] AgenticLoopCeilingError),
 }
@@ -41,7 +43,7 @@ pub(crate) fn read_settings(kwargs: &JsonMap) -> Result<AgenticSettings, Setting
     Ok(AgenticSettings {
         depth: read_depth(kwargs)?,
         max_loops: read_max_loops(kwargs)?,
-        fingerprints: read_fingerprints(kwargs),
+        fingerprints: read_fingerprints(kwargs)?,
     })
 }
 
@@ -90,21 +92,22 @@ fn read_max_loops(kwargs: &JsonMap) -> Result<u32, SettingsError> {
     Ok(configured.unwrap_or(DEFAULT_MAX_AGENTIC_LOOPS))
 }
 
-fn read_fingerprints(kwargs: &JsonMap) -> Vec<String> {
+fn read_fingerprints(kwargs: &JsonMap) -> Result<Vec<String>, SettingsError> {
     let Some(raw) = kwargs.get(AGENTIC_LOOP_FINGERPRINTS_KEY) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     match from_str::<Json>(raw.get()) {
         Ok(Json::List(items)) => items.iter().map(fingerprint_text).collect(),
-        _ => Vec::new(),
+        _ => Ok(Vec::new()),
     }
 }
 
 // Python's str(fp) keeps a string as it is and writes every other value as text
-fn fingerprint_text(value: &Json) -> String {
+fn fingerprint_text(value: &Json) -> Result<String, SettingsError> {
     match value {
-        Json::Text(text) => text.clone(),
-        other => sorted_json_text(other),
+        Json::Text(text) => Ok(text.clone()),
+        other => serde_json::to_string(&sorted_json(other))
+            .map_err(|error| SettingsError::Fingerprint(error.to_string())),
     }
 }
 

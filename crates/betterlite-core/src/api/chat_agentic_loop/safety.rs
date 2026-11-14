@@ -12,6 +12,8 @@ pub enum SafetyError {
     RepeatedFingerprint,
     #[error("Exceeded max_agentic_loops={max_loops} for model={model}")]
     MaxLoopsExceeded { max_loops: u32, model: String },
+    #[error("could not render the agentic loop fingerprint: {0}")]
+    Fingerprint(String),
 }
 
 pub(crate) fn check_loop_safety(
@@ -21,7 +23,7 @@ pub(crate) fn check_loop_safety(
     max_loops: u32,
     model: &str,
 ) -> Result<String, SafetyError> {
-    let fingerprint = fingerprint_tools(tool_calls);
+    let fingerprint = fingerprint_tools(tool_calls)?;
     if fingerprints.contains(&fingerprint) {
         return Err(SafetyError::RepeatedFingerprint);
     }
@@ -34,12 +36,8 @@ pub(crate) fn check_loop_safety(
     Ok(fingerprint)
 }
 
-// json.dumps(..., sort_keys=True, default=str) in compact form; the spaces json.dumps adds are not part of the contract
-pub(crate) fn sorted_json_text(value: &Json) -> String {
-    serde_json::to_string(&sorted_json(value)).unwrap_or_default()
-}
-
-fn fingerprint_tools(tool_calls: &JsonMap) -> String {
+// json.dumps(..., sort_keys=True, default=str); serde_json owns the escaping and the number text
+fn fingerprint_tools(tool_calls: &JsonMap) -> Result<String, SafetyError> {
     let fields = tool_calls
         .iter()
         .map(|(key, value)| {
@@ -51,11 +49,12 @@ fn fingerprint_tools(tool_calls: &JsonMap) -> String {
             )
         })
         .collect();
-    sorted_json_text(&Json::Object(fields))
+    serde_json::to_string(&sorted_json(&Json::Object(fields)))
+        .map_err(|error| SafetyError::Fingerprint(error.to_string()))
 }
 
 // json.dumps(sort_keys=True) sorts every nested object too, so the same call set fingerprints the same however it was built
-fn sorted_json(value: &Json) -> Json {
+pub(crate) fn sorted_json(value: &Json) -> Json {
     match value {
         Json::Object(fields) => {
             let mut sorted: IndexMap<String, Json> = fields

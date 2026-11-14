@@ -1,8 +1,12 @@
 #![cfg(test)]
 
+use betterlite_models::decisions::Json;
 use rstest::rstest;
+use serde_json::Number;
 
-use super::{AgenticSettings, SettingsError, converted_stream_requested, read_settings};
+use super::{
+    AgenticSettings, SettingsError, converted_stream_requested, fingerprint_text, read_settings,
+};
 use crate::api::chat_agentic_loop::tests::support::json_map;
 
 fn read(entries: &[(&str, &str)]) -> AgenticSettings {
@@ -107,6 +111,34 @@ fn the_fingerprints_read_every_element_as_text() {
         settings.fingerprints,
         ["first", "1", "true", r#"{"a":[null],"b":2}"#]
     );
+}
+
+#[test]
+fn the_fingerprint_text_renders_every_shape() {
+    assert_eq!(fingerprint_text(&Json::Null).unwrap(), "null");
+    assert_eq!(fingerprint_text(&Json::Bool(true)).unwrap(), "true");
+    assert_eq!(fingerprint_text(&Json::Bool(false)).unwrap(), "false");
+    assert_eq!(
+        fingerprint_text(&Json::Number(Number::from(7))).unwrap(),
+        "7"
+    );
+    assert_eq!(
+        fingerprint_text(&Json::Number(Number::from_f64(1.5).unwrap())).unwrap(),
+        "1.5"
+    );
+    assert_eq!(
+        fingerprint_text(&Json::List(vec![Json::Bool(false), Json::Null])).unwrap(),
+        "[false,null]"
+    );
+    let object = Json::Object(
+        [
+            ("z".to_owned(), Json::Null),
+            ("a".to_owned(), Json::Bool(true)),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    assert_eq!(fingerprint_text(&object).unwrap(), r#"{"a":true,"z":null}"#);
 }
 
 #[rstest]

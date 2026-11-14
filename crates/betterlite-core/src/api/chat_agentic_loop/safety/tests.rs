@@ -1,10 +1,8 @@
 #![cfg(test)]
 
 use betterlite_context::agentic_loop_plan::JsonMap;
-use betterlite_models::decisions::Json;
-use serde_json::Number;
 
-use super::{SafetyError, check_loop_safety, sorted_json_text};
+use super::{SafetyError, check_loop_safety};
 use crate::api::chat_agentic_loop::tests::support::json_map;
 
 fn tools() -> JsonMap {
@@ -58,32 +56,8 @@ fn a_depth_below_the_cap_passes() {
 }
 
 #[test]
-fn the_text_escapes_control_characters() {
-    let text = Json::Text("a\"b\\c\n\r\t\u{08}\u{0c}\u{1} d".to_owned());
-    assert_eq!(sorted_json_text(&text), r#""a\"b\\c\n\r\t\b\f\u0001 d""#);
-}
-
-#[test]
-fn the_text_renders_every_shape() {
-    assert_eq!(sorted_json_text(&Json::Null), "null");
-    assert_eq!(sorted_json_text(&Json::Bool(true)), "true");
-    assert_eq!(sorted_json_text(&Json::Bool(false)), "false");
-    assert_eq!(sorted_json_text(&Json::Number(Number::from(7))), "7");
-    assert_eq!(
-        sorted_json_text(&Json::Number(Number::from_f64(1.5).unwrap())),
-        "1.5"
-    );
-    assert_eq!(
-        sorted_json_text(&Json::List(vec![Json::Bool(false), Json::Null])),
-        "[false,null]"
-    );
-    let object = Json::Object(
-        [
-            ("z".to_owned(), Json::Null),
-            ("a".to_owned(), Json::Bool(true)),
-        ]
-        .into_iter()
-        .collect(),
-    );
-    assert_eq!(sorted_json_text(&object), r#"{"a":true,"z":null}"#);
+fn the_fingerprint_text_escapes_control_characters() {
+    let calls = json_map(&[("call", r#""a\"b\\c\n\r\t\b\f\u0001 d""#)]);
+    let fingerprint = check_loop_safety(&calls, &[], 0, 3, "gpt-4o").unwrap();
+    assert_eq!(fingerprint, r#"{"call":"a\"b\\c\n\r\t\b\f\u0001 d"}"#);
 }
