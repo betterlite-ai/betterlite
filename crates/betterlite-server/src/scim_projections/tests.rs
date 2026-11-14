@@ -31,13 +31,37 @@ use deadpool_postgres::{Manager, Pool};
 use http::StatusCode;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Value, json};
+use serde::Serialize;
 use tokio_postgres::NoTls;
 
 const ENTERPRISE_FIELD: &str = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 
 fn json_data(text: &str) -> JsonData {
     serde_json::from_str(text).unwrap()
+}
+
+fn as_json<T>(value: &T) -> JsonData
+where
+    T: Serialize,
+{
+    json_data(&serde_json::to_string(value).unwrap())
+}
+
+fn field<'a>(value: &'a JsonData, name: &str) -> &'a JsonData {
+    let JsonData::Object(fields) = value else {
+        panic!("{name} read from a non-object");
+    };
+    match fields.get(name) {
+        Some(found) => found,
+        None => panic!("{name} is missing"),
+    }
+}
+
+fn element<'a>(value: &'a JsonData, index: usize) -> &'a JsonData {
+    let JsonData::Array(items) = value else {
+        panic!("index {index} read from a non-array");
+    };
+    &items[index]
 }
 
 fn metadata(text: &str) -> Metadata {
@@ -65,8 +89,8 @@ fn projected(text: &str) -> UserProjection {
     project_user(&ScimUserSource::from(&user), Vec::new()).unwrap()
 }
 
-fn projected_json(text: &str) -> Value {
-    serde_json::to_value(projected(text).user).unwrap()
+fn projected_json(text: &str) -> JsonData {
+    as_json(&projected(text).user)
 }
 
 fn user_with_metadata(stored: &str) -> String {
@@ -159,80 +183,65 @@ fn scim_projections_directory_parse_of_a_missing_key_is_absent() {
     None,
     None,
     "{}",
-    "Unknown Display Name",
-    "Unknown User",
-    "Unknown Family Name"
+    ("Unknown Display Name", "Unknown User", "Unknown Family Name")
 )]
 #[case::email_only(
     Some("a@b.co"),
     None,
     "{}",
-    "a@b.co",
-    "Unknown User",
-    "Unknown Family Name"
+    ("a@b.co", "Unknown User", "Unknown Family Name")
 )]
-#[case::alias_only(Some(""), Some("Ann"), "{}", "Unknown Display Name", "Ann", "Ann")]
-#[case::email_beats_alias(Some("a@b.co"), Some("Ann"), "{}", "a@b.co", "Ann", "Ann")]
+#[case::alias_only(Some(""), Some("Ann"), "{}", ("Unknown Display Name", "Ann", "Ann"))]
+#[case::email_beats_alias(Some("a@b.co"), Some("Ann"), "{}", ("a@b.co", "Ann", "Ann"))]
 #[case::empty_alias(
     Some("a@b.co"),
     Some(""),
     "{}",
-    "a@b.co",
-    "Unknown User",
-    "Unknown Family Name"
+    ("a@b.co", "Unknown User", "Unknown Family Name")
 )]
 #[case::uuid_email(
     Some("3f2504e0-4f89"),
     None,
     "{}",
-    "3f2504e0-4f89",
-    "Unknown User",
-    "Unknown Family Name"
+    ("3f2504e0-4f89", "Unknown User", "Unknown Family Name")
 )]
 #[case::stored_names_beat_alias(
     None,
     Some("Ann"),
     r#"{"scim_metadata":{"givenName":"Gi","familyName":"Fa"}}"#,
-    "Unknown Display Name",
-    "Gi",
-    "Fa"
+    ("Unknown Display Name", "Gi", "Fa")
 )]
 #[case::empty_stored_names_use_alias(
     None,
     Some("Ann"),
     r#"{"scim_metadata":{"givenName":"","familyName":""}}"#,
-    "Unknown Display Name",
-    "Ann",
-    "Ann"
+    ("Unknown Display Name", "Ann", "Ann")
 )]
 #[case::given_only(
     None,
     Some("Ann"),
     r#"{"scim_metadata":{"givenName":"Gi"}}"#,
-    "Unknown Display Name",
-    "Gi",
-    "Ann"
+    ("Unknown Display Name", "Gi", "Ann")
 )]
 #[case::null_stored_names(
     None,
     None,
     r#"{"scim_metadata":{"givenName":null,"familyName":null}}"#,
-    "Unknown Display Name",
-    "Unknown User",
-    "Unknown Family Name"
+    ("Unknown Display Name", "Unknown User", "Unknown Family Name")
 )]
 fn scim_projections_names_prefer_stored_values(
     #[case] email: Option<&str>,
     #[case] alias: Option<&str>,
     #[case] stored: &str,
-    #[case] user_name: &str,
-    #[case] given: &str,
-    #[case] family: &str,
+    #[case] expected: (&str, &str, &str),
 ) {
     let names = scim_names(email, alias, &metadata(stored)).unwrap();
-    assert_eq!(names.user_name, user_name);
-    assert_eq!(names.given_name, given);
-    assert_eq!(names.family_name, family);
+    let projected = (
+        names.user_name.as_str(),
+        names.given_name.as_str(),
+        names.family_name.as_str(),
+    );
+    assert_eq!(projected, expected);
 }
 
 #[rstest]
@@ -302,23 +311,17 @@ fn scim_projections_meta_names_the_resource_and_both_times() {
         Some(aware("2026-01-03T03:04:05Z")),
     )
     .unwrap();
-    assert_eq!(
-        serde_json::to_value(meta).unwrap(),
-        json!({
-            "resourceType": "User",
-            "created": "2026-01-02T03:04:05",
-            "lastModified": "2026-01-03T03:04:05+00:00",
-        })
+    let expected = json_data(
+        r#"{"resourceType":"User","created":"2026-01-02T03:04:05","lastModified":"2026-01-03T03:04:05+00:00"}"#,
     );
+    assert_eq!(as_json(&meta), expected);
 }
 
 #[test]
 fn scim_projections_meta_without_times_has_nulls() {
     let meta = resource_meta("Group", None, None).unwrap();
-    assert_eq!(
-        serde_json::to_value(meta).unwrap(),
-        json!({"resourceType": "Group", "created": null, "lastModified": null})
-    );
+    let expected = json_data(r#"{"resourceType":"Group","created":null,"lastModified":null}"#);
+    assert_eq!(as_json(&meta), expected);
 }
 
 #[test]
@@ -326,33 +329,60 @@ fn scim_projections_uuid_email_is_still_the_username() {
     let user = projected_json(
         r#"{"user_id":"u","user_email":"3f2504e0-4f89-11d3-9a0c-0305e82c3301","user_alias":"Ann"}"#,
     );
-    assert_eq!(user["userName"], "3f2504e0-4f89-11d3-9a0c-0305e82c3301");
-    assert_eq!(user["displayName"], "3f2504e0-4f89-11d3-9a0c-0305e82c3301");
-    assert_eq!(user["emails"], json!([]));
-    assert_eq!(user["name"]["givenName"], "Ann");
-    assert_eq!(user["name"]["familyName"], "Ann");
+    let address = json_data(r#""3f2504e0-4f89-11d3-9a0c-0305e82c3301""#);
+    assert_eq!(field(&user, "userName"), &address);
+    assert_eq!(field(&user, "displayName"), &address);
+    assert_eq!(field(&user, "emails"), &json_data("[]"));
+    assert_eq!(
+        field(field(&user, "name"), "givenName"),
+        &json_data(r#""Ann""#)
+    );
+    assert_eq!(
+        field(field(&user, "name"), "familyName"),
+        &json_data(r#""Ann""#)
+    );
 }
 
 #[test]
 fn scim_projections_address_with_at_sign_is_an_email_and_the_username() {
     let user = projected_json(r#"{"user_id":"u","user_email":"ann@example.com"}"#);
-    assert_eq!(user["userName"], "ann@example.com");
-    assert_eq!(user["displayName"], "ann@example.com");
-    assert_eq!(user["emails"][0]["value"], "ann@example.com");
-    assert_eq!(user["emails"][0]["primary"], true);
-    assert_eq!(user["id"], "u");
-    assert_eq!(user["schemas"], json!([super::USER_SCHEMA]));
+    assert_eq!(field(&user, "userName"), &json_data(r#""ann@example.com""#));
+    assert_eq!(
+        field(&user, "displayName"),
+        &json_data(r#""ann@example.com""#)
+    );
+    let emails = field(&user, "emails");
+    assert_eq!(
+        field(element(emails, 0), "value"),
+        &json_data(r#""ann@example.com""#)
+    );
+    assert_eq!(field(element(emails, 0), "primary"), &JsonData::Bool(true));
+    assert_eq!(field(&user, "id"), &json_data(r#""u""#));
+    let schemas = json_data(&format!(r#"["{}"]"#, super::USER_SCHEMA));
+    assert_eq!(field(&user, "schemas"), &schemas);
 }
 
 #[test]
 fn scim_projections_user_without_email_or_alias_gets_placeholders() {
     let user = projected_json(r#"{"user_id":"u"}"#);
-    assert_eq!(user["userName"], "Unknown Display Name");
-    assert_eq!(user["displayName"], "Unknown Display Name");
-    assert_eq!(user["name"]["givenName"], "Unknown User");
-    assert_eq!(user["name"]["familyName"], "Unknown Family Name");
-    assert_eq!(user["emails"], json!([]));
-    assert_eq!(user["groups"], json!([]));
+    assert_eq!(
+        field(&user, "userName"),
+        &json_data(r#""Unknown Display Name""#)
+    );
+    assert_eq!(
+        field(&user, "displayName"),
+        &json_data(r#""Unknown Display Name""#)
+    );
+    assert_eq!(
+        field(field(&user, "name"), "givenName"),
+        &json_data(r#""Unknown User""#)
+    );
+    assert_eq!(
+        field(field(&user, "name"), "familyName"),
+        &json_data(r#""Unknown Family Name""#)
+    );
+    assert_eq!(field(&user, "emails"), &json_data("[]"));
+    assert_eq!(field(&user, "groups"), &json_data("[]"));
 }
 
 #[test]
@@ -376,12 +406,22 @@ fn scim_projections_malformed_scim_metadata_keeps_its_error() {
 
 #[test]
 fn scim_projections_user_without_metadata_is_active() {
-    assert_eq!(projected_json(r#"{"user_id":"u"}"#)["active"], true);
+    let active = JsonData::Bool(true);
     assert_eq!(
-        projected_json(r#"{"user_id":"u","metadata":null}"#)["active"],
-        true
+        field(&projected_json(r#"{"user_id":"u"}"#), "active"),
+        &active
     );
-    assert_eq!(projected_json(&user_with_metadata("{}"))["active"], true);
+    assert_eq!(
+        field(
+            &projected_json(r#"{"user_id":"u","metadata":null}"#),
+            "active"
+        ),
+        &active
+    );
+    assert_eq!(
+        field(&projected_json(&user_with_metadata("{}")), "active"),
+        &active
+    );
 }
 
 #[rstest]
@@ -396,7 +436,10 @@ fn scim_projections_user_without_metadata_is_active() {
 #[case::empty_object("{}", false)]
 fn scim_projections_active_follows_scim_active(#[case] stored: &str, #[case] expected: bool) {
     let text = user_with_metadata(&format!(r#"{{"scim_active":{stored}}}"#));
-    assert_eq!(projected_json(&text)["active"], expected);
+    assert_eq!(
+        field(&projected_json(&text), "active"),
+        &JsonData::Bool(expected)
+    );
 }
 
 #[rstest]
@@ -456,10 +499,13 @@ fn scim_projections_directory_blocks_are_kept_or_dropped(
     #[case] present: bool,
 ) {
     let projection = projected(&user_with_metadata(&format!(r#"{{"{key}":{stored}}}"#)));
-    let user = serde_json::to_value(&projection.user).unwrap();
+    let user = as_json(&projection.user);
+    let JsonData::Object(fields) = &user else {
+        panic!("the projected user is not a JSON object");
+    };
     let expected_dropped: Vec<&str> = if dropped { vec![key] } else { Vec::new() };
     assert_eq!(projection.dropped, expected_dropped);
-    assert_eq!(user.get(field).is_some(), present);
+    assert_eq!(fields.contains_key(field), present);
 }
 
 #[test]
@@ -467,11 +513,16 @@ fn scim_projections_enterprise_block_adds_its_schema() {
     let user = projected_json(&user_with_metadata(&format!(
         r#"{{"{ENTERPRISE_METADATA_KEY}":{{"department":"R&D"}}}}"#
     )));
+    let schemas = json_data(&format!(
+        r#"["{}","{}"]"#,
+        super::USER_SCHEMA,
+        ENTERPRISE_USER_SCHEMA
+    ));
+    assert_eq!(field(&user, "schemas"), &schemas);
     assert_eq!(
-        user["schemas"],
-        json!([super::USER_SCHEMA, ENTERPRISE_USER_SCHEMA])
+        field(field(&user, ENTERPRISE_FIELD), "department"),
+        &json_data(r#""R&D""#)
     );
-    assert_eq!(user[ENTERPRISE_FIELD]["department"], "R&D");
 }
 
 #[test]
@@ -479,7 +530,8 @@ fn scim_projections_dropped_enterprise_block_keeps_the_core_schema_only() {
     let user = projected_json(&user_with_metadata(&format!(
         r#"{{"{ENTERPRISE_METADATA_KEY}":[1]}}"#
     )));
-    assert_eq!(user["schemas"], json!([super::USER_SCHEMA]));
+    let schemas = json_data(&format!(r#"["{}"]"#, super::USER_SCHEMA));
+    assert_eq!(field(&user, "schemas"), &schemas);
 }
 
 #[test]
@@ -487,11 +539,17 @@ fn scim_projections_broken_directory_block_drops_only_that_block() {
     let projection = projected(&user_with_metadata(&format!(
         r#"{{"{ENTITLEMENTS_METADATA_KEY}":[[1]],"{ROLES_METADATA_KEY}":["admin"],"scim_active":false}}"#
     )));
-    let user = serde_json::to_value(&projection.user).unwrap();
+    let user = as_json(&projection.user);
+    let JsonData::Object(fields) = &user else {
+        panic!("the projected user is not a JSON object");
+    };
     assert_eq!(projection.dropped, vec![ENTITLEMENTS_METADATA_KEY]);
-    assert!(user.get("entitlements").is_none());
-    assert_eq!(user["roles"][0]["value"], "admin");
-    assert_eq!(user["active"], false);
+    assert!(!fields.contains_key("entitlements"));
+    assert_eq!(
+        field(element(field(&user, "roles"), 0), "value"),
+        &json_data(r#""admin""#)
+    );
+    assert_eq!(field(&user, "active"), &JsonData::Bool(false));
 }
 
 #[test]
@@ -499,16 +557,24 @@ fn scim_projections_user_times_are_formatted_as_given() {
     let user = projected_json(
         r#"{"user_id":"u","created_at":"2026-01-02T03:04:05.123456","updated_at":"2026-01-02T03:04:06+00:00"}"#,
     );
-    assert_eq!(user["meta"]["resourceType"], "User");
-    assert_eq!(user["meta"]["created"], "2026-01-02T03:04:05.123456");
-    assert_eq!(user["meta"]["lastModified"], "2026-01-02T03:04:06+00:00");
+    let meta = field(&user, "meta");
+    assert_eq!(field(meta, "resourceType"), &json_data(r#""User""#));
+    assert_eq!(
+        field(meta, "created"),
+        &json_data(r#""2026-01-02T03:04:05.123456""#)
+    );
+    assert_eq!(
+        field(meta, "lastModified"),
+        &json_data(r#""2026-01-02T03:04:06+00:00""#)
+    );
 }
 
 #[test]
 fn scim_projections_user_without_times_has_null_meta_times() {
     let user = projected_json(r#"{"user_id":"u"}"#);
-    assert_eq!(user["meta"]["created"], Value::Null);
-    assert_eq!(user["meta"]["lastModified"], Value::Null);
+    let meta = field(&user, "meta");
+    assert_eq!(field(meta, "created"), &JsonData::Null);
+    assert_eq!(field(meta, "lastModified"), &JsonData::Null);
 }
 
 #[test]
@@ -520,10 +586,10 @@ fn scim_projections_user_keeps_the_groups_it_is_given() {
         kind: GroupKind::default(),
     }];
     let projection = project_user(&ScimUserSource::from(&user), groups).unwrap();
-    let user_json = serde_json::to_value(projection.user).unwrap();
+    let user_json = as_json(&projection.user);
     assert_eq!(
-        user_json["groups"],
-        json!([{"value": "t1", "display": "alpha", "type": "direct"}])
+        field(&user_json, "groups"),
+        &json_data(r#"[{"value":"t1","display":"alpha","type":"direct"}]"#)
     );
 }
 
@@ -548,25 +614,25 @@ const TEAM: &str = r#"{
 
 #[test]
 fn scim_projections_group_walks_the_stored_roster() {
-    let group = serde_json::to_value(project_group(&stored_team(TEAM)).unwrap()).unwrap();
-    assert_eq!(group["schemas"], json!([super::GROUP_SCHEMA]));
-    assert_eq!(group["id"], "t1");
-    assert_eq!(group["displayName"], "alpha");
-    assert_eq!(group["meta"]["resourceType"], "Group");
-    assert_eq!(group["meta"]["created"], "2026-01-02T03:04:05+00:00");
+    let group = as_json(&project_group(&stored_team(TEAM)).unwrap());
+    let schemas = json_data(&format!(r#"["{}"]"#, super::GROUP_SCHEMA));
+    assert_eq!(field(&group, "schemas"), &schemas);
+    assert_eq!(field(&group, "id"), &json_data(r#""t1""#));
+    assert_eq!(field(&group, "displayName"), &json_data(r#""alpha""#));
+    let meta = field(&group, "meta");
+    assert_eq!(field(meta, "resourceType"), &json_data(r#""Group""#));
     assert_eq!(
-        group["meta"]["lastModified"],
-        "2026-01-02T03:04:06.500000+00:00"
+        field(meta, "created"),
+        &json_data(r#""2026-01-02T03:04:05+00:00""#)
     );
     assert_eq!(
-        group["members"],
-        json!([
-            {"value": "u1", "display": "ann@example.com", "type": "User"},
-            {"value": "u2", "display": "u2", "type": "User"},
-            {"value": "Unknown Member Value", "display": "x@y.co", "type": "User"},
-            {"value": "Unknown Member Value", "display": "Unknown Member Value", "type": "User"},
-        ])
+        field(meta, "lastModified"),
+        &json_data(r#""2026-01-02T03:04:06.500000+00:00""#)
     );
+    let members = json_data(
+        r#"[{"value":"u1","display":"ann@example.com","type":"User"},{"value":"u2","display":"u2","type":"User"},{"value":"Unknown Member Value","display":"x@y.co","type":"User"},{"value":"Unknown Member Value","display":"Unknown Member Value","type":"User"}]"#,
+    );
+    assert_eq!(field(&group, "members"), &members);
 }
 
 #[test]
@@ -580,9 +646,9 @@ fn scim_projections_group_without_an_alias_fails_instead_of_using_the_id() {
 #[test]
 fn scim_projections_group_without_times_has_null_meta_times() {
     let team = stored_team(r#"{"team_id":"t1","team_alias":"alpha"}"#);
-    let group = serde_json::to_value(project_group(&team).unwrap()).unwrap();
-    assert_eq!(group["meta"]["created"], Value::Null);
-    assert_eq!(group["members"], json!([]));
+    let group = as_json(&project_group(&team).unwrap());
+    assert_eq!(field(field(&group, "meta"), "created"), &JsonData::Null);
+    assert_eq!(field(&group, "members"), &json_data("[]"));
 }
 
 #[test]
@@ -694,7 +760,7 @@ async fn close(fixture: PostgresFixture, pool: Pool) {
     fixture.close_async().await.unwrap();
 }
 
-fn assert_no_database(error: ProjectionError) {
+fn assert_no_database(error: &ProjectionError) {
     assert!(matches!(error, ProjectionError::NoDatabase));
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(error.to_string(), "No database connected");
@@ -706,19 +772,19 @@ async fn scim_projections_every_lookup_without_a_database_is_a_500() {
     let lookups = ScimLookups { store: &missing };
     let user = stored_user(r#"{"user_id":"u","teams":["t1"]}"#);
     let team = stored_team(r#"{"team_id":"t1","team_alias":"alpha"}"#);
-    assert_no_database(lookups.check_user_exists("u").await.err().unwrap());
-    assert_no_database(lookups.check_team_exists("t1").await.err().unwrap());
+    assert_no_database(&lookups.check_user_exists("u").await.err().unwrap());
+    assert_no_database(&lookups.check_team_exists("t1").await.err().unwrap());
     assert_no_database(
-        lookups
+        &lookups
             .project_stored_user(&ScimUserSource::from(&user))
             .await
             .err()
             .unwrap(),
     );
-    assert_no_database(lookups.project_stored_group(&team).err().unwrap());
-    assert_no_database(lookups.get_team_members_display(&[]).await.err().unwrap());
+    assert_no_database(&lookups.project_stored_group(&team).err().unwrap());
+    assert_no_database(&lookups.get_team_members_display(&[]).await.err().unwrap());
     assert_no_database(
-        lookups
+        &lookups
             .get_team_members_display(&["u".to_owned()])
             .await
             .err()
@@ -810,22 +876,25 @@ async fn scim_projections_user_groups_come_from_their_teams_and_skip_deleted_one
         .project_stored_user(&ScimUserSource::from(&user))
         .await
         .unwrap();
-    let user_json = serde_json::to_value(projection.user).unwrap();
+    let user_json = as_json(&projection.user);
     assert_eq!(
-        user_json["groups"],
-        json!([
-            {"value": "t1", "display": "alpha", "type": "direct"},
-            {"value": "t_null", "display": null, "type": "direct"},
-        ])
-    );
-    assert_eq!(user_json["userName"], "ann@example.com");
-    assert_eq!(
-        user_json["meta"]["created"],
-        "2026-01-02T03:04:05.123000+00:00"
+        field(&user_json, "groups"),
+        &json_data(
+            r#"[{"value":"t1","display":"alpha","type":"direct"},{"value":"t_null","display":null,"type":"direct"}]"#
+        )
     );
     assert_eq!(
-        user_json["meta"]["lastModified"],
-        "2026-01-02T03:04:06+00:00"
+        field(&user_json, "userName"),
+        &json_data(r#""ann@example.com""#)
+    );
+    let meta = field(&user_json, "meta");
+    assert_eq!(
+        field(meta, "created"),
+        &json_data(r#""2026-01-02T03:04:05.123000+00:00""#)
+    );
+    assert_eq!(
+        field(meta, "lastModified"),
+        &json_data(r#""2026-01-02T03:04:06+00:00""#)
     );
     close(fixture, pool).await;
 }
@@ -841,8 +910,8 @@ async fn scim_projections_user_without_teams_has_no_groups() {
         .await
         .unwrap();
     assert_eq!(
-        serde_json::to_value(projection.user).unwrap()["groups"],
-        json!([])
+        field(&as_json(&projection.user), "groups"),
+        &json_data("[]")
     );
     close(fixture, pool).await;
 }
@@ -858,8 +927,8 @@ async fn scim_projections_user_groups_read_the_team_row_without_validating_it() 
         .await
         .unwrap();
     assert_eq!(
-        serde_json::to_value(projection.user).unwrap()["groups"],
-        json!([{"value": "t_bad", "display": "broken", "type": "direct"}])
+        field(&as_json(&projection.user), "groups"),
+        &json_data(r#"[{"value":"t_bad","display":"broken","type":"direct"}]"#)
     );
     close(fixture, pool).await;
 }
@@ -871,16 +940,17 @@ async fn scim_projections_group_keeps_a_member_whose_user_row_is_gone() {
     let lookups = ScimLookups { store: &store };
     let team = lookups.check_team_exists("t1").await.unwrap();
     let group = lookups.project_stored_group(&team).unwrap();
-    let group = serde_json::to_value(group).unwrap();
-    assert_eq!(group["displayName"], "alpha");
-    assert_eq!(group["meta"]["created"], "2026-02-03T04:05:06.500000+00:00");
+    let group_json = as_json(&group);
+    assert_eq!(field(&group_json, "displayName"), &json_data(r#""alpha""#));
     assert_eq!(
-        group["members"],
-        json!([
-            {"value": "u1", "display": "u1", "type": "User"},
-            {"value": "ghost", "display": "ghost", "type": "User"},
-            {"value": "u3", "display": "u3", "type": "User"},
-        ])
+        field(field(&group_json, "meta"), "created"),
+        &json_data(r#""2026-02-03T04:05:06.500000+00:00""#)
+    );
+    assert_eq!(
+        field(&group_json, "members"),
+        &json_data(
+            r#"[{"value":"u1","display":"u1","type":"User"},{"value":"ghost","display":"ghost","type":"User"},{"value":"u3","display":"u3","type":"User"}]"#
+        )
     );
     assert_eq!(team_member_user_ids(&team), ["u1", "ghost", "u3"]);
     close(fixture, pool).await;
@@ -894,12 +964,10 @@ async fn scim_projections_members_display_resolves_current_users_and_omits_missi
     let ids = ["u1", "ghost", "u3", "u2"].map(str::to_owned);
     let members = lookups.get_team_members_display(&ids).await.unwrap();
     assert_eq!(
-        serde_json::to_value(members).unwrap(),
-        json!([
-            {"value": "u1", "display": "ann@example.com", "type": "User"},
-            {"value": "u3", "display": "u3", "type": "User"},
-            {"value": "u2", "display": "u2", "type": "User"},
-        ])
+        as_json(&members),
+        json_data(
+            r#"[{"value":"u1","display":"ann@example.com","type":"User"},{"value":"u3","display":"u3","type":"User"},{"value":"u2","display":"u2","type":"User"}]"#
+        )
     );
     close(fixture, pool).await;
 }

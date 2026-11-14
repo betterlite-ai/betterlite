@@ -79,7 +79,7 @@ impl<'database> ScimLookups<'database> {
             use_writer: false,
         };
         let mut found = users.find_by_id(user_id).await?;
-        for user in &mut found {
+        if let Some(user) = &mut found {
             as_utc([&mut user.created_at, &mut user.updated_at]);
         }
         Ok(found)
