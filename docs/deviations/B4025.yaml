@@ -12,7 +12,7 @@ deviations:
   - what: Amounts in the alert text render with the Decimal's text, so 100 prints as 100 where LiteLLM's f-string prints the float 100.0.
     why: Money is a rust_decimal::Decimal from the moment it is read, and only the trailing .0 of a whole number differs. Applies to the soft and max budget text and to the customer spend message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L652
-  - what: The alert_emails list and the max_budget_alert_emails map render with Rust's Debug text, so the addresses carry double quotes and the map reads {"50": ["a@example.com"]}, where LiteLLM writes Python's list and dict repr with single quotes.
+  - what: 'The alert_emails list and the max_budget_alert_emails map render with Rust''s Debug text, so the addresses carry double quotes and the map reads {"50": ["a@example.com"]}, where LiteLLM writes Python''s list and dict repr with single quotes.'
     why: docs/compatibility.md keeps Python's repr and str text out of the port; both fields are optional extras that only appear in the user info block when they are set.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L691-L697
   - what: A team member key alert id renders a missing user id or team id as an empty slot (team_member::team-1), where LiteLLM's f-string writes Python's None (team_member:None:team-1).
