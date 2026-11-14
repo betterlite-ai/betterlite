@@ -39,8 +39,9 @@ class ServerSentEvent:
     def data(self) -> str:
         return self._data
 
-    def json(self) -> JsonValue:  # ast-grep-ignore: no-one-line-functions
-        return json.loads(self.data)
+    def json(self) -> JsonValue:
+        parsed: JsonValue = json.loads(self.data)
+        return parsed
 
     @override
     def __repr__(self) -> str:
