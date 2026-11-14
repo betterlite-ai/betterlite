@@ -138,6 +138,28 @@ def test_model_names_match_litellm() -> None:
         assert our_model.model_config == their_model.model_config, our_model.__name__
 
 
+def test_defaults_names_match() -> None:
+    our_marketplace = claude_code.MarketplaceResponse(
+        name="market", owner=claude_code.PluginOwner(name="owner")
+    )
+    their_marketplace = litellm_claude_code.MarketplaceResponse(
+        name="market", owner=litellm_claude_code.PluginOwner(name="owner")
+    )
+    assert our_marketplace.plugins == their_marketplace.plugins
+    our_logs = callback_logs.CallbackLogsResponse(processed=0, failed=0)
+    their_logs = litellm_callback_logs.CallbackLogsResponse(processed=0, failed=0)
+    assert our_logs.failures == their_logs.failures
+    scopes: dict[str, JsonValue] = {
+        "provider": "microsoft_entra",
+        "tenant_id": "00000000-0000-0000-0000-000000000001",
+        "client_id": "00000000-0000-0000-0000-000000000002",
+    }
+    our_config = agent_identity.EntraIdentityConfig.model_validate(scopes)
+    their_config = litellm_agent_identity.EntraIdentityConfig.model_validate(scopes)
+    assert our_config.required_scopes == their_config.required_scopes
+    assert our_config.required_roles == their_config.required_roles
+
+
 def test_typed_dict_names_match() -> None:
     their_secret: dict[str, JsonValue] = TypeAdapter(litellm_pre_call.SecretFields).json_schema()
     our_secret: dict[str, JsonValue] = TypeAdapter(SecretFields).json_schema()
