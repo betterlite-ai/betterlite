@@ -80,10 +80,25 @@ where
     };
     match load_file(loader, path) {
         Ok(resolved) => {
+            // Router.get_model_list also lists every deployment of a visible alias's group under the alias name
+            let aliased: usize = resolved
+                .sections
+                .deployment_catalog
+                .model_group_alias
+                .values()
+                .filter(|alias| !alias.hidden)
+                .map(|alias| {
+                    resolved
+                        .model_list
+                        .iter()
+                        .filter(|deployment| deployment.model_name == alias.model)
+                        .count()
+                })
+                .sum();
             writeln!(
                 writer,
                 "LiteLLM: config OK ({} models)",
-                resolved.model_list.len()
+                resolved.model_list.len().saturating_add(aliased)
             )?;
             Ok(())
         }

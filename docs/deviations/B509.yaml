@@ -1,0 +1,14 @@
+task: B509
+deviations:
+  - what: The compact reply's lax-validation debug line names the validation error and omits the response payload, where LiteLLM logs the whole raw_response_json.
+    why: A provider response can carry credentials, and betterlite never writes a response body into a log line. Compact shares the reply conversion B508 owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L966-L971
+  - what: The compact URL keeps percent-escaped bytes in the API base path as the caller wrote them, where httpx.URL decodes the path and re-encodes it, turning an escaped slash into a separator and an escaped unreserved byte into its bare character.
+    why: Decoding an API base path the way httpx does needs a lossy UTF-8 conversion betterlite forbids, and an administrative api_base does not carry escapes that decode differently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L938-L941
+  - what: A response resource body is refused past 64 MiB, 16384 JSON values or 128 nesting levels, where httpx.Response.json() has no bound; such a refusal is a local decode error, not an OpenAIError carrying the upstream status.
+    why: Rule bounded-inputs gives every parser of provider bytes a finite limit, so the byte cap matches the crate's other large-body readers (64 MiB); a retrieved response can carry a base64 image well over 1 MiB, so the cap must stay above what create returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L95-L102
+  - what: A compact request refuses an api_base that is not an absolute URL with a URL error, where httpx.URL builds a relative URL and the failure only comes when the request is sent.
+    why: Compact parses the API base with url::Url, which requires a scheme, and an api_base without one reaches no provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L934-L937

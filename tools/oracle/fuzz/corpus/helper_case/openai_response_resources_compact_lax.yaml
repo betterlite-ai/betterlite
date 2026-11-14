@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-resources-seed-compact-lax
+call:
+  openai_response_resources:
+    compact_lax_response:
+      probes:
+        - {endpoint: compact, body: '{"id":"resp_1","created_at":9,"output":[]}', status: 200, headers: {}, now: 1700000000}
+env: {}
+compare: {ignore: []}

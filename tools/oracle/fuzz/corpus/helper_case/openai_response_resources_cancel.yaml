@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-resources-seed-cancel
+call:
+  openai_response_resources:
+    cancel_response:
+      probes:
+        - {endpoint: cancel, body: '{"id":"resp_1","created_at":9,"output":[],"status":"cancelled"}', status: 200}
+env: {}
+compare: {ignore: []}

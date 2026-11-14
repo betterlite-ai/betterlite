@@ -1,0 +1,15 @@
+kind: helper
+name: openai-response-resources-encoded-response-id
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_resources:
+    encoded_response_id:
+      probes:
+        - {endpoint: delete, response_id: resp_1, api_base: https://api.openai.com/v1}
+        - {endpoint: get, response_id: 'a/b c?d#e', api_base: https://api.openai.com/v1}
+        - {endpoint: cancel, response_id: 'rés', api_base: https://api.openai.com/v1}
+        - {endpoint: delete, response_id: resp_2, api_base: 'https://api.openai.com/v1/'}
+        - {endpoint: get, response_id: 'x~y.z-_', api_base: 'https://host.example/openai'}
+        - {endpoint: get, response_id: '..', api_base: https://api.openai.com/v1}
+        - {endpoint: delete, response_id: '', api_base: https://api.openai.com/v1}

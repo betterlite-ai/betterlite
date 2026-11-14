@@ -1,0 +1,44 @@
+kind: helper
+name: openai-response-resources-compact-replay-input
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_resources:
+    compact_replay_input:
+      probes:
+        - endpoint: compact
+          model: gpt-4o
+          api_base: https://api.openai.com/v1
+          input:
+            - {type: reasoning, id: rs_1, summary: [], status: null, content: null, encrypted_content: null}
+            - {role: user, content: [{type: input_text, text: hi, cache_control: {type: ephemeral}}]}
+          params:
+            tools:
+              - {type: function, name: f, parameters: '{"type":"object"}', cache_control: {type: ephemeral}}
+        - endpoint: compact
+          model: gpt-4o
+          api_base: https://api.openai.com/v1
+          input:
+            - {type: function_call, id: fc_1, call_id: c, name: f, arguments: '{}'}
+            - {type: function_call, id: other_1, call_id: c, name: f, arguments: '{}'}
+            - {type: custom_tool_call, id: ctc_1, call_id: c, name: f, input: x}
+            - {type: custom_tool_call, id: foreign, call_id: c, name: f, input: x}
+        - endpoint: compact
+          provider: hosted_vllm
+          model: gpt-4o
+          api_base: https://api.openai.com/v1
+          input:
+            - {type: function_call, id: other_1, call_id: c, name: f, arguments: '{}'}
+          params:
+            tools:
+              - {type: function, name: f, parameters: {allOf: [{type: object}]}}
+        - endpoint: compact
+          model: gpt-4o
+          api_base: https://api.openai.com/v1
+          model_info: {base_model: gpt-4o}
+          input: hi
+          params:
+            tools:
+              - {type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}
+        - {endpoint: compact, model: gpt-4o, api_base: https://api.openai.com/v1, input: hi, params: {tools: null}}
+        - {endpoint: compact, model: gpt-4o, api_base: https://api.openai.com/v1, input: hi, params: {tools: [{type: function, name: f, parameters: 'not json'}]}}
