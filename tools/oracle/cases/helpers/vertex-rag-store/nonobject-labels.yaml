@@ -1,0 +1,19 @@
+kind: helper
+name: vertex-rag-store-nonobject-labels
+call:
+  vertex_rag_store:
+    calls:
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/a","display_name":"store","labels":"team"}'
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/b","labels":[1,2]}'
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/c","labels":null}'
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/d","labels":{"team":"rag"}}'
+env: {}
+compare: {ignore: []}
