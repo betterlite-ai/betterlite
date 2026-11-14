@@ -1,0 +1,19 @@
+kind: helper
+name: dynamoai-during-call-analysis-success
+call:
+  b3768:
+    mode: during_call
+    env: {}
+    api_key: dynamo-key
+    api_base: null
+    policy_ids: null
+    model_id: null
+    messages:
+      - {role: user, content: hello}
+    choices: []
+    answer:
+      status: 200
+      headers: {}
+      body: {finalAction: NONE}
+env: {}
+compare: {ignore: []}
