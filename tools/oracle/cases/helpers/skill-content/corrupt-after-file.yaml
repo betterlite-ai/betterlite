@@ -1,0 +1,17 @@
+kind: helper
+name: corrupt_after_file
+call:
+  skill_content:
+    function: extract_files
+    skill:
+      skill_id: litellm_skill_demo
+      display_title: null
+      description: null
+      instructions: null
+      file_content: 'UEsDBBQAAAAIADmMbV2SToRsBgAAAAQAAAAOAAAAc2tpbGwvZ29vZC50eHRLz89PAQBQSwMEFAAAAAgAOYxtXWN8efoTAAAAeAAAAAwAAABza2lsbC9iYWQubWT/////////////////////////UEsBAhQDFAAAAAgAOYxtXZJOhGwGAAAABAAAAA4AAAAAAAAAAAAAAIABAAAAAHNraWxsL2dvb2QudHh0UEsBAhQDFAAAAAgAOYxtXWN8efoTAAAAeAAAAAwAAAAAAAAAAAAAAIABMgAAAHNraWxsL2JhZC5tZFBLBQYAAAAAAgACAHYAAABvAAAAAAA='
+      metadata: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/warnings
+      why: betterlite names the zip failure in its own words

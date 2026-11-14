@@ -1,7 +1,7 @@
 id: B1504
 milestone: M3 providers
 title: Extract skill archives and construct injected prompts and tools
-status: todo
+status: done
 depends_on: [B171, B178, B858]
 file: tasks/B1504-skill-content.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/litellm_proxy/skills/code_execution.py"
 parent: B044
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1678

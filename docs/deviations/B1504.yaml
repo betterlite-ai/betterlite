@@ -1,0 +1,11 @@
+task: B1504
+deviations:
+  - what: An archive past 16 MiB compressed, 64 MiB expanded or 4096 entries warns and falls back, giving the instructions as the prompt text or only the files extracted before the limit; a repeated normalized path warns before the last entry replaces it.
+    why: Bounded input and no-silent-drops require a limit and a visible collision, where Python expands and replaces without bound and without a word.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/prompt_injection.py#L92-L126
+  - what: A top-level system that is not a string, a messages value that is not a list, and a system message whose content is not a string are SkillContentError, which the pre-call answers as a 400 naming the field.
+    why: LiteLLM adds the section with no type check, so those values raise TypeError and answer 500; a value the declared type cannot hold is rejected where it enters.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/prompt_injection.py#L154-L181
+  - what: An archive entry whose name bytes are valid UTF-8 while its language-encoding flag is clear is read as the UTF-8 name; LiteLLM's zipfile decodes every unflagged name as cp437.
+    why: The zip crate is the maintained decoder betterlite uses, and its name decoding reads UTF-8 text a setup wrote rather than the mojibake cp437 gives the same bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/prompt_injection.py#L95-L120

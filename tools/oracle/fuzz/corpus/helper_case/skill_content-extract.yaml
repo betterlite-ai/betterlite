@@ -1,0 +1,15 @@
+kind: helper
+name: skill_content_extract_markdown
+call:
+  skill_content:
+    function: extract_content
+    skill:
+      skill_id: litellm_skill_demo
+      display_title: Markdown
+      description: null
+      instructions: fallback text
+      file_content: 'UEsDBBQAAAAIADmMbV2pWo8DHQAAABsAAAAOAAAAc2tpbGwvbm90ZXMubWRTVvDLL0kt5uIKyUhVKMnILEpRSM7Iz0xO1eMCAFBLAwQUAAAACAA5jG1dyqPfix8AAAAdAAAADwAAAHNraWxsL1JFQURNRS5tZFNWCEpNTMlN5eIKyUhVKE5Nzs9LUUjOyM9MTtXjAgBQSwMEFAAAAAgAOYxtXWvNPbIdAAAAGwAAAA4AAABza2lsbC9TS0lMTC5tZFNWCM7OzMnh4grJSFVIyywqLlFIzsjPTE7V4wIAUEsBAhQDFAAAAAgAOYxtXalajwMdAAAAGwAAAA4AAAAAAAAAAAAAAIABAAAAAHNraWxsL25vdGVzLm1kUEsBAhQDFAAAAAgAOYxtXcqj34sfAAAAHQAAAA8AAAAAAAAAAAAAAIABSQAAAHNraWxsL1JFQURNRS5tZFBLAQIUAxQAAAAIADmMbV1rzT2yHQAAABsAAAAOAAAAAAAAAAAAAACAAZUAAABza2lsbC9TS0lMTC5tZFBLBQYAAAAAAwADALUAAADeAAAAAAA='
+      metadata: null
+env: {}
+compare:
+  ignore: []

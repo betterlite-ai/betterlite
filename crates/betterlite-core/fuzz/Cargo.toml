@@ -230,3 +230,10 @@ path = "fuzz_targets/messages_sse_events.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "skill_zip"
+path = "fuzz_targets/skill_zip.rs"
+test = false
+doc = false
+bench = false

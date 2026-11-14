@@ -1,0 +1,20 @@
+kind: helper
+name: metadata_schema
+call:
+  skill_content:
+    function: convert_anthropic_tool
+    skill:
+      skill_id: m
+      display_title: null
+      description: null
+      instructions: null
+      file_content: null
+      metadata:
+        parameters:
+          type: object
+          properties:
+            q:
+              type: string
+env: {}
+compare:
+  ignore: []
