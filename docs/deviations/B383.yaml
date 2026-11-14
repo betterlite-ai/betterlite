@@ -1,0 +1,11 @@
+task: B383
+deviations:
+  - what: Tag budgets are available without a paid-tier flag.
+    why: The accepted product decision removes licensing gates and ships all MIT features; LiteLLM raises before creating the limiter whenever tag_budget_config is set and premium_user is not True.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L915-L935
+  - what: A provider budget without time_period writes no start-time or zero-spend window keys when the limiter starts.
+    why: LiteLLM writes both keys with no TTL, but no window ever reads them since spend tracking and filtering skip a provider without budget_duration, and the provider spend endpoint already answers 0.0 for a missing key. The shared window cache takes a TTL on every write, so betterlite skips the keys instead of storing them forever.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L803-L816
+  - what: Reading a provider's spend at limiter start does not copy a Redis value into the in-memory cache.
+    why: LiteLLM's DualCache backfills memory on a Redis hit. Here the read only decides whether to write zero, and the in-memory spend is filled by the Redis sync that B326 owns, so no budget check sees a different value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L284-L288

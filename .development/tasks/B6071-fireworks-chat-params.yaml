@@ -64,6 +64,8 @@ description: >-
   tracing at the same points; cases do not compare them. LiteLLM size: about 270 lines.
 scope:
   paths:
+    - "tools/oracle/**"
+    - "crates/betterlite-openai/src/fireworks_ai_chat_params*"
     - crates/betterlite-openai/src/fireworks_ai_chat_params.rs
     - crates/betterlite-openai/src/fireworks_ai_chat_params/**
     - tools/oracle/cases/helpers/fireworks-ai-chat-params/**
@@ -72,6 +74,8 @@ scope:
     - tools/oracle/helpers/b6071/**
     - tools/oracle/src/helpers/openai/b6071.rs
     - tools/oracle/src/helpers/openai/b6071/**
+    - crates/betterlite-models/src/fireworks_catalog_metadata.rs
+    - crates/betterlite-models/src/fireworks_catalog_metadata/tests/cases.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L53-L135

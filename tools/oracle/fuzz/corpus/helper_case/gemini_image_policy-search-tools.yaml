@@ -1,0 +1,23 @@
+kind: helper
+name: gemini-image-policy-search-tools-seed
+call:
+  gemini_image_policy:
+    settings: {}
+    cases:
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params:
+          tools:
+            - type: function
+              function: {name: lookup}
+            - googleSearch: {}
+          web_search_options: {}
+        supported_params: ["n", size, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response:
+          candidates:
+            - groundingMetadata: {webSearchQueries: [q]}
+env: {}
+compare: {ignore: []}
