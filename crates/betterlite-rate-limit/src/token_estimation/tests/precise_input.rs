@@ -2,12 +2,14 @@
 
 use std::sync::Mutex;
 
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::estimate::{TokenEstimateRequest, estimate_precise_input_tokens};
+use super::services::TranslatedChat;
 use super::support::{
-    FixedCounter, FixedResponses, FixedTranslation, RecordingCounter, SeenCount, chat_reply,
-    no_translation, request, value,
+    FixedResponses, FixedTranslation, RecordingCounter, SeenCount, chat_reply, no_translation,
+    request, value,
 };
 
 fn estimate_with<'request>(
@@ -289,7 +291,7 @@ async fn translated_google_messages_reach_the_counter() {
     let translation = FixedTranslation {
         reply: Some(chat_reply(r#"[{"role":"user","content":"hi"}]"#)),
     };
-    let counter = FixedCounter { tokens: Some(9) };
+    let counter = recording_counter(Some(9));
     let total = estimate_precise_input_tokens(
         &translation,
         &FixedResponses {
@@ -300,6 +302,51 @@ async fn translated_google_messages_reach_the_counter() {
     )
     .await;
     assert_eq!(total, 9);
+    let seen = first_count(&counter);
+    assert_eq!(
+        seen.messages,
+        Some(vec![value(r#"{"role":"user","content":"hi"}"#)])
+    );
+    assert_eq!(seen.text, None);
+}
+
+#[rstest]
+#[case::translated_tools(
+    Some(r#"[{"type":"function","function":{"name":"translated"}}]"#),
+    Some(r#""required""#)
+)]
+#[case::no_translated_tools(None, None)]
+#[tokio::test]
+async fn a_translated_google_request_passes_the_translated_tools_and_tool_choice(
+    #[case] tools: Option<&str>,
+    #[case] tool_choice: Option<&str>,
+) {
+    let data = request(
+        r#"{"contents":[{"parts":[{"text":"hi"}]}],"tools":[{"functionDeclarations":[{"name":"raw"}]}],"toolConfig":{"functionCallingConfig":{"mode":"AUTO"}},"tool_choice":"auto"}"#,
+    );
+    let translation = FixedTranslation {
+        reply: Some(TranslatedChat {
+            messages: value(r#"[{"role":"user","content":"hi"}]"#),
+            tools: tools.map(value),
+            tool_choice: tool_choice.map(value),
+        }),
+    };
+    let counter = recording_counter(Some(9));
+    let _total = estimate_precise_input_tokens(
+        &translation,
+        &FixedResponses {
+            messages: Vec::new(),
+        },
+        &counter,
+        &estimate_with(&data, Some("generate_content"), None),
+    )
+    .await;
+    let seen = first_count(&counter);
+    assert_eq!(
+        seen.tools,
+        tools.map(|text| serde_json::from_str::<Vec<Json>>(text).expect("a tool list"))
+    );
+    assert_eq!(seen.tool_choice, tool_choice.map(value));
 }
 
 #[rstest]

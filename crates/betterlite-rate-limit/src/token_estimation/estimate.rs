@@ -110,35 +110,23 @@ pub async fn estimate_precise_input_tokens(
     if let Some(pretokenized) = embedding_input.and_then(pretokenized_embedding_tokens) {
         return pretokenized;
     }
-    let responses_messages = if is_responses {
-        Some(responses_chat_messages(responses, data))
-    } else {
-        None
-    };
-    let counted = counted_input(
+    let responses_messages = is_responses.then(|| responses_chat_messages(responses, data));
+    let input = counted_input(
         data,
         translated.as_ref(),
         responses_messages,
         request.call_type,
     );
-    let audio_tokens = estimate_audio_content_tokens(counted.messages.as_deref());
-    let stripped = counted.messages.as_deref().map(strip_audio_content_blocks);
-    if let Some(tokens) = counter_tokens(
-        counter,
-        stripped.as_ref(),
-        counted.text.as_deref(),
-        data,
-        request.model,
-    )
-    .await
-    {
+    let audio_tokens = estimate_audio_content_tokens(input.messages.as_deref());
+    let stripped = input.messages.as_deref().map(strip_audio_content_blocks);
+    if let Some(tokens) = counter_tokens(counter, stripped.as_ref(), &input, request.model).await {
         return tokens.max(0).saturating_add(audio_tokens);
     }
     fallback_tokens(
         translation,
         request,
         family,
-        counted.text.as_deref(),
+        input.text.as_deref(),
         audio_tokens,
     )
 }
@@ -171,6 +159,8 @@ fn selected_fields<'data>(
 struct CountedInput<'request> {
     messages: Option<Cow<'request, Json>>,
     text: Option<Cow<'request, Json>>,
+    tools: Option<&'request Json>,
+    tool_choice: Option<&'request Json>,
 }
 
 fn counted_input<'request>(
@@ -204,22 +194,30 @@ fn counted_input<'request>(
             Some(_) | None => data.get("input").map(Cow::Borrowed),
         }
     };
-    CountedInput { messages, text }
+    let (tools, tool_choice) = match translated {
+        Some(translated) => (translated.tools.as_ref(), translated.tool_choice.as_ref()),
+        None => (data.get("tools"), data.get("tool_choice")),
+    };
+    CountedInput {
+        messages,
+        text,
+        tools,
+        tool_choice,
+    }
 }
 
 async fn counter_tokens(
     counter: &dyn InputTokenCounter,
     countable: Option<&Json>,
-    text: Option<&Json>,
-    data: &RequestData,
+    input: &CountedInput<'_>,
     model: Option<&str>,
 ) -> Option<i64> {
     let request = TokenCounterRequest {
         model: model.unwrap_or_default(),
         messages: countable.and_then(json_list),
-        text,
-        tools: data.get("tools").and_then(json_list),
-        tool_choice: data.get("tool_choice"),
+        text: input.text.as_deref(),
+        tools: input.tools.and_then(json_list),
+        tool_choice: input.tool_choice,
     };
     counter.count_tokens(&request).await
 }

@@ -142,17 +142,6 @@ pub(crate) struct SeenCount {
     pub(crate) tool_choice: Option<Json>,
 }
 
-pub(crate) struct FixedCounter {
-    pub(crate) tokens: Option<i64>,
-}
-
-#[async_trait]
-impl InputTokenCounter for FixedCounter {
-    async fn count_tokens(&self, _request: &TokenCounterRequest<'_>) -> Option<i64> {
-        self.tokens
-    }
-}
-
 pub(crate) struct RecordingCounter {
     pub(crate) tokens: Option<i64>,
     pub(crate) seen: Mutex<Vec<SeenCount>>,

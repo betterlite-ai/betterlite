@@ -13,40 +13,31 @@ impl GenAiTranslation for TranslationContext<'_> {
         let mut body = IndexMap::new();
         body.insert("model".to_owned(), Json::Text(request.model.to_owned()));
         body.insert("contents".to_owned(), request.contents.clone());
-        if let Some(config) = request.config {
-            body.insert("generationConfig".to_owned(), config.clone());
-        }
-        if let Some(instruction) = request.system_instruction {
-            body.insert("systemInstruction".to_owned(), instruction.clone());
-        }
-        if let Some(instruction) = request.system_instruction_snake {
-            body.insert("system_instruction".to_owned(), instruction.clone());
-        }
-        if let Some(tools) = request.tools {
-            body.insert("tools".to_owned(), tools.clone());
-        }
-        if let Some(config) = request.tool_config {
-            body.insert("toolConfig".to_owned(), config.clone());
-        }
-        if let Some(config) = request.tool_config_snake {
-            body.insert("tool_config".to_owned(), config.clone());
+        let optional = [
+            ("generationConfig", request.config),
+            ("systemInstruction", request.system_instruction),
+            ("system_instruction", request.system_instruction_snake),
+            ("tools", request.tools),
+            ("toolConfig", request.tool_config),
+            ("tool_config", request.tool_config_snake),
+        ];
+        for (key, entry) in optional {
+            if let Some(field) = entry {
+                body.insert(key.to_owned(), field.clone());
+            }
         }
         let value = serde_json::to_value(Json::Object(body)).ok()?;
         let parsed: GenerateContentRequest = serde_json::from_value(value).ok()?;
         let (completion, _) = translate_generate_content(&parsed, None, self).ok()?;
         let messages = serde_json::to_value(&completion.messages).ok()?;
-        let tools = match completion.tools.as_ref() {
-            Some(tools) => serde_json::to_value(tools)
-                .ok()
-                .and_then(|value| serde_json::from_value(value).ok()),
-            None => None,
-        };
-        let tool_choice = match completion.tool_choice.as_ref() {
-            Some(choice) => serde_json::to_value(choice)
-                .ok()
-                .and_then(|value| serde_json::from_value(value).ok()),
-            None => None,
-        };
+        let tools = completion
+            .tools
+            .as_ref()
+            .and_then(|tools| serde_json::from_value(serde_json::to_value(tools).ok()?).ok());
+        let tool_choice = completion
+            .tool_choice
+            .as_ref()
+            .and_then(|choice| serde_json::from_value(serde_json::to_value(choice).ok()?).ok());
         Some(TranslatedChat {
             messages: serde_json::from_value(messages).ok()?,
             tools,
