@@ -95,7 +95,10 @@ fn bare_request(model: &str) -> Object {
 
 fn configured_request(model: &str, config: &str) -> Object {
     let mut request = bare_request(model);
-    request["generation_config"] = serde_json::from_str(config).unwrap();
+    request.insert(
+        "generation_config".to_owned(),
+        serde_json::from_str(config).unwrap(),
+    );
     request
 }
 
