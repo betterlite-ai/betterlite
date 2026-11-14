@@ -42,13 +42,13 @@ struct FailureContext<'context, T: ?Sized> {
     responses_yielded: &'context [GuardrailValue],
 }
 
-pub(crate) async fn emit_transform_round<T, G>(
+pub(crate) async fn emit_transform_round<T, G, E>(
     params: &mut StreamLoopParams<'_, T, G>,
     state: &mut TransformState,
     buffers: StreamBuffers<'_>,
     reference_chunk: &GuardrailValue,
     is_final: bool,
-) -> Result<(), RoundFailure>
+) -> Result<(), RoundFailure<E>>
 where
     T: BaseTranslation<Guardrail = G, LogTarget = GuardrailLogTarget, Failure = GuardrailFailure>
         + Sync,
@@ -132,12 +132,12 @@ where
     .map_err(RoundCallError::Http)
 }
 
-fn handle_round_failure<T>(
+fn handle_round_failure<T, E>(
     failure: RoundCallError,
     context: &FailureContext<'_, T>,
     request_data: &BTreeMap<String, GuardrailValue>,
     outputs: &mut VecDeque<StreamOutput>,
-) -> Result<(), RoundFailure>
+) -> Result<(), RoundFailure<E>>
 where
     T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
 {
@@ -175,11 +175,11 @@ where
 }
 
 // LiteLLM turns an HTTPException inside a round into an in-stream error and stops the stream
-fn terminate_with_http<T>(
+fn terminate_with_http<T, E>(
     error: StreamHttpError,
     emission: &StreamErrorEmission<'_, T>,
     outputs: &mut VecDeque<StreamOutput>,
-) -> Result<(), RoundFailure>
+) -> Result<(), RoundFailure<E>>
 where
     T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
 {
@@ -192,12 +192,12 @@ where
 }
 
 // LiteLLM yields the block message and returns; a format without one re-raises the failure
-pub(crate) fn terminate_with_block<T>(
+pub(crate) fn terminate_with_block<T, E>(
     translation: &T,
     failure: GuardrailFailure,
     responses_yielded: &[GuardrailValue],
     outputs: &mut VecDeque<StreamOutput>,
-) -> Result<(), RoundFailure>
+) -> Result<(), RoundFailure<E>>
 where
     T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
 {

@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::convert::Infallible;
 use std::future::{Future, ready};
 use std::sync::Mutex;
 
@@ -420,7 +419,7 @@ pub(crate) const fn item(value: GuardrailValue) -> StreamOutput {
     StreamOutput::Item(value)
 }
 
-pub(crate) fn block_texts(outputs: &[Result<StreamOutput, StreamLoopError>]) -> Vec<String> {
+pub(crate) fn block_texts<E>(outputs: &[Result<StreamOutput, StreamLoopError<E>>]) -> Vec<String> {
     outputs
         .iter()
         .filter_map(|output| match output {
@@ -450,24 +449,22 @@ pub(crate) fn params<'run>(
 }
 
 // The failure a test source raises where the provider would have dropped the stream
-#[derive(Debug, Error)]
+#[derive(Debug, PartialEq, Error)]
 #[error("the provider dropped the stream")]
 pub(crate) struct SourceFailure;
 
 pub(crate) async fn collect_outputs(
     params: StreamLoopParams<'_, FakeTranslation, FakeGuardrail>,
     source: Vec<GuardrailValue>,
-) -> Vec<Result<StreamOutput, StreamLoopError>> {
-    let items = source.into_iter().map(Ok::<_, Infallible>);
-    incremental_transform_stream(params, stream::iter(items))
-        .collect()
-        .await
+) -> Vec<Result<StreamOutput, StreamLoopError<SourceFailure>>> {
+    let results = source.into_iter().map(Ok::<_, SourceFailure>);
+    collect_results(params, results.collect()).await
 }
 
 pub(crate) async fn collect_results(
     params: StreamLoopParams<'_, FakeTranslation, FakeGuardrail>,
     source: Vec<Result<GuardrailValue, SourceFailure>>,
-) -> Vec<Result<StreamOutput, StreamLoopError>> {
+) -> Vec<Result<StreamOutput, StreamLoopError<SourceFailure>>> {
     incremental_transform_stream(params, stream::iter(source))
         .collect()
         .await

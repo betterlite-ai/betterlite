@@ -4,7 +4,7 @@ use thiserror::Error;
 
 // The failures that leave the loop instead of becoming a stream message
 #[derive(Debug, PartialEq, Error)]
-pub enum StreamLoopError {
+pub enum StreamLoopError<E> {
     #[error("the guardrail failed while transforming the streamed response")]
     Guardrail {
         #[source]
@@ -20,8 +20,11 @@ pub enum StreamLoopError {
         #[source]
         source: StreamHttpError,
     },
-    #[error("the upstream response stream failed: {detail}")]
-    Source { detail: String },
+    #[error("the upstream response stream failed")]
+    Source {
+        #[source]
+        source: E,
+    },
 }
 
 // The terminal chunks of a block or an in-stream error were already queued when this is raised
@@ -30,9 +33,9 @@ pub enum StreamLoopError {
 pub(crate) struct StreamTerminated;
 
 #[derive(Debug, Error)]
-pub(crate) enum RoundFailure {
+pub(crate) enum RoundFailure<E> {
     #[error(transparent)]
     Terminated(#[from] StreamTerminated),
     #[error(transparent)]
-    Loop(#[from] StreamLoopError),
+    Loop(#[from] StreamLoopError<E>),
 }

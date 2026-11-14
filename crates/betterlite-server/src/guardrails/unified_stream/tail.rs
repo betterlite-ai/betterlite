@@ -10,12 +10,12 @@ use super::round::{self, TransformState};
 use super::{StreamBuffers, StreamLoopParams, StreamOutput};
 
 // LiteLLM's _emit_stream_tail: flush the held text with holdback 0, then replay metadata chunks
-pub(crate) async fn emit_stream_tail<T, G>(
+pub(crate) async fn emit_stream_tail<T, G, E>(
     params: &mut StreamLoopParams<'_, T, G>,
     state: &mut TransformState,
     buffers: StreamBuffers<'_>,
     last_chunk: Option<&GuardrailValue>,
-) -> Result<(), RoundFailure>
+) -> Result<(), RoundFailure<E>>
 where
     T: BaseTranslation<Guardrail = G, LogTarget = GuardrailLogTarget, Failure = GuardrailFailure>
         + Sync,

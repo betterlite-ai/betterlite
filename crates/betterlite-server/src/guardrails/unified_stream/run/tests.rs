@@ -357,7 +357,7 @@ async fn source_failure_after_a_chunk_is_the_only_output() {
     assert_eq!(
         outputs,
         vec![Err(StreamLoopError::Source {
-            detail: SourceFailure.to_string(),
+            source: SourceFailure,
         })]
     );
     assert!(translation.calls().is_empty());
@@ -379,7 +379,7 @@ async fn source_failure_after_a_tool_chunk_skips_the_inspection() {
         vec![
             Ok(item(tool_chunk())),
             Err(StreamLoopError::Source {
-                detail: SourceFailure.to_string(),
+                source: SourceFailure,
             }),
         ]
     );
@@ -404,7 +404,7 @@ async fn source_failure_keeps_the_queued_output_before_the_error() {
         vec![
             Ok(item(synthetic("ab", Some("assistant"), None))),
             Err(StreamLoopError::Source {
-                detail: SourceFailure.to_string(),
+                source: SourceFailure,
             }),
         ]
     );

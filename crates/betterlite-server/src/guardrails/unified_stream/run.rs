@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::fmt::Display;
+use std::error::Error;
 use std::pin::Pin;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -25,7 +25,7 @@ struct Seen {
 }
 
 // Everything one run remembers between source items; the Python locals of the loop
-pub(crate) struct LoopState<'run, T, G, S> {
+pub(crate) struct LoopState<'run, T, G, S, E> {
     params: StreamLoopParams<'run, T, G>,
     source: Pin<Box<S>>,
     transform: TransformState,
@@ -35,7 +35,7 @@ pub(crate) struct LoopState<'run, T, G, S> {
     last_chunk: Option<GuardrailValue>,
     chunk_counter: usize,
     seen: Seen,
-    failure: Option<StreamLoopError>,
+    failure: Option<StreamLoopError<E>>,
     finished: bool,
 }
 
@@ -44,14 +44,14 @@ pub(crate) struct LoopState<'run, T, G, S> {
 pub fn incremental_transform_stream<'run, T, G, S, E>(
     params: StreamLoopParams<'run, T, G>,
     source: S,
-) -> impl Stream<Item = Result<StreamOutput, StreamLoopError>> + Send + 'run
+) -> impl Stream<Item = Result<StreamOutput, StreamLoopError<E>>> + Send + 'run
 where
     T: BaseTranslation<Guardrail = G, LogTarget = GuardrailLogTarget, Failure = GuardrailFailure>
         + Sync
         + 'run,
     G: GuardrailContract + 'run,
     S: Stream<Item = Result<GuardrailValue, E>> + Send + 'run,
-    E: Display + Send + 'run,
+    E: Error + Send + Sync + 'static,
 {
     let start = LoopState {
         params,
@@ -80,7 +80,7 @@ where
             let pulled = state.source.next().await;
             match pulled {
                 Some(Ok(item)) => state.consume_item(item).await,
-                Some(Err(error)) => state.fail_source(error.to_string()),
+                Some(Err(error)) => state.fail_source(error),
                 None => {
                     state.finish_stream().await;
                     state.finished = true;
@@ -90,7 +90,7 @@ where
     })
 }
 
-impl<'run, T, G, S> LoopState<'run, T, G, S>
+impl<T, G, S, E> LoopState<'_, T, G, S, E>
 where
     T: BaseTranslation<Guardrail = G, LogTarget = GuardrailLogTarget, Failure = GuardrailFailure>
         + Sync,
@@ -152,7 +152,7 @@ where
         &mut self,
         reference: &GuardrailValue,
         is_final: bool,
-    ) -> Result<(), RoundFailure> {
+    ) -> Result<(), RoundFailure<E>> {
         round::emit_transform_round(
             &mut self.params,
             &mut self.transform,
@@ -168,7 +168,7 @@ where
     }
 
     // the terminal chunks were already queued; a loop failure still leaves as a stream error
-    fn absorb(&mut self, failure: RoundFailure) {
+    fn absorb(&mut self, failure: RoundFailure<E>) {
         if let RoundFailure::Loop(error) = failure {
             self.failure = Some(error);
         }
@@ -176,8 +176,8 @@ where
     }
 
     // LiteLLM lets an exception from the source leave before the inspection and the tail
-    fn fail_source(&mut self, detail: String) {
-        self.failure = Some(StreamLoopError::Source { detail });
+    fn fail_source(&mut self, source: E) {
+        self.failure = Some(StreamLoopError::Source { source });
         self.finished = true;
     }
 
@@ -208,7 +208,9 @@ where
             last_chunk.as_ref(),
         )
         .await;
-        self.absorb(tailed);
+        if let Err(failure) = tailed {
+            self.absorb(failure);
+        }
     }
 }
 
