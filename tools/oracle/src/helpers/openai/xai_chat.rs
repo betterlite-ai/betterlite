@@ -83,7 +83,10 @@ fn invalid(message: String) -> Box<HelperError> {
 const CHAT_FAILURE: &str = "XaiChatError";
 const STREAM_FAILURE: &str = "XaiStreamError";
 
-fn failure(class: &str, status: Option<u16>, error: impl fmt::Display) -> Box<HelperError> {
+fn failure<E>(class: &str, status: Option<u16>, error: E) -> Box<HelperError>
+where
+    E: fmt::Display,
+{
     Box::new(HelperError {
         class: class.to_owned(),
         status,
