@@ -29,10 +29,8 @@ pub struct UserDetails {
 #[must_use]
 pub fn unanimous(first: Option<&str>, last: Option<&str>) -> Option<String> {
     match (first, last) {
-        (None, last) => last.map(str::to_owned),
-        (first, None) => first.map(str::to_owned),
-        (Some(first), Some(last)) if first == last => Some(first.to_owned()),
-        (Some(_), Some(_)) => None,
+        (Some(first_owner), Some(last_owner)) if first_owner != last_owner => None,
+        (first_owner, last_owner) => first_owner.or(last_owner).map(str::to_owned),
     }
 }
 
@@ -109,12 +107,12 @@ pub fn meta_with_user_details(
         return meta.clone();
     };
     let mut updated = meta.clone();
-    let email = meta
+    let merged_email = meta
         .user_email
         .clone()
         .filter(|email| !email.is_empty())
         .or_else(|| user.email.clone());
-    let team = meta
+    let merged_team = meta
         .team_id
         .clone()
         .filter(|team| !team.is_empty())
@@ -125,11 +123,11 @@ pub fn meta_with_user_details(
                 None
             }
         });
-    if let Some(email) = email {
-        updated.user_email = Some(email);
+    if let Some(filled_email) = merged_email {
+        updated.user_email = Some(filled_email);
     }
-    if let Some(team) = team {
-        updated.team_id = Some(team);
+    if let Some(filled_team) = merged_team {
+        updated.team_id = Some(filled_team);
     }
     updated
 }

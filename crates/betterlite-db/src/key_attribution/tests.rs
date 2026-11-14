@@ -80,8 +80,10 @@ fn cli_metadata_keeps_only_known_users_with_the_full_key_as_alias() {
             "cli-session-known".to_owned(),
             KeyMetadata {
                 key_alias: Some("cli-session-known".to_owned()),
+                team_id: None,
                 user_id: Some("known".to_owned()),
-                ..meta_with(None)
+                user_email: None,
+                key_exists: None,
             }
         )])
     );
@@ -111,8 +113,11 @@ fn user(email: &str, teams: &[&str]) -> UserDetails {
 
 fn meta_with(user_id: Option<&str>) -> KeyMetadata {
     KeyMetadata {
+        key_alias: None,
+        team_id: None,
         user_id: user_id.map(str::to_owned),
-        ..meta_with(None)
+        user_email: None,
+        key_exists: None,
     }
 }
 
@@ -136,9 +141,11 @@ fn details_never_infer_a_team_for_an_ordinary_key() {
 fn existing_metadata_email_and_team_win_over_user_details() {
     let details = BTreeMap::from([("user".to_owned(), user("user@example.com", &["team-a"]))]);
     let meta = KeyMetadata {
-        user_email: Some("meta@example.com".to_owned()),
+        key_alias: None,
         team_id: Some("meta-team".to_owned()),
-        ..meta_with(Some("user"))
+        user_id: Some("user".to_owned()),
+        user_email: Some("meta@example.com".to_owned()),
+        key_exists: None,
     };
     let merged = meta_with_user_details("cli-session-user", &meta, &details);
     assert_eq!(merged.user_email, Some("meta@example.com".to_owned()));
@@ -149,9 +156,11 @@ fn existing_metadata_email_and_team_win_over_user_details() {
 fn empty_metadata_values_count_as_absent() {
     let details = BTreeMap::from([("user".to_owned(), user("user@example.com", &["team-a"]))]);
     let meta = KeyMetadata {
-        user_email: Some(String::new()),
+        key_alias: None,
         team_id: Some(String::new()),
-        ..meta_with(Some("user"))
+        user_id: Some("user".to_owned()),
+        user_email: Some(String::new()),
+        key_exists: None,
     };
     let merged = meta_with_user_details("cli-session-user", &meta, &details);
     assert_eq!(merged.user_email, Some("user@example.com".to_owned()));
@@ -168,9 +177,11 @@ fn needing_details_skips_only_a_complete_ordinary_metadata(
     #[case] needs: bool,
 ) {
     let meta = KeyMetadata {
-        user_email: Some("meta@example.com".to_owned()),
+        key_alias: None,
         team_id: Some("team".to_owned()),
-        ..meta_with(user_id)
+        user_id: user_id.map(str::to_owned),
+        user_email: Some("meta@example.com".to_owned()),
+        key_exists: None,
     };
     let expected = if needs {
         user_id.map(str::to_owned)
@@ -183,8 +194,11 @@ fn needing_details_skips_only_a_complete_ordinary_metadata(
 #[test]
 fn cli_metadata_without_a_team_still_needs_user_details() {
     let meta = KeyMetadata {
+        key_alias: None,
+        team_id: None,
+        user_id: Some("user".to_owned()),
         user_email: Some("meta@example.com".to_owned()),
-        ..meta_with(Some("user"))
+        key_exists: None,
     };
     assert_eq!(
         user_id_needing_details("cli-session-user", &meta),
@@ -195,9 +209,11 @@ fn cli_metadata_without_a_team_still_needs_user_details() {
 #[test]
 fn an_empty_metadata_email_still_needs_user_details() {
     let meta = KeyMetadata {
-        user_email: Some(String::new()),
+        key_alias: None,
         team_id: Some("team".to_owned()),
-        ..meta_with(Some("user"))
+        user_id: Some("user".to_owned()),
+        user_email: Some(String::new()),
+        key_exists: None,
     };
     assert_eq!(
         user_id_needing_details("sk-key", &meta),
@@ -208,8 +224,11 @@ fn an_empty_metadata_email_still_needs_user_details() {
 #[test]
 fn an_ordinary_key_without_a_team_never_needs_details() {
     let meta = KeyMetadata {
+        key_alias: None,
+        team_id: None,
+        user_id: Some("user".to_owned()),
         user_email: Some("meta@example.com".to_owned()),
-        ..meta_with(Some("user"))
+        key_exists: None,
     };
     assert_eq!(user_id_needing_details("sk-key", &meta), None);
 }
@@ -279,7 +298,10 @@ fn unresolved_digests_are_the_requested_ones_without_metadata() {
         "a".to_owned(),
         KeyMetadata {
             key_alias: Some("alias".to_owned()),
-            ..meta_with(None)
+            team_id: None,
+            user_id: None,
+            user_email: None,
+            key_exists: None,
         },
     )]);
     let digests = BTreeSet::from(["a".to_owned(), "b".to_owned()]);
@@ -370,8 +392,9 @@ fn recovered_alias(alias: Option<&str>) -> BTreeMap<String, KeyMetadata> {
         KeyMetadata {
             key_alias: alias.map(str::to_owned),
             team_id: Some("recovered-team".to_owned()),
+            user_id: None,
             user_email: Some("recovered@example.com".to_owned()),
-            ..meta_with(None)
+            key_exists: None,
         },
     )])
 }
@@ -451,7 +474,9 @@ fn empty_recovered_alias_and_team_keep_the_row_values() {
         KeyMetadata {
             key_alias: Some(String::new()),
             team_id: Some(String::new()),
-            ..meta_with(None)
+            user_id: None,
+            user_email: None,
+            key_exists: None,
         },
     )]);
     let projected = row_with_recovered_fields(&row, &recovered, &ExportFields::default());
@@ -487,8 +512,11 @@ fn row_email_wins_only_when_it_is_truthy(#[case] email: JsonData, #[case] row_wi
     let recovered = BTreeMap::from([(
         "key".to_owned(),
         KeyMetadata {
+            key_alias: None,
+            team_id: None,
+            user_id: None,
             user_email: Some("recovered@example.com".to_owned()),
-            ..meta_with(None)
+            key_exists: None,
         },
     )]);
     let projected = row_with_recovered_fields(&row, &recovered, &ExportFields::default());
@@ -772,8 +800,10 @@ async fn postgres_cli_keys_recover_the_existing_user_only() {
             "cli-session-known".to_owned(),
             KeyMetadata {
                 key_alias: Some("cli-session-known".to_owned()),
+                team_id: None,
                 user_id: Some("known".to_owned()),
-                ..meta_with(None)
+                user_email: None,
+                key_exists: None,
             }
         )])
     );
@@ -796,8 +826,11 @@ async fn postgres_user_detail_read_binds_one_array_beyond_one_chunk() {
             (
                 format!("key-{index}"),
                 KeyMetadata {
+                    key_alias: None,
+                    team_id: None,
                     user_id: Some(format!("user-{index}")),
-                    ..meta_with(None)
+                    user_email: None,
+                    key_exists: None,
                 },
             )
         })

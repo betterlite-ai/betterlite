@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use betterlite_models::key_digest::is_valid_sha256_hash;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Row;
-use tokio_postgres::types::FromSql;
 
 use crate::postgres_store::diagnostics::DriverError;
 
@@ -33,41 +32,39 @@ pub struct DailyOwnerRow {
 
 pub fn token_rows(rows: &[Row]) -> Result<Vec<TokenDigestRow>, KeyAttributionError> {
     rows.iter()
-        .map(|row| token_values(row).map_err(|source| KeyAttributionError::TokenDigest { source }))
+        .map(|row| {
+            token_values(row).map_err(|driver| KeyAttributionError::TokenDigest {
+                source: DriverError { driver },
+            })
+        })
         .collect()
 }
 
-fn token_values(row: &Row) -> Result<TokenDigestRow, DriverError> {
+fn token_values(row: &Row) -> Result<TokenDigestRow, tokio_postgres::Error> {
     Ok(TokenDigestRow {
-        digest: value(row, "digest")?,
-        key_alias: value(row, "key_alias")?,
-        team_id: value(row, "team_id")?,
-        user_id: value(row, "user_id")?,
+        digest: row.try_get("digest")?,
+        key_alias: row.try_get("key_alias")?,
+        team_id: row.try_get("team_id")?,
+        user_id: row.try_get("user_id")?,
     })
 }
 
 pub fn owner_rows(rows: &[Row]) -> Result<Vec<DailyOwnerRow>, KeyAttributionError> {
     rows.iter()
-        .map(|row| owner_values(row).map_err(|source| KeyAttributionError::DailyOwner { source }))
+        .map(|row| {
+            owner_values(row).map_err(|driver| KeyAttributionError::DailyOwner {
+                source: DriverError { driver },
+            })
+        })
         .collect()
 }
 
-fn owner_values(row: &Row) -> Result<DailyOwnerRow, DriverError> {
+fn owner_values(row: &Row) -> Result<DailyOwnerRow, tokio_postgres::Error> {
     Ok(DailyOwnerRow {
-        hashed_api_key: value(row, "api_key")?,
-        first_owner: value(row, "first_owner")?,
-        last_owner: value(row, "last_owner")?,
+        hashed_api_key: row.try_get("api_key")?,
+        first_owner: row.try_get("first_owner")?,
+        last_owner: row.try_get("last_owner")?,
     })
-}
-
-fn value<T>(row: &Row, column: &str) -> Result<T, DriverError>
-where
-    T: for<'row> FromSql<'row>,
-{
-    match row.try_get(column) {
-        Ok(value) => Ok(value),
-        Err(driver) => Err(DriverError { driver }),
-    }
 }
 
 #[must_use]

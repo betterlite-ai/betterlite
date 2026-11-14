@@ -60,10 +60,10 @@ pub fn row_with_recovered_fields(
     recovered: &BTreeMap<String, KeyMetadata>,
     fields: &ExportFields,
 ) -> BTreeMap<String, JsonData> {
-    let Some(meta) = row.get(&fields.key_column).and_then(|key| match key {
-        JsonData::String(key) => recovered.get(key),
-        _ => None,
-    }) else {
+    let Some(JsonData::String(key)) = row.get(&fields.key_column) else {
+        return row.clone();
+    };
+    let Some(meta) = recovered.get(key) else {
         return row.clone();
     };
     let mut projected = row.clone();
