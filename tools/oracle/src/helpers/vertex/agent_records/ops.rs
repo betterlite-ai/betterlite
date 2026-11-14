@@ -56,7 +56,7 @@ struct FixtureCounter {
     completion_tokens: u64,
 }
 impl FixtureCounter {
-    fn counted(&self, fixed: u64) -> Result<u64, CountError> {
+    const fn counted(&self, fixed: u64) -> Result<u64, CountError> {
         match self.kind {
             CounterKind::Fixed => Ok(fixed),
             CounterKind::Failure => Err(CountError::Overflow),
