@@ -2,13 +2,10 @@ kind: helper
 name: prompt-dispatch-merge-drops-prompt-keys
 call:
   b8466:
-    function: merge_prompt_request
-    new_model_has_deployments: true
-    request:
-      litellm_logging_obj: handle
-      api_base: https://request.invalid
-    deployment:
-      model_name: langfuse/my-prompt
+    check: prompt_factory
+    model: langfuse/my-prompt
+    model_list:
+    - model_name: langfuse/my-prompt
       litellm_params:
         model: langfuse/my-prompt
         api_base: https://deployment.invalid
@@ -21,12 +18,19 @@ call:
         dotprompt_config:
           path: prompts/greeting.prompt
         prompt_version: 2
+    - model_name: gpt-4o
+      litellm_params:
+        model: openai/gpt-4o
+        api_key: sk-test
+    request:
+      api_base: https://request.invalid
     compiled:
       model: gpt-4o
       messages:
-        - role: user
-          content: compiled
+      - role: user
+        content: compiled
       optional_params:
         temperature: 0.2
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

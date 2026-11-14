@@ -2,12 +2,21 @@ kind: helper
 name: prompt-dispatch-identity-litellm-agent-skips-check
 call:
   b8466:
-    function: resolve_prompt_identity
-    request: {}
-    deployment:
-      model_name: litellm_agent/support-bot
+    check: prompt_factory
+    model: litellm_agent/support-bot
+    model_list:
+    - model_name: litellm_agent/support-bot
       litellm_params:
         model: litellm_agent/support-bot
         prompt_label: production
+    request:
+      original_function: acompletion
+    compiled:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: compiled
+      optional_params: {}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

@@ -2,11 +2,12 @@ kind: helper
 name: prompt-dispatch-is-prompt-model-no-slash
 call:
   b8466:
-    function: is_prompt_model
+    check: is_prompt_model
     model: plain-model
     model_list:
-      - model_name: plain-model
-        litellm_params:
-          model: gpt-4o
+    - model_name: plain-model
+      litellm_params:
+        model: gpt-4o
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

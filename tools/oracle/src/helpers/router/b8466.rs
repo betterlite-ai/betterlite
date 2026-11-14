@@ -1,33 +1,34 @@
+use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
-use betterlite_router::prompt_dispatch::identity::resolve_prompt_identity;
+use betterlite_router::prompt_dispatch::factory::prompt_factory;
 use betterlite_router::prompt_dispatch::known_callbacks::KNOWN_CALLBACKS;
-use betterlite_router::prompt_dispatch::merge::{PromptCall, merge_prompt_request};
-use betterlite_router::prompt_dispatch::ports::CompiledPrompt;
+use betterlite_router::prompt_dispatch::ports::{CompilePromptCall, CompiledPrompt, PromptPorts};
 use betterlite_router::prompt_dispatch::predicate::is_prompt_model;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
+use thiserror::Error;
+use tokio::sync::Mutex;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
+const LOGGING_HANDLE: &str = "logging-handle";
+
 #[derive(Debug, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "check", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     IsPromptModel {
         model: String,
         #[serde(default)]
         model_list: Vec<DeploymentRow>,
     },
-    ResolvePromptIdentity {
+    PromptFactory {
+        model: String,
+        #[serde(default)]
+        model_list: Vec<DeploymentRow>,
         request: JsonObject,
-        deployment: DeploymentRow,
-    },
-    MergePromptRequest {
-        request: JsonObject,
-        deployment: DeploymentRow,
         compiled: CompiledRow,
-        new_model_has_deployments: bool,
     },
 }
 
@@ -51,6 +52,82 @@ pub(crate) struct CompiledRow {
     optional_params: JsonObject,
 }
 
+#[derive(Debug, Error)]
+#[error("no deployment is named {0}")]
+struct NoDeployment(String);
+
+struct Outcome {
+    call: &'static str,
+    request: JsonObject,
+}
+
+struct HelperPorts {
+    deployments: Vec<DeploymentSpec>,
+    compiled: CompiledPrompt,
+    compile_call: Mutex<Value>,
+}
+
+#[async_trait]
+impl PromptPorts for HelperPorts {
+    type Error = NoDeployment;
+    type Response = Outcome;
+
+    async fn select_deployment(
+        &self,
+        model: &str,
+        _messages: &[Json],
+        _specific_deployment: Option<&Json>,
+        _request: &JsonObject,
+    ) -> Result<DeploymentSpec, NoDeployment> {
+        self.deployments
+            .iter()
+            .find(|deployment| deployment.model_name == model)
+            .cloned()
+            .ok_or_else(|| NoDeployment(model.to_owned()))
+    }
+
+    fn update_with_deployment(&self, _request: &mut JsonObject, _deployment: &DeploymentSpec) {}
+
+    async fn compile_prompt(
+        &self,
+        call: CompilePromptCall<'_>,
+    ) -> Result<CompiledPrompt, NoDeployment> {
+        let mut request_kwargs = call.request.clone();
+        request_kwargs.shift_remove("litellm_logging_obj");
+        *self.compile_call.lock().await = json!({
+            "model": call.model,
+            "messages": call.messages,
+            "non_default_params": call.non_default_params,
+            "prompt_id": call.prompt_id,
+            "prompt_variables": call.prompt_variables,
+            "prompt_label": call.prompt_label,
+            "request_kwargs": request_kwargs,
+            "injected_for_every_deployment": call.injected_for_every_deployment,
+        });
+        Ok(self.compiled.clone())
+    }
+
+    fn has_deployments(&self, model: &str) -> bool {
+        self.deployments
+            .iter()
+            .any(|deployment| deployment.model_name == model)
+    }
+
+    async fn call_direct(&self, request: JsonObject) -> Result<Outcome, NoDeployment> {
+        Ok(Outcome {
+            call: "direct",
+            request,
+        })
+    }
+
+    async fn call_with_fallbacks(&self, request: JsonObject) -> Result<Outcome, NoDeployment> {
+        Ok(Outcome {
+            call: "with_fallbacks",
+            request,
+        })
+    }
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -59,58 +136,59 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::IsPromptModel { model, model_list } => {
-                let deployments: Vec<DeploymentSpec> = model_list
-                    .iter()
-                    .filter(|row| row.model_name == *model)
-                    .map(|row| DeploymentSpec {
-                        model_name: row.model_name.clone(),
-                        litellm_params: row.litellm_params.clone(),
-                        model_info: row.model_info.clone(),
-                        extra: JsonObject::new(),
-                    })
+                let named: Vec<DeploymentSpec> = specs(model_list)
+                    .into_iter()
+                    .filter(|deployment| deployment.model_name == *model)
                     .collect();
-                Ok(json!({"is_prompt_model": is_prompt_model(&deployments, &KNOWN_CALLBACKS)}))
+                Ok(json!({"is_prompt_model": is_prompt_model(&named, &KNOWN_CALLBACKS)}))
             }
-            Input::ResolvePromptIdentity {
+            Input::PromptFactory {
+                model,
+                model_list,
                 request,
-                deployment,
-            } => {
-                let identity = resolve_prompt_identity(request, &deployment.litellm_params)
-                    .map_err(|error| value_error(error.to_string()))?;
-                Ok(json!({
-                    "prompt_id": identity.prompt_id,
-                    "prompt_variables": identity.prompt_variables,
-                    "prompt_label": identity.prompt_label,
-                }))
-            }
-            Input::MergePromptRequest {
-                request,
-                deployment,
                 compiled,
-                new_model_has_deployments,
             } => {
-                let identity = resolve_prompt_identity(request, &deployment.litellm_params)
+                let ports = HelperPorts {
+                    deployments: specs(model_list),
+                    compiled: CompiledPrompt {
+                        model: compiled.model.clone(),
+                        messages: compiled.messages.clone(),
+                        optional_params: compiled.optional_params.clone(),
+                    },
+                    compile_call: Mutex::new(Value::Null),
+                };
+                let mut request = request.clone();
+                let handle = Json::Text(LOGGING_HANDLE.to_owned());
+                request.insert("litellm_logging_obj".to_owned(), handle.clone());
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
                     .map_err(|error| value_error(error.to_string()))?;
-                let compiled = CompiledPrompt {
-                    model: compiled.model.clone(),
-                    messages: compiled.messages.clone(),
-                    optional_params: compiled.optional_params.clone(),
-                };
-                let merged = merge_prompt_request(
-                    &deployment.litellm_params,
-                    request,
-                    &compiled,
-                    &identity,
-                    *new_model_has_deployments,
-                );
-                let call = match merged.call {
-                    PromptCall::Direct => "direct",
-                    PromptCall::WithFallbacks => "with_fallbacks",
-                };
-                Ok(json!({"request": merged.fields, "call": call}))
+                let mut outcome = runtime
+                    .block_on(prompt_factory(model, &[], request, &ports))
+                    .map_err(|error| value_error(error.to_string()))?;
+                let logging_kept =
+                    outcome.request.shift_remove("litellm_logging_obj") == Some(handle);
+                Ok(json!({
+                    "compile_call": ports.compile_call.into_inner(),
+                    "request": outcome.request,
+                    "logging_kept": logging_kept,
+                    "call": outcome.call,
+                }))
             }
         }
     }
+}
+
+fn specs(rows: &[DeploymentRow]) -> Vec<DeploymentSpec> {
+    rows.iter()
+        .map(|row| DeploymentSpec {
+            model_name: row.model_name.clone(),
+            litellm_params: row.litellm_params.clone(),
+            model_info: row.model_info.clone(),
+            extra: JsonObject::new(),
+        })
+        .collect()
 }
 
 fn value_error(message: String) -> Box<HelperError> {
