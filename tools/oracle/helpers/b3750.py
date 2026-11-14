@@ -190,11 +190,13 @@ def rejection(outcome: dict[str, Json] | BaseException) -> Json:
     match outcome:
         case BaseException():
             facts = TypeAdapter(Rejection).validate_python(outcome, from_attributes=True)
+            # the proxy turns ProxyException.openai_code into the string the error body carries
+            code = None if facts.openai_code is None else str(facts.openai_code)
             return {
                 "status": HTTP_BAD_REQUEST,
                 "type": facts.type,
                 "param": facts.param,
-                "code": facts.openai_code,
+                "code": code,
             }
         case dict():
             return None
