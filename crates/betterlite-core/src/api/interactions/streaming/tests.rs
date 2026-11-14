@@ -475,7 +475,7 @@ async fn serve_stream(listener: TcpListener, answer: &str) {
 }
 
 #[tokio::test]
-async fn async_iteration_reads_a_streamed_http_response() {
+async fn async_iteration_reads_the_first_line_of_a_streamed_http_response() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("the port binds");
@@ -509,13 +509,13 @@ async fn async_iteration_reads_a_streamed_http_response() {
         Some(&Json::Text(String::from("9")))
     );
     let first = iterator
-        .next_chunk()
+        .lines
+        .next_line()
         .await
-        .expect("the first event arrives")
-        .expect("the first event decodes");
-    assert_eq!(first.id.as_deref(), Some("int_1"));
-    assert!(iterator.next_chunk().await.is_none());
-    assert!(iterator.base.finished);
+        .expect("the first line is read")
+        .expect("the first line arrives");
+    assert_eq!(first, format!("data: {COMPLETED_STATUS}"));
+    assert!(!iterator.base.finished);
 }
 
 #[test]
