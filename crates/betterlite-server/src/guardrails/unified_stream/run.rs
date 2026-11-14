@@ -75,7 +75,14 @@ where
             if state.finished {
                 return None;
             }
-            state.advance().await;
+            let pulled = state.source.next().await;
+            match pulled {
+                Some(item) => state.consume_item(item).await,
+                None => {
+                    state.finish_stream().await;
+                    state.finished = true;
+                }
+            }
         }
     })
 }
@@ -87,14 +94,6 @@ where
     G: GuardrailContract,
     S: Stream<Item = GuardrailValue> + Send,
 {
-    async fn advance(&mut self) {
-        let pulled = self.source.next().await;
-        match pulled {
-            Some(item) => self.consume_item(item).await,
-            None => self.finish_stream().await,
-        }
-    }
-
     async fn consume_item(&mut self, item: GuardrailValue) {
         if chunk_has_tool_calls(&item) {
             self.consume_tool_call_chunk(item).await;
