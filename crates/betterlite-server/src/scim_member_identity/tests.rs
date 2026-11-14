@@ -616,6 +616,7 @@ async fn scim_member_identity_classification_events_name_the_value_and_account()
     assert!(captured.contains("user_id=u2"));
     assert!(captured.contains("SCIM: member is also another account's identity or email"));
     assert!(captured.contains("value=shared"));
+    assert!(captured.contains("other=u_other"));
     assert!(captured.contains("SCIM: member names several accounts and is ambiguous"));
     assert!(captured.contains("value=ann@example.com"));
 }

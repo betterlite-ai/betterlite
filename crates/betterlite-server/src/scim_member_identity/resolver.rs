@@ -54,8 +54,8 @@ impl MemberResolver<'_> {
         let named = accounts_named_by_member_value(self.store, value).await?;
         if named.iter().any(|found| found == value) {
             // the keyed row still loses to an account that shares the value as an identity
-            if named.iter().any(|other| other != value) {
-                tracing::warn!(%value, "SCIM: member is also another account's identity or email");
+            if let Some(other) = named.iter().find(|other| other.as_str() != value) {
+                tracing::warn!(%value, %other, "SCIM: member is also another account's identity or email");
                 return Ok(ClassifiedGroupMember::Ambiguous {
                     value: value.to_owned(),
                 });
