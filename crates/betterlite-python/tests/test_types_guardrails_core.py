@@ -533,3 +533,5 @@ def test_str_enum_names() -> None:
     assert category == "General"
     action: dict[str, JsonValue] = {"action": pii.PiiAction.BLOCK}
     assert json.dumps(action) == '{"action": "BLOCK"}'
+    role_payload: dict[str, JsonValue] = {"role": core.Role.SYSTEM}
+    assert json.dumps(role_payload) == '{"role": "system"}'
