@@ -49,12 +49,13 @@ impl ClaudePluginPolicyError {
         let (status_code, message) = match self {
             Self::InvalidSource { message } => (400, *message),
             Self::NotProxyAdmin { message } => (403, *message),
-            Self::DatabaseNotConnected { message } => (500, *message),
+            Self::DatabaseNotConnected { message } | Self::Pattern { message, .. } => {
+                (500, *message)
+            }
             Self::Response {
                 status_code,
                 message,
             } => (*status_code, message.as_str()),
-            Self::Pattern { message, .. } => (500, *message),
         };
         PluginErrorFields {
             status_code,
@@ -169,7 +170,7 @@ impl SkillVisibility {
 }
 
 fn skills_of(permission: Option<&PluginObjectPermission>) -> BTreeSet<String> {
-    let Some(skills) = permission.and_then(|permission| permission.skills.as_ref()) else {
+    let Some(skills) = permission.and_then(|granted| granted.skills.as_ref()) else {
         return BTreeSet::new();
     };
     skills.iter().cloned().collect()
@@ -188,17 +189,17 @@ pub fn granted_skills(caller: &PluginCaller) -> BTreeSet<String> {
 
 #[must_use]
 pub fn skill_visibility(caller: Option<&PluginCaller>) -> SkillVisibility {
-    let Some(caller) = caller else {
+    let Some(known) = caller else {
         return PUBLIC_ONLY;
     };
-    if is_proxy_admin(Some(&caller.principal)) {
+    if is_proxy_admin(Some(&known.principal)) {
         return SkillVisibility {
             granted: BTreeSet::new(),
             sees_private: true,
         };
     }
     SkillVisibility {
-        granted: granted_skills(caller),
+        granted: granted_skills(known),
         sees_private: false,
     }
 }
@@ -222,7 +223,7 @@ pub fn plugin_not_found_error(name: &str) -> ClaudePluginPolicyError {
 }
 
 pub fn require_proxy_admin(caller: Option<&PluginCaller>) -> Result<(), ClaudePluginPolicyError> {
-    if caller.is_some_and(|caller| is_proxy_admin(Some(&caller.principal))) {
+    if caller.is_some_and(|known| is_proxy_admin(Some(&known.principal))) {
         return Ok(());
     }
     Err(ClaudePluginPolicyError::NotProxyAdmin {

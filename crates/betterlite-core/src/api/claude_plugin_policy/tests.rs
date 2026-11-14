@@ -13,8 +13,8 @@ use super::source::{
     validate_plugin_source,
 };
 use super::{
-    ClaudePluginPolicyError, ClaudePluginPolicyInput, DB_NOT_CONNECTED, NOT_PROXY_ADMIN,
-    PluginCaller, PluginObjectPermission, PluginRecord, PluginWhere, evaluate, granted_skills,
+    ClaudePluginPolicyInput, DB_NOT_CONNECTED, NOT_PROXY_ADMIN, PluginCaller,
+    PluginObjectPermission, PluginRecord, PluginWhere, evaluate, granted_skills,
     name_conflict_error, plugin_not_found_error, require_database, require_proxy_admin,
     skill_visibility,
 };
@@ -198,22 +198,25 @@ fn invalid_plugin_source(#[case] source_json: &str, #[case] expected: Option<&st
 }
 
 #[rstest]
-#[case::intersection(Some(&["a", "b"]), Some(&["b", "c"]), &["b"])]
-#[case::key_only(Some(&["a"]), None, &["a"])]
-#[case::team_only(None, Some(&["b"]), &["b"])]
+#[case::intersection(Some(vec!["a", "b"]), Some(vec!["b", "c"]), &["b"])]
+#[case::key_only(Some(vec!["a"]), None, &["a"])]
+#[case::team_only(None, Some(vec!["b"]), &["b"])]
 #[case::neither(None, None, &[])]
-#[case::empty_key_defers_to_team(Some(&[]), Some(&["b"]), &["b"])]
-#[case::empty_team_defers_to_key(Some(&["a"]), Some(&[]), &["a"])]
-#[case::both_empty(Some(&[]), Some(&[]), &[])]
-#[case::disjoint(Some(&["a"]), Some(&["b"]), &[])]
-#[case::duplicates_collapse(Some(&["a", "a"]), None, &["a"])]
+#[case::empty_key_defers_to_team(Some(vec![]), Some(vec!["b"]), &["b"])]
+#[case::empty_team_defers_to_key(Some(vec!["a"]), Some(vec![]), &["a"])]
+#[case::both_empty(Some(vec![]), Some(vec![]), &[])]
+#[case::disjoint(Some(vec!["a"]), Some(vec!["b"]), &[])]
+#[case::duplicates_collapse(Some(vec!["a", "a"]), None, &["a"])]
 fn skill_object_permission(
-    #[case] key: Option<&[&str]>,
-    #[case] team: Option<&[&str]>,
+    #[case] key: Option<Vec<&str>>,
+    #[case] team: Option<Vec<&str>>,
     #[case] expected: &[&str],
 ) {
     let want: BTreeSet<String> = expected.iter().map(|name| (*name).to_owned()).collect();
-    assert_eq!(granted_skills(&caller(None, key, team)), want);
+    assert_eq!(
+        granted_skills(&caller(None, key.as_deref(), team.as_deref())),
+        want
+    );
 }
 
 #[rstest]
@@ -251,17 +254,17 @@ fn unauthenticated_callers_see_only_public_plugins() {
 #[case::public_only(None, None, r#"{"enabled":true}"#)]
 #[case::granted(
     None,
-    Some(&["b", "a"]),
+    Some(vec!["b", "a"]),
     r#"{"OR":[{"enabled":true},{"name":{"in":["a","b"]}}]}"#
 )]
-#[case::admin_queries_everything(Some(ADMIN), None, r#"{}"#)]
+#[case::admin_queries_everything(Some(ADMIN), None, "{}")]
 fn skill_visibility_where(
     #[case] role: Option<&str>,
-    #[case] key: Option<&[&str]>,
+    #[case] key: Option<Vec<&str>>,
     #[case] expected: &str,
 ) {
     let input = ClaudePluginPolicyInput {
-        caller: Some(caller(role, key, None)),
+        caller: Some(caller(role, key.as_deref(), None)),
         plugins: Vec::new(),
     };
     let result = evaluate(&input);
@@ -276,12 +279,12 @@ fn skill_visibility_where(
 #[case::internal(Some("internal_user"), Some(403))]
 #[case::anonymous(None, Some(403))]
 fn nonadmin_plugin_denied(#[case] role: Option<&str>, #[case] expected: Option<u16>) {
-    let caller = role.map(|role| self::caller(Some(role), None, None));
-    let result = require_proxy_admin(caller.as_ref());
+    let principal = role.map(|name| caller(Some(name), None, None));
+    let result = require_proxy_admin(principal.as_ref());
     assert_eq!(result.is_ok(), expected.is_none());
-    let fields = result.err().map(|error| error.fields());
-    assert_eq!(fields.as_ref().map(|fields| fields.status_code), expected);
-    let detail = fields.map(|fields| fields.detail.error);
+    let rejection = result.err().map(|error| error.fields());
+    assert_eq!(rejection.as_ref().map(|found| found.status_code), expected);
+    let detail = rejection.map(|found| found.detail.error);
     assert_eq!(detail, expected.map(|_| NOT_PROXY_ADMIN.to_owned()));
 }
 
@@ -361,8 +364,8 @@ fn the_error_envelope_names_the_error_key() {
     r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo","ref":"main"},"version":"1.0.0"}"#
 )]
 fn manifest_holds_the_present_spec_fields(#[case] spec: &str, #[case] expected: &str) {
-    let spec: PluginSpec = serde_json::from_str(spec).unwrap();
-    let manifest = build_plugin_manifest("my-plugin", &spec);
+    let parsed: PluginSpec = serde_json::from_str(spec).unwrap();
+    let manifest = build_plugin_manifest("my-plugin", &parsed);
     assert_eq!(serde_json::to_string(&manifest).unwrap(), expected);
 }
 

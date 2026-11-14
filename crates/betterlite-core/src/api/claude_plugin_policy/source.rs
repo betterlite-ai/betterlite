@@ -67,7 +67,10 @@ pub fn validate_plugin_source(source: &PluginSource) -> Result<(), ClaudePluginP
     }
 }
 
-fn require_field(present: bool, message: &'static str) -> Result<(), ClaudePluginPolicyError> {
+const fn require_field(
+    present: bool,
+    message: &'static str,
+) -> Result<(), ClaudePluginPolicyError> {
     if present {
         return Ok(());
     }
@@ -86,10 +89,10 @@ fn validate_variant_fields(source: &PluginSource) -> Result<(), ClaudePluginPoli
                 message: GIT_SUBDIR_PATH_MISSING,
             });
         };
-        let pattern = Regex::new(GIT_SUBDIR_PATH_PATTERN).map_err(|source| {
+        let pattern = Regex::new(GIT_SUBDIR_PATH_PATTERN).map_err(|error| {
             ClaudePluginPolicyError::Pattern {
                 message: PATTERN_INVALID,
-                source,
+                source: error,
             }
         })?;
         if !pattern.is_match(path) {
@@ -104,11 +107,10 @@ fn validate_variant_fields(source: &PluginSource) -> Result<(), ClaudePluginPoli
             message: ARCHIVE_URL_INVALID,
         });
     }
-    let pattern =
-        Regex::new(SHA256_PATTERN).map_err(|source| ClaudePluginPolicyError::Pattern {
-            message: PATTERN_INVALID,
-            source,
-        })?;
+    let pattern = Regex::new(SHA256_PATTERN).map_err(|error| ClaudePluginPolicyError::Pattern {
+        message: PATTERN_INVALID,
+        source: error,
+    })?;
     match source.sha256.as_deref() {
         Some(sha256) if !pattern.is_match(sha256) => Err(ClaudePluginPolicyError::InvalidSource {
             message: ARCHIVE_SHA256_INVALID,
@@ -145,7 +147,8 @@ pub struct PluginSpec {
     pub namespace: Option<String>,
 }
 
-fn default_version() -> Option<String> {
+#[must_use]
+pub fn default_version() -> Option<String> {
     Some("1.0.0".to_owned())
 }
 
