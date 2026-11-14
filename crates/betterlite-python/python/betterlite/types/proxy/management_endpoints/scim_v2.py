@@ -23,6 +23,11 @@ SCIM_ROLES_METADATA_KEY: Final[str] = "scim_roles"
 SCIM_MANAGED_TEAM_METADATA_KEY: Final[str] = "scim_managed"
 SCIM_TEAM_DATA_METADATA_KEY: Final[str] = "scim_data"
 
+_ALIASED_CONFIG: Final[ConfigDict] = ConfigDict(
+    serialize_by_alias=True, validate_by_name=True
+)
+
+
 def _absent(value: JsonValue | BaseModel) -> bool:
     match value:
         case None:
@@ -64,6 +69,13 @@ class SCIMUserEmail(_SCIMBase):
     type: str | None = None
     primary: bool | None = None
 
+    @field_validator("value")
+    @classmethod
+    def normalize_address(cls, value: str) -> str:
+        stripped = value.strip()
+        local, separator, domain = stripped.rpartition("@")
+        return local + separator + domain.lower() if separator else stripped
+
 
 class SCIMUserGroup(_SCIMBase):
     value: str
@@ -101,9 +113,7 @@ SCIM_MULTI_VALUED_ATTRIBUTE_METADATA_KEYS: Final[dict[str, str]] = {
 
 
 class SCIMUserManager(_SCIMBase):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        serialize_by_alias=True, validate_by_name=True
-    )
+    model_config: ClassVar[ConfigDict] = _ALIASED_CONFIG
 
     value: str | None = None
     display_name: str | None = Field(default=None, alias="displayName")
@@ -111,9 +121,7 @@ class SCIMUserManager(_SCIMBase):
 
 
 class SCIMEnterpriseUser(_SCIMBase):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        serialize_by_alias=True, validate_by_name=True
-    )
+    model_config: ClassVar[ConfigDict] = _ALIASED_CONFIG
 
     employee_number: str | None = Field(default=None, alias="employeeNumber")
     cost_center: str | None = Field(default=None, alias="costCenter")
@@ -124,9 +132,7 @@ class SCIMEnterpriseUser(_SCIMBase):
 
 
 class SCIMUser(SCIMResource):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        serialize_by_alias=True, validate_by_name=True
-    )
+    model_config: ClassVar[ConfigDict] = _ALIASED_CONFIG
 
     user_name: str | None = Field(default=None, alias="userName")
     name: SCIMUserName | None = None
@@ -223,9 +229,7 @@ class SCIMServiceProviderConfig(_SCIMBase):
 
 
 class SCIMSchemaExtension(_SCIMBase):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        serialize_by_alias=True, validate_by_name=True
-    )
+    model_config: ClassVar[ConfigDict] = _ALIASED_CONFIG
 
     schema_: str
     required: bool
@@ -238,9 +242,7 @@ class SCIMSchemaExtension(_SCIMBase):
 
 
 class SCIMResourceType(_SCIMBase):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        serialize_by_alias=True, validate_by_name=True
-    )
+    model_config: ClassVar[ConfigDict] = _ALIASED_CONFIG
 
     schemas: list[str] = ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"]
     id: str
