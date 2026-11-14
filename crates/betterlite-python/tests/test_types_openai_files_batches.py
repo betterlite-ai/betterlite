@@ -1,6 +1,11 @@
+import operator
+from os import PathLike
+from typing import Literal, get_args, get_origin, get_type_hints
+
 import litellm.types.llms.openai as litellm_openai
 import pytest
 from pydantic import JsonValue, ValidationError
+from typing_extensions import TypeForm
 
 import betterlite.types.llms.openai.core.batches as core_batches
 import betterlite.types.llms.openai.core.binary as core_binary
@@ -21,6 +26,38 @@ from betterlite.types.llms.openai.core.chat_blocks import (
 )
 from betterlite.types.llms.openai.core.messages import AllMessageValues, ToolMessageContentPart
 from betterlite.types.llms.openai.core.threads import AttachmentTool
+
+
+def literal_values(annotation: TypeForm[JsonValue] | None) -> tuple[str, ...]:
+    values: list[str] = []
+    pending: list[TypeForm[JsonValue] | None] = [annotation]
+    while pending:
+        current = pending.pop()
+        origin: TypeForm[JsonValue] | None = get_origin(current)
+        # a plain is check against Literal trips mypy's non-overlapping identity check
+        if operator.is_(origin, Literal):
+            arguments: tuple[TypeForm[JsonValue] | None, ...] = get_args(current)
+            values.extend(str(argument) for argument in arguments)
+            continue
+        nested: tuple[TypeForm[JsonValue] | None, ...] = get_args(current)
+        pending.extend(nested)
+    return tuple(values)
+
+
+def check_file_content_forms(
+    ours: tuple[TypeForm[JsonValue], ...], theirs: tuple[TypeForm[JsonValue], ...]
+) -> None:
+    assert len(ours) == len(theirs) + 1
+    assert ours[:2] == theirs[:2]
+    ours_text_origin: TypeForm[JsonValue] | None = get_origin(ours[2])
+    ours_text_parameters: tuple[TypeForm[JsonValue], ...] = get_args(ours[2])
+    ours_bytes_origin: TypeForm[JsonValue] | None = get_origin(ours[3])
+    ours_bytes_parameters: tuple[TypeForm[JsonValue], ...] = get_args(ours[3])
+    assert operator.is_(ours_text_origin, PathLike)
+    assert ours_text_parameters == (str,)
+    assert operator.is_(ours_bytes_origin, PathLike)
+    assert ours_bytes_parameters == (bytes,)
+    assert operator.is_(theirs[2], PathLike)
 
 
 def test_names_typed_dicts() -> None:
@@ -293,6 +330,14 @@ def test_names_typed_dicts() -> None:
     for pair in typed_dicts:
         assert pair[0].__required_keys__ == pair[1].__required_keys__
         assert pair[0].__optional_keys__ == pair[1].__optional_keys__
+        ours_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(
+            pair[0], include_extras=True
+        )
+        theirs_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(
+            pair[1], include_extras=True
+        )
+        for key in ours_hints.keys() & theirs_hints.keys():
+            assert literal_values(ours_hints[key]) == literal_values(theirs_hints[key])
     literal_aliases = (
         (
             core_batches.BatchJobStatus,
@@ -327,6 +372,23 @@ def test_names_typed_dicts() -> None:
         assert pair[0] == pair[1]
 
 
+def test_names_model_literals() -> None:
+    models = (
+        (core_files.OpenAIFileObject, litellm_openai.OpenAIFileObject),
+        (core_files.BatchGuardrailRecord, litellm_openai.BatchGuardrailRecord),
+        (core_files.FileListPage, litellm_openai.FileListPage),
+    )
+    for ours, theirs in models:
+        ours_fields = ours.model_fields
+        theirs_fields = theirs.model_fields
+        for key in ours_fields.keys() & theirs_fields.keys():
+            ours_annotation: TypeForm[JsonValue] | None = ours_fields[key].annotation
+            theirs_annotation: TypeForm[JsonValue] | None = (
+                theirs_fields[key].annotation
+            )
+            assert literal_values(ours_annotation) == literal_values(theirs_annotation)
+
+
 def test_names_audio_object_keys() -> None:
     ours = core_chat_blocks.ChatCompletionAudioObject
     theirs = litellm_openai.ChatCompletionAudioObject
@@ -344,30 +406,36 @@ def test_names_audio_object_keys() -> None:
 
 
 def test_names_shared_aliases() -> None:
-    content: FileContent = b"raw"
-    file_types: FileTypes = ("a.txt", b"raw")
-    embedding: EmbeddingInput = ["a"]
-    prompt: AllPromptValues = ["a", "b"]
-    message_content: OpenAIMessageContent = "hi"
+    _content: FileContent = b"raw"
+    _file_types: FileTypes = ("a.txt", b"raw")
+    _embedding: EmbeddingInput = ["a"]
+    _prompt: AllPromptValues = ["a", "b"]
+    _message_content: OpenAIMessageContent = "hi"
     text_object = core_chat_blocks.ChatCompletionTextObject(type="text", text="hi")
-    block: OpenAIMessageContentListBlock = text_object
+    _block: OpenAIMessageContentListBlock = text_object
     search_tool = core_threads.FileSearchToolParam(type="file_search")
-    attachment_tool: AttachmentTool = search_tool
+    _attachment_tool: AttachmentTool = search_tool
     tool_reference = core_messages.ChatCompletionToolReferenceObject(
         type="tool_reference", tool_name="t"
     )
-    tool_part: ToolMessageContentPart = tool_reference
+    _tool_part: ToolMessageContentPart = tool_reference
     user_message = core_messages.ChatCompletionUserMessage(role="user", content="hi")
-    message: AllMessageValues = user_message
-    assert content == b"raw"
-    assert file_types == ("a.txt", b"raw")
-    assert embedding == ["a"]
-    assert prompt == ["a", "b"]
-    assert message_content == "hi"
-    assert block == text_object
-    assert attachment_tool == search_tool
-    assert tool_part == tool_reference
-    assert message == user_message
+    _message: AllMessageValues = user_message
+    assert EmbeddingInput == litellm_openai.EmbeddingInput
+    assert AllPromptValues == litellm_openai.AllPromptValues
+    ours_members: tuple[TypeForm[JsonValue], ...] = get_args(FileTypes)
+    theirs_members: tuple[TypeForm[JsonValue], ...] = get_args(litellm_openai.FileTypes)
+    assert len(ours_members) == len(theirs_members) + 1
+    check_file_content_forms(ours_members[:4], theirs_members[:3])
+    for ours_tuple, theirs_tuple in zip(ours_members[4:], theirs_members[3:], strict=True):
+        ours_slots: tuple[TypeForm[JsonValue], ...] = get_args(ours_tuple)
+        theirs_slots: tuple[TypeForm[JsonValue], ...] = get_args(theirs_tuple)
+        assert len(ours_slots) == len(theirs_slots)
+        assert ours_slots[0] == theirs_slots[0]
+        assert ours_slots[2:] == theirs_slots[2:]
+        ours_content: tuple[TypeForm[JsonValue], ...] = get_args(ours_slots[1])
+        theirs_content: tuple[TypeForm[JsonValue], ...] = get_args(theirs_slots[1])
+        check_file_content_forms(ours_content, theirs_content)
 
 
 def test_models_file_and_page_dump() -> None:
