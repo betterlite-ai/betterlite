@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from typing import Literal, NotRequired, TypedDict
 
@@ -6,18 +7,22 @@ import litellm
 from litellm import cost_calculator
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.ocr.transformation import OCRResponse, OCRUsageInfo
+from litellm.types.llms.openai import ChatCompletionAnnotation
 from litellm.types.utils import (
+    Choices,
     CostPerToken,
     ImageResponse,
-    LiteLLMRealtimeStreamLoggingObject as RealtimeLogging,
+    Message,
     ModelResponse,
+    PromptTokensDetailsWrapper,
     StandardBuiltInToolsParams,
     TranscriptionResponse,
     TranscriptionUsageInputTokenDetailsObject,
     TranscriptionUsageTokensObject,
     Usage,
 )
-from pydantic import JsonValue
+from litellm.types.utils import LiteLLMRealtimeStreamLoggingObject as RealtimeLogging
+from pydantic import JsonValue, TypeAdapter
 
 CallKind = Literal[
     "completion",
@@ -31,24 +36,6 @@ CallKind = Literal[
     "_aresponses_websocket",
 ]
 ResponseKind = Literal["chat", "image", "transcription", "ocr", "realtime_stream", "none"]
-
-
-class Entry(TypedDict):
-    litellm_provider: str
-    mode: str
-    input_cost_per_token: float
-    output_cost_per_token: float
-    cache_read_input_token_cost: NotRequired[float | None]
-    input_cost_per_image: NotRequired[float]
-    input_cost_per_query: NotRequired[float]
-    ocr_cost_per_credit: NotRequired[float]
-    ocr_cost_per_page: NotRequired[float]
-    output_cost_per_second: NotRequired[float]
-    input_cost_per_token_priority: NotRequired[float]
-    output_cost_per_token_priority: NotRequired[float]
-    input_cost_per_token_flex: NotRequired[float]
-    output_cost_per_token_flex: NotRequired[float]
-    search_context_cost_per_query: NotRequired[dict[str, float]]
 
 
 class UsageInput(TypedDict):
@@ -83,7 +70,7 @@ class Input(TypedDict):
     model: str
     custom_llm_provider: str | None
     region_name: str | None
-    catalog: dict[str, Entry]
+    catalog: dict[str, dict[str, JsonValue]]
     usage: UsageInput
     custom_price: Rates | None
     cache_hit: bool | None
@@ -103,60 +90,25 @@ class Input(TypedDict):
     service_tier: NotRequired[str | None]
     transcription_seconds: NotRequired[float | None]
     ocr: NotRequired[OcrInput | None]
-    events: NotRequired[list[dict[str, JsonValue]] | None]
-
-
-class Output(TypedDict):
-    cost: float
+    events: NotRequired[list[JsonValue] | None]
 
 
 WrapperResponse = (
-    ModelResponse
-    | ImageResponse
-    | TranscriptionResponse
-    | RealtimeLogging
+    ModelResponse | ImageResponse | TranscriptionResponse | RealtimeLogging
 )
 
 CompletionResponse = WrapperResponse | OCRResponse | None
 
 
-def margin_config(margin: dict[str, Split]) -> dict[str, float | dict[str, float]]:
-    config: dict[str, float | dict[str, float]] = {}
-    for provider, entry in margin.items():
-        fields: dict[str, float] = {}
-        percentage = entry["percentage"]
-        if percentage is not None:
-            fields["percentage"] = percentage
-        fixed_amount = entry["fixed_amount"]
-        if fixed_amount is not None:
-            fields["fixed_amount"] = fixed_amount
-        config[provider] = fields
-    return config
-
-
 def usage_value(fields: UsageInput) -> Usage:
-    values: dict[str, JsonValue] = {
-        "prompt_tokens": fields["prompt_tokens"],
-        "completion_tokens": fields["completion_tokens"],
-        "total_tokens": fields["prompt_tokens"] + fields["completion_tokens"],
-    }
+    prompt = fields["prompt_tokens"]
+    completion = fields["completion_tokens"]
     cached = fields["cached_tokens"]
-    if cached is not None:
-        details: dict[str, JsonValue] = {"cached_tokens": cached}
-        values["prompt_tokens_details"] = details
-    return Usage.model_validate(values)
-
-
-def usage_payload(fields: UsageInput) -> dict[str, JsonValue]:
-    payload: dict[str, JsonValue] = {
-        "prompt_tokens": fields["prompt_tokens"],
-        "completion_tokens": fields["completion_tokens"],
-        "total_tokens": fields["prompt_tokens"] + fields["completion_tokens"],
-    }
-    cached = fields["cached_tokens"]
-    if cached is not None:
-        payload["prompt_tokens_details"] = {"cached_tokens": cached}
-    return payload
+    details = None if cached is None else PromptTokensDetailsWrapper(cached_tokens=cached)
+    return Usage(
+        prompt_tokens=prompt, completion_tokens=completion, total_tokens=prompt + completion,
+        prompt_tokens_details=details,
+    )
 
 
 def response_kind(input_value: Input) -> ResponseKind:
@@ -166,41 +118,21 @@ def response_kind(input_value: Input) -> ResponseKind:
     return kind
 
 
-def chat_response(
-    input_value: Input, usage: Usage, payload: dict[str, JsonValue]
-) -> ModelResponse:
+def chat_response(input_value: Input, usage: Usage) -> ModelResponse:
     model = input_value.get("response_model")
+    choices: list[Choices] | None = None
     if input_value.get("annotations"):
-        response = ModelResponse.model_validate(
-            {
-                "id": "response-charge-case",
-                "created": 0,
-                "object": "chat.completion",
-                "model": model,
-                "usage": payload,
-                "choices": [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": "",
-                            "annotations": [
-                                {
-                                    "type": "url_citation",
-                                    "url_citation": {
-                                        "url": "https://example.invalid",
-                                        "title": "case",
-                                        "start_index": 0,
-                                        "end_index": 0,
-                                    },
-                                }
-                            ],
-                        }
-                    }
-                ],
-            }
-        )
-    else:
-        response = ModelResponse(model=model, usage=usage)
+        citation: ChatCompletionAnnotation = {
+            "type": "url_citation",
+            "url_citation": {
+                "url": "https://example.invalid",
+                "title": "case",
+                "start_index": 0,
+                "end_index": 0,
+            },
+        }
+        choices = [Choices(message=Message(content="", role="assistant", annotations=[citation]))]
+    response = ModelResponse(model=model, usage=usage, choices=choices)
     header = input_value["header_cost"]
     if header is not None:
         response.set_provider_response_headers(
@@ -210,13 +142,11 @@ def chat_response(
 
 
 def image_response(input_value: Input) -> ImageResponse:
-    return ImageResponse.model_validate(
-        {
-            "created": 0,
-            "data": [{"url": "https://example.invalid/image.png"}],
-            "model": input_value.get("response_model"),
-        }
-    )
+    document: dict[str, JsonValue] = {
+        "created": 0, "model": input_value.get("response_model"),
+        "data": [{"url": "https://example.invalid/image.png"}],
+    }
+    return TypeAdapter(ImageResponse).validate_json(json.dumps(document))
 
 
 def transcription_response(input_value: Input) -> TranscriptionResponse:
@@ -249,50 +179,42 @@ def ocr_response(input_value: Input) -> OCRResponse:
     return OCRResponse(pages=[], model=input_value["model"], usage_info=usage)
 
 
-def realtime_response(
-    input_value: Input, usage: Usage
-) -> RealtimeLogging:
+def realtime_response(input_value: Input) -> RealtimeLogging:
     events = input_value.get("events")
     if events is None:
         raise ValueError("a realtime stream response needs its events")
-    return RealtimeLogging.model_validate(
-        {"results": events, "usage": usage}
-    )
+    fields = input_value["usage"]
+    prompt = fields["prompt_tokens"]
+    completion = fields["completion_tokens"]
+    usage: dict[str, JsonValue] = {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": prompt + completion,
+    }
+    document: dict[str, JsonValue] = {"results": events, "usage": usage}
+    return TypeAdapter(RealtimeLogging).validate_json(json.dumps(document))
 
 
-def wrapper_response(
-    input_value: Input, usage: Usage, payload: dict[str, JsonValue]
-) -> WrapperResponse:
+def wrapper_response(input_value: Input, usage: Usage) -> WrapperResponse:
     kind = response_kind(input_value)
     if kind == "chat":
-        return chat_response(input_value, usage, payload)
+        return chat_response(input_value, usage)
     if kind == "image":
         return image_response(input_value)
     if kind == "transcription":
         return transcription_response(input_value)
     if kind == "realtime_stream":
-        return realtime_response(input_value, usage)
+        return realtime_response(input_value)
     raise ValueError("the response wrapper needs a priced response")
 
 
-def completion_response(
-    input_value: Input, usage: Usage, payload: dict[str, JsonValue]
-) -> CompletionResponse:
+def completion_response(input_value: Input, usage: Usage) -> CompletionResponse:
     kind = response_kind(input_value)
     if kind == "ocr":
         return ocr_response(input_value)
     if kind == "none":
         return None
-    return wrapper_response(input_value, usage, payload)
-
-
-def agent_details(agent: AgentInput) -> dict[str, JsonValue]:
-    params: dict[str, JsonValue] = {"cost_per_query": agent["cost_per_query"]}
-    details: dict[str, JsonValue] = {"litellm_params": params}
-    response_cost = agent["response_cost"]
-    if response_cost is not None:
-        details["response_cost"] = response_cost
-    return details
+    return wrapper_response(input_value, usage)
 
 
 def build_logging(input_value: Input) -> Logging | None:
@@ -310,7 +232,12 @@ def build_logging(input_value: Input) -> Logging | None:
         function_id="response-charge-case",
     )
     if agent is not None:
-        log.model_call_details = agent_details(agent)
+        params: dict[str, JsonValue] = {"cost_per_query": agent["cost_per_query"]}
+        details: dict[str, JsonValue] = {"litellm_params": params}
+        response_cost = agent["response_cost"]
+        if response_cost is not None:
+            details["response_cost"] = response_cost
+        log.model_call_details = details
     return log
 
 
@@ -323,10 +250,9 @@ def call_cost(input_value: Input, log: Logging | None) -> float:
             output_cost_per_token=prices["output_cost_per_token"],
         )
     usage = usage_value(input_value["usage"])
-    payload = usage_payload(input_value["usage"])
     if input_value["function"] == "completion_cost":
         return litellm.completion_cost(
-            completion_response=completion_response(input_value, usage, payload),
+            completion_response=completion_response(input_value, usage),
             model=input_value["model"],
             call_type=input_value.get("call_type"),
             custom_llm_provider=input_value["custom_llm_provider"],
@@ -338,22 +264,34 @@ def call_cost(input_value: Input, log: Logging | None) -> float:
             custom_pricing=input_value.get("custom_pricing"),
             service_tier=input_value.get("service_tier"),
         )
+    params: dict[str, JsonValue] = {}
     return cost_calculator.response_cost_calculator(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1979
-        response_object=wrapper_response(input_value, usage, payload),
+        response_object=wrapper_response(input_value, usage),
         model=input_value["model"],
         custom_llm_provider=input_value["custom_llm_provider"],
         call_type="completion",
-        optional_params={},
+        optional_params=params,
         cache_hit=input_value["cache_hit"],
         region_name=input_value["region_name"],
     )
 
 
-def run(input_value: Input) -> Output:
+def run(input_value: Input) -> dict[str, float]:
+    models: dict[str, dict[str, JsonValue]] = {}
     for model, entry in input_value["catalog"].items():
-        record = {key: value for key, value in entry.items() if value is not None}
-        litellm.register_model({model: record})
+        models[model] = {key: value for key, value in entry.items() if value is not None}
+    litellm.register_model(models)
     litellm.cost_discount_config = input_value["discount"]
-    litellm.cost_margin_config = margin_config(input_value["margin"])
+    margin: dict[str, float | dict[str, float]] = {}
+    for provider, split in input_value["margin"].items():
+        fields: dict[str, float] = {}
+        percentage = split["percentage"]
+        if percentage is not None:
+            fields["percentage"] = percentage
+        fixed_amount = split["fixed_amount"]
+        if fixed_amount is not None:
+            fields["fixed_amount"] = fixed_amount
+        margin[provider] = fields
+    litellm.cost_margin_config = margin
     log = build_logging(input_value)
     return {"cost": call_cost(input_value, log)}
