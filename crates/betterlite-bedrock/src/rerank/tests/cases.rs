@@ -818,6 +818,17 @@ fn transport_logging_sync() {
         Json::Text("https://bedrock-agent-runtime.us-east-1.amazonaws.com/rerank".to_owned())
     );
     assert_eq!(arguments["complete_input_dict"], Json::Object(run.body()));
+    let Json::Object(headers) = &arguments["headers"] else {
+        panic!("pre_call records the prepared headers");
+    };
+    assert_eq!(
+        headers["Content-Type"],
+        Json::Text("application/json".to_owned())
+    );
+    assert!(
+        headers.contains_key("Authorization"),
+        "the prepared headers are the signed ones"
+    );
     assert!(run.post_call().is_some());
 }
 
