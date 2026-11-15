@@ -99,13 +99,12 @@ fn ensure(
     session: &mut Session<'_>,
     budgets: &Settings,
     model: &str,
-    request: ParamMap,
+    mut request: ParamMap,
 ) -> (
     Result<bool, MessageOptionsError>,
     ParamMap,
     Vec<(Level, String)>,
 ) {
-    let mut request = request;
     let watch = Watch::default();
     let guard = watch.install();
     let result = session.ensure_thinking(budgets, &mut request, model);
@@ -116,18 +115,22 @@ fn ensure(
 
 pub(super) fn cache_ttl_model_policy() {
     let model_cost = map(MODEL_COST);
-    let watch = Watch::default();
-    let _guard = watch.install();
-    let mut request = map(BIG_REQUEST);
-    remove_ttl_from_cache_control(&mut request, Some("claude-4-5-fixture"), &model_cost)
-        .expect("a dict-shaped map reads");
-    assert_eq!(request, map(BIG_EXPECTED));
-    assert!(watch.messages().is_empty());
+    {
+        let watch = Watch::default();
+        let _guard = watch.install();
+        let mut request = map(BIG_REQUEST);
+        remove_ttl_from_cache_control(&mut request, Some("claude-4-5-fixture"), &model_cost)
+            .expect("a dict-shaped map reads");
+        assert_eq!(request, map(BIG_EXPECTED));
+        assert!(watch.messages().is_empty());
+    }
 
-    let mut stripped = map(STRIPPED);
-    remove_ttl_from_cache_control(&mut stripped, Some("unknown-model"), &model_cost)
-        .expect("a dict-shaped map reads");
-    assert_eq!(stripped, map(STRIPPED_EXPECTED));
+    {
+        let mut stripped = map(STRIPPED);
+        remove_ttl_from_cache_control(&mut stripped, Some("unknown-model"), &model_cost)
+            .expect("a dict-shaped map reads");
+        assert_eq!(stripped, map(STRIPPED_EXPECTED));
+    }
 
     for model in [None, Some(""), Some("zero-entry"), Some("null-entry")] {
         let mut request = map(STRIPPED);
@@ -136,20 +139,25 @@ pub(super) fn cache_ttl_model_policy() {
         assert_eq!(request, map(STRIPPED_EXPECTED), "model {model:?}");
     }
 
-    let mut request = map(STRIPPED);
-    let failure = remove_ttl_from_cache_control(&mut request, Some("malformed"), &model_cost);
-    assert!(matches!(
-        failure,
-        Err(CapabilityError::MalformedEntry { .. })
-    ));
-    assert_eq!(request, map(STRIPPED));
+    {
+        let mut request = map(STRIPPED);
+        let failure = remove_ttl_from_cache_control(&mut request, Some("malformed"), &model_cost);
+        assert!(matches!(
+            failure,
+            Err(CapabilityError::MalformedEntry { .. })
+        ));
+        assert_eq!(request, map(STRIPPED));
+    }
 
-    let containers =
-        map(r#"{"tools": "abc", "system": {"type": "text"}, "messages": [{"content": "plain"}]}"#);
-    let mut request = containers.clone();
-    remove_ttl_from_cache_control(&mut request, Some("claude-4-5-fixture"), &model_cost)
-        .expect("a dict-shaped map reads");
-    assert_eq!(request, containers);
+    {
+        let containers = map(
+            r#"{"tools": "abc", "system": {"type": "text"}, "messages": [{"content": "plain"}]}"#,
+        );
+        let mut request = containers.clone();
+        remove_ttl_from_cache_control(&mut request, Some("claude-4-5-fixture"), &model_cost)
+            .expect("a dict-shaped map reads");
+        assert_eq!(request, containers);
+    }
 }
 
 pub(super) fn clear_thinking_budget() {
@@ -157,28 +165,30 @@ pub(super) fn clear_thinking_budget() {
     let mut session = fixture.session();
     let budgets = Settings::default();
 
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-adaptive",
-        clearing(r#""thinking": {"type": "enabled", "budget_tokens": null}, "max_tokens": 1"#),
-    );
-    assert_eq!(result.ok(), Some(true));
-    assert_eq!(
-        request,
-        clearing(
-            r#""thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}, "max_tokens": 1"#
-        )
-    );
-    assert_eq!(
-        messages,
-        vec![(
-            Level::DEBUG,
-            format!(
-                "{PREFIX} injected adaptive thinking with effort=low for model=fixture-adaptive"
+    {
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-adaptive",
+            clearing(r#""thinking": {"type": "enabled", "budget_tokens": null}, "max_tokens": 1"#),
+        );
+        assert_eq!(result.ok(), Some(true));
+        assert_eq!(
+            request,
+            clearing(
+                r#""thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}, "max_tokens": 1"#
             )
-        )]
-    );
+        );
+        assert_eq!(
+            messages,
+            vec![(
+                Level::DEBUG,
+                format!(
+                    "{PREFIX} injected adaptive thinking with effort=low for model=fixture-adaptive"
+                )
+            )]
+        );
+    }
 
     for (budget, effort) in [
         ("0", "low"),
@@ -193,11 +203,11 @@ pub(super) fn clear_thinking_budget() {
         ("8192", "xhigh"),
         ("\"8192\"", "xhigh"),
     ] {
-        let request = clearing(&format!(
+        let pending = clearing(&format!(
             r#""thinking": {{"type": "enabled", "budget_tokens": {budget}}}, "max_tokens": 0"#
         ));
         let (result, request, messages) =
-            ensure(&mut session, &budgets, "fixture-adaptive", request);
+            ensure(&mut session, &budgets, "fixture-adaptive", pending);
         assert_eq!(result.ok(), Some(true), "budget {budget}");
         assert_eq!(
             request,
@@ -218,34 +228,40 @@ pub(super) fn clear_thinking_budget() {
         );
     }
 
-    let adaptive = clearing(r#""thinking": {"type": "adaptive", "display": "summarized"}"#);
-    let (result, request, messages) =
-        ensure(&mut session, &budgets, "fixture-adaptive", adaptive.clone());
-    assert_eq!(result.ok(), Some(false));
-    assert_eq!(request, adaptive);
-    assert!(messages.is_empty());
+    {
+        let adaptive = clearing(r#""thinking": {"type": "adaptive", "display": "summarized"}"#);
+        let (result, request, messages) =
+            ensure(&mut session, &budgets, "fixture-adaptive", adaptive.clone());
+        assert_eq!(result.ok(), Some(false));
+        assert_eq!(request, adaptive);
+        assert!(messages.is_empty());
+    }
 
-    let non_adaptive = clearing(r#""thinking": {"type": "enabled", "budget_tokens": 5}"#);
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-opus-4-5",
-        non_adaptive.clone(),
-    );
-    assert_eq!(result.ok(), Some(false));
-    assert_eq!(request, non_adaptive);
-    assert!(messages.is_empty());
+    {
+        let non_adaptive = clearing(r#""thinking": {"type": "enabled", "budget_tokens": 5}"#);
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-opus-4-5",
+            non_adaptive.clone(),
+        );
+        assert_eq!(result.ok(), Some(false));
+        assert_eq!(request, non_adaptive);
+        assert!(messages.is_empty());
+    }
 
-    let unsupported = clearing(r#""thinking": {"type": "enabled", "budget_tokens": 5}"#);
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-legacy",
-        unsupported.clone(),
-    );
-    assert_eq!(result.ok(), Some(false));
-    assert_eq!(request, unsupported);
-    assert!(messages.is_empty());
+    {
+        let unsupported = clearing(r#""thinking": {"type": "enabled", "budget_tokens": 5}"#);
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-legacy",
+            unsupported.clone(),
+        );
+        assert_eq!(result.ok(), Some(false));
+        assert_eq!(request, unsupported);
+        assert!(messages.is_empty());
+    }
 
     for context_management in [
         "{}",
@@ -255,35 +271,43 @@ pub(super) fn clear_thinking_budget() {
         r#"{"context_management": {"edits": [{"type": "other"}, 7]}}"#,
         r#"{"context_management": {"edits": [{"type": 5}]}}"#,
     ] {
-        let request = map(context_management);
+        let pending = map(context_management);
         let (result, request, messages) =
-            ensure(&mut session, &budgets, "fixture-adaptive", request.clone());
+            ensure(&mut session, &budgets, "fixture-adaptive", pending.clone());
         assert_eq!(result.ok(), Some(false), "{context_management}");
         assert_eq!(request, map(context_management));
         assert!(messages.is_empty());
     }
 
-    let mixed = map(
-        r#"{"context_management": {"edits": [{"type": "other"}, {"type": "clear_thinking_20251015"}], "clear_tool_uses": true}, "thinking": {"type": "enabled", "budget_tokens": 2048}}"#,
-    );
-    let (result, request, _messages) = ensure(&mut session, &budgets, "fixture-adaptive", mixed);
-    assert_eq!(result.ok(), Some(true));
-    assert_eq!(
-        request,
-        map(
-            r#"{"context_management": {"edits": [{"type": "other"}, {"type": "clear_thinking_20251015"}], "clear_tool_uses": true}, "thinking": {"type": "adaptive"}, "output_config": {"effort": "medium"}}"#
-        )
-    );
+    {
+        let mixed = map(
+            r#"{"context_management": {"edits": [{"type": "other"}, {"type": "clear_thinking_20251015"}], "clear_tool_uses": true}, "thinking": {"type": "enabled", "budget_tokens": 2048}}"#,
+        );
+        let (result, request, _messages) =
+            ensure(&mut session, &budgets, "fixture-adaptive", mixed);
+        assert_eq!(result.ok(), Some(true));
+        assert_eq!(
+            request,
+            map(
+                r#"{"context_management": {"edits": [{"type": "other"}, {"type": "clear_thinking_20251015"}], "clear_tool_uses": true}, "thinking": {"type": "adaptive"}, "output_config": {"effort": "medium"}}"#
+            )
+        );
+    }
 
-    let invalid = clearing(r#""thinking": {"type": "enabled", "budget_tokens": [1]}"#);
-    let (result, request, messages) =
-        ensure(&mut session, &budgets, "fixture-adaptive", invalid.clone());
-    assert!(matches!(result, Err(MessageOptionsError::BudgetTokens)));
-    assert_eq!(request, invalid);
-    assert!(messages.is_empty());
+    {
+        let invalid = clearing(r#""thinking": {"type": "enabled", "budget_tokens": [1]}"#);
+        let (result, request, messages) =
+            ensure(&mut session, &budgets, "fixture-adaptive", invalid.clone());
+        assert!(matches!(result, Err(MessageOptionsError::BudgetTokens)));
+        assert_eq!(request, invalid);
+        assert!(messages.is_empty());
+    }
 
     assert!(matches!(
-        resolve_clear_thinking_budget(Some(&ParamValue::Number(serde_json::Number::from(7))), 1024),
+        resolve_clear_thinking_budget(
+            Some(&ParamValue::Number(serde_json::Number::from(7_i64))),
+            1024
+        ),
         Ok(7)
     ));
     assert!(matches!(resolve_clear_thinking_budget(None, 5), Ok(5)));
@@ -299,10 +323,10 @@ pub(super) fn adaptive_clear_thinking() {
         ..Settings::default()
     };
 
-    let request = map("{}");
+    let base = map("{}");
     let watch = Watch::default();
     let guard = watch.install();
-    let mut injected = request.clone();
+    let mut injected = base.clone();
     inject_adaptive_thinking(&mut injected, 1024, "fixture-adaptive", &budgets);
     assert_eq!(
         injected,
@@ -319,8 +343,8 @@ pub(super) fn adaptive_clear_thinking() {
     );
     drop(guard);
 
-    let watch = Watch::default();
-    let guard = watch.install();
+    let kept_watch = Watch::default();
+    let kept_guard = kept_watch.install();
     let mut kept = map(r#"{"output_config": {"effort": "max", "format": "x"}}"#);
     inject_adaptive_thinking(&mut kept, 1024, "fixture-adaptive", &budgets);
     assert_eq!(
@@ -330,7 +354,7 @@ pub(super) fn adaptive_clear_thinking() {
         )
     );
     assert_eq!(
-        watch.messages(),
+        kept_watch.messages(),
         vec![(
             Level::DEBUG,
             format!(
@@ -338,10 +362,10 @@ pub(super) fn adaptive_clear_thinking() {
             )
         )]
     );
-    drop(guard);
+    drop(kept_guard);
 
-    let watch = Watch::default();
-    let guard = watch.install();
+    let empty_watch = Watch::default();
+    let empty_guard = empty_watch.install();
     let mut empty = map(r#"{"output_config": {"effort": ""}, "thinking": {"type": "enabled"}}"#);
     inject_adaptive_thinking(&mut empty, 4096, "fixture-adaptive", &budgets);
     assert_eq!(
@@ -349,16 +373,16 @@ pub(super) fn adaptive_clear_thinking() {
         map(r#"{"output_config": {"effort": ""}, "thinking": {"type": "adaptive"}}"#)
     );
     assert_eq!(
-        watch.messages(),
+        empty_watch.messages(),
         vec![(
             Level::DEBUG,
             format!("{PREFIX} injected adaptive thinking with effort= for model=fixture-adaptive")
         )]
     );
-    drop(guard);
+    drop(empty_guard);
 
-    let watch = Watch::default();
-    let guard = watch.install();
+    let null_watch = Watch::default();
+    let null_guard = null_watch.install();
     let mut null = map(r#"{"output_config": {"effort": null}}"#);
     inject_adaptive_thinking(&mut null, 8192, "fixture-adaptive", &budgets);
     assert_eq!(
@@ -366,7 +390,7 @@ pub(super) fn adaptive_clear_thinking() {
         map(r#"{"output_config": {"effort": null}, "thinking": {"type": "adaptive"}}"#)
     );
     assert_eq!(
-        watch.messages(),
+        null_watch.messages(),
         vec![(
             Level::DEBUG,
             format!(
@@ -374,7 +398,7 @@ pub(super) fn adaptive_clear_thinking() {
             )
         )]
     );
-    drop(guard);
+    drop(null_guard);
 
     let mut replaced = map(r#"{"output_config": "plain"}"#);
     inject_adaptive_thinking(&mut replaced, 8192, "fixture-adaptive", &budgets);
@@ -520,23 +544,24 @@ pub(super) fn effort_clamp() {
     }
 
     let mut non_adaptive = map(r#"{"reasoning_effort": "xhigh"}"#);
-    let result = session.clamp(&budgets, "fixture-legacy", &mut non_adaptive, &answers);
-    assert!(result.is_ok());
+    let non_adaptive_result =
+        session.clamp(&budgets, "fixture-legacy", &mut non_adaptive, &answers);
+    assert!(non_adaptive_result.is_ok());
     assert_eq!(non_adaptive, map(r#"{"reasoning_effort": "xhigh"}"#));
 
     let mut no_ceiling = map(r#"{"reasoning_effort": "xhigh"}"#);
-    let result = session.clamp(
+    let ceiling_result = session.clamp(
         &budgets,
         "fixture-adaptive",
         &mut no_ceiling,
         &Answers::new(&[]),
     );
-    assert!(result.is_ok());
+    assert!(ceiling_result.is_ok());
     assert_eq!(no_ceiling, map(r#"{"reasoning_effort": "xhigh"}"#));
 
     let mut weird = map(r#"{"reasoning_effort": "xhigh"}"#);
-    let result = session.clamp(&budgets, "fixture-weird-ceiling", &mut weird, &answers);
-    assert!(result.is_ok());
+    let weird_result = session.clamp(&budgets, "fixture-weird-ceiling", &mut weird, &answers);
+    assert!(weird_result.is_ok());
     assert_eq!(weird, map(r#"{"reasoning_effort": "xhigh"}"#));
 }
 
@@ -578,24 +603,26 @@ pub(super) fn clear_thinking_injection_limit() {
     let mut session = fixture.session();
     let budgets = Settings::default();
 
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-opus-4-5",
-        clearing(r#""stream": true"#),
-    );
-    assert_eq!(result.ok(), Some(true));
-    assert_eq!(
-        request,
-        clearing(r#""stream": true, "thinking": {"type": "enabled", "budget_tokens": 1024}"#)
-    );
-    assert_eq!(
-        messages,
-        vec![(
-            Level::DEBUG,
-            format!("{PREFIX} injected thinking with budget_tokens=1024")
-        )]
-    );
+    {
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-opus-4-5",
+            clearing(r#""stream": true"#),
+        );
+        assert_eq!(result.ok(), Some(true));
+        assert_eq!(
+            request,
+            clearing(r#""stream": true, "thinking": {"type": "enabled", "budget_tokens": 1024}"#)
+        );
+        assert_eq!(
+            messages,
+            vec![(
+                Level::DEBUG,
+                format!("{PREFIX} injected thinking with budget_tokens=1024")
+            )]
+        );
+    }
 
     for (max_tokens, logged) in [
         ("1024", "1024"),
@@ -639,196 +666,222 @@ pub(super) fn clear_thinking_injection_limit() {
         assert_eq!(request, expected, "max_tokens {max_tokens}");
     }
 
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-opus-4-5",
-        clearing(r#""thinking": {}, "max_tokens": 1"#),
-    );
-    assert_eq!(result.ok(), Some(false));
-    assert_eq!(request, clearing(r#""thinking": {}, "max_tokens": 1"#));
-    assert_eq!(
-        messages,
-        vec![
-            (
-                Level::DEBUG,
-                format!("{PREFIX} replacing thinking={{}} with minimal thinking config")
-            ),
-            (
-                Level::WARN,
-                format!(
-                    "{PREFIX} max_tokens=1 is not greater than minimum thinking budget (1024); cannot inject thinking safely"
-                )
-            ),
-        ]
-    );
+    {
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-opus-4-5",
+            clearing(r#""thinking": {}, "max_tokens": 1"#),
+        );
+        assert_eq!(result.ok(), Some(false));
+        assert_eq!(request, clearing(r#""thinking": {}, "max_tokens": 1"#));
+        assert_eq!(
+            messages,
+            vec![
+                (
+                    Level::DEBUG,
+                    format!("{PREFIX} replacing thinking={{}} with minimal thinking config")
+                ),
+                (
+                    Level::WARN,
+                    format!(
+                        "{PREFIX} max_tokens=1 is not greater than minimum thinking budget (1024); cannot inject thinking safely"
+                    )
+                ),
+            ]
+        );
+    }
 
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-opus-4-5",
-        clearing(r#""thinking": {}, "max_tokens": 5000"#),
-    );
-    assert_eq!(result.ok(), Some(true));
-    assert_eq!(
-        request,
-        clearing(r#""thinking": {"type": "enabled", "budget_tokens": 1024}, "max_tokens": 5000"#)
-    );
-    assert_eq!(
-        messages,
-        vec![
-            (
-                Level::DEBUG,
-                format!("{PREFIX} replacing thinking={{}} with minimal thinking config")
-            ),
-            (
+    {
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-opus-4-5",
+            clearing(r#""thinking": {}, "max_tokens": 5000"#),
+        );
+        assert_eq!(result.ok(), Some(true));
+        assert_eq!(
+            request,
+            clearing(
+                r#""thinking": {"type": "enabled", "budget_tokens": 1024}, "max_tokens": 5000"#
+            )
+        );
+        assert_eq!(
+            messages,
+            vec![
+                (
+                    Level::DEBUG,
+                    format!("{PREFIX} replacing thinking={{}} with minimal thinking config")
+                ),
+                (
+                    Level::DEBUG,
+                    format!("{PREFIX} injected thinking with budget_tokens=1024")
+                ),
+            ]
+        );
+    }
+
+    {
+        let other = clearing(
+            r#""thinking": {"type": "disabled", "budget_tokens": 5, "display": "summarized"}, "max_tokens": 5000"#,
+        );
+        let (result, request, messages) = ensure(&mut session, &budgets, "fixture-opus-4-5", other);
+        assert_eq!(result.ok(), Some(true));
+        assert_eq!(
+            request,
+            clearing(
+                r#""thinking": {"type": "enabled", "budget_tokens": 1024}, "max_tokens": 5000"#
+            )
+        );
+        assert_eq!(
+            messages,
+            vec![
+                (
+                    Level::DEBUG,
+                    format!(
+                        "{PREFIX} replacing thinking={{\"type\":\"disabled\",\"budget_tokens\":5,\"display\":\"summarized\"}} with minimal thinking config"
+                    )
+                ),
+                (
+                    Level::DEBUG,
+                    format!("{PREFIX} injected thinking with budget_tokens=1024")
+                ),
+            ]
+        );
+    }
+
+    {
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-opus-4-5",
+            clearing(r#""thinking": "adaptive", "max_tokens": 5000"#),
+        );
+        assert_eq!(result.ok(), Some(true));
+        assert_eq!(
+            request,
+            clearing(
+                r#""thinking": {"type": "enabled", "budget_tokens": 1024}, "max_tokens": 5000"#
+            )
+        );
+        assert_eq!(
+            messages,
+            vec![(
                 Level::DEBUG,
                 format!("{PREFIX} injected thinking with budget_tokens=1024")
-            ),
-        ]
-    );
-
-    let other = clearing(
-        r#""thinking": {"type": "disabled", "budget_tokens": 5, "display": "summarized"}, "max_tokens": 5000"#,
-    );
-    let (result, request, messages) = ensure(&mut session, &budgets, "fixture-opus-4-5", other);
-    assert_eq!(result.ok(), Some(true));
-    assert_eq!(
-        request,
-        clearing(r#""thinking": {"type": "enabled", "budget_tokens": 1024}, "max_tokens": 5000"#)
-    );
-    assert_eq!(
-        messages,
-        vec![
-            (
-                Level::DEBUG,
-                format!(
-                    "{PREFIX} replacing thinking={{\"type\":\"disabled\",\"budget_tokens\":5,\"display\":\"summarized\"}} with minimal thinking config"
-                )
-            ),
-            (
-                Level::DEBUG,
-                format!("{PREFIX} injected thinking with budget_tokens=1024")
-            ),
-        ]
-    );
-
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-opus-4-5",
-        clearing(r#""thinking": "adaptive", "max_tokens": 5000"#),
-    );
-    assert_eq!(result.ok(), Some(true));
-    assert_eq!(
-        request,
-        clearing(r#""thinking": {"type": "enabled", "budget_tokens": 1024}, "max_tokens": 5000"#)
-    );
-    assert_eq!(
-        messages,
-        vec![(
-            Level::DEBUG,
-            format!("{PREFIX} injected thinking with budget_tokens=1024")
-        )]
-    );
+            )]
+        );
+    }
 
     let tight = Settings {
         bedrock_min: 5,
         ..Settings::default()
     };
-    let (result, _request, messages) = ensure(
-        &mut session,
-        &tight,
-        "fixture-opus-4-5",
-        clearing(r#""max_tokens": 5"#),
-    );
-    assert_eq!(result.ok(), Some(false));
-    assert_eq!(
-        messages,
-        vec![(
-            Level::WARN,
-            format!(
-                "{PREFIX} max_tokens=5 is not greater than minimum thinking budget (5); cannot inject thinking safely"
+    {
+        let (result, _request, messages) = ensure(
+            &mut session,
+            &tight,
+            "fixture-opus-4-5",
+            clearing(r#""max_tokens": 5"#),
+        );
+        assert_eq!(result.ok(), Some(false));
+        assert_eq!(
+            messages,
+            vec![(
+                Level::WARN,
+                format!(
+                    "{PREFIX} max_tokens=5 is not greater than minimum thinking budget (5); cannot inject thinking safely"
+                )
+            )]
+        );
+    }
+    {
+        let (result, request, messages) = ensure(
+            &mut session,
+            &tight,
+            "fixture-opus-4-5",
+            clearing(r#""max_tokens": 6"#),
+        );
+        assert_eq!(result.ok(), Some(true));
+        assert_eq!(
+            request,
+            clearing(r#""max_tokens": 6, "thinking": {"type": "enabled", "budget_tokens": 5}"#)
+        );
+        assert_eq!(
+            messages,
+            vec![(
+                Level::DEBUG,
+                format!("{PREFIX} injected thinking with budget_tokens=5")
+            )]
+        );
+    }
+
+    {
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-adaptive",
+            clearing(r#""max_tokens": 1"#),
+        );
+        assert_eq!(result.ok(), Some(false));
+        assert_eq!(request, clearing(r#""max_tokens": 1"#));
+        assert_eq!(
+            messages,
+            vec![(
+                Level::WARN,
+                format!(
+                    "{PREFIX} max_tokens=1 is not greater than minimum thinking budget (1024); cannot inject thinking safely"
+                )
+            )]
+        );
+    }
+
+    {
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-adaptive",
+            clearing(r#""max_tokens": 5000"#),
+        );
+        assert_eq!(result.ok(), Some(true));
+        assert_eq!(
+            request,
+            clearing(
+                r#""max_tokens": 5000, "output_config": {"effort": "low"}, "thinking": {"type": "adaptive"}"#
             )
-        )]
-    );
-    let (result, request, messages) = ensure(
-        &mut session,
-        &tight,
-        "fixture-opus-4-5",
-        clearing(r#""max_tokens": 6"#),
-    );
-    assert_eq!(result.ok(), Some(true));
-    assert_eq!(
-        request,
-        clearing(r#""max_tokens": 6, "thinking": {"type": "enabled", "budget_tokens": 5}"#)
-    );
-    assert_eq!(
-        messages,
-        vec![(
-            Level::DEBUG,
-            format!("{PREFIX} injected thinking with budget_tokens=5")
-        )]
-    );
+        );
+        assert_eq!(
+            messages,
+            vec![(
+                Level::DEBUG,
+                format!(
+                    "{PREFIX} injected adaptive thinking with effort=low for model=fixture-adaptive"
+                )
+            )]
+        );
+    }
 
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-adaptive",
-        clearing(r#""max_tokens": 1"#),
-    );
-    assert_eq!(result.ok(), Some(false));
-    assert_eq!(request, clearing(r#""max_tokens": 1"#));
-    assert_eq!(
-        messages,
-        vec![(
-            Level::WARN,
-            format!(
-                "{PREFIX} max_tokens=1 is not greater than minimum thinking budget (1024); cannot inject thinking safely"
-            )
-        )]
-    );
+    {
+        let no_edit = map(
+            r#"{"context_management": {"edits": [{"type": "other"}]}, "thinking": {}, "max_tokens": 1}"#,
+        );
+        let (result, request, messages) =
+            ensure(&mut session, &budgets, "fixture-opus-4-5", no_edit.clone());
+        assert_eq!(result.ok(), Some(false));
+        assert_eq!(request, no_edit);
+        assert!(messages.is_empty());
+    }
 
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-adaptive",
-        clearing(r#""max_tokens": 5000"#),
-    );
-    assert_eq!(result.ok(), Some(true));
-    assert_eq!(
-        request,
-        clearing(
-            r#""max_tokens": 5000, "output_config": {"effort": "low"}, "thinking": {"type": "adaptive"}"#
-        )
-    );
-    assert_eq!(
-        messages,
-        vec![(
-            Level::DEBUG,
-            format!(
-                "{PREFIX} injected adaptive thinking with effort=low for model=fixture-adaptive"
-            )
-        )]
-    );
-
-    let no_edit = map(
-        r#"{"context_management": {"edits": [{"type": "other"}]}, "thinking": {}, "max_tokens": 1}"#,
-    );
-    let (result, request, messages) =
-        ensure(&mut session, &budgets, "fixture-opus-4-5", no_edit.clone());
-    assert_eq!(result.ok(), Some(false));
-    assert_eq!(request, no_edit);
-    assert!(messages.is_empty());
-
-    let unsupported = clearing(r#""thinking": {}"#);
-    let (result, request, messages) = ensure(
-        &mut session,
-        &budgets,
-        "fixture-legacy",
-        unsupported.clone(),
-    );
-    assert_eq!(result.ok(), Some(false));
-    assert_eq!(request, unsupported);
-    assert!(messages.is_empty());
+    {
+        let unsupported = clearing(r#""thinking": {}"#);
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-legacy",
+            unsupported.clone(),
+        );
+        assert_eq!(result.ok(), Some(false));
+        assert_eq!(request, unsupported);
+        assert!(messages.is_empty());
+    }
 }

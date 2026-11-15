@@ -32,9 +32,9 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
 
 use crate::mantle_inputs::region::split_region_prefix;
-use crate::message_options::OptionsSources;
 use crate::message_options::effort::clamp_adaptive_effort;
 use crate::message_options::thinking::{ensure_clear_thinking, supports_extended_thinking};
+use crate::message_options::{MessageOptionsError, OptionsSources};
 use crate::model_routes::ParamMap;
 
 const NORMALIZERS: NameNormalizers = NameNormalizers {
@@ -160,7 +160,7 @@ impl Session<'_> {
         budgets: &Settings,
         request: &mut ParamMap,
         model: &str,
-    ) -> Result<bool, crate::message_options::MessageOptionsError> {
+    ) -> Result<bool, MessageOptionsError> {
         let catalogs = self.fixture.catalogs();
         let mut environment = CapabilityEnvironment {
             metadata: MetadataEnvironment {
@@ -191,7 +191,7 @@ impl Session<'_> {
         model: &str,
         params: &mut ParamMap,
         answers: &Answers,
-    ) -> Result<(), crate::message_options::MessageOptionsError> {
+    ) -> Result<(), MessageOptionsError> {
         let catalogs = self.fixture.catalogs();
         let mut environment = CapabilityEnvironment {
             metadata: MetadataEnvironment {
