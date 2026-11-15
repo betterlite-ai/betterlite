@@ -4,16 +4,11 @@ use betterlite_config::sections::compatible_embedding_settings::{
     DEFAULT_COMETAPI_API_BASE, EmbeddingFamily, Globals, Settings,
 };
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::cometapi_wire::embed::{
     complete_url, transform_embedding_request, validate_environment,
 };
-use betterlite_openai::compatible_embedding::error::EmbeddingError;
-use betterlite_openai::compatible_embedding::{
-    EmbeddingCall, Mode, finish_embedding, plan_embedding, send_embedding,
-};
+use betterlite_openai::compatible_embedding::{EmbeddingCall, Mode};
 use betterlite_openai::compatible_wire::header_map;
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::openai_base_config::Headers;
@@ -90,18 +85,6 @@ impl SharedEmbedding<'_> {
     }
 }
 
-// B1425's handler: plan the original input, timeout and mode, send through the pooled client, then finish the hooks
-pub async fn shared_embedding(
-    call: EmbeddingCall,
-    client: &ProxiedClient,
-    state: &mut LoggingState,
-    env: &PrePostEnv<'_>,
-) -> Result<EmbeddingResponse, EmbeddingError> {
-    let plan = plan_embedding(call, state, env)?;
-    let sent = send_embedding(client, &plan).await;
-    finish_embedding(&plan, sent, state, env)
-}
-
 pub struct CometapiEmbedding<'source> {
     pub model: &'source str,
     pub input: &'source PromptJson,
@@ -158,7 +141,7 @@ impl CometapiEmbedding<'_> {
             return Err(CompatibleEmbeddingError::Streamed);
         };
         let mut decoded: EmbeddingResponse = parse(response, "embedding")?;
-        decoded.model = self.model.to_owned();
+        self.model.clone_into(&mut decoded.model);
         Ok(decoded)
     }
 }
