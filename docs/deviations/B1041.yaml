@@ -1,3 +1,6 @@
 task: B1041
-deviations: []
+deviations:
+  - what: "A scheduler whose job lookup raises is inactive in LiteLLM through the bare except at the end of batch_cost_poller_is_active; betterlite's ScheduledJobs port answers Option, so a backend that cannot produce the job says None and the check returns false with no exception to swallow."
+    why: "The value a caller reads is the same false. Python's scheduler raises varied exception types from get_job, so LiteLLM needs that swallow; a Rust port with a typed trait has no error channel there, and a job it cannot find is the same inactive answer the source gives."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1424-L1425
 kept_bugs: []
