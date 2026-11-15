@@ -13,7 +13,7 @@ pub fn transform_reply(
     hidden_params: &mut HiddenParams,
     reply: &ImageHttpResponse,
 ) -> Result<(), IdeogramError> {
-    let fields = decode_reply(reply)?;
+    let fields = decode_reply_object(reply)?;
     let images = appended_images(fields.get("images"))?;
     response.data.get_or_insert_with(Vec::new).extend(images);
     if let Some(seed) = fields.get("seed") {
@@ -22,7 +22,10 @@ pub fn transform_reply(
     Ok(())
 }
 
-fn decode_reply(reply: &ImageHttpResponse) -> Result<IndexMap<String, Json>, FalImageError> {
+// Both Fal diffusion families read the reply as one JSON object, so they share this decode
+pub fn decode_reply_object(
+    reply: &ImageHttpResponse,
+) -> Result<IndexMap<String, Json>, FalImageError> {
     if reply.body.len() > MAX_FAL_REPLY_BYTES {
         return Err(FalImageError::ReplyTooLarge {
             status: reply.status_code,

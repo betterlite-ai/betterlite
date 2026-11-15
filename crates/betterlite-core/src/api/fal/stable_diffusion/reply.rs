@@ -2,59 +2,21 @@ use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHttpResponse, ImageResponse,
 };
-use serde::{Deserialize, Deserializer};
+use indexmap::IndexMap;
 
-use crate::api::fal::images::decode::MAX_FAL_REPLY_BYTES;
-use crate::api::fal::images::error::FalImageError;
+use crate::api::fal::ideogram::reply::decode_reply_object;
 use crate::api::fal::stable_diffusion::error::StableDiffusionError;
-
-#[derive(Debug, Deserialize)]
-struct ReplyFields {
-    images: Option<Json>,
-    #[serde(default, deserialize_with = "present_field")]
-    seed: Option<Json>,
-    #[serde(default, deserialize_with = "present_field")]
-    timings: Option<Json>,
-    #[serde(default, deserialize_with = "present_field")]
-    has_nsfw_concepts: Option<Json>,
-}
-
-// A key that is present with a null value is not the same as a key that is absent
-pub(super) fn present_field<'de, D>(deserializer: D) -> Result<Option<Json>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match Option::<Json>::deserialize(deserializer)? {
-        Some(value) => Ok(Some(value)),
-        None => Ok(Some(Json::Null)),
-    }
-}
 
 pub fn transform_reply(
     response: &mut ImageResponse,
     hidden_params: &mut HiddenParams,
     reply: &ImageHttpResponse,
 ) -> Result<(), StableDiffusionError> {
-    let fields = decode_reply(reply)?;
-    let images = appended_images(fields.images.as_ref())?;
+    let fields = decode_reply_object(reply)?;
+    let images = appended_images(fields.get("images"))?;
     response.data.get_or_insert_with(Vec::new).extend(images);
     copy_hidden(&fields, hidden_params);
     Ok(())
-}
-
-fn decode_reply(reply: &ImageHttpResponse) -> Result<ReplyFields, FalImageError> {
-    if reply.body.len() > MAX_FAL_REPLY_BYTES {
-        return Err(FalImageError::ReplyTooLarge {
-            status: reply.status_code,
-            headers: reply.headers.clone(),
-            limit: MAX_FAL_REPLY_BYTES,
-        });
-    }
-    serde_json::from_slice(&reply.body).map_err(|source| FalImageError::ReplyDecode {
-        status: reply.status_code,
-        headers: reply.headers.clone(),
-        source,
-    })
 }
 
 fn appended_images(images: Option<&Json>) -> Result<Vec<ImageData>, StableDiffusionError> {
@@ -83,13 +45,9 @@ fn appended_images(images: Option<&Json>) -> Result<Vec<ImageData>, StableDiffus
     Ok(appended)
 }
 
-fn copy_hidden(fields: &ReplyFields, hidden_params: &mut HiddenParams) {
-    for (name, value) in [
-        ("seed", &fields.seed),
-        ("timings", &fields.timings),
-        ("has_nsfw_concepts", &fields.has_nsfw_concepts),
-    ] {
-        if let Some(value) = value {
+fn copy_hidden(fields: &IndexMap<String, Json>, hidden_params: &mut HiddenParams) {
+    for name in ["seed", "timings", "has_nsfw_concepts"] {
+        if let Some(value) = fields.get(name) {
             hidden_params.insert(name.to_owned(), value.clone());
         }
     }

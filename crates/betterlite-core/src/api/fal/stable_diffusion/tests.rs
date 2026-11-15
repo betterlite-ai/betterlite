@@ -503,29 +503,39 @@ fn stable_diffusion_reply_keeps_the_reply_status_and_headers_on_a_decode_failure
     assert_eq!(response.data, Some(Vec::new()));
 }
 
-#[test]
-fn stable_diffusion_reply_rejects_a_non_object_root() {
+#[rstest]
+#[case("[]")]
+#[case("[null]")]
+#[case(r#"[["https://a.test/1.png"]]"#)]
+#[case(r#"[["https://a.test/1.png"], 42]"#)]
+#[case(r#"[["https://a.test/1.png"], 42, {"a": 1}, true]"#)]
+#[case(r#""https://a.test/1.png""#)]
+#[case("42")]
+#[case("null")]
+fn stable_diffusion_reply_rejects_a_non_object_root(#[case] body: &str) {
     let mut response = response(Some(Vec::new()));
     let mut hidden_params = hidden(&[]);
-    match transform_reply(&mut response, &mut hidden_params, &reply(201, "[]")) {
-        Err(error @ StableDiffusionError::Fal(FalImageError::ReplyDecode { .. })) => {
+    match transform_reply(&mut response, &mut hidden_params, &reply(201, body)) {
+        Err(error @ StableDiffusionError::Fal(FalImageError::ReplyNotAnObject { .. })) => {
             assert_eq!(error.status(), Some(201));
         }
         other => panic!("{other:?}"),
     }
+    assert_eq!(response.data, Some(Vec::new()));
+    assert_eq!(hidden_params, hidden(&[]));
 }
 
 #[test]
-fn stable_diffusion_reply_rejects_a_repeated_top_level_field() {
+fn stable_diffusion_reply_keeps_the_last_value_of_a_repeated_top_level_field() {
     let mut response = response(Some(Vec::new()));
     let mut hidden_params = hidden(&[]);
-    let repeated = reply(500, r#"{"images": [], "images": []}"#);
-    match transform_reply(&mut response, &mut hidden_params, &repeated) {
-        Err(error @ StableDiffusionError::Fal(FalImageError::ReplyDecode { .. })) => {
-            assert_eq!(error.status(), Some(500));
-        }
-        other => panic!("{other:?}"),
-    }
+    let repeated = reply(
+        200,
+        r#"{"images": ["https://a.test/1.png"], "seed": 1, "images": [], "seed": 2}"#,
+    );
+    transform_reply(&mut response, &mut hidden_params, &repeated).expect("a decoded reply");
+    assert_eq!(response.data, Some(Vec::new()));
+    assert_eq!(hidden_params, hidden(&[("seed", number(2))]));
 }
 
 #[test]

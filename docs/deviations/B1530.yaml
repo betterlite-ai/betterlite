@@ -15,9 +15,6 @@ deviations:
   - what: An Ideogram reply whose JSON root is not an object fails with a typed error that keeps the upstream status and headers.
     why: LiteLLM reads images with response_data.get, so a list, string or number raises an unhandled AttributeError as a 500 with the upstream status lost; a working setup never receives a non-object image reply.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L172
-  - what: A Stable Diffusion reply object that repeats one of the top-level fields betterlite reads is a decode error that keeps the upstream status.
-    why: betterlite decodes the reply into a typed struct so a present null stays apart from an absent key, and a typed decode refuses a repeated field where Python's json.loads keeps the last value; a working provider never repeats a key.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/stable_diffusion_transformation.py#L233-L246
   - what: A Stable Diffusion size value that is not a string fails with a typed SizeNotAString error.
     why: LiteLLM tests membership and the letter x on the value, so a number, boolean, null, list or map raises an unhandled TypeError as a 500; betterlite names the field instead, and a working request sends a size string.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/stable_diffusion_transformation.py#L152-L161
