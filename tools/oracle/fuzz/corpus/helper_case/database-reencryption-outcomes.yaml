@@ -1,0 +1,14 @@
+kind: helper
+name: database-reencryption-outcomes
+call:
+  database_reencryption:
+    op: outcome
+    outcome:
+      kind: failed
+      migrated: 0
+      remaining: 0
+      error_class: RuntimeError
+      error_message: the database is unreachable
+env: {}
+compare:
+  ignore: []
