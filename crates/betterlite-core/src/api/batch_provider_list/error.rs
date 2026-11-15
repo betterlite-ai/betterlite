@@ -15,4 +15,6 @@ pub enum BatchProviderListError {
     },
     #[error("the timeout must be finite")]
     NonFiniteTimeout,
+    #[error("vertex_credentials must be a string or an object")]
+    InvalidVertexCredentials,
 }

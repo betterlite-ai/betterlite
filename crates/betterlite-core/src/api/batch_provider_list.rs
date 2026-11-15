@@ -7,14 +7,15 @@ mod tests;
 
 use betterlite_config::sections::batch_provider_list::Settings as ConfiguredSettings;
 use betterlite_openai::batches::sdk::TimeoutPhases;
+use betterlite_prompts::arguments::json::Json;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
+use crate::genai_setup::params::VertexCredentials;
 use call::{
     AzureBatchListCall, AzureBatchListParams, BatchListProviderCall, BatchListWindow,
-    BatchProviderListCall, OpenAiBatchListCall, VertexBatchListCall, VertexCredentials,
-    XaiBatchListCall,
+    BatchProviderListCall, OpenAiBatchListCall, VertexBatchListCall, XaiBatchListCall,
 };
 use error::BatchProviderListError;
 use timeout::resolve_timeout;
@@ -108,7 +109,7 @@ pub struct BatchProviderListInput {
     #[serde(default)]
     pub vertex_location: Option<String>,
     #[serde(default)]
-    pub vertex_credentials: Option<VertexCredentials>,
+    pub vertex_credentials: Option<Json>,
     #[serde(default)]
     pub azure_ad_token: Option<SecretString>,
     #[serde(default)]
@@ -173,9 +174,9 @@ impl From<ConfiguredSettings> for ResourceSdkSettings {
 }
 
 fn request_options(input: &BatchProviderListInput) -> ResourceSdkRequestOptions {
-    let vertex_credentials = match &input.vertex_credentials {
-        Some(VertexCredentials::Path(path)) => Some(SecretString::from(path.clone())),
-        Some(VertexCredentials::ServiceAccount(_)) | None => None,
+    let vertex_credentials = match input.vertex_credentials.as_ref() {
+        Some(Json::Text(path)) => Some(SecretString::from(path.clone())),
+        _ => None,
     };
     ResourceSdkRequestOptions {
         api_base: input.api_base.clone(),
@@ -188,19 +189,25 @@ fn request_options(input: &BatchProviderListInput) -> ResourceSdkRequestOptions 
     }
 }
 
+// LiteLLM declares vertex_credentials as a path string or an inline service-account object
 fn resolve_vertex_credentials(
     settings: &ResourceSdkSettings,
     request: &ResourceSdkRequestOptions,
     input: &BatchProviderListInput,
-) -> Option<VertexCredentials> {
-    match &input.vertex_credentials {
-        Some(VertexCredentials::ServiceAccount(account)) => {
-            Some(VertexCredentials::ServiceAccount(account.clone()))
-        }
-        Some(VertexCredentials::Path(_)) | None => settings
-            .vertex_credentials(request)
-            .map(|text| VertexCredentials::Path(text.expose_secret().to_owned())),
+) -> Result<Option<VertexCredentials>, BatchProviderListError> {
+    if let Some(Json::Object(account)) = input.vertex_credentials.as_ref() {
+        return Ok(Some(VertexCredentials::ServiceAccount(account.clone())));
     }
+    if matches!(
+        input.vertex_credentials.as_ref(),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_))
+    ) {
+        return Err(BatchProviderListError::InvalidVertexCredentials);
+    }
+    // a path string is already on the request options, so the shared chain resolves it
+    Ok(settings
+        .vertex_credentials(request)
+        .map(|text| VertexCredentials::Path(text.expose_secret().to_owned())))
 }
 
 fn azure_params(input: &BatchProviderListInput) -> AzureBatchListParams {
@@ -264,7 +271,7 @@ impl BatchProviderList {
                     api_base: input.api_base.clone().unwrap_or_default(),
                     vertex_project: self.settings.vertex_project(request).map(str::to_owned),
                     vertex_location: self.settings.vertex_location(request).map(str::to_owned),
-                    vertex_credentials: resolve_vertex_credentials(&self.settings, request, input),
+                    vertex_credentials: resolve_vertex_credentials(&self.settings, request, input)?,
                     max_retries: input.max_retries,
                 }))
             }

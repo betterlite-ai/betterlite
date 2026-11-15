@@ -3,13 +3,14 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::batch_provider_list::{Raw, RawSettings};
 use betterlite_core::api::batch_provider_list::call::{
-    AzureBatchListParams, BatchListProviderCall, VertexCredentials,
+    AzureBatchListParams, BatchListProviderCall,
 };
 use betterlite_core::api::batch_provider_list::error::BatchProviderListError;
 use betterlite_core::api::batch_provider_list::{
     BatchListTimeoutValue, BatchProviderList, BatchProviderListInput, BatchProviderListResult,
 };
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
+use betterlite_core::genai_setup::params::VertexCredentials;
 use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -125,6 +126,7 @@ fn failure(error: &BatchProviderListError) -> Box<HelperError> {
     let (class, status): (&str, Option<u16>) = match error {
         BatchProviderListError::UnsupportedProvider { .. } => ("BadRequestError", Some(400)),
         BatchProviderListError::InvalidTimeout { .. }
+        | BatchProviderListError::InvalidVertexCredentials
         | BatchProviderListError::NonFiniteTimeout => ("ValueError", None),
     };
     Box::new(HelperError {

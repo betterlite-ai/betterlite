@@ -8,7 +8,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::batch_provider_list::call::{
     AzureBatchListCall, BatchListProviderCall, OpenAiBatchListCall, VertexBatchListCall,
-    VertexCredentials, XaiBatchListCall,
+    XaiBatchListCall,
 };
 use crate::api::batch_provider_list::error::BatchProviderListError;
 use crate::api::batch_provider_list::{
@@ -16,6 +16,7 @@ use crate::api::batch_provider_list::{
     BatchProviderListResult,
 };
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
+use crate::genai_setup::params::VertexCredentials;
 
 fn service() -> BatchProviderList {
     service_with(ConfiguredSettings::default())
@@ -278,9 +279,7 @@ fn vertex_call_prefers_a_request_credentials_path_over_the_environment() {
     settings.vertexai_credentials = Some(SecretString::from("env-credentials"));
     let service = service_with(settings);
     let mut request = input(BatchListProvider::VertexAi);
-    request.vertex_credentials = Some(VertexCredentials::Path(
-        "request-credentials.json".to_owned(),
-    ));
+    request.vertex_credentials = Some(Json::Text("request-credentials.json".to_owned()));
     let call = vertex_call(service.run(&request).expect("prepares"));
     assert_eq!(
         call.vertex_credentials,
@@ -310,6 +309,26 @@ fn vertex_call_carries_a_service_account_credentials_object() {
         account.get("project_id").and_then(Json::as_str),
         Some("example")
     );
+}
+
+#[test]
+fn an_explicit_null_credentials_value_is_absent() {
+    let source = r#"{"provider": "vertex_ai", "vertex_credentials": null}"#;
+    let request: BatchProviderListInput = serde_json::from_str(source).expect("input parses");
+    assert!(vertex_call(prepared(&request)).vertex_credentials.is_none());
+}
+
+#[test]
+fn vertex_call_rejects_credentials_that_are_neither_text_nor_object() {
+    let source = r#"{"provider": "vertex_ai", "vertex_credentials": 7}"#;
+    let request: BatchProviderListInput = serde_json::from_str(source).expect("input parses");
+    let error = service()
+        .run(&request)
+        .expect_err("the credentials are rejected");
+    assert!(matches!(
+        error,
+        BatchProviderListError::InvalidVertexCredentials
+    ));
 }
 
 #[test]
