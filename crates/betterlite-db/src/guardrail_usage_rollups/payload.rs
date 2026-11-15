@@ -1,4 +1,9 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::Json;
+use betterlite_models::guardrail_pricing::entries::{
+    GuardrailInformationEntry, billed_guardrail_cost_by_unit,
+};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -24,10 +29,6 @@ pub enum PayloadStartTime {
     Text(String),
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(transparent)]
-pub struct UnitCost(#[serde(with = "rust_decimal::serde::arbitrary_precision")] pub Decimal);
-
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct GuardrailEntry {
     pub guardrail_id: Option<String>,
@@ -35,8 +36,8 @@ pub struct GuardrailEntry {
     pub guardrail_status: Option<String>,
     pub policy_id: Option<String>,
     pub guardrail_usage: Option<IndexMap<String, Json>>,
-    pub guardrail_cost_by_unit: Option<IndexMap<String, Option<UnitCost>>>,
-    pub guardrail_cost_in_spend: Option<bool>,
+    #[serde(flatten)]
+    raw: IndexMap<String, Json>,
 }
 
 // LiteLLM's metadata is either the object itself or a JSON string holding it
@@ -154,17 +155,19 @@ pub(crate) fn unit_count(value: &Json) -> Option<i64> {
     }
 }
 
-// billed_guardrail_cost_by_unit: a report-only entry, one with a negative price, and a unit with no price are all unpriced
+// the shared pricing module owns LiteLLM's cost coercion, so an entry it reads as report-only or malformed prices no unit
 #[must_use]
-pub(crate) fn billed_cost(entry: &GuardrailEntry, unit: &str) -> Option<Decimal> {
-    if entry.guardrail_cost_in_spend == Some(false) {
-        return None;
-    }
-    let costs = entry.guardrail_cost_by_unit.as_ref()?;
-    if costs.values().flatten().any(|cost| cost.0 < Decimal::ZERO) {
-        return None;
-    }
-    costs.get(unit).copied().flatten().map(|cost| cost.0)
+pub(crate) fn billed_cost_by_unit(
+    entry: &GuardrailEntry,
+) -> Option<BTreeMap<String, Option<Decimal>>> {
+    let value = serde_json::to_value(&entry.raw).ok()?;
+    let information = serde_json::from_value::<GuardrailInformationEntry>(value).ok()?;
+    billed_guardrail_cost_by_unit(&information).unwrap_or_else(|error| {
+        tracing::warn!(
+            "guardrail usage: ignoring a guardrail cost entry with no finite price: {error}"
+        );
+        None
+    })
 }
 
 fn start_instant(payload: &GuardrailSpendLog) -> Option<DateTime<Utc>> {

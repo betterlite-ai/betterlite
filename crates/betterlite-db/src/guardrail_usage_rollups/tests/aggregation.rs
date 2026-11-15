@@ -128,6 +128,7 @@ fn sums_two_entries_of_the_same_unit_key() {
 
 #[rstest]
 #[case::report_only(r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0.5}, "guardrail_cost_in_spend": false}"#)]
+#[case::report_only_text_flag(r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0.5}, "guardrail_cost_in_spend": "false"}"#)]
 #[case::negative_cost(
     r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": -0.5}}"#
 )]
@@ -139,18 +140,61 @@ fn treats_the_whole_entry_as_unpriced(#[case] entry: &str) {
     );
 }
 
-#[rstest]
-#[case::zero(
-    r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0}}"#
-)]
-#[case::negative_zero(
-    r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": -0.0}}"#
-)]
-fn keeps_a_zero_cost_unit_priced(#[case] entry: &str) {
+#[test]
+fn keeps_a_zero_cost_unit_priced() {
+    let entry = r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0}}"#;
     assert_eq!(
         units_of(&[payload_with_entries(entry)]),
         [unit_call("g1", "a", increment(1, Decimal::ZERO, 0))]
     );
+}
+
+// the shared pricing rejects a negative-signed zero that LiteLLM's Field(ge=0) reads as zero, as docs/deviations/B3688.yaml records
+#[test]
+fn treats_a_negative_signed_zero_price_as_unpriced() {
+    let entry = r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": -0.0}}"#;
+    assert_eq!(
+        units_of(&[payload_with_entries(entry)]),
+        [unit_call("g1", "a", increment(1, Decimal::ZERO, 1))]
+    );
+}
+
+#[rstest]
+#[case::text_price(r#""0.5""#, Decimal::new(5, 1))]
+#[case::boolean_price("true", Decimal::new(1, 0))]
+fn prices_a_cost_the_shared_pricing_module_coerces(#[case] price: &str, #[case] expected: Decimal) {
+    let entry = format!(
+        r#"{{"guardrail_id": "g1", "guardrail_usage": {{"a": 2}}, "guardrail_cost_by_unit": {{"a": {price}}}}}"#
+    );
+    assert_eq!(
+        units_of(&[payload_with_entries(&entry)]),
+        [unit_call("g1", "a", increment(2, expected, 0))]
+    );
+}
+
+#[rstest]
+#[case::price_map_is_a_number("2.5")]
+#[case::price_map_is_a_string(r#""0.5""#)]
+#[case::price_map_is_a_list("[0.5]")]
+fn treats_a_cost_map_that_is_not_an_object_as_unpriced(#[case] price_map: &str) {
+    let entry = format!(
+        r#"{{"guardrail_id": "g1", "guardrail_usage": {{"a": 1}}, "guardrail_cost_by_unit": {price_map}}}"#
+    );
+    assert_eq!(
+        units_of(&[payload_with_entries(&entry)]),
+        [unit_call("g1", "a", increment(1, Decimal::ZERO, 1))]
+    );
+}
+
+#[test]
+fn treats_a_price_the_shared_pricing_module_cannot_represent_as_unpriced_with_a_warning() {
+    let capture = capture_logs();
+    let entry = r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 1e400}}"#;
+    assert_eq!(
+        units_of(&[payload_with_entries(entry)]),
+        [unit_call("g1", "a", increment(1, Decimal::ZERO, 1))]
+    );
+    assert!(capture.logs.has("WARN", "no finite price"));
 }
 
 #[rstest]
@@ -186,6 +230,17 @@ fn keys_a_unit_by_the_entry_name_when_the_name_to_id_map_does_not_apply() {
             unit_call("g1", "a", increment(1, Decimal::ZERO, 1)),
             unit_call("pii", "a", increment(2, Decimal::ZERO, 2)),
         ]
+    );
+}
+
+#[test]
+fn falls_back_to_the_name_when_the_guardrail_id_is_empty() {
+    let payload = payload_with_entries(
+        r#"{"guardrail_name": "pii", "guardrail_id": "", "guardrail_usage": {"b": 4}}"#,
+    );
+    assert_eq!(
+        units_of(&[payload]),
+        [unit_call("pii", "b", increment(4, Decimal::ZERO, 4))]
     );
 }
 

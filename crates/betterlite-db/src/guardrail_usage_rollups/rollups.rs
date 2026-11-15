@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use super::payload::{
-    billed_cost, ids_by_name, information_entries, payload_stamp, resolved_id, unit_count,
+    billed_cost_by_unit, ids_by_name, information_entries, payload_stamp, resolved_id, unit_count,
     unit_guardrail_id,
 };
 use super::{
@@ -69,6 +69,7 @@ pub(crate) fn fresh_units(
             let Some(usage) = entry.guardrail_usage.as_ref() else {
                 continue;
             };
+            let costs = billed_cost_by_unit(entry);
             for (unit_name, value) in usage {
                 let Some(count) = unit_count(value) else {
                     continue;
@@ -80,7 +81,11 @@ pub(crate) fn fresh_units(
                     api_key: api_key.clone(),
                     usage_unit: unit_name.clone(),
                 };
-                let cost = billed_cost(entry, unit_name);
+                let cost = costs
+                    .as_ref()
+                    .and_then(|costs| costs.get(unit_name))
+                    .copied()
+                    .flatten();
                 units.entry(key).or_default().add_usage(count, cost);
             }
         }
