@@ -1,0 +1,25 @@
+kind: helper
+name: soniox-prepare-polling-clamps
+call:
+  soniox_prepare:
+    calls:
+    - {function: prepare, optional_params: {}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: 0, temperature: 0}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: 0.4}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: 0.5}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: 60}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: 60.5}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: -3}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: "2.5"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: " 3 "}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: "1_0"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: 5e39}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: "inf"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: "nan"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: "abc"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: ""}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_polling_interval: "abc"}, api_key: null, environment: {}}
+    - {function: prepare, optional_params: {}, api_key: null, environment: {SONIOX_API_KEY: environment, SONIOX_API_BASE: "https://env.test///"}}
+    - {function: prepare, optional_params: {}, api_key: explicit, api_base: "https://base.test/path/", environment: {SONIOX_API_BASE: "https://env.test"}}
+compare: {ignore: []}
+env: {}
