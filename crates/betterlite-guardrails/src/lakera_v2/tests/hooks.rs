@@ -13,7 +13,10 @@ use crate::guardrail_initializers::lakera_v2::LakeraV2Args;
 use crate::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
 use crate::lakera_v2::Data;
 use crate::lakera_v2::error::LakeraV2Error;
-use crate::lakera_v2::guardrail::LakeraV2Guardrail;
+use crate::lakera_v2::guardrail::construction;
+use crate::lakera_v2::guardrail::{LakeraV2Guardrail, update};
+use crate::lakera_v2::hooks::post_call::post_call;
+use crate::lakera_v2::hooks::pre_call::pre_call;
 
 use super::{
     ATTACK_ONLY, CollectingSink, EMAIL_SPAN, ESCAPED_TEMPLATE_TEXT, Hook, MIXED, PAYLOAD_TEXT,
@@ -179,8 +182,7 @@ async fn pre_call_does_not_run_when_every_message_is_skipped() {
         scan: ScanScope::AllMessages,
     };
     let mut call_context = context(scope, &mut call, &sink, &suppressed);
-    let outcome = guardrail
-        .pre_call(&mut data, &mut call_context)
+    let outcome = pre_call(&guardrail, &mut data, &mut call_context)
         .await
         .expect("skipped");
     assert_eq!(outcome.applied_guardrail, None);
@@ -384,9 +386,8 @@ fn update_refuses_the_escaped_template_and_keeps_the_instance() {
     let params = update_params(
         r#", "on_flagged": "inject_system_message", "advisory_system_message": "Watch out for {{reason}}""#,
     );
-    let error = guardrail
-        .update_params(&params)
-        .expect_err("the template is invalid");
+    let error =
+        update::update_params(&mut guardrail, &params).expect_err("the template is invalid");
     assert_eq!(error.to_string(), ESCAPED_TEMPLATE_TEXT);
     assert_eq!(
         guardrail.advisory_system_message.as_deref(),
@@ -402,9 +403,8 @@ fn update_refuses_advisory_mode_with_payload_off_and_keeps_the_instance() {
     let params = update_params(
         r#", "on_flagged": "inject_system_message", "advisory_system_message": "Why: {reason}", "payload": false"#,
     );
-    let error = guardrail
-        .update_params(&params)
-        .expect_err("advisory mode needs payload");
+    let error =
+        update::update_params(&mut guardrail, &params).expect_err("advisory mode needs payload");
     assert_eq!(error.to_string(), PAYLOAD_TEXT);
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Block);
     assert!(guardrail.flags.payload);
@@ -418,7 +418,7 @@ fn update_applies_the_advisory_fields_and_the_new_mode() {
     let params = update_params(
         r#", "on_flagged": "inject_system_message", "advisory_system_message": "Why: {reason}", "payload": true, "breakdown": true"#,
     );
-    guardrail.update_params(&params).expect("a valid update");
+    update::update_params(&mut guardrail, &params).expect("a valid update");
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::InjectSystemMessage);
     assert_eq!(
         guardrail.advisory_system_message.as_deref(),
@@ -438,7 +438,7 @@ fn update_reapplies_the_base_settings_and_the_skip_flags() {
     let params = update_params(
         r#", "default_on": false, "skip_system_message_in_guardrail": true, "skip_tool_message_in_guardrail": false, "scan_only_tool_results": true"#,
     );
-    guardrail.update_params(&params).expect("a valid update");
+    update::update_params(&mut guardrail, &params).expect("a valid update");
     assert!(!guardrail.base.settings.default_on);
     assert_eq!(guardrail.skip_flags.skip_system_message, Some(true));
     assert_eq!(guardrail.skip_flags.skip_tool_message, Some(false));
@@ -459,7 +459,7 @@ fn update_keeps_the_connection_fields() {
     let params = update_params(
         r#", "api_base": "http://other", "api_key": "other", "project_id": "other", "metadata": {"team": "b"}"#,
     );
-    guardrail.update_params(&params).expect("a valid update");
+    update::update_params(&mut guardrail, &params).expect("a valid update");
     assert_eq!(guardrail.api_base, "http://live");
     assert_eq!(guardrail.api_key.expose_secret(), "live-key");
     assert_eq!(guardrail.project_id.as_deref(), Some("live-project"));
@@ -476,9 +476,7 @@ fn update_keeps_the_connection_fields() {
 fn update_rejects_a_wrong_typed_payload() {
     let mut guardrail = build("http://unused", LakeraOnFlagged::Block, None);
     let params = update_params(r#", "payload": "yes""#);
-    let error = guardrail
-        .update_params(&params)
-        .expect_err("payload must be a bool");
+    let error = update::update_params(&mut guardrail, &params).expect_err("payload must be a bool");
     assert!(
         matches!(&error, LakeraV2Error::InvalidParam { field, .. } if field == "payload"),
         "{error}"
@@ -489,8 +487,7 @@ fn update_rejects_a_wrong_typed_payload() {
 #[test]
 fn update_refuses_a_timeout_without_a_duration_and_keeps_the_live_one() {
     let mut guardrail = build("http://unused", LakeraOnFlagged::Block, None);
-    let error = guardrail
-        .update_params(&update_params(r#", "timeout": -1.0"#))
+    let error = update::update_params(&mut guardrail, &update_params(r#", "timeout": -1.0"#))
         .expect_err("a negative timeout has no duration");
     assert!(matches!(error, LakeraV2Error::Timeout { .. }), "{error}");
     assert_eq!(guardrail.timeout, Duration::from_secs(600));
@@ -498,7 +495,7 @@ fn update_refuses_a_timeout_without_a_duration_and_keeps_the_live_one() {
 
 fn built(args: LakeraV2Args) -> LakeraV2Guardrail {
     let env = BTreeMap::new();
-    LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built")
+    construction::new(args, base(true), reqwest::Client::default(), &env).expect("built")
 }
 
 #[test]
@@ -509,9 +506,7 @@ fn update_resets_omitted_params_to_the_model_defaults() {
     args.breakdown = Some(false);
     args.dev_info = Some(false);
     let mut guardrail = built(args);
-    guardrail
-        .update_params(&update_params(""))
-        .expect("a valid update");
+    update::update_params(&mut guardrail, &update_params("")).expect("a valid update");
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Block);
     assert!(guardrail.flags.payload);
     assert!(guardrail.flags.breakdown);
@@ -529,7 +524,7 @@ fn update_resolves_explicit_nulls_to_the_model_defaults() {
     let params = update_params(
         r#", "on_flagged": null, "payload": null, "breakdown": null, "dev_info": null"#,
     );
-    guardrail.update_params(&params).expect("a valid update");
+    update::update_params(&mut guardrail, &params).expect("a valid update");
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Block);
     assert!(guardrail.flags.payload);
     assert!(guardrail.flags.breakdown);
@@ -544,9 +539,7 @@ fn update_to_advisory_mode_defaults_an_omitted_payload_to_true() {
     let params = update_params(
         r#", "on_flagged": "inject_system_message", "advisory_system_message": "Why: {reason}""#,
     );
-    guardrail
-        .update_params(&params)
-        .expect("the omitted payload defaults to true");
+    update::update_params(&mut guardrail, &params).expect("the omitted payload defaults to true");
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::InjectSystemMessage);
     assert!(guardrail.flags.payload);
 }
@@ -568,9 +561,7 @@ fn update_resets_an_omitted_timeout_to_the_default() {
     let mut args = args();
     args.timeout = Some(2.5);
     let mut guardrail = built(args);
-    guardrail
-        .update_params(&update_params(""))
-        .expect("a valid update");
+    update::update_params(&mut guardrail, &update_params("")).expect("a valid update");
     assert_eq!(guardrail.timeout, Duration::from_secs(600));
 }
 
@@ -711,8 +702,7 @@ async fn post_call_masks_the_choice_after_a_skipped_system_message() {
         scan: ScanScope::AllMessages,
     };
     let mut call_context = context(scope, &mut call, &sink, &suppressed);
-    guardrail
-        .post_call(&mut data, &mut response, &mut call_context)
+    post_call(&guardrail, &mut data, &mut response, &mut call_context)
         .await
         .expect("masked");
     assert_eq!(

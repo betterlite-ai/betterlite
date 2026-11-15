@@ -11,7 +11,9 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
 use crate::lakera_v2::Data;
 use crate::lakera_v2::error::LakeraV2Error;
-use crate::lakera_v2::guardrail::LakeraV2Guardrail;
+use crate::lakera_v2::guardrail::build_advisory_message;
+use crate::lakera_v2::guardrail::construction;
+use crate::lakera_v2::hooks::pre_call::pre_call;
 use crate::lakera_v2::scope::{
     breakdown_has_pii_violation, has_combined_input, has_responses_instructions,
     pre_masking_scope_indices,
@@ -80,7 +82,7 @@ fn advisory_rules_apply_only_in_inject_mode(#[case] on_flagged: LakeraOnFlagged)
 #[test]
 fn the_default_advisory_message_carries_the_reason() {
     let guardrail = build("http://unused", LakeraOnFlagged::InjectSystemMessage, None);
-    let advisory = guardrail.build_advisory_message(None).unwrap();
+    let advisory = build_advisory_message(&guardrail, None).unwrap();
     assert!(
         advisory
             .starts_with("The user's latest message was flagged for a content safety concern by"),
@@ -103,7 +105,7 @@ fn a_named_base_keeps_its_own_name_and_takes_the_args_name_otherwise(
     let mut named = base(true);
     named.settings.guardrail_name = base_name.map(str::to_owned);
     let guardrail =
-        LakeraV2Guardrail::new(args, named, reqwest::Client::default(), &env).expect("built");
+        construction::new(args, named, reqwest::Client::default(), &env).expect("built");
     assert_eq!(guardrail.base.settings.guardrail_name.as_deref(), expected);
 }
 
@@ -255,8 +257,7 @@ async fn pre_call_masks_around_a_skipped_system_message_and_keeps_other_fields()
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
     let mut call_context = context(flags(true, false), &mut call, &sink, &suppressed);
-    guardrail
-        .pre_call(&mut data, &mut call_context)
+    pre_call(&guardrail, &mut data, &mut call_context)
         .await
         .expect("masked");
     assert_eq!(
@@ -390,7 +391,7 @@ async fn a_stalled_guard_call_ends_at_its_timeout(
     args.timeout = timeout;
     let env = BTreeMap::new();
     let guardrail =
-        LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built");
+        construction::new(args, base(true), reqwest::Client::default(), &env).expect("built");
     let mut data = chat_data();
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
