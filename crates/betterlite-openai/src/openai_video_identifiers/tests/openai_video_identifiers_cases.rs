@@ -284,16 +284,16 @@ fn plus_in_base64_payload() {
 
 fn padding_in_the_middle() {
     let capture = Capture::default();
-    let decoded = capture.captured(|| decode_video_id_with_provider("video_YWJjO2I7Yw==AA"));
-    assert_eq!(decoded.custom_llm_provider.as_deref(), Some("abc"));
-    assert_eq!(decoded.model_id.as_deref(), Some("b"));
-    assert_eq!(decoded.video_id, "c\0\0");
+    let padded = capture.captured(|| decode_video_id_with_provider("video_YWJjO2I7Yw==AA"));
+    assert_eq!(padded.custom_llm_provider.as_deref(), Some("abc"));
+    assert_eq!(padded.model_id.as_deref(), Some("b"));
+    assert_eq!(padded.video_id, "c");
     assert!(capture.events().is_empty());
-    let failed = capture.captured(|| decode_video_id_with_provider("video_YWJjO2I7Yw==AAAA"));
-    assert_eq!(failed.video_id, "video_YWJjO2I7Yw==AAAA");
-    assert!(failed.custom_llm_provider.is_none());
-    assert!(failed.model_id.is_none());
-    assert_eq!(capture.events().len(), 1);
+    let trailing = capture.captured(|| decode_video_id_with_provider("video_YWJjO2I7Yw==AAAA"));
+    assert_eq!(trailing.custom_llm_provider.as_deref(), Some("abc"));
+    assert_eq!(trailing.model_id.as_deref(), Some("b"));
+    assert_eq!(trailing.video_id, "c");
+    assert!(capture.events().is_empty());
 }
 
 fn character_list_rewrite() {

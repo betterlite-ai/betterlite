@@ -64,6 +64,9 @@ fn decode_base64_text(encoded: &str) -> Option<String> {
             pads = 0;
         } else if character == '=' && data.len().checked_rem(4)? >= 2 {
             pads = pads.checked_add(1)?;
+            if data.len().checked_rem(4)?.checked_add(pads)? >= 4 {
+                break;
+            }
         }
     }
     let leftover = data.len().checked_rem(4)?;
