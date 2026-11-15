@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 

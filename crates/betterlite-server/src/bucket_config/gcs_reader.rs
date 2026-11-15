@@ -55,20 +55,20 @@ where
     Http: GcsHttpClient,
 {
     async fn read_object(&self, object_key: &str) -> Option<Vec<u8>> {
-        let Some(bucket) = self.bucket.as_ref() else {
-            return None;
-        };
-        match download_gcs_object(bucket, object_key, &GcsLoggingKwargs::default()).await {
-            Some(bytes) => Some(bytes),
-            None => {
-                tracing::error!(
-                    bucket_name = %self.bucket_name,
-                    object_key,
-                    "Error retrieving object from GCS bucket"
-                );
-                None
-            }
-        }
+        let bucket = self.bucket.as_ref()?;
+        download_gcs_object(bucket, object_key, &GcsLoggingKwargs::default())
+            .await
+            .map_or_else(
+                || {
+                    tracing::error!(
+                        bucket_name = %self.bucket_name,
+                        object_key,
+                        "Error retrieving object from GCS bucket"
+                    );
+                    None
+                },
+                Some,
+            )
     }
 }
 

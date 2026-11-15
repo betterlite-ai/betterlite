@@ -70,24 +70,7 @@ impl BucketModuleDownloader {
                 });
             }
         };
-        let parent = local_file_path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty());
-        if let Some(parent) = parent {
-            fs::create_dir_all(parent).await.map_err(|source| {
-                ModuleDownloadError::Directories {
-                    path: parent.to_path_buf(),
-                    source,
-                }
-            })?;
-        }
-        // LiteLLM logs the file text here; a module can hold secrets, so only the path is logged
-        fs::write(local_file_path, text)
-            .await
-            .map_err(|source| ModuleDownloadError::Write {
-                path: local_file_path.to_path_buf(),
-                source,
-            })?;
+        write_module_file(local_file_path, text).await?;
         tracing::debug!(
             object_key,
             path = %local_file_path.display(),
@@ -95,6 +78,27 @@ impl BucketModuleDownloader {
         );
         Ok(())
     }
+}
+
+async fn write_module_file(local_file_path: &Path, text: &str) -> Result<(), ModuleDownloadError> {
+    let parent = local_file_path
+        .parent()
+        .filter(|directory| !directory.as_os_str().is_empty());
+    if let Some(directory) = parent {
+        fs::create_dir_all(directory)
+            .await
+            .map_err(|source| ModuleDownloadError::Directories {
+                path: directory.to_path_buf(),
+                source,
+            })?;
+    }
+    // LiteLLM logs the file text here; a module can hold secrets, so only the path is logged
+    fs::write(local_file_path, text)
+        .await
+        .map_err(|source| ModuleDownloadError::Write {
+            path: local_file_path.to_path_buf(),
+            source,
+        })
 }
 
 mod tests;

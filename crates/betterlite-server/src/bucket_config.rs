@@ -7,5 +7,4 @@ pub mod object;
 pub mod s3_reader;
 pub mod source;
 
-#[cfg(test)]
 mod test_support;

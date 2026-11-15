@@ -4,12 +4,11 @@ fn posix_normpath(path: &str) -> String {
         .chars()
         .take_while(|character| *character == '/')
         .count();
-    let initial_slashes = if leading_slashes >= 2 && !path.starts_with("///") {
-        2
-    } else if leading_slashes >= 1 {
+    // POSIX reads three or more leading slashes as one and keeps exactly two as two
+    let initial_slashes = if path.starts_with("///") {
         1
     } else {
-        0
+        leading_slashes.min(2)
     };
     let mut components: Vec<&str> = Vec::new();
     for component in path.split('/') {
@@ -21,7 +20,7 @@ fn posix_normpath(path: &str) -> String {
             || components.last() == Some(&"..");
         if keep {
             components.push(component);
-        } else if !components.is_empty() {
+        } else {
             components.pop();
         }
     }

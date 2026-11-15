@@ -19,8 +19,8 @@ use tokio::task::JoinSet;
 
 use super::addressing::object_url;
 use super::{
-    DEFAULT_REGION, ProxiedS3Get, REGION_VARIABLE, S3GetRequest, S3Reader, S3TransportFailure,
-    credential_settings, region_from_environment,
+    DEFAULT_REGION, ProxiedS3Get, REGION_VARIABLE, S3Get, S3GetRequest, S3Reader,
+    S3TransportFailure, credential_settings, region_from_environment,
 };
 use crate::bucket_config::object::BucketObjectReader;
 use crate::bucket_config::test_support::{

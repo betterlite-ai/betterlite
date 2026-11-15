@@ -185,9 +185,7 @@ impl S3Reader {
     }
 
     async fn fetch(&self, object_key: &str) -> Option<Vec<u8>> {
-        let Some(credentials) = self.credentials.as_ref() else {
-            return None;
-        };
+        let credentials = self.credentials.as_ref()?;
         let url = addressing::object_url(&self.bucket_name, &self.region, object_key);
         let headers = match self.signed_headers(&url, credentials) {
             Ok(headers) => headers,
