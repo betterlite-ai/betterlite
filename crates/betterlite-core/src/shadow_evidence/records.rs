@@ -41,7 +41,7 @@ impl JudgeVerdict {
     pub fn parsed(preference: String, confidence: Decimal, cost: Decimal) -> Self {
         Self {
             preference,
-            confidence: confidence.min(Decimal::ONE).max(Decimal::ZERO),
+            confidence: confidence.clamp(Decimal::ZERO, Decimal::ONE),
             cost,
         }
     }
