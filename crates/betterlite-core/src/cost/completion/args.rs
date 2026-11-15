@@ -1,37 +1,96 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::cost_adjustments::AdjustmentEntry;
 use betterlite_models::billing_text::ResponseText;
 use betterlite_models::cost_usage::server_tool_projection::ServerToolProjection;
 use betterlite_models::ocr_pricing::OcrBilling;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
 use betterlite_models::protocol_cost::ProtocolCall;
+use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::tool_fees::billing::{BuiltInToolBilling, BuiltInToolParams};
+use betterlite_models::tool_fees::ports::{ToolPricePolicy, ToolPriceSource};
+use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_models::tool_signals::response::ToolBillingResponse;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
 use chrono::{DateTime, Utc};
+use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 
 use crate::cost::call_price::CustomCostPerToken;
 use crate::cost::call_price::policy::ProviderPricePolicy;
 use crate::cost::context::CostResponse;
 use crate::cost::context::response_time::ResponseTiming;
+use crate::cost::image_dispatch::options::SizePattern;
 use crate::cost::prepare::{
     BillingTokenCounter, CompletionBillingInput, PreparedBilling, RerankUnits,
 };
+use crate::cost::special::policy::SpecialPricePolicy;
 use crate::cost::special::replicate::ReplicateStamps;
 use crate::cost::special::request::{
     ImageParts, LoggingView, RealtimeSession, SpecialRequest, SpecialResponse, SpecialServices,
     TranscriptionDuration, VideoUsage,
 };
 
+// The early-return stage's collaborators with Sync bounds, since SpecialServices itself holds plain trait objects that would keep a charge future off other threads.
+pub struct SpecialBorrows<'services, Resolver, ImagePolicy> {
+    pub lookup: &'services (dyn PriceLookup + Sync),
+    pub resolver: &'services Resolver,
+    pub image_policy: &'services ImagePolicy,
+    pub special_policy: &'services (dyn SpecialPricePolicy + Sync),
+    pub size_pattern: &'services SizePattern,
+    pub database: &'services TimeZoneDatabase,
+    pub replicate_models: &'services ProviderModelSets,
+    pub replicate_price: Decimal,
+    pub discount: &'services BTreeMap<String, AdjustmentEntry>,
+    pub margin: &'services BTreeMap<String, AdjustmentEntry>,
+}
+
+impl<Resolver, ImagePolicy> SpecialBorrows<'_, Resolver, ImagePolicy> {
+    // The early-return stage takes the same borrows back as the plain trait objects it declares.
+    pub(super) const fn services(&self) -> SpecialServices<'_, Resolver, ImagePolicy> {
+        SpecialServices {
+            lookup: self.lookup,
+            resolver: self.resolver,
+            image_policy: self.image_policy,
+            special_policy: self.special_policy,
+            size_pattern: self.size_pattern,
+            database: self.database,
+            replicate_models: self.replicate_models,
+            replicate_price: self.replicate_price,
+            discount: self.discount,
+            margin: self.margin,
+        }
+    }
+}
+
+// The built-in tool prices as the calculator borrows them, Sync-bounded like SpecialBorrows.
+pub struct ToolBorrows<'services> {
+    pub source: &'services (dyn ToolPriceSource + Sync),
+    pub policy: &'services (dyn ToolPricePolicy + Sync),
+    pub prices: &'services ToolPrices,
+}
+
+impl ToolBorrows<'_> {
+    // The fee calculation takes the same borrows back as the billing it declares.
+    pub(super) const fn billing(&self) -> BuiltInToolBilling<'_> {
+        BuiltInToolBilling {
+            source: self.source,
+            policy: self.policy,
+            prices: self.prices,
+        }
+    }
+}
+
 // The one shared calculator: the catalog, provider policies, adjustments and tool prices one charge reads. The clock and the breakdown target are per call.
 pub struct CostCalculator<'services, Resolver, ImagePolicy, Inference> {
-    pub special: SpecialServices<'services, Resolver, ImagePolicy>,
+    pub special: SpecialBorrows<'services, Resolver, ImagePolicy>,
     pub catalog: &'services (dyn PriceLookup + Sync),
     pub inference: &'services Inference,
     pub counter: &'services dyn BillingTokenCounter,
-    pub price_policy: &'services dyn ProviderPricePolicy,
+    pub price_policy: &'services (dyn ProviderPricePolicy + Sync),
     pub resolution: &'services ResolutionContext<'services>,
-    pub tools: BuiltInToolBilling<'services>,
+    pub tools: ToolBorrows<'services>,
 }
 
 // The response attributes the early-return stage reads; a branch whose response kind did not arrive keeps the empty default.

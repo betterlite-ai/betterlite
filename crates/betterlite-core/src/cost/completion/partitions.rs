@@ -25,11 +25,11 @@ pub(super) async fn charge_partitions<Resolver, ImagePolicy, Inference, Target, 
     mut target: Option<&mut Target>,
 ) -> Result<Decimal, CompletionCostError<ImagePolicy::Error>>
 where
-    Resolver: ModelResolver,
-    ImagePolicy: ImagePricePolicy,
+    Resolver: ModelResolver + Sync,
+    ImagePolicy: ImagePricePolicy + Sync,
     Inference: ProviderInference + Sync,
-    Target: CostBreakdownTarget,
-    Clock: FnMut() -> SystemTime,
+    Target: CostBreakdownTarget + Send,
+    Clock: FnMut() -> SystemTime + Send,
 {
     let moment = reading(clock)?;
     let mut total = Decimal::ZERO;
@@ -43,7 +43,7 @@ where
             response: Some(&view),
             ..args.billing
         };
-        let PreparedCompletion::Attempts(prepared) = prepare(
+        let PreparedCompletion::Attempts(boxed) = prepare(
             &billing,
             services.catalog,
             services.inference,
@@ -53,7 +53,7 @@ where
         else {
             return Err(CompletionCostError::NestedPartitions);
         };
-        let mut prepared = *prepared;
+        let mut prepared = *boxed;
         let attempts = take(&mut prepared.attempts);
         let round = Round {
             args,

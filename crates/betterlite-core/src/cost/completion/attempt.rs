@@ -4,18 +4,17 @@ use std::time::SystemTime;
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_models::billed_tokens::TokenTypeCostBreakdown;
 use betterlite_models::tool_fees::billing::BuiltInToolRequest;
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use super::Round;
-use super::args::{CompletionArgs, CostCalculator};
+use super::args::CostCalculator;
 use super::breakdown::{BreakdownRequest, token_type_breakdown};
 use super::error::CompletionCostError;
 use crate::cost::call_price::error::CallPriceError;
 use crate::cost::call_price::{CallPriceEnv, call_price};
 use crate::cost::context::storage::store_cost_breakdown;
 use crate::cost::image_dispatch::policy::ImagePricePolicy;
-use crate::cost::prepare::{AttemptOutcome, PreparedBilling, PreparedBillingAttempt};
+use crate::cost::prepare::{AttemptOutcome, PreparedBillingAttempt};
 use crate::cost::special::policy::ModelResolver;
 use crate::cost::special::request::{RealtimeSession, SpecialOutcome, TokenStage};
 use crate::cost::special::special_charge;
@@ -57,15 +56,17 @@ where
     let priced = call_price(&price_input(attempt, owned), &env)?;
     let additional_costs = additional_fees(attempt, lookup)?;
     let params = &attempt.args.charge.tools;
-    let tool_usage_cost = services
-        .tools
-        .cost_for_built_in_tools(&BuiltInToolRequest {
-            model: attempt.model,
-            custom_llm_provider: attempt.provider,
-            response: &params.response,
-            google_maps_requests: params.google_maps_requests,
-            params: &params.params,
-        })?;
+    let tool_usage_cost =
+        services
+            .tools
+            .billing()
+            .cost_for_built_in_tools(&BuiltInToolRequest {
+                model: attempt.model,
+                custom_llm_provider: attempt.provider,
+                response: &params.response,
+                google_maps_requests: params.google_maps_requests,
+                params: &params.params,
+            })?;
     let original_cost = checked_total(
         priced.prompt_cost,
         priced.completion_cost,
@@ -115,26 +116,19 @@ where
     Ok(breakdown)
 }
 
-// Hands the breakdown to the logging target; a failing setter never replaces the charge, but a failing token-type computation fails the attempt.
-fn record_breakdown<Resolver, ImagePolicy, Inference, Target>(
-    services: &CostCalculator<'_, Resolver, ImagePolicy, Inference>,
+// Hands the breakdown to the logging target; a failing setter never replaces a charge that is already known.
+fn record_breakdown<Target>(
+    sink: &mut Target,
     attempt: &Attempt<'_>,
-    owned: &Owned,
-    charge: Charge,
-    target: Option<&mut Target>,
-) -> Result<(), CompletionCostError<ImagePolicy::Error>>
-where
-    ImagePolicy: ImagePricePolicy,
+    breakdown: Option<TokenTypeCostBreakdown>,
+    charge: &Charge,
+) where
     Target: CostBreakdownTarget,
 {
-    let Some(target) = target else {
-        return Ok(());
-    };
-    let breakdown = token_breakdown(services, attempt, owned)?;
     let inputs = &attempt.args.charge;
     let adjusted = charge.adjusted;
     store_cost_breakdown(
-        Some(target),
+        Some(sink),
         &CostBreakdownInput {
             input_cost: charge.input_cost,
             output_cost: charge.output_cost,
@@ -156,16 +150,13 @@ where
             billed_token_rates: breakdown.and_then(|found| found.rates),
         },
     );
-    Ok(())
 }
 
 // Ports completion_cost L1811-L1959 for one attempt: price the tokens, add fees, adjust, and record the breakdown.
 pub(super) fn attempt_charge<Resolver, ImagePolicy, Inference, Target>(
     services: &CostCalculator<'_, Resolver, ImagePolicy, Inference>,
-    args: &CompletionArgs<'_>,
-    prepared: &PreparedBilling,
+    round: &Round<'_>,
     stage: TokenStage,
-    moment: DateTime<Utc>,
     target: Option<&mut Target>,
 ) -> Result<Decimal, CompletionCostError<ImagePolicy::Error>>
 where
@@ -182,14 +173,14 @@ where
         AttemptOutcome::Ready(billing) => billing,
         AttemptOutcome::Failed(error) => return Err(CompletionCostError::Prepare(error)),
     };
-    let Some(model) = model.as_deref() else {
+    let Some(named) = model.as_deref() else {
         return Err(CompletionCostError::Price(CallPriceError::NullModel));
     };
     let attempt = Attempt {
-        args,
-        prepared,
-        moment,
-        model,
+        args: round.args,
+        prepared: round.prepared,
+        moment: round.moment,
+        model: named,
         provider: custom_llm_provider.as_deref(),
         region: region_name.as_deref(),
         request_model_for_cost: stage.request_model_for_cost.as_deref(),
@@ -199,7 +190,11 @@ where
     let owned = Owned::new::<ImagePolicy::Error>(&attempt, services.special.lookup)?;
     let charge = price_attempt(services, &attempt, &owned)?;
     let final_cost = charge.adjusted.final_cost;
-    record_breakdown(services, &attempt, &owned, charge, target)?;
+    let Some(sink) = target else {
+        return Ok(final_cost);
+    };
+    let breakdown = token_breakdown(services, &attempt, &owned)?;
+    record_breakdown(sink, &attempt, breakdown, &charge);
     Ok(final_cost)
 }
 
@@ -226,26 +221,14 @@ where
             .args
             .charge
             .special_request(round.billing, round.prepared, round.moment, realtime);
-    match special_charge(
-        &services.special,
-        &request,
-        attempt,
-        clock,
-        target.as_deref_mut(),
-    )? {
+    let special = services.special.services();
+    match special_charge(&special, &request, attempt, clock, target.as_deref_mut())? {
         SpecialOutcome::Charged(charge) => Ok(charge),
         // special_charge hands an attempt back unchanged only when its preparation failed.
         SpecialOutcome::Failed(failed) => match failed.outcome {
             AttemptOutcome::Failed(error) => Err(CompletionCostError::Prepare(error)),
             AttemptOutcome::Ready(_) => Err(CompletionCostError::NoCandidates),
         },
-        SpecialOutcome::Continue(stage) => attempt_charge(
-            services,
-            round.args,
-            round.prepared,
-            *stage,
-            round.moment,
-            target,
-        ),
+        SpecialOutcome::Continue(stage) => attempt_charge(services, round, *stage, target),
     }
 }

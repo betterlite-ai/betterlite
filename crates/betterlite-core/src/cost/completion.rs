@@ -62,25 +62,25 @@ pub async fn completion_cost<Resolver, ImagePolicy, Inference, Target, Clock>(
     target: Option<&mut Target>,
 ) -> Result<Decimal, CompletionCostError<ImagePolicy::Error>>
 where
-    Resolver: ModelResolver,
-    ImagePolicy: ImagePricePolicy,
+    Resolver: ModelResolver + Sync,
+    ImagePolicy: ImagePricePolicy + Sync,
     Inference: ProviderInference + Sync,
-    Target: CostBreakdownTarget,
-    Clock: FnMut() -> SystemTime,
+    Target: CostBreakdownTarget + Send,
+    Clock: FnMut() -> SystemTime + Send,
 {
-    let prepared = prepare(
+    let outcome = prepare(
         &args.billing,
         services.catalog,
         services.inference,
         services.counter,
     )
     .await?;
-    match prepared {
+    match outcome {
         PreparedCompletion::WebsocketPartitions(partitions) => {
             charge_partitions(services, args, &partitions, clock, target).await
         }
-        PreparedCompletion::Attempts(prepared) => {
-            let mut prepared = *prepared;
+        PreparedCompletion::Attempts(boxed) => {
+            let mut prepared = *boxed;
             let attempts = take(&mut prepared.attempts);
             let session = match args.billing.response {
                 Some(ResponseView::Realtime { record, .. }) => {

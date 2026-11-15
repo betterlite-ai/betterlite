@@ -54,11 +54,11 @@ pub async fn response_cost_calculator<Resolver, ImagePolicy, Inference, Target, 
     target: Option<&mut Target>,
 ) -> Result<Decimal, CompletionCostError<ImagePolicy::Error>>
 where
-    Resolver: ModelResolver,
-    ImagePolicy: ImagePricePolicy,
+    Resolver: ModelResolver + Sync,
+    ImagePolicy: ImagePricePolicy + Sync,
     Inference: ProviderInference + Sync,
-    Target: CostBreakdownTarget,
-    Clock: FnMut() -> SystemTime,
+    Target: CostBreakdownTarget + Send,
+    Clock: FnMut() -> SystemTime + Send,
 {
     if cache_hit == Some(true) {
         return Ok(Decimal::ZERO);
