@@ -3,6 +3,6 @@ name: sagemaker-completion-response-parse-failure
 call:
   b5960:
     steps:
-      - {kind: completion_response, model: endpoint, prompt: hi, reply: []}
+      - {kind: completion_response, model: endpoint, prompt: hi, reply: [], created: 1700000000}
 env: {}
 compare: {ignore: []}
