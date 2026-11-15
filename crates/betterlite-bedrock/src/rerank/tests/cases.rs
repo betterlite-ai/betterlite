@@ -659,12 +659,20 @@ fn results_index_score_failures() {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     for body in [
         r#"{"usage":{}}"#,
+        r#"[]"#,
         r#"{"results":[]}"#,
         r#"{"results":null}"#,
+        r#"{"results":{"index":0}}"#,
+        r#"{"results":[5]}"#,
         r#"{"results":[{"relevanceScore":0.5}]}"#,
-        r#"{"results":[{"index":0,"relevanceScore":"half"}]}"#,
         r#"{"results":[{"index":null,"relevanceScore":0.5}]}"#,
+        r#"{"results":[{"index":1.5,"relevanceScore":0.5}]}"#,
+        r#"{"results":[{"index":0,"relevanceScore":"half"}]}"#,
+        r#"{"results":[{"index":0,"relevanceScore":null}]}"#,
+        r#"{"results":[{"index":0,"relevanceScore":0.12345678901234567890123456789012}]}"#,
         r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":"none"}"#,
+        r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":1.5}}"#,
+        r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"total_tokens":"many"}}"#,
         r#"{"id":7,"results":[{"index":0,"relevanceScore":0.5}]}"#,
     ] {
         let run = run_case(
