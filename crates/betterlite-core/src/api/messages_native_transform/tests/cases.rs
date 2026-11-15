@@ -277,6 +277,7 @@ fn legacy_budget_fit() {
     budget_cap();
     budget_drop_keeps_existing();
     budget_missing();
+    budget_not_an_integer();
 }
 
 #[test]
@@ -381,7 +382,11 @@ fn budget_missing() {
         false,
     ));
     assert_eq!(early.to_string(), missing.to_string());
+}
 
+#[test]
+fn budget_not_an_integer() {
+    let world = World::load(RECORDS);
     let text = failure(transform(
         &world,
         "claude-sonnet-4-5",
@@ -537,56 +542,51 @@ fn invalid_legacy_effort() {
     assert!(invalid.to_string().contains("Unmapped reasoning effort"));
 }
 
-// The record is an explicit seam: a pinned name whose provider record has no reasoning support.
+// An explicit seam: a pinned name whose provider record has no reasoning support.
+const NO_REASONING_RECORD: &str = r#"{"claude-haiku-4-5": {"litellm_provider": "anthropic", "supports_reasoning": false, "supports_adaptive_thinking": false, "supports_output_config": false, "supports_legacy_thinking": false, "supports_xhigh_reasoning_effort": false, "supports_max_reasoning_effort": false, "thinking_always_on": false}}"#;
+
+const DROPPED_EFFORT_WARNING: &str =
+    "Dropping adaptive `thinking`/`output_config.effort` for model=claude-haiku-4-5";
+
+fn dropped_adaptive(world: &World, params: &str) -> Json {
+    let sent = body_of(transform(world, "claude-haiku-4-5", USER, params, false));
+    assert_eq!(field(&sent, "thinking"), None);
+    sent
+}
+
 #[test]
 fn no_reasoning_support_drops_adaptive_effort() {
-    let world = World::load(
-        r#"{"claude-haiku-4-5": {"litellm_provider": "anthropic", "supports_reasoning": false, "supports_adaptive_thinking": false, "supports_output_config": false, "supports_legacy_thinking": false, "supports_xhigh_reasoning_effort": false, "supports_max_reasoning_effort": false, "thinking_always_on": false}}"#,
-    );
+    let world = World::load(NO_REASONING_RECORD);
     let (_guard, logs) = capture();
-    let dropped = body_of(transform(
+    let formatted = dropped_adaptive(
         &world,
-        "claude-haiku-4-5",
-        USER,
         r#"{"max_tokens":32768,"thinking":{"type":"adaptive"},"output_config":{"effort":"medium","format":{"type":"json_schema"}}}"#,
-        false,
-    ));
-    assert_eq!(field(&dropped, "thinking"), None);
+    );
     assert_eq!(
-        field(&dropped, "output_config"),
+        field(&formatted, "output_config"),
         Some(&json(r#"{"format":{"type":"json_schema"}}"#))
     );
 
-    let plain = body_of(transform(
+    let plain = dropped_adaptive(
         &world,
-        "claude-haiku-4-5",
-        USER,
         r#"{"max_tokens":32768,"thinking":{"type":"adaptive"},"output_config":{"effort":"medium"}}"#,
-        false,
-    ));
-    assert_eq!(field(&plain, "thinking"), None);
+    );
     assert_eq!(field(&plain, "output_config"), None);
 
-    let invalid = body_of(transform(
+    let invalid = dropped_adaptive(
         &world,
-        "claude-haiku-4-5",
-        USER,
         r#"{"max_tokens":32768,"thinking":{"type":"adaptive"},"output_config":{"effort":"extreme"}}"#,
-        false,
-    ));
-    assert_eq!(field(&invalid, "thinking"), None);
+    );
     assert_eq!(field(&invalid, "output_config"), None);
 
     let warnings = logs.warnings();
     assert_eq!(warnings.len(), 3, "{warnings:?}");
-    for warning in &warnings {
-        assert!(
-            warning.contains(
-                "Dropping adaptive `thinking`/`output_config.effort` for model=claude-haiku-4-5"
-            ),
-            "{warnings:?}"
-        );
-    }
+    assert!(
+        warnings
+            .iter()
+            .all(|line| line.contains(DROPPED_EFFORT_WARNING)),
+        "{warnings:?}"
+    );
 }
 
 #[test]
