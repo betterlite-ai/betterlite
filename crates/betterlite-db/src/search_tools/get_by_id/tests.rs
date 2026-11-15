@@ -42,11 +42,10 @@ async fn get_by_id_returns_none_for_a_missing_tool() {
 }
 
 #[tokio::test]
-async fn get_by_id_reads_columns_stored_as_json_objects() {
+async fn get_by_id_reads_columns_stored_as_json_text() {
     let mut record = stored_record("tool-1", "web");
-    record.litellm_params =
-        serde_json::from_str::<JsonValue>(r#"{"search_provider":"exa"}"#).unwrap();
-    record.search_tool_info = None;
+    record.litellm_params = JsonValue::String(r#"{"search_provider":"exa"}"#.to_owned());
+    record.search_tool_info = Some(JsonValue::String(r#"{"description":"x"}"#.to_owned()));
     let table = FakeTable::with_rows(vec![record]);
     let found = registry()
         .get_search_tool_by_id_from_db("tool-1", &table)
@@ -54,7 +53,7 @@ async fn get_by_id_reads_columns_stored_as_json_objects() {
         .unwrap()
         .unwrap();
     assert_eq!(found.litellm_params.search_provider, "exa");
-    assert!(found.search_tool_info.is_none());
+    assert_eq!(found.search_tool_info.unwrap().len(), 1);
 }
 
 #[tokio::test]

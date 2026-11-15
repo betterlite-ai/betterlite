@@ -39,10 +39,7 @@ fn convert_record_turns_both_timestamps_into_iso_strings() {
     let converted = SearchToolRegistry::convert_prisma_to_dict(&stored_record("tool-1", "web"));
     assert_eq!(converted.search_tool_id, "tool-1");
     assert_eq!(converted.search_tool_name, "web");
-    assert_eq!(
-        converted.litellm_params,
-        JsonValue::String(PARAMS_TEXT.to_owned())
-    );
+    assert_eq!(converted.litellm_params, json(PARAMS_TEXT));
     assert_eq!(converted.created_at, "2026-02-25T06:13:20+00:00");
     assert_eq!(converted.updated_at, isoformat(instant()));
 }

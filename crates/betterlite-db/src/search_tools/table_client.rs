@@ -16,7 +16,7 @@ pub enum CreatedAtOrder {
     Descending,
 }
 
-// The two parameter fields carry JSON text, which the table stores as a JSON string
+// The two parameter fields carry JSON text, which the table binds as a JSON document
 #[derive(Clone)]
 pub struct SearchToolCreate {
     pub search_tool_name: String,

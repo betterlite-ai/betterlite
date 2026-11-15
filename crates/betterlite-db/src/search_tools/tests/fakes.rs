@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use chrono::{DateTime, TimeDelta, Utc};
 
@@ -38,15 +38,25 @@ pub(crate) fn tool() -> SearchTool {
     serde_json::from_str(TOOL_JSON).unwrap()
 }
 
+pub(crate) fn json(text: &str) -> JsonValue {
+    serde_json::from_str(text).unwrap()
+}
+
 pub(crate) fn stored_record(search_tool_id: &str, search_tool_name: &str) -> SearchToolRecord {
     SearchToolRecord {
         search_tool_id: search_tool_id.to_owned(),
         search_tool_name: search_tool_name.to_owned(),
-        litellm_params: JsonValue::String(PARAMS_TEXT.to_owned()),
-        search_tool_info: Some(JsonValue::String(INFO_TEXT.to_owned())),
+        litellm_params: json(PARAMS_TEXT),
+        search_tool_info: Some(json(INFO_TEXT)),
         created_at: earlier(),
         updated_at: instant(),
     }
+}
+
+fn row_position(rows: &[SearchToolRecord], search_tool_id: &str) -> Result<usize, TableError> {
+    rows.iter()
+        .position(|row| row.search_tool_id == search_tool_id)
+        .ok_or(TableError::MissingRow)
 }
 
 pub(crate) fn transport_failure() -> TableError {
@@ -86,6 +96,15 @@ impl FakeTable {
         };
         Err(failures.remove(position).1)
     }
+
+    fn rows_for(
+        &self,
+        operation: &'static str,
+        entry: String,
+    ) -> Result<MutexGuard<'_, Vec<SearchToolRecord>>, TableError> {
+        self.enter(operation, entry)?;
+        Ok(self.rows.lock().unwrap())
+    }
 }
 
 impl SearchToolTableClient for FakeTable {
@@ -95,8 +114,8 @@ impl SearchToolTableClient for FakeTable {
         let record = SearchToolRecord {
             search_tool_id: "generated-id".to_owned(),
             search_tool_name: data.search_tool_name.clone(),
-            litellm_params: JsonValue::String(data.litellm_params.clone()),
-            search_tool_info: Some(JsonValue::String(data.search_tool_info.clone())),
+            litellm_params: json(&data.litellm_params),
+            search_tool_info: Some(json(&data.search_tool_info)),
             created_at: data.created_at.checked_add_signed(shift).unwrap(),
             updated_at: data.updated_at.checked_add_signed(shift).unwrap(),
         };
@@ -109,8 +128,7 @@ impl SearchToolTableClient for FakeTable {
         &self,
         search_tool_id: &str,
     ) -> Result<Option<SearchToolRecord>, TableError> {
-        self.enter("find_unique", format!("find_unique:{search_tool_id}"))?;
-        let rows = self.rows.lock().unwrap();
+        let rows = self.rows_for("find_unique", format!("find_unique:{search_tool_id}"))?;
         Ok(rows
             .iter()
             .find(|row| row.search_tool_id == search_tool_id)
@@ -134,16 +152,13 @@ impl SearchToolTableClient for FakeTable {
         search_tool_id: &str,
         data: SearchToolUpdate,
     ) -> Result<SearchToolRecord, TableError> {
-        self.enter("update", format!("update:{search_tool_id}"))?;
         let record = {
-            let mut rows = self.rows.lock().unwrap();
-            let row = rows
-                .iter_mut()
-                .find(|row| row.search_tool_id == search_tool_id)
-                .ok_or(TableError::MissingRow)?;
+            let mut rows = self.rows_for("update", format!("update:{search_tool_id}"))?;
+            let index = row_position(&rows, search_tool_id)?;
+            let row = &mut rows[index];
             row.search_tool_name.clone_from(&data.search_tool_name);
-            row.litellm_params = JsonValue::String(data.litellm_params.clone());
-            row.search_tool_info = Some(JsonValue::String(data.search_tool_info.clone()));
+            row.litellm_params = json(&data.litellm_params);
+            row.search_tool_info = Some(json(&data.search_tool_info));
             row.updated_at = data.updated_at;
             row.clone()
         };
@@ -152,13 +167,9 @@ impl SearchToolTableClient for FakeTable {
     }
 
     async fn delete(&self, search_tool_id: &str) -> Result<SearchToolRecord, TableError> {
-        self.enter("delete", format!("delete:{search_tool_id}"))?;
-        let mut rows = self.rows.lock().unwrap();
-        let position = rows
-            .iter()
-            .position(|row| row.search_tool_id == search_tool_id)
-            .ok_or(TableError::MissingRow)?;
-        Ok(rows.remove(position))
+        let mut rows = self.rows_for("delete", format!("delete:{search_tool_id}"))?;
+        let index = row_position(&rows, search_tool_id)?;
+        Ok(rows.remove(index))
     }
 }
 

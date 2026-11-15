@@ -6,9 +6,9 @@ deviations:
   - what: A litellm_params key outside the five that SearchToolLiteLLMParams declares is refused with an error that names the field, where LiteLLM stores it unchanged.
     why: SearchTool is a typed struct and an undeclared key would otherwise be dropped without a word.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L17-L28
-  - what: Reading a row whose litellm_params column holds a JSON string returns the parsed SearchToolLiteLLMParams, where LiteLLM hands back the stored string in the typed field.
-    why: The declared type is SearchToolLiteLLMParams, and the table stores the serialized text as a JSON string.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L205-L212
+  - what: A row written here stores litellm_params and search_tool_info as JSONB documents, where LiteLLM's Prisma client sends the safe_dumps text as a JSON string and the column holds that string.
+    why: The table binds the dumped text as jsonb, so the typed row carries the same parsed document LiteLLM's Prisma Json field hands back; a row LiteLLM wrote is still read through its string form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L95-L96
 kept_bugs:
   - what: update_search_tool_in_db replaces the name, litellm_params and search_tool_info together, and an absent search_tool_info is written as "{}", which erases the stored info.
     why: Callers send the whole tool on update, so a partial body already loses fields in LiteLLM and clients rely on the full replacement.

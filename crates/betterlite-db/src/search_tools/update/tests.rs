@@ -2,7 +2,7 @@
 
 use crate::auxiliary_repository::repository::TableError;
 use crate::search_tools::tests::fakes::{
-    EXPECTED_PARAMS, FakeTable, INFO_TEXT, instant, registry, stored_record, tool,
+    EXPECTED_PARAMS, FakeTable, INFO_TEXT, instant, json, registry, stored_record, tool,
 };
 
 #[tokio::test]
@@ -34,6 +34,17 @@ async fn update_returns_the_row_with_iso_timestamps_and_the_original_created_at(
     assert_eq!(row.search_tool_name, "web");
     assert_eq!(row.created_at, "2026-02-25T06:13:20+00:00");
     assert_eq!(row.updated_at, "2026-03-04T05:06:07.123456+00:00");
+}
+
+#[tokio::test]
+async fn update_returns_the_parameter_fields_as_parsed_documents() {
+    let table = FakeTable::with_rows(vec![stored_record("tool-1", "web")]);
+    let row = registry()
+        .update_search_tool_in_db("tool-1", &tool(), &table)
+        .await
+        .unwrap();
+    assert_eq!(row.litellm_params, json(EXPECTED_PARAMS));
+    assert_eq!(row.search_tool_info, Some(json(INFO_TEXT)));
 }
 
 #[tokio::test]

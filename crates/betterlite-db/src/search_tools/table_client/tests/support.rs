@@ -85,6 +85,10 @@ impl Case {
     }
 }
 
+fn publish_result(result: Result<(), TableError>) -> PublishFuture<TableError> {
+    Box::pin(async move { result })
+}
+
 pub(crate) fn recording_publisher(journal: &Journal) -> PublishChange<TableError> {
     let entries = Arc::clone(journal);
     Arc::new(move |object_type: &str| {
@@ -92,19 +96,15 @@ pub(crate) fn recording_publisher(journal: &Journal) -> PublishChange<TableError
             .lock()
             .unwrap()
             .push(format!("publish:{object_type}"));
-        let future: PublishFuture<TableError> = Box::pin(async { Ok(()) });
-        future
+        publish_result(Ok(()))
     })
 }
 
 pub(crate) fn failing_publisher() -> PublishChange<TableError> {
     Arc::new(|_object_type: &str| {
-        let future: PublishFuture<TableError> = Box::pin(async {
-            Err(TableError::Publish {
-                message: "redis is down".to_owned(),
-            })
-        });
-        future
+        publish_result(Err(TableError::Publish {
+            message: "redis is down".to_owned(),
+        }))
     })
 }
 

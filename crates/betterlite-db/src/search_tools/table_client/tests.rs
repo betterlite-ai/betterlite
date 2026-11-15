@@ -14,12 +14,18 @@ mod support;
 use support::{Case, Journal, failing_publisher, recording_publisher, row_count};
 
 const PARAMS: &str = r#"{"search_provider":"tavily"}"#;
+const UPDATED_PARAMS: &str = r#"{"search_provider":"exa"}"#;
+const UPDATED_INFO: &str = r#"{"description":"changed"}"#;
 const PUBLISHED: &str = "publish:litellm_searchtoolstable";
 const NO_DB_MESSAGE: &str =
     "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys";
 
 fn at(micros: i64) -> DateTime<Utc> {
     DateTime::from_timestamp_micros(micros).unwrap()
+}
+
+fn json(text: &str) -> JsonValue {
+    serde_json::from_str(text).unwrap()
 }
 
 fn create_data(name: &str, created_at: DateTime<Utc>) -> SearchToolCreate {
@@ -32,11 +38,11 @@ fn create_data(name: &str, created_at: DateTime<Utc>) -> SearchToolCreate {
     }
 }
 
-fn update_data(name: &str, updated_at: DateTime<Utc>) -> SearchToolUpdate {
+fn update_data(updated_at: DateTime<Utc>) -> SearchToolUpdate {
     SearchToolUpdate {
-        search_tool_name: name.to_owned(),
-        litellm_params: r#"{"search_provider":"exa"}"#.to_owned(),
-        search_tool_info: r#"{"description":"changed"}"#.to_owned(),
+        search_tool_name: "renamed".to_owned(),
+        litellm_params: UPDATED_PARAMS.to_owned(),
+        search_tool_info: UPDATED_INFO.to_owned(),
         updated_at,
     }
 }
@@ -46,7 +52,7 @@ fn published(journal: &Journal) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn table_client_create_stores_json_strings_and_publishes_the_change() {
+async fn table_client_create_stores_the_parameter_documents_and_publishes_the_change() {
     let case = Case::new().await;
     let journal = Journal::default();
     let table = PostgresSearchTools::new(Some(case.client()), recording_publisher(&journal));
@@ -56,11 +62,8 @@ async fn table_client_create_stores_json_strings_and_publishes_the_change() {
         .unwrap();
     assert_eq!(record.search_tool_id.len(), 36);
     assert_eq!(record.search_tool_name, "web");
-    assert_eq!(record.litellm_params, JsonValue::String(PARAMS.to_owned()));
-    assert_eq!(
-        record.search_tool_info,
-        Some(JsonValue::String("{}".to_owned()))
-    );
+    assert_eq!(record.litellm_params, json(PARAMS));
+    assert_eq!(record.search_tool_info, Some(json("{}")));
     assert_eq!(record.created_at, at(1_772_600_767_123_000));
     assert_eq!(record.updated_at, at(1_772_600_767_123_000));
     assert_eq!(published(&journal), [PUBLISHED]);
@@ -132,16 +135,14 @@ async fn table_client_update_replaces_fields_keeps_created_at_and_publishes() {
     let updated = table
         .update(
             &created.search_tool_id,
-            update_data("renamed", at(1_772_700_000_000_000)),
+            update_data(at(1_772_700_000_000_000)),
         )
         .await
         .unwrap();
     assert_eq!(updated.search_tool_id, created.search_tool_id);
     assert_eq!(updated.search_tool_name, "renamed");
-    assert_eq!(
-        updated.litellm_params,
-        JsonValue::String(r#"{"search_provider":"exa"}"#.to_owned())
-    );
+    assert_eq!(updated.litellm_params, json(UPDATED_PARAMS));
+    assert_eq!(updated.search_tool_info, Some(json(UPDATED_INFO)));
     assert_eq!(updated.created_at, created.created_at);
     assert_eq!(updated.updated_at, at(1_772_700_000_000_000));
     assert_eq!(published(&journal), [PUBLISHED, PUBLISHED]);
@@ -154,7 +155,7 @@ async fn table_client_update_of_a_missing_row_fails_without_publishing() {
     let journal = Journal::default();
     let table = PostgresSearchTools::new(Some(case.client()), recording_publisher(&journal));
     let error = table
-        .update("missing", update_data("renamed", at(1_772_700_000_000_000)))
+        .update("missing", update_data(at(1_772_700_000_000_000)))
         .await
         .unwrap_err();
     assert!(matches!(error, TableError::MissingRow));
@@ -229,7 +230,7 @@ async fn table_client_without_a_connection_fails_every_call_with_the_litellm_tex
         table.find_unique("tool-1").await.unwrap_err(),
         table.find_many(None).await.unwrap_err(),
         table
-            .update("tool-1", update_data("web", at_time))
+            .update("tool-1", update_data(at_time))
             .await
             .unwrap_err(),
         table.delete("tool-1").await.unwrap_err(),

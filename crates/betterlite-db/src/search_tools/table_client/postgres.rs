@@ -4,7 +4,7 @@ use betterlite_redis::config_sync::publish::PublishChange;
 use chrono::NaiveDateTime;
 use deadpool_postgres::GenericClient as _;
 use tokio_postgres::Row;
-use tokio_postgres::types::Json;
+use tokio_postgres::types::{Json, ToSql};
 
 use crate::auxiliary_repository::bindings::SearchToolsTable;
 use crate::auxiliary_repository::repository::{
@@ -18,7 +18,7 @@ use super::{CreatedAtOrder, SearchToolCreate, SearchToolTableClient, SearchToolU
 
 const CREATE_SQL: &str = "INSERT INTO \"LiteLLM_SearchToolsTable\" \
      (search_tool_id, search_tool_name, litellm_params, search_tool_info, created_at, updated_at) \
-     VALUES (gen_random_uuid()::text, $1, to_jsonb($2::text), to_jsonb($3::text), $4, $5) \
+     VALUES (gen_random_uuid()::text, $1, $2::text::jsonb, $3::text::jsonb, $4, $5) \
      RETURNING search_tool_id, search_tool_name, litellm_params, search_tool_info, created_at, updated_at";
 
 const FIND_SQL: &str = "SELECT search_tool_id, search_tool_name, litellm_params, search_tool_info, \
@@ -36,12 +36,14 @@ const LIST_DESCENDING_SQL: &str = "SELECT search_tool_id, search_tool_name, lite
      ORDER BY created_at DESC";
 
 const UPDATE_SQL: &str = "UPDATE \"LiteLLM_SearchToolsTable\" SET search_tool_name = $2, \
-     litellm_params = to_jsonb($3::text), search_tool_info = to_jsonb($4::text), updated_at = $5 \
+     litellm_params = $3::text::jsonb, search_tool_info = $4::text::jsonb, updated_at = $5 \
      WHERE search_tool_id = $1 \
      RETURNING search_tool_id, search_tool_name, litellm_params, search_tool_info, created_at, updated_at";
 
 const DELETE_SQL: &str = "DELETE FROM \"LiteLLM_SearchToolsTable\" WHERE search_tool_id = $1 \
      RETURNING search_tool_id, search_tool_name, litellm_params, search_tool_info, created_at, updated_at";
+
+type Params<'query> = [&'query (dyn ToSql + Sync)];
 
 pub struct PostgresSearchTools<'db> {
     base: PrismaTableRepository<'db, SearchToolsTable>,
@@ -55,6 +57,32 @@ impl<'db> PostgresSearchTools<'db> {
             base: PrismaTableRepository::new(client, Arc::clone(&publish), SearchToolsTable),
             publish,
         }
+    }
+
+    // A read borrows the pool's reader session and reports a backend failure the same way
+    async fn read_rows(&self, sql: &str, params: &Params<'_>) -> Result<Vec<Row>, TableError> {
+        let client = self.base.access()?.read.session().await?;
+        client
+            .query(sql, params)
+            .await
+            .map_err(|source| TableError::Database(backend(source)))
+    }
+
+    // A write takes the writer session, and a statement that returns no row names a missing row
+    async fn write_row(&self, sql: &str, params: &Params<'_>) -> Result<Row, TableError> {
+        let client = self.base.access()?.write.session().await?;
+        client
+            .query_opt(sql, params)
+            .await
+            .map_err(|source| TableError::Database(backend(source)))?
+            .ok_or(TableError::MissingRow)
+    }
+
+    // Config-sync listeners hear about a table change only after the row is written
+    async fn published(&self, row: &Row) -> Result<SearchToolRecord, TableError> {
+        let record = decode(row)?;
+        (self.publish)(SearchToolsTable::NAME).await?;
+        Ok(record)
     }
 }
 
@@ -106,22 +134,15 @@ impl SearchToolTableClient for PostgresSearchTools<'_> {
             )
             .await
             .map_err(|source| TableError::Database(backend(source)))?;
-        let record = decode(&row)?;
-        (self.publish)(SearchToolsTable::NAME).await?;
-        Ok(record)
+        self.published(&row).await
     }
 
     async fn find_unique(
         &self,
         search_tool_id: &str,
     ) -> Result<Option<SearchToolRecord>, TableError> {
-        let access = self.base.access()?;
-        let client = access.read.session().await?;
-        let row = client
-            .query_opt(FIND_SQL, &[&search_tool_id])
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?;
-        row.as_ref().map(decode).transpose()
+        let mut rows = self.read_rows(FIND_SQL, &[&search_tool_id]).await?;
+        rows.pop().map(|row| decode(&row)).transpose()
     }
 
     async fn find_many(
@@ -133,12 +154,7 @@ impl SearchToolTableClient for PostgresSearchTools<'_> {
             Some(CreatedAtOrder::Ascending) => LIST_ASCENDING_SQL,
             Some(CreatedAtOrder::Descending) => LIST_DESCENDING_SQL,
         };
-        let access = self.base.access()?;
-        let client = access.read.session().await?;
-        let rows = client
-            .query(sql, &[])
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?;
+        let rows = self.read_rows(sql, &[]).await?;
         rows.iter().map(decode).collect()
     }
 
@@ -147,11 +163,9 @@ impl SearchToolTableClient for PostgresSearchTools<'_> {
         search_tool_id: &str,
         data: SearchToolUpdate,
     ) -> Result<SearchToolRecord, TableError> {
-        let access = self.base.access()?;
-        let client = access.write.session().await?;
         let updated_at = data.updated_at.naive_utc();
-        let row = client
-            .query_opt(
+        let row = self
+            .write_row(
                 UPDATE_SQL,
                 &[
                     &search_tool_id,
@@ -161,24 +175,12 @@ impl SearchToolTableClient for PostgresSearchTools<'_> {
                     &updated_at,
                 ],
             )
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?
-            .ok_or(TableError::MissingRow)?;
-        let record = decode(&row)?;
-        (self.publish)(SearchToolsTable::NAME).await?;
-        Ok(record)
+            .await?;
+        self.published(&row).await
     }
 
     async fn delete(&self, search_tool_id: &str) -> Result<SearchToolRecord, TableError> {
-        let access = self.base.access()?;
-        let client = access.write.session().await?;
-        let row = client
-            .query_opt(DELETE_SQL, &[&search_tool_id])
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?
-            .ok_or(TableError::MissingRow)?;
-        let record = decode(&row)?;
-        (self.publish)(SearchToolsTable::NAME).await?;
-        Ok(record)
+        let row = self.write_row(DELETE_SQL, &[&search_tool_id]).await?;
+        self.published(&row).await
     }
 }
