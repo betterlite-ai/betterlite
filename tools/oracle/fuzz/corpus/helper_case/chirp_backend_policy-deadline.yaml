@@ -1,0 +1,14 @@
+kind: helper
+name: chirp-backend-policy-deadline
+call:
+  chirp_backend_policy:
+    kind: deadline
+    elapsed_seconds: 240.0
+    speech_active: false
+    item_kind: closed
+    turn: 0
+    event: ''
+    reason: ''
+    discarded_turns: []
+env: {}
+compare: {ignore: []}

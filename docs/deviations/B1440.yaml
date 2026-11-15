@@ -1,0 +1,18 @@
+task: B1440
+deviations:
+  - what: Selection answers a closed policy identity instead of constructing LiteLLM's config class; the route tasks build it.
+    why: Rule closed-sets-are-enums keeps the choice typed, and the config classes belong to provider crates this one cannot import.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9113-L9148
+  - what: litellm.api_base, litellm.api_key, litellm.openai_like_key and litellm.cometapi_key are fields of an injected Globals record.
+    why: Rule inject-dependencies forbids process-wide state; the config crate loads the env aliases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6613-L6644
+  - what: A CometAPI embedding reply is decoded through B010's prepared execution, so it carries the caller's model.
+    why: The typed EmbeddingResponse needs a model, and B010's decode gives the caller's model precedence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L135
+  - what: image_generation_api_policy names the AIML and CometAPI classes again next to betterlite-context's select_image_generation.
+    why: select_image_generation takes a model and returns a tag carrying it, while this task needs the provider-only policy B038 binds; betterlite-context also depends on betterlite-models, so calling it from here would make the lower crate depend on the higher one. Both copies answer LiteLLM's class names, each pinned by its own tests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9610-L9621
+kept_bugs:
+  - what: A CometAPI embedding with no API key anywhere sends Authorization with the literal value Bearer None instead of omitting the header.
+    why: The wire request stays byte-identical to LiteLLM's for a keyless deployment, and a setup that can authenticate never reaches this value; B1437's shared configuration also reads COMETAPI_KEY, as LiteLLM's validate_environment does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L59-L66
