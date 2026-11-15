@@ -22,7 +22,6 @@ from litellm.types.utils import (
     Choices,
     Delta,
     Function,
-    Message,
     ModelResponse,
     StreamingChoices,
     Usage,
@@ -204,28 +203,27 @@ def delta_tool_call(tool: DeltaToolCallInput) -> ChatCompletionDeltaToolCall:
     return ChatCompletionDeltaToolCall(index=tool["index"], id=tool["id"], function=function)
 
 
-def record_values(value: RecordInput, tool_calls: ToolCalls) -> dict[str, RecordValue]:
-    return {
-        "content": value["content"], "reasoning_content": value["reasoning_content"],
-        "thinking_blocks": value["thinking_blocks"], "refusal": value["refusal"],
-        "tool_calls": tool_calls, "provider_specific_fields": value["provider_specific_fields"],
+def choice_object(value: ChoiceInput) -> Choices:
+    message = value["message"]
+    tools = [message_tool_call(tool) for tool in message["tool_calls"]]
+    record: dict[str, RecordValue] = {
+        "content": message["content"], "reasoning_content": message["reasoning_content"],
+        "thinking_blocks": message["thinking_blocks"], "refusal": message["refusal"],
+        "tool_calls": tools, "provider_specific_fields": message["provider_specific_fields"],
     }
-
-
-def message_object(value: MessageInput) -> Message:
-    tools = [message_tool_call(tool) for tool in value["tool_calls"]]
-    return Message.model_validate(record_values(value, tools))
+    return Choices(finish_reason=value["finish_reason"], message=record)
 
 
 def delta_object(value: DeltaInput) -> Delta:
     tools = [delta_tool_call(tool) for tool in value["tool_calls"]]
-    return Delta.model_validate(record_values(value, tools))
-
-
-def choice_object(value: ChoiceInput) -> Choices:
-    return Choices(
-        finish_reason=value["finish_reason"], message=message_object(value["message"])
+    delta = Delta(
+        content=value["content"], reasoning_content=value["reasoning_content"],
+        tool_calls=tools, provider_specific_fields=value["provider_specific_fields"],
+        refusal=value["refusal"],
     )
+    if value["thinking_blocks"] is not None:
+        delta["thinking_blocks"] = value["thinking_blocks"]
+    return delta
 
 
 def stream_choice(value: StreamChoiceInput) -> StreamingChoices:
@@ -235,25 +233,22 @@ def stream_choice(value: StreamChoiceInput) -> StreamingChoices:
 
 
 def response_object(value: ResponseInput) -> ModelResponse:
-    return ModelResponse(
-        id=value["id"],
-        model=value["model"],
-        choices=[choice_object(choice) for choice in value["choices"]],
-        usage=usage_object(value["usage"]) if value["usage"] is not None else None,
-    )
+    choices: list[Choices] = [choice_object(choice) for choice in value["choices"]]
+    usage = usage_object(value["usage"]) if value["usage"] is not None else None
+    return ModelResponse(id=value["id"], model=value["model"], choices=choices, usage=usage)
 
 
 def terminal_response(call: TerminalCall) -> ModelResponse:
-    return ModelResponse(
-        choices=[choice_object(choice) for choice in call["choices"]],
-        usage=usage_object(call["usage"]) if call["usage"] is not None else None,
-    )
+    choices: list[Choices] = [choice_object(choice) for choice in call["choices"]]
+    usage = usage_object(call["usage"]) if call["usage"] is not None else None
+    return ModelResponse(choices=choices, usage=usage)
 
 
 def answer_block(call: StreamCall) -> JsonValue:
     choices: StreamChoices = [stream_choice(choice) for choice in call["choices"]]
     block_type, block = VIEW.block_start(choices)
-    return ANSWER.validate_json(json.dumps({"block_type": block_type, "block": block}))
+    payload: dict[str, JsonValue] = {"block_type": block_type, "block": block}
+    return ANSWER.validate_json(json.dumps(payload))
 
 
 def answer_delta(call: StreamCall) -> JsonValue:
