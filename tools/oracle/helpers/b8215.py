@@ -127,7 +127,7 @@ def run_scenario(scenario: Scenario) -> ScenarioOutput:
     # an unreachable endpoint is retried on a real client, which the mock never records
     calls = script.calls if scenario["answer"] is not None else None
     try:
-        returned = asyncio.run(guardrail.apply_guardrail(inputs, request, scenario["input_type"]))  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
+        returned = asyncio.run(guardrail.apply_guardrail(inputs, request, scenario["input_type"]))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
     except GuardrailRaisedException as error:
         outcome: Literal["blocked", "error"] = "blocked" if error.blocked_content else "error"
         return {
