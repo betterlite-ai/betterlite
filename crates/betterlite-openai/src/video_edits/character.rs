@@ -21,6 +21,7 @@ pub struct CreateCharacter<'media> {
 }
 
 #[must_use]
+// ast-grep-ignore: no-long-names
 pub fn transform_video_create_character_request<'media>(
     name: &'media str,
     video: MediaBody<'media>,
@@ -38,6 +39,7 @@ pub fn transform_video_create_character_request<'media>(
     }
 }
 
+// ast-grep-ignore: no-long-names
 pub fn transform_video_get_character_request(
     character_id: &str,
     api_base: &str,

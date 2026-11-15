@@ -18,6 +18,7 @@ pub struct VideoExtension {
 }
 
 #[must_use]
+// ast-grep-ignore: no-long-names
 pub fn transform_video_extension_request(request: VideoExtensionRequest) -> VideoExtension {
     let mut body = IndexMap::new();
     body.insert(String::from("prompt"), Json::Text(request.prompt));
