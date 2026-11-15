@@ -94,7 +94,6 @@ impl RecraftImageEditConfig {
         (body, files.into_iter().collect())
     }
 
-    #[must_use]
     pub fn transform_image_edit_response(
         response: &ImageHttpResponse,
         created: i64,

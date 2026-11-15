@@ -114,7 +114,10 @@ impl PriceLookup for NoPrices {
     }
 }
 
-fn serialized<T: serde::Serialize>(value: &T) -> Json {
+fn serialized<T>(value: &T) -> Json
+where
+    T: serde::Serialize,
+{
     json(&serde_json::to_string(value).expect("the value serializes"))
 }
 
@@ -219,7 +222,7 @@ fn generation_writes_prompt_model_and_every_provider_option() {
 #[rstest]
 #[case::prompt("prompt")]
 #[case::model("model")]
-fn generation_rejects_a_duplicate_argument(#[case] argument: &str) {
+fn generation_rejects_a_duplicate_argument(#[case] argument: &'static str) {
     let error = RecraftImageGenerationConfig::transform_image_generation_request(
         "recraft/recraftv3",
         "a cat",
@@ -272,6 +275,10 @@ fn the_edit_url_appends_its_own_endpoint() {
     assert_eq!(
         edit(&[]).get_complete_url(Some("https://caller.test/base/")),
         "https://caller.test/base/v1/images/imageToImage"
+    );
+    assert_eq!(
+        edit(&[("RECRAFT_API_BASE", "https://env.test/v1")]).get_complete_url(Some("")),
+        "https://env.test/v1/v1/images/imageToImage"
     );
 }
 
@@ -624,8 +631,8 @@ fn the_edit_response_starts_fresh_and_keeps_the_caller_created() {
 }
 
 #[rstest]
-#[case::not_an_object(r#"[]"#)]
-#[case::missing_data(r#"{}"#)]
+#[case::not_an_object("[]")]
+#[case::missing_data("{}")]
 #[case::null_data(r#"{"data":null}"#)]
 #[case::data_not_a_list(r#"{"data":{}}"#)]
 #[case::image_not_an_object(r#"{"data":[1]}"#)]
@@ -634,8 +641,7 @@ fn the_edit_response_starts_fresh_and_keeps_the_caller_created() {
 fn structural_reply_failures_name_the_shape(#[case] body: &str) {
     let error = decode_recraft_images(&upstream(200, body)).expect_err("the shape is rejected");
 
-    assert_eq!(error.status(), None);
-    assert_eq!(error.headers(), None);
+    assert!(error.malformed().is_none());
 }
 
 #[test]
@@ -672,14 +678,9 @@ fn an_unparsable_reply_keeps_the_upstream_status_and_headers() {
         decode_recraft_images(&upstream(502, "not json")).expect_err("the body is not JSON");
 
     assert!(matches!(error, RecraftReplyError::Malformed { .. }));
-    assert_eq!(error.status(), Some(502));
-    assert_eq!(
-        error
-            .headers()
-            .and_then(|headers| headers.get("x-request-id"))
-            .map(String::as_str),
-        Some("req")
-    );
+    let (status, headers) = error.malformed().expect("the failure keeps the reply");
+    assert_eq!(status, 502);
+    assert_eq!(headers.get("x-request-id").map(String::as_str), Some("req"));
 }
 
 #[test]

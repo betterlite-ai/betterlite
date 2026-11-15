@@ -93,18 +93,16 @@ pub(super) fn url_answer(
 ) -> Value {
     let url = match endpoint {
         Endpoint::Generation => generation_config(model, environment).get_complete_url(api_base),
-        Endpoint::Edit => {
-            let (api_key, base) = RoutingStrategy::recraft_image_settings(environment);
-            RecraftImageEditConfig {
-                settings: RecraftImageSettings {
-                    api_key,
-                    api_base: base,
-                },
-            }
-            .get_complete_url(api_base)
-        }
+        Endpoint::Edit => edit_config(environment).get_complete_url(api_base),
     };
     json!({"url": url})
+}
+
+fn edit_config(environment: &BTreeMap<String, String>) -> RecraftImageEditConfig {
+    let (api_key, api_base) = RoutingStrategy::recraft_image_settings(environment);
+    RecraftImageEditConfig {
+        settings: RecraftImageSettings { api_key, api_base },
+    }
 }
 
 pub(super) fn environment_answer(
@@ -119,14 +117,7 @@ pub(super) fn environment_answer(
         Endpoint::Generation => generation_config(model, environment)
             .validate_environment(headers.clone(), explicit.as_ref()),
         Endpoint::Edit => {
-            let (settings_key, base) = RoutingStrategy::recraft_image_settings(environment);
-            RecraftImageEditConfig {
-                settings: RecraftImageSettings {
-                    api_key: settings_key,
-                    api_base: base,
-                },
-            }
-            .validate_environment(headers.clone(), explicit.as_ref())
+            edit_config(environment).validate_environment(headers.clone(), explicit.as_ref())
         }
     };
     match validated {
@@ -141,15 +132,9 @@ pub(super) fn request_answer(
     optional_params: &ImageParams,
 ) -> Result<Value, Box<HelperError>> {
     // ast-grep-ignore: no-long-names
-    let attempt = RecraftImageGenerationConfig::transform_image_generation_request(
-        model,
-        prompt,
-        optional_params,
-    );
-    match attempt {
-        Ok(request) => Ok(json!({"request": request})),
-        Err(error) => Err(helper_error("TypeError", error.to_string())),
-    }
+    RecraftImageGenerationConfig::transform_image_generation_request(model, prompt, optional_params)
+        .map(|request| json!({"request": request}))
+        .map_err(|error| helper_error("TypeError", error.to_string()))
 }
 
 pub(super) fn edit_request_answer(
@@ -199,11 +184,7 @@ pub(super) fn response_answer(
     created: i64,
     data: &[ImageData],
 ) -> Result<Value, Box<HelperError>> {
-    let upstream = ImageHttpResponse {
-        status_code: status,
-        headers: headers.clone(),
-        body: body.as_bytes().to_vec(),
-    };
+    let upstream = upstream_response(status, headers, body);
     let mut response = ImageResponse {
         created,
         data: (!data.is_empty()).then(|| data.to_vec()),
@@ -224,20 +205,24 @@ pub(super) fn edit_response_answer(
     headers: &ImageHeaders,
     body: &str,
 ) -> Result<Value, Box<HelperError>> {
-    let upstream = ImageHttpResponse {
-        status_code: status,
-        headers: headers.clone(),
-        body: body.as_bytes().to_vec(),
-    };
+    let upstream = upstream_response(status, headers, body);
     match RecraftImageEditConfig::transform_image_edit_response(&upstream, 0) {
         Ok(response) => Ok(json!({"data": response.data, "usage": response.usage})),
         Err(error) => Err(reply_error(&error)),
     }
 }
 
+fn upstream_response(status: u16, headers: &ImageHeaders, body: &str) -> ImageHttpResponse {
+    ImageHttpResponse {
+        status_code: status,
+        headers: headers.clone(),
+        body: body.as_bytes().to_vec(),
+    }
+}
+
 fn reply_error(error: &RecraftReplyError) -> Box<HelperError> {
     let mut failure = helper_error("BaseLLMException", error.to_string());
-    failure.status = error.status();
+    failure.status = error.malformed().map(|(status, _headers)| status);
     failure
 }
 

@@ -69,14 +69,16 @@ impl RecraftImageGenerationConfig {
             if optional_params.contains_key(name) {
                 continue;
             }
-            if Self::SUPPORTED_OPENAI_PARAMS.contains(&name.as_str()) {
-                optional_params.insert(name.clone(), value.clone());
-            } else if !drop_params {
+            if !Self::SUPPORTED_OPENAI_PARAMS.contains(&name.as_str()) {
+                if drop_params {
+                    continue;
+                }
                 return Err(RecraftError::UnsupportedParameter {
                     parameter: name.clone(),
                     model: model.to_owned(),
                 });
             }
+            optional_params.insert(name.clone(), value.clone());
         }
         Ok(optional_params)
     }

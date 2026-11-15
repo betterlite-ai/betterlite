@@ -262,7 +262,9 @@ def url_call(call: UrlCall) -> JsonValue:
     generation, edit = load_configs(call["model"])
     match call["endpoint"]:
         case "generation":
-            url = generation.get_complete_url(call["api_base"], None, call["model"], EMPTY, EMPTY, None)
+            url = generation.get_complete_url(
+                call["api_base"], None, call["model"], EMPTY, EMPTY, None
+            )
             return {"url": url}
         case "edit":
             return {"url": edit.get_complete_url(call["model"], call["api_base"], EMPTY)}
@@ -282,7 +284,9 @@ def environment_call(call: EnvironmentCall) -> JsonValue:
             return {"headers": validated}
         case "edit":
             try:
-                validated = edit.validate_environment(headers, call["model"], call["api_key"], EMPTY, None)
+                validated = edit.validate_environment(
+                    headers, call["model"], call["api_key"], EMPTY, None
+                )
             except ValueError:
                 return {"missing_key": True}
             return {"headers": validated}
@@ -356,7 +360,9 @@ def response_call(call: ResponseCall) -> JsonValue:
     response = ImageResponse(created=call["created"])
     if call["data"]:
         seeded: list[Image] = [
-            ImageObject(b64_json=seed["b64_json"], url=seed["url"], revised_prompt=seed["revised_prompt"])
+            ImageObject(
+                b64_json=seed["b64_json"], url=seed["url"], revised_prompt=seed["revised_prompt"]
+            )
             for seed in call["data"]
         ]
         response.data = seeded
@@ -370,7 +376,8 @@ def response_call(call: ResponseCall) -> JsonValue:
         EMPTY,
         None,
     )
-    return {"response": JSON.validate_python(RESPONSE.validate_json(finished.model_dump_json(exclude_none=True)))}
+    dumped = finished.model_dump_json(exclude_none=True)
+    return {"response": JSON.validate_python(RESPONSE.validate_json(dumped))}
 
 
 def edit_response_call(call: EditResponseCall) -> JsonValue:

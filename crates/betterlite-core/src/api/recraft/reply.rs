@@ -28,22 +28,13 @@ pub enum RecraftReplyError {
 }
 
 impl RecraftReplyError {
+    // The upstream status and headers a JSON failure carries, and nothing for a structural one
     #[must_use]
-    pub const fn status(&self) -> Option<u16> {
+    pub const fn malformed(&self) -> Option<(u16, &ImageHeaders)> {
         match self {
-            Self::Malformed { status, .. } => Some(*status),
-            Self::NotObject
-            | Self::MissingData
-            | Self::DataShape
-            | Self::ImageShape
-            | Self::ImageField { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub const fn headers(&self) -> Option<&ImageHeaders> {
-        match self {
-            Self::Malformed { headers, .. } => Some(headers),
+            Self::Malformed {
+                status, headers, ..
+            } => Some((*status, headers)),
             Self::NotObject
             | Self::MissingData
             | Self::DataShape
