@@ -1,0 +1,1 @@
+{"id":"resp_2","created_at":9,"object":"response","model":"gpt-5","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hi","annotations":[]}]}],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}

@@ -70,3 +70,10 @@ path = "fuzz_targets/azure_managed_identity.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "azure_responses"
+path = "fuzz_targets/azure_responses.rs"
+test = false
+doc = false
+bench = false
