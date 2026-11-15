@@ -60,7 +60,10 @@ fn replay(chunks: Vec<Vec<u8>>) -> Vec<ParsedStreamChunk> {
     }
     decoder.flush(&mut pending);
     lines.extend(pending.drain(..));
-    lines.iter().map(|line| parse_stream_chunk(line)).collect()
+    lines
+        .iter()
+        .map(|line| parse_stream_chunk(line.as_str()))
+        .collect()
 }
 
 fn buffered(bytes: &[u8]) -> Vec<ParsedStreamChunk> {
@@ -70,7 +73,7 @@ fn buffered(bytes: &[u8]) -> Vec<ParsedStreamChunk> {
     };
     response
         .iter_lines()
-        .map(|line| parse_stream_chunk(&line.expect("the corpus seed decodes")))
+        .map(|line| parse_stream_chunk(line.expect("the corpus seed decodes").as_str()))
         .collect()
 }
 

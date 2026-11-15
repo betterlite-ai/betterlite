@@ -592,9 +592,13 @@ fn buffered_response_yields_the_decoded_lines_before_the_line_error() {
         headers: IndexMap::new(),
         body: format!("data: {COMPLETED_EVENT}\n\n").into_bytes(),
     };
-    response
-        .body
-        .resize(response.body.len().saturating_add(MAX_LINE_BYTES + 1), b'x');
+    response.body.resize(
+        response
+            .body
+            .len()
+            .saturating_add(MAX_LINE_BYTES.saturating_add(1)),
+        b'x',
+    );
     let mut lines = response.iter_lines();
     assert_eq!(
         lines.next().transpose().expect("the first line decodes"),
