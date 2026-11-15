@@ -25,6 +25,9 @@ fn metadata_ip() -> Option<IpAddr> {
 #[case::hex_underscore_after_prefix("0x_a9fea9fe", metadata_ip())]
 #[case::octal_underscore_after_prefix("0o_10", v4(0, 0, 0, 8))]
 #[case::binary_underscore_after_prefix("0b_10", v4(0, 0, 0, 2))]
+#[case::sign_after_prefix("0x_+a9fea9fe", None)]
+#[case::sign_without_underscore("0x+a9fea9fe", None)]
+#[case::minus_after_prefix("0x_-a9fea9fe", None)]
 #[case::underscored("1_000", v4(0, 0, 3, 232))]
 #[case::whitespace(" 2852039166 ", metadata_ip())]
 #[case::zero("0", v4(0, 0, 0, 0))]
@@ -86,6 +89,7 @@ fn api_base_rejects_cloud_metadata_targets(#[case] url: &str) {
 #[case::uppercase_scheme("HTTPS://api.compresr.ai")]
 #[case::missing_slashes("http:api.compresr.ai")]
 #[case::leading_space(" http://api.compresr.ai")]
+#[case::sign_after_prefix("http://0x_+a9fea9fe")]
 #[case::tab_in_scheme("ht\ttp://api.compresr.ai")]
 fn api_base_accepts_private_and_public_targets(#[case] url: &str) {
     assert_eq!(validate_api_base(url), Ok(url.to_owned()));
