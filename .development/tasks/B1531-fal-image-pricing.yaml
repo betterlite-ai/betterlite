@@ -33,6 +33,7 @@ description: >-
   230 tests and 110 oracle/wiring lines within a 650-line budget.
 scope:
   paths:
+    - "crates/betterlite-core/src/cost/image_dispatch/route.rs"
     - crates/betterlite-core/src/api/fal/pricing.rs
     - crates/betterlite-core/src/api/fal/pricing/**
     - crates/betterlite-config/src/providers/fal.rs
@@ -80,4 +81,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 1
