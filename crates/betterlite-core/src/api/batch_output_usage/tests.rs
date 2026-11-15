@@ -31,9 +31,9 @@ use super::error::BatchOutputUsageError;
 use super::pricing::BatchRowPricer;
 use super::tokens::{BatchTokenCounter, count_batch_entry_tokens, estimate_batch_entry_tokens};
 use super::{
-    BatchOutputDiagnostic, BatchOutputProviders, BatchOutputUsage, BatchOutputUsageInput,
-    BatchOutputUsageResult, BatchUsageTotals, ConverseUsageOutcome, VertexRowStats,
-    decode_batch_output_usage,
+    BatchOutputDiagnostic, BatchOutputProvider, BatchOutputProviders, BatchOutputUsage,
+    BatchOutputUsageInput, BatchOutputUsageResult, BatchUsageTotals, ConverseUsageOutcome,
+    VertexRowStats, decode_batch_output_usage,
 };
 use crate::api::api_boundaries::ApiLimits;
 
@@ -87,8 +87,47 @@ impl BatchOutputProviders for NoProviders {
     }
 }
 
+struct ByModelLookup {
+    response: PriceRecord,
+    deployment: PriceRecord,
+}
+
+impl PriceLookup for ByModelLookup {
+    fn effective_model_info(
+        &self,
+        model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PriceRecord> {
+        match model {
+            "gpt-4o-response" => Some(self.response.clone()),
+            "gpt-4o-deployment" => Some(self.deployment.clone()),
+            _ => None,
+        }
+    }
+
+    fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
+        None
+    }
+
+    fn effective_priced_model(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        None
+    }
+}
+
 fn run(
     input: &BatchOutputUsageInput,
+    providers: &dyn BatchOutputProviders,
+) -> Result<BatchOutputUsageResult, BatchOutputUsageError> {
+    run_with_lookup(input, &NoLookup, providers)
+}
+
+fn run_with_lookup(
+    input: &BatchOutputUsageInput,
+    lookup: &dyn PriceLookup,
     providers: &dyn BatchOutputProviders,
 ) -> Result<BatchOutputUsageResult, BatchOutputUsageError> {
     let catalog = ModelCatalog::default();
@@ -105,7 +144,7 @@ fn run(
     };
     let service = BatchOutputUsage {
         limits: ApiLimits::default(),
-        lookup: &NoLookup,
+        lookup,
         resolution: &resolution,
         providers,
     };
@@ -140,6 +179,30 @@ const fn totals(prompt_tokens: i64, completion_tokens: i64, total_tokens: i64) -
         cache_read_tokens: 0,
         cache_creation_tokens: 0,
     }
+}
+
+#[test]
+fn provider_slugs_match_the_batch_providers() {
+    assert_eq!(
+        [
+            BatchOutputProvider::Openai.slug(),
+            BatchOutputProvider::Azure.slug(),
+            BatchOutputProvider::VertexAi.slug(),
+            BatchOutputProvider::HostedVllm.slug(),
+            BatchOutputProvider::Anthropic.slug(),
+            BatchOutputProvider::Bedrock.slug(),
+            BatchOutputProvider::Mistral.slug(),
+        ],
+        [
+            "openai",
+            "azure",
+            "vertex_ai",
+            "hosted_vllm",
+            "anthropic",
+            "bedrock",
+            "mistral",
+        ]
+    );
 }
 
 #[rstest::rstest]
@@ -193,14 +256,40 @@ fn chat_output_usage_counts_cached_tokens() {
                 "prompt_tokens": 10,
                 "completion_tokens": 5,
                 "total_tokens": 15,
-                "prompt_tokens_details": {"cached_tokens": 4},
+                "prompt_tokens_details": {"cached_tokens": 4, "cache_write_tokens": 6},
             }}},
         }]},
     }));
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     assert_eq!(result.usage.cache_read_tokens, 4);
-    assert_eq!(result.usage.cache_creation_tokens, 0);
+    assert_eq!(result.usage.cache_creation_tokens, 6);
     assert_eq!(result.models, vec!["gpt-4o-batch".to_owned()]);
+}
+
+#[test]
+fn line_cost_prefers_the_response_model() {
+    let lookup = ByModelLookup {
+        response: serde_json::from_str(r#"{"input_cost_per_token_batches":0.5}"#)
+            .expect("the response rates decode"),
+        deployment: serde_json::from_str(r#"{"input_cost_per_token_batches":0.25}"#)
+            .expect("the deployment rates decode"),
+    };
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "openai",
+        "model_name": "gpt-4o-deployment",
+        "content": {"kind": "lines", "lines": [{
+            "custom_id": "m",
+            "response": {"status_code": 200, "body": {
+                "model": "gpt-4o-response",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 0, "total_tokens": 10},
+            }},
+        }]},
+    }));
+    let result = run_with_lookup(&decoded, &lookup, &NoProviders).expect("the batch is costed");
+    assert_eq!(result.prompt_cost, Decimal::new(5, 0));
+    assert_eq!(result.completion_cost, Decimal::ZERO);
+    assert_eq!(result.cost, Decimal::new(5, 0));
 }
 
 #[test]
@@ -241,6 +330,10 @@ fn anthropic_result_usage() {
                 "model": "claude-batch",
                 "usage": {"mystery": 1},
             }}},
+            {"custom_id": "a3", "result": {"type": "errored", "message": {
+                "model": "claude-batch",
+                "usage": {"input_tokens": 7, "output_tokens": 3},
+            }}},
         ]},
     }));
     let (outcome, logs) = run_captured(&decoded, &NoProviders);
@@ -249,6 +342,7 @@ fn anthropic_result_usage() {
     assert_eq!(result.prompt_cost, Decimal::new(50, 0));
     assert_eq!(result.completion_cost, Decimal::new(5, 0));
     assert_eq!(result.successful_requests, 2);
+    assert_eq!(result.failed_requests, 1);
     assert_eq!(
         result.models,
         vec!["claude-batch".to_owned(), "claude-batch".to_owned()]
@@ -397,6 +491,23 @@ fn vertex_native_usage(
     assert!(result.diagnostics.is_empty());
 }
 
+#[test]
+fn vertex_models_are_counted_once() {
+    let decoded = input(json!({
+        "kind": "vertex_usage",
+        "model_info": batch_model_info(),
+        "content": {"kind": "lines", "lines": [
+            {"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
+            {"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
+        ]},
+    }));
+    let result = run(&decoded, &FakeVertex).expect("the batch is costed");
+    assert_eq!(result.usage, totals(20, 10, 30));
+    assert_eq!(result.cost, Decimal::new(125, 1));
+    assert_eq!(result.models, vec!["gemini-test".to_owned()]);
+    assert_eq!(result.successful_requests, 2);
+}
+
 fn malformed_bytes() -> Vec<u8> {
     let good = r#"{"custom_id":"ok","response":{"status_code":200,"body":{"usage":{"prompt_tokens":4,"completion_tokens":0,"total_tokens":4}}}}"#;
     format!("not json\n42\n{good}\n").into_bytes()
@@ -459,6 +570,11 @@ fn an_uncostable_line_warns_and_stays_successful() {
         Level::WARN,
         "batch output line could not be costed"
     ));
+    assert!(logs.iter().any(|(level, message, custom_id)| {
+        *level == Level::WARN
+            && message.starts_with("batch output line could not be costed")
+            && custom_id.contains("bad")
+    }));
 }
 
 #[test]
@@ -498,16 +614,17 @@ fn decodes_preparsed_lines() {
     let decoded = input(json!({
         "kind": "output_usage",
         "provider": "openai",
-        "content": {"kind": "lines", "lines": [{"custom_id": "a"}, 7]},
+        "content": {"kind": "lines", "lines": [{"custom_id": "a"}, 7, 1.5]},
     }));
     let BatchOutputUsageInput::OutputUsage(request) = &decoded else {
         panic!("the fixture is an output usage request");
     };
     let lines = super::decode::decoded_lines(&request.content, &ApiLimits::default())
         .expect("the lines decode");
-    assert_eq!(lines.len(), 2);
+    assert_eq!(lines.len(), 3);
     assert!(matches!(lines[0], DecodedBatchLine::Entry(_)));
     assert_eq!(lines[1], DecodedBatchLine::NonObject { kind: "int" });
+    assert_eq!(lines[2], DecodedBatchLine::NonObject { kind: "float" });
 }
 
 #[test]
@@ -541,6 +658,28 @@ fn rejects_more_lines_than_the_item_limit() {
     };
     let error = decode_batch_output_usage(b"1\n2", &limits).expect_err("there are too many lines");
     assert!(matches!(error, BatchOutputUsageError::TooManyLines(1)));
+}
+
+#[test]
+fn accepts_a_batch_at_the_json_limit() {
+    let limits = ApiLimits {
+        max_json_bytes: 5,
+        max_event_bytes: 1024,
+        max_items: 16,
+    };
+    let decoded = decode_batch_output_usage(b"1\n2\n3", &limits).expect("the batch fits");
+    assert_eq!(decoded.len(), 3);
+}
+
+#[test]
+fn accepts_a_line_at_the_event_limit() {
+    let limits = ApiLimits {
+        max_json_bytes: 1024,
+        max_event_bytes: 2,
+        max_items: 16,
+    };
+    let decoded = decode_batch_output_usage(b"12", &limits).expect("the line fits");
+    assert_eq!(decoded.len(), 1);
 }
 
 #[test]
@@ -639,10 +778,11 @@ async fn counts_a_prompt_string_through_the_counter() {
 #[tokio::test]
 async fn counts_prompt_chunks_that_are_tokens_or_text() {
     let counter = ScriptedCounter::with_answer(3);
-    let entry = json_entry(json!({"body": {"prompt": ["a", 1, 2, true, 1.5, ["b", 3]]}}));
+    let entry = json_entry(json!({"body": {"prompt": ["a", 1, 2, true, 1.5, ["b", 3, 2.5]]}}));
     let tokens = count_batch_entry_tokens(&entry, Some("fallback"), &counter)
         .await
         .expect("the entry counts");
+    // The two floats are not integer tokens, so they add nothing.
     assert_eq!(tokens, 3 + 1 + 1 + 1 + 3 + 1);
     let calls = counter.taken();
     assert_eq!(calls.len(), 2);
@@ -803,6 +943,27 @@ fn bedrock_falls_back_to_the_anthropic_usage_shape() {
 }
 
 #[test]
+fn bedrock_success_needs_model_output_and_no_error() {
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "bedrock",
+        "model_name": "bedrock-batch",
+        "model_info": batch_model_info(),
+        "content": {"kind": "lines", "lines": [
+            {"custom_id": "ok", "modelOutput": {"usage": {"input_tokens": 4, "output_tokens": 1}}},
+            {"custom_id": "errored", "error": {"message": "boom"}, "modelOutput": {
+                "usage": {"input_tokens": 9, "output_tokens": 9},
+            }},
+            {"custom_id": "empty"},
+        ]},
+    }));
+    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    assert_eq!(result.usage, totals(4, 1, 5));
+    assert_eq!(result.successful_requests, 1);
+    assert_eq!(result.failed_requests, 2);
+}
+
+#[test]
 fn an_unreadable_converse_usage_is_uncostable() {
     let providers = EmbeddingProviders {
         embedding: None,
@@ -816,10 +977,10 @@ fn an_unreadable_converse_usage_is_uncostable() {
 }
 
 #[derive(Clone, Default)]
-struct CapturedLogs(Arc<Mutex<Vec<(Level, String)>>>);
+struct CapturedLogs(Arc<Mutex<Vec<(Level, String, String)>>>);
 
 impl CapturedLogs {
-    fn take(&self) -> Vec<(Level, String)> {
+    fn take(&self) -> Vec<(Level, String, String)> {
         match self.0.lock() {
             Ok(mut entries) => mem::take(&mut entries),
             Err(poisoned) => mem::take(&mut poisoned.into_inner()),
@@ -828,30 +989,38 @@ impl CapturedLogs {
 }
 
 #[derive(Default)]
-struct CapturedMessage(String);
+struct CapturedMessage {
+    message: String,
+    custom_id: String,
+}
 
 impl Visit for CapturedMessage {
     fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "message" {
-            value.clone_into(&mut self.0);
+        match field.name() {
+            "message" => value.clone_into(&mut self.message),
+            "custom_id" => value.clone_into(&mut self.custom_id),
+            _ => {}
         }
     }
 
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        if field.name() == "message" {
-            self.0 = format!("{value:?}");
+        match field.name() {
+            "message" => self.message = format!("{value:?}"),
+            "custom_id" => self.custom_id = format!("{value:?}"),
+            _ => {}
         }
     }
 }
 
 impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        let mut message = CapturedMessage::default();
-        event.record(&mut message);
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((*event.metadata().level(), message.0));
+        let mut fields = CapturedMessage::default();
+        event.record(&mut fields);
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).push((
+            *event.metadata().level(),
+            fields.message,
+            fields.custom_id,
+        ));
     }
 }
 
@@ -860,7 +1029,7 @@ fn run_captured(
     providers: &dyn BatchOutputProviders,
 ) -> (
     Result<BatchOutputUsageResult, BatchOutputUsageError>,
-    Vec<(Level, String)>,
+    Vec<(Level, String, String)>,
 ) {
     let logs = CapturedLogs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
@@ -868,7 +1037,7 @@ fn run_captured(
     (result, logs.take())
 }
 
-fn logged(logs: &[(Level, String)], level: Level, message: &str) -> bool {
+fn logged(logs: &[(Level, String, String)], level: Level, message: &str) -> bool {
     logs.iter()
-        .any(|(entry_level, entry)| *entry_level == level && entry.starts_with(message))
+        .any(|(entry_level, entry, _custom_id)| *entry_level == level && entry.starts_with(message))
 }
