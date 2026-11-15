@@ -166,6 +166,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "singulr_response"
+path = "fuzz_targets/singulr_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "pillar_response"
 path = "fuzz_targets/pillar_response.rs"
 test = false
