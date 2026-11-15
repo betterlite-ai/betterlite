@@ -133,7 +133,7 @@ fn record_breakdown<Target>(
     Target: CostBreakdownTarget,
 {
     let inputs = &attempt.args.charge;
-    let adjusted = charge.adjusted;
+    let adjusted = &charge.adjusted;
     store_cost_breakdown(
         Some(sink),
         &CostBreakdownInput {
@@ -141,7 +141,7 @@ fn record_breakdown<Target>(
             output_cost: charge.output_cost,
             total_cost: adjusted.final_cost,
             tool_usage_cost: charge.tool_usage_cost,
-            additional_costs: charge.additional_costs,
+            additional_costs: charge.additional_costs.clone(),
             original_cost: Some(charge.original_cost),
             discount_percent: Some(adjusted.discount_percent),
             discount_amount: Some(adjusted.discount_amount),
