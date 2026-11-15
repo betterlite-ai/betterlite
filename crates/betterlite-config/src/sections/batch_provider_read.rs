@@ -7,19 +7,6 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 use crate::sections::resource_sdk_settings;
 
-// the litellm_settings keys and their environment fallbacks are the ones resource_sdk_settings declares
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct RawSettings {
-    pub api_base: Option<String>,
-    pub api_version: Option<String>,
-    pub api_key: Option<SecretString>,
-    pub openai_key: Option<SecretString>,
-    pub azure_key: Option<SecretString>,
-    pub organization: Option<String>,
-    pub vertex_project: Option<String>,
-    pub vertex_location: Option<String>,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub resources: resource_sdk_settings::Settings,
@@ -33,20 +20,21 @@ impl Settings {
     // ANTHROPIC_API_BASE first, then ANTHROPIC_BASE_URL, skipping an empty value in either
     #[must_use]
     pub fn anthropic_base(&self) -> Option<&str> {
-        [
+        match (
             self.anthropic_api_base.as_deref(),
             self.anthropic_base_url.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .find(|value| !value.is_empty())
+        ) {
+            (Some(api_base), _) if !api_base.is_empty() => Some(api_base),
+            (_, Some(base_url)) if !base_url.is_empty() => Some(base_url),
+            (_, _) => None,
+        }
     }
 }
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
-    pub litellm_settings: RawSettings,
+    pub litellm_settings: resource_sdk_settings::RawSettings,
 }
 
 impl Section for Raw {
@@ -56,18 +44,8 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let settings = self.litellm_settings;
         let resources = resource_sdk_settings::Raw {
-            settings: resource_sdk_settings::RawSettings {
-                api_base: settings.api_base,
-                api_version: settings.api_version,
-                api_key: settings.api_key,
-                openai_key: settings.openai_key,
-                azure_key: settings.azure_key,
-                organization: settings.organization,
-                vertex_project: settings.vertex_project,
-                vertex_location: settings.vertex_location,
-            },
+            settings: self.litellm_settings,
         }
         .convert(lookup)?;
         Ok(Settings {

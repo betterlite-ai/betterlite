@@ -135,6 +135,7 @@ type Case = Result<(Field, Option<&'static str>), &'static str>;
 #[case::anthropic_base_url_environment(EMPTY, &[("ANTHROPIC_BASE_URL", "https://base-url.example")], Ok((Field::AnthropicBase, Some("https://base-url.example"))))]
 #[case::anthropic_base_prefers_api_base(EMPTY, &[("ANTHROPIC_API_BASE", "https://api-base.example"), ("ANTHROPIC_BASE_URL", "https://base-url.example")], Ok((Field::AnthropicBase, Some("https://api-base.example"))))]
 #[case::anthropic_base_skips_empty_api_base(EMPTY, &[("ANTHROPIC_API_BASE", ""), ("ANTHROPIC_BASE_URL", "https://base-url.example")], Ok((Field::AnthropicBase, Some("https://base-url.example"))))]
+#[case::anthropic_base_skips_empty_base_url(EMPTY, &[("ANTHROPIC_BASE_URL", "")], Ok((Field::AnthropicBase, None)))]
 #[case::anthropic_base_unset(EMPTY, &[], Ok((Field::AnthropicBase, None)))]
 #[case::anthropic_api_key_environment(EMPTY, &[("ANTHROPIC_API_KEY", "env-anthropic")], Ok((Field::AnthropicApiKey, Some("env-anthropic"))))]
 #[case::anthropic_api_key_empty_environment(EMPTY, &[("ANTHROPIC_API_KEY", "")], Ok((Field::AnthropicApiKey, Some(""))))]
