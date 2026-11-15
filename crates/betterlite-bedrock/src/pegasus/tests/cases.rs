@@ -265,6 +265,7 @@ fn non_text_finish_reasons() {
         br#"{"message":"visible","finishReason":0}"#.as_slice(),
         br#"{"message":"visible","finishReason":1}"#.as_slice(),
         br#"{"message":"visible","finishReason":false}"#.as_slice(),
+        br#"{"message":"visible","finishReason":9223372036854775808}"#.as_slice(),
     ] {
         let mut numeric = response(vec![choice(0, None, "length")]);
         block_on(decode_pegasus_reply(
