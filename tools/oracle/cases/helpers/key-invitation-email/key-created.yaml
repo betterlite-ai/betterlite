@@ -1,0 +1,15 @@
+kind: helper
+name: key-created
+call:
+  b4023:
+    template: key_created
+    email_logo_url: https://cdn.example/logo.png
+    recipient_email: alice@example.com
+    key_budget: 10.0
+    key_token: sk-test-token
+    team_name: null
+    base_url: https://proxy.example
+    email_support_contact: help@example.com
+env: {}
+compare:
+  ignore: []
