@@ -6,6 +6,11 @@ use crate::realtime_input::error::InputError;
 
 #[test]
 fn replays_the_bedrock_services_realtime_input_corpus() {
+    let seeds = replay_bedrock_services_realtime_input_corpus();
+    assert!(seeds >= 12, "the corpus holds only {seeds} seeds");
+}
+
+fn replay_bedrock_services_realtime_input_corpus() -> usize {
     let corpus =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/bedrock_services_realtime_input");
     let mut seeds = 0_usize;
@@ -28,5 +33,5 @@ fn replays_the_bedrock_services_realtime_input_corpus() {
         assert_eq!(Some(category), expected, "seed {name}");
         seeds = seeds.saturating_add(1);
     }
-    assert!(seeds >= 12, "the corpus holds only {seeds} seeds");
+    seeds
 }
