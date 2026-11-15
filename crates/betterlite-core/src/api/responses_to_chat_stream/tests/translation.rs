@@ -114,7 +114,7 @@ fn stateless_translation_generates_an_id_without_a_created_response() {
         json!({"type": "response.created", "response": {"id": null}}),
     ]
     .map(|source| translated(&source).unwrap()["id"].clone());
-    assert_eq!(ids, [json!(GENERATED_ID); 4]);
+    assert_eq!(ids, vec![json!(GENERATED_ID); 4]);
 }
 
 #[test]
@@ -399,7 +399,7 @@ fn terminal_usage_needs_a_truthy_payload() {
             ["usage"]
             .clone()
     });
-    assert_eq!(usages, [json!(null); 5]);
+    assert_eq!(usages, vec![json!(null); 5]);
 }
 
 #[test]
@@ -419,7 +419,7 @@ fn stateless_translation_finishes_an_incomplete_response_by_its_reason() {
         json!({"type": "response.incomplete", "response": {"incomplete_details": {"reason": null}}}),
     ]
     .map(|source| translated(&source).unwrap()["choices"][0]["finish_reason"].clone());
-    assert_eq!(lengths, [json!("length"); 3]);
+    assert_eq!(lengths, vec![json!("length"); 3]);
 }
 
 #[test]
