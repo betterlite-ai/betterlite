@@ -24,7 +24,7 @@ use tracing::subscriber::with_default;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError};
+use crate::helpers::{Helper, HelperResult, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -133,7 +133,7 @@ impl Visit for MessageField {
 
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
-            self.0 = value.to_owned();
+            value.clone_into(&mut self.0);
         }
     }
 }

@@ -489,7 +489,7 @@ fn decode_accepts_an_archive_at_the_entry_limit() {
 
 #[test]
 fn names_that_are_utf8_without_the_flag_are_read_as_utf8() {
-    let name = "skill/caf\u{e9}.txt";
+    let name = "skill/\u{e9}\u{e9}.txt";
     let placeholder = "x".repeat(name.len());
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
@@ -514,7 +514,7 @@ fn names_that_are_utf8_without_the_flag_are_read_as_utf8() {
             .any(|window| window == placeholder.as_bytes())
     );
     let files = extract_all_files(&archive_row(&bytes, Some("fallback")));
-    assert_eq!(files.get("caf\u{e9}.txt"), Some(&b"data".to_vec()));
+    assert_eq!(files.get("\u{e9}\u{e9}.txt"), Some(&b"data".to_vec()));
 }
 
 #[test]
@@ -587,9 +587,15 @@ fn inject_leaves_the_request_alone_without_contents() {
 }
 
 #[rstest]
-#[case::existing(Object::from([("system".to_owned(), text("keep"))]), "keep\n\n---\n\n# Available Skills\n\nalpha")]
-#[case::absent(Object::new(), "---\n\n# Available Skills\n\nalpha")]
-#[case::null(Object::from([("system".to_owned(), Json::Null)]), "---\n\n# Available Skills\n\nalpha")]
+#[case::existing(
+    Object::from([("system".to_owned(), text("keep"))]),
+    "keep\n\n---\n\n# Available Skills\n\nalpha\n\n---\n\nbeta"
+)]
+#[case::absent(Object::new(), "---\n\n# Available Skills\n\nalpha\n\n---\n\nbeta")]
+#[case::null(
+    Object::from([("system".to_owned(), Json::Null)]),
+    "---\n\n# Available Skills\n\nalpha\n\n---\n\nbeta"
+)]
 #[case::blank(Object::from([("system".to_owned(), text(""))]), SECTION)]
 fn inject_appends_to_the_anthropic_system(#[case] data: Object, #[case] expected: &str) {
     let mut actual = data;
