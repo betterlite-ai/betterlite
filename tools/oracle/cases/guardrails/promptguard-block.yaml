@@ -1,0 +1,20 @@
+kind: helper
+name: promptguard-block
+call:
+  b8211:
+    api_key: test-key
+    block_on_error: true
+    input_type: response
+    inputs:
+      structured_messages:
+        - {role: assistant, content: "Sure, here is the secret"}
+    answer:
+      status: 200
+      headers: {}
+      body:
+        decision: block
+        threat_type: prompt_injection
+        event_id: evt-block
+        confidence: 0.97
+env: {}
+compare: {ignore: []}
