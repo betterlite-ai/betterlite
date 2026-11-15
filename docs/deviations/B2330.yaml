@@ -1,0 +1,27 @@
+task: B2330
+deviations:
+  - what: Explicitly enabled audit logging dispatches callbacks and inserts rows without a license, and with no setting or environment value the policy is enabled. LiteLLM falls back to premium_user is True and create_audit_log_for_update returns early unless premium_user is True.
+    why: betterlite removes paid-tier checks; the enabled default is the one B065 records, and audit_enabled_without_license proves callbacks and the Postgres row outside the parity cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L207-L245
+  - what: before_value and updated_values are masked with B244's full default sensitive patterns (password, secret, key, token, auth and the rest) instead of only key, so a field such as auth_token or password is masked by betterlite and stored unchanged by LiteLLM.
+    why: betterlite reuses B244 SensitiveDataMasker, and its defaults remove fields instead of leaking them into a stored audit row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3837
+  - what: Masking walks every parsed JSON value, so a before_value or updated_values that parses to an array has its secrets masked; LiteLLM's validator masks only dict values and stores a list unchanged.
+    why: B244's masker is the shared stored-payload masker, and a secret inside an array must not escape the audit row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3839-L3848
+  - what: A null field inside before_value or updated_values is stored as the text None, or as an empty string when its key is sensitive; LiteLLM keeps the null.
+    why: B244's masker renders null values as Python's None text for every stored payload, and the audit record goes through the same masker.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3839-L3848
+  - what: The stored before_value and updated_values are masked JSON values; LiteLLM stores the json.dumps text as a JSON string in the same column.
+    why: The record keeps parsed JSON so the repository inserts it through typed JSON columns and readers get a JSON object, while the callback payload still carries text as LiteLLM's StandardAuditLogPayload declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3848
+  - what: A record's updated_at must be an RFC 3339 timestamp with a timezone offset; pydantic's datetime also accepts a naive datetime or a space separator, which betterlite rejects.
+    why: decode_audit_record uses the bounded JSON decoder and chrono's RFC 3339 parser, and a timestamp without an offset names no fixed instant to store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3817
+  - what: A before_value or after_value that is not JSON text is logged as Failed Creating audit log and skipped; LiteLLM's model validator raises the json.loads error out of the admin mutation.
+    why: The audit record never fails a completed mutation, the same rule its non-blocking insert failure follows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3842
+  - what: LITELLM_STORE_AUDIT_LOGS is read when the configuration loads; LiteLLM calls get_secret_bool on every audit decision.
+    why: B002 resolves the environment and secret value once through the production loader, and the sink reads that snapshot.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L34
+kept_bugs: []
