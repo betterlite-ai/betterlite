@@ -1,0 +1,21 @@
+kind: helper
+name: azure-chat-params-alias-seed
+call:
+  azure_chat_params:
+    function: gpt5_alias_catalog
+    install:
+      model_cost:
+        azure/gpt-5.1:
+          supports_tool_choice: true
+          supports_reasoning: true
+          supports_none_reasoning_effort: true
+          default_reasoning_effort: none
+      chat_models: [azure/gpt-5.1, gpt-5.1]
+      text_models: []
+      drop_params: false
+      openai_system_messages_first: false
+    steps:
+      - model: gpt5_series/gpt-5.1
+      - model: gpt-5.1
+env: {}
+compare: {ignore: []}
