@@ -124,6 +124,8 @@ def run_scenario(scenario: Scenario) -> ScenarioOutput:
     guardrail.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(script))
     inputs = scenario["inputs"]
     request = dict(scenario["request_data"])
+    # an unreachable endpoint is retried on a real client, which the mock never records
+    calls = script.calls if scenario["answer"] is not None else None
     try:
         returned = asyncio.run(guardrail.apply_guardrail(inputs, request, scenario["input_type"]))  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
     except GuardrailRaisedException as error:
@@ -132,14 +134,14 @@ def run_scenario(scenario: Scenario) -> ScenarioOutput:
             "name": scenario["name"],
             "outcome": outcome,
             "status": error.status_code,
-            "calls": script.calls if scenario["answer"] is not None else None,
+            "calls": calls,
             "inputs": None,
         }
     return {
         "name": scenario["name"],
         "outcome": "allowed",
         "status": None,
-        "calls": script.calls,
+        "calls": calls,
         "inputs": JSON_ADAPTER.validate_python(returned),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
     }
 
