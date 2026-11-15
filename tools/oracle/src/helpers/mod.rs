@@ -191,7 +191,7 @@ pub(crate) const fn left_side(self_check: bool) -> HelperLeft {
 }
 
 pub fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
-    let total = case.calls.len() + 1;
+    let total = case.calls.len().saturating_add(1);
     for (index, call) in std::iter::once(&case.call)
         .chain(case.calls.iter())
         .enumerate()

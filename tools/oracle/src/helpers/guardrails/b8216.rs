@@ -92,12 +92,13 @@ fn output(
         ),
         None => (None, None, None, None),
     };
-    let headers = headers.map(|headers| header_subset(&headers, api_key));
+    let sanitized_headers =
+        headers.map(|recorded_headers| header_subset(&recorded_headers, api_key));
     match result {
         Ok(inputs) => Ok(json!({
             "method": method,
             "path": path,
-            "headers": headers,
+            "headers": sanitized_headers,
             "body": body,
             "inputs": inputs,
         })),
@@ -107,7 +108,7 @@ fn output(
             "detail": error.detail(),
             "method": method,
             "path": path,
-            "headers": headers,
+            "headers": sanitized_headers,
             "body": body,
         })),
         Err(error) => Err(failure(
