@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
-use secrecy::SecretString;
 
 use crate::loader::ConfigLoader;
 
@@ -37,28 +36,48 @@ enum Field {
     VertexProject,
 }
 
-fn exposed(value: Option<&SecretString>) -> Option<String> {
-    value.map(|text| text.expose_secret().to_owned())
-}
-
 fn value(settings: &Settings, field: Field) -> Option<String> {
     match field {
         Field::ApiBase => settings.api_base.clone(),
-        Field::ApiKey => exposed(settings.api_key.as_ref()),
+        Field::ApiKey => settings
+            .api_key
+            .as_ref()
+            .map(|text| text.expose_secret().to_owned()),
         Field::ApiVersion => settings.api_version.clone(),
-        Field::AzureAdToken => exposed(settings.azure_ad_token.as_ref()),
+        Field::AzureAdToken => settings
+            .azure_ad_token
+            .as_ref()
+            .map(|text| text.expose_secret().to_owned()),
         Field::AzureApiBase => settings.azure_api_base.clone(),
-        Field::AzureApiKey => exposed(settings.azure_api_key.as_ref()),
+        Field::AzureApiKey => settings
+            .azure_api_key
+            .as_ref()
+            .map(|text| text.expose_secret().to_owned()),
         Field::AzureApiVersion => settings.azure_api_version.clone(),
-        Field::AzureKey => exposed(settings.azure_key.as_ref()),
-        Field::AzureOpenaiApiKey => exposed(settings.azure_openai_api_key.as_ref()),
+        Field::AzureKey => settings
+            .azure_key
+            .as_ref()
+            .map(|text| text.expose_secret().to_owned()),
+        Field::AzureOpenaiApiKey => settings
+            .azure_openai_api_key
+            .as_ref()
+            .map(|text| text.expose_secret().to_owned()),
         Field::OpenaiApiBase => settings.openai_api_base.clone(),
-        Field::OpenaiApiKey => exposed(settings.openai_api_key.as_ref()),
+        Field::OpenaiApiKey => settings
+            .openai_api_key
+            .as_ref()
+            .map(|text| text.expose_secret().to_owned()),
         Field::OpenaiBaseUrl => settings.openai_base_url.clone(),
-        Field::OpenaiKey => exposed(settings.openai_key.as_ref()),
+        Field::OpenaiKey => settings
+            .openai_key
+            .as_ref()
+            .map(|text| text.expose_secret().to_owned()),
         Field::OpenaiOrganization => settings.openai_organization.clone(),
         Field::Organization => settings.organization.clone(),
-        Field::VertexaiCredentials => exposed(settings.vertexai_credentials.as_ref()),
+        Field::VertexaiCredentials => settings
+            .vertexai_credentials
+            .as_ref()
+            .map(|text| text.expose_secret().to_owned()),
         Field::VertexaiLocation => settings.vertexai_location.clone(),
         Field::VertexaiProject => settings.vertexai_project.clone(),
         Field::VertexLocation => settings.vertex_location.clone(),
@@ -128,11 +147,11 @@ fn loads_settings(
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     match expected {
-        Ok((field, expected)) => {
+        Ok((field, wanted)) => {
             let config = ConfigLoader { lookup }.load(yaml).expect("settings load");
             assert_eq!(
                 value(&config.sections.batch_provider_list, field).as_deref(),
-                expected
+                wanted
             );
         }
         Err(category) => assert_eq!(
