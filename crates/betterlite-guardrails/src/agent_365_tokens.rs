@@ -4,9 +4,10 @@ use std::time::{Duration, SystemTime};
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use lru::LruCache;
 use secrecy::SecretString;
 
-use crate::agent_365_tokens::cache::{OboTokenCache, clock_seconds};
+use crate::agent_365_tokens::cache::{CachedOboToken, OBO_CACHE_CAPACITY};
 use crate::agent_365_tokens::error::Agent365Error;
 use crate::agent_365_tokens::poster::Agent365Poster;
 use crate::guardrail_base::GuardrailBase;
@@ -17,6 +18,7 @@ pub mod error;
 pub mod exchange;
 pub mod payload;
 pub mod poster;
+pub mod wire;
 
 mod tests;
 
@@ -52,8 +54,8 @@ pub struct Agent365Guardrail {
     pub settings: Agent365Settings,
     pub poster: Arc<dyn Agent365Poster>,
     pub request_timeout: Duration,
-    pub cache: Mutex<OboTokenCache>,
-    pub clock: Arc<dyn Fn() -> f64 + Send + Sync>,
+    pub cache: Mutex<LruCache<String, CachedOboToken>>,
+    pub clock: Arc<dyn Fn() -> SystemTime + Send + Sync>,
 }
 
 impl Agent365Guardrail {
@@ -61,45 +63,32 @@ impl Agent365Guardrail {
         settings: Agent365Settings,
         poster: Arc<dyn Agent365Poster>,
         strict_modes: bool,
+        clock: Arc<dyn Fn() -> SystemTime + Send + Sync>,
     ) -> Result<Self, Agent365Error> {
         // LiteLLM's constructor default is 10.0 seconds when the config carries no timeout
         let seconds = settings.request_timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
-        let request_timeout = match Duration::try_from_secs_f64(seconds) {
-            Ok(timeout) => timeout,
-            Err(_) => return Err(Agent365Error::Timeout { seconds }),
-        };
-        let base = GuardrailBase::new(guardrail_settings(&settings), strict_modes)?;
+        let request_timeout = Duration::try_from_secs_f64(seconds)
+            .map_err(|source| Agent365Error::Timeout { seconds, source })?;
+        let base = GuardrailBase::new(
+            GuardrailSettings {
+                guardrail_name: Some(settings.guardrail_name.clone()),
+                supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
+                event_hook: settings.event_hook.clone(),
+                default_on: settings.default_on,
+                // LiteLLM constructs this guardrail with run_in_parallel=True
+                run_in_parallel: true,
+                switches: AGENT_365_SWITCHES,
+                ..GuardrailSettings::default()
+            },
+            strict_modes,
+        )?;
         Ok(Self {
             base,
             settings,
             poster,
             request_timeout,
-            cache: Mutex::new(OboTokenCache::new()),
-            clock: Arc::new(|| clock_seconds(SystemTime::now())),
+            cache: Mutex::new(LruCache::new(OBO_CACHE_CAPACITY)),
+            clock,
         })
-    }
-}
-
-fn guardrail_settings(settings: &Agent365Settings) -> GuardrailSettings {
-    GuardrailSettings {
-        guardrail_name: Some(settings.guardrail_name.clone()),
-        supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
-        event_hook: settings.event_hook.clone(),
-        default_on: settings.default_on,
-        mask_request_content: false,
-        mask_response_content: false,
-        violation_message_template: None,
-        end_session_after_n_fails: None,
-        on_violation: None,
-        realtime_violation_message: None,
-        on_sensitive_data: None,
-        sensitive_data_route_to_model: None,
-        sticky_session_routing: true,
-        // LiteLLM constructs this guardrail with run_in_parallel=True
-        run_in_parallel: true,
-        scan_raw_request: false,
-        only_scan_new_messages: false,
-        timeout: None,
-        switches: AGENT_365_SWITCHES,
     }
 }

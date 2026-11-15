@@ -15,9 +15,12 @@ deviations:
   - what: error and error_description are read as the string LiteLLM's type declares, and error_codes as i64 items; a non-string value falls back to its default where LiteLLM applies str(), and a code list holding a numeric string, an integral float or an item outside i64's range is empty where pydantic's int adapter coerces or accepts it.
     why: A value of the wrong type is not coerced, and the gateway-owned verdict only differs for documents no Entra deployment sends; an i64-sized integer list, the shape the endpoint sends, is unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L472-L478
-  - what: An expires_in of a JSON boolean takes the 3599-second default, where LiteLLM's isinstance check lets Python's bool-as-int coercion read true as one second.
-    why: Compatibility keeps values to the declared type and no Entra deployment sends a boolean lifetime; every number and numeric string parses the same.
+  - what: An expires_in of a JSON boolean, a negative number, NaN or infinity takes the 3599-second default, where LiteLLM's isinstance check reads a bool as an int and stores a negative or non-finite float as the lifetime.
+    why: The cache holds a typed Duration and a SystemTime, and no Entra deployment sends such a lifetime; every ordinary number and numeric string parses the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L69-L75
+  - what: The Agent 365 config model rejects an unknown key, where LiteLLM's pydantic model ignores extra keys.
+    why: A misspelled credential key is an error that names it instead of a gateway that silently runs without its tenant, client or secret.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/agent_365.py#L12-L49
 kept_bugs:
   - what: A 4xx token response whose body is not a JSON object is reported as a malformed response instead of a token exchange error, because LiteLLM parses the body before it inspects the status.
     why: A working setup branches on the malformed-response class for such bodies, and the classification is observable through the error the exchange raises.

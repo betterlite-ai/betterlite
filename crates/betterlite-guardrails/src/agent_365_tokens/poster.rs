@@ -28,6 +28,8 @@ pub enum Agent365PosterError {
         #[source]
         source: ReadError,
     },
+    #[error("the Agent 365 poster has no reply for {url}")]
+    NoReply { url: String },
 }
 
 // A non-2xx status is a reply and not an error: LiteLLM's raise_for_status is caught where the exchange inspects the status.

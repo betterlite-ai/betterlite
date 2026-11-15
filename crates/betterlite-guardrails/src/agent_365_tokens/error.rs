@@ -1,3 +1,5 @@
+use std::time::TryFromFloatSecsError;
+
 use thiserror::Error;
 
 use crate::agent_365_tokens::poster::Agent365PosterError;
@@ -11,20 +13,17 @@ pub const GATEWAY_OWNED_TOKEN_ERRORS: [&str; 4] = [
 ];
 // Entra reports a malformed or unverifiable assertion as invalid_client too; only its AADSTS50027xx sub-codes tell that apart from a bad gateway secret.
 pub const ASSERTION_ERROR_AADSTS_PREFIX: &str = "50027";
-pub const MALFORMED_NON_JSON_BODY: &str = "the Entra token endpoint returned a non-JSON body";
-pub const MALFORMED_NON_OBJECT_BODY: &str =
-    "the Entra token endpoint returned a non-object JSON body";
-pub const MALFORMED_MISSING_ACCESS_TOKEN: &str =
-    "the Entra token endpoint returned no access_token";
-pub const MALFORMED_BAD_ACCESS_TOKEN: &str =
-    "the Entra token endpoint returned a non-string access_token";
 
 #[derive(Debug, Error)]
 pub enum Agent365Error {
     #[error(transparent)]
     Guardrail(#[from] GuardrailBaseError),
     #[error("Agent 365 request_timeout must be a non-negative number of seconds, got {seconds}")]
-    Timeout { seconds: f64 },
+    Timeout {
+        seconds: f64,
+        #[source]
+        source: TryFromFloatSecsError,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -51,12 +50,23 @@ impl Agent365TokenExchangeError {
 pub enum Agent365TokenError {
     #[error(transparent)]
     Exchange(#[from] Agent365TokenExchangeError),
-    #[error("{message}")]
-    Malformed { message: &'static str },
+    #[error("the Entra token endpoint returned a non-JSON body")]
+    NonJsonBody {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the Entra token endpoint returned a non-object JSON body")]
+    NonObjectBody,
+    #[error("the Entra token endpoint returned no access_token")]
+    MissingAccessToken,
+    #[error("the Entra token endpoint returned a non-string access_token")]
+    BadAccessToken,
     #[error("HTTP {status}")]
     Throttled { status: u16 },
     #[error("HTTP {status}")]
     HttpStatus { status: u16 },
+    #[error("the Agent 365 token expiry is out of range")]
+    TokenExpiry,
     #[error(transparent)]
     Poster(#[from] Agent365PosterError),
 }

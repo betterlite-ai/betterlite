@@ -5,7 +5,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -17,6 +17,7 @@ use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use sha2::{Digest as _, Sha256};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -33,13 +34,11 @@ use crate::agent_365_config::{
     AGENT_365_PROD_API_BASE, AGENT_365_PROD_RESOURCE_APP_ID, AGENT_365_SCOPE_NAME,
 };
 use crate::agent_365_tokens::cache::{
-    DEFAULT_TOKEN_TTL_SECONDS, OBO_CACHE_MAX_ENTRIES, assertion_cache_key,
+    DEFAULT_TOKEN_TTL, OBO_CACHE_MAX_ENTRIES, TOKEN_EXPIRY_MARGIN,
 };
-use crate::agent_365_tokens::error::{
-    Agent365Error, Agent365TokenError, MALFORMED_BAD_ACCESS_TOKEN, MALFORMED_MISSING_ACCESS_TOKEN,
-    MALFORMED_NON_JSON_BODY, MALFORMED_NON_OBJECT_BODY,
-};
-use crate::agent_365_tokens::exchange::{MAX_DESCRIPTION_CHARS, OBO_SCOPE, entra_assertion};
+use crate::agent_365_tokens::error::{Agent365Error, Agent365TokenError};
+use crate::agent_365_tokens::exchange::{OBO_SCOPE, entra_assertion};
+use crate::agent_365_tokens::wire::MAX_DESCRIPTION_CHARS;
 
 type ScenarioFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 type Scenario = fn() -> ScenarioFuture;
@@ -63,9 +62,9 @@ impl TestClock {
         let _previous = self.now.fetch_add(seconds, Ordering::Relaxed);
     }
 
-    fn handle(&self) -> Arc<dyn Fn() -> f64 + Send + Sync> {
+    fn handle(&self) -> Arc<dyn Fn() -> SystemTime + Send + Sync> {
         let now = Arc::clone(&self.now);
-        Arc::new(move || Duration::from_secs(now.load(Ordering::Relaxed)).as_secs_f64())
+        Arc::new(move || UNIX_EPOCH + Duration::from_secs(now.load(Ordering::Relaxed)))
     }
 }
 
@@ -142,19 +141,20 @@ impl Agent365Poster for FakePoster {
 
 fn guardrail(poster: Arc<FakePoster>) -> (Agent365Guardrail, TestClock) {
     let clock = TestClock::new();
-    let mut guardrail = Agent365Guardrail::new(settings(), poster, true).unwrap();
-    guardrail.clock = clock.handle();
+    let guardrail = Agent365Guardrail::new(settings(), poster, true, clock.handle()).unwrap();
     (guardrail, clock)
 }
 
+fn cache_key(assertion: &str) -> String {
+    hex::encode(Sha256::digest(assertion.as_bytes()))
+}
+
 fn cached_tokens(guardrail: &Agent365Guardrail) -> Vec<(String, String)> {
-    guardrail
-        .cache
-        .lock()
-        .unwrap()
-        .snapshot()
-        .into_iter()
-        .map(|(key, token)| (key, token.expose_secret().to_owned()))
+    let cache = guardrail.cache.lock().unwrap();
+    cache
+        .iter()
+        .rev()
+        .map(|(key, entry)| (key.clone(), entry.access_token.expose_secret().to_owned()))
         .collect()
 }
 
@@ -166,15 +166,16 @@ fn cached_keys(guardrail: &Agent365Guardrail) -> Vec<String> {
 }
 
 fn expiry_offset(guardrail: &Agent365Guardrail, assertion: &str) -> Duration {
-    let expiry = guardrail
+    let expires_at = guardrail
         .cache
         .lock()
         .unwrap()
-        .expiry(&assertion_cache_key(assertion))
-        .unwrap();
-    let start = Duration::from_secs(START_SECONDS).as_secs_f64();
-    // float_arithmetic is denied; a fused multiply-add subtracts the start time
-    Duration::try_from_secs_f64(start.mul_add(-1.0_f64, expiry)).unwrap()
+        .peek(&cache_key(assertion))
+        .unwrap()
+        .expires_at;
+    expires_at
+        .duration_since(UNIX_EPOCH + Duration::from_secs(START_SECONDS))
+        .unwrap()
 }
 
 async fn fetch(guardrail: &Agent365Guardrail, assertion: &str) -> String {
@@ -250,10 +251,7 @@ fn token_is_cached_per_assertion() -> ScenarioFuture {
             "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&client_id=client-1&client_secret=secret-1&assertion=header.payload.signature&scope=ea9ffc3e-8a23-4a7d-836d-234d7c7565c1%2FThreatProtection.Evaluate.All&requested_token_use=on_behalf_of"
         );
         assert_eq!(request.timeout, Duration::from_secs(10));
-        assert_eq!(
-            cached_keys(&guardrail),
-            vec![assertion_cache_key(ASSERTION)]
-        );
+        assert_eq!(cached_keys(&guardrail), vec![cache_key(ASSERTION)]);
         assert_eq!(cached_tokens(&guardrail).first().unwrap().1, "tok-1");
     })
 }
@@ -339,15 +337,14 @@ fn default_ttl_applies_until_the_margin() -> ScenarioFuture {
             r#"{"access_token":"tok-1","expires_in":"soon"}"#,
             r#"{"access_token":"tok-1","expires_in":null}"#,
             r#"{"access_token":"tok-1"}"#,
+            r#"{"access_token":"tok-1","expires_in":-5}"#,
+            r#"{"access_token":"tok-1","expires_in":"inf"}"#,
         ] {
             let poster = Arc::new(FakePoster::default());
             poster.queue(vec![reply(200, body), reply(200, body)]);
             let (guardrail, clock) = guardrail(poster.clone());
             let _first = fetch(&guardrail, ASSERTION).await;
-            assert_eq!(
-                expiry_offset(&guardrail, ASSERTION),
-                Duration::try_from_secs_f64(DEFAULT_TOKEN_TTL_SECONDS).unwrap()
-            );
+            assert_eq!(expiry_offset(&guardrail, ASSERTION), DEFAULT_TOKEN_TTL);
             clock.advance(3538);
             let _cached = fetch(&guardrail, ASSERTION).await;
             assert_eq!(poster.request_count(), 1);
@@ -389,6 +386,16 @@ fn throttled_and_server_errors() -> ScenarioFuture {
     })
 }
 
+fn malformed_variant(error: &Agent365TokenError) -> &'static str {
+    match error {
+        Agent365TokenError::NonJsonBody { .. } => "non_json_body",
+        Agent365TokenError::NonObjectBody => "non_object_body",
+        Agent365TokenError::MissingAccessToken => "missing_access_token",
+        Agent365TokenError::BadAccessToken => "bad_access_token",
+        _ => "other",
+    }
+}
+
 fn malformed_bodies() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
@@ -403,19 +410,17 @@ fn malformed_bodies() -> ScenarioFuture {
         ]);
         let (guardrail, _clock) = guardrail(poster.clone());
         let cases = [
-            ("first.assertion.value", MALFORMED_NON_JSON_BODY),
-            ("second.assertion.value", MALFORMED_NON_OBJECT_BODY),
-            ("third.assertion.value", MALFORMED_NON_JSON_BODY),
-            ("fourth.assertion.value", MALFORMED_MISSING_ACCESS_TOKEN),
-            ("fifth.assertion.value", MALFORMED_BAD_ACCESS_TOKEN),
-            ("sixth.assertion.value", MALFORMED_BAD_ACCESS_TOKEN),
-            ("seventh.assertion.value", MALFORMED_BAD_ACCESS_TOKEN),
+            ("first.assertion.value", "non_json_body"),
+            ("second.assertion.value", "non_object_body"),
+            ("third.assertion.value", "non_json_body"),
+            ("fourth.assertion.value", "missing_access_token"),
+            ("fifth.assertion.value", "bad_access_token"),
+            ("sixth.assertion.value", "bad_access_token"),
+            ("seventh.assertion.value", "bad_access_token"),
         ];
-        for (assertion, message) in cases {
-            match token_error(guardrail.get_obo_token(assertion).await) {
-                Agent365TokenError::Malformed { message: actual } => assert_eq!(actual, message),
-                other => panic!("expected a malformed response, got {other}"),
-            }
+        for (assertion, expected) in cases {
+            let error = token_error(guardrail.get_obo_token(assertion).await);
+            assert_eq!(malformed_variant(&error), expected);
         }
         assert!(cached_tokens(&guardrail).is_empty());
     })
@@ -587,8 +592,8 @@ fn capacity_evicts_the_least_recently_used_token() -> ScenarioFuture {
         assert_eq!(tokens.first().unwrap().1, "tok-2");
         assert_eq!(tokens.last().unwrap().1, "tok-1000");
         let keys = cached_keys(&guardrail);
-        assert!(keys.contains(&assertion_cache_key("assertion-0")));
-        assert!(!keys.contains(&assertion_cache_key("assertion-1")));
+        assert!(keys.contains(&cache_key("assertion-0")));
+        assert!(!keys.contains(&cache_key("assertion-1")));
     })
 }
 
@@ -871,19 +876,15 @@ fn conversation_id_generated() -> ScenarioFuture {
 
 fn constants() -> ScenarioFuture {
     Box::pin(async {
-        let production = (
+        assert_eq!(
             AGENT_365_PROD_API_BASE,
-            AGENT_365_PROD_RESOURCE_APP_ID,
-            AGENT_365_SCOPE_NAME,
+            "https://agent365.svc.cloud.microsoft"
         );
         assert_eq!(
-            production,
-            (
-                "https://agent365.svc.cloud.microsoft",
-                "ea9ffc3e-8a23-4a7d-836d-234d7c7565c1",
-                "ThreatProtection.Evaluate.All",
-            )
+            AGENT_365_PROD_RESOURCE_APP_ID,
+            "ea9ffc3e-8a23-4a7d-836d-234d7c7565c1"
         );
+        assert_eq!(AGENT_365_SCOPE_NAME, "ThreatProtection.Evaluate.All");
         assert_eq!(
             EVALUATE_URL,
             format!("{AGENT_365_PROD_API_BASE}/agents/tool-evaluation/evaluate")
@@ -894,14 +895,9 @@ fn constants() -> ScenarioFuture {
         );
         assert_eq!(DEFENDER_STATUS_EVALUATED, "Evaluated");
         assert_eq!(SUPPORTED_EVENT_HOOKS, [GuardrailEventHooks::PreMcpCall]);
-        assert_eq!(
-            Duration::try_from_secs_f64(DEFAULT_TIMEOUT_SECONDS).unwrap(),
-            Duration::from_secs(10)
-        );
-        assert_eq!(
-            Duration::try_from_secs_f64(DEFAULT_TOKEN_TTL_SECONDS).unwrap(),
-            Duration::from_secs(3599)
-        );
+        assert_eq!(DEFAULT_TIMEOUT_SECONDS, 10.0);
+        assert_eq!(DEFAULT_TOKEN_TTL, Duration::from_secs(3599));
+        assert_eq!(TOKEN_EXPIRY_MARGIN, Duration::from_secs(60));
         assert_eq!(OBO_CACHE_MAX_ENTRIES, 1000);
     })
 }
@@ -909,41 +905,38 @@ fn constants() -> ScenarioFuture {
 fn wiring() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
-        let guardrail = Agent365Guardrail::new(settings(), poster.clone(), true).unwrap();
+        let clock = TestClock::new();
+        let guardrail =
+            Agent365Guardrail::new(settings(), poster.clone(), true, clock.handle()).unwrap();
         assert_eq!(guardrail.request_timeout, Duration::from_secs(10));
-        assert!((guardrail.clock)() > 1_000_000.0);
+        let expected_now = UNIX_EPOCH + Duration::from_secs(START_SECONDS);
+        assert_eq!((guardrail.clock)(), expected_now);
         assert_eq!(
             guardrail.base.settings.supported_event_hooks,
             Some(vec![GuardrailEventHooks::PreMcpCall])
         );
-        assert_eq!(
-            guardrail.base.settings.guardrail_name.as_deref(),
-            Some("agent365")
-        );
+        let name = guardrail.base.settings.guardrail_name.as_deref();
+        assert_eq!(name, Some("agent365"));
         assert!(guardrail.base.settings.run_in_parallel);
         assert!(guardrail.base.settings.switches.records_own_information);
         assert!(!guardrail.base.settings.switches.use_native_lifecycle_hooks);
-        assert_eq!(
-            guardrail.settings.unreachable_fallback,
-            UnreachableFallback::FailClosed
-        );
+        let fallback = guardrail.settings.unreachable_fallback;
+        assert_eq!(fallback, UnreachableFallback::FailClosed);
 
         let mut configured = settings();
         configured.request_timeout = Some(2.5);
         configured.event_hook = Some(LitellmParamsMode::One("pre_mcp_call".to_owned()));
         configured.default_on = true;
         configured.unreachable_fallback = UnreachableFallback::FailOpen;
-        let configured = Agent365Guardrail::new(configured, poster, true).unwrap();
+        let configured = Agent365Guardrail::new(configured, poster, true, clock.handle()).unwrap();
         assert_eq!(configured.request_timeout, Duration::from_millis(2500));
         assert_eq!(
             configured.base.settings.event_hook,
             Some(LitellmParamsMode::One("pre_mcp_call".to_owned()))
         );
         assert!(configured.base.settings.default_on);
-        assert_eq!(
-            configured.settings.unreachable_fallback,
-            UnreachableFallback::FailOpen
-        );
+        let fallback = configured.settings.unreachable_fallback;
+        assert_eq!(fallback, UnreachableFallback::FailOpen);
     })
 }
 
@@ -953,8 +946,14 @@ fn invalid_timeouts_are_rejected() -> ScenarioFuture {
             let mut invalid = settings();
             invalid.request_timeout = Some(seconds);
             let poster = Arc::new(FakePoster::default());
-            let result = Agent365Guardrail::new(invalid, poster, true);
-            assert!(matches!(result, Err(Agent365Error::Timeout { .. })));
+            let result = Agent365Guardrail::new(invalid, poster, true, TestClock::new().handle());
+            match result {
+                Err(Agent365Error::Timeout { source, .. }) => {
+                    assert!(!source.to_string().is_empty())
+                }
+                Err(other) => panic!("expected a timeout error, got {other:?}"),
+                Ok(_) => panic!("expected a timeout error"),
+            }
         }
     })
 }
