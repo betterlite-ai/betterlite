@@ -5,6 +5,7 @@ use betterlite_openai::api::vector_store_records::records::vector::{
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Builder;
 
 use crate::vector_stores::create::{CreateStep, create_vector_store};
 use crate::vector_stores::embedding::{
@@ -86,8 +87,8 @@ fn route_matches(pattern: &str, path: &str) -> bool {
 }
 
 fn any_route(routes: Option<&Vec<(String, String)>>, method: &str, path: &str) -> bool {
-    routes.is_some_and(|routes| {
-        routes.iter().any(|(route_method, route_path)| {
+    routes.is_some_and(|entries| {
+        entries.iter().any(|(route_method, route_path)| {
             route_method == method && route_matches(route_path, path)
         })
     })
@@ -289,11 +290,21 @@ fn search_call(
 }
 
 fn search_query_fields() {
-    let executor = FixtureExecutor::new(vec![0.25, 0.5]);
+    let executor = FixtureExecutor::new(vec![0.25_f64, 0.5_f64]);
     let litellm_params = embedding_params();
     let query = SearchQuery::Text("hello".to_owned());
     let (outcome, logging) = search_call(&query, &Params::new(), &litellm_params, &executor);
     let call = outcome.expect("search");
+    search_query_fields_body(&call);
+    search_query_fields_logging(&logging, &executor);
+    search_query_fields_options();
+    search_query_fields_defaults_only_when_absent();
+    search_query_fields_rejects_bad_types();
+    search_query_fields_embedding_configuration();
+    search_query_fields_reports_embedding_failure();
+}
+
+fn search_query_fields_body(call: &SearchCall) {
     assert_eq!(
         call.url,
         "https://foundry-search.example/indexes/store-1/docs/search?api-version=2024-07-01"
@@ -306,6 +317,9 @@ fn search_query_fields() {
     assert_eq!(vector_query.fields, "contentVector");
     assert_eq!(vector_query.kind, "vector");
     assert_eq!(vector_query.top_k, 10);
+}
+
+fn search_query_fields_logging(logging: &SearchLogging, executor: &FixtureExecutor) {
     assert_eq!(
         logging.model_call_details.get("input"),
         Some(&Json::Text("hello".to_owned()))
@@ -320,15 +334,10 @@ fn search_query_fields() {
     assert_eq!(calls[0].model, EMBEDDING_MODEL);
     assert_eq!(calls[0].query, "hello");
     assert!(calls[0].configuration.is_empty());
-    search_query_fields_options();
-    search_query_fields_defaults_only_when_absent();
-    search_query_fields_rejects_bad_types();
-    search_query_fields_embedding_configuration();
-    search_query_fields_reports_embedding_failure();
 }
 
 fn search_query_fields_options() {
-    let executor = FixtureExecutor::new(vec![0.5]);
+    let executor = FixtureExecutor::new(vec![0.5_f64]);
     let litellm_params = params(&format!(
         r#"{{"litellm_embedding_model":"{EMBEDDING_MODEL}","azure_search_vector_field":"customVector","litellm_embedding_config":{{"dimensions":2}}}}"#
     ));
@@ -361,7 +370,7 @@ fn search_query_fields_options() {
 
 // a default applies only when the key is absent, so an explicit empty vector field stays empty
 fn search_query_fields_defaults_only_when_absent() {
-    let executor = FixtureExecutor::new(vec![0.5]);
+    let executor = FixtureExecutor::new(vec![0.5_f64]);
     let litellm_params = params(&format!(
         r#"{{"litellm_embedding_model":"{EMBEDDING_MODEL}","azure_search_vector_field":""}}"#
     ));
@@ -376,7 +385,7 @@ fn search_query_fields_defaults_only_when_absent() {
 
 // the embedding runs before the body is built, so a bad top_k still reaches the executor once
 fn search_query_fields_rejects_bad_types() {
-    let executor = FixtureExecutor::new(vec![0.5]);
+    let executor = FixtureExecutor::new(vec![0.5_f64]);
     let litellm_params = embedding_params();
     let query = SearchQuery::Text("q".to_owned());
     let optional = params(r#"{"top_k":"three"}"#);
@@ -402,8 +411,14 @@ fn search_query_fields_embedding_configuration() {
     );
     let with_list = params(r#"{"litellm_embedding_config":[1]}"#);
     assert!(query_embedding_configuration(&with_list).is_empty());
-    assert!(query_embedding_model(&params("{}")).is_err());
-    assert!(query_embedding_model(&params(r#"{"litellm_embedding_model":""}"#)).is_err());
+    assert!(matches!(
+        query_embedding_model(&params("{}")),
+        Err(AzureSearchError::MissingEmbeddingModel)
+    ));
+    assert!(matches!(
+        query_embedding_model(&params(r#"{"litellm_embedding_model":""}"#)),
+        Err(AzureSearchError::MissingEmbeddingModel)
+    ));
     assert_eq!(
         query_embedding_model(&params(r#"{"litellm_embedding_model":"m"}"#)).expect("model"),
         "m"
@@ -433,7 +448,7 @@ fn search_query_fields_reports_embedding_failure() {
 }
 
 fn vector_query_with_embedding() {
-    let executor = FixtureExecutor::new(vec![0.5, 0.25, 0.125]);
+    let executor = FixtureExecutor::new(vec![0.5_f64, 0.25_f64, 0.125_f64]);
     let litellm_params = embedding_params();
     let query = SearchQuery::Text("ordered".to_owned());
     let mut logging = SearchLogging::default();
@@ -461,7 +476,7 @@ fn vector_query_with_embedding() {
 
 // the store id fills one path segment, so a traversal or query id cannot retarget the request (docs/deviations/B558.yaml)
 fn vector_query_with_embedding_encodes_store_id() {
-    let executor = FixtureExecutor::new(vec![0.5]);
+    let executor = FixtureExecutor::new(vec![0.5_f64]);
     let litellm_params = embedding_params();
     let query = SearchQuery::Text("encoded".to_owned());
     let mut logging = SearchLogging::default();
@@ -482,11 +497,9 @@ fn vector_query_with_embedding_encodes_store_id() {
 }
 
 fn vector_query_with_embedding_async() {
-    let executor = FixtureExecutor::new(vec![0.125, 0.5]);
+    let executor = FixtureExecutor::new(vec![0.125_f64, 0.5_f64]);
     let query = SearchQuery::Sequence(vec!["async".to_owned(), "query".to_owned()]);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("runtime");
+    let runtime = Builder::new_current_thread().build().expect("runtime");
     let vector = runtime
         .block_on(aembed_query(
             &query_text(&query),
@@ -594,11 +607,11 @@ fn document_score_citation_omits_missing_value() {
 }
 
 fn document_score_citation_uses_logged_query() {
-    let executor = FixtureExecutor::new(vec![0.5]);
+    let executor = FixtureExecutor::new(vec![0.5_f64]);
     let litellm_params = embedding_params();
     let query = SearchQuery::Text("cited query".to_owned());
     let (call, logging) = search_call(&query, &Params::new(), &litellm_params, &executor);
-    assert!(call.is_ok());
+    call.expect("search");
     let page = decode_with_logging(r#"{"value":[]}"#, &logging).expect("page");
     assert_eq!(page.search_query.as_deref(), Some("cited query"));
 }
