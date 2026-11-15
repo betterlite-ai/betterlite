@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::str::from_utf8;
 
 use betterlite_models::decisions::Json as ModelJson;
 use betterlite_prompts::arguments::json::Object;
@@ -15,8 +16,8 @@ use super::chat::{
     transform_request,
 };
 use super::rerank::response::{
-    BaseLlmException, LoggingFailure, RerankDecodeError, RerankLogging, ResponseRequest,
-    decode_deepinfra_error, decode_deepinfra_rerank, get_error_class, transform_rerank_response,
+    LoggingFailure, RerankDecodeError, RerankLogging, ResponseRequest, decode_deepinfra_error,
+    decode_deepinfra_rerank, get_error_class, transform_rerank_response,
 };
 use super::rerank::{
     EnvironmentRequest, Headers, MapRequest as RerankMapRequest, Params, RerankError, RerankLimits,
@@ -174,15 +175,12 @@ fn the_mapper_never_inserts_tool_choice(
         minimum_temperature: 0.0001,
         supports_reasoning: false,
     });
-    match expected_status {
-        Some(status) => {
-            let error = outcome.unwrap_err();
-            assert_eq!(error.status_code(), status);
-        }
-        None => {
-            outcome.unwrap();
-            assert_eq!(optional, Object::new());
-        }
+    if let Some(status) = expected_status {
+        let error = outcome.unwrap_err();
+        assert_eq!(error.status_code(), status);
+    } else {
+        outcome.unwrap();
+        assert_eq!(optional, Object::new());
     }
 }
 
@@ -211,7 +209,7 @@ fn only_the_mistral_model_replaces_a_zero_temperature(
     let expected = if replaced {
         object(r#"{"temperature": 0.25}"#)
     } else {
-        given.clone()
+        given
     };
     assert_eq!(optional, expected);
 }
@@ -311,14 +309,15 @@ fn a_single_text_tool_part_with_a_null_text_keeps_null() {
 #[test]
 fn any_other_tool_content_list_becomes_python_json_text() {
     let transformed = tool_messages(
-        r#"[{"role": "tool", "content": [{"type": "text", "text": "é"}, {"type": "text", "text": "done"}]}]"#,
+        r#"[{"role": "tool", "content": [{"type": "text", "text": "\u00e9"}, {"type": "text", "text": "done"}]}]"#,
     );
     // Python's json.dumps escapes non-ASCII, so the content text keeps a literal backslash-u escape
-    let expected = serde_json::json!({
-        "role": "tool",
-        "content": r#"[{"type": "text", "text": "\u00e9"}, {"type": "text", "text": "done"}]"#,
-    });
-    assert_eq!(serde_json::to_value(&transformed[0]).unwrap(), expected);
+    assert_eq!(
+        transformed,
+        vec![model_object(
+            r#"{"role": "tool", "content": "[{\"type\": \"text\", \"text\": \"\\u00e9\"}, {\"type\": \"text\", \"text\": \"done\"}]"}"#
+        )]
+    );
 }
 
 // only a part whose type is text may supply its text value, even when another part type carries a text key
@@ -327,11 +326,10 @@ fn a_single_non_text_tool_part_keeps_its_python_json_text() {
     let transformed =
         tool_messages(r#"[{"role": "tool", "content": [{"type": "audio", "text": "kept"}]}]"#);
     assert_eq!(
-        serde_json::to_value(&transformed[0]).unwrap(),
-        serde_json::json!({
-            "role": "tool",
-            "content": r#"[{"type": "audio", "text": "kept"}]"#,
-        })
+        transformed,
+        vec![model_object(
+            r#"{"role": "tool", "content": "[{\"type\": \"audio\", \"text\": \"kept\"}]"}"#
+        )]
     );
 }
 
@@ -342,11 +340,10 @@ fn a_dumped_tool_part_writes_type_before_the_callers_other_keys() {
         r#"[{"role": "tool", "content": [{"text": "kept", "alt": "b", "type": "audio"}]}]"#,
     );
     assert_eq!(
-        serde_json::to_value(&transformed[0]).unwrap(),
-        serde_json::json!({
-            "role": "tool",
-            "content": r#"[{"type": "audio", "alt": "b", "text": "kept"}]"#,
-        })
+        transformed,
+        vec![model_object(
+            r#"{"role": "tool", "content": "[{\"type\": \"audio\", \"alt\": \"b\", \"text\": \"kept\"}]"}"#
+        )]
     );
 }
 
@@ -705,10 +702,7 @@ fn the_post_call_hook_sees_the_raw_response_text() {
     let body = b"{\"scores\": []}";
     let mut logging = Recording::new(false);
     project(body, &mut logging, RerankResponse::default());
-    assert_eq!(
-        logging.calls,
-        vec![String::from_utf8_lossy(body).into_owned()]
-    );
+    assert_eq!(logging.calls, vec![from_utf8(body).unwrap().to_owned()]);
 }
 
 #[test]
@@ -797,10 +791,9 @@ fn a_failing_post_call_hook_falls_back_without_a_warning() {
 
 #[test]
 fn the_byte_decoder_is_bounded_and_returns_json() {
-    assert!(decode_deepinfra_rerank(b"{\"scores\": []}", limits()).is_ok());
-    assert!(
-        decode_deepinfra_rerank(b"{\"scores\": []}", RerankLimits { max_body_bytes: 14 }).is_ok()
-    );
+    let _decoded = decode_deepinfra_rerank(b"{\"scores\": []}", limits()).unwrap();
+    let _bounded =
+        decode_deepinfra_rerank(b"{\"scores\": []}", RerankLimits { max_body_bytes: 14 }).unwrap();
     assert!(matches!(
         decode_deepinfra_rerank(b"{\"scores\": []}", RerankLimits { max_body_bytes: 2 }),
         Err(RerankDecodeError::BodyTooLarge)
@@ -850,11 +843,11 @@ fn replays_deepinfra_payload_corpus(#[files("fuzz/corpus/deepinfra_payload/*")] 
     let Some((&tag, payload)) = bytes.split_first() else {
         return;
     };
-    if tag % 2 == 0 {
+    if tag.is_multiple_of(2) {
         let _decoded = decode_deepinfra_rerank(payload, limits());
         return;
     }
-    if let Ok(message) = std::str::from_utf8(payload) {
+    if let Ok(message) = from_utf8(payload) {
         let _extracted = decode_deepinfra_error(message, limits());
     }
 }
@@ -862,7 +855,7 @@ fn replays_deepinfra_payload_corpus(#[files("fuzz/corpus/deepinfra_payload/*")] 
 #[test]
 fn the_error_class_keeps_the_status_and_headers_and_extracts_the_detail() {
     let headers = BTreeMap::from([(String::from("retry-after"), model_number("2"))]);
-    let raised: BaseLlmException = get_error_class(
+    let raised = get_error_class(
         r#"{"detail": {"error": "boom"}}"#,
         422,
         headers.clone(),
