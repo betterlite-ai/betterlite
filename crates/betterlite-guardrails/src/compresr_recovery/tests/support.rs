@@ -16,7 +16,6 @@ pub(super) const CALL_ID: &str = "call-1";
 pub(super) const NOW: Duration = Duration::from_secs(100);
 pub(super) const NO_CAP: usize = 0;
 pub(super) const HASH_ONE: &str = "47080470c1aeb2a10e9df746";
-pub(super) const HASH_TWO: &str = "29e0e91a3bcefa7f8d341741";
 pub(super) const RETRIEVE_TOOL: &str =
     r#"[{"type":"function","function":{"name":"compresr_retrieve"}}]"#;
 
