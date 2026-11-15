@@ -23,7 +23,8 @@ pub(crate) struct Input {
     #[serde(default)]
     pub(crate) block_on_error: Option<bool>,
     pub(crate) inputs: GuardrailApiInputs,
-    pub(crate) input_type: GuardrailInputType,
+    #[serde(rename = "input_type")]
+    pub(crate) direction: GuardrailInputType,
     pub(crate) answer: UpstreamAnswer,
 }
 
@@ -70,7 +71,7 @@ fn execute(input: &Input) -> Result<Output, Box<HelperError>> {
         .build()
         .map_err(|error| fail("OSError", error.to_string()))?;
     let outcome =
-        runtime.block_on(guardrail.apply_guardrail(input.inputs.clone(), input.input_type));
+        runtime.block_on(guardrail.apply_guardrail(input.inputs.clone(), input.direction));
     let calls = mock
         .finish()
         .map_err(|error| fail("MockError", error.to_string()))?;
