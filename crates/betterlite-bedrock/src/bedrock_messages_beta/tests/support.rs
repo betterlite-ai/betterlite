@@ -276,11 +276,13 @@ pub(super) struct Session<'fixture> {
 
 impl<'fixture> Session<'fixture> {
     pub(super) fn new(fixture: &'fixture Fixture) -> Self {
+        let resolution = fixture.resolution();
+        let runtime = runtime();
         Self {
             fixture,
-            resolution: fixture.resolution(),
+            resolution,
             keys: ModelCostKeys::default(),
-            runtime: runtime(),
+            runtime,
         }
     }
 
