@@ -134,4 +134,38 @@ probes:
               - development
         lookups:
           - model: gpt
+  - clock:
+      unix_millis: 1700000000308
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: only
+            use_in_pass_through: true
+            weight: 1
+        lookups:
+          - model: gpt
+            specific_deployment: true
+  - clock:
+      unix_millis: 1700000000309
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: development
+            use_in_pass_through: true
+            weight: 1
+            supported_environments:
+              - development
+        lookups:
+          - model: openai/gpt-4o
+            specific_deployment: true
 compare: {ignore: []}

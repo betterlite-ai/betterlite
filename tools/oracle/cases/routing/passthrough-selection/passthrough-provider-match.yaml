@@ -54,13 +54,13 @@ probes:
         enable_pre_call_checks: true
         models:
           - model_name: gpt
-            model: openai/gpt-4o
-            id: modern
+            model: openai/gpt-4
+            id: legacy
             use_in_pass_through: true
             weight: 1
           - model_name: gpt
-            model: openai/gpt-4
-            id: legacy
+            model: openai/gpt-4o
+            id: modern
             use_in_pass_through: true
             weight: 1
         lookups:

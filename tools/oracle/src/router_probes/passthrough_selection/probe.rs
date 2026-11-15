@@ -36,7 +36,10 @@ fn facts(lookup: &Lookup) -> RequestFacts {
     }
 }
 
-fn invalid(error: impl std::fmt::Display) -> OperationError {
+fn invalid<E>(error: E) -> OperationError
+where
+    E: std::fmt::Display,
+{
     OperationError::InvalidRequest {
         message: error.to_string(),
     }

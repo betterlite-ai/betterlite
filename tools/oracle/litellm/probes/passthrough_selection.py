@@ -90,14 +90,18 @@ def model_list_entry(entry: Entry) -> dict[str, object]:
     params: dict[str, object] = {"model": entry.model, "api_key": API_KEY}
     if entry.use_in_pass_through is not None:
         params["use_in_pass_through"] = entry.use_in_pass_through
-    for key, value in (
-        ("weight", entry.weight),
-        ("rpm", entry.rpm),
-        ("tpm", entry.tpm),
-        ("order", entry.order),
-    ):
-        if value is not None:
-            params[key] = value
+    params.update(
+        {
+            key: value
+            for key, value in (
+                ("weight", entry.weight),
+                ("rpm", entry.rpm),
+                ("tpm", entry.tpm),
+                ("order", entry.order),
+            )
+            if value is not None
+        }
+    )
     return {"model_name": entry.model_name, "litellm_params": params, "model_info": info}
 
 
