@@ -7,7 +7,7 @@ use betterlite_bedrock::bedrock_messages_beta::fields::strip_unsupported_fields;
 use betterlite_bedrock::bedrock_messages_beta::provider::{
     CUSTOM_LLM_PROVIDER, beta_headers_provider,
 };
-use betterlite_bedrock::bedrock_messages_beta::web_search::reject_unsupported_web_search_tools;
+use betterlite_bedrock::bedrock_messages_beta::web_search::reject_web_search_tools;
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
 use betterlite_prompts::arguments::json::Object;
@@ -52,7 +52,7 @@ fn beta_headers(model_cost: &ParamMap, calls: &[BetaHeadersCall]) -> HelperResul
             params: &call.params,
             headers: &call.headers,
             outgoing: &mut outgoing,
-            injected_thinking_for_clear_thinking: call.injected_thinking_for_clear_thinking,
+            clear_thinking_injected: call.clear_thinking_injected,
             subclass_provider: call.subclass_provider.as_deref(),
         };
         let betas = session.betas(request, &matrix).map_err(failure)?;
@@ -79,7 +79,7 @@ fn context_filter(cases: &[ContextCase]) -> HelperResult {
 }
 
 fn web_search(request: &Object, model: &str) -> HelperResult {
-    match reject_unsupported_web_search_tools(request, model) {
+    match reject_web_search_tools(request, model) {
         Ok(()) => Ok(json!({ "accepted": true })),
         Err(error) => Err(Box::new(HelperError {
             class: "BadRequestError".to_owned(),

@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-pub(super) enum Input {
+pub(crate) enum Input {
     BetaHeaders {
         model_cost: ParamMap,
         calls: Vec<BetaHeadersCall>,
@@ -31,7 +31,7 @@ pub(super) enum Input {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct BetaHeadersCall {
+pub(crate) struct BetaHeadersCall {
     pub(super) model: String,
     #[serde(default)]
     pub(super) messages: Vec<Json>,
@@ -48,14 +48,14 @@ pub(super) struct BetaHeadersCall {
     #[serde(default)]
     pub(super) outgoing: Object,
     #[serde(default, rename = "injected")]
-    pub(super) injected_thinking_for_clear_thinking: bool,
+    pub(super) clear_thinking_injected: bool,
     #[serde(default)]
     pub(super) subclass_provider: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ContextCase {
+pub(crate) struct ContextCase {
     pub(super) request: Object,
     #[serde(default)]
     pub(super) betas: Vec<String>,
@@ -63,13 +63,13 @@ pub(super) struct ContextCase {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct FieldsCase {
+pub(crate) struct FieldsCase {
     pub(super) request: Object,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct IdentityCase {
+pub(crate) struct IdentityCase {
     pub(super) model: String,
     #[serde(default)]
     pub(super) subclass_provider: Option<String>,
