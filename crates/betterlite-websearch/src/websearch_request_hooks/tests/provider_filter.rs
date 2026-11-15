@@ -1,6 +1,8 @@
 use betterlite_prompts::arguments::json::Object;
 
 use crate::websearch_request_hooks::WebSearchError;
+use crate::websearch_request_hooks::WebSearchInterceptionLogger;
+use crate::websearch_request_hooks::provider::ProviderError;
 use crate::websearch_request_hooks::tests::{logger, object};
 use crate::websearch_request_hooks::tool_rewrite::RewriteError;
 
@@ -52,7 +54,7 @@ fn skips_every_provider_when_the_enabled_list_is_empty() {
 
 #[test]
 fn a_missing_enabled_list_intercepts_any_provider() {
-    let enabled = crate::websearch_request_hooks::WebSearchInterceptionLogger {
+    let enabled = WebSearchInterceptionLogger {
         enabled_providers: None,
         search_tool_name: None,
         max_agentic_loops: None,
@@ -157,16 +159,22 @@ fn a_non_object_litellm_params_is_refused() {
     let request = object(
         r#"{"litellm_params":"bedrock","tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,
     );
-    assert!(enabled.async_pre_request_hook(&request).is_err());
+    let error = enabled.async_pre_request_hook(&request).unwrap_err();
+    assert!(matches!(
+        error,
+        WebSearchError::Provider(ProviderError::LitellmParams)
+    ));
 }
 
 #[test]
 fn a_non_string_provider_is_refused() {
     let enabled = logger(&["bedrock"]);
     let request = object(r#"{"custom_llm_provider":7}"#);
-    assert!(
-        enabled
-            .async_pre_call_deployment_hook(&request, None)
-            .is_err()
-    );
+    let error = enabled
+        .async_pre_call_deployment_hook(&request, None)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        WebSearchError::Provider(ProviderError::CustomProvider)
+    ));
 }

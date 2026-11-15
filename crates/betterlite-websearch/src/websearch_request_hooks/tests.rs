@@ -17,10 +17,10 @@ pub(crate) fn json(source: &str) -> Json {
 }
 
 pub(crate) fn object(source: &str) -> Object {
-    match json(source) {
-        Json::Object(fields) => fields,
-        other => panic!("{source} must be an object, got {other:?}"),
-    }
+    let Json::Object(fields) = json(source) else {
+        panic!("{source} must be an object");
+    };
+    fields
 }
 
 pub(crate) fn logger(providers: &[&str]) -> WebSearchInterceptionLogger {

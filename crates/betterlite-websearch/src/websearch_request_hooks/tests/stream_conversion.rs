@@ -50,34 +50,38 @@ fn the_responses_path_buffers_a_stream_too() {
     assert_eq!(converted.get(CONVERTED_STREAM_KEY), Some(&Json::Bool(true)));
 }
 
-#[rstest]
-#[case::false_value("false")]
-#[case::null("null")]
-fn a_non_streaming_request_keeps_its_stream_and_gains_no_flag(#[case] value: &str) {
-    let source = format!(
-        r#"{{"custom_llm_provider":"bedrock","stream":{value},"tools":[{{"type":"web_search_20250305","name":"web_search"}}]}}"#
-    );
-    let converted = logger(&["bedrock"])
-        .async_pre_call_deployment_hook(&object(&source), None)
-        .unwrap()
-        .unwrap();
-    assert_eq!(converted.get("stream"), Some(&json(value)));
-    assert_eq!(converted.get(CONVERTED_STREAM_KEY), None);
+#[derive(Clone, Copy, Debug)]
+enum InterceptionHook {
+    Deployment,
+    PreRequest,
 }
 
 #[rstest]
-#[case::false_value("false")]
-#[case::null("null")]
-fn a_non_streaming_pre_request_keeps_its_stream_and_gains_no_flag(#[case] value: &str) {
+#[case::deployment_false_value(InterceptionHook::Deployment, "false")]
+#[case::deployment_null(InterceptionHook::Deployment, "null")]
+#[case::pre_request_false_value(InterceptionHook::PreRequest, "false")]
+#[case::pre_request_null(InterceptionHook::PreRequest, "null")]
+fn either_hook_keeps_a_non_streaming_stream_and_adds_no_flag(
+    #[case] hook: InterceptionHook,
+    #[case] value: &str,
+) {
     let source = format!(
-        r#"{{"litellm_params":{{"custom_llm_provider":"bedrock"}},"stream":{value},"tools":[{{"type":"web_search_20250305","name":"web_search"}}]}}"#
+        r#"{{"custom_llm_provider":"bedrock","litellm_params":{{"custom_llm_provider":"bedrock"}},"stream":{value},"tools":[{{"type":"web_search_20250305","name":"web_search"}}]}}"#
     );
-    let converted = logger(&["bedrock"])
-        .async_pre_request_hook(&object(&source))
-        .unwrap()
-        .unwrap();
+    let request = object(&source);
+    let converted = match hook {
+        InterceptionHook::Deployment => {
+            logger(&["bedrock"]).async_pre_call_deployment_hook(&request, None)
+        }
+        InterceptionHook::PreRequest => logger(&["bedrock"]).async_pre_request_hook(&request),
+    }
+    .unwrap()
+    .unwrap();
     assert_eq!(converted.get("stream"), Some(&json(value)));
-    assert_eq!(converted.get(CONVERTED_STREAM_KEY), None);
+    assert_eq!(
+        converted.get("_websearch_interception_converted_stream"),
+        None
+    );
 }
 
 #[test]

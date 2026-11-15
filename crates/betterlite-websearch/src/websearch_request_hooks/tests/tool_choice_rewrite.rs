@@ -1,7 +1,7 @@
 use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 
-use crate::tools::openai_web_search_tool;
+use crate::tools::{get_litellm_web_search_tool, openai_web_search_tool};
 use crate::websearch_request_hooks::tests::{json, list, logger, object};
 use crate::websearch_request_hooks::tool_rewrite::{encode, sync_forced_tool_choice};
 
@@ -86,6 +86,6 @@ fn the_pre_request_hook_syncs_the_forced_choice() {
             r#"{"type":"tool","name":"litellm_web_search"}"#
         )))
     );
-    let expected = encode(&crate::tools::get_litellm_web_search_tool()).unwrap();
+    let expected = encode(&get_litellm_web_search_tool()).unwrap();
     assert_eq!(list(&converted, "tools")[0], expected);
 }
