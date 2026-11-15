@@ -80,7 +80,11 @@ impl Script {
 }
 
 impl PollTransport for Script {
-    async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+    fn get(
+        &self,
+        url: Url,
+        headers: HeaderMap,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -89,11 +93,11 @@ impl PollTransport for Script {
             let mut replies = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
             replies.pop_front().unwrap_or_else(|| self.fallback.clone())
         };
-        Ok(UpstreamResponse {
+        ready(Ok(UpstreamResponse {
             status: reply.status,
             headers: HeaderMap::new(),
             body: reply.body.as_bytes().to_vec(),
-        })
+        }))
     }
 }
 

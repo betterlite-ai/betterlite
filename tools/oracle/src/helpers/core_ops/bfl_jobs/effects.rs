@@ -69,7 +69,10 @@ impl<'effects> Script<'effects> {
 }
 
 impl SubmitTransport for Script<'_> {
-    async fn post(&self, request: SubmitRequest) -> Result<UpstreamResponse, SubmitError> {
+    fn post(
+        &self,
+        request: SubmitRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, SubmitError>> + Send {
         self.effects.record(json!({
             "effect": "post",
             "url": request.url.to_string(),
@@ -77,18 +80,22 @@ impl SubmitTransport for Script<'_> {
             "body": request.body.clone(),
             "timeout_millis": request.timeout.map(timeout_millis),
         }));
-        Ok(response(&self.submission))
+        ready(Ok(response(&self.submission)))
     }
 }
 
 impl PollTransport for Script<'_> {
-    async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+    fn get(
+        &self,
+        url: Url,
+        headers: HeaderMap,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.effects.record(json!({
             "effect": "get",
             "url": url.to_string(),
             "headers": header_object(&headers),
         }));
-        Ok(response(&self.next_reply()))
+        ready(Ok(response(&self.next_reply())))
     }
 }
 
