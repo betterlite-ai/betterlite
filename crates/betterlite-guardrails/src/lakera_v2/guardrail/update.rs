@@ -9,7 +9,7 @@ use super::super::error::LakeraV2Error;
 use super::LakeraV2Guardrail;
 use super::construction::resolve_timeout;
 
-pub(crate) fn update_params(
+pub fn update_params(
     guardrail: &mut LakeraV2Guardrail,
     params: &LitellmParams,
 ) -> Result<(), LakeraV2Error> {

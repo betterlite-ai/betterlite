@@ -15,8 +15,8 @@ use super::advisory;
 use super::error::LakeraV2Error;
 
 mod call;
-pub(crate) mod construction;
-pub(crate) mod update;
+pub mod construction;
+pub mod update;
 
 pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
     GuardrailEventHooks::PreCall,

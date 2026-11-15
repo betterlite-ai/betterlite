@@ -95,7 +95,7 @@ pub fn unmaskable_reason(
     }
     if response
         .and_then(|value| value.payload.as_ref())
-        .is_none_or(|payload| payload.is_empty())
+        .is_none_or(Vec::is_empty)
     {
         return Some(NO_PAYLOAD_REASON);
     }

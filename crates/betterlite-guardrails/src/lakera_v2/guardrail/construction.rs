@@ -12,7 +12,7 @@ use super::super::advisory;
 use super::super::error::LakeraV2Error;
 use super::{DEFAULT_API_BASE, DEFAULT_TIMEOUT, LakeraV2Flags, LakeraV2Guardrail};
 
-pub(crate) fn new(
+pub fn new(
     args: LakeraV2Args,
     base: GuardrailBase,
     client: reqwest::Client,
@@ -63,10 +63,9 @@ fn named_base(mut base: GuardrailBase, name: &str) -> GuardrailBase {
 }
 
 fn resolve_api_key(args: &LakeraV2Args, env: &dyn EnvironmentLookup) -> SecretString {
-    args.api_key.as_ref().map_or_else(
-        || SecretString::from(env.lookup("LAKERA_API_KEY").unwrap_or_default()),
-        |key| key.clone(),
-    )
+    args.api_key
+        .clone()
+        .unwrap_or_else(|| SecretString::from(env.lookup("LAKERA_API_KEY").unwrap_or_default()))
 }
 
 fn resolve_api_base(args: &LakeraV2Args, env: &dyn EnvironmentLookup) -> String {
