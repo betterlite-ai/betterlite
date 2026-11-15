@@ -7,8 +7,8 @@ use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::database_replica::availability::Availability;
 use crate::mcp::table_access::actions::{
-    _mcp_server_table_actions, _oauth_client_table_actions, _user_credential_actions,
-    _user_env_var_actions,
+    mcp_server_table_actions, oauth_client_table_actions, user_credential_actions,
+    user_env_var_actions,
 };
 use crate::mcp::table_access::rows::{
     CREDENTIAL_TABLE, ENV_VAR_TABLE, OAUTH_CLIENT_TABLE, SERVER_TABLE,
@@ -31,18 +31,18 @@ fn every_mcp_table_handle_binds_its_own_table() {
         reader: &writer,
         availability: &availability,
     };
-    let server = _mcp_server_table_actions(Some(client), publisher()).expect("a server handle");
+    let server = mcp_server_table_actions(Some(client), publisher()).expect("a server handle");
     assert_eq!(server.actions.table.relation, SERVER_TABLE.relation);
     assert!(ptr::eq(server.actions.store, &writer));
-    let oauth = _oauth_client_table_actions(Some(client), publisher()).expect("an oauth handle");
+    let oauth = oauth_client_table_actions(Some(client), publisher()).expect("an oauth handle");
     assert_eq!(oauth.actions.table.relation, OAUTH_CLIENT_TABLE.relation);
     let credentials =
-        _user_credential_actions(Some(client), publisher()).expect("a credential handle");
+        user_credential_actions(Some(client), publisher()).expect("a credential handle");
     assert_eq!(
         credentials.actions.table.relation,
         CREDENTIAL_TABLE.relation
     );
-    let env_vars = _user_env_var_actions(Some(client), publisher()).expect("an env-var handle");
+    let env_vars = user_env_var_actions(Some(client), publisher()).expect("an env-var handle");
     assert_eq!(env_vars.actions.table.relation, ENV_VAR_TABLE.relation);
     assert_eq!(env_vars.actions.table.name, "litellm_mcpuserenvvars");
 }
@@ -50,7 +50,7 @@ fn every_mcp_table_handle_binds_its_own_table() {
 #[test]
 fn every_mcp_table_handle_needs_a_database_client() {
     let absent: Option<PrismaClient<'static>> = None;
-    let missing = _mcp_server_table_actions(absent, publisher())
+    let missing = mcp_server_table_actions(absent, publisher())
         .err()
         .expect("no client means no handle");
     assert!(matches!(

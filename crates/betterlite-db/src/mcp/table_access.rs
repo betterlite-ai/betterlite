@@ -26,8 +26,8 @@ mod mcp_table_access;
 
 use filter::{FindServers, ServerFilter, identifier_candidates};
 use rows::{RowFields, ServerUpdate, server_id_of};
-use server_reads::_db_find_mcp_server_rows;
-use store::{_db_transaction_manager, LockedTable, McpTableStore};
+use server_reads::db_find_mcp_server_row;
+use store::{LockedTable, McpTableStore, db_transaction_manager};
 use types::{
     ACTIVE, IdentifierField, LockedWrite, LockedWriteOutcome, MCPSubmissionsSummary,
     McpServerAccess, McpTableError, PENDING_REVIEW, REJECTED,
@@ -44,18 +44,18 @@ pub struct McpIdentifierConflict {
     pub server_id: String,
 }
 
-// Prisma equals with mode=insensitive over server_name and alias; approval_status NULL or not draft
+// Mirrors LiteLLM's fn _identifier_where: Prisma equals with mode=insensitive over server_name and alias; approval_status NULL or not draft
 #[must_use]
-pub fn _identifier_where(value: &str, exclude_server_id: Option<&str>) -> ServerFilter {
+pub fn identifier_where(value: &str, exclude_server_id: Option<&str>) -> ServerFilter {
     ServerFilter::Identifiers {
         value: value.to_owned(),
         exclude_server_id: exclude_server_id.map(str::to_owned),
     }
 }
 
-// blake2b over "mcp_identifier:{normalized}", digest_size=8 big-endian signed=True, keys from sorted(normalized)
+// Mirrors LiteLLM's fn _mcp_identifier_lock_keys: blake2b over "mcp_identifier:{normalized}", digest_size=8 big-endian signed=True, keys from sorted(normalized)
 #[must_use]
-pub fn _mcp_identifier_lock_keys(identifiers: &[Option<&str>]) -> Vec<i64> {
+pub fn mcp_identifier_lock_keys(identifiers: &[Option<&str>]) -> Vec<i64> {
     let mut normalized = Vec::with_capacity(identifiers.len());
     for identifier in identifiers.iter().flatten() {
         if !identifier.is_empty() {
@@ -88,7 +88,7 @@ where
     // alias is checked before server_name so the reported field is deterministic
     for (field, value) in identifier_candidates(server_name, alias) {
         let request = FindServers {
-            filter: Some(_identifier_where(value, exclude_server_id)),
+            filter: Some(identifier_where(value, exclude_server_id)),
             descending: false,
             take: Some(1),
         };
@@ -103,16 +103,16 @@ where
     Ok(None)
 }
 
-// ast-grep-ignore: no-long-names
-pub async fn _mcp_server_write_if_identifier_free(
+// ast-grep-ignore: no-long-names - mirrors LiteLLM's fn _mcp_server_write_if_identifier_free
+pub async fn mcp_server_write_if_identifier_free(
     store: &McpTableStore<'_>,
     request: &LockedWrite,
 ) -> Result<LockedWriteOutcome, McpTableError> {
-    let mut manager = _db_transaction_manager(store.client.writer).await?;
+    let mut manager = db_transaction_manager(store.client.writer).await?;
     let transaction = manager.begin().await?;
     // execute_raw's pg_advisory_xact_lock per identifier holds until this transaction ends
     let identifiers = [request.server_name.as_deref(), request.alias.as_deref()];
-    for key in _mcp_identifier_lock_keys(&identifiers) {
+    for key in mcp_identifier_lock_keys(&identifiers) {
         transaction
             .execute(ADVISORY_LOCK_SQL, &[&key])
             .await
@@ -139,25 +139,8 @@ pub async fn _mcp_server_write_if_identifier_free(
     Ok(LockedWriteOutcome::Written(written))
 }
 
-// Prisma's find_unique on the server_id primary key
-pub async fn _db_find_mcp_server_row<Access>(
-    table: &Access,
-    server_id: &str,
-) -> Result<Option<JsonData>, McpTableError>
-where
-    Access: McpServerAccess,
-{
-    let unique = FindServers {
-        filter: Some(ServerFilter::ServerId(server_id.to_owned())),
-        descending: false,
-        take: Some(1),
-    };
-    let mut found = table.find_servers(&unique).await?;
-    Ok(found.pop())
-}
-
-// missing row raises ValueError("MCP server not found, passed server_id={server_id}")
-pub async fn _db_update_mcp_server_row<Access>(
+// Mirrors LiteLLM's fn _db_update_mcp_server_row: a missing row raises ValueError("MCP server not found, passed server_id={server_id}")
+pub async fn db_update_mcp_server_row<Access>(
     table: &Access,
     server_id: &str,
     data: RowFields,
@@ -177,7 +160,24 @@ where
         })
 }
 
-pub fn _readable_mcp_servers(
+// Mirrors LiteLLM's fn _db_find_mcp_server_rows: find_many with an optional where
+pub async fn db_find_mcp_server_rows<Access>(
+    table: &Access,
+    filter: Option<ServerFilter>,
+) -> Result<Vec<JsonData>, McpTableError>
+where
+    Access: McpServerAccess,
+{
+    let request = FindServers {
+        filter,
+        descending: false,
+        take: None,
+    };
+    table.find_servers(&request).await
+}
+
+// Mirrors LiteLLM's fn _readable_mcp_servers: a row whose secret map cannot be decrypted is warned about and skipped
+pub fn readable_mcp_servers(
     rows: Vec<JsonData>,
     cipher: &DbCipher,
 ) -> Result<Vec<McpServerTable>, McpTableError> {
@@ -195,7 +195,7 @@ pub fn _readable_mcp_servers(
     Ok(servers)
 }
 
-// line up with _db_find_mcp_server_rows: approval_status None means every row where it is NULL or not draft
+// line up with db_find_mcp_server_rows: approval_status None means every row where it is NULL or not draft
 pub async fn get_all_mcp_servers<Access>(
     table: &Access,
     cipher: &DbCipher,
@@ -207,8 +207,8 @@ where
     let filter = approval_status.map_or(ServerFilter::NotDraft, |status| {
         ServerFilter::ApprovalStatus(status.to_owned())
     });
-    let rows = _db_find_mcp_server_rows(table, Some(filter)).await?;
-    _readable_mcp_servers(rows, cipher)
+    let rows = db_find_mcp_server_rows(table, Some(filter)).await?;
+    readable_mcp_servers(rows, cipher)
 }
 
 // reviewed_at is the current UTC time and updated_by the reviewer on both review outcomes
@@ -228,7 +228,7 @@ where
         ("updated_by", touched_by),
     ];
     entries.extend_from_slice(outcome);
-    let mut row = _db_update_mcp_server_row(table, server_id, RowFields::texts(&entries)).await?;
+    let mut row = db_update_mcp_server_row(table, server_id, RowFields::texts(&entries)).await?;
     rows::readable_server(&mut row, cipher)
 }
 
@@ -280,7 +280,7 @@ pub async fn set_mcp_server_pinned_tools<Access>(
 where
     Access: McpServerAccess,
 {
-    if _db_find_mcp_server_row(table, server_id).await?.is_none() {
+    if db_find_mcp_server_row(table, server_id).await?.is_none() {
         return Ok(None);
     }
     let snapshot = serde_json::to_string(&pinned_tools.cloned().unwrap_or_default())
@@ -289,7 +289,7 @@ where
         ("pinned_tools", snapshot.as_str()),
         ("updated_by", touched_by),
     ]);
-    let mut row = _db_update_mcp_server_row(table, server_id, data).await?;
+    let mut row = db_update_mcp_server_row(table, server_id, data).await?;
     rows::readable_server(&mut row, cipher).map(Some)
 }
 
@@ -308,7 +308,7 @@ where
     let filter = ServerFilter::SubmittedByActive {
         user_id: user_id.to_owned(),
     };
-    let rows = _db_find_mcp_server_rows(table, Some(filter)).await?;
+    let rows = db_find_mcp_server_rows(table, Some(filter)).await?;
     let mut server_ids = Vec::with_capacity(rows.len());
     for row in &rows {
         server_ids.push(server_id_of(row)?);
@@ -329,7 +329,7 @@ where
         descending: true,
         take: Some(500),
     };
-    let items = _readable_mcp_servers(table.find_servers(&request).await?, cipher)?;
+    let items = readable_mcp_servers(table.find_servers(&request).await?, cipher)?;
     let pending_review = items
         .iter()
         .filter(|server| server.approval_status.as_deref() == Some(PENDING_REVIEW))

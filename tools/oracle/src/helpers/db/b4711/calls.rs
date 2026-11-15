@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_db::mcp::table_access::rows::RowFields;
 use betterlite_db::mcp::table_access::server_reads::{
-    _identifier_field, get_mcp_server, get_mcp_servers,
+    get_mcp_server, get_mcp_servers, identifier_field,
 };
 use betterlite_db::mcp::table_access::{
-    _mcp_identifier_lock_keys, McpIdentifierConflict, approve_mcp_server, find_identifier_conflict,
-    get_all_mcp_servers, get_mcp_submissions, reject_mcp_server, set_mcp_server_pinned_tools,
+    McpIdentifierConflict, approve_mcp_server, find_identifier_conflict, get_all_mcp_servers,
+    get_mcp_submissions, mcp_identifier_lock_keys, reject_mcp_server, set_mcp_server_pinned_tools,
 };
 // ast-grep-ignore: no-long-names
 use betterlite_db::mcp::table_access::get_active_submitted_mcp_server_ids_for_user as active_ids;
@@ -74,9 +74,9 @@ pub(super) async fn create_if_free(call: &CreateIfFree) -> HelperResult {
         );
     }
     let data = RowFields(fields);
-    let name = _identifier_field(&data, "server_name");
-    let alias = _identifier_field(&data, "alias");
-    let lock_keys = _mcp_identifier_lock_keys(&[name.as_deref(), alias.as_deref()]);
+    let name = identifier_field(&data, "server_name");
+    let alias = identifier_field(&data, "alias");
+    let lock_keys = mcp_identifier_lock_keys(&[name.as_deref(), alias.as_deref()]);
     let store = RowStore::new(&call.rows);
     let conflict = find_identifier_conflict(&store, name.as_deref(), alias.as_deref(), None)
         .await

@@ -102,7 +102,7 @@ where
 }
 
 // ast-grep-ignore: no-one-line-functions
-pub fn _mcp_server_table_actions<'db>(
+pub fn mcp_server_table_actions<'db>(
     client: Option<PrismaClient<'db>>,
     publish: PublishChange<TableError>,
 ) -> Handle<'db> {
@@ -110,7 +110,7 @@ pub fn _mcp_server_table_actions<'db>(
 }
 
 // ast-grep-ignore: no-one-line-functions
-pub fn _oauth_client_table_actions<'db>(
+pub fn oauth_client_table_actions<'db>(
     client: Option<PrismaClient<'db>>,
     publish: PublishChange<TableError>,
 ) -> Handle<'db> {
@@ -118,7 +118,7 @@ pub fn _oauth_client_table_actions<'db>(
 }
 
 // ast-grep-ignore: no-one-line-functions
-pub fn _user_credential_actions<'db>(
+pub fn user_credential_actions<'db>(
     client: Option<PrismaClient<'db>>,
     publish: PublishChange<TableError>,
 ) -> Handle<'db> {
@@ -126,7 +126,7 @@ pub fn _user_credential_actions<'db>(
 }
 
 // ast-grep-ignore: no-one-line-functions
-pub fn _user_env_var_actions<'db>(
+pub fn user_env_var_actions<'db>(
     client: Option<PrismaClient<'db>>,
     publish: PublishChange<TableError>,
 ) -> Handle<'db> {

@@ -5,12 +5,12 @@ use std::collections::BTreeMap;
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
 
-use super::{_get_prisma_client_or_none, get_prisma_client_or_throw};
+use super::{get_prisma_client_or_none, get_prisma_client_or_throw};
 
 #[test]
 fn a_database_handle_passes_through_both_accessors() {
     let database = 7_u8;
-    assert_eq!(_get_prisma_client_or_none(Some(&database)), Some(&database));
+    assert_eq!(get_prisma_client_or_none(Some(&database)), Some(&database));
     assert_eq!(
         get_prisma_client_or_throw(Some(&database), "Database not available"),
         Ok(&database)
@@ -19,7 +19,7 @@ fn a_database_handle_passes_through_both_accessors() {
 
 #[test]
 fn no_database_returns_none_without_raising() {
-    assert_eq!(_get_prisma_client_or_none::<u8>(None), None);
+    assert_eq!(get_prisma_client_or_none::<u8>(None), None);
 }
 
 #[test]

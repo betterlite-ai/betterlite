@@ -2,11 +2,11 @@ use crate::managed_resource_rows::ManagedRowsDecodeError;
 use crate::managed_resource_rows::mcp::McpServerTable;
 use crate::mcp::table_access::filter::{FindServers, ServerFilter};
 use crate::mcp::table_access::server_reads::{
-    _db_find_mcp_server_rows, get_mcp_server, get_mcp_servers,
+    db_find_mcp_server_row, get_mcp_server, get_mcp_servers,
 };
 use crate::mcp::table_access::types::McpTableError;
 use crate::mcp::table_access::{
-    _db_find_mcp_server_row, _readable_mcp_servers, get_all_mcp_servers,
+    db_find_mcp_server_rows, get_all_mcp_servers, readable_mcp_servers,
 };
 
 use super::support::{FakeStore, cipher, row};
@@ -70,11 +70,11 @@ async fn server_rows_are_read_with_the_given_where_or_unfiltered() {
         row(r#"{"server_id":"s1","approval_status":"draft","transport":"http"}"#),
         row(r#"{"server_id":"s2","transport":"http"}"#),
     ]);
-    let every = _db_find_mcp_server_rows(&store, None)
+    let every = db_find_mcp_server_rows(&store, None)
         .await
         .expect("the fake store never fails");
     assert_eq!(every.len(), 2);
-    let kept = _db_find_mcp_server_rows(&store, Some(ServerFilter::NotDraft))
+    let kept = db_find_mcp_server_rows(&store, Some(ServerFilter::NotDraft))
         .await
         .expect("the fake store never fails");
     assert_eq!(kept, vec![row(r#"{"server_id":"s2","transport":"http"}"#)]);
@@ -86,15 +86,18 @@ async fn server_rows_are_read_with_the_given_where_or_unfiltered() {
 #[tokio::test]
 async fn the_server_row_is_found_by_id_or_none() {
     let store = FakeStore::new(vec![row(r#"{"server_id":"s1","transport":"http"}"#)]);
-    let found = _db_find_mcp_server_row(&store, "s1")
+    let found = db_find_mcp_server_row(&store, "s1")
         .await
         .expect("the fake store never fails");
     assert_eq!(found, Some(row(r#"{"server_id":"s1","transport":"http"}"#)));
-    let missing = _db_find_mcp_server_row(&store, "s2")
+    let missing = db_find_mcp_server_row(&store, "s2")
         .await
         .expect("the fake store never fails");
     assert_eq!(missing, None);
-    assert_eq!(first_find(&store).take, Some(1));
+    assert!(matches!(
+        first_find(&store).filter,
+        Some(ServerFilter::ServerId(server_id)) if server_id == "s1"
+    ));
 }
 
 #[tokio::test]
@@ -143,14 +146,14 @@ fn readable_servers_skip_rows_whose_secret_map_fails_to_decrypt() {
         row(r#"{"server_id":"good","transport":"http"}"#),
         row(r#"{"server_id":"bad","env":"not-a-secret","transport":"http"}"#),
     ];
-    let servers = _readable_mcp_servers(rows, &cipher()).expect("only the bad row is skipped");
+    let servers = readable_mcp_servers(rows, &cipher()).expect("only the bad row is skipped");
     assert_eq!(server_ids(&servers), vec!["good"]);
 }
 
 #[test]
 fn readable_servers_report_other_decode_failures() {
     let rows = vec![row(r#"{"server_id":"broken"}"#)];
-    let error = _readable_mcp_servers(rows, &cipher()).expect_err("a row without transport fails");
+    let error = readable_mcp_servers(rows, &cipher()).expect_err("a row without transport fails");
     assert!(matches!(error, McpTableError::Decode(_)));
 }
 

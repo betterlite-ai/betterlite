@@ -5,16 +5,16 @@ use betterlite_redis::config_sync::table_actions::TableActions as _;
 
 use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::database_replica::availability::Availability;
-use crate::mcp::table_access::_mcp_server_write_if_identifier_free;
-use crate::mcp::table_access::actions::_mcp_server_table_actions;
+use crate::mcp::table_access::actions::mcp_server_table_actions;
 use crate::mcp::table_access::filter::FindServers;
+use crate::mcp::table_access::mcp_server_write_if_identifier_free;
 use crate::mcp::table_access::rows::{CREDENTIAL_TABLE, KeyValues, RowFields, ServerUpdate};
 use crate::mcp::table_access::sql;
-use crate::mcp::table_access::store::{_db_transaction_manager, McpTableStore};
+use crate::mcp::table_access::store::{McpTableStore, db_transaction_manager};
 use crate::mcp::table_access::types::{LockedWrite, McpServerAccess, McpTableError, ServerWrite};
 use crate::mcp::table_access::user_tables::{
-    _db_find_user_credential_row, _db_find_user_credential_rows, _db_find_user_env_var_rows,
-    _db_upsert_user_credential_row,
+    db_find_user_credential_row, db_find_user_credential_rows, db_find_user_env_var_rows,
+    db_upsert_user_credential_row,
 };
 use crate::postgres_store::errors::DbError;
 use crate::postgres_store::session::PostgresStore;
@@ -70,8 +70,8 @@ async fn table_actions_without_a_pool_report_no_database() {
         reader: &writer,
         availability: &availability,
     };
-    let table = _mcp_server_table_actions(Some(client), publisher())
-        .expect("a client builds table actions");
+    let table =
+        mcp_server_table_actions(Some(client), publisher()).expect("a client builds table actions");
     let filter = KeyValues::from([("server_id", "s1".to_owned())]);
     let created = table
         .create(row())
@@ -114,7 +114,7 @@ async fn table_actions_without_a_pool_report_no_database() {
 async fn a_pool_less_store_reports_no_database_for_reads_updates_and_locked_writes() {
     let writer = PostgresStore { pool: None };
     let availability = Availability::default();
-    let opened = _db_transaction_manager(&writer)
+    let opened = db_transaction_manager(&writer)
         .await
         .err()
         .expect("no pool means no session");
@@ -151,7 +151,7 @@ async fn a_pool_less_store_reports_no_database_for_reads_updates_and_locked_writ
         exclude_server_id: None,
         write: ServerWrite::Create(row()),
     };
-    let locked = _mcp_server_write_if_identifier_free(&table, &write)
+    let locked = mcp_server_write_if_identifier_free(&table, &write)
         .await
         .err()
         .expect("no pool means no locks");
@@ -166,28 +166,28 @@ async fn user_table_helpers_without_a_pool_report_no_database() {
     let writer = PostgresStore { pool: None };
     let availability = Availability::default();
     let table = store(&writer, &availability);
-    let credential = _db_find_user_credential_row(&table, "u1", "s1")
+    let credential = db_find_user_credential_row(&table, "u1", "s1")
         .await
         .expect_err("no pool means no credential");
     assert!(matches!(
         credential,
         McpTableError::Database(DbError::NoDbConnected)
     ));
-    let credentials = _db_find_user_credential_rows(&table, None)
+    let credentials = db_find_user_credential_rows(&table, None)
         .await
         .expect_err("no pool means no credentials");
     assert!(matches!(
         credentials,
         McpTableError::Database(DbError::NoDbConnected)
     ));
-    let env_vars = _db_find_user_env_var_rows(&table, None)
+    let env_vars = db_find_user_env_var_rows(&table, None)
         .await
         .expect_err("no pool means no environment");
     assert!(matches!(
         env_vars,
         McpTableError::Database(DbError::NoDbConnected)
     ));
-    let upserted = _db_upsert_user_credential_row(&table, "u1", "s1", "blob")
+    let upserted = db_upsert_user_credential_row(&table, "u1", "s1", "blob")
         .await
         .expect_err("no pool means no upsert");
     assert!(matches!(upserted, McpTableError::Table(error) if no_database(&error)));

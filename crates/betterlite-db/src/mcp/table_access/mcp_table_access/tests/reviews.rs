@@ -5,7 +5,7 @@ use chrono::DateTime;
 use crate::mcp::table_access::rows::{RowFields, ServerUpdate};
 use crate::mcp::table_access::types::McpTableError;
 use crate::mcp::table_access::{
-    _db_update_mcp_server_row, approve_mcp_server, reject_mcp_server, set_mcp_server_pinned_tools,
+    approve_mcp_server, db_update_mcp_server_row, reject_mcp_server, set_mcp_server_pinned_tools,
 };
 use crate::mcp_stored_contracts::{JsonValue, PinnedMCPTool};
 
@@ -20,7 +20,7 @@ fn only_update(store: &FakeStore) -> ServerUpdate {
 #[tokio::test]
 async fn update_of_a_missing_server_is_not_found() {
     let store = FakeStore::new(Vec::new());
-    let error = _db_update_mcp_server_row(
+    let error = db_update_mcp_server_row(
         &store,
         "missing",
         RowFields::texts(&[("updated_by", "admin")]),
@@ -41,7 +41,7 @@ async fn update_of_a_missing_server_is_not_found() {
 async fn update_of_a_stored_server_returns_the_written_row() {
     let store = FakeStore::new(vec![row(r#"{"server_id":"s1","transport":"http"}"#)]);
     let written =
-        _db_update_mcp_server_row(&store, "s1", RowFields::texts(&[("updated_by", "admin")]))
+        db_update_mcp_server_row(&store, "s1", RowFields::texts(&[("updated_by", "admin")]))
             .await
             .expect("s1 is stored");
     assert_eq!(

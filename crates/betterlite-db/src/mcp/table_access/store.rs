@@ -10,7 +10,7 @@ use crate::budget_permission_rows::JsonData;
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::PostgresStore;
 
-use super::actions::_mcp_server_table_actions;
+use super::actions::mcp_server_table_actions;
 use super::filter::FindServers;
 use super::rows::{KeyValues, SERVER_TABLE, ServerUpdate};
 use super::sql::{self, Scope, Select};
@@ -72,7 +72,7 @@ impl McpServerAccess for McpTableStore<'_> {
         &self,
         request: &ServerUpdate,
     ) -> Result<Option<JsonData>, McpTableError> {
-        let table = _mcp_server_table_actions(Some(self.client), Arc::clone(&self.publish))?;
+        let table = mcp_server_table_actions(Some(self.client), Arc::clone(&self.publish))?;
         let filter = KeyValues::from([("server_id", request.server_id.clone())]);
         table
             .update(request.data.clone(), filter)
@@ -131,7 +131,7 @@ impl TransactionManager {
     }
 }
 
-pub async fn _db_transaction_manager(
+pub async fn db_transaction_manager(
     store: &PostgresStore,
 ) -> Result<TransactionManager, McpTableError> {
     Ok(TransactionManager {

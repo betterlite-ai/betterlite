@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 use crate::mcp::table_access::filter::ServerFilter;
 use crate::mcp::table_access::rows::RowFields;
-use crate::mcp::table_access::server_reads::_identifier_field;
+use crate::mcp::table_access::server_reads::identifier_field;
 use crate::mcp::table_access::types::IdentifierField;
 use crate::mcp::table_access::{
-    _identifier_where, _mcp_identifier_lock_keys, McpIdentifierConflict, find_identifier_conflict,
+    McpIdentifierConflict, find_identifier_conflict, identifier_where, mcp_identifier_lock_keys,
 };
 use crate::mcp_stored_contracts::JsonValue;
 
@@ -95,14 +95,14 @@ async fn empty_identifiers_do_not_query_for_a_collision() {
 
 #[test]
 fn the_identifier_predicate_keeps_null_rows_and_hides_drafts() {
-    let (predicate, binds) = _identifier_where("Shared", Some("s1")).predicate(1);
+    let (predicate, binds) = identifier_where("Shared", Some("s1")).predicate(1);
     assert_eq!(
         predicate,
         "((LOWER(\"server_name\") = LOWER($1) OR LOWER(\"alias\") = LOWER($1)) AND (\"approval_status\" IS NULL OR \"approval_status\" <> 'draft')) AND \"server_id\" <> $2"
     );
     assert_eq!(binds, vec!["Shared".to_owned(), "s1".to_owned()]);
     assert!(matches!(
-        _identifier_where("Shared", None),
+        identifier_where("Shared", None),
         ServerFilter::Identifiers {
             exclude_server_id: None,
             ..
@@ -113,15 +113,15 @@ fn the_identifier_predicate_keeps_null_rows_and_hides_drafts() {
 #[test]
 fn lock_keys_are_signed_big_endian_blake2b_digests() {
     assert_eq!(
-        _mcp_identifier_lock_keys(&[Some("a")]),
+        mcp_identifier_lock_keys(&[Some("a")]),
         vec![5_603_257_361_941_401_104_i64]
     );
     assert_eq!(
-        _mcp_identifier_lock_keys(&[Some("mcp")]),
+        mcp_identifier_lock_keys(&[Some("mcp")]),
         vec![8_703_809_971_163_426_483_i64]
     );
     assert_eq!(
-        _mcp_identifier_lock_keys(&[Some("alias")]),
+        mcp_identifier_lock_keys(&[Some("alias")]),
         vec![-5_559_374_156_414_036_648_i64]
     );
 }
@@ -129,12 +129,12 @@ fn lock_keys_are_signed_big_endian_blake2b_digests() {
 #[test]
 fn lock_keys_come_from_sorted_deduplicated_lowercased_identifiers() {
     let keys =
-        _mcp_identifier_lock_keys(&[Some("B"), None, Some("a"), Some(""), Some("b"), Some("A")]);
+        mcp_identifier_lock_keys(&[Some("B"), None, Some("a"), Some(""), Some("b"), Some("A")]);
     assert_eq!(
         keys,
         vec![5_603_257_361_941_401_104_i64, 5_257_132_140_804_914_424_i64]
     );
-    assert!(_mcp_identifier_lock_keys(&[None, Some("")]).is_empty());
+    assert!(mcp_identifier_lock_keys(&[None, Some("")]).is_empty());
 }
 
 #[test]
@@ -147,10 +147,10 @@ fn the_identifier_field_reads_strings_only() {
             JsonValue::Number(serde_json::Number::from(7_i32)),
         ),
     ]));
-    assert_eq!(_identifier_field(&fields, "server_name"), None);
-    assert_eq!(_identifier_field(&fields, "missing"), None);
+    assert_eq!(identifier_field(&fields, "server_name"), None);
+    assert_eq!(identifier_field(&fields, "missing"), None);
     assert_eq!(
-        _identifier_field(&fields, "alias"),
+        identifier_field(&fields, "alias"),
         Some("alias-value".to_owned())
     );
 }

@@ -10,9 +10,9 @@ use tokio_postgres::{Config, NoTls};
 use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::budget_permission_rows::JsonData;
 use crate::database_replica::availability::Availability;
-use crate::mcp::table_access::_mcp_server_write_if_identifier_free;
+use crate::mcp::table_access::mcp_server_write_if_identifier_free;
 use crate::mcp::table_access::rows::{RowFields, ServerUpdate};
-use crate::mcp::table_access::store::{_db_transaction_manager, McpTableStore};
+use crate::mcp::table_access::store::{McpTableStore, db_transaction_manager};
 use crate::mcp::table_access::types::{
     IdentifierField, LockedWrite, LockedWriteOutcome, ServerWrite,
 };
@@ -105,7 +105,7 @@ async fn stored_count(writer: &PostgresStore, server_id: &str) -> i64 {
 #[tokio::test]
 async fn a_locked_write_inserts_free_rows_and_reports_collisions() {
     let (_fixture, writer) = seeded().await;
-    let mut transactions = _db_transaction_manager(&writer)
+    let mut transactions = db_transaction_manager(&writer)
         .await
         .expect("the manager opens on a live pool");
     let transaction = transactions.begin().await.expect("the transaction opens");
@@ -121,7 +121,7 @@ async fn a_locked_write_inserts_free_rows_and_reports_collisions() {
     };
     let table = McpTableStore::new(Some(client), publisher()).expect("a client builds a store");
     let free = locked_write("s2", "OTHER");
-    let written = _mcp_server_write_if_identifier_free(&table, &free)
+    let written = mcp_server_write_if_identifier_free(&table, &free)
         .await
         .expect("a free identifier commits");
     let LockedWriteOutcome::Written(Some(inserted)) = written else {
@@ -130,7 +130,7 @@ async fn a_locked_write_inserts_free_rows_and_reports_collisions() {
     assert_eq!(text_field(&inserted, "server_id"), Some("s2"));
     assert_eq!(stored_count(&writer, "s2").await, 1);
     let taken = locked_write("s3", "taken");
-    let refused = _mcp_server_write_if_identifier_free(&table, &taken)
+    let refused = mcp_server_write_if_identifier_free(&table, &taken)
         .await
         .expect("the lock and check run");
     let LockedWriteOutcome::Conflict(conflict) = refused else {
@@ -161,7 +161,7 @@ async fn a_locked_update_may_keep_its_own_name_and_changes_the_row() {
             data: RowFields::texts(&[("approval_status", "active")]),
         }),
     };
-    let written = _mcp_server_write_if_identifier_free(&table, &rename)
+    let written = mcp_server_write_if_identifier_free(&table, &rename)
         .await
         .expect("the own row is excluded from the check");
     let LockedWriteOutcome::Written(Some(updated)) = written else {
@@ -177,7 +177,7 @@ async fn a_locked_update_may_keep_its_own_name_and_changes_the_row() {
             data: RowFields::texts(&[("approval_status", "active")]),
         }),
     };
-    let nothing = _mcp_server_write_if_identifier_free(&table, &missing)
+    let nothing = mcp_server_write_if_identifier_free(&table, &missing)
         .await
         .expect("an update of no row still commits");
     assert!(matches!(nothing, LockedWriteOutcome::Written(None)));
