@@ -1,0 +1,30 @@
+kind: helper
+name: shadow-unmask-b-real-first
+call:
+  b4084:
+    operation: unmask
+    raw_preference: B
+    real_is_a: true
+calls:
+  - b4084:
+      operation: unmask
+      raw_preference: b
+      real_is_a: true
+  - b4084:
+      operation: unmask
+      raw_preference: B
+      real_is_a: false
+  - b4084:
+      operation: unmask
+      raw_preference: b
+      real_is_a: false
+  - b4084:
+      operation: unmask
+      raw_preference: A
+      real_is_a: false
+  - b4084:
+      operation: unmask
+      raw_preference: " b "
+      real_is_a: true
+env: {}
+compare: {ignore: []}

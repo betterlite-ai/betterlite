@@ -1,0 +1,11 @@
+kind: helper
+name: shadow-judge-prompt-with-tools
+call:
+  b4084:
+    operation: judge_prompt
+    conversation: "USER: weather?"
+    response_a: It is sunny.
+    response_b: '[tool call] get_weather({"city":"Paris"})'
+    tool_definitions: "Tools available to both responses:\n- get_weather: Get the weather"
+env: {}
+compare: {ignore: []}

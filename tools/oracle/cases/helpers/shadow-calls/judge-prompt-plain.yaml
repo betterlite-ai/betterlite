@@ -1,0 +1,28 @@
+kind: helper
+name: shadow-judge-prompt-plain
+call:
+  b4084:
+    operation: judge_prompt
+    conversation: "USER: hi\nASSISTANT: hello"
+    response_a: first reply
+    response_b: second reply
+    tool_definitions: ""
+calls:
+  - b4084:
+      operation: judge_prompt
+      conversation: one line
+      response_a: ""
+      response_b: reply
+  - b4084:
+      operation: judge_prompt
+      conversation: "USER: what's up?"
+      response_a: "nothing much"
+      response_b: ""
+      tool_definitions: ""
+  - b4084:
+      operation: judge_prompt
+      conversation: "USER: line one\nASSISTANT: line two\nUSER: line three"
+      response_a: "a\nb"
+      response_b: "c\nd"
+env: {}
+compare: {ignore: []}

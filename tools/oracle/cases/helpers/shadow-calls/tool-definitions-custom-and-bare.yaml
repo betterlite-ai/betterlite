@@ -1,0 +1,35 @@
+kind: helper
+name: shadow-tool-definitions-custom-and-bare
+call:
+  b4084:
+    operation: tool_definitions
+    tools:
+      - type: custom
+        custom:
+          name: run_code
+          description: Run a code snippet
+      - name: bare_tool
+        description: A bare entry
+      - a bare string
+      - type: function
+        function:
+          description: A function with no name
+calls:
+  - b4084:
+      operation: tool_definitions
+      tools: []
+  - b4084:
+      operation: tool_definitions
+      tools: "not a list"
+  - b4084:
+      operation: tool_definitions
+      tools: {"type": "function"}
+  - b4084:
+      operation: tool_definitions
+      tools: [1, true, null]
+  - b4084:
+      operation: tool_definitions
+      tools:
+        - function: {}
+env: {}
+compare: {ignore: []}
