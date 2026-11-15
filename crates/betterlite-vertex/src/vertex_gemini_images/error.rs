@@ -30,8 +30,6 @@ pub enum GeminiImageError {
     },
     #[error("the Google image usageMetadata is not an object")]
     UsageShape,
-    #[error("`{field}` does not hold integer token counts")]
-    TokenCount { field: &'static str },
     #[error("the Google image token counts in `{field}` overflow")]
     TokenOverflow { field: &'static str },
     // B1334's tools mapping owns its own error classes, so this one passes them through
@@ -49,7 +47,6 @@ impl GeminiImageError {
             | Self::Shape { .. }
             | Self::FieldType { .. }
             | Self::UsageShape
-            | Self::TokenCount { .. }
             | Self::TokenOverflow { .. }
             | Self::Policy(_) => None,
         }
@@ -63,7 +60,6 @@ impl GeminiImageError {
             | Self::Shape { .. }
             | Self::FieldType { .. }
             | Self::UsageShape
-            | Self::TokenCount { .. }
             | Self::TokenOverflow { .. }
             | Self::Policy(_) => None,
         }

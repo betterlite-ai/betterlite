@@ -286,7 +286,7 @@ fn a_blank_signature_is_not_attached() {
 #[test]
 fn usage_sums_only_text_and_image_details() {
     let response = transform_image_generation_response(&reply(
-        r#"{"usageMetadata":{"promptTokenCount":9,"promptTokensDetails":[{"modality":"TEXT","tokenCount":4},{"modality":"IMAGE","tokenCount":5},{"modality":"AUDIO","tokenCount":7},{"modality":"","tokenCount":8},"junk",{"tokenCount":6}],"candidatesTokenCount":132,"totalTokenCount":141}}"#,
+        r#"{"usageMetadata":{"promptTokenCount":9,"promptTokensDetails":[{"modality":"TEXT","tokenCount":4},{"modality":"IMAGE","tokenCount":5},{"modality":"AUDIO","tokenCount":7},{"modality":"","tokenCount":8},{"tokenCount":6}],"candidatesTokenCount":132,"totalTokenCount":141}}"#,
     ))
     .expect("the usage transforms");
     assert_eq!(
@@ -343,10 +343,20 @@ fn a_token_count_that_is_not_an_integer_names_the_field() {
     .expect_err("a string is not a count");
     assert!(matches!(
         error,
-        GeminiImageError::TokenCount {
-            field: "promptTokenCount"
-        }
+        GeminiImageError::Shape { ref path, .. } if path == "promptTokenCount"
     ));
+}
+
+#[test]
+fn an_usage_object_of_only_nulls_is_present_with_zero_counts() {
+    let response = transform_image_generation_response(&reply(
+        r#"{"usageMetadata":{"promptTokenCount":null}}"#,
+    ))
+    .expect("nulls take their default");
+    assert_eq!(
+        encoded(&response),
+        r#"{"data":[],"usage":{"input_tokens":0,"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,"total_tokens":0}}"#
+    );
 }
 
 #[test]

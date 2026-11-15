@@ -4,7 +4,9 @@ use betterlite_openai::api::image_contracts::records::{ImageInputTokens, ImageUs
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use super::decode::{GoogleImageCandidate, decode_google_image};
+use super::decode::{
+    GoogleImageCandidate, ImageUsageMetadata, decode_google_image, decode_image_usage,
+};
 use super::error::GeminiImageError;
 use crate::gemini_image_policy::generation::image_web_search_requests;
 
@@ -74,90 +76,60 @@ pub fn transform_image_generation_response(
             });
         }
     }
-    // an absent or empty usageMetadata leaves usage away; a non-object value is a typed error, and
-    // only a present usage takes the search count
-    let usage = decoded
+    // absent or empty usage leaves usage away, and only a present usage takes the search count
+    let usage_metadata = decoded
         .usage_metadata
-        .as_ref()
-        .filter(|metadata| !matches!(metadata, ResponseJson::Object(fields) if fields.is_empty()))
-        .map(transform_image_generation_usage)
+        .as_deref()
+        .map(decode_image_usage)
         .transpose()?
-        .map(|usage| ImageGenerationUsage {
-            usage,
+        .flatten();
+    let usage = match usage_metadata {
+        Some(metadata) => Some(ImageGenerationUsage {
+            usage: transform_image_generation_usage(&metadata)?,
             web_search_requests: web_search_requests(candidates),
-        });
+        }),
+        None => None,
+    };
     Ok(ImageGenerationResponse { data, usage })
 }
 
 pub fn transform_image_generation_usage(
-    usage: &ResponseJson,
+    usage: &ImageUsageMetadata,
 ) -> Result<ImageUsage, GeminiImageError> {
-    let ResponseJson::Object(fields) = usage else {
-        return Err(GeminiImageError::UsageShape);
-    };
     let mut image_tokens = 0_i64;
     let mut text_tokens = 0_i64;
-    if let Some(ResponseJson::List(details)) = fields.get("promptTokensDetails") {
-        for detail in details {
-            let ResponseJson::Object(detail) = detail else {
-                continue;
-            };
-            let Some(ResponseJson::Text(modality)) =
-                detail.get("modality").filter(|value| value.is_truthy())
-            else {
-                continue;
-            };
-            match modality.as_str() {
-                "TEXT" => {
-                    let count = token_count(detail, "promptTokensDetails")?;
-                    text_tokens =
-                        text_tokens
-                            .checked_add(count)
-                            .ok_or(GeminiImageError::TokenOverflow {
-                                field: "promptTokensDetails",
-                            })?;
-                }
-                "IMAGE" => {
-                    let count = token_count(detail, "promptTokensDetails")?;
-                    image_tokens =
-                        image_tokens
-                            .checked_add(count)
-                            .ok_or(GeminiImageError::TokenOverflow {
-                                field: "promptTokensDetails",
-                            })?;
-                }
-                _ => {}
+    let details = usage.prompt_tokens_details.as_deref().unwrap_or_default();
+    for detail in details {
+        if detail.modality.is_empty() {
+            continue;
+        }
+        match detail.modality.as_str() {
+            "TEXT" => {
+                text_tokens = text_tokens
+                    .checked_add(detail.token_count.unwrap_or_default())
+                    .ok_or(GeminiImageError::TokenOverflow {
+                        field: "promptTokensDetails",
+                    })?;
             }
+            "IMAGE" => {
+                image_tokens = image_tokens
+                    .checked_add(detail.token_count.unwrap_or_default())
+                    .ok_or(GeminiImageError::TokenOverflow {
+                        field: "promptTokensDetails",
+                    })?;
+            }
+            _ => {}
         }
     }
     Ok(ImageUsage {
-        input_tokens: token_count(fields, "promptTokenCount")?,
+        input_tokens: usage.prompt_token_count.unwrap_or_default(),
         input_tokens_details: ImageInputTokens {
             image_tokens,
             text_tokens,
         },
-        output_tokens: token_count(fields, "candidatesTokenCount")?,
-        total_tokens: token_count(fields, "totalTokenCount")?,
+        output_tokens: usage.candidates_token_count.unwrap_or_default(),
+        total_tokens: usage.total_token_count.unwrap_or_default(),
     })
-}
-
-// usage.get(name, 0): an absent or null count is zero, and a non-integer one fails the typed usage
-fn token_count(
-    fields: &IndexMap<String, ResponseJson>,
-    field: &'static str,
-) -> Result<i64, GeminiImageError> {
-    match fields.get(field) {
-        None | Some(ResponseJson::Null) => Ok(0),
-        Some(ResponseJson::Number(number)) => number
-            .as_i64()
-            .ok_or(GeminiImageError::TokenCount { field }),
-        Some(
-            ResponseJson::Bool(_)
-            | ResponseJson::Text(_)
-            | ResponseJson::List(_)
-            | ResponseJson::Object(_),
-        ) => Err(GeminiImageError::TokenCount { field }),
-    }
 }
 
 // get_gemini_image_web_search_requests reads candidates and groundingMetadata from the reply object
