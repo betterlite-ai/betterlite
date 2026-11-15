@@ -1,24 +1,16 @@
 use betterlite_http::proxy::limits::{ReadError, read_bounded};
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
-use serde::Deserialize;
 
 use super::error::SingulrError;
 use super::payload::SingulrPayload;
 use super::settings::SingulrSettings;
+use super::wire::Answer;
 use super::{GUARD_ENDPOINT, MAX_RESPONSE_BYTES};
 
 const TOKEN_HEADER: &str = "x-singulr-gateway-token";
 const APPLICATION_HEADER: &str = "x-singulr-enforcement-entity-id";
 const GUARDRAIL_HEADER: &str = "x-singulr-guardrail-id";
-
-#[derive(Debug, Deserialize)]
-pub(super) struct Answer {
-    #[serde(default)]
-    pub(super) should_block: bool,
-    #[serde(default)]
-    pub(super) blocking_due_to: Option<String>,
-}
 
 pub(super) async fn send(
     client: &reqwest::Client,
@@ -77,11 +69,11 @@ fn headers(settings: &SingulrSettings) -> Result<HeaderMap, SingulrError> {
     for (name, value, sensitive) in optional {
         if let Some(value) = value.filter(|value| !value.is_empty()) {
             let mut header = HeaderValue::from_str(value)
-                .map_err(|_source| SingulrError::InvalidHeader { name })?;
+                .map_err(|source| SingulrError::InvalidHeader { name, source })?;
             header.set_sensitive(sensitive);
             headers.insert(
                 HeaderName::try_from(name)
-                    .map_err(|_source| SingulrError::InvalidHeader { name })?,
+                    .map_err(|source| SingulrError::InvalidHeaderName { name, source })?,
                 header,
             );
         }

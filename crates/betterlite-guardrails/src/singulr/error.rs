@@ -1,5 +1,6 @@
 use std::str::Utf8Error;
 
+use reqwest::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
 
 // LiteLLM raises GuardrailRaisedException for every one of these, and its default status is 400
@@ -21,7 +22,17 @@ pub enum SingulrError {
         source: reqwest::Error,
     },
     #[error("Singulr API unreachable (block_on_error=True): the {name} header value is invalid")]
-    InvalidHeader { name: &'static str },
+    InvalidHeader {
+        name: &'static str,
+        #[source]
+        source: InvalidHeaderValue,
+    },
+    #[error("Singulr API unreachable (block_on_error=True): the {name} header name is invalid")]
+    InvalidHeaderName {
+        name: &'static str,
+        #[source]
+        source: InvalidHeaderName,
+    },
     #[error("Singulr API returned an invalid response: {source}")]
     InvalidResponse {
         #[source]
@@ -43,7 +54,7 @@ impl SingulrError {
             Self::Transport { source } => {
                 tracing::error!(error = %source, "Singulr API unreachable");
             }
-            Self::InvalidHeader { name } => {
+            Self::InvalidHeader { name, .. } | Self::InvalidHeaderName { name, .. } => {
                 tracing::error!(header = *name, "Singulr API request header is invalid");
             }
             Self::InvalidResponse { source } => {

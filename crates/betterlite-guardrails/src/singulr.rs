@@ -5,6 +5,7 @@ mod metadata;
 mod payload;
 pub mod settings;
 mod tool_calls;
+pub mod wire;
 
 use std::collections::BTreeMap;
 use std::time::Duration;

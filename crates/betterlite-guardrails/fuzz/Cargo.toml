@@ -129,3 +129,10 @@ path = "fuzz_targets/model_armor_files.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "singulr_response"
+path = "fuzz_targets/singulr_response.rs"
+test = false
+doc = false
+bench = false

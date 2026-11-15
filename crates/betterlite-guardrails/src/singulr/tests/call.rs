@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 use axum::http::StatusCode;
 use secrecy::SecretString;
 
@@ -5,6 +8,7 @@ use super::support;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::singulr::SUPPORTED_EVENT_HOOKS;
 use crate::singulr::error::{STATUS_CODE, SingulrError};
+use crate::singulr::wire::Answer;
 
 #[tokio::test]
 async fn the_call_posts_to_the_guard_endpoint_with_the_singulr_headers() {
@@ -354,6 +358,17 @@ fn a_failed_call_logs_at_error_level() {
     assert!(outcome.is_ok());
     let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
     assert!(output.contains("Singulr API returned an HTTP error status"));
+}
+
+#[test]
+fn replays_the_singulr_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/singulr_response");
+    let seeds: Vec<_> = fs::read_dir(corpus).unwrap().collect();
+    assert!(!seeds.is_empty());
+    assert!(seeds.into_iter().all(|seed| {
+        let bytes = fs::read(seed.unwrap().path()).unwrap();
+        serde_json::from_slice::<Answer>(&bytes).is_ok()
+    }));
 }
 
 #[test]
