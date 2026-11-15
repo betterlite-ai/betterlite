@@ -1,0 +1,27 @@
+kind: helper
+name: legacy-duplicate-name
+call:
+  b3683:
+    function: legacy_plan
+    guardrails:
+      - dup:
+          callbacks: [first, shared]
+          default_on: true
+          callback_args:
+            shared:
+              from: one
+              extra: 1
+      - other:
+          callbacks: [second, first]
+          default_on: true
+      - dup:
+          callbacks: [third]
+          default_on: true
+          enabled_roles: null
+          callback_args:
+            shared:
+              from: three
+    started: [second]
+env: {}
+compare:
+  ignore: []

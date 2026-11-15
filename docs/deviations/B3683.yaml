@@ -1,0 +1,27 @@
+task: B3683
+deviations:
+  - what: IN_MEMORY_GUARDRAIL_HANDLER, the registry and GUARDRAIL_RECONCILE_LOCK are fields of one GuardrailRuntime built at startup and shared by Arc. The handler sits behind a tokio RwLock, and sync_locked and poll_database take the reconcile mutex first and the write lock second.
+    why: Module-level state is forbidden in this codebase. LiteLLM readers take no lock, but Rust cannot share a mutable handler without one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L891-L893
+  - what: start_from_config returns the router guardrail list and the caller hands it to the router. Each RouterGuardrail entry has no callback field, and a missing router is the caller's decision, so there is no "Router not initialized" skip inside.
+    why: The callback object belongs to the guardrails crate, so the entry holds only the id and the router asks the runtime for the callback. betterlite-guardrails does not depend on the router crate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L52-L97
+  - what: The default_on callbacks of the legacy path are handed on in the order of first appearance. LiteLLM passes list(set), whose order changes between runs.
+    why: A fixed order is the only stable choice, and no behavior depends on the set order. The oracle sorts the list before it compares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L140
+  - what: The legacy path hands its callbacks to a LegacyCallbackStarter, and RegistryStarter implements it on B189's CallbackRegistry. Only the registration of a named callback is ported, and callback_args stays in the plan without reaching the registry.
+    why: initialize_callbacks_on_proxy is not ported by B189, the legacy default_on guardrails need only registration by name, and the registry takes no per-callback arguments. The named enterprise and integration branches, custom imports and the prometheus mount have no owner yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L134-L172
+  - what: A legacy spec with an unknown key, or with its own guardrail_name key, fails the config load with a betterlite-config error, not a Python TypeError traceback at startup.
+    why: The effect is the same (the proxy does not start) and the config crate reports load errors with the path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L117
+  - what: init_guardrails_v2 skips an entry for every RegistryError variant that LiteLLM raises as ValueError, which includes Initializer (a bad guardrail config from an initializer). The task text listed six variants and left Initializer out.
+    why: B3682's error.rs marks Initializer as the ValueError case, and LiteLLM catches ValueError and TypeError here, so a bad initializer config skips the entry and does not stop the proxy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L28-L45
+kept_bugs:
+  - what: A later legacy item with the same name replaces the earlier one in the name map without a message, while both stay in the item list that feeds the default_on callbacks.
+    why: A working setup can rely on the last definition winning and on the earlier callbacks still starting, so both behaviors are copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L116-L119
+  - what: The presidio logging_only rewrite replaces the user's presidio callback args, and it also runs when presidio is already started.
+    why: The rewrite sits outside the started test in LiteLLM, and a config that sets logging_only on presidio relies on the args it gets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L134-L138

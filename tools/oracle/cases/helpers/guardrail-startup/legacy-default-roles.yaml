@@ -1,0 +1,17 @@
+kind: helper
+name: legacy-default-roles
+call:
+  b3683:
+    function: legacy_plan
+    guardrails:
+      - roles:
+          callbacks: [presidio]
+          default_on: true
+      - explicit:
+          callbacks: [lakera_prompt_injection]
+          enabled_roles: [assistant]
+          logging_only: false
+    started: []
+env: {}
+compare:
+  ignore: []

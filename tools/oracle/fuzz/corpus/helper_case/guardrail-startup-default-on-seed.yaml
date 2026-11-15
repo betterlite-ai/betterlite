@@ -1,0 +1,5 @@
+kind: helper
+name: guardrail-startup-default-on-seed
+call: {b3683: {function: legacy_plan, guardrails: [{pii: {callbacks: [presidio], default_on: true, callback_args: {presidio: {language: en}}}}], started: []}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: legacy-presidio-logging-only
+call:
+  b3683:
+    function: legacy_plan
+    guardrails:
+      - pii:
+          callbacks: [presidio, lakera_prompt_injection]
+          default_on: true
+          logging_only: true
+          callback_args:
+            presidio:
+              language: en
+              score_threshold: 0.5
+    started: [presidio]
+env: {}
+compare:
+  ignore: []

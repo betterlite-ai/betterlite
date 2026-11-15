@@ -1,0 +1,15 @@
+kind: helper
+name: legacy-not-default-on
+call:
+  b3683:
+    function: legacy_plan
+    guardrails:
+      - pii:
+          callbacks: [presidio]
+          callback_args:
+            presidio:
+              language: en
+    started: []
+env: {}
+compare:
+  ignore: []
