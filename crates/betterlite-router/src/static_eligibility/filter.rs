@@ -142,7 +142,9 @@ fn pre_call_filters(
         &mut causes,
     );
     if deployments.is_empty() && !rejected.is_empty() {
-        return Err(ContextWindowExceeded { causes: rejected }.into());
+        return Err(EligibilityError::ContextWindow(ContextWindowExceeded {
+            causes: rejected,
+        }));
     }
     Ok((deployments, causes))
 }
