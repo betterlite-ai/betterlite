@@ -266,7 +266,7 @@ fn invited_email(base_url: &str) -> UserInvitedEmail<'_> {
 
 #[test]
 fn render_key_created_email_matches_the_litellm_template() {
-    let html = render_key_created_email(&budget_email(Some(10.0)));
+    let html = render_key_created_email(&budget_email(Some(10.0_f64)));
     assert_eq!(html, fixtures::KEY_CREATED_HTML);
     assert_eq!(html.matches("sk-test-token").count(), 2);
     assert!(html.contains("base_url={base_url}"));
@@ -275,7 +275,7 @@ fn render_key_created_email_matches_the_litellm_template() {
     assert!(!html.contains("}}"));
     let braced = render_key_created_email(&KeyCreatedEmail {
         key_token: Some("sk-{email_logo_url}"),
-        ..budget_email(Some(10.0))
+        ..budget_email(Some(10.0_f64))
     });
     assert!(braced.contains("Key: <pre>sk-{email_logo_url}</pre> <br>"));
     assert!(braced.contains("api_key=\"sk-{email_logo_url}\""));
@@ -312,12 +312,12 @@ fn render_user_invited_email_matches_the_litellm_template() {
 }
 
 #[rstest]
-#[case::whole(10.0, "10.0")]
-#[case::fraction(0.5, "0.5")]
-#[case::cents(100.25, "100.25")]
-#[case::small(1e-7, "1e-07")]
-#[case::large(1e300, "1e+300")]
-#[case::negative_zero(-0.0, "-0.0")]
+#[case::whole(10.0_f64, "10.0")]
+#[case::fraction(0.5_f64, "0.5")]
+#[case::cents(100.25_f64, "100.25")]
+#[case::small(1e-7_f64, "1e-07")]
+#[case::large(1e300_f64, "1e+300")]
+#[case::negative_zero(-0.0_f64, "-0.0")]
 fn render_float_budgets_print_like_python(#[case] budget: f64, #[case] expected: &str) {
     let html = render_key_created_email(&budget_email(Some(budget)));
     assert!(html.contains(&format!("loaded with ${expected} per month")));
