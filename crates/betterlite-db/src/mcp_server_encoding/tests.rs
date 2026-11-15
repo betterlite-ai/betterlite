@@ -8,6 +8,7 @@ use betterlite_secrets::secret_codec::{
 };
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::error::Category;
 
 use super::McpEncodingError;
 use super::blank::blank_to_none;
@@ -60,7 +61,7 @@ fn decrypt_cipher() -> DbCipher {
     }
 }
 
-fn s(text: &str) -> JsonValue {
+fn json_string(text: &str) -> JsonValue {
     JsonValue::String(text.to_owned())
 }
 
@@ -175,8 +176,11 @@ fn blank_to_none_trims_a_value_and_clears_a_blank(
 
 #[test]
 fn blank_to_none_has_no_non_string_input_at_the_typed_boundary() {
-    assert!(serde_json::from_str::<McpServerRequest>(r#"{"issuer": 5}"#).is_err());
-    assert!(serde_json::from_str::<McpServerRequest>(r#"{"audience": ["a"]}"#).is_err());
+    let issuer_error = serde_json::from_str::<McpServerRequest>(r#"{"issuer": 5}"#).unwrap_err();
+    assert_eq!(issuer_error.classify(), Category::Data);
+    let audience_error =
+        serde_json::from_str::<McpServerRequest>(r#"{"audience": ["a"]}"#).unwrap_err();
+    assert_eq!(audience_error.classify(), Category::Data);
 }
 
 #[rstest]
@@ -285,8 +289,14 @@ fn encrypt_credentials_encrypts_the_secret_fields_only() {
         plaintext.get("client_private_key"),
         "client_private_key was left in plaintext"
     );
-    assert_eq!(credentials.get("aws_region_name"), Some(&s("us-east-1")));
-    assert_eq!(credentials.get("access_token"), Some(&s("minted")));
+    assert_eq!(
+        credentials.get("aws_region_name"),
+        Some(&json_string("us-east-1"))
+    );
+    assert_eq!(
+        credentials.get("access_token"),
+        Some(&json_string("minted"))
+    );
     assert_eq!(credentials.get("scopes"), Some(&json(r#"["read"]"#)));
 }
 
@@ -313,7 +323,10 @@ fn encrypt_credentials_encrypts_the_aws_secret_fields_only() {
         plaintext.get("aws_session_token"),
         "aws_session_token was left in plaintext"
     );
-    assert_eq!(credentials.get("aws_region_name"), Some(&s("us-east-1")));
+    assert_eq!(
+        credentials.get("aws_region_name"),
+        Some(&json_string("us-east-1"))
+    );
 }
 
 #[test]
@@ -341,8 +354,14 @@ fn decrypt_credentials_restores_the_secret_fields() {
 fn decrypt_credentials_forwards_a_value_it_cannot_decrypt() {
     let mut credentials = blob(r#"{"client_id":"not-a-ciphertext","aws_region_name":"us-east-1"}"#);
     decrypt_credentials(&mut credentials, &decrypt_cipher());
-    assert_eq!(credentials.get("client_id"), Some(&s("not-a-ciphertext")));
-    assert_eq!(credentials.get("aws_region_name"), Some(&s("us-east-1")));
+    assert_eq!(
+        credentials.get("client_id"),
+        Some(&json_string("not-a-ciphertext"))
+    );
+    assert_eq!(
+        credentials.get("aws_region_name"),
+        Some(&json_string("us-east-1"))
+    );
 }
 
 #[rstest]
@@ -360,18 +379,18 @@ fn credentials_blob_to_dict_reads_a_string_or_an_object(
     let result = credentials_blob_to_dict(&json(stored));
     assert_eq!(result.is_ok(), expected_ok);
     if let Ok(decoded) = result {
-        assert_eq!(decoded.get("client_id"), Some(&s("abc")));
+        assert_eq!(decoded.get("client_id"), Some(&json_string("abc")));
     }
 }
 
 #[test]
 fn credentials_blob_to_dict_reports_a_parse_error() {
     assert!(matches!(
-        credentials_blob_to_dict(&s("not json")),
+        credentials_blob_to_dict(&json_string("not json")),
         Err(McpEncodingError::Json(_))
     ));
     assert!(matches!(
-        credentials_blob_to_dict(&s("[1]")),
+        credentials_blob_to_dict(&json_string("[1]")),
         Err(McpEncodingError::CredentialsNotObject)
     ));
 }
@@ -390,11 +409,25 @@ fn prepare_create_drops_nulls_and_keeps_explicit_values() {
     let prepared = create(&request(
         r#"{"server_id":"s1","server_name":"srv","alias":"alias","description":"d","transport":"http","auth_type":"oauth2","url":"https://up","spec_path":"/spec","instructions":"use","command":"run","args":["a"],"mcp_access_groups":["g"],"allowed_tools":["t"],"extra_headers":["h"],"issuer":"https://issuer","authorization_url":"https://auth","token_url":"https://token","registration_url":"https://register","oauth2_flow":"authorization_code","dcr_bridge":true,"allow_all_keys":true,"available_on_public_internet":false,"delegate_auth_to_upstream":true,"oauth_passthrough":true,"per_server_oauth_discovery":true,"is_byok":true,"byok_description":["k"],"byok_api_key_help_url":"https://help","source_url":"https://source","max_concurrent_requests":3}"#,
     ));
-    assert_eq!(prepared.get("server_id"), Some(&s("s1")));
-    assert_eq!(prepared.get("alias"), Some(&s("alias")));
-    assert_eq!(prepared.get("transport"), Some(&s("http")));
-    assert_eq!(prepared.get("auth_type"), Some(&s("oauth2")));
-    assert_eq!(prepared.get("oauth2_flow"), Some(&s("authorization_code")));
+    assert_eq!(prepared.get("server_id"), Some(&json_string("s1")));
+    assert_eq!(prepared.get("alias"), Some(&json_string("alias")));
+    assert_eq!(prepared.get("transport"), Some(&json_string("http")));
+    assert_eq!(prepared.get("auth_type"), Some(&json_string("oauth2")));
+    assert_eq!(
+        prepared.get("oauth2_flow"),
+        Some(&json_string("authorization_code"))
+    );
+    assert!(!prepared.contains_key("credentials"));
+    assert!(!prepared.contains_key("mcp_info"));
+    assert!(!prepared.contains_key("static_headers"));
+    assert!(!prepared.contains_key("env_vars"));
+}
+
+#[test]
+fn prepare_create_keeps_explicit_flag_list_and_count_values() {
+    let prepared = create(&request(
+        r#"{"server_name":"srv","args":["a"],"mcp_access_groups":["g"],"dcr_bridge":true,"allow_all_keys":true,"available_on_public_internet":false,"is_byok":true,"max_concurrent_requests":3}"#,
+    ));
     assert_eq!(prepared.get("dcr_bridge"), Some(&JsonValue::Bool(true)));
     assert_eq!(prepared.get("allow_all_keys"), Some(&JsonValue::Bool(true)));
     assert_eq!(
@@ -405,10 +438,6 @@ fn prepare_create_drops_nulls_and_keeps_explicit_values() {
     assert_eq!(prepared.get("args"), Some(&json(r#"["a"]"#)));
     assert_eq!(prepared.get("mcp_access_groups"), Some(&json(r#"["g"]"#)));
     assert_eq!(prepared.get("max_concurrent_requests"), Some(&json("3")));
-    assert!(!prepared.contains_key("credentials"));
-    assert!(!prepared.contains_key("mcp_info"));
-    assert!(!prepared.contains_key("static_headers"));
-    assert!(!prepared.contains_key("env_vars"));
 }
 
 #[test]
@@ -423,8 +452,11 @@ fn prepare_create_encrypts_credentials_and_drops_null_values() {
         r#"{"server_id":"s1","server_name":"srv","credentials":{"client_id":"abc","client_secret":null,"aws_region_name":"us-east-1"}}"#,
     ));
     let decoded = decrypted_blob(&prepared);
-    assert_eq!(decoded.get("client_id"), Some(&s("abc")));
-    assert_eq!(decoded.get("aws_region_name"), Some(&s("us-east-1")));
+    assert_eq!(decoded.get("client_id"), Some(&json_string("abc")));
+    assert_eq!(
+        decoded.get("aws_region_name"),
+        Some(&json_string("us-east-1"))
+    );
     assert!(!decoded.contains_key("client_secret"));
 }
 
@@ -435,7 +467,7 @@ fn prepare_create_drops_a_credential_field_outside_the_typed_model() {
         r#"{"server_name":"srv","credentials":{"client_id":"abc","future_field":5}}"#,
     ));
     let decoded = decrypted_blob(&prepared);
-    assert_eq!(decoded.get("client_id"), Some(&s("abc")));
+    assert_eq!(decoded.get("client_id"), Some(&json_string("abc")));
     assert!(!decoded.contains_key("future_field"));
 }
 
@@ -446,17 +478,23 @@ fn prepare_create_lifts_token_exchange_settings_out_of_the_credentials_blob() {
     ));
     assert_eq!(
         prepared.get("token_exchange_endpoint"),
-        Some(&s("https://idp/token"))
+        Some(&json_string("https://idp/token"))
     );
-    assert_eq!(prepared.get("audience"), Some(&s("aud")));
-    assert_eq!(prepared.get("subject_token_type"), Some(&s("urn:type")));
-    assert_eq!(prepared.get("token_exchange_profile"), Some(&s("profile")));
+    assert_eq!(prepared.get("audience"), Some(&json_string("aud")));
+    assert_eq!(
+        prepared.get("subject_token_type"),
+        Some(&json_string("urn:type"))
+    );
+    assert_eq!(
+        prepared.get("token_exchange_profile"),
+        Some(&json_string("profile"))
+    );
     let decoded = decrypted_blob(&prepared);
     assert!(!decoded.contains_key("token_exchange_endpoint"));
     assert!(!decoded.contains_key("audience"));
     assert!(!decoded.contains_key("subject_token_type"));
     assert!(!decoded.contains_key("token_exchange_profile"));
-    assert_eq!(decoded.get("client_id"), Some(&s("abc")));
+    assert_eq!(decoded.get("client_id"), Some(&json_string("abc")));
 }
 
 #[test]
@@ -466,7 +504,7 @@ fn prepare_create_keeps_an_explicit_top_level_token_exchange_value() {
     ));
     assert_eq!(
         prepared.get("token_exchange_endpoint"),
-        Some(&s("https://top"))
+        Some(&json_string("https://top"))
     );
     let decoded = decrypted_blob(&prepared);
     assert!(!decoded.contains_key("token_exchange_endpoint"));
@@ -496,8 +534,8 @@ fn prepare_create_encrypts_static_headers_and_the_stdio_env_map() {
 #[test]
 fn prepare_create_stores_an_empty_secret_map_as_an_empty_object() {
     let prepared = create(&request(r#"{"server_name":"srv","static_headers":{}}"#));
-    assert_eq!(prepared.get("static_headers"), Some(&s("{}")));
-    assert_eq!(prepared.get("env"), Some(&s("{}")));
+    assert_eq!(prepared.get("static_headers"), Some(&json_string("{}")));
+    assert_eq!(prepared.get("env"), Some(&json_string("{}")));
 }
 
 #[test]
@@ -591,7 +629,7 @@ fn prepare_update_keeps_a_normalized_alias_the_body_omitted() {
         &["server_id", "server_name", "alias"],
         &["server_id", "server_name"],
     );
-    assert_eq!(prepared.get("alias"), Some(&s("srv")));
+    assert_eq!(prepared.get("alias"), Some(&json_string("srv")));
 }
 
 #[test]
@@ -624,8 +662,14 @@ fn prepare_update_turns_null_json_maps_into_empty_objects() {
             "tool_name_to_description",
         ],
     );
-    assert_eq!(prepared.get("tool_name_to_display_name"), Some(&s("{}")));
-    assert_eq!(prepared.get("tool_name_to_description"), Some(&s("{}")));
+    assert_eq!(
+        prepared.get("tool_name_to_display_name"),
+        Some(&json_string("{}"))
+    );
+    assert_eq!(
+        prepared.get("tool_name_to_description"),
+        Some(&json_string("{}"))
+    );
 }
 
 #[test]
@@ -656,7 +700,7 @@ fn prepare_update_encrypts_credentials_without_dropping_null_values() {
         &["server_id", "credentials"],
     );
     let decoded = decrypted_blob(&prepared);
-    assert_eq!(decoded.get("client_id"), Some(&s("abc")));
+    assert_eq!(decoded.get("client_id"), Some(&json_string("abc")));
     assert_eq!(decoded.get("client_secret"), Some(&JsonValue::Null));
 }
 
@@ -678,17 +722,16 @@ fn prepare_update_writes_is_byok_only_when_the_caller_sent_it() {
 
 #[test]
 fn prepare_rejects_an_unknown_request_field() {
-    assert!(
-        serde_json::from_str::<McpServerRequest>(r#"{"server_name":"srv","future":1}"#).is_err()
-    );
+    let error = serde_json::from_str::<McpServerRequest>(r#"{"server_name":"srv","future":1}"#)
+        .unwrap_err();
+    assert_eq!(error.classify(), Category::Data);
 }
 
 #[test]
 fn prepare_rejects_an_unknown_env_var_scope() {
-    assert!(
-        serde_json::from_str::<McpServerRequest>(
-            r#"{"server_name":"srv","env_vars":[{"name":"A","scope":"team"}]}"#
-        )
-        .is_err()
-    );
+    let error = serde_json::from_str::<McpServerRequest>(
+        r#"{"server_name":"srv","env_vars":[{"name":"A","scope":"team"}]}"#,
+    )
+    .unwrap_err();
+    assert_eq!(error.classify(), Category::Data);
 }

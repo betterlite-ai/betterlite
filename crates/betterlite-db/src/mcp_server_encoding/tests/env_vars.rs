@@ -105,7 +105,7 @@ fn encrypt_global_env_var_values_leaves_a_non_string_value_alone() {
 #[test]
 fn encrypt_global_env_var_values_rejects_a_non_object_entry() {
     let cipher = encrypt_cipher();
-    let mut env_vars = entries(r#"[5]"#);
+    let mut env_vars = entries("[5]");
     assert!(matches!(
         encrypt_global_env_var_values(&mut env_vars, &cipher),
         Err(McpEncodingError::EnvVarNotObject)

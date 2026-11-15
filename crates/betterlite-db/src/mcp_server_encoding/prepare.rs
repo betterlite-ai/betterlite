@@ -123,11 +123,23 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    let Some(mut entries) = take_field(data, "env_vars", as_array) else {
+    let Some(value) = data.remove("env_vars") else {
         return Ok(());
     };
-    encrypt_global_env_var_values(&mut entries, cipher)?;
-    store_serialized(data, "env_vars", &entries)
+    match value {
+        JsonValue::Array(mut entries) => {
+            encrypt_global_env_var_values(&mut entries, cipher)?;
+            store_serialized(data, "env_vars", &entries)
+        }
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Object(_)) => {
+            data.insert("env_vars".to_owned(), other);
+            Ok(())
+        }
+    }
 }
 
 fn prepare_json_text(
@@ -166,17 +178,6 @@ fn as_object(value: JsonValue) -> Result<BTreeMap<String, JsonValue>, JsonValue>
         | JsonValue::Number(_)
         | JsonValue::String(_)
         | JsonValue::Array(_)) => Err(other),
-    }
-}
-
-fn as_array(value: JsonValue) -> Result<Vec<JsonValue>, JsonValue> {
-    match value {
-        JsonValue::Array(items) => Ok(items),
-        other @ (JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Object(_)) => Err(other),
     }
 }
 
