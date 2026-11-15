@@ -159,7 +159,7 @@ class Config(Protocol):
     transform_response: TransformResponse
 
 
-CONFIG: Final[Config] = cast(Config, VertexAgentEngineConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L57-L65
+CFG: Final[Config] = cast(Config, VertexAgentEngineConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L57-L65
 
 
 def url_outcome(call: UrlCall) -> JsonValue:
@@ -168,7 +168,7 @@ def url_outcome(call: UrlCall) -> JsonValue:
         "vertex_location": call["location"],
     }
     try:
-        url = CONFIG.get_complete_url(None, None, call["model"], EMPTY, params)
+        url = CFG.get_complete_url(None, None, call["model"], EMPTY, params)
     except ValueError:
         return {"ok": False}
     return {"ok": True, "url": url}
@@ -177,10 +177,10 @@ def url_outcome(call: UrlCall) -> JsonValue:
 def request_outcome(call: RequestCall) -> JsonValue:
     litellm_uuid.uuid4 = FixedUuid(call["uuid"])
     optional: dict[str, JsonValue] = dict(call["optional_params"])
-    mapped = CONFIG.map_openai_params(
+    mapped = CFG.map_openai_params(
         call["non_default_params"], optional, REQUEST_MODEL, drop_params=False
     )
-    payload = CONFIG.transform_request(REQUEST_MODEL, call["messages"], mapped, EMPTY, EMPTY)
+    payload = CFG.transform_request(REQUEST_MODEL, call["messages"], mapped, EMPTY, EMPTY)
     return {"ok": True, "payload": payload}
 
 
@@ -213,7 +213,7 @@ def response_outcome(call: ResponseCall) -> JsonValue:
         request=httpx.Request("POST", "https://agent-engine.invalid"),
     )
     try:
-        response = CONFIG.transform_response(
+        response = CFG.transform_response(
             call["model"],
             raw,
             ModelResponse(),
