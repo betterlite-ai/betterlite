@@ -10,10 +10,7 @@ use super::error::{CallbackError, PatchError};
 use super::executor::{ContinuationExecutor, PlanRun, ResponsesContinuation};
 use super::hooks::{HookRun, post_response_hook, run_agentic_loop_cleanup};
 use super::values::{merged_params, typed_map};
-use super::{
-    CODE_INTERPRETER_CONVERTED_STREAM_KEY, INPUT_KEY, LITELLM_LOGGING_OBJ_KEY, MODEL_KEY,
-    STREAM_KEY,
-};
+use super::{CONVERTED_STREAM_KEY, INPUT_KEY, LITELLM_LOGGING_OBJ_KEY, MODEL_KEY, STREAM_KEY};
 use crate::api::responses_hook_policy::followup::{
     AgenticFollowupInput, build_agentic_followup_kwargs,
 };
@@ -50,7 +47,7 @@ fn build_continuation(run: &PlanRun<'_, '_>) -> Result<ResponsesContinuation, Pa
     };
     let mut params = merged_params(run.run.call.optional_params, patch)?;
     params.shift_remove(STREAM_KEY);
-    params.shift_remove(CODE_INTERPRETER_CONVERTED_STREAM_KEY);
+    params.shift_remove(CONVERTED_STREAM_KEY);
     let kwargs = followup_kwargs(run, &params, patch)?;
     let mut model = run.run.call.model.to_owned();
     if let Some(patched) = &patch.model {
@@ -79,7 +76,7 @@ fn followup_kwargs(
             .iter()
             .any(|prefix| key.starts_with(*prefix))
             || key.as_str() == LITELLM_LOGGING_OBJ_KEY
-            || key.as_str() == CODE_INTERPRETER_CONVERTED_STREAM_KEY;
+            || key.as_str() == CONVERTED_STREAM_KEY;
         if !internal {
             request_kwargs.insert(key.clone(), value.clone());
         }

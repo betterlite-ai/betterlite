@@ -4,9 +4,8 @@ use serde_json::value::RawValue;
 
 use crate::api::responses_hook_policy::safety::{is_refused_tool_use_block, refused_tool_ids};
 
-// _finalize_refused_agentic_response: the refused tool_use blocks go and the turn is closed out,
-// while a tool_use the client declared keeps both its block and the tool_use stop reason
-pub(crate) fn finalize_refused_agentic_response(
+// _finalize_refused_agentic_response: refused tool_use blocks go and a client tool_use keeps the stop reason
+pub(crate) fn finalize_refused_response(
     response: &RawValue,
     tool_calls: &Json,
 ) -> Result<Json, serde_json::Error> {

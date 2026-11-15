@@ -11,7 +11,7 @@ use super::anthropic_plan::execute_anthropic_agentic_plan;
 use super::error::{AgenticExecutionError, CallbackError};
 use super::executor::{CallbackRun, CompletionCall, ContinuationExecutor, LoopState, PlanRun};
 use super::fake_stream::maybe_wrap_in_fake_stream;
-use super::finalize::finalize_refused_agentic_response;
+use super::finalize::finalize_refused_response;
 use super::hooks::hook_message;
 use super::logged_call_id;
 use super::responses_plan::execute_responses_agentic_plan;
@@ -169,14 +169,14 @@ fn refused(
     error: AgenticLoopSafetyError,
 ) -> Result<CallbackStep, AgenticExecutionError> {
     if !can_finalize_turn(call.stream, call.api_surface) {
-        return Err(error.into());
+        return Err(AgenticExecutionError::Safety(error));
     }
     let call_id = logged_call_id(call.logging);
     let model = call.model;
     tracing::warn!(
         "LiteLLM.AgenticLoopRefused: ending turn [call_id={call_id} model={model}]: {error}"
     );
-    let finalized = finalize_refused_agentic_response(call.response, tool_calls)?;
+    let finalized = finalize_refused_response(call.response, tool_calls)?;
     let wrapped =
         maybe_wrap_in_fake_stream(to_raw_value(&finalized)?, call.logging, call.api_surface)?;
     Ok(CallbackStep::Done(wrapped))
@@ -226,7 +226,7 @@ where
         let name = run.callback.callback_name();
         let reason = plan.stop_reason.as_deref().unwrap_or("None");
         tracing::debug!("Agentic loop terminated by callback={name} reason={reason}");
-        let finalized = finalize_refused_agentic_response(run.call.response, run.tool_calls)?;
+        let finalized = finalize_refused_response(run.call.response, run.tool_calls)?;
         let hooked = run
             .callback
             .post_agentic_loop_response(to_raw_value(&finalized)?, plan, run.hook_kwargs)

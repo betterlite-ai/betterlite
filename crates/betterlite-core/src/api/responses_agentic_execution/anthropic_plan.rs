@@ -1,6 +1,5 @@
 use betterlite_context::agentic_loop_plan::{AgenticLoopRequestPatch, JsonMap};
 use betterlite_models::decisions::Json;
-use betterlite_openai::code_execution_records::OTHER_INTERCEPTION_PREFIXES;
 use indexmap::IndexMap;
 use serde_json::Number;
 use serde_json::value::RawValue;
@@ -17,6 +16,9 @@ use super::{
     STREAM_KEY,
 };
 use crate::api::responses_hook_policy::error::AgenticFollowupKwargsError;
+
+// _execute_anthropic_agentic_plan drops only these two interceptor prefixes, where the responses plan drops three
+const DROPPED_PREFIXES: [&str; 2] = ["_websearch_interception", "_compression_interception"];
 
 // _execute_anthropic_agentic_plan: no cleanup finally here, and the post hook keeps a failed send's error
 pub(crate) async fn execute_anthropic_agentic_plan<Executor>(
@@ -136,7 +138,7 @@ fn followup_kwargs(
 ) -> Result<IndexMap<String, Json>, PatchError> {
     let mut kwargs = IndexMap::new();
     for (key, value) in run.provider_kwargs {
-        let internal = OTHER_INTERCEPTION_PREFIXES
+        let internal = DROPPED_PREFIXES
             .iter()
             .any(|prefix| key.starts_with(*prefix))
             || key.as_str() == LITELLM_LOGGING_OBJ_KEY

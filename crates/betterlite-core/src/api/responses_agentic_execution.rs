@@ -20,8 +20,7 @@ use crate::api::messages_fake_stream::MessagesFakeStream;
 pub(crate) const AGENTIC_LOOP_API_SURFACE_KEY: &str = "_agentic_loop_api_surface";
 pub(crate) const AGENTIC_LOOP_DEPTH_KEY: &str = "_agentic_loop_depth";
 pub(crate) const AGENTIC_LOOP_FINGERPRINTS_KEY: &str = "_agentic_loop_fingerprints";
-pub(crate) const CODE_INTERPRETER_CONVERTED_STREAM_KEY: &str =
-    "_code_interpreter_interception_converted_stream";
+pub(crate) const CONVERTED_STREAM_KEY: &str = "_code_interpreter_interception_converted_stream";
 pub(crate) const CUSTOM_LLM_PROVIDER_KEY: &str = "custom_llm_provider";
 pub(crate) const DEFAULT_MAX_TOKENS: u64 = 1024;
 pub(crate) const INPUT_KEY: &str = "input";

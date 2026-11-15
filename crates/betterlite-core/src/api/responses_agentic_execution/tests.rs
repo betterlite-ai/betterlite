@@ -17,7 +17,7 @@ use crate::api::responses_agentic_execution::dispatch::call_agentic_completion_h
 use crate::api::responses_agentic_execution::error::{
     AgenticExecutionError, CallbackError, PatchError,
 };
-use crate::api::responses_agentic_execution::finalize::finalize_refused_agentic_response;
+use crate::api::responses_agentic_execution::finalize::finalize_refused_response;
 use crate::api::responses_hook_policy::error::AgenticLoopSafetyError;
 use support::{
     ANTHROPIC_BODY, Fixture, NEXT_BODY, REFUSED_BODY, RecordingCallback, ScriptedExecutor,
@@ -385,17 +385,39 @@ async fn responses_followup_http() {
         text(&continuation.kwargs, "custom_llm_provider").as_deref(),
         Some("openai")
     );
-    for dropped in [
-        "litellm_logging_obj",
-        "_websearch_interception_converted_stream",
-        "_compression_interception_item_parts",
-        "_headroom_interception_state",
-        "_code_interpreter_interception_converted_stream",
-        "model",
-        "input",
-    ] {
-        assert_eq!(continuation.kwargs.get(dropped), None, "{dropped} survived");
-    }
+    assert_eq!(
+        continuation.kwargs.get("litellm_logging_obj"),
+        None,
+        "litellm_logging_obj survived"
+    );
+    assert_eq!(
+        continuation
+            .kwargs
+            .get("_websearch_interception_converted_stream"),
+        None,
+        "_websearch_interception_converted_stream survived"
+    );
+    assert_eq!(
+        continuation
+            .kwargs
+            .get("_compression_interception_item_parts"),
+        None,
+        "_compression_interception_item_parts survived"
+    );
+    assert_eq!(
+        continuation.kwargs.get("_headroom_interception_state"),
+        None,
+        "_headroom_interception_state survived"
+    );
+    assert_eq!(
+        continuation
+            .kwargs
+            .get("_code_interpreter_interception_converted_stream"),
+        None,
+        "_code_interpreter_interception_converted_stream survived"
+    );
+    assert_eq!(continuation.kwargs.get("model"), None, "model survived");
+    assert_eq!(continuation.kwargs.get("input"), None, "input survived");
     assert_eq!(number(&continuation.kwargs, "_agentic_loop_depth"), Some(1));
     assert_eq!(number(&continuation.kwargs, "max_agentic_loops"), Some(2));
     assert_eq!(
@@ -480,11 +502,11 @@ async fn agentic_override_termination_and_safety() {
 
     let tools_json = Json::Object(typed_map(&tools).expect("the tool map"));
     assert_eq!(
-        finalize_refused_agentic_response(&raw(r#"[1,2]"#), &tools_json).expect("a list survives"),
+        finalize_refused_response(&raw(r#"[1,2]"#), &tools_json).expect("a list survives"),
         json("[1,2]")
     );
     assert_eq!(
-        finalize_refused_agentic_response(&raw(r#"{"id":"x"}"#), &tools_json)
+        finalize_refused_response(&raw(r#"{"id":"x"}"#), &tools_json)
             .expect("a dict without content survives"),
         json(r#"{"id":"x"}"#)
     );
@@ -852,6 +874,7 @@ async fn anthropic_continuation_and_wrapping() {
     merged.optional_params = json_map(&[("request_only", "\"one\""), ("top_k", "\"five\"")]);
     merged.kwargs = typed_kwargs(&[
         ("_compression_interception_x", "true"),
+        ("_headroom_interception_x", "true"),
         ("_websearch_interception_x", "true"),
         ("kept", "\"yes\""),
         ("litellm_logging_obj", "{}"),
@@ -883,13 +906,25 @@ async fn anthropic_continuation_and_wrapping() {
     assert_eq!(text(&call.params, "request_only").as_deref(), Some("one"));
     assert_eq!(text(&call.params, "patched_only").as_deref(), Some("two"));
     assert_eq!(text(&call.params, "kept").as_deref(), Some("yes"));
-    for dropped in [
-        "litellm_logging_obj",
-        "_websearch_interception_x",
-        "_compression_interception_x",
-    ] {
-        assert_eq!(call.params.get(dropped), None, "{dropped} survived");
-    }
+    assert_eq!(
+        call.params.get("litellm_logging_obj"),
+        None,
+        "litellm_logging_obj survived"
+    );
+    assert_eq!(
+        call.params.get("_websearch_interception_x"),
+        None,
+        "_websearch_interception_x survived"
+    );
+    assert_eq!(
+        call.params.get("_compression_interception_x"),
+        None,
+        "_compression_interception_x survived"
+    );
+    assert_eq!(
+        text(&call.params, "_headroom_interception_x").as_deref(),
+        Some("true")
+    );
     assert_eq!(number(&call.params, "_agentic_loop_depth"), Some(1));
     assert_eq!(number(&call.params, "max_agentic_loops"), Some(3));
     assert_eq!(
