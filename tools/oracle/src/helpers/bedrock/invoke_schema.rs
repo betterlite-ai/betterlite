@@ -123,12 +123,16 @@ fn answer(
     warnings: &Warnings,
 ) -> Value {
     match step {
-        Step::ApplyStructuredOutput { model, body } => warned_answer(body, warnings, |body| {
-            runtime.block_on(apply_structured_output(model, body, catalog));
-        }),
-        Step::StripUnsupportedConfigKeys { model, body } => warned_answer(body, warnings, |body| {
-            runtime.block_on(strip_unsupported_config_keys(model, body, catalog));
-        }),
+        Step::ApplyStructuredOutput { model, body } => {
+            warned_answer(body, warnings, |mutable_body| {
+                runtime.block_on(apply_structured_output(model, mutable_body, catalog));
+            })
+        }
+        Step::StripUnsupportedConfigKeys { model, body } => {
+            warned_answer(body, warnings, |mutable_body| {
+                runtime.block_on(strip_unsupported_config_keys(model, mutable_body, catalog));
+            })
+        }
         Step::NormalizeCustomField { body } => object_answer(body, normalize_tool_custom_field),
         Step::NormalizeToolSchemas { body } => object_answer(body, normalize_tool_schema_types),
         Step::EnsureToolNames { body } => object_answer(body, ensure_tool_names),
@@ -136,26 +140,26 @@ fn answer(
             json!({"tools": strip_eager_input_streaming(body)})
         }
         Step::NormalizeSchema { schema } => {
-            let mut schema = schema.clone();
-            normalize_schema_custom_types(&mut schema);
-            json!({"schema": schema})
+            let mut owned_schema = schema.clone();
+            normalize_schema_custom_types(&mut owned_schema);
+            json!({"schema": owned_schema})
         }
     }
 }
 
 fn object_answer(body: &Object, run: fn(&mut Object)) -> Value {
-    let mut body = body.clone();
-    run(&mut body);
-    json!({"body": body})
+    let mut owned_body = body.clone();
+    run(&mut owned_body);
+    json!({"body": owned_body})
 }
 
 fn warned_answer<Run>(body: &Object, warnings: &Warnings, run: Run) -> Value
 where
     Run: FnOnce(&mut Object),
 {
-    let mut body = body.clone();
+    let mut owned_body = body.clone();
     let before = warnings.events.load(Ordering::Relaxed);
-    run(&mut body);
+    run(&mut owned_body);
     let warned = warnings.events.load(Ordering::Relaxed) > before;
-    json!({"body": body, "warned": warned})
+    json!({"body": owned_body, "warned": warned})
 }

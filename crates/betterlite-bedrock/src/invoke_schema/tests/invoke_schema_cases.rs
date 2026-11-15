@@ -274,15 +274,16 @@ async fn missing_content_becomes_one_block() {
 async fn invalid_content_leaves_the_message_alone() {
     let mut capabilities = Capabilities::default();
     for content in [Json::Null, flag(true)] {
+        let message = user_message(content);
         let mut body = object(&[
-            ("messages", list(vec![user_message(content)])),
+            ("messages", list(vec![message.clone()])),
             (
                 "output_config",
                 json_object(&[("format", schema_format(type_object()))]),
             ),
         ]);
         apply_structured_output("plain", &mut body, &mut capabilities).await;
-        assert_eq!(messages_of(&body).len(), 1);
+        assert_eq!(messages_of(&body), vec![message]);
     }
 }
 
@@ -312,7 +313,7 @@ async fn empty_or_non_list_messages_are_not_inlined() {
     let mut capabilities = Capabilities::default();
     for messages in [list(Vec::new()), text("messages")] {
         let mut body = object(&[
-            ("messages", messages),
+            ("messages", messages.clone()),
             (
                 "output_config",
                 json_object(&[("format", schema_format(type_object()))]),
@@ -320,6 +321,7 @@ async fn empty_or_non_list_messages_are_not_inlined() {
         ]);
         apply_structured_output("plain", &mut body, &mut capabilities).await;
         assert!(body.get("output_config").is_none());
+        assert_eq!(body.get("messages"), Some(&messages));
     }
 }
 

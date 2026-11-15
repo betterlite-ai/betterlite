@@ -124,7 +124,7 @@ pub async fn apply_structured_output<Capabilities>(
         Some(Json::Object(fields)) => Some(fields),
         _ => nested,
     };
-    let Some(schema_format) = schema_format else {
+    let Some(selected_format) = schema_format else {
         return;
     };
     if bedrock_model_supports(capabilities, model, NATIVE_STRUCTURED_OUTPUT).await {
@@ -132,14 +132,14 @@ pub async fn apply_structured_output<Capabilities>(
             Some(Json::Object(fields)) => fields,
             _ => Object::new(),
         };
-        output_config.insert(FORMAT.to_owned(), Json::Object(schema_format));
+        output_config.insert(FORMAT.to_owned(), Json::Object(selected_format));
         body.insert(OUTPUT_CONFIG.to_owned(), Json::Object(output_config));
         return;
     }
     tracing::warn!(
         "Bedrock Invoke: model={model} does not advertise `supports_native_structured_output` in model_prices_and_context_window.json, so the JSON schema was inlined into the last user message and is NOT enforced by the model."
     );
-    inline_output_format(&schema_format, body);
+    inline_output_format(&selected_format, body);
 }
 
 pub async fn strip_unsupported_config_keys<Capabilities>(
