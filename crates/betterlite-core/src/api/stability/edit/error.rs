@@ -1,13 +1,21 @@
 use std::convert::Infallible;
 use std::error::Error;
 
+use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use thiserror::Error;
 
 use crate::api::stability::generation::reply::StabilityReplyError;
 
 #[derive(Debug, Error)]
-#[error("the output_cost_per_image value is not a number")]
-pub struct CostValueError;
+pub enum CostValueError {
+    #[error("the output_cost_per_image value is not a number")]
+    NotNumber,
+    #[error("the output_cost_per_image value is not a decimal price")]
+    Parse {
+        #[source]
+        source: DecimalLexemeError,
+    },
+}
 
 #[derive(Debug, Error)]
 pub enum StabilityEditError<LookupError = Infallible>

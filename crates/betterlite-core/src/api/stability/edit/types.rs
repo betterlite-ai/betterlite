@@ -38,7 +38,6 @@ pub const STABILITY_EDIT_ENDPOINTS: [(&str, &str); 14] = [
     ),
 ];
 
-// an edit option's value: plain JSON, or the file bytes its multipart part carries
 #[derive(Debug, Clone, PartialEq)]
 pub enum EditValue {
     Json(Json),

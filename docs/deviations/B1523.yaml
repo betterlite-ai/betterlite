@@ -11,13 +11,21 @@ deviations:
       compare the two implementations on a model the bundled catalog has no price for.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L306-L312
   - what: >-
-      A cost value that is text parsing to a non-finite float, such as "nan" or "inf", fails with a typed
-      CostValue error, where LiteLLM's float() accepts it and the hidden header carries a value no JSON
-      response can represent.
+      A cost value that does not fit a Decimal, such as the text "nan" or "inf" or the number 1e400, fails with
+      a typed CostValue error that keeps the parse error as its source, where LiteLLM's float() accepts it and
+      the hidden header carries a non-finite float no JSON response can represent.
     why: >-
-      The header value is a JSON number, so a non-finite float cannot reach a caller intact; naming the field
-      is better than a response body whose header value is not JSON, and no working catalog entry carries a
-      non-finite price.
+      The price is read as a Decimal and the header value is a JSON number, so a non-finite or out-of-range
+      price cannot reach a caller intact; naming the field is better than a header value that is not JSON,
+      and no working catalog entry carries such a price.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L306-L312
+  - what: >-
+      The cost header keeps every digit of the catalog price, so 0.1000000000000000055511 stays as written and
+      a whole price such as 2 is sent as 2.0, where LiteLLM's float() rounds the price to the nearest binary
+      double first.
+    why: >-
+      Prices are Decimal from the moment they are read, and rounding a catalog price through a float would
+      change the amount charged; every catalog price shorter than 17 significant digits comes out the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L306-L312
   - what: >-
       An empty image list fails with a typed MissingFile error for the image part, where LiteLLM indexes

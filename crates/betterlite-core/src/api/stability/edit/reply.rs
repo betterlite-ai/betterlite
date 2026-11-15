@@ -1,10 +1,12 @@
 use std::error::Error;
 
+use betterlite_logging::langfuse_assembly::usage::cost_value;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use betterlite_openai::api::image_contracts::records::{ImageHttpResponse, ImageResponse};
-use serde_json::Number;
+use rust_decimal::Decimal;
 
 use super::error::{CostValueError, StabilityEditError};
 use crate::api::stability::generation::reply::decode_stability_image;
@@ -55,28 +57,18 @@ where
     })
 }
 
-// a missing price is zero, an explicit null suppresses the header, and anything else is converted
+// a missing price is zero, an explicit null suppresses the header, and anything else is read as a Decimal
 fn cost_header(value: Option<&Json>) -> Result<Option<Json>, CostValueError> {
-    match value {
-        None => Ok(Some(cost_number(0.0)?)),
-        Some(Json::Null) => Ok(None),
-        Some(value) => Ok(Some(cost_number(cost_float(value)?)?)),
-    }
-}
-
-fn cost_number(value: f64) -> Result<Json, CostValueError> {
-    match Number::from_f64(value) {
-        Some(number) => Ok(Json::Number(number)),
-        None => Err(CostValueError),
-    }
-}
-
-// Python's float(): a bool counts as 0 or 1, a number keeps its value, and text is trimmed then parsed
-fn cost_float(value: &Json) -> Result<f64, CostValueError> {
-    match value {
-        Json::Bool(flag) => Ok(if *flag { 1.0 } else { 0.0 }),
-        Json::Number(number) => number.as_f64().ok_or(CostValueError),
-        Json::Text(text) => text.trim().parse::<f64>().map_err(|_source| CostValueError),
-        Json::Null | Json::List(_) | Json::Object(_) => Err(CostValueError),
-    }
+    let price = match value {
+        None => Decimal::ZERO,
+        Some(Json::Null) => return Ok(None),
+        Some(Json::Bool(flag)) => Decimal::from(u8::from(*flag)),
+        Some(Json::Number(number)) => parse_decimal_lexeme(&number.to_string())
+            .map_err(|source| CostValueError::Parse { source })?,
+        Some(Json::Text(text)) => {
+            parse_decimal_lexeme(text.trim()).map_err(|source| CostValueError::Parse { source })?
+        }
+        Some(Json::List(_) | Json::Object(_)) => return Err(CostValueError::NotNumber),
+    };
+    Ok(Some(cost_value(price)))
 }

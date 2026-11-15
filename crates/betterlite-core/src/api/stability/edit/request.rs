@@ -27,7 +27,6 @@ pub const EDIT_TEXT_FIELDS: [(&str, EditField); 17] = [
     ("change_strength", EditField::Number),
 ];
 
-// the three option names Stability takes as multipart file parts
 pub const EDIT_FILE_FIELDS: [&str; 3] = ["mask", "init_image", "style_image"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

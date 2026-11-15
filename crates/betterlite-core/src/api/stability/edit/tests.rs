@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::str::FromStr as _;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -11,7 +12,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Number;
 
-use super::error::StabilityEditError;
+use super::error::{CostValueError, StabilityEditError};
 use super::reply::{COST_HEADER, ImageEditReply, ModelInfoLookup, transform_image_edit_response};
 use super::request::{
     EDIT_FILE_FIELDS, EDIT_TEXT_FIELDS, StabilityImageEditRequest, transform_image_edit_request,
@@ -133,6 +134,10 @@ where
 
 fn header(reply: &ImageEditReply) -> Option<&Json> {
     reply.additional_headers.get(COST_HEADER)
+}
+
+fn price(lexeme: &str) -> Json {
+    Json::Number(Number::from_str(lexeme).expect("the price is a JSON number"))
 }
 
 fn part_names(request: &StabilityImageEditRequest) -> Vec<&str> {
@@ -747,7 +752,7 @@ fn the_text_and_file_tables_hold_the_litellm_names() {
 }
 
 #[test]
-fn the_catalog_cost_becomes_a_float_header() {
+fn the_catalog_cost_becomes_a_number_header() {
     let reply = response(
         &catalog(r#"{"output_cost_per_image": 0.04, "litellm_provider": "stability"}"#),
         r#"{"image": "abc", "finish_reason": "SUCCESS"}"#,
@@ -756,12 +761,7 @@ fn the_catalog_cost_becomes_a_float_header() {
 
     assert_eq!(reply.response.created, NOW);
     assert_eq!(reply.response.data, Some(vec![image("abc")]));
-    assert_eq!(
-        header(&reply),
-        Some(&Json::Number(
-            Number::from_f64(0.04).expect("0.04 is a JSON number")
-        ))
-    );
+    assert_eq!(header(&reply), Some(&price("0.04")));
 }
 
 #[test]
@@ -772,12 +772,7 @@ fn a_missing_catalog_cost_defaults_to_zero() {
     )
     .expect("the reply holds an image");
 
-    assert_eq!(
-        header(&reply),
-        Some(&Json::Number(
-            Number::from_f64(0.0).expect("0.0 is a JSON number")
-        ))
-    );
+    assert_eq!(header(&reply), Some(&price("0.0")));
 }
 
 #[test]
@@ -792,33 +787,54 @@ fn a_null_catalog_cost_suppresses_the_header() {
 }
 
 #[rstest]
-#[case::text(r#"{"output_cost_per_image": "0.5"}"#, 0.5)]
-#[case::padded_text(r#"{"output_cost_per_image": "  0.5  "}"#, 0.5)]
-#[case::exponent(r#"{"output_cost_per_image": 5e-2}"#, 0.05)]
-#[case::boolean(r#"{"output_cost_per_image": true}"#, 1.0)]
-#[case::zero(r#"{"output_cost_per_image": 0}"#, 0.0)]
-fn a_catalog_cost_is_converted_like_python_float(#[case] entry: &str, #[case] expected: f64) {
+#[case::text(r#"{"output_cost_per_image": "0.5"}"#, "0.5")]
+#[case::padded_text(r#"{"output_cost_per_image": "  0.5  "}"#, "0.5")]
+#[case::exponent(r#"{"output_cost_per_image": 5e-2}"#, "0.05")]
+#[case::text_exponent(r#"{"output_cost_per_image": "5E-2"}"#, "0.05")]
+#[case::truthy(r#"{"output_cost_per_image": true}"#, "1.0")]
+#[case::falsy(r#"{"output_cost_per_image": false}"#, "0.0")]
+#[case::zero(r#"{"output_cost_per_image": 0}"#, "0.0")]
+#[case::whole(r#"{"output_cost_per_image": 2}"#, "2.0")]
+#[case::every_digit(
+    r#"{"output_cost_per_image": 0.0000123456789012345678}"#,
+    "0.0000123456789012345678"
+)]
+#[case::every_text_digit(
+    r#"{"output_cost_per_image": "0.1000000000000000055511"}"#,
+    "0.1000000000000000055511"
+)]
+fn a_catalog_cost_is_read_as_a_decimal(#[case] entry: &str, #[case] expected: &str) {
     let reply = response(&catalog(entry), r#"{"image": "abc"}"#).expect("the cost converts");
 
-    assert_eq!(
-        header(&reply),
-        Some(&Json::Number(
-            Number::from_f64(expected).expect("the expectation is a JSON number")
-        ))
-    );
+    assert_eq!(header(&reply), Some(&price(expected)));
 }
 
 #[rstest]
 #[case::text(r#"{"output_cost_per_image": "abc"}"#)]
 #[case::nan(r#"{"output_cost_per_image": "nan"}"#)]
 #[case::infinity(r#"{"output_cost_per_image": "inf"}"#)]
+#[case::out_of_range(r#"{"output_cost_per_image": 1e400}"#)]
+fn a_cost_that_is_not_a_decimal_keeps_its_parse_error(#[case] entry: &str) {
+    let error = response(&catalog(entry), r#"{"image": "abc"}"#)
+        .expect_err("the cost is not a decimal price");
+
+    assert!(matches!(
+        error,
+        StabilityEditError::CostValue(CostValueError::Parse { .. })
+    ));
+}
+
+#[rstest]
 #[case::list(r#"{"output_cost_per_image": [1]}"#)]
 #[case::object(r#"{"output_cost_per_image": {"amount": 1}}"#)]
-fn a_cost_that_is_not_a_finite_number_fails(#[case] entry: &str) {
-    let error = response(&catalog(entry), r#"{"image": "abc"}"#)
-        .expect_err("the cost is not a finite number");
+fn a_cost_that_is_not_a_scalar_fails(#[case] entry: &str) {
+    let error =
+        response(&catalog(entry), r#"{"image": "abc"}"#).expect_err("the cost is not a number");
 
-    assert!(matches!(error, StabilityEditError::CostValue(_)));
+    assert!(matches!(
+        error,
+        StabilityEditError::CostValue(CostValueError::NotNumber)
+    ));
 }
 
 #[test]
@@ -890,12 +906,7 @@ fn an_empty_result_still_attaches_the_cost(#[case] body: &str) {
         .expect("an empty result is not a failure");
 
     assert_eq!(reply.response.data, Some(Vec::new()));
-    assert_eq!(
-        header(&reply),
-        Some(&Json::Number(
-            Number::from_f64(0.05).expect("0.05 is a JSON number")
-        ))
-    );
+    assert_eq!(header(&reply), Some(&price("0.05")));
 }
 
 #[test]
