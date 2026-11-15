@@ -78,6 +78,8 @@ fn api_base_rejects_cloud_metadata_targets(#[case] url: &str) {
 #[case::public_host("https://api.compresr.ai")]
 #[case::uppercase_scheme("HTTPS://api.compresr.ai")]
 #[case::missing_slashes("http:api.compresr.ai")]
+#[case::leading_space(" http://api.compresr.ai")]
+#[case::tab_in_scheme("ht\ttp://api.compresr.ai")]
 fn api_base_accepts_private_and_public_targets(#[case] url: &str) {
     assert_eq!(validate_api_base(url), Ok(url.to_owned()));
 }

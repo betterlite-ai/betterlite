@@ -21,11 +21,6 @@ const BLOCKED_METADATA_IPS: [IpAddr; 4] = [
 ];
 
 pub fn validate_api_base(url: &str) -> Result<String, CompresrTransportError> {
-    let scheme = url.split_once(':').map(|(found, _)| found);
-    if !matches!(scheme, Some(found) if found.eq_ignore_ascii_case("http") || found.eq_ignore_ascii_case("https"))
-    {
-        return Err(CompresrTransportError::Scheme);
-    }
     let parsed = Url::parse(url).map_err(|error| match error {
         ParseError::EmptyHost => CompresrTransportError::NoHost,
         ParseError::RelativeUrlWithoutBase => CompresrTransportError::Scheme,
@@ -38,6 +33,10 @@ pub fn validate_api_base(url: &str) -> Result<String, CompresrTransportError> {
         | ParseError::SetHostOnCannotBeABaseUrl
         | ParseError::Overflow => CompresrTransportError::InvalidApiBase,
     })?;
+    // urlparse removes the leading controls and the tabs the WHATWG parse ignores, so read the scheme the same way
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(CompresrTransportError::Scheme);
+    }
     let Some(host) = parsed.host_str() else {
         return Err(CompresrTransportError::NoHost);
     };
