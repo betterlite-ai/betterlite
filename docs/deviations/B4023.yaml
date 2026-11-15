@@ -1,0 +1,15 @@
+task: B4023
+deviations:
+  - what: Setting SMTP_SENDER_LOGO, EMAIL_LOGO_URL or EMAIL_SUPPORT_CONTACT customizes the key and invitation emails and no license check runs.
+    why: betterlite has no paid tier and no license gate, so the customization is always accepted; LiteLLM raises only when premium_user is not true.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1232-L1234
+  - what: The missing-recipient error log prints the event name and the user id instead of the whole webhook event.
+    why: LiteLLM passes webhook_event.dict() as log extras, and it holds the key token; betterlite never writes the token or the event dump to a log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1309-L1313
+  - what: The unknown-event error log prints the event name instead of the dumped event.
+    why: LiteLLM dumps the event with model_dump(), which carries the key token; betterlite logs only the event name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1342-L1346
+kept_bugs:
+  - what: An event other than key_created or internal_user_created still sends an email with the body "Alert from LiteLLM Server" and returns true.
+    why: A working setup relies on the two named events only, but the fallback is what the task asks for, so betterlite keeps it; only the log line differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1342-L1361
