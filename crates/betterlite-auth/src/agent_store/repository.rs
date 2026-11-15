@@ -84,7 +84,10 @@ impl LookupParameters for SubjectKey<'_> {
     }
 }
 
-fn decode_json_row<Record: DeserializeOwned>(row: &Row) -> Result<Record, AgentStoreError> {
+fn decode_json_row<Record>(row: &Row) -> Result<Record, AgentStoreError>
+where
+    Record: DeserializeOwned,
+{
     let payload: String = row
         .try_get(0)
         .map_err(|source| AgentStoreError::Database(backend(source)))?;

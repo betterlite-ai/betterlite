@@ -16,7 +16,7 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
@@ -66,10 +66,18 @@ async fn database() -> (PostgresFixture, AgentIdentityStore, PostgresStore) {
         .resolve()
         .await
         .expect("the database fixture");
-    let pool = Pool::builder(Manager::new(fixture.options.config.clone(), NoTls))
-        .max_size(2)
-        .build()
-        .expect("the database pool");
+    let pool = Pool::builder(Manager::new(
+        fixture
+            .options
+            .url
+            .expose_secret()
+            .parse()
+            .expect("the database url"),
+        NoTls,
+    ))
+    .max_size(2)
+    .build()
+    .expect("the database pool");
     let postgres = PostgresStore { pool: Some(pool) };
     apply_schema(&postgres).await;
     let store = AgentIdentityStore::from_client(&postgres, None);
