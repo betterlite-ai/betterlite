@@ -3,11 +3,12 @@
 mod fixture;
 mod scenarios;
 
-use std::cell::Cell;
 use std::fs;
+use std::iter;
 use std::path::Path;
 use std::pin::Pin;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::Context;
 
 use futures_util::{Stream as _, stream, task::noop_waker};
@@ -45,7 +46,7 @@ fn corpus_outcomes() -> Vec<(String, Category)> {
         let path = entry.unwrap().path();
         let payload = fs::read(&path).unwrap();
         // A fresh converter starts with an empty buffer, so its count starts at zero.
-        let mut accumulated_bytes = 0usize;
+        let mut accumulated_bytes = 0_usize;
         let category = match decode_anthropic_event(
             &mut converter(),
             &payload,
@@ -207,12 +208,14 @@ fn drops_many_broken_tokens_in_one_line() {
 
 #[test]
 fn a_value_split_over_many_non_closing_data_lines_accumulates() {
-    let steps: Vec<fixture::Source> = std::iter::once(Ok(TransportChunk::Text(
+    let steps: Vec<fixture::Source> = iter::once(Ok(TransportChunk::Text(
         r#"data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"#
             .to_owned(),
     )))
-    .chain((0..8).map(|_| Ok(TransportChunk::Text(format!("data:{}", "x".repeat(64))))))
-    .chain(std::iter::once(Ok(TransportChunk::Text(
+    .chain(
+        iter::repeat_with(|| Ok(TransportChunk::Text(format!("data:{}", "x".repeat(64))))).take(8),
+    )
+    .chain(iter::once(Ok(TransportChunk::Text(
         r#"data:"}}"#.to_owned(),
     ))))
     .collect();
@@ -300,7 +303,7 @@ fn the_count_after_a_discarded_prefix_is_the_bytes_still_buffered() {
 #[test]
 fn the_entry_bound_carries_the_count_across_calls_on_one_converter() {
     let mut converter = converter();
-    let mut accumulated_bytes = 0usize;
+    let mut accumulated_bytes = 0_usize;
     let first = decode_anthropic_event(&mut converter, br#"{"a":"#, 8, &mut accumulated_bytes);
     assert!(matches!(first, Ok(None)));
     assert_eq!(accumulated_bytes, 5);
@@ -362,21 +365,20 @@ fn rejects_an_accumulated_event_over_max_event_bytes() {
         Ok(TransportChunk::Text(r#"data: {"a":"#.to_owned())),
         Ok(TransportChunk::Text("data: 123456789".to_owned())),
     ];
-    let kept = ChunkStream {
+    let mut kept = ChunkStream {
         converter: converter(),
         source: at_limit.into_iter(),
         source_ended: false,
         accumulated_bytes: 0,
         max_event_bytes: 16,
-    }
-    .collect::<Vec<_>>();
-    assert!(kept.is_empty());
+    };
+    assert!(kept.next().is_none());
 }
 
 #[test]
 fn dropping_the_stream_while_pending_keeps_the_source_unpulled() {
-    let yielded = Rc::new(Cell::new(0));
-    let dropped = Rc::new(Cell::new(false));
+    let yielded = Arc::new(AtomicUsize::new(0));
+    let dropped = Arc::new(AtomicBool::new(false));
     let items: Vec<fixture::Source> = vec![
         Ok(TransportChunk::Text(r#"data: {"a":"#.to_owned())),
         Ok(TransportChunk::Text("data: 1}".to_owned())),
@@ -388,8 +390,8 @@ fn dropping_the_stream_while_pending_keeps_the_source_unpulled() {
                 inner: stream::iter(items),
                 pending: false,
             },
-            yielded: Rc::clone(&yielded),
-            dropped: Rc::clone(&dropped),
+            yielded: Arc::clone(&yielded),
+            dropped: Arc::clone(&dropped),
         },
         source_ended: false,
         accumulated_bytes: 0,
@@ -399,9 +401,9 @@ fn dropping_the_stream_while_pending_keeps_the_source_unpulled() {
     let mut context = Context::from_waker(&waker);
     assert!(Pin::new(&mut stream).poll_next(&mut context).is_pending());
     assert!(Pin::new(&mut stream).poll_next(&mut context).is_pending());
-    assert_eq!(yielded.get(), 1);
-    assert!(!dropped.get());
+    assert_eq!(yielded.load(Ordering::SeqCst), 1);
+    assert!(!dropped.load(Ordering::SeqCst));
     drop(stream);
-    assert!(dropped.get());
-    assert_eq!(yielded.get(), 1);
+    assert!(dropped.load(Ordering::SeqCst));
+    assert_eq!(yielded.load(Ordering::SeqCst), 1);
 }

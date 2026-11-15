@@ -95,9 +95,9 @@ where
             },
         ))));
     };
-    match parse_data::<SourceFailure, Counter>(converter, data, max_event_bytes, accumulated_bytes)?
-    {
-        Some(parsed) => Ok(Progress::Produced(DecodedChunk::Event(Box::new(parsed)))),
-        None => Ok(Progress::Skipped),
-    }
+    let parsed =
+        parse_data::<SourceFailure, Counter>(converter, data, max_event_bytes, accumulated_bytes)?;
+    Ok(parsed.map_or(Progress::Skipped, |parsed| {
+        Progress::Produced(DecodedChunk::Event(Box::new(parsed)))
+    }))
 }

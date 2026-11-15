@@ -154,23 +154,33 @@ fn prefix_end(trimmed: &str) -> Option<usize> {
 
 // Counts brackets outside strings so the dropped prefix ends where the value does, not at the buffer end.
 fn container_end(trimmed: &str) -> Option<usize> {
-    let mut depth = 0usize;
+    let mut depth = 0_usize;
     let mut in_string = false;
     let mut escaped = false;
     for (index, character) in trimmed.char_indices() {
         if in_string {
             if escaped {
                 escaped = false;
-            } else if character == '\\' {
+                continue;
+            }
+            if character == '\\' {
                 escaped = true;
-            } else if character == '"' {
+                continue;
+            }
+            if character == '"' {
                 in_string = false;
             }
-        } else if character == '"' {
+            continue;
+        }
+        if character == '"' {
             in_string = true;
-        } else if matches!(character, '{' | '[') {
+            continue;
+        }
+        if matches!(character, '{' | '[') {
             depth = depth.checked_add(1)?;
-        } else if matches!(character, '}' | ']') {
+            continue;
+        }
+        if matches!(character, '}' | ']') {
             depth = depth.checked_sub(1)?;
             if depth == 0 {
                 return index.checked_add(1);
@@ -182,7 +192,7 @@ fn container_end(trimmed: &str) -> Option<usize> {
 
 // A broken quoted token ends after its next unescaped quote, so a valid value glued behind it survives.
 fn quoted_end(bytes: &[u8]) -> Option<usize> {
-    let mut position = 1usize;
+    let mut position = 1_usize;
     while let Some(&byte) = bytes.get(position) {
         if byte == b'\\' {
             position = position.checked_add(2)?;

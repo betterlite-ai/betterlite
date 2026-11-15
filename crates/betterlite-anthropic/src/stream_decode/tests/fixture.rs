@@ -1,8 +1,7 @@
-use std::cell::Cell;
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::pin::Pin;
-use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context, Poll};
 
@@ -58,8 +57,8 @@ where
 // Counts the items the inner source yielded and records its drop, so a test can see what a cancel pulls.
 pub(super) struct Tracked<S> {
     pub(super) inner: S,
-    pub(super) yielded: Rc<Cell<usize>>,
-    pub(super) dropped: Rc<Cell<bool>>,
+    pub(super) yielded: Arc<AtomicUsize>,
+    pub(super) dropped: Arc<AtomicBool>,
 }
 
 impl<S, Item> Stream for Tracked<S>
@@ -72,14 +71,14 @@ where
         let this = self.get_mut();
         let polled = this.inner.poll_next_unpin(cx);
         let yielded = usize::from(polled.is_ready());
-        this.yielded.set(this.yielded.get().saturating_add(yielded));
+        this.yielded.fetch_add(yielded, Ordering::SeqCst);
         polled
     }
 }
 
 impl<S> Drop for Tracked<S> {
     fn drop(&mut self) {
-        self.dropped.set(true);
+        self.dropped.store(true, Ordering::SeqCst);
     }
 }
 
