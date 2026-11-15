@@ -1,0 +1,6 @@
+task: B2430
+deviations:
+  - what: On an adaptive model without legacy thinking support, a thinking.budget_tokens that is not an integer (a non-numeric string or a list) answers 400 "thinking budget_tokens is not an integer"; LiteLLM hands the value to int() unguarded, so the ValueError or TypeError escapes and the proxy answers 500.
+    why: The value is the caller's malformed request, so a 4xx that names the field is right and a 500 would blame the server; no working setup can rely on that crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L769
+kept_bugs: []
