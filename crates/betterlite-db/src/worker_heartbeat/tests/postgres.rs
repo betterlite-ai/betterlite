@@ -58,34 +58,36 @@ fn heartbeat(worker_id: Option<&str>, hostname: &'static str) -> ProxyWorkerHear
 async fn postgres_clock_ignores_process_skew() {
     let (fixture, pool) = database().await;
     let mut client = pool.get().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-    transaction
-        .batch_execute(
-            r#"INSERT INTO "LiteLLM_ProxyWorkerHeartbeat" (worker_id, hostname, last_heartbeat_at)
+    {
+        let transaction = client.transaction().await.unwrap();
+        transaction
+            .batch_execute(
+                r#"INSERT INTO "LiteLLM_ProxyWorkerHeartbeat" (worker_id, hostname, last_heartbeat_at)
                VALUES ('sentinel', 'host', NOW() - interval '179 seconds')"#,
-        )
-        .await
-        .unwrap();
-    let database = PostgresDatabase {
-        client: transaction,
-    };
-    let service = heartbeat(Some("worker-a"), "host-a");
-    service.beat(&database).await;
-    let row = database
-        .client
-        .query_one(
-            r#"SELECT last_heartbeat_at = NOW() FROM "LiteLLM_ProxyWorkerHeartbeat"
+            )
+            .await
+            .unwrap();
+        let database = PostgresDatabase {
+            client: transaction,
+        };
+        let service = heartbeat(Some("worker-a"), "host-a");
+        service.beat(&database).await;
+        let row = database
+            .client
+            .query_one(
+                r#"SELECT last_heartbeat_at = NOW() FROM "LiteLLM_ProxyWorkerHeartbeat"
                WHERE worker_id = 'worker-a'"#,
-            &[],
-        )
-        .await
-        .unwrap();
-    assert!(row.get::<_, bool>(0));
-    assert_eq!(
-        count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
-        Some(2)
-    );
-    database.client.commit().await.unwrap();
+                &[],
+            )
+            .await
+            .unwrap();
+        assert!(row.get::<_, bool>(0));
+        assert_eq!(
+            count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
+            Some(2)
+        );
+        database.client.commit().await.unwrap();
+    }
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
@@ -204,34 +206,36 @@ async fn heartbeat_exists(client: &Client, worker_id: &str) -> bool {
 async fn postgres_live_and_prune_strict_boundaries() {
     let (fixture, pool) = database().await;
     let mut client = pool.get().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-    transaction.batch_execute(BOUNDARY_ROWS).await.unwrap();
-    let database = PostgresDatabase {
-        client: transaction,
-    };
-    assert_eq!(
-        count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
-        Some(1)
-    );
-    heartbeat(Some("worker-a"), "host-a").beat(&database).await;
-    let rows = database
-        .client
-        .query(
-            r#"SELECT worker_id FROM "LiteLLM_ProxyWorkerHeartbeat" ORDER BY worker_id"#,
-            &[],
-        )
-        .await
-        .unwrap();
-    let names: Vec<String> = rows.iter().map(|row| row.get(0)).collect();
-    assert_eq!(
-        names,
-        vec!["boundary-dead", "boundary-live", "prune-kept", "worker-a"]
-    );
-    assert_eq!(
-        count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
-        Some(2)
-    );
-    database.client.commit().await.unwrap();
+    {
+        let transaction = client.transaction().await.unwrap();
+        transaction.batch_execute(BOUNDARY_ROWS).await.unwrap();
+        let database = PostgresDatabase {
+            client: transaction,
+        };
+        assert_eq!(
+            count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
+            Some(1)
+        );
+        heartbeat(Some("worker-a"), "host-a").beat(&database).await;
+        let rows = database
+            .client
+            .query(
+                r#"SELECT worker_id FROM "LiteLLM_ProxyWorkerHeartbeat" ORDER BY worker_id"#,
+                &[],
+            )
+            .await
+            .unwrap();
+        let names: Vec<String> = rows.iter().map(|row| row.get(0)).collect();
+        assert_eq!(
+            names,
+            vec!["boundary-dead", "boundary-live", "prune-kept", "worker-a"]
+        );
+        assert_eq!(
+            count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
+            Some(2)
+        );
+        database.client.commit().await.unwrap();
+    }
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
