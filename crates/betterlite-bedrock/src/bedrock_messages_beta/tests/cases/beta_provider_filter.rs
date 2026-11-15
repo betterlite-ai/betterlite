@@ -14,21 +14,18 @@ fn resolve(call: &mut Call) -> Vec<String> {
 
 fn auto_betas() {
     let (_guard, logs) = capture_logs();
-    let mut call = Call {
-        model: "claude-sonnet-4-5".to_owned(),
-        subclass_provider: Some("anthropic".to_owned()),
-        messages: list(
-            r#"[{"role": "user", "content": [{"type": "file", "file": {"file_id": "file-abc"}}]}]"#,
-        ),
-        mcp_servers: list(r#"[{"type": "url", "url": "https://example.test/mcp"}]"#),
-        tools: list(
-            r#"[{"type": "computer_20250124", "name": "computer"}, {"name": "geo", "input_schema": {}, "eager_input_streaming": true}]"#,
-        ),
-        injected: true,
-        safeguards: Some(js("[]")),
-        header_values: headers(r#"{"anthropic-beta": "mcp-client-2025-04-04"}"#),
-        ..Call::default()
-    };
+    let mut call = Call::new("claude-sonnet-4-5");
+    call.subclass_provider = Some("anthropic".to_owned());
+    call.messages = list(
+        r#"[{"role": "user", "content": [{"type": "file", "file": {"file_id": "file-abc"}}]}]"#,
+    );
+    call.mcp_servers = list(r#"[{"type": "url", "url": "https://example.test/mcp"}]"#);
+    call.tools = list(
+        r#"[{"type": "computer_20250124", "name": "computer"}, {"name": "geo", "input_schema": {}, "eager_input_streaming": true}]"#,
+    );
+    call.injected = true;
+    call.safeguards = Some(js("[]"));
+    call.header_values = headers(r#"{"anthropic-beta": "mcp-client-2025-04-04"}"#);
     assert_eq!(
         resolve(&mut call),
         [
@@ -44,20 +41,18 @@ fn auto_betas() {
     assert!(logs.warnings().is_empty());
 }
 
-// the mid-conversation and display betas read the outgoing request instead
+// the mid-conversation and display betas read the outgoing request, so no model is set
 fn outgoing_betas() {
-    let mut call = Call {
-        messages: list(r#"[{"role": "user", "content": "hi"}]"#),
-        subclass_provider: Some("anthropic".to_owned()),
-        outgoing: obj(r#"{
+    let mut call = Call::new("");
+    call.messages = list(r#"[{"role": "user", "content": "hi"}]"#);
+    call.subclass_provider = Some("anthropic".to_owned());
+    call.outgoing = obj(r#"{
   "messages": [
     {"role": "assistant", "output_config": {"format": {"type": "json_schema"}}},
     {"role": "system", "content": [{"type": "tool_addition", "tool": {"type": "tool_reference", "name": "geo"}}]}
   ],
   "thinking": {"type": "adaptive", "display": "updates"}
-}"#),
-        ..Call::default()
-    };
+}"#);
     assert_eq!(
         resolve(&mut call),
         [
@@ -76,40 +71,31 @@ fn safeguards_cases() {
         (None, &[]),
     ];
     for (safeguards, expected) in cases {
-        let mut call = Call {
-            model: "fixture-no-flag".to_owned(),
-            subclass_provider: Some("bedrock_mantle".to_owned()),
-            safeguards,
-            ..Call::default()
-        };
+        let mut call = Call::new("fixture-no-flag");
+        call.subclass_provider = Some("bedrock_mantle".to_owned());
+        call.safeguards = safeguards;
         assert_eq!(resolve(&mut call), expected.to_vec());
     }
 }
 
 // the feature params reach the beta list
 fn feature_params() {
-    let mut call = Call {
-        model: "fixture-no-flag".to_owned(),
-        subclass_provider: Some("bedrock_mantle".to_owned()),
-        params: params(r#"{"output_config": {"effort": "low"}}"#),
-        ..Call::default()
-    };
+    let mut call = Call::new("fixture-no-flag");
+    call.subclass_provider = Some("bedrock_mantle".to_owned());
+    call.params = params(r#"{"output_config": {"effort": "low"}}"#);
     assert_eq!(resolve(&mut call), ["effort-2025-11-24"]);
 }
 
 // the context filter runs inside the composition and rewrites the outgoing request
 fn context_rewrite() {
-    let mut call = Call {
-        model: "fixture-tool-search".to_owned(),
-        subclass_provider: Some("bedrock_mantle".to_owned()),
-        tools: list(r#"[{"type": "tool_search_tool_regex_20251119", "name": "tool_search"}]"#),
-        header_values: headers(r#"{"anthropic-beta": "advanced-tool-use-2025-11-20"}"#),
-        outgoing: obj(r#"{
+    let mut call = Call::new("fixture-tool-search");
+    call.subclass_provider = Some("bedrock_mantle".to_owned());
+    call.tools = list(r#"[{"type": "tool_search_tool_regex_20251119", "name": "tool_search"}]"#);
+    call.header_values = headers(r#"{"anthropic-beta": "advanced-tool-use-2025-11-20"}"#);
+    call.outgoing = obj(r#"{
   "messages": [],
   "context_management": {"edits": [{"type": "clear_thinking_20251015"}, {"type": "compact_20260112"}]}
-}"#),
-        ..Call::default()
-    };
+}"#);
     assert_eq!(
         resolve(&mut call),
         [

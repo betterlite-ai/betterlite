@@ -117,7 +117,6 @@ pub(super) fn params(text: &str) -> FeatureParams {
     serde_json::from_str(text).expect("fixture feature params parse")
 }
 
-#[derive(Default)]
 pub(super) struct Call {
     pub(super) model: String,
     pub(super) messages: Vec<Json>,
@@ -132,6 +131,21 @@ pub(super) struct Call {
 }
 
 impl Call {
+    pub(super) fn new(model: &str) -> Self {
+        Self {
+            model: model.to_owned(),
+            messages: Vec::new(),
+            tools: Vec::new(),
+            mcp_servers: Vec::new(),
+            safeguards: None,
+            params: FeatureParams::default(),
+            header_values: BTreeMap::new(),
+            outgoing: Object::new(),
+            injected: false,
+            subclass_provider: None,
+        }
+    }
+
     pub(super) fn request(&mut self) -> BetaHeadersRequest<'_> {
         BetaHeadersRequest {
             model: &self.model,

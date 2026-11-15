@@ -12,13 +12,10 @@ const TOOL_EXAMPLES_BETA: &str = "tool-examples-2025-10-29";
 fn betas(tools: &str, header: &str, model: &str, provider: Option<&str>) -> Vec<String> {
     let fixture = Fixture::new();
     let mut session = Session::new(&fixture);
-    let mut call = Call {
-        model: model.to_owned(),
-        tools: list(tools),
-        header_values: headers(header),
-        subclass_provider: provider.map(str::to_owned),
-        ..Call::default()
-    };
+    let mut call = Call::new(model);
+    call.tools = list(tools);
+    call.header_values = headers(header);
+    call.subclass_provider = provider.map(str::to_owned);
     session
         .betas(call.request())
         .expect("the beta headers resolve")

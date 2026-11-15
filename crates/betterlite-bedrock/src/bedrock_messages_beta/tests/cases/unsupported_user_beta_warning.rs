@@ -21,12 +21,10 @@ fn warning(dropped: &str) -> String {
 }
 
 fn call_with(header: &str) -> Call {
-    Call {
-        model: "fixture-tool-search".to_owned(),
-        subclass_provider: Some("bedrock_mantle".to_owned()),
-        header_values: headers(&format!(r#"{{"anthropic-beta": "{header}"}}"#)),
-        ..Call::default()
-    }
+    let mut call = Call::new("fixture-tool-search");
+    call.subclass_provider = Some("bedrock_mantle".to_owned());
+    call.header_values = headers(&format!(r#"{{"anthropic-beta": "{header}"}}"#));
+    call
 }
 
 fn drops_unmapped_betas() {
@@ -58,14 +56,11 @@ fn reports_each_value_once() {
 
     // generated betas the provider drops are never named in the warning
     let (_fifth_guard, fifth_logs) = capture_logs();
-    let mut generated = Call {
-        model: "claude-sonnet-4-5".to_owned(),
-        messages: list(
-            r#"[{"role": "user", "content": [{"type": "file", "file": {"file_id": "file-abc"}}]}]"#,
-        ),
-        header_values: headers(r#"{"anthropic-beta": "nope"}"#),
-        ..Call::default()
-    };
+    let mut generated = Call::new("claude-sonnet-4-5");
+    generated.messages = list(
+        r#"[{"role": "user", "content": [{"type": "file", "file": {"file_id": "file-abc"}}]}]"#,
+    );
+    generated.header_values = headers(r#"{"anthropic-beta": "nope"}"#);
     assert!(resolve(&mut generated).is_empty());
     assert_eq!(fifth_logs.warnings(), [warning("['nope']")]);
 }
