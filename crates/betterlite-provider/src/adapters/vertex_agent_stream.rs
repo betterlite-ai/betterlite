@@ -115,69 +115,69 @@ pub trait StreamLogger: Send + Sync {
 pub struct VertexAgentStream {
     pub model: String,
     pub provider: String,
-    ids: Arc<dyn IdSource>,
+    pub ids: Arc<dyn IdSource>,
     // the body stream owns the HTTP response, so dropping it here releases the connection
-    chunks: Chunks,
-    decoder: LineDecoder,
-    pending: VecDeque<String>,
-    done: bool,
+    pub chunks: Chunks,
+    pub decoder: LineDecoder,
+    pub pending: VecDeque<String>,
+    pub done: bool,
     // a finished chunk ends the stream for LiteLLM's wrapper, so a later read failure (not a timeout) is not seen
-    finished: bool,
+    pub finished: bool,
 }
 
 impl VertexAgentStream {
     pub async fn next_chunk(&mut self) -> Result<Option<Chunk>, VertexAgentStreamError> {
         loop {
-            if let Some(line) = self.pending.pop_front() {
-                match parse_line(&line, &self.model, self.ids.as_ref()) {
-                    Ok(Some(chunk)) => {
-                        self.finished |= chunk
-                            .choices
-                            .first()
-                            .is_some_and(|choice| choice.finish_reason.is_some());
-                        return Ok(Some(chunk));
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        self.end();
-                        return Err(error);
-                    }
-                }
-                continue;
+            if let Some(chunk) = self.next_pending()? {
+                return Ok(Some(chunk));
             }
             if self.done {
                 return Ok(None);
             }
-            match next_frame(&mut self.chunks).await {
-                Ok(Some(bytes)) => {
-                    if let Err(source) = self.decoder.push(&bytes, &mut self.pending) {
-                        self.end();
-                        return Err(VertexAgentStreamError::Line(source));
-                    }
+            self.read_frame().await?;
+        }
+    }
+
+    fn next_pending(&mut self) -> Result<Option<Chunk>, VertexAgentStreamError> {
+        while let Some(line) = self.pending.pop_front() {
+            match parse_line(&line, &self.model, self.ids.as_ref()) {
+                Ok(Some(chunk)) => {
+                    self.finished |= chunk
+                        .choices
+                        .first()
+                        .is_some_and(|choice| choice.finish_reason.is_some());
+                    return Ok(Some(chunk));
                 }
-                Ok(None) => {
-                    self.decoder.flush(&mut self.pending);
-                    self.done = true;
-                }
+                Ok(None) => {}
                 Err(error) => {
                     self.end();
-                    // LiteLLM's wrapper ends cleanly only on a read or protocol error, a timeout still raises
-                    let timed_out = match &error {
-                        VertexAgentStreamError::Body {
-                            source: HttpError::Request(source),
-                        } => source.is_timeout(),
-                        VertexAgentStreamError::Body {
-                            source: HttpError::Timeout,
-                        }
-                        | VertexAgentStreamError::Timeout => true,
-                        _ => false,
-                    };
-                    return if self.finished && !timed_out {
-                        Ok(None)
-                    } else {
-                        Err(error)
-                    };
+                    return Err(error);
                 }
+            }
+        }
+        Ok(None)
+    }
+
+    async fn read_frame(&mut self) -> Result<(), VertexAgentStreamError> {
+        match next_frame(&mut self.chunks).await {
+            Ok(Some(bytes)) => {
+                if let Err(source) = self.decoder.push(&bytes, &mut self.pending) {
+                    self.end();
+                    return Err(VertexAgentStreamError::Line(source));
+                }
+                Ok(())
+            }
+            Ok(None) => {
+                self.decoder.flush(&mut self.pending);
+                self.done = true;
+                Ok(())
+            }
+            Err(error) => {
+                self.end();
+                if self.finished && !timed_out(&error) {
+                    return Ok(());
+                }
+                Err(error)
             }
         }
     }
@@ -187,6 +187,28 @@ impl VertexAgentStream {
         self.chunks = stream::empty().boxed();
         self.pending.clear();
         self.done = true;
+    }
+}
+
+// LiteLLM's wrapper ends cleanly only on a read or protocol error, a timeout still raises
+fn timed_out(error: &VertexAgentStreamError) -> bool {
+    match error {
+        VertexAgentStreamError::Body {
+            source: HttpError::Request(source),
+        } => source.is_timeout(),
+        VertexAgentStreamError::Body {
+            source: HttpError::Timeout,
+        }
+        | VertexAgentStreamError::Timeout => true,
+        VertexAgentStreamError::Body { .. }
+        | VertexAgentStreamError::Chunk(_)
+        | VertexAgentStreamError::ChunkNotObject
+        | VertexAgentStreamError::Line(_)
+        | VertexAgentStreamError::TooLarge { .. }
+        | VertexAgentStreamError::Transport { .. }
+        | VertexAgentStreamError::Encode { .. }
+        | VertexAgentStreamError::Url { .. }
+        | VertexAgentStreamError::Provider(_) => false,
     }
 }
 

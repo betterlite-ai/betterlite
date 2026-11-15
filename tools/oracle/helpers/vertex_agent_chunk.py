@@ -30,12 +30,12 @@ class Input(TypedDict):
     chunks: list[dict[str, JsonValue]]
 
 
-# chunk_parser declares the generic stream kind as an answer too, while an Agent Engine line answers this one
+# the generic iterator declares chunk_parser too; this subclass answers an Agent Engine line
 class ChunkParser(Protocol):
     def chunk_parser(self, chunk: dict[str, JsonValue]) -> ModelResponseStream: ...
 
 
-PARSER: Final = cast(ChunkParser, VertexAgentEngineResponseIterator(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/sse_iterator.py#L30
+PARSER: Final = cast(ChunkParser, VertexAgentEngineResponseIterator(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/sse_iterator.py#L30
     streaming_response=iter(()), sync_stream=True
 ))
 STREAM: Final = TypeAdapter(StreamView)

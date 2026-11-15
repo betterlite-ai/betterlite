@@ -75,7 +75,7 @@ fn chunk_of(model: &str, ids: &dyn IdSource, chunk: &AgentEngineChunk<'_>) -> Ch
     }
 }
 
-fn chat_usage(usage: AgentEngineUsage) -> ChatUsage {
+const fn chat_usage(usage: AgentEngineUsage) -> ChatUsage {
     ChatUsage {
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens,
