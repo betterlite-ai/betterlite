@@ -142,15 +142,17 @@ fn precedence_outcomes(prompt: &str, profiles: &[Profile], cases: &[MappingCase]
 }
 
 fn precedence_outcome(profile: FluxProfile, prompt: &str, case: &MappingCase) -> Value {
-    match profile.map_openai_params(
-        &case.non_default,
-        case.optional.clone(),
-        MODEL,
-        case.drop_params,
-    ) {
-        Ok(mapped) => json!({"request": image_generation_body(prompt, mapped)}),
-        Err(_) => error_outcome(),
-    }
+    profile
+        .map_openai_params(
+            &case.non_default,
+            case.optional.clone(),
+            MODEL,
+            case.drop_params,
+        )
+        .map_or_else(
+            |_| json!({"error": {"status": null}}),
+            |mapped| json!({"request": image_generation_body(prompt, mapped)}),
+        )
 }
 
 fn size_outcomes(profiles: &[Profile], sizes: &[Json]) -> Value {
@@ -181,13 +183,13 @@ fn fallback_outcomes(profiles: &[Profile], sizes: &[Json], image_sizes: &[Json])
 fn size_outcome(profile: Profile, size: &Json) -> Value {
     let mut non_default = ImageParams::new();
     non_default.insert("size".to_owned(), size.clone());
-    let mapped = profile
+    let outcome = profile
         .flux()
-        .map_openai_params(&non_default, ImageParams::new(), MODEL, false);
-    let outcome = match mapped {
-        Ok(params) => json!({"params": params}),
-        Err(_) => error_outcome(),
-    };
+        .map_openai_params(&non_default, ImageParams::new(), MODEL, false)
+        .map_or_else(
+            |_| json!({"error": {"status": null}}),
+            |params| json!({"params": params}),
+        );
     json!({"profile": profile, "size": size, "outcome": outcome})
 }
 
@@ -240,16 +242,15 @@ fn hidden_outcome(reply: &ReplyCase) -> Value {
         reply.body.as_bytes(),
         &mut response,
     ) {
-        Ok(()) => json!({
-            "data": records(&response.data),
-            "hidden_params": response.hidden_params,
-        }),
+        Ok(()) => {
+            let data: Vec<Value> = response.data.iter().map(record).collect();
+            json!({
+                "data": data,
+                "hidden_params": response.hidden_params,
+            })
+        }
         Err(_) => json!({"error": {"status": reply.status}}),
     }
-}
-
-fn records(images: &[FalImage]) -> Vec<Value> {
-    images.iter().map(record).collect()
 }
 
 fn record(image: &FalImage) -> Value {
@@ -258,8 +259,4 @@ fn record(image: &FalImage) -> Value {
         "b64_json": image.b64_json.as_deref(),
         "provider_specific_fields": image.provider_specific_fields.as_ref(),
     })
-}
-
-fn error_outcome() -> Value {
-    json!({"error": {"status": null}})
 }

@@ -95,18 +95,18 @@ fn flux_n_maps_to_num_images_under_the_original_key_rule() {
     );
 }
 
-#[test]
-fn flux_response_format_url_and_b64_json_become_jpeg() {
-    for format in ["url", "b64_json"] {
-        assert_eq!(
-            mapped(
-                FluxProfile::ProV11,
-                &[("response_format", text(format))],
-                &[]
-            ),
-            params(&[("output_format", text("jpeg"))])
-        );
-    }
+#[rstest]
+#[case::url("url")]
+#[case::b64_json("b64_json")]
+fn flux_response_format_url_and_b64_json_become_jpeg(#[case] format: &str) {
+    assert_eq!(
+        mapped(
+            FluxProfile::ProV11,
+            &[("response_format", text(format))],
+            &[]
+        ),
+        params(&[("output_format", text("jpeg"))])
+    );
     assert_eq!(
         mapped(FluxProfile::Ultra, &[("response_format", text("png"))], &[]),
         params(&[("output_format", text("png"))])
@@ -208,9 +208,10 @@ fn flux_ultra_exact_sizes_use_their_aliases(#[case] size: &str, #[case] aspect_r
 fn flux_ultra_exact_and_custom_sizes_differ_across_overlapping_intervals() {
     assert_eq!(map_aspect_ratio("1536x1024"), "3:2");
     assert_eq!(map_aspect_ratio("1500x1000"), "4:3");
-    for size in ["1400x1000", "1499x1000", "1599x1000", "1600x1000"] {
-        assert_eq!(map_aspect_ratio(size), "4:3");
-    }
+    assert_eq!(map_aspect_ratio("1400x1000"), "4:3");
+    assert_eq!(map_aspect_ratio("1499x1000"), "4:3");
+    assert_eq!(map_aspect_ratio("1599x1000"), "4:3");
+    assert_eq!(map_aspect_ratio("1600x1000"), "4:3");
 }
 
 #[rstest]
@@ -279,19 +280,16 @@ fn flux_ultra_invalid_sizes_fall_back_to_sixteen_nine(#[case] size: &str) {
     assert_eq!(map_aspect_ratio(size), "16:9");
 }
 
-#[test]
-fn flux_ultra_size_must_be_text() {
-    for size in [
-        number(7),
-        Json::Bool(true),
-        Json::Null,
-        Json::List(Vec::new()),
-    ] {
-        let error = FluxProfile::Ultra
-            .map_openai_params(&params(&[("size", size)]), ImageParams::new(), MODEL, false)
-            .expect_err("a non-text size");
-        assert!(matches!(error, FluxError::SizeNotText));
-    }
+#[rstest]
+#[case::number(number(7))]
+#[case::bool(Json::Bool(true))]
+#[case::null(Json::Null)]
+#[case::list(Json::List(Vec::new()))]
+fn flux_ultra_size_must_be_text(#[case] size: Json) {
+    let error = FluxProfile::Ultra
+        .map_openai_params(&params(&[("size", size)]), ImageParams::new(), MODEL, false)
+        .expect_err("a non-text size");
+    assert!(matches!(error, FluxError::SizeNotText));
 }
 
 #[rstest]
@@ -302,33 +300,41 @@ fn flux_ultra_size_must_be_text() {
 #[case("1024x768", "landscape_4_3")]
 #[case("768x1024", "portrait_4_3")]
 fn flux_image_sizes_use_their_aliases(#[case] size: &str, #[case] image_size: &str) {
-    for profile in [FluxProfile::ProV11, FluxProfile::Schnell, FluxProfile::Dev] {
-        assert_eq!(
-            mapped(profile, &[("size", text(size))], &[]),
-            params(&[("image_size", text(image_size))])
-        );
-    }
+    assert_eq!(
+        mapped(FluxProfile::ProV11, &[("size", text(size))], &[]),
+        params(&[("image_size", text(image_size))])
+    );
+    assert_eq!(
+        mapped(FluxProfile::Schnell, &[("size", text(size))], &[]),
+        params(&[("image_size", text(image_size))])
+    );
+    assert_eq!(
+        mapped(FluxProfile::Dev, &[("size", text(size))], &[]),
+        params(&[("image_size", text(image_size))])
+    );
 }
 
-#[test]
-fn flux_image_size_passes_non_strings_through() {
-    let object = Json::Object(IndexMap::from([("width".to_owned(), number(512))]));
-    for size in [
-        object,
-        number(7),
-        Json::Bool(true),
-        Json::Null,
-        Json::List(vec![number(1)]),
-        Json::Number(Number::from_f64(1.5).expect("a finite number")),
-    ] {
-        for profile in [FluxProfile::ProV11, FluxProfile::Schnell, FluxProfile::Dev] {
-            assert_eq!(
-                mapped(profile, &[("size", size.clone())], &[]),
-                params(&[("image_size", size.clone())])
-            );
-        }
-        assert_eq!(map_image_size(&size), size);
-    }
+#[rstest]
+#[case::object(Json::Object(IndexMap::from([("width".to_owned(), number(512))])))]
+#[case::number(number(7))]
+#[case::bool(Json::Bool(true))]
+#[case::null(Json::Null)]
+#[case::list(Json::List(vec![number(1)]))]
+#[case::float(Json::Number(Number::from_f64(1.5).expect("a finite number")))]
+fn flux_image_size_passes_non_strings_through(#[case] size: Json) {
+    assert_eq!(
+        mapped(FluxProfile::ProV11, &[("size", size.clone())], &[]),
+        params(&[("image_size", size.clone())])
+    );
+    assert_eq!(
+        mapped(FluxProfile::Schnell, &[("size", size.clone())], &[]),
+        params(&[("image_size", size.clone())])
+    );
+    assert_eq!(
+        mapped(FluxProfile::Dev, &[("size", size.clone())], &[]),
+        params(&[("image_size", size.clone())])
+    );
+    assert_eq!(map_image_size(&size), size);
 }
 
 #[rstest]
