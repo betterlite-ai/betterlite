@@ -56,7 +56,7 @@ const UNIFORM_30: TimeoutFacts = TimeoutFacts {
 const REPLY: &str = r#"{"id":"chat-1","object":"chat.completion","created":1,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
 const FAKE_REPLY: &str = r#"{"id":"chat-1","object":"chat.completion","created":1,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"fake"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
 const LINES: &str =
-    "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"index\":0}]}\n\ndata: [DONE]\n\n";
+    "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"index\":0}]}\ndata: [DONE]\n";
 
 struct Discard;
 
@@ -99,11 +99,14 @@ fn logging(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
 }
 
 fn messages() -> Vec<ChatMessage> {
-    serde_json::from_value(serde_json::json!([{"role": "user", "content": "hi"}])).unwrap()
+    serde_json::from_str(r#"[{"role": "user", "content": "hi"}]"#).unwrap()
 }
 
 fn user_message(content: &str) -> Json {
-    serde_json::from_value(serde_json::json!([{"role": "user", "content": content}])).unwrap()
+    Json::List(vec![Json::Object(IndexMap::from([
+        ("role".to_owned(), Json::Text(String::from("user"))),
+        ("content".to_owned(), Json::Text(content.to_owned())),
+    ]))])
 }
 
 fn number(value: f64) -> Json {
@@ -220,7 +223,7 @@ async fn serve(listener: &TcpListener, status: u16, reply: &[u8]) -> String {
     String::from_utf8(request).unwrap()
 }
 
-async fn base(listener: &TcpListener) -> String {
+fn base(listener: &TcpListener) -> String {
     format!("http://{}/v1", listener.local_addr().unwrap())
 }
 
@@ -399,21 +402,21 @@ fn async_stream_writes_the_stream_flag_after_the_pre_call_log() {
 }
 
 #[rstest]
-#[case(Mode::Async, false, None, Some(DEFAULT_TIMEOUT), None, 600)]
-#[case(Mode::Async, false, Some(30), Some(UNIFORM_30), None, 30)]
-#[case(Mode::Async, true, Some(30), None, None, 6000)]
-#[case(Mode::Sync, true, Some(30), Some(UNIFORM_30), None, 30)]
-#[case(Mode::Sync, true, None, None, None, 600)]
-#[case(Mode::Sync, false, Some(30), None, Some(UNIFORM_30), 30)]
-#[case(Mode::Sync, false, None, None, None, 600)]
+#[case(Mode::Async, false, None, (Some(DEFAULT_TIMEOUT), None), 600)]
+#[case(Mode::Async, false, Some(30), (Some(UNIFORM_30), None), 30)]
+#[case(Mode::Async, true, Some(30), (None, None), 6000)]
+#[case(Mode::Sync, true, Some(30), (Some(UNIFORM_30), None), 30)]
+#[case(Mode::Sync, true, None, (None, None), 600)]
+#[case(Mode::Sync, false, Some(30), (None, Some(UNIFORM_30)), 30)]
+#[case(Mode::Sync, false, None, (None, None), 600)]
 fn timeouts_follow_the_source_branches(
     #[case] mode: Mode,
     #[case] stream: bool,
     #[case] seconds: Option<u64>,
-    #[case] send: Option<TimeoutFacts>,
-    #[case] construct: Option<TimeoutFacts>,
+    #[case] timeouts: (Option<TimeoutFacts>, Option<TimeoutFacts>),
     #[case] deadline: u64,
 ) {
+    let (send, construct) = timeouts;
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(mode);
@@ -517,7 +520,7 @@ async fn a_nonstream_reply_is_decoded_with_the_provider_prefix_and_base_model() 
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.options.insert(
         "base_model".to_owned(),
         Json::Text(String::from("upstream")),
@@ -554,7 +557,7 @@ async fn execute_plans_sends_and_finishes_in_one_call() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
         tokio::join!(serve(&listener, 200, REPLY.as_bytes()), async {
             call.execution(None, None)
@@ -577,7 +580,7 @@ async fn a_sync_fake_stream_buffers_and_replays_one_chunk() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Sync);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.fake_stream = true;
     call.options.insert("stream".to_owned(), Json::Bool(true));
     let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
@@ -613,7 +616,7 @@ async fn a_sync_fake_stream_requires_exactly_200() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Sync);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.fake_stream = true;
     call.options.insert("stream".to_owned(), Json::Bool(true));
     let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
@@ -637,7 +640,7 @@ async fn a_sync_fake_stream_with_a_decoder_reads_1024_byte_chunks() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Sync);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.fake_stream = true;
     call.options.insert("stream".to_owned(), Json::Bool(true));
     let body = "a".repeat(3000);
@@ -671,7 +674,7 @@ async fn an_async_fake_stream_is_dropped_and_reads_lines() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.fake_stream = true;
     call.options.insert("stream".to_owned(), Json::Bool(true));
     let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
@@ -699,44 +702,42 @@ async fn an_async_fake_stream_is_dropped_and_reads_lines() {
     );
 }
 
-#[tokio::test]
-async fn a_sync_stream_requires_exactly_200_and_logs_the_first_response() {
+async fn sync_stream(
+    status: u16,
+    call: &mut Call,
+    state: &mut LoggingState,
+    env: &PrePostEnv<'_>,
+) -> (String, Result<CompatibleChatOutcome, CompatibleChatError>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, env) = logging(&redactor);
-    let mut call = Call::new(Mode::Sync);
-    call.api_base = Some(base(&listener).await);
-    call.options.insert("stream".to_owned(), Json::Bool(true));
-    let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
-        tokio::join!(serve(&listener, 201, LINES.as_bytes()), async {
-            let plan = plan(&call, &mut state, &env);
-            send_chat(&client(), &plan).await
+    call.api_base = Some(base(&listener));
+    let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(serve(&listener, status, LINES.as_bytes()), async {
+            let plan = plan(call, state, env);
+            let answer = send_chat(&client(), &plan).await?;
+            finish_chat(&plan, answer, state, env)
         })
     })
     .await
     .unwrap();
+    (request, answer)
+}
+
+#[tokio::test]
+async fn a_sync_stream_requires_exactly_200_and_logs_the_first_response() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging(&redactor);
+    let mut call = Call::new(Mode::Sync);
+    call.options.insert("stream".to_owned(), Json::Bool(true));
+    let (_, rejected) = sync_stream(201, &mut call, &mut state, &env).await;
     assert!(matches!(
-        answer,
+        rejected,
         Err(CompatibleChatError::OpenAiLike(error)) if error.status_code == 201
     ));
     assert_eq!(
         state.model_call_details.get("log_event_type"),
         Some(&Json::Text(String::from("pre_api_call")))
     );
-
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let mut call = Call::new(Mode::Sync);
-    call.api_base = Some(base(&listener).await);
-    call.options.insert("stream".to_owned(), Json::Bool(true));
-    let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
-        tokio::join!(serve(&listener, 200, LINES.as_bytes()), async {
-            let plan = plan(&call, &mut state, &env);
-            let answer = send_chat(&client(), &plan).await.unwrap();
-            finish_chat(&plan, answer, &mut state, &env)
-        })
-    })
-    .await
-    .unwrap();
+    let (_, answer) = sync_stream(200, &mut call, &mut state, &env).await;
     let CompatibleChatOutcome::Stream(stream) = answer.unwrap() else {
         panic!("the line stream");
     };
@@ -760,7 +761,7 @@ async fn an_async_stream_ignores_the_status() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.options.insert("stream".to_owned(), Json::Bool(true));
     let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
         tokio::join!(serve(&listener, 404, LINES.as_bytes()), async {
@@ -779,7 +780,7 @@ async fn a_buffered_status_error_keeps_the_body_text() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
         tokio::join!(serve(&listener, 404, b"missing"), async {
             let plan = plan(&call, &mut state, &env);
@@ -794,20 +795,20 @@ async fn a_buffered_status_error_keeps_the_body_text() {
         Err(CompatibleChatError::OpenAiLike(error)) if error.status_code == 404 && error.message == "missing"
     ));
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let mut call = Call::new(Mode::Sync);
-    call.api_base = Some(base(&listener).await);
-    let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
-        tokio::join!(serve(&listener, 300, b"moved"), async {
-            let plan = plan(&call, &mut state, &env);
-            let answer = send_chat(&client(), &plan).await.unwrap();
-            finish_chat(&plan, answer, &mut state, &env)
+    let sync_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut sync_call = Call::new(Mode::Sync);
+    sync_call.api_base = Some(base(&sync_listener));
+    let (_, moved) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(serve(&sync_listener, 300, b"moved"), async {
+            let plan = plan(&sync_call, &mut state, &env);
+            let reply = send_chat(&client(), &plan).await.unwrap();
+            finish_chat(&plan, reply, &mut state, &env)
         })
     })
     .await
     .unwrap();
     assert!(matches!(
-        answer,
+        moved,
         Err(CompatibleChatError::OpenAiLike(error)) if error.status_code == 300 && error.message == "moved"
     ));
 }
@@ -818,7 +819,7 @@ async fn a_reply_that_is_not_openai_json_is_a_wire_error() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
         tokio::join!(serve(&listener, 200, b"not json"), async {
             let plan = plan(&call, &mut state, &env);
@@ -837,7 +838,7 @@ async fn a_status_body_that_is_not_utf8_is_its_own_error() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Sync);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.options.insert("stream".to_owned(), Json::Bool(true));
     let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
         tokio::join!(serve(&listener, 400, &[0xff, 0xfe]), async {
@@ -863,7 +864,7 @@ async fn a_stream_send_failure_stays_a_transport_error() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.options.insert("stream".to_owned(), Json::Bool(true));
     let plan = plan(&call, &mut state, &env);
     drop(listener);
@@ -883,7 +884,7 @@ async fn a_nonstream_send_failure_is_a_transport_error() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.timeout = Some(Duration::from_millis(20));
     let expired = plan(&call, &mut state, &env);
     let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &expired))
@@ -895,19 +896,19 @@ async fn a_nonstream_send_failure_is_a_transport_error() {
     assert!(matches!(error, CompatibleChatError::Transport(_)));
     assert_eq!(error.status_code(), Some(500));
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
-    let failed = plan(&call, &mut state, &env);
-    drop(listener);
-    let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &failed))
+    let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut lost = Call::new(Mode::Async);
+    lost.api_base = Some(base(&closed));
+    let failed = plan(&lost, &mut state, &env);
+    drop(closed);
+    let refused = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &failed))
         .await
         .unwrap();
-    let Err(error) = answer else {
+    let Err(refusal) = refused else {
         panic!("the transport error");
     };
-    assert!(matches!(error, CompatibleChatError::Transport(_)));
-    assert_eq!(error.status_code(), Some(500));
+    assert!(matches!(refusal, CompatibleChatError::Transport(_)));
+    assert_eq!(refusal.status_code(), Some(500));
 }
 
 #[tokio::test]
@@ -916,7 +917,7 @@ async fn a_sync_stream_send_timeout_is_the_timeout_error() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Sync);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.options.insert("stream".to_owned(), Json::Bool(true));
     call.timeout = Some(Duration::from_millis(20));
     let plan = plan(&call, &mut state, &env);
@@ -967,7 +968,7 @@ async fn a_custom_decoder_wins_and_reads_1024_byte_chunks() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Async);
-    call.api_base = Some(base(&listener).await);
+    call.api_base = Some(base(&listener));
     call.fake_stream = true;
     call.options.insert("stream".to_owned(), Json::Bool(true));
     let body = "a".repeat(3000);
