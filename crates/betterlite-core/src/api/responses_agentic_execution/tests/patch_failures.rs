@@ -5,7 +5,7 @@ use serde_json::value::RawValue;
 
 use super::super::error::{CallbackError, PatchError};
 use super::support::{
-    ANTHROPIC_BODY, NEXT_BODY, RecordingCallback, ScriptedExecutor, anthropic_fixture,
+    ANTHROPIC_BODY, NEXT_BODY, PlanHarness, RecordingCallback, ScriptedExecutor, anthropic_fixture,
     callback_list, dispatch, fixture, order_log, plan_harness, plan_with_patch, recording,
 };
 use super::{assert_log, continue_messages, legacy, response_text};
