@@ -62,7 +62,7 @@ class CompletionParams(TypedDict):
     fake_stream: bool
 
 
-# completion is unannotated on the handler, so its result and its Any-laden signature are typed through this view
+# completion is unannotated, so this view types its kwargs and its Any-laden return
 class Completion(Protocol):
     def completion(self, **params: Unpack[CompletionParams]) -> Reply | Deferred: ...
 
