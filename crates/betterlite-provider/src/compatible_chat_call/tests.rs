@@ -702,42 +702,38 @@ async fn an_async_fake_stream_is_dropped_and_reads_lines() {
     );
 }
 
-async fn sync_stream(
-    status: u16,
-    call: &mut Call,
-    state: &mut LoggingState,
-    env: &PrePostEnv<'_>,
-) -> (String, Result<CompatibleChatOutcome, CompatibleChatError>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    call.api_base = Some(base(&listener));
-    let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
-        tokio::join!(serve(&listener, status, LINES.as_bytes()), async {
-            let plan = plan(call, state, env);
-            let answer = send_chat(&client(), &plan).await?;
-            finish_chat(&plan, answer, state, env)
-        })
-    })
-    .await
-    .unwrap();
-    (request, answer)
-}
-
 #[tokio::test]
 async fn a_sync_stream_requires_exactly_200_and_logs_the_first_response() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
     let mut call = Call::new(Mode::Sync);
     call.options.insert("stream".to_owned(), Json::Bool(true));
-    let (_, rejected) = sync_stream(201, &mut call, &mut state, &env).await;
-    assert!(matches!(
-        rejected,
-        Err(CompatibleChatError::OpenAiLike(error)) if error.status_code == 201
-    ));
-    assert_eq!(
-        state.model_call_details.get("log_event_type"),
-        Some(&Json::Text(String::from("pre_api_call")))
-    );
-    let (_, answer) = sync_stream(200, &mut call, &mut state, &env).await;
+    let mut answers = Vec::new();
+    for status in [201, 200] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        call.api_base = Some(base(&listener));
+        let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
+            tokio::join!(serve(&listener, status, LINES.as_bytes()), async {
+                let plan = plan(&call, &mut state, &env);
+                let answer = send_chat(&client(), &plan).await?;
+                finish_chat(&plan, answer, &mut state, &env)
+            })
+        })
+        .await
+        .unwrap();
+        if status == 201 {
+            assert!(matches!(
+                answer,
+                Err(CompatibleChatError::OpenAiLike(ref error)) if error.status_code == 201
+            ));
+            assert_eq!(
+                state.model_call_details.get("log_event_type"),
+                Some(&Json::Text(String::from("pre_api_call")))
+            );
+        }
+        answers.push(answer);
+    }
+    let answer = answers.pop().unwrap();
     let CompatibleChatOutcome::Stream(stream) = answer.unwrap() else {
         panic!("the line stream");
     };

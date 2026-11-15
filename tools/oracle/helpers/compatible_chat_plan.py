@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -64,8 +64,7 @@ class CompletionParams(TypedDict):
 
 # completion is unannotated, so this view types its arguments through CompletionParams
 class Completion(Protocol):
-    @property
-    def completion(self) -> Callable[..., Reply | Deferred]: ...
+    def completion(self, **params: Unpack[CompletionParams]) -> Reply | Deferred: ...
 
 
 class ChatHandler(OpenAILikeChatHandler):
