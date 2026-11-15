@@ -16,6 +16,7 @@ use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptOb
 use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
+use std::str::{Utf8Error, from_utf8};
 use std::time::Duration;
 use thiserror::Error;
 use url::Url;
@@ -38,7 +39,7 @@ pub enum HttpExecutorError {
     #[error("the provider answered the agentic follow-up with status {status}: {body}")]
     Status { status: u16, body: String },
     #[error("the provider's agentic follow-up error answer is not UTF-8")]
-    StatusBodyNotUtf8(#[source] std::str::Utf8Error),
+    StatusBodyNotUtf8(#[source] Utf8Error),
     #[error(transparent)]
     Decode(#[from] ResponsesObjectsDecodeError),
     #[error("the anthropic follow-up is served by the messages transport, not this executor")]
@@ -67,7 +68,7 @@ impl ContinuationExecutor for ResponsesHttpExecutor {
         };
         let response = self.client.send_buffered(request).await?;
         if !(200..300).contains(&response.status) {
-            let body = std::str::from_utf8(&response.body)
+            let body = from_utf8(&response.body)
                 .map_err(HttpExecutorError::StatusBodyNotUtf8)?
                 .to_owned();
             return Err(HttpExecutorError::Status {

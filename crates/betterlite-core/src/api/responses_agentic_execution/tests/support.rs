@@ -15,7 +15,8 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
-use http::HeaderMap;
+use http::header::AUTHORIZATION;
+use http::{HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -40,6 +41,7 @@ use crate::api::chat_agentic_loop::tests::support::{
 use crate::api::responses_hook_policy::agentic::AgenticLoopSettings;
 use crate::api::responses_hook_policy::safety::{ApiSurface, sort_json_keys};
 
+pub(crate) const PROVIDER_AUTHORIZATION: &str = "Bearer sk-test";
 pub(crate) const RESPONSES_BODY: &str =
     r#"{"id":"resp_first","object":"response","created_at":1,"status":"completed","output":[]}"#;
 pub(crate) const NEXT_BODY: &str =
@@ -333,7 +335,7 @@ impl AgenticCallback for RecordingCallback {
 pub(crate) fn callback_list(items: &[&Arc<RecordingCallback>]) -> Vec<Arc<dyn AgenticCallback>> {
     let mut collected: Vec<Arc<dyn AgenticCallback>> = Vec::with_capacity(items.len());
     for item in items.iter().copied() {
-        let callback: Arc<dyn AgenticCallback> = Arc::clone(item);
+        let callback: Arc<RecordingCallback> = Arc::clone(item);
         collected.push(callback);
     }
     collected
@@ -502,11 +504,16 @@ pub(crate) fn http_executor(api_base: &str) -> ResponsesHttpExecutor {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the proxy policy"),
     );
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_static(PROVIDER_AUTHORIZATION),
+    );
     ResponsesHttpExecutor {
         client: ProxiedClient::outbound(&policy).expect("the test client"),
         api_base: format!("{api_base}/v1"),
         provider: ProviderId::Openai,
-        headers: HeaderMap::new(),
+        headers,
         model_info: None,
         deadline: DEFAULT_DEADLINE,
     }
@@ -514,6 +521,7 @@ pub(crate) fn http_executor(api_base: &str) -> ResponsesHttpExecutor {
 
 pub(crate) struct SeenRequest {
     pub request_line: String,
+    pub headers: BTreeMap<String, String>,
     pub body: String,
 }
 
@@ -603,20 +611,25 @@ async fn read_request(socket: &mut TcpStream) -> Option<SeenRequest> {
             continue;
         };
         let head = String::from_utf8(received.get(..head_end)?.to_vec()).ok()?;
-        let length = head
-            .lines()
-            .find_map(|line| {
-                let (name, value) = line.split_once(':')?;
-                name.eq_ignore_ascii_case("content-length")
-                    .then(|| value.trim().parse::<usize>().ok())
-                    .flatten()
-            })
+        let mut lines = head.lines();
+        let request_line = lines.next()?.to_owned();
+        let mut headers = BTreeMap::new();
+        for line in lines {
+            let (name, value) = line.split_once(':')?;
+            headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_owned());
+        }
+        let length = headers
+            .get("content-length")
+            .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(0);
         let body_start = head_end.checked_add(4)?;
         if received.len().saturating_sub(body_start) >= length || read == 0 {
             let body = String::from_utf8(received.get(body_start..)?.to_vec()).ok()?;
-            let request_line = head.lines().next()?.to_owned();
-            return Some(SeenRequest { request_line, body });
+            return Some(SeenRequest {
+                request_line,
+                headers,
+                body,
+            });
         }
     }
 }

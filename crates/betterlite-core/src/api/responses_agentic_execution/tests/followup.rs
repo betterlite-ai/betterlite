@@ -7,8 +7,8 @@ use super::super::dispatch::call_agentic_completion_hooks;
 use super::super::executor::{AnthropicContinuation, ContinuationExecutor, ResponsesContinuation};
 use super::super::http::HttpExecutorError;
 use super::support::{
-    NEXT_BODY, ScriptedExecutor, SeenRequest, Upstream, callback_list, dispatch, fingerprint_of,
-    http_executor, order_log,
+    NEXT_BODY, PROVIDER_AUTHORIZATION, ScriptedExecutor, SeenRequest, Upstream, callback_list,
+    dispatch, fingerprint_of, http_executor, order_log,
 };
 use super::{
     assert_log, followup_fixture, followup_patch, json, number, plan_callback, response_text, text,
@@ -43,6 +43,10 @@ pub(super) async fn http_followup() {
 
 fn assert_sent_request(request: &SeenRequest) {
     assert_eq!(request.request_line, "POST /v1/responses HTTP/1.1");
+    assert_eq!(
+        request.headers.get("authorization").map(String::as_str),
+        Some(PROVIDER_AUTHORIZATION)
+    );
     let Json::Object(fields) = json(&request.body) else {
         panic!("the follow-up body is an object")
     };

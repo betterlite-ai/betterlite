@@ -51,10 +51,9 @@ pub(crate) fn count_field(value: Json, field: &'static str) -> Result<u64, Patch
             "a non-negative integer",
         ))));
     };
-    number.as_u64().ok_or(PatchError::Field(Box::new((
-        field,
-        "a non-negative integer",
-    ))))
+    number
+        .as_u64()
+        .ok_or_else(|| PatchError::Field(Box::new((field, "a non-negative integer"))))
 }
 pub(crate) fn message_list(
     value: Json,
