@@ -7,7 +7,7 @@ use crate::static_eligibility::request::RequestFacts;
 
 const RESPONSE_FORMAT: &str = "response_format";
 
-fn text(value: Option<&Json>) -> Option<&str> {
+const fn text(value: Option<&Json>) -> Option<&str> {
     match value {
         Some(Json::Text(text)) if !text.is_empty() => Some(text.as_str()),
         Some(

@@ -44,20 +44,25 @@ pub fn active_in_environment(
             });
         }
     };
-    let Some(environment) = environment else {
+    let Some(current) = environment else {
         return Err(EnvironmentError::MissingEnvironment);
     };
-    if !VALID_ENVIRONMENTS.contains(&environment) {
+    if !VALID_ENVIRONMENTS.contains(&current) {
         return Err(EnvironmentError::UnknownEnvironment {
-            value: environment.to_owned(),
+            value: current.to_owned(),
         });
     }
     for entry in supported {
         match entry {
             Json::Text(name) if VALID_ENVIRONMENTS.contains(&name.as_str()) => {}
-            other => {
+            Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_) => {
                 return Err(EnvironmentError::UnknownSupportedEnvironment {
-                    value: listing(other),
+                    value: listing(entry),
                     model_info: listing(&Json::Object(model_info.clone())),
                 });
             }
@@ -65,5 +70,5 @@ pub fn active_in_environment(
     }
     Ok(supported
         .iter()
-        .any(|entry| matches!(entry, Json::Text(name) if name == environment)))
+        .any(|entry| matches!(entry, Json::Text(name) if name == current)))
 }

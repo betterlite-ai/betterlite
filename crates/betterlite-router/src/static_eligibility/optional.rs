@@ -24,6 +24,7 @@ pub const RUNTIME_TOGGLEABLE: [OptionalPreCallCheck; 3] = [
 
 impl OptionalPreCallCheck {
     // The OptionalPreCallChecks literal of litellm/types/router.py; a name outside it registers nothing.
+    #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "deployment_affinity" => Some(Self::DeploymentAffinity),
@@ -54,15 +55,15 @@ impl EnabledChecks {
 
     // set_optional_pre_call_checks drops the toggleable checks the new setting leaves out, then adds what it names.
     pub fn replace(&mut self, requested: Option<&[OptionalPreCallCheck]>) {
-        let Some(requested) = requested else {
+        let Some(names) = requested else {
             return;
         };
         for check in RUNTIME_TOGGLEABLE {
-            if !requested.contains(&check) {
+            if !names.contains(&check) {
                 self.checks.remove(&check);
             }
         }
-        self.add(requested);
+        self.add(names);
     }
 }
 
@@ -91,13 +92,10 @@ pub fn routing_strategy_checks(
     deployment: &DeploymentSpec,
     checks: &[&dyn DeploymentPreCallCheck],
 ) -> Result<(), PreCallError> {
-    for check in checks {
-        check.check(deployment)?;
-    }
-    Ok(())
+    checks.iter().try_for_each(|check| check.check(deployment))
 }
 
-fn rate_limit(failure: &PreCallError) -> Option<(&str, u16)> {
+const fn rate_limit(failure: &PreCallError) -> Option<(&str, u16)> {
     match failure {
         PreCallError::RateLimited {
             deployment_id,
