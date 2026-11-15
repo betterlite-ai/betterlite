@@ -4,7 +4,8 @@ use std::io;
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use betterlite_redis::config_sync::table_actions::TableActions;
 use betterlite_redis::redis_cache::RedisCache;
@@ -18,7 +19,7 @@ use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use clap::Parser;
-use deadpool_postgres::{GenericClient, Manager, Pool};
+use deadpool_postgres::{GenericClient as _, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
@@ -48,11 +49,15 @@ fn test_url() -> Option<SecretString> {
         .map(SecretString::from)
 }
 
+// Each test owns a database: pg_constraint guards span the whole database, not one schema.
 async fn provision() -> PostgresFixture {
-    PostgresFixture::provision_schema(test_url().as_ref())
-        .resolve()
-        .await
-        .unwrap()
+    let mut generator = RandomDatabaseName;
+    let mut task = PostgresFixture::provision_with_name_generator(
+        test_url().as_ref(),
+        &FixtureSeed::default(),
+        &mut generator,
+    );
+    task.resolve().await.unwrap()
 }
 
 pub(crate) fn store(fixture: &PostgresFixture) -> PostgresStore {
@@ -64,6 +69,10 @@ pub(crate) fn store(fixture: &PostgresFixture) -> PostgresStore {
 
 async fn migrate(store: &PostgresStore) {
     let client = store.session().await.unwrap();
+    client
+        .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+        .await
+        .unwrap();
     for catalog in [
         schema_baseline::MIGRATION_CATALOG,
         schema_daily_usage::MIGRATION_CATALOG,
@@ -124,7 +133,7 @@ impl Case {
         case
     }
 
-    pub(crate) fn client(&self) -> PrismaClient<'_> {
+    pub(crate) const fn client(&self) -> PrismaClient<'_> {
         PrismaClient {
             writer: &self.writer,
             reader: &self.reader,
