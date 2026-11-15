@@ -53,12 +53,21 @@ impl SingulrSettings {
     {
         let api_base = resolve_text(args.singulr_api_base.as_deref(), environment, API_BASE_ENV)
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
-        let api_base = api_base.trim().trim_end_matches('/').to_owned();
-        if let Ok(url) = Url::parse(&api_base)
-            && url.scheme() == "http"
-            && !matches!(url.host_str(), Some(host) if LOCAL_HOSTS.contains(&host))
-        {
-            return Err(SettingsError::PlainHttp { api_base });
+        let trimmed = api_base.trim().trim_end_matches('/').to_owned();
+        // urlsplit strips leading C0 controls and spaces, then every tab, CR and LF
+        let scheme_text = trimmed
+            .trim_start_matches(|c: char| matches!(c, '\0'..=' '))
+            .replace(['\t', '\r', '\n'], "");
+        let plain_http = scheme_text
+            .split_once(':')
+            .is_some_and(|(scheme, _rest)| scheme.eq_ignore_ascii_case("http"));
+        let url = Url::parse(&trimmed).ok();
+        let local = url
+            .as_ref()
+            .and_then(Url::host_str)
+            .is_some_and(|host| LOCAL_HOSTS.contains(&host));
+        if plain_http && !local {
+            return Err(SettingsError::PlainHttp { api_base: trimmed });
         }
         let api_key = resolve_text(
             args.singulr_api_key
@@ -74,7 +83,7 @@ impl SingulrSettings {
             None => DEFAULT_TIMEOUT,
         };
         Ok(Self {
-            api_base,
+            api_base: trimmed,
             api_key,
             application_id: resolve_text(
                 args.singulr_application_id.as_deref(),

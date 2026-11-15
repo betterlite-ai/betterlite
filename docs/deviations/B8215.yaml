@@ -15,3 +15,6 @@ deviations:
   - what: A request that fails to connect is sent once, not twice.
     why: B173's pooled guardrail client disables implicit retries, and the retry lives in LiteLLM's shared AsyncHTTPHandler rather than in the Singulr guardrail.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
+  - what: The plain-HTTP refusal decides localness from the host the URL parser reads, so http://127.1 is allowed and a plain-http base whose URL does not parse, such as http://localhost:notaport, is refused at start.
+    why: LiteLLM compares the textual hostname urlparse returns, so it refuses http://127.1 and starts on http://localhost:notaport, which fails only when a request is sent. 127.1 is loopback, the traffic this check permits. Reading the parsed host is also what refuses the host-less bases 'http:' and 'http://', which a textual scheme check alone lets through to a cleartext POST.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L64-L77

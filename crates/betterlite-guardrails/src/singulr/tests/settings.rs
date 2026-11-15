@@ -83,9 +83,33 @@ fn plain_http_to_a_non_local_host_is_refused_and_keeps_the_token_out() {
 #[case::localhost("http://localhost:8003")]
 #[case::loopback("http://127.0.0.1:8003")]
 #[case::uppercase_host("http://LOCALHOST:8003")]
+#[case::normalized_loopback("http://127.1")]
 fn plain_http_to_a_local_host_is_allowed(#[case] base: &str) {
     let settings = resolve(&[("SINGULR_API_BASE", base)]).unwrap();
     assert_eq!(settings.api_base, base);
+}
+
+#[rstest]
+#[case::empty_authority("http://", "http:")]
+#[case::scheme_only("http:", "http:")]
+#[case::empty_authority_with_path("http:///evil", "http:///evil")]
+fn a_host_less_plain_http_base_is_refused_at_start(#[case] base: &str, #[case] named: &str) {
+    let error = resolve(&[("SINGULR_API_BASE", base)]).unwrap_err();
+    assert!(matches!(&error, SettingsError::PlainHttp { api_base } if api_base.as_str() == named));
+}
+
+#[rstest]
+#[case::tab("ht\ttp://guard.example")]
+#[case::nul("\0http://guard.example")]
+fn a_plain_http_base_hidden_behind_a_control_character_is_refused_at_start(#[case] base: &str) {
+    let error = resolve(&[("SINGULR_API_BASE", base)]).unwrap_err();
+    assert!(matches!(error, SettingsError::PlainHttp { .. }));
+}
+
+#[test]
+fn a_plain_http_base_with_an_invalid_port_is_refused_at_start() {
+    let error = resolve(&[("SINGULR_API_BASE", "http://localhost:notaport")]).unwrap_err();
+    assert!(matches!(error, SettingsError::PlainHttp { .. }));
 }
 
 #[test]
