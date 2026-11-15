@@ -16,9 +16,11 @@ arc-swap = "1.9.2"
 async-trait = "0.1.92"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
+betterlite-core = { path = "../betterlite-core" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono.workspace = true

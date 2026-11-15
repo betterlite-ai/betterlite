@@ -1,0 +1,23 @@
+kind: helper
+name: catalog-model-list
+call:
+  anthropic_headers:
+    environment: {}
+    calls:
+      - function: model_list
+        models:
+          - {id: anthropic/claude-sonnet-4, object: model, created: 0, owned_by: openai, max_input_tokens: 200000, max_output_tokens: 64000}
+          - {id: anthropic/claude-opus-4, object: model, created: 0, owned_by: openai}
+        display_names: {anthropic/claude-sonnet-4: Claude Sonnet 4}
+        listed_ids: {anthropic/claude-sonnet-4: sonnet-listed, anthropic/claude-opus-4: ""}
+      - function: model_list
+        models:
+          - {id: anthropic/claude-sonnet-4, object: model, created: 0, owned_by: openai}
+        display_names: {sonnet-listed: Wrong name}
+        listed_ids: {anthropic/claude-sonnet-4: sonnet-listed}
+      - function: model_list
+        models: []
+        display_names: {}
+        listed_ids: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-model-capabilities-tool-search
+call:
+  bedrock_model_capabilities:
+    function: tool_search
+    model_cost:
+      bedrock/fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+    models: [fixture-tool-search, mystery-model]
+env: {}
+compare: {ignore: []}

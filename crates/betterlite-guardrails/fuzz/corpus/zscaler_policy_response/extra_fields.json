@@ -1,0 +1,1 @@
+{"statusCode": 200, "action": "ALLOW", "provider": {"id": "abc"}, "extra": [1, 2.5, "x"]}

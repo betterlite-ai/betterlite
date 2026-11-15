@@ -163,7 +163,7 @@ fn integer_float(number: f64) -> Option<i64> {
 }
 
 // pydantic's int from a string takes a sign, digits with single underscores, and a fraction of zeros only
-fn parse_integer(text: &str) -> Option<i64> {
+pub(crate) fn parse_integer(text: &str) -> Option<i64> {
     let trimmed = text.trim();
     let (integral, fraction) = match trimmed.split_once('.') {
         Some((integral, fraction)) => (integral, Some(fraction)),
