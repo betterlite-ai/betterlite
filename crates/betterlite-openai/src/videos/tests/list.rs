@@ -68,7 +68,7 @@ fn list_wrap_case() {
     assert_eq!(model_of(&first).as_deref(), Some(MODEL));
     // the codec decodes the empty model segment a None wrap writes as an empty string
     assert_eq!(model_of(&last).as_deref(), Some(""));
-    let second = decoded.data.get(1).unwrap();
+    let second = &decoded.data[1];
     assert_eq!(second.model, Some(None));
     let vendor = Value::Object(options(&[("n", json!(1_i64))]));
     assert_eq!(second.fields.get("vendor"), Some(&vendor));
