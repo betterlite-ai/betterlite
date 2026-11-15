@@ -315,13 +315,13 @@ fn limits_bound_the_create_maps() {
     request.metadata = Some(IndexMap::from([("first".to_owned(), "one".to_owned())]));
     request.extra_headers = Some(IndexMap::from([("x-a".to_owned(), "b".to_owned())]));
     request.extra_body = Some(IndexMap::from([("x-c".to_owned(), "d".to_owned())]));
-    assert!(outcome_is_overflow(create_outcome(&request, 2), 3, 2));
+    assert!(outcome_is_overflow(&create_outcome(&request, 2), 3, 2));
     let mut wide = input(BatchProvider::Xai);
     wide.metadata = Some(IndexMap::from([
         ("first".to_owned(), "one".to_owned()),
         ("second".to_owned(), "two".to_owned()),
     ]));
-    assert!(outcome_is_overflow(create_outcome(&wide, 1), 2, 1));
+    assert!(outcome_is_overflow(&create_outcome(&wide, 1), 2, 1));
 }
 
 fn create_outcome(
@@ -344,7 +344,7 @@ fn create_outcome(
 }
 
 fn outcome_is_overflow(
-    outcome: Result<super::BatchProviderCreateResult, BatchProviderCreateError>,
+    outcome: &Result<super::BatchProviderCreateResult, BatchProviderCreateError>,
     observed: usize,
     limit: usize,
 ) -> bool {
@@ -355,7 +355,7 @@ fn outcome_is_overflow(
                 observed: seen,
                 limit: maximum
             }
-        )) if seen == observed && maximum == limit
+        )) if *seen == observed && *maximum == limit
     )
 }
 
@@ -463,20 +463,20 @@ fn completion_window_rejects_other_values(#[case] window: &str) {
     let mut deserializer = serde_json::Deserializer::from_str(&source);
     let decoded: Result<BatchProviderCreateInput, _> =
         serde_path_to_error::deserialize(&mut deserializer);
-    let error = decoded.err().expect("a window other than 24h is rejected");
+    let error = decoded.expect_err("a window other than 24h is rejected");
     assert_eq!(error.path().to_string(), "completion_window");
 }
 
 #[rstest]
-#[case::optional_seconds_win(Some(RequestTimeout::Seconds(12.5)), Some(7.5), 12.5)]
-#[case::request_timeout_fills_in(None, Some(7.5), 7.5)]
+#[case::optional_seconds_win(Some(RequestTimeout::Seconds(12.5_f64)), Some(7.5_f64), 12.5_f64)]
+#[case::request_timeout_fills_in(None, Some(7.5_f64), 7.5_f64)]
 #[case::default_when_both_absent(None, None, DEFAULT_TIMEOUT_SECONDS)]
-#[case::explicit_zero_stays_zero(Some(RequestTimeout::Seconds(0.0)), Some(7.5), 0.0)]
-#[case::request_timeout_zero_stays_zero(None, Some(0.0), 0.0)]
-#[case::client_read_value(client_with_read(Some(5.0)), None, 5.0)]
-#[case::client_without_read_takes_the_default(client_with_read(None), None, 600.0)]
-#[case::client_zero_read_stays_zero(client_with_read(Some(0.0)), None, 0.0)]
-#[case::client_beats_request_timeout(client_with_read(Some(9.0)), Some(7.5), 9.0)]
+#[case::explicit_zero_stays_zero(Some(RequestTimeout::Seconds(0.0_f64)), Some(7.5_f64), 0.0_f64)]
+#[case::request_timeout_zero_stays_zero(None, Some(0.0_f64), 0.0_f64)]
+#[case::client_read_value(Some(client_with_read(Some(5.0_f64))), None, 5.0_f64)]
+#[case::client_without_read_takes_the_default(Some(client_with_read(None)), None, 600.0_f64)]
+#[case::client_zero_read_stays_zero(Some(client_with_read(Some(0.0_f64))), None, 0.0_f64)]
+#[case::client_beats_request_timeout(Some(client_with_read(Some(9.0_f64))), Some(7.5_f64), 9.0_f64)]
 fn timeout_precedence(
     #[case] optional: Option<RequestTimeout>,
     #[case] request_timeout: Option<f64>,
@@ -492,13 +492,13 @@ fn timeout_precedence(
     assert_eq!(call.timeout.to_bits(), expected.to_bits());
 }
 
-fn client_with_read(read: Option<f64>) -> Option<RequestTimeout> {
-    Some(RequestTimeout::Client(HttpTimeout {
+fn client_with_read(read: Option<f64>) -> RequestTimeout {
+    RequestTimeout::Client(HttpTimeout {
         connect: Some(1.0),
         read,
         write: Some(3.0),
         pool: Some(4.0),
-    }))
+    })
 }
 
 #[rstest]
