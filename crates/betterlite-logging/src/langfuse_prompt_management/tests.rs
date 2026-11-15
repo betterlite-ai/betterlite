@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod support;
 
 mod async_compilation;
@@ -10,6 +12,7 @@ mod failure_logging;
 mod initialization;
 mod integration_name;
 mod optional_params;
+mod output_content;
 mod prompt_compilation;
 mod prompt_fetch;
 mod prompt_validation;

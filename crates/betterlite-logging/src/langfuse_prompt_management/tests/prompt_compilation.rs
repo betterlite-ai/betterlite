@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::PromptParams;
+use indexmap::IndexMap;
 
 use super::support;
 use crate::langfuse_rest::records::Prompt;
@@ -21,7 +22,7 @@ fn a_text_prompt_becomes_one_system_message() {
     .expect("the prompt compiles");
     assert_eq!(
         compiled,
-        vec![Json::Object(indexmap::IndexMap::from([
+        vec![Json::Object(IndexMap::from([
             ("role".to_owned(), Json::Text("system".to_owned())),
             (
                 "content".to_owned(),
@@ -43,14 +44,14 @@ fn a_chat_prompt_keeps_its_messages_and_expands_placeholders() {
     assert_eq!(compiled.len(), 2);
     assert_eq!(
         compiled[0],
-        Json::Object(indexmap::IndexMap::from([
+        Json::Object(IndexMap::from([
             ("role".to_owned(), Json::Text("system".to_owned())),
             ("content".to_owned(), Json::Text("Hello Ada".to_owned())),
         ]))
     );
     assert_eq!(
         compiled[1],
-        Json::Object(indexmap::IndexMap::from([
+        Json::Object(IndexMap::from([
             ("role".to_owned(), Json::Text("user".to_owned())),
             ("content".to_owned(), Json::Text("hi there".to_owned())),
         ]))
@@ -77,6 +78,7 @@ fn a_non_string_variable_is_substituted_as_its_json_text() {
 
 #[test]
 fn a_placeholder_without_a_variable_becomes_a_placeholder_message() {
+    let (log, guard) = support::langfuse::capture_log();
     let compiled = super::super::prompt::compile_prompt(
         &prompt(&support::chat_prompt()),
         Some(&variables(r#"{"name":"Ada"}"#)),
@@ -85,9 +87,15 @@ fn a_placeholder_without_a_variable_becomes_a_placeholder_message() {
     assert_eq!(compiled.len(), 2);
     assert_eq!(
         compiled[1],
-        Json::Object(indexmap::IndexMap::from([
+        Json::Object(IndexMap::from([
             ("type".to_owned(), Json::Text("placeholder".to_owned())),
             ("name".to_owned(), Json::Text("history".to_owned())),
         ]))
     );
+    assert!(
+        log.contents().contains("have not been resolved"),
+        "the unresolved placeholder was not reported: {}",
+        log.contents()
+    );
+    drop(guard);
 }

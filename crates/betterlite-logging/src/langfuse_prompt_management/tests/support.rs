@@ -8,12 +8,14 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 use tokio_util::task::TaskTracker;
 
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::langfuse_channels::LangfuseTracing;
 use crate::langfuse_logger::LangfuseClientBuilder;
+use crate::langfuse_logger::LangfuseServices;
 use crate::langfuse_logger::budget::LangfuseClientBudget;
 use crate::langfuse_prompt_management::LangfusePromptManagement;
 use crate::langfuse_rest::cache::SystemClock;
@@ -24,7 +26,7 @@ use crate::langfuse_rest::client::{
 pub(super) use crate::langfuse_logger::tests::support as langfuse;
 
 pub(super) const HOST: &str = "http://127.0.0.1:1";
-pub(super) const TRACE_ID: &str = crate::langfuse_logger::tests::support::TRACE_ID;
+pub(super) const TRACE_ID: &str = langfuse::TRACE_ID;
 pub(super) const PUBLIC_KEY: &str = "pk-lf-test";
 pub(super) const SECRET_KEY: &str = "sk-lf-test";
 pub(super) const CALL_ID: &str = "call-1";
@@ -35,7 +37,7 @@ const PAYLOAD: &str = r#"{
     "trace_id": "@trace_id",
     "litellm_call_id": @call_id,
     "session_id": "session-1",
-    "call_type": "completion",
+    "call_type": @call_type,
     "response_cost": 0.5,
     "status": "success",
     "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"},
@@ -94,7 +96,7 @@ pub(super) fn borrowed(variables: &[(&'static str, String)]) -> Vec<(&'static st
 pub(super) fn services(
     variables: &[(&str, &str)],
     clients: Arc<dyn LangfuseClientBuilder>,
-) -> crate::langfuse_logger::LangfuseServices {
+) -> LangfuseServices {
     langfuse::services_with(
         variables,
         LangfuseClientBudget::new(100),
@@ -135,15 +137,18 @@ pub(super) fn text_prompt() -> String {
 }
 
 pub(super) fn payload(
+    call_type: &str,
     call_id: Option<&str>,
     response: Json,
     error: Option<&str>,
 ) -> StandardLoggingPayload {
+    let call_type = serde_json::to_string(call_type).expect("the call type serializes");
     let call_id = serde_json::to_string(&call_id).expect("the call id serializes");
     let response = serde_json::to_string(&response).expect("the response serializes");
     let error = serde_json::to_string(&error).expect("the error serializes");
     let source = PAYLOAD
         .replace("@trace_id", langfuse::TRACE_ID)
+        .replace("@call_type", &call_type)
         .replace("@call_id", &call_id)
         .replace("@response", &response)
         .replace("@error", &error);
@@ -151,21 +156,29 @@ pub(super) fn payload(
 }
 
 pub(super) fn success_payload(call_id: Option<&str>) -> StandardLoggingPayload {
-    payload(call_id, response(), None)
+    payload("completion", call_id, response(), None)
 }
 
 pub(super) fn failure_payload(
     call_id: Option<&str>,
     error: Option<&str>,
 ) -> StandardLoggingPayload {
-    payload(call_id, Json::Null, error)
+    payload("completion", call_id, Json::Null, error)
 }
 
 pub(super) fn event(payload: StandardLoggingPayload) -> Arc<LoggerEvent> {
+    event_with(payload, no_dynamic_params(), IndexMap::new())
+}
+
+pub(super) fn event_with(
+    payload: StandardLoggingPayload,
+    dynamic_params: StandardCallbackDynamicParams,
+    litellm_metadata: IndexMap<String, Json>,
+) -> Arc<LoggerEvent> {
     Arc::new(LoggerEvent {
         payload: Arc::new(payload),
-        dynamic_params: Arc::new(Json::Object(IndexMap::new())),
-        litellm_metadata: Arc::new(IndexMap::new()),
+        dynamic_params: Arc::new(dynamic_params),
+        litellm_metadata: Arc::new(litellm_metadata),
         stream: false,
         guardrail_snapshot: None,
     })
@@ -188,6 +201,7 @@ pub(super) fn dynamic_params(entries: &[(&str, &str)]) -> StandardCallbackDynami
 pub(super) struct FakeLangfuse {
     pub(super) base_url: String,
     requests: Arc<Mutex<Vec<String>>>,
+    _tasks: JoinSet<()>,
 }
 
 impl FakeLangfuse {
@@ -195,18 +209,16 @@ impl FakeLangfuse {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let address = listener.local_addr().expect("address");
         let requests = Arc::new(Mutex::new(Vec::new()));
-        let scripted = Arc::new(Mutex::new(VecDeque::from(answers)));
-        let seen = Arc::clone(&requests);
-        tokio::spawn(async move {
-            while let Ok((stream, _peer)) = listener.accept().await {
-                let seen = Arc::clone(&seen);
-                let scripted = Arc::clone(&scripted);
-                tokio::spawn(async move { answer(stream, seen, scripted).await });
-            }
-        });
+        let mut tasks = JoinSet::new();
+        tasks.spawn(answer_all(
+            listener,
+            Arc::clone(&requests),
+            VecDeque::from(answers),
+        ));
         Self {
             base_url: format!("http://{address}"),
             requests,
+            _tasks: tasks,
         }
     }
 
@@ -218,24 +230,31 @@ impl FakeLangfuse {
     }
 }
 
+async fn answer_all(
+    listener: TcpListener,
+    requests: Arc<Mutex<Vec<String>>>,
+    mut answers: VecDeque<(u16, String)>,
+) {
+    while let Ok((stream, _peer)) = listener.accept().await {
+        answer(stream, &requests, &mut answers).await;
+    }
+}
+
 async fn answer(
     mut stream: TcpStream,
-    requests: Arc<Mutex<Vec<String>>>,
-    answers: Arc<Mutex<VecDeque<(u16, String)>>>,
+    requests: &Mutex<Vec<String>>,
+    answers: &mut VecDeque<(u16, String)>,
 ) {
     let mut buffer = vec![0_u8; 8192];
     let Ok(read) = stream.read(&mut buffer).await else {
         return;
     };
-    let head = String::from_utf8_lossy(&buffer[..read]).into_owned();
+    let head = String::from_utf8(buffer[..read].to_vec()).unwrap_or_default();
     requests
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(head);
-    let (status, body) = {
-        let mut answers = answers.lock().unwrap_or_else(PoisonError::into_inner);
-        answers.pop_front().unwrap_or((200, "{}".to_owned()))
-    };
+    let (status, body) = answers.pop_front().unwrap_or((200, "{}".to_owned()));
     let response = format!(
         "HTTP/1.1 {status} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
         reason(status),

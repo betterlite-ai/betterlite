@@ -68,11 +68,11 @@ async fn every_one_of_the_six_arguments_separates_the_cache() {
             ..base
         },
     ];
-    for variant in variants {
+    variants.into_iter().for_each(|variant| {
         clients
             .client_init(&services, &variant)
             .expect("the variant builds");
-    }
+    });
     clients
         .client_init(&services, &base)
         .expect("the base builds");
@@ -88,11 +88,11 @@ async fn the_eleventh_client_evicts_the_least_recently_used_one() {
     let keys: Vec<String> = (0..=PROMPT_CLIENT_CACHE_CAPACITY)
         .map(|index| format!("pk-{index}"))
         .collect();
-    for key in &keys {
+    keys.iter().for_each(|key| {
         clients
             .client_init(&services, &request(key.as_str(), support::HOST))
             .expect("the client builds");
-    }
+    });
     assert_eq!(builder.configs().len(), PROMPT_CLIENT_CACHE_CAPACITY + 1);
     clients
         .client_init(&services, &request(keys[0].as_str(), support::HOST))
@@ -116,11 +116,11 @@ async fn reading_a_cached_client_makes_it_the_most_recently_used() {
     let keys: Vec<String> = (0..PROMPT_CLIENT_CACHE_CAPACITY)
         .map(|index| format!("pk-{index}"))
         .collect();
-    for key in &keys {
+    keys.iter().for_each(|key| {
         clients
             .client_init(&services, &request(key.as_str(), support::HOST))
             .expect("the client builds");
-    }
+    });
     clients
         .client_init(&services, &request(keys[0].as_str(), support::HOST))
         .expect("the cached client is touched");

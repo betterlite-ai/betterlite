@@ -1,4 +1,6 @@
-use betterlite_models::prompt_contracts::{PromptAsyncCompileRequest, PromptCompileRequest};
+use betterlite_models::prompt_contracts::{
+    PromptAsyncCompileRequest, PromptCompileRequest, PromptParams,
+};
 
 use super::support;
 
@@ -12,7 +14,7 @@ async fn the_async_helper_answers_exactly_like_the_sync_one() {
     let variables = support::env(&server.base_url);
     let fixture = support::manager(&support::borrowed(&variables)).await;
     let dynamic = support::no_dynamic_params();
-    let prompt_variables: betterlite_models::prompt_contracts::PromptParams =
+    let prompt_variables: PromptParams =
         serde_json::from_str(r#"{"name":"Ada","history":[{"role":"user","content":"hi"}]}"#)
             .expect("the variables parse");
     let async_request = PromptAsyncCompileRequest {

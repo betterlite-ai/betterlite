@@ -1,9 +1,24 @@
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::support;
 use crate::callback_logger::CallbackLogger;
 use crate::langfuse_prompt_management::LangfusePromptManagement;
 use crate::langfuse_prompt_management::clients::PromptClientRequest;
+use crate::langfuse_prompt_management::unix_seconds;
+
+#[test]
+fn the_trace_cache_clock_reads_the_wall_clock() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("the clock is after the epoch")
+        .as_secs_f64();
+    let clock = unix_seconds();
+    assert!(
+        (clock - now).abs() < 60.0,
+        "the clock read {clock} while the wall clock read {now}"
+    );
+}
 
 #[tokio::test]
 async fn the_manager_owns_a_tracing_channel_that_receives_its_events() {

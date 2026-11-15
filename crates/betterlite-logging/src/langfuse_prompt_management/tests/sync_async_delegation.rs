@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 
 use super::support;
 use crate::langfuse_prompt_management::completion::{
-    AsyncChatCompletionPromptRequest, ChatCompletionPromptRequest,
+    AsyncPromptRequest, ChatCompletionPromptRequest,
 };
 
 fn message() -> Json {
@@ -34,7 +34,7 @@ async fn without_a_prompt_id_the_async_hook_returns_the_callers_request() {
     };
     let result = fixture
         .manager
-        .async_get_chat_completion_prompt(AsyncChatCompletionPromptRequest {
+        .async_chat_completion_prompt(AsyncPromptRequest {
             request,
             tools: Some(&[]),
         })
@@ -77,7 +77,7 @@ async fn the_async_hook_answers_exactly_like_the_sync_base() {
         .expect("the sync base compiles the prompt");
     let asynchronous = fixture
         .manager
-        .async_get_chat_completion_prompt(AsyncChatCompletionPromptRequest {
+        .async_chat_completion_prompt(AsyncPromptRequest {
             request: request(),
             tools: None,
         })

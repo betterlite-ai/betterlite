@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
-use betterlite_models::prompt_contracts::PromptCompileRequest;
+use betterlite_models::prompt_contracts::{PromptCompileRequest, PromptParams};
+use indexmap::IndexMap;
 
 use super::support;
 use crate::langfuse_prompt_management::LangfusePromptManagementError;
@@ -14,7 +15,7 @@ async fn the_helper_returns_the_compiled_prompt_model_and_optional_params() {
     let variables = support::env(&server.base_url);
     let fixture = support::manager(&support::borrowed(&variables)).await;
     let dynamic = support::no_dynamic_params();
-    let prompt_variables: betterlite_models::prompt_contracts::PromptParams =
+    let prompt_variables: PromptParams =
         serde_json::from_str(r#"{"name":"Ada","history":[{"role":"user","content":"hi"}]}"#)
             .expect("the variables parse");
     let request = PromptCompileRequest {
@@ -40,7 +41,7 @@ async fn the_helper_returns_the_compiled_prompt_model_and_optional_params() {
     assert_eq!(client.completed_messages, None);
     assert_eq!(
         client.prompt_template[1],
-        Json::Object(indexmap::IndexMap::from([
+        Json::Object(IndexMap::from([
             ("role".to_owned(), Json::Text("user".to_owned())),
             ("content".to_owned(), Json::Text("hi".to_owned())),
         ]))

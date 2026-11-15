@@ -8,7 +8,7 @@ async fn the_sync_failure_event_reaches_the_logger_through_the_bridge() {
     let payload = support::failure_payload(Some(support::CALL_ID), Some("boom!"));
     fixture
         .manager
-        .log_failure_event(&payload)
+        .log_failure_event(&support::event(payload))
         .expect("the bridged call returns the async result");
     assert!(fixture.manager.logger.flush().await);
     let spans = fixture.spans.spans();

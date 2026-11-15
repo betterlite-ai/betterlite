@@ -54,8 +54,9 @@ fn a_dynamic_field_of_the_wrong_type_is_named() {
         "langfuse_host".to_owned(),
         serde_json::from_str("7").expect("the number parses"),
     )]));
-    let error =
-        PromptClientRequest::from_dynamic_params(&params).expect_err("a number is not a host");
+    let Err(error) = PromptClientRequest::from_dynamic_params(&params) else {
+        panic!("a number is not a host");
+    };
     assert!(matches!(
         error,
         LangfusePromptManagementError::FieldType {
@@ -70,8 +71,9 @@ fn a_dynamic_field_of_the_wrong_type_is_named() {
 
 #[test]
 fn dynamic_params_that_are_not_an_object_are_rejected() {
-    let error =
-        PromptClientRequest::from_dynamic_params(&Json::Null).expect_err("null is not an object");
+    let Err(error) = PromptClientRequest::from_dynamic_params(&Json::Null) else {
+        panic!("null is not an object");
+    };
     assert!(matches!(error, LangfusePromptManagementError::ParamsType));
     assert_eq!(
         error.to_string(),
