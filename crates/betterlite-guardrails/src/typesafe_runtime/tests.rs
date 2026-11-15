@@ -24,6 +24,7 @@ use tracing_subscriber::fmt;
 
 use super::apply::compact;
 use super::error::TypeSafeRuntimeError;
+use super::messages::message_rows;
 use super::{TypeSafeDefaults, TypeSafeGuard};
 use crate::generic_guardrail_contracts::{
     GuardrailInputType, GuardrailMessage, UnreachableFallback,
@@ -791,8 +792,10 @@ async fn a_failed_call_answers_502_under_fail_closed() {
 async fn a_message_that_is_not_an_object_leaves_the_request_unchanged() {
     let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
     let guard = guard_at(&base_url, args(&base_url));
-    let original = inputs(two_exchanges());
-    let rows = vec![Json::Text("not a message".to_owned())];
+    let typed = two_exchanges();
+    let mut rows = message_rows(&typed);
+    rows.push(Json::Text("not a message".to_owned()));
+    let original = inputs(typed);
     let mut data = request_data();
     let returned = compact(&guard, original.clone(), &rows, &mut data, None)
         .await
