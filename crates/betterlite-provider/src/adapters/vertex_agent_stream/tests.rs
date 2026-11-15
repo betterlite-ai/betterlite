@@ -659,8 +659,8 @@ async fn the_line_prefix_is_optional() {
 async fn a_line_split_across_two_reads_is_parsed_as_one() {
     let chunks = collect(
         stream_from(vec![
-            Ok(b"data: {\"content\": {\"parts\": [{\"text\": \"split\"}]}}".to_vec()),
-            Ok(b"\n".to_vec()),
+            Ok(b"data: {\"content\": {\"parts\": [{\"te".to_vec()),
+            Ok(b"xt\": \"split\"}]}}\n".to_vec()),
         ])
         .await,
     )
