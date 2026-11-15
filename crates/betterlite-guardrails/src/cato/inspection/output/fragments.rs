@@ -50,9 +50,16 @@ fn message_fragments(choice: &GuardrailValue, choice_index: usize) -> Vec<Fragme
             text: text.to_owned(),
         });
     }
+    fragments.extend(tool_call_fragments(message, choice_index));
+    fragments
+}
+
+// every tool call's non-empty arguments string, written back at its own index
+fn tool_call_fragments(message: &GuardrailValue, choice_index: usize) -> Vec<Fragment> {
     let Some(tool_calls) = field_of(message, "tool_calls").and_then(as_array) else {
-        return fragments;
+        return Vec::new();
     };
+    let mut fragments = Vec::new();
     for (call_index, tool_call) in tool_calls.iter().enumerate() {
         let arguments = field_of(tool_call, "function")
             .and_then(|function| field_of(function, "arguments"))
