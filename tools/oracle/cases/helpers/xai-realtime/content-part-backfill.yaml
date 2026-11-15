@@ -32,6 +32,12 @@ call:
       - {type: response.content_part.done, response_id: r-notype-audio, item_id: i-notype-audio}
       - {type: response.content_part.added, response_id: null, item_id: null, part: {type: text, text: null-ids}}
       - {type: response.content_part.done}
+      - {type: response.content_part.done, response_id: r-done-cache, item_id: i-done-cache, part: {type: text, text: declared-by-done}}
+      - {type: response.content_part.added, response_id: r-done-cache, item_id: i-done-cache}
+      - {type: response.content_part.added, response_id: r-shared-first, item_id: i-shared, content_index: 0, part: {type: text, text: first-response}}
+      - {type: response.content_part.added, response_id: r-shared-second, item_id: i-shared, content_index: 0, part: {type: audio, transcript: second-response}}
+      - {type: response.content_part.done, response_id: r-shared-first, item_id: i-shared, content_index: 0}
+      - {type: response.content_part.done, response_id: r-shared-second, item_id: i-shared, content_index: 0}
     sessions: []
     model: grok-4-1-fast-non-reasoning
     api_key: null
