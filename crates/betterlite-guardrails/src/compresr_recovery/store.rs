@@ -74,17 +74,24 @@ impl State {
 
     // The newest entry survives the byte ceiling so the current call's originals are kept
     pub(super) fn prune(&mut self, now: Duration, max_total_bytes: usize) {
-        while self
+        let expired = self
             .entries
-            .first()
-            .is_some_and(|(_, entry)| entry.expires_at <= now)
-        {
+            .values()
+            .take_while(|entry| entry.expires_at <= now)
+            .count();
+        for _ in 0..expired {
             self.evict_oldest();
         }
-        while self.entries.len() > MAX_TRACKED_CALLS {
+        let over_calls = self.entries.len().saturating_sub(MAX_TRACKED_CALLS);
+        for _ in 0..over_calls {
             self.evict_oldest();
         }
-        while self.entries.len() > 1 && self.total_bytes > max_total_bytes {
+        // One pass over the entries other than the newest, ending as soon as the rest fit
+        let evictable = self.entries.len().saturating_sub(1);
+        for _ in 0..evictable {
+            if self.entries.len() == 1 || self.total_bytes <= max_total_bytes {
+                break;
+            }
             self.evict_oldest();
         }
     }
