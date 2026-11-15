@@ -1,0 +1,21 @@
+task: B664
+deviations:
+  - what: A string toolUse input that holds NaN, Infinity or -Infinity is not JSON in betterlite, so the arguments become {} instead of the non-JSON text NaN.
+    why: Python's json.loads accepts those tokens, but they are not valid JSON and every OpenAI realtime client would fail to parse the function_call_arguments.done event that carries them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1186
+  - what: A string toolUse input nested more than 128 levels deep becomes {}, and a toolUse event whose input nests that deep is refused with a typed error.
+    why: The parser caps nesting so that a hostile tool input cannot exhaust the stack, where json.loads only stops at Python's recursion limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1186
+  - what: A usage difference that does not fit in 64 bits returns a typed error instead of a larger integer.
+    why: The cumulative usage counts are 64-bit integers in the shared usage record, so a delta outside that range cannot be represented on the wire.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L863-L875
+kept_bugs:
+  - what: contentEnd for a response whose delta type is neither text nor audio still emits response.output_item.done, and an empty-looking turn closes an item that never received a content part.
+    why: A client that already handles LiteLLM's stream sees that event today, and dropping it would leave the item open for that client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1083-L1101
+  - what: Ending a response without both a response id and a conversation id emits nothing but still clears the current item id, response id and delta type, and it leaves the usage unreported.
+    why: The caller of LiteLLM assigns the three cleared values from the return tuple, so the identity is dropped even though no response.done was sent, and the next response.done carries that usage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1136-L1140
+  - what: The usage delta of response.done always reports cached_tokens as 0 in input_token_details and omits cached_tokens from output_token_details, whatever Bedrock reported.
+    why: LiteLLM hardcodes the zero, and a billing or logging setup built on its events reads that zero today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L859-L864
