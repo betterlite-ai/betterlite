@@ -65,6 +65,22 @@ async fn resolve_unbound_client_is_unbound() {
 }
 
 #[tokio::test]
+async fn resolve_binding_failure_is_policy_unavailable() {
+    let fake = FakeRecords::shared();
+    {
+        let mut state = fake.state();
+        state.failure = Some(FakeCall::Identity);
+    }
+    let store = fake_store(&fake, None);
+    let failure = resolve_verified_claims(&store, &application_claims())
+        .await
+        .expect_err("a binding read failure");
+    assert_eq!(failure.code, FailureCode::PolicyUnavailable);
+    assert_eq!(failure.message, "Agent identity could not be loaded");
+    assert!(fake.state().agent_reads.is_empty());
+}
+
+#[tokio::test]
 async fn resolve_missing_agent_is_denied() {
     let fake = FakeRecords::shared();
     {
