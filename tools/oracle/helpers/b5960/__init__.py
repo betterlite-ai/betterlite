@@ -115,11 +115,7 @@ def params_step(step: ParamsStep) -> Object:
 
 
 def completion_request_step(step: CompletionRequestStep) -> Object:
-    prompt_dict = (
-        step["custom_prompt_dict"]
-        if step["custom_prompt_dict"]
-        else step["global_custom_prompt_dict"]
-    )
+    prompt_dict = step["custom_prompt_dict"] or step["global_custom_prompt_dict"]
     litellm_params: Object = {
         "custom_prompt_dict": prompt_dict,
         "hf_model_name": step["hf_model_name"],
@@ -179,12 +175,22 @@ def chat_headers_step(step: ChatHeadersStep) -> Object:
 
 def chat_policy_step(step: ChatPolicyStep) -> Object:
     litellm.open_ai_chat_completion_models = set(step["chat_models"])
+    chat_supported: list[JsonValue] = [*CHAT.get_supported_openai_params(step["model"])]
+    nova_supported: list[JsonValue] = [*NOVA.get_supported_openai_params(step["model"])]
+    chat_flags: list[JsonValue] = [
+        CHAT.has_custom_stream_wrapper,
+        CHAT.supports_stream_param_in_request_body,
+    ]
+    nova_flags: list[JsonValue] = [
+        NOVA.has_custom_stream_wrapper,
+        NOVA.supports_stream_param_in_request_body,
+    ]
     return {
         "kind": "chat_policy",
-        "chat_supported": CHAT.get_supported_openai_params(step["model"]),
-        "nova_supported": NOVA.get_supported_openai_params(step["model"]),
-        "chat_flags": [CHAT.has_custom_stream_wrapper, CHAT.supports_stream_param_in_request_body],
-        "nova_flags": [NOVA.has_custom_stream_wrapper, NOVA.supports_stream_param_in_request_body],
+        "chat_supported": chat_supported,
+        "nova_supported": nova_supported,
+        "chat_flags": chat_flags,
+        "nova_flags": nova_flags,
     }
 
 

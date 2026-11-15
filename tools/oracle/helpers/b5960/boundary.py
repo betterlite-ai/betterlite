@@ -58,7 +58,7 @@ class CompletionConfig(TransformConfig, Protocol):
 
 class ChatConfig(TransformConfig, Protocol):
     has_custom_stream_wrapper: bool
-    supports_stream_param_in_request_body: bool
+    supports_stream_param_in_request_body: bool  # ast-grep-ignore: no-long-names
 
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, str]
