@@ -59,6 +59,7 @@ class ImageConfig(Protocol):
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
+        *,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
@@ -255,7 +256,7 @@ def mapping_value(input_value: MappingInput) -> JsonValue:
                 call["non_default_params"],
                 call["optional_params"],
                 params["model"],
-                call["drop_params"],
+                drop_params=call["drop_params"],
             )
         except ValueError:
             results.append({"unsupported": True})
