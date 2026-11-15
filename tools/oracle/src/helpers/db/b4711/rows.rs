@@ -1,3 +1,4 @@
+use std::future::ready;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_db::budget_permission_rows::JsonData;
@@ -57,14 +58,14 @@ impl McpServerAccess for RowStore {
         &self,
         request: &FindServers,
     ) -> impl Future<Output = Result<Vec<JsonData>, McpTableError>> + Send {
-        std::future::ready(Ok(self.select(request)))
+        ready(Ok(self.select(request)))
     }
 
     fn update_server(
         &self,
         request: &ServerUpdate,
     ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
-        std::future::ready(self.update(request))
+        ready(self.update(request))
     }
 }
 

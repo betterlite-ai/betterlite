@@ -1,3 +1,4 @@
+use std::future::ready;
 use std::sync::Mutex;
 
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
@@ -55,9 +56,7 @@ impl FakeStore {
             .expect("the finds are not poisoned")
             .clone()
     }
-}
 
-impl FakeStore {
     fn select(&self, request: &FindServers) -> Vec<JsonData> {
         let mut selected: Vec<JsonData> = self
             .rows
@@ -106,14 +105,14 @@ impl McpServerAccess for FakeStore {
             .lock()
             .expect("the finds are not poisoned")
             .push(request.clone());
-        std::future::ready(Ok(self.select(request)))
+        ready(Ok(self.select(request)))
     }
 
     fn update_server(
         &self,
         request: &ServerUpdate,
     ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
-        std::future::ready(Ok(self.update(request)))
+        ready(Ok(self.update(request)))
     }
 }
 

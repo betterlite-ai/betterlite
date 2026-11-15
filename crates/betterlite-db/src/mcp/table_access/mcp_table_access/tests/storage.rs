@@ -47,7 +47,10 @@ fn missing_pool(error: &McpTableError) -> bool {
     matches!(error, McpTableError::Database(DbError::NoDbConnected))
 }
 
-fn assert_no_database<T: Debug>(result: Result<T, TableError>) {
+fn assert_no_database<T>(result: Result<T, TableError>)
+where
+    T: Debug,
+{
     let error = result.expect_err("no pool means no write");
     assert!(no_database(&error));
 }
