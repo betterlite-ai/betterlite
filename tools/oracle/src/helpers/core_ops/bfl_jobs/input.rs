@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
+pub(crate) struct Input {
     pub(super) jobs: Vec<Job>,
 }
 

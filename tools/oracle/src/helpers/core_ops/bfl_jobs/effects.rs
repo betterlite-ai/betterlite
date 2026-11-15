@@ -26,7 +26,7 @@ const TRANSPORT_HEADERS: [&str; 6] = [
 ];
 
 #[derive(Default)]
-pub(super) struct Effects(Mutex<Vec<Value>>);
+pub(super) struct Effects(pub(super) Mutex<Vec<Value>>);
 
 impl Effects {
     pub(super) fn record(&self, effect: Value) {
@@ -34,10 +34,6 @@ impl Effects {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(effect);
-    }
-
-    pub(super) fn take(&self) -> Vec<Value> {
-        std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
 

@@ -1,12 +1,14 @@
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_core::api::bfl::generation::BflImageResponse;
 use betterlite_core::api::bfl::generation_call::error::GenerationCallError;
 use betterlite_core::api::bfl::generation_call::params::CallParams;
 use betterlite_core::api::bfl::generation_call::submit::SuppliedTransport;
-use betterlite_core::api::bfl::generation_call::{GenerationCall, GenerationExecutor, LogContext};
+use betterlite_core::api::bfl::generation_call::{
+    GenerationCall, GenerationExecutor, LogContext, prepare_call,
+};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use secrecy::SecretString;
@@ -39,24 +41,23 @@ pub(super) fn run_job(job: &Job, runtime: &Runtime) -> HelperResult {
         sleeper: &timeline,
     };
     let supplied: Option<SuppliedTransport<'_, Script<'_>>> = None;
-    // the environment and its logger borrow temporaries, so they live only through this one statement
-    let result = runtime.block_on(executor.image_generation(
+    let logger = |details: &Json| -> Result<(), PrePostError> {
+        effects.record(pre_call_effect(details));
+        Ok(())
+    };
+    let env = logging_env(&redactor, &sink, &logger)?;
+    let prepared = prepare_call(
         &call,
-        supplied,
-        Vec::new(),
         &mut LogContext {
             state: &mut state,
-            env: &logging_env(
-                &redactor,
-                &sink,
-                &|details: &Json| -> Result<(), PrePostError> {
-                    effects.record(pre_call_effect(details));
-                    Ok(())
-                },
-            )?,
+            env: &env,
         },
-    ));
-    Ok(json!({"effects": effects.take(), "outcome": outcome(result)}))
+    )
+    .map_err(|error| failure(&error))?;
+    let result =
+        runtime.block_on(executor.image_generation(&call, &prepared, supplied, Vec::new()));
+    let recorded = std::mem::take(&mut *effects.0.lock().unwrap_or_else(PoisonError::into_inner));
+    Ok(json!({"effects": recorded, "outcome": outcome(result)}))
 }
 
 fn generation_call<'borrow>(
