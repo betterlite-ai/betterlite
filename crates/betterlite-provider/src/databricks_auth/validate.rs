@@ -64,21 +64,19 @@ async fn authenticate(
         api_key,
         api_base.as_deref(),
         custom_endpoint,
-        oauth.is_some(),
         headers.as_ref(),
     )?;
     Ok((base, with_api_key(api_key, headers)))
 }
 
-// LiteLLM raises the missing-key 400 before the missing-base 400, with the SDK text when no custom endpoint is set
+// LiteLLM's missing-key 400 sits in the OAuth branch's else arm, since OAuth sets a header map and a base; the SDK text follows when no custom endpoint is set
 fn required_base(
     api_key: Option<&SecretString>,
     api_base: Option<&str>,
     custom_endpoint: bool,
-    oauth_authenticated: bool,
     headers: Option<&Headers>,
 ) -> Result<String, DatabricksError> {
-    if !oauth_authenticated && api_key.is_none() && headers.is_none_or(BTreeMap::is_empty) {
+    if api_key.is_none() && headers.is_none_or(BTreeMap::is_empty) {
         return Err(DatabricksError {
             status_code: 400,
             message: if custom_endpoint {
