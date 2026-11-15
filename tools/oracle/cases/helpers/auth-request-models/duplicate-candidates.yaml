@@ -1,0 +1,9 @@
+kind: helper
+name: auth-request-models-duplicate-candidates
+call:
+  auth_request_models:
+    steps:
+      - {route: "/cost/predict-cache", endpoint_marker: null, path_params: [], team_id: null, deployments: [{model_name: same, litellm_params: {model: "openai/gpt"}, model_info: {id: same-id, team_id: null}}], current_deployment_id: same-id, candidate_deployment_id: same-id}
+      - {route: "/files", endpoint_marker: false, path_params: [endpoint], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+env: {}
+compare: {ignore: []}
