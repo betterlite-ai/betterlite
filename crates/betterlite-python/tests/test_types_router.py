@@ -667,7 +667,7 @@ def test_names_protocol_signatures() -> None:
     assert_same("signatures", protocols)
 
 
-def test_names_pre_routing_strategy_signature() -> None:
+def test_names_strategy_signature() -> None:
     spec = ["PreRoutingStrategy"]
     ours = run_probe(OURS_PREFIX, OURS_MODULE, "signatures", spec)
     theirs = run_probe(LITELLM_PREFIX, LITELLM_MODULE, "signatures", spec)
@@ -689,7 +689,7 @@ def test_names_pre_routing_strategy_signature() -> None:
     ]
 
 
-def test_names_rate_limit_error_signatures() -> None:
+def test_names_error_signatures() -> None:
     spec = ["RouterRateLimitError", "RouterRateLimitErrorBasic"]
     ours = run_probe(OURS_PREFIX, OURS_MODULE, "signatures", spec)
     theirs = run_probe(LITELLM_PREFIX, LITELLM_MODULE, "signatures", spec)
@@ -780,7 +780,7 @@ def test_behavior_model_group_info() -> None:
     assert_same("groups")
 
 
-def test_behavior_rate_limit_errors() -> None:
+def test_behavior_errors() -> None:
     result = run_probe(OURS_PREFIX, OURS_MODULE, "errors")
     assert result["basic"] == {
         "message": "No deployments available for selected model.",
@@ -811,7 +811,7 @@ def test_behavior_adaptive_weights() -> None:
     assert_same("adaptive")
 
 
-def test_behavior_mock_testing_params() -> None:
+def test_behavior_mock() -> None:
     result = run_probe(OURS_PREFIX, OURS_MODULE, "mock")
     assert result["case_0"] == {
         "fallbacks": True,

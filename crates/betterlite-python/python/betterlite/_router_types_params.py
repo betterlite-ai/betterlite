@@ -25,27 +25,9 @@ LOGGER: Final = logging.getLogger("LiteLLM")
 _RESERVED_INIT_KEYS: Final = frozenset({"self", "params", "__class__"})
 _HTTP_HEADER_NAME_PATTERN: Final = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _FORBIDDEN_AFFINITY_HEADERS: Final = frozenset(
-    {
-        "api-key",
-        "authorization",
-        "connection",
-        "content-length",
-        "content-type",
-        "cookie",
-        "host",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "proxy-connection",
-        "set-cookie",
-        "te",
-        "trailer",
-        "transfer-encoding",
-        "upgrade",
-        "www-authenticate",
-        "x-api-key",
-        "x-goog-api-key",
-    }
+    "api-key authorization connection content-length content-type cookie host keep-alive "
+    "proxy-authenticate proxy-authorization proxy-connection set-cookie te trailer "
+    "transfer-encoding upgrade www-authenticate x-api-key x-goog-api-key".split()
 )
 _DROP_PARAMS_BOOL: Final[TypeAdapter[bool]] = TypeAdapter(bool)
 
@@ -69,8 +51,7 @@ def _normalize_drop_params(value: JsonValue) -> bool | None:
             return _validated_flag(value)
 
 
-# ast-grep-ignore: no-long-names
-def _validate_provider_affinity_header_name(header: str) -> str:
+def _validate_provider_affinity_header_name(header: str) -> str:  # ast-grep-ignore: no-long-names
     if not _HTTP_HEADER_NAME_PATTERN.fullmatch(header):
         raise ValueError("provider_affinity_header must be a valid HTTP header name")
     if header.lower() in _FORBIDDEN_AFFINITY_HEADERS:
@@ -128,9 +109,7 @@ class CredentialLiteLLMParams(ResponseObject):
 
 
 class GenericLiteLLMParams(CredentialLiteLLMParams, CustomPricingLiteLLMParams):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        extra="allow", arbitrary_types_allowed=True
-    )
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
     @override
     def __init__(self, /, **data: InitValue) -> None:
@@ -162,8 +141,7 @@ class GenericLiteLLMParams(CredentialLiteLLMParams, CustomPricingLiteLLMParams):
     max_budget: float | None = None
     budget_duration: str | None = None
     keepalive_seconds: float | None = None
-    # ast-grep-ignore: no-long-names
-    allow_client_keepalive_override: bool | None = False
+    allow_client_keepalive_override: bool | None = False  # ast-grep-ignore: no-long-names
     use_in_pass_through: bool | None = False
     use_litellm_proxy: bool | None = False
     use_chat_completions_api: bool | None = None
@@ -171,8 +149,7 @@ class GenericLiteLLMParams(CredentialLiteLLMParams, CustomPricingLiteLLMParams):
         default=False,
         description="Use stored xAI OAuth credentials when no xAI API key is configured.",
     )
-    # ast-grep-ignore: no-long-names
-    merge_reasoning_content_in_choices: bool | None = False
+    merge_reasoning_content_in_choices: bool | None = False  # ast-grep-ignore: no-long-names
     model_info: dict[str, JsonValue] | None = None
     mock_response: str | ModelResponse | Exception | JsonValue | None = None
 
@@ -184,13 +161,11 @@ class GenericLiteLLMParams(CredentialLiteLLMParams, CustomPricingLiteLLMParams):
     auto_router_default_model: str | None = None
     auto_router_embedding_model: str | None = None
     auto_router_max_input_chars: int | None = None
-    # ast-grep-ignore: no-long-names
-    auto_router_routing_compression: str | None = None
+    auto_router_routing_compression: str | None = None  # ast-grep-ignore: no-long-names
     auto_router_model_compression: str | None = None
 
     complexity_router_config: dict[str, JsonValue] | None = None
-    # ast-grep-ignore: no-long-names
-    complexity_router_default_model: str | None = None
+    complexity_router_default_model: str | None = None  # ast-grep-ignore: no-long-names
 
     adaptive_router_default_model: str | None = None
     adaptive_router_config: dict[str, JsonValue] | None = None
@@ -256,9 +231,7 @@ class GenericLiteLLMParams(CredentialLiteLLMParams, CustomPricingLiteLLMParams):
 
 class LiteLLMParams(GenericLiteLLMParams):
     model: str
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        extra="allow", arbitrary_types_allowed=True
-    )
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
 
 class UpdateLiteLLMParams(GenericLiteLLMParams):

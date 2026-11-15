@@ -68,8 +68,7 @@ class LiteLLMParamsTypedDict(TypedDict, total=False):
     max_budget: float | None
     budget_duration: str | None
     keepalive_seconds: float | None
-    # ast-grep-ignore: no-long-names
-    allow_client_keepalive_override: bool | None
+    allow_client_keepalive_override: bool | None  # ast-grep-ignore: no-long-names
 
     cooldown_time: float | None
 

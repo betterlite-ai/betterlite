@@ -29,19 +29,13 @@ class AutoRouterCapabilityLimit(Protocol):
 
 
 class LiteLLMRouterFileObject(TypedDict, total=False):
-    # ast-grep-ignore: no-long-names
-    litellm_params_sensitive_credential_hash: str
+    litellm_params_sensitive_credential_hash: str  # ast-grep-ignore: no-long-names
     file_object: OpenAIFileObject
 
 
 def _str_to_bool(value: str) -> bool | None:
-    match value.strip().lower():
-        case "true":
-            return True
-        case "false":
-            return False
-        case _:
-            return None
+    flags: Final = {"true": True, "false": False}
+    return flags.get(value.strip().lower())
 
 
 def _extract_bool_param(kwargs: dict[str, JsonValue], name: str) -> bool | None:
@@ -61,8 +55,7 @@ def _extract_bool_param(kwargs: dict[str, JsonValue], name: str) -> bool | None:
 class MockRouterTestingParams:
     mock_testing_fallbacks: bool | None = None
     mock_testing_context_fallbacks: bool | None = None
-    # ast-grep-ignore: no-long-names
-    mock_testing_content_policy_fallbacks: bool | None = None
+    mock_testing_content_policy_fallbacks: bool | None = None  # ast-grep-ignore: no-long-names
 
     @classmethod
     def from_kwargs(cls, kwargs: dict[str, JsonValue]) -> "MockRouterTestingParams":
@@ -81,8 +74,7 @@ class MockRouterTestingParams:
 class ModelGroupSettings(ResponseObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
-    # ast-grep-ignore: no-long-names
-    forward_client_headers_to_llm_api: list[str] | None = None
+    forward_client_headers_to_llm_api: list[str] | None = None  # ast-grep-ignore: no-long-names
 
 
 class PreRoutingHookResponse(ResponseObject):

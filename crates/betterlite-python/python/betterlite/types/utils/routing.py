@@ -5,49 +5,26 @@ from pydantic import JsonValue
 from typing_extensions import ReadOnly, TypedDict
 
 
-# ast-grep-ignore: no-long-names
-class StandardLoggingRoutingDecisionTierBoundaries(TypedDict):
+class StandardLoggingRoutingDecisionTierBoundaries(TypedDict):  # ast-grep-ignore: no-long-names
     simple_medium: float
     medium_complex: float
     complex_reasoning: float
 
 
 RoutingDecisionCause = Literal[
-    "prompt_cache_cost",
-    "heuristic_scorer",
-    "heuristic_v2",
-    "reasoning_override",
-    "llm_classifier",
-    "capability_classifier",
-    "jev_classifier",
-    "llm_v2_classifier",
-    "llm_v2_fallback",
-    "heuristic_first_short_circuit",
-    "hybrid_short_circuit",
-    "classifier_plugin",
-    "classifier_fallback",
-    "capability_classifier_fallback",
-    "default_model_fallback",
-    "literal_keyword_match",
-    "semantic_keyword_match",
-    "plan_mode",
-    "housekeeping",
-    "modality_escalation",
-    "modality_pin_override",
-    "health_failover",
-    "health_default_fallback",
-    "session_affinity_pin",
-    "session_affinity_escalation",
-    "user_turn_continuation",
-    "default_fallback",
-    "keyword",
-    "quality_tier",
-    "bandit",
+    "prompt_cache_cost", "heuristic_scorer", "heuristic_v2", "reasoning_override",
+    "llm_classifier", "capability_classifier", "jev_classifier", "llm_v2_classifier",
+    "llm_v2_fallback", "heuristic_first_short_circuit", "hybrid_short_circuit",
+    "classifier_plugin", "classifier_fallback", "capability_classifier_fallback",
+    "default_model_fallback", "literal_keyword_match", "semantic_keyword_match",
+    "plan_mode", "housekeeping", "modality_escalation", "modality_pin_override",
+    "health_failover", "health_default_fallback", "session_affinity_pin",
+    "session_affinity_escalation", "user_turn_continuation", "default_fallback",
+    "keyword", "quality_tier", "bandit",
 ]
 
 
-# ast-grep-ignore: no-long-names
-class StandardLoggingHeuristicV2Forecast(TypedDict):
+class StandardLoggingHeuristicV2Forecast(TypedDict):  # ast-grep-ignore: no-long-names
     probabilities: ReadOnly[Mapping[str, float]]
     threshold: ReadOnly[float]
     predicted_tier: ReadOnly[str]
@@ -82,8 +59,7 @@ class StandardLoggingRoutingDecision(TypedDict, total=False):
     classifier_capable_p_solve: ReadOnly[float]
     # ast-grep-ignore: no-long-names
     classifier_calibrated_efficient_p_solve: ReadOnly[float]
-    # ast-grep-ignore: no-long-names
-    classifier_calibrated_capable_p_solve: ReadOnly[float]
+    classifier_calibrated_capable_p_solve: ReadOnly[float]  # ast-grep-ignore: no-long-names
     classifier_max_quality_gap: ReadOnly[float]
     classifier_prompt_version: ReadOnly[str]
     classifier_threshold: float
@@ -91,8 +67,7 @@ class StandardLoggingRoutingDecision(TypedDict, total=False):
     context_escalated: bool
     # ast-grep-ignore: no-long-names
     context_escalation_original_tier: str
-    # ast-grep-ignore: no-long-names
-    tier_boundaries: StandardLoggingRoutingDecisionTierBoundaries
+    tier_boundaries: StandardLoggingRoutingDecisionTierBoundaries  # ast-grep-ignore: no-long-names
     reasoning_override_min_score: float
     conversation_continuing: bool
     savings_baseline_model: str

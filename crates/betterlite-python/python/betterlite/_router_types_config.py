@@ -10,8 +10,7 @@ from betterlite.types.router_weights import RouterWeights
 from betterlite.types.utils.base import ResponseObject
 
 
-# ast-grep-ignore: no-long-names
-class ConfigurableClientsideParamsCustomAuth(TypedDict):
+class ConfigurableClientsideParamsCustomAuth(TypedDict):  # ast-grep-ignore: no-long-names
     api_base: str
 
 
@@ -98,8 +97,7 @@ class RetryPolicy(ResponseObject):
     AuthenticationErrorRetries: int | None = None
     TimeoutErrorRetries: int | None = None
     RateLimitErrorRetries: int | None = None
-    # ast-grep-ignore: no-long-names
-    ContentPolicyViolationErrorRetries: int | None = None
+    ContentPolicyViolationErrorRetries: int | None = None  # ast-grep-ignore: no-long-names
     InternalServerErrorRetries: int | None = None
     ServiceUnavailableErrorRetries: int | None = None
     NotFoundErrorRetries: int | None = None
@@ -108,14 +106,9 @@ class RetryPolicy(ResponseObject):
 
 OptionalPreCallChecks = list[
     Literal[
-        "prompt_caching",
-        "router_budget_limiting",
-        "responses_api_deployment_check",
-        "deployment_affinity",
-        "session_affinity",
-        "forward_client_headers_by_model_group",
-        "enforce_model_rate_limits",
-        "encrypted_content_affinity",
+        "prompt_caching", "router_budget_limiting", "responses_api_deployment_check",
+        "deployment_affinity", "session_affinity", "forward_client_headers_by_model_group",
+        "enforce_model_rate_limits", "encrypted_content_affinity",
     ]
 ]
 

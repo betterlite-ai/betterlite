@@ -20,8 +20,7 @@ class RouterErrors(Enum):
     # ast-grep-ignore: no-long-names
     no_deployments_with_provider_budget_routing = "No deployments available - crossed budget"
     no_healthy_deployments = "There are no healthy deployments for this model"
-    # ast-grep-ignore: no-long-names
-    only_strategy_marker_deployments = (
+    only_strategy_marker_deployments = (  # ast-grep-ignore: no-long-names
         "Every deployment for it is a strategy router marker (auto_router/...), which is not a "
         "callable model, and no pre-routing strategy selected a deployment for this request"
     )
@@ -31,16 +30,14 @@ class AllowedFailsPolicy(ResponseObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
     BadRequestErrorAllowedFails: int | None = None
-    # ast-grep-ignore: no-long-names
-    AuthenticationErrorAllowedFails: int | None = None
+    AuthenticationErrorAllowedFails: int | None = None  # ast-grep-ignore: no-long-names
     TimeoutErrorAllowedFails: int | None = None
     RateLimitErrorAllowedFails: int | None = None
     # ast-grep-ignore: no-long-names
     ContentPolicyViolationErrorAllowedFails: int | None = None
     # ast-grep-ignore: no-long-names
     InternalServerErrorAllowedFails: int | None = None
-    # ast-grep-ignore: no-long-names
-    ServiceUnavailableErrorAllowedFails: int | None = None
+    ServiceUnavailableErrorAllowedFails: int | None = None  # ast-grep-ignore: no-long-names
     BadGatewayErrorAllowedFails: int | None = None
     NotFoundErrorAllowedFails: int | None = None
 
@@ -63,13 +60,8 @@ class ModelGroupInfo(ResponseObject):
     output_cost_per_token: float | None = None
     input_cost_per_pixel: float | None = None
     mode: str | Literal[
-        "chat",
-        "embedding",
-        "completion",
-        "image_generation",
-        "audio_transcription",
-        "rerank",
-        "moderations",
+        "chat", "embedding", "completion", "image_generation", "audio_transcription",
+        "rerank", "moderations",
     ] | None = Field(default="chat")
     tpm: int | None = None
     rpm: int | None = None

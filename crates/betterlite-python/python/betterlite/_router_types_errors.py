@@ -44,16 +44,11 @@ class RouterRateLimitError(ValueError):
         self.cooldown_list = cooldown_list
         cooldown_ids: Final = frozenset(cooldown_list)
         self.all_deployments_in_cooldown = bool(model_ids) and frozenset(model_ids) <= cooldown_ids
-        self.type = (
-            RouterErrorTypes.all_deployments_in_cooldown.value
-            if self.all_deployments_in_cooldown
-            else RouterErrorTypes.rate_limit_error.value
-        )
-        reason: Final = (
-            f" {RouterErrors.all_deployments_in_cooldown.value}."
-            if self.all_deployments_in_cooldown
-            else ""
-        )
+        self.type = RouterErrorTypes.rate_limit_error.value
+        reason = ""
+        if self.all_deployments_in_cooldown:
+            self.type = RouterErrorTypes.all_deployments_in_cooldown.value
+            reason = f" {RouterErrors.all_deployments_in_cooldown.value}."
         message: Final = (
             f"{RouterErrors.no_deployments_available.value}, Try again in {cooldown_time} seconds."
             f"{reason} Passed model={model}. pre-call-checks={enable_pre_call_checks}, "

@@ -13,8 +13,7 @@ class MirroredPricingParams(ResponseObject):
     input_cost_per_character: float | None = None
     output_cost_per_character: float | None = None
     cache_read_input_token_cost: float | None = None
-    # ast-grep-ignore: no-long-names
-    cache_creation_input_token_cost: float | None = None
+    cache_creation_input_token_cost: float | None = None  # ast-grep-ignore: no-long-names
     tiered_pricing: list[dict[str, JsonValue]] | None = None
 
 
@@ -131,17 +130,14 @@ class CustomPricingLiteLLMParams(MirroredPricingParams):
     input_cost_per_video_per_second_above_8s_interval: float | None = None
     # ast-grep-ignore: no-long-names
     input_cost_per_audio_token_batches: float | None = None
-    # ast-grep-ignore: no-long-names
-    input_cost_per_image_token_batches: float | None = None
+    input_cost_per_image_token_batches: float | None = None  # ast-grep-ignore: no-long-names
     input_cost_per_token_batches: float | None = None
-    # ast-grep-ignore: no-long-names
-    input_cost_per_video_token_batches: float | None = None
+    input_cost_per_video_token_batches: float | None = None  # ast-grep-ignore: no-long-names
     output_cost_per_token_batches: float | None = None
     output_cost_per_token_flex: float | None = None
     output_cost_per_token_priority: float | None = None
     output_cost_per_token_balanced: float | None = None
-    # ast-grep-ignore: no-long-names
-    output_cost_per_token_ultrafast: float | None = None
+    output_cost_per_token_ultrafast: float | None = None  # ast-grep-ignore: no-long-names
     output_cost_per_audio_token: float | None = None
     # ast-grep-ignore: no-long-names
     output_cost_per_token_above_128k_tokens: float | None = None
@@ -172,11 +168,9 @@ class CustomPricingLiteLLMParams(MirroredPricingParams):
     output_cost_per_reasoning_token_priority: float | None = None
     # ast-grep-ignore: no-long-names
     output_cost_per_video_per_second: float | None = None
-    # ast-grep-ignore: no-long-names
-    output_cost_per_audio_per_second: float | None = None
+    output_cost_per_audio_per_second: float | None = None  # ast-grep-ignore: no-long-names
     search_context_cost_per_query: dict[str, JsonValue] | None = None
-    # ast-grep-ignore: no-long-names
-    google_maps_grounding_cost_per_query: float | None = None
+    google_maps_grounding_cost_per_query: float | None = None  # ast-grep-ignore: no-long-names
     citation_cost_per_token: float | None = None
     # ast-grep-ignore: no-long-names
     cache_read_input_token_cost_above_272k_tokens: float | None = None
@@ -190,8 +184,7 @@ class CustomPricingLiteLLMParams(MirroredPricingParams):
     input_cost_per_token_above_512k_tokens: float | None = None
     # ast-grep-ignore: no-long-names
     output_cost_per_token_above_272k_tokens: float | None = None
-    # ast-grep-ignore: no-long-names
-    output_cost_per_token_above_512k_tokens: float | None = None
+    output_cost_per_token_above_512k_tokens: float | None = None  # ast-grep-ignore: no-long-names
     output_vector_size: int | None = None
     ocr_cost_per_page: float | None = None
     ocr_cost_per_page_batches: float | None = None
@@ -203,8 +196,7 @@ class CustomPricingLiteLLMParams(MirroredPricingParams):
     regional_processing_uplift_multiplier_eu: float | None = None
     # ast-grep-ignore: no-long-names
     regional_processing_uplift_multiplier_us: float | None = None
-    # ast-grep-ignore: no-long-names
-    regional_endpoint_uplift_multiplier: float | None = None
+    regional_endpoint_uplift_multiplier: float | None = None  # ast-grep-ignore: no-long-names
 
     @classmethod
     def strip_custom_pricing_fields(cls, model_info: dict[str, JsonValue]) -> dict[str, JsonValue]:
