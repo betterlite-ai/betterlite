@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -40,7 +40,7 @@ pub(super) const START_EPOCH: i64 = 1_767_323_045;
 pub(super) fn window(start_epoch: i64, frequency: &str) -> FocusTimeWindow {
     FocusTimeWindow {
         start_time: DateTime::from_timestamp(start_epoch, 0).unwrap(),
-        end_time: DateTime::from_timestamp(start_epoch + 3_600, 0).unwrap(),
+        end_time: DateTime::from_timestamp(start_epoch.checked_add(3_600).unwrap(), 0).unwrap(),
         frequency: frequency.to_owned(),
     }
 }
@@ -100,7 +100,10 @@ impl Captured {
 
 impl io::Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -207,7 +210,9 @@ struct FixedClock;
 
 impl Clock for FixedClock {
     fn now(&self) -> SystemTime {
-        UNIX_EPOCH + Duration::from_secs(u64::try_from(START_EPOCH).unwrap())
+        UNIX_EPOCH
+            .checked_add(Duration::from_secs(u64::try_from(START_EPOCH).unwrap()))
+            .unwrap()
     }
 }
 
@@ -268,12 +273,15 @@ impl FakeAuth {
     }
 
     fn token(&self, request: &EnsureAccessToken) -> Result<AccessToken, NetworkDown> {
-        self.ensured.lock().unwrap().push(
-            request
-                .credentials
-                .as_ref()
-                .map(|value| value.expose_secret().to_owned()),
-        );
+        self.ensured
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(
+                request
+                    .credentials
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned()),
+            );
         if self.failing {
             return Err(NetworkDown);
         }
@@ -335,7 +343,9 @@ impl FakeGcsHttp {
             .iter()
             .map(|request| match request {
                 GcsRequest::Post(post) => post.clone(),
-                other => panic!("the destination sent a request that is not a POST: {other:?}"),
+                other @ GcsRequest::Get(_) | other @ GcsRequest::Delete(_) => {
+                    panic!("the destination sent a request that is not a POST: {other:?}")
+                }
             })
             .collect()
     }
