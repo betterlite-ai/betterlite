@@ -267,6 +267,14 @@ fn stable_diffusion_mapping_overwrites_the_image_size_destination() {
 }
 
 #[test]
+fn stable_diffusion_mapping_treats_a_destination_added_earlier_as_present() {
+    let non_default = params(&[("size", text("1024x768")), ("image_size", size(1, 2))]);
+    let mapped = map_openai_params(&non_default, ImageParams::new(), MODEL, false)
+        .expect("a destination the earlier key supplied");
+    assert_eq!(mapped, params(&[("image_size", text("landscape_4_3"))]));
+}
+
+#[test]
 fn stable_diffusion_mapping_rejects_unsupported_parameters() {
     let non_default = params(&[("seed", number(1)), ("user", text("alice"))]);
     match map_openai_params(&non_default, ImageParams::new(), MODEL, false) {
