@@ -1,0 +1,7 @@
+# async headers carry application/json and ignore GOOGLE_SECRET_MANAGER_PROJECT_ID
+kind: helper
+name: gcs-storage-auth-async-headers-include-content-type
+call:
+  b3997: {"action": "async_headers", "environment": {"GOOGLE_SECRET_MANAGER_PROJECT_ID": "secret-project"}}
+env: {}
+compare: {ignore: []}
