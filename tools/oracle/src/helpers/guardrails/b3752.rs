@@ -23,7 +23,7 @@ mod endpoint;
 const TIMEOUT_PROBE: Duration = Duration::from_millis(20);
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum FailureKind {
     Connect,
@@ -38,7 +38,7 @@ struct ScriptedAnswer {
 }
 
 #[derive(Debug, Deserialize)]
-struct AliceApplyArgs {
+pub(crate) struct AliceApplyArgs {
     api_key: Option<String>,
     unreachable_fallback: UnreachableFallback,
     texts: Option<Vec<String>>,
@@ -49,7 +49,7 @@ struct AliceApplyArgs {
 }
 
 #[derive(Debug, Deserialize)]
-struct ConductPayloadArgs {
+pub(crate) struct ConductPayloadArgs {
     texts: Option<Vec<String>>,
     structured_message_text: Option<String>,
     request_data: BTreeMap<String, GuardrailValue>,
@@ -58,7 +58,7 @@ struct ConductPayloadArgs {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-enum Input {
+pub(crate) enum Input {
     AliceApply(Box<AliceApplyArgs>),
     ConductRequestPayload(Box<ConductPayloadArgs>),
 }
@@ -86,9 +86,10 @@ fn alice_apply(args: &AliceApplyArgs) -> HelperResult {
 
 async fn alice_apply_async(args: &AliceApplyArgs) -> HelperResult {
     let endpoint = start_endpoint(args).await?;
-    let timeout = match args.failure {
-        Some(FailureKind::Timeout) => TIMEOUT_PROBE,
-        Some(FailureKind::Connect) | None => ANSWER_TIMEOUT,
+    let timeout = if args.failure == Some(FailureKind::Timeout) {
+        TIMEOUT_PROBE
+    } else {
+        ANSWER_TIMEOUT
     };
     let guardrail = guardrail_from(args, &endpoint, timeout)?;
     if args.answer.is_none() && args.failure.is_none() {
