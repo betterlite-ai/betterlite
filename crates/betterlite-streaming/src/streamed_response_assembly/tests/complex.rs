@@ -12,6 +12,7 @@ pub(super) async fn complex_content_order() {
     complex_thinking().await;
     complex_audio().await;
     complex_audio_default_expiry().await;
+    complex_created_at_order().await;
 }
 
 pub(super) async fn complex_tool_calls() {
@@ -95,6 +96,29 @@ pub(super) async fn complex_function_call_only() {
         .as_ref()
         .expect("the function call fragments are assembled");
     assert_eq!(function.arguments, r#"{"city":"Paris"}"#);
+}
+
+// B2232 sorts by _hidden_params.created_at when the first chunk sets it, so the later arrival joins first.
+pub(super) async fn complex_created_at_order() {
+    let stream = chunks(
+        r#"[
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+         "_hidden_params": {"created_at": 2},
+         "choices": [{"index": 0, "delta": {"role": "assistant", "content": "B", "reasoning_content": "y"},
+            "finish_reason": "stop"}]},
+        {"model": "gpt-4o", "_hidden_params": {"created_at": 1},
+         "choices": [{"index": 0, "delta": {"content": "A", "reasoning_content": "x"},
+            "finish_reason": "length"}]}
+    ]"#,
+    );
+    let mut harness = Harness::new(Some(stream));
+    harness.messages = true;
+    harness.counter.response_text = 1;
+    let response = chat_of(&harness).await;
+    let choice = &response.choices[0];
+    assert_eq!(choice.message.content.as_deref(), Some("AB"));
+    assert_eq!(choice.message.reasoning_content.as_deref(), Some("xy"));
+    assert_eq!(choice.finish_reason, "stop");
 }
 
 pub(super) async fn complex_lists() {
