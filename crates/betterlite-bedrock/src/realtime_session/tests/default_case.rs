@@ -2,8 +2,8 @@ use rust_decimal::Decimal;
 
 use super::support::{AUDIO_CONTENT, CONTENT, PROMPT, session};
 use crate::realtime_session::records::{
-    AudioSettings, BedrockContentEnd, ExactDecimal, MaxResponseTokens, Setting, UsageDetails,
-    UsageEvent, UsageTokens,
+    AudioOutputConfiguration, AudioSettings, BedrockContentEnd, ExactDecimal, MaxResponseTokens,
+    SessionConfiguration, Setting, UsageDetails, UsageEvent, UsageTokens,
 };
 
 const USAGE_ZERO: &str = concat!(
@@ -42,6 +42,12 @@ fn content_end_defaults() {
 }
 
 fn default_session_state() {
+    default_session_names();
+    default_session_activity();
+    default_session_settings();
+}
+
+fn default_session_names() {
     let state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
     assert_eq!(state.names.prompt, PROMPT);
     assert_eq!(state.names.content, CONTENT);
@@ -49,6 +55,10 @@ fn default_session_state() {
     assert_ne!(state.names.prompt, state.names.content);
     assert_ne!(state.names.content, state.names.audio_content);
     assert_ne!(state.names.prompt, state.names.audio_content);
+}
+
+fn default_session_activity() {
+    let state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
     assert!(!state.prompt_started);
     assert!(!state.client_audio_streamed);
     assert!(!state.transcript.active);
@@ -57,6 +67,10 @@ fn default_session_state() {
     assert_eq!(state.transcript.buffer, "");
     assert_usage_zero(&state.cumulative_usage);
     assert_usage_zero(&state.reported_usage);
+}
+
+fn default_session_settings() {
+    let state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
     assert_eq!(
         state.max_tokens,
         Setting(Some(MaxResponseTokens::Count(1024)))
@@ -106,7 +120,13 @@ fn default_prompt_configuration() {
         prompt_start.text_output_configuration.media_type,
         "text/plain"
     );
-    let audio = &prompt_start.audio_output_configuration;
+    assert_audio_output(&prompt_start.audio_output_configuration);
+    assert!(prompt_start.tool_use_output_configuration.is_none());
+    assert!(prompt_start.tool_configuration.is_none());
+    assert_prompt_wire(&configuration);
+}
+
+fn assert_audio_output(audio: &AudioOutputConfiguration) {
     assert_eq!(audio.media_type, "audio/lpcm");
     assert_eq!(audio.sample_rate_hertz, Setting(Some(24000)));
     assert_eq!(audio.sample_size_bits, 16);
@@ -114,9 +134,10 @@ fn default_prompt_configuration() {
     assert_eq!(audio.voice_id, Setting(Some("matthew".to_owned())));
     assert_eq!(audio.encoding, "base64");
     assert_eq!(audio.audio_type, "SPEECH");
-    assert!(prompt_start.tool_use_output_configuration.is_none());
-    assert!(prompt_start.tool_configuration.is_none());
-    let wire = serde_json::to_string(&configuration).expect("the marker serializes");
+}
+
+fn assert_prompt_wire(configuration: &SessionConfiguration) {
+    let wire = serde_json::to_string(configuration).expect("the marker serializes");
     assert!(wire.contains(r#""prompt_start":{"event":{"promptStart""#));
     assert!(wire.contains(r#""mediaType":"text/plain""#));
     assert!(wire.contains(r#""mediaType":"audio/lpcm""#));

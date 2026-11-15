@@ -78,10 +78,10 @@ pub(super) fn output_audio(frames: &[UpdateFrame]) -> &AudioOutputConfiguration 
     &prompt_start(frames).audio_output_configuration
 }
 
-pub(super) struct InstructionContent<'a> {
-    pub content_start: &'a ContentStart,
-    pub text_input: (&'a str, &'a str, &'a str),
-    pub content_end: (&'a str, &'a str),
+pub(super) struct InstructionContent<'frames> {
+    pub content_start: &'frames ContentStart,
+    pub text_input: (&'frames str, &'frames str, &'frames str),
+    pub content_end: (&'frames str, &'frames str),
 }
 
 pub(super) fn instruction_content(frames: &[UpdateFrame]) -> InstructionContent<'_> {

@@ -240,8 +240,7 @@ pub fn complete_url(api_base: Option<&str>) -> String {
     base.to_owned()
 }
 
-// LiteLLM's Bedrock realtime config adds no header of its own: the SDK client resolves the credentials,
-// so the caller's headers come back exactly as they were given.
+// LiteLLM returns the caller's headers unchanged; this adds none of its own.
 #[must_use]
 pub fn validate_environment(headers: &[(String, String)]) -> Vec<(String, String)> {
     let mut validated = Vec::with_capacity(headers.len());

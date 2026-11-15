@@ -122,6 +122,9 @@ class RealtimeConfig(Protocol):
     ) -> BedrockError: ...
 
 
+CONFIG_TYPE: type[RealtimeConfig] = BedrockRealtimeConfig
+
+
 class FixedStd:
     def __init__(self, values: list[str]) -> None:
         self.values = [UUID(value) for value in values]
@@ -167,7 +170,7 @@ def apply_updates(config: RealtimeConfig, updates: list[JsonObject]) -> list[Jso
     results: list[JsonValue] = []
     for message in updates:
         messages = config.transform_session_update_event(message)
-        frames = list(map(JsonAdapter.validate_json, messages))
+        frames = [JsonAdapter.validate_json(frame) for frame in messages]
         results.append({"frames": frames, "input_audio": input_audio_view(config)})
     return results
 
@@ -194,12 +197,12 @@ def tool_updates(config: RealtimeConfig, updates: list[JsonObject]) -> list[Json
     results: list[JsonValue] = []
     for message in updates:
         messages = config.transform_session_update_event(message)
-        frames = list(map(JsonAdapter.validate_json, messages))
+        frames = [JsonAdapter.validate_json(frame) for frame in messages]
         results.append({"prompt_start": prompt_start_tools(frames[1])})
     return results
 
 
-def session_view(event: EventView) -> JsonObject:
+def event_view(event: EventView) -> JsonObject:
     session = event["session"]
     carried = session.get("modalities")
     if carried is None:
@@ -208,15 +211,7 @@ def session_view(event: EventView) -> JsonObject:
     view: JsonObject = {"id": session["id"], "modalities": modalities}
     if "model" in session:
         view["model"] = session["model"]
-    return view
-
-
-def event_view(event: EventView) -> JsonObject:
-    return {
-        "event_id": event["event_id"],
-        "type": event["type"],
-        "session": session_view(event),
-    }
+    return {"event_id": event["event_id"], "type": event["type"], "session": view}
 
 
 def validated_headers(
@@ -232,7 +227,7 @@ def validated_headers(
 
 def run_default(input_value: Input) -> JsonValue:
     uuid.uuid4 = FixedStd(input_value["ids"])
-    config: RealtimeConfig = BedrockRealtimeConfig()
+    config = CONFIG_TYPE()
     marker = config.session_configuration_request(input_value["model"])
     configuration = JsonAdapter.validate_json(marker)
     return {
@@ -248,7 +243,7 @@ def run_default(input_value: Input) -> JsonValue:
 
 
 def run_created_updated(input_value: Input) -> JsonValue:
-    config: RealtimeConfig = BedrockRealtimeConfig()
+    config = CONFIG_TYPE()
     model = input_value["model"]
     logging_obj = make_logging(input_value["trace_id"])
     fastuuid.uuid4 = FixedFast(input_value["ids"])
@@ -287,7 +282,7 @@ def run(input_value: Input) -> JsonValue:
     if case == "default_session_configuration":
         return run_default(input_value)
     uuid.uuid4 = FixedStd(input_value["ids"])
-    config: RealtimeConfig = BedrockRealtimeConfig()
+    config = CONFIG_TYPE()
     if case == "tool_configuration":
         results = tool_updates(config, input_value["updates"])
     else:
