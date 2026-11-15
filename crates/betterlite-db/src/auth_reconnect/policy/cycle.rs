@@ -43,17 +43,17 @@ where
     outcome
 }
 
-fn database_url<'request, Engine>(
+fn database_url<'request>(
     request: &'request ReconnectRequest<'_>,
     missing: &str,
-) -> Result<&'request SecretString, ReconnectError<Engine::Error>> {
-    request
+) -> Option<&'request SecretString> {
+    let url = request
         .database_url
-        .filter(|url| !url.expose_secret().is_empty())
-        .ok_or_else(|| {
-            error!("{}", missing);
-            ReconnectError::MissingDatabaseUrl
-        })
+        .filter(|url| !url.expose_secret().is_empty());
+    if url.is_none() {
+        error!("{}", missing);
+    }
+    url
 }
 
 async fn reconnect<Engine, Clock, Gate>(
@@ -72,7 +72,9 @@ where
     } else {
         "DATABASE_URL not set; cannot reconnect the database pool."
     };
-    let url = database_url(request, missing)?;
+    let Some(url) = database_url(request, missing) else {
+        return Err(ReconnectError::MissingDatabaseUrl);
+    };
     if !dead && !request.force_recreate && !writer_needs_recreate(policy).await? {
         return Ok(());
     }
