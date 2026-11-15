@@ -97,7 +97,11 @@ class EnvironmentKey:
     ) -> str | None:
         if secret_name == ENV_NAME and self._api_key is not None:
             return self._api_key
-        return default_value
+        match default_value:
+            case str():
+                return default_value
+            case bool() | None:
+                return None
 
 
 class SupportedCall(TypedDict):
