@@ -11,6 +11,8 @@ use crate::api::stability::generation::reply::decode_stability_image;
 
 pub const COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
 
+const OUTPUT_COST_PER_IMAGE: &str = "output_cost_per_image";
+
 // B2225 get_model_info hands over the model's metadata record; a failed lookup keeps its own error type
 pub trait ModelInfoLookup {
     type Error: Error + 'static;
@@ -44,7 +46,7 @@ where
         .model_info(model)
         .map_err(StabilityEditError::ModelInfo)?;
     let mut additional_headers = AdditionalHeaders::new();
-    if let Some(value) = cost_header(info.get(COST_HEADER))? {
+    if let Some(value) = cost_header(info.get(OUTPUT_COST_PER_IMAGE))? {
         additional_headers.insert(COST_HEADER.to_owned(), value);
     }
     Ok(ImageEditReply {
