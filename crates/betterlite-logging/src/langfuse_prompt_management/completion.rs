@@ -1,9 +1,10 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::{
-    AllMessageValues, PromptCompileRequest, PromptIgnoreFlags, PromptParams,
-    PromptProcessingOptions, PromptSpec, StandardCallbackDynamicParams,
+    AllMessageValues, PromptCompileRequest, PromptIgnoreFlags, PromptManagementClient,
+    PromptParams, PromptProcessingOptions, StandardCallbackDynamicParams,
     post_compile_prompt_processing, resolve_ignore_flags,
 };
+use betterlite_models::prompt_spec::PromptSpec;
 
 use super::{INTEGRATION_NAME, LangfusePromptManagement, LangfusePromptManagementError};
 
@@ -28,9 +29,8 @@ pub struct ChatCompletionPrompt {
     pub non_default_params: PromptParams,
 }
 
-// LangfusePromptManagement.async_get_chat_completion_prompt's extra arguments; it forwards neither
-// litellm_logging_obj nor tools to the sync base, so the request tools never reach the prompt
-pub struct AsyncChatCompletionPromptRequest<'request> {
+// async_get_chat_completion_prompt's extra arguments: neither litellm_logging_obj nor tools reaches the sync base
+pub struct AsyncPromptRequest<'request> {
     pub request: ChatCompletionPromptRequest<'request>,
     pub tools: Option<&'request [Json]>,
 }
@@ -54,20 +54,7 @@ impl LangfusePromptManagement {
         {
             return Ok(unchanged_prompt(request));
         }
-        // PromptManagementBase.compile_prompt calls the sync helper without a prompt spec
-        let mut prompt_template = self
-            .compile_prompt_helper(&PromptCompileRequest {
-                prompt_id: Some(prompt_id),
-                prompt_spec: None,
-                prompt_variables: request.prompt_variables,
-                dynamic_callback_params: request.dynamic_callback_params,
-                prompt_label: request.prompt_label,
-                prompt_version: request.prompt_version,
-            })
-            .await?;
-        let mut completed = prompt_template.prompt_template.clone();
-        completed.extend(request.messages.clone());
-        prompt_template.completed_messages = Some(completed);
+        let prompt_template = self.compile_prompt_client(prompt_id, &request).await?;
         let ignore_flags = resolve_ignore_flags(request.prompt_spec, request.ignore_flags);
         let (model, messages, non_default_params) = post_compile_prompt_processing(
             &prompt_template,
@@ -86,12 +73,35 @@ impl LangfusePromptManagement {
         })
     }
 
-    // LangfusePromptManagement.async_get_chat_completion_prompt delegates to the sync base
-    pub async fn async_get_chat_completion_prompt(
+    // PromptManagementBase.compile_prompt: the helper, then the client messages it appends
+    async fn compile_prompt_client(
         &self,
-        request: AsyncChatCompletionPromptRequest<'_>,
+        prompt_id: &str,
+        request: &ChatCompletionPromptRequest<'_>,
+    ) -> Result<PromptManagementClient, LangfusePromptManagementError> {
+        // compile_prompt calls the sync helper without a prompt spec
+        let mut prompt_template = self
+            .compile_prompt_helper(&PromptCompileRequest {
+                prompt_id: Some(prompt_id),
+                prompt_spec: None,
+                prompt_variables: request.prompt_variables,
+                dynamic_callback_params: request.dynamic_callback_params,
+                prompt_label: request.prompt_label,
+                prompt_version: request.prompt_version,
+            })
+            .await?;
+        let mut completed = prompt_template.prompt_template.clone();
+        completed.extend(request.messages.clone());
+        prompt_template.completed_messages = Some(completed);
+        Ok(prompt_template)
+    }
+
+    // LangfusePromptManagement.async_get_chat_completion_prompt delegates to the sync base
+    pub async fn async_chat_completion_prompt(
+        &self,
+        request: AsyncPromptRequest<'_>,
     ) -> Result<ChatCompletionPrompt, LangfusePromptManagementError> {
-        let AsyncChatCompletionPromptRequest { request, .. } = request;
+        let AsyncPromptRequest { request, .. } = request;
         self.get_chat_completion_prompt(request).await
     }
 }

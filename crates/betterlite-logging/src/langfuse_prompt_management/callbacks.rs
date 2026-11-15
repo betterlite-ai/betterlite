@@ -1,15 +1,19 @@
+use std::fmt::Display;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
 use crate::dynamic_logger_cache::{DynamicLoggerCache, RemovalEffect};
 use crate::langfuse_handler::LangFuseHandler;
-use crate::langfuse_logger::langfuse::{LangFuseLoggedEvent, LangFuseLogger, LangfuseCall};
+use crate::langfuse_logger::langfuse::{LangFuseLogger, LangfuseCall, LangfuseLoggedEvent};
 use crate::langfuse_observations::identity::Timestamp;
 use crate::langfuse_projections::content::ResponseObj;
 
@@ -45,12 +49,37 @@ fn event_parts(event: &LoggerEvent, outcome: EventOutcome<'_>) -> EventParts {
         EventOutcome::Failure { .. } => None,
     };
     let started = event.payload.completion_start_time;
+    let completion_start_time = if started.is_zero() {
+        None
+    } else {
+        Some(timestamp_at(started))
+    };
     EventParts {
         litellm_params: Json::Object(IndexMap::from([("metadata".to_owned(), metadata)])),
         status_message,
         response,
         level,
-        completion_start_time: (!started.is_zero()).then_some(Timestamp::Seconds(started)),
+        completion_start_time,
+    }
+}
+
+// LiteLLM hands _serialize_datetime a datetime, so epoch seconds become the RFC 3339 text it writes
+fn timestamp_at(seconds: Decimal) -> Timestamp {
+    seconds
+        .checked_mul(Decimal::from(1_000_000_i64))
+        .and_then(|micros| micros.round().to_i64())
+        .and_then(DateTime::<Utc>::from_timestamp_micros)
+        .map_or(Timestamp::Seconds(seconds), Timestamp::DateTime)
+}
+
+// every callback failure becomes one delivery error that names langfuse and keeps the cause's text
+fn delivery_error<E>(source: E) -> LoggerError
+where
+    E: Display,
+{
+    LoggerError::Delivery {
+        callback: INTEGRATION_NAME.to_owned(),
+        message: source.to_string(),
     }
 }
 
@@ -87,24 +116,12 @@ impl CallbackLogger for LangfusePromptManagement {
     // CustomLogger.log_success_event: asyncify.run_async_function drives the async hook to completion
     fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
         let event = Arc::new(event.clone());
-        match run_async_function(self.async_log_success_event(event)) {
-            Ok(result) => result,
-            Err(error) => Err(LoggerError::Delivery {
-                callback: INTEGRATION_NAME.to_owned(),
-                message: error.to_string(),
-            }),
-        }
+        run_async_function(self.async_log_success_event(event)).map_err(delivery_error)?
     }
 
     fn log_failure_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
         let event = Arc::new(event.clone());
-        match run_async_function(self.async_log_failure_event(event)) {
-            Ok(result) => result,
-            Err(error) => Err(LoggerError::Delivery {
-                callback: INTEGRATION_NAME.to_owned(),
-                message: error.to_string(),
-            }),
-        }
+        run_async_function(self.async_log_failure_event(event)).map_err(delivery_error)?
     }
 
     // exceptions are logged and counted, never propagated to the request
@@ -141,10 +158,7 @@ impl LangfusePromptManagement {
             Some(Arc::clone(&self.logger)),
         )
         .await
-        .map_err(|error| LoggerError::Delivery {
-            callback: INTEGRATION_NAME.to_owned(),
-            message: error.to_string(),
-        })
+        .map_err(delivery_error)
     }
 
     // the try block of async_log_success_event and async_log_failure_event
@@ -159,14 +173,14 @@ impl LangfusePromptManagement {
             .as_ref()
             .and_then(|response| response_object(&event.payload.call_type, response));
         let call = LangfuseCall {
-            payload: &event.payload,
+            payload: event.payload.as_ref(),
             litellm_params: Some(&parts.litellm_params),
             messages: event.payload.messages.as_ref(),
             optional_params: &event.payload.model_parameters,
             response: parts.response.as_ref(),
             response_object: object,
-            start_time: Some(Timestamp::Seconds(event.payload.start_time)),
-            end_time: Some(Timestamp::Seconds(event.payload.end_time)),
+            start_time: Some(timestamp_at(event.payload.start_time)),
+            end_time: Some(timestamp_at(event.payload.end_time)),
             completion_start_time: parts.completion_start_time,
             level: parts.level,
             status_message: parts.status_message.as_deref(),
@@ -180,17 +194,14 @@ impl LangfusePromptManagement {
         };
         let logged = logger.log_event_on_langfuse(&call).await;
         self.remember_trace_id(event, &logged)
-            .map_err(|error| LoggerError::Delivery {
-                callback: INTEGRATION_NAME.to_owned(),
-                message: error.to_string(),
-            })
+            .map_err(delivery_error)
     }
 
     // _remember_trace_id stores the trace only when the call id is a string and a trace id came back
     fn remember_trace_id(
         &self,
         event: &LoggerEvent,
-        logged: &LangFuseLoggedEvent,
+        logged: &LangfuseLoggedEvent,
     ) -> Result<(), LangfusePromptManagementError> {
         let Some(call_id) = event.payload.litellm_call_id.as_deref() else {
             return Ok(());

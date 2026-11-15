@@ -1,12 +1,11 @@
 pub(crate) mod bridge;
 mod callbacks;
 mod clients;
-mod compilation;
-mod completion;
-mod prompt;
+pub mod compilation;
+pub mod completion;
+pub mod prompt;
 mod template;
 
-#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;

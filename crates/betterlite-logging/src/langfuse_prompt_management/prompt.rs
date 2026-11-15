@@ -8,7 +8,7 @@ use super::LangfusePromptManagementError;
 use super::template;
 
 // LangfusePromptManagement._compile_prompt: a text prompt becomes the system message, a chat prompt its list
-pub(crate) fn compile_prompt(
+pub fn compile_prompt(
     prompt: &Prompt,
     variables: Option<&PromptParams>,
 ) -> Result<Vec<AllMessageValues>, LangfusePromptManagementError> {

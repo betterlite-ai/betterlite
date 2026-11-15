@@ -1,15 +1,15 @@
 use betterlite_models::prompt_contracts::{
-    PromptAsyncCompileRequest, PromptCompileRequest, PromptManagementClient, PromptSpec,
+    PromptAsyncCompileRequest, PromptCompileRequest, PromptManagementClient,
     StandardCallbackDynamicParams,
 };
+use betterlite_models::prompt_spec::PromptSpec;
 
 use super::clients::PromptClientRequest;
 use super::prompt::{compile_prompt, optional_params_from_langfuse, template_model};
 use super::{LangfusePromptManagement, LangfusePromptManagementError};
 
 impl LangfusePromptManagement {
-    // LangfusePromptManagement.should_run_prompt_management: the fetch is the validation, and its
-    // failure only means this request goes to the model with the caller's own messages
+    // should_run_prompt_management: the fetch validates, and a failure sends the caller's own messages
     pub async fn should_run_prompt_management(
         &self,
         prompt_id: Option<&str>,

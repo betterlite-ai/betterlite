@@ -18,7 +18,7 @@ use super::LangfusePromptManagementError;
 pub(crate) const PROMPT_CLIENT_CACHE_CAPACITY: usize = 10;
 
 // the six langfuse_client_init arguments; every one of them is part of the cache key
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub(crate) struct PromptClientRequest<'request> {
     pub(crate) public_key: Option<&'request str>,
     pub(crate) secret: Option<&'request str>,

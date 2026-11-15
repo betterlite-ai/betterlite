@@ -71,12 +71,13 @@ fn services(inputs: &CatalogInputs) -> Result<LangfuseServices, CatalogError> {
         tasks: inputs.tracker.clone(),
         runtime,
         assembly: AssemblyDefaults {
+            default_tags: Vec::new(),
+            update_trace_keys: false,
             redact_user_api_key_info: inputs
                 .config
                 .sections
                 .logging_privacy
                 .redact_user_api_key_info,
-            ..AssemblyDefaults::default()
         },
         id_generator: Arc::new(RequestedIdGenerator::default()),
         clients: Arc::new(HttpClientBuilder {
