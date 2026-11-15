@@ -259,7 +259,8 @@ fn create_versioned_prompt_spec_reads_stored_json_text() {
 fn create_versioned_prompt_spec_reads_stored_json_objects() {
     let mut row = prompt_row("greeting", 2, "production");
     row.litellm_params = PromptRowJson::Object(
-        serde_json::from_str(r#"{"prompt_integration":"custom"}"#).expect("params object parses"),
+        serde_json::from_str(r#"{"prompt_integration":"custom","temperature":0.2}"#)
+            .expect("params object parses"),
     );
     row.prompt_info = Some(PromptRowJson::Object(
         serde_json::from_str(r#"{"prompt_type":"config"}"#).expect("info object parses"),
@@ -267,6 +268,10 @@ fn create_versioned_prompt_spec_reads_stored_json_objects() {
     let spec = create_versioned_prompt_spec(&row).expect("row converts");
     assert_eq!(spec.litellm_params.prompt_id, None);
     assert_eq!(spec.litellm_params.prompt_integration, "custom");
+    assert_eq!(
+        spec.litellm_params.extra.get("temperature"),
+        Some(&json_value("0.2"))
+    );
     assert_eq!(spec.prompt_info.prompt_type, "config");
 }
 

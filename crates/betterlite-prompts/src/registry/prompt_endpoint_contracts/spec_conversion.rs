@@ -25,7 +25,7 @@ where
 {
     match stored {
         PromptRowJson::Text(text) => serde_json::from_str(text),
-        PromptRowJson::Object(object) => serde_json::from_str(&serde_json::to_string(object)?),
+        PromptRowJson::Object(object) => serde_json::from_value(serde_json::to_value(object)?),
     }
 }
 
