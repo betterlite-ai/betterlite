@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import httpx
@@ -13,6 +14,21 @@ from typing_extensions import override
 EMBEDDING_MODEL = "text-embedding-v4"
 RERANK_MODEL = "qwen3-rerank"
 KEEP_PARAMS: Final = False
+
+MapCohereRerankParams = Callable[
+    [
+        dict[str, JsonValue] | None,
+        str,
+        bool,
+        str,
+        list[str | dict[str, JsonValue]],
+        str | None,
+        int | None,
+        list[str] | None,
+        bool | None,
+    ],
+    dict[str, JsonValue],
+]
 
 
 class NoMessages(list[AllMessageValues]): ...
@@ -85,19 +101,8 @@ class RerankConfig(Protocol):
 
     def get_complete_url(self, api_base: str | None, model: str, optional_params: None) -> str: ...
 
-    def map_cohere_rerank_params(
-        self,
-        _non_default_params: dict[str, JsonValue] | None,
-        _model: str,
-        /,
-        *,
-        drop_params: bool,
-        query: str,
-        documents: list[str | dict[str, JsonValue]],
-        top_n: int | None,
-        rank_fields: list[str] | None,
-        return_documents: bool | None,
-    ) -> dict[str, JsonValue]: ...
+    @property
+    def map_cohere_rerank_params(self) -> MapCohereRerankParams: ...
 
     def transform_rerank_request(
         self,
@@ -273,12 +278,13 @@ def rerank_request(input_value: RerankRequestInput) -> dict[str, JsonValue]:
     params = RERANK.map_cohere_rerank_params(
         {},
         input_value["model"],
-        drop_params=KEEP_PARAMS,
-        query=input_value["query"],
-        documents=input_value["documents"],
-        top_n=input_value["top_n"],
-        rank_fields=input_value["rank_fields"],
-        return_documents=input_value["return_documents"],
+        KEEP_PARAMS,
+        input_value["query"],
+        input_value["documents"],
+        None,
+        input_value["top_n"],
+        input_value["rank_fields"],
+        input_value["return_documents"],
     )
     body = RERANK.transform_rerank_request(
         model=input_value["model"], optional_rerank_params=params, headers={}, litellm_params=None

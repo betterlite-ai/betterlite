@@ -20,7 +20,7 @@ pub fn decode_dashscope_rerank_reply(
     bytes: &[u8],
     status_code: u16,
 ) -> Result<RerankResponse, DashscopeError> {
-    let body: Json = serde_json::from_slice(bytes).map_err(|_| DashscopeError {
+    let body: Json = serde_json::from_slice(bytes).map_err(|_source| DashscopeError {
         status_code,
         message: body_text(bytes),
         headers: Headers::new(),
@@ -57,20 +57,17 @@ fn rerank_reply(
         Some(Json::Text(text)) if !text.is_empty() => text.clone(),
         _ => Uuid::new_v4().to_string(),
     };
-    let meta = match total_tokens {
-        Some(total) => RerankResponseMeta {
-            api_version: None,
-            billed_units: Some(Some(RerankBilledUnits {
-                search_units: None,
-                total_tokens: Some(Some(total)),
-            })),
-            tokens: Some(Some(RerankTokens {
-                input_tokens: Some(Some(total)),
-                output_tokens: None,
-            })),
-        },
-        None => RerankResponseMeta::default(),
-    };
+    let meta = total_tokens.map_or_else(RerankResponseMeta::default, |total| RerankResponseMeta {
+        api_version: None,
+        billed_units: Some(Some(RerankBilledUnits {
+            search_units: None,
+            total_tokens: Some(Some(total)),
+        })),
+        tokens: Some(Some(RerankTokens {
+            input_tokens: Some(Some(total)),
+            output_tokens: None,
+        })),
+    });
     Ok(RerankResponse {
         id: Some(id),
         results: Some(results),
@@ -86,25 +83,20 @@ fn rerank_result(item: &Json) -> Result<RerankResponseResult, DashscopeError> {
     let index = match fields.get("index") {
         Some(Json::Number(number)) => number.as_i64(),
         _ => None,
-    };
-    let Some(index) = index else {
-        return Err(shape_error("results[].index"));
-    };
+    }
+    .ok_or_else(|| shape_error("results[].index"))?;
     let relevance_score = match fields.get("relevance_score") {
         Some(Json::Number(number)) => Score::try_from(number.clone()).ok(),
         _ => None,
-    };
-    let Some(relevance_score) = relevance_score else {
-        return Err(shape_error("results[].relevance_score"));
-    };
+    }
+    .ok_or_else(|| shape_error("results[].relevance_score"))?;
     let document = match fields.get("document") {
-        None | Some(Json::Null) => None,
         Some(Json::Text(text)) => Some(RerankResponseDocument { text: text.clone() }),
         Some(Json::Object(document)) => match document.get("text") {
             Some(Json::Text(text)) => Some(RerankResponseDocument { text: text.clone() }),
             _ => return Err(shape_error("results[].document.text")),
         },
-        Some(_) => None,
+        _ => None,
     };
     Ok(RerankResponseResult {
         index,

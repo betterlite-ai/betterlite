@@ -23,8 +23,7 @@ pub fn resolve_rerank_base(
 }
 
 fn chat_shaped_rerank_base(api_base: Option<&str>) -> Option<String> {
-    let api_base = api_base?;
-    let parsed = Url::parse(api_base).ok()?;
+    let parsed = Url::parse(api_base?).ok()?;
     let host = parsed.host_str()?.to_lowercase();
     let on_aliyun_host = host == "aliyuncs.com" || host.ends_with(".aliyuncs.com");
     if !on_aliyun_host || parsed.path().trim_end_matches('/') != DASHSCOPE_CHAT_COMPATIBLE_PATH {

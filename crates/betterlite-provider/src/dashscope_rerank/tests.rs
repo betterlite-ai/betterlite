@@ -14,8 +14,8 @@ use uuid::Uuid;
 use super::decode::decode_dashscope_rerank_reply;
 use super::{DashscopeRerankConfig, DashscopeRerankError};
 use crate::api::rerank_contracts::{
-    BaseRerankConfig, EnvironmentRequest, Headers, MapCohereRerankParams, Params, RerankLogging,
-    RerankProviderResponse, ResponseTransform,
+    BaseRerankConfig as _, EnvironmentRequest, Headers, MapCohereRerankParams, Params,
+    RerankLogging, RerankProviderResponse, ResponseTransform,
 };
 use crate::dashscope_common::DASHSCOPE_RERANK_URL;
 
@@ -367,8 +367,11 @@ fn the_reply_keeps_a_truthy_id_and_mints_one_otherwise(
     let response = decode_dashscope_rerank_reply(body, 200).unwrap();
     let id = response.id.expect("id");
     match expected {
-        Some(expected) => assert_eq!(id, expected),
-        None => assert!(Uuid::parse_str(&id).is_ok()),
+        Some(given) => assert_eq!(id, given),
+        None => {
+            let minted = Uuid::parse_str(&id).expect("minted id is a uuid");
+            assert_eq!(minted.get_version_num(), 4);
+        }
     }
 }
 

@@ -1,10 +1,10 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::rerank_contracts::records::RerankResponse;
+use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankResponse};
 use betterlite_openai::dashscope_embedding::error::DashscopeError;
 use betterlite_openai::dashscope_embedding::identity::{
     FamilyIdentity, FamilyKeyError, resolve_key,
 };
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use serde_json::Number;
 use thiserror::Error;
 
@@ -50,7 +50,7 @@ impl BaseRerankConfig for DashscopeRerankConfig {
     ) -> Result<Headers, Self::Error> {
         let key = resolve_key(
             &self.identity,
-            request.api_key.map(|key| key.expose_secret()),
+            request.api_key.map(ExposeSecret::expose_secret),
         )?;
         let mut headers = Headers::new();
         headers.insert(
@@ -146,7 +146,7 @@ impl BaseRerankConfig for DashscopeRerankConfig {
                 request
                     .documents
                     .iter()
-                    .map(|document| document.as_json())
+                    .map(RerankDocument::as_json)
                     .collect(),
             ),
         );
