@@ -118,15 +118,11 @@ fn message(role: &str, content: &str) -> GuardrailValue {
 }
 
 fn chat_data() -> Data {
+    let model = GuardrailValue::Text("gpt-4o".to_owned());
+    let messages = vec![message("user", "email a@example.com")];
     let mut data = Data::new();
-    data.insert(
-        "model".to_owned(),
-        GuardrailValue::Text("gpt-4o".to_owned()),
-    );
-    data.insert(
-        "messages".to_owned(),
-        GuardrailValue::Array(vec![message("user", "email a@example.com")]),
-    );
+    data.insert("model".to_owned(), model);
+    data.insert("messages".to_owned(), GuardrailValue::Array(messages));
     data
 }
 
@@ -611,26 +607,25 @@ fn response_with(breakdown: &str, payload: &str) -> LakeraResponse {
 }
 
 fn multimodal_data() -> Data {
+    let turn = multimodal_turn();
     let mut data = chat_data();
-    data.insert(
-        "messages".to_owned(),
-        GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
-            ("role".to_owned(), GuardrailValue::Text("user".to_owned())),
-            (
-                "content".to_owned(),
-                GuardrailValue::Array(vec![message("text", "hi")]),
-            ),
-        ]))]),
-    );
+    data.insert("messages".to_owned(), GuardrailValue::Array(vec![turn]));
     data
 }
 
+fn multimodal_turn() -> GuardrailValue {
+    let role = GuardrailValue::Text("user".to_owned());
+    let content = GuardrailValue::Array(vec![message("text", "hi")]);
+    let mut turn = BTreeMap::new();
+    turn.insert("role".to_owned(), role);
+    turn.insert("content".to_owned(), content);
+    GuardrailValue::Object(turn)
+}
+
 fn instructions_data() -> Data {
+    let brief = GuardrailValue::Text("be brief".to_owned());
     let mut data = chat_data();
-    data.insert(
-        "instructions".to_owned(),
-        GuardrailValue::Text("be brief".to_owned()),
-    );
+    data.insert("instructions".to_owned(), brief);
     data
 }
 
