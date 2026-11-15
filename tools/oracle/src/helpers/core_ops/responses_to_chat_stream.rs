@@ -94,13 +94,16 @@ fn stateless_steps(
     events: &[Map<String, Value>],
     shared_map: Option<BTreeMap<i64, i64>>,
 ) -> HelperResult {
-    let shares_map = shared_map.is_some();
+    let keep_slots = shared_map.is_some();
     let mut map: ToolCallIndices = shared_map.unwrap_or_default();
     let mut steps = Vec::with_capacity(events.len());
     for event in events {
-        let indices = if shares_map { Some(&mut map) } else { None };
-        let chunk = translate_event(&Value::Object(event.clone()), indices, FACTORY)
-            .map_err(|error| failure(&error))?;
+        let chunk = translate_event(
+            &Value::Object(event.clone()),
+            keep_slots.then_some(&mut map),
+            FACTORY,
+        )
+        .map_err(|error| failure(&error))?;
         steps.push(rendered(&chunk)?);
     }
     Ok(json!({ "steps": steps }))
