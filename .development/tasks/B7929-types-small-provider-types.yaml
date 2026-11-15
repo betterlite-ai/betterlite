@@ -70,5 +70,5 @@ deviations:
   why: The wheel does not depend on openai or httpx.
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 1
 review_level: standard

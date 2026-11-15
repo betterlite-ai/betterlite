@@ -1,0 +1,38 @@
+kind: helper
+name: history-pages-offset
+call:
+  b4501:
+    seed:
+      lenses:
+        lens-a:
+          version: 0
+          data:
+            id: lens-a
+            scope: {}
+            settings: {name: lens, model: gpt-4o, context: cite}
+            created_at: "2026-01-01T00:00:00Z"
+            next_run_at: "2026-01-01T00:15:00Z"
+            budget_month: "2026-01"
+            jobs:
+              - id: job-a1
+                created_at: "2026-01-03T00:00:00Z"
+                start: "2026-01-03T00:00:00Z"
+                end: "2026-01-03T00:00:00Z"
+                settings: {name: lens, model: gpt-4o, context: cite}
+                revision: 1
+      runs:
+        job-r1:
+          lens_id: lens-a
+          data:
+            id: job-r1
+            created_at: "2026-01-02T00:00:00Z"
+            start: "2026-01-02T00:00:00Z"
+            end: "2026-01-02T00:00:00Z"
+            settings: {name: lens, model: gpt-4o, context: cite}
+            revision: 1
+    call:
+      operation: jobs
+      lens_id: lens-a
+      offset: 1
+env: {}
+compare: {ignore: []}

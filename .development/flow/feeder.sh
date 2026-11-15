@@ -40,22 +40,32 @@ while [[ ! -f "${L}/feeder.STOP" ]]; do
     pgrep -f "gate dispatch ${id}( |$)" > /dev/null || waiting=$((waiting + 1))
   done
   room=2
-  [[ "${waiting}" -ge 2 ]] && room=0
+  # queued args come back up to 6 a round, so a batch of parked tasks restarts within the hour (Max, 11-14); fresh picks keep 2
+  resume=6
+  # open work goes first and a fresh task only takes capacity it leaves (Max, 11-14): one flow waiting in next-slot.sh stops fresh picks, two stop resumes too
+  [[ "${waiting}" -ge 1 ]] && room=0
+  [[ "${waiting}" -ge 2 ]] && resume=0
   # a task within 10 steps of the longest open chain may run up to 4 flows over the cap (Max, 11-12), since that chain sets the end date
   chain_room=${room}
   [[ $((cap + 4 - count)) -lt "${chain_room}" ]] && chain_room=$((cap + 4 - count))
   [[ $((cap - count)) -lt "${room}" ]] && room=$((cap - count))
+  [[ $((cap - count)) -lt "${resume}" ]] && resume=$((cap - count))
   # a flow that died without finishing left its arguments behind, oldest first
   stale=$(find "${L}/flows" -maxdepth 1 -name '*.args' -printf '%T@ %p\n')
   stale=$(LC_ALL=C sort -n <<< "${stale}")
   stale=$(cut -d' ' -f2- <<< "${stale}")
   for args in ${stale}; do
-    [[ "${room}" -gt 0 ]] || break
     id=$(basename "${args}" .args)
     grep -q -x -F "${id}" <<< "${flows}" && continue
     if grep -q '^status: done' "${main}/.development/backlog/${id}.yaml" 2> /dev/null; then
       rm -f -- "${args}"
       continue
+    fi
+    # a queued flow left for the next round keeps fresh picks out of this one
+    if [[ "${resume}" -le 0 ]]; then
+      room=0
+      chain_room=0
+      break
     fi
     if ! run=$(jq -e -r .run "${args}" 2> /dev/null); then
       mv -- "${args}" "${args}.unread"
@@ -69,6 +79,7 @@ while [[ ! -f "${L}/feeder.STOP" ]]; do
     land_only=$(jq -r .land_only "${args}")
     printf '%(%H:%M)T %s\n' -1 "${id} resumed by the feeder (${run})" >> "${events}"
     GRANT=${grant} CI_ROUNDS=${ci_rounds} CONFLICTS=${conflicts} LAND_ONLY=${land_only} setsid -f bash "${P}/dispatch-flow.sh" "${id}" "${run}" "${note}" > /dev/null 2>&1 < /dev/null
+    resume=$((resume - 1))
     room=$((room - 1))
     chain_room=$((chain_room - 1))
     sleep 5

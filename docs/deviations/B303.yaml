@@ -1,0 +1,13 @@
+task: B303
+deviations:
+  - what: A request api_base or base_url never reaches client construction, so a clientside request keeps the configured
+      deployment base while LiteLLM copies the request value into the deployment params.
+    why: The architect requires configuration-only URLs, and B052 owns the request api_base 400 through
+      is_request_body_safe. Client key overrides remain supported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/clientside_credential_handler.py#L76-L105
+  - what: tpm, rpm, max_parallel_requests and default_max_parallel_requests are read as unsigned 32-bit numbers, so a negative value or one above 4294967295 is a config error that names the key.
+    why: The section reuses the config reader every other integer limit uses, and a negative cap or rate limit has no meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5145-L5190
+  - what: ChatRequest::parse still refuses a request api_key as unsupported, and only parse_with_api_key accepts it.
+    why: The caller of parse forwards unknown keys to the provider body, so accepting the key there would send it upstream. The route moves to parse_with_api_key when B016 wires the clientside credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3937-L3970

@@ -1,0 +1,25 @@
+kind: helper
+name: fireworks-ai-chat-params-reasoning-effort-forms
+call:
+  b6071:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/effort-capable", model_info: {litellm_provider: fireworks_ai, supports_reasoning: true}}
+    steps:
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: "high"}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: {effort: "low"}}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: {effort: true}}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: {effort: false}}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: "auto"}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: {effort: "auto"}}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: {budget: 3}}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: true}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: false}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: 1}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: null}}
+      - {op: map_params, model: "effort-capable", non_default_params: {reasoning_effort: {effort: null}}}
+      - {op: map_params, model: "effort-capable", optional_params: {temperature: 0.2}, non_default_params: {reasoning_effort: "medium", top_p: 0.9}}
+      - {op: map_params, model: "unknown-model", non_default_params: {reasoning_effort: "high"}}
+      - {op: map_params, model: "effort-capable", non_default_params: {thinking: null, reasoning_effort: "high"}}
+      - {op: map_params, model: "effort-capable", non_default_params: {thinking: {type: "enabled"}}}
+env: {}
+compare: {ignore: []}

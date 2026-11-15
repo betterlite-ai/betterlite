@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-options-penalty-model
+call:
+  gemini_options:
+    safety_settings: null
+    steps:
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {frequency_penalty: 0.1, presence_penalty: 0.2}
+        optional_params: {}
+      - op: options
+        model: gemini-3-pro-preview
+        non_default_params: {frequency_penalty: 0.1, presence_penalty: 0.2}
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro-preview-06-05
+        non_default_params: {frequency_penalty: 0.1, presence_penalty: 0.2}
+        optional_params: {}
+      - op: options
+        model: vertex_ai/gemini-2.5-pro-preview-06-05
+        non_default_params: {frequency_penalty: 0.1, presence_penalty: 0.2}
+        optional_params: {}
+env: {}
+compare: {ignore: []}

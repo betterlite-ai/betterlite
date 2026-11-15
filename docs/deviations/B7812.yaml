@@ -1,0 +1,5 @@
+task: B7812
+deviations:
+  - what: A query vector with a NaN or infinite value is refused before the request is built, with an error that names the position.
+    why: JSON has no spelling for those values. LiteLLM's json.dumps writes NaN or Infinity, S3 Vectors rejects the body, and the caller gets a provider error with no hint of the cause.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L137
