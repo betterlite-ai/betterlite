@@ -1,0 +1,23 @@
+kind: helper
+name: prefixed_digest_preserves_database_key
+call:
+  history_attribution:
+    keys:
+      - '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      - 'hashed-jwt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      - 'hashed-jwt-0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF'
+      - 'hashed-jwt-hashed-jwt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      - 'HASHED-JWT-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      - 'hashed-jwt-'
+      - 'hashed-jwt-0123456789abcdef'
+      - 'hashed-jwt-g123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      - 'hashed-jwt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0'
+      - 'sk-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      - ''
+    windows:
+      - digest: 'hashed-jwt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+        start: '2026-03-01T00:00:00'
+        end: '2026-04-01T00:00:00'
+    rows: []
+env: {}
+compare: {ignore: []}

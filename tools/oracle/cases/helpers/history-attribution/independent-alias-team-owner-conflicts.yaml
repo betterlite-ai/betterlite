@@ -1,0 +1,20 @@
+kind: helper
+name: independent_alias_team_owner_conflicts
+call:
+  history_attribution:
+    keys: []
+    windows: []
+    rows:
+      - {digest: both-agree, first_alias: alias, last_alias: alias, first_team: team, last_team: team, first_owner: owner, last_owner: owner}
+      - {digest: alias-conflicts, first_alias: old, last_alias: new, first_team: team, last_team: team, first_owner: owner, last_owner: owner}
+      - {digest: team-conflicts, first_alias: alias, last_alias: alias, first_team: old, last_team: new, first_owner: owner, last_owner: owner}
+      - {digest: owner-conflicts, first_alias: alias, last_alias: alias, first_team: team, last_team: team, first_owner: old, last_owner: new}
+      - {digest: first-only, first_alias: alias, last_alias: null, first_team: team, last_team: null, first_owner: owner, last_owner: null}
+      - {digest: last-only, first_alias: null, last_alias: alias, first_team: null, last_team: team, first_owner: null, last_owner: owner}
+      - {digest: mixed-sides, first_alias: alias, last_alias: null, first_team: null, last_team: team, first_owner: old, last_owner: new}
+      - {digest: everything-conflicts, first_alias: a, last_alias: b, first_team: c, last_team: d, first_owner: e, last_owner: f}
+      - {digest: nothing-named, first_alias: null, last_alias: null, first_team: null, last_team: null, first_owner: null, last_owner: null}
+      - {digest: empty-text-agrees, first_alias: '', last_alias: '', first_team: '', last_team: null, first_owner: null, last_owner: ''}
+      - {digest: empty-text-conflicts, first_alias: '', last_alias: alias, first_team: team, last_team: '', first_owner: '', last_owner: ''}
+env: {}
+compare: {ignore: []}
