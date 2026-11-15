@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use async_trait::async_trait;
 use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
+use betterlite_db::auxiliary_repository::file_content::ManagedFileContentRepository;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_models::decisions::Json;
 use betterlite_models::full_model_metadata::parameters::SupportedParameterSource;
@@ -281,6 +282,34 @@ async fn repository_failures_propagate() {
             RepoCall::Delete("r".to_owned())
         ]
     );
+}
+
+#[tokio::test]
+async fn managed_repository_port_delegates() {
+    let backend = LiteLlmDbStorageBackend {
+        contents: ManagedFileContentRepository::new(
+            None,
+            Arc::new(|_object: &str| Box::pin(async { Ok(()) })),
+        ),
+    };
+    let upload = backend
+        .upload_file(b"x", "a", "text/plain", UploadOptions::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        upload,
+        StorageError::Repository(TableError::Database(_))
+    ));
+    let download = backend.download_file("litellm_db://r").await.unwrap_err();
+    assert!(matches!(
+        download,
+        StorageError::Repository(TableError::Database(_))
+    ));
+    let delete = backend.delete_file("litellm_db://r").await.unwrap_err();
+    assert!(matches!(
+        delete,
+        StorageError::Repository(TableError::Database(_))
+    ));
 }
 
 #[test]
