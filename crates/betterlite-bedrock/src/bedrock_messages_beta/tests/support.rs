@@ -205,16 +205,16 @@ impl Fixture {
             ModelCostMap::parse(MODEL_COST.as_bytes()).expect("the model cost map parses");
         let patterns = CandidatePatterns::new().expect("the candidate patterns compile");
         let runtime = serde_json::from_str(MODEL_COST).expect("the raw catalog parses");
-        let mut bundled = BundledCatalog::default();
+        let typed = ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("an empty catalog");
+        let packaged = BundledCatalog::default().get();
+        let client = NoHfTransport;
+        let base_url = HF_CONFIG_BASE_URL.to_owned();
         Self {
             entries,
-            typed: ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("an empty catalog"),
-            packaged: bundled.get(),
+            typed,
+            packaged,
             provider_catalog: Catalog::new(),
-            hf: HfConfigClient {
-                client: NoHfTransport,
-                base_url: HF_CONFIG_BASE_URL.to_owned(),
-            },
+            hf: HfConfigClient { client, base_url },
             known_model_names: BTreeSet::new(),
             custom_providers: BTreeSet::new(),
             environment: BTreeMap::new(),

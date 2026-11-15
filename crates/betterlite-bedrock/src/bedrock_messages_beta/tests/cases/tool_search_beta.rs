@@ -30,48 +30,21 @@ fn replaces_advanced_beta() {
     assert!(betas(SEARCH, ADVANCED, "claude-sonnet-4-5", None).is_empty());
 }
 
-// tool examples ride along when the provider keeps them, and an added beta always brings them
-fn keeps_examples_beta() {
-    assert_eq!(
-        betas(
-            SEARCH,
-            ADVANCED,
-            "fixture-tool-search",
-            Some("bedrock_mantle")
-        ),
-        [TOOL_EXAMPLES_BETA, TOOL_SEARCH_BETA]
-    );
-    assert_eq!(
-        betas(
-            WITH_EXAMPLES,
-            ADVANCED,
-            "fixture-tool-search",
-            Some("bedrock_mantle")
-        ),
-        [TOOL_SEARCH_BETA]
-    );
+fn mantle(tools: &str, header: &str) -> Vec<String> {
+    betas(tools, header, "fixture-tool-search", Some("bedrock_mantle"))
 }
 
-// input examples or programmatic calls never change the added beta, and a user beta brings examples
+// tool examples ride along when the provider keeps them, and an added beta always brings them
+fn keeps_examples_beta() {
+    let both = [TOOL_EXAMPLES_BETA, TOOL_SEARCH_BETA];
+    assert_eq!(mantle(SEARCH, ADVANCED), both);
+    assert_eq!(mantle("[]", SEARCH_BETA), both);
+}
+
+// input examples or programmatic calls never change the added beta
 fn keeps_added_examples() {
-    assert_eq!(
-        betas(
-            PROGRAMMATIC,
-            ADVANCED,
-            "fixture-tool-search",
-            Some("bedrock_mantle")
-        ),
-        [TOOL_SEARCH_BETA]
-    );
-    assert_eq!(
-        betas(
-            "[]",
-            SEARCH_BETA,
-            "fixture-tool-search",
-            Some("bedrock_mantle")
-        ),
-        [TOOL_EXAMPLES_BETA, TOOL_SEARCH_BETA]
-    );
+    assert_eq!(mantle(WITH_EXAMPLES, ADVANCED), [TOOL_SEARCH_BETA]);
+    assert_eq!(mantle(PROGRAMMATIC, ADVANCED), [TOOL_SEARCH_BETA]);
 }
 
 // the adjust discards the user's advanced beta before the provider filter sees it
