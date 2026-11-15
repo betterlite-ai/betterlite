@@ -7,7 +7,7 @@ use betterlite_config::sections::compatible_image_credentials::{
     AIML_DEFAULT_API_BASE, COMETAPI_DEFAULT_API_BASE, Host, Settings,
 };
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 fn settings(environment: &[(&str, &str)]) -> Settings {
     let lookup = environment

@@ -25,8 +25,8 @@ pub fn validate_environment(
     api_key: Option<&SecretString>,
     headers: &ImageHeaders,
 ) -> Result<ImageHeaders, ImageCredentialError> {
-    let (_base, key) = settings.resolve(host, None, api_key);
-    let Some(key) = key else {
+    let (_base, resolved) = settings.resolve(host, None, api_key);
+    let Some(key) = resolved else {
         return Err(match host {
             Host::Aiml => ImageCredentialError::MissingAimlKey,
             Host::CometApi => ImageCredentialError::MissingCometApiKey,

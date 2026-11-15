@@ -8,15 +8,13 @@ use std::str::FromStr as _;
 use std::sync::Mutex;
 
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::sections::compatible_image_credentials::{
-    AIML_DEFAULT_API_BASE, COMETAPI_DEFAULT_API_BASE, Host, Settings,
-};
+use betterlite_config::sections::compatible_image_credentials::{Host, Settings};
 use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::error::ImageCostError;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use rstest::rstest;
 use rust_decimal::Decimal;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::credentials::{complete_url, validate_environment};
 use super::error::{CompatibleImageReplyError, ImageCredentialError, ImageOptionError};

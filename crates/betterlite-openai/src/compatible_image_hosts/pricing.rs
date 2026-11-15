@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use super::host_provider;
 use crate::api::image_contracts::records::ImageResponse;
 
+#[derive(Clone, Copy)]
 pub enum ImageBilling<'response> {
     Response(&'response ImageResponse),
     Other,
