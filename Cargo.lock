@@ -1601,6 +1601,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "caseless",
  "chrono",
  "futures-util",
  "hex",
@@ -1687,6 +1688,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-postgres-fixture",
+ "betterlite-redis",
  "betterlite-roi",
  "betterlite-secret-managers",
  "betterlite-secrets",
@@ -2386,6 +2388,7 @@ dependencies = [
 name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
@@ -2533,6 +2536,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
@@ -2543,6 +2547,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
@@ -2550,6 +2555,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "rand 0.10.3",
