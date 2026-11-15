@@ -1,7 +1,3 @@
-use std::collections::BTreeMap;
-
-use serde::de::IgnoredAny;
-
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
@@ -11,7 +7,7 @@ const VARIABLE: &str = "GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS";
 
 // The TTL is an environment variable only, so every key of the file is ignored by this section
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw(BTreeMap<String, IgnoredAny>);
+pub struct Raw {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {

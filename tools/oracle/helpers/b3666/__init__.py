@@ -105,7 +105,12 @@ class Hooked(Protocol):
     ) -> None: ...
 
 
-class Probe(CustomGuardrail):
+# a custom metaclass skips mypy's __init_subclass__ simulation, which reports Any from **kwargs
+class ProbeMeta(type):
+    pass
+
+
+class Probe(CustomGuardrail, metaclass=ProbeMeta):
     keys: list[UserAPIKeyAuth]
 
     @override
@@ -132,19 +137,14 @@ class Probe(CustomGuardrail):
 class StoredCache(DualCache):
     def __init__(self) -> None:
         super().__init__()
-        self.entries: dict[str, list[str]] = {}
         self.last: list[str] = []
-
-    @override
-    async def async_get_cache(self, key: str, *args: Json, **kwargs: Json) -> list[str] | None:
-        return self.entries.get(key)
 
     @override
     async def async_set_cache(
         self, key: str, value: list[str], local_only: bool = False, **kwargs: Json
     ) -> None:
-        self.entries[key] = value
         self.last = value
+        await super().async_set_cache(key=key, value=value, local_only=local_only, **kwargs)
 
 
 def build_probe(settings: Settings) -> Hooked:
