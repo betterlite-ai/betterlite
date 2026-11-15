@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
 use std::future::{Future, ready};
 use std::io;
 use std::str::from_utf8;
@@ -24,6 +25,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 use tracing::subscriber::DefaultGuard;
+use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
 use crate::database_replica::availability::Availability;
@@ -113,10 +115,9 @@ impl Case {
         reader_fixture: Option<PostgresFixture>,
     ) -> Self {
         let writer = store(&writer_fixture);
-        let reader = match &reader_fixture {
-            Some(fixture) => store(fixture),
-            None => store(&writer_fixture),
-        };
+        let reader = reader_fixture
+            .as_ref()
+            .map_or_else(|| store(&writer_fixture), store);
         let separate_reader = reader_fixture.is_some();
         let mut fixtures = vec![writer_fixture];
         fixtures.extend(reader_fixture);
@@ -388,7 +389,7 @@ pub(crate) struct NoHooks;
 impl ServiceHooks for NoHooks {
     fn success(&self, _event: &ServiceEvent) {}
 
-    fn failure(&self, _event: &ServiceEvent, _error: &(dyn std::error::Error + Send + Sync)) {}
+    fn failure(&self, _event: &ServiceEvent, _error: &(dyn Error + Send + Sync)) {}
 }
 
 pub(crate) struct OpenGate;
@@ -400,14 +401,9 @@ impl BreakerGate for OpenGate {
 
     fn exit(&self, _admission: BreakerAdmission) {}
 
-    fn record_failure(&self, _error: &(dyn std::error::Error + Send + Sync)) {}
+    fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {}
 
-    fn swallowed(
-        &self,
-        _admission: &BreakerAdmission,
-        _error: &(dyn std::error::Error + Send + Sync),
-    ) {
-    }
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
 }
 
 #[derive(Clone, Default)]
@@ -426,12 +422,12 @@ impl CapturedLogs {
 }
 
 impl io::Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -439,7 +435,7 @@ impl io::Write for CapturedLogs {
     }
 }
 
-impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for CapturedLogs {
+impl<'writer> MakeWriter<'writer> for CapturedLogs {
     type Writer = Self;
 
     fn make_writer(&'writer self) -> Self::Writer {

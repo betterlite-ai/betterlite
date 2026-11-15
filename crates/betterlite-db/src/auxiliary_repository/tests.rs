@@ -97,8 +97,8 @@ async fn default_read_and_explicit_writer() {
         AutoRouterSessionTable,
     );
     let routed_access = routed.access().unwrap();
-    assert!(eq(routed_access.read, &case.reader));
-    assert!(eq(routed_access.write, &case.writer));
+    assert!(eq(routed_access.read, &raw const case.reader));
+    assert!(eq(routed_access.write, &raw const case.writer));
 
     let pinned = PrismaTableRepository::<AutoRouterSessionTable>::new(
         Some(case.client()),
@@ -107,15 +107,15 @@ async fn default_read_and_explicit_writer() {
     )
     .with_writer();
     let pinned_access = pinned.access().unwrap();
-    assert!(eq(pinned_access.read, &case.writer));
-    assert!(eq(pinned_access.write, &case.writer));
+    assert!(eq(pinned_access.read, &raw const case.writer));
+    assert!(eq(pinned_access.write, &raw const case.writer));
 
     case.availability
         .reader_unavailable
         .store(true, Ordering::SeqCst);
     let fallback_access = routed.access().unwrap();
-    assert!(eq(fallback_access.read, &case.writer));
-    assert!(eq(fallback_access.write, &case.writer));
+    assert!(eq(fallback_access.read, &raw const case.writer));
+    assert!(eq(fallback_access.write, &raw const case.writer));
     case.close().await;
 }
 
@@ -336,12 +336,10 @@ async fn status_load_ignores_corrupt_blob() {
         repository.load_status("corrupt").await.unwrap(),
         Some("completed".to_owned())
     );
-    assert!(
-        repository
-            .load_batch::<BatchObject>("corrupt")
-            .await
-            .is_err()
-    );
+    assert!(matches!(
+        repository.load_batch::<BatchObject>("corrupt").await,
+        Err(TableError::Batch(_))
+    ));
     assert_eq!(repository.load_status("missing").await.unwrap(), None);
     assert_eq!(
         repository
@@ -667,8 +665,8 @@ async fn latest_model(
     api_key: &str,
     session_id: &str,
 ) -> Result<Option<String>, TableError> {
-    let row = repository.find_latest_for_key(api_key, session_id).await?;
-    Ok(row.map(|row| row.last_model))
+    let found = repository.find_latest_for_key(api_key, session_id).await?;
+    Ok(found.map(|session| session.last_model))
 }
 
 async fn allow_null_turn_at(case: &Case) {

@@ -25,14 +25,14 @@ struct ObjectCall {
     object: Value,
 }
 
-fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> {
+fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: message.to_owned(),
+        message,
     })
 }
 
@@ -50,15 +50,15 @@ impl crate::helpers::Helper for Op {
         let mut calls: Vec<Value> = Vec::new();
         for call in &input.json_strings {
             let stored = serde_json::to_vec(&call.json)
-                .map_err(|source| helper_error("InvalidOutput", &source.to_string()))?;
+                .map_err(|source| helper_error("InvalidOutput", source.to_string()))?;
             calls.push(decoded(&call.name, &stored));
         }
         for call in &input.objects {
             let stored = serde_json::to_vec(&call.object)
-                .map_err(|source| helper_error("InvalidOutput", &source.to_string()))?;
+                .map_err(|source| helper_error("InvalidOutput", source.to_string()))?;
             calls.push(decoded(&call.name, &stored));
         }
         serde_json::to_value(json!({ "calls": calls }))
-            .map_err(|source| helper_error("InvalidOutput", &source.to_string()))
+            .map_err(|source| helper_error("InvalidOutput", source.to_string()))
     }
 }

@@ -77,13 +77,12 @@ use super::super::repository::TableBinding;
 #[case::table_binding_auditlog(PhantomData::<AuditLog>, "litellm_auditlog", "LiteLLM_AuditLog")]
 #[case::table_binding_adaptiveroutersession(PhantomData::<AdaptiveRouterSession>, "litellm_adaptiveroutersession", "LiteLLM_AdaptiveRouterSession")]
 #[case::table_binding_retiredagent(PhantomData::<RetiredAgent>, "litellm_retiredagent", "LiteLLM_RetiredAgent")]
-fn table_binding<T: TableBinding>(
-    #[case] _binding: PhantomData<T>,
-    #[case] name: &str,
-    #[case] table: &str,
-) {
-    assert_eq!(T::NAME, name);
-    assert_eq!(T::TABLE, table);
+fn table_binding<T>(#[case] binding: PhantomData<T>, #[case] name: &str, #[case] table: &str)
+where
+    T: TableBinding,
+{
+    assert_eq!(T::NAME, name, "binding {binding:?}");
+    assert_eq!(T::TABLE, table, "binding {binding:?}");
     assert!(super::super::bindings::ALL.contains(&(T::NAME, T::TABLE)));
 }
 

@@ -1,7 +1,7 @@
 use betterlite_redis::config_sync::table_actions::TableActions as _;
 
 use super::super::bindings::UISettings;
-use super::super::repository::PrismaTableRepository;
+use super::super::repository::{PrismaTableRepository, TableError};
 use super::super::user_banner::{BannerActions, UiSettingsRow};
 use super::support::{Case, Journal, recording_publisher};
 
@@ -64,7 +64,10 @@ async fn banner_create_many_rolls_back_a_partial_batch() {
             ui_settings: "again".to_owned(),
         },
     ];
-    assert!(table.create_many(rows).await.is_err());
+    assert!(matches!(
+        table.create_many(rows).await,
+        Err(TableError::Database(_))
+    ));
     assert!(journal.entries().is_empty());
     let client = case.writer.session().await.unwrap();
     let stored = client

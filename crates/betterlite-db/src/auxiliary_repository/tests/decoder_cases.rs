@@ -29,9 +29,15 @@ fn batch_object_and_json_string_validation() {
 #[case::unknown_status(r#"{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"batch","status":"done"}"#)]
 #[case::wrong_object(r#"{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"list","status":"validating"}"#)]
 fn batch_required_fields_fail(#[case] stored: &str) {
-    assert!(decode_managed_batch_record::<BatchObject>(stored.as_bytes()).is_err());
+    assert!(matches!(
+        decode_managed_batch_record::<BatchObject>(stored.as_bytes()),
+        Err(ManagedBatchRecordError::Stored(_))
+    ));
     let quoted = serde_json::to_string(stored).unwrap();
-    assert!(decode_managed_batch_record::<BatchObject>(quoted.as_bytes()).is_err());
+    assert!(matches!(
+        decode_managed_batch_record::<BatchObject>(quoted.as_bytes()),
+        Err(ManagedBatchRecordError::Stored(_))
+    ));
 }
 
 #[rstest]
@@ -55,7 +61,10 @@ fn batch_missing_or_falsey_blob_returns_none(#[case] stored: &str) {
 #[case::null_string(r#""null""#)]
 #[case::empty_object_string(r#""{}""#)]
 fn truthy_null_json_is_validated(#[case] stored: &str) {
-    assert!(decode_managed_batch_record::<BatchObject>(stored.as_bytes()).is_err());
+    assert!(matches!(
+        decode_managed_batch_record::<BatchObject>(stored.as_bytes()),
+        Err(ManagedBatchRecordError::Stored(_))
+    ));
 }
 
 const PADDED_PREFIX: &str = r#"{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"batch","status":"validating","padding":""#;
