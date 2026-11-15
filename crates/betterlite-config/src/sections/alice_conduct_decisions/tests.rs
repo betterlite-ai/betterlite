@@ -6,7 +6,7 @@ use secrecy::ExposeSecret as _;
 
 use super::{DEFAULT_API_BASE, Raw, Settings};
 use crate::loader::ConfigError;
-use crate::sections::Section;
+use crate::sections::Section as _;
 use crate::sections::guardrail_params::base::UnreachableFallback;
 
 fn settings_from(yaml: &str, env: &[(&str, &str)]) -> Settings {

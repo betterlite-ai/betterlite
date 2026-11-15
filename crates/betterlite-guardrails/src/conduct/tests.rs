@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::{Ready, ready};
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -44,7 +44,7 @@ impl ConductCheck for FixedCheck {
         &self,
         data: &BTreeMap<String, GuardrailValue>,
         call_type: &str,
-    ) -> Ready<Result<ConductDecision, ConductError>> {
+    ) -> impl Future<Output = Result<ConductDecision, ConductError>> + Send {
         self.calls
             .lock()
             .expect("the call log is not poisoned")

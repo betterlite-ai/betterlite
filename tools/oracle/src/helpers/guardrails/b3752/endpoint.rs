@@ -42,7 +42,7 @@ pub(super) enum Endpoint {
 }
 
 impl Endpoint {
-    pub(super) fn base(&self) -> &str {
+    pub(super) const fn base(&self) -> &str {
         match self {
             Self::Serving { base, .. } | Self::Silent { base, .. } | Self::Refused { base } => {
                 base.as_str()

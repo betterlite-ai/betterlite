@@ -60,7 +60,7 @@ enum Answer {
     Timeout,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Serialize)]
 struct ScriptedVerdict {
     #[serde(skip_serializing_if = "Option::is_none")]
     verdict: Option<String>,
@@ -83,7 +83,10 @@ struct ScriptedReplacement {
 fn verdict(name: &str) -> ScriptedVerdict {
     ScriptedVerdict {
         verdict: Some(name.to_owned()),
-        ..ScriptedVerdict::default()
+        message: None,
+        correlation_id: None,
+        categories: None,
+        replacements: None,
     }
 }
 
@@ -412,7 +415,9 @@ async fn alice_guardrail_block_raises_400_with_the_verdict_message() {
     let harness = serve(answer(ScriptedVerdict {
         verdict: Some("BLOCK".to_owned()),
         message: Some("policy says no".to_owned()),
-        ..ScriptedVerdict::default()
+        correlation_id: None,
+        categories: None,
+        replacements: None,
     }))
     .await;
     let instance = guardrail(
@@ -454,6 +459,9 @@ async fn alice_guardrail_block_without_a_message_uses_the_default_text() {
 async fn alice_guardrail_mask_applies_replacements_in_order() {
     let harness = serve(answer(ScriptedVerdict {
         verdict: Some("MASK".to_owned()),
+        message: None,
+        correlation_id: None,
+        categories: None,
         replacements: Some(vec![
             ScriptedReplacement {
                 index: 0,
@@ -468,7 +476,6 @@ async fn alice_guardrail_mask_applies_replacements_in_order() {
                 text: "last".to_owned(),
             },
         ]),
-        ..ScriptedVerdict::default()
     }))
     .await;
     let instance = guardrail(
@@ -512,11 +519,13 @@ async fn alice_guardrail_mask_refuses_a_malformed_verdict(#[case] body: &str) {
 async fn alice_guardrail_mask_without_texts_cannot_apply_a_replacement() {
     let harness = serve(answer(ScriptedVerdict {
         verdict: Some("MASK".to_owned()),
+        message: None,
+        correlation_id: None,
+        categories: None,
         replacements: Some(vec![ScriptedReplacement {
             index: 0,
             text: "x".to_owned(),
         }]),
-        ..ScriptedVerdict::default()
     }))
     .await;
     let instance = guardrail(
@@ -542,9 +551,10 @@ async fn alice_guardrail_mask_without_texts_cannot_apply_a_replacement() {
 async fn alice_guardrail_detect_logs_the_correlation_id_and_categories() {
     let harness = serve(answer(ScriptedVerdict {
         verdict: Some("DETECT".to_owned()),
+        message: None,
         correlation_id: Some("corr-1".to_owned()),
         categories: Some(vec!["cat-a".to_owned(), "cat-b".to_owned()]),
-        ..ScriptedVerdict::default()
+        replacements: None,
     }))
     .await;
     let instance = guardrail(
@@ -587,8 +597,11 @@ async fn alice_guardrail_unrecognized_verdict_fails_closed() {
 #[tokio::test]
 async fn alice_guardrail_missing_verdict_fails_open_when_configured() {
     let harness = serve(answer(ScriptedVerdict {
+        verdict: None,
         message: Some("no verdict".to_owned()),
-        ..ScriptedVerdict::default()
+        correlation_id: None,
+        categories: None,
+        replacements: None,
     }))
     .await;
     let instance = guardrail(
