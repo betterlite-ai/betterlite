@@ -64,9 +64,7 @@ struct OauthFixture;
 
 impl OauthAccess for OauthFixture {
     fn access_token(&mut self) -> impl Future<Output = Result<SecretString, XaiOauthError>> + Send {
-        ready(Err::<SecretString, XaiOauthError>(
-            XaiOauthError::LoginRequired,
-        ))
+        ready(Err(XaiOauthError::LoginRequired))
     }
 }
 
