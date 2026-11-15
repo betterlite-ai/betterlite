@@ -1,0 +1,24 @@
+kind: helper
+name: shadow-routing-decision-absent
+call:
+  b4081:
+    operation: routing
+    response: {}
+    metadata: {}
+    routed_model: ""
+calls:
+  - b4081:
+      operation: routing
+      response: {}
+      metadata:
+        routing_decision: x
+      routed_model: ""
+  - b4081:
+      operation: routing
+      response: {}
+      metadata:
+        routing_decision:
+          routed_model: m
+      routed_model: ""
+env: {}
+compare: {ignore: []}

@@ -1502,11 +1502,14 @@ dependencies = [
  "betterlite-env",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-redis",
  "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-vertex",
  "chrono",
+ "deadpool-postgres",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
  "insta",
@@ -1529,11 +1532,13 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
  "unicode_titlecase",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1693,6 +1698,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-postgres-fixture",
+ "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",
  "betterlite-secret-managers",
@@ -1731,6 +1737,7 @@ dependencies = [
  "unicode-normalization",
  "url",
  "uuid",
+ "whoami",
 ]
 
 [[package]]
@@ -1836,6 +1843,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-secret-managers",
  "chrono",
  "indexmap 2.14.2",
  "jiff",
@@ -1848,6 +1856,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -2714,6 +2723,7 @@ name = "betterlite-policy"
 version = "0.1.0"
 dependencies = [
  "betterlite-auth",
+ "chrono",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
  "mutants",
@@ -3007,9 +3017,11 @@ name = "betterlite-rate-limit"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
+ "betterlite-db",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
@@ -3363,15 +3375,19 @@ dependencies = [
  "icu_properties",
  "indexmap 2.14.2",
  "jiff",
+ "jsonwebtoken",
  "multipart-rs",
  "mutants",
  "num-traits",
  "opentelemetry",
  "opentelemetry_sdk",
+ "pem",
  "percent-encoding",
  "phf",
+ "pkcs8",
  "rand 0.10.3",
  "rcgen",
+ "redis",
  "regex",
  "rmcp",
  "rquickjs",

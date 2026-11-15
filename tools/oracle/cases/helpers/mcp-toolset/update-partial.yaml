@@ -1,0 +1,16 @@
+kind: helper
+name: update_partial
+call:
+  b4681:
+    operation: update
+    timestamp: '2026-01-02T03:04:05'
+    touched_by: tester
+    rows:
+      - {toolset_id: ts-1, toolset_name: alpha, description: first, tools: [{server_id: s1, tool_name: t1}]}
+      - {toolset_id: ts-2, toolset_name: beta}
+    request:
+      toolset_id: ts-1
+      toolset_name: renamed
+env: {}
+compare:
+  ignore: []

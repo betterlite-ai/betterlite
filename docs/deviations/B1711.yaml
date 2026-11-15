@@ -1,0 +1,15 @@
+task: B1711
+deviations:
+  - what: A missing database pool is treated like a driver failure, so the probe counts as a miss with no fresh evidence instead of raising.
+    why: betterlite reports an unconfigured pool as NoDbConnected inside the same catch boundary LiteLLM uses for driver errors; a working LiteLLM setup always has a Prisma client, so nothing relies on the exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L169-L180
+  - what: The probe window is a pair of naive timestamps, so a timezone-aware window is not accepted and its cache key never carries a UTC offset.
+    why: LiteLLM binds the window to a timestamp-without-zone parameter, and betterlite's callers hold the window as the same naive UTC values, so an offset suffix would only split one window across two cache keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L379-L381
+  - what: The metadata cache and the query lock live in a SpendLogHistory value that the server owns and shares, not in module-level globals.
+    why: betterlite passes every shared dependency through a constructor, so two histories never share entries unless the caller shares one value; one process still uses one cache and one lock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L133-L165
+kept_bugs:
+  - what: Storing a value in a full cache evicts the entry that expires first even when the key is already stored, so overwriting one entry can drop another.
+    why: LiteLLM's in-memory cache evicts before it checks for the key, a bounded cache never grows past its capacity either way, and no caller depends on which entry survives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158-L177

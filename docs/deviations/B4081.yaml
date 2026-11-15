@@ -1,0 +1,18 @@
+task: B4081
+deviations:
+  - what: Costs, classifier costs and confidences are Decimal throughout instead of float, so a stamped cost keeps every digit. A number that needs more than 28 fractional digits or exceeds Decimal's maximum of about 7.9e28 is unreadable, so a stamped response_cost of that size falls back to the price map and a classifier_cost of that size reads as zero.
+    why: betterlite uses rust_decimal for financial accuracy; LiteLLM converts to float, whose range is wider, but no working setup bills an amount Decimal cannot hold, and the stamped-first and unmapped-zero behavior is otherwise identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L513-L531
+  - what: Confidence in judge verdicts is a Decimal and the clamp to [0, 1] happens in the verdict constructor, while LiteLLM clamps in the judge execution path and stores a float.
+    why: Rust keeps the confidence exact and the invariant with the value, so every verdict built through the constructor is already clamped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1369
+  - what: Field readers read a Json value on the chat surface and the typed ResponsesApiResponse on the Responses surface, not the dict-or-attribute pair of Python readers.
+    why: Rust requires explicit type handling; the mapping-versus-attribute branch of the Python reader has no Rust form, so a caller converts its response to JSON before reading.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L181-L192
+  - what: A failure detail is capped at 500 characters where it is built, not where an attempt row is written.
+    why: the attempt-row writer that applies LiteLLM's cap is owned by another task, so building a detail that already fits the cap keeps the stored text identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1260
+  - what: The public price-map fallback enters through an injected PriceMap trait rather than calling litellm.completion_cost directly.
+    why: completion_cost is a native SDK operation owned elsewhere; the reader keeps the stamped-first and zero-for-unmapped behavior at that seam.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L524-L531
+kept_bugs: []
