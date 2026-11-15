@@ -3,7 +3,7 @@
 mod fakes;
 mod postgres;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -78,7 +78,7 @@ fn gated_policy(effects: &Effects, gate: &Arc<Notify>) -> GatedPolicy {
 fn scripted(probes: &[bool], recreates: Vec<Step<bool>>) -> EngineScript {
     let mut script = EngineScript::default();
     script.probes = probes.iter().copied().map(Step::Done).collect();
-    script.recreates = recreates.into();
+    script.recreates = VecDeque::from(recreates);
     script
 }
 

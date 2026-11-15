@@ -132,7 +132,10 @@ impl FakeEngine {
         }
     }
 
-    fn take(&self, select: impl FnOnce(&mut EngineScript) -> Outcome) -> Outcome {
+    fn take<F>(&self, select: F) -> Outcome
+    where
+        F: FnOnce(&mut EngineScript) -> Outcome,
+    {
         let mut script = self
             .shared
             .script

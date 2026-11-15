@@ -122,7 +122,10 @@ impl FakeEngine {
         }
     }
 
-    fn with_script<T>(&self, select: impl FnOnce(&mut EngineScript) -> T) -> T {
+    fn with_script<T, F>(&self, select: F) -> T
+    where
+        F: FnOnce(&mut EngineScript) -> T,
+    {
         let mut script = self
             .shared
             .script
@@ -139,11 +142,10 @@ impl FakeEngine {
         }
     }
 
-    async fn settle(
-        &self,
-        effect: Effect,
-        next: impl FnOnce(&mut EngineScript) -> Option<Step<()>>,
-    ) -> Result<(), FakeError> {
+    async fn settle<F>(&self, effect: Effect, next: F) -> Result<(), FakeError>
+    where
+        F: FnOnce(&mut EngineScript) -> Option<Step<()>>,
+    {
         record(&self.shared.effects, effect);
         apply(self.with_script(next).unwrap_or(Step::Done(()))).await
     }
