@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
-use std::sync::Mutex;
 
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
@@ -10,9 +9,7 @@ use betterlite_models::fetch_policy::response::FetchResponse;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::lemonade_model_metadata::{ModelInfoClient, ModelInfoRequest};
 use betterlite_models::model_catalog_keys::ModelCostKeys;
-use betterlite_models::model_metadata_resolution::dynamic::{
-    DynamicMetadataSource, NoDynamicMetadata,
-};
+use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
 use betterlite_models::model_metadata_resolution::hf_config::{HF_CONFIG_BASE_URL, HfConfigClient};
 use betterlite_models::model_metadata_resolution::names::{
     ModelCostMap, NameNormalizers, VertexModelSets,
@@ -63,7 +60,6 @@ pub(super) struct ModelCostLookup {
     entries: IndexMap<String, Box<RawValue>>,
     vertex: VertexModelSets,
     catalog: ModelCatalog,
-    keys: Mutex<ModelCostKeys>,
 }
 
 fn build(entries: IndexMap<String, Box<RawValue>>) -> ModelCostLookup {
@@ -74,7 +70,6 @@ fn build(entries: IndexMap<String, Box<RawValue>>) -> ModelCostLookup {
         entries,
         vertex,
         catalog,
-        keys: Mutex::new(ModelCostKeys::default()),
     }
 }
 
@@ -112,32 +107,39 @@ impl ModelInfoLookup for ModelCostLookup {
             resolution: &resolution,
             normalizers: NORMALIZERS,
         };
-        let hf = HfConfigClient {
-            client: RefuseFetch,
-            base_url: HF_CONFIG_BASE_URL.to_owned(),
-        };
         let request = MetadataRequest {
             model,
             custom_llm_provider,
             api_base: None,
             api_key: None,
         };
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|_| LookupFailed)?;
-        let mut keys = self.keys.lock().map_err(|_| LookupFailed)?;
-        let raw = runtime
-            .block_on(get_model_info_helper(
-                &request,
-                &environment,
-                &mut keys,
-                &NoDynamicMetadata,
-                &hf,
-            ))
-            .map_err(|_| LookupFailed)?;
-        serde_json::from_str::<ModelInfo>(raw.get()).map_err(|_| LookupFailed)
+        query(&environment, &request)
     }
+}
+
+fn query(
+    environment: &MetadataEnvironment<'_>,
+    request: &MetadataRequest<'_>,
+) -> Result<ModelInfo, LookupFailed> {
+    let hf = HfConfigClient {
+        client: RefuseFetch,
+        base_url: HF_CONFIG_BASE_URL.to_owned(),
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| LookupFailed)?;
+    let mut keys = ModelCostKeys::default();
+    let raw = runtime
+        .block_on(get_model_info_helper(
+            request,
+            environment,
+            &mut keys,
+            &NoDynamicMetadata,
+            &hf,
+        ))
+        .map_err(|_| LookupFailed)?;
+    serde_json::from_str::<ModelInfo>(raw.get()).map_err(|_| LookupFailed)
 }
 
 #[derive(Debug, Deserialize)]

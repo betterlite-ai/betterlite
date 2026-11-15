@@ -1,14 +1,25 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::fireworks_ai_common::error::MissingApiKey;
-use betterlite_openai::fireworks_ai_common::{FireworksEnv, resolve_api_key, validate_environment};
+use betterlite_openai::fireworks_ai_common::{
+    FireworksEnv, get_session_id, resolve_api_key, validate_environment, with_session_affinity,
+};
+use betterlite_openai::fireworks_ai_cost::{FireworksPricingTiers, get_base_model_for_pricing};
+use betterlite_openai::fireworks_ai_embedding::{map_openai_params, supported_openai_params};
 use betterlite_openai::fireworks_ai_rerank::error::FireworksRerankError;
+use betterlite_openai::fireworks_ai_rerank::get_complete_url;
 use betterlite_openai::fireworks_ai_rerank::response::{UuidIds, transform_rerank_response};
 use betterlite_openai::fireworks_ai_rerank::validate_environment as validate_rerank_environment;
+use betterlite_openai::fireworks_ai_rerank::wire::{
+    OptionalRerankParams, transform_rerank_request,
+};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use super::{ApiKeyCall, HeadersCall, MixinCall, ResponseCall};
+use super::{
+    AffinityCall, ApiKeyCall, EmbeddingCall, HeadersCall, MixinCall, PricingCall, RequestCall,
+    ResponseCall, SessionCall, UrlCall,
+};
 use crate::helpers::HelperError;
 
 pub(super) fn collect<T>(
@@ -46,6 +57,72 @@ pub(super) fn api_key_answer(call: &ApiKeyCall) -> Result<Value, Box<HelperError
     let argument = call.argument.as_deref().map(SecretString::from);
     let resolved = resolve_api_key(argument.as_ref(), &env_of(&call.env));
     Ok(json!(resolved.map(|key| key.expose_secret().clone())))
+}
+
+pub(super) fn sessions_answer(items: &[SessionCall]) -> Value {
+    let mut answers = Vec::with_capacity(items.len());
+    for call in items {
+        answers.push(json!(get_session_id(&call.litellm_params)));
+    }
+    Value::Array(answers)
+}
+
+pub(super) fn affinity_answer(items: &[AffinityCall]) -> Value {
+    let mut answers = Vec::with_capacity(items.len());
+    for call in items {
+        answers.push(json!(with_session_affinity(
+            &call.headers,
+            &call.litellm_params
+        )));
+    }
+    Value::Array(answers)
+}
+
+pub(super) fn embedding_answer(items: &[EmbeddingCall]) -> Value {
+    let mut answers = Vec::with_capacity(items.len());
+    for call in items {
+        answers.push(json!({
+            "supported": supported_openai_params(&call.model),
+            "mapped": map_openai_params(
+                &call.non_default_params,
+                call.optional_params.clone(),
+                &call.model,
+            ),
+        }));
+    }
+    Value::Array(answers)
+}
+
+pub(super) fn pricing_answer(items: &[PricingCall]) -> Value {
+    let tiers = FireworksPricingTiers::default();
+    let mut answers = Vec::with_capacity(items.len());
+    for call in items {
+        answers.push(json!(get_base_model_for_pricing(&call.model, &tiers)));
+    }
+    Value::Array(answers)
+}
+
+pub(super) fn rerank_urls_answer(items: &[UrlCall]) -> Value {
+    let mut answers = Vec::with_capacity(items.len());
+    for call in items {
+        answers.push(json!(get_complete_url(call.api_base.as_deref())));
+    }
+    Value::Array(answers)
+}
+
+pub(super) fn rerank_requests_answer(items: &[RequestCall]) -> Result<Value, Box<HelperError>> {
+    let mut answers = Vec::with_capacity(items.len());
+    for call in items {
+        let params = OptionalRerankParams {
+            query: call.params.query.clone(),
+            documents: call.params.documents.clone(),
+            top_n: call.params.top_n,
+            return_documents: call.params.return_documents,
+        };
+        let body = transform_rerank_request(&call.model, &params).map_err(rerank_failure)?;
+        answers.push(json!(body));
+    }
+    Ok(Value::Array(answers))
 }
 
 pub(super) fn mixin_answer(call: &MixinCall) -> Result<Value, Box<HelperError>> {
