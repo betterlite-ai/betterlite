@@ -31,7 +31,7 @@ pub fn chunk_parser(chunk: &Object) -> Result<OvhCloudChunk, OvhCloudError> {
             Some(_) => not_a_list(),
         });
     };
-    let choices = with_reasoning(choices)?;
+    let projected = with_reasoning(choices)?;
     let (id, created, model) = chunk_keys(chunk)?;
     Ok(OvhCloudChunk {
         id,
@@ -39,7 +39,7 @@ pub fn chunk_parser(chunk: &Object) -> Result<OvhCloudChunk, OvhCloudError> {
         created,
         model,
         usage: chunk.get("usage").cloned(),
-        choices,
+        choices: projected,
     })
 }
 
