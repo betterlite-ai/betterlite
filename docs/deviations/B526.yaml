@@ -1,3 +1,18 @@
 task: B526
 deviations: []
-kept_bugs: []
+kept_bugs:
+  - what: >-
+      An empty supplied video file still selects the multipart edit form instead of the video id, because LiteLLM
+      tests video_file against None alone.
+    why: >-
+      A setup that uploads an empty file gets a multipart request from LiteLLM today, so betterlite keeps the same
+      check and the request shape stays identical; changing it would silently switch that request to a video id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L515
+  - what: >-
+      Character create and get replies return the id as the provider sent it, with no provider wrapping, where the
+      video create, edit and extension replies wrap their id when a provider is present.
+    why: >-
+      The character retrieve request decodes both a wrapped and a plain id, so a setup reading the id from a create
+      or get reply and passing it back keeps working, and one that stores or compares the id keeps the value LiteLLM
+      gives it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L481
