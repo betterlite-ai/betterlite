@@ -179,10 +179,11 @@ fn prepare(params: &PrepareParams) -> HelperResult {
         MaskSpec::Absent | MaskSpec::Null => None,
         MaskSpec::Supplied { media } => Some(media_from(media)?),
     };
-    let mask_input = match (&params.mask, mask.as_mut()) {
-        (MaskSpec::Null, _) => MaskInput::Null,
-        (MaskSpec::Supplied { .. }, Some(media)) => MaskInput::Media(media),
-        (MaskSpec::Absent, _) | (MaskSpec::Supplied { .. }, None) => MaskInput::Absent,
+    let mask_input = match &params.mask {
+        MaskSpec::Null => MaskInput::Null,
+        MaskSpec::Absent | MaskSpec::Supplied { .. } => {
+            mask.as_mut().map_or(MaskInput::Absent, MaskInput::Media)
+        }
     };
     let form = transform_image_edit_request(
         params.prompt.as_deref(),
