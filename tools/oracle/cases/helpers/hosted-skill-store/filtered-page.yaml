@@ -1,0 +1,29 @@
+kind: helper
+name: hosted-skill-store-filtered-page
+call:
+  hosted_skill_store:
+    now: "2026-02-03T04:05:06"
+    uuid: "00000000-0000-4000-8000-000000000002"
+    page:
+      - {skill_id: litellm_skill_a, display_title: Alpha, created_by: alice, created_at: "2026-01-01T00:00:00"}
+      - {skill_id: litellm_skill_b, display_title: Beta, created_by: bob}
+    steps:
+      - action: list
+        principal: {user_id: alice}
+      - action: list
+        principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}
+        limit: 5
+        offset: 2
+      - action: list
+        principal: {user_id: alice, admin: true}
+      - action: list
+      - action: list
+        principal: {}
+      - action: search
+        principal: {user_id: alice}
+      - action: list
+        limit: 5
+      - action: search
+        limit: 7
+env: {}
+compare: {ignore: []}

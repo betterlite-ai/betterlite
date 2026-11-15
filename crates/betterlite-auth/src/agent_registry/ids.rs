@@ -1,0 +1,44 @@
+use std::collections::BTreeSet;
+
+use betterlite_logging::python_json::dumps;
+use betterlite_models::decisions::Json;
+use sha2::{Digest as _, Sha256};
+
+use super::AgentRegistry;
+use super::python_json;
+
+mod tests;
+
+pub(crate) fn stable_id(agent_name: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(agent_name.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+pub(crate) fn legacy_id(entry: &Json) -> String {
+    let text = dumps(&python_json::sorted(entry));
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+pub(super) fn ids_for_agent(registry: &AgentRegistry, agent_id: &str) -> BTreeSet<String> {
+    let state = registry.state();
+    let mut ids = BTreeSet::new();
+    ids.insert(agent_id.to_owned());
+    for (legacy, stable) in &state.legacy_to_stable {
+        if stable == agent_id {
+            ids.insert(legacy.clone());
+        }
+    }
+    drop(state);
+    ids
+}
+
+pub(super) fn stable_agent_id(registry: &AgentRegistry, agent_id: &str) -> String {
+    let state = registry.state();
+    state
+        .legacy_to_stable
+        .get(agent_id)
+        .map_or_else(|| agent_id.to_owned(), String::clone)
+}

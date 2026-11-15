@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-messages-beta-beta-headers
+call:
+  bedrock_messages_beta:
+    function: beta_headers
+    model_cost:
+      bedrock/fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+    calls:
+      - model: fixture-tool-search
+        tools: [{type: tool_search_tool_regex_20251119, name: tool_search}]
+        headers: {anthropic-beta: advanced-tool-use-2025-11-20}
+        outgoing: {messages: []}
+env: {}
+compare: {ignore: []}

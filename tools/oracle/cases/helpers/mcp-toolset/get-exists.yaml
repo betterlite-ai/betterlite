@@ -1,0 +1,13 @@
+kind: helper
+name: get_exists
+call:
+  b4681:
+    operation: get
+    timestamp: '2026-01-02T03:04:05'
+    rows:
+      - {toolset_id: ts-1, toolset_name: alpha, description: first, tools: [{server_id: s1, tool_name: t1}]}
+      - {toolset_id: ts-2, toolset_name: beta}
+    toolset_id: ts-1
+env: {}
+compare:
+  ignore: []

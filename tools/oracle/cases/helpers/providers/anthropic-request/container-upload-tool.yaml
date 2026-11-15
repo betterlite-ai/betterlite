@@ -1,0 +1,99 @@
+kind: helper
+name: anthropic-request-container-upload-tool
+call:
+  anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content:
+      - file:
+          file_id: file-abc
+        type: file
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params: {}
+    strips_billing_metadata: false
+calls:
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content:
+      - file:
+          file_id: file-abc
+        type: file
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params:
+      tools:
+      - input_schema:
+          properties: {}
+          type: object
+        name: weather
+        type: custom
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content:
+      - file:
+          file_id: file-abc
+        type: file
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params:
+      tools:
+      - name: code_execution
+        type: code_execution_20250101
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params:
+      tools:
+      - input_schema:
+          properties: {}
+          type: object
+        name: weather
+        type: custom
+    strips_billing_metadata: false
+env: {}
+compare:
+  ignore: []
