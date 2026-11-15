@@ -1,0 +1,43 @@
+task: B1500
+deviations:
+  - what: >-
+      Catalog listing failures carry typed errors: MissingApiBase when no base resolves,
+      and ModelList::Status or ModelList::Decode when the inherited OpenAI listing fails.
+      LiteLLM raises ValueError for the missing base and a bare Exception for a non-200
+      reply, and lets a JSONDecodeError out for a body it cannot parse.
+    why: >-
+      A bare Exception says nothing about the failure and drops the status a caller needs
+      to retry or report. A working setup cannot branch on Exception, so nothing that
+      works today stops working, and the oracle records a failed listing for both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L785-L788
+  - what: >-
+      LITELLM_PROXY_API_BASE and LITELLM_PROXY_API_KEY keep an environment value of
+      "true" or "false" as text. LiteLLM's get_secret_str turns such a value into a bool
+      through str_to_bool and then returns None for it, so the variable reads as unset.
+    why: >-
+      docs/compatibility.md reads an environment string into the field's declared type,
+      and the declared type here is a string, so the text stays as written. A base or key
+      that spells "true" is not a value a working setup relies on, and the parse that
+      drops it is a Python-runtime effect rather than a declared type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L355-L360
+  - what: >-
+      USE_LITELLM_PROXY is read with betterlite's boolean environment parser, so "1",
+      "yes" and "on" also turn forcing on and "0", "no" and "off" turn it off, while
+      other text is an error that names the variable. LiteLLM compares the lowercased
+      text with "true" and "false" only, so "1" counts as false and any other text
+      counts as false without an error.
+    why: >-
+      The repository reads every boolean environment variable through one parser, and
+      the loader reports the variable name instead of silently ignoring a value the
+      operator meant as a flag. A setup that spells the value "true" or "false" reads
+      the same on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L136
+kept_bugs:
+  - what: >-
+      Image generation and image edit requests set Authorization to "Bearer None" when
+      no proxy key resolves, overwriting an Authorization header the caller sent.
+    why: >-
+      LiteLLM formats a missing key into the header instead of leaving it out, and the
+      task requires the same header at this seam so a proxy that accepts an unauthenticated
+      route sees the identical request. betterlite keeps that rendering on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/image_generation/transformation.py#L20-L21
