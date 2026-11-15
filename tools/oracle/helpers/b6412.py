@@ -1,13 +1,13 @@
 import os
+from collections.abc import Callable
 from functools import partial
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.base_llm.audio_transcription.transformation import BaseAudioTranscriptionConfig
 from litellm.llms.ovhcloud.audio_transcription.transformation import (
-    OVHCloudAudioTranscriptionConfig,
+    OVHCloudAudioTranscriptionConfig as OvhAudio,
 )
 from litellm.llms.ovhcloud.chat.transformation import (
     OVHCloudChatCompletionStreamingHandler as OvhHandler,
@@ -15,14 +15,14 @@ from litellm.llms.ovhcloud.chat.transformation import (
 from litellm.llms.ovhcloud.chat.transformation import OVHCloudChatConfig
 from litellm.llms.ovhcloud.embedding.transformation import OVHCloudEmbeddingConfig
 from litellm.llms.scaleway.audio_transcription.transformation import (
-    ScalewayAudioTranscriptionConfig,
+    ScalewayAudioTranscriptionConfig as ScwAudio,
 )
 from litellm.types.llms.openai import AllEmbeddingInputValues, AllMessageValues
-from litellm.types.utils import EmbeddingResponse
+from litellm.types.utils import EmbeddingResponse, ModelResponseStream, TranscriptionResponse
 from pydantic import JsonValue, TypeAdapter
 
 from xai_files import LOG, guarded
-from xai_stt import form_answer
+from xai_stt import FormView, form_answer
 
 Object: TypeAlias = dict[str, JsonValue]
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -35,33 +35,24 @@ class NoMessages(list[AllMessageValues]):
     pass
 
 
-class Keyed(Protocol):
-    def validate_environment(
-        self,
-        headers: dict[str, str],
-        model: str,
-        messages: list[AllMessageValues],
-        optional_params: Object,
-        litellm_params: Object,
-        /,
-        *,
-        api_key: str | None = None,
-    ) -> dict[str, str]: ...
-
-
-class ChatConfig(Protocol):
+class Urls(Protocol):
     def get_complete_url(
         self, base: str | None, key: str | None, model: str, params: Object, extra: Object, /
     ) -> str: ...
 
+
+class Keyed(Protocol):
+    # a property keeps ruff's argument limit off LiteLLM's six-parameter method
+    @property
+    def validate_environment(self) -> Callable[
+        [dict[str, str], str, list[AllMessageValues], Object, Object, str | None], dict[str, str]
+    ]: ...
+
+
+class ChatConfig(Urls, Protocol):
     def transform_request(
-        self,
-        model: str,
-        messages: list[AllMessageValues],
-        optional_params: Object,
-        litellm_params: Object,
-        headers: Object,
-        /,
+        self, model: str, messages: list[AllMessageValues], optional: Object,
+        litellm_params: Object, headers: Object, /
     ) -> Object: ...
 
 
@@ -74,18 +65,26 @@ class EmbeddingConfig(Keyed, Protocol):
         self, model: str, value: AllEmbeddingInputValues, optional: Object, headers: Object, /
     ) -> Object: ...
 
-    def transform_embedding_response(
-        self,
-        model: str,
-        raw_response: httpx.Response,
-        model_response: EmbeddingResponse,
-        logging_obj: Logging,
-        api_key: str | None,
-        request_data: Object,
-        optional_params: Object,
-        litellm_params: Object,
-        /,
-    ) -> EmbeddingResponse: ...
+    # a property keeps ruff's argument limit off LiteLLM's eight-parameter method
+    @property
+    def transform_embedding_response(self) -> Callable[
+        [str, httpx.Response, EmbeddingResponse, Logging, str | None, Object, Object, Object],
+        EmbeddingResponse,
+    ]: ...
+
+
+class AudioConfig(Urls, Keyed, Protocol):
+    def transform_audio_transcription_request(  # ast-grep-ignore: no-long-names
+        self, model: str, audio: tuple[str, bytes], optional: Object, extra: Object, /
+    ) -> FormView: ...
+
+    def transform_audio_transcription_response(  # ast-grep-ignore: no-long-names
+        self, raw: httpx.Response, /
+    ) -> TranscriptionResponse: ...
+
+
+class StreamParser(Protocol):
+    def chunk_parser(self, chunk: Object, /) -> ModelResponseStream: ...
 
 
 class UsageView(TypedDict):
@@ -161,8 +160,8 @@ Input: TypeAlias = (
 )
 
 OVH_EMBEDDING: Final[EmbeddingConfig] = OVHCloudEmbeddingConfig()
-OVH_AUDIO: Final = OVHCloudAudioTranscriptionConfig.__new__(OVHCloudAudioTranscriptionConfig)
-SCALEWAY_AUDIO: Final = ScalewayAudioTranscriptionConfig.__new__(ScalewayAudioTranscriptionConfig)
+OVH_AUDIO: Final[AudioConfig] = OvhAudio.__new__(OvhAudio)
+SCALEWAY_AUDIO: Final[AudioConfig] = ScwAudio.__new__(ScwAudio)
 
 
 def response_of(call: ReplyCall) -> httpx.Response:
@@ -181,7 +180,7 @@ def chat_request(config: ChatConfig, call: ChatRequestCall) -> JsonValue:
     return {"url": url, "ok": True, "value": body}
 
 
-def chunk_answer(handler: OvhHandler, chunk: Object) -> JsonValue:
+def chunk_answer(handler: StreamParser, chunk: Object) -> JsonValue:
     parsed = handler.chunk_parser(chunk)
     return {
         "ok": True,
@@ -200,7 +199,7 @@ def auth_headers(config: Keyed, call: HeaderCall) -> JsonValue:
     os.environ.clear()
     os.environ.update(call["env"])
     headers = config.validate_environment(
-        dict(call["headers"]), "m", NoMessages(), EMPTY, EMPTY, api_key=call["api_key"]
+        dict(call["headers"]), "m", NoMessages(), EMPTY, EMPTY, call["api_key"]
     )
     return {"ok": True, "headers": JSON.validate_python(headers)}
 
@@ -233,9 +232,7 @@ def embedding_reply(config: EmbeddingConfig, call: ReplyCall) -> JsonValue:
     }
 
 
-def transcription_request(
-    config: BaseAudioTranscriptionConfig, call: TranscriptionCall
-) -> JsonValue:
+def transcription_request(config: AudioConfig, call: TranscriptionCall) -> JsonValue:
     url = config.get_complete_url(call["api_base"], None, call["model"], EMPTY, EMPTY)
     keyed = HeaderCall(api_key=None, headers={}, env=call["env"])
     audio = (call["filename"], call["content"].encode())
@@ -249,7 +246,7 @@ def transcription_request(
     }
 
 
-def transcription_reply(config: BaseAudioTranscriptionConfig, call: ReplyCall) -> JsonValue:
+def transcription_reply(config: AudioConfig, call: ReplyCall) -> JsonValue:
     result = config.transform_audio_transcription_response(response_of(call))
     dumped = OBJECT.validate_json(result.model_dump_json())
     value: Object = {"text": dumped.get("text")}
@@ -261,7 +258,9 @@ def transcription_reply(config: BaseAudioTranscriptionConfig, call: ReplyCall) -
 
 def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "chunks":
-        handler = OvhHandler(streaming_response=iter([""]), sync_stream=False, json_mode=False)
+        handler: StreamParser = OvhHandler(
+            streaming_response=iter([""]), sync_stream=False, json_mode=False
+        )
         return [guarded(partial(chunk_answer, handler), item) for item in input_value["chunks"]]
     if input_value["function"] == "chat_request":
         chat: ChatConfig = OVHCloudChatConfig()
@@ -282,7 +281,7 @@ def run(input_value: Input) -> JsonValue:
             "headers": [guarded(keys, item) for item in input_value["calls"]],
             "replies": [guarded(replies, item) for item in input_value["replies"]],
         }
-    audio: BaseAudioTranscriptionConfig = OVH_AUDIO
+    audio: AudioConfig = OVH_AUDIO
     if input_value["provider"] == "scaleway":
         audio = SCALEWAY_AUDIO
     forms = partial(transcription_request, audio)
