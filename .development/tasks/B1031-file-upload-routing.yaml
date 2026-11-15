@@ -156,7 +156,7 @@ oracle_cases:
 - tools/oracle/cases/sdk-http/file-upload-routing/routed-upload-paths.yaml
 deviations:
 - what: Managed-target upload returns 500 internal_server_error, code="500", message="Managed files hook not found"; automatic executed-batch storage reaches B1027's target_model_names 400 instead.
-  why: Keep observable MIT behavior pending Max's managed files and batches decision, without installing an enterprise hook or license gate.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L473-L480
 out_of_scope:
 - B1032 owns create_file; B1033 get_file_content; B1034 get_file/list_files/_as_file_list_page; B087 delete_file.
