@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 
+use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_openai::reasoning_models::{ReasoningCapabilities, catalogue_declares_default};
 use betterlite_openai::response_events::NativeStreamingSupport;
-use betterlite_prompts::arguments::json::Json;
 use serde_json::Value;
 
 use super::input::Install;
