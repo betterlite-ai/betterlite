@@ -23,9 +23,9 @@ pub struct CustomPromptEntry {
     #[serde(default)]
     pub roles: BTreeMap<String, RoleTemplate>,
     #[serde(default)]
-    pub initial_prompt_value: Option<String>,
+    pub initial_prompt_value: String,
     #[serde(default)]
-    pub final_prompt_value: Option<String>,
+    pub final_prompt_value: String,
 }
 
 #[derive(Debug, Error)]
@@ -108,8 +108,8 @@ async fn transform_prompt(input: &RequestInput<'_>) -> Result<String, RequestErr
 fn render_prompt(entry: &CustomPromptEntry, messages: &[Message]) -> Result<String, RequestError> {
     let template = CustomPromptTemplate {
         roles: entry.roles.clone(),
-        initial_prompt_value: entry.initial_prompt_value.clone().unwrap_or_default(),
-        final_prompt_value: entry.final_prompt_value.clone().unwrap_or_default(),
+        initial_prompt_value: entry.initial_prompt_value.clone(),
+        final_prompt_value: entry.final_prompt_value.clone(),
         bos_token: String::new(),
         eos_token: String::new(),
     };

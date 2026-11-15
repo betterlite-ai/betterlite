@@ -42,8 +42,8 @@ fn entry(initial: &str, final_value: &str) -> CustomPromptEntry {
                 post_message: String::new(),
             },
         )]),
-        initial_prompt_value: Some(initial.to_owned()),
-        final_prompt_value: Some(final_value.to_owned()),
+        initial_prompt_value: initial.to_owned(),
+        final_prompt_value: final_value.to_owned(),
     }
 }
 
@@ -120,6 +120,19 @@ async fn the_hf_model_name_entry_builds_the_prompt_when_the_model_has_none() {
 }
 
 #[tokio::test]
+async fn the_model_entry_wins_over_the_hf_model_name_entry() {
+    let mut fixture = Fixture::new();
+    fixture
+        .custom
+        .insert(String::from("endpoint"), entry("[", "]"));
+    fixture
+        .custom
+        .insert(String::from("hf-endpoint"), entry("<h>", "</h>"));
+    let built = body(&fixture.request("endpoint", Some("hf-endpoint"))).await;
+    assert_eq!(built.get("inputs"), Some(&json!("[U: hi]")));
+}
+
+#[tokio::test]
 async fn the_global_dictionary_is_used_when_the_request_has_none() {
     let mut fixture = Fixture::new();
     fixture
@@ -156,6 +169,17 @@ async fn a_llama_2_model_name_without_chat_picks_the_base_template() {
     let fixture = Fixture::new();
     let built = body(&fixture.request("acme/llama-2-13b", None)).await;
     assert_eq!(built.get("inputs"), Some(&json!("BASE")));
+}
+
+#[tokio::test]
+async fn a_mixed_case_llama_2_name_still_picks_the_llama_2_templates() {
+    let fixture = Fixture::new();
+    let chat = body(&fixture.request("ACME/Llama-2-13B-Chat", None)).await;
+    let prompt = chat["inputs"].as_str().expect("a prompt");
+    assert!(prompt.starts_with("<s>"));
+    assert!(prompt.contains("[INST]"));
+    let base = body(&fixture.request("ACME/Llama-2-13B", None)).await;
+    assert_eq!(base.get("inputs"), Some(&json!("BASE")));
 }
 
 #[tokio::test]
