@@ -1,0 +1,22 @@
+kind: helper
+name: openai-realtime-http-auth
+call:
+  openai_realtime:
+    kind: http
+    api_key: null
+    model: gpt-realtime
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 1048576
+    openai_api_base: null
+    openai_api_key: sk-env-key
+    queries: []
+    failures: []
+    http_setups:
+      - {api_base: null, api_key: sk-explicit, litellm_api_base: null, litellm_api_key: sk-global, litellm_openai_key: sk-openai, api_version: null, headers: {Authorization: "Bearer stale", X-Test: "a"}}
+      - {api_base: null, api_key: null, litellm_api_base: null, litellm_api_key: sk-global, litellm_openai_key: sk-openai, api_version: null, headers: {}}
+      - {api_base: null, api_key: null, litellm_api_base: null, litellm_api_key: null, litellm_openai_key: sk-openai, api_version: null, headers: {}}
+      - {api_base: null, api_key: null, litellm_api_base: null, litellm_api_key: null, litellm_openai_key: null, api_version: null, headers: {}}
+env:
+  OPENAI_API_KEY: "sk-env-key"
+compare: {ignore: []}

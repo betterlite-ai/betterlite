@@ -1,0 +1,93 @@
+id: B9959
+title: Server tests bind their own ports
+description: >-
+  Every test that starts a betterlite server picks its port by binding 127.0.0.1:0, reading the port and dropping the
+  listener, then starts the server on that number. Between the drop and the server's bind any other test of the same
+  nextest run can take the port, and the test then talks to the wrong process or never gets an answer. Main run
+  43705771297 on 11-15 failed this way in auth::auth_route_patterns::tests::stage_is_registered: the client hit its
+  2-second deadline (Elapsed) after 5.8 s under a full test run, while 16,487 other tests passed. The same bind and
+  drop sits in free_port in crates/betterlite-server/src/tests.rs, crates/betterlite/tests/tests.rs,
+  crates/betterlite-backend/tests/component.rs and crates/betterlite-gateway/tests/component.rs.
+
+
+  Every server binary serves through serve in crates/betterlite-server/src/server.rs, and serve already binds its own
+  TcpListener. Make serve log the address the listener really holds (listener.local_addr()) in its "betterlite server
+  listening" line instead of the port it was given, so a server started with port 0 reports the port the kernel chose.
+  Split run so in-process tests can hand it a listener they bound themselves: run binds and calls the new function,
+  and the tests in betterlite-server call that function with a listener bound to 127.0.0.1:0 that they never drop.
+  stage_is_registered then spawns the server task, waits for the answer without the 2-second client deadline, and
+  aborts the server task once it has the response.
+
+
+  The tests that start a binary (betterlite, betterlite-backend, betterlite-gateway) pass --port 0 and read the port
+  from the listening log line before they connect. That reading lives once: a module in betterlite-server behind a
+  test-support feature, which the three crates enable through their dev-dependencies. The backend and gateway
+  component tests already parse JSON log lines, so the shared code takes the child's output and returns the port.
+  Delete every free_port in crates/.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/server/**
+  - crates/betterlite-server/src/test_support.rs
+  - crates/betterlite-server/src/test_support/**
+  - crates/betterlite-server/src/tests.rs
+  - crates/betterlite-server/src/tests/**
+  - crates/betterlite-server/src/auth/auth_route_patterns/tests.rs
+  - crates/betterlite/Cargo.toml
+  - crates/betterlite/tests/**
+  - crates/betterlite-backend/Cargo.toml
+  - crates/betterlite-backend/tests/**
+  - crates/betterlite-gateway/Cargo.toml
+  - crates/betterlite-gateway/tests/**
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/betterlite-ai/betterlite/actions/runs/43705771297
+  why: The main run where stage_is_registered timed out (job checks / tests-3).
+- url: https://github.com/betterlite-ai/betterlite/blob/8a630da083/crates/betterlite-server/src/server.rs#L65-L89
+  why: run, serve and the bind and log line every server binary goes through.
+- url: https://github.com/betterlite-ai/betterlite/blob/8a630da083/crates/betterlite-server/src/auth/auth_route_patterns/tests.rs#L222-L270
+  why: stage_is_registered and its 2-second deadline.
+- url: https://github.com/betterlite-ai/betterlite/blob/8a630da083/crates/betterlite-server/src/server/component.rs#L61-L80
+  why: serve_component, how the backend and gateway binaries reach serve.
+dod:
+- text: A server started with port 0 logs the port it really listens on in its listening line.
+  proof: [server-tests]
+- text: The in-process server tests hand run's new sibling a listener they bound and kept, and stage_is_registered stops its server by aborting the task, with no 2-second client deadline.
+  proof: [server-tests]
+- text: The betterlite, betterlite-backend and betterlite-gateway binary tests start on port 0 and read the port from the listening line through one shared function.
+  proof: [binary-tests, backend-tests, gateway-tests]
+- text: No free_port is left in crates/.
+  proof: [no-free-port]
+checks:
+  optional: []
+  commands:
+  - id: server-tests
+    why: The listening line, the listener hand-over or stage_is_registered is wrong.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_route_patterns::tests::/) | test(/^tests::/)'
+  - id: binary-tests
+    why: The betterlite binary tests do not start on port 0 or read the port wrong.
+    run: cargo nextest run --locked -p betterlite --test tests --no-tests=fail
+  - id: backend-tests
+    why: The betterlite-backend component tests do not start on port 0 or read the port wrong.
+    run: cargo nextest run --locked -p betterlite-backend --test component --no-tests=fail
+  - id: gateway-tests
+    why: The betterlite-gateway component tests do not start on port 0 or read the port wrong.
+    run: cargo nextest run --locked -p betterlite-gateway --test component --no-tests=fail
+  - id: no-free-port
+    why: A test still binds a port, drops it and hands the number to a server.
+    run: "! git grep -n 'fn free_port' -- crates"
+oracle_cases: []
+deviations: []
+out_of_scope:
+- tools/oracle/src/paths.rs free_port. It derives a port from the process id inside the local port range instead of binding and dropping, and the oracle starts LiteLLM too, so it needs its own change.
+- Any change to what the listening line logs besides the real port.
+pitfalls:
+- The listening line goes through tracing to the JSON log the binary tests already read; keep its message text, since tests and operators match on it.
+- A test-support module must not reach the release build. Gate the module and anything it pulls in on the feature, and enable the feature only under [dev-dependencies].
+- Aborting the server task drops the listener, so the test needs no shutdown signal of its own.
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0
