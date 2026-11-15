@@ -1,0 +1,35 @@
+kind: helper
+name: apply-request-guard-input
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      structured_messages:
+      - role: user
+        content: hello
+      tools:
+      - type: function
+        function:
+          name: lookup
+    request_data: {}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: true
+          guard_output:
+            messages:
+            - role: user
+              content: masked
+env: {}
+compare:
+  ignore: []

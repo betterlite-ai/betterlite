@@ -1,0 +1,34 @@
+kind: helper
+name: fal-image-core-gpt-destination-precedence
+call:
+  fal_image_core:
+    operation: gpt_destination_precedence
+    model: gpt-image-2
+    cases:
+      - non_default: {n: 2, size: "1024x768"}
+        optional: {}
+        drop_params: false
+      - non_default: {n: 2}
+        optional: {num_images: 3}
+        drop_params: false
+      - non_default: {size: "auto"}
+        optional: {size: "auto"}
+        drop_params: false
+      - non_default: {output_format: "png"}
+        optional: {}
+        drop_params: false
+      - non_default: {response_format: "url"}
+        optional: {}
+        drop_params: false
+      - non_default: {seed: 1}
+        optional: {}
+        drop_params: false
+      - non_default: {seed: 1}
+        optional: {}
+        drop_params: true
+      - non_default: {seed: 1}
+        optional: {seed: 2}
+        drop_params: false
+env: {}
+compare:
+  ignore: []
