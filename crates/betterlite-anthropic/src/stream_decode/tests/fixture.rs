@@ -183,6 +183,7 @@ pub(super) fn drive_sync(items: Vec<Source>) -> Vec<Outcome> {
         converter: converter(),
         source: items.into_iter(),
         source_ended: false,
+        accumulated_bytes: 0,
         max_event_bytes: MAX_EVENT_BYTES,
     }
     .collect()
@@ -200,6 +201,7 @@ pub(super) fn drive_async(items: Vec<Source>) -> Vec<Outcome> {
                     pending: false,
                 },
                 source_ended: false,
+                accumulated_bytes: 0,
                 max_event_bytes: MAX_EVENT_BYTES,
             };
             let mut outcomes = Vec::new();

@@ -19,6 +19,7 @@ pub(super) fn step<SourceFailure, Counter>(
     converter: &mut StreamEventConverter<Counter>,
     max_event_bytes: usize,
     incoming: Option<ChunkItem<SourceFailure>>,
+    accumulated_bytes: &mut usize,
 ) -> Result<Progress, DecodeError<SourceFailure, Counter::Failure>>
 where
     SourceFailure: StdError + 'static,
@@ -28,7 +29,7 @@ where
         return drained(converter);
     };
     match polled {
-        Ok(chunk) => received_line(converter, max_event_bytes, chunk),
+        Ok(chunk) => received_line(converter, max_event_bytes, chunk, accumulated_bytes),
         Err(ReceiveError::Value { source }) => Err(DecodeError::Receiving { source }),
         Err(ReceiveError::Other { source }) => Err(DecodeError::Other { source }),
     }
@@ -56,6 +57,7 @@ fn received_line<SourceFailure, Counter>(
     converter: &mut StreamEventConverter<Counter>,
     max_event_bytes: usize,
     chunk: TransportChunk,
+    accumulated_bytes: &mut usize,
 ) -> Result<Progress, DecodeError<SourceFailure, Counter::Failure>>
 where
     SourceFailure: StdError + 'static,
@@ -93,7 +95,8 @@ where
             },
         ))));
     };
-    match parse_data::<SourceFailure, Counter>(converter, data, max_event_bytes)? {
+    match parse_data::<SourceFailure, Counter>(converter, data, max_event_bytes, accumulated_bytes)?
+    {
         Some(parsed) => Ok(Progress::Produced(DecodedChunk::Event(Box::new(parsed)))),
         None => Ok(Progress::Skipped),
     }

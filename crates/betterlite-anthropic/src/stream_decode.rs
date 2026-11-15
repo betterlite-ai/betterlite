@@ -33,11 +33,14 @@ pub enum DecodedChunk {
     Generic(Box<GenericChunk>),
 }
 
-// The source hands over transport chunks; the decoder owns the converter, the exhausted flag and the event bound.
+// The source hands over transport chunks; the decoder owns the converter, the exhausted flag, the buffered
+// byte count and the event bound.
 pub struct ChunkStream<Source, Counter> {
     pub converter: StreamEventConverter<Counter>,
     pub source: Source,
     pub source_ended: bool,
+    // Bytes appended since the decoder last produced a value; the event bound reads this, not the buffer.
+    pub accumulated_bytes: usize,
     pub max_event_bytes: usize,
 }
 
@@ -54,7 +57,10 @@ where
         source,
         chunk: payload.to_vec(),
     })?;
-    parse_data::<Infallible, Counter>(converter, text, max_event_bytes)
+    // The shared framing parser hands over one payload per call and owns no running count, so the bound
+    // covers the payload; the iterator's accumulated count covers a value split across its fragments.
+    let mut accumulated_bytes = 0usize;
+    parse_data::<Infallible, Counter>(converter, text, max_event_bytes, &mut accumulated_bytes)
 }
 
 // LiteLLM tries one JSON value first and keeps accumulating after the first failure, permanently.
@@ -62,6 +68,7 @@ fn parse_data<SourceFailure, Counter>(
     converter: &mut StreamEventConverter<Counter>,
     data: &str,
     max_event_bytes: usize,
+    accumulated_bytes: &mut usize,
 ) -> Result<Option<StreamEventChunk>, DecodeError<SourceFailure, Counter::Failure>>
 where
     SourceFailure: StdError + 'static,
@@ -77,8 +84,9 @@ where
         converter.state.chunk_type = ChunkType::AccumulatedJson;
     }
     // LiteLLM buffers an unterminated value for the rest of the stream; the shared max_event_bytes bounds it.
-    let buffered = converter.state.json_buffer.snapshot();
-    if buffered.len().saturating_add(data.len()) > max_event_bytes {
+    // The bound reads a running count, so a deferred fragment costs its append and not a buffer snapshot.
+    let appended = accumulated_bytes.saturating_add(data.len());
+    if appended > max_event_bytes {
         return Err(DecodeError::TooLarge {
             limit: max_event_bytes,
         });
@@ -87,20 +95,24 @@ where
         .handle_accumulated_json_chunk(data, false)
         .map_err(DecodeError::Event)?;
     if parsed.is_some() {
+        // A produced value drained the front, so the next bound counts from an empty buffer.
+        *accumulated_bytes = 0;
         return Ok(parsed);
     }
+    *accumulated_bytes = appended;
     // The accumulator defers a fragment whose last byte cannot close a value; dropping then would rescan
-    // a buffer LiteLLM leaves alone, and a long value split over many fragments would cost O(n^2).
+    // a buffer LiteLLM leaves alone.
     if !converter.json_could_close {
         return Ok(None);
     }
-    discard_unparseable_prefix(converter).map_err(DecodeError::Event)
+    discard_unparseable_prefix(converter, accumulated_bytes).map_err(DecodeError::Event)
 }
 
 // LiteLLM keeps a failed front in the buffer for good and loses every later event; drop only that value.
 // A value that only lacks its tail keeps accumulating, so only a syntax or data failure is broken.
 fn discard_unparseable_prefix<Counter>(
     converter: &mut StreamEventConverter<Counter>,
+    accumulated_bytes: &mut usize,
 ) -> Result<Option<StreamEventChunk>, StreamEventError<Counter::Failure>>
 where
     Counter: ReasoningTokenCounter,
@@ -131,7 +143,10 @@ where
     // One write and one parse per call keep a line of broken values linear in its length.
     converter.state.json_buffer.set(rest.to_owned());
     converter.json_could_close = true;
-    converter.handle_accumulated_json_chunk("", false)
+    let parsed = converter.handle_accumulated_json_chunk("", false);
+    // The tail the pop leaves is at most the scanned remainder, so the count stays an upper bound.
+    *accumulated_bytes = rest.len();
+    parsed
 }
 
 // The broken value ends at its own closing bracket or quote, so a valid value glued behind it survives.

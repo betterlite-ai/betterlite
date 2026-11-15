@@ -29,7 +29,12 @@ where
                 self.source.next()
             };
             self.source_ended = received.is_none();
-            match step(&mut self.converter, self.max_event_bytes, received) {
+            match step(
+                &mut self.converter,
+                self.max_event_bytes,
+                received,
+                &mut self.accumulated_bytes,
+            ) {
                 Ok(Progress::Produced(chunk)) => return Some(Ok(chunk)),
                 Ok(Progress::Skipped) => {}
                 Ok(Progress::Ended) => return None,
@@ -56,7 +61,12 @@ where
                 ready!(Pin::new(&mut this.source).poll_next(cx))
             };
             this.source_ended = received.is_none();
-            match step(&mut this.converter, this.max_event_bytes, received) {
+            match step(
+                &mut this.converter,
+                this.max_event_bytes,
+                received,
+                &mut this.accumulated_bytes,
+            ) {
                 Ok(Progress::Produced(chunk)) => return Poll::Ready(Some(Ok(chunk))),
                 Ok(Progress::Skipped) => {}
                 Ok(Progress::Ended) => return Poll::Ready(None),

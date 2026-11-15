@@ -127,6 +127,7 @@ fn sync_outcomes(input: &Input) -> Result<Vec<Value>, Box<HelperError>> {
         converter: converter(&input.ids)?,
         source: sources(input),
         source_ended: false,
+        accumulated_bytes: 0,
         max_event_bytes: MAX_EVENT_BYTES,
     };
     record_outcomes(stream)
@@ -167,6 +168,7 @@ fn async_outcomes(input: &Input) -> Result<Vec<Value>, Box<HelperError>> {
         converter: converter(&input.ids)?,
         source: chunks,
         source_ended: false,
+        accumulated_bytes: 0,
         max_event_bytes: MAX_EVENT_BYTES,
     };
     let outcomes = runtime.block_on(async {

@@ -215,6 +215,50 @@ fn a_value_split_over_many_non_closing_data_lines_accumulates() {
     assert_text(&outcomes[0], &"x".repeat(512));
 }
 
+// The buffer stays empty on the error, so a materialized length would be 64 and pass the 100-byte limit; only
+// the running count trips it, on the first fragment.
+#[test]
+fn the_event_bound_reads_the_count_instead_of_materializing_the_buffer() {
+    let steps: Vec<fixture::Source> = (0..2)
+        .map(|_| Ok(TransportChunk::Text(format!("data:{}", "x".repeat(64)))))
+        .collect();
+    let outcomes = ChunkStream {
+        converter: converter(),
+        source: steps.into_iter(),
+        source_ended: false,
+        accumulated_bytes: 95,
+        max_event_bytes: 100,
+    }
+    .collect::<Vec<_>>();
+    assert_eq!(outcomes.len(), 2);
+    assert!(matches!(
+        &outcomes[0],
+        Err(DecodeError::TooLarge { limit: 100 })
+    ));
+}
+
+#[test]
+fn a_produced_value_resets_the_running_byte_count() {
+    let steps: Vec<fixture::Source> = vec![
+        Ok(TransportChunk::Text(
+            r#"data: {"type":"ping"}{"type":"message_stop"}"#.to_owned(),
+        )),
+        // The produced ping released its 40 counted bytes, so this 11-byte fragment stays under the limit.
+        Ok(TransportChunk::Text("data: 1234567890".to_owned())),
+    ];
+    let outcomes = ChunkStream {
+        converter: converter(),
+        source: steps.into_iter(),
+        source_ended: false,
+        accumulated_bytes: 0,
+        max_event_bytes: 48,
+    }
+    .collect::<Vec<_>>();
+    assert_eq!(outcomes.len(), 2);
+    assert_text(&outcomes[0], "");
+    assert_text(&outcomes[1], "");
+}
+
 #[test]
 fn drops_done_markers_and_keeps_later_events() {
     let (guard, warnings) = fixture::capture_warnings();
@@ -255,6 +299,7 @@ fn rejects_an_accumulated_event_over_max_event_bytes() {
         converter: converter(),
         source: over_limit.into_iter(),
         source_ended: false,
+        accumulated_bytes: 0,
         max_event_bytes: 16,
     }
     .collect::<Vec<_>>();
@@ -272,6 +317,7 @@ fn rejects_an_accumulated_event_over_max_event_bytes() {
         converter: converter(),
         source: at_limit.into_iter(),
         source_ended: false,
+        accumulated_bytes: 0,
         max_event_bytes: 16,
     }
     .collect::<Vec<_>>();
@@ -297,6 +343,7 @@ fn dropping_the_stream_while_pending_keeps_the_source_unpulled() {
             dropped: Rc::clone(&dropped),
         },
         source_ended: false,
+        accumulated_bytes: 0,
         max_event_bytes: MAX_EVENT_BYTES,
     };
     let waker = noop_waker();
