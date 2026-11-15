@@ -78,11 +78,10 @@ struct TrimmedOutput {
     queued_bytes: usize,
 }
 
-// A map keyed by a number is the row a JSON serializer refuses, the same way json.dumps refuses a tuple key
+// serde_json writes integer keys as strings, so the refused row keys by a tuple, which json.dumps refuses too
 #[derive(Debug, Serialize)]
 struct Refused {
-    #[serde(flatten)]
-    keys: BTreeMap<i64, i64>,
+    keys: BTreeMap<(i64, i64), i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -163,7 +162,7 @@ fn transaction_output(
 fn measured_row(row: &RowInput) -> Result<MeasuredRow, Box<crate::helpers::HelperError>> {
     if row.refused {
         return Ok(MeasuredRow::Refused(Refused {
-            keys: BTreeMap::from([(1, 0)]),
+            keys: BTreeMap::from([((1, 2), 0)]),
         }));
     }
     let ToolSpendTime { start_time, .. } = decode_tool_spend_time(&row.start_time)

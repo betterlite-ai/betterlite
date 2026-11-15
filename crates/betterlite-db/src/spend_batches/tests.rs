@@ -21,10 +21,10 @@ struct TaggedRow {
     tags: Vec<u8>,
 }
 
+// serde_json writes integer keys as strings, so the refused row keys by a tuple, which it rejects
 #[derive(Serialize)]
 struct Refused {
-    #[serde(flatten)]
-    keys: BTreeMap<i64, i64>,
+    keys: BTreeMap<(i64, i64), i64>,
 }
 
 #[derive(Serialize)]
@@ -43,7 +43,7 @@ fn row(request_id: &str, tool_name: &str) -> TestRow {
 
 fn refused() -> Measured {
     Measured::Refused(Refused {
-        keys: BTreeMap::from([(1, 2)]),
+        keys: BTreeMap::from([((1, 2), 3)]),
     })
 }
 
