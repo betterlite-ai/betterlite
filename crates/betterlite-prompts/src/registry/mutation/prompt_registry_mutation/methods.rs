@@ -123,9 +123,8 @@ impl PromptRegistryMutation for InMemoryPromptRegistry {
             .iter()
             .filter(|(_, spec)| {
                 get_base_prompt_id(&spec.prompt_id) == base_prompt_id
-                    && environment.is_none_or(|environment| {
-                        prompt_environment_or_default(Some(spec.environment.as_str()))
-                            == environment
+                    && environment.is_none_or(|chosen| {
+                        prompt_environment_or_default(Some(spec.environment.as_str())) == chosen
                     })
             })
             .map(|(registry_key, _)| registry_key.clone())
@@ -154,10 +153,11 @@ pub(crate) fn same_litellm_params(left: &PromptLiteLLMParams, right: &PromptLite
 fn same_api_key(left: Option<&SecretString>, right: Option<&SecretString>) -> bool {
     match (left, right) {
         (None, None) => true,
-        (Some(left), Some(right)) => bool::from(
-            left.expose_secret()
+        (Some(left_key), Some(right_key)) => bool::from(
+            left_key
+                .expose_secret()
                 .as_bytes()
-                .ct_eq(right.expose_secret().as_bytes()),
+                .ct_eq(right_key.expose_secret().as_bytes()),
         ),
         (None, Some(_)) | (Some(_), None) => false,
     }
