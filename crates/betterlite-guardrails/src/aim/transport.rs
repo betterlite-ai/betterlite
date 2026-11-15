@@ -126,7 +126,10 @@ impl AimFrameReader for TungsteniteReader {
             let next = tokio::time::timeout(self.read_timeout, self.stream.next())
                 .await
                 .map_err(|_elapsed| AimError::StreamTimeout)?;
-            match next.map_err(AimError::WebSocket)? {
+            let Some(message) = next else {
+                return Ok(None);
+            };
+            match message.map_err(AimError::WebSocket)? {
                 Message::Text(text) => return Ok(Some(text.as_str().to_owned())),
                 Message::Binary(bytes) => {
                     return String::from_utf8(bytes.to_vec())
