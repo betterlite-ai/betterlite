@@ -33,20 +33,20 @@ pub fn get_azure_ai_auth_headers(
             value,
         )]));
     }
-    let token = get_azure_ai_entra_token(&EntraTokenRequest {
+    let resolved = get_azure_ai_entra_token(&EntraTokenRequest {
         params: request.params,
         environment: request.environment,
         refresh_enabled: request.refresh_enabled,
         sources: request.sources,
     })?
     .filter(|value| !value.expose_secret().is_empty());
-    match token {
-        Some(token) => Ok(BTreeMap::from([(
-            "Authorization".to_owned(),
-            format!("Bearer {}", token.expose_secret()),
-        )])),
-        None => Err(CredentialsError::MissingCredentials {
+    let Some(token) = resolved else {
+        return Err(CredentialsError::MissingCredentials {
             env_var: request.api_key_env_var.to_owned(),
-        }),
-    }
+        });
+    };
+    Ok(BTreeMap::from([(
+        "Authorization".to_owned(),
+        format!("Bearer {}", token.expose_secret()),
+    )]))
 }

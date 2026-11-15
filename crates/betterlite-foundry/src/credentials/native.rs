@@ -16,13 +16,13 @@ pub fn supports_native_responses(
     {
         return false;
     }
-    let Some(model) = model else {
+    let Some(resolved_model) = model else {
         return true;
     };
-    if model.to_lowercase().contains("claude") {
+    if resolved_model.to_lowercase().contains("claude") {
         return false;
     }
-    get_azure_ai_route(model) == AzureAiRoute::Default
+    get_azure_ai_route(resolved_model) == AzureAiRoute::Default
 }
 
 #[must_use]

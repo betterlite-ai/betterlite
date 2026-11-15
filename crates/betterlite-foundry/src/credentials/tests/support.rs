@@ -187,12 +187,14 @@ impl OidcClock for NoOidc {
 }
 
 pub(super) fn secrets() -> SecretLookup {
-    let transport = Arc::new(NoOidc);
+    let oidc_http: Arc<dyn OidcHttp> = Arc::new(NoOidc);
+    let azure_tokens: Arc<dyn AzureOidcTokens> = Arc::new(NoOidc);
+    let clock: Arc<dyn OidcClock> = Arc::new(NoOidc);
     SecretLookup {
         manager: None,
-        oidc_http: Arc::clone(&transport),
-        azure_tokens: Arc::clone(&transport),
-        clock: transport,
+        oidc_http,
+        azure_tokens,
+        clock,
         oidc_cache: OidcTokenCache::default(),
     }
 }

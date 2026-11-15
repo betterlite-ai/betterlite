@@ -94,13 +94,13 @@ fn grant_fallback() {
 }
 
 fn static_fallback() {
-    let environment = environment(&[]);
+    let empty_env = environment(&[]);
     let static_token = object([("azure_ad_token", Json::Text("static-token".to_owned()))]);
     let sources = FixtureSources::new();
     let direct = header_result(
         None,
         Some(&static_token),
-        &environment,
+        &empty_env,
         ApiKeyHeader::Authorization,
         &sources,
     );
@@ -167,22 +167,22 @@ pub(super) fn missing_credentials() {
 }
 
 fn partial_credentials() {
-    let environment = environment(&[]);
+    let empty_env = environment(&[]);
     let sources = FixtureSources::new();
     let tenant_only = object([
         ("tenant_id", Json::Text("tenant".to_owned())),
         ("client_id", Json::Text("client".to_owned())),
     ]);
-    let missing = request_error(Some(&tenant_only), &environment, &sources);
+    let missing = request_error(Some(&tenant_only), &empty_env, &sources);
     assert!(matches!(
         missing,
         CredentialsError::MissingCredentials { .. }
     ));
     let empty_token = object([("azure_ad_token", Json::Text(String::new()))]);
-    let empty = request_error(Some(&empty_token), &environment, &sources);
+    let empty = request_error(Some(&empty_token), &empty_env, &sources);
     assert!(matches!(empty, CredentialsError::MissingCredentials { .. }));
-    let empty_env = environment(&[("AZURE_AD_TOKEN", "")]);
-    let from_empty_env = request_error(None, &empty_env, &sources);
+    let empty_variable = environment(&[("AZURE_AD_TOKEN", "")]);
+    let from_empty_env = request_error(None, &empty_variable, &sources);
     assert!(matches!(
         from_empty_env,
         CredentialsError::MissingCredentials { .. }
@@ -190,7 +190,7 @@ fn partial_credentials() {
     let custom = AuthHeaderRequest {
         api_key: None,
         params: None,
-        environment: &environment,
+        environment: &empty_env,
         api_key_header: ApiKeyHeader::Authorization,
         api_key_env_var: "CUSTOM_AI_KEY",
         refresh_enabled: false,

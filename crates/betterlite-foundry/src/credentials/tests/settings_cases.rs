@@ -1,6 +1,6 @@
 use betterlite_config::sections::azure_credentials::DEFAULT_SCOPE;
 use betterlite_prompts::arguments::json::{Json, Object};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::credentials::entra::{EntraTokenRequest, get_azure_ai_entra_token};
 use crate::credentials::error::CredentialsError;

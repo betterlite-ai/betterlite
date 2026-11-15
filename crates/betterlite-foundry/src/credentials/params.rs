@@ -19,19 +19,19 @@ pub struct EntraParams {
 
 impl EntraParams {
     pub fn from_mapping(mapping: Option<&Object>) -> Result<Self, CredentialsError> {
-        let Some(mapping) = mapping else {
+        let Some(fields) = mapping else {
             return Ok(Self::default());
         };
         Ok(Self {
-            azure_ad_token: text(mapping.get("azure_ad_token"), "azure_ad_token")?
+            azure_ad_token: text(fields.get("azure_ad_token"), "azure_ad_token")?
                 .map(SecretString::from),
-            tenant_id: text(mapping.get("tenant_id"), "tenant_id")?,
-            client_id: text(mapping.get("client_id"), "client_id")?,
-            client_secret: text(mapping.get("client_secret"), "client_secret")?
+            tenant_id: text(fields.get("tenant_id"), "tenant_id")?,
+            client_id: text(fields.get("client_id"), "client_id")?,
+            client_secret: text(fields.get("client_secret"), "client_secret")?
                 .map(SecretString::from),
-            azure_scope: text(mapping.get("azure_scope"), "azure_scope")?,
-            azure_username: text(mapping.get("azure_username"), "azure_username")?,
-            azure_password: text(mapping.get("azure_password"), "azure_password")?
+            azure_scope: text(fields.get("azure_scope"), "azure_scope")?,
+            azure_username: text(fields.get("azure_username"), "azure_username")?,
+            azure_password: text(fields.get("azure_password"), "azure_password")?
                 .map(SecretString::from),
         })
     }

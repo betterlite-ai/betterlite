@@ -156,10 +156,10 @@ pub fn resolve_agent_auth_header(
 
 #[must_use]
 pub fn has_azure_entra_params(params: Option<&Object>) -> bool {
-    params.is_some_and(|params| {
+    params.is_some_and(|values| {
         ENTRA_PARAM_KEYS
             .iter()
-            .any(|key| params.get(*key).is_some_and(Json::is_truthy))
+            .any(|key| values.get(*key).is_some_and(Json::is_truthy))
     })
 }
 
