@@ -17,6 +17,7 @@ use crate::guardrail_base::contract::GuardrailContract;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::third_party_init_b::vigil_guard::VigilGuardArgs;
+use crate::vigil_guard::ANALYZE_ENDPOINT;
 use crate::vigil_guard::analysis::{AnalyzeMode, AnalyzePayload, Source};
 use crate::vigil_guard::handler_protocol::{AsyncPostHandler, HttpResponse, RequestTimeout};
 use crate::vigil_guard::metadata::MetadataValue;
@@ -28,6 +29,7 @@ use super::cases::{BuildCase, BuildExpectation, BuiltSettings, Expected, Scenari
 
 #[derive(Debug, Clone)]
 pub(crate) struct Call {
+    pub(crate) url: String,
     pub(crate) payload: AnalyzePayload,
 }
 
@@ -52,12 +54,13 @@ impl FakeHandler {
 impl AsyncPostHandler for FakeHandler {
     fn post<'request>(
         &'request self,
-        _url: &str,
+        url: &str,
         _headers: &HeaderMap,
         json: &AnalyzePayload,
         _timeout: RequestTimeout,
     ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, TransportError>> + Send + 'request>> {
         lock(&self.calls).push(Call {
+            url: url.to_owned(),
             payload: json.clone(),
         });
         let response = lock(&self.responses)
@@ -229,6 +232,8 @@ fn assert_calls(
         GuardrailInputType::Response => Source::ModelOutput,
     };
     for call in calls {
+        // the endpoint comes from the configured base, never from the request
+        assert_eq!(call.url, format!("https://vigil.example{ANALYZE_ENDPOINT}"));
         assert_eq!(call.payload.source, source);
         assert_eq!(call.payload.mode, AnalyzeMode::Full);
         for (name, value) in metadata {
