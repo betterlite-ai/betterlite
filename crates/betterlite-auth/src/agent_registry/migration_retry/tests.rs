@@ -147,18 +147,17 @@ async fn a_missed_attempt_is_retried_until_a_clean_pass() {
     retry_migration(|| {
         let attempt = calls.get() + 1;
         calls.set(attempt);
-        async move {
-            if attempt == 1 {
-                return Ok(GrantMigrationResult {
-                    rewritten: 0,
-                    missed: 1,
-                });
-            }
-            Ok(GrantMigrationResult {
+        let result = match attempt {
+            1 => GrantMigrationResult {
+                rewritten: 0,
+                missed: 1,
+            },
+            _ => GrantMigrationResult {
                 rewritten: 1,
                 missed: 0,
-            })
-        }
+            },
+        };
+        async move { Ok(result) }
     })
     .await;
     assert_eq!(started.elapsed(), Duration::from_secs(5));
