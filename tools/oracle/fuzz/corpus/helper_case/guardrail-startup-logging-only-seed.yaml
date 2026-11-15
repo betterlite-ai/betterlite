@@ -1,5 +1,5 @@
 kind: helper
 name: guardrail-startup-logging-only-seed
-call: {b3683: {function: legacy_plan, guardrails: [{pii: {callbacks: [presidio], default_on: true, logging_only: true}}], started: [presidio]}}
+call: {b3683: {function: legacy_plan, guardrails: [{pii: {callbacks: [presidio], default_on: true, logging_only: true}}], started: []}}
 env: {}
 compare: {ignore: []}

@@ -5,12 +5,12 @@ call:
     function: legacy_plan
     guardrails:
       - pii:
-          callbacks: [presidio, lakera_prompt_injection]
+          callbacks: [langfuse, lakera_prompt_injection]
           default_on: true
           callback_args:
             presidio:
               language: en
-    started: [presidio]
+    started: [langfuse]
 env: {}
 compare:
   ignore: []

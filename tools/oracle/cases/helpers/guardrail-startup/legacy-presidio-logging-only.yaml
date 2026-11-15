@@ -12,7 +12,7 @@ call:
             presidio:
               language: en
               score_threshold: 0.5
-    started: [presidio]
+    started: []
 env: {}
 compare:
   ignore: []
