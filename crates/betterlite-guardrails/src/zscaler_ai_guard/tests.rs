@@ -4,6 +4,8 @@ mod settings;
 mod support;
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -12,6 +14,7 @@ use betterlite_http::proxy::base_builder;
 use super::error::{ZscalerAiGuardError, ZscalerErrorDetail};
 use super::metadata;
 use super::printed::{quote_text, repr_text, str_text};
+use super::wire::PolicyResponse;
 use super::{SUPPORTED_EVENT_HOOKS, ZscalerAiGuard};
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use support::{args, guardrail, inputs, mock, request_data};
@@ -829,4 +832,22 @@ async fn inputs_pass_through_unchanged() {
         .await
         .unwrap();
     assert_eq!(result, given);
+}
+
+#[test]
+fn replays_the_zscaler_policy_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/zscaler_policy_response");
+    let mut accepted = 0;
+    let mut rejected = 0;
+    for entry in fs::read_dir(corpus).unwrap() {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
+        if serde_json::from_slice::<PolicyResponse>(&bytes).is_ok() {
+            accepted += 1;
+        } else {
+            rejected += 1;
+        }
+    }
+    // the corpus keeps both an answer the parser reads and one it turns into the JSON error
+    assert!(accepted > 0);
+    assert!(rejected > 0);
 }

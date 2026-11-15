@@ -129,3 +129,10 @@ path = "fuzz_targets/model_armor_files.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "zscaler_policy_response"
+path = "fuzz_targets/zscaler_policy_response.rs"
+test = false
+doc = false
+bench = false

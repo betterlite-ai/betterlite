@@ -5,7 +5,7 @@ mod metadata;
 mod printed;
 pub mod settings;
 mod tests;
-mod wire;
+pub mod wire;
 
 use std::collections::BTreeMap;
 
