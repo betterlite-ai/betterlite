@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-http-headers-psc-flag
+call:
+  gemini_http_headers:
+    api_key: null
+    auth_map:
+      x-goog-api-key: gemini-oracle-key
+    headers: null
+    optional_params:
+      use_psc_endpoint_format: true
+env: {}
+compare: {ignore: []}

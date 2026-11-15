@@ -1,0 +1,22 @@
+kind: helper
+name: openai-video-identifiers-character-id-roundtrip
+call:
+  openai_video_identifiers:
+    calls:
+      - op: encode_character_id
+        character_id: char-1
+        provider: openai
+        model_id: sora-2
+      - op: encode_character_id
+        character_id: char-2
+        provider: azure
+        model_id: ''
+      - op: decode_character_id
+        encoded: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7Y2hhcmFjdGVyX2lkOmNoYXItMQ==
+        capture_debug: true
+      - op: extract_original_character_id
+        encoded: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7Y2hhcmFjdGVyX2lkOmNoYXItMQ==
+        capture_debug: true
+env: {}
+compare:
+  ignore: []
