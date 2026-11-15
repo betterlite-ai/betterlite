@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
@@ -19,15 +19,13 @@ pub fn params_changed(
     }
     let existing_params = params_map(&existing_guardrail.litellm_params)?;
     let new_params = params_map(&new.litellm_params)?;
+    // a key missing on one side reads as null, as dict.get does in LiteLLM
+    let null = GuardrailValue::Null;
+    let keys: BTreeSet<&String> = existing_params.keys().chain(new_params.keys()).collect();
     let mut changed = Vec::new();
-    for key in existing_params.keys() {
-        if value_of(&existing_params, key) != value_of(&new_params, key) {
-            changed.push(key.clone());
-        }
-    }
-    for key in new_params.keys() {
-        if !existing_params.contains_key(key) {
-            changed.push(key.clone());
+    for key in keys {
+        if existing_params.get(key).unwrap_or(&null) != new_params.get(key).unwrap_or(&null) {
+            changed.push(key);
         }
     }
     if changed.is_empty() {
@@ -35,11 +33,6 @@ pub fn params_changed(
     }
     tracing::debug!(fields = ?changed, "guardrail litellm_params changed");
     Ok(true)
-}
-
-// a key missing on one side reads as null, as dict.get does in LiteLLM
-fn value_of(params: &BTreeMap<String, GuardrailValue>, key: &str) -> GuardrailValue {
-    params.get(key).cloned().unwrap_or(GuardrailValue::Null)
 }
 
 fn params_map(params: &LitellmParams) -> Result<BTreeMap<String, GuardrailValue>, RegistryError> {

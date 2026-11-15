@@ -24,14 +24,12 @@ impl GuardrailRows for FakeRows {
         row: NewGuardrailRow,
     ) -> impl Future<Output = Result<GuardrailRow, RowsError>> + Send {
         self.seen.lock().unwrap().create = Some(row);
-        let scripted = self.create.lock().unwrap().take();
-        std::future::ready(scripted.expect("create is scripted"))
+        std::future::ready(self.create.lock().unwrap().take().expect("scripted"))
     }
 
     fn delete(&self, guardrail_id: &str) -> impl Future<Output = Result<(), RowsError>> + Send {
         self.seen.lock().unwrap().delete = Some(guardrail_id.to_owned());
-        let scripted = self.delete.lock().unwrap().take();
-        std::future::ready(scripted.expect("delete is scripted"))
+        std::future::ready(self.delete.lock().unwrap().take().expect("scripted"))
     }
 
     fn update(
@@ -40,13 +38,11 @@ impl GuardrailRows for FakeRows {
         row: GuardrailUpdate,
     ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
         self.seen.lock().unwrap().update = Some((guardrail_id.to_owned(), row));
-        let scripted = self.update.lock().unwrap().take();
-        std::future::ready(scripted.expect("update is scripted"))
+        std::future::ready(self.update.lock().unwrap().take().expect("scripted"))
     }
 
     fn find_active(&self) -> impl Future<Output = Result<Vec<GuardrailRow>, RowsError>> + Send {
-        let scripted = self.active.lock().unwrap().take();
-        std::future::ready(scripted.expect("find_active is scripted"))
+        std::future::ready(self.active.lock().unwrap().take().expect("scripted"))
     }
 
     fn find_by_id(
@@ -54,8 +50,7 @@ impl GuardrailRows for FakeRows {
         guardrail_id: &str,
     ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
         self.seen.lock().unwrap().by_id = Some(guardrail_id.to_owned());
-        let scripted = self.by_id.lock().unwrap().take();
-        std::future::ready(scripted.expect("find_by_id is scripted"))
+        std::future::ready(self.by_id.lock().unwrap().take().expect("scripted"))
     }
 
     fn find_by_name(
@@ -63,8 +58,7 @@ impl GuardrailRows for FakeRows {
         guardrail_name: &str,
     ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
         self.seen.lock().unwrap().by_name = Some(guardrail_name.to_owned());
-        let scripted = self.by_name.lock().unwrap().take();
-        std::future::ready(scripted.expect("find_by_name is scripted"))
+        std::future::ready(self.by_name.lock().unwrap().take().expect("scripted"))
     }
 }
 
@@ -87,8 +81,8 @@ async fn registry_add_returns_the_input_with_the_new_id() {
     let written = seen.lock().unwrap().create.clone().unwrap();
     assert_ne!(written.guardrail_id, "client-id");
     assert_eq!(written.created_at, at);
-    assert_eq!(written.updated_at, at);
-    assert_eq!(written.guardrail_info, "{}");
+    assert_eq!(written.fields.updated_at, at);
+    assert_eq!(written.fields.guardrail_info, "{}");
 }
 
 #[tokio::test]
@@ -169,7 +163,7 @@ async fn registry_update_reports_a_missing_row() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Error updating guardrail from DB: Guardrail not found, passed guardrail_id=g-1"
+        "Error updating guardrail in DB: Guardrail not found, passed guardrail_id=g-1"
     );
 }
 
@@ -188,7 +182,7 @@ async fn registry_update_wraps_a_failure() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Error updating guardrail from DB: guardrail row is missing"
+        "Error updating guardrail in DB: guardrail row is missing"
     );
 }
 
@@ -223,7 +217,7 @@ async fn registry_get_all_wraps_a_failure() {
 
 #[test]
 fn registry_find_active_query_filters_and_orders() {
-    let sql = super::postgres_rows::sql::select_active();
+    let sql = postgres_rows::SELECT_ACTIVE;
     assert!(sql.contains("WHERE status = 'active'"));
     assert!(sql.contains("ORDER BY created_at DESC"));
 }

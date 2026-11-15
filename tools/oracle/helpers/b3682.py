@@ -1,7 +1,6 @@
 from typing import Literal, TypedDict
 
 from litellm.proxy.guardrails.guardrail_registry import InMemoryGuardrailHandler
-from litellm.types.guardrails import Guardrail, LitellmParams
 
 
 class Input(TypedDict):
@@ -14,26 +13,9 @@ class Output(TypedDict):
     id: str
 
 
-def held(guardrail_id: str) -> Guardrail:
-    return Guardrail(
-        guardrail_id=guardrail_id,
-        guardrail_name=f"held-{guardrail_id}",
-        litellm_params=LitellmParams(guardrail="tool_permission", mode="pre_call"),
-    )
-
-
 def run(input_value: Input) -> Output:
-    handler = InMemoryGuardrailHandler()
-    handler.IN_MEMORY_GUARDRAILS = {
-        guardrail_id: held(guardrail_id)
-        for guardrail_id in input_value["existing_ids"]
-    }
-    guardrail = Guardrail(
-        guardrail_name=input_value["guardrail_name"],
-        litellm_params=LitellmParams(guardrail="tool_permission", mode="pre_call"),
-    )
-    parsed = handler.initialize_guardrail(guardrail)
-    guardrail_id = None if parsed is None else parsed.get("guardrail_id")
-    if guardrail_id is None:
-        raise ValueError("the guardrail did not get a stable id")
+    handler = InMemoryGuardrailHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L469
+    # the id check only asks whether a key is held, so a key with no guardrail behind it is enough
+    handler.IN_MEMORY_GUARDRAILS = {guardrail_id: None for guardrail_id in input_value["existing_ids"]}  # type: ignore[assignment, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L470
+    guardrail_id = handler._stable_guardrail_id(input_value["guardrail_name"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L489
     return {"id": guardrail_id}

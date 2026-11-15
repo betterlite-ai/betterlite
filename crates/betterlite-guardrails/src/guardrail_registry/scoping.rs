@@ -16,7 +16,7 @@ pub fn configure_scoping(
         scan_only_tool_results: fields.scan_only_tool_results,
     };
     let scan_only_tool_results = callback.scoping.scan_only_tool_results == Some(true);
-    if scan_only_tool_results && !callback.supports_tool_result_scan() {
+    if scan_only_tool_results && !callback.supports_scan_only_tool_results() {
         return Err(RegistryError::ScanOnlyUnsupported {
             guardrail_name: guardrail_name.to_owned(),
         });

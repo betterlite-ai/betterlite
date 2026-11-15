@@ -38,6 +38,18 @@ fn handler_init_uses_the_next_seed_for_a_second_guardrail_of_the_same_name() {
 }
 
 #[test]
+fn handler_init_treats_an_empty_id_as_absent() {
+    let mut handler = handler();
+    let initialized = handler
+        .initialize_guardrail(
+            guardrail(Some(""), "pii-guard", BEDROCK_PARAMS),
+            GuardrailDefinitionLocation::Config,
+        )
+        .unwrap();
+    assert_eq!(initialized.guardrail_id.as_deref(), Some(PII_GUARD_ID));
+}
+
+#[test]
 fn handler_init_returns_the_held_guardrail_without_building() {
     let mut handler = handler();
     handler
@@ -82,10 +94,7 @@ fn handler_init_replaces_environment_references() {
         .unwrap();
     let fields = &initialized.litellm_params.base.fields;
     assert_eq!(
-        fields
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        fields.api_key.as_ref().map(|key| key.expose_secret()),
         Some("sk-live")
     );
     assert_eq!(fields.api_base.as_deref(), Some("https://guard.example"));
@@ -111,7 +120,7 @@ fn handler_init_uses_none_text_for_a_missing_environment_variable() {
             .fields
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(|key| key.expose_secret()),
         Some("None")
     );
 }
@@ -213,7 +222,7 @@ fn handler_init_marks_a_compression_callback() {
     let mut callbacks = factories()
         .build("bedrock", &params(BEDROCK_PARAMS), "compress", true)
         .unwrap();
-    super::handler::mark_compression(&mut callbacks, CompressionKind::Compresr);
+    super::handler::mark_compression(&mut callbacks, "compresr");
     assert!(callbacks[0].is_compression());
     assert!(matches!(
         &callbacks[0].spec,
@@ -247,19 +256,26 @@ fn handler_update_keeps_callbacks_when_params_are_unchanged() {
         )
         .unwrap();
     let id = initialized.guardrail_id.clone().unwrap();
-    let before: *const GuardrailCallback =
-        std::ptr::from_ref(handler.all_callbacks().next().unwrap());
     let mut changed_info = guardrail(Some(id.as_str()), "pii-guard", BEDROCK_PARAMS);
     changed_info.guardrail_info = Some(OpaqueParams(BTreeMap::from([(
         "team".to_owned(),
         GuardrailValue::Text("x".to_owned()),
     )])));
     handler
+        .initialize_guardrail(
+            guardrail(None, "later-guard", BEDROCK_PARAMS),
+            GuardrailDefinitionLocation::Config,
+        )
+        .unwrap();
+    handler
         .update_in_memory_guardrail(&id, changed_info, GuardrailDefinitionLocation::Db)
         .unwrap();
-    let after: *const GuardrailCallback =
-        std::ptr::from_ref(handler.all_callbacks().next().unwrap());
-    assert_eq!(before, after);
+    // a rebuild would move the guardrail's callback behind the later one
+    let names: Vec<Option<&str>> = handler
+        .all_callbacks()
+        .map(|callback| callback.base.settings.guardrail_name.as_deref())
+        .collect();
+    assert_eq!(names, [Some("pii-guard"), Some("later-guard")]);
     assert_eq!(
         handler.get_source(&id),
         Some(GuardrailDefinitionLocation::Db)
@@ -389,6 +405,19 @@ fn handler_update_reinitialize_without_an_id_returns_none() {
     let result = handler
         .reinitialize_guardrail(
             &guardrail(None, "pii-guard", BEDROCK_PARAMS),
+            GuardrailDefinitionLocation::Config,
+        )
+        .unwrap();
+    assert!(result.is_none());
+    assert_eq!(handler.list_in_memory_guardrails().len(), 0);
+}
+
+#[test]
+fn handler_update_reinitialize_with_an_empty_id_returns_none() {
+    let mut handler = handler();
+    let result = handler
+        .reinitialize_guardrail(
+            &guardrail(Some(""), "pii-guard", BEDROCK_PARAMS),
             GuardrailDefinitionLocation::Config,
         )
         .unwrap();

@@ -33,16 +33,23 @@ fn build_bedrock_sets_its_hooks_and_settings() {
 fn build_lakera_sets_its_two_hooks() {
     let callback = build_one(
         "lakera",
-        r#"{"guardrail":"lakera","mode":"pre_call"}"#,
+        r#"{"guardrail":"lakera","mode":"pre_call","default_on":true,"timeout":1.5}"#,
         "lakera-guard",
     );
+    let settings = &callback.base.settings;
     assert_eq!(
-        callback.base.settings.supported_event_hooks,
+        settings.supported_event_hooks,
         Some(vec![
             GuardrailEventHooks::PreCall,
             GuardrailEventHooks::DuringCall,
         ])
     );
+    assert_eq!(
+        settings.event_hook,
+        Some(LitellmParamsMode::One("pre_call".to_owned()))
+    );
+    assert!(settings.default_on);
+    assert_eq!(settings.timeout, Some(1.5));
     assert!(matches!(&callback.spec, CallbackSpec::Lakera(_)));
 }
 
@@ -50,17 +57,24 @@ fn build_lakera_sets_its_two_hooks() {
 fn build_lakera_v2_sets_its_three_hooks() {
     let callback = build_one(
         "lakera_v2",
-        r#"{"guardrail":"lakera_v2","mode":"pre_call"}"#,
+        r#"{"guardrail":"lakera_v2","mode":"during_call","default_on":true,"timeout":2.5}"#,
         "lakera-v2-guard",
     );
+    let settings = &callback.base.settings;
     assert_eq!(
-        callback.base.settings.supported_event_hooks,
+        settings.supported_event_hooks,
         Some(vec![
             GuardrailEventHooks::PreCall,
             GuardrailEventHooks::DuringCall,
             GuardrailEventHooks::PostCall,
         ])
     );
+    assert_eq!(
+        settings.event_hook,
+        Some(LitellmParamsMode::One("during_call".to_owned()))
+    );
+    assert!(settings.default_on);
+    assert_eq!(settings.timeout, Some(2.5));
     assert!(matches!(&callback.spec, CallbackSpec::LakeraV2(_)));
 }
 
@@ -68,10 +82,15 @@ fn build_lakera_v2_sets_its_three_hooks() {
 fn build_tool_permission_sets_its_hooks_and_template() {
     let callback = build_one(
         "tool_permission",
-        r#"{"guardrail":"tool_permission","mode":"pre_call","violation_message_template":"Blocked tool"}"#,
+        r#"{"guardrail":"tool_permission","mode":"post_call","default_on":true,"timeout":4.0,"violation_message_template":"Blocked tool"}"#,
         "tool-guard",
     );
     let settings = &callback.base.settings;
+    assert_eq!(
+        settings.event_hook,
+        Some(LitellmParamsMode::One("post_call".to_owned()))
+    );
+    assert!(settings.default_on);
     assert_eq!(
         settings.supported_event_hooks,
         Some(vec![
@@ -126,6 +145,27 @@ fn build_presidio_orders_scan_restore_and_mask() {
         callbacks
             .iter()
             .all(|callback| callback.base.settings.guardrail_name.as_deref() == Some("pii-guard"))
+    );
+}
+
+#[test]
+fn build_presidio_copies_the_common_settings_to_every_callback() {
+    let callbacks = factories()
+        .build(
+            "presidio",
+            &params(
+                r#"{"guardrail":"presidio","mode":"pre_call","output_parse_pii":true,"default_on":true,"timeout":3.5}"#,
+            ),
+            "pii-guard",
+            true,
+        )
+        .unwrap();
+    assert!(callbacks.iter().all(|callback| {
+        callback.base.settings.default_on && callback.base.settings.timeout == Some(3.5)
+    }));
+    assert_eq!(
+        callbacks[0].base.settings.event_hook,
+        Some(LitellmParamsMode::One("pre_call".to_owned()))
     );
 }
 
@@ -287,7 +327,9 @@ fn build_compression_spec_is_recognized() {
         .build("bedrock", &params(BEDROCK_PARAMS), "compress", true)
         .unwrap();
     assert!(!callbacks[0].is_compression());
-    super::handler::mark_compression(&mut callbacks, CompressionKind::Headroom);
+    super::handler::mark_compression(&mut callbacks, "bedrock");
+    assert!(!callbacks[0].is_compression());
+    super::handler::mark_compression(&mut callbacks, "headroom");
     assert!(callbacks[0].is_compression());
     assert!(matches!(
         &callbacks[0].spec,
@@ -296,7 +338,7 @@ fn build_compression_spec_is_recognized() {
 }
 
 #[test]
-fn compression_kind_matches_only_the_three_providers() {
+fn build_compression_kind_matches_only_the_three_providers() {
     assert_eq!(
         compression_kind("headroom"),
         Some(CompressionKind::Headroom)

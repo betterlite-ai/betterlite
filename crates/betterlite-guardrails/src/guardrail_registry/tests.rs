@@ -12,9 +12,11 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::{
     Guardrail, GuardrailDefinitionLocation, GuardrailEventHooks,
 };
+use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::Timestamp;
+use betterlite_redis::config_sync::publish::{PublishChange, redis_config_change_publisher};
 use chrono::{DateTime, NaiveDateTime, Utc};
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
 
 use super::build::GuardrailFactories;
 use super::callback::{CallbackScoping, CallbackSpec, GuardrailCallback};
@@ -22,6 +24,7 @@ use super::changed::params_changed;
 use super::error::RegistryError;
 use super::handler::{HandlerSettings, InMemoryGuardrailHandler};
 use super::integrations::{CompressionKind, compression_kind};
+use super::postgres_rows::{self, PostgresGuardrailRows};
 use super::registry::GuardrailRegistry;
 use super::rows::{
     GuardrailRow, GuardrailRows, GuardrailUpdate, NewGuardrailRow, RowsError, guardrail_to_new_row,

@@ -1,17 +1,8 @@
-use betterlite_db::auxiliary_repository::repository::TableError;
-use betterlite_redis::config_sync::publish::{PublishChange, redis_config_change_publisher};
-
-use super::postgres_rows::PostgresGuardrailRows;
-use super::rows::{GuardrailRows, GuardrailUpdate, NewGuardrailRow, RowsError};
-
 fn new_row() -> NewGuardrailRow {
     NewGuardrailRow {
         guardrail_id: "g-1".to_owned(),
-        guardrail_name: "pii-guard".to_owned(),
-        litellm_params: "{}".to_owned(),
-        guardrail_info: "{}".to_owned(),
         created_at: now(),
-        updated_at: now(),
+        fields: update_row(),
     }
 }
 

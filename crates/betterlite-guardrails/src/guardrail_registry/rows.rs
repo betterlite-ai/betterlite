@@ -31,11 +31,8 @@ pub struct GuardrailRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewGuardrailRow {
     pub guardrail_id: String,
-    pub guardrail_name: String,
-    pub litellm_params: String,
-    pub guardrail_info: String,
     pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub fields: GuardrailUpdate,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,14 +104,13 @@ pub fn guardrail_to_new_row(
     guardrail: &Guardrail,
     now: DateTime<Utc>,
 ) -> Result<NewGuardrailRow, RegistryError> {
+    let fields = guardrail_to_update(guardrail, now)?;
+    // Prisma's uuid() default: an id in the request never reaches the row
+    let guardrail_id = Uuid::new_v4().to_string();
     Ok(NewGuardrailRow {
-        // Prisma's uuid() default: an id in the request never reaches the row
-        guardrail_id: Uuid::new_v4().to_string(),
-        guardrail_name: guardrail.guardrail_name.clone(),
-        litellm_params: encode_params(&guardrail.litellm_params)?,
-        guardrail_info: encode_info(guardrail.guardrail_info.as_ref())?,
+        guardrail_id,
         created_at: now,
-        updated_at: now,
+        fields,
     })
 }
 
@@ -122,10 +118,13 @@ pub fn guardrail_to_update(
     guardrail: &Guardrail,
     now: DateTime<Utc>,
 ) -> Result<GuardrailUpdate, RegistryError> {
+    let guardrail_name = guardrail.guardrail_name.clone();
+    let litellm_params = encode_params(&guardrail.litellm_params)?;
+    let guardrail_info = encode_info(guardrail.guardrail_info.as_ref())?;
     Ok(GuardrailUpdate {
-        guardrail_name: guardrail.guardrail_name.clone(),
-        litellm_params: encode_params(&guardrail.litellm_params)?,
-        guardrail_info: encode_info(guardrail.guardrail_info.as_ref())?,
+        guardrail_name,
+        litellm_params,
+        guardrail_info,
         updated_at: now,
     })
 }

@@ -118,3 +118,28 @@ fn scoping_overwrites_the_two_settings_when_the_params_set_them() {
     assert!(!callback.base.settings.run_in_parallel);
     assert!(!callback.base.settings.scan_raw_request);
 }
+
+#[test]
+fn scoping_allows_latest_role_bedrock_without_scan_only() {
+    let parsed = params(
+        r#"{"guardrail":"bedrock","mode":"pre_call","experimental_use_latest_role_message_only":true}"#,
+    );
+    let mut callback = factories()
+        .build("bedrock", &parsed, "latest-guard", true)
+        .unwrap()
+        .remove(0);
+    configure_scoping(&mut callback, "latest-guard", &parsed, false).unwrap();
+    assert_eq!(callback.scoping.scan_only_tool_results, None);
+}
+
+#[test]
+fn scoping_allows_skip_tool_without_scan_only() {
+    let parsed =
+        params(r#"{"guardrail":"lakera","mode":"pre_call","skip_tool_message_in_guardrail":true}"#);
+    let mut callback = factories()
+        .build("lakera", &parsed, "skip-guard", true)
+        .unwrap()
+        .remove(0);
+    configure_scoping(&mut callback, "skip-guard", &parsed, true).unwrap();
+    assert_eq!(callback.scoping.skip_tool_message, Some(true));
+}

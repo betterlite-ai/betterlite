@@ -83,10 +83,10 @@ fn rows_new_row_defaults_guardrail_info_and_uses_a_db_id() {
     .unwrap();
     assert_ne!(created.guardrail_id, "client-id");
     assert_eq!(created.guardrail_id.len(), 36);
-    assert_eq!(created.guardrail_info, "{}");
+    assert_eq!(created.fields.guardrail_info, "{}");
     assert_eq!(created.created_at, now());
-    assert_eq!(created.updated_at, now());
-    let decoded = decode_litellm_params(created.litellm_params.as_bytes()).unwrap();
+    assert_eq!(created.fields.updated_at, now());
+    let decoded = decode_litellm_params(created.fields.litellm_params.as_bytes()).unwrap();
     assert_eq!(decoded.guardrail, "bedrock");
 }
 
@@ -98,7 +98,7 @@ fn rows_new_row_writes_the_given_info() {
         GuardrailValue::Text("x".to_owned()),
     )])));
     let created = guardrail_to_new_row(&with_info, now()).unwrap();
-    assert!(created.guardrail_info.contains("\"team\""));
+    assert!(created.fields.guardrail_info.contains("\"team\""));
 }
 
 #[test]
@@ -114,12 +114,10 @@ fn rows_update_sets_updated_at() {
 
 #[test]
 fn rows_sql_stores_json_text_and_reads_it_back() {
-    let insert = super::postgres_rows::sql::insert();
-    assert!(insert.contains("to_jsonb($3::text)"));
-    let active = super::postgres_rows::sql::select_active();
-    assert!(active.contains("'litellm_params', litellm_params::text"));
-    assert!(super::postgres_rows::sql::select_by_id().contains("WHERE guardrail_id = $1"));
-    assert!(super::postgres_rows::sql::select_by_name().contains("WHERE guardrail_name = $1"));
-    assert!(super::postgres_rows::sql::update().contains("litellm_params = to_jsonb($3::text)"));
-    assert!(super::postgres_rows::sql::delete().contains("DELETE FROM"));
+    assert!(postgres_rows::INSERT.contains("to_jsonb($3::text)"));
+    assert!(postgres_rows::SELECT_ACTIVE.contains("'litellm_params', litellm_params::text"));
+    assert!(postgres_rows::SELECT_BY_ID.contains("WHERE guardrail_id = $1"));
+    assert!(postgres_rows::SELECT_BY_NAME.contains("WHERE guardrail_name = $1"));
+    assert!(postgres_rows::UPDATE.contains("litellm_params = to_jsonb($3::text)"));
+    assert!(postgres_rows::DELETE.contains("DELETE FROM"));
 }

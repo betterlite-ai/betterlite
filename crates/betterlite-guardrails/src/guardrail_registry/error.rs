@@ -49,12 +49,10 @@ pub enum RegistryError {
     },
     #[error("stored guardrail row has no litellm_params")]
     MissingParams,
-    #[error(
-        "Error updating guardrail from DB: Guardrail not found, passed guardrail_id={guardrail_id}"
-    )]
+    #[error("Guardrail not found, passed guardrail_id={guardrail_id}")]
     UpdateNotFound { guardrail_id: String },
     #[error("{context}: {source}")]
-    Context {
+    Database {
         context: &'static str,
         #[source]
         source: Box<Self>,
@@ -67,9 +65,12 @@ pub enum RegistryError {
 }
 
 // LiteLLM wraps every failure of a DB method in its own text, the not-found update included
-pub(crate) fn wrapped(context: &'static str, source: RegistryError) -> RegistryError {
-    RegistryError::Context {
+pub(crate) fn wrapped<E>(context: &'static str, source: E) -> RegistryError
+where
+    RegistryError: From<E>,
+{
+    RegistryError::Database {
         context,
-        source: Box::new(source),
+        source: Box::new(RegistryError::from(source)),
     }
 }

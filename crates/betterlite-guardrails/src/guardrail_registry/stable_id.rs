@@ -1,6 +1,7 @@
 use uuid::Uuid;
 
-const NAMESPACE: Uuid = Uuid::from_u128(0x625f_63f4_935a_50e5_98b5_fbe7_7babc74a);
+pub const CONFIG_GUARDRAIL_ID_NAMESPACE: Uuid =
+    Uuid::from_u128(0x625f_63f4_935a_50e5_98b5_fbe7_7bab_c74a);
 
 #[must_use]
 pub fn stable_guardrail_id(guardrail_name: &str, taken: &dyn Fn(&str) -> bool) -> String {
@@ -10,7 +11,7 @@ pub fn stable_guardrail_id(guardrail_name: &str, taken: &dyn Fn(&str) -> bool) -
             0 => guardrail_name.to_owned(),
             _ => format!("{guardrail_name}:{occurrence}"),
         };
-        let candidate = Uuid::new_v5(&NAMESPACE, seed.as_bytes()).to_string();
+        let candidate = Uuid::new_v5(&CONFIG_GUARDRAIL_ID_NAMESPACE, seed.as_bytes()).to_string();
         if !taken(&candidate) {
             return candidate;
         }

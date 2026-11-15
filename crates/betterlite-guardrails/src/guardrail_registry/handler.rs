@@ -6,13 +6,13 @@ use betterlite_config::sections::guardrail_params::records::{
     Guardrail, GuardrailDefinitionLocation,
 };
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::build::GuardrailFactories;
 use super::callback::{CallbackSpec, GuardrailCallback};
 use super::changed::params_changed;
 use super::error::RegistryError;
-use super::integrations::{CompressionKind, compression_kind};
+use super::integrations::compression_kind;
 use super::scoping::configure_scoping;
 use super::stable_id::stable_guardrail_id;
 
@@ -62,12 +62,15 @@ impl InMemoryGuardrailHandler {
         source: GuardrailDefinitionLocation,
     ) -> Result<Guardrail, RegistryError> {
         let name = guardrail.guardrail_name.clone();
-        let guardrail_id = match guardrail.guardrail_id.clone().filter(|id| !id.is_empty()) {
-            Some(id) => id,
-            None => stable_guardrail_id(&name, &|candidate: &str| {
-                self.guardrails.contains_key(candidate)
-            }),
-        };
+        let guardrail_id = guardrail
+            .guardrail_id
+            .clone()
+            .filter(|id| !id.is_empty())
+            .unwrap_or_else(|| {
+                stable_guardrail_id(&name, &|candidate: &str| {
+                    self.guardrails.contains_key(candidate)
+                })
+            });
         guardrail.guardrail_id = Some(guardrail_id.clone());
         if let Some(held) = self.guardrails.get(&guardrail_id).cloned() {
             // LiteLLM honors the caller's source even on the early-return path
@@ -129,6 +132,7 @@ impl InMemoryGuardrailHandler {
     }
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn list_in_memory_guardrails(&self) -> Vec<Guardrail> {
         self.guardrails.values().cloned().collect()
     }
@@ -189,9 +193,7 @@ impl InMemoryGuardrailHandler {
             &guardrail.guardrail_name,
             self.settings.strict_modes,
         )?;
-        if let Some(compression) = compression_kind(kind) {
-            mark_compression(&mut callbacks, compression);
-        }
+        mark_compression(&mut callbacks, kind);
         for callback in &mut callbacks {
             configure_scoping(
                 callback,
@@ -254,7 +256,11 @@ fn parsed_guardrail(guardrail_id: &str, guardrail: &Guardrail) -> Guardrail {
     }
 }
 
-pub(super) fn mark_compression(callbacks: &mut [GuardrailCallback], kind: CompressionKind) {
+// the registry sets the kind itself, so no compression task has to
+pub(super) fn mark_compression(callbacks: &mut [GuardrailCallback], provider: &str) {
+    let Some(kind) = compression_kind(provider) else {
+        return;
+    };
     for callback in callbacks {
         callback.spec = CallbackSpec::Compression(kind);
     }
