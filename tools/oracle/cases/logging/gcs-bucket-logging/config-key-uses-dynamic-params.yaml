@@ -1,0 +1,7 @@
+# dynamic params pick the bucket and the service account of the config key
+kind: helper
+name: gcs-bucket-logging-config-key-uses-dynamic-params
+call:
+  b3998: {"bucket": "instance-bucket", "dynamic": {"gcs_bucket_name": "dynamic-bucket", "gcs_path_service_account": "/creds/dynamic.json"}, "steps": [{"do": "config"}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-batch-upload-developer-role
+call:
+  vertex_batch_upload:
+    calls:
+      - content: |-
+          {"custom_id":"d1","url":"/v1/chat/completions","body":{"model":"gemini-2.5-flash","messages":[{"role":"developer","content":"be brief","name":"ops"},{"role":"user","content":"hi"}]}}
+        passthrough: false
+env: {}
+compare: {ignore: []}

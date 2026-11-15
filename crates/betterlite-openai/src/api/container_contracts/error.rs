@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_http::error::HttpError;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -10,7 +11,7 @@ pub struct BaseLlmException {
     pub headers: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Error)]
 pub enum ContainerError {
     #[error("api_base is required")]
     ApiBaseRequired,
@@ -18,4 +19,9 @@ pub enum ContainerError {
     Decode(String),
     #[error(transparent)]
     Upstream(#[from] BaseLlmException),
+    #[error("{source}")]
+    PathSegment {
+        #[from]
+        source: HttpError,
+    },
 }
