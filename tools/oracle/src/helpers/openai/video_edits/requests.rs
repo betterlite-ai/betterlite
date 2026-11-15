@@ -5,16 +5,11 @@ use betterlite_openai::video_edits::character::{
     transform_video_get_character_request,
 };
 use betterlite_openai::video_edits::edit::{VideoEditRequest, transform_video_edit_request};
-use betterlite_openai::video_edits::extension::{
-    VideoExtensionRequest,
-    // ast-grep-ignore: no-long-names
-    transform_video_extension_request,
-};
 use serde_json::{Value, json};
 
 use super::fixture::{Prepared, character_files, file_part_value, prepared};
 use super::support::helper_error;
-use super::{CreateCharacterRequest, EditRequest, ExtensionRequest, GetCharacterRequest};
+use super::{CreateCharacterRequest, EditRequest, GetCharacterRequest};
 use crate::helpers::HelperResult;
 
 pub(super) fn create_character_value(request: &CreateCharacterRequest) -> HelperResult {
@@ -50,16 +45,4 @@ pub(super) fn edit_request_value(request: &EditRequest) -> HelperResult {
         .map(|file| file_part_value(file).map(|part| [part]))
         .transpose()?;
     Ok(json!({"url": edit.url, "body": edit.body, "files": files}))
-}
-
-pub(super) fn extension_request_value(request: &ExtensionRequest) -> Value {
-    // ast-grep-ignore: no-long-names
-    let extension = transform_video_extension_request(VideoExtensionRequest {
-        prompt: request.prompt.clone(),
-        video_id: request.video_id.clone(),
-        seconds: request.seconds.clone(),
-        api_base: request.api_base.clone(),
-        extra_body: request.extra_body.clone(),
-    });
-    json!({"url": extension.url, "body": extension.body})
 }

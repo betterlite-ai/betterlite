@@ -1,7 +1,12 @@
 use betterlite_models::decisions::Json;
+use betterlite_openai::video_edits::extension::{
+    VideoExtensionRequest,
+    // ast-grep-ignore: no-long-names
+    transform_video_extension_request,
+};
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperResult};
 
@@ -103,7 +108,18 @@ fn run_call(call: &Call) -> HelperResult {
             reply.provider.as_deref(),
             reply.request_data.as_ref(),
         ),
-        Call::ExtensionRequest(request) => Ok(requests::extension_request_value(request)),
+        Call::ExtensionRequest(request) => {
+            let extension =
+                // ast-grep-ignore: no-long-names
+                transform_video_extension_request(VideoExtensionRequest {
+                    prompt: request.prompt.clone(),
+                    video_id: request.video_id.clone(),
+                    seconds: request.seconds.clone(),
+                    api_base: request.api_base.clone(),
+                    extra_body: request.extra_body.clone(),
+                });
+            Ok(json!({"url": extension.url, "body": extension.body}))
+        }
         Call::ExtensionResponse(reply) => {
             replies::video_reply_value(&reply.body, reply.provider.as_deref(), None)
         }

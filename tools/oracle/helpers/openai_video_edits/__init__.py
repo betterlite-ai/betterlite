@@ -86,12 +86,6 @@ Call: TypeAlias = Annotated[
     Field(discriminator="op"),
 ]
 CALLS: TypeAdapter[list[Call]] = TypeAdapter(list[Call])
-RequestCall: TypeAlias = (
-    CreateCharacterRequest | GetCharacterRequest | EditRequest | ExtensionRequest
-)
-ReplyCall: TypeAlias = (
-    CreateCharacterResponse | GetCharacterResponse | EditResponse | ExtensionResponse
-)
 
 
 def create_character_value(call: CreateCharacterRequest) -> JsonValue:
@@ -204,7 +198,7 @@ def extension_reply(call: ExtensionResponse) -> JsonValue:
     return JSON.validate_json(transformed.model_dump_json())
 
 
-def request_value(call: RequestCall) -> JsonValue:
+def call_value(call: Call) -> JsonValue:
     match call["op"]:
         case "create_character_request":
             return create_character_value(call)
@@ -214,10 +208,6 @@ def request_value(call: RequestCall) -> JsonValue:
             return edit_value(call)
         case "extension_request":
             return extension_value(call)
-
-
-def reply_value(call: ReplyCall) -> JsonValue:
-    match call["op"]:
         case "create_character_response":
             return create_character_reply(call)
         case "get_character_response":
@@ -226,24 +216,6 @@ def reply_value(call: ReplyCall) -> JsonValue:
             return edit_reply(call)
         case "extension_response":
             return extension_reply(call)
-
-
-def call_value(call: Call) -> JsonValue:
-    match call["op"]:
-        case (
-            "create_character_request"
-            | "get_character_request"
-            | "edit_request"
-            | "extension_request"
-        ):
-            return request_value(call)
-        case (
-            "create_character_response"
-            | "get_character_response"
-            | "edit_response"
-            | "extension_response"
-        ):
-            return reply_value(call)
 
 
 def run(raw: dict[str, JsonValue]) -> JsonValue:
