@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum Fixture {
+pub(crate) enum Fixture {
     Bytes {
         data_base64: String,
     },
@@ -34,7 +34,7 @@ pub(super) enum Fixture {
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum Failure {
+pub(crate) enum Failure {
     #[serde(rename = "none")]
     None,
     Tell,
@@ -80,7 +80,7 @@ pub(super) struct ProbeReader {
 }
 
 impl ProbeReader {
-    fn new(data: Vec<u8>, position: usize, failure: Failure) -> Self {
+    const fn new(data: Vec<u8>, position: usize, failure: Failure) -> Self {
         Self {
             data,
             position,
@@ -133,6 +133,22 @@ impl Seek for ProbeReader {
     }
 }
 
+fn prepared_stream(
+    data_base64: &str,
+    position: usize,
+    failure: Failure,
+    name: Option<String>,
+) -> Prepared {
+    Prepared {
+        name,
+        kind: PreparedKind::Reader(ProbeReader::new(
+            STANDARD.decode(data_base64).unwrap_or_default(),
+            position,
+            failure,
+        )),
+    }
+}
+
 pub(super) fn prepared(fixture: &Fixture) -> Prepared {
     match fixture {
         Fixture::Bytes { data_base64 } => Prepared {
@@ -146,38 +162,17 @@ pub(super) fn prepared(fixture: &Fixture) -> Prepared {
         Fixture::BytesIo {
             data_base64,
             position,
-        } => Prepared {
-            name: None,
-            kind: PreparedKind::Reader(ProbeReader::new(
-                STANDARD.decode(data_base64).unwrap_or_default(),
-                *position,
-                Failure::None,
-            )),
-        },
+        } => prepared_stream(data_base64, *position, Failure::None, None),
         Fixture::BufferedReader {
             data_base64,
             position,
             name,
-        } => Prepared {
-            name: Some(name.clone()),
-            kind: PreparedKind::Reader(ProbeReader::new(
-                STANDARD.decode(data_base64).unwrap_or_default(),
-                *position,
-                Failure::None,
-            )),
-        },
+        } => prepared_stream(data_base64, *position, Failure::None, Some(name.clone())),
         Fixture::FailingReader {
             data_base64,
             position,
             failure,
             name,
-        } => Prepared {
-            name: Some(name.clone()),
-            kind: PreparedKind::Reader(ProbeReader::new(
-                STANDARD.decode(data_base64).unwrap_or_default(),
-                *position,
-                *failure,
-            )),
-        },
+        } => prepared_stream(data_base64, *position, *failure, Some(name.clone())),
     }
 }

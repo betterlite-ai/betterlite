@@ -21,7 +21,7 @@ use tracing_subscriber::layer::{Context, Layer};
 use crate::helpers::{Helper, HelperResult};
 use fixtures::{Fixture, prepared};
 
-mod fixtures;
+pub(crate) mod fixtures;
 mod tests;
 
 const IMAGE_FIELD: &str = "input_reference";
