@@ -38,6 +38,7 @@ pkcs8 = { version = "0.11.0", default-features = false }
 regex.workspace = true
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "form", "json", "multipart", "query"] }
 rust_decimal.workspace = true
+rustls = { workspace = true, features = ["std", "tls12"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde-saphyr.workspace = true
@@ -46,7 +47,7 @@ serde_with = { version = "3.24.0", default-features = false, features = ["macros
 sha2.workspace = true
 strfmt = "0.2.6"
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio = { workspace = true, features = ["fs", "rt", "sync", "time"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
@@ -63,7 +64,6 @@ axum.workspace = true
 mutants = "0.0.4"
 rcgen ={ version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
-rustls = { workspace = true, features = ["std", "tls12"] }
 temp-env = "0.3.6"
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["rt", "macros", "test-util"] }

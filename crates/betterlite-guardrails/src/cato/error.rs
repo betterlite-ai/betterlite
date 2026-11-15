@@ -4,6 +4,8 @@ use betterlite_http::tls::TlsError;
 use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
+use tokio::task::JoinError;
+use tokio_tungstenite::tungstenite;
 
 #[derive(Debug, Error)]
 pub enum CatoError {
@@ -58,6 +60,55 @@ pub enum CatoError {
         #[source]
         source: reqwest::Error,
     },
+    #[error("the Cato Networks upstream websocket failed")]
+    WebSocket {
+        #[source]
+        source: tungstenite::Error,
+    },
+    #[error("the Cato Networks upstream websocket did not complete its handshake in time")]
+    ConnectTimeout,
+    #[error("the Cato Networks websocket TLS configuration is not valid")]
+    WsTls {
+        #[source]
+        source: rustls::Error,
+    },
+    #[error("the Cato Networks websocket CA file could not be read")]
+    WsCaFile {
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("the Cato Networks upstream websocket sent no message in time")]
+    StreamTimeout,
+    #[error("the Cato Networks upstream websocket message is not valid JSON")]
+    StreamJson {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the model stream chunk is not valid JSON")]
+    StreamChunkJson {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("Cato guardrail connection closed unexpectedly")]
+    StreamClosed,
+    #[error("{message}")]
+    StreamBlocked { message: String },
+    #[error("Cato guardrail upstream stream failed")]
+    StreamSenderFailed {
+        #[source]
+        source: Box<CatoError>,
+    },
+    #[error("the Cato Networks stream sender task failed")]
+    StreamTask {
+        #[source]
+        source: JoinError,
+    },
+    #[error("the Cato Networks output redaction is not text")]
+    OutputRedactionNotText,
+    #[error(
+        "the Cato Networks output redaction does not fit the response fragment it was read from"
+    )]
+    OutputRedactionMismatch,
 }
 
 impl CatoError {
@@ -68,13 +119,27 @@ impl CatoError {
             Self::Timeout { .. }
             | Self::Request { .. }
             | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. } => StatusCode::BAD_GATEWAY,
+            | Self::ResponseJson { .. }
+            | Self::OutputRedactionNotText
+            | Self::OutputRedactionMismatch => StatusCode::BAD_GATEWAY,
             Self::HttpStatus { status } => *status,
+            // everything raised inside the streaming iterator reaches the client as a 500 error frame
             Self::MissingApiKey
             | Self::InvalidHeader { .. }
             | Self::Tls { .. }
             | Self::TimeoutSetting { .. }
-            | Self::Client { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | Self::Client { .. }
+            | Self::WebSocket { .. }
+            | Self::ConnectTimeout
+            | Self::WsTls { .. }
+            | Self::WsCaFile { .. }
+            | Self::StreamTimeout
+            | Self::StreamJson { .. }
+            | Self::StreamChunkJson { .. }
+            | Self::StreamClosed
+            | Self::StreamBlocked { .. }
+            | Self::StreamSenderFailed { .. }
+            | Self::StreamTask { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
