@@ -78,16 +78,17 @@ fn assemble_input(
     let typed_messages = decode_messages(input.messages.as_deref())?;
     let fixture_counter = FixtureCounter::new(&input.counter);
     let fixture_costs = FixtureCosts::new(&input.costs);
-    let fixture_logging = input.logging.as_ref().map(FixtureLogging::new);
+    let fixture_logging = input
+        .logging
+        .as_ref()
+        .map(|fixture| -> Box<dyn StreamLogging> { Box::new(FixtureLogging::new(fixture)) });
     let callback = prompt_callback(input.count_prompt_tokens.as_ref());
     let hooks = hooks()?;
     let request = Request {
         chunks: input.chunks.as_deref(),
         messages: typed_messages.as_deref(),
         count_prompt_tokens: callback.as_deref(),
-        logging: fixture_logging
-            .as_ref()
-            .map(|logging| logging as &dyn StreamLogging),
+        logging: fixture_logging.as_deref(),
         costs: &fixture_costs,
         counter: &fixture_counter,
         metadata: None,
@@ -131,10 +132,10 @@ fn assembly_error(error: &AssemblyError) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
         class: "APIError".to_owned(),
         status: Some(details.status),
-        error_type: None,
-        param: None,
-        code: None,
-        message: details.context.message,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message: format!("litellm.APIError: {}", details.context.message),
     })
 }
 

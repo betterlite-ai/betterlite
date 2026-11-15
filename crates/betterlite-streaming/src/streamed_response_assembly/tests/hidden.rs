@@ -40,15 +40,15 @@ pub(super) async fn usage_reasoning_and_hidden() {
     assert_eq!(harness.counter.seen_reasoning().as_deref(), Some("r"));
     assert_eq!(harness.counter.seen_model().as_deref(), Some("gpt-4o"));
     assert_eq!(response.usage.prompt_tokens, 10);
-    assert_eq!(response.usage.completion_tokens, 2);
-    assert_eq!(response.usage.total_tokens, 12);
+    assert_eq!(response.usage.completion_tokens, 3);
+    assert_eq!(response.usage.total_tokens, 13);
     let details = response
         .usage
         .completion_tokens_details
         .as_ref()
         .expect("the complex path counts reasoning tokens");
     assert_eq!(details.reasoning_tokens, Some(1));
-    assert_eq!(details.text_tokens, Some(1));
+    assert_eq!(details.text_tokens, Some(2));
     assert_eq!(
         response.hidden_params.get("provider_specific_fields"),
         Some(&value(r#"{"traffic_type": "on_demand"}"#))

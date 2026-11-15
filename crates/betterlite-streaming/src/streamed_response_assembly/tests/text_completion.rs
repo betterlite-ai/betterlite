@@ -1,4 +1,5 @@
 use crate::streamed_response_assembly::AssemblyError;
+use crate::streamed_response_assembly::response::TextResponse;
 
 use super::support::chunks;
 use super::{FIXED_NOW, Harness, chat_of, failed, ok, text, value};
@@ -12,25 +13,30 @@ pub(super) async fn text_completion_assembly() {
     text_branch_mixed().await;
 }
 
-pub(super) async fn text_completion_join() {
-    let logprobs = value(
-        r#"{"tokens": ["Hey"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}"#,
-    );
-    let stream = chunks(
-        r#"[{"id": "chatcmpl-text", "object": "text_completion", "created": 1700000000, "model": "gpt-4o",
-         "system_fingerprint": "fp_1", "choices": [{"index": 0, "text": "Hey"}]},
-        {"created": 1700000500, "choices": [{"index": 0, "text": " you", "finish_reason": "length"}, {"index": 1, "text": "!"}]},
-        {"created": 1700000999, "choices": [{"index": 0, "text": null, "finish_reason": "stop",
-         "logprobs": {"tokens": ["Hey"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}}]}]"#,
-    );
-    let mut harness = Harness::new(Some(stream));
+const JOIN_STREAM: &str = r#"[
+    {"id": "chatcmpl-text", "object": "text_completion", "created": 1700000000, "model": "gpt-4o",
+     "system_fingerprint": "fp_1", "choices": [{"index": 0, "text": "Hey"}]},
+    {"created": 1700000500, "choices": [{"index": 0, "text": " you", "finish_reason": "length"}, {"index": 1, "text": "!"}]},
+    {"created": 1700000999, "choices": [{"index": 0, "text": null, "finish_reason": "stop",
+     "logprobs": {"tokens": ["Hey"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}}]}
+]"#;
+
+async fn join_run() -> (TextResponse, Vec<String>) {
+    let mut harness = Harness::new(Some(chunks(JOIN_STREAM)));
     harness.messages = true;
     harness.prompt = Some(Box::new(|| Ok(7)));
     harness.counter.messages = 3;
     harness.counter.response_text = 2;
     harness.now = 1_800_000_000;
     let (result, logs) = harness.run().await;
-    let response = text(ok(result));
+    (text(ok(result)), logs)
+}
+
+pub(super) async fn text_completion_join() {
+    let logprobs = value(
+        r#"{"tokens": ["Hey"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}"#,
+    );
+    let (response, logs) = join_run().await;
     let metadata = (
         response.id.as_str(),
         response.object.as_str(),

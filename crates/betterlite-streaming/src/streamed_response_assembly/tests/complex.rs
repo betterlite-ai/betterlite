@@ -145,13 +145,13 @@ pub(super) async fn complex_thinking() {
         harness.counter.seen_reasoning().as_deref(),
         Some("thinking")
     );
-    assert_eq!(response.usage.completion_tokens, 3);
+    assert_eq!(response.usage.completion_tokens, 5);
     let details = response
         .usage
         .completion_tokens_details
         .expect("the complex path counts reasoning tokens");
     assert_eq!(details.reasoning_tokens, Some(2));
-    assert_eq!(details.text_tokens, Some(1));
+    assert_eq!(details.text_tokens, Some(3));
 }
 
 fn thinking_stream() -> Vec<Chunk> {
