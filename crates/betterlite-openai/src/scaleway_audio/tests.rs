@@ -4,14 +4,13 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::json;
 
-use super::error::MISSING_KEY_MESSAGE;
+use super::error::{MISSING_KEY_MESSAGE, get_error_class};
 use super::reply::decode_transcription_reply;
 use super::request::{
     complete_url, map_openai_params, transcription_request, validate_environment,
 };
 use crate::api::audio_file_input::ProcessedAudioFile;
 use crate::openai_base_config::{Headers, Object};
-use crate::ovhcloud_chat::error::get_error_class;
 
 fn object(value: serde_json::Value) -> Object {
     serde_json::from_value(value).expect("a JSON object")
