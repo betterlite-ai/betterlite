@@ -16,9 +16,9 @@ pub enum ToolListError {
 
 impl ToolListError {
     #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
+    pub const fn status_code(&self) -> u16 {
         match self {
-            Self::NotList | Self::NotObject { .. } => Some(400),
+            Self::NotList | Self::NotObject { .. } => 400,
         }
     }
 }

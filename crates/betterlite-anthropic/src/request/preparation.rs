@@ -38,8 +38,7 @@ use super::error::RequestError;
 use super::metadata::apply_user_id;
 use super::system::translate_system_message;
 
-mod option_gates;
-mod tools;
+mod stages;
 
 const DROP_THINKING_WARNING: &str = "Dropping 'thinking' param because the last assistant message with tool_calls has no thinking_blocks. The model won't use extended thinking for this turn.";
 

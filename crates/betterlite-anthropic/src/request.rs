@@ -6,7 +6,7 @@ pub mod metadata;
 mod preparation;
 pub mod system;
 mod tests;
-mod tool_list;
+pub mod tool_list;
 
 use std::collections::BTreeMap;
 

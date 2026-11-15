@@ -62,7 +62,7 @@ where
             Self::Parameters(error) => error.status_code(),
             Self::Defaults(_) | Self::Convert(_) => None,
             Self::Tools(error) => error.status_code(),
-            Self::ToolList(error) => error.status_code(),
+            Self::ToolList(error) => Some(error.status_code()),
             Self::BetaHeaders(error) => error.status_code(),
             Self::Metadata(error) => error.status_code(),
         }

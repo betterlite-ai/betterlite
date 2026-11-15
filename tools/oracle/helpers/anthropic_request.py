@@ -1,23 +1,17 @@
 import asyncio
 import logging
-from collections.abc import Callable, Coroutine
-from typing import Final, TypedDict
+from collections.abc import Coroutine
+from typing import Final, Protocol, TypedDict, runtime_checkable
 
 import litellm
 from litellm.exceptions import BadRequestError
 from litellm.llms.anthropic.chat.transformation import AnthropicConfig
 from litellm.llms.anthropic.common_utils import AnthropicError
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, ConfigDict
 from pydantic import JsonValue as Json
 from typing_extensions import override
 
 REVERSE_MAP_KEY: Final = "_anthropic_tool_name_map"
-Transform = Callable[
-    [str, list[Json], dict[str, Json], dict[str, Json], dict[str, Json]],
-    Coroutine[Json, Json, dict[str, Json]],
-]
-# the message type carries Any, so the bound method enters through this JSON-facing signature
-TRANSFORM = TypeAdapter(Transform)
 # the exception classes carry Any, so they enter through annotated names
 BAD_REQUEST: Final[type[Exception]] = BadRequestError
 ANTHROPIC_FAILURE: Final[type[Exception]] = AnthropicError
@@ -39,6 +33,24 @@ class Input(TypedDict):
     strips_billing_metadata: bool
     modify_params: bool
     global_drop_params: bool
+
+
+@runtime_checkable
+class Transformer(Protocol):
+    def async_transform_request(
+        self,
+        model: str,
+        messages: list[Json],
+        optional_params: dict[str, Json],
+        litellm_params: dict[str, Json],
+        headers: dict[str, Json],
+    ) -> Coroutine[Json, Json, dict[str, Json]]: ...
+
+
+# the message type carries Any, so the config enters through this JSON-facing signature
+class Bound(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    transformer: Transformer
 
 
 class Rejection(BaseModel):
@@ -83,8 +95,7 @@ def answer(input_value: Input) -> Json:
     if provider is None:
         provider = "anthropic"
     config = CaseConfig(provider=provider, strips_billing=input_value["strips_billing_metadata"])
-    method: object = config.async_transform_request
-    transform = TRANSFORM.validate_python(method)
+    transformer = Bound.model_validate({"transformer": config}).transformer
     messages: list[Json] = list(input_value["messages"])
     optional_params: dict[str, Json] = dict(input_value["optional_params"])
     litellm_params: dict[str, Json] = dict(input_value["litellm_params"])
@@ -93,7 +104,7 @@ def answer(input_value: Input) -> Json:
     logging.getLogger("LiteLLM").addHandler(warnings)
     try:
         body = asyncio.run(
-            transform(
+            transformer.async_transform_request(
                 input_value["model"],
                 messages,
                 optional_params,
