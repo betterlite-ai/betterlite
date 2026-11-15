@@ -131,7 +131,7 @@ async fn alice_apply_async(args: &AliceApplyArgs) -> HelperResult {
     )
     .await;
     let (texts, raised, status, blocked_content) = match outcome {
-        Ok(inputs) => (inputs.texts.unwrap_or_default(), false, None, None),
+        Ok(returned) => (returned.texts.unwrap_or_default(), false, None, None),
         Err(GuardrailFailure::GuardrailRaised {
             status_code,
             blocked_content,
@@ -159,10 +159,10 @@ async fn alice_apply_async(args: &AliceApplyArgs) -> HelperResult {
 
 fn conduct_request_payload(args: &ConductPayloadArgs) -> HelperResult {
     let inputs = conduct_inputs(args);
-    let payload = match request_payload(&inputs, &args.request_data, args.input_type) {
-        Some(payload) => json!(serde_json::to_value(payload).or_value_error()?),
-        None => Value::Null,
+    let Some(fields) = request_payload(&inputs, &args.request_data, args.input_type) else {
+        return Ok(json!({ "payload": Value::Null }));
     };
+    let payload = serde_json::to_value(fields).or_value_error()?;
     Ok(json!({ "payload": payload }))
 }
 

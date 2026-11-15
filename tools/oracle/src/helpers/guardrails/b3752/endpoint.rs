@@ -97,8 +97,8 @@ async fn serve(answer: ScriptedAnswer) -> Result<Endpoint, Box<HelperError>> {
     let recorder: Recorder = Arc::new(Mutex::new(Vec::new()));
     let handler_recorder = Arc::clone(&recorder);
     let handler = move |uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let recorder = Arc::clone(&handler_recorder);
-        let answer = answer.clone();
+        let entry_recorder = Arc::clone(&handler_recorder);
+        let scripted = answer.clone();
         async move {
             let entry = Recorded {
                 path: uri.path().to_owned(),
@@ -106,14 +106,14 @@ async fn serve(answer: ScriptedAnswer) -> Result<Endpoint, Box<HelperError>> {
                 content_type: header_text(&headers, "content-type"),
                 body: serde_json::from_slice(&bytes).unwrap_or(Value::Null),
             };
-            match recorder.lock() {
+            match entry_recorder.lock() {
                 Ok(mut entries) => entries.push(entry),
                 Err(_poisoned) => {
                     return (StatusCode::INTERNAL_SERVER_ERROR, "recorder poisoned")
                         .into_response();
                 }
             }
-            answer_response(&answer)
+            answer_response(&scripted)
         }
     };
     let router = Router::new().route(EVALUATE_PATH, post(handler));
