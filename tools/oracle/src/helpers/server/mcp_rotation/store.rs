@@ -44,7 +44,7 @@ fn rows<T: DeserializeOwned>(values: &[Value]) -> Result<Vec<T>, Box<HelperError
     values
         .iter()
         .map(|value| {
-            serde_json::from_value(value.clone())
+            serde_json::from_str(&value.to_string())
                 .map_err(|source| helper_error("InvalidRow", &source.to_string()))
         })
         .collect()

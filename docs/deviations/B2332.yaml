@@ -3,7 +3,7 @@ deviations:
   - what: The legacy URL-safe base64 fallback for a user credential rejects text over 1048576 bytes and non-ASCII text before decoding, so such a row is warned and skipped.
     why: bounded-inputs requires a finite limit before decoding untrusted stored text, and a real credential ciphertext or legacy value stays far below it. LiteLLM's base64.urlsafe_b64decode would decode the oversized value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1381-L1399
-  - what: JSONB columns are read as their text and re-parsed by the bounded stored-contract decoder, so a stored JSON value over 1048576 bytes or nested past its depth fails with a typed codec error instead of being used.
+  - what: Each stored row is read as one JSON text and checked by the bounded stored-contract decoder before it is used, so a row over 1048576 bytes or nested past the depth limit fails with a typed codec error instead of being rotated.
     why: Python's Prisma client hands LiteLLM already-parsed JSON, while betterlite's native rows carry text; the size and depth limits are B003's bounded decoding.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1308-L1323
   - what: The rotation takes the current salt key and encryption algorithm from an injected cipher snapshot instead of reading LITELLM_SALT_KEY and general_settings on every call.
