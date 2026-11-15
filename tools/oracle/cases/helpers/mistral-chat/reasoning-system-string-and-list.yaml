@@ -1,0 +1,42 @@
+kind: helper
+name: mistral-chat-reasoning-system-string-and-list
+call:
+  mistral_chat:
+    steps:
+      - kind: request
+        model: Magistral-Small-2506
+        optional_params:
+          _add_reasoning_prompt: true
+          temperature: 0.1
+        messages:
+          - role: system
+            content: be brief
+          - role: user
+            content: hi
+      - kind: request
+        model: magistral-medium
+        optional_params:
+          _add_reasoning_prompt: true
+        messages:
+          - role: system
+            content:
+              - type: text
+                text: be brief
+          - role: user
+            content: hi
+      - kind: request
+        model: magistral-small
+        optional_params:
+          _add_reasoning_prompt: true
+        messages:
+          - role: user
+            content: hi
+      - kind: request
+        model: mistral-small-latest
+        optional_params:
+          _add_reasoning_prompt: true
+        messages:
+          - role: user
+            content: hi
+env: {}
+compare: {ignore: []}
