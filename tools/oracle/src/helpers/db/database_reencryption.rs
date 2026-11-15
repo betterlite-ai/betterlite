@@ -120,7 +120,7 @@ fn run_replace(
     let stored =
         decode_migration_json(text.as_bytes()).map_err(|error| input_error(error.to_string()))?;
     let mut replacement =
-        |text: &str| Ok::<_, MigrationError>(replacements.get(text).cloned().flatten());
+        |suffix: &str| Ok::<_, MigrationError>(replacements.get(suffix).cloned().flatten());
     let (replaced, count) = replace_ciphertexts(stored, &mut replacement, depth, max_depth)
         .map_err(|error| input_error(error.to_string()))?;
     let rendered =
