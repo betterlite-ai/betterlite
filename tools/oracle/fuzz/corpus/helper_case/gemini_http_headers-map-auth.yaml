@@ -1,0 +1,11 @@
+kind: helper
+name: gemini-http-headers-map-auth
+call:
+  gemini_http_headers:
+    api_key: null
+    auth_map:
+      x-goog-api-key: helper-key
+    headers: null
+    optional_params: {}
+env: {}
+compare: {ignore: []}

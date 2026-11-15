@@ -1,0 +1,12 @@
+kind: helper
+name: aim-output-streaming-blocking-message
+call:
+  b3750:
+    function: stream
+    settings: {api_key: aim-oracle-key, api_base: "http://aim.test", litellm_version: "1.105.1"}
+    request_data: {messages: [{role: user, content: "hello"}]}
+    key_alias: null
+    chunks: [{choices: [{index: 0, delta: {content: "he"}}]}]
+    frames: [{verified_chunk: {id: "chatcmpl-1", object: "chat.completion.chunk", choices: [{index: 0, delta: {content: "he"}}]}}, {blocking_message: "blocked output"}]
+env: {}
+compare: {ignore: []}

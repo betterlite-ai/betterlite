@@ -1,0 +1,18 @@
+kind: helper
+name: soniox-prepare-provider-error-priority
+call:
+  soniox_prepare:
+    calls:
+    - {function: raise, status: 200, action: create transcription, body: '{"id": "tx_1"}', probes: []}
+    - {function: raise, status: 400, action: create transcription, body: '{"error_message": "FIRST", "error": "SECOND", "marker": "RAW"}', headers: {X-Request-Id: abc}, probes: [FIRST, SECOND, RAW]}
+    - {function: raise, status: 500, action: poll transcription, body: '{"error_message": "", "error": "SECOND"}', headers: {X-Request-Id: abc}, probes: [SECOND]}
+    - {function: raise, status: 500, action: poll transcription, body: '{"error_message": null, "error": "SECOND"}', probes: [SECOND]}
+    - {function: raise, status: 502, action: upload file, body: '{"error": "ONLY"}', probes: [ONLY]}
+    - {function: raise, status: 503, action: poll transcription, body: '{"error_message": 0, "error": false, "marker": "RAW"}', probes: [RAW]}
+    - {function: raise, status: 400, action: fetch transcript, body: '{"error_message": "", "error": 7}', probes: ["7"]}
+    - {function: raise, status: 400, action: create transcription, body: 'not json RAW', probes: [RAW]}
+    - {function: raise, status: 418, action: fetch transcript, body: '[1, 2] RAW', probes: [RAW]}
+    - {function: raise, status: 500, action: poll transcription, body: '{"marker": "RAW"}', probes: [RAW]}
+    - {function: raise, status: 401, action: upload file, body: '{"error": {"detail": "NESTED"}}', probes: [NESTED]}
+compare: {ignore: []}
+env: {}

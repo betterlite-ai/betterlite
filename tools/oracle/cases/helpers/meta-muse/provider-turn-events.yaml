@@ -1,0 +1,39 @@
+kind: helper
+name: provider-turn-events
+call:
+  b6414:
+    function: events
+    mode: PUSH_TO_TALK
+    frames:
+      - {"type": "speechStart", "turnId": "t1"}
+      - {"type": "transcript", "turnId": "t1", "transcript": "hel"}
+      - {"type": "transcript", "turnId": "t1", "transcript": "hello"}
+      - {"type": "transcript", "turnId": "t1", "transcript": "hello"}
+      - {"type": "transcript", "turnId": "t1", "transcript": "help"}
+      - {"type": "speechEnd", "turnId": "t1"}
+      - {"type": "transcript", "turnId": "t1", "transcript": "hello there", "final": true}
+      - {"type": "transcript", "transcript": "ptt"}
+      - {"type": "transcript", "transcript": "ptt done", "final": true}
+      - {"type": "speechComplete", "turnId": 7, "transcript": "seven"}
+      - {"type": "speechStart", "turnId": 7}
+      - {"type": "speechEnd", "turnId": " 8 "}
+      - {"type": "speechComplete", "turnId": "8", "transcript": "eight"}
+      - {"type": "error", "error": {"type": "provider_error", "message": "secret provider detail"}}
+      - {"type": "transcript", "turnId": "t9"}
+      - {"type": "speechComplete", "turnId": "t9", "transcript": 5}
+      - {"type": "speechEnd"}
+      - {"type": "speechStart", "turnId": true}
+      - {"type": "conversation.item.created"}
+      - {"type": "transcript", "turnId": "t10", "transcript": ""}
+      - {"type": "transcript", "turnId": 12, "transcript": "twelve"}
+      - {"type": "speechStart", "turnId": "   "}
+      - {"type": "transcript", "turnId": 1.5, "transcript": "float"}
+      - {"type": "transcript", "turnId": "t1", "transcript": "ignored", "final": "yes"}
+      - {"type": "transcript", "turnId": "", "transcript": "blank"}
+      - {"type": "transcript", "turnId": null, "transcript": ""}
+      - {"type": "transcript", "turnId": null, "transcript": "x"}
+      - {"type": "speechComplete", "turnId": "t1", "transcript": "again"}
+      - {"type": "speechComplete", "turnId": 5, "transcript": "five"}
+      - {"type": "audioProgress", "audioProcessedMs": 100}
+env: {}
+compare: {ignore: []}
