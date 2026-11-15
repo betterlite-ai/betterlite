@@ -1,0 +1,14 @@
+kind: helper
+name: deepinfra-score-order-and-inference-status
+call:
+  deepinfra_policy:
+    operation: rerank_response
+    params:
+      - model: BAAI/bge-reranker-v2-m3
+        body: '{"scores": [0.9, 0.125], "input_tokens": 4, "request_id": "req-1", "inference_status": {"status": "ok", "runtime_ms": 12, "cost": 0.5, "tokens_generated": 3, "tokens_input": 4}}'
+        fail_logging: false
+      - {model: BAAI/bge-reranker-v2-m3, body: '{"scores": [], "request_id": "req-2"}', fail_logging: false}
+      - {model: BAAI/bge-reranker-v2-m3, body: '{"request_id": "req-3"}', fail_logging: false}
+      - {model: BAAI/bge-reranker-v2-m3, body: '{"scores": [5.0], "request_id": "req-4"}', fail_logging: false}
+env: {}
+compare: {ignore: []}

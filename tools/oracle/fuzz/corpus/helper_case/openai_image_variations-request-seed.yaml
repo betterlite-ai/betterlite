@@ -1,0 +1,16 @@
+kind: helper
+name: openai-image-variations-request-seed
+call:
+  openai_image_variations:
+    function: binary_file_descriptor
+    probes:
+      - model: dall-e-2
+        image_filename: cat.png
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        client: sync
+        reply: {status: 200, body: '{"created":7,"data":[]}'}
+env: {}
+compare: {ignore: []}

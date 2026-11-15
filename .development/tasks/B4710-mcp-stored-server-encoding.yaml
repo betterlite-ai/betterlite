@@ -28,6 +28,9 @@ description: >-
   The plan registers helper operation b4710 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b4710.rs, write tools/oracle/helpers/b4710.py, and leave both registries as they are.
 scope:
   paths:
+    - "tools/oracle/src/tests.rs"
+    - "tools/oracle/src/lib.rs"
+    - "tools/oracle/src/cli.rs"
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/mcp_server_encoding.rs
     - crates/betterlite-db/src/mcp_server_encoding/**

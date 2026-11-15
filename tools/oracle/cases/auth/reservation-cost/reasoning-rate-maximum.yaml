@@ -1,0 +1,21 @@
+kind: helper
+name: reservation-cost-reasoning-rate-maximum
+call:
+  b3001:
+    function: max_cost
+    request:
+      model: reason-model
+      max_tokens: 100
+    route: /v1/chat/completions
+    model_cost:
+      reason-model:
+        mode: chat
+        max_output_tokens: 1000
+        input_cost_per_token: 0.00001
+        output_cost_per_token: 0.00001
+        output_cost_per_reasoning_token: 0.00003
+    input_token_counts:
+      reason-model: 1000
+    model_list: []
+env: {}
+compare: {ignore: []}

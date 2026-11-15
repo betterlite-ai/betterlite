@@ -1,0 +1,33 @@
+kind: helper
+name: reservation-cost-mixed-pricing-shapes-takes-max
+call:
+  b3001:
+    function: max_cost
+    request:
+      model: [flat-model, tiered-model]
+      max_tokens: 500
+    route: /v1/chat/completions
+    model_cost:
+      flat-model:
+        mode: chat
+        max_input_tokens: 100000
+        max_output_tokens: 1000
+        input_cost_per_token: 0.000002
+        output_cost_per_token: 0.00001
+      tiered-model:
+        mode: chat
+        max_input_tokens: 1000000
+        max_output_tokens: 1000
+        tiered_pricing:
+          - input_cost_per_token: 0.00000005
+            output_cost_per_token: 0.0000004
+            range: [0, 256000]
+          - input_cost_per_token: 0.00000025
+            output_cost_per_token: 0.000002
+            range: [256000, 1000000]
+    input_token_counts:
+      flat-model: 1000
+      tiered-model: 300000
+    model_list: []
+env: {}
+compare: {ignore: []}
