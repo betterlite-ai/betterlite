@@ -193,6 +193,19 @@ fn build_rejects_kinds_without_a_builder() {
         .err()
         .unwrap();
     assert_eq!(judge.to_string(), "Unsupported guardrail: llm_as_a_judge");
+    let custom = factories()
+        .build(
+            "my_module.MyGuardrail",
+            &params(r#"{"guardrail":"my_module.MyGuardrail","mode":"pre_call"}"#),
+            "custom",
+            true,
+        )
+        .err()
+        .unwrap();
+    assert_eq!(
+        custom.to_string(),
+        "Unsupported guardrail: my_module.MyGuardrail"
+    );
 }
 
 #[test]
