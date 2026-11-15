@@ -6,6 +6,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_translation::LakeraOnFlagged;
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_initializers::lakera_v2::LakeraV2Args;
@@ -398,12 +399,27 @@ fn update_applies_the_advisory_fields_and_the_new_mode() {
 fn update_keeps_the_connection_fields() {
     let mut args = args();
     args.api_base = Some("http://live".to_owned());
+    args.api_key = Some(SecretString::from("live-key"));
     args.project_id = Some("live-project".to_owned());
+    args.metadata = Some(BTreeMap::from([(
+        "team".to_owned(),
+        GuardrailValue::Text("a".to_owned()),
+    )]));
     let mut guardrail = built(args);
-    let params = update_params(r#", "api_base": "http://other", "project_id": "other""#);
+    let params = update_params(
+        r#", "api_base": "http://other", "api_key": "other", "project_id": "other", "metadata": {"team": "b"}"#,
+    );
     guardrail.update_params(&params).expect("a valid update");
     assert_eq!(guardrail.api_base, "http://live");
+    assert_eq!(guardrail.api_key.expose_secret(), "live-key");
     assert_eq!(guardrail.project_id.as_deref(), Some("live-project"));
+    assert_eq!(
+        guardrail
+            .metadata
+            .as_ref()
+            .and_then(|fields| fields.get("team")),
+        Some(&GuardrailValue::Text("a".to_owned()))
+    );
 }
 
 #[test]
