@@ -217,7 +217,11 @@ fn transform_builds_the_bfl_edit_body() {
     let form = form_for(
         &mut image,
         MaskInput::Absent,
-        &params(&[("seed", number(7))]),
+        &params(&[
+            ("seed", number(7)),
+            ("steps", Json::Null),
+            ("unrelated", Json::Bool(true)),
+        ]),
     )
     .unwrap();
 
@@ -481,11 +485,11 @@ async fn async_transform_rejects_a_remote_image_before_transforming() {
 
 #[tokio::test]
 async fn async_transform_rejects_a_remote_mask_before_transforming() {
-    let mut image = media_bytes("image");
+    // the async override reaches its mask download before the sync transform ever looks at the image
     let mut mask = SuppliedMedia::Text("https://example.test/mask.png".to_owned());
     let error = async_transform_image_edit_request(
         Some("edit it"),
-        Some(&mut image),
+        None,
         MaskInput::Media(&mut mask),
         &empty_params(),
         DEPTH,
