@@ -136,7 +136,16 @@ class ActiveSubmissions(TypedDict):
     rows: list[JsonValue]
 
 
-Input = FindConflict | CreateIfFree | GetAll | GetServer | Review | PinnedTools | Submissions | ActiveSubmissions
+Input = (
+    FindConflict
+    | CreateIfFree
+    | GetAll
+    | GetServer
+    | Review
+    | PinnedTools
+    | Submissions
+    | ActiveSubmissions
+)
 
 
 def insensitive_equals(value: JsonValue, expected: JsonValue) -> bool:
