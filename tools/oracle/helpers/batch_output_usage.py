@@ -107,5 +107,5 @@ def run(input_value: Input) -> JsonValue:
         provider = input_value["provider"]
     name = input_value["model_name"]
     info = input_value["model_info"]
-    result = asyncio.run(batch_utils.calculate_batch_cost_and_usage(entries, provider, name, info))  # type: ignore[misc, arg-type]  # noqa: E501  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # bare dict entries and a deployment model_info LiteLLM types as a full ModelInfo: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L71-L76
+    result = asyncio.run(batch_utils.calculate_batch_cost_and_usage(entries, provider, name, info))  # type: ignore[arg-type]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # bare dict entries and a deployment model_info LiteLLM types as a full ModelInfo: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L71-L76
     return _result_value(result, diagnostics)
