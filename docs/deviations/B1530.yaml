@@ -3,7 +3,7 @@ deviations:
   - what: An Ideogram or Stable Diffusion reply larger than 16 MiB is refused with a typed error that keeps the upstream status and headers.
     why: LiteLLM reads the reply with raw_response.json() and has no size limit; bounded-inputs requires one on a body that comes from outside, and an image reply that large is not one any working setup returns.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L160-L167
-  - what: An Ideogram reply image member that ImageObject cannot hold, such as a number, a boolean or a list, fails with a typed InvalidImageUrl error that names the entry index.
+  - what: An Ideogram reply image member that ImageObject cannot hold, such as a number, a boolean, a list or a map whose url is not a string or null, fails with a typed InvalidImageUrl error that names the entry index.
     why: LiteLLM constructs ImageObject inside the transform and its pydantic ValidationError escapes as a 500; betterlite keeps the failure and its entry index but as a typed error, and no working reply carries such a member.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L172-L185
   - what: A Stable Diffusion reply map whose url is not a string or null fails with the same typed InvalidImageUrl error and entry index.
@@ -28,6 +28,6 @@ deviations:
     why: betterlite's shared size reader accepts ASCII digits only; a working request spells its size in ASCII.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L106-L115
   - what: A size string padded with U+001C to U+001F is not trimmed by betterlite, so it falls back to the family preset where Python's strip() and int() remove those characters and read the dimensions.
-    why: Rust's Unicode whitespace set leaves out the four information separators Python counts as whitespace; no working request sends them around a size.
+    why: Python's str.strip() removes the four information separators before the Ideogram alias lookup, while Rust's trim leaves them; Python's int() rejects them too, so only the trimmed Ideogram path differs, and no working request sends them around a size.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L102-L115
 kept_bugs: []
