@@ -172,9 +172,7 @@ where
         let Some(files) = self.files.as_ref() else {
             return raw_file_id.map(str::to_owned);
         };
-        let Some(raw_id) = raw_file_id else {
-            return None;
-        };
+        let raw_id = raw_file_id?;
         if raw_id.is_empty()
             || is_base64_encoded_unified_id(raw_id, MANAGED_FILE_ID_PREFIX).is_some()
         {
@@ -198,6 +196,6 @@ where
         let Some(job) = jobs.scheduled_job(CHECK_BATCH_COST_JOB) else {
             return false;
         };
-        job.poller.is_some_and(|poller| poller.support_confirmed())
+        job.poller.is_some_and(BatchCostPoller::support_confirmed)
     }
 }

@@ -40,10 +40,10 @@ impl ManagedFileLookup for ManagedFileRows<'_> {
             .map_err(|source| {
                 ManagedFileLookupError::Lookup(TableError::Database(backend(source)))
             })?;
-        let Some(row) = row else {
+        let Some(found) = row else {
             return Ok(None);
         };
-        let text: String = row.try_get(0).map_err(|source| {
+        let text: String = found.try_get(0).map_err(|source| {
             ManagedFileLookupError::Lookup(TableError::Database(backend(source)))
         })?;
         serde_json::from_str(&text)
