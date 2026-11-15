@@ -752,3 +752,44 @@ fn a_default_decision_renders_the_violation_message_template() {
     let result = get_permission_for_tool_call(&guardrail, Some("Bash"), Some("function"), None);
     assert_eq!(result.message.as_deref(), Some("blocked Bash"));
 }
+
+#[test]
+fn the_first_failing_path_in_sorted_order_is_reported() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![pattern_rule(
+            "both-paths",
+            ToolDecision::Allow,
+            "^read$",
+            &[("b", "^y$"), ("a", "^x$")],
+        )],
+    );
+    let arguments = json_arguments(r#"{"a": "1", "b": "2"}"#);
+    let result =
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
+    assert!(!result.is_allowed);
+    assert_eq!(
+        result.message.as_deref(),
+        Some("Value '1' for path 'a' does not match allowed pattern '^x$' for tool 'read'")
+    );
+}
+
+#[test]
+fn the_fallback_template_without_a_rule_id_uses_the_default_message() {
+    let mut parameters = args(ToolDefaultAction::Deny);
+    parameters.violation_message_template = Some("blocked {rule_id}".to_owned());
+    let guardrail = build(parameters, Vec::new());
+    let (result, output) = captured_logs(tracing::Level::WARN, || {
+        get_permission_for_tool_call(&guardrail, Some("Bash"), Some("function"), None)
+    });
+    assert!(!result.is_allowed);
+    assert_eq!(result.rule_id, None);
+    assert_eq!(
+        result.message.as_deref(),
+        Some("Tool 'Bash' denied by default action")
+    );
+    assert!(
+        output.contains("Failed to format violation message template"),
+        "unexpected log output {output}"
+    );
+}
