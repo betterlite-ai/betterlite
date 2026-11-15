@@ -127,7 +127,13 @@ fn stage_input(
             if backend == AuthBackend::AuthRequestModels {
                 return Ok(StageInput::AuthRequestModels(Box::new(stage)));
             }
-            let requested = resolve(&stage).map_err(|_| AuthenticationFailure::Missing)?;
+            let requested = match resolve(&stage) {
+                Ok(requested) => requested,
+                Err(error) => {
+                    tracing::debug!(error = %error, "the request model stage failed");
+                    return Err(AuthenticationFailure::Missing);
+                }
+            };
             let rule = rule_for_request(request);
             let depth = max_recurse_depth_for_request(request);
             Ok(StageInput::AuthModelPatterns(Box::new(
