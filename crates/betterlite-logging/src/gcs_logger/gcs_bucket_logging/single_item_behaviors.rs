@@ -1,4 +1,7 @@
+use thiserror::Error;
+
 use crate::gcs_client::gcs_storage_auth::config_resolution_behaviors::logging_config;
+use crate::gcs_client::gcs_storage_auth::error::GcsClientError;
 use crate::gcs_client::gcs_storage_auth::header_construction_behaviors::construct_request_headers;
 use crate::gcs_client::gcs_storage_auth::upload_behaviors::log_json_data_on_gcs;
 use crate::gcs_mock::auth::VertexAuth;
@@ -8,7 +11,21 @@ use crate::types::gcs_storage_auth::type_definitions::{GcsLoggingKwargs, GcsLogg
 use super::GcsBucketLogger;
 use super::QueuedItem;
 use super::grouped_batch_behaviors::dynamic_params;
-use super::object_naming_behaviors::get_object_name;
+use super::object_naming_behaviors::{ObjectNameError, get_object_name};
+
+#[derive(Debug, Error)]
+pub enum SingleUploadError<Auth, Http>
+where
+    Auth: VertexAuth,
+    Http: GcsHttpClient,
+{
+    #[error("the GCS item upload failed")]
+    Client(#[from] GcsClientError<Auth, Http>),
+    #[error("the GCS object name could not be built")]
+    ObjectName(#[source] ObjectNameError),
+    #[error("the GCS logging payload could not be serialized")]
+    Payload(#[source] serde_json::Error),
+}
 
 // LiteLLM catches every exception of a single send and logs it, so one bad item never stops the loop
 pub async fn send_single_log_item<Auth, Http>(
@@ -18,9 +35,9 @@ pub async fn send_single_log_item<Auth, Http>(
     Auth: VertexAuth + Clone,
     Http: GcsHttpClient,
 {
-    if let Err(message) = upload_item(logger, item).await {
+    if let Err(error) = upload_item(logger, item).await {
         tracing::error!(
-            message = %message,
+            error = ?error,
             "GCS Bucket error logging individual payload to GCS bucket"
         );
     }
@@ -29,7 +46,7 @@ pub async fn send_single_log_item<Auth, Http>(
 async fn upload_item<Auth, Http>(
     logger: &GcsBucketLogger<Auth, Http>,
     item: &QueuedItem,
-) -> Result<(), String>
+) -> Result<(), SingleUploadError<Auth, Http>>
 where
     Auth: VertexAuth + Clone,
     Http: GcsHttpClient,
@@ -37,26 +54,23 @@ where
     let kwargs = GcsLoggingKwargs {
         dynamic_params: dynamic_params(item.dynamic_params.as_ref()),
     };
-    let config = logging_config(&logger.base, &kwargs)
-        .await
-        .map_err(|error| error.to_string())?;
+    let config = logging_config(&logger.base, &kwargs).await?;
     let headers = construct_request_headers(
         &logger.base,
         &config.bucket_name,
         config.path_service_account.as_ref(),
         Some(&config.vertex_instance),
     )
-    .await
-    .map_err(|error| error.to_string())?;
+    .await?;
     let object_name = get_object_name(
         logger,
         item.payload.as_ref(),
         &item.response_id,
         item.metadata.as_ref(),
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(SingleUploadError::ObjectName)?;
     let payload =
-        serde_json::to_string(item.payload.as_ref()).map_err(|error| error.to_string())?;
+        serde_json::to_string(item.payload.as_ref()).map_err(SingleUploadError::Payload)?;
     log_json_data_on_gcs(
         &logger.base,
         &headers,
@@ -64,8 +78,7 @@ where
         &object_name,
         &GcsLoggingPayload::Text(payload),
     )
-    .await
-    .map_err(|error| error.to_string())?;
+    .await?;
     Ok(())
 }
 

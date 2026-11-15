@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 
-use super::super::tests::support::{Answer, body_of, item, metadata, open, upload_name};
+use super::super::tests::support::{
+    Answer, body_of, capture_logs, item, metadata, open, upload_name,
+};
 use super::send_single_log_item;
 
 const FIRST_ID: &str = "00000000000000000000000000000000";
@@ -60,8 +62,13 @@ async fn a_custom_log_id_names_the_object() {
 #[tokio::test]
 async fn an_upload_failure_is_logged_and_not_propagated() {
     let harness = open(&[], Some("bucket"), Answer::with_status(500));
+    let (logs, _guard) = capture_logs();
     send_single_log_item(&harness.logger, &item("chatcmpl-1", None, Json::Null)).await;
     assert_eq!(harness.requests().len(), 1);
+    assert!(
+        logs.text()
+            .contains("GCS Bucket error logging individual payload to GCS bucket")
+    );
 }
 
 #[tokio::test]

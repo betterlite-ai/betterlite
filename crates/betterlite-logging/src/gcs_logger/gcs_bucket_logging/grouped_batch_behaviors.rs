@@ -1,6 +1,8 @@
 use betterlite_models::decisions::Json;
+use thiserror::Error;
 
 use crate::gcs_client::gcs_storage_auth::config_resolution_behaviors::logging_config;
+use crate::gcs_client::gcs_storage_auth::error::GcsClientError;
 use crate::gcs_client::gcs_storage_auth::header_construction_behaviors::construct_request_headers;
 use crate::gcs_client::gcs_storage_auth::upload_behaviors::log_json_data_on_gcs;
 use crate::gcs_mock::auth::VertexAuth;
@@ -20,6 +22,18 @@ pub(super) fn dynamic_params(dynamic: &Json) -> Option<Json> {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum BatchUploadError<Auth, Http>
+where
+    Auth: VertexAuth,
+    Http: GcsHttpClient,
+{
+    #[error("the GCS batch upload failed")]
+    Client(#[from] GcsClientError<Auth, Http>),
+    #[error("the GCS batch payload could not be serialized")]
+    Payload(#[source] serde_json::Error),
+}
+
 #[must_use]
 pub async fn send_grouped_batch<Auth, Http>(
     logger: &GcsBucketLogger<Auth, Http>,
@@ -34,9 +48,9 @@ where
     }
     match upload_group(logger, items).await {
         Ok(()) => (items.len(), 0),
-        Err(message) => {
+        Err(error) => {
             tracing::error!(
-                message = %message,
+                error = ?error,
                 "GCS Bucket error logging batch payload to GCS bucket"
             );
             (0, items.len())
@@ -47,27 +61,24 @@ where
 async fn upload_group<Auth, Http>(
     logger: &GcsBucketLogger<Auth, Http>,
     items: &[QueuedItem],
-) -> Result<(), String>
+) -> Result<(), BatchUploadError<Auth, Http>>
 where
     Auth: VertexAuth + Clone,
     Http: GcsHttpClient,
 {
     let kwargs = logging_kwargs(items);
-    let config = logging_config(&logger.base, &kwargs)
-        .await
-        .map_err(|error| error.to_string())?;
+    let config = logging_config(&logger.base, &kwargs).await?;
     let headers = construct_request_headers(
         &logger.base,
         &config.bucket_name,
         config.path_service_account.as_ref(),
         Some(&config.vertex_instance),
     )
-    .await
-    .map_err(|error| error.to_string())?;
+    .await?;
     let date = get_object_date(logger.clock.now());
     let batch_id = batch_id(logger);
     let object_name = generate_batch_object_name(&date, &batch_id);
-    let ndjson = combine_payloads_to_ndjson(items).map_err(|error| error.to_string())?;
+    let ndjson = combine_payloads_to_ndjson(items).map_err(BatchUploadError::Payload)?;
     log_json_data_on_gcs(
         &logger.base,
         &headers,
@@ -75,8 +86,7 @@ where
         &object_name,
         &GcsLoggingPayload::Text(ndjson),
     )
-    .await
-    .map_err(|error| error.to_string())?;
+    .await?;
     Ok(())
 }
 
