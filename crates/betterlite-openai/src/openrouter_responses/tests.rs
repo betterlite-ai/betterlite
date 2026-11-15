@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::identity::provider_id::ProviderId;
+use secrecy::SecretString;
 
 use super::{
     PROVIDER, ResponsesConfigError, SUPPORTS_NATIVE_WEBSOCKET, get_complete_url,
@@ -29,7 +30,13 @@ fn the_config_reports_openrouter_and_no_native_websocket() {
 #[test]
 fn validate_environment_sets_only_the_bearer_header() {
     let given = Headers::from([(String::from("x-extra"), String::from("1"))]);
-    let headers = validate_environment(given, Some("sk-or"), None, &environment(&[])).unwrap();
+    let headers = validate_environment(
+        given,
+        Some(&SecretString::from("sk-or")),
+        None,
+        &environment(&[]),
+    )
+    .unwrap();
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
         Some("Bearer sk-or")
@@ -67,8 +74,15 @@ fn validate_environment_follows_the_key_order(
     #[case] env: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    let headers =
-        validate_environment(Headers::new(), api_key, global_api_key, &environment(env)).unwrap();
+    let api_key = api_key.map(SecretString::from);
+    let global_api_key = global_api_key.map(SecretString::from);
+    let headers = validate_environment(
+        Headers::new(),
+        api_key.as_ref(),
+        global_api_key.as_ref(),
+        &environment(env),
+    )
+    .unwrap();
     let wanted = format!("Bearer {expected}");
     assert_eq!(
         headers.get("Authorization").map(String::as_str),

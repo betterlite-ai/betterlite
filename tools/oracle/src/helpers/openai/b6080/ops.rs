@@ -81,10 +81,12 @@ fn embedding(cases: &[EmbeddingCase]) -> HelperResult {
 fn responses(cases: &[ResponsesCase]) -> HelperResult {
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
+        let api_key = case.api_key.clone().map(SecretString::from);
+        let global_api_key = case.global_api_key.clone().map(SecretString::from);
         let headers = responses_headers(
             case.headers.clone(),
-            case.api_key.as_deref(),
-            case.global_api_key.as_deref(),
+            api_key.as_ref(),
+            global_api_key.as_ref(),
             &case.environment,
         )
         .or_value_error()?;
