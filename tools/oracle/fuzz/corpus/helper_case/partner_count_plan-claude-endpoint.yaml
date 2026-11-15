@@ -1,0 +1,11 @@
+kind: helper
+name: partner-count-plan-claude-endpoint-seed
+call:
+  partner_count_plan:
+    cases:
+    - model: claude-sonnet-4-6@default
+      project: my-project
+      location: us-east5
+compare:
+  ignore: []
+env: {}
