@@ -41,9 +41,9 @@ pub(super) fn final_text() {
     let mut state = session();
     let current = ids(Some("resp_a"), Some("item_a"));
     let mut chunks = None;
-    let mut output = projection(&mut state, &source);
-    let first = output.transform_text_output_event(&text("Hel"), &current, &mut chunks);
-    assert_eq!(first.as_ref().map(json), Some(delta(1, "Hel")));
+    let output = projection(&mut state, &source);
+    let first = output.transform_text_output_event(&text("Hey"), &current, &mut chunks);
+    assert_eq!(first.as_ref().map(json), Some(delta(1, "Hey")));
     let second = output.transform_text_output_event(&text(""), &current, &mut chunks);
     assert_eq!(second.as_ref().map(json), Some(delta(2, "")));
     let defaulted: TextOutput = serde_json::from_str("{}").expect("an empty textOutput");
@@ -53,7 +53,7 @@ pub(super) fn final_text() {
         .flatten()
         .map(|chunk| chunk.delta.clone())
         .collect();
-    assert_eq!(contents, ["Hel", "", ""]);
+    assert_eq!(contents, ["Hey", "", ""]);
     assert_eq!(chunks.as_ref().map(Vec::len), Some(3));
 }
 
@@ -61,7 +61,7 @@ pub(super) fn audio_output_delta() {
     let source = CountingIds::new();
     let mut state = session();
     let current = ids(Some("resp_a"), Some("item_a"));
-    let mut output = projection(&mut state, &source);
+    let output = projection(&mut state, &source);
     let audio = AudioOutput {
         content: "!!not base64!!".to_owned(),
     };

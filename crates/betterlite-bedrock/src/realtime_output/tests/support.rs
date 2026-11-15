@@ -60,6 +60,9 @@ pub(super) fn ids(response: Option<&str>, item: Option<&str>) -> OutputIds {
     }
 }
 
-pub(super) fn json<T: serde::Serialize>(value: &T) -> String {
+pub(super) fn json<T>(value: &T) -> String
+where
+    T: serde::Serialize,
+{
     serde_json::to_string(value).expect("a serializable event")
 }

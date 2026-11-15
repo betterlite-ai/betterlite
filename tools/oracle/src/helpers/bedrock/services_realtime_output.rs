@@ -147,20 +147,10 @@ fn content_start_output(
     }
 }
 
-fn text_output(
-    output: &NovaRealtimeOutput<'_>,
-    event: &TextOutput,
-    ids: &OutputIds,
-    chunks: &mut Option<Vec<ResponseDelta>>,
-) -> CallOutput {
-    let emitted = output.transform_text_output_event(event, ids, chunks);
-    CallOutput::Text {
-        events: emitted.into_iter().collect(),
-        delta_chunks: chunks.as_ref().map(|kept| {
-            kept.iter()
-                .map(|chunk| OutputEvent::TextDelta(chunk.clone()))
-                .collect()
-        }),
+fn usage_output(output: &mut NovaRealtimeOutput<'_>, usage: &UsageEvent) -> CallOutput {
+    output.transform_usage_event(usage.clone());
+    CallOutput::Usage {
+        usage: take_usage_delta(output.session),
     }
 }
 
@@ -174,28 +164,36 @@ fn run_call(
         Call::UserSpeech { start } => CallOutput::Events {
             events: vec![output.transform_user_speech_event(*start)],
         },
-        Call::UserTranscript { text } => CallOutput::Events {
-            events: vec![output.transform_user_transcript_event(text)],
-        },
+        Call::UserTranscript { text } => {
+            let transcribed = output.transform_user_transcript_event(text);
+            CallOutput::Events {
+                events: vec![transcribed],
+            }
+        }
         Call::UserCompleted => CallOutput::Events {
             events: output
                 .user_transcript_completed_events()
                 .into_iter()
                 .collect(),
         },
-        Call::TextOutput { event, ids } => text_output(output, event, ids, chunks),
+        Call::TextOutput { event, ids } => CallOutput::Text {
+            events: output
+                .transform_text_output_event(event, ids, chunks)
+                .into_iter()
+                .collect(),
+            delta_chunks: chunks.as_ref().map(|kept| {
+                kept.iter()
+                    .map(|chunk| OutputEvent::TextDelta(chunk.clone()))
+                    .collect()
+            }),
+        },
         Call::AudioOutput { event, ids } => CallOutput::Events {
             events: output
                 .transform_audio_output_event(event, ids)
                 .into_iter()
                 .collect(),
         },
-        Call::Usage { usage } => {
-            output.transform_usage_event(usage.clone());
-            CallOutput::Usage {
-                usage: take_usage_delta(output.session),
-            }
-        }
+        Call::Usage { usage } => usage_output(output, usage),
     }
 }
 

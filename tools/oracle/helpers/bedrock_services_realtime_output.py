@@ -10,7 +10,7 @@ from pydantic import JsonValue, TypeAdapter
 JsonObject = dict[str, JsonValue]
 JsonAdapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-# LiteLLM's event TypedDicts carry Any, so this is the widest Any-free type they fit; json.dumps reads them
+# LiteLLM's event TypedDicts carry Any, so this is the widest Any-free type they fit
 EventList = Sequence[Collection[str]]
 
 
@@ -135,7 +135,9 @@ class RealtimeConfig(Protocol):
 
     def transform_user_speech_event(self, *, is_speech_start: bool) -> EventList: ...
 
-    def transform_user_transcript_event(self, transcript: str) -> EventList: ...  # ast-grep-ignore: no-long-names
+    def transform_user_transcript_event(  # ast-grep-ignore: no-long-names
+        self, transcript: str
+    ) -> EventList: ...
 
     def user_transcript_completed_events(self) -> EventList: ...  # ast-grep-ignore: no-long-names
 
@@ -171,7 +173,8 @@ class FixedFast:
 
 
 def events_view(events: EventList) -> list[JsonValue]:
-    views = [JsonAdapter.validate_json(json.dumps(event)) for event in events]
+    views: list[JsonValue] = []
+    views.extend(JsonAdapter.validate_json(json.dumps(event)) for event in events)
     return views
 
 
@@ -224,9 +227,11 @@ def run(input_value: Input) -> JsonValue:
         if call["method"] == "content_start":
             results.append(run_content_start(config, call))
         elif call["method"] == "user_speech":
-            results.append({"events": events_view(config.transform_user_speech_event(is_speech_start=call["start"]))})
+            speech = config.transform_user_speech_event(is_speech_start=call["start"])
+            results.append({"events": events_view(speech)})
         elif call["method"] == "user_transcript":
-            results.append({"events": events_view(config.transform_user_transcript_event(call["text"]))})
+            transcript = config.transform_user_transcript_event(call["text"])
+            results.append({"events": events_view(transcript)})
         elif call["method"] == "user_completed":
             results.append({"events": events_view(config.user_transcript_completed_events())})
         elif call["method"] == "text_output":
