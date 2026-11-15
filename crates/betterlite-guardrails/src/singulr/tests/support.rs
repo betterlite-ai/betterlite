@@ -184,6 +184,12 @@ pub(crate) fn expects(call: &Seen, expected: &str) {
     assert_eq!(call.body, json_value(expected));
 }
 
+pub(crate) fn expects_headers(call: &Seen, expected: &[(&str, &str)]) {
+    for &(name, value) in expected {
+        assert_eq!(call.headers.get(name).map(String::as_str), Some(value));
+    }
+}
+
 pub(crate) fn json_value(text: &str) -> GuardrailValue {
     serde_json::from_str(text).unwrap()
 }

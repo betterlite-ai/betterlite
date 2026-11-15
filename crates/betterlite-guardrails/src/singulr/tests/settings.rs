@@ -264,7 +264,7 @@ fn the_timeout_defaults_to_thirty_seconds() {
 #[test]
 fn the_timeout_is_the_argument() {
     let mut args = support::args();
-    args.timeout = Some(2.5);
+    args.timeout = Some(2.5_f64);
     let settings = SingulrSettings::resolve(&args, &env(&[])).unwrap();
     assert_eq!(settings.timeout, Duration::try_from_secs_f64(2.5).unwrap());
 }
@@ -272,7 +272,7 @@ fn the_timeout_is_the_argument() {
 #[test]
 fn a_negative_timeout_is_an_error() {
     let mut args = support::args();
-    args.timeout = Some(-1.0);
+    args.timeout = Some(-1.0_f64);
     assert!(matches!(
         SingulrSettings::resolve(&args, &env(&[])).unwrap_err(),
         SettingsError::Timeout { .. }

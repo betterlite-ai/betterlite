@@ -18,6 +18,6 @@ deviations:
   - what: The configured timeout is one reqwest request deadline covering connect, send and body read; the call sets it at crates/betterlite-guardrails/src/singulr/call.rs:25, and LiteLLM passes httpx timeout=self.timeout, which applies the value to connect, read, write and pool wait separately.
     why: betterlite bounds every outbound request with one timeout, and a working Singulr answer returns well inside the configured seconds. An endpoint whose phases each fit the timeout but whose total does not is cut off here where LiteLLM answers.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L181-L186
-  - what: A configured timeout that a Duration cannot represent (negative, NaN, infinite or too large) is refused while the guardrail is built, at crates/betterlite-guardrails/src/singulr/settings.rs:71.
+  - what: A configured timeout that a Duration cannot represent (negative, NaN, infinite or too large) is refused while the guardrail is built, at crates/betterlite-guardrails/src/singulr/settings.rs:106.
     why: LiteLLM stores any float in self.timeout and starts; betterlite's timeout is a std Duration, which cannot hold a negative or non-finite value, so the invalid configuration is reported where it enters instead of failing every call later.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L102

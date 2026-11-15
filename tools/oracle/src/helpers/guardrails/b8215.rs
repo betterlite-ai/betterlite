@@ -88,11 +88,6 @@ fn scenario_value(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
         None,
     ));
     let calls = finish_calls(mock)?;
-    let failed_calls = if scenario.answer.is_some() {
-        calls
-    } else {
-        None
-    };
     Ok(match result {
         Ok(inputs) => json!({
             "name": scenario.name,
@@ -105,16 +100,16 @@ fn scenario_value(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
             "name": scenario.name,
             "outcome": if matches!(error, SingulrError::Blocked { .. }) { "blocked" } else { "error" },
             "status": STATUS_CODE,
-            "calls": failed_calls,
+            "calls": calls,
             "inputs": Value::Null,
         }),
     })
 }
 
 fn start_mock(
-    answer: Option<&UpstreamAnswer>,
+    scripted: Option<&UpstreamAnswer>,
 ) -> Result<(Option<MockProvider>, String), Box<HelperError>> {
-    let Some(answer) = answer else {
+    let Some(answer) = scripted else {
         let listener = TcpListener::bind(("127.0.0.1", 0))
             .map_err(|error| failure("OSError", error.to_string()))?;
         let address = listener
@@ -153,8 +148,8 @@ fn build_guardrail(settings: &Settings, base: &str) -> Result<SingulrGuardrail, 
     Ok(guardrail)
 }
 
-fn finish_calls(mock: Option<MockProvider>) -> Result<Option<Vec<Value>>, Box<HelperError>> {
-    let Some(mock) = mock else {
+fn finish_calls(scripted: Option<MockProvider>) -> Result<Option<Vec<Value>>, Box<HelperError>> {
+    let Some(mock) = scripted else {
         return Ok(None);
     };
     let calls = mock

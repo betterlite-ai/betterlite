@@ -1,7 +1,7 @@
 use std::fs;
 use std::io;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use axum::http::StatusCode;
@@ -31,17 +31,15 @@ async fn the_call_posts_to_the_guard_endpoint_with_the_singulr_headers() {
     assert_eq!(calls.len(), 1);
     let call = &calls[0];
     assert_eq!(call.path, "/api/v1/ai-gateway/litellm-v2");
-    for (name, expected) in [
-        ("x-singulr-gateway-token", Some(support::API_KEY)),
-        (
-            "x-singulr-enforcement-entity-id",
-            Some(support::APPLICATION_ID),
-        ),
-        ("x-singulr-guardrail-id", Some(support::GUARDRAIL_ID)),
-        ("content-type", Some("application/json")),
-    ] {
-        assert_eq!(call.headers.get(name).map(String::as_str), expected);
-    }
+    support::expects_headers(
+        call,
+        &[
+            ("x-singulr-gateway-token", support::API_KEY),
+            ("x-singulr-enforcement-entity-id", support::APPLICATION_ID),
+            ("x-singulr-guardrail-id", support::GUARDRAIL_ID),
+            ("content-type", "application/json"),
+        ],
+    );
     support::expects(
         call,
         r#"{"correlation_id": null, "model_name": null, "model_provider_name": null,
@@ -244,7 +242,7 @@ async fn a_transport_failure_passes_when_block_on_error_is_false() {
 async fn a_stalled_answer_reaches_the_request_deadline() {
     let stalled = support::stalled_base(Duration::from_secs(2)).await;
     let mut blocking_args = support::args_for(&stalled.base);
-    blocking_args.timeout = Some(0.2);
+    blocking_args.timeout = Some(0.2_f64);
     let error = support::build(&blocking_args)
         .apply_guardrail(
             support::inputs(r#"{"texts": ["hello"]}"#),
@@ -258,7 +256,7 @@ async fn a_stalled_answer_reaches_the_request_deadline() {
 
     let stalled_passthrough = support::stalled_base(Duration::from_secs(2)).await;
     let mut passthrough_args = support::args_for(&stalled_passthrough.base);
-    passthrough_args.timeout = Some(0.2);
+    passthrough_args.timeout = Some(0.2_f64);
     passthrough_args.block_on_error = Some(false);
     let inputs = support::inputs(r#"{"texts": ["hello"]}"#);
     let returned = support::build(&passthrough_args)
@@ -372,7 +370,8 @@ struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        let mut captured = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        captured.extend_from_slice(buf);
         Ok(buf.len())
     }
 
