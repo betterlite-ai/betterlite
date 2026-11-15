@@ -53,7 +53,7 @@ class FakeToolTable:
     async def find_many(
         self,
         *,
-        where: Mapping[str, object],
+        where: Mapping[str, JsonValue],
         order: Mapping[str, str],
     ) -> Sequence[dict[str, JsonValue]]:
         del where, order
