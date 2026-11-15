@@ -270,6 +270,34 @@ fn the_count_after_a_produced_value_is_the_bytes_still_buffered() {
     assert_text(&outcomes[3], "");
 }
 
+// The discard path pops one value too, so the bound counts what the pop leaves behind there as well.
+#[test]
+fn the_count_after_a_discarded_prefix_is_the_bytes_still_buffered() {
+    let (guard, warnings) = fixture::capture_warnings();
+    let steps: Vec<fixture::Source> = vec![
+        Ok(TransportChunk::Text(
+            r#"data: nope {"type":"ping"}{"type":"ping"}"#.to_owned(),
+        )),
+        Ok(TransportChunk::Text(format!("data:{}", "x".repeat(30)))),
+    ];
+    let outcomes = ChunkStream {
+        converter: converter(),
+        source: steps.into_iter(),
+        source_ended: false,
+        accumulated_bytes: 0,
+        max_event_bytes: 44,
+    }
+    .collect::<Vec<_>>();
+    drop(guard);
+    assert_eq!(outcomes.len(), 2);
+    assert_text(&outcomes[0], "");
+    assert!(matches!(
+        &outcomes[1],
+        Err(DecodeError::TooLarge { limit: 44 })
+    ));
+    assert_eq!(warnings.messages(), drop_warnings(&[4]));
+}
+
 // The buffer outlives one payload, so the caller's count does too: five deferred bytes count against the second call.
 #[test]
 fn the_entry_bound_carries_the_count_across_calls_on_one_converter() {
