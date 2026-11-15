@@ -180,6 +180,43 @@ fn repeated_end_events_do_not_repeat_turn_events() {
 }
 
 #[test]
+fn speech_end_stops_a_turn_without_completing_it() {
+    let mut harness = Harness::default();
+    drop(harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#));
+    let ended = harness.transform(r#"{"type":"speechEnd","turnId":"t1"}"#);
+    assert_eq!(kinds(&ended), vec!["stopped"]);
+    assert_eq!(turn_item(&ended[0]), "t1");
+    let repeated = harness.transform(r#"{"type":"speechEnd","turnId":"t1"}"#);
+    assert!(repeated.is_empty());
+    assert!(harness.transformer.take_unbilled_usage().is_none());
+}
+
+#[test]
+fn completed_turns_do_not_restart() {
+    let mut harness = Harness::default();
+    drop(harness.transform(r#"{"type":"speechComplete","turnId":"t1","transcript":"done"}"#));
+    let restarted = harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#);
+    assert!(restarted.is_empty());
+    let orphan = harness
+        .try_transform(r#"{"type":"transcript","transcript":"next"}"#)
+        .unwrap_err();
+    assert!(matches!(orphan, MuseProtocolError::MissingTurnId));
+}
+
+#[test]
+fn separate_turns_keep_their_own_state() {
+    let mut harness = Harness::default();
+    drop(harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#));
+    drop(harness.transform(r#"{"type":"speechStart","turnId":"t2"}"#));
+    let first = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"one"}"#);
+    assert_eq!(kinds(&first), vec!["delta"]);
+    assert_eq!(turn_item(&first[0]), "t1");
+    let second = harness.transform(r#"{"type":"transcript","turnId":"t2","transcript":"two"}"#);
+    assert_eq!(kinds(&second), vec!["delta"]);
+    assert_eq!(turn_item(&second[0]), "t2");
+}
+
+#[test]
 fn transcripts_without_a_turn_id_use_the_active_turn() {
     let mut harness = Harness::default();
     drop(harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#));
@@ -235,6 +272,8 @@ fn turns_beyond_the_limit_drop_the_oldest() {
         .for_each(drop);
     let recent = harness.transform(r#"{"type":"transcript","turnId":"t127","transcript":"y"}"#);
     assert_eq!(kinds(&recent), vec!["delta"]);
+    let oldest = harness.transform(r#"{"type":"transcript","turnId":"t0","transcript":"x"}"#);
+    assert_eq!(kinds(&oldest), vec!["delta"]);
     let newest = harness.transform(r#"{"type":"speechStart","turnId":"t128"}"#);
     assert_eq!(kinds(&newest), vec!["started"]);
     let evicted = harness.transform(r#"{"type":"transcript","turnId":"t0","transcript":"x"}"#);

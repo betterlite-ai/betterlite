@@ -128,6 +128,11 @@ fn builds_the_default_and_custom_realtime_urls() {
         ),
         // LiteLLM drops the IPv6 brackets, so the URL it rebuilds here cannot be parsed
         ("wss://[::1]:9443/x", "wss://[::1]:9443/v1/asr/realtime"),
+        // the url crate punycodes a non-ASCII host, while LiteLLM keeps the text urllib.parse reports
+        (
+            "wss://bücher.example/x",
+            "wss://xn--bcher-kva.example/v1/asr/realtime",
+        ),
         // the url crate drops a port that is the scheme default, so the rebuilt URL keeps the endpoint without it
         (
             "wss://example.com:443/x",
@@ -191,6 +196,20 @@ fn parses_a_ga_transcription_session() {
     assert_eq!(config.mode, MuseMode::Endpointing);
     assert_eq!(config.sample_rate, MuseSampleRate::Hz16000);
     assert_eq!(config.language_bias, vec!["Portuguese".to_owned()]);
+}
+
+#[test]
+fn parses_ga_sessions_with_a_default_or_explicit_24000_rate() {
+    let absent = r#"{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm"},"transcription":{}}}}}"#;
+    assert_eq!(
+        configured(absent).unwrap().sample_rate,
+        MuseSampleRate::Hz24000
+    );
+    let explicit = r#"{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"transcription":{}}}}}"#;
+    assert_eq!(
+        configured(explicit).unwrap().sample_rate,
+        MuseSampleRate::Hz24000
+    );
 }
 
 #[test]
