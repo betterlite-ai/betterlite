@@ -1,0 +1,15 @@
+kind: helper
+name: sambanova-wire-embedding-reply-seed
+call:
+  b6413:
+    chat_supported: []
+    chat_params: []
+    embedding_urls: []
+    embedding_headers: []
+    embedding_requests: []
+    embedding_replies:
+      - {status: 200, headers: {}, body: '{"usage": {"prompt_tokens": 2}}'}
+    embedding_errors:
+      - {message: seed, status: 503, headers: {retry-after: "1"}}
+env: {}
+compare: {ignore: []}
