@@ -11,36 +11,17 @@ OURS_PREFIX: Final = "betterlite"
 OURS_MODULE: Final = "_router_types"
 EXCLUDED: Final = {"CustomRoutingStrategyBase"}
 PROTOCOLS: Final = (
-    "FallbackAccessCheck",
-    "FallbackBudgetCheck",
-    "AutoRouterCapabilityLimit",
-    "PreRoutingStrategy",
-    "RoutingPlugin",
-    "ClassifierPlugin",
+    "FallbackAccessCheck", "FallbackBudgetCheck", "AutoRouterCapabilityLimit",
+    "PreRoutingStrategy", "RoutingPlugin", "ClassifierPlugin",
 )
 GENERATED_ID_LENGTH: Final = 36
 MOCK_INT_MARKER: Final = 1
 EXTRA_MODELS: Final = 19
 FORBIDDEN_HEADERS: Final = (
-    "api-key",
-    "authorization",
-    "connection",
-    "content-length",
-    "content-type",
-    "cookie",
-    "host",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "proxy-connection",
-    "set-cookie",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
-    "www-authenticate",
-    "x-api-key",
-    "x-goog-api-key",
+    "api-key", "authorization", "connection", "content-length", "content-type", "cookie",
+    "host", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection",
+    "set-cookie", "te", "trailer", "transfer-encoding", "upgrade", "www-authenticate",
+    "x-api-key", "x-goog-api-key",
 )
 FORBIDDEN_HEADER_MESSAGE: Final = (
     "Value error, provider_affinity_header cannot be an authentication, cookie, "
@@ -49,7 +30,7 @@ FORBIDDEN_HEADER_MESSAGE: Final = (
 HEADER_NAME_MESSAGE: Final = (
     "Value error, provider_affinity_header must be a valid HTTP header name"
 )
-SIBLING_TYPES: Final = (
+SIBLING_TYPES: Final[tuple[str, ...]] = (
     "SearchProviders",
     "StandardLoggingRoutingDecision",
     "MirroredPricingParams",
