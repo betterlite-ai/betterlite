@@ -2877,6 +2877,7 @@ dependencies = [
  "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "betterlite-vertex",
  "chrono",
  "futures-util",
  "hex",
