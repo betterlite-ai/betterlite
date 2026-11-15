@@ -1,0 +1,39 @@
+task: B4084
+deviations:
+  - what: The A/B coin comes from an injected PositionCoin, whose production implementation is a uniform random draw, instead of a call to Python's random.random().
+    why: Tests and oracle runs need a fixed coin; a user sees a fair coin per judge call, the same distribution LiteLLM gives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1328
+  - what: The shadow router and the judge model are reached through injected traits, ShadowRouter for the arm call and B4080's JudgeRouter and JudgeSdk through judge_acompletion for the judge, not the proxy's global router.
+    why: betterlite keeps no module-level state; LiteLLM's router provider reads a proxy global.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1284-L1293
+  - what: The 8,000 response cap, the 24,000 prompt budget and the 2,000 tool-text cap count Unicode characters and never cut inside one.
+    why: Rust strings slice by bytes; counting characters keeps the prompt identical to LiteLLM's Python slicing for non-ASCII chat.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L565-L578
+  - what: A router error's detail is built from the exception class, the optional source location and the message the ShadowRouter adapter supplies, where LiteLLM formats the caught Python exception's class, traceback frame and text.
+    why: Rust has no exception traceback; the adapter that turns a provider failure into ShadowRouterError fills the same three parts and B4081's detail renders them the way LiteLLM's _failure_detail does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1294-L1297
+  - what: A judge dispatch failure reads `judge call failed: ` plus B4080's dispatch message, and a judge model that resolves to no deployment reads `judge call failed: ` plus B4080's nothing-target text.
+    why: LiteLLM stringifies the caught exception; the message comes from the layer that made the call, and B4080 owns both texts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1356-L1358
+  - what: A judge reply with no choices, no message or non-text content reads as empty content and fails with the JSON parser's message, where LiteLLM raises KeyError or TypeError and reports that Python text.
+    why: The task text asks for the parser or validation message on every malformed reply; the reply shape text and the billed cost are the same as LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1360
+  - what: When the capped replies and the tool text use up the whole prompt budget, betterlite keeps an empty conversation tail, where Python's conversation[-budget:] yields the whole conversation at a zero budget and drops the first -budget characters at a negative one.
+    why: The production path cannot reach a zero or negative budget (replies cap at 8,000 each and the tool text at 2,002, leaving at least 5,998), and a clamp keeps the helper total when it is called directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L572-L575
+  - what: The pairwise response format is built by pairwise_judge_response_format() on each call instead of being a module constant.
+    why: the workspace Json object is an IndexMap built at runtime, so the value LiteLLM pins as a constant has no const form in Rust; the contents are identical and the oracle case compares them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L480
+  - what: The pure helpers are pub functions, not the pub(crate) the task text names.
+    why: the oracle's Rust helper is a separate crate and reaches them by their module path, as the shadow-evidence helpers do; the alternatives were reimplementing them in the oracle or comparing in Python only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L534
+  - what: A parent metadata map that B188's forward rejects fails the shadow or judge call with a CallbackMetadataError detail and zero costs.
+    why: LiteLLM's sanitizer does not raise on any mapping; betterlite's forward reports a typed error, and a call that cannot carry the shadowed key's identity must not spend.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1280
+  - what: A verdict validation failure names the field in one line (`preference: field required`, `confidence: input should be a number`, `preference: input should be 'A', 'B' or 'tie'`), where LiteLLM reports pydantic's multi-line ValidationError text with the type, the input value and a documentation URL.
+    why: a pydantic error's shape is Python's exception formatting; a stable one-line message carries the field and the rule without porting it, and the reply shape and billed cost after the semicolon are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1361
+  - what: A confidence that Decimal cannot hold (more than 28 fractional digits, or a magnitude beyond about 7.9e28) fails as `confidence: input should be a number`, where LiteLLM keeps the float and clamps it to [0, 1].
+    why: B4081's verdict stores confidence as a Decimal; a working judge sends a ratio near [0, 1], and naming the field beats silently rounding a number the record cannot represent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1369
+kept_bugs: []
