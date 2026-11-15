@@ -1,0 +1,18 @@
+kind: helper
+name: reservation-cost-embedding-route-zero-output
+call:
+  b3001:
+    function: max_cost
+    request:
+      model: embed-model
+    route: /v1/embeddings
+    model_cost:
+      embed-model:
+        mode: embedding
+        max_input_tokens: 8192
+        input_cost_per_token: 0.00006
+    input_token_counts:
+      embed-model: 1000
+    model_list: []
+env: {}
+compare: {ignore: []}
