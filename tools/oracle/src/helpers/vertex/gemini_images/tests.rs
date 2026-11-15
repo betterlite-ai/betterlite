@@ -100,14 +100,14 @@ fn a_non_object_image_config_only_counts_a_warning() {
         "model": "gemini-2.5-flash-image",
         "mappings": [{
             "prompt": "a red fox",
-            "non_default_params": {"imageConfig": 3},
+            "non_default_params": {"imageConfig": 3_i32},
             "optional_params": {},
         }],
         "target": null,
         "response": null,
     }));
     let value = Op::run(&input).expect("the mapping warns instead of failing");
-    assert_eq!(value["mappings"][0]["warnings"], json!(1));
+    assert_eq!(value["mappings"][0]["warnings"], json!(1_i32));
     assert_eq!(value["mappings"][0]["mapped"], json!({}));
     assert_eq!(
         value["mappings"][0]["body"]["generationConfig"],
@@ -130,7 +130,7 @@ fn a_reply_without_usage_keeps_the_search_count_out_of_the_response() {
         },
     }));
     let value = Op::run(&input).expect("the reply transforms");
-    assert_eq!(value["response"]["search_requests"], json!(2));
+    assert_eq!(value["response"]["search_requests"], json!(2_i32));
     assert_eq!(
         value["response"]["response"],
         json!({"data": [{"b64_json": "AAA"}]})
