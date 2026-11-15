@@ -73,6 +73,7 @@ scope:
     - Cargo.lock
     - crates/betterlite-routes/src/wildcard.rs
     - crates/betterlite-routes/src/wildcard/**
+    - tools/oracle/src/helpers/server/route_match.rs
     - crates/betterlite-auth/src/route_match/templates.rs
     - crates/betterlite-auth/src/route_match/classifier.rs
     - crates/betterlite-auth/src/route_match/tests.rs
@@ -245,5 +246,5 @@ pitfalls:
 
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2400
   max_new_expects: 0
