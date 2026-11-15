@@ -115,7 +115,7 @@ async fn a_string_output_is_the_reply() {
 }
 
 #[tokio::test]
-async fn a_unicode_output_is_counted_in_characters() {
+async fn a_unicode_output_is_counted_by_the_counter() {
     let response = response(&reply_fixture(r#"{"outputs":"héllo"}"#))
         .await
         .unwrap();

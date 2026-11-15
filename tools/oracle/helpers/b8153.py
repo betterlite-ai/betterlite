@@ -208,10 +208,11 @@ def params_value(cases: list[MapCase], validate: list[ValidateCase]) -> JsonValu
 
 
 # DEFAULT_MAX_TOKENS becomes litellm.max_tokens, the PetalsConfig class default (constants.py L90)
+# PetalsConfig.__init__ writes a non-None value onto the class, which get_config reads
 def apply_max_new_tokens(values: dict[str, str]) -> None:
     text = values.get("DEFAULT_MAX_TOKENS", "").strip()
     if text != "":
-        PetalsConfig.max_new_tokens = int(text)
+        PetalsConfig(max_new_tokens=int(text))
 
 
 def request_value(call: RequestCase) -> JsonValue:
