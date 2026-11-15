@@ -609,8 +609,12 @@ fn image_variations_logs_the_pre_call_then_the_post_call() {
     assert!(headers.contains_key("x-caller"));
     let post = object(&recorded[1]);
     assert_eq!(post.get("input"), Some(&Json::Null));
-    let original = object(post.get("original_response").unwrap());
-    assert_eq!(original.get("created"), Some(&number(7)));
+    // post_call keeps a dict reply as its JSON text, the way LiteLLM's json.dumps does
+    let Some(Json::Text(original)) = post.get("original_response") else {
+        panic!("the post call stores the reply as JSON text");
+    };
+    let parsed: Json = serde_json::from_str(original).unwrap();
+    assert_eq!(object(&parsed).get("created"), Some(&number(7)));
 }
 
 #[test]
