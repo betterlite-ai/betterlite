@@ -13,6 +13,7 @@ use crate::api::container_contracts::records::{
     ContainerFileObjectLiteral, ContainerObjectLiteral, DeletedContainerLiteral, ExpiresAfter,
     ExpiresAfterAnchor,
 };
+use crate::containers::urls::ContainerResource;
 use crate::containers::{costs, urls};
 
 use super::support::{
@@ -262,11 +263,7 @@ fn retrieve_delete_id() {
             .unwrap_err();
         assert!(matches!(delete, ContainerError::PathSegment { .. }));
         assert!(delete.to_string().contains("container_id"));
-        let segments = [urls::ContainerPathSegment::Id {
-            field_name: "container_id",
-            value: refused,
-        }];
-        let error = urls::resource_url(BASE, &segments).unwrap_err();
+        let error = urls::resource_url(BASE, ContainerResource::Files(refused)).unwrap_err();
         assert!(error.to_string().contains("container_id"));
     }
 }
@@ -414,7 +411,7 @@ fn cost_header(hidden: &Map<String, Value>) -> &Value {
 
 fn container_cost_header() {
     let recorder = Arc::new(RecorderCost::default());
-    let config = config_with_costs(Arc::clone(&recorder));
+    let config = config_with_costs(Arc::<RecorderCost>::clone(&recorder));
     let created = config
         .transform_container_create_response(CONTAINER_BODY.as_bytes())
         .unwrap();
@@ -494,6 +491,19 @@ fn container_response_error() {
         .transform_container_create_response(b"{}")
         .unwrap_err();
     assert!(matches!(missing, ContainerError::Decode(_)), "{missing:?}");
+    // a derived record takes an array in field order, but LiteLLM's model_validate takes only an object
+    let array = config
+        .transform_container_retrieve_response(
+            br#"["cntr_1","container",1,"running",null,null,null]"#,
+        )
+        .unwrap_err();
+    assert!(matches!(array, ContainerError::Decode(_)), "{array:?}");
+    let repeated = config
+        .transform_container_retrieve_response(
+            br#"{"id":"cntr_first","object":"container","created_at":1,"status":"running","id":"cntr_last"}"#,
+        )
+        .unwrap();
+    assert_eq!(repeated.id, "cntr_last");
     assert_eq!(
         config
             .transform_container_file_content_response(b"bytes")

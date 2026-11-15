@@ -13,6 +13,7 @@ use crate::api::container_contracts::records::{
     ContainerFileListResponse, ContainerListResponse, ContainerObject, DeleteContainerResult,
 };
 use crate::containers::costs::ContainerCosts;
+use crate::containers::urls::ContainerResource;
 use crate::credentials::{
     ExplicitCredentials, LiteLlmGlobals, get_openai_credentials, resolve_openai_api_base,
 };
@@ -43,10 +44,12 @@ impl BaseContainerConfig for OpenAiContainerConfig {
 
     fn map_openai_params(
         &self,
-        params: &Map<String, Value>,
+        // ast-grep-ignore: no-long-names
+        container_create_optional_params: &Map<String, Value>,
         _drop_params: bool,
     ) -> Map<String, Value> {
-        params.clone()
+        // ast-grep-ignore: no-long-names
+        container_create_optional_params.clone()
     }
 
     fn validate_environment(
@@ -67,12 +70,11 @@ impl BaseContainerConfig for OpenAiContainerConfig {
         };
         let resolved =
             get_openai_credentials(explicit, globals, &self.settings, self.env_api_key.clone());
+        let authorization = resolved.api_key.as_ref().map_or_else(
+            || String::from("Bearer None"),
+            |secret| format!("Bearer {}", secret.expose_secret()),
+        );
         let mut merged = headers.clone();
-        let mut authorization = String::from("Bearer None");
-        if let Some(secret) = &resolved.api_key {
-            let key = secret.expose_secret();
-            authorization = format!("Bearer {key}");
-        }
         merged.insert(String::from("Authorization"), authorization);
         merged
     }
@@ -92,10 +94,12 @@ impl BaseContainerConfig for OpenAiContainerConfig {
     fn transform_container_create_request(
         &self,
         name: &str,
-        params: &Map<String, Value>,
+        // ast-grep-ignore: no-long-names
+        container_create_optional_request_params: &Map<String, Value>,
         _context: ContainerRequestContext<'_>,
     ) -> Map<String, Value> {
-        requests::create_request(name, params)
+        // ast-grep-ignore: no-long-names
+        requests::create_request(name, container_create_optional_request_params)
     }
 
     // ast-grep-ignore: no-long-names
@@ -127,18 +131,13 @@ impl BaseContainerConfig for OpenAiContainerConfig {
         replies::decode_container_reply(raw_response)
     }
 
+    #[rustfmt::skip]
     // ast-grep-ignore: no-long-names
     fn transform_container_retrieve_request(
-        &self,
-        container_id: &str,
-        api_base: &str,
-        _context: ContainerRequestContext<'_>,
+        &self, container_id: &str, api_base: &str, _context: ContainerRequestContext<'_>,
     ) -> Result<(String, Map<String, Value>), ContainerError> {
-        let segments = [urls::ContainerPathSegment::Id {
-            field_name: "container_id",
-            value: container_id,
-        }];
-        Ok((urls::resource_url(api_base, &segments)?, Map::new()))
+        let url = urls::resource_url(api_base, ContainerResource::Container(container_id))?;
+        Ok((url, Map::new()))
     }
 
     // ast-grep-ignore: no-long-names
@@ -149,18 +148,13 @@ impl BaseContainerConfig for OpenAiContainerConfig {
         replies::decode_container_reply(raw_response)
     }
 
+    // LiteLLM builds the delete request exactly as the retrieve request
+    #[rustfmt::skip]
     // ast-grep-ignore: no-long-names
     fn transform_container_delete_request(
-        &self,
-        container_id: &str,
-        api_base: &str,
-        _context: ContainerRequestContext<'_>,
+        &self, container_id: &str, api_base: &str, context: ContainerRequestContext<'_>,
     ) -> Result<(String, Map<String, Value>), ContainerError> {
-        let segments = [urls::ContainerPathSegment::Id {
-            field_name: "container_id",
-            value: container_id,
-        }];
-        Ok((urls::resource_url(api_base, &segments)?, Map::new()))
+        self.transform_container_retrieve_request(container_id, api_base, context)
     }
 
     // ast-grep-ignore: no-long-names
@@ -171,25 +165,13 @@ impl BaseContainerConfig for OpenAiContainerConfig {
         replies::decode_container_reply(raw_response)
     }
 
+    #[rustfmt::skip]
     // ast-grep-ignore: no-long-names
     fn transform_container_file_list_request(
-        &self,
-        container_id: &str,
-        api_base: &str,
-        _context: ContainerRequestContext<'_>,
-        query: &ContainerListQuery<'_>,
+        &self, container_id: &str, api_base: &str, _context: ContainerRequestContext<'_>, query: &ContainerListQuery<'_>,
     ) -> Result<(String, Map<String, Value>), ContainerError> {
-        let segments = [
-            urls::ContainerPathSegment::Id {
-                field_name: "container_id",
-                value: container_id,
-            },
-            urls::ContainerPathSegment::Literal("files"),
-        ];
-        Ok((
-            urls::resource_url(api_base, &segments)?,
-            requests::list_query(query),
-        ))
+        let url = urls::resource_url(api_base, ContainerResource::Files(container_id))?;
+        Ok((url, requests::list_query(query)))
     }
 
     // ast-grep-ignore: no-long-names
@@ -200,27 +182,13 @@ impl BaseContainerConfig for OpenAiContainerConfig {
         replies::decode_container_reply(raw_response)
     }
 
+    #[rustfmt::skip]
     // ast-grep-ignore: no-long-names
     fn transform_container_file_content_request(
-        &self,
-        container_id: &str,
-        file_id: &str,
-        api_base: &str,
-        _context: ContainerRequestContext<'_>,
+        &self, container_id: &str, file_id: &str, api_base: &str, _context: ContainerRequestContext<'_>,
     ) -> Result<(String, Map<String, Value>), ContainerError> {
-        let segments = [
-            urls::ContainerPathSegment::Id {
-                field_name: "container_id",
-                value: container_id,
-            },
-            urls::ContainerPathSegment::Literal("files"),
-            urls::ContainerPathSegment::Id {
-                field_name: "file_id",
-                value: file_id,
-            },
-            urls::ContainerPathSegment::Literal("content"),
-        ];
-        Ok((urls::resource_url(api_base, &segments)?, Map::new()))
+        let resource = ContainerResource::FileContent { container_id, file_id };
+        Ok((urls::resource_url(api_base, resource)?, Map::new()))
     }
 
     // ast-grep-ignore: no-long-names
