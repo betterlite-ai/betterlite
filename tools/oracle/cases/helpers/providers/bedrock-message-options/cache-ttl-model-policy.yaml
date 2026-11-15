@@ -1,0 +1,71 @@
+kind: helper
+name: cache-ttl-model-policy
+call:
+  bedrock_message_options:
+    function: remove_ttl
+    model_cost:
+      anthropic.claude-4-5-fixture: {cache_creation_input_token_cost_above_1hr: 0.000006}
+      anthropic.claude-legacy-fixture: {litellm_provider: bedrock}
+      anthropic-zero-fixture: {cache_creation_input_token_cost_above_1hr: 0}
+      anthropic.claude-e-v1:0: {cache_creation_input_token_cost_above_1hr: 1}
+      anthropic-null-fixture: {cache_creation_input_token_cost_above_1hr: null}
+      malformed-fixture: 5
+    cases:
+      - model: anthropic.claude-4-5-fixture
+        request:
+          tools:
+            - {name: both, cache_control: {type: ephemeral, scope: global, ttl: "1h", custom: 1}}
+            - {name: five, cache_control: {ttl: "5m"}}
+            - {name: ten, cache_control: {type: ephemeral, ttl: "10m"}}
+            - {name: number, cache_control: {ttl: 1}}
+            - {cache_control: plain}
+            - not-a-tool
+          system:
+            - {type: text, cache_control: {scope: x, ttl: "5m"}}
+            - string-item
+            - {type: text, cache_control: {scope: y}}
+          messages:
+            - role: user
+              content:
+                - {type: text, cache_control: {ttl: "1h", scope: global}}
+                - {type: tool_result, cache_control: {ttl: "1h"}, content: [{type: text, cache_control: {ttl: "1h"}}]}
+                - {cache_control: {type: ephemeral}}
+            - {role: assistant, content: plain}
+            - not-a-message
+      - model: anthropic.claude-legacy-fixture
+        request:
+          tools:
+            - {name: both, cache_control: {type: ephemeral, scope: global, ttl: "1h"}}
+            - {name: five, cache_control: {ttl: "5m"}}
+          messages:
+            - role: user
+              content:
+                - {type: text, cache_control: {ttl: "1h", scope: global}}
+      - model: anthropic-zero-fixture
+        request:
+          system:
+            - {type: text, cache_control: {ttl: "5m"}}
+      - model: us.anthropic.claude-e-v1:0
+        request:
+          tools:
+            - {name: keep, cache_control: {ttl: "1h", scope: global}}
+      - model: null
+        request:
+          tools:
+            - {name: keep, cache_control: {ttl: "1h", scope: global}}
+      - model: ""
+        request:
+          messages:
+            - role: user
+              content:
+                - {type: text, cache_control: {ttl: "5m"}}
+      - model: anthropic-null-fixture
+        request:
+          tools:
+            - {name: keep, cache_control: {ttl: "5m"}}
+      - model: malformed-fixture
+        request:
+          tools:
+            - {name: keep, cache_control: {ttl: "5m"}}
+env: {}
+compare: {ignore: []}
