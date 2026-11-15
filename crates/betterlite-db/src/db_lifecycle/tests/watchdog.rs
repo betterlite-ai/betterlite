@@ -64,6 +64,7 @@ async fn loop_probes_after_the_interval() {
 
 #[tokio::test(start_paused = true)]
 async fn start_twice_runs_one_loop() {
+    let (logs, guard) = capture_logs();
     let harness = watchdog_harness();
     harness.watchdog.start(&harness.tasks);
     harness.watchdog.start(&harness.tasks);
@@ -75,6 +76,13 @@ async fn start_twice_runs_one_loop() {
     yield_now().await;
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 2);
     harness.watchdog.stop().await;
+    drop(guard);
+    let started = logs
+        .lines()
+        .iter()
+        .filter(|line| line.contains("Started Prisma DB health watchdog"))
+        .count();
+    assert_eq!(started, 1, "{:?}", logs.lines());
 }
 
 #[tokio::test]

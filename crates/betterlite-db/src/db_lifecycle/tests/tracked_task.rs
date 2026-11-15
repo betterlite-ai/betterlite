@@ -1,9 +1,29 @@
+use std::future;
 use std::sync::Mutex;
 
 use tokio_util::task::TaskTracker;
 
 use super::support::capture_logs;
 use crate::db_lifecycle::TrackedTask;
+
+#[tokio::test]
+async fn a_cancelled_task_is_not_reported() {
+    let (logs, guard) = capture_logs();
+    let tracked = TrackedTask {
+        handle: Mutex::new(None),
+    };
+    let tasks = TaskTracker::new();
+    assert!(tracked.start_with(&tasks, future::pending::<()>()));
+    assert!(tracked.stop().await);
+    drop(guard);
+    assert!(
+        logs.lines()
+            .iter()
+            .all(|line| !line.contains("a database lifecycle task ended with an error")),
+        "{:?}",
+        logs.lines()
+    );
+}
 
 #[tokio::test]
 async fn a_task_that_panics_is_reported_when_it_stops() {
