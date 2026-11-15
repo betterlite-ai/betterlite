@@ -47,13 +47,10 @@ where
     let Some(value) = text else {
         return ca_verification(lookup);
     };
-    match betterlite_env::flag(SSL_VERIFY_VARIABLE, value)
-        .ok()
-        .flatten()
-    {
-        Some(true) => ca_verification(lookup),
-        Some(false) => Verification::Disabled,
-        None => Verification::CaFile(value.to_owned()),
+    match betterlite_env::flag(SSL_VERIFY_VARIABLE, value) {
+        Ok(Some(true)) => ca_verification(lookup),
+        Ok(Some(false)) => Verification::Disabled,
+        Ok(None) | Err(_) => Verification::CaFile(value.to_owned()),
     }
 }
 
@@ -61,7 +58,10 @@ fn ca_verification<L>(lookup: &L) -> Verification
 where
     L: EnvironmentLookup,
 {
-    environment_value(lookup, "SSL_CERT_FILE").map_or(Verification::Enabled, Verification::CaFile)
+    match environment_value(lookup, "SSL_CERT_FILE") {
+        Some(path) => Verification::CaFile(path),
+        None => Verification::Enabled,
+    }
 }
 
 pub(super) fn environment_value<L>(lookup: &L, variable: &str) -> Option<String>
