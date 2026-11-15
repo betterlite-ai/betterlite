@@ -84,7 +84,9 @@ class Adapter(MessagesAdapter):
 
 
 ADAPTER: Final = Adapter()
-VIEW: Final[Projection] = TypeAdapter(Projection, config=ARBITRARY).validate_python(ADAPTER)
+VIEW: Final[Projection] = TypeAdapter[Projection](
+    Projection, config=ARBITRARY
+).validate_python(ADAPTER)
 
 
 class FunctionInput(TypedDict):
