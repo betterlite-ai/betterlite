@@ -12,7 +12,9 @@ path = "lib.rs"
 base64 = "0.23.1"
 betterlite-azure = { path = "../../../../../crates/betterlite-azure" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }

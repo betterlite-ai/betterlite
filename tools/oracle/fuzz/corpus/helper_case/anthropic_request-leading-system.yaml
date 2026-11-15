@@ -1,0 +1,24 @@
+kind: helper
+name: anthropic_request-leading-system
+call:
+  anthropic_request:
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    model: plain-model
+    custom_llm_provider: null
+    messages:
+      - role: system
+        content: lead
+      - role: user
+        content: hi
+    optional_params: {}
+    litellm_params: {}
+    headers: {}
+    strips_billing_metadata: false
+    modify_params: false
+    global_drop_params: false
+env: {}
+compare: {ignore: []}

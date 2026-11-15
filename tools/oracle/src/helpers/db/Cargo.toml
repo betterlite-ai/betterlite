@@ -17,6 +17,7 @@ betterlite-lens = { path = "../../../../../crates/betterlite-lens" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false }

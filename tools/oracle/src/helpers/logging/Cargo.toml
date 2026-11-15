@@ -29,6 +29,7 @@ jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-
 opentelemetry = { version = "0.33.1", default-features = false }
 opentelemetry-http = { version = "0.33.1", default-features = false }
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace", "testing"] }
+regex.workspace = true
 rust_decimal.workspace = true
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }

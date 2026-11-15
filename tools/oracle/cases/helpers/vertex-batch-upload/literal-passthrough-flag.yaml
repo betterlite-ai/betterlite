@@ -1,0 +1,19 @@
+kind: helper
+name: vertex-batch-upload-literal-passthrough-flag
+call:
+  vertex_batch_upload:
+    calls:
+      - content: |-
+          {"custom_id":"p","url":"/v1/embeddings","body":{"input":"x"}}
+          {"custom_id":"p2","url":"/v1/embeddings","body":{"input":"y"}}
+        passthrough: true
+      - content: '{"custom_id":"p","url":"/v1/embeddings","body":{"input":"x"}}'
+        passthrough: 1
+      - content: '{"custom_id":"p","url":"/v1/embeddings","body":{"input":"x"}}'
+        passthrough: "true"
+      - content: '{"custom_id":"p","url":"/v1/embeddings","body":{"input":"x"}}'
+        passthrough: false
+      - content: '{"custom_id":"p","url":"/v1/embeddings","body":{"input":"x"}}'
+        passthrough: null
+env: {}
+compare: {ignore: []}

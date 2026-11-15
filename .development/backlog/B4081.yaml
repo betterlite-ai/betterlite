@@ -1,14 +1,14 @@
 id: B4081
 milestone: M7 observability
 title: Extract comparable shadow responses and billed call costs
-status: todo
+status: done
 depends_on: [B4080, B068, B1138]
 file: tasks/B4081-shadow-response-evidence.yaml
 covers:
   - "litellm/integrations/shadow_eval_logger.py"
 parent: B118
 split_from: B118
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1956

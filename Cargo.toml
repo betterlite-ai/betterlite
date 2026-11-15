@@ -159,5 +159,6 @@ debug = "line-tables-only" # backtraces keep file and line; full debug info adde
 debug = false # a dependency frame still shows its function name
 
 [profile.dev.package]
+betterlite-reporting = { debug = "line-tables-only" } # bug reports read file and line from backtrace frames, and CI builds the rest with no debug info
 regex-automata = { opt-level = 2 } # Redactor compilation otherwise dominates debug startup.
 regex-syntax = { opt-level = 2 }

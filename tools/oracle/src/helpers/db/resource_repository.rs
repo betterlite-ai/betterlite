@@ -1,11 +1,21 @@
+use betterlite_db::resource_repository::config::decode_config_json;
+
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
-impl Helper for Op {
-    type Input = serde_json::Value;
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    raw: String,
+}
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("resource_repository")
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        let decoded = decode_config_json(input.raw.as_bytes()).or_value_error()?;
+        serde_json::to_value(decoded).or_value_error()
     }
 }

@@ -12,6 +12,7 @@ use betterlite_oracle_runner::case::UpstreamAnswer;
 use error::SdkHttpError;
 use messages_stream_logging::call::MessagesStreamLoggingCall;
 use messages_stream_logging::relay::call::MessagesNativeStreamCall;
+use responses_agentic_continuation::AgenticContinuationCall;
 use result::SdkResult;
 
 pub(crate) mod anthropic_beta_config;
@@ -23,6 +24,7 @@ pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
 pub(crate) mod native;
 pub(crate) mod python;
+pub mod responses_agentic_continuation;
 pub mod result;
 mod tests;
 pub(crate) mod vector_query_embedding;
@@ -71,6 +73,7 @@ pub enum SdkHttpCall {
     MessagesHeaderStream(MessagesHeaderStreamCall),
     MessagesStreamLogging(MessagesStreamLoggingCall),
     MessagesNativeStream(MessagesNativeStreamCall),
+    ResponsesAgenticContinuation(Box<AgenticContinuationCall>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,7 +250,8 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
                 ));
             }
         }
-        SdkHttpCall::VectorQueryEmbedding(_)
+        SdkHttpCall::ResponsesAgenticContinuation(_)
+        | SdkHttpCall::VectorQueryEmbedding(_)
         | SdkHttpCall::AnthropicBetaConfig(_)
         | SdkHttpCall::MessagesStreamLogging(_) => {}
     }

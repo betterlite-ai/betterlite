@@ -1,0 +1,21 @@
+task: B4657
+deviations:
+  - what: 'An unreachable token endpoint reports "token exchange failed: token endpoint unreachable (TransportError)"; LiteLLM names the caught httpx exception class (ConnectError, ReadError, Timeout) in the same slot.'
+    why: betterlite's outbound client has one transport error type, so the detail names that type. The CredError variant, the 502-class mapping and the fail-closed behavior are the same; only the type name inside the detail differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_endpoint.py#L103-L107
+  - what: A private-key JWT configured with ES512 is rejected as misconfigured; LiteLLM's PyJWT signs ES512 when the key is an EC P-521 key.
+    why: jsonwebtoken 11 signs ES256 and ES384 but has no ES512, so betterlite takes the same CredError.of_misconfigured path LiteLLM uses for a signing failure instead of minting the assertion. Any other algorithm jsonwebtoken does not know fails the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_endpoint.py#L271-L281
+  - what: Cancelling a coordinator run stops it without releasing the lock; LiteLLM releases in a finally block, so a cancelled holder deletes its key immediately.
+    why: betterlite does not spawn detached tasks, so a dropped run future cannot run its release. The PX lease expires after lock_ttl_seconds, the same bounded window a crashed holder gets, so a loser still stops waiting and re-reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/redis_refresh_coordinator.py#L116-L124
+  - what: A connection error reaches the token endpoint once; LiteLLM's AsyncHTTPHandler catches httpx.ConnectError and RemoteProtocolError and retries the POST once with a fresh client.
+    why: betterlite's shared outbound client configures the retry policy to never, so a transport failure is reported as upstream_unavailable after one attempt. The result and status a caller sees are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
+  - what: A token minted for a different fingerprint over a still-live slot keeps that slot's earlier expiry in LiteLLM; betterlite gives the new token its own TTL from its expires_in.
+    why: LiteLLM's InMemoryCache.set_cache leaves an existing TTL in place while it is unexpired, so a shorter-lived re-mint can be served past its own expiry. Betterlite stores the new expiry, so a cached token never outlives the lifetime the endpoint granted it. Only the slot's lifetime differs; the fingerprint mismatch itself re-mints in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L148-L153
+  - what: An EC private key in SEC1 form (a BEGIN EC PRIVATE KEY PEM block) is refused as misconfigured; LiteLLM hands the key string to PyJWT, whose cryptography loader reads SEC1 as well as PKCS#8 and PKCS#1.
+    why: jsonwebtoken's aws-lc signer builds an ECDSA key only from PKCS#8 DER, so betterlite parses the PEM itself and has no SEC1 to PKCS#8 conversion. RSA in PKCS#1 or PKCS#8 and EC or Ed in PKCS#8 all sign; a SEC1 EC key takes the same CredError.of_misconfigured path LiteLLM uses for a key it cannot load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_endpoint.py#L269-L281
+kept_bugs: []

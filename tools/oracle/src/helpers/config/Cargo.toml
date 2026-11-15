@@ -11,13 +11,16 @@ path = "lib.rs"
 [dependencies]
 aws-credential-types = "1.3.1"
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-db = { path = "../../../../../crates/betterlite-db" }
 betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
+chrono.workspace = true
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
 tempfile = "3.27.0"
 thiserror = "2.0.17"
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
 url = "2.5.8"

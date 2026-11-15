@@ -14,6 +14,8 @@ betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-policy = { path = "../../../../../crates/betterlite-policy" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+thiserror = "2.0.17"
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
 
 [dev-dependencies]
 serde-saphyr = "2.0.0"

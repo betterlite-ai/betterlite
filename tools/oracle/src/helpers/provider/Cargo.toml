@@ -23,6 +23,7 @@ betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../../../../crates/betterlite-provider" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
+betterlite-vertex = { path = "../../../../../crates/betterlite-vertex" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"

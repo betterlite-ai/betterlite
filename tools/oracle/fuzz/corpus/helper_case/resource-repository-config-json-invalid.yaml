@@ -1,0 +1,7 @@
+kind: helper
+name: resource-repository-config-json-invalid-seed
+call:
+  resource_repository:
+    raw: '{"a":'
+env: {}
+compare: {ignore: []}

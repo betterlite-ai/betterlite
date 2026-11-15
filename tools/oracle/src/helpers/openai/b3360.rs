@@ -101,7 +101,7 @@ impl BaseContainerConfig for FixtureConfig {
     // ast-grep-ignore: no-long-names
     fn transform_container_retrieve_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
-    ) -> Prepared { (String::new(), Object::new()) }
+    ) -> Reply<Prepared> { Ok((String::new(), Object::new())) }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_retrieve_response(&self, _raw: &[u8]) -> Reply<ContainerObject> {
@@ -111,7 +111,7 @@ impl BaseContainerConfig for FixtureConfig {
     // ast-grep-ignore: no-long-names
     fn transform_container_delete_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
-    ) -> Prepared { (String::new(), Object::new()) }
+    ) -> Reply<Prepared> { Ok((String::new(), Object::new())) }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_delete_response(&self, _raw: &[u8]) -> Reply<DeleteContainerResult> {
@@ -121,7 +121,7 @@ impl BaseContainerConfig for FixtureConfig {
     // ast-grep-ignore: no-long-names
     fn transform_container_file_list_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>,
-    ) -> Prepared { (String::new(), Object::new()) }
+    ) -> Reply<Prepared> { Ok((String::new(), Object::new())) }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_file_list_response(&self, _raw: &[u8]) -> Reply<ContainerFileListResponse> {
@@ -131,7 +131,7 @@ impl BaseContainerConfig for FixtureConfig {
     // ast-grep-ignore: no-long-names
     fn transform_container_file_content_request(
         &self, _id: &str, _file: &str, _base: &str, _context: ContainerRequestContext<'_>,
-    ) -> Prepared { (String::new(), Object::new()) }
+    ) -> Reply<Prepared> { Ok((String::new(), Object::new())) }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_file_content_response(&self, _raw: &[u8]) -> Reply<Vec<u8>> {
