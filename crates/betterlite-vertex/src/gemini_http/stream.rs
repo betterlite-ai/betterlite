@@ -115,9 +115,7 @@ impl Reading {
                 match self.decoder.push(line.as_bytes()) {
                     Ok(None) => continue,
                     Ok(Some(chunk)) => return Some(Ok(chunk)),
-                    Err(source) => {
-                        return Some(self.stop(GeminiStreamError::Chunk(source)));
-                    }
+                    Err(source) => return Some(self.stop(GeminiStreamError::Chunk(source))),
                 }
             }
             if let Some(error) = self.error.take() {
