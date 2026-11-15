@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_http::proxy::limits::read_bounded;
 use error::CompresrTransportError;
 use failure::{Failure, REQUEST_FAILED, SERVICE_ERROR};
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
@@ -131,22 +132,25 @@ impl CompresrTransport {
 
     async fn finish_response(
         &self,
-        response: reqwest::Response,
+        mut response: reqwest::Response,
         expected: usize,
     ) -> Result<CompressOutcome, CompresrTransportError> {
         let status = response.status();
-        let text = response::read_body(response).await;
+        let body = read_bounded(&mut response, response::MAX_RESPONSE_BYTES)
+            .await
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok());
         if !status.is_success() {
             let detail = format!(
                 "status {status}, body {}",
-                response::safe_response_text(text.as_deref(), SAFE_RESPONSE_TEXT_LIMIT)
+                response::safe_response_text(body.as_deref(), SAFE_RESPONSE_TEXT_LIMIT)
             );
             return self.failed(Failure {
                 message: SERVICE_ERROR,
                 detail,
             });
         }
-        match response::parse_results(text.as_deref(), expected) {
+        match response::parse_results(body.as_deref(), expected) {
             Ok(results) => Ok(CompressOutcome::Results(results)),
             Err(failure) => self.failed(failure),
         }
