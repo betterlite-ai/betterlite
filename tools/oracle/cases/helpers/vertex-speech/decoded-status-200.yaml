@@ -1,0 +1,21 @@
+kind: helper
+name: decoded-status-200
+call:
+  vertex_speech:
+    function: decoded_status_200
+    bodies:
+      - '{"audioContent": "WFk="}'
+      - '{"audioContent": "ZkxhQwA="}'
+      - '{"audioContent": "QUJD", "other": 1}'
+      - '{"audioContent": "!!!"}'
+      - '{"audioContent": "QQ=="}'
+      - '{"audioContent": ""}'
+      - '{}'
+      - '{"audioContent": null}'
+      - '{"audioContent": 5}'
+      - '{"audioContent": "QQ"}'
+      - '{"audioContent": "é"}'
+      - '[]'
+      - '{not json'
+env: {}
+compare: {ignore: []}

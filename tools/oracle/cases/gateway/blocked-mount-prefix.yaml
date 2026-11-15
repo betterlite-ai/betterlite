@@ -1,0 +1,8 @@
+kind: helper
+name: gateway-blocked-mount-prefix
+call:
+  b4471:
+    component: gateway
+    paths: [/metric, /metr]
+env: {}
+compare: {ignore: []}

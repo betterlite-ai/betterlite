@@ -1,0 +1,21 @@
+kind: helper
+name: elevenlabs-speech-voice-forms
+call:
+  elevenlabs_speech:
+    calls:
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: AMBER, optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: "  Sage  ", optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: "  Custom-Voice ", optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: "\u001falloy\u001c", optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: "\u00a0ash\u3000", optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: {voice_id: lily, id: ash, name: blue}, optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: {id: Blue, name: coral}, optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: {voice_id: "  ", id: ash}, optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: {voice_id: "\u001c", id: ash}, optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: {voice_id: 5, id: null, name: Onyx}, optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: {name: " Rachel "}, optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: {other: 1}, optional_params: {}, kwargs: {}}
+    - {function: map_params, voice: {voice_id: " "}, optional_params: {}, kwargs: {}}
+compare: {ignore: []}
+env: {}
