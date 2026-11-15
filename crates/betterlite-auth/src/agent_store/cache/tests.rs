@@ -42,5 +42,5 @@ async fn cache_writes_and_reads_through_the_auth_cache() {
 #[tokio::test]
 async fn cache_management_ttl_uses_the_in_memory_ttl() {
     let cache = local_cache(Some(30.0));
-    assert_eq!(cache.management_ttl(), 30.0);
+    assert_eq!(cache.management_ttl().to_bits(), 30.0_f64.to_bits());
 }

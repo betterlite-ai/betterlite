@@ -5,10 +5,11 @@ use rstest::rstest;
 
 use crate::agent_store::records::RetiredIdentityRecord;
 use crate::agent_store::tests::support::{
-    FakeCache, FakeCall, FakeRecords, RecordedBindingKey, RecordedCacheWrite, binding, store,
-    store_with_cache,
+    FakeCache, FakeCall, FakeRecords, RecordedBindingKey, RecordedCacheWrite, binding, fake_store,
 };
 use crate::identity::FailureCode;
+
+use super::bound_agent_id;
 
 const CACHE_KEY: &str = r#"agent_identity:["tenant-1", "client-1"]"#;
 
@@ -19,11 +20,11 @@ async fn bound_agent_id_reads_the_microsoft_entra_key() {
         let mut state = fake.state();
         state.identity = Some(binding("agent-1"));
     }
-    let bound = store(&fake)
-        .bound_agent_id("tenant-1", "client-1")
+    let store = fake_store(&fake, None);
+    let found = bound_agent_id(&store, "tenant-1", "client-1")
         .await
         .expect("the identity lookup");
-    assert_eq!(bound, Some(String::from("agent-1")));
+    assert_eq!(found, Some(String::from("agent-1")));
     assert_eq!(
         fake.state().identity_reads,
         vec![RecordedBindingKey {
@@ -43,11 +44,11 @@ async fn bound_agent_id_writes_the_cache_with_the_management_ttl() {
     }
     let cache = FakeCache::shared();
     cache.state().ttl = 42.5;
-    let bound = store_with_cache(&fake, &cache)
-        .bound_agent_id("tenant-1", "client-1")
+    let store = fake_store(&fake, Some(&cache));
+    let found = bound_agent_id(&store, "tenant-1", "client-1")
         .await
         .expect("the identity lookup");
-    assert_eq!(bound, Some(String::from("agent-1")));
+    assert_eq!(found, Some(String::from("agent-1")));
     assert_eq!(
         cache.state().writes,
         vec![RecordedCacheWrite {
@@ -63,11 +64,11 @@ async fn bound_agent_id_cache_hit_skips_the_identity_read() {
     let fake = FakeRecords::shared();
     let cache = FakeCache::shared();
     cache.state().value = Some(Json::Text(String::from("cached-agent")));
-    let bound = store_with_cache(&fake, &cache)
-        .bound_agent_id("tenant-1", "client-1")
+    let store = fake_store(&fake, Some(&cache));
+    let found = bound_agent_id(&store, "tenant-1", "client-1")
         .await
         .expect("the cached binding");
-    assert_eq!(bound, Some(String::from("cached-agent")));
+    assert_eq!(found, Some(String::from("cached-agent")));
     assert!(fake.state().identity_reads.is_empty());
     assert!(cache.state().writes.is_empty());
 }
@@ -87,11 +88,11 @@ async fn bound_agent_id_non_string_cache_value_is_a_miss(#[case] cached: &str) {
     }
     let cache = FakeCache::shared();
     cache.state().value = Some(serde_json::from_str(cached).expect("a json cache value"));
-    let bound = store_with_cache(&fake, &cache)
-        .bound_agent_id("tenant-1", "client-1")
+    let store = fake_store(&fake, Some(&cache));
+    let found = bound_agent_id(&store, "tenant-1", "client-1")
         .await
         .expect("the identity lookup");
-    assert_eq!(bound, Some(String::from("agent-1")));
+    assert_eq!(found, Some(String::from("agent-1")));
     assert_eq!(fake.state().identity_reads.len(), 1);
     assert_eq!(cache.state().writes.len(), 1);
 }
@@ -99,11 +100,11 @@ async fn bound_agent_id_non_string_cache_value_is_a_miss(#[case] cached: &str) {
 #[tokio::test]
 async fn bound_agent_id_missing_binding_checks_the_retired_key() {
     let fake = FakeRecords::shared();
-    let bound = store(&fake)
-        .bound_agent_id("tenant-1", "client-1")
+    let store = fake_store(&fake, None);
+    let found = bound_agent_id(&store, "tenant-1", "client-1")
         .await
         .expect("the identity lookup");
-    assert!(bound.is_none());
+    assert!(found.is_none());
     assert_eq!(
         fake.state().retired_identity_reads,
         vec![RecordedBindingKey {
@@ -123,8 +124,8 @@ async fn bound_agent_id_retired_binding_is_denied() {
             binding_id: String::from("binding-1"),
         });
     }
-    let failure = store(&fake)
-        .bound_agent_id("tenant-1", "client-1")
+    let store = fake_store(&fake, None);
+    let failure = bound_agent_id(&store, "tenant-1", "client-1")
         .await
         .expect_err("a retired binding");
     assert_eq!(failure.code, FailureCode::IdentityDenied);
@@ -141,8 +142,8 @@ async fn bound_agent_id_read_failure_is_policy_unavailable() {
         let mut state = fake.state();
         state.failure = Some(FakeCall::Identity);
     }
-    let failure = store(&fake)
-        .bound_agent_id("tenant-1", "client-1")
+    let store = fake_store(&fake, None);
+    let failure = bound_agent_id(&store, "tenant-1", "client-1")
         .await
         .expect_err("an identity read failure");
     assert_eq!(failure.code, FailureCode::PolicyUnavailable);

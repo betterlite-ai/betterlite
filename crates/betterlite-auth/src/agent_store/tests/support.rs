@@ -11,9 +11,10 @@ use crate::agent_store::AgentIdentityStore;
 use crate::agent_store::cache::ManagementObjectCache;
 use crate::agent_store::error::AgentStoreError;
 use crate::agent_store::records::{
-    AgentRecords, AgentStateFilter, AuthenticationFilter, IdentityRecord, IdentityRecords,
-    InteractiveEnrollment, RetiredAgentRecord, RetiredAgentRecords, RetiredIdentityRecord,
-    RetiredIdentityRecords, VerifiedSubjectRecords, VerifiedSubjectRow,
+    AgentRecords, AgentStateFilter, AuthenticationFilter, BindingKey, FindResult, IdentityRecord,
+    IdentityRecords, InteractiveEnrollment, RetiredAgentRecord, RetiredAgentRecords,
+    RetiredIdentityRecord, RetiredIdentityRecords, SubjectKey, VerifiedSubjectRecords,
+    VerifiedSubjectRow,
 };
 use crate::identity::MicrosoftInteractiveSubject;
 
@@ -156,35 +157,45 @@ pub(crate) fn store_failure() -> AgentStoreError {
     AgentStoreError::Database(DbError::NoDbConnected)
 }
 
+fn refuse(state: &FakeState, call: FakeCall) -> Result<(), AgentStoreError> {
+    if state.failure == Some(call) {
+        return Err(store_failure());
+    }
+    Ok(())
+}
+
+fn recorded_binding(key: &BindingKey<'_>) -> RecordedBindingKey {
+    RecordedBindingKey {
+        provider: key.provider.to_owned(),
+        tenant_id: key.tenant_id.to_owned(),
+        client_id: key.client_id.to_owned(),
+    }
+}
+
+fn recorded_subject(key: &SubjectKey<'_>) -> RecordedSubjectKey {
+    RecordedSubjectKey {
+        issuer: key.issuer.to_owned(),
+        tenant_id: key.tenant_id.to_owned(),
+        oid: key.oid.to_owned(),
+    }
+}
+
 #[async_trait]
 impl AgentRecords for FakeRecords {
-    async fn find_unique(&self, agent_id: &str) -> Result<Option<AgentResponse>, AgentStoreError> {
+    async fn find_unique(&self, agent_id: &str) -> FindResult<AgentResponse> {
         let mut state = self.state();
         state.agent_reads.push(agent_id.to_owned());
-        if state.failure == Some(FakeCall::Agent) {
-            return Err(store_failure());
-        }
+        refuse(&state, FakeCall::Agent)?;
         Ok(state.agent.clone())
     }
 }
 
 #[async_trait]
 impl IdentityRecords for FakeRecords {
-    async fn find_unique(
-        &self,
-        provider: &str,
-        tenant_id: &str,
-        client_id: &str,
-    ) -> Result<Option<IdentityRecord>, AgentStoreError> {
+    async fn find_unique(&self, key: &BindingKey<'_>) -> FindResult<IdentityRecord> {
         let mut state = self.state();
-        state.identity_reads.push(RecordedBindingKey {
-            provider: provider.to_owned(),
-            tenant_id: tenant_id.to_owned(),
-            client_id: client_id.to_owned(),
-        });
-        if state.failure == Some(FakeCall::Identity) {
-            return Err(store_failure());
-        }
+        state.identity_reads.push(recorded_binding(key));
+        refuse(&state, FakeCall::Identity)?;
         Ok(state.identity.clone())
     }
 
@@ -201,30 +212,17 @@ impl IdentityRecords for FakeRecords {
             agent: filter.agent,
             at,
         });
-        if state.failure == Some(FakeCall::Authentication) {
-            return Err(store_failure());
-        }
+        refuse(&state, FakeCall::Authentication)?;
         Ok(state.authentication_count)
     }
 }
 
 #[async_trait]
 impl VerifiedSubjectRecords for FakeRecords {
-    async fn find_unique(
-        &self,
-        issuer: &str,
-        tenant_id: &str,
-        oid: &str,
-    ) -> Result<Option<VerifiedSubjectRow>, AgentStoreError> {
+    async fn find_unique(&self, key: &SubjectKey<'_>) -> FindResult<VerifiedSubjectRow> {
         let mut state = self.state();
-        state.subject_reads.push(RecordedSubjectKey {
-            issuer: issuer.to_owned(),
-            tenant_id: tenant_id.to_owned(),
-            oid: oid.to_owned(),
-        });
-        if state.failure == Some(FakeCall::Subject) {
-            return Err(store_failure());
-        }
+        state.subject_reads.push(recorded_subject(key));
+        refuse(&state, FakeCall::Subject)?;
         Ok(state.subject.clone())
     }
 
@@ -240,9 +238,7 @@ impl VerifiedSubjectRecords for FakeRecords {
             user_id: enrollment.user_id.to_owned(),
             verified_via: enrollment.verified_via.to_owned(),
         });
-        if state.failure == Some(FakeCall::Enrollment) {
-            return Err(store_failure());
-        }
+        refuse(&state, FakeCall::Enrollment)?;
         Ok(state
             .enrollment_row
             .clone()
@@ -252,36 +248,20 @@ impl VerifiedSubjectRecords for FakeRecords {
 
 #[async_trait]
 impl RetiredIdentityRecords for FakeRecords {
-    async fn find_unique(
-        &self,
-        provider: &str,
-        tenant_id: &str,
-        client_id: &str,
-    ) -> Result<Option<RetiredIdentityRecord>, AgentStoreError> {
+    async fn find_unique(&self, key: &BindingKey<'_>) -> FindResult<RetiredIdentityRecord> {
         let mut state = self.state();
-        state.retired_identity_reads.push(RecordedBindingKey {
-            provider: provider.to_owned(),
-            tenant_id: tenant_id.to_owned(),
-            client_id: client_id.to_owned(),
-        });
-        if state.failure == Some(FakeCall::RetiredIdentity) {
-            return Err(store_failure());
-        }
+        state.retired_identity_reads.push(recorded_binding(key));
+        refuse(&state, FakeCall::RetiredIdentity)?;
         Ok(state.retired_identity.clone())
     }
 }
 
 #[async_trait]
 impl RetiredAgentRecords for FakeRecords {
-    async fn find_unique(
-        &self,
-        agent_id: &str,
-    ) -> Result<Option<RetiredAgentRecord>, AgentStoreError> {
+    async fn find_unique(&self, agent_id: &str) -> FindResult<RetiredAgentRecord> {
         let mut state = self.state();
         state.retired_agent_reads.push(agent_id.to_owned());
-        if state.failure == Some(FakeCall::RetiredAgent) {
-            return Err(store_failure());
-        }
+        refuse(&state, FakeCall::RetiredAgent)?;
         Ok(state.retired_agent.clone())
     }
 }
@@ -328,6 +308,30 @@ impl ManagementObjectCache for FakeCache {
             value: value.clone(),
             ttl,
         });
+    }
+}
+
+fn management_cache(cache: &Arc<FakeCache>) -> Arc<dyn ManagementObjectCache> {
+    Arc::<FakeCache>::clone(cache)
+}
+
+pub(crate) fn fake_store(
+    fake: &Arc<FakeRecords>,
+    cache: Option<&Arc<FakeCache>>,
+) -> AgentIdentityStore {
+    let agents: Arc<dyn AgentRecords> = Arc::<FakeRecords>::clone(fake);
+    let identities: Arc<dyn IdentityRecords> = Arc::<FakeRecords>::clone(fake);
+    let humans: Arc<dyn VerifiedSubjectRecords> = Arc::<FakeRecords>::clone(fake);
+    let retired: Arc<dyn RetiredIdentityRecords> = Arc::<FakeRecords>::clone(fake);
+    let retired_agents: Arc<dyn RetiredAgentRecords> = Arc::<FakeRecords>::clone(fake);
+    AgentIdentityStore {
+        agents,
+        identities,
+        humans,
+        retired: Some(retired),
+        retired_agents: Some(retired_agents),
+        cache: cache.map(management_cache),
+        clock: fixed_clock,
     }
 }
 
@@ -392,56 +396,5 @@ pub(crate) fn microsoft_subject() -> MicrosoftInteractiveSubject {
         issuer: String::from("issuer-1"),
         tenant_id: String::from("tenant-1"),
         oid: String::from("oid-2"),
-    }
-}
-
-pub(crate) fn store(fake: &Arc<FakeRecords>) -> AgentIdentityStore {
-    AgentIdentityStore {
-        agents: Arc::clone(fake),
-        identities: Arc::clone(fake),
-        humans: Arc::clone(fake),
-        retired: Some(Arc::clone(fake)),
-        retired_agents: Some(Arc::clone(fake)),
-        cache: None,
-        clock: fixed_clock,
-    }
-}
-
-pub(crate) fn store_without_retired(fake: &Arc<FakeRecords>) -> AgentIdentityStore {
-    AgentIdentityStore {
-        agents: Arc::clone(fake),
-        identities: Arc::clone(fake),
-        humans: Arc::clone(fake),
-        retired: None,
-        retired_agents: Some(Arc::clone(fake)),
-        cache: None,
-        clock: fixed_clock,
-    }
-}
-
-pub(crate) fn store_without_retired_agents(fake: &Arc<FakeRecords>) -> AgentIdentityStore {
-    AgentIdentityStore {
-        agents: Arc::clone(fake),
-        identities: Arc::clone(fake),
-        humans: Arc::clone(fake),
-        retired: Some(Arc::clone(fake)),
-        retired_agents: None,
-        cache: None,
-        clock: fixed_clock,
-    }
-}
-
-pub(crate) fn store_with_cache(
-    fake: &Arc<FakeRecords>,
-    cache: &Arc<FakeCache>,
-) -> AgentIdentityStore {
-    AgentIdentityStore {
-        agents: Arc::clone(fake),
-        identities: Arc::clone(fake),
-        humans: Arc::clone(fake),
-        retired: Some(Arc::clone(fake)),
-        retired_agents: Some(Arc::clone(fake)),
-        cache: Some(Arc::clone(cache)),
-        clock: fixed_clock,
     }
 }

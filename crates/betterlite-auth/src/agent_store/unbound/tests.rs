@@ -1,17 +1,16 @@
 #![cfg(test)]
 
 use crate::agent_store::records::RetiredIdentityRecord;
-use crate::agent_store::tests::support::{
-    FakeCall, FakeRecords, RecordedBindingKey, store, store_without_retired,
-};
+use crate::agent_store::tests::support::{FakeCall, FakeRecords, RecordedBindingKey, fake_store};
+use crate::agent_store::unbound;
 use crate::identity::FailureCode;
 
 #[tokio::test]
 async fn unbound_client_without_a_retired_store_is_allowed() {
     let fake = FakeRecords::shared();
-    let result = store_without_retired(&fake)
-        .unbound_client("tenant-1", "client-1")
-        .await;
+    let mut store = fake_store(&fake, None);
+    store.retired = None;
+    let result = unbound::unbound_client(&store, "tenant-1", "client-1").await;
     assert!(result.is_ok());
     assert!(fake.state().retired_identity_reads.is_empty());
 }
@@ -19,8 +18,8 @@ async fn unbound_client_without_a_retired_store_is_allowed() {
 #[tokio::test]
 async fn unbound_client_reads_the_microsoft_entra_key() {
     let fake = FakeRecords::shared();
-    store(&fake)
-        .unbound_client("tenant-1", "client-1")
+    let store = fake_store(&fake, None);
+    unbound::unbound_client(&store, "tenant-1", "client-1")
         .await
         .expect("the retired check");
     assert_eq!(
@@ -42,8 +41,8 @@ async fn unbound_client_retired_binding_is_denied() {
             binding_id: String::from("binding-1"),
         });
     }
-    let failure = store(&fake)
-        .unbound_client("tenant-1", "client-1")
+    let store = fake_store(&fake, None);
+    let failure = unbound::unbound_client(&store, "tenant-1", "client-1")
         .await
         .expect_err("a retired binding");
     assert_eq!(failure.code, FailureCode::IdentityDenied);
@@ -60,8 +59,8 @@ async fn unbound_client_read_failure_is_policy_unavailable() {
         let mut state = fake.state();
         state.failure = Some(FakeCall::RetiredIdentity);
     }
-    let failure = store(&fake)
-        .unbound_client("tenant-1", "client-1")
+    let store = fake_store(&fake, None);
+    let failure = unbound::unbound_client(&store, "tenant-1", "client-1")
         .await
         .expect_err("a retired check failure");
     assert_eq!(failure.code, FailureCode::PolicyUnavailable);

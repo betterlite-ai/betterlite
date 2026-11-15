@@ -3,8 +3,9 @@
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 
+use crate::agent_store::subject;
 use crate::agent_store::tests::support::{
-    FakeCall, FakeRecords, RecordedSubjectKey, human_row, store,
+    FakeCall, FakeRecords, RecordedSubjectKey, fake_store, human_row,
 };
 use crate::identity::FailureCode;
 
@@ -22,8 +23,8 @@ async fn subject_non_string_oid_is_none(#[case] oid: &str) {
         state.subject = Some(human_row("human", "sso_interactive", Some("user-1")));
     }
     let oid: JsonData = serde_json::from_str(oid).expect("a json oid");
-    let found = store(&fake)
-        .subject("issuer-1", "tenant-1", Some(&oid))
+    let store = fake_store(&fake, None);
+    let found = subject::find(&store, "issuer-1", "tenant-1", Some(&oid))
         .await
         .expect("the subject lookup");
     assert!(found.is_none());
@@ -37,8 +38,8 @@ async fn subject_missing_oid_is_none() {
         let mut state = fake.state();
         state.subject = Some(human_row("human", "sso_interactive", Some("user-1")));
     }
-    let found = store(&fake)
-        .subject("issuer-1", "tenant-1", None)
+    let store = fake_store(&fake, None);
+    let found = subject::find(&store, "issuer-1", "tenant-1", None)
         .await
         .expect("the subject lookup");
     assert!(found.is_none());
@@ -53,8 +54,8 @@ async fn subject_reads_the_verified_subject_key() {
         state.subject = Some(human_row("human", "sso_interactive", Some("user-1")));
     }
     let oid = JsonData::String(String::from("oid-2"));
-    let found = store(&fake)
-        .subject("issuer-1", "tenant-1", Some(&oid))
+    let store = fake_store(&fake, None);
+    let found = subject::find(&store, "issuer-1", "tenant-1", Some(&oid))
         .await
         .expect("the subject lookup")
         .expect("the stored subject");
@@ -73,8 +74,8 @@ async fn subject_reads_the_verified_subject_key() {
 async fn subject_missing_returns_none() {
     let fake = FakeRecords::shared();
     let oid = JsonData::String(String::from("oid-2"));
-    let found = store(&fake)
-        .subject("issuer-1", "tenant-1", Some(&oid))
+    let store = fake_store(&fake, None);
+    let found = subject::find(&store, "issuer-1", "tenant-1", Some(&oid))
         .await
         .expect("the subject lookup");
     assert!(found.is_none());
@@ -89,8 +90,8 @@ async fn subject_read_failure_is_policy_unavailable() {
         state.failure = Some(FakeCall::Subject);
     }
     let oid = JsonData::String(String::from("oid-2"));
-    let failure = store(&fake)
-        .subject("issuer-1", "tenant-1", Some(&oid))
+    let store = fake_store(&fake, None);
+    let failure = subject::find(&store, "issuer-1", "tenant-1", Some(&oid))
         .await
         .expect_err("a subject read failure");
     assert_eq!(failure.code, FailureCode::PolicyUnavailable);

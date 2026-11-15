@@ -1,7 +1,8 @@
 #![cfg(test)]
 
+use crate::agent_store::enrollment;
 use crate::agent_store::tests::support::{
-    FakeCall, FakeRecords, RecordedEnrollment, human_row, microsoft_subject, store,
+    FakeCall, FakeRecords, RecordedEnrollment, fake_store, human_row, microsoft_subject,
 };
 use crate::identity::FailureCode;
 
@@ -12,8 +13,8 @@ async fn enroll_create_data_carries_the_subject_and_user() {
         let mut state = fake.state();
         state.enrollment_row = Some(human_row("human", "sso_interactive", Some("user-1")));
     }
-    store(&fake)
-        .enroll_interactive_human(&microsoft_subject(), "user-1")
+    let store = fake_store(&fake, None);
+    enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
         .expect("the enrollment");
     assert_eq!(
@@ -35,9 +36,8 @@ async fn enroll_matching_row_succeeds() {
         let mut state = fake.state();
         state.enrollment_row = Some(human_row("human", "sso_interactive", Some("user-1")));
     }
-    let result = store(&fake)
-        .enroll_interactive_human(&microsoft_subject(), "user-1")
-        .await;
+    let store = fake_store(&fake, None);
+    let result = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1").await;
     assert!(result.is_ok());
 }
 
@@ -48,8 +48,8 @@ async fn enroll_other_user_row_is_denied() {
         let mut state = fake.state();
         state.enrollment_row = Some(human_row("human", "sso_interactive", Some("user-9")));
     }
-    let failure = store(&fake)
-        .enroll_interactive_human(&microsoft_subject(), "user-1")
+    let store = fake_store(&fake, None);
+    let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
         .expect_err("a subject bound to another user");
     assert_eq!(failure.code, FailureCode::IdentityDenied);
@@ -66,8 +66,8 @@ async fn enroll_non_human_row_is_denied() {
         let mut state = fake.state();
         state.enrollment_row = Some(human_row("application", "sso_interactive", Some("user-1")));
     }
-    let failure = store(&fake)
-        .enroll_interactive_human(&microsoft_subject(), "user-1")
+    let store = fake_store(&fake, None);
+    let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
         .expect_err("a non-human subject");
     assert_eq!(failure.code, FailureCode::IdentityDenied);
@@ -84,8 +84,8 @@ async fn enroll_other_verified_via_is_denied() {
         let mut state = fake.state();
         state.enrollment_row = Some(human_row("human", "sso_other", Some("user-1")));
     }
-    let failure = store(&fake)
-        .enroll_interactive_human(&microsoft_subject(), "user-1")
+    let store = fake_store(&fake, None);
+    let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
         .expect_err("a subject verified another way");
     assert_eq!(failure.code, FailureCode::IdentityDenied);
@@ -102,8 +102,8 @@ async fn enroll_null_user_row_is_denied() {
         let mut state = fake.state();
         state.enrollment_row = Some(human_row("human", "sso_interactive", None));
     }
-    let failure = store(&fake)
-        .enroll_interactive_human(&microsoft_subject(), "user-1")
+    let store = fake_store(&fake, None);
+    let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
         .expect_err("a subject without a user");
     assert_eq!(failure.code, FailureCode::IdentityDenied);
@@ -120,8 +120,8 @@ async fn enroll_upsert_failure_is_policy_unavailable() {
         let mut state = fake.state();
         state.failure = Some(FakeCall::Enrollment);
     }
-    let failure = store(&fake)
-        .enroll_interactive_human(&microsoft_subject(), "user-1")
+    let store = fake_store(&fake, None);
+    let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
         .expect_err("an upsert failure");
     assert_eq!(failure.code, FailureCode::PolicyUnavailable);
