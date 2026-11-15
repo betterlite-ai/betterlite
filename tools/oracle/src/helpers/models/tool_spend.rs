@@ -101,7 +101,7 @@ impl crate::helpers::Helper for Op {
             .map(measured_row)
             .collect::<Result<Vec<_>, _>>()?;
         let output = Output {
-            transaction: transaction_output(input.transaction.as_ref())?,
+            transaction: transaction_output(input.transaction.as_ref()),
             sizes: rows.iter().map(spend_log_row_bytes).collect(),
             batches: input
                 .max_bytes
@@ -121,12 +121,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn transaction_output(
-    input: Option<&TransactionInput>,
-) -> Result<Option<TransactionOutput>, Box<crate::helpers::HelperError>> {
-    let Some(request) = input else {
-        return Ok(None);
-    };
+fn transaction_output(input: Option<&TransactionInput>) -> Option<TransactionOutput> {
+    let request = input?;
     let response_names = request
         .completion_response
         .as_ref()
@@ -146,7 +142,7 @@ fn transaction_output(
         &response_names,
         &realtime_names,
     );
-    Ok(transaction.map(|built| TransactionOutput {
+    transaction.map(|built| TransactionOutput {
         request_id: built.request_id,
         date: built.date,
         start_time: TimeOutput {
@@ -156,7 +152,7 @@ fn transaction_output(
         tool_names: built.tool_names,
         spend: built.spend.normalize().to_string(),
         total_tokens: built.total_tokens,
-    }))
+    })
 }
 
 fn measured_row(row: &RowInput) -> Result<MeasuredRow, Box<crate::helpers::HelperError>> {
