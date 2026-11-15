@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::Sections;
+use betterlite_config::types::RouterSettings;
 use betterlite_core::api::bfl::common::{BflError, check_bfl_poll_url, decode_bfl_reply};
 use betterlite_core::api::bfl::generation::{
     SUPPORTED_OPENAI_PARAMS, apply_image_response, complete_url, map_openai_params, request_body,
@@ -61,7 +61,7 @@ pub(crate) struct PollParams {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     Mapping(MappingParams),
     Credentials(CredentialParams),
@@ -71,7 +71,7 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -123,7 +123,8 @@ fn mapping(params: &MappingParams) -> HelperResult {
 }
 
 fn credentials(params: &CredentialParams) -> HelperResult {
-    let (configured_key, configured_base) = Sections::bfl_generation_settings(&params.environment);
+    let (configured_key, configured_base) =
+        RouterSettings::bfl_generation_settings(&params.environment);
     let mut outcomes = Vec::new();
     for request in &params.requests {
         let key = request.api_key.clone().map(SecretString::from);

@@ -3,6 +3,15 @@ deviations:
   - what: A polling URL the URL library cannot parse is rejected with BFL's 502 error; LiteLLM's urlparse raises ValueError for the same malformed IPv6 input and the scheme check only runs on URLs it accepts.
     why: The trust boundary must reject before an x-key-bearing request, and no working setup can rely on a provider handing back an unparsable URL.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/common_utils.py#L33-L44
-  - what: Size dimensions parse ASCII digits with an optional sign and surrounding whitespace; Python's int() also accepts underscores and non-ASCII digits.
+  - what: Size dimensions parse ASCII digits with an optional sign and surrounding whitespace and must fit a signed 64-bit integer; Python's int() also accepts underscores, non-ASCII digits and values beyond 64 bits.
     why: A working setup sends ordinary pixel dimensions, and the shared parser keeps the request body typed as JSON integers.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L120-L146
+  - what: A reply that is not valid BFL JSON raises the typed decode error with no status; LiteLLM wraps the parse exception in BlackForestLabsError carrying the HTTP status of the reply it could not parse.
+    why: betterlite decodes before a provider status exists, and a malformed reply is not an HTTP failure of its own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L270-L275
+  - what: An api key a header cannot carry fails with BFL's own error before the request is built; LiteLLM stores the key in the header dict and lets httpx refuse it while building the request.
+    why: betterlite builds a typed header value, so the failure surfaces as a named error instead of a transport exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L165
+  - what: A reply larger than 16 MiB is refused before it is parsed; LiteLLM parses whatever size the provider sends.
+    why: The boundary reads bytes from a provider it does not control, so rule bounded-inputs needs a limit before they are buffered and parsed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L271
