@@ -20,8 +20,7 @@ use serde_json::Value;
 use crate::helpers::{HelperError, HelperResult};
 
 use super::input::{
-    Ai21MapStep, MinimaxInfoStep, MinimaxUrlStep, ModelscopeUrlStep, Step, TencentCostStep,
-    TencentMapStep, TencentUrlStep,
+    Ai21MapStep, MinimaxInfoStep, MinimaxUrlStep, Step, TencentCostStep, TencentMapStep,
 };
 
 fn params_value(names: &[&str]) -> Value {
@@ -86,14 +85,6 @@ fn minimax_url(step: &MinimaxUrlStep) -> Value {
         step.api_base.as_deref(),
         step.env_base.as_deref(),
     ))
-}
-
-fn modelscope_url(step: &ModelscopeUrlStep) -> Value {
-    Value::String(modelscope_chat::complete_url(step.api_base.as_deref()))
-}
-
-fn tencent_url(step: &TencentUrlStep) -> Value {
-    Value::String(tencent_chat::complete_url(step.api_base.as_deref()))
 }
 
 fn tencent_map(step: &TencentMapStep) -> Value {
@@ -170,14 +161,18 @@ pub(crate) fn execute(step: &Step) -> HelperResult {
         ))),
         Step::MinimaxInfo(given) => Ok(minimax_info(given)),
         Step::MinimaxUrl(given) => Ok(minimax_url(given)),
-        Step::ModelscopeUrl(given) => Ok(modelscope_url(given)),
+        Step::ModelscopeUrl(given) => Ok(Value::String(modelscope_chat::complete_url(
+            given.api_base.as_deref(),
+        ))),
         Step::TencentParams(given) => Ok(params_value(&tencent_chat::supported_params(
             &given.model,
             &config(),
             &catalog(),
             given.supports_reasoning,
         ))),
-        Step::TencentUrl(given) => Ok(tencent_url(given)),
+        Step::TencentUrl(given) => Ok(Value::String(tencent_chat::complete_url(
+            given.api_base.as_deref(),
+        ))),
         Step::TencentMap(given) => Ok(tencent_map(given)),
         Step::TencentCost(given) => tencent_cost(given),
     }
