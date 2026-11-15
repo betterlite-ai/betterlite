@@ -39,8 +39,9 @@ class EmbeddingConfig(Protocol):
         _non_default_params: dict[str, JsonValue],
         _optional_params: dict[str, JsonValue],
         _model: str,
-        _drop_params: bool,
         /,
+        *,
+        drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
     def validate_environment(
@@ -88,11 +89,11 @@ class RerankConfig(Protocol):
         self,
         _non_default_params: dict[str, JsonValue] | None,
         _model: str,
-        _drop_params: bool,
-        _query: str,
-        _documents: list[str | dict[str, JsonValue]],
         /,
         *,
+        drop_params: bool,
+        query: str,
+        documents: list[str | dict[str, JsonValue]],
         top_n: int | None,
         rank_fields: list[str] | None,
         return_documents: bool | None,
@@ -209,7 +210,7 @@ def embedding_params_and_url(
         input_value["non_default_params"],
         input_value["optional_params"],
         EMBEDDING_MODEL,
-        KEEP_PARAMS,
+        drop_params=KEEP_PARAMS,
     )
     headers = EMBEDDING.validate_environment(
         input_value["caller_headers"], EMBEDDING_MODEL, NoMessages(), {}, {}, input_value["api_key"]
@@ -272,9 +273,9 @@ def rerank_request(input_value: RerankRequestInput) -> dict[str, JsonValue]:
     params = RERANK.map_cohere_rerank_params(
         {},
         input_value["model"],
-        KEEP_PARAMS,
-        input_value["query"],
-        input_value["documents"],
+        drop_params=KEEP_PARAMS,
+        query=input_value["query"],
+        documents=input_value["documents"],
         top_n=input_value["top_n"],
         rank_fields=input_value["rank_fields"],
         return_documents=input_value["return_documents"],

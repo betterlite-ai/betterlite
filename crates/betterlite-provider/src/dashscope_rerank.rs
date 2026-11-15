@@ -50,7 +50,7 @@ impl BaseRerankConfig for DashscopeRerankConfig {
     ) -> Result<Headers, Self::Error> {
         let key = resolve_key(
             &self.identity,
-            request.api_key.map(|key| key.expose_secret().as_str()),
+            request.api_key.map(|key| key.expose_secret()),
         )?;
         let mut headers = Headers::new();
         headers.insert(

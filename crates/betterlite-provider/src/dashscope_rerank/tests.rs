@@ -201,7 +201,10 @@ fn maps_the_cohere_params_it_supports() {
         mapped.get("documents"),
         Some(&Json::List(vec![text("first"), text("second")]))
     );
-    assert_eq!(mapped.get("top_n"), Some(&Json::Number(Number::from(1))));
+    assert_eq!(
+        mapped.get("top_n"),
+        Some(&Json::Number(Number::from(1_i32)))
+    );
     assert_eq!(mapped.get("return_documents"), Some(&Json::Bool(false)));
     assert_eq!(mapped.get("rank_fields"), None);
     assert_eq!(mapped.get("max_chunks_per_doc"), None);
@@ -238,7 +241,7 @@ fn the_request_body_carries_the_model_query_and_documents() {
     let request = params(&[
         ("query", text("which one")),
         ("documents", Json::List(vec![text("first")])),
-        ("top_n", Json::Number(Number::from(1))),
+        ("top_n", Json::Number(Number::from(1_i32))),
         ("return_documents", Json::Bool(true)),
     ]);
     let body = config("")
@@ -250,7 +253,7 @@ fn the_request_body_carries_the_model_query_and_documents() {
         body.get("documents"),
         Some(&Json::List(vec![text("first")]))
     );
-    assert_eq!(body.get("top_n"), Some(&Json::Number(Number::from(1))));
+    assert_eq!(body.get("top_n"), Some(&Json::Number(Number::from(1_i32))));
     assert_eq!(body.get("return_documents"), Some(&Json::Bool(true)));
 }
 

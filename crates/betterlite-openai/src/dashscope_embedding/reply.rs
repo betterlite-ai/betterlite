@@ -66,7 +66,9 @@ fn error_message(error: &Json) -> String {
             _ => serde_json::to_string(error).unwrap_or_default(),
         },
         Json::Text(text) => text.clone(),
-        _ => serde_json::to_string(error).unwrap_or_default(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
+            serde_json::to_string(error).unwrap_or_default()
+        }
     }
 }
 
@@ -89,10 +91,8 @@ fn embedding_record(item: &Json) -> Result<EmbeddingRecord, DashscopeError> {
     let index = match fields.get("index") {
         Some(Json::Number(number)) => number.as_u64().and_then(|value| u32::try_from(value).ok()),
         _ => None,
-    };
-    let Some(index) = index else {
-        return Err(shape_error("data.index"));
-    };
+    }
+    .ok_or_else(|| shape_error("data.index"))?;
     let embedding = match fields.get("embedding") {
         Some(Json::Text(text)) => EmbeddingVector::Base64(text.clone()),
         Some(Json::List(values)) => EmbeddingVector::Floats(vector(values)?),
@@ -110,7 +110,9 @@ fn vector(values: &[Json]) -> Result<Vec<Number>, DashscopeError> {
         .iter()
         .map(|value| match value {
             Json::Number(number) => Ok(number.clone()),
-            _ => Err(shape_error("data.embedding")),
+            Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+                Err(shape_error("data.embedding"))
+            }
         })
         .collect()
 }
@@ -133,23 +135,25 @@ fn usage(usage: Option<&Json>) -> Result<EmbeddingUsage, DashscopeError> {
 }
 
 fn token_count(
-    fields: Option<&IndexMap<String, Json>>,
+    counts: Option<&IndexMap<String, Json>>,
     name: &str,
 ) -> Result<Option<u32>, DashscopeError> {
-    let Some(fields) = fields else {
+    let Some(fields) = counts else {
         return Ok(None);
     };
-    let Some(value) = fields.get(name) else {
+    let Some(raw) = fields.get(name) else {
         return Ok(None);
     };
-    match value {
+    match raw {
         Json::Null => Ok(None),
         Json::Number(number) => number
             .as_u64()
-            .and_then(|value| u32::try_from(value).ok())
+            .and_then(|count| u32::try_from(count).ok())
             .map(Some)
             .ok_or_else(|| shape_error(&format!("usage.{name}"))),
-        _ => Err(shape_error(&format!("usage.{name}"))),
+        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+            Err(shape_error(&format!("usage.{name}")))
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::str;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{
@@ -146,7 +147,7 @@ fn no_results_error(status_code: u16, body: &Json) -> DashscopeError {
 }
 
 fn body_text(bytes: &[u8]) -> String {
-    std::str::from_utf8(bytes).map_or_else(
+    str::from_utf8(bytes).map_or_else(
         |_| "the DashScope rerank reply is not UTF-8 text".to_owned(),
         str::to_owned,
     )

@@ -233,12 +233,14 @@ fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError
 }
 
 fn rerank_failure(error: DashscopeRerankError) -> Box<HelperError> {
-    match error {
+    match &error {
         DashscopeRerankError::Provider(provider) => failure(
             DASHSCOPE_EXCEPTION,
             Some(provider.status_code),
-            provider.message,
+            provider.message.clone(),
         ),
-        other => failure("ValueError", None, other.to_string()),
+        DashscopeRerankError::Key(_)
+        | DashscopeRerankError::MissingQuery
+        | DashscopeRerankError::MissingDocuments => failure("ValueError", None, error.to_string()),
     }
 }

@@ -102,12 +102,12 @@ fn resolve_key_falls_through_to_the_fallback_and_then_the_message() {
         resolve_key(&identity, None).unwrap().expose_secret(),
         "sk-fallback"
     );
-    let identity = FamilyIdentity {
+    let without_fallback = FamilyIdentity {
         empty_key_is_set: false,
         fallback_key: None,
         ..plain_identity(None, None)
     };
-    let error = resolve_key(&identity, None).unwrap_err();
+    let error = resolve_key(&without_fallback, None).unwrap_err();
     assert_eq!(
         error,
         FamilyKeyError::Missing {
@@ -158,7 +158,7 @@ fn the_debug_output_redacts_the_keys() {
 }
 
 #[rstest]
-#[case::only_the_supported_keys(&[("dimensions", Json::Number(Number::from(256))), ("rank", text("x"))], &["dimensions"])]
+#[case::only_the_supported_keys(&[("dimensions", Json::Number(Number::from(256_i32))), ("rank", text("x"))], &["dimensions"])]
 #[case::a_null_value_is_skipped(&[("user", Json::Null)], &[])]
 #[case::an_unknown_key_is_dropped(&[("encoding_format", text("float")), ("foo", text("bar"))], &["encoding_format"])]
 fn map_openai_params_keeps_only_the_supported_non_null_keys(
@@ -176,11 +176,14 @@ fn map_openai_params_overwrites_an_existing_supported_value() {
         &params(&[("user", text("new"))]),
         params(&[
             ("user", text("old")),
-            ("top_k", Json::Number(Number::from(3))),
+            ("top_k", Json::Number(Number::from(3_i32))),
         ]),
     );
     assert_eq!(mapped.get("user"), Some(&text("new")));
-    assert_eq!(mapped.get("top_k"), Some(&Json::Number(Number::from(3))));
+    assert_eq!(
+        mapped.get("top_k"),
+        Some(&Json::Number(Number::from(3_i32)))
+    );
 }
 
 #[test]
@@ -267,7 +270,7 @@ fn the_request_body_carries_the_options_that_are_set() {
         "text-embedding-v4",
         &Json::List(vec![text("hello")]),
         &params(&[
-            ("dimensions", Json::Number(Number::from(64))),
+            ("dimensions", Json::Number(Number::from(64_i32))),
             ("user", text("max")),
             ("encoding_format", Json::Null),
         ]),
@@ -279,7 +282,7 @@ fn the_request_body_carries_the_options_that_are_set() {
     assert_eq!(body.get("input"), Some(&Json::List(vec![text("hello")])));
     assert_eq!(
         body.get("dimensions"),
-        Some(&Json::Number(Number::from(64)))
+        Some(&Json::Number(Number::from(64_i32)))
     );
     assert_eq!(body.get("user"), Some(&Json::Text("max".to_owned())));
     assert_eq!(body.get("encoding_format"), None);
@@ -306,7 +309,7 @@ fn the_reply_decodes_the_data_model_and_usage() {
 
 #[test]
 fn the_reply_defaults_the_missing_parts() {
-    let reply = decode_dashscope_embedding(br#"{}"#, 200, "requested-model").unwrap();
+    let reply = decode_dashscope_embedding(b"{}", 200, "requested-model").unwrap();
     assert_eq!(reply.id, None);
     assert!(reply.response.data.is_empty());
     assert_eq!(reply.response.model, "requested-model");
@@ -360,6 +363,7 @@ fn the_reply_reports_a_non_json_body_with_the_reply_status() {
     "invalid api key"
 )]
 #[case::a_text_error(br#"{"error":"rate limited"}"#, "rate limited")]
+#[case::a_null_error(br#"{"error":null}"#, "null")]
 #[case::an_object_without_a_message(br#"{"error":{"code":"x"}}"#, r#"{"code":"x"}"#)]
 fn the_reply_reports_an_error_key_as_a_dashscope_error(
     #[case] body: &[u8],
@@ -378,8 +382,12 @@ fn the_reply_reports_an_error_key_as_a_dashscope_error(
 #[case::an_embedding_that_is_not_a_list(
     br#"{"data":[{"object":"embedding","index":0,"embedding":{}}]}"#
 )]
+#[case::an_embedding_element_that_is_not_a_number(
+    br#"{"data":[{"object":"embedding","index":0,"embedding":[0.5,"x"]}]}"#
+)]
 #[case::usage_that_is_not_an_object(br#"{"usage":[]}"#)]
 #[case::a_token_count_that_is_negative(br#"{"usage":{"prompt_tokens":-1}}"#)]
+#[case::a_token_count_that_is_not_a_number(br#"{"usage":{"prompt_tokens":"many"}}"#)]
 #[case::an_id_that_is_not_text(br#"{"id":7}"#)]
 fn the_reply_rejects_a_shape_the_records_cannot_hold(#[case] body: &[u8]) {
     let error = decode_dashscope_embedding(body, 200, "model").unwrap_err();
