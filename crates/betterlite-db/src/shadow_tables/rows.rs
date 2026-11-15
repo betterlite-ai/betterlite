@@ -90,7 +90,7 @@ pub struct FunnelCounters {
 }
 
 impl FunnelCounters {
-    pub fn record(&mut self, stage: FunnelStage) {
+    pub const fn record(&mut self, stage: FunnelStage) {
         let slot = match stage {
             FunnelStage::NotSampled => &mut self.not_sampled,
             FunnelStage::Unjudgeable => &mut self.unjudgeable,
