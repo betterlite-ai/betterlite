@@ -559,6 +559,40 @@ async fn a_lookup_body_read_timeout_is_a_500_like_litellms_raw_timeout() {
 }
 
 #[tokio::test]
+async fn a_lookup_body_over_the_limit_is_a_transport_500() {
+    let server = stalled_server(Some(STALLED_BODY_HEAD)).await;
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
+    );
+    let limits = TransportLimits {
+        body_bytes: 16,
+        ..TransportLimits::DEFAULT
+    };
+    let client = ProxiedClient::build(base_builder(), &policy, limits).expect("a fixture client");
+    let urls = UserUrlFetcher {
+        validator: UrlValidator::new(BlockedResolver, &[], &Verification::Enabled),
+        validation: false,
+    };
+    let safe = SafeGet {
+        urls: &urls,
+        client: &client,
+    };
+    let transport = Scripted::new(Vec::new());
+    let input = create(TUNED);
+    let request = BatchCreateRequest {
+        api_base: Some(&server.base),
+        ..base(&input)
+    };
+    let error = timeout(Duration::from_secs(5), run(&transport, &safe, &request))
+        .await
+        .expect("the oversized body ends the lookup")
+        .unwrap_err();
+    assert!(matches!(error, VertexBatchCreateError::Transport { .. }));
+    assert_eq!(error.status_code(), 500);
+    assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
 async fn transport_failure_is_a_500() {
     let transport = Scripted::new(vec![Reply::Failure]);
     let fetcher = Scripted::new(Vec::new());

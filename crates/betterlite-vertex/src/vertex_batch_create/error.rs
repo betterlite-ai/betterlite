@@ -111,4 +111,14 @@ impl VertexBatchCreateError {
             Self::Transport { source }
         }
     }
+
+    pub(crate) fn lookup_transport(source: TransportError) -> Self {
+        if matches!(
+            &source,
+            TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
+        ) {
+            return Self::LookupTimeout;
+        }
+        Self::Transport { source }
+    }
 }
