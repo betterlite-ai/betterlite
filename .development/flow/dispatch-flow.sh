@@ -330,6 +330,12 @@ case "${result}" in
       picked=$(gh run view "${run_id}" --log-failed 2> /dev/null)
       grep -q -E 'curl: \(22\) The requested URL returned error: 5[0-9]{2}' <<< "${picked}" && ! grep -q -E 'FAIL ' <<< "${picked}" && lost=0
     fi
+    # a runner that shuts down mid-job fails it with no FAIL line (B384 and B1549 on 11-15), so its failed jobs run again, twice at most, before the run costs a fix round
+    if [[ "${lost}" != 0 ]] && [[ "${LOSSES:-0}" -lt 2 ]] && grep -q 'The runner has received a shutdown signal' <<< "${picked}" && ! grep -q -E 'FAIL ' <<< "${picked}"; then
+      say "CI run ${run_id} on PR #${pr} lost a runner and no check failed; running its failed jobs again"
+      gh run rerun "${run_id}" --failed > /dev/null 2>&1
+      LOSSES=$((${LOSSES:-0} + 1)) LAND_ONLY=1 exec bash "${P}/dispatch-flow.sh" "${id}" "${run}" ""
+    fi
     if [[ "${lost}" = 0 ]] && [[ "${OUTAGES:-0}" -lt 6 ]]; then
       say "CI run ${run_id} on PR #${pr} failed with no failed check, a GitHub outage; running CI again in 15 minutes"
       sleep 900
