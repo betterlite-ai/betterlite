@@ -17,7 +17,7 @@ use betterlite_http::proxy::base_builder;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
@@ -809,6 +809,9 @@ async fn an_answer_cut_off_before_its_length_is_a_failed_call() {
     let mut server = JoinSet::new();
     server.spawn(async move {
         let (mut socket, _) = listener.accept().await.expect("accept");
+        let mut request = [0_u8; 1024];
+        let bytes = socket.read(&mut request).await.expect("read");
+        assert!(bytes > 0, "the guardrail sends its request first");
         socket
             .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 64\r\n\r\n{\"decision\":\"allow\"}")
             .await
