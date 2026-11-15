@@ -28,7 +28,7 @@ fn section<'data>(
 }
 
 // LiteLLM checks the key's presence, so a null zguard_policy_id still wins over the configured id
-pub fn selected_policy_id(
+pub(crate) fn selected_policy_id(
     request_data: &BTreeMap<String, GuardrailValue>,
     configured: i64,
 ) -> Result<GuardrailValue, ZscalerAiGuardError> {
@@ -41,10 +41,10 @@ pub fn selected_policy_id(
         .map(|fields| section(fields, TEAM_METADATA))
         .transpose()?
         .flatten();
-    let selected = metadata
-        .and_then(|fields| fields.get(ZGUARD_POLICY_ID))
-        .or_else(|| user_key.and_then(|fields| fields.get(ZGUARD_POLICY_ID)))
-        .or_else(|| team.and_then(|fields| fields.get(ZGUARD_POLICY_ID)));
+    let from_metadata = metadata.and_then(|fields| fields.get(ZGUARD_POLICY_ID));
+    let from_user_key = user_key.and_then(|fields| fields.get(ZGUARD_POLICY_ID));
+    let from_team = team.and_then(|fields| fields.get(ZGUARD_POLICY_ID));
+    let selected = from_metadata.or(from_user_key).or(from_team);
     Ok(selected
         .cloned()
         .unwrap_or(GuardrailValue::SignedInteger(configured)))
@@ -80,7 +80,7 @@ fn metadata_value(
 }
 
 // LiteLLM's `_resolve_metadata_value(...) or "N/A"`
-pub fn header_value(
+pub(crate) fn header_value(
     request_data: &BTreeMap<String, GuardrailValue>,
     key: &str,
 ) -> Result<String, ZscalerAiGuardError> {
@@ -91,15 +91,15 @@ pub fn header_value(
 }
 
 // policy_id is only written when it is not null and at least 1; LiteLLM compares the raw value, so a non-number fails
-pub fn policy_id_wire(
+pub(crate) fn policy_id_wire(
     value: &GuardrailValue,
 ) -> Result<Option<GuardrailValue>, ZscalerAiGuardError> {
     match value {
-        GuardrailValue::Null => Ok(None),
         GuardrailValue::SignedInteger(id) if *id >= 1 => Ok(Some(value.clone())),
         GuardrailValue::UnsignedInteger(id) if *id >= 1 => Ok(Some(value.clone())),
         GuardrailValue::Decimal(id) if *id >= 1.0 => Ok(Some(value.clone())),
-        GuardrailValue::Boolean(_)
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
         | GuardrailValue::SignedInteger(_)
         | GuardrailValue::UnsignedInteger(_)
         | GuardrailValue::Decimal(_) => Ok(None),

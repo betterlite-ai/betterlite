@@ -1,7 +1,7 @@
 use super::GuardrailExtraValue;
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use unicode_general_category::{GeneralCategory, get_general_category};
 
 // the categories Python's str.isprintable() rejects, so repr escapes exactly its characters
@@ -249,7 +249,7 @@ fn decimal_repr(number: f64) -> String {
     }
 }
 
-fn write_escape(rendered: &mut String, character: char) -> std::fmt::Result {
+fn write_escape(rendered: &mut String, character: char) -> fmt::Result {
     if let Ok(code) = u8::try_from(character) {
         write!(rendered, "\\x{code:02x}")
     } else if let Ok(code) = u16::try_from(character) {

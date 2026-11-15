@@ -8,11 +8,9 @@ pub mod wire;
 
 use std::collections::BTreeMap;
 
-use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::{Deserialize, Serialize};
 
-use error::ZscalerAiGuardError;
 use settings::Settings;
 
 pub const DEFAULT_URL: &str = "https://api.us1.zseclipse.net/v1/detection/execute-policy";
@@ -49,22 +47,4 @@ pub struct ZscalerAiGuard {
     pub guardrail_name: String,
     pub settings: Settings,
     pub client: reqwest::Client,
-}
-
-impl ZscalerAiGuard {
-    pub fn new<L>(
-        args: init::ZscalerArgs,
-        environment: &L,
-        client: reqwest::Client,
-    ) -> Result<Self, ZscalerAiGuardError>
-    where
-        L: EnvironmentLookup,
-    {
-        let settings = Settings::resolve(&args, environment)?;
-        Ok(Self {
-            guardrail_name: args.name,
-            settings,
-            client,
-        })
-    }
 }

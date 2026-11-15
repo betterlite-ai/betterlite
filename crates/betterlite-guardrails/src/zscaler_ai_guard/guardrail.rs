@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_http::proxy::limits::{ReadError, read_bounded};
@@ -8,8 +9,10 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, Header
 use secrecy::ExposeSecret as _;
 
 use super::error::ZscalerAiGuardError;
+use super::init::ZscalerArgs;
+use super::settings::{self, Settings};
 use super::wire::{Direction, PolicyRequest, PolicyResponse};
-use super::{Inputs, MAX_RESPONSE_BYTES, ZscalerAiGuard, metadata, settings};
+use super::{Inputs, MAX_RESPONSE_BYTES, ZscalerAiGuard, metadata};
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::generic_guardrail_contracts::headers::{python_repr, python_str, quote_python_string};
 
@@ -20,6 +23,22 @@ struct UserKeyHeaders {
 }
 
 impl ZscalerAiGuard {
+    pub fn new<L>(
+        args: ZscalerArgs,
+        environment: &L,
+        client: reqwest::Client,
+    ) -> Result<Self, ZscalerAiGuardError>
+    where
+        L: EnvironmentLookup,
+    {
+        let settings = Settings::resolve(&args, environment)?;
+        Ok(Self {
+            guardrail_name: args.name,
+            settings,
+            client,
+        })
+    }
+
     pub async fn apply_guardrail(
         &self,
         inputs: Inputs,
@@ -28,12 +47,12 @@ impl ZscalerAiGuard {
     ) -> Result<Inputs, ZscalerAiGuardError> {
         let policy_id = metadata::selected_policy_id(request_data, self.settings.policy_id)?;
         let user = UserKeyHeaders {
-            alias: if self.settings.send.alias {
+            alias: if self.settings.send.alias.0 {
                 Some(metadata::header_value(request_data, "user_api_key_alias")?)
             } else {
                 None
             },
-            user_id: if self.settings.send.user_id {
+            user_id: if self.settings.send.user_id.0 {
                 Some(metadata::header_value(
                     request_data,
                     "user_api_key_user_id",
@@ -41,7 +60,7 @@ impl ZscalerAiGuard {
             } else {
                 None
             },
-            team_id: if self.settings.send.team_id {
+            team_id: if self.settings.send.team_id.0 {
                 Some(metadata::header_value(
                     request_data,
                     "user_api_key_team_id",
@@ -103,10 +122,10 @@ impl ZscalerAiGuard {
     fn prepare_headers(&self, user: &UserKeyHeaders) -> Result<HeaderMap, ZscalerAiGuardError> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        let bearer = match &self.settings.api_key {
-            Some(key) => format!("Bearer {}", key.expose_secret()),
-            None => "Bearer ".to_owned(),
-        };
+        let bearer = self.settings.api_key.as_ref().map_or_else(
+            || "Bearer ".to_owned(),
+            |key| format!("Bearer {}", key.expose_secret()),
+        );
         let mut authorization =
             HeaderValue::from_str(&bearer).map_err(|source| ZscalerAiGuardError::Header {
                 name: "authorization",
@@ -134,12 +153,12 @@ fn insert_header(
     name: &'static str,
     value: Option<&str>,
 ) -> Result<(), ZscalerAiGuardError> {
-    let Some(value) = value else {
+    let Some(text) = value else {
         return Ok(());
     };
-    let value = HeaderValue::from_str(value)
+    let header = HeaderValue::from_str(text)
         .map_err(|source| ZscalerAiGuardError::Header { name, source })?;
-    headers.insert(HeaderName::from_static(name), value);
+    headers.insert(HeaderName::from_static(name), header);
     Ok(())
 }
 
@@ -225,10 +244,10 @@ fn match_answer(answer: &PolicyResponse) -> Result<(), ZscalerAiGuardError> {
     })
 }
 
-fn status_code_is_200(status_code: Option<&GuardrailValue>) -> bool {
+const fn status_code_is_200(status_code: Option<&GuardrailValue>) -> bool {
     match status_code {
         Some(GuardrailValue::SignedInteger(200) | GuardrailValue::UnsignedInteger(200)) => true,
-        Some(GuardrailValue::Decimal(value)) => *value == 200.0,
+        Some(GuardrailValue::Decimal(value)) => value.to_bits() == 200.0_f64.to_bits(),
         Some(
             GuardrailValue::Null
             | GuardrailValue::Boolean(_)

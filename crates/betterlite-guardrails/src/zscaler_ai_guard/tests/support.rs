@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
+use std::io::{Error as IoError, Result as IoResult, Write};
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
@@ -9,6 +10,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt;
 
@@ -25,16 +28,16 @@ pub(super) struct Seen {
 pub(super) struct Mock {
     pub(super) base: String,
     pub(super) seen: Arc<Mutex<Vec<Seen>>>,
-    _server: tokio::task::JoinSet<std::io::Result<()>>,
+    _server: JoinSet<IoResult<()>>,
 }
 
 pub(super) async fn mock(status: u16, reply: &str) -> Mock {
     let recorded = Arc::new(Mutex::new(Vec::new()));
-    let captures = Arc::clone(&recorded);
-    let reply = reply.to_owned();
+    let sink = Arc::clone(&recorded);
+    let answer_text = reply.to_owned();
     let answer = move |method: Method, uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let captures = Arc::clone(&captures);
-        let reply = reply.clone();
+        let captures = Arc::clone(&sink);
+        let answer_body = answer_text.clone();
         async move {
             let body =
                 serde_json::from_slice::<GuardrailValue>(&bytes).unwrap_or(GuardrailValue::Null);
@@ -47,13 +50,13 @@ pub(super) async fn mock(status: u16, reply: &str) -> Mock {
             (
                 StatusCode::from_u16(status).unwrap(),
                 [("content-type", "application/json")],
-                reply,
+                answer_body,
             )
         }
     };
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let mut server = tokio::task::JoinSet::new();
+    let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, Router::new().fallback(answer)).into_future());
     Mock {
         base,
@@ -102,6 +105,14 @@ pub(super) fn request_data(json: &str) -> BTreeMap<String, GuardrailValue> {
     serde_json::from_str(json).unwrap()
 }
 
+pub(super) fn body(json: &str) -> GuardrailValue {
+    serde_json::from_str(json).unwrap()
+}
+
+pub(super) fn header(seen: &Seen, name: &str) -> String {
+    seen.headers.get(name).unwrap().to_str().unwrap().to_owned()
+}
+
 pub(super) fn captured<T, F>(run: F) -> (T, String)
 where
     F: FnOnce() -> T,
@@ -120,13 +131,16 @@ where
 
 struct Captured(Arc<Mutex<Vec<u8>>>);
 
-impl std::io::Write for Captured {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+impl Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| IoError::other("the captured log lock is poisoned"))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> IoResult<()> {
         Ok(())
     }
 }

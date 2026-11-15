@@ -16,7 +16,7 @@ use super::metadata;
 use super::wire::PolicyResponse;
 use super::{SUPPORTED_EVENT_HOOKS, ZscalerAiGuard};
 use crate::generic_guardrail_contracts::GuardrailInputType;
-use support::{args, guardrail, inputs, mock, request_data};
+use support::{args, body, guardrail, header, inputs, mock, request_data};
 
 #[test]
 fn supported_hooks_are_pre_call_and_post_call() {
@@ -172,54 +172,14 @@ async fn the_request_carries_the_documented_headers_and_body() {
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].method, Method::POST);
     assert_eq!(seen[0].path, "/v1/detection/execute-policy");
+    assert_eq!(header(&seen[0], "content-type"), "application/json");
+    assert_eq!(header(&seen[0], "authorization"), "Bearer oracle-key");
+    assert_eq!(header(&seen[0], "user-api-key-alias"), "alias-1");
+    assert_eq!(header(&seen[0], "user-api-key-team-id"), "team-1");
+    assert_eq!(header(&seen[0], "user-api-key-user-id"), "user-1");
     assert_eq!(
-        seen[0]
-            .headers
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "application/json"
-    );
-    assert_eq!(
-        seen[0]
-            .headers
-            .get("authorization")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "Bearer oracle-key"
-    );
-    assert_eq!(
-        seen[0]
-            .headers
-            .get("user-api-key-alias")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "alias-1"
-    );
-    assert_eq!(
-        seen[0]
-            .headers
-            .get("user-api-key-team-id")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "team-1"
-    );
-    assert_eq!(
-        seen[0]
-            .headers
-            .get("user-api-key-user-id")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "user-1"
-    );
-    assert_eq!(
-        serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "IN", "content": "hello world", "policyId": 42})
+        seen[0].body,
+        body(r#"{"direction": "IN", "content": "hello world", "policyId": 42}"#)
     );
 }
 
@@ -240,13 +200,7 @@ async fn a_missing_api_key_sends_an_empty_bearer_token() {
         )
         .await
         .unwrap();
-    let seen = mock.seen.lock().unwrap();
-    let authorization = seen[0]
-        .headers
-        .get("authorization")
-        .unwrap()
-        .to_str()
-        .unwrap();
+    let authorization = header(&mock.seen.lock().unwrap()[0], "authorization");
     assert_eq!(authorization.trim_end(), "Bearer");
 }
 
@@ -269,8 +223,8 @@ async fn the_policy_id_is_only_sent_when_it_is_at_least_one() {
         .unwrap();
     let seen = mock.seen.lock().unwrap();
     assert_eq!(
-        serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "IN", "content": "hello"})
+        seen[0].body,
+        body(r#"{"direction": "IN", "content": "hello"}"#)
     );
 }
 
@@ -285,8 +239,8 @@ async fn a_metadata_policy_id_overrides_the_configured_id() {
         .unwrap();
     let seen = mock.seen.lock().unwrap();
     assert_eq!(
-        serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "IN", "content": "hello", "policyId": 7})
+        seen[0].body,
+        body(r#"{"direction": "IN", "content": "hello", "policyId": 7}"#)
     );
 }
 
@@ -301,8 +255,8 @@ async fn a_null_metadata_policy_id_sends_no_policy_id() {
         .unwrap();
     let seen = mock.seen.lock().unwrap();
     assert_eq!(
-        serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "IN", "content": "hello"})
+        seen[0].body,
+        body(r#"{"direction": "IN", "content": "hello"}"#)
     );
 }
 
@@ -317,8 +271,8 @@ async fn a_zero_metadata_policy_id_is_not_sent() {
         .unwrap();
     let seen = mock.seen.lock().unwrap();
     assert_eq!(
-        serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "IN", "content": "hello"})
+        seen[0].body,
+        body(r#"{"direction": "IN", "content": "hello"}"#)
     );
 }
 
@@ -342,8 +296,8 @@ async fn a_response_direction_is_out() {
         .unwrap();
     let seen = mock.seen.lock().unwrap();
     assert_eq!(
-        serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "OUT", "content": "hello", "policyId": 42})
+        seen[0].body,
+        body(r#"{"direction": "OUT", "content": "hello", "policyId": 42}"#)
     );
 }
 
@@ -736,8 +690,8 @@ async fn a_decimal_policy_id_from_metadata_is_sent() {
         .unwrap();
     let seen = mock.seen.lock().unwrap();
     assert_eq!(
-        serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "IN", "content": "hello", "policyId": 5.0})
+        seen[0].body,
+        body(r#"{"direction": "IN", "content": "hello", "policyId": 5.0}"#)
     );
 }
 
@@ -752,8 +706,8 @@ async fn a_fractional_policy_id_below_one_is_not_sent() {
         .unwrap();
     let seen = mock.seen.lock().unwrap();
     assert_eq!(
-        serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "IN", "content": "hello"})
+        seen[0].body,
+        body(r#"{"direction": "IN", "content": "hello"}"#)
     );
 }
 
@@ -768,8 +722,8 @@ async fn a_large_unsigned_policy_id_is_sent() {
         .unwrap();
     let seen = mock.seen.lock().unwrap();
     assert_eq!(
-        serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "IN", "content": "hello", "policyId": u64::MAX})
+        seen[0].body,
+        body(r#"{"direction": "IN", "content": "hello", "policyId": 18446744073709551615}"#)
     );
 }
 

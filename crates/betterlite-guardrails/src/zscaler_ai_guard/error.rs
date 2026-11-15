@@ -1,3 +1,5 @@
+use std::time::TryFromFloatSecsError;
+
 use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use serde::Serialize;
@@ -20,7 +22,7 @@ pub enum ZscalerAiGuardError {
     #[error("the Zscaler AI Guard timeout is not a representable duration")]
     Timeout {
         #[source]
-        source: std::time::TryFromFloatSecsError,
+        source: TryFromFloatSecsError,
     },
     #[error("the Zscaler AI Guard header {name} has an invalid value")]
     Header {
@@ -66,7 +68,7 @@ pub enum ZscalerErrorDetail {
 
 impl ZscalerAiGuardError {
     #[must_use]
-    pub fn status_code(&self) -> StatusCode {
+    pub const fn status_code(&self) -> StatusCode {
         match self {
             Self::Blocked { .. } => StatusCode::BAD_REQUEST,
             Self::Http { status, .. } => *status,
@@ -99,7 +101,17 @@ impl ZscalerAiGuardError {
     fn reason(&self) -> String {
         match self {
             Self::Http { reason, .. } => reason.clone(),
-            other => other.to_string(),
+            Self::PolicyId { .. }
+            | Self::SendFlag { .. }
+            | Self::Timeout { .. }
+            | Self::Header { .. }
+            | Self::MetadataShape { .. }
+            | Self::PolicyIdType
+            | Self::DetectorShape
+            | Self::Request { .. }
+            | Self::ResponseTooLarge { .. }
+            | Self::ResponseJson { .. }
+            | Self::Blocked { .. } => self.to_string(),
         }
     }
 }

@@ -136,7 +136,7 @@ fn send_flags_resolve_from_the_argument_then_the_environment(
         environment(&[(SEND_ALIAS_ENV, value)])
     });
     let resolved = Settings::resolve(&args, &environment).unwrap();
-    assert_eq!(resolved.send.alias, expected);
+    assert_eq!(resolved.send.alias.0, expected);
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn a_false_send_flag_argument_beats_a_true_environment_value() {
     let mut args = args();
     args.send_user_api_key_alias = Some(false);
     let resolved = Settings::resolve(&args, &environment(&[(SEND_ALIAS_ENV, "true")])).unwrap();
-    assert!(!resolved.send.alias);
+    assert!(!resolved.send.alias.0);
 }
 
 #[test]
@@ -163,14 +163,14 @@ fn user_id_and_team_id_flags_read_their_own_environment_variables() {
     args.send_user_api_key_team_id = None;
     let environment = environment(&[(SEND_USER_ID_ENV, "true"), (SEND_TEAM_ID_ENV, "1")]);
     let resolved = Settings::resolve(&args, &environment).unwrap();
-    assert!(resolved.send.user_id);
-    assert!(resolved.send.team_id);
+    assert!(resolved.send.user_id.0);
+    assert!(resolved.send.team_id.0);
 }
 
 #[test]
 fn settings_keep_a_positive_timeout() {
     let mut args = args();
-    args.timeout = Some(1.5);
+    args.timeout = Some(1.5_f64);
     let resolved = Settings::resolve(&args, &environment(&[])).unwrap();
     assert_eq!(resolved.timeout, Duration::from_millis(1500));
 }
@@ -185,13 +185,13 @@ fn settings_default_the_timeout_when_it_is_absent() {
 
 #[test]
 fn a_zero_timeout_falls_back_to_five_seconds() {
-    let (timeout, _written) = captured(|| settings::resolve_timeout(Some(0.0)).unwrap());
+    let (timeout, _written) = captured(|| settings::resolve_timeout(Some(0.0_f64)).unwrap());
     assert_eq!(timeout, DEFAULT_TIMEOUT_DURATION);
 }
 
 #[rstest]
-#[case::zero(0.0)]
-#[case::negative(-1.5)]
+#[case::zero(0.0_f64)]
+#[case::negative(-1.5_f64)]
 fn non_positive_timeouts_fall_back_and_name_the_value_and_default(#[case] value: f64) {
     let (timeout, written) = captured(|| settings::resolve_timeout(Some(value)).unwrap());
     assert_eq!(timeout, DEFAULT_TIMEOUT_DURATION);

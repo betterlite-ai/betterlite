@@ -13,12 +13,15 @@ use super::{
 pub const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 pub const DEFAULT_POLICY_ID: i64 = -1;
 
-// clippy allows two bools per struct, so the three send flags sit together
+// A bool on the wire; the newtype keeps struct_excessive_bools off the three send switches, as RowFlag does on a row
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SendFlag(pub bool);
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SendFlags {
-    pub alias: bool,
-    pub user_id: bool,
-    pub team_id: bool,
+    pub alias: SendFlag,
+    pub user_id: SendFlag,
+    pub team_id: SendFlag,
 }
 
 #[derive(Debug, Clone)]
@@ -73,17 +76,21 @@ where
     L: EnvironmentLookup,
 {
     Ok(SendFlags {
-        alias: resolve_flag(args.send_user_api_key_alias, environment, SEND_ALIAS_ENV)?,
-        user_id: resolve_flag(
+        alias: SendFlag(resolve_flag(
+            args.send_user_api_key_alias,
+            environment,
+            SEND_ALIAS_ENV,
+        )?),
+        user_id: SendFlag(resolve_flag(
             args.send_user_api_key_user_id,
             environment,
             SEND_USER_ID_ENV,
-        )?,
-        team_id: resolve_flag(
+        )?),
+        team_id: SendFlag(resolve_flag(
             args.send_user_api_key_team_id,
             environment,
             SEND_TEAM_ID_ENV,
-        )?,
+        )?),
     })
 }
 
