@@ -280,16 +280,21 @@ fn non_text_finish_reasons() {
             "{body:?}"
         );
     }
-    let fractional = block_on(decode_pegasus_reply(
-        br#"{"message":"visible","finishReason":1.5}"#,
-        &context(200, &headers, &given, 10.0),
-        &mut response(vec![choice(0, None, "length")]),
-        &FixtureCounter::counting(0, 0),
-    ));
-    assert!(matches!(
-        fractional,
-        Err(PegasusError::FinishReasonNotMappable)
-    ));
+    for body in [
+        br#"{"message":"visible","finishReason":1.5}"#.as_slice(),
+        br#"{"message":"visible","finishReason":1e3}"#.as_slice(),
+    ] {
+        let fractional = block_on(decode_pegasus_reply(
+            body,
+            &context(200, &headers, &given, 10.0),
+            &mut response(vec![choice(0, None, "length")]),
+            &FixtureCounter::counting(0, 0),
+        ));
+        assert!(
+            matches!(fractional, Err(PegasusError::FinishReasonNotMappable)),
+            "{body:?}"
+        );
+    }
 }
 
 fn usage_and_finish_reason() {
