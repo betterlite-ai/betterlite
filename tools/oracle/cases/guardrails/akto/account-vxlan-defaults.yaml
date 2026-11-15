@@ -1,0 +1,10 @@
+kind: helper
+name: account-vxlan-defaults
+call:
+  b3751:
+    op: init
+    settings:
+      akto_base_url: http://akto.invalid
+      akto_api_key: oracle-key
+env: {}
+compare: {ignore: []}

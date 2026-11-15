@@ -1,0 +1,24 @@
+kind: helper
+name: get-span-found-200
+call:
+  b3867:
+    request:
+      method: GET
+      path: /v1/traces/trace-1/spans/span-1
+      query:
+        trace_ref: env-a
+    auth: {user_role: proxy_admin, team_id: team-1, token: hash-1, org_id: org-1}
+    tracing: true
+    master_key: "sk-master"
+    script:
+      get_span:
+        value: {
+              span_id: span-1,
+              input: question,
+              output: answer,
+              input_ui: {kind: text, text: question},
+              output_ui: {kind: text, text: answer},
+              attributes: {gen_ai.system: openai}
+            }
+env: {}
+compare: {ignore: []}
