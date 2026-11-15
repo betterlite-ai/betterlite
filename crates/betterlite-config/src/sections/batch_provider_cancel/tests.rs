@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::batch_provider_cancel::Settings;
@@ -22,7 +22,7 @@ fn settings(yaml: &str, environment: &[(&str, &str)]) -> Settings {
 }
 
 fn exposed(value: Option<&SecretString>) -> Option<String> {
-    value.map(|token| token.expose_secret().clone())
+    value.map(|token| token.expose_secret().to_owned())
 }
 
 // the settings contract reads one row per key, like the YAML and environment names it mirrors
@@ -118,17 +118,14 @@ fn configured_values_win_over_environment_fallbacks() {
         Some("project-configured")
     );
     assert_eq!(
-        settings
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        settings.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-configured")
     );
     assert_eq!(
         settings
             .openai_api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("sk-env")
     );
 }
@@ -147,10 +144,7 @@ fn os_environ_references_read_the_environment() {
         Some("https://resolved.example")
     );
     assert_eq!(
-        settings
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        settings.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-resolved")
     );
 }
@@ -176,7 +170,7 @@ fn an_empty_environment_value_stays_empty() {
         settings
             .openai_api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("")
     );
 }
