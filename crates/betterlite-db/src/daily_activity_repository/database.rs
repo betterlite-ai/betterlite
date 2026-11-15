@@ -229,10 +229,8 @@ fn render_filters(
             DailyRowFilter::EntityIn { values } => {
                 membership(&mut clauses, &mut parameters, &entity, values);
             }
+            DailyRowFilter::EntityNotIn { values } if values.is_empty() => {}
             DailyRowFilter::EntityNotIn { values } => {
-                if values.is_empty() {
-                    continue;
-                }
                 let index = parameters.len().saturating_add(1);
                 clauses.push(format!(
                     "({entity} IS NULL OR NOT ({entity} = ANY(${index}::text[])))"

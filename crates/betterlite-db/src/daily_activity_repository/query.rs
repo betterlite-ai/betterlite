@@ -9,7 +9,8 @@ use super::rows::adapters::grouping::grouping_rows;
 use super::rows::adapters::key_page::key_page;
 use super::{DailyActivityRepository, DailyActivityRepositoryError, Result};
 use crate::daily_activity_contracts::{
-    AggregatedRows, DailyActivityProxyReads, DailyActivityScope, DailyRowsPage, KeyPage, SqlQuery,
+    AggregatedRows, DailyActivityProxyReads, DailyActivityScope, DailyActivityScopeInput,
+    DailyRowsPage, KeyPage, SqlQuery,
 };
 use crate::daily_activity_sql::filters::adjust_dates_for_timezone;
 use crate::daily_activity_sql::key_page::build_key_page_sql;
@@ -98,27 +99,7 @@ where
             input.include_current_utc_day,
             &self.clock,
         )?;
-        let mut filters = vec![DailyRowFilter::DateRange { start, end }];
-        if let Some(values) = input.entity_ids.as_ref() {
-            filters.push(DailyRowFilter::EntityIn {
-                values: values.clone(),
-            });
-        }
-        if !input.exclude_entity_ids.is_empty() {
-            filters.push(DailyRowFilter::EntityNotIn {
-                values: input.exclude_entity_ids.clone(),
-            });
-        }
-        if let Some(model) = input.model.as_deref().filter(|model| !model.is_empty()) {
-            filters.push(DailyRowFilter::Model {
-                value: model.to_owned(),
-            });
-        }
-        if let Some(values) = input.api_keys.as_ref() {
-            filters.push(DailyRowFilter::ApiKeyIn {
-                values: values.clone(),
-            });
-        }
+        let filters = daily_filters(input, start, end);
         let skip = page
             .checked_sub(1)
             .and_then(|pages| pages.checked_mul(page_size))
@@ -135,4 +116,33 @@ where
             rows: found?,
         })
     }
+}
+
+fn daily_filters(
+    input: &DailyActivityScopeInput,
+    start: String,
+    end: String,
+) -> Vec<DailyRowFilter> {
+    let mut filters = vec![DailyRowFilter::DateRange { start, end }];
+    if let Some(values) = input.entity_ids.as_ref() {
+        filters.push(DailyRowFilter::EntityIn {
+            values: values.clone(),
+        });
+    }
+    if !input.exclude_entity_ids.is_empty() {
+        filters.push(DailyRowFilter::EntityNotIn {
+            values: input.exclude_entity_ids.clone(),
+        });
+    }
+    if let Some(model) = input.model.as_deref().filter(|model| !model.is_empty()) {
+        filters.push(DailyRowFilter::Model {
+            value: model.to_owned(),
+        });
+    }
+    if let Some(values) = input.api_keys.as_ref() {
+        filters.push(DailyRowFilter::ApiKeyIn {
+            values: values.clone(),
+        });
+    }
+    filters
 }

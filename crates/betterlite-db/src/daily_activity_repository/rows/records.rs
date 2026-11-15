@@ -1,4 +1,4 @@
-use super::RowError;
+use super::{RowError, column_error};
 use crate::budget_permission_rows::JsonData;
 use crate::daily_activity_contracts::DailyActivityRow;
 use chrono::NaiveDateTime;
@@ -30,9 +30,7 @@ macro_rules! column {
 }
 
 pub fn verification_token_row(row: &Row) -> Result<VerificationTokenRow, RowError> {
-    let metadata_text = row
-        .try_get::<_, Option<String>>("metadata")
-        .map_err(|source| RowError::Decode { source })?;
+    let metadata_text: Option<String> = column!(row, "metadata");
     let metadata = match metadata_text {
         None => None,
         Some(text) => json_object(&text, "metadata")?,
@@ -55,10 +53,7 @@ fn json_object(text: &str, column: &str) -> Result<Option<BTreeMap<String, JsonD
         JsonData::Object(fields) => Ok(Some(fields)),
         JsonData::Null => Ok(None),
         JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Array(_) => {
-            Err(RowError::ColumnType {
-                column: column.to_owned(),
-                expected: "a JSON object",
-            })
+            Err(column_error(column, "a JSON object"))
         }
     }
 }

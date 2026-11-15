@@ -24,13 +24,21 @@ where
         for row in &active_rows {
             active.insert(row.token.clone(), metadata_row(row, true));
         }
-        let mut missing = Vec::new();
-        for key in &values {
-            if !active.contains_key(key) {
-                missing.push(key.clone());
-            }
-        }
-        let deleted_rows = match self.database.deleted_tokens(&missing).await {
+        let missing: Vec<String> = values
+            .iter()
+            .filter(|key| !active.contains_key(*key))
+            .cloned()
+            .collect();
+        let mut resolved = self.archived_rows(&missing).await;
+        resolved.extend(active);
+        Ok(self
+            .proxy_reads
+            .recover_key_metadata(resolved, api_keys, window)
+            .await)
+    }
+
+    async fn archived_rows(&self, missing: &[String]) -> BTreeMap<String, KeyMetadataRow> {
+        let deleted_rows = match self.database.deleted_tokens(missing).await {
             Ok(rows) => rows,
             Err(error) => {
                 tracing::warn!(
@@ -50,16 +58,12 @@ where
             }
         }
         let mut resolved = BTreeMap::new();
-        for key in &missing {
+        for key in missing {
             if let Some(row) = newest.get(key) {
                 resolved.insert(key.clone(), metadata_row(&row.row, false));
             }
         }
-        resolved.extend(active);
-        Ok(self
-            .proxy_reads
-            .recover_key_metadata(resolved, api_keys, window)
-            .await)
+        resolved
     }
 }
 

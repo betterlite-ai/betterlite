@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
 use std::collections::BTreeMap;
 use tokio_postgres::Row;
-use tokio_postgres::types::Type;
+use tokio_postgres::types::{FromSql, Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DatabaseRow {
@@ -105,7 +105,7 @@ impl DatabaseRow {
     }
 }
 
-fn column_error(column: &str, expected: &'static str) -> RowError {
+pub(super) fn column_error(column: &str, expected: &'static str) -> RowError {
     RowError::ColumnType {
         column: column.to_owned(),
         expected,
@@ -157,37 +157,21 @@ fn decode_column(
     name: &str,
     column_type: &Type,
 ) -> Result<DatabaseValue, RowError> {
-    if column_type == &Type::TEXT
-        || column_type == &Type::VARCHAR
-        || column_type == &Type::BPCHAR
-        || column_type == &Type::NAME
-    {
-        let value = row
-            .try_get::<_, Option<String>>(index)
-            .map_err(|source| RowError::Decode { source })?;
-        return Ok(value.map_or(DatabaseValue::Null, DatabaseValue::Text));
+    if [Type::TEXT, Type::VARCHAR, Type::BPCHAR, Type::NAME].contains(column_type) {
+        return column_value(row, index, DatabaseValue::Text);
     }
     if column_type == &Type::INT8 {
-        let value = row
-            .try_get::<_, Option<i64>>(index)
-            .map_err(|source| RowError::Decode { source })?;
-        return Ok(value.map_or(DatabaseValue::Null, DatabaseValue::Integer));
+        return column_value(row, index, DatabaseValue::Integer);
     }
     if column_type == &Type::INT4 {
-        let value = row
-            .try_get::<_, Option<i32>>(index)
-            .map_err(|source| RowError::Decode { source })?;
-        return Ok(value.map_or(DatabaseValue::Null, |value| {
+        return column_value(row, index, |value: i32| {
             DatabaseValue::Integer(i64::from(value))
-        }));
+        });
     }
     if column_type == &Type::INT2 {
-        let value = row
-            .try_get::<_, Option<i16>>(index)
-            .map_err(|source| RowError::Decode { source })?;
-        return Ok(value.map_or(DatabaseValue::Null, |value| {
+        return column_value(row, index, |value: i16| {
             DatabaseValue::Integer(i64::from(value))
-        }));
+        });
     }
     if column_type == &Type::FLOAT8 {
         let value = row
@@ -204,6 +188,21 @@ fn decode_column(
     Err(RowError::UnsupportedColumn {
         column: name.to_owned(),
     })
+}
+
+fn column_value<'row, T, Convert>(
+    row: &'row Row,
+    index: usize,
+    convert: Convert,
+) -> Result<DatabaseValue, RowError>
+where
+    T: FromSql<'row>,
+    Convert: FnOnce(T) -> DatabaseValue,
+{
+    let value = row
+        .try_get::<_, Option<T>>(index)
+        .map_err(|source| RowError::Decode { source })?;
+    Ok(value.map_or(DatabaseValue::Null, convert))
 }
 
 fn number_value(value: Option<f64>, column: &str) -> Result<DatabaseValue, RowError> {
