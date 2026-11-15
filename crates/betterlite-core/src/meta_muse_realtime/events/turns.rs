@@ -265,10 +265,8 @@ fn integer_text(number: &Number) -> Option<String> {
     if text == "-0" {
         return Some("0".to_owned());
     }
-    let integer = text
-        .bytes()
-        .enumerate()
-        .all(|(index, byte)| byte.is_ascii_digit() || (index == 0 && byte == b'-'));
+    let unsigned = text.strip_prefix('-').unwrap_or(text.as_str());
+    let integer = !unsigned.is_empty() && unsigned.bytes().all(|byte| byte.is_ascii_digit());
     integer.then_some(text)
 }
 
