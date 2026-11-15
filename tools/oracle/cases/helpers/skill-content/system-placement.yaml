@@ -1,0 +1,15 @@
+kind: helper
+name: system_placement
+call:
+  skill_content:
+    function: inject
+    data:
+      messages:
+        - {role: user, content: hi}
+        - {role: system, content: first}
+        - {role: system, content: second}
+    contents: [alpha, beta]
+    use_anthropic_format: false
+env: {}
+compare:
+  ignore: []
