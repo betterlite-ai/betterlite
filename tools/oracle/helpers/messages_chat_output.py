@@ -1,5 +1,6 @@
 import json
-from typing import Final, Literal, TypeAlias, TypedDict
+from collections.abc import Callable
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 from litellm.llms.anthropic.pass_through.adapters.transformation import (
     LiteLLMAnthropicMessagesAdapter as MessagesAdapter,
@@ -8,7 +9,6 @@ from litellm.llms.anthropic.pass_through.context_management.result import Polyfi
 from litellm.types.llms.anthropic import (
     AppliedEdit,
     CompactionBlock,
-    ContentBlockContentBlockDict,
     ContentJsonBlockDelta,
     ContentTextBlockDelta,
     ContentThinkingBlockDelta,
@@ -16,8 +16,6 @@ from litellm.types.llms.anthropic import (
     UsageIteration,
 )
 from litellm.types.llms.anthropic import ContentThinkingSignatureBlockDelta as SignatureDelta
-from litellm.types.llms.openai import ChatCompletionRedactedThinkingBlock as RedactedBlock
-from litellm.types.llms.openai import ChatCompletionThinkingBlock
 from litellm.types.utils import (
     ChatCompletionDeltaToolCall,
     ChatCompletionMessageToolCall,
@@ -30,8 +28,47 @@ from litellm.types.utils import (
     Usage,
 )
 from openai.types.chat.chat_completion_chunk import Choice as OpenAIStreamChoice
-from pydantic import JsonValue as Json
-from pydantic import TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
+
+ARBITRARY: Final = ConfigDict(arbitrary_types_allowed=True)
+ANSWER: Final = TypeAdapter(JsonValue)
+NO_MESSAGES: Final[list[dict[str, JsonValue]]] = []
+StreamChoices: TypeAlias = list[OpenAIStreamChoice | StreamingChoices]
+ToolCalls: TypeAlias = list[ChatCompletionMessageToolCall] | list[ChatCompletionDeltaToolCall]
+RecordValue: TypeAlias = str | ToolCalls | list[dict[str, JsonValue]] | dict[str, JsonValue] | None
+# the pinned block union carries Any, so this alias names the JSON the block serializes as
+BlockStart: TypeAlias = tuple[Literal["text", "tool_use", "thinking"], JsonValue]
+ChunkDelta: TypeAlias = tuple[
+    StreamingContentBlockDeltaType,
+    ContentTextBlockDelta | ContentJsonBlockDelta | ContentThinkingBlockDelta | SignatureDelta,
+]
+
+
+@runtime_checkable
+class Projection(Protocol):
+    # ast-grep-ignore: no-long-names
+    def _translate_streaming_openai_chunk_to_anthropic_content_block(
+        self, choices: StreamChoices
+    ) -> BlockStart: ...
+
+    # ast-grep-ignore: no-long-names
+    def translate_streaming_openai_response_to_anthropic(
+        self,
+        response: ModelResponse,
+        current_content_block_index: int,
+        applied_edits: list[AppliedEdit] | None = None,
+    ) -> JsonValue: ...
+
+    # ast-grep-ignore: no-long-names
+    def translate_openai_response_to_anthropic(
+        self,
+        response: ModelResponse,
+        tool_name_mapping: dict[str, str] | None = None,
+        polyfill_result: PolyfillResult | None = None,
+    ) -> JsonValue: ...
+
+    def block_start(self, choices: StreamChoices) -> BlockStart:
+        return self._translate_streaming_openai_chunk_to_anthropic_content_block(choices)
 
 
 class Adapter(MessagesAdapter):
@@ -39,27 +76,15 @@ class Adapter(MessagesAdapter):
     def __init__(self) -> None:
         ...
 
-    def block_start(
-        self,
-        choices: list[OpenAIStreamChoice | StreamingChoices],
-    ) -> tuple[Literal["text", "tool_use", "thinking"], ContentBlockContentBlockDict]:
-        return self._translate_streaming_openai_chunk_to_anthropic_content_block(choices)
+    # the runtime protocol check wants the member; as a function it binds the adapter when called
+    block_start: Callable[[Projection, StreamChoices], BlockStart] = Projection.block_start
 
-    def chunk_delta(
-        self,
-        choices: list[OpenAIStreamChoice | StreamingChoices],
-    ) -> tuple[
-        StreamingContentBlockDeltaType,
-        ContentTextBlockDelta
-        | ContentJsonBlockDelta
-        | ContentThinkingBlockDelta
-        | SignatureDelta,
-    ]:
+    def chunk_delta(self, choices: StreamChoices) -> ChunkDelta:
         return self._translate_streaming_openai_chunk_to_anthropic(choices)
 
 
 ADAPTER: Final = Adapter()
-ANSWER: Final = TypeAdapter(Json)
+VIEW: Final[Projection] = TypeAdapter(Projection, config=ARBITRARY).validate_python(ADAPTER)
 
 
 class FunctionInput(TypedDict):
@@ -70,7 +95,7 @@ class FunctionInput(TypedDict):
 class MessageToolCallInput(TypedDict):
     id: str
     function: FunctionInput
-    provider_specific_fields: dict[str, Json] | None
+    provider_specific_fields: dict[str, JsonValue] | None
 
 
 class DeltaToolCallInput(TypedDict):
@@ -79,22 +104,20 @@ class DeltaToolCallInput(TypedDict):
     function: FunctionInput
 
 
-class MessageInput(TypedDict):
+class RecordInput(TypedDict):
     content: str | None
+    reasoning_content: str | None
+    thinking_blocks: list[dict[str, JsonValue]] | None
+    refusal: str | None
+    provider_specific_fields: dict[str, JsonValue] | None
+
+
+class MessageInput(RecordInput):
     tool_calls: list[MessageToolCallInput]
-    reasoning_content: str | None
-    thinking_blocks: list[ChatCompletionThinkingBlock | RedactedBlock] | None
-    refusal: str | None
-    provider_specific_fields: dict[str, Json] | None
 
 
-class DeltaInput(TypedDict):
-    content: str | None
+class DeltaInput(RecordInput):
     tool_calls: list[DeltaToolCallInput]
-    reasoning_content: str | None
-    thinking_blocks: list[ChatCompletionThinkingBlock | RedactedBlock] | None
-    refusal: str | None
-    provider_specific_fields: dict[str, Json] | None
 
 
 class ChoiceInput(TypedDict):
@@ -110,12 +133,12 @@ class StreamChoiceInput(TypedDict):
 class UsageInput(TypedDict):
     prompt_tokens: int | None
     completion_tokens: int | None
-    prompt_tokens_details: dict[str, Json] | None
-    server_tool_use: dict[str, Json] | None
-    cache_read_input_tokens: Json
-    cache_creation_input_tokens: Json
-    _cache_read_input_tokens: Json
-    _cache_creation_input_tokens: Json
+    prompt_tokens_details: dict[str, JsonValue] | None
+    server_tool_use: dict[str, JsonValue] | None
+    cache_read_input_tokens: JsonValue
+    cache_creation_input_tokens: JsonValue
+    _cache_read_input_tokens: JsonValue
+    _cache_creation_input_tokens: JsonValue
 
 
 class ResponseInput(TypedDict):
@@ -152,7 +175,6 @@ class TerminalCall(TypedDict):
 
 
 Input = ResponseCall | StreamCall | TerminalCall
-StreamChoices: TypeAlias = list[OpenAIStreamChoice | StreamingChoices]
 
 
 def usage_object(value: UsageInput) -> Usage:
@@ -168,120 +190,103 @@ def usage_object(value: UsageInput) -> Usage:
     )
 
 
-def message_object(value: MessageInput) -> Message:
-    tool_calls: list[ChatCompletionMessageToolCall] = [
-        ChatCompletionMessageToolCall(
-            function=Function(
-                name=tool["function"]["name"],
-                arguments=tool["function"]["arguments"],
-            ),
-            id=tool["id"],
-            provider_specific_fields=tool["provider_specific_fields"],
-        )
-        for tool in value["tool_calls"]
-    ]
-    return Message(
-        content=value["content"],
-        tool_calls=tool_calls,
-        reasoning_content=value["reasoning_content"],
-        thinking_blocks=value["thinking_blocks"],
-        refusal=value["refusal"],
-        provider_specific_fields=value["provider_specific_fields"],
+def message_tool_call(tool: MessageToolCallInput) -> ChatCompletionMessageToolCall:
+    function = Function(name=tool["function"]["name"], arguments=tool["function"]["arguments"])
+    return ChatCompletionMessageToolCall(
+        function=function, id=tool["id"], provider_specific_fields=tool["provider_specific_fields"]
     )
+
+
+def delta_tool_call(tool: DeltaToolCallInput) -> ChatCompletionDeltaToolCall:
+    function = Function(name=tool["function"]["name"], arguments=tool["function"]["arguments"])
+    return ChatCompletionDeltaToolCall(index=tool["index"], id=tool["id"], function=function)
+
+
+def record_values(value: RecordInput, tool_calls: ToolCalls) -> dict[str, RecordValue]:
+    return {
+        "content": value["content"], "reasoning_content": value["reasoning_content"],
+        "thinking_blocks": value["thinking_blocks"], "refusal": value["refusal"],
+        "tool_calls": tool_calls, "provider_specific_fields": value["provider_specific_fields"],
+    }
+
+
+def message_object(value: MessageInput) -> Message:
+    tools = [message_tool_call(tool) for tool in value["tool_calls"]]
+    return Message.model_validate(record_values(value, tools))
 
 
 def delta_object(value: DeltaInput) -> Delta:
-    tool_calls: list[ChatCompletionDeltaToolCall] = [
-        ChatCompletionDeltaToolCall(
-            index=tool["index"],
-            id=tool["id"],
-            function=Function(
-                name=tool["function"]["name"],
-                arguments=tool["function"]["arguments"],
-            ),
-        )
-        for tool in value["tool_calls"]
-    ]
-    return Delta(
-        content=value["content"],
-        tool_calls=tool_calls,
-        reasoning_content=value["reasoning_content"],
-        thinking_blocks=value["thinking_blocks"],
-        refusal=value["refusal"],
-        provider_specific_fields=value["provider_specific_fields"],
-    )
+    tools = [delta_tool_call(tool) for tool in value["tool_calls"]]
+    return Delta.model_validate(record_values(value, tools))
 
 
 def choice_object(value: ChoiceInput) -> Choices:
     return Choices(
-        finish_reason=value["finish_reason"],
-        message=message_object(value["message"]),
+        finish_reason=value["finish_reason"], message=message_object(value["message"])
     )
 
 
 def stream_choice(value: StreamChoiceInput) -> StreamingChoices:
     return StreamingChoices(
-        finish_reason=value["finish_reason"],
-        delta=delta_object(value["delta"]),
+        finish_reason=value["finish_reason"], delta=delta_object(value["delta"])
     )
 
 
 def response_object(value: ResponseInput) -> ModelResponse:
-    usage_value = value["usage"]
     return ModelResponse(
         id=value["id"],
         model=value["model"],
         choices=[choice_object(choice) for choice in value["choices"]],
-        usage=usage_object(usage_value) if usage_value is not None else None,
+        usage=usage_object(value["usage"]) if value["usage"] is not None else None,
     )
 
 
-def answer_block(call: StreamCall) -> Json:
+def terminal_response(call: TerminalCall) -> ModelResponse:
+    return ModelResponse(
+        choices=[choice_object(choice) for choice in call["choices"]],
+        usage=usage_object(call["usage"]) if call["usage"] is not None else None,
+    )
+
+
+def answer_block(call: StreamCall) -> JsonValue:
     choices: StreamChoices = [stream_choice(choice) for choice in call["choices"]]
-    block_type, block = ADAPTER.block_start(choices)
+    block_type, block = VIEW.block_start(choices)
     return ANSWER.validate_json(json.dumps({"block_type": block_type, "block": block}))
 
 
-def answer_delta(call: StreamCall) -> Json:
+def answer_delta(call: StreamCall) -> JsonValue:
     choices: StreamChoices = [stream_choice(choice) for choice in call["choices"]]
-    projected = ADAPTER.chunk_delta(choices)
-    return ANSWER.validate_json(json.dumps(projected[1]))
+    return ANSWER.validate_json(json.dumps(ADAPTER.chunk_delta(choices)[1]))
 
 
-def answer_terminal(call: TerminalCall) -> Json:
-    usage_value = call["usage"]
-    response = ModelResponse(
-        choices=[choice_object(choice) for choice in call["choices"]],
-        usage=usage_object(usage_value) if usage_value is not None else None,
-    )
-    frame = ADAPTER.translate_streaming_openai_response_to_anthropic(
-        response, call["index"], call["applied_edits"]
+def answer_terminal(call: TerminalCall) -> JsonValue:
+    frame = VIEW.translate_streaming_openai_response_to_anthropic(
+        terminal_response(call), call["index"], call["applied_edits"]
     )
     return ANSWER.validate_json(json.dumps(frame))
 
 
-def answer_response(call: ResponseCall) -> Json:
-    polyfill_value = call["polyfill_result"]
-    polyfill = (
-        PolyfillResult(
-            messages=[],
-            system=None,
-            applied_edits=polyfill_value["applied_edits"],
-            compaction_block=polyfill_value["compaction_block"],
-            iterations_usage=polyfill_value["iterations_usage"],
-        )
-        if polyfill_value is not None
-        else None
+def polyfill_result(value: PolyfillInput | None) -> PolyfillResult | None:
+    if value is None:
+        return None
+    return PolyfillResult(
+        messages=NO_MESSAGES,
+        system=None,
+        applied_edits=value["applied_edits"],
+        compaction_block=value["compaction_block"],
+        iterations_usage=value["iterations_usage"],
     )
-    translated = ADAPTER.translate_openai_response_to_anthropic(
-        response_object(call["response"]),
-        tool_name_mapping=call["tool_name_mapping"],
-        polyfill_result=polyfill,
+
+
+def answer_response(call: ResponseCall) -> JsonValue:
+    translated = VIEW.translate_openai_response_to_anthropic(
+        response_object(call["response"]), tool_name_mapping=call["tool_name_mapping"],
+        polyfill_result=polyfill_result(call["polyfill_result"]),
     )
     return ANSWER.validate_json(json.dumps(translated))
 
 
-def run(input_value: Input) -> Json:
+def run(input_value: Input) -> JsonValue:
     match input_value["operation"]:
         case "response":
             return answer_response(input_value)
