@@ -1,0 +1,44 @@
+kind: helper
+name: batch-create-body
+call:
+  batch_provider_create:
+    env: {}
+    module: {}
+    steps:
+      - completion_window: "24h"
+        endpoint: "/v1/chat/completions"
+        input_file_id: file-1
+        custom_llm_provider: openai
+        metadata: {first: one, second: two}
+        extra_headers: {x-a: b}
+        extra_body: {x-c: d}
+        output_expires_after: {anchor: created_at, seconds: 60}
+      - completion_window: "24h"
+        endpoint: "/v1/embeddings"
+        input_file_id: file-2
+        custom_llm_provider: xai
+        metadata: {only: one}
+      - completion_window: "24h"
+        endpoint: "/v1/completions"
+        input_file_id: file-3
+        custom_llm_provider: azure
+        extra_body: {azure_ad_token: token, mode: given}
+        optional_params: {api_base: "https://azure.example", api_version: "2024-06-01", api_key: azure-key, max_retries: 3}
+      - completion_window: "24h"
+        endpoint: "/v1/responses"
+        input_file_id: file-4
+        custom_llm_provider: vertex_ai
+        optional_params:
+          api_base: "https://vertex.example"
+          vertex_project: project
+          vertex_location: location
+          vertex_credentials: {client_email: "svc@example.com"}
+      - completion_window: "24h"
+        endpoint: "/v1/chat/completions"
+        input_file_id: file-5
+        custom_llm_provider: bedrock
+        model: "bedrock/anthropic.claude-3"
+        extra_headers: {x-b: c}
+        optional_params: {api_base: "https://bedrock.example", max_retries: 1}
+env: {}
+compare: {ignore: []}

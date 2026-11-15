@@ -1,0 +1,31 @@
+task: B1386
+deviations:
+  - what: >-
+      A buffered object whose content, parts, actions or state_delta LiteLLM cannot index (any of them
+      null, content or actions a string, state_delta a list, a part that is a number, a text value that
+      is not a string) contributes no text; LiteLLM raises VertexAgentEngineError carrying the
+      response's own status, 200 for these bodies.
+    why: A provider error reporting the response's own 200 status is a bug no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L244-L282
+  - what: >-
+      A buffered body that is not UTF-8 is an Agent Engine error carrying the raw status; LiteLLM reads it
+      through httpx, which replaces the bytes it cannot decode, so a setup sees mangled text or a line
+      dropped instead of an error.
+    why: The repository refuses bytes that are not UTF-8 instead of mangling them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L301-L303
+  - what: >-
+      A model needing a project with none configured and an empty message list answer 400 naming the
+      problem; LiteLLM raises ValueError or IndexError there, which a proxy answers with a 500.
+    why: The request is at fault, so the 4xx the compatibility policy assigns to it replaces the 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L126-L128
+  - what: >-
+      A user_id, user or session_id that is not a string answers 400 naming the field; LiteLLM puts a
+      truthy value of any type into the payload and treats a falsy one as absent.
+    why: The compatibility policy makes a wrong-typed value an error instead of following Python truthiness.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L167-L177
+  - what: >-
+      A vertex location that is not a lowercase alphanumeric-hyphen token answers 400 before any request
+      is built; LiteLLM raises ValueError from validate_vertex_location, which a proxy answers with a 500.
+    why: The request is at fault, so the 4xx the compatibility policy assigns to it replaces the 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L435-L441
+kept_bugs: []

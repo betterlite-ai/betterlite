@@ -1,0 +1,22 @@
+kind: helper
+name: bedrock-invoke-custom-tool-field
+call:
+  bedrock_invoke_schema:
+    model_cost: {}
+    steps:
+      - function: normalize_custom_field
+        body:
+          tools:
+            - {name: t, custom: {defer_loading: true}}
+            - {name: u, custom: {defer_loading: false}}
+            - {name: v, custom: text}
+            - {name: w, custom: {other: 1}}
+            - {name: x, custom: {defer_loading: true}, defer_loading: null}
+            - junk
+            - {name: y, custom: {defer_loading: "true"}}
+            - {name: z, custom: {defer_loading: true}, defer_loading: false}
+      - {function: normalize_custom_field, body: {model: m}}
+      - {function: normalize_custom_field, body: {tools: []}}
+      - {function: normalize_custom_field, body: {tools: null}}
+env: {}
+compare: {ignore: []}
