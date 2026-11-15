@@ -7,12 +7,12 @@ from uuid import UUID
 import fastuuid
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.realtime.transformation import BedrockRealtimeConfig
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import ReadOnly
 
 JsonObject = dict[str, JsonValue]
-Frames = TypeAdapter(list[JsonObject])
 JsonAdapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 
@@ -33,13 +33,17 @@ class InputSchemaWire(TypedDict):
 
 
 class ToolSpecWire(TypedDict):
-    name: str
-    description: str
+    name: JsonValue
+    description: JsonValue
     inputSchema: InputSchemaWire
 
 
+class ToolEntryWire(TypedDict):
+    toolSpec: ToolSpecWire
+
+
 class ToolConfigWire(TypedDict):
-    tools: list[ToolSpecWire]
+    tools: list[ToolEntryWire]
 
 
 class PromptStartWire(TypedDict):
@@ -87,11 +91,6 @@ class Input(TypedDict):
     error: ErrorRun | None
 
 
-class ErrorView(Protocol):
-    status_code: int
-    status_code_is_synthesized: bool
-
-
 class RealtimeConfig(Protocol):
     prompt_name: str
     content_name: str
@@ -123,7 +122,7 @@ class RealtimeConfig(Protocol):
 
     def get_error_class(
         self, error_message: str, status_code: int, headers: httpx.Headers
-    ) -> ErrorView: ...
+    ) -> BedrockError: ...
 
 
 CONFIG_TYPE: type[RealtimeConfig] = BedrockRealtimeConfig
@@ -132,23 +131,17 @@ CONFIG_TYPE: type[RealtimeConfig] = BedrockRealtimeConfig
 class FixedStd:
     def __init__(self, values: list[str]) -> None:
         self.values = [UUID(value) for value in values]
-        self.index = 0
 
     def __call__(self) -> UUID:
-        value = self.values[self.index]
-        self.index += 1
-        return value
+        return self.values.pop(0)
 
 
 class FixedFast:
     def __init__(self, values: list[str]) -> None:
         self.values = [fastuuid.UUID(value) for value in values]
-        self.index = 0
 
     def __call__(self) -> fastuuid.UUID:
-        value = self.values[self.index]
-        self.index += 1
-        return value
+        return self.values.pop(0)
 
 
 def make_logging(trace_id: str) -> Logging:
@@ -166,8 +159,8 @@ def make_logging(trace_id: str) -> Logging:
 
 
 def frame_list(messages: list[str]) -> list[JsonValue]:
-    frames = Frames.validate_json(json.dumps(messages))
-    return list(frames)
+    parsed = map(JsonAdapter.validate_json, messages)
+    return list(parsed)
 
 
 def apply_updates(config: RealtimeConfig, updates: list[JsonObject]) -> list[JsonValue]:
@@ -186,10 +179,11 @@ def prompt_start_tools(frame: JsonValue) -> JsonObject:
         result["tool_use_output_configuration"] = prompt_start["toolUseOutputConfiguration"]
     if "toolConfiguration" in prompt_start:
         tools: list[JsonValue] = []
-        for tool in prompt_start["toolConfiguration"]["tools"]:
-            schema = JsonAdapter.validate_json(tool["inputSchema"]["json"])
+        for entry in prompt_start["toolConfiguration"]["tools"]:
+            spec = entry["toolSpec"]
+            schema = JsonAdapter.validate_json(spec["inputSchema"]["json"])
             tools.append(
-                {"name": tool["name"], "description": tool["description"], "schema": schema}
+                {"name": spec["name"], "description": spec["description"], "schema": schema}
             )
         result["tools"] = tools
     return result
@@ -258,9 +252,7 @@ def run_created_updated(input_value: Input) -> JsonValue:
     created = config.session_created_event(model, logging_obj)
     updated_default = config.session_updated_event(model, logging_obj)
     updated_empty = config.session_updated_event(model, logging_obj, [])
-    updated_explicit = config.session_updated_event(
-        model, logging_obj, input_value["modalities"]
-    )
+    updated_explicit = config.session_updated_event(model, logging_obj, input_value["modalities"])
     model_event = config.session_created_event(input_value["models"][0], logging_obj)
     error_input = input_value["error"]
     if error_input is None:
@@ -270,9 +262,7 @@ def run_created_updated(input_value: Input) -> JsonValue:
         error_input["status"],
         httpx.Headers(error_input["headers"]),
     )
-    urls: list[JsonValue] = [
-        config.get_complete_url(url, model) for url in input_value["urls"]
-    ]
+    urls: list[JsonValue] = [config.get_complete_url(url, model) for url in input_value["urls"]]
     return {
         "created": event_view(created),
         "updated_default": event_view(updated_default),

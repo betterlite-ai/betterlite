@@ -1,5 +1,5 @@
 use betterlite_bedrock::invoke_primitives::environment::error_class;
-use betterlite_bedrock::realtime_session::records::UpdateFrame;
+use betterlite_bedrock::realtime_session::records::{SessionEvent, SessionEventType, UpdateFrame};
 use betterlite_bedrock::realtime_session::{
     REQUIRES_SESSION_CONFIGURATION, RealtimeSession, complete_url,
 };
@@ -8,49 +8,49 @@ use uuid::Uuid;
 
 use super::FixedIds;
 use super::wire::{event_summary, failure, header_pair, parse_ids, prompt_start_summary};
-use crate::helpers::HelperResult;
+use crate::helpers::{HelperError, HelperResult};
 
-pub(super) fn update_values(input: &super::Input, ids: &[Uuid]) -> HelperResult {
-    let ids = FixedIds::new(ids);
-    let mut session = RealtimeSession::new(&ids);
-    let mut results: Vec<Value> = Vec::new();
-    for update in &input.updates {
-        let frames = session.apply_update(update, &ids);
-        let value = serde_json::to_value(&frames).map_err(failure)?;
-        results.push(json!({ "frames": value }));
-    }
-    Ok(json!({
-        "updates": results,
-        "prompt_name": session.names.prompt,
-        "prompt_started": session.prompt_started,
-        "client_audio_streamed": session.client_audio_streamed,
-    }))
+#[derive(Debug, Clone, Copy)]
+pub(super) enum Summary {
+    Frames,
+    PromptStart,
 }
 
-pub(super) fn tool_values(input: &super::Input, ids: &[Uuid]) -> HelperResult {
-    let ids = FixedIds::new(ids);
-    let mut session = RealtimeSession::new(&ids);
+pub(super) fn update_values(input: &super::Input, ids: &[Uuid], summary: Summary) -> HelperResult {
+    let source = FixedIds::new(ids);
+    let mut session = RealtimeSession::new(&source);
     let mut results: Vec<Value> = Vec::new();
     for update in &input.updates {
-        let frames = session.apply_update(update, &ids);
-        let prompt_start = match frames.get(1) {
-            Some(UpdateFrame::PromptStart(frame)) => &frame.event.prompt_start,
-            _ => return Err(failure("the second frame is promptStart")),
-        };
-        let summary = prompt_start_summary(prompt_start)?;
-        results.push(json!({ "prompt_start": summary }));
+        let frames = session.apply_update(update, &source);
+        results.push(summarize(&frames, summary)?);
     }
-    Ok(json!({
+    Ok(update_body(&session, results))
+}
+
+fn summarize(frames: &[UpdateFrame], summary: Summary) -> HelperResult {
+    match summary {
+        Summary::Frames => Ok(json!({ "frames": serde_json::to_value(frames).map_err(failure)? })),
+        Summary::PromptStart => {
+            let Some(UpdateFrame::PromptStart(frame)) = frames.get(1) else {
+                return Err(failure("the second frame is promptStart"));
+            };
+            Ok(json!({ "prompt_start": prompt_start_summary(&frame.event.prompt_start)? }))
+        }
+    }
+}
+
+fn update_body(session: &RealtimeSession, results: Vec<Value>) -> Value {
+    json!({
         "updates": results,
         "prompt_name": session.names.prompt,
         "prompt_started": session.prompt_started,
         "client_audio_streamed": session.client_audio_streamed,
-    }))
+    })
 }
 
 pub(super) fn default_case(ids: &[Uuid]) -> HelperResult {
-    let ids = FixedIds::new(ids);
-    let session = RealtimeSession::new(&ids);
+    let source = FixedIds::new(ids);
+    let session = RealtimeSession::new(&source);
     let configuration = session.configuration_request(None);
     Ok(json!({
         "prompt_name": session.names.prompt,
@@ -64,65 +64,100 @@ pub(super) fn default_case(ids: &[Uuid]) -> HelperResult {
 }
 
 pub(super) fn created_updated(input: &super::Input) -> HelperResult {
-    let ids = FixedIds::new(&parse_ids(&input.ids)?);
+    let source = FixedIds::new(&parse_ids(&input.ids)?);
+    let events = build_events(input, &source);
+    let (error_status, error_synthesized) = error_summary(input)?;
+    Ok(json!({
+        "created": event_summary(&events.created)?,
+        "updated_default": event_summary(&events.updated_default)?,
+        "updated_empty": event_summary(&events.updated_empty)?,
+        "updated_explicit": event_summary(&events.updated_explicit)?,
+        "model_event": event_summary(&events.model_event)?,
+        "requires_session_configuration": REQUIRES_SESSION_CONFIGURATION,
+        "complete_urls": complete_urls(input),
+        "validated_headers": validated_headers(input)?,
+        "error_status": error_status,
+        "error_synthesized": error_synthesized,
+    }))
+}
+
+struct Events {
+    created: SessionEvent,
+    updated_default: SessionEvent,
+    updated_empty: SessionEvent,
+    updated_explicit: SessionEvent,
+    model_event: SessionEvent,
+}
+
+fn build_events(input: &super::Input, source: &FixedIds) -> Events {
+    let model = Some(input.model.as_str());
+    let trace_id = input.trace_id.as_str();
     let created =
-        RealtimeSession::session_created_event(Some(input.model.as_str()), &input.trace_id, &ids);
-    let updated_default = RealtimeSession::session_updated_event(
-        Some(input.model.as_str()),
-        &input.trace_id,
-        None,
-        &ids,
-    );
+        RealtimeSession::session_event(SessionEventType::Created, model, trace_id, None, source);
+    let updated_default =
+        RealtimeSession::session_event(SessionEventType::Updated, model, trace_id, None, source);
     let no_modalities: &[String] = &[];
-    let updated_empty = RealtimeSession::session_updated_event(
-        Some(input.model.as_str()),
-        &input.trace_id,
+    let updated_empty = RealtimeSession::session_event(
+        SessionEventType::Updated,
+        model,
+        trace_id,
         Some(no_modalities),
-        &ids,
+        source,
     );
-    let updated_explicit = RealtimeSession::session_updated_event(
-        Some(input.model.as_str()),
-        &input.trace_id,
+    let updated_explicit = RealtimeSession::session_event(
+        SessionEventType::Updated,
+        model,
+        trace_id,
         input.modalities.as_deref(),
-        &ids,
+        source,
     );
     let model_name = input.models.first().map_or("", String::as_str);
-    let model_event =
-        RealtimeSession::session_created_event(Some(model_name), &input.trace_id, &ids);
-    let urls: Vec<String> = input
+    let model_event = RealtimeSession::session_event(
+        SessionEventType::Created,
+        Some(model_name),
+        trace_id,
+        None,
+        source,
+    );
+    Events {
+        created,
+        updated_default,
+        updated_empty,
+        updated_explicit,
+        model_event,
+    }
+}
+
+fn complete_urls(input: &super::Input) -> Vec<String> {
+    input
         .urls
         .iter()
         .map(|url| complete_url(url.as_deref()))
-        .collect();
+        .collect()
+}
+
+fn validated_headers(input: &super::Input) -> Result<Vec<Value>, Box<HelperError>> {
     let mut validated: Vec<Value> = Vec::new();
     for header in &input.headers {
         let pair = header_pair(header)?;
         validated.push(json!([pair.0, pair.1]));
     }
-    let error = match &input.error {
-        Some(error) => {
-            let mut pairs: Vec<(String, String)> = Vec::new();
-            for header in &error.headers {
-                pairs.push(header_pair(header)?);
-            }
-            let built = error_class(error.message.clone(), error.status, pairs).map_err(failure)?;
-            (
-                built.error.status_code,
-                built.error.status_code_is_synthesized,
-            )
-        }
-        None => (0, false),
+    Ok(validated)
+}
+
+fn error_summary(input: &super::Input) -> Result<(u16, bool), Box<HelperError>> {
+    let Some(error) = &input.error else {
+        return Err(failure(
+            "the created_updated_events case needs an error fixture",
+        ));
     };
-    Ok(json!({
-        "created": event_summary(&created)?,
-        "updated_default": event_summary(&updated_default)?,
-        "updated_empty": event_summary(&updated_empty)?,
-        "updated_explicit": event_summary(&updated_explicit)?,
-        "model_event": event_summary(&model_event)?,
-        "requires_session_configuration": REQUIRES_SESSION_CONFIGURATION,
-        "complete_urls": urls,
-        "validated_headers": validated,
-        "error_status": error.0,
-        "error_synthesized": error.1,
-    }))
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for header in &error.headers {
+        pairs.push(header_pair(header)?);
+    }
+    let built = error_class(error.message.clone(), error.status, pairs).map_err(failure)?;
+    Ok((
+        built.error.status_code,
+        built.error.status_code_is_synthesized,
+    ))
 }

@@ -93,12 +93,14 @@ impl Helper for Op {
         match input.case {
             Case::DefaultSessionConfiguration => cases::default_case(&ids),
             Case::CreatedUpdatedEvents => cases::created_updated(input),
-            Case::ToolConfiguration => cases::tool_values(input, &ids),
+            Case::ToolConfiguration => {
+                cases::update_values(input, &ids, cases::Summary::PromptStart)
+            }
             Case::SessionUpdateOptions
             | Case::Pcm16InputOutputRates
             | Case::G711Rates
             | Case::ExplicitSampleRate
-            | Case::SystemInstructions => cases::update_values(input, &ids),
+            | Case::SystemInstructions => cases::update_values(input, &ids, cases::Summary::Frames),
         }
     }
 }

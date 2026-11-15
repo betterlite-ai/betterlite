@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use betterlite_bedrock::realtime_session::records::{
-    MediaType, PromptStart, SessionEvent, SessionEventType,
+    MediaType, PromptStart, SessionEvent, SessionEventType, Tool,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -36,8 +36,8 @@ struct PromptStartSummary {
 
 #[derive(Serialize)]
 struct ToolSummary {
-    name: String,
-    description: String,
+    name: Option<String>,
+    description: Option<String>,
     schema: Value,
 }
 
@@ -58,6 +58,7 @@ where
 pub(super) fn parse_ids(values: &[String]) -> Result<Vec<Uuid>, Box<HelperError>> {
     values
         .iter()
+        .map(String::as_str)
         .map(Uuid::parse_str)
         .collect::<Result<Vec<Uuid>, _>>()
         .map_err(failure)
@@ -71,28 +72,31 @@ pub(super) fn header_pair(header: &[String]) -> Result<(String, String), Box<Hel
 }
 
 pub(super) fn prompt_start_summary(prompt_start: &PromptStart) -> HelperResult {
-    let tools = match &prompt_start.tool_configuration {
-        Some(configuration) => {
-            let mut summaries: Vec<ToolSummary> = Vec::new();
-            for tool in &configuration.tools {
-                let schema = serde_json::from_str::<Value>(&tool.tool_spec.input_schema.json)
-                    .map_err(failure)?;
-                summaries.push(ToolSummary {
-                    name: tool.tool_spec.name.clone(),
-                    description: tool.tool_spec.description.clone(),
-                    schema,
-                });
-            }
-            Some(summaries)
-        }
-        None => None,
-    };
+    let tools = prompt_start
+        .tool_configuration
+        .as_ref()
+        .map(|configuration| summarize_tools(&configuration.tools))
+        .transpose()?;
     serde_json::to_value(PromptStartSummary {
         prompt_name: prompt_start.prompt_name.clone(),
         tool_use_output_configuration: prompt_start.tool_use_output_configuration.clone(),
         tools,
     })
     .map_err(failure)
+}
+
+fn summarize_tools(tools: &[Tool]) -> Result<Vec<ToolSummary>, Box<HelperError>> {
+    let mut summaries: Vec<ToolSummary> = Vec::new();
+    for tool in tools {
+        let schema =
+            serde_json::from_str::<Value>(&tool.tool_spec.input_schema.json).map_err(failure)?;
+        summaries.push(ToolSummary {
+            name: tool.tool_spec.name.clone(),
+            description: tool.tool_spec.description.clone(),
+            schema,
+        });
+    }
+    Ok(summaries)
 }
 
 pub(super) fn event_summary(event: &SessionEvent) -> HelperResult {
