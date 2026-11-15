@@ -1,0 +1,55 @@
+kind: helper
+name: shadow-chat-with-tool-calls
+call:
+  b4081:
+    operation: chat_text
+    response:
+      choices:
+        - message:
+            role: assistant
+            content: Checking.
+            tool_calls:
+              - id: call_1
+                type: function
+                function:
+                  name: search
+                  arguments: '{"q":"weather"}'
+              - id: call_2
+                type: function
+                function:
+                  name: lookup
+                  arguments: "{}"
+          finish_reason: tool_calls
+    metadata: {}
+    routed_model: gpt-4o
+calls:
+  - b4081:
+      operation: chat_text
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: null
+              function_call:
+                name: legacy
+                arguments: '{"x":1}'
+            finish_reason: function_call
+      metadata: {}
+      routed_model: gpt-4o
+  - b4081:
+      operation: chat_text
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: null
+              tool_calls:
+                - type: custom
+                  custom:
+                    name: c
+                    input: raw
+            finish_reason: tool_calls
+      metadata: {}
+      routed_model: gpt-4o
+env: {}
+compare: {ignore: []}

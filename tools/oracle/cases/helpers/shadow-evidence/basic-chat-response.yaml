@@ -1,0 +1,32 @@
+kind: helper
+name: shadow-basic-chat-response
+call:
+  b4081:
+    operation: chat_text
+    response:
+      choices:
+        - message:
+            role: assistant
+            content: Hello there
+          finish_reason: stop
+    metadata: {}
+    routed_model: gpt-4o
+calls:
+  - b4081:
+      operation: chat_text
+      response:
+        choices: []
+      metadata: {}
+      routed_model: ""
+  - b4081:
+      operation: chat_text
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: ""
+            finish_reason: ""
+      metadata: {}
+      routed_model: gpt-4o
+env: {}
+compare: {ignore: []}

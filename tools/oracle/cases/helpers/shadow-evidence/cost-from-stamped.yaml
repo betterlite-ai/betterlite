@@ -1,0 +1,30 @@
+kind: helper
+name: shadow-cost-from-stamped
+call:
+  b4081:
+    operation: call_cost
+    response:
+      model: gpt-4o
+      _hidden_params:
+        response_cost: 0.00123
+    metadata: {}
+    routed_model: ""
+calls:
+  - b4081:
+      operation: call_cost
+      response:
+        model: gpt-4o
+        _hidden_params:
+          response_cost: 3
+      metadata: {}
+      routed_model: ""
+  - b4081:
+      operation: call_cost
+      response:
+        model: gpt-4o
+        _hidden_params:
+          response_cost: "0.5"
+      metadata: {}
+      routed_model: ""
+env: {}
+compare: {ignore: []}
