@@ -895,7 +895,8 @@ fn constants() -> ScenarioFuture {
         );
         assert_eq!(DEFENDER_STATUS_EVALUATED, "Evaluated");
         assert_eq!(SUPPORTED_EVENT_HOOKS, [GuardrailEventHooks::PreMcpCall]);
-        assert_eq!(DEFAULT_TIMEOUT_SECONDS, 10.0);
+        let default_timeout = Duration::try_from_secs_f64(DEFAULT_TIMEOUT_SECONDS).unwrap();
+        assert_eq!(default_timeout, Duration::from_secs(10));
         assert_eq!(DEFAULT_TOKEN_TTL, Duration::from_secs(3599));
         assert_eq!(TOKEN_EXPIRY_MARGIN, Duration::from_secs(60));
         assert_eq!(OBO_CACHE_MAX_ENTRIES, 1000);

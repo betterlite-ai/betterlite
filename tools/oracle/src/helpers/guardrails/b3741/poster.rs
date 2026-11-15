@@ -39,7 +39,7 @@ impl ScriptedReplies {
         for reply in replies {
             let status = StatusCode::from_u16(reply.status).or_value_error()?;
             let body = match &reply.raw {
-                Some(raw) => raw.clone().into_bytes(),
+                Some(raw) => raw.as_bytes().to_vec(),
                 None => serde_json::to_vec(&reply.body).or_value_error()?,
             };
             prepared.push(PostReply { status, body });

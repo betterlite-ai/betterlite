@@ -90,6 +90,7 @@ impl TokenReply {
         }
     }
 
+    #[must_use]
     pub fn exchange_failure(&self, status: u16) -> Agent365TokenExchangeError {
         let description = self
             .error_description
