@@ -63,9 +63,12 @@ pub(super) struct Entry {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct UsageInput {
-    pub(super) prompt_tokens: i64,
-    pub(super) completion_tokens: i64,
-    pub(super) cached_tokens: Option<i64>,
+    #[serde(rename = "prompt_tokens")]
+    pub(super) prompt: i64,
+    #[serde(rename = "completion_tokens")]
+    pub(super) completion: i64,
+    #[serde(rename = "cached_tokens")]
+    pub(super) cached: Option<i64>,
 }
 
 #[derive(Deserialize)]

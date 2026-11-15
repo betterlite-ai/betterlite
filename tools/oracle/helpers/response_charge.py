@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 from datetime import UTC, datetime
 from typing import Literal, NotRequired, TypedDict
@@ -12,6 +14,7 @@ from litellm.types.utils import (
     Choices,
     CostPerToken,
     ImageResponse,
+    LiteLLMRealtimeStreamLoggingObject as RealtimeLogging,
     Message,
     ModelResponse,
     PromptTokensDetailsWrapper,
@@ -21,7 +24,6 @@ from litellm.types.utils import (
     TranscriptionUsageTokensObject,
     Usage,
 )
-from litellm.types.utils import LiteLLMRealtimeStreamLoggingObject as RealtimeLogging
 from pydantic import JsonValue, TypeAdapter
 
 CallKind = Literal[
@@ -93,9 +95,7 @@ class Input(TypedDict):
     events: NotRequired[list[JsonValue] | None]
 
 
-WrapperResponse = (
-    ModelResponse | ImageResponse | TranscriptionResponse | RealtimeLogging
-)
+WrapperResponse = ModelResponse | ImageResponse | TranscriptionResponse | RealtimeLogging
 
 CompletionResponse = WrapperResponse | OCRResponse | None
 
@@ -277,21 +277,22 @@ def call_cost(input_value: Input, log: Logging | None) -> float:
 
 
 def run(input_value: Input) -> dict[str, float]:
-    models: dict[str, dict[str, JsonValue]] = {}
-    for model, entry in input_value["catalog"].items():
-        models[model] = {key: value for key, value in entry.items() if value is not None}
-    litellm.register_model(models)
-    litellm.cost_discount_config = input_value["discount"]
-    margin: dict[str, float | dict[str, float]] = {}
-    for provider, split in input_value["margin"].items():
-        fields: dict[str, float] = {}
-        percentage = split["percentage"]
-        if percentage is not None:
-            fields["percentage"] = percentage
-        fixed_amount = split["fixed_amount"]
-        if fixed_amount is not None:
-            fields["fixed_amount"] = fixed_amount
-        margin[provider] = fields
-    litellm.cost_margin_config = margin
-    log = build_logging(input_value)
-    return {"cost": call_cost(input_value, log)}
+    with contextlib.redirect_stdout(io.StringIO()):
+        models: dict[str, dict[str, JsonValue]] = {}
+        for model, entry in input_value["catalog"].items():
+            models[model] = {key: value for key, value in entry.items() if value is not None}
+        litellm.register_model(models)
+        litellm.cost_discount_config = input_value["discount"]
+        margin: dict[str, float | dict[str, float]] = {}
+        for provider, split in input_value["margin"].items():
+            fields: dict[str, float] = {}
+            percentage = split["percentage"]
+            if percentage is not None:
+                fields["percentage"] = percentage
+            fixed_amount = split["fixed_amount"]
+            if fixed_amount is not None:
+                fields["fixed_amount"] = fixed_amount
+            margin[provider] = fields
+        litellm.cost_margin_config = margin
+        log = build_logging(input_value)
+        return {"cost": call_cost(input_value, log)}

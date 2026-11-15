@@ -20,12 +20,10 @@ use super::{Entry, Input, Kind, Margin, UsageInput};
 
 pub(crate) fn usage_block(fields: &UsageInput) -> Usage {
     Usage {
-        prompt_tokens: fields.prompt_tokens,
-        completion_tokens: fields.completion_tokens,
-        total_tokens: fields
-            .prompt_tokens
-            .saturating_add(fields.completion_tokens),
-        prompt_tokens_details: fields.cached_tokens.map(|count| {
+        prompt_tokens: fields.prompt,
+        completion_tokens: fields.completion,
+        total_tokens: fields.prompt.saturating_add(fields.completion),
+        prompt_tokens_details: fields.cached.map(|count| {
             IndexMap::from([(
                 "cached_tokens".to_owned(),
                 Json::Number(Number::from(count)),
@@ -94,8 +92,8 @@ pub(crate) fn search_rates(catalog: &BTreeMap<String, Entry>) -> BTreeMap<String
 }
 
 pub(crate) fn transcription_usage(input: &Input) -> TranscriptionUsage {
-    let prompt = input.usage.prompt_tokens;
-    let completion = input.usage.completion_tokens;
+    let prompt = input.usage.prompt;
+    let completion = input.usage.completion;
     TranscriptionUsage::Tokens(Box::new(TranscriptionTokens {
         input_tokens: prompt,
         output_tokens: completion,
@@ -108,10 +106,8 @@ pub(crate) fn transcription_usage(input: &Input) -> TranscriptionUsage {
 }
 
 pub(crate) fn transcription_duration(input: &Input) -> Option<Decimal> {
-    input
-        .transcription_seconds
-        .as_ref()
-        .and_then(|number| number.to_string().parse().ok())
+    let number = input.transcription_seconds.as_ref()?;
+    number.to_string().parse().ok()
 }
 
 pub(crate) fn protocol(input: &Input) -> Option<ProtocolCall> {
@@ -157,13 +153,11 @@ pub(crate) fn tool_response(input: &Input) -> ToolBillingResponse {
     if input.response_kind.unwrap_or(Kind::Chat) != Kind::Chat {
         return ToolBillingResponse::Other(OtherView { usage: None });
     }
-    let annotations = if input.annotations == Some(true) {
-        Some(vec![Annotation {
+    let annotations = (input.annotations == Some(true)).then(|| {
+        vec![Annotation {
             annotation_type: Some(Json::Text("url_citation".to_owned())),
-        }])
-    } else {
-        None
-    };
+        }]
+    });
     ToolBillingResponse::Chat(ChatView {
         choices: vec![ChatChoice {
             message: Some(ChatMessage { annotations }),
