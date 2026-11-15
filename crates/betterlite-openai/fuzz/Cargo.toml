@@ -607,3 +607,10 @@ path = "fuzz_targets/openai_video_identifiers.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_videos"
+path = "fuzz_targets/openai_videos.rs"
+test = false
+doc = false
+bench = false
