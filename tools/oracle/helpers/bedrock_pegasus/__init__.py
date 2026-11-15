@@ -13,6 +13,7 @@ from typing import (
 )
 
 import httpx
+from litellm.llms.base_llm.chat.transformation import BaseConfig
 from litellm.types.utils import Choices, LlmProviders, Message, ModelResponse
 from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
@@ -75,7 +76,8 @@ def pegasus_config(model: str) -> Transform:
     )
     if config is None:
         raise ValueError("LiteLLM selects no Bedrock chat config")
-    return TransformRecord.model_validate({"transform": config}).transform
+    payload: dict[str, BaseConfig] = {"transform": config}
+    return TransformRecord.model_validate(payload).transform
 
 
 class MessageSeed(TypedDict):
