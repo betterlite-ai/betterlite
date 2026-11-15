@@ -116,7 +116,7 @@ impl ManagedIdDecoders for RecordingDecoders {
                 .map_err(|_poisoned| ManagedIdError::Decoder)?
                 .push(resource_id.to_owned());
         }
-        candidates.extend(self.hint_models.iter().cloned());
+        candidates.extend_from_slice(&self.hint_models);
         if !self.fails_unified {
             return Ok(());
         }
