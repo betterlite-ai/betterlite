@@ -512,6 +512,28 @@ async fn an_empty_deployment_table_is_not_a_candidate() {
 }
 
 #[tokio::test]
+async fn an_empty_deployment_table_keeps_the_catalog_tiered_price() {
+    let fixture = Fixture::new(r#"{"model":"grouped","max_tokens":10}"#)
+        .router(FixedRouter {
+            deployments: BTreeMap::from([(
+                "grouped".to_owned(),
+                vec![deployment(Some("dep-a"), Some("backend"))],
+            )]),
+            deployment_infos: BTreeMap::from([(
+                "dep-a".to_owned(),
+                json(r#"{"mode":"chat","tiered_pricing":[]}"#),
+            )]),
+            ..FixedRouter::default()
+        })
+        .model_info(
+            "grouped",
+            r#"{"mode":"chat","max_input_tokens":1000,"max_output_tokens":1000,"input_cost_per_token":0.00001,"output_cost_per_token":0.0001,"tiered_pricing":[{"input_cost_per_token":1e-06,"output_cost_per_token":2e-06,"range":[0,1000]}]}"#,
+        )
+        .provided_count("grouped", 100);
+    assert_eq!(fixture.max_cost().await.unwrap(), Some(dec("0.00012")));
+}
+
+#[tokio::test]
 async fn a_non_list_tiered_pricing_table_is_flat() {
     let fixture = Fixture::new(r#"{"model":"flat-model","max_tokens":100}"#)
         .model_info(
