@@ -1,14 +1,14 @@
 id: B4577
 milestone: M8 platform
 title: Temporarily route Claude sessions through the gateway
-status: todo
+status: done
 depends_on: [B4562, B4564, B4574, B4575, B4585]
 file: tasks/B4577-cli-temporary-routing.yaml
 covers:
   - "litellm/proxy/client/cli/commands/up.py"
 parent: B134
 split_from: B134
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1737

@@ -1,0 +1,66 @@
+id: B9954
+title: Prompt API cache keeps at most 1000 entries
+description: >-
+  PromptCache in crates/betterlite-models/src/generic_prompt_api_cache.rs holds the compiled prompts of the generic
+  prompt API in a plain HashMap keyed by "prompt_id:label:version", the key LiteLLM builds. The label and the version
+  come from the client's completion request and never reach the prompt API, so a client that sends a new version on
+  every call stores one more full copy of the same template each time, and nothing removes an entry until clear_cache.
+  LiteLLM has the same leak: its _prompt_cache is a dict with no limit. Any key holder can grow gateway memory by
+  changing one request field, so rule owned-behavior-is-built says to fix it.
+
+
+  Hold the entries in an lru::LruCache with a capacity of 1000, a named const in the module. betterlite-models already
+  depends on the lru crate (full_model_metadata/cache.rs uses it). A lookup that finds an entry marks it as recently
+  used, and an insert past the capacity drops the least recently used entry. The cache key, the lookup, the variable
+  substitution on a hit and clear_cache stay as they are, so every request that fits in 1000 entries gets the same
+  answer as before.
+
+
+  Add a row to docs/deviations/B9954.yaml: what = the prompt cache keeps at most 1000 entries and drops the least
+  recently used one; why = LiteLLM's dict grows with every label and version a client sends and never shrinks; link =
+  the _get_cache_key link below.
+scope:
+  paths:
+  - crates/betterlite-models/src/generic_prompt_api_cache.rs
+  - crates/betterlite-models/src/generic_prompt_api_cache/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L225-L231
+  why: The cache key, built from the client's label and version.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L298
+  why: One of the two inserts into the unbounded dict; the other is at L339, the dict itself at L79.
+- url: https://github.com/betterlite-ai/betterlite/blob/da88751516/crates/betterlite-models/src/full_model_metadata/cache.rs
+  why: How the crate already uses lru::LruCache.
+dod:
+- text: After 1001 inserts under different keys the cache holds 1000 entries, and the first key is gone.
+  proof: [prompt-cache-tests]
+- text: A key read just before the cache fills survives the next insert, and the least recently used key is dropped instead.
+  proof: [prompt-cache-tests]
+- text: A hit still applies the request's prompt variables, and clear_cache still empties the cache.
+  proof: [prompt-cache-tests]
+- text: docs/deviations/B9954.yaml lists the cap with the pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: prompt-cache-tests
+    why: The cap, the eviction order, the variable substitution or clear_cache is wrong.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^generic_prompt_api_cache::tests::/)'
+  - id: deviation-row
+    why: The cap is not listed as a deviation with the pinned LiteLLM link.
+    run: grep -q -F 'generic_prompt_manager.py#L225-L231' docs/deviations/B9954.yaml
+oracle_cases: []
+deviations:
+- what: The prompt cache keeps at most 1000 entries and drops the least recently used one.
+  why: LiteLLM's dict grows with every label and version a client sends and never shrinks.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L225-L231
+out_of_scope:
+- A config key for the capacity. LiteLLM has none, so a fixed cap adds no setting a user has to learn.
+- The prompt API fetch and its error handling (B4057).
+pitfalls:
+- LruCache::get needs a mutable borrow because it moves the entry to the front, so the lookup takes the lock the same way the insert does.
+- LruCache::new takes a NonZeroUsize. Write the capacity as a NonZeroUsize const built with a match on NonZeroUsize::new, not with expect or unwrap, which the no-panic rule forbids. full_model_metadata/cache.rs builds its capacity from NonZeroUsize::new too.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

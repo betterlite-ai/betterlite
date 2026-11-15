@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::resolve_number;
+use crate::resolve::{parse_money, resolve_number};
 use crate::sections::Section;
 
 mod tests;
@@ -94,12 +94,4 @@ where
         }
     }
     Ok(DEFAULT_CLI_HOURS)
-}
-
-fn parse_money(text: &str, path: &str) -> Result<Decimal, ConfigError> {
-    text.parse::<Decimal>()
-        .map_err(|_source| ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: false,
-        })
 }

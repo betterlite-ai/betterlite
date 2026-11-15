@@ -1,14 +1,14 @@
 id: B3497
 milestone: M5 api families
 title: Translate interaction requests and replies through Responses
-status: todo
+status: done
 depends_on: [B3481, B1306]
 file: tasks/B3497-interaction-responses-projection.yaml
 covers:
   - "litellm/interactions/litellm_responses_transformation/transformation.py"
 parent: B098
 split_from: B098
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1599

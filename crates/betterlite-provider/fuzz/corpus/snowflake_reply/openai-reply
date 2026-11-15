@@ -1,0 +1,1 @@
+{"id":"chatcmpl-1","object":"chat.completion","created":7,"model":"mistral-large","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}
