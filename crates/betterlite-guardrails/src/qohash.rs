@@ -39,8 +39,8 @@ pub const NEXUS_HEADERS: [&str; 4] = [
 ];
 pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
     GuardrailEventHooks::PreCall,
-    GuardrailEventHooks::DuringCall,
     GuardrailEventHooks::PostCall,
+    GuardrailEventHooks::DuringCall,
 ];
 
 #[derive(Debug, Error)]

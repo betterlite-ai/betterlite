@@ -20,9 +20,8 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use super::{
-    API_BASE_VARIABLE, DEFAULT_API_BASE, GUARDRAIL_NAME, GUARDRAIL_PATH, LITELLM_VERSION,
-    NEXUS_HEADERS, QostodianNexus, QostodianNexusConfigModel, QostodianNexusError,
-    QostodianNexusParams, SUPPORTED_EVENT_HOOKS,
+    GUARDRAIL_NAME, GUARDRAIL_PATH, NEXUS_HEADERS, QostodianNexus, QostodianNexusConfigModel,
+    QostodianNexusError, QostodianNexusParams, SUPPORTED_EVENT_HOOKS,
 };
 use crate::generic_guardrail_api::DEFAULT_TIMEOUT;
 use crate::generic_guardrail_contracts::{
@@ -122,7 +121,7 @@ fn nexus_defaults_api_base_to_the_default_endpoint_with_the_guardrail_path() {
     let nexus = build(nexus_params(), &[]);
     assert_eq!(
         nexus.generic.api_base,
-        format!("{DEFAULT_API_BASE}{GUARDRAIL_PATH}")
+        "http://nexus:8800/beta/litellm_basic_guardrail_api"
     );
 }
 
@@ -130,7 +129,10 @@ fn nexus_defaults_api_base_to_the_default_endpoint_with_the_guardrail_path() {
 fn nexus_prefers_a_given_api_base_over_the_environment() {
     let mut params = nexus_params();
     params.api_base = Some("https://configured.example".to_owned());
-    let nexus = build(params, &[(API_BASE_VARIABLE, "https://env.example")]);
+    let nexus = build(
+        params,
+        &[("QOSTODIAN_NEXUS_API_BASE", "https://env.example")],
+    );
     assert_eq!(
         nexus.generic.api_base,
         format!("https://configured.example{GUARDRAIL_PATH}")
@@ -141,7 +143,7 @@ fn nexus_prefers_a_given_api_base_over_the_environment() {
 fn nexus_reads_api_base_from_the_environment_when_none_is_given() {
     let nexus = build(
         nexus_params(),
-        &[(API_BASE_VARIABLE, "https://env.example")],
+        &[("QOSTODIAN_NEXUS_API_BASE", "https://env.example")],
     );
     assert_eq!(
         nexus.generic.api_base,
@@ -153,10 +155,10 @@ fn nexus_reads_api_base_from_the_environment_when_none_is_given() {
 fn nexus_treats_an_empty_api_base_and_environment_as_unset() {
     let mut params = nexus_params();
     params.api_base = Some(String::new());
-    let nexus = build(params, &[(API_BASE_VARIABLE, "")]);
+    let nexus = build(params, &[("QOSTODIAN_NEXUS_API_BASE", "")]);
     assert_eq!(
         nexus.generic.api_base,
-        format!("{DEFAULT_API_BASE}{GUARDRAIL_PATH}")
+        "http://nexus:8800/beta/litellm_basic_guardrail_api"
     );
 }
 
@@ -183,7 +185,7 @@ fn nexus_trims_the_trailing_slash_before_appending_the_path() {
 }
 
 #[rstest]
-#[case::none(None, GUARDRAIL_NAME)]
+#[case::none(None, "qostodian_nexus")]
 #[case::custom(Some("nexus-check"), "nexus-check")]
 #[case::explicitly_empty(Some(""), "")]
 fn nexus_names_the_guardrail_qostodian_nexus_only_when_none_is_given(
@@ -201,16 +203,21 @@ fn nexus_headers_are_the_four_identifiers_first() {
     let nexus = build(nexus_params(), &[]);
     assert_eq!(
         nexus.extra_headers,
-        NEXUS_HEADERS
-            .iter()
-            .map(|header| (*header).to_owned())
-            .collect::<Vec<String>>()
+        vec![
+            "x-qostodian-nexus-identifiers-trace".to_owned(),
+            "x-qostodian-nexus-identifiers-source".to_owned(),
+            "x-qostodian-nexus-identifiers-container".to_owned(),
+            "x-qostodian-nexus-identifiers-identity".to_owned(),
+        ]
     );
 }
 
 #[rstest]
 #[case::keeps_order(vec!["x-caller-one", "x-caller-two"], vec!["x-caller-one", "x-caller-two"])]
-#[case::drops_a_fixed_name(vec!["x-caller-one", "x-qostodian-nexus-identifiers-trace"], vec!["x-caller-one"])]
+#[case::drops_trace(vec!["x-caller-one", "x-qostodian-nexus-identifiers-trace"], vec!["x-caller-one"])]
+#[case::drops_source(vec!["x-caller-one", "x-qostodian-nexus-identifiers-source"], vec!["x-caller-one"])]
+#[case::drops_container(vec!["x-caller-one", "x-qostodian-nexus-identifiers-container"], vec!["x-caller-one"])]
+#[case::drops_identity(vec!["x-caller-one", "x-qostodian-nexus-identifiers-identity"], vec!["x-caller-one"])]
 #[case::keeps_caller_duplicates(vec!["x-caller-one", "x-caller-one"], vec!["x-caller-one", "x-caller-one"])]
 fn nexus_headers_append_caller_headers_skipping_the_fixed_names(
     #[case] given: Vec<&str>,
@@ -285,8 +292,8 @@ fn nexus_supports_pre_call_during_call_and_post_call() {
         nexus.get_supported_event_hooks(),
         Some(vec![
             GuardrailEventHooks::PreCall,
-            GuardrailEventHooks::DuringCall,
-            GuardrailEventHooks::PostCall
+            GuardrailEventHooks::PostCall,
+            GuardrailEventHooks::DuringCall
         ])
     );
     assert_eq!(SUPPORTED_EVENT_HOOKS.len(), 3);
@@ -327,7 +334,7 @@ async fn apply_guardrail_sends_the_generic_request_and_returns_the_texts() {
     assert_eq!(request.input_type, GuardrailInputType::Request);
     assert_eq!(request.texts, Some(vec!["hello".to_owned()]));
     assert_eq!(request.request_headers, None);
-    assert_eq!(request.litellm_version.as_deref(), Some(LITELLM_VERSION));
+    assert_eq!(request.litellm_version.as_deref(), Some("1.105.1"));
     assert_eq!(result.texts, Some(vec!["hello".to_owned()]));
 }
 
