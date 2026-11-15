@@ -1,14 +1,14 @@
 id: B554
 milestone: M3 providers
 title: Foundry MAI images and usage
-status: todo
+status: done
 depends_on: [B549, B511, B171, B668, B004, B249]
 file: tasks/B554-foundry-mai-images.yaml
 covers:
   - "litellm/llms/azure_ai/image_generation/mai_transformation.py"
 parent: B026
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1987

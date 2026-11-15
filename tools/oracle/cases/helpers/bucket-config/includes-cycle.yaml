@@ -1,0 +1,12 @@
+kind: helper
+name: bucket-config-includes-cycle
+call:
+  b4143:
+    operation: load_config
+    object_key: config.yaml
+    objects:
+      config.yaml: {include: [a.yaml], root: true}
+      a.yaml: {include: [config.yaml, b.yaml], a: true}
+      b.yaml: {include: [a.yaml], b: true}
+env: {}
+compare: {ignore: []}
