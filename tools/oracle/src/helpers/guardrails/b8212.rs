@@ -5,7 +5,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::{
     GenericGuardrailAPISettings, GuardrailInputType,
 };
-use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
+use betterlite_guardrails::guardrail_base::contract::GuardrailContract as _;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use betterlite_guardrails::qohash::{QostodianNexus, QostodianNexusParams};
