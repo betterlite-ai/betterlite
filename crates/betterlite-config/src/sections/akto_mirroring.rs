@@ -161,7 +161,7 @@ where
     if api_base.is_empty() {
         return Err(missing_environment("AKTO_GUARDRAIL_API_BASE", &base_path));
     }
-    let key_text = key.map(|key| key.expose_secret().to_owned());
+    let key_text = key.map(|secret| secret.expose_secret().to_owned());
     let api_key = SecretString::from(resolve_value(
         key_text,
         "AKTO_API_KEY",
