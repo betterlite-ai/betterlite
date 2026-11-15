@@ -439,7 +439,12 @@ fn sync_iteration_yields_events_in_order_and_finishes() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
     let mut iterator = SyncInteractionsStreamIterator::new(
-        FakeSyncResponse::new(&[r#"data: {"id":"a"}"#, r#"data: {"id":"b"}"#, "data: [DONE]"]),
+        FakeSyncResponse::new(&[
+            r#"data: {"id":"a"}"#,
+            r#"data: {"id":"b"}"#,
+            "data: [DONE]",
+            r#"data: {"id":"after"}"#,
+        ]),
         setup(&mut logging, &config, &NO_API_BASE),
     )
     .expect("the fixture iterator builds");
@@ -710,6 +715,25 @@ async fn error_handling_transform_error_is_returned_without_finishing() {
     assert!(matches!(failure, Err(InteractionStreamError::Transform(_))));
     assert!(!iterator.base.finished);
     let next = iterator.next_chunk().await.expect("the stream continues");
+    assert_eq!(
+        next.expect("the second chunk decodes").id.as_deref(),
+        Some("int_1")
+    );
+}
+
+#[test]
+fn error_handling_sync_transform_error_is_returned_without_finishing() {
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(Params::new());
+    let mut iterator = SyncInteractionsStreamIterator::new(
+        FakeSyncResponse::new(&[r#"data: {"id":5}"#, r#"data: {"id":"int_1"}"#]),
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
+    let failure = iterator.next_chunk().expect("the chunk is transformed");
+    assert!(matches!(failure, Err(InteractionStreamError::Transform(_))));
+    assert!(!iterator.base.finished);
+    let next = iterator.next_chunk().expect("the stream continues");
     assert_eq!(
         next.expect("the second chunk decodes").id.as_deref(),
         Some("int_1")
