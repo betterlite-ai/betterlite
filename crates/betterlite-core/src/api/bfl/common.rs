@@ -123,7 +123,7 @@ pub enum BflResult {
     Other(IgnoredAny),
 }
 
-fn default_result() -> BflResult {
+const fn default_result() -> BflResult {
     BflResult::Other(IgnoredAny)
 }
 
