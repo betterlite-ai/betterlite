@@ -102,33 +102,33 @@ where
 }
 
 // ast-grep-ignore: no-one-line-functions
-pub fn mcp_server_table_actions<'db>(
-    client: Option<PrismaClient<'db>>,
+pub fn mcp_server_table_actions(
+    client: Option<PrismaClient<'_>>,
     publish: PublishChange<TableError>,
-) -> Handle<'db> {
+) -> Handle<'_> {
     actions(client, publish, MCPServerTable, &SERVER_TABLE)
 }
 
 // ast-grep-ignore: no-one-line-functions
-pub fn oauth_client_table_actions<'db>(
-    client: Option<PrismaClient<'db>>,
+pub fn oauth_client_table_actions(
+    client: Option<PrismaClient<'_>>,
     publish: PublishChange<TableError>,
-) -> Handle<'db> {
+) -> Handle<'_> {
     actions(client, publish, MCPServerOAuthClient, &OAUTH_CLIENT_TABLE)
 }
 
 // ast-grep-ignore: no-one-line-functions
-pub fn user_credential_actions<'db>(
-    client: Option<PrismaClient<'db>>,
+pub fn user_credential_actions(
+    client: Option<PrismaClient<'_>>,
     publish: PublishChange<TableError>,
-) -> Handle<'db> {
+) -> Handle<'_> {
     actions(client, publish, MCPUserCredentials, &CREDENTIAL_TABLE)
 }
 
 // ast-grep-ignore: no-one-line-functions
-pub fn user_env_var_actions<'db>(
-    client: Option<PrismaClient<'db>>,
+pub fn user_env_var_actions(
+    client: Option<PrismaClient<'_>>,
     publish: PublishChange<TableError>,
-) -> Handle<'db> {
+) -> Handle<'_> {
     actions(client, publish, McpUserEnvVarsRepository, &ENV_VAR_TABLE)
 }

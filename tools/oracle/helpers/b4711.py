@@ -1,7 +1,6 @@
 import asyncio
 from collections import UserDict
 from contextlib import suppress
-from types import TracebackType
 from typing import Final, Literal, Self, TypedDict
 
 from litellm.proxy._experimental.mcp_server import db as mcp_db
@@ -112,8 +111,25 @@ class ActiveSubmissions(Rows):
     user_id: str
 
 
-Input = FindConflict | CreateIfFree | GetAll | GetServer | Review | PinnedTools | Submissions | ActiveSubmissions
-Output = ConflictView | CreateOutput | list[ServerView] | ServerView | ReviewOutput | PinnedView | SubmissionsOutput
+Input = (
+    FindConflict
+    | CreateIfFree
+    | GetAll
+    | GetServer
+    | Review
+    | PinnedTools
+    | Submissions
+    | ActiveSubmissions
+)
+Output = (
+    ConflictView
+    | CreateOutput
+    | list[ServerView]
+    | ServerView
+    | ReviewOutput
+    | PinnedView
+    | SubmissionsOutput
+)
 Answer = Output | list[str] | None
 STRING: Final = TypeAdapter(str)
 OPERATORS: Final = TypeAdapter(Where)
@@ -158,8 +174,14 @@ def field_matches(value: JsonValue, condition: JsonValue) -> bool:
 def where_matches(values: FakeRow, where: Where) -> bool:
     for key, condition in where.items():
         if key in {"AND", "OR", "NOT"}:
-            nested = [where_matches(values, branch) for branch in BRANCHES.validate_python(condition)]
-            matched = all(nested) if key == "AND" else any(nested) if key == "OR" else not any(nested)
+            branches = BRANCHES.validate_python(condition)
+            nested = [where_matches(values, branch) for branch in branches]
+            if key == "AND":
+                matched = all(nested)
+            elif key == "OR":
+                matched = any(nested)
+            else:
+                matched = not any(nested)
         else:
             matched = field_matches(values.get(key), condition)
         if not matched:
@@ -178,7 +200,7 @@ class FakeTable:
     async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, *_raised: type[BaseException] | BaseException | TracebackType | None) -> None:
+    async def __aexit__(self, *_raised: object) -> None:
         pass
 
     async def execute_raw(self, query: str, *args: int) -> int:
@@ -186,11 +208,14 @@ class FakeTable:
         self.locks.extend(args)
         return 0
 
-    # get_mcp_submissions is the one caller that orders, newest submitted_at first, ties in table order
-    async def find_many(self, where: Where, order: Where | None = None, take: int | None = None) -> list[FakeRow]:
+    # only get_mcp_submissions orders: newest submitted_at first, ties in table order
+    async def find_many(
+        self, where: Where, order: Where | None = None, take: int | None = None
+    ) -> list[FakeRow]:
         selected = [row for row in self.rows if where_matches(row, where)]
         if order is not None:
-            keyed = [(STRING.validate_python(row["submitted_at"]), -index) for index, row in enumerate(selected)]
+            stamps = [STRING.validate_python(row["submitted_at"]) for row in selected]
+            keyed = [(stamp, -index) for index, stamp in enumerate(stamps)]
             selected = [selected[-negated] for _, negated in sorted(keyed, reverse=True)]
         return selected if take is None else selected[:take]
 
@@ -237,7 +262,9 @@ def conflict_view(conflict: mcp_db.McpIdentifierConflict | None) -> ConflictView
 
 
 def create_call(client: FakeClient, value: CreateIfFree) -> CreateOutput:
-    request = NewMCPServerRequest.model_construct(server_name=value["server_name"], alias=value["alias"])
+    request = NewMCPServerRequest.model_construct(
+        server_name=value["server_name"], alias=value["alias"]
+    )
     conflict: mcp_db.McpIdentifierConflict | None = None
     with suppress(CapturedCreateError):
         match asyncio.run(mcp_db.create_mcp_server_if_identifier_free(client, request, "tester")):
@@ -253,10 +280,22 @@ def review_call(client: FakeClient, value: Review) -> ReviewOutput:
     if value["action"] == "approve":
         review = mcp_db.approve_mcp_server(client, value["server_id"], value["touched_by"])
     else:
-        review = mcp_db.reject_mcp_server(client, value["server_id"], value["touched_by"], value["review_notes"])
+        review = mcp_db.reject_mcp_server(
+            client, value["server_id"], value["touched_by"], value["review_notes"]
+        )
     dump = asyncio.run(review).model_dump_json()
     reviewed_at_present = REVIEWED.validate_json(dump)["reviewed_at"] is not None
     return {**REVIEW_VIEW.validate_json(dump), "reviewed_at_present": reviewed_at_present}
+
+
+def get_all_call(client: FakeClient, value: GetAll) -> list[ServerView]:
+    ids = value["server_ids"]
+    if ids is None:
+        reads = mcp_db.get_all_mcp_servers(client, value["approval_status"])
+    else:
+        reads = mcp_db.get_mcp_servers(client, ids)
+    servers = asyncio.run(reads)
+    return [SERVER_VIEW.validate_json(server.model_dump_json()) for server in servers]
 
 
 def run(input_value: Input) -> Answer:
@@ -274,9 +313,7 @@ def run(input_value: Input) -> Answer:
         case "create_if_free":
             answer = create_call(client, input_value)
         case "get_all":
-            ids, status = input_value["server_ids"], input_value["approval_status"]
-            reads = mcp_db.get_all_mcp_servers(client, status) if ids is None else mcp_db.get_mcp_servers(client, ids)
-            answer = [SERVER_VIEW.validate_json(server.model_dump_json()) for server in asyncio.run(reads)]
+            answer = get_all_call(client, input_value)
         case "get_server":
             server = asyncio.run(mcp_db.get_mcp_server(client, input_value["server_id"]))
             answer = None if server is None else SERVER_VIEW.validate_json(server.model_dump_json())
@@ -284,17 +321,24 @@ def run(input_value: Input) -> Answer:
             answer = review_call(client, input_value)
         case "pinned_tools":
             tools = PINNED_INPUT.validate_python(input_value["pinned_tools"])
-            pin = mcp_db.set_mcp_server_pinned_tools(client, input_value["server_id"], tools, input_value["touched_by"])
+            pin = mcp_db.set_mcp_server_pinned_tools(
+                client, input_value["server_id"], tools, input_value["touched_by"]
+            )
             server = asyncio.run(pin)
             answer = None if server is None else PINNED_VIEW.validate_json(server.model_dump_json())
         case "submissions":
             summary = asyncio.run(mcp_db.get_mcp_submissions(client))
             submitted: SubmissionsOutput = {
-                "total": summary.total, "pending_review": summary.pending_review, "active": summary.active,
-                "rejected": summary.rejected, "server_ids": [item.server_id for item in summary.items],
+                "total": summary.total,
+                "pending_review": summary.pending_review,
+                "active": summary.active,
+                "rejected": summary.rejected,
+                "server_ids": [item.server_id for item in summary.items],
             }
             answer = submitted
         case "active_submissions":
-            active = mcp_db.get_active_submitted_mcp_server_ids_for_user(client, input_value["user_id"])
+            active = mcp_db.get_active_submitted_mcp_server_ids_for_user(
+                client, input_value["user_id"]
+            )
             answer = asyncio.run(active)
     return answer
