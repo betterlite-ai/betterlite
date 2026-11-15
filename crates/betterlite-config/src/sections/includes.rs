@@ -185,7 +185,6 @@ fn value_to_map(value: Value, path: &Path) -> Result<ConfigMap, IncludeError> {
     }
 }
 
-#[must_use]
 pub fn include_entries(config: &ConfigMap) -> Result<Vec<&str>, IncludeError> {
     let Some(value) = config.get("include") else {
         return Ok(Vec::new());

@@ -37,10 +37,16 @@ impl BucketConfigSource {
     where
         L: EnvironmentLookup + ?Sized,
     {
-        let Some(bucket_name) = present(environment, BUCKET_NAME_VARIABLE) else {
+        let Some(bucket_name) = environment
+            .lookup(BUCKET_NAME_VARIABLE)
+            .filter(|value| !value.is_empty())
+        else {
             return Ok(None);
         };
-        let Some(object_key) = present(environment, BUCKET_OBJECT_KEY_VARIABLE) else {
+        let Some(object_key) = environment
+            .lookup(BUCKET_OBJECT_KEY_VARIABLE)
+            .filter(|value| !value.is_empty())
+        else {
             return Err(BucketConfigError::MissingObjectKey);
         };
         let bucket_type = environment
@@ -52,13 +58,6 @@ impl BucketConfigSource {
             object_key,
         }))
     }
-}
-
-fn present<L>(environment: &L, name: &str) -> Option<String>
-where
-    L: EnvironmentLookup + ?Sized,
-{
-    environment.lookup(name).filter(|value| !value.is_empty())
 }
 
 mod tests;

@@ -34,7 +34,11 @@ pub async fn load_config_from_bucket(
     source: &BucketConfigSource,
     reader: &dyn BucketObjectReader,
 ) -> Result<Option<ConfigMap>, BucketConfigError> {
-    let Some(value) = read_object_value(reader, &source.object_key).await else {
+    let Some(value) = reader
+        .read_object(&source.object_key)
+        .await
+        .and_then(|bytes| parse_bucket_object(&source.object_key, &bytes))
+    else {
         return Ok(None);
     };
     let config = object_to_map(value, &source.object_key)?;
@@ -61,17 +65,16 @@ async fn read_included_config(
     reader: &dyn BucketObjectReader,
     object_key: &str,
 ) -> Result<ConfigMap, BucketConfigError> {
-    let Some(value) = read_object_value(reader, object_key).await else {
+    let Some(value) = reader
+        .read_object(object_key)
+        .await
+        .and_then(|bytes| parse_bucket_object(object_key, &bytes))
+    else {
         return Err(BucketConfigError::IncludedUnreadable {
             object_key: object_key.to_owned(),
         });
     };
     object_to_map(value, object_key)
-}
-
-async fn read_object_value(reader: &dyn BucketObjectReader, object_key: &str) -> Option<Value> {
-    let bytes = reader.read_object(object_key).await?;
-    parse_bucket_object(object_key, &bytes)
 }
 
 fn object_to_map(value: Value, object_key: &str) -> Result<ConfigMap, BucketConfigError> {
