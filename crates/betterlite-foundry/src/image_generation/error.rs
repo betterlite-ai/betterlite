@@ -38,12 +38,9 @@ impl FoundryImageError {
 
     #[must_use]
     pub const fn llm_provider(&self) -> Option<&'static str> {
-        match self {
-            Self::InvalidSize { .. } | Self::UnsupportedParams { .. } => Some("azure_ai"),
-            Self::ApiBaseRequired
-            | Self::WholeNumber { .. }
-            | Self::Decimal { .. }
-            | Self::GptParams(_) => None,
+        match self.status_code() {
+            Some(_) => Some("azure_ai"),
+            None => None,
         }
     }
 }

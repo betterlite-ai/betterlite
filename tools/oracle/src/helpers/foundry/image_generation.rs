@@ -4,6 +4,7 @@ use betterlite_foundry::image_generation::flux::{
     flux2_image_generation_url, flux2_provider_model_path, is_flux2_model, supported_params,
 };
 use betterlite_foundry::image_generation::params::map_openai_params;
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::helpers::{Helper, HelperResult};
@@ -90,25 +91,26 @@ fn failure(error: &FoundryImageError) -> Value {
     })
 }
 
-fn url_outcome(call: &UrlCall) -> Value {
-    match flux2_image_generation_url(
-        call.api_base.as_deref(),
-        &call.model,
-        call.api_version.as_deref(),
-    ) {
-        Ok(url) => json!({ "value": url }),
+fn outcome<T: Serialize>(result: Result<T, FoundryImageError>) -> Value {
+    match result {
+        Ok(value) => json!({ "value": value }),
         Err(error) => failure(&error),
     }
 }
 
+fn url_outcome(call: &UrlCall) -> Value {
+    outcome(flux2_image_generation_url(
+        call.api_base.as_deref(),
+        &call.model,
+        call.api_version.as_deref(),
+    ))
+}
+
 fn params_outcome(call: &ParamsCall) -> Value {
-    match map_openai_params(
+    outcome(map_openai_params(
         &call.non_default_params,
         &call.optional_params,
         &call.model,
         call.drop_params,
-    ) {
-        Ok(params) => json!({ "value": params }),
-        Err(error) => failure(&error),
-    }
+    ))
 }

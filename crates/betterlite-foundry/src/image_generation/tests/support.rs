@@ -13,12 +13,3 @@ pub(super) fn mapped(
 ) -> Result<ImageParams, FoundryImageError> {
     map_openai_params(&object(non_default), &object(optional), model, drop_params)
 }
-
-pub(super) fn failure(
-    non_default: &str,
-    optional: &str,
-    model: &str,
-    drop_params: bool,
-) -> FoundryImageError {
-    mapped(non_default, optional, model, drop_params).expect_err("a mapping error")
-}

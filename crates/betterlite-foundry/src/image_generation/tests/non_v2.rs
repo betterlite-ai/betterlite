@@ -1,6 +1,6 @@
 use betterlite_openai::image_generation::family::{GPT_IMAGE_PARAMS, ImageParamError};
 
-use super::support::{failure, mapped, object};
+use super::support::{mapped, object};
 use crate::image_generation::error::FoundryImageError;
 use crate::image_generation::flux::supported_params;
 
@@ -68,7 +68,7 @@ fn gpt_optional_fields() {
 }
 
 fn gpt_unsupported() {
-    let width = failure(r#"{"width":10}"#, "{}", FLUX1, false);
+    let width = mapped(r#"{"width":10}"#, "{}", FLUX1, false).expect_err("unsupported");
     assert_eq!(
         width,
         FoundryImageError::GptParams(ImageParamError::Unsupported {
@@ -83,7 +83,7 @@ fn gpt_unsupported() {
     assert!(message.starts_with("parameter width is not supported for model "));
     assert!(message.contains(FLUX1));
     assert_eq!(
-        failure(r#"{"steps":4}"#, "{}", FLUX1, false),
+        mapped(r#"{"steps":4}"#, "{}", FLUX1, false).expect_err("unsupported"),
         FoundryImageError::GptParams(ImageParamError::Unsupported {
             parameter: String::from("steps"),
             model: String::from(FLUX1),
@@ -91,12 +91,13 @@ fn gpt_unsupported() {
         })
     );
     assert_eq!(
-        failure(
+        mapped(
             r#"{"style":"vivid","response_format":"b64_json"}"#,
             "{}",
             FLUX1,
             false,
-        ),
+        )
+        .expect_err("unsupported"),
         FoundryImageError::GptParams(ImageParamError::Unsupported {
             parameter: String::from("style"),
             model: String::from(FLUX1),

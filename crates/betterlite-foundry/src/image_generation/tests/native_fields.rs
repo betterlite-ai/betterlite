@@ -1,8 +1,14 @@
-use super::support::{failure, mapped, object};
+use super::support::{mapped, object};
 use crate::image_generation::error::FoundryImageError;
 use crate::image_generation::flux::FLUX2_OPENAI_PARAMS;
 
 const FLUX2: &str = "azure_ai/FLUX.2-pro";
+const SQUARE: &str = r#"{"width":1024,"height":768}"#;
+const SQUARE_512: &str = r#"{"width":512,"height":512}"#;
+const KEPT_OPTIONAL: &str = r#"{"width":1,"height":2,"quality":"low","custom":true}"#;
+const KEPT_EXPECTED: &str = r#"{"width":512,"height":512,"quality":"low","custom":true}"#;
+const WIDTH_AFTER_SIZE: &str = r#"{"width":300,"height":512}"#;
+const WIDTH_ONE: &str = r#"{"width":1}"#;
 
 pub(super) fn flux_native_fields() {
     size_auto();
@@ -13,78 +19,45 @@ pub(super) fn flux_native_fields() {
     non_text_sizes();
 }
 
+fn expect_size(non_default: &str, optional: &str, expected: &str) {
+    assert_eq!(
+        mapped(non_default, optional, FLUX2, false).expect("mapped"),
+        object(expected)
+    );
+}
+
 fn size_auto() {
-    assert_eq!(
-        mapped(r#"{"size":"auto"}"#, "{}", FLUX2, false).expect("mapped"),
-        object("{}")
-    );
-    assert_eq!(
-        mapped(r#"{"size":"AUTO"}"#, "{}", FLUX2, false).expect("mapped"),
-        object("{}")
-    );
-    assert_eq!(
-        mapped(r#"{"size":"Auto","width":1}"#, "{}", FLUX2, false).expect("mapped"),
-        object(r#"{"width":1}"#)
-    );
-    assert_eq!(
-        mapped(r#"{"size":"AUTO"}"#, r#"{"width":1}"#, FLUX2, false).expect("mapped"),
-        object(r#"{"width":1}"#)
-    );
+    expect_size(r#"{"size":"auto"}"#, "{}", "{}");
+    expect_size(r#"{"size":"AUTO"}"#, "{}", "{}");
+    expect_size(r#"{"size":"Auto","width":1}"#, "{}", WIDTH_ONE);
+    expect_size(r#"{"size":"AUTO"}"#, WIDTH_ONE, WIDTH_ONE);
 }
 
 fn size_dimensions() {
-    assert_eq!(
-        mapped(r#"{"size":"1024x768"}"#, "{}", FLUX2, false).expect("mapped"),
-        object(r#"{"width":1024,"height":768}"#)
-    );
-    assert_eq!(
-        mapped(r#"{"size":"1024X768"}"#, "{}", FLUX2, false).expect("mapped"),
-        object(r#"{"width":1024,"height":768}"#)
-    );
-    assert_eq!(
-        mapped(r#"{"size":" 1024 x 768 "}"#, "{}", FLUX2, false).expect("mapped"),
-        object(r#"{"width":1024,"height":768}"#)
-    );
+    expect_size(r#"{"size":"1024x768"}"#, "{}", SQUARE);
+    expect_size(r#"{"size":"1024X768"}"#, "{}", SQUARE);
+    expect_size(r#"{"size":" 1024 x 768 "}"#, "{}", SQUARE);
 }
 
 fn size_overwrites() {
-    assert_eq!(
-        mapped(
-            r#"{"size":"512x512"}"#,
-            r#"{"width":1,"height":2,"quality":"low","custom":true}"#,
-            FLUX2,
-            false,
-        )
-        .expect("mapped"),
-        object(r#"{"width":512,"height":512,"quality":"low","custom":true}"#)
-    );
-    assert_eq!(
-        mapped(r#"{"width":300,"size":"512x512"}"#, "{}", FLUX2, false).expect("mapped"),
-        object(r#"{"width":512,"height":512}"#)
-    );
-    assert_eq!(
-        mapped(r#"{"size":"512x512","width":300}"#, "{}", FLUX2, false).expect("mapped"),
-        object(r#"{"width":300,"height":512}"#)
-    );
-    assert_eq!(
-        mapped(
-            r#"{"quality":"high"}"#,
-            r#"{"quality":"low"}"#,
-            FLUX2,
-            false
-        )
-        .expect("kept"),
-        object(r#"{"quality":"low"}"#)
+    expect_size(r#"{"size":"512x512"}"#, KEPT_OPTIONAL, KEPT_EXPECTED);
+    expect_size(r#"{"width":300,"size":"512x512"}"#, "{}", SQUARE_512);
+    expect_size(r#"{"size":"512x512","width":300}"#, "{}", WIDTH_AFTER_SIZE);
+    expect_size(
+        r#"{"quality":"high"}"#,
+        r#"{"quality":"low"}"#,
+        r#"{"quality":"low"}"#,
     );
 }
 
 fn unsupported_parameters() {
-    let unsupported = failure(
+    let unsupported = mapped(
         r#"{"style":"vivid","response_format":"b64_json"}"#,
         "{}",
         FLUX2,
         false,
-    );
+    )
+    .expect_err("unsupported parameters");
     assert_eq!(
         unsupported,
         FoundryImageError::UnsupportedParams {
@@ -115,14 +88,16 @@ fn unsupported_parameters() {
 
 fn invalid_sizes() {
     assert_eq!(
-        failure(r#"{"style":"vivid","size":"bad"}"#, "{}", FLUX2, false),
+        mapped(r#"{"style":"vivid","size":"bad"}"#, "{}", FLUX2, false)
+            .expect_err("unsupported before the size"),
         FoundryImageError::UnsupportedParams {
             model: String::from(FLUX2),
             names: vec![String::from("style")],
             supported: &FLUX2_OPENAI_PARAMS,
         }
     );
-    let invalid = failure(r#"{"style":"vivid","size":"bad"}"#, "{}", FLUX2, true);
+    let invalid = mapped(r#"{"style":"vivid","size":"bad"}"#, "{}", FLUX2, true)
+        .expect_err("an invalid size");
     assert_eq!(
         invalid,
         FoundryImageError::InvalidSize {
@@ -150,7 +125,7 @@ fn malformed_sizes() {
         "auto x",
     ] {
         let text = format!(r#"{{"size":{size:?}}}"#);
-        let error = failure(&text, "{}", FLUX2, false);
+        let error = mapped(&text, "{}", FLUX2, false).expect_err("an invalid size");
         assert_eq!(
             error,
             FoundryImageError::InvalidSize {
@@ -162,13 +137,13 @@ fn malformed_sizes() {
 
 fn non_text_sizes() {
     assert_eq!(
-        failure(r#"{"size":1024}"#, "{}", FLUX2, false),
+        mapped(r#"{"size":1024}"#, "{}", FLUX2, false).expect_err("an invalid size"),
         FoundryImageError::InvalidSize {
             size: String::from("1024"),
         }
     );
     assert_eq!(
-        failure(r#"{"size":null}"#, "{}", FLUX2, false),
+        mapped(r#"{"size":null}"#, "{}", FLUX2, false).expect_err("an invalid size"),
         FoundryImageError::InvalidSize {
             size: String::from("null"),
         }

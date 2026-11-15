@@ -11,77 +11,43 @@ use crate::image_generation::config::FoundryImageConfig;
 
 pub(super) fn dalle_gpt_model_selection() {
     dalle_names();
-    other_names();
+    mai_and_flux_names();
+    inherited_names();
     priority_order();
     gpt_fallback_is_logged();
 }
 
-fn dalle_names() {
-    assert_eq!(FoundryImageConfig::select(""), FoundryImageConfig::DallE2);
-    assert_eq!(
-        FoundryImageConfig::select("DALL-E-2"),
-        FoundryImageConfig::DallE2
-    );
-    assert_eq!(
-        FoundryImageConfig::select("dall_e_2"),
-        FoundryImageConfig::DallE2
-    );
-    assert_eq!(
-        FoundryImageConfig::select("DALL-E-3"),
-        FoundryImageConfig::DallE3
-    );
-    assert_eq!(
-        FoundryImageConfig::select("dall_e_3_preview"),
-        FoundryImageConfig::DallE3
-    );
+fn assert_selected(model: &str, expected: FoundryImageConfig) {
+    assert_eq!(FoundryImageConfig::select(model), expected);
 }
 
-fn other_names() {
-    assert_eq!(
-        FoundryImageConfig::select("MAI-Image-2.5"),
-        FoundryImageConfig::Mai
-    );
-    assert_eq!(
-        FoundryImageConfig::select("mai_image_2_5"),
-        FoundryImageConfig::Mai
-    );
-    assert_eq!(
-        FoundryImageConfig::select("azure_ai/FLUX.2-pro"),
-        FoundryImageConfig::Flux
-    );
-    assert_eq!(FoundryImageConfig::select("flux"), FoundryImageConfig::Flux);
-    assert_eq!(
-        FoundryImageConfig::select("gpt-image-1"),
-        FoundryImageConfig::GptImage
-    );
-    assert_eq!(
-        FoundryImageConfig::select("azure_ai/gpt-image-1"),
-        FoundryImageConfig::GptImage
-    );
-    assert_eq!(
-        FoundryImageConfig::select("dall e 3"),
-        FoundryImageConfig::GptImage
-    );
+fn dalle_names() {
+    assert_selected("", FoundryImageConfig::DallE2);
+    assert_selected("DALL-E-2", FoundryImageConfig::DallE2);
+    assert_selected("dall_e_2", FoundryImageConfig::DallE2);
+    assert_selected("DALL-E-3", FoundryImageConfig::DallE3);
+    assert_selected("dall_e_3_preview", FoundryImageConfig::DallE3);
+}
+
+fn mai_and_flux_names() {
+    assert_selected("MAI-Image-2.5", FoundryImageConfig::Mai);
+    assert_selected("mai_image_2_5", FoundryImageConfig::Mai);
+    assert_selected("azure_ai/FLUX.2-pro", FoundryImageConfig::Flux);
+    assert_selected("flux", FoundryImageConfig::Flux);
+}
+
+fn inherited_names() {
+    assert_selected("gpt-image-1", FoundryImageConfig::GptImage);
+    assert_selected("azure_ai/gpt-image-1", FoundryImageConfig::GptImage);
+    assert_selected("dall e 3", FoundryImageConfig::GptImage);
 }
 
 fn priority_order() {
-    assert_eq!(
-        FoundryImageConfig::select("dall-e-2-dall-e-3-flux"),
-        FoundryImageConfig::DallE2
-    );
-    assert_eq!(
-        FoundryImageConfig::select("dall-e-3-flux"),
-        FoundryImageConfig::DallE3
-    );
-    assert_eq!(
-        FoundryImageConfig::select("mai-image-flux"),
-        FoundryImageConfig::Mai
-    );
-    assert_eq!(FoundryImageConfig::select("_"), FoundryImageConfig::DallE2);
-    assert_eq!(
-        FoundryImageConfig::select("DallE2x"),
-        FoundryImageConfig::DallE2
-    );
+    assert_selected("dall-e-2-dall-e-3-flux", FoundryImageConfig::DallE2);
+    assert_selected("dall-e-3-flux", FoundryImageConfig::DallE3);
+    assert_selected("mai-image-flux", FoundryImageConfig::Mai);
+    assert_selected("_", FoundryImageConfig::DallE2);
+    assert_selected("DallE2x", FoundryImageConfig::DallE2);
 }
 
 struct MessageVisitor(String);
