@@ -3,10 +3,9 @@ use super::{Harness, chat_of, object, value};
 
 pub(super) async fn simple_text_path() {
     simple_text_join().await;
-    simple_unsupported_deltas().await;
+    simple_delta_shapes().await;
     simple_first_choice_content().await;
     simple_disabled_by_fields().await;
-    simple_any_choice_disables().await;
     simple_no_parts().await;
 }
 
@@ -38,26 +37,41 @@ pub(super) async fn simple_text_join() {
     assert_eq!(details.text_tokens, Some(3));
 }
 
-pub(super) async fn simple_unsupported_deltas() {
-    let stream = chunks(
-        r#"[
+pub(super) async fn simple_delta_shapes() {
+    let unsupported = r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
          "choices": [{"index": 0, "delta": {"content": "A"}}]},
         {"choices": [{"index": 0, "delta": null}]},
         {"choices": [{"index": 0, "delta": "text"}]},
         {"choices": [{"index": 0, "delta": [1, 2]}]}
-    ]"#,
-    );
-    let mut harness = Harness::new(Some(stream));
-    harness.messages = true;
-    harness.counter.response_text = 1;
-    let response = chat_of(&harness).await;
-    assert_eq!(response.choices[0].message.content.as_deref(), Some("A"));
-    let details = response
-        .usage
-        .completion_tokens_details
-        .expect("unsupported deltas keep the simple path");
-    assert_eq!(details.reasoning_tokens, Some(0));
+    ]"#;
+    let later_choice_tools = r#"[
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+         "choices": [{"index": 0, "delta": {"role": "assistant", "content": "A"}}]},
+        {"choices": [
+            {"index": 0, "delta": {"content": "B"}},
+            {"index": 1, "delta": {"tool_calls": []}}
+        ]}
+    ]"#;
+    // Unsupported deltas keep the fast path; an empty tool_calls on a later choice leaves it and still joins an empty list.
+    let cases = [
+        (unsupported, "A", 1, None),
+        (later_choice_tools, "AB", 2, Some(0)),
+    ];
+    for (source, content, text_tokens, tool_calls) in cases {
+        let mut harness = Harness::new(Some(chunks(source)));
+        harness.messages = true;
+        harness.counter.response_text = text_tokens;
+        let response = chat_of(&harness).await;
+        let message = &response.choices[0].message;
+        assert_eq!(message.content.as_deref(), Some(content));
+        assert_eq!(message.tool_calls.as_ref().map(Vec::len), tool_calls);
+        assert_eq!(
+            response.usage.completion_tokens_details.is_some(),
+            tool_calls.is_none(),
+            "{content}"
+        );
+    }
 }
 
 pub(super) async fn simple_first_choice_content() {
@@ -110,33 +124,6 @@ pub(super) async fn simple_disabled_by_fields() {
             "{field} must leave the fast path"
         );
     }
-}
-
-pub(super) async fn simple_any_choice_disables() {
-    let stream = chunks(
-        r#"[
-        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
-         "choices": [{"index": 0, "delta": {"role": "assistant", "content": "A"}}]},
-        {"choices": [
-            {"index": 0, "delta": {"content": "B"}},
-            {"index": 1, "delta": {"tool_calls": []}}
-        ]}
-    ]"#,
-    );
-    let mut harness = Harness::new(Some(stream));
-    harness.messages = true;
-    harness.counter.response_text = 2;
-    let response = chat_of(&harness).await;
-    assert_eq!(response.choices[0].message.content.as_deref(), Some("AB"));
-    assert_eq!(
-        response.choices[0]
-            .message
-            .tool_calls
-            .as_ref()
-            .map(Vec::len),
-        Some(0)
-    );
-    assert_eq!(response.usage.completion_tokens_details, None);
 }
 
 pub(super) async fn simple_no_parts() {

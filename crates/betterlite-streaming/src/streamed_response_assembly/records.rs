@@ -1,4 +1,5 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
+use serde_with::{DefaultOnError, serde_as};
 
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue};
 
@@ -21,22 +22,16 @@ pub struct Chunk {
 
 impl Chunk {
     #[must_use]
-    pub const fn hidden_object(&self) -> Option<&JsonObject> {
-        match self.hidden_params.as_ref() {
-            Some(JsonValue::Object(fields)) => Some(fields),
-            Some(
-                JsonValue::Null
-                | JsonValue::Bool(_)
-                | JsonValue::Number(_)
-                | JsonValue::String(_)
-                | JsonValue::Array(_),
-            )
-            | None => None,
-        }
+    pub fn hidden_object(&self) -> Option<&JsonObject> {
+        let JsonValue::Object(fields) = self.hidden_params.as_ref()? else {
+            return None;
+        };
+        Some(fields)
     }
 }
 
 // A chunk choice is a text choice when it carries a text key, even a null one, like TextChoices.
+#[serde_as]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Choice {
@@ -44,7 +39,7 @@ pub struct Choice {
     pub finish_reason: Option<String>,
     pub logprobs: Option<JsonValue>,
     // LiteLLM reads a delta that is not a mapping as an empty one, so a null, string or list delta joins nothing
-    #[serde(default, deserialize_with = "delta_or_empty")]
+    #[serde_as(as = "DefaultOnError")]
     pub delta: Option<Delta>,
     pub text: TextField,
 }
@@ -52,17 +47,10 @@ pub struct Choice {
 impl Choice {
     #[must_use]
     pub fn text_value(&self) -> Option<&str> {
-        match &self.text {
-            TextField::Present(JsonValue::String(text)) => Some(text),
-            TextField::Present(
-                JsonValue::Null
-                | JsonValue::Bool(_)
-                | JsonValue::Number(_)
-                | JsonValue::Array(_)
-                | JsonValue::Object(_),
-            )
-            | TextField::Absent => None,
-        }
+        let TextField::Present(value) = &self.text else {
+            return None;
+        };
+        value.as_str()
     }
 }
 
@@ -105,47 +93,13 @@ impl Delta {
     }
 }
 
-// _stream_choice_delta: a mapping is the delta, and an unsupported shape reads as {}.
-fn delta_or_empty<'de, D>(deserializer: D) -> Result<Option<Delta>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<JsonValue>::deserialize(deserializer)?;
-    match value {
-        Some(JsonValue::Object(fields)) => {
-            let mapping = serde_json::to_value(JsonValue::Object(fields))
-                .map_err(serde::de::Error::custom)?;
-            let delta: Delta = serde_json::from_value(mapping).map_err(serde::de::Error::custom)?;
-            Ok(Some(delta))
-        }
-        Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_),
-        )
-        | None => Ok(None),
-    }
-}
-
 impl Choice {
     #[must_use]
     pub fn provider_fields(&self) -> Option<&JsonObject> {
-        match self
-            .delta
-            .as_ref()
-            .and_then(|delta| delta.provider_specific_fields.as_ref())
-        {
-            Some(JsonValue::Object(fields)) => Some(fields),
-            Some(
-                JsonValue::Null
-                | JsonValue::Bool(_)
-                | JsonValue::Number(_)
-                | JsonValue::String(_)
-                | JsonValue::Array(_),
-            )
-            | None => None,
-        }
+        let delta = self.delta.as_ref()?;
+        let JsonValue::Object(fields) = delta.provider_specific_fields.as_ref()? else {
+            return None;
+        };
+        Some(fields)
     }
 }

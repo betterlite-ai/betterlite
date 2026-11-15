@@ -89,7 +89,7 @@ pub(super) async fn stamping_error() {
     let mut harness = Harness::new(Some(cost_stream(None)));
     harness.logging = Some(&logging);
     let (result, logs) = harness.run().await;
-    assert!(matches!(failed(result), AssemblyError::Cost(_)));
+    assert!(matches!(failed(result), AssemblyError::Cost { .. }));
     assert!(logs[0].ends_with(
         "Exception occurred - the cost calculation failed: fixture logging cost failure"
     ));

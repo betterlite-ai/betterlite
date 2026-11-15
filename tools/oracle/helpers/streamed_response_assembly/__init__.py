@@ -7,10 +7,9 @@ from litellm.main import stream_chunk_builder
 from litellm.types.utils import ModelResponse, TextCompletionResponse
 from pydantic import JsonValue as Json
 
-from .build import ChunkWire, build_chunk
+from .build import INPUT, ChunkWire, Input, build_chunk
 from .fixture import START_TIME, logging_fixture, prompt_callback
 from .projection import response_view
-from .specs import INPUT, Input
 
 # LiteLLM's annotation says list, but its runtime raises the None-chunks APIError, so null passes.
 BUILD: Final[Callable[..., ModelResponse | TextCompletionResponse | None]] = stream_chunk_builder

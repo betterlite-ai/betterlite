@@ -1,7 +1,6 @@
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::stream_base_assembly::records::Chunk as BaseChunk;
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue};
 use crate::stream_content_assembly::wire::Chunk as ContentWireChunk;
 use crate::stream_tool_assembly::records::Chunk as ToolWireChunk;
@@ -10,12 +9,14 @@ use crate::stream_usage_assembly::wire::Chunk as UsageWireChunk;
 use super::records::{Choice, Chunk};
 
 // The shared typed records are the input to B2232/B2233/B2234/B2235, which each read their own fields.
-pub(crate) fn project<T, S>(source: &S) -> Result<T, serde_json::Error>
+fn project_chunks<T, P>(projections: impl Iterator<Item = P>) -> Result<Vec<T>, serde_json::Error>
 where
     T: DeserializeOwned,
-    S: Serialize + ?Sized,
+    P: Serialize,
 {
-    serde_json::from_value(serde_json::to_value(source)?)
+    projections
+        .map(|projection| serde_json::to_value(projection).and_then(serde_json::from_value))
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -60,64 +61,49 @@ struct UsageChoice<'chunk> {
 pub(crate) fn content_chunks(
     chunks: &[&Chunk],
 ) -> Result<Vec<ContentWireChunk>, serde_json::Error> {
-    chunks
-        .iter()
-        .map(|chunk| {
-            project(&ContentProjection {
-                choices: chunk.choices.iter().collect(),
-            })
-        })
-        .collect()
+    project_chunks(chunks.iter().map(|chunk| ContentProjection {
+        choices: chunk.choices.iter().collect(),
+    }))
 }
 
 pub(crate) fn tool_chunks(chunks: &[&Chunk]) -> Result<Vec<ToolWireChunk>, serde_json::Error> {
-    chunks
-        .iter()
-        .map(|chunk| {
-            project(&ToolProjection {
-                choices: chunk
-                    .choices
-                    .iter()
-                    .map(|choice| ToolChoice {
-                        index: choice.index,
-                        delta: ToolDelta {
-                            tool_calls: choice
-                                .delta
-                                .as_ref()
-                                .and_then(|delta| delta.tool_calls.as_ref()),
-                            function_call: choice
-                                .delta
-                                .as_ref()
-                                .and_then(|delta| delta.function_call.as_ref()),
-                        },
-                    })
-                    .collect(),
-            })
-        })
-        .collect()
-}
-
-pub(crate) fn base_chunks(chunks: &[Chunk]) -> Result<Vec<BaseChunk>, serde_json::Error> {
-    chunks.iter().map(project).collect()
+    project_chunks(chunks.iter().map(|chunk| {
+        ToolProjection {
+            choices: chunk
+                .choices
+                .iter()
+                .map(|choice| ToolChoice {
+                    index: choice.index,
+                    delta: ToolDelta {
+                        tool_calls: choice
+                            .delta
+                            .as_ref()
+                            .and_then(|delta| delta.tool_calls.as_ref()),
+                        function_call: choice
+                            .delta
+                            .as_ref()
+                            .and_then(|delta| delta.function_call.as_ref()),
+                    },
+                })
+                .collect(),
+        }
+    }))
 }
 
 pub(crate) fn usage_chunks(chunks: &[Chunk]) -> Result<Vec<UsageWireChunk>, serde_json::Error> {
-    chunks
-        .iter()
-        .map(|chunk| {
-            project(&UsageProjection {
-                usage: chunk.usage.as_ref().map(sanitized_usage),
-                hidden_params: chunk.hidden_object(),
-                choices: chunk
-                    .choices
-                    .iter()
-                    .map(|choice| UsageChoice {
-                        finish_reason: choice.finish_reason.as_deref(),
-                    })
-                    .collect(),
-            })
-        })
-        .collect()
+    project_chunks(chunks.iter().map(|chunk| {
+        UsageProjection {
+            usage: chunk.usage.as_ref().map(sanitized_usage),
+            hidden_params: chunk.hidden_object(),
+            choices: chunk
+                .choices
+                .iter()
+                .map(|choice| UsageChoice {
+                    finish_reason: choice.finish_reason.as_deref(),
+                })
+                .collect(),
+        }
+    }))
 }
 
 // Python's bool is an int, so a true or false cost is read as 1 or 0 before the Decimal record sees it.

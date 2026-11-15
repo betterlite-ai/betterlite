@@ -1,9 +1,8 @@
 from typing import Final, TypedDict
 
 from litellm.types.utils import ModelResponse, TextCompletionResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
-from pydantic import TypeAdapter
 
 TEXT_OBJECT = "text_completion"
 

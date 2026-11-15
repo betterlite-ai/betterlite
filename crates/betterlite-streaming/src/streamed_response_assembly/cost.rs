@@ -45,12 +45,6 @@ pub trait StreamLogging: Send + Sync {
     fn response_cost(&self, input: &CostInput<'_>) -> Result<Option<Decimal>, CostError>;
 }
 
-// A reported cost priced by the logging calculator is only xai's, and only while a logging object exists.
-#[must_use]
-pub fn reported_cost_uses_calculator(logging: Option<&dyn StreamLogging>) -> bool {
-    logging.and_then(|logging| logging.provider()) == Some(XAI_PROVIDER)
-}
-
 // The logging calculator only stamps a positive cost, and an existing reported cost is never recomputed.
 pub fn stamp_usage_cost(
     input: &CostInput<'_>,
@@ -74,7 +68,8 @@ pub fn stream_builder_response_cost(
     costs: &dyn StreamCostCalculator,
 ) -> Result<Option<Decimal>, CostError> {
     if let Some(reported) = input.usage.cost {
-        if reported_cost_uses_calculator(logging) {
+        // xai's reported cost is priced by the logging calculator, and only while a logging object exists.
+        if logging.and_then(|active| active.provider()) == Some(XAI_PROVIDER) {
             return Ok(None);
         }
         return Ok(Some(reported));

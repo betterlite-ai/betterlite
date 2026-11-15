@@ -1,4 +1,3 @@
-use std::str::FromStr as _;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -7,7 +6,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
 use betterlite_streaming::stream_usage_assembly::wire::Usage;
-use betterlite_streaming::streamed_response_assembly::{
+use betterlite_streaming::streamed_response_assembly::cost::{
     CostError, CostInput, StreamCostCalculator, StreamLogging,
 };
 use betterlite_tokenizer::count::error::CountError;
@@ -59,7 +58,7 @@ impl UsageTokenCounter for FixtureCounter {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct CostFixture {
-    pub(crate) completion_cost: Option<String>,
+    pub(crate) completion_cost: Option<Decimal>,
 }
 
 pub(crate) struct FixtureCosts {
@@ -80,11 +79,7 @@ impl StreamCostCalculator for FixtureCosts {
         _input: &CostInput<'_>,
         _provider: Option<&str>,
     ) -> Result<Option<Decimal>, CostError> {
-        self.fixture
-            .completion_cost
-            .as_deref()
-            .map(|text| Decimal::from_str(text).map_err(fixture_decimal))
-            .transpose()
+        Ok(self.fixture.completion_cost)
     }
 
     fn prompt_completion_cost(
@@ -98,18 +93,12 @@ impl StreamCostCalculator for FixtureCosts {
     }
 }
 
-fn fixture_decimal(error: rust_decimal::Error) -> CostError {
-    CostError {
-        message: format!("fixture cost is not a decimal: {error}"),
-    }
-}
-
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct LoggingFixture {
     pub(crate) provider: Option<String>,
     pub(crate) cache_hit: bool,
-    pub(crate) response_cost: Option<String>,
+    pub(crate) response_cost: Option<Decimal>,
 }
 
 pub(crate) struct FixtureLogging {
@@ -134,11 +123,7 @@ impl StreamLogging for FixtureLogging {
         if self.fixture.cache_hit {
             return Ok(Some(Decimal::ZERO));
         }
-        self.fixture
-            .response_cost
-            .as_deref()
-            .map(|text| Decimal::from_str(text).map_err(fixture_decimal))
-            .transpose()
+        Ok(self.fixture.response_cost)
     }
 }
 

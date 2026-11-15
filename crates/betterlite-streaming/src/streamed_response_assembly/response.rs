@@ -27,14 +27,14 @@ pub(crate) struct Extras {
     pub(crate) provider_specific_fields: Option<JsonObject>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum Response {
     Chat(Box<ChatResponse>),
     Text(TextResponse),
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ChatResponse {
     pub id: String,
     pub object: String,
@@ -47,7 +47,7 @@ pub struct ChatResponse {
     pub hidden_params: JsonObject,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ChatChoice {
     pub index: i64,
     pub message: ChatMessage,
@@ -56,7 +56,7 @@ pub struct ChatChoice {
     pub provider_specific_fields: Option<ChoiceProviderFields>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ChatMessage {
     pub content: Option<String>,
     pub role: String,

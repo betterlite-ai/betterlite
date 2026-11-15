@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue};
-use crate::stream_tool_assembly::records::{FunctionOutput, ToolOutput};
+use crate::stream_tool_assembly::records::{
+    FunctionOutput, JsonValue as ToolJsonValue, ToolOutput,
+};
 
 use super::records::Choice;
 
@@ -16,7 +18,7 @@ struct FunctionJson<'call> {
 #[derive(Serialize)]
 struct ProviderToolJson<'call> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    provider_specific_fields: Option<&'call JsonObject>,
+    provider_specific_fields: Option<&'call BTreeMap<String, ToolJsonValue>>,
     function: FunctionJson<'call>,
     id: &'call str,
     r#type: &'call str,

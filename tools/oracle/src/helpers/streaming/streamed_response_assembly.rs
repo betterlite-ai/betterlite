@@ -1,9 +1,11 @@
 use betterlite_error::error::ErrorClass;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue};
 use betterlite_streaming::stream_usage_assembly::wire::Usage;
-use betterlite_streaming::streamed_response_assembly::response::{ChatChoice, TextUsage};
+use betterlite_streaming::streamed_response_assembly::cost::StreamLogging;
+use betterlite_streaming::streamed_response_assembly::records::Chunk;
+use betterlite_streaming::streamed_response_assembly::response::{ChatChoice, Response, TextUsage};
 use betterlite_streaming::streamed_response_assembly::{
-    AssemblyError, Chunk, Request, Response, StreamLogging, stream_chunk_builder,
+    AssemblyError, Request, stream_chunk_builder,
 };
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
@@ -207,7 +209,7 @@ fn usage_view(usage: &Usage) -> Value {
         "prompt_tokens": usage.prompt_tokens,
         "completion_tokens": usage.completion_tokens,
         "total_tokens": usage.total_tokens,
-        "cost": usage.cost.map(money),
+        "cost": usage.cost.map(|cost| format!("{cost:.12}")),
     })
 }
 
@@ -239,11 +241,6 @@ fn text_usage_view(usage: &TextUsage) -> Value {
         "completion_tokens": usage.completion_tokens,
         "total_tokens": usage.total_tokens,
     })
-}
-
-// The Python side formats the same float with .12f, so both sides print the money fields this way.
-fn money(cost: rust_decimal::Decimal) -> String {
-    format!("{cost:.12}")
 }
 
 fn prune(value: Value) -> Value {

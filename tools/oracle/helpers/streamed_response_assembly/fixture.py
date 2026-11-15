@@ -4,7 +4,7 @@ from typing import Final, Literal
 from litellm.litellm_core_utils.litellm_logging import Logging
 from pydantic import JsonValue as Json
 
-from .specs import LoggingInput
+from .build import LoggingInput
 
 LOG_MODEL: Final = "gpt-4o"
 START_TIME: Final = datetime(2024, 1, 1, tzinfo=UTC)

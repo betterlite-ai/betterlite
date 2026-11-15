@@ -4,9 +4,10 @@ use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use rstest::rstest;
 
+use super::cost::StreamLogging;
 use super::records::Chunk;
 use super::response::{ChatResponse, Response, TextResponse};
-use super::{AssemblyError, MetadataServices, Request, StreamLogging, stream_chunk_builder};
+use super::{AssemblyError, MetadataServices, Request, stream_chunk_builder};
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue};
 
 mod boundary;
@@ -34,7 +35,7 @@ struct Harness<'fixture> {
     now: i64,
 }
 
-impl<'fixture> Harness<'fixture> {
+impl Harness<'_> {
     fn new(chunks: Option<Vec<Chunk>>) -> Self {
         Self {
             chunks,

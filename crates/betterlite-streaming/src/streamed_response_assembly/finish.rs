@@ -1,6 +1,5 @@
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 
-use crate::stream_base_assembly::StreamedChunks;
 use crate::stream_base_assembly::provider_metadata::{
     ProviderMetadataContext, apply_provider_metadata,
 };
@@ -12,7 +11,7 @@ use crate::stream_usage_assembly::{UsageRequest, calculate_usage, count_reasonin
 use super::cost::{self, CostInput, RESPONSE_COST_KEY};
 use super::records::Chunk;
 use super::response::{ChatChoice, ChatMessage, ChatResponse, Draft};
-use super::{AssemblyError, Request, content, project};
+use super::{AssemblyError, Request, Streamed, content, project};
 
 #[derive(Clone, Copy)]
 pub(crate) enum ReasoningMode {
@@ -22,7 +21,7 @@ pub(crate) enum ReasoningMode {
 
 pub(crate) async fn finish_chat<L, C>(
     request: &Request<'_>,
-    streamed: &StreamedChunks,
+    streamed: &Streamed,
     mut draft: Draft,
     mode: ReasoningMode,
     hooks: &VerboseHooks<L, C>,
@@ -34,14 +33,14 @@ where
     let mut usage = estimate_usage(request, streamed, &draft, mode, hooks).await?;
     propagate_hidden_fields(&mut draft.base.hidden_params, &streamed.chunks)?;
     apply_costs(request, &mut draft.base, &mut usage)?;
-    apply_metadata(request, streamed, &mut draft.base)?;
+    apply_metadata(request, streamed, &mut draft.base);
     build_response(draft, usage)
 }
 
 // LiteLLM hands the first sorted chunk's model to the counters, not the base model a later chunk may replace.
 async fn estimate_usage<L, C>(
     request: &Request<'_>,
-    streamed: &StreamedChunks,
+    streamed: &Streamed,
     draft: &Draft,
     mode: ReasoningMode,
     hooks: &VerboseHooks<L, C>,
@@ -110,24 +109,17 @@ fn apply_costs(
     Ok(())
 }
 
-fn apply_metadata(
-    request: &Request<'_>,
-    streamed: &StreamedChunks,
-    base: &mut BaseResponse,
-) -> Result<(), AssemblyError> {
-    let Some(services) = request.metadata else {
-        return Ok(());
-    };
-    let context = ProviderMetadataContext {
-        custom_llm_provider: request.logging.and_then(|logging| logging.provider()),
-        redactor: services.redactor,
-        resolver: services.resolver,
-        selector: services.selector,
-        projection: services.projection,
-    };
-    let chunks = project::base_chunks(&streamed.chunks)?;
-    apply_provider_metadata(base, &chunks, &context);
-    Ok(())
+fn apply_metadata(request: &Request<'_>, streamed: &Streamed, base: &mut BaseResponse) {
+    if let Some(services) = request.metadata {
+        let context = ProviderMetadataContext {
+            custom_llm_provider: request.logging.and_then(|logging| logging.provider()),
+            redactor: services.redactor,
+            resolver: services.resolver,
+            selector: services.selector,
+            projection: services.projection,
+        };
+        apply_provider_metadata(base, &streamed.base.chunks, &context);
+    }
 }
 
 async fn reasoning_tokens(

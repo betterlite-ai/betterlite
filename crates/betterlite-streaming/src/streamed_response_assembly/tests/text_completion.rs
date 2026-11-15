@@ -9,18 +9,19 @@ pub(super) async fn text_completion_assembly() {
     text_completion_failure().await;
     text_total_overflow().await;
     text_branch_selection().await;
+    text_branch_mixed().await;
 }
 
 pub(super) async fn text_completion_join() {
     let logprobs = value(
-        r#"{"tokens": ["Hel"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}"#,
+        r#"{"tokens": ["Hey"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}"#,
     );
     let stream = chunks(
         r#"[{"id": "chatcmpl-text", "object": "text_completion", "created": 1700000000, "model": "gpt-4o",
-         "system_fingerprint": "fp_1", "choices": [{"index": 0, "text": "Hel"}]},
-        {"created": 1700000500, "choices": [{"index": 0, "text": "lo", "finish_reason": "length"}, {"index": 1, "text": "!"}]},
+         "system_fingerprint": "fp_1", "choices": [{"index": 0, "text": "Hey"}]},
+        {"created": 1700000500, "choices": [{"index": 0, "text": " you", "finish_reason": "length"}, {"index": 1, "text": "!"}]},
         {"created": 1700000999, "choices": [{"index": 0, "text": null, "finish_reason": "stop",
-         "logprobs": {"tokens": ["Hel"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}}]}]"#,
+         "logprobs": {"tokens": ["Hey"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}}]}]"#,
     );
     let mut harness = Harness::new(Some(stream));
     harness.messages = true;
@@ -36,7 +37,7 @@ pub(super) async fn text_completion_join() {
     assert_eq!(response.model.as_deref(), Some("gpt-4o"));
     assert_eq!(response.system_fingerprint.as_deref(), Some("fp_1"));
     assert_eq!(response.choices.len(), 1);
-    assert_eq!(response.choices[0].text, "Hello!");
+    assert_eq!(response.choices[0].text, "Hey you!");
     assert_eq!(response.choices[0].index, 0);
     assert_eq!(response.choices[0].finish_reason.as_deref(), Some("stop"));
     assert_eq!(response.choices[0].logprobs, Some(logprobs));
@@ -120,6 +121,9 @@ pub(super) async fn text_branch_selection() {
     assert_eq!(response.id, "chatcmpl-lead");
     assert_eq!(response.object, "text_completion");
     assert_eq!(response.choices[0].text, "AB");
+}
+
+pub(super) async fn text_branch_mixed() {
     let mixed = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",

@@ -20,9 +20,10 @@ use crate::stream_base_assembly::response::BaseResponse;
 use crate::stream_chunk_shaping::records::JsonValue;
 use crate::stream_usage_assembly::UsageTokenCounter;
 use crate::stream_usage_assembly::wire::Usage;
-use crate::streamed_response_assembly::{
-    Chunk, CostError, CostInput, StreamCostCalculator, StreamLogging,
+use crate::streamed_response_assembly::cost::{
+    CostError, CostInput, StreamCostCalculator, StreamLogging,
 };
+use crate::streamed_response_assembly::records::Chunk;
 
 #[derive(Default)]
 pub(super) struct RecordingLogger {
@@ -199,24 +200,36 @@ impl FixtureCosts {
     }
 }
 
+// Both price fixtures count the call, then fail or answer with the fixed price.
+fn priced(
+    calls: &Mutex<usize>,
+    fail: bool,
+    message: &str,
+    price: Option<Decimal>,
+) -> Result<Option<Decimal>, CostError> {
+    *calls.lock().expect("fixture cost calls") += 1;
+    if fail {
+        return Err(CostError {
+            message: message.to_owned(),
+        });
+    }
+    Ok(price)
+}
+
 impl StreamCostCalculator for FixtureCosts {
     fn completion_cost(
         &self,
         _input: &CostInput<'_>,
         provider: Option<&str>,
     ) -> Result<Option<Decimal>, CostError> {
-        *self
-            .completion_calls
-            .lock()
-            .expect("fixture completion cost calls") += 1;
         *self.seen_provider.lock().expect("fixture cost provider") =
             Some(provider.map(str::to_owned));
-        if self.completion_error {
-            return Err(CostError {
-                message: "fixture completion cost failure".to_owned(),
-            });
-        }
-        Ok(self.completion)
+        priced(
+            &self.completion_calls,
+            self.completion_error,
+            "fixture completion cost failure",
+            self.completion,
+        )
     }
 
     fn prompt_completion_cost(
@@ -256,13 +269,12 @@ impl StreamLogging for FixtureLogging {
     }
 
     fn response_cost(&self, _input: &CostInput<'_>) -> Result<Option<Decimal>, CostError> {
-        *self.calls.lock().expect("fixture logging cost calls") += 1;
-        if self.fail {
-            return Err(CostError {
-                message: "fixture logging cost failure".to_owned(),
-            });
-        }
-        Ok(self.cost)
+        priced(
+            &self.calls,
+            self.fail,
+            "fixture logging cost failure",
+            self.cost,
+        )
     }
 }
 

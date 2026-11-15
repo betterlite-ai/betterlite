@@ -11,29 +11,28 @@ use crate::stream_base_assembly::StreamedChunks;
 use crate::stream_base_assembly::provider_metadata::{
     ChatConfigSelection, ProviderMetadataProjection, ProviderResolution,
 };
+use crate::stream_base_assembly::records::Chunk as BaseChunk;
 use crate::stream_base_assembly::response::build_base_response;
 use crate::stream_content_assembly::AssemblyError as ContentAssemblyError;
 use crate::stream_tool_assembly::AssemblyError as ToolAssemblyError;
 use crate::stream_usage_assembly::{UsageAssemblyError, UsageTokenCounter};
 
+pub mod cost;
 pub mod records;
 pub mod response;
 
 mod complex;
 mod content;
-mod cost;
 mod finish;
 mod project;
 mod simple;
 mod tests;
 mod text;
 
-pub use cost::{CostError, CostInput, StreamCostCalculator, StreamLogging};
-pub use records::Chunk;
-pub use response::{ChatResponse, Response, TextResponse};
-
+use cost::{CostError, StreamCostCalculator, StreamLogging};
 use finish::ReasoningMode;
-use response::{Draft, Extras};
+use records::Chunk;
+use response::{ChatResponse, Draft, Extras, Response};
 
 const SOURCE_MESSAGE: &str = "Error building chunks for logging/streaming usage calculation";
 const ERROR_STATUS: u16 = 500;
@@ -119,6 +118,11 @@ pub struct Request<'request> {
     pub now: i64,
 }
 
+pub(crate) struct Streamed {
+    pub(crate) base: StreamedChunks,
+    pub(crate) chunks: Vec<Chunk>,
+}
+
 pub async fn stream_chunk_builder<L, C>(
     request: &Request<'_>,
     hooks: &VerboseHooks<L, C>,
@@ -156,7 +160,7 @@ where
     if chunks.is_empty() {
         return Ok(None);
     }
-    let streamed = StreamedChunks::new(chunks.to_vec())?;
+    let streamed = sort_chunks(chunks)?;
     let first_choice = streamed
         .chunks
         .iter()
@@ -170,16 +174,37 @@ where
     Ok(Some(Response::Chat(Box::new(chat))))
 }
 
+// B2232 sorts and reads its own chunk records, so the assembler's richer chunks follow the order it chose.
+fn sort_chunks(chunks: &[Chunk]) -> Result<Streamed, AssemblyError> {
+    let base_chunks = chunks
+        .iter()
+        .map(|chunk| serde_json::to_value(chunk).and_then(serde_json::from_value))
+        .collect::<Result<Vec<BaseChunk>, _>>()?;
+    let mut positioned = base_chunks.clone();
+    for (position, chunk) in positioned.iter_mut().enumerate() {
+        chunk.created = i64::try_from(position).ok();
+    }
+    let sorted: Vec<Chunk> = StreamedChunks::new(positioned)?
+        .chunks
+        .iter()
+        .filter_map(|chunk| chunks.get(usize::try_from(chunk.created?).ok()?).cloned())
+        .collect();
+    Ok(Streamed {
+        base: StreamedChunks::new(base_chunks)?,
+        chunks: sorted,
+    })
+}
+
 async fn assemble_chat<L, C>(
     request: &Request<'_>,
-    streamed: &StreamedChunks,
+    streamed: &Streamed,
     hooks: &VerboseHooks<L, C>,
 ) -> Result<ChatResponse, AssemblyError>
 where
     L: LoggerSink + Sync,
     C: ConsoleSink + Sync,
 {
-    let mut base = build_base_response(streamed)?;
+    let mut base = build_base_response(&streamed.base)?;
     let simple = simple::apply(&mut base, &streamed.chunks);
     let mut draft = Draft {
         base,

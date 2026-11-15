@@ -1,11 +1,10 @@
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue};
-use crate::stream_content_assembly::wire::{AudioResponse, ThinkingBlock};
 use crate::stream_content_assembly::{
     ContentField, get_combined_audio_content, get_combined_content, get_combined_thinking_content,
 };
 use crate::stream_tool_assembly::assemble;
 use crate::stream_tool_assembly::records::{
-    AssemblyInput, AssemblyOutput, FunctionInput, FunctionOutput, ToolInput, ToolOutput,
+    AssemblyInput, AssemblyOutput, FunctionInput, ToolInput,
 };
 
 use super::content::combined_provider_fields;
@@ -15,40 +14,79 @@ use super::{AssemblyError, project};
 
 // The non-simple path: each field joins its own selected chunks, and later content overwrites a cleared text.
 pub(crate) fn apply(draft: &mut Draft, chunks: &[Chunk], now: i64) -> Result<(), AssemblyError> {
-    if let Some(calls) = joined_tool_calls(chunks)? {
-        clear_content(draft);
-        draft.extras.tool_calls = Some(calls);
-    }
-    if let Some(call) = joined_function_call(chunks)? {
-        clear_content(draft);
-        draft.extras.function_call = Some(call);
-    }
-    if let Some(content) = joined_content(chunks, ContentField::Content)? {
-        set_content(draft, content);
-    }
-    draft.extras.thinking_blocks = joined_thinking(chunks)?;
-    if let Some(reasoning) = joined_content(chunks, ContentField::Reasoning)? {
-        draft.extras.reasoning_content = Some(reasoning);
-    }
-    draft.extras.annotations = joined_lists(chunks, ListField::Annotations);
-    if let Some(audio) = joined_audio(chunks, now)? {
-        draft.extras.audio = Some(audio);
-    }
-    draft.extras.images = joined_lists(chunks, ListField::Images);
+    apply_calls(draft, chunks)?;
+    apply_content(draft, chunks, now)?;
+    draft.extras.annotations = joined_lists(chunks, |delta| delta.annotations.as_deref());
+    draft.extras.images = joined_lists(chunks, |delta| delta.images.as_deref());
     draft.extras.provider_specific_fields = joined_provider_fields(chunks);
     Ok(())
 }
 
-// LiteLLM assigns through Choices, which owns the one message of the base choice.
-fn clear_content(draft: &mut Draft) {
-    if let Some(choice) = draft.base.choices.first_mut() {
-        choice.message.content = None;
+fn apply_calls(draft: &mut Draft, chunks: &[Chunk]) -> Result<(), AssemblyError> {
+    let tool_chunks: Vec<&Chunk> = chunks
+        .iter()
+        .filter(|chunk| has_tool_calls(chunk))
+        .collect();
+    if !tool_chunks.is_empty() {
+        let input = AssemblyInput::Tool {
+            tool: ToolInput {
+                chunks: project::tool_chunks(&tool_chunks)?,
+            },
+        };
+        let AssemblyOutput::Tools(calls) = assemble(&input)? else {
+            return Err(AssemblyError::WrongToolOutput);
+        };
+        set_content(draft, None);
+        draft.extras.tool_calls = Some(calls);
     }
+    let function_chunks = select(chunks, |delta| delta.function_call.is_some());
+    if !function_chunks.is_empty() {
+        let input = AssemblyInput::Function {
+            function: FunctionInput {
+                chunks: project::tool_chunks(&function_chunks)?,
+            },
+        };
+        let AssemblyOutput::Function(call) = assemble(&input)? else {
+            return Err(AssemblyError::WrongFunctionOutput);
+        };
+        set_content(draft, None);
+        draft.extras.function_call = Some(call);
+    }
+    Ok(())
 }
 
-fn set_content(draft: &mut Draft, content: String) {
+fn apply_content(draft: &mut Draft, chunks: &[Chunk], now: i64) -> Result<(), AssemblyError> {
+    let content = select(chunks, |delta| delta.content.is_some());
+    if !content.is_empty() {
+        let joined =
+            get_combined_content(&project::content_chunks(&content)?, ContentField::Content)?;
+        set_content(draft, Some(joined));
+    }
+    let thinking = select(chunks, |delta| delta.thinking_blocks.is_some());
+    if !thinking.is_empty() {
+        draft.extras.thinking_blocks =
+            get_combined_thinking_content(&project::content_chunks(&thinking)?)?;
+    }
+    let reasoning = select(chunks, |delta| delta.reasoning_content.is_some());
+    if !reasoning.is_empty() {
+        let joined = get_combined_content(
+            &project::content_chunks(&reasoning)?,
+            ContentField::Reasoning,
+        )?;
+        draft.extras.reasoning_content = Some(joined);
+    }
+    let audio = select(chunks, |delta| delta.audio.is_some());
+    if !audio.is_empty() {
+        let joined = get_combined_audio_content(&project::content_chunks(&audio)?, now)?;
+        draft.extras.audio = Some(joined);
+    }
+    Ok(())
+}
+
+// LiteLLM assigns through Choices, which owns the one message of the base choice.
+fn set_content(draft: &mut Draft, content: Option<String>) {
     if let Some(choice) = draft.base.choices.first_mut() {
-        choice.message.content = Some(content);
+        choice.message.content = content;
     }
 }
 
@@ -69,115 +107,29 @@ fn has_tool_calls(chunk: &Chunk) -> bool {
     })
 }
 
-fn joined_tool_calls(chunks: &[Chunk]) -> Result<Option<Vec<ToolOutput>>, AssemblyError> {
-    let selected: Vec<&Chunk> = chunks
+// The chunks whose first choice carries the field, in stream order.
+fn select(chunks: &[Chunk], keep: impl Fn(&Delta) -> bool) -> Vec<&Chunk> {
+    chunks
         .iter()
-        .filter(|chunk| has_tool_calls(chunk))
-        .collect();
-    if selected.is_empty() {
-        return Ok(None);
-    }
-    let projected = project::tool_chunks(&selected)?;
-    let output = assemble(&AssemblyInput::Tool {
-        tool: ToolInput { chunks: projected },
-    })?;
-    let AssemblyOutput::Tools(calls) = output else {
-        return Err(AssemblyError::WrongToolOutput);
-    };
-    Ok(Some(calls))
-}
-
-fn joined_function_call(chunks: &[Chunk]) -> Result<Option<FunctionOutput>, AssemblyError> {
-    let selected: Vec<&Chunk> = chunks
-        .iter()
-        .filter(|chunk| first_delta(chunk).is_some_and(|delta| delta.function_call.is_some()))
-        .collect();
-    if selected.is_empty() {
-        return Ok(None);
-    }
-    let projected = project::tool_chunks(&selected)?;
-    let output = assemble(&AssemblyInput::Function {
-        function: FunctionInput { chunks: projected },
-    })?;
-    let AssemblyOutput::Function(call) = output else {
-        return Err(AssemblyError::WrongFunctionOutput);
-    };
-    Ok(Some(call))
-}
-
-fn joined_content(chunks: &[Chunk], field: ContentField) -> Result<Option<String>, AssemblyError> {
-    let selected: Vec<&Chunk> = chunks
-        .iter()
-        .filter(|chunk| {
-            first_delta(chunk).is_some_and(|delta| match field {
-                ContentField::Content => delta.content.is_some(),
-                ContentField::Reasoning => delta.reasoning_content.is_some(),
-            })
-        })
-        .collect();
-    if selected.is_empty() {
-        return Ok(None);
-    }
-    let projected = project::content_chunks(&selected)?;
-    Ok(Some(get_combined_content(&projected, field)?))
-}
-
-fn joined_thinking(chunks: &[Chunk]) -> Result<Option<Vec<ThinkingBlock>>, AssemblyError> {
-    let selected: Vec<&Chunk> = chunks
-        .iter()
-        .filter(|chunk| first_delta(chunk).is_some_and(|delta| delta.thinking_blocks.is_some()))
-        .collect();
-    if selected.is_empty() {
-        return Ok(None);
-    }
-    let projected = project::content_chunks(&selected)?;
-    Ok(get_combined_thinking_content(&projected)?)
-}
-
-fn joined_audio(chunks: &[Chunk], now: i64) -> Result<Option<AudioResponse>, AssemblyError> {
-    let selected: Vec<&Chunk> = chunks
-        .iter()
-        .filter(|chunk| first_delta(chunk).is_some_and(|delta| delta.audio.is_some()))
-        .collect();
-    if selected.is_empty() {
-        return Ok(None);
-    }
-    let projected = project::content_chunks(&selected)?;
-    Ok(Some(get_combined_audio_content(&projected, now)?))
-}
-
-#[derive(Clone, Copy)]
-enum ListField {
-    Annotations,
-    Images,
+        .filter(|chunk| first_delta(chunk).is_some_and(&keep))
+        .collect()
 }
 
 // Every selected first-choice list is concatenated in stream order, and an empty join still assigns.
-fn joined_lists(chunks: &[Chunk], field: ListField) -> Option<Vec<JsonValue>> {
-    let mut joined = Vec::new();
-    let mut selected = false;
-    for chunk in chunks {
-        let Some(delta) = first_delta(chunk) else {
-            continue;
-        };
-        let items = match field {
-            ListField::Annotations => delta.annotations.as_ref(),
-            ListField::Images => delta.images.as_ref(),
-        };
-        if let Some(list) = items {
-            selected = true;
-            joined.extend(list.iter().cloned());
-        }
-    }
-    selected.then_some(joined)
+fn joined_lists(
+    chunks: &[Chunk],
+    field: impl Fn(&Delta) -> Option<&[JsonValue]>,
+) -> Option<Vec<JsonValue>> {
+    let lists: Vec<&[JsonValue]> = chunks
+        .iter()
+        .filter_map(|chunk| first_delta(chunk).and_then(&field))
+        .collect();
+    (!lists.is_empty()).then(|| lists.concat())
 }
 
 fn joined_provider_fields(chunks: &[Chunk]) -> Option<JsonObject> {
-    let selected: Vec<&Choice> = chunks
-        .iter()
-        .filter(|chunk| {
-            first_delta(chunk).is_some_and(|delta| delta.provider_specific_fields.is_some())
-        })
+    let selected: Vec<&Choice> = select(chunks, |delta| delta.provider_specific_fields.is_some())
+        .into_iter()
         .filter_map(|chunk| chunk.choices.first())
         .collect();
     combined_provider_fields(&selected)
