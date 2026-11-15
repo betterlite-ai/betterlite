@@ -6,6 +6,7 @@ use betterlite_prompts::system_placement::text_parts::CONVERTED_SYSTEM_NOTE;
 use crate::anthropic_capability_catalog::thinking::DROP_DISABLED_THINKING_WARNING;
 use crate::capabilities::speed::DROP_UNSUPPORTED_SPEED_WARNING;
 use crate::params::output_config::DROP_OUTPUT_CONFIG_WARNING;
+use crate::request::BillingHeader;
 use crate::request::system::translate_system_message;
 
 use super::fixture::{InliningFetcher, Outcome, Scenario, expect_absent, expect_field};
@@ -310,6 +311,8 @@ fn case_4_billing_metadata_policy() {
     expect_field(&stripped, "system", STRIPPED_SYSTEM);
     let kept = Scenario::new("plain-model", BILLING_HISTORY).run().ok();
     expect_field(&kept, "system", KEPT_SYSTEM);
+    assert_eq!(BillingHeader::from(true), BillingHeader::Strip);
+    assert_eq!(BillingHeader::from(false), BillingHeader::Keep);
 }
 
 const BILLING_HISTORY: &str = r#"[{"role":"system","content":"x-anthropic-billing-header: abc"},{"role":"system","content":"kept"},{"role":"system","content":[{"type":"text","text":"x-anthropic-billing-header: x"},{"type":"text","text":" x-anthropic-billing-header: y"},{"type":"text","text":"X-anthropic-billing-header: z"},{"type":"text","text":"KEEP"}]},{"role":"user","content":"hi"}]"#;
