@@ -157,7 +157,6 @@ impl Recorder {
     }
 
     fn take<Body>(
-        &self,
         requests: &Mutex<Vec<Recorded>>,
         replies: &Mutex<VecDeque<Body>>,
         request: &PostRequest<'_>,
@@ -185,12 +184,12 @@ fn recorded(request: &PostRequest<'_>) -> Recorded {
 
 impl GeminiPost for Recorder {
     fn post<'request>(&'request self, request: PostRequest<'request>) -> PostFuture<'request> {
-        let reply = self.take(&self.posts, &self.post_replies, &request);
+        let reply = Self::take(&self.posts, &self.post_replies, &request);
         Box::pin(async move { complete(reply) })
     }
 
     fn open<'request>(&'request self, request: PostRequest<'request>) -> OpenFuture<'request> {
-        let reply = self.take(&self.opens, &self.open_replies, &request);
+        let reply = Self::take(&self.opens, &self.open_replies, &request);
         Box::pin(async move { open(reply) })
     }
 }

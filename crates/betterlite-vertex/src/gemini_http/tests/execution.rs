@@ -398,10 +398,10 @@ async fn execution_a_wrong_psc_flag_fails_before_any_request() {
         Box::new(fixed_id),
     )
     .await;
-    let Err(error) = stream else {
+    let Err(stream_error) = stream else {
         panic!("a wrong psc flag fails before the stream is built");
     };
-    assert!(matches!(error, GeminiHttpError::Flag { .. }));
+    assert!(matches!(stream_error, GeminiHttpError::Flag { .. }));
     assert!(recorder.posts().is_empty());
     assert!(recorder.opens().is_empty());
 }

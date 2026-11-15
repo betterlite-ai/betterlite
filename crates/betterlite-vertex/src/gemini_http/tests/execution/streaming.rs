@@ -312,10 +312,10 @@ async fn execution_streaming_transport_failure_ends_the_stream() {
     .await
     .unwrap();
     let error = stream.next_chunk().await.unwrap().unwrap_err();
-    let GeminiStreamError::Http(error) = error else {
+    let GeminiStreamError::Http(http) = error else {
         panic!("a transport failure is an HTTP error");
     };
-    assert!(matches!(error, GeminiHttpError::Transport { .. }));
+    assert!(matches!(http, GeminiHttpError::Transport { .. }));
     assert!(stream.next_chunk().await.is_none());
 }
 
@@ -337,10 +337,10 @@ async fn execution_streaming_open_timeout_is_408() {
     .await
     .unwrap();
     let error = stream.next_chunk().await.unwrap().unwrap_err();
-    let GeminiStreamError::Http(error) = error else {
+    let GeminiStreamError::Http(http) = error else {
         panic!("an open timeout is an HTTP error");
     };
-    let provider = error.provider().expect("a timeout is a provider error");
+    let provider = http.provider().expect("a timeout is a provider error");
     assert_eq!(provider.status_code, 408);
     assert_eq!(provider.message, "Timeout error occurred.");
 }
@@ -522,7 +522,7 @@ async fn execution_streaming_keeps_an_error_body_at_the_limit() {
     assert_eq!(provider.message.len(), MAX_RESPONSE_BYTES);
 }
 
-fn stream_call<'call>(url: &'call str) -> StreamCall<'call> {
+fn stream_call(url: &str) -> StreamCall<'_> {
     StreamCall {
         url,
         headers: &NO_SECRET_HEADERS,

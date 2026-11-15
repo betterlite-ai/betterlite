@@ -115,11 +115,13 @@ impl Reading {
                 match self.decoder.push(line.as_bytes()) {
                     Ok(None) => continue,
                     Ok(Some(chunk)) => return Some(Ok(chunk)),
-                    Err(source) => return self.stop(GeminiStreamError::Chunk(source)),
+                    Err(source) => {
+                        return Some(self.stop(GeminiStreamError::Chunk(source)));
+                    }
                 }
             }
             if let Some(error) = self.error.take() {
-                return self.stop(error);
+                return Some(self.stop(error));
             }
             if self.ended {
                 return self.finish();
@@ -133,12 +135,9 @@ impl Reading {
     }
 
     // a failure ends the stream once the caller has seen it
-    const fn stop(
-        &mut self,
-        error: GeminiStreamError,
-    ) -> Option<Result<StreamChunk, GeminiStreamError>> {
+    const fn stop(&mut self, error: GeminiStreamError) -> Result<StreamChunk, GeminiStreamError> {
         self.done = true;
-        Some(Err(error))
+        Err(error)
     }
 
     // the decoder's last chunk comes out once the body ended, and the stream stays finished after it
