@@ -53,21 +53,6 @@ class VariationHandler(Protocol):
     def image_variations(self) -> Variation: ...
 
 
-# LiteLLM leaves the handler's params bare, so this typed view is the entry to create_variation
-HANDLER: Final[VariationHandler] = OpenAIImageVariationsHandler()
-
-
-# the class the handler reads its config from, aliased so the protocol member can name it
-ConfigManager: TypeAlias = ProviderConfigManager
-
-
-class ConfigRegistry(Protocol):
-    ProviderConfigManager: type[ConfigManager]
-
-
-REGISTRY: ConfigRegistry = variation_handler
-
-
 class AbsentProviderConfigManager(ProviderConfigManager):
     @staticmethod
     @override
@@ -78,6 +63,9 @@ class AbsentProviderConfigManager(ProviderConfigManager):
         if provider == LlmProviders.OPENAI:
             return None
         return ProviderConfigManager.get_provider_image_variation_config(model, provider)
+
+
+CONFIG_MANAGER: Final = "ProviderConfigManager"
 
 
 class ErrorRecord(BaseModel):
@@ -224,6 +212,29 @@ def diagnostic_of(message: str) -> Json:
     return None
 
 
+# LiteLLM leaves the handler's params bare, so this typed view is the entry to create_variation
+def variation_call(
+    handler: VariationHandler, probe: Probe, supplied: openai.OpenAI | None
+) -> ImageResponse:
+    return handler.image_variations(
+        ImageResponse(created=NOW),
+        text_of(probe.api_key),
+        text_of(probe.api_base),
+        probe.model,
+        file_object(probe),
+        timeout_of(probe),
+        "openai",
+        logging_object(),
+        dict(probe.optional_params),
+        {},
+        None,  # print_verbose stays at its default
+        None,  # logger_fn stays at its default
+        supplied,
+        probe.organization,
+        None,  # headers stay at their default
+    )
+
+
 def request_value(probe: Probe) -> Json:
     model = text_of(probe.model)
     config = variation_config(model)
@@ -235,31 +246,15 @@ def request_value(probe: Probe) -> Json:
     previous_session = litellm.client_session
     if supplied is None:
         litellm.client_session = httpx.Client(transport=transport)
-    previous_config = REGISTRY.ProviderConfigManager
+    # the handler reads its module's globals on every call; mypy forbids assigning an imported class by name
     if probe.missing_config:
-        REGISTRY.ProviderConfigManager = AbsentProviderConfigManager
-    optional_params: dict[str, Json] = dict(probe.optional_params)
-    litellm_params: dict[str, Json] = {}
+        setattr(  # ast-grep-ignore: no-reflection
+            variation_handler, CONFIG_MANAGER, AbsentProviderConfigManager
+        )
     error: Json = None
     result: Json = None
     try:
-        response = HANDLER.image_variations(
-            ImageResponse(created=NOW),
-            text_of(probe.api_key),
-            text_of(probe.api_base),
-            probe.model,
-            file_object(probe),
-            timeout_of(probe),
-            "openai",
-            logging_object(),
-            optional_params,
-            litellm_params,
-            None,  # print_verbose stays at its default
-            None,  # logger_fn stays at its default
-            supplied,
-            probe.organization,
-            None,  # headers stay at their default
-        )
+        response = variation_call(OpenAIImageVariationsHandler(), probe, supplied)
     except PROVIDER_ERROR as failure:
         record = ErrorRecord.model_validate(failure, from_attributes=True)
         failure_view: dict[str, Json] = {
@@ -272,7 +267,9 @@ def request_value(probe: Probe) -> Json:
     else:
         result = DOCUMENT.validate_json(response.model_dump_json())
     finally:
-        REGISTRY.ProviderConfigManager = previous_config
+        setattr(  # ast-grep-ignore: no-reflection
+            variation_handler, CONFIG_MANAGER, ProviderConfigManager
+        )
         litellm.client_session = previous_session
     answer["supplied"] = probe.client is not None
     answer["kind"] = "sync"
