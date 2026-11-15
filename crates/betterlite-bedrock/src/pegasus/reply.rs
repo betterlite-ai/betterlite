@@ -1,6 +1,7 @@
 use betterlite_models::call_helpers::finish_reason::map_finish_reason;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
+use num_traits::cast;
 
 use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput};
 use crate::image_models::params::{Field, Params};
@@ -54,13 +55,11 @@ where
         message.as_deref(),
         finish_reason,
     )?;
-    let prompt_tokens = prompt_tokens(context, counter).await?;
-    let completion_tokens = completion_tokens(context, response, counter).await?;
+    let (prompt_tokens, completion_tokens) = token_count(context, response, counter).await?;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
         .ok_or(PegasusError::TotalOverflow)?;
-    response.created =
-        i64::try_from(context.now).map_err(|_range| PegasusError::CreatedOutOfRange)?;
+    response.created = cast::<f64, i64>(context.now).ok_or(PegasusError::CreatedOutOfRange)?;
     response.model = context.model.to_owned();
     response.usage = PegasusUsage {
         prompt_tokens,
@@ -100,60 +99,61 @@ fn assign_content(
     let Some(choice) = response.choices.first_mut() else {
         return Err(content_error(context, record));
     };
-    let Some(content) = message else {
+    let Some(reply_text) = message else {
         return Err(content_error(context, record));
     };
     if choice.message.tool_calls.is_some() {
         return Err(content_error(context, record));
     }
-    choice.message.content = Some(content.to_owned());
+    choice.message.content = Some(reply_text.to_owned());
     choice.finish_reason = Some(finish_reason.to_owned());
     Ok(())
 }
 
-async fn prompt_tokens<C>(context: &ReplyContext<'_>, counter: &C) -> Result<i64, PegasusError>
-where
-    C: TokenCounter + Sync,
-{
-    let Some(value) = header(context.headers, INPUT_TOKENS).filter(|value| !value.is_empty())
-    else {
-        return counter
-            .count_messages(context.messages)
-            .await
-            .map_err(|source| PegasusError::TokenCount { source });
-    };
-    parse_python_int(value).map_err(|source| PegasusError::TokenCountHeader {
-        name: "x-amzn-bedrock-input-token-count",
-        source,
-    })
-}
-
-async fn completion_tokens<C>(
+async fn token_count<C>(
     context: &ReplyContext<'_>,
     response: &PegasusResponse,
     counter: &C,
-) -> Result<i64, PegasusError>
+) -> Result<(i64, i64), PegasusError>
 where
     C: TokenCounter + Sync,
 {
-    let Some(value) = header(context.headers, OUTPUT_TOKENS).filter(|value| !value.is_empty())
-    else {
-        let text = response
-            .choices
-            .first()
-            .and_then(|choice| choice.message.content.as_deref())
-            .ok_or(PegasusError::TokenCount {
-                source: CountError::MissingInput,
-            })?;
-        return counter
-            .count_text(text)
+    let prompt = match header_count(context, INPUT_TOKENS)? {
+        Some(count) => count,
+        None => counter
+            .count_messages(context.messages)
             .await
-            .map_err(|source| PegasusError::TokenCount { source });
+            .map_err(|source| PegasusError::TokenCount { source })?,
     };
-    parse_python_int(value).map_err(|source| PegasusError::TokenCountHeader {
-        name: "x-amzn-bedrock-output-token-count",
-        source,
-    })
+    let completion = match header_count(context, OUTPUT_TOKENS)? {
+        Some(count) => count,
+        None => {
+            let text = response
+                .choices
+                .first()
+                .and_then(|choice| choice.message.content.as_deref())
+                .ok_or(PegasusError::TokenCount {
+                    source: CountError::MissingInput,
+                })?;
+            counter
+                .count_text(text)
+                .await
+                .map_err(|source| PegasusError::TokenCount { source })?
+        }
+    };
+    Ok((prompt, completion))
+}
+
+fn header_count(
+    context: &ReplyContext<'_>,
+    name: &'static str,
+) -> Result<Option<i64>, PegasusError> {
+    let Some(value) = header(context.headers, name).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    parse_python_int(value)
+        .map(Some)
+        .map_err(|source| PegasusError::TokenCountHeader { name, source })
 }
 
 fn header<'headers>(headers: &'headers [(String, String)], name: &str) -> Option<&'headers str> {

@@ -71,6 +71,28 @@ fn pegasus_media_source() {
         Some(field(r#"{"base64String":"QUJD"}"#))
     );
     assert_eq!(
+        media(r#"{"base64_string":"QUJD"}"#),
+        Some(field(r#"{"base64String":"QUJD"}"#))
+    );
+    assert_eq!(
+        media(r#"{"s3_uri":"s3://b"}"#),
+        Some(field(r#"{"s3Location":{"uri":"s3://b"}}"#))
+    );
+    assert_eq!(
+        media(r#"{"video_s3_uri":"s3://a","video_s3_bucket_owner":"own-a"}"#),
+        Some(field(
+            r#"{"s3Location":{"uri":"s3://a","bucketOwner":"own-a"}}"#
+        ))
+    );
+    assert_eq!(
+        media(r#"{"mediaSource":"literal","video_base64":"QUJD"}"#),
+        Some(field(r#"{"base64String":"QUJD"}"#))
+    );
+    assert_eq!(
+        media(r#"{"mediaSource":"literal","video_s3_uri":"s3://a"}"#),
+        Some(field(r#"{"s3Location":{"uri":"s3://a"}}"#))
+    );
+    assert_eq!(
         media(r#"{"video_base64":"prefix,first,second"}"#),
         Some(field(r#"{"base64String":"first"}"#))
     );
@@ -103,6 +125,7 @@ fn text_video_prompt() {
     );
     assert_eq!(prompt(r#"[{"role":"user"}]"#), "user:");
     assert_eq!(prompt(r#"[{"role":"user","content":null}]"#), "user: None");
+    assert_eq!(prompt(r#"[{"role":null,"content":"x"}]"#), "None: x");
     assert_eq!(prompt("[]"), "");
     assert_eq!(
         prompt(r#"[{"role":"user","content":"  padded  "}]"#),
@@ -186,13 +209,13 @@ fn segments_and_response() {
 
 fn usage_and_finish_reason() {
     let given = messages(r#"[{"role":"user","content":"hi"}]"#);
-    let counter = FixtureCounter::counting(100, 200);
+    let fixture = FixtureCounter::counting(100, 200);
     let mut counted = single_choice();
     block_on(decode_pegasus_reply(
         br#"{"message":"visible"}"#,
         &context(&header_counts("0", "-3"), &given, 1_700_000_000.9),
         &mut counted,
-        &counter,
+        &fixture,
     ))
     .unwrap();
     assert_eq!(counted.usage.prompt_tokens, 0);
@@ -200,7 +223,7 @@ fn usage_and_finish_reason() {
     assert_eq!(counted.usage.total_tokens, -3);
     assert_eq!(counted.created, 1_700_000_000);
     assert_eq!(counted.model, "twelvelabs.pegasus-1-2-v1:0");
-    assert!(counter.calls().is_empty());
+    assert!(fixture.calls().is_empty());
     let fallback = FixtureCounter::counting(11, 7);
     let mut counted_fallback = single_choice();
     block_on(decode_pegasus_reply(
@@ -283,6 +306,15 @@ fn pegasus_options() {
         truthy,
         params(r#"{"inputPrompt":"","responseFormat":{"jsonSchema":{"type":"object"}}}"#)
     );
+    let raw_schema = transform_request(
+        &prompt_messages("[]"),
+        &params(r#"{"responseFormat":{"json_schema":{"schema":{"type":"object"}}}}"#),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_schema,
+        params(r#"{"inputPrompt":"","responseFormat":{"jsonSchema":{"type":"object"}}}"#)
+    );
 }
 
 fn pegasus_reply_errors() {
@@ -324,11 +356,26 @@ fn pegasus_reply_errors() {
         }
         other => panic!("expected a bedrock error, got {other:?}"),
     }
+    assert!(matches!(
+        block_on(decode_pegasus_reply(
+            b"[1,2]",
+            &context(&headers, &given, 10.0),
+            &mut single_choice(),
+            &counter,
+        )),
+        Err(PegasusError::ReplyNotObject)
+    ));
+    assert!(matches!(
+        block_on(decode_pegasus_reply(
+            br#"{"message":"visible","finishReason":[]}"#,
+            &context(&headers, &given, 10.0),
+            &mut single_choice(),
+            &counter,
+        )),
+        Err(PegasusError::FinishReasonNotMappable)
+    ));
     for body in [
-        b"[1,2]".as_slice(),
-        br#"{"message":"visible","finishReason":[]}"#.as_slice(),
         br#"{"message":""}"#.as_slice(),
-        br#"{"message":0,"finishReason":"stop"}"#.as_slice(),
         br#"{"finishReason":"stop"}"#.as_slice(),
     ] {
         let mut response = single_choice();
@@ -339,7 +386,7 @@ fn pegasus_reply_errors() {
             &counter,
         ))
         .unwrap_err();
-        assert!(!matches!(failure, PegasusError::ReplyNotObject) || body == b"[1,2]".as_slice());
+        assert!(matches!(failure, PegasusError::Bedrock { status: 200, .. }));
         assert_eq!(response.choices[0].message.content, None);
     }
     assert!(matches!(
