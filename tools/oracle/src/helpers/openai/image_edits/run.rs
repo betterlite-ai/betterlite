@@ -50,26 +50,26 @@ fn failure(error: &ImageEditError) -> Box<HelperError> {
     })
 }
 
-fn file_of(spec: &Option<FileSpec>) -> Result<Option<ImageEditFile>, Box<HelperError>> {
-    let Some(spec) = spec else {
-        return Ok(None);
-    };
+fn file_of(spec: &FileSpec) -> Result<ImageEditFile, Box<HelperError>> {
     let content = BASE64
         .decode(&spec.content_base64)
         .map_err(|error| invalid(error.to_string()))?;
-    Ok(Some(ImageEditFile {
+    Ok(ImageEditFile {
         content,
         name: spec.name.clone(),
-    }))
+    })
 }
 
 fn image_files(
-    specs: Option<&Vec<Option<FileSpec>>>,
+    specs: Option<&[Option<FileSpec>]>,
 ) -> Result<Option<Vec<Option<ImageEditFile>>>, Box<HelperError>> {
-    let Some(specs) = specs else {
+    let Some(supplied) = specs else {
         return Ok(None);
     };
-    let files = specs.iter().map(file_of).collect::<Result<Vec<_>, _>>()?;
+    let files = supplied
+        .iter()
+        .map(|spec| spec.as_ref().map(file_of).transpose())
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(Some(files))
 }
 
@@ -114,8 +114,8 @@ fn error_value(error: &ImageEditError) -> Value {
 }
 
 fn request_of(probe: &Probe) -> Result<ImageEditRequest, Box<HelperError>> {
-    let image = image_files(probe.image.as_ref())?;
-    let mask = image_files(probe.mask.as_ref())?;
+    let image = image_files(probe.image.as_deref())?;
+    let mask = image_files(probe.mask.as_deref())?;
     Ok(ImageEditRequest {
         model: probe.model.clone(),
         prompt: probe.prompt.clone(),
