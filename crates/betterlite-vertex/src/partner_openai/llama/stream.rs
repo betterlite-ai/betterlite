@@ -59,6 +59,10 @@ fn repair_first_choice(choice: &mut StreamChoice) -> Option<String> {
 }
 
 // An empty-content chunk is dropped downstream unless provider_specific_fields is a map.
+#[expect(
+    clippy::disallowed_types,
+    reason = "provider_specific_fields has to be an empty JSON object, and no typed model represents a provider's passthrough fields"
+)]
 fn ensure_provider_fields(delta: &mut StreamDelta) {
     let present = delta
         .passthrough

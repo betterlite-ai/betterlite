@@ -22,7 +22,7 @@ struct Envelope {
     usage: Option<Object>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LlamaReply {
     pub id: String,
     pub created: i64,

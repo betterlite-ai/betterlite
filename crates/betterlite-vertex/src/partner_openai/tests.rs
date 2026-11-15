@@ -4,10 +4,10 @@ use std::collections::BTreeSet;
 
 use betterlite_openai::base_helpers::provider_config;
 use betterlite_openai::chat_choices::stream::chunk_parser;
-use betterlite_openai::chat_choices::wire::StreamReply;
+use betterlite_openai::chat_choices::wire::{StreamDelta, StreamReply};
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Object};
 use rstest::rstest;
-use serde_json::{from_str, json, to_value};
+use serde_json::from_str;
 use uuid::Uuid;
 
 use super::ai21::Ai21Config;
@@ -41,6 +41,24 @@ fn chunk(source: &str) -> StreamReply {
     chunk_parser(&wire, Uuid::nil, || 7).expect("the fixture parses as a chunk")
 }
 
+// LiteLLM needs an empty map here so the stream wrapper keeps an empty chunk instead of dropping it
+fn provider_fields_are_empty(delta: &StreamDelta) -> bool {
+    delta
+        .passthrough
+        .get("provider_specific_fields")
+        .and_then(|value| value.as_object())
+        .is_some_and(|fields| fields.is_empty())
+}
+
+fn provider_source(delta: &StreamDelta) -> Option<&str> {
+    delta
+        .passthrough
+        .get("provider_specific_fields")
+        .and_then(|value| value.as_object())
+        .and_then(|fields| fields.get("source"))
+        .and_then(|value| value.as_str())
+}
+
 #[test]
 fn ai21_validates_the_base_list_but_maps_reasoning_effort() {
     let supported = Ai21Config::supported_params(AI21_MODEL, &catalog());
@@ -62,14 +80,14 @@ fn ai21_overwrites_max_tokens_with_the_completion_alias() {
     Ai21Config::map_params(AI21_MODEL, &requested, &mut existing, &catalog());
     assert_eq!(existing, object(r#"{"max_tokens":16,"temperature":0.5}"#));
 
-    let mut existing = object(r#"{"max_tokens":1}"#);
+    let mut prior = object(r#"{"max_tokens":1}"#);
     Ai21Config::map_params(
         AI21_MODEL,
         &object(r#"{"max_tokens":8}"#),
-        &mut existing,
+        &mut prior,
         &catalog(),
     );
-    assert_eq!(existing, object(r#"{"max_tokens":8}"#));
+    assert_eq!(prior, object(r#"{"max_tokens":8}"#));
 }
 
 #[test]
@@ -190,7 +208,10 @@ fn partner_class_tokens_default_to_none_and_keep_a_configured_value() {
     };
     let snapshot =
         provider_config(&configured.settings).expect("the configured partner settings serialize");
-    assert_eq!(snapshot.get("max_tokens"), Some(&json!(512)));
+    assert_eq!(
+        snapshot.get("max_tokens").and_then(|limit| limit.as_i64()),
+        Some(512)
+    );
     assert_eq!(snapshot.len(), 1);
 }
 
@@ -263,37 +284,30 @@ fn llama_reply_hands_the_choices_to_the_shared_transform() {
 fn llama_stream_adds_the_missing_role_to_the_first_chunk_only() {
     let mut state = LlamaStreamState::default();
     let first = state.push(chunk(
-        r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"Hel"}}]}"#,
+        r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"first"}}]}"#,
     ));
     assert_eq!(first.len(), 1);
-    assert_eq!(
-        to_value(&first[0]).expect("the chunk serializes"),
-        json!({
-            "id": "chunk-1",
-            "object": "chat.completion.chunk",
-            "created": 7,
-            "model": "m",
-            "choices": [{
-                "index": 0,
-                "finish_reason": null,
-                "delta": {
-                    "role": "assistant",
-                    "content": "Hel",
-                    "function_call": null,
-                    "tool_calls": null,
-                    "audio": null,
-                },
-                "logprobs": null,
-            }],
-        })
-    );
+    assert_eq!(first[0].id, "chunk-1");
+    assert_eq!(first[0].object, "chat.completion.chunk");
+    assert_eq!(first[0].created, 7);
+    assert_eq!(first[0].model.as_deref(), Some("m"));
+    let choice = &first[0].choices[0];
+    assert_eq!(choice.index, 0);
+    assert_eq!(choice.finish_reason, None);
+    assert_eq!(choice.logprobs, None);
+    assert_eq!(choice.delta.role.as_deref(), Some("assistant"));
+    assert_eq!(choice.delta.content.as_deref(), Some("first"));
+    assert_eq!(choice.delta.function_call, None);
+    assert_eq!(choice.delta.tool_calls, None);
+    assert_eq!(choice.delta.audio, None);
+    assert!(choice.delta.passthrough.is_empty());
 
     let later = state.push(chunk(
-        r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"lo"}}]}"#,
+        r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"second"}}]}"#,
     ));
     assert_eq!(later.len(), 1);
     assert_eq!(later[0].choices[0].delta.role, None);
-    assert_eq!(later[0].choices[0].delta.content.as_deref(), Some("lo"));
+    assert_eq!(later[0].choices[0].delta.content.as_deref(), Some("second"));
 }
 
 #[test]
@@ -303,55 +317,68 @@ fn llama_stream_splits_a_terminal_first_chunk_and_queues_its_terminal() {
         r#"{"id":"chunk-9","created":7,"model":"m","choices":[{"index":1,"delta":{"role":null,"content":null},"finish_reason":"stop"}]}"#,
     ));
     assert_eq!(chunks.len(), 2);
-    assert_eq!(
-        to_value(&chunks[0]).expect("the chunk serializes"),
-        json!({
-            "id": "chunk-9",
-            "object": "chat.completion.chunk",
-            "created": 7,
-            "model": "m",
-            "choices": [{
-                "index": 1,
-                "finish_reason": null,
-                "delta": {
-                    "role": "assistant",
-                    "content": "",
-                    "function_call": null,
-                    "tool_calls": null,
-                    "audio": null,
-                    "provider_specific_fields": {},
-                },
-                "logprobs": null,
-            }],
-        })
-    );
-    assert_eq!(
-        to_value(&chunks[1]).expect("the chunk serializes"),
-        json!({
-            "id": "chunk-9",
-            "object": "chat.completion.chunk",
-            "created": 7,
-            "model": "m",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "stop",
-                "delta": {
-                    "role": null,
-                    "content": null,
-                    "function_call": null,
-                    "tool_calls": null,
-                    "audio": null,
-                },
-                "logprobs": null,
-            }],
-        })
-    );
+    let repaired = &chunks[0];
+    assert_eq!(repaired.id, "chunk-9");
+    assert_eq!(repaired.created, 7);
+    assert_eq!(repaired.model.as_deref(), Some("m"));
+    let first = &repaired.choices[0];
+    assert_eq!(first.index, 1);
+    assert_eq!(first.finish_reason, None);
+    assert_eq!(first.delta.role.as_deref(), Some("assistant"));
+    assert_eq!(first.delta.content.as_deref(), Some(""));
+    assert!(provider_fields_are_empty(&first.delta));
 
-    let later = state.push(chunk(
-        r#"{"id":"chunk-9","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"x"}}]}"#,
+    let queued = &chunks[1];
+    assert_eq!(queued.id, "chunk-9");
+    assert_eq!(queued.object, "chat.completion.chunk");
+    assert_eq!(queued.created, 7);
+    assert_eq!(queued.model.as_deref(), Some("m"));
+    assert_eq!(queued.usage, None);
+    assert_eq!(queued.service_tier, None);
+    let terminal = &queued.choices[0];
+    assert_eq!(terminal.index, 0);
+    assert_eq!(terminal.finish_reason.as_deref(), Some("stop"));
+    assert_eq!(terminal.delta.role, None);
+    assert_eq!(terminal.delta.content, None);
+    assert!(terminal.delta.passthrough.is_empty());
+}
+
+#[test]
+fn llama_stream_keeps_the_content_of_a_terminal_first_chunk() {
+    let mut state = LlamaStreamState::default();
+    let chunks = state.push(chunk(
+        r#"{"id":"chunk-3","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}"#,
     ));
-    assert_eq!(later.len(), 1);
-    assert_eq!(later[0].choices[0].delta.role, None);
+    assert_eq!(chunks.len(), 2);
+    let repaired = &chunks[0].choices[0];
+    assert_eq!(repaired.finish_reason, None);
+    assert_eq!(repaired.delta.role.as_deref(), Some("assistant"));
+    assert_eq!(repaired.delta.content.as_deref(), Some("hi"));
+    assert!(provider_fields_are_empty(&repaired.delta));
+
+    let terminal = &chunks[1].choices[0];
+    assert_eq!(terminal.index, 0);
+    assert_eq!(terminal.finish_reason.as_deref(), Some("stop"));
+    assert_eq!(terminal.delta.content, None);
+}
+
+#[test]
+fn llama_stream_leaves_a_later_terminal_chunk_whole() {
+    let mut state = LlamaStreamState::default();
+    let first = state.push(chunk(
+        r#"{"id":"chunk-4","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"a"}}]}"#,
+    ));
+    assert_eq!(first.len(), 1);
+
+    let terminal = state.push(chunk(
+        r#"{"id":"chunk-4","created":7,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+    ));
+    assert_eq!(terminal.len(), 1);
+    assert_eq!(
+        terminal[0].choices[0].finish_reason.as_deref(),
+        Some("stop")
+    );
+    assert_eq!(terminal[0].choices[0].delta.role, None);
 }
 
 #[rstest]
@@ -372,13 +399,7 @@ fn llama_stream_gives_an_empty_initial_delta_provider_fields(
         Some("assistant")
     );
     assert_eq!(chunks[0].choices[0].delta.content.as_deref(), content);
-    assert_eq!(
-        chunks[0].choices[0]
-            .delta
-            .passthrough
-            .get("provider_specific_fields"),
-        Some(&json!({}))
-    );
+    assert!(provider_fields_are_empty(&chunks[0].choices[0].delta));
 }
 
 #[test]
@@ -387,25 +408,13 @@ fn llama_stream_keeps_a_present_provider_map_and_replaces_a_null_one() {
     let kept = state.push(chunk(
         r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"","provider_specific_fields":{"source":"vertex"}}}]}"#,
     ));
-    assert_eq!(
-        kept[0].choices[0]
-            .delta
-            .passthrough
-            .get("provider_specific_fields"),
-        Some(&json!({"source": "vertex"}))
-    );
+    assert_eq!(provider_source(&kept[0].choices[0].delta), Some("vertex"));
 
     let mut other = LlamaStreamState::default();
     let replaced = other.push(chunk(
         r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"","provider_specific_fields":null}}]}"#,
     ));
-    assert_eq!(
-        replaced[0].choices[0]
-            .delta
-            .passthrough
-            .get("provider_specific_fields"),
-        Some(&json!({}))
-    );
+    assert!(provider_fields_are_empty(&replaced[0].choices[0].delta));
 }
 
 #[test]
