@@ -10,6 +10,6 @@ class Input(TypedDict):
 
 
 def run(input_value: Input) -> JsonValue:
-    decoded = config_repository._decoded_json(input_value["raw"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L15-L17
+    decoded = config_repository._decoded_json(input_value["raw"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L13-L15
     param = ConfigParam("param_name", decoded)
     return TypeAdapter(JsonValue).validate_python(param.param_value)
