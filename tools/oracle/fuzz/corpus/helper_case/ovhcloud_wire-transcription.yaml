@@ -1,0 +1,17 @@
+kind: helper
+name: ovhcloud-wire-seed-transcription
+call:
+  b6412:
+    function: transcription
+    provider: ovhcloud
+    requests:
+      - api_base: null
+        model: m
+        optional_params: {language: fr}
+        filename: a.wav
+        content: abc
+        env: {}
+    replies:
+      - {body: '{"text":"hi","seconds":2}', status: 200, headers: {}}
+env: {}
+compare: {ignore: []}
