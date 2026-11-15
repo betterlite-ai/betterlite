@@ -15,19 +15,23 @@ pub fn image_generation_body(prompt: &str, optional_params: ImageParams) -> Imag
     body
 }
 
-pub type SizeTranslation = fn(&Json) -> Result<(&'static str, Json), FalImageError>;
+pub(crate) type SizeTranslation = fn(&Json) -> Result<(&'static str, Json), FalImageError>;
+
+// the pinned Bria and Recraft classes advertise n and response_format but send neither, and rename size
+#[derive(Clone, Copy)]
+pub(crate) enum SizeMapping {
+    Verbatim,
+    UrlOnly(SizeTranslation),
+}
 
 // an original key already in the options suppresses its translation; an unlisted key fails unless dropped
-fn map_params<F>(
+pub(crate) fn map_params(
     non_default_params: &ImageParams,
     optional_params: ImageParams,
     model: &str,
     drop_params: bool,
-    mut apply: F,
-) -> Result<ImageParams, FalImageError>
-where
-    F: FnMut(&str, &Json, &mut ImageParams) -> Result<(), FalImageError>,
-{
+    sizes: SizeMapping,
+) -> Result<ImageParams, FalImageError> {
     let mut mapped = optional_params;
     for (name, value) in non_default_params {
         if mapped.contains_key(name) {
@@ -42,7 +46,17 @@ where
                 model: model.to_owned(),
             });
         }
-        apply(name, value, &mut mapped)?;
+        match sizes {
+            SizeMapping::Verbatim => {
+                mapped.insert(name.clone(), value.clone());
+            }
+            SizeMapping::UrlOnly(translate_size) => {
+                if name == "size" {
+                    let (destination, translated) = translate_size(value)?;
+                    mapped.insert(destination.to_owned(), translated);
+                }
+            }
+        }
     }
     Ok(mapped)
 }
@@ -58,32 +72,6 @@ pub fn map_openai_params(
         optional_params,
         model,
         drop_params,
-        |name, value, mapped| {
-            mapped.insert(name.to_owned(), value.clone());
-            Ok(())
-        },
-    )
-}
-
-// the pinned Bria and Recraft classes advertise n and response_format but never send them, and rename size
-pub fn map_url_only_params(
-    non_default_params: &ImageParams,
-    optional_params: ImageParams,
-    model: &str,
-    drop_params: bool,
-    translate_size: SizeTranslation,
-) -> Result<ImageParams, FalImageError> {
-    map_params(
-        non_default_params,
-        optional_params,
-        model,
-        drop_params,
-        |name, value, mapped| {
-            if name == "size" {
-                let (destination, translated) = translate_size(value)?;
-                mapped.insert(destination.to_owned(), translated);
-            }
-            Ok(())
-        },
+        SizeMapping::Verbatim,
     )
 }

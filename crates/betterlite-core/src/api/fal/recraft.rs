@@ -9,7 +9,7 @@ use betterlite_openai::api::image_contracts::records::{
 use crate::api::fal::images::decode::decode_fal_image_record;
 use crate::api::fal::images::error::FalImageError;
 use crate::api::fal::images::image_url;
-use crate::api::fal::images::params::map_url_only_params;
+use crate::api::fal::images::params::{SizeMapping, map_params};
 use crate::api::fal::recraft::size::translate_size;
 
 pub const ENDPOINT: &str = "fal-ai/recraft/v3/text-to-image";
@@ -20,12 +20,12 @@ pub fn map_openai_params(
     model: &str,
     drop_params: bool,
 ) -> Result<ImageParams, FalImageError> {
-    map_url_only_params(
+    map_params(
         non_default_params,
         optional_params,
         model,
         drop_params,
-        translate_size,
+        SizeMapping::UrlOnly(translate_size),
     )
 }
 
