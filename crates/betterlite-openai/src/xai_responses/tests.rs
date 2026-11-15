@@ -37,59 +37,70 @@ fn settings(
     }
 }
 
-fn tools(params: &Object) -> &Vec<Value> {
-    match params.get("tools") {
-        Some(Value::Array(items)) => items,
-        None
-        | Some(
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_),
-        ) => unreachable!("the transformed params hold a tools list"),
-    }
+// serde_json::json! uses Into::into for object members, which clippy.toml disallows
+fn object<const N: usize>(pairs: [(&str, Value); N]) -> Value {
+    Value::Object(
+        pairs
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect(),
+    )
 }
 
-fn mapped(json: Value) -> Object {
-    let mut params = json.as_object().cloned().unwrap_or_default();
+fn tools(params: &Object) -> &Vec<Value> {
+    params
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("the transformed params hold a tools list")
+}
+
+fn mapped(given: &Value) -> Object {
+    let mut params = given.as_object().cloned().unwrap_or_default();
     map_openai_params(&mut params);
     params
 }
 
-fn response(json: Value) -> ResponsesApiResponse {
-    serde_json::from_value(json).unwrap()
+fn response(body: Value) -> ResponsesApiResponse {
+    serde_json::from_value(body).unwrap()
 }
 
-fn base_response(usage: Value) -> Value {
-    json!({
-        "id": "resp-1",
-        "created_at": 7,
-        "output": [],
-        "usage": usage,
-    })
+fn base_response(usage: &Value) -> Value {
+    object([
+        ("id", json!("resp-1")),
+        ("created_at", json!(7_i32)),
+        ("output", json!([])),
+        ("usage", usage.clone()),
+    ])
 }
 
-fn restated(json: Value) -> ResponsesApiResponse {
+fn restated(body: Value) -> ResponsesApiResponse {
     let mut reply = ResponsesReply {
-        response: ReplyBody::Typed(Box::new(response(json))),
+        response: ReplyBody::Typed(Box::new(response(body))),
         headers: IndexMap::new(),
         additional_headers: IndexMap::new(),
     };
     restate_reply_usage(&mut reply);
     let ReplyBody::Typed(restated) = reply.response else {
-        unreachable!("a typed reply stays typed");
+        panic!("a typed reply stays typed");
     };
     *restated
 }
 
 fn cost(response: &ResponsesApiResponse) -> Option<Decimal> {
-    response.usage.as_ref().and_then(|usage| usage.cost)
+    response.usage.as_ref()?.cost
 }
 
-fn ticks(json: Value) -> Json {
-    serde_json::from_value(json).unwrap()
+fn ticks(body: Value) -> Json {
+    serde_json::from_value(body).unwrap()
 }
 
 #[test]
 fn metadata_is_removed_even_when_null() {
-    let transformed = mapped(json!({"metadata": null, "store": false, "model": "grok-4"}));
+    let transformed = mapped(&object([
+        ("metadata", Value::Null),
+        ("store", json!(false)),
+        ("model", json!("grok-4")),
+    ]));
     assert!(!transformed.contains_key("metadata"));
     assert_eq!(transformed.get("store"), Some(&Value::Bool(false)));
     assert_eq!(
@@ -100,101 +111,142 @@ fn metadata_is_removed_even_when_null() {
 
 #[test]
 fn code_interpreter_keeps_only_its_type() {
-    let transformed = mapped(json!({
-        "tools": [{"type": "code_interpreter", "container": {"type": "auto"}, "extra": 1}],
-    }));
+    let transformed = mapped(&object([(
+        "tools",
+        Value::Array(vec![object([
+            ("type", json!("code_interpreter")),
+            ("container", object([("type", json!("auto"))])),
+            ("extra", json!(1_i32)),
+        ])]),
+    )]));
     assert_eq!(
         tools(&transformed),
-        &vec![json!({"type": "code_interpreter"})]
+        &vec![object([("type", json!("code_interpreter"))])]
     );
 }
 
 #[test]
 fn nested_filters_win_over_flat_fields() {
-    let transformed = mapped(json!({
-        "tools": [{
-            "type": "web_search",
-            "filters": {"allowed_domains": ["nested"], "excluded_domains": ["gone"]},
-            "allowed_domains": ["flat"],
-            "excluded_domains": ["flat-gone"],
-            "search_context_size": "low",
-            "enable_image_understanding": true,
-            "unknown": 1,
-        }],
-    }));
+    let transformed = mapped(&object([(
+        "tools",
+        Value::Array(vec![object([
+            ("type", json!("web_search")),
+            (
+                "filters",
+                object([
+                    ("allowed_domains", json!(["nested"])),
+                    ("excluded_domains", json!(["gone"])),
+                ]),
+            ),
+            ("allowed_domains", json!(["flat"])),
+            ("excluded_domains", json!(["flat-gone"])),
+            ("search_context_size", json!("low")),
+            ("enable_image_understanding", json!(true)),
+            ("unknown", json!(1_i32)),
+        ])]),
+    )]));
     assert_eq!(
         tools(&transformed),
-        &vec![json!({
-            "type": "web_search",
-            "filters": {"allowed_domains": ["nested"], "excluded_domains": ["gone"]},
-            "enable_image_understanding": true,
-        })]
+        &vec![object([
+            ("type", json!("web_search")),
+            (
+                "filters",
+                object([
+                    ("allowed_domains", json!(["nested"])),
+                    ("excluded_domains", json!(["gone"])),
+                ]),
+            ),
+            ("enable_image_understanding", json!(true)),
+        ])]
     );
 }
 
 #[test]
 fn flat_domains_fill_filters_without_a_mapping() {
-    let transformed = mapped(json!({
-        "tools": [{
-            "type": "web_search",
-            "filters": null,
-            "allowed_domains": ["flat"],
-            "excluded_domains": ["flat-gone"],
-        }],
-    }));
+    let transformed = mapped(&object([(
+        "tools",
+        Value::Array(vec![object([
+            ("type", json!("web_search")),
+            ("filters", Value::Null),
+            ("allowed_domains", json!(["flat"])),
+            ("excluded_domains", json!(["flat-gone"])),
+        ])]),
+    )]));
     assert_eq!(
         tools(&transformed),
-        &vec![json!({
-            "type": "web_search",
-            "filters": {"allowed_domains": ["flat"], "excluded_domains": ["flat-gone"]},
-        })]
+        &vec![object([
+            ("type", json!("web_search")),
+            (
+                "filters",
+                object([
+                    ("allowed_domains", json!(["flat"])),
+                    ("excluded_domains", json!(["flat-gone"])),
+                ]),
+            ),
+        ])]
     );
 }
 
 #[test]
 fn an_empty_filters_mapping_suppresses_flat_domains() {
-    let transformed = mapped(json!({
-        "tools": [{"type": "web_search", "filters": {}, "allowed_domains": ["flat"]}],
-    }));
-    assert_eq!(tools(&transformed), &vec![json!({"type": "web_search"})]);
+    let transformed = mapped(&object([(
+        "tools",
+        Value::Array(vec![object([
+            ("type", json!("web_search")),
+            ("filters", json!({})),
+            ("allowed_domains", json!(["flat"])),
+        ])]),
+    )]));
+    assert_eq!(
+        tools(&transformed),
+        &vec![object([("type", json!("web_search"))])]
+    );
 }
 
 #[test]
 fn a_filters_mapping_keeps_an_explicit_null_domain_list() {
-    let transformed = mapped(json!({
-        "tools": [{"type": "web_search", "filters": {"allowed_domains": null}}],
-    }));
+    let transformed = mapped(&object([(
+        "tools",
+        Value::Array(vec![object([
+            ("type", json!("web_search")),
+            ("filters", object([("allowed_domains", Value::Null)])),
+        ])]),
+    )]));
     assert_eq!(
         tools(&transformed),
-        &vec![json!({"type": "web_search", "filters": {"allowed_domains": null}})]
+        &vec![object([
+            ("type", json!("web_search")),
+            ("filters", object([("allowed_domains", Value::Null)])),
+        ])]
     );
 }
 
 #[test]
 fn x_search_keeps_every_handle_date_and_media_field() {
-    let transformed = mapped(json!({
-        "tools": [{
-            "type": "x_search",
-            "allowed_x_handles": ["a"],
-            "excluded_x_handles": null,
-            "from_date": "2026-01-01",
-            "to_date": "2026-02-01",
-            "enable_image_understanding": false,
-            "enable_video_understanding": null,
-            "unknown": "dropped",
-        }],
-    }));
+    let transformed = mapped(&object([(
+        "tools",
+        Value::Array(vec![object([
+            ("type", json!("x_search")),
+            ("allowed_x_handles", json!(["a"])),
+            ("excluded_x_handles", Value::Null),
+            ("from_date", json!("2026-01-01")),
+            ("to_date", json!("2026-02-01")),
+            ("enable_image_understanding", json!(false)),
+            ("enable_video_understanding", Value::Null),
+            ("unknown", json!("dropped")),
+        ])]),
+    )]));
     assert_eq!(
         tools(&transformed),
-        &vec![json!({
-            "type": "x_search",
-            "allowed_x_handles": ["a"],
-            "excluded_x_handles": null,
-            "from_date": "2026-01-01",
-            "to_date": "2026-02-01",
-            "enable_image_understanding": false,
-            "enable_video_understanding": null,
-        })]
+        &vec![object([
+            ("type", json!("x_search")),
+            ("allowed_x_handles", json!(["a"])),
+            ("excluded_x_handles", Value::Null),
+            ("from_date", json!("2026-01-01")),
+            ("to_date", json!("2026-02-01")),
+            ("enable_image_understanding", json!(false)),
+            ("enable_video_understanding", Value::Null),
+        ])]
     );
 }
 
@@ -204,54 +256,75 @@ fn x_handles_are_not_capped_at_the_documented_ten() {
     let handles = (0..11_usize)
         .map(|index| format!("handle-{index}"))
         .collect::<Vec<String>>();
-    let transformed = mapped(json!({
-        "tools": [{"type": "x_search", "allowed_x_handles": handles.clone()}],
-    }));
+    let transformed = mapped(&object([(
+        "tools",
+        Value::Array(vec![object([
+            ("type", json!("x_search")),
+            ("allowed_x_handles", json!(handles)),
+        ])]),
+    )]));
     assert_eq!(
         tools(&transformed),
-        &vec![json!({"type": "x_search", "allowed_x_handles": handles})]
+        &vec![object([
+            ("type", json!("x_search")),
+            ("allowed_x_handles", json!(handles)),
+        ])]
     );
 }
 
 #[test]
 fn unknown_tools_and_non_objects_pass_through() {
-    let function = json!({"type": "function", "name": "f", "parameters": {}});
-    let transformed = mapped(json!({"tools": [function.clone(), "plain", 3]}));
+    let function = object([
+        ("type", json!("function")),
+        ("name", json!("f")),
+        ("parameters", json!({})),
+    ]);
+    let transformed = mapped(&object([(
+        "tools",
+        Value::Array(vec![function.clone(), json!("plain"), json!(3_i32)]),
+    )]));
     assert_eq!(
         tools(&transformed),
-        &vec![function, json!("plain"), json!(3)]
+        &vec![function, json!("plain"), json!(3_i32)]
     );
 }
 
 #[test]
 fn a_truthy_non_list_tools_value_becomes_one_element() {
-    let transformed = mapped(json!({
-        "tools": {"type": "web_search", "allowed_domains": ["a"]},
-    }));
+    let transformed = mapped(&object([(
+        "tools",
+        object([
+            ("type", json!("web_search")),
+            ("allowed_domains", json!(["a"])),
+        ]),
+    )]));
     assert_eq!(
         tools(&transformed),
-        &vec![json!({"type": "web_search", "filters": {"allowed_domains": ["a"]}})]
+        &vec![object([
+            ("type", json!("web_search")),
+            ("filters", object([("allowed_domains", json!(["a"]))])),
+        ])]
     );
 }
 
 #[rstest]
-#[case::zero(json!(0))]
+#[case::zero(json!(0_i32))]
 #[case::empty_text(json!(""))]
 #[case::empty_object(json!({}))]
 #[case::empty_list(json!([]))]
 #[case::false_value(json!(false))]
 #[case::null_value(Value::Null)]
 fn falsy_tools_are_not_normalized(#[case] given: Value) {
-    let transformed = mapped(json!({"tools": given.clone()}));
+    let transformed = mapped(&object([("tools", given.clone())]));
     assert_eq!(transformed.get("tools"), Some(&given));
 }
 
 #[test]
 fn absent_tools_and_store_stay_absent() {
-    let transformed = mapped(json!({"model": "grok-4"}));
+    let transformed = mapped(&object([("model", json!("grok-4"))]));
     assert!(!transformed.contains_key("tools"));
     assert!(!transformed.contains_key("store"));
-    let stored = mapped(json!({"store": true}));
+    let stored = mapped(&object([("store", json!(true))]));
     assert_eq!(stored.get("store"), Some(&Value::Bool(true)));
 }
 
@@ -262,7 +335,7 @@ struct FixedOauth {
 
 impl OauthAccess for FixedOauth {
     fn access_token(&mut self) -> impl Future<Output = Result<SecretString, XaiOauthError>> + Send {
-        self.calls += 1;
+        self.calls = self.calls.saturating_add(1);
         let outcome = if self.fail {
             Err(XaiOauthError::LoginRequired)
         } else {
@@ -301,8 +374,8 @@ async fn the_explicit_key_replaces_an_existing_authorization() {
     })
     .await
     .unwrap();
-    assert_eq!(validated.get("Authorization").unwrap(), "Bearer explicit");
-    assert_eq!(validated.get("X-Keep").unwrap(), "yes");
+    assert_eq!(&validated["Authorization"], "Bearer explicit");
+    assert_eq!(&validated["X-Keep"], "yes");
     assert_eq!(login.calls, 0);
 }
 
@@ -320,7 +393,7 @@ async fn the_generic_key_falls_back_before_the_environment() {
     })
     .await
     .unwrap();
-    assert_eq!(with_generic.get("Authorization").unwrap(), "Bearer generic");
+    assert_eq!(&with_generic["Authorization"], "Bearer generic");
     assert_eq!(first.calls, 0);
     let environment_only = settings(None, None, Some("environment"), None);
     let mut second = oauth(false);
@@ -334,10 +407,7 @@ async fn the_generic_key_falls_back_before_the_environment() {
     })
     .await
     .unwrap();
-    assert_eq!(
-        with_environment.get("Authorization").unwrap(),
-        "Bearer environment"
-    );
+    assert_eq!(&with_environment["Authorization"], "Bearer environment");
 }
 
 #[tokio::test]
@@ -354,7 +424,7 @@ async fn a_module_key_beats_the_generic_and_environment_keys() {
     })
     .await
     .unwrap();
-    assert_eq!(validated.get("Authorization").unwrap(), "Bearer module");
+    assert_eq!(&validated["Authorization"], "Bearer module");
     assert_eq!(login.calls, 0);
 }
 
@@ -391,10 +461,7 @@ async fn an_opted_in_login_supplies_the_key_only_without_one() {
     })
     .await
     .unwrap();
-    assert_eq!(
-        with_login.get("Authorization").unwrap(),
-        "Bearer oauth-token"
-    );
+    assert_eq!(&with_login["Authorization"], "Bearer oauth-token");
     assert_eq!(login.calls, 1);
     let mut explicit = oauth(false);
     let with_explicit = validate_environment(Environment {
@@ -407,10 +474,7 @@ async fn an_opted_in_login_supplies_the_key_only_without_one() {
     })
     .await
     .unwrap();
-    assert_eq!(
-        with_explicit.get("Authorization").unwrap(),
-        "Bearer explicit"
-    );
+    assert_eq!(&with_explicit["Authorization"], "Bearer explicit");
     assert_eq!(explicit.calls, 0);
 }
 
@@ -520,38 +584,38 @@ fn oauth_selects_its_own_base_only_without_a_key() {
 
 #[test]
 fn an_ordinary_reply_restates_the_reported_ticks() {
-    let replied = restated(base_response(json!({
-        "input_tokens": 1,
-        "output_tokens": 2,
-        "total_tokens": 3,
-        "cost_in_usd_ticks": 12_500_000_000_i64,
-    })));
+    let replied = restated(base_response(&object([
+        ("input_tokens", json!(1_i32)),
+        ("output_tokens", json!(2_i32)),
+        ("total_tokens", json!(3_i32)),
+        ("cost_in_usd_ticks", json!(12_500_000_000_i64)),
+    ])));
     assert_eq!(cost(&replied), Some(Decimal::new(125, 2)));
 }
 
 #[rstest]
-#[case::negative(json!(-1))]
+#[case::negative(json!(-1_i32))]
 #[case::boolean(json!(true))]
-#[case::fraction(json!(1.5))]
+#[case::fraction(json!(1.5_f64))]
 #[case::text(json!("100"))]
 #[case::absent(Value::Null)]
 fn a_reply_without_valid_ticks_keeps_its_cost(#[case] given: Value) {
-    let mut usage = json!({
-        "input_tokens": 1,
-        "output_tokens": 2,
-        "total_tokens": 3,
-        "cost": 0.25,
-    });
+    let mut usage = object([
+        ("input_tokens", json!(1_i32)),
+        ("output_tokens", json!(2_i32)),
+        ("total_tokens", json!(3_i32)),
+        ("cost", json!(0.25_f64)),
+    ]);
     if !given.is_null() {
         usage["cost_in_usd_ticks"] = given;
     }
-    let replied = restated(base_response(usage));
+    let replied = restated(base_response(&usage));
     assert_eq!(cost(&replied), Some(Decimal::new(25, 2)));
 }
 
 #[test]
 fn a_reply_carrying_no_usage_stays_without_one() {
-    let mut body = base_response(json!({}));
+    let mut body = base_response(&json!({}));
     body.as_object_mut().unwrap().remove("usage");
     let replied = restated(body);
     assert_eq!(cost(&replied), None);
@@ -559,7 +623,7 @@ fn a_reply_carrying_no_usage_stays_without_one() {
 
 #[test]
 fn a_lax_reply_is_left_as_sent() {
-    let sent = ticks(json!({"cost_in_usd_ticks": 12_500_000_000_i64}));
+    let sent = ticks(object([("cost_in_usd_ticks", json!(12_500_000_000_i64))]));
     let mut reply = ResponsesReply {
         response: ReplyBody::Lax(IndexMap::from([(String::from("usage"), sent.clone())])),
         headers: IndexMap::new(),
@@ -567,26 +631,29 @@ fn a_lax_reply_is_left_as_sent() {
     };
     restate_reply_usage(&mut reply);
     let ReplyBody::Lax(fields) = reply.response else {
-        unreachable!("a lax reply stays lax");
+        panic!("a lax reply stays lax");
     };
     assert_eq!(fields.get("usage"), Some(&sent));
 }
 
-fn event(json: Value) -> DecodedStreamResponse {
-    let bytes = serde_json::to_vec(&json).unwrap();
+fn event(given: &Value) -> DecodedStreamResponse {
+    let bytes = serde_json::to_vec(given).unwrap();
     decode_response_event(&bytes).unwrap()
 }
 
 fn terminal_event(event_type: &str) -> Value {
-    json!({
-        "type": event_type,
-        "response": base_response(json!({
-            "input_tokens": 1,
-            "output_tokens": 2,
-            "total_tokens": 3,
-            "cost_in_usd_ticks": 5_000_000_000_i64,
-        })),
-    })
+    object([
+        ("type", json!(event_type)),
+        (
+            "response",
+            base_response(&object([
+                ("input_tokens", json!(1_i32)),
+                ("output_tokens", json!(2_i32)),
+                ("total_tokens", json!(3_i32)),
+                ("cost_in_usd_ticks", json!(5_000_000_000_i64)),
+            ])),
+        ),
+    ])
 }
 
 fn record_cost(decoded: &DecodedStreamResponse) -> Option<Decimal> {
@@ -597,12 +664,12 @@ fn record_cost(decoded: &DecodedStreamResponse) -> Option<Decimal> {
     | KnownResponseEvent::ResponseIncomplete(fields)
     | KnownResponseEvent::ResponseFailed(fields) = record.as_ref()
     {
-        return fields.response.usage.as_ref().and_then(|usage| usage.cost);
+        return fields.response.usage.as_ref()?.cost;
     }
     if let KnownResponseEvent::ResponseCreated(fields)
     | KnownResponseEvent::ResponseInProgress(fields) = record.as_ref()
     {
-        return fields.response.usage.as_ref().and_then(|usage| usage.cost);
+        return fields.response.usage.as_ref()?.cost;
     }
     None
 }
@@ -618,20 +685,27 @@ fn only_terminal_events_restate_the_reported_ticks(
     #[case] event_type: &str,
     #[case] expected: Option<Decimal>,
 ) {
-    let mut decoded = event(terminal_event(event_type));
+    let mut decoded = event(&terminal_event(event_type));
     restate_event_usage(&mut decoded);
     assert_eq!(record_cost(&decoded), expected);
 }
 
 #[test]
 fn a_terminal_event_without_usage_is_left_alone() {
-    let mut decoded = event(json!({
-        "type": "response.completed",
-        "response": {"id": "resp-2", "created_at": 7, "output": []},
-    }));
+    let mut decoded = event(&object([
+        ("type", json!("response.completed")),
+        (
+            "response",
+            object([
+                ("id", json!("resp-2")),
+                ("created_at", json!(7_i32)),
+                ("output", json!([])),
+            ]),
+        ),
+    ]));
     restate_event_usage(&mut decoded);
     let DecodedStreamResponse::Known { record, .. } = decoded else {
-        unreachable!("a valid terminal event decodes as known");
+        panic!("a valid terminal event decodes as known");
     };
     let KnownResponseEvent::ResponseCompleted(fields) = *record else {
         panic!("the completed event variant is the one that was decoded");
@@ -641,7 +715,10 @@ fn a_terminal_event_without_usage_is_left_alone() {
 
 #[test]
 fn a_generic_event_is_left_alone() {
-    let mut decoded = event(json!({"type": "response.shell_call.in_progress", "extra": 1}));
+    let mut decoded = event(&object([
+        ("type", json!("response.shell_call.in_progress")),
+        ("extra", json!(1_i32)),
+    ]));
     restate_event_usage(&mut decoded);
     assert!(matches!(decoded, DecodedStreamResponse::Generic(_)));
 }
@@ -649,36 +726,48 @@ fn a_generic_event_is_left_alone() {
 // LiteLLM raises AttributeError when a terminal payload fails its model and stays a dict
 #[test]
 fn a_lax_terminal_event_keeps_its_fields_as_sent() {
-    let mut decoded = event(json!({
-        "type": "response.completed",
-        "response": {"usage": {"cost_in_usd_ticks": 5_000_000_000_i64}},
-    }));
+    let mut decoded = event(&object([
+        ("type", json!("response.completed")),
+        (
+            "response",
+            object([(
+                "usage",
+                object([("cost_in_usd_ticks", json!(5_000_000_000_i64))]),
+            )]),
+        ),
+    ]));
     restate_event_usage(&mut decoded);
     let DecodedStreamResponse::Lax { fields, .. } = decoded else {
         panic!("an incomplete terminal payload decodes as lax");
     };
     assert_eq!(
         fields.get("response"),
-        Some(&ticks(
-            json!({"usage": {"cost_in_usd_ticks": 5_000_000_000_i64}})
-        ))
+        Some(&ticks(object([(
+            "usage",
+            object([("cost_in_usd_ticks", json!(5_000_000_000_i64))]),
+        )])))
     );
 }
 
 #[test]
 fn the_xai_responses_capability_is_not_native_websocket() {
-    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+    const {
+        assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+    }
 }
 
 #[test]
 fn a_restated_cost_keeps_the_ticks_beside_it() {
-    let replied = restated(base_response(json!({
-        "input_tokens": 1,
-        "output_tokens": 2,
-        "total_tokens": 3,
-        "cost_in_usd_ticks": 1_i64,
-    })));
+    let replied = restated(base_response(&object([
+        ("input_tokens", json!(1_i32)),
+        ("output_tokens", json!(2_i32)),
+        ("total_tokens", json!(3_i32)),
+        ("cost_in_usd_ticks", json!(1_i64)),
+    ])));
     let usage = replied.usage.unwrap();
-    assert_eq!(usage.extra.get("cost_in_usd_ticks"), Some(&ticks(json!(1))));
+    assert_eq!(
+        usage.extra.get("cost_in_usd_ticks"),
+        Some(&ticks(json!(1_i64)))
+    );
     assert_eq!(usage.cost, Some(Decimal::new(1, 10)));
 }
