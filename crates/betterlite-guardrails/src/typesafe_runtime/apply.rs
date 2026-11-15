@@ -13,7 +13,7 @@ use crate::typesafe::typesafe_state_building::{TypeSafeState, build_state};
 use crate::typesafe::{DROPPED_RESULT_TEXT, TypeSafeGuardrail};
 
 use super::TypeSafeGuard;
-use super::records::{Timing, record_compacted, record_unavailable};
+use super::records::{Outcome, Timing};
 
 pub(super) struct CompactionCounts {
     pub(super) chars_removed: i64,
@@ -38,7 +38,7 @@ enum Evaluated {
 
 pub(super) async fn compact(
     guard: &TypeSafeGuard,
-    inputs: GuardrailApiInputs,
+    mut inputs: GuardrailApiInputs,
     rows: &[Json],
     request_data: &mut BTreeMap<String, GuardrailValue>,
     log_target: Option<&mut GuardrailLogTarget>,
@@ -52,17 +52,23 @@ pub(super) async fn compact(
         return Ok(inputs);
     }
     let state = build_state(&guard.runtime, rows, &candidates);
+    let model = guard.runtime.settings.model.as_str();
     let (response, timing) = match evaluate(guard, &state, candidates.len()).await? {
         Evaluated::Answers(response, timing) => (response, timing),
         Evaluated::Unavailable(timing) => {
-            record_unavailable(guard, request_data, log_target, &timing);
+            timing.record(guard, request_data, log_target, Outcome::unavailable(model));
             return Ok(inputs);
         }
     };
     let Some(compaction) = compact_answers(guard, rows, &candidates, &response) else {
         return Ok(inputs);
     };
-    record_compacted(guard, request_data, log_target, &compaction.counts, &timing);
+    timing.record(
+        guard,
+        request_data,
+        log_target,
+        Outcome::compacted(&compaction.counts, model),
+    );
     if let Some(messages) = inputs.structured_messages.as_mut() {
         rewrite_contents(messages, &compaction.indices);
     }

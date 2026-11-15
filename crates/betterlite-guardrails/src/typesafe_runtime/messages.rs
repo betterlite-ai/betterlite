@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Number;
@@ -10,7 +12,33 @@ pub(super) fn content_text(content: Option<&Json>) -> String {
     let Some(content) = content else {
         return String::new();
     };
-    content_to_text(&guardrail_value(content))
+    content_to_text(&content_value(content))
+}
+
+// content_to_text reads a string or a list of text parts; every other JSON shape holds no text.
+fn content_value(content: &Json) -> GuardrailValue {
+    match content {
+        Json::Text(text) => GuardrailValue::Text(text.clone()),
+        Json::List(parts) => GuardrailValue::Array(parts.iter().filter_map(text_part).collect()),
+        _ => GuardrailValue::Null,
+    }
+}
+
+// LiteLLM joins the {type: "text", text: ...} parts of a list and ignores every other part.
+fn text_part(part: &Json) -> Option<GuardrailValue> {
+    let Json::Object(fields) = part else {
+        return None;
+    };
+    let Some(Json::Text(text)) = fields.get("text") else {
+        return None;
+    };
+    match fields.get("type") {
+        Some(Json::Text(kind)) if kind == "text" => Some(GuardrailValue::Object(BTreeMap::from([
+            ("type".to_owned(), GuardrailValue::Text("text".to_owned())),
+            ("text".to_owned(), GuardrailValue::Text(text.clone())),
+        ]))),
+        _ => None,
+    }
 }
 
 // B3798 reads messages as the framework's JSON value, so each typed message converts one for one and keeps its index.
@@ -41,32 +69,4 @@ fn json_value(value: &GuardrailValue) -> Json {
                 .collect(),
         ),
     }
-}
-
-fn guardrail_value(value: &Json) -> GuardrailValue {
-    match value {
-        Json::Null => GuardrailValue::Null,
-        Json::Bool(flag) => GuardrailValue::Boolean(*flag),
-        Json::Number(number) => number_value(number),
-        Json::Text(text) => GuardrailValue::Text(text.clone()),
-        Json::List(items) => GuardrailValue::Array(items.iter().map(guardrail_value).collect()),
-        Json::Object(fields) => GuardrailValue::Object(
-            fields
-                .iter()
-                .map(|(key, value)| (key.clone(), guardrail_value(value)))
-                .collect(),
-        ),
-    }
-}
-
-fn number_value(number: &Number) -> GuardrailValue {
-    if let Some(signed) = number.as_i64() {
-        return GuardrailValue::SignedInteger(signed);
-    }
-    if let Some(unsigned) = number.as_u64() {
-        return GuardrailValue::UnsignedInteger(unsigned);
-    }
-    number
-        .as_f64()
-        .map_or(GuardrailValue::Null, GuardrailValue::Decimal)
 }

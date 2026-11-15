@@ -24,9 +24,41 @@ pub(super) struct Timing {
     pub(super) duration: Duration,
 }
 
-struct Outcome {
+pub(super) struct Outcome {
     status: GuardrailStatus,
     response: GuardrailValue,
+}
+
+impl Outcome {
+    pub(super) fn unavailable(model: &str) -> Self {
+        Self {
+            status: GuardrailStatus::GuardrailFailedToRespond,
+            response: GuardrailValue::Object(BTreeMap::from([
+                (
+                    "error".to_owned(),
+                    GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
+                ),
+                ("model".to_owned(), GuardrailValue::Text(model.to_owned())),
+            ])),
+        }
+    }
+
+    pub(super) fn compacted(compacted: &CompactionCounts, model: &str) -> Self {
+        let counts = [
+            ("chars_removed", compacted.chars_removed),
+            ("exchanges_dropped", compacted.exchanges_dropped),
+            ("exchanges_evaluated", compacted.exchanges_evaluated),
+        ];
+        let mut response = BTreeMap::new();
+        for (key, count) in counts {
+            response.insert(key.to_owned(), GuardrailValue::SignedInteger(count));
+        }
+        response.insert("model".to_owned(), GuardrailValue::Text(model.to_owned()));
+        Self {
+            status: GuardrailStatus::Success,
+            response: GuardrailValue::Object(response),
+        }
+    }
 }
 
 struct NoSpan;
@@ -38,7 +70,7 @@ impl GuardrailSpanSink for NoSpan {
 }
 
 impl Timing {
-    fn record(
+    pub(super) fn record(
         &self,
         guard: &TypeSafeGuard,
         request_data: &mut BTreeMap<String, GuardrailValue>,
@@ -66,59 +98,6 @@ impl Timing {
             tracing::warn!(%error, "TypeSafe: guardrail record could not be written");
         }
     }
-}
-
-pub(super) fn record_unavailable(
-    guard: &TypeSafeGuard,
-    request_data: &mut BTreeMap<String, GuardrailValue>,
-    log_target: Option<&mut GuardrailLogTarget>,
-    timing: &Timing,
-) {
-    let outcome = Outcome {
-        status: GuardrailStatus::GuardrailFailedToRespond,
-        response: GuardrailValue::Object(BTreeMap::from([
-            (
-                "error".to_owned(),
-                GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
-            ),
-            (
-                "model".to_owned(),
-                GuardrailValue::Text(guard.runtime.settings.model.clone()),
-            ),
-        ])),
-    };
-    timing.record(guard, request_data, log_target, outcome);
-}
-
-pub(super) fn record_compacted(
-    guard: &TypeSafeGuard,
-    request_data: &mut BTreeMap<String, GuardrailValue>,
-    log_target: Option<&mut GuardrailLogTarget>,
-    compacted: &CompactionCounts,
-    timing: &Timing,
-) {
-    let outcome = Outcome {
-        status: GuardrailStatus::Success,
-        response: GuardrailValue::Object(BTreeMap::from([
-            (
-                "chars_removed".to_owned(),
-                GuardrailValue::SignedInteger(compacted.chars_removed),
-            ),
-            (
-                "exchanges_dropped".to_owned(),
-                GuardrailValue::SignedInteger(compacted.exchanges_dropped),
-            ),
-            (
-                "exchanges_evaluated".to_owned(),
-                GuardrailValue::SignedInteger(compacted.exchanges_evaluated),
-            ),
-            (
-                "model".to_owned(),
-                GuardrailValue::Text(guard.runtime.settings.model.clone()),
-            ),
-        ])),
-    };
-    timing.record(guard, request_data, log_target, outcome);
 }
 
 fn epoch_seconds(time: SystemTime) -> f64 {

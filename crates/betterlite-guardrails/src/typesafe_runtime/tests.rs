@@ -42,6 +42,9 @@ const API_KEY: &str = "test-key";
 const FIRST_RESULT: &str = "結果: the first tool result";
 const SECOND_RESULT: &str = "the second tool result, still needed by the assistant";
 const FUNCTION_RESULT: &str = "the legacy function result that is no longer needed";
+const PART_ONE: &str = "the first paragraph of the tool output";
+const PART_TWO: &str = "the second paragraph of the tool output";
+const IMAGE_CAPTION: &str = "an image caption that must not count as text";
 const NO_CANDIDATES_LOG: &str = "TypeSafe: no completed tool exchanges eligible for evaluation";
 const ALL_RELEVANT_LOG: &str =
     "TypeSafe: all evaluated exchanges still relevant; request unchanged";
@@ -100,102 +103,120 @@ fn guard_at(base_url: &str, args: TypeSafeArgs) -> TypeSafeGuard {
         .expect("guardrail")
 }
 
-fn message(role: &str, content: &str) -> GuardrailMessage {
+fn str_value(value: &str) -> GuardrailValue {
+    GuardrailValue::Text(value.to_owned())
+}
+
+fn entry(role: &str, fields: Vec<(&str, GuardrailValue)>) -> GuardrailMessage {
     GuardrailMessage {
         role: role.to_owned(),
-        extra: BTreeMap::from([(
-            "content".to_owned(),
-            GuardrailValue::Text(content.to_owned()),
-        )]),
+        extra: fields
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect(),
     }
 }
 
+fn message(role: &str, content: &str) -> GuardrailMessage {
+    entry(role, vec![("content", str_value(content))])
+}
+
 fn call_message(call_id: &str) -> GuardrailMessage {
-    GuardrailMessage {
-        role: "assistant".to_owned(),
-        extra: BTreeMap::from([
-            ("content".to_owned(), GuardrailValue::Null),
-            (
-                "tool_calls".to_owned(),
-                GuardrailValue::Array(vec![tool_call(call_id)]),
-            ),
-        ]),
-    }
+    let calls = GuardrailValue::Array(vec![tool_call(call_id)]);
+    entry(
+        "assistant",
+        vec![("content", GuardrailValue::Null), ("tool_calls", calls)],
+    )
 }
 
 fn tool_call(call_id: &str) -> GuardrailValue {
     GuardrailValue::Object(BTreeMap::from([
-        ("id".to_owned(), GuardrailValue::Text(call_id.to_owned())),
-        (
-            "type".to_owned(),
-            GuardrailValue::Text("function".to_owned()),
-        ),
+        ("id".to_owned(), str_value(call_id)),
+        ("type".to_owned(), str_value("function")),
         (
             "function".to_owned(),
             GuardrailValue::Object(BTreeMap::from([
-                ("name".to_owned(), GuardrailValue::Text("lookup".to_owned())),
-                (
-                    "arguments".to_owned(),
-                    GuardrailValue::Text("{\"q\":\"x\"}".to_owned()),
-                ),
+                ("name".to_owned(), str_value("lookup")),
+                ("arguments".to_owned(), str_value("{\"q\":\"x\"}")),
             ])),
         ),
     ]))
 }
 
+fn result_message(role: &str, call_id: &str, content: GuardrailValue) -> GuardrailMessage {
+    entry(
+        role,
+        vec![("tool_call_id", str_value(call_id)), ("content", content)],
+    )
+}
+
 fn tool_result(call_id: &str, content: &str) -> GuardrailMessage {
-    GuardrailMessage {
-        role: "tool".to_owned(),
-        extra: BTreeMap::from([
-            (
-                "tool_call_id".to_owned(),
-                GuardrailValue::Text(call_id.to_owned()),
-            ),
-            (
-                "content".to_owned(),
-                GuardrailValue::Text(content.to_owned()),
-            ),
-        ]),
-    }
+    result_message("tool", call_id, str_value(content))
 }
 
 fn function_result(call_id: &str, content: &str) -> GuardrailMessage {
-    GuardrailMessage {
-        role: "function".to_owned(),
-        extra: BTreeMap::from([
-            ("name".to_owned(), GuardrailValue::Text("lookup".to_owned())),
-            (
-                "tool_call_id".to_owned(),
-                GuardrailValue::Text(call_id.to_owned()),
-            ),
-            (
-                "content".to_owned(),
-                GuardrailValue::Text(content.to_owned()),
-            ),
-        ]),
-    }
+    let mut message = result_message("function", call_id, str_value(content));
+    message.extra.insert("name".to_owned(), str_value("lookup"));
+    message
+}
+
+fn text_part_value(content: &str) -> GuardrailValue {
+    GuardrailValue::Object(BTreeMap::from([
+        ("type".to_owned(), str_value("text")),
+        ("text".to_owned(), str_value(content)),
+    ]))
+}
+
+fn parts_result(call_id: &str) -> GuardrailMessage {
+    let parts = vec![
+        text_part_value(PART_ONE),
+        GuardrailValue::Object(BTreeMap::from([
+            ("type".to_owned(), str_value("image")),
+            ("text".to_owned(), str_value(IMAGE_CAPTION)),
+            ("source".to_owned(), GuardrailValue::Null),
+        ])),
+        text_part_value(PART_TWO),
+    ];
+    result_message("tool", call_id, GuardrailValue::Array(parts))
+}
+
+fn conversation(question: &str, exchange: Vec<GuardrailMessage>) -> Vec<GuardrailMessage> {
+    let mut messages = vec![message("user", question)];
+    messages.extend(exchange);
+    messages.extend([
+        message("user", "now use what you found"),
+        message("assistant", "done"),
+    ]);
+    messages
 }
 
 fn function_exchange() -> Vec<GuardrailMessage> {
-    vec![
-        message("user", "look this up"),
-        call_message("call_f"),
-        function_result("call_f", FUNCTION_RESULT),
-        message("user", "now use what you found"),
-        message("assistant", "done"),
-    ]
+    conversation(
+        "look this up",
+        vec![
+            call_message("call_f"),
+            function_result("call_f", FUNCTION_RESULT),
+        ],
+    )
+}
+
+fn parts_exchange() -> Vec<GuardrailMessage> {
+    conversation(
+        "look this up",
+        vec![call_message("call_p"), parts_result("call_p")],
+    )
 }
 
 fn two_exchanges() -> Vec<GuardrailMessage> {
-    vec![
-        message("user", "summarize the quarterly report"),
-        call_message("call_1"),
-        tool_result("call_1", FIRST_RESULT),
-        call_message("call_2"),
-        tool_result("call_2", SECOND_RESULT),
-        message("user", "now use what you found"),
-        message("assistant", "done"),
-    ]
+    conversation(
+        "summarize the quarterly report",
+        vec![
+            call_message("call_1"),
+            tool_result("call_1", FIRST_RESULT),
+            call_message("call_2"),
+            tool_result("call_2", SECOND_RESULT),
+        ],
+    )
 }
 
 fn no_candidates() -> Vec<GuardrailMessage> {
@@ -754,6 +775,29 @@ async fn a_function_role_result_is_dropped_with_its_exchange() {
     let removed = code_points(FUNCTION_RESULT).saturating_sub(code_points(DROPPED_RESULT_TEXT));
     assert_eq!(
         field(record, "guardrail_response"),
+        Some(&success_counts(removed, 1, 1))
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_dropped_result_joins_its_text_parts() {
+    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
+    let guard = guard_at(&base_url, args(&base_url));
+    let original = parts_exchange();
+    let mut data = request_data();
+    let returned = apply_request(&guard, inputs(original.clone()), &mut data)
+        .await
+        .expect("compaction");
+    assert_eq!(
+        returned.structured_messages,
+        Some(dropped_once(&original, 2))
+    );
+    assert_eq!(question_ids(&requests.first()), ["e0".to_owned()]);
+    let joined = format!("{PART_ONE}\n\n{PART_TWO}");
+    let removed = code_points(&joined).saturating_sub(code_points(DROPPED_RESULT_TEXT));
+    assert_eq!(
+        field(&records(&data)[0], "guardrail_response"),
         Some(&success_counts(removed, 1, 1))
     );
     server.shutdown().await;
