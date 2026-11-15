@@ -12,30 +12,30 @@ use crate::cato::error::{CatoError, ModelStreamError};
 use crate::cato::wire::StreamMessage;
 
 // websockets' client caps a message at one mebibyte unless the caller says otherwise
-pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_FRAME_BYTES: usize = 1024 * 1024;
 // websockets' client waits ten seconds for the handshake unless the caller says otherwise
-pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 // LiteLLM sends json.dumps({"done": True}) when the model stream ends
-pub const DONE_FRAME: &str = r#"{"done": true}"#;
+pub(crate) const DONE_FRAME: &str = r#"{"done": true}"#;
 
 #[async_trait]
-pub trait CatoFrameReader: Send {
+pub(crate) trait CatoFrameReader: Send {
     // Ok(Some) is one upstream frame; Ok(None) means the upstream closed the connection
     async fn recv_message(&mut self) -> Result<Option<Vec<u8>>, CatoError>;
 }
 
 #[async_trait]
-pub trait CatoFrameWriter: Send {
+pub(crate) trait CatoFrameWriter: Send {
     async fn send_text(&mut self, text: &str) -> Result<(), CatoError>;
 }
 
-pub struct CatoSocket {
-    pub reader: Box<dyn CatoFrameReader>,
-    pub writer: Box<dyn CatoFrameWriter>,
+pub(crate) struct CatoSocket {
+    pub(crate) reader: Box<dyn CatoFrameReader>,
+    pub(crate) writer: Box<dyn CatoFrameWriter>,
 }
 
 #[async_trait]
-pub trait CatoSocketConnector: Send + Sync {
+pub(crate) trait CatoSocketConnector: Send + Sync {
     async fn connect(
         &self,
         url: &str,
@@ -46,7 +46,7 @@ pub trait CatoSocketConnector: Send + Sync {
 }
 
 // LiteLLM's async_post_call_streaming_iterator_hook: chunks go upstream while the verified ones come back
-pub async fn relay_output_stream(
+pub(crate) async fn relay_output_stream(
     connector: &dyn CatoSocketConnector,
     guardrail: &CatoGuardrail,
     headers: HeaderMap,

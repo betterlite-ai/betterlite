@@ -4,8 +4,8 @@ use super::error::CatoError;
 use super::wire::{AnalyzeRequest, AnalyzeResponse};
 use super::{CatoGuardrail, MAX_RESPONSE_BYTES};
 
-pub mod stream;
-pub mod websocket;
+pub(crate) mod stream;
+pub(crate) mod websocket;
 
 pub(super) async fn post_analyze(
     guardrail: &CatoGuardrail,

@@ -27,7 +27,7 @@ type SocketStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 // LiteLLM's websockets connect call: no ssl argument uses the system roots, and ssl_verify chooses the others
 #[derive(Debug, Clone)]
-pub struct WebSocketConnector {
+pub(crate) struct WebSocketConnector {
     ssl: Option<WsSsl>,
 }
 
