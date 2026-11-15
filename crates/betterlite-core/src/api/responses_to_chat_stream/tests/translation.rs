@@ -113,7 +113,9 @@ fn stateless_translation_generates_an_id_without_a_created_response() {
         json!({"type": "response.created", "response": {}}),
         json!({"type": "response.created", "response": {"id": null}}),
     ]
-    .map(|source| translated(&source).unwrap()["id"].clone());
+    .into_iter()
+    .map(|source| translated(&source).unwrap()["id"].clone())
+    .collect::<Vec<_>>();
     assert_eq!(ids, vec![json!(GENERATED_ID); 4]);
 }
 
@@ -394,11 +396,14 @@ fn stateless_translation_finishes_on_completed_output() {
 
 #[test]
 fn terminal_usage_needs_a_truthy_payload() {
-    let usages = [json!({}), json!(0), json!(""), json!([]), json!(false)].map(|usage| {
-        translated(&json!({"type": "response.completed", "response": {"usage": usage}})).unwrap()
-            ["usage"]
-            .clone()
-    });
+    let usages = [json!({}), json!(0), json!(""), json!([]), json!(false)]
+        .into_iter()
+        .map(|usage| {
+            translated(&json!({"type": "response.completed", "response": {"usage": usage}}))
+                .unwrap()["usage"]
+                .clone()
+        })
+        .collect::<Vec<_>>();
     assert_eq!(usages, vec![json!(null); 5]);
 }
 
@@ -418,7 +423,9 @@ fn stateless_translation_finishes_an_incomplete_response_by_its_reason() {
         json!({"type": "response.incomplete", "response": {"incomplete_details": {"reason": "max_output_tokens"}}}),
         json!({"type": "response.incomplete", "response": {"incomplete_details": {"reason": null}}}),
     ]
-    .map(|source| translated(&source).unwrap()["choices"][0]["finish_reason"].clone());
+    .into_iter()
+    .map(|source| translated(&source).unwrap()["choices"][0]["finish_reason"].clone())
+    .collect::<Vec<_>>();
     assert_eq!(lengths, vec![json!("length"); 3]);
 }
 
