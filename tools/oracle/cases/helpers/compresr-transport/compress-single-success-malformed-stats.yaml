@@ -1,0 +1,6 @@
+kind: helper
+name: compress-single-success-malformed-stats
+call:
+  compresr_transport: {"function": "compress", "settings": {"api_base": "http://compresr.test", "model": "latte_v2", "target_compression_ratio": 0.5, "coarse": false, "dynamic": false, "dynamic_min_ratio": null, "dynamic_max_ratio": null, "compression_params": {}, "timeout": null, "fallback": "fail_closed"}, "goals": [{"context": "tool output", "query": "the question"}], "reply": {"status": 200, "body": "{\"data\": {\"compressed_context\": \"short\", \"original_tokens\": \"12\", \"compressed_tokens\": \"n/a\"}}"}}
+env: {}
+compare: {ignore: []}

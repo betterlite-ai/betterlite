@@ -1,0 +1,19 @@
+kind: helper
+name: openai-realtime-beta-header-only-when-client-sends
+call:
+  openai_realtime:
+    kind: connect
+    api_key: sk-realtime-1234567890
+    model: gpt-4o-realtime-preview
+    scope_headers: [["OpenAI-Beta", "realtime=v1"], ["x-extra", "1"]]
+    ssl_verification: enabled
+    max_message_size_bytes: 1048576
+    openai_api_base: null
+    openai_api_key: null
+    queries:
+      - {api_base: null, query_params: null}
+    failures: []
+    http_setups: []
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "1048576"
+compare: {ignore: []}
