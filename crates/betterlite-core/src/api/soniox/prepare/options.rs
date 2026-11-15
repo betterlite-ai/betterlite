@@ -101,11 +101,9 @@ fn max_attempts_at(params: &mut Object) -> Result<i64, PrepareError> {
             field: MAX_ATTEMPTS_FIELD,
         });
     }
-    let attempts = if let Some(text) = value.as_str() {
-        text::attempts(text)
-    } else {
-        number_attempts(&value)
-    };
+    let attempts = value
+        .as_str()
+        .map_or_else(|| number_attempts(&value), text::attempts);
     let Some(parsed) = attempts else {
         return Ok(SONIOX_DEFAULT_ATTEMPTS);
     };
