@@ -51,6 +51,13 @@ class SettingsStep(TypedDict, total=False):
     params: dict[str, JsonValue]
 
 
+class NativeStep(TypedDict, total=False):
+    api_base: str
+    environment: dict[str, str]
+    global_api_base: str
+    model: str
+
+
 class GateStep(TypedDict):
     model: str
     reasoning_effort: NotRequired[str | dict[str, JsonValue]]
@@ -62,7 +69,7 @@ class Input(TypedDict, total=False):
     auth_headers: list[AuthStep]
     has_entra: list[AgentStep]
     host_boundary: list[HostStep]
-    native_responses: list[SettingsStep]
+    native_responses: list[NativeStep]
     reasoning_gate: list[GateStep]
     settings: list[SettingsStep]
 
@@ -242,7 +249,7 @@ def settings_step(step: SettingsStep) -> JsonValue:
         return {"api_base": api_base, "api_key": api_key, "outcome": outcome}
 
 
-def native_step(step: SettingsStep) -> JsonValue:
+def native_step(step: NativeStep) -> JsonValue:
     values = step.get("environment")
     if values is None:
         values = {}
