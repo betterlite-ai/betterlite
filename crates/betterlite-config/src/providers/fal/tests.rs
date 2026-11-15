@@ -80,6 +80,5 @@ fn fal_queue_settings(
     #[case] expected: (Option<&str>, Option<&str>),
 ) {
     let (api_key, queue_base) = queue_settings(environment);
-    assert_eq!(api_key.as_deref(), expected.0);
-    assert_eq!(queue_base.as_deref(), expected.1);
+    assert_eq!((api_key.as_deref(), queue_base.as_deref()), expected);
 }

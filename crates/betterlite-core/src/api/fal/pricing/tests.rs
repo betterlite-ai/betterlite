@@ -16,9 +16,13 @@ use super::keyed::{keyed_quality, keyed_size, parse_keyed_dimensions};
 use super::{
     DEFAULT_KEYED_DIMENSIONS, FAL_AI_QUEUE_DEFAULT_BASE, FAL_KEYED_DEFAULT_QUALITY,
     FAL_NAMED_IMAGE_SIZES, FAL_PIXELS_PER_MEGAPIXEL, FAL_TEXT_TO_IMAGE_DEFAULT_SIZE,
-    FalCostRequest, FalImageResponse, FalPricingError, cost_calculator, fal_ai_passthrough_cost,
-    fal_ai_queue_base, image_dimensions, resolution_key,
+    FalCostRequest, FalImageResponse, FalPricingError, cost_calculator, fal_ai_queue_base,
+    image_dimensions, resolution_key,
 };
+
+mod passthrough;
+
+const SKIP_FLAT: &str = r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.75}"#;
 
 const FLUX_SCHNELL: &str = "fal_ai/fal-ai/flux/schnell";
 const FLUX_DEV: &str = "fal_ai/fal-ai/flux/dev";
@@ -31,35 +35,23 @@ struct Lookup {
 }
 
 impl PriceLookup for Lookup {
-    fn effective_model_info(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PriceRecord> {
-        if let Some(provider) = custom_llm_provider
-            && let Some(record) = self.entries.get(&format!("{provider}/{model}"))
-        {
-            return Some(record.clone());
-        }
-        self.entries.get(model).cloned()
+    fn effective_model_info(&self, model: &str, provider: Option<&str>) -> Option<PriceRecord> {
+        let scoped = provider.and_then(|name| self.entries.get(&format!("{name}/{model}")));
+        scoped.or_else(|| self.entries.get(model)).cloned()
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
         self.entries.get(key).cloned()
     }
 
-    fn effective_priced_model(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
-            .map(|record| PricedModel {
-                record,
-                tiered_pricing: Vec::new(),
-                off_peak_pricing: None,
-                off_peak_cache_read_present: false,
-            })
+    fn effective_priced_model(&self, model: &str, provider: Option<&str>) -> Option<PricedModel> {
+        let record = self.effective_model_info(model, provider)?;
+        Some(PricedModel {
+            record,
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
+        })
     }
 }
 
@@ -100,14 +92,10 @@ fn decimal(text: &str) -> Decimal {
 }
 
 fn record(entries: &[(&str, &str)]) -> PriceRecord {
+    let parse = |body: &str| serde_json::from_str::<Scalar>(body).expect("a price scalar");
     entries
         .iter()
-        .map(|(key, body)| {
-            (
-                (*key).to_owned(),
-                serde_json::from_str::<Scalar>(body).expect("the value is a price scalar"),
-            )
-        })
+        .map(|(key, body)| ((*key).to_owned(), parse(body)))
         .collect()
 }
 
@@ -130,22 +118,26 @@ fn object(entries: &[(&str, Json)]) -> IndexMap<String, Json> {
         .collect()
 }
 
+fn priced_fixture(model: &str, flat: &str, rows: &[(&str, &str)]) -> Fixture {
+    let mut entries = vec![(format!("fal_ai/{model}"), flat.to_owned())];
+    for (size, price) in rows {
+        let body = format!(r#"{{"litellm_provider": "fal_ai", "output_cost_per_image": {price}}}"#);
+        entries.push((format!("fal_ai/{size}/{model}"), body));
+    }
+    let borrowed: Vec<(&str, &str)> = entries
+        .iter()
+        .map(|(key, body)| (key.as_str(), body.as_str()))
+        .collect();
+    fixture(&borrowed)
+}
+
 fn keyed_fixture() -> Fixture {
-    fixture(&[
-        (FLUX_SCHNELL, FLAT_SCHNELL),
-        (
-            "fal_ai/high/1024-x-768/fal-ai/flux/schnell",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.25}"#,
-        ),
-        (
-            "fal_ai/high/512-x-512/fal-ai/flux/schnell",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.125}"#,
-        ),
-        (
-            "fal_ai/medium/1024-x-768/fal-ai/flux/schnell",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.125}"#,
-        ),
-    ])
+    let rows = [
+        ("high/1024-x-768", "0.25"),
+        ("high/512-x-512", "0.125"),
+        ("medium/1024-x-768", "0.125"),
+    ];
+    priced_fixture("fal-ai/flux/schnell", FLAT_SCHNELL, &rows)
 }
 
 #[rstest]
@@ -170,7 +162,7 @@ fn the_published_constants_match_the_source() {
         .as_str()
     );
     assert_eq!(FAL_KEYED_DEFAULT_QUALITY, "high");
-    assert_eq!(FAL_PIXELS_PER_MEGAPIXEL, 1_048_576);
+    assert_eq!(FAL_PIXELS_PER_MEGAPIXEL, 0x0010_0000);
     assert_eq!(FAL_NAMED_IMAGE_SIZES.len(), 6);
     assert_eq!(FAL_NAMED_IMAGE_SIZES[1], ("square", "512-x-512"));
 }
@@ -399,20 +391,8 @@ fn a_non_string_quality_uses_the_default_keyed_rows(#[case] quality: Option<u64>
 }
 
 fn tie_fixture() -> Fixture {
-    fixture(&[
-        (
-            "fal_ai/fal-ai/tie",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.75}"#,
-        ),
-        (
-            "fal_ai/high/1000-x-1000/fal-ai/tie",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.2}"#,
-        ),
-        (
-            "fal_ai/high/900-x-1000/fal-ai/tie",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.1}"#,
-        ),
-    ])
+    let rows = [("high/1000-x-1000", "0.2"), ("high/900-x-1000", "0.1")];
+    priced_fixture("fal-ai/tie", SKIP_FLAT, &rows)
 }
 
 #[test]
@@ -449,8 +429,6 @@ fn the_closest_area_wins_and_a_tie_goes_to_the_smaller_area() {
     .expect("the closer area prices the image");
     assert_eq!(closer_cost, decimal("0.2"));
 }
-
-const SKIP_FLAT: &str = r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.75}"#;
 
 #[test]
 fn a_keyed_row_without_a_price_or_a_parsable_size_is_skipped() {
@@ -738,13 +716,8 @@ fn a_zero_resolution_price_is_used_as_zero() {
 }
 
 fn dev_keyed_fixture() -> Fixture {
-    fixture(&[
-        (FLUX_DEV, FLAT_DEV),
-        (
-            "fal_ai/high/1024-x-768/fal-ai/flux/dev",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.3}"#,
-        ),
-    ])
+    let rows = [("high/1024-x-768", "0.3")];
+    priced_fixture("fal-ai/flux/dev", FLAT_DEV, &rows)
 }
 
 #[test]
@@ -900,110 +873,5 @@ fn a_non_image_response_is_rejected() {
     assert!(matches!(
         cost_calculator(&request, &fixture.catalog, &fixture.lookup),
         Err(FalPricingError::NotImageResponse)
-    ));
-}
-
-fn passthrough_pass_cost(body: &IndexMap<String, Json>) -> Option<Decimal> {
-    let lookup = lookup_from(&[(
-        "fal_ai/fal-ai/pass",
-        r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.5, "output_cost_per_image_1024": 0.25}"#,
-    )]);
-    fal_ai_passthrough_cost("fal-ai/pass", body, &lookup).expect("the entry prices the request")
-}
-
-#[test]
-fn a_passthrough_resolution_price_counts_the_requested_images() {
-    let body = object(&[("resolution", integer(1024)), ("num_images", integer(3))]);
-    assert_eq!(passthrough_pass_cost(&body), Some(decimal("0.75")));
-}
-
-#[test]
-fn a_passthrough_flat_price_counts_the_requested_images() {
-    let body = object(&[("num_images", integer(3))]);
-    assert_eq!(passthrough_pass_cost(&body), Some(decimal("1.5")));
-}
-
-#[test]
-fn a_named_passthrough_resolution_price_counts_the_requested_images() {
-    let body = object(&[("resolution", text("1024")), ("num_images", integer(3))]);
-    assert_eq!(passthrough_pass_cost(&body), Some(decimal("0.75")));
-}
-
-#[rstest]
-#[case::boolean("true")]
-#[case::zero("0")]
-#[case::negative("-1")]
-#[case::float("2.0")]
-#[case::text(r#""4""#)]
-#[case::null("null")]
-#[case::list("[]")]
-fn a_count_that_is_not_a_positive_exact_integer_uses_one(#[case] count: &str) {
-    let count: Json = serde_json::from_str(count).expect("the case is a JSON value");
-    let body = object(&[("num_images", count)]);
-    assert_eq!(passthrough_pass_cost(&body), Some(decimal("0.5")));
-}
-
-#[test]
-fn a_positive_exact_integer_count_multiplies_the_price() {
-    let body = object(&[("num_images", integer(4))]);
-    assert_eq!(passthrough_pass_cost(&body), Some(decimal("2")));
-}
-
-#[test]
-fn passthrough_cost_distinguishes_an_unavailable_price_from_zero() {
-    let lookup = lookup_from(&[
-        ("fal_ai/fal-ai/missing", r#"{"litellm_provider": "fal_ai"}"#),
-        (
-            "fal_ai/fal-ai/zero",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0}"#,
-        ),
-    ]);
-    let body = object(&[]);
-    assert_eq!(
-        fal_ai_passthrough_cost("fal-ai/missing", &body, &lookup)
-            .expect("a missing price is not an error"),
-        None
-    );
-    assert_eq!(
-        fal_ai_passthrough_cost("fal-ai/unknown", &body, &lookup)
-            .expect("a missing entry is not an error"),
-        None
-    );
-    assert_eq!(
-        fal_ai_passthrough_cost("fal-ai/zero", &body, &lookup).expect("the zero price is a price"),
-        Some(Decimal::ZERO)
-    );
-    let flag = object(&[("resolution", Json::Bool(true))]);
-    assert_eq!(
-        fal_ai_passthrough_cost("fal-ai/zero", &flag, &lookup)
-            .expect("a boolean resolution is ignored"),
-        Some(Decimal::ZERO)
-    );
-}
-
-#[test]
-fn a_boolean_catalog_price_reads_as_one() {
-    let lookup = lookup_from(&[(
-        "fal_ai/fal-ai/flag",
-        r#"{"litellm_provider": "fal_ai", "output_cost_per_image": true}"#,
-    )]);
-    let body = object(&[]);
-    assert_eq!(
-        fal_ai_passthrough_cost("fal-ai/flag", &body, &lookup)
-            .expect("the boolean price is a price"),
-        Some(Decimal::ONE)
-    );
-}
-
-#[test]
-fn passthrough_cost_reports_an_overflowing_product() {
-    let lookup = lookup_from(&[(
-        "fal_ai/fal-ai/huge",
-        r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 79228162514264337593543950335}"#,
-    )]);
-    let body = object(&[("num_images", integer(2))]);
-    assert!(matches!(
-        fal_ai_passthrough_cost("fal-ai/huge", &body, &lookup),
-        Err(FalPricingError::Overflow)
     ));
 }

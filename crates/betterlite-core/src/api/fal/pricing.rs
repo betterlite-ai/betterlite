@@ -18,7 +18,7 @@ use crate::cost::image_dispatch::route::deployment_price_record;
 pub const FAL_KEYED_DEFAULT_QUALITY: &str = "high";
 const DEFAULT_KEYED_DIMENSIONS: (u64, u64) = (1024, 768);
 pub const FAL_TEXT_TO_IMAGE_DEFAULT_SIZE: &str = "1024-x-768";
-pub const FAL_PIXELS_PER_MEGAPIXEL: u64 = 1_048_576;
+pub const FAL_PIXELS_PER_MEGAPIXEL: u64 = 0x0010_0000;
 pub const FAL_NAMED_IMAGE_SIZES: [(&str, &str); 6] = [
     ("square_hd", "1024-x-1024"),
     ("square", "512-x-512"),
@@ -178,7 +178,7 @@ fn flat_cost_per_image(
     };
     let megapixels = (u128::from(dimensions.0).saturating_mul(u128::from(dimensions.1)))
         .div_ceil(u128::from(FAL_PIXELS_PER_MEGAPIXEL));
-    let units = u64::try_from(megapixels).map_err(|_| FalPricingError::Overflow)?;
+    let units = u64::try_from(megapixels).map_err(|_too_large| FalPricingError::Overflow)?;
     pixel
         .checked_mul(Decimal::from(FAL_PIXELS_PER_MEGAPIXEL))
         .and_then(|value| value.checked_mul(Decimal::from(units)))
@@ -197,10 +197,10 @@ fn resolution_key(resolution: Option<&Json>) -> Option<String> {
 }
 
 fn resolution_cost_per_image(
-    entry: Option<&PriceRecord>,
+    catalog_entry: Option<&PriceRecord>,
     resolution: Option<&Json>,
 ) -> Result<Option<Decimal>, ImageCostError> {
-    let (Some(entry), Some(key)) = (entry, resolution_key(resolution)) else {
+    let (Some(entry), Some(key)) = (catalog_entry, resolution_key(resolution)) else {
         return Ok(None);
     };
     image_price(entry.get(&format!("output_cost_per_image_{key}")))
