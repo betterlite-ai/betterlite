@@ -10,13 +10,15 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time;
 use tokio_tungstenite::accept_hdr_async;
-use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
+use tokio_tungstenite::tungstenite::handshake::server::{
+    Callback, ErrorResponse, Request, Response,
+};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 use super::fixture;
 use crate::aim::error::AimError;
 use crate::aim::settings::AimHook;
-use crate::aim::stream::{AimSocketConnector, MAX_STREAM_FRAME_BYTES, StreamFrame};
+use crate::aim::stream::{AimSocketConnector as _, MAX_STREAM_FRAME_BYTES, StreamFrame};
 use crate::aim::transport::AimWebSocketConnector;
 use crate::aim::wire::AnalyzeResponse;
 
@@ -24,6 +26,22 @@ struct FrameServer {
     url: String,
     seen: Arc<Mutex<Option<String>>>,
     tasks: JoinSet<Vec<String>>,
+}
+
+struct Handshake {
+    recorded: Arc<Mutex<Option<String>>>,
+}
+
+impl Callback for Handshake {
+    fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
+        let authorization = request
+            .headers()
+            .get("authorization")
+            .and_then(|header| header.to_str().ok())
+            .map(str::to_owned);
+        *self.recorded.lock().unwrap_or_else(PoisonError::into_inner) = authorization;
+        Ok(response)
+    }
 }
 
 async fn frame_server(frames: Vec<String>) -> FrameServer {
@@ -37,17 +55,9 @@ async fn frame_server(frames: Vec<String>) -> FrameServer {
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         let (stream, _peer) = listener.accept().await.unwrap();
-        let mut socket = accept_hdr_async(stream, move |request: &Request, response: Response| {
-            let authorization = request
-                .headers()
-                .get("authorization")
-                .and_then(|header| header.to_str().ok())
-                .map(str::to_owned);
-            *recorded.lock().unwrap_or_else(PoisonError::into_inner) = authorization;
-            Ok::<_, ErrorResponse>(response)
-        })
-        .await
-        .unwrap();
+        let mut socket = accept_hdr_async(stream, Handshake { recorded })
+            .await
+            .unwrap();
         for frame in frames {
             socket
                 .send(Message::Text(Utf8Bytes::from(frame)))
@@ -80,31 +90,30 @@ async fn aim_guardrail_websocket_connector_exchanges_text_frames_with_a_local_se
     ])
     .await;
     let connector = AimWebSocketConnector;
-    {
-        let mut socket = connector
-            .connect(
-                &server.url,
-                &headers(),
-                Duration::from_secs(5),
-                Duration::from_secs(5),
-            )
-            .await
-            .unwrap();
-        socket
-            .writer
-            .send_text(r#"{"choices":[]}"#.to_owned())
-            .await
-            .unwrap();
-        socket
-            .writer
-            .send_text(r#"{"done":true}"#.to_owned())
-            .await
-            .unwrap();
-        let first = socket.reader.recv_text().await.unwrap().unwrap();
-        let second = socket.reader.recv_text().await.unwrap().unwrap();
-        assert!(first.contains("verified_chunk"));
-        assert_eq!(second, r#"{"done": true}"#);
-    }
+    let mut socket = connector
+        .connect(
+            &server.url,
+            &headers(),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+    socket
+        .writer
+        .send_text(r#"{"choices":[]}"#.to_owned())
+        .await
+        .unwrap();
+    socket
+        .writer
+        .send_text(r#"{"done":true}"#.to_owned())
+        .await
+        .unwrap();
+    let first = socket.reader.recv_text().await.unwrap().unwrap();
+    let second = socket.reader.recv_text().await.unwrap().unwrap();
+    assert!(first.contains("verified_chunk"));
+    assert_eq!(second, r#"{"done": true}"#);
+    drop(socket);
     assert_eq!(
         server.seen.lock().unwrap().as_deref(),
         Some("Bearer aim-key")

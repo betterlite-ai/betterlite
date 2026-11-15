@@ -34,33 +34,31 @@ fn prepared(
 }
 
 fn recorded(built: &Built) -> HelperResult {
-    let (url, headers, bytes) = {
-        let posts = built
-            .state
-            .posts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let Some(post) = posts.first() else {
-            return Err(failure(
-                "ValueError",
-                "the guardrail sent no request".to_owned(),
-            ));
-        };
-        let mut headers: BTreeMap<String, String> = post
-            .headers
-            .iter()
-            .filter(|(header, _)| {
-                header.as_str().starts_with("x-aim-")
-                    || matches!(header.as_str(), "authorization" | "content-type")
-            })
-            .filter_map(|(header, value)| {
-                Some((header.as_str().to_owned(), value.to_str().ok()?.to_owned()))
-            })
-            .collect();
-        // the real HttpPoster adds this header; the fake poster records the caller's map
-        headers.insert("content-type".to_owned(), "application/json".to_owned());
-        (post.url.clone(), headers, post.body.clone())
+    let Some((url, recorded_headers, bytes)) = built
+        .state
+        .posts
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .first()
+        .map(|post| (post.url.clone(), post.headers.clone(), post.body.clone()))
+    else {
+        return Err(failure(
+            "ValueError",
+            "the guardrail sent no request".to_owned(),
+        ));
     };
+    let mut headers: BTreeMap<String, String> = recorded_headers
+        .iter()
+        .filter(|(header, _)| {
+            header.as_str().starts_with("x-aim-")
+                || matches!(header.as_str(), "authorization" | "content-type")
+        })
+        .filter_map(|(header, value)| {
+            Some((header.as_str().to_owned(), value.to_str().ok()?.to_owned()))
+        })
+        .collect();
+    // the real HttpPoster adds this header; the fake poster records the caller's map
+    headers.insert("content-type".to_owned(), "application/json".to_owned());
     let body = serde_json::from_slice::<GuardrailValue>(&bytes)
         .map_err(|error| failure("ValueError", error.to_string()))?;
     Ok(json!({
@@ -143,22 +141,28 @@ fn execute_output(args: &OutputArgs) -> HelperResult {
         &args.output,
         args.key_alias.as_deref(),
     ));
-    let output = match verdict {
-        Ok(AimOutput::Blocked { detection_message }) => {
-            json!({"detected": detection_message.is_some(), "redacted_output": null})
-        }
-        Ok(AimOutput::Redacted { output }) => {
-            json!({"detected": false, "redacted_output": output})
-        }
-        Ok(AimOutput::Unchanged) => {
-            json!({"detected": false, "redacted_output": args.output})
-        }
+    let request = recorded(&built)?;
+    match verdict {
+        Ok(AimOutput::Blocked { detection_message }) => Ok(json!({
+            "request": request,
+            "output": {"detected": detection_message.is_some(), "redacted_output": null},
+        })),
+        Ok(AimOutput::Redacted { output }) => Ok(json!({
+            "request": request,
+            "output": {"detected": false, "redacted_output": output},
+        })),
+        Ok(AimOutput::Unchanged) => Ok(json!({
+            "request": request,
+            "output": {"detected": false, "redacted_output": args.output},
+        })),
         Err(error) => match rejection(&error) {
-            Some(blocked) => json!({"detected": false, "rejected": blocked}),
-            None => return Err(failure("AimError", error.to_string())),
+            Some(blocked) => Ok(json!({
+                "request": request,
+                "output": {"detected": false, "rejected": blocked},
+            })),
+            None => Err(failure("AimError", error.to_string())),
         },
-    };
-    Ok(json!({"request": recorded(&built)?, "output": output}))
+    }
 }
 
 fn stream(args: &StreamArgs) -> HelperResult {

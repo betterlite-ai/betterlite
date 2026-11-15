@@ -27,10 +27,33 @@ pub(super) struct State {
     pub(super) incoming: Mutex<VecDeque<Option<String>>>,
 }
 
+impl State {
+    fn record(&self, url: &str, headers: &HeaderMap, body: &[u8]) {
+        self.posts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Recorded {
+                url: url.to_owned(),
+                headers: headers.clone(),
+                body: body.to_vec(),
+            });
+    }
+}
+
 pub(super) struct Fake {
     pub(super) state: Arc<State>,
     pub(super) status: StatusCode,
     pub(super) body: Vec<u8>,
+}
+
+impl Fake {
+    fn half(&self) -> Self {
+        Self {
+            state: Arc::clone(&self.state),
+            status: self.status,
+            body: Vec::new(),
+        }
+    }
 }
 
 #[async_trait]
@@ -42,15 +65,7 @@ impl AimPoster for Fake {
         body: &[u8],
         _timeout: Option<Duration>,
     ) -> Result<AimHttpResponse, AimError> {
-        self.state
-            .posts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Recorded {
-                url: url.to_owned(),
-                headers: headers.clone(),
-                body: body.to_vec(),
-            });
+        self.state.record(url, headers, body);
         Ok(AimHttpResponse {
             status: self.status,
             body: self.body.clone(),
@@ -87,16 +102,8 @@ impl AimSocketConnector for Fake {
         _read: Duration,
     ) -> Result<AimSocket, AimError> {
         Ok(AimSocket {
-            reader: Box::new(Self {
-                state: Arc::clone(&self.state),
-                status: self.status,
-                body: Vec::new(),
-            }),
-            writer: Box::new(Self {
-                state: Arc::clone(&self.state),
-                status: self.status,
-                body: Vec::new(),
-            }),
+            reader: Box::new(self.half()),
+            writer: Box::new(self.half()),
         })
     }
 }
