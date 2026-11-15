@@ -608,6 +608,22 @@ async fn deployment_isolation() {
 }
 
 #[test]
+fn selection_provider_predicates() {
+    let vertex = vertex_counter();
+    let studio = StudioTokenCounter {
+        settings: Settings::default(),
+    };
+    assert!(vertex.should_use_token_counting_api(Some("vertex_ai")));
+    assert!(!vertex.should_use_token_counting_api(Some("vertex_ai_beta")));
+    assert!(!vertex.should_use_token_counting_api(Some("gemini")));
+    assert!(!vertex.should_use_token_counting_api(None));
+    assert!(studio.should_use_token_counting_api(Some("gemini")));
+    assert!(!studio.should_use_token_counting_api(Some("gemini/")));
+    assert!(!studio.should_use_token_counting_api(Some("vertex_ai")));
+    assert!(!studio.should_use_token_counting_api(None));
+}
+
+#[test]
 fn selection_model_info_stubs_stay_unsupported() {
     let vertex = VertexModelInfo {
         settings: VertexSettings::default(),
