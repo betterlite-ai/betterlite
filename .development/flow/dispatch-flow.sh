@@ -140,7 +140,7 @@ if [[ -z "${LAND_ONLY}" ]]; then
       RETRIED=1 exec bash "${P}/dispatch-flow.sh" "${id}" "${run}b" "main is merged into your branch now; continue where the last run stopped."
     fi
     if grep -q -E 'at its usage limit|ladder is unavailable|every worker vendor is unavailable' "${log}"; then
-      why=$(grep -o -E "[a-z]+ (can't reach its API|is logged out|is at its usage limit)" "${log}") && why=$(sort -u <<< "${why}") && why=${why//$'\n'/,}
+      why=$(grep -o -E "[a-z][a-z0-9-]* (can't reach its API|is logged out|is at its usage limit)" "${log}") && why=$(sort -u <<< "${why}") && why=${why//$'\n'/,}
       say "paused: ${why:-vendor unavailable}; waiting for its reset or recovery before preparing another checkout"
       sleep 60
       maintenance

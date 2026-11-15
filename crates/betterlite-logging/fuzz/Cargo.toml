@@ -13,6 +13,7 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-logging = { path = ".." }
+betterlite-models = { path = "../../betterlite-models" }
 chrono = "0.4.45"
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["raw_value"] }
