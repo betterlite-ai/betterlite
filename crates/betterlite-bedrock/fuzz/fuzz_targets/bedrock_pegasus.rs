@@ -9,6 +9,7 @@ use betterlite_bedrock::pegasus::response::{
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use libfuzzer_sys::fuzz_target;
+use tokio::runtime::Builder;
 
 struct ZeroCounter;
 
@@ -42,7 +43,7 @@ fn seeded_response() -> PegasusResponse {
 }
 
 fn replay(bytes: &[u8]) {
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread().build() else {
+    let Ok(runtime) = Builder::new_current_thread().build() else {
         return;
     };
     let headers = [
