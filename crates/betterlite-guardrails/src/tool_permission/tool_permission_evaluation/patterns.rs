@@ -28,7 +28,6 @@ pub(super) fn patterns_match_for_rule(
         };
         for value in values {
             if !pattern.regex.is_match(value) {
-                let rule_id = rule.id.as_str();
                 let pattern_source = pattern.source.as_str();
                 let tool = tool_name.unwrap_or("unknown_tool");
                 return Some(format!(
