@@ -1,0 +1,8 @@
+kind: helper
+name: compresr
+call:
+  b6562:
+    provider: compresr
+env: {}
+compare:
+  ignore: []

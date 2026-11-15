@@ -1,0 +1,21 @@
+task: B662
+deviations:
+  - what: The Invalid JSON message warning for a client message that is not JSON omits the first 200 characters of the message; the warning and the empty outbound result stay.
+    why: Repository redaction rules prohibit exposing client audio or text through malformed request logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L645-L649
+kept_bugs:
+  - what: Every input_audio_buffer.append marks the session as having client audio, even when the audio is empty, null or not base64, and the synthetic ready trigger of response.create then stays off for the rest of the session.
+    why: A working setup that streams audio relies on Nova Sonic's own turn detection, so the trigger audio must not be injected after the first append.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L369
+  - what: input_audio_buffer.commit closes the open audio content but keeps its content name, so a later append opens a new content with the same name.
+    why: Bedrock accepts the reopened name today and no setup can tell the difference from a fresh one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L436-L448
+  - what: response.create reuses an audio content that is already open without checking its sample rate against the 16 kHz trigger audio, and the trigger audio is sent again on every response.create because it does not mark the session as having client audio.
+    why: Text-only sessions rely on every response.create producing a response, and a repeated trigger is what gives them one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L539-L566
+  - what: response.cancel is logged and answered with no Bedrock event, so a response that is already generating keeps going.
+    why: A working setup only sees the cancel go unanswered, and an interrupt event would change what Nova Sonic does for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L585-L597
+  - what: session close leaves client_audio_streamed set, so a session that streamed audio never gets the ready trigger again after a close.
+    why: The flag describes the session, and a setup that reuses one after a close has only seen this behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L599-L626

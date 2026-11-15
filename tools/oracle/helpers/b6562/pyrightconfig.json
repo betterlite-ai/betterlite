@@ -1,0 +1,6 @@
+{
+  "include": ["../b6562.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

@@ -1,0 +1,37 @@
+kind: helper
+name: bedrock-messages-beta-tool-search-beta
+call:
+  bedrock_messages_beta:
+    function: beta_headers
+    model_cost:
+      anthropic/fixture-tool-search: {litellm_provider: anthropic}
+      bedrock/claude-sonnet-4-5: {litellm_provider: bedrock, supports_tool_search: false}
+      bedrock/fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+    calls:
+      - model: fixture-tool-search
+        tools: [{type: tool_search_tool_regex_20251119, name: tool_search}]
+        headers: {anthropic-beta: advanced-tool-use-2025-11-20}
+        outgoing: {messages: []}
+      - model: claude-sonnet-4-5
+        tools: [{type: tool_search_tool_regex_20251119, name: tool_search}]
+        headers: {anthropic-beta: advanced-tool-use-2025-11-20}
+      - model: fixture-tool-search
+        subclass_provider: bedrock_mantle
+        tools: [{type: tool_search_tool_regex_20251119, name: tool_search}]
+        headers: {anthropic-beta: advanced-tool-use-2025-11-20}
+      - model: fixture-tool-search
+        subclass_provider: bedrock_mantle
+        tools: [{type: tool_search_tool_regex_20251119, name: tool_search, input_examples: [{query: x}]}]
+        headers: {anthropic-beta: advanced-tool-use-2025-11-20}
+      - model: fixture-tool-search
+        subclass_provider: bedrock_mantle
+        headers: {anthropic-beta: tool-search-tool-2025-10-19}
+      - model: fixture-tool-search
+        subclass_provider: anthropic
+        headers: {anthropic-beta: advanced-tool-use-2025-11-20}
+      - model: fixture-tool-search
+        subclass_provider: anthropic
+        tools: [{type: tool_search_tool_regex_20251119, name: tool_search}]
+        headers: {anthropic-beta: advanced-tool-use-2025-11-20}
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}
