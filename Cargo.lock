@@ -1460,6 +1460,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-cli",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -1635,12 +1636,15 @@ version = "0.0.0"
 dependencies = [
  "betterlite-config",
  "betterlite-core",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "chrono",
+ "http 1.5.0",
  "jiff",
  "libfuzzer-sys",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -1815,12 +1819,17 @@ dependencies = [
 name = "betterlite-foundry"
 version = "0.1.0"
 dependencies = [
+ "betterlite-azure",
+ "betterlite-config",
  "betterlite-context",
  "betterlite-models",
+ "betterlite-prompts",
  "chrono",
  "jiff",
  "rstest",
  "rust_decimal",
+ "secrecy",
+ "serde",
  "serde_json",
  "thiserror",
  "tracing",
@@ -3538,7 +3547,6 @@ dependencies = [
  "betterlite-streaming",
  "betterlite-tokenizer",
  "data-encoding",
- "futures-util",
  "google-cloud-auth",
  "google-cloud-gax",
  "google-cloud-speech-v2",
