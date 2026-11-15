@@ -33,12 +33,10 @@ use super::{
 use crate::agent_365_config::{
     AGENT_365_PROD_API_BASE, AGENT_365_PROD_RESOURCE_APP_ID, AGENT_365_SCOPE_NAME,
 };
-use crate::agent_365_tokens::cache::{
-    DEFAULT_TOKEN_TTL, OBO_CACHE_MAX_ENTRIES, TOKEN_EXPIRY_MARGIN,
-};
+use crate::agent_365_tokens::cache::{OBO_CACHE_MAX_ENTRIES, TOKEN_EXPIRY_MARGIN};
 use crate::agent_365_tokens::error::{Agent365Error, Agent365TokenError};
 use crate::agent_365_tokens::exchange::{OBO_SCOPE, entra_assertion};
-use crate::agent_365_tokens::wire::MAX_DESCRIPTION_CHARS;
+use crate::agent_365_tokens::wire::{DEFAULT_TOKEN_TTL, MAX_DESCRIPTION_CHARS};
 
 type ScenarioFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 type Scenario = fn() -> ScenarioFuture;
@@ -221,7 +219,7 @@ fn object_fields(pairs: &[(&str, GuardrailValue)]) -> BTreeMap<String, Guardrail
         .collect()
 }
 
-fn token_is_cached_per_assertion() -> ScenarioFuture {
+fn test_token_is_cached_per_assertion() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![reply(
@@ -256,7 +254,7 @@ fn token_is_cached_per_assertion() -> ScenarioFuture {
     })
 }
 
-fn token_within_the_margin_is_reused() -> ScenarioFuture {
+fn test_token_within_the_margin_is_reused() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -275,7 +273,7 @@ fn token_within_the_margin_is_reused() -> ScenarioFuture {
     })
 }
 
-fn token_at_the_margin_is_refetched() -> ScenarioFuture {
+fn test_token_at_the_margin_is_refetched() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -294,7 +292,7 @@ fn token_at_the_margin_is_refetched() -> ScenarioFuture {
     })
 }
 
-fn expired_token_is_refetched() -> ScenarioFuture {
+fn test_expired_token_is_refetched() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -312,7 +310,7 @@ fn expired_token_is_refetched() -> ScenarioFuture {
     })
 }
 
-fn expires_in_forms_are_parsed() -> ScenarioFuture {
+fn test_expires_in_forms_are_parsed() -> ScenarioFuture {
     Box::pin(async {
         let forms = [
             ("120", Duration::from_secs(120)),
@@ -331,7 +329,7 @@ fn expires_in_forms_are_parsed() -> ScenarioFuture {
     })
 }
 
-fn default_ttl_applies_until_the_margin() -> ScenarioFuture {
+fn test_default_ttl_applies_until_the_margin() -> ScenarioFuture {
     Box::pin(async {
         for body in [
             r#"{"access_token":"tok-1","expires_in":"soon"}"#,
@@ -355,7 +353,7 @@ fn default_ttl_applies_until_the_margin() -> ScenarioFuture {
     })
 }
 
-fn throttled_and_server_errors() -> ScenarioFuture {
+fn test_throttled_and_server_errors() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -389,14 +387,14 @@ fn throttled_and_server_errors() -> ScenarioFuture {
 fn malformed_variant(error: &Agent365TokenError) -> &'static str {
     match error {
         Agent365TokenError::NonJsonBody { .. } => "non_json_body",
-        Agent365TokenError::NonObjectBody => "non_object_body",
+        Agent365TokenError::NonObjectBody { .. } => "non_object_body",
         Agent365TokenError::MissingAccessToken => "missing_access_token",
         Agent365TokenError::BadAccessToken => "bad_access_token",
         _ => "other",
     }
 }
 
-fn malformed_bodies() -> ScenarioFuture {
+fn test_malformed_bodies() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -426,7 +424,7 @@ fn malformed_bodies() -> ScenarioFuture {
     })
 }
 
-fn exchange_errors_carry_the_gateway_verdict() -> ScenarioFuture {
+fn test_exchange_errors_carry_the_gateway_verdict() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -446,7 +444,7 @@ fn exchange_errors_carry_the_gateway_verdict() -> ScenarioFuture {
                 assert_eq!(failure.status_code, 401);
                 assert_eq!(failure.error_code, "invalid_client");
                 assert_eq!(failure.description, "AADSTS700016: application not found");
-                assert_eq!(failure.aadsts_codes, vec![700016]);
+                assert_eq!(failure.aadsts_codes, vec![700_016]);
                 assert!(failure.gateway_owned());
             }
             other => panic!("expected a token exchange failure, got {other}"),
@@ -462,7 +460,7 @@ fn exchange_errors_carry_the_gateway_verdict() -> ScenarioFuture {
     })
 }
 
-fn exchange_errors_fall_back_to_defaults() -> ScenarioFuture {
+fn test_exchange_errors_fall_back_to_defaults() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -501,7 +499,7 @@ fn exchange_errors_fall_back_to_defaults() -> ScenarioFuture {
     })
 }
 
-fn aadsts_codes_tolerate_invalid_input() -> ScenarioFuture {
+fn test_aadsts_codes_tolerate_invalid_input() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -536,7 +534,7 @@ fn aadsts_codes_tolerate_invalid_input() -> ScenarioFuture {
     })
 }
 
-fn long_description_is_truncated() -> ScenarioFuture {
+fn test_long_description_is_truncated() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         let description = "d".repeat(600);
@@ -553,7 +551,7 @@ fn long_description_is_truncated() -> ScenarioFuture {
     })
 }
 
-fn eviction_removes_only_the_named_token() -> ScenarioFuture {
+fn test_eviction_removes_only_the_named_token() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -574,7 +572,7 @@ fn eviction_removes_only_the_named_token() -> ScenarioFuture {
     })
 }
 
-fn capacity_evicts_the_least_recently_used_token() -> ScenarioFuture {
+fn test_capacity_evicts_the_least_recently_used_token() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         queue_series(&poster, OBO_CACHE_MAX_ENTRIES + 1);
@@ -597,7 +595,7 @@ fn capacity_evicts_the_least_recently_used_token() -> ScenarioFuture {
     })
 }
 
-fn assertion_shapes() -> ScenarioFuture {
+fn test_assertion_shapes() -> ScenarioFuture {
     Box::pin(async {
         let compact = GuardrailValue::Text("a.b.c".to_owned());
         assert_eq!(entra_assertion(&compact), Some("a.b.c"));
@@ -614,7 +612,7 @@ fn assertion_shapes() -> ScenarioFuture {
     })
 }
 
-fn post_returns_the_reply() -> ScenarioFuture {
+fn test_post_returns_the_reply() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         poster.queue(vec![
@@ -647,7 +645,7 @@ fn post_returns_the_reply() -> ScenarioFuture {
     })
 }
 
-fn http_poster_returns_error_statuses() -> ScenarioFuture {
+fn test_http_poster_returns_error_statuses() -> ScenarioFuture {
     Box::pin(async {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -683,7 +681,7 @@ fn http_poster_returns_error_statuses() -> ScenarioFuture {
     })
 }
 
-fn payload_defaults() -> ScenarioFuture {
+fn test_payload_defaults() -> ScenarioFuture {
     Box::pin(async {
         let fields = object_fields(&[("litellm_call_id", text("call-1"))]);
         let payload = build_evaluate_payload(&fields, None).unwrap();
@@ -699,7 +697,7 @@ fn payload_defaults() -> ScenarioFuture {
     })
 }
 
-fn payload_arguments_and_alias() -> ScenarioFuture {
+fn test_payload_arguments_and_alias() -> ScenarioFuture {
     Box::pin(async {
         let arguments = object_fields(&[("q", text("weather"))]);
         let fields = object_fields(&[
@@ -720,7 +718,7 @@ fn payload_arguments_and_alias() -> ScenarioFuture {
     })
 }
 
-fn payload_omits_non_object_arguments() -> ScenarioFuture {
+fn test_payload_omits_non_object_arguments() -> ScenarioFuture {
     Box::pin(async {
         for omitted in [
             GuardrailValue::Text("not-an-object".to_owned()),
@@ -737,7 +735,7 @@ fn payload_omits_non_object_arguments() -> ScenarioFuture {
     })
 }
 
-fn payload_rejects_non_string_names() -> ScenarioFuture {
+fn test_payload_rejects_non_string_names() -> ScenarioFuture {
     Box::pin(async {
         let tool = object_fields(&[("mcp_tool_name", GuardrailValue::SignedInteger(5))]);
         assert!(matches!(
@@ -756,7 +754,7 @@ fn payload_rejects_non_string_names() -> ScenarioFuture {
     })
 }
 
-fn conversation_id_from_metadata_and_headers() -> ScenarioFuture {
+fn test_conversation_id_from_metadata_and_headers() -> ScenarioFuture {
     Box::pin(async {
         let logging_session = object_fields(&[
             (
@@ -796,7 +794,7 @@ fn conversation_id_from_metadata_and_headers() -> ScenarioFuture {
     })
 }
 
-fn conversation_id_from_nested_tool_metadata() -> ScenarioFuture {
+fn test_conversation_id_from_nested_tool_metadata() -> ScenarioFuture {
     Box::pin(async {
         let nested_tool = object_fields(&[(
             "metadata",
@@ -821,7 +819,7 @@ fn conversation_id_from_nested_tool_metadata() -> ScenarioFuture {
     })
 }
 
-fn conversation_id_skips_empty_sources() -> ScenarioFuture {
+fn test_conversation_id_skips_empty_sources() -> ScenarioFuture {
     Box::pin(async {
         let ignored = object_fields(&[(
             "headers",
@@ -857,7 +855,7 @@ fn conversation_id_skips_empty_sources() -> ScenarioFuture {
     })
 }
 
-fn conversation_id_generated() -> ScenarioFuture {
+fn test_conversation_id_generated() -> ScenarioFuture {
     Box::pin(async {
         let generated = resolve_conversation_id(&object_fields(&[]));
         let parsed = uuid::Uuid::parse_str(&generated).unwrap();
@@ -874,7 +872,7 @@ fn conversation_id_generated() -> ScenarioFuture {
     })
 }
 
-fn constants() -> ScenarioFuture {
+fn test_constants() -> ScenarioFuture {
     Box::pin(async {
         assert_eq!(
             AGENT_365_PROD_API_BASE,
@@ -903,7 +901,7 @@ fn constants() -> ScenarioFuture {
     })
 }
 
-fn wiring() -> ScenarioFuture {
+fn test_wiring() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         let clock = TestClock::new();
@@ -941,7 +939,7 @@ fn wiring() -> ScenarioFuture {
     })
 }
 
-fn invalid_timeouts_are_rejected() -> ScenarioFuture {
+fn test_invalid_timeouts_are_rejected() -> ScenarioFuture {
     Box::pin(async {
         for seconds in [-1.0, f64::NAN, f64::INFINITY] {
             let mut invalid = settings();
@@ -960,36 +958,36 @@ fn invalid_timeouts_are_rejected() -> ScenarioFuture {
 }
 
 #[rstest]
-#[case::token_is_cached_per_assertion(token_is_cached_per_assertion)]
-#[case::token_within_the_margin_is_reused(token_within_the_margin_is_reused)]
-#[case::token_at_the_margin_is_refetched(token_at_the_margin_is_refetched)]
-#[case::expired_token_is_refetched(expired_token_is_refetched)]
-#[case::expires_in_forms_are_parsed(expires_in_forms_are_parsed)]
-#[case::default_ttl_applies_until_the_margin(default_ttl_applies_until_the_margin)]
-#[case::throttled_and_server_errors(throttled_and_server_errors)]
-#[case::malformed_bodies(malformed_bodies)]
-#[case::exchange_errors_carry_the_gateway_verdict(exchange_errors_carry_the_gateway_verdict)]
-#[case::exchange_errors_fall_back_to_defaults(exchange_errors_fall_back_to_defaults)]
-#[case::aadsts_codes_tolerate_invalid_input(aadsts_codes_tolerate_invalid_input)]
-#[case::long_description_is_truncated(long_description_is_truncated)]
-#[case::eviction_removes_only_the_named_token(eviction_removes_only_the_named_token)]
+#[case::token_is_cached_per_assertion(test_token_is_cached_per_assertion)]
+#[case::token_within_the_margin_is_reused(test_token_within_the_margin_is_reused)]
+#[case::token_at_the_margin_is_refetched(test_token_at_the_margin_is_refetched)]
+#[case::expired_token_is_refetched(test_expired_token_is_refetched)]
+#[case::expires_in_forms_are_parsed(test_expires_in_forms_are_parsed)]
+#[case::default_ttl_applies_until_the_margin(test_default_ttl_applies_until_the_margin)]
+#[case::throttled_and_server_errors(test_throttled_and_server_errors)]
+#[case::malformed_bodies(test_malformed_bodies)]
+#[case::exchange_errors_carry_the_gateway_verdict(test_exchange_errors_carry_the_gateway_verdict)]
+#[case::exchange_errors_fall_back_to_defaults(test_exchange_errors_fall_back_to_defaults)]
+#[case::aadsts_codes_tolerate_invalid_input(test_aadsts_codes_tolerate_invalid_input)]
+#[case::long_description_is_truncated(test_long_description_is_truncated)]
+#[case::eviction_removes_only_the_named_token(test_eviction_removes_only_the_named_token)]
 #[case::capacity_evicts_the_least_recently_used_token(
-    capacity_evicts_the_least_recently_used_token
+    test_capacity_evicts_the_least_recently_used_token
 )]
-#[case::assertion_shapes(assertion_shapes)]
-#[case::post_returns_the_reply(post_returns_the_reply)]
-#[case::http_poster_returns_error_statuses(http_poster_returns_error_statuses)]
-#[case::payload_defaults(payload_defaults)]
-#[case::payload_arguments_and_alias(payload_arguments_and_alias)]
-#[case::payload_omits_non_object_arguments(payload_omits_non_object_arguments)]
-#[case::payload_rejects_non_string_names(payload_rejects_non_string_names)]
-#[case::conversation_id_from_metadata_and_headers(conversation_id_from_metadata_and_headers)]
-#[case::conversation_id_from_nested_tool_metadata(conversation_id_from_nested_tool_metadata)]
-#[case::conversation_id_skips_empty_sources(conversation_id_skips_empty_sources)]
-#[case::conversation_id_generated(conversation_id_generated)]
-#[case::constants(constants)]
-#[case::wiring(wiring)]
-#[case::invalid_timeouts_are_rejected(invalid_timeouts_are_rejected)]
+#[case::assertion_shapes(test_assertion_shapes)]
+#[case::post_returns_the_reply(test_post_returns_the_reply)]
+#[case::http_poster_returns_error_statuses(test_http_poster_returns_error_statuses)]
+#[case::payload_defaults(test_payload_defaults)]
+#[case::payload_arguments_and_alias(test_payload_arguments_and_alias)]
+#[case::payload_omits_non_object_arguments(test_payload_omits_non_object_arguments)]
+#[case::payload_rejects_non_string_names(test_payload_rejects_non_string_names)]
+#[case::conversation_id_from_metadata_and_headers(test_conversation_id_from_metadata_and_headers)]
+#[case::conversation_id_from_nested_tool_metadata(test_conversation_id_from_nested_tool_metadata)]
+#[case::conversation_id_skips_empty_sources(test_conversation_id_skips_empty_sources)]
+#[case::conversation_id_generated(test_conversation_id_generated)]
+#[case::constants(test_constants)]
+#[case::wiring(test_wiring)]
+#[case::invalid_timeouts_are_rejected(test_invalid_timeouts_are_rejected)]
 #[tokio::test]
 async fn agent_365_token_behaviors(#[case] scenario: Scenario) {
     scenario().await;
