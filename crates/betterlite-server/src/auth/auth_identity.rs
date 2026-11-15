@@ -6,7 +6,7 @@ use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
-use crate::auth::auth_request_models::RequestModelStageInput;
+use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,7 +60,7 @@ fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, Authenti
     let StageInput::AuthRequestModels(stage) = input else {
         return Err(AuthenticationFailure::Missing);
     };
-    match crate::auth::auth_request_models::resolve(stage) {
+    match resolve(stage) {
         Ok(_) => Ok(stage.context.clone()),
         Err(error) => {
             tracing::debug!(error = %error, "the request model stage failed");

@@ -28,6 +28,7 @@ use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
 };
 use crate::auth::{headers_json, model_stage_input, query_json};
+use crate::error_body::AuthenticationFailure;
 use crate::routes;
 use crate::routes::tests::state_for;
 
@@ -103,7 +104,9 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         master_key,
     ) {
         Ok(context) => context,
-        Err(_failure) => panic!("the master key stage authenticates"),
+        Err(AuthenticationFailure::Missing | AuthenticationFailure::Invalid) => {
+            panic!("the master key stage authenticates")
+        }
     }
 }
 
@@ -162,15 +165,15 @@ fn managed(text: &str) -> String {
 fn stage_is_registered() {
     assert!(INSTALLED_STAGES.contains(&AuthBackend::AuthRequestModels));
     let config = config_with_master_key("secret-master-key");
-    let state = state_for(&config);
+    let app = state_for(&config);
     let master_key = SecretString::from("secret-master-key".to_owned());
-    let stage = stage_input(
+    let request_stage = stage_input(
         master_context(&master_key),
         "/v1/chat/completions",
         r#"{"model": "gpt-4"}"#,
-        Arc::clone(&state.auth_request_models.resolver),
+        Arc::clone(&app.auth_request_models.resolver),
     );
-    let input = StageInput::AuthRequestModels(Box::new(stage));
+    let input = StageInput::AuthRequestModels(Box::new(request_stage));
     let Ok(forwarded) = dispatch(AuthBackend::AuthRequestModels, &input, &master_key) else {
         panic!("the B732 constructor dispatches to the production model stage");
     };
@@ -186,7 +189,10 @@ fn stage_is_registered() {
         failing,
     );
     let failing_input = StageInput::AuthRequestModels(Box::new(failing_stage));
-    assert!(dispatch(AuthBackend::AuthRequestModels, &failing_input, &master_key).is_err());
+    assert!(matches!(
+        dispatch(AuthBackend::AuthRequestModels, &failing_input, &master_key),
+        Err(AuthenticationFailure::Missing)
+    ));
 }
 
 async fn mark_reached(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static str {
