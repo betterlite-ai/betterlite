@@ -125,6 +125,11 @@ fn stream_logs_each_translation_step() {
             .chunk_parser(&json!({"type": "response.created", "response": {"id": "resp_a"}}))
             .unwrap()
     });
+    // the response-id decoder logs its own debug line for an id that is not an encoded envelope
+    let lines: Vec<String> = lines
+        .into_iter()
+        .filter(|line| line.starts_with("Chat provider: "))
+        .collect();
     assert_eq!(
         lines,
         vec![
