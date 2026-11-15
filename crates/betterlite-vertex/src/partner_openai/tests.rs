@@ -1,8 +1,11 @@
+#![cfg(test)]
+
 use std::collections::BTreeSet;
 
 use betterlite_openai::chat_choices::stream::chunk_parser;
 use betterlite_openai::chat_choices::wire::StreamReply;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Object};
+use rstest::rstest;
 use serde_json::{from_str, json, to_value};
 use uuid::Uuid;
 
@@ -85,12 +88,15 @@ fn gpt_oss_removes_the_tool_params_only_when_function_calling_is_false() {
     assert!(!disabled.contains(&"functions"));
     // the removal list spells its first entry "tool", so the inherited "tools" survives
     assert!(disabled.contains(&"tools"));
+}
 
-    for enabled in [None, Some(true)] {
-        let supported = GptOssConfig::supported_params(GPT_OSS_MODEL, &catalog(), enabled);
-        assert_eq!(supported.len(), 32);
-        assert!(supported.contains(&"tool_choice"));
-    }
+#[rstest]
+#[case::unspecified(None)]
+#[case::supported(Some(true))]
+fn gpt_oss_keeps_the_tool_params_unless_function_calling_is_false(#[case] support: Option<bool>) {
+    let supported = GptOssConfig::supported_params(GPT_OSS_MODEL, &catalog(), support);
+    assert_eq!(supported.len(), 32);
+    assert!(supported.contains(&"tool_choice"));
 }
 
 #[test]
@@ -137,22 +143,26 @@ fn llama_excludes_only_max_retries_for_a_publisher_model() {
 fn llama_excludes_the_ten_deployment_params_for_a_self_deployed_endpoint() {
     let supported = Llama3Config::supported_params(DEPLOYED_MODEL, &catalog());
     assert_eq!(supported.len(), 21);
-    for param in [
-        "audio",
-        "max_retries",
-        "modalities",
-        "prediction",
-        "prompt_cache_key",
-        "prompt_cache_retention",
-        "safety_identifier",
-        "service_tier",
-        "store",
-        "web_search_options",
-    ] {
-        assert!(!supported.contains(&param), "{param}");
-    }
     assert!(supported.contains(&"max_tokens"));
     assert!(supported.contains(&"tools"));
+}
+
+#[rstest]
+#[case::audio("audio")]
+#[case::max_retries("max_retries")]
+#[case::modalities("modalities")]
+#[case::prediction("prediction")]
+#[case::prompt_cache_key("prompt_cache_key")]
+#[case::prompt_cache_retention("prompt_cache_retention")]
+#[case::safety_identifier("safety_identifier")]
+#[case::service_tier("service_tier")]
+#[case::store("store")]
+#[case::web_search_options("web_search_options")]
+fn llama_deployment_params_are_unsupported(#[case] param: &str) {
+    assert!(
+        !Llama3Config::supported_params(DEPLOYED_MODEL, &catalog()).contains(&param),
+        "{param}"
+    );
 }
 
 #[test]
@@ -185,13 +195,14 @@ fn mistral_is_the_only_partner_that_changes_its_provider() {
         PartnerClass::Mistral.custom_llm_provider(),
         Some("vertex_ai")
     );
-    for partner in [
-        PartnerClass::Ai21,
-        PartnerClass::GptOss,
-        PartnerClass::Llama3,
-    ] {
-        assert_eq!(partner.custom_llm_provider(), None);
-    }
+}
+
+#[rstest]
+#[case::ai21(PartnerClass::Ai21)]
+#[case::gpt_oss(PartnerClass::GptOss)]
+#[case::llama(PartnerClass::Llama3)]
+fn other_partners_keep_the_inherited_provider(#[case] partner: PartnerClass) {
+    assert_eq!(partner.custom_llm_provider(), None);
 }
 
 #[test]
@@ -338,30 +349,31 @@ fn llama_stream_splits_a_terminal_first_chunk_and_queues_its_terminal() {
     assert_eq!(later[0].choices[0].delta.role, None);
 }
 
-#[test]
-fn llama_stream_gives_an_empty_initial_delta_provider_fields() {
-    for delta in [r#"{"content":""}"#, "{}"] {
-        let source = format!(
-            r#"{{"id":"chunk-1","created":7,"model":"m","choices":[{{"index":0,"delta":{delta}}}]}}"#
-        );
-        let mut state = LlamaStreamState::default();
-        let chunks = state.push(chunk(&source));
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(
-            chunks[0].choices[0].delta.role.as_deref(),
-            Some("assistant")
-        );
-        assert_eq!(
-            chunks[0].choices[0]
-                .delta
-                .passthrough
-                .get("provider_specific_fields"),
-            Some(&json!({}))
-        );
-        if delta == "{}" {
-            assert_eq!(chunks[0].choices[0].delta.content, None);
-        }
-    }
+#[rstest]
+#[case::empty_string(r#"{"content":""}"#, Some(""))]
+#[case::empty_delta("{}", None)]
+fn llama_stream_gives_an_empty_initial_delta_provider_fields(
+    #[case] delta: &str,
+    #[case] content: Option<&str>,
+) {
+    let source = format!(
+        r#"{{"id":"chunk-1","created":7,"model":"m","choices":[{{"index":0,"delta":{delta}}}]}}"#
+    );
+    let mut state = LlamaStreamState::default();
+    let chunks = state.push(chunk(&source));
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(
+        chunks[0].choices[0].delta.role.as_deref(),
+        Some("assistant")
+    );
+    assert_eq!(chunks[0].choices[0].delta.content.as_deref(), content);
+    assert_eq!(
+        chunks[0].choices[0]
+            .delta
+            .passthrough
+            .get("provider_specific_fields"),
+        Some(&json!({}))
+    );
 }
 
 #[test]

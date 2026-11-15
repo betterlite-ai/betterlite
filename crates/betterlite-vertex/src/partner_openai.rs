@@ -7,5 +7,4 @@ pub mod settings;
 
 mod params;
 
-#[cfg(test)]
 mod tests;
