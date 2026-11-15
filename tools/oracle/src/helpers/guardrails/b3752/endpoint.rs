@@ -72,7 +72,7 @@ pub(super) async fn start_endpoint(args: &AliceApplyArgs) -> Result<Endpoint, Bo
                 _listener: listener,
             })
         }
-        (None, Some(FailureKind::Connect)) => {
+        (None, Some(FailureKind::Connect) | None) => {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let address = listener.local_addr()?;
             drop(listener);
@@ -80,14 +80,6 @@ pub(super) async fn start_endpoint(args: &AliceApplyArgs) -> Result<Endpoint, Bo
                 base: format!("http://{address}"),
             })
         }
-        (None, None) => Err(Box::new(HelperError {
-            class: "ValueError".to_owned(),
-            status: None,
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: "a scripted answer or a failure is required".to_owned(),
-        })),
     }
 }
 

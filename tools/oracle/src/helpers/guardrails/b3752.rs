@@ -91,6 +91,16 @@ async fn alice_apply_async(args: &AliceApplyArgs) -> HelperResult {
         Some(FailureKind::Connect) | None => ANSWER_TIMEOUT,
     };
     let guardrail = guardrail_from(args, &endpoint, timeout)?;
+    if args.answer.is_none() && args.failure.is_none() {
+        return Err(Box::new(HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: "a scripted answer or a failure is required".to_owned(),
+        }));
+    }
     let mut request_data = args.request_data.clone();
     let outcome = <AliceGuardrail as GuardrailContract>::apply_guardrail(
         &guardrail,
