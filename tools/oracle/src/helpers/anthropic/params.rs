@@ -102,10 +102,11 @@ async fn run_steps(
         warnings.clear();
         let mut environment = fixture.environment(&resolution, &mut keys, &dynamic);
         // LiteLLM raises here; the case compares that the step raised, not the message
-        answers.push(match answer(step, &context, &mut environment).await {
-            Ok(value) => value,
-            Err(_) => json!({"error": {"raised": true}}),
-        });
+        answers.push(
+            answer(step, &context, &mut environment)
+                .await
+                .unwrap_or_else(|_| json!({"error": {"raised": true}})),
+        );
     }
     Ok(Value::Array(answers))
 }
@@ -138,23 +139,9 @@ async fn answer(
         }
         Step::ApplyOutputConfig {
             model,
-            optional_params,
+            optional_params: optional,
             global_drop_params,
-        } => {
-            let request = OutputConfigRequest {
-                model,
-                provider: PROVIDER,
-                global_drop: *global_drop_params,
-            };
-            answer_output(
-                &request,
-                optional_params,
-                context.warnings,
-                context.catalogs,
-                environment,
-            )
-            .await
-        }
+        } => answer_output(model, *global_drop_params, optional, context, environment).await,
     }
 }
 
@@ -203,28 +190,33 @@ fn output_side(params: &IndexMap<String, Json>) -> OutputSide {
 }
 
 async fn answer_output(
-    request: &OutputConfigRequest<'_>,
+    model: &str,
+    global_drop_params: bool,
     optional_params: &IndexMap<String, Json>,
-    warnings: &Warnings,
-    catalogs: &CatalogSources<'_>,
+    context: &StepContext<'_>,
     environment: &mut Environment<'_>,
 ) -> Result<Value, Box<HelperError>> {
+    let request = OutputConfigRequest {
+        model,
+        provider: PROVIDER,
+        global_drop: global_drop_params,
+    };
     // transform_request builds its body from {**optional_params} before this runs
     let mut updated_data = optional_params.clone();
     let mut updated_optional = optional_params.clone();
     apply_output_config(
-        request,
+        &request,
         &mut updated_data,
         &mut updated_optional,
         environment,
-        catalogs,
+        context.catalogs,
     )
     .await
     .or_value_error()?;
     let answer = OutputAnswer {
         data: output_side(&updated_data),
         optional_params: output_side(&updated_optional),
-        warning: warnings.first(),
+        warning: context.warnings.first(),
     };
     serde_json::to_value(answer).or_value_error()
 }
