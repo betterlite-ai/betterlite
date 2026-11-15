@@ -14,6 +14,8 @@ call:
       - {api_base: "https://api.openai.com/v1/realtime/sessions", query_params: null}
       - {api_base: "https://proxy.test/openai/v1/", query_params: null}
       - {api_base: "wss://example.test/base?q=1#frag", query_params: null}
+      - {api_base: "https://example.test:443/x", query_params: null}
+      - {api_base: "wss://example.test/x", query_params: null}
     failures: []
     http_setups: []
 env:
