@@ -173,6 +173,7 @@ fn event(text: &str) -> Arc<LoggerEvent> {
     Arc::new(LoggerEvent {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     })
@@ -339,6 +340,7 @@ async fn callback_logger_reports_a_bad_payload_timestamp() {
     let event = Arc::new(LoggerEvent {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     });

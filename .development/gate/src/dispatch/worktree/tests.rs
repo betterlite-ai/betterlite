@@ -173,3 +173,20 @@ fn migration_refuses_an_unfinished_git_operation() {
     assert!(target.join(".git").is_file());
     assert_eq!(fs::read_to_string(marker).unwrap(), head);
 }
+
+#[test]
+fn a_task_checkout_runs_no_git_hooks() {
+    let (folder, root) = fixture();
+    let hooks = common_dir(&root).unwrap().join("hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    fs::write(hooks.join("pre-commit"), "#!/bin/sh\nexit 1\n").unwrap();
+    let target = folder.path().join("B123");
+    let branch = "task/B123-counter";
+    prepare(&root, &target, branch).unwrap();
+    assert!(!target.join(".git/hooks/pre-commit").exists());
+    fs::write(target.join(".git/hooks/pre-push"), "#!/bin/sh\nexit 1\n").unwrap();
+    prepare(&root, &target, branch).unwrap();
+    assert!(!target.join(".git/hooks/pre-push").exists());
+    fs::write(target.join("counter"), "two\n").unwrap();
+    git(&target, &["commit", "-qam", "second counter"]).unwrap();
+}

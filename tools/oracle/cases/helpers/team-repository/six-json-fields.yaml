@@ -1,0 +1,42 @@
+kind: helper
+name: six_json_fields
+call:
+  team_repository:
+    cases:
+      six-fields:
+        records:
+          - {"team_id":"t","metadata":"{\"stored\": true}","model_spend":"{\"m\": 1.5}","model_max_budget":"{\"m\": 2.5}","router_settings":"{\"rpm\": 10}","budget_limits":"[{\"budget_duration\": \"1d\", \"max_budget\": 1.5}]","members_with_roles":"[{\"user_id\": \"u\", \"role\": \"admin\"}]"}
+      absent-fields:
+        records:
+          - {"team_id":"t"}
+          - null
+      null-fields:
+        records:
+          - {"team_id":"t","metadata":null,"model_spend":null,"model_max_budget":null,"router_settings":null,"budget_limits":null}
+          - {"team_id":"t","members_with_roles":null}
+      decoded-fields:
+        records:
+          - {"team_id":"t","metadata":{"stored":true},"model_spend":{},"model_max_budget":{},"router_settings":{},"budget_limits":[]}
+          - {"team_id":"t","members_with_roles":[{"user_id":"u","role":"admin"}]}
+      empty-strings:
+        records:
+          - {"team_id":"t","metadata":""}
+          - {"team_id":"t","model_spend":""}
+          - {"team_id":"t","model_max_budget":""}
+          - {"team_id":"t","router_settings":""}
+          - {"team_id":"t","budget_limits":""}
+          - {"team_id":"t","members_with_roles":""}
+      json-null-text:
+        records:
+          - {"team_id":"t","metadata":"null"}
+          - {"team_id":"t","model_spend":"null"}
+          - {"team_id":"t","members_with_roles":"null"}
+      wrong-shapes:
+        records:
+          - {"team_id":"t","metadata":"[]"}
+          - {"team_id":"t","model_spend":"false"}
+          - {"team_id":"t","budget_limits":"{\"a\": 1}"}
+          - {"team_id":"t","members_with_roles":"\"\""}
+          - {"team_id":"t","members_with_roles":"[{\"user_id\": \"u\", \"role\": \"owner\"}]"}
+env: {}
+compare: {ignore: []}

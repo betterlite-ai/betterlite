@@ -103,6 +103,7 @@ async fn perform(logger: &Arc<DatadogLogger>, action: &Action) -> Result<Value, 
                         .map_err(value_error)?,
                 ),
                 dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+                litellm_metadata: Arc::new(IndexMap::new()),
                 stream: false,
                 guardrail_snapshot: None,
             });

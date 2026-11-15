@@ -11,6 +11,11 @@ pub(crate) struct DeviationLog {
     #[schemars(regex(pattern = "^B([0-9]{3}|[1-9][0-9]{3,5})$"))]
     pub(crate) task: String,
     pub(crate) deviations: Vec<LoggedDeviation>,
+    #[serde(default)]
+    #[schemars(
+        description = "LiteLLM bugs the task copies on purpose because a working setup relies on them: what LiteLLM gets wrong, why a setup relies on it, and the https link to the LiteLLM line."
+    )]
+    pub(crate) kept_bugs: Vec<LoggedDeviation>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

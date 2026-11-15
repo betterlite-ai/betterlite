@@ -118,24 +118,18 @@ fn configure(root: &Path, target: &Path) -> Result<(), GateError> {
     )?;
     // commit and fetch start a detached gc, and its reflog expire holds HEAD.lock while the next git command needs it
     git(target, &["config", "maintenance.auto", "false"])?;
-    for key in [
-        "user.name",
-        "user.email",
-        "commit.gpgsign",
-        "core.hooksPath",
-    ] {
+    for key in ["user.name", "user.email", "commit.gpgsign"] {
         if let Ok(value) = git(root, &["config", "--get", key]) {
             git(target, &["config", key, value.trim()])?;
         }
     }
+    // CI runs the hooks on the pull request, and on 11-13 a worker commit that ran them took 158 s on average
     for name in ["pre-commit", "pre-push"] {
-        let hook = coordinator.join("hooks").join(name);
-        if hook.is_file() {
-            let destination = target.join(".git/hooks").join(name);
-            fs::copy(&hook, &destination).map_err(|source| GateError::Write {
-                path: destination,
-                source,
-            })?;
+        let hook = target.join(".git/hooks").join(name);
+        match fs::remove_file(&hook) {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(source) => return Err(GateError::Write { path: hook, source }),
         }
     }
     Ok(())

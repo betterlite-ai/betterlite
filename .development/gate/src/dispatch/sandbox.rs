@@ -11,6 +11,7 @@ use crate::error::GateError;
 #[derive(Serialize)]
 struct Settings<'dirs> {
     sandbox: Sandbox<'dirs>,
+    permissions: Permissions,
     // a config folder without the user's settings would add Claude Code's Co-Authored-By line to commits
     attribution: Attribution,
 }
@@ -44,9 +45,15 @@ struct Network {
     allow_unix_sockets: Vec<String>,
 }
 
+#[derive(Serialize)]
+struct Permissions {
+    deny: [String; 10],
+}
+
 pub(crate) fn write_settings(
     path: &Path,
     worktree: &str,
+    home: &str,
     writable: &[String],
 ) -> Result<(), GateError> {
     let mut allow_write = vec![worktree];
@@ -60,6 +67,21 @@ pub(crate) fn write_settings(
                 allowed_domains: ["*"],
                 allow_unix_sockets: env::var("GATE_POSTGRES_SOCKET").ok().into_iter().collect(),
             },
+        },
+        // on 11-13 workers got past bin/cargo by unsetting GATE_DISPATCHED or calling cargo by path, and a local gate run or cargo fmt took minutes while CI runs them anyway
+        permissions: Permissions {
+            deny: [
+                "Bash(env -u GATE_DISPATCHED:*)".to_owned(),
+                "Bash(unset GATE_DISPATCHED:*)".to_owned(),
+                "Bash(GATE_DISPATCHED=:*)".to_owned(),
+                "Bash(~/.cargo/bin/cargo:*)".to_owned(),
+                "Bash($HOME/.cargo/bin/cargo:*)".to_owned(),
+                format!("Bash({home}/.cargo/bin/cargo:*)"),
+                "Bash(cargo gate run:*)".to_owned(),
+                "Bash(cargo gate preflight:*)".to_owned(),
+                "Bash(cargo gate hook:*)".to_owned(),
+                "Bash(cargo fmt:*)".to_owned(),
+            ],
         },
         attribution: Attribution { commit: "", pr: "" },
     };

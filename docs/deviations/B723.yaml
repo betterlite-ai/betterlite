@@ -1,0 +1,8 @@
+task: B723
+deviations:
+  - what: Stored user JSON-string fields above 1048576 bytes or depth 64 produce a typed decode-limit error.
+    why: Bound the new field decoder without dropping corrupt data; native_user_record_field_limits covers both boundaries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L56-L66
+  - what: Stored user record JSON above 1048576 bytes or depth 64 fails with a typed decode-limit error before the row is validated.
+    why: Bound the outer stored record this repository parses; native_user_record_field_depth_and_envelope_limits covers both limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L51-L57

@@ -1,0 +1,65 @@
+id: B9956
+title: Prisma AIRS scans at most 128 tool calls per request
+description: >-
+  scan_tool_calls_for_guardrail in crates/betterlite-guardrails/src/panw_prisma_airs/tool_scan.rs walks every entry
+  of tool_calls and awaits one Prisma AIRS scan per entry, one after another, each with the guardrail's timeout (10 s by
+  default). LiteLLM's _scan_tool_calls_for_guardrail has the same loop. Nothing limits the number of entries. On the
+  request side the client writes the tool_calls list, so one body with a few thousand tool calls holds the request
+  open for hours and sends a few thousand scans to the customer's AIRS account. Rule owned-behavior-is-built says to fix
+  it.
+
+
+  Before the loop sends anything, count the tool calls that have a function to scan. When there are more than 128, a
+  named const in the module, send no scan and end the call the way a blocked scan ends it in this module: the same
+  GuardrailHttpError status, type and code a block verdict gives, with a message that names the cap. The OpenAI API
+  accepts at most 128 tools per request, so a list past that is no regular model output. A list of 128 or fewer is
+  scanned exactly as before.
+
+
+  Add a row to docs/deviations/B9956.yaml: what = a request or response with more than 128 tool calls is blocked
+  before any AIRS scan; why = LiteLLM sends one sequential scan per tool call with no limit, so one body can send
+  thousands of scans and hold the request for hours; link = the _scan_tool_calls_for_guardrail link below.
+scope:
+  paths:
+  - crates/betterlite-guardrails/src/panw_prisma_airs/tool_scan.rs
+  - crates/betterlite-guardrails/src/panw_prisma_airs/tests/prisma_scan_tool_call.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1481-L1505
+  why: LiteLLM's loop, one awaited scan per tool call at L1497.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L175
+  why: The default scan timeout of 10 seconds each call can take.
+- url: https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools
+  why: The OpenAI chat API takes at most 128 tools per request.
+dod:
+- text: 129 tool calls send no request to the AIRS mock and end in the error a blocked scan gives.
+  proof: [tool-call-tests]
+- text: 128 tool calls are each scanned once, as before.
+  proof: [tool-call-tests]
+- text: docs/deviations/B9956.yaml lists the cap with the pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: tool-call-tests
+    why: The cap sends scans past 128, blocks at or under 128, or ends differently from a blocked scan.
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma_airs::tests::prisma_scan_tool_call::/)'
+  - id: deviation-row
+    why: The cap is not listed as a deviation with the pinned LiteLLM link.
+    run: grep -q -F 'panw_prisma_airs.py#L1481-L1505' docs/deviations/B9956.yaml
+oracle_cases: []
+deviations:
+- what: A request or response with more than 128 tool calls is blocked before any Prisma AIRS scan.
+  why: LiteLLM sends one sequential scan per tool call with no limit, so one body can send thousands of scans and hold the request for hours.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1481-L1505
+out_of_scope:
+- Scanning tool calls in parallel. The order of scans and audit entries stays LiteLLM's.
+- A config key for the cap. LiteLLM has none.
+- The scan transport and the verdict handling (B3786).
+pitfalls:
+- Tool calls with no function or nothing to scan are skipped today and send no request. Count only the ones the loop would scan, so a list padded with empty entries is judged by what it would send.
+- The tests in prisma_scan_tool_call.rs count the bodies the mock received. Assert zero bodies for the over-cap case, not only the error.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

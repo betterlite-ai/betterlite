@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-gemini-transcription-request
+call:
+  vertex_gemini_transcription:
+    steps:
+      - {step: url, api_base: 'https://proxy.example///', location: global, project: my-project, model: vertex_ai/gemini-2.0-flash}
+      - {step: request, content: seed, language: en}
+env: {}
+compare: {ignore: []}

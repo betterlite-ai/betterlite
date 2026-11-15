@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from typing import Literal, TypedDict
 
-from betterlite.types.utils.values import JsonValue
+from betterlite.types.utils import JsonValue
 
 AnthropicErrorType = Literal[
     "invalid_request_error",

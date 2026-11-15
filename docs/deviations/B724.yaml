@@ -1,0 +1,8 @@
+task: B724
+deviations:
+  - what: Stored team/roster JSON above 1048576 bytes or depth 64 returns a typed decode-limit error.
+    why: Bound both newly exposed parsers; native_team_record_limits and native_locked_roster_limits prove this before any falsey roster shortcut.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L112-L149
+  - what: A stored JSON string with a duplicate object key is rejected as invalid JSON instead of keeping the last value.
+    why: The shared bounded record parser refuses duplicates so nothing silently overwrites an earlier entry; duplicate_key_in_stored_field_is_refused proves a duplicated metadata key fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L107-L110

@@ -1,0 +1,16 @@
+kind: helper
+name: genai-setup-mock-response-string-raises-valueerror
+call:
+  b3483:
+    setups:
+      - model: gemini/gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: null
+        custom_llm_provider: null
+        tools: null
+        kwargs:
+          mock_response: hi
+        extra_body: null
+        with_logging: true
+env: {}
+compare: {ignore: []}
