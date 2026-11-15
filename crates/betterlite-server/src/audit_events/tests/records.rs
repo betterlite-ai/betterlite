@@ -4,37 +4,14 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::private_json::safe_json::{MAX_JSON_BYTES, MAX_JSON_DEPTH};
 use chrono::DateTime;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
 
-use crate::audit_events::record::{AuditRecordError, decode_audit_record, json_timestamp};
+use crate::audit_events::enums::AuditName;
+use crate::audit_events::record::{AuditRecordError, decode_audit_record, timestamp_text};
 
 const RECORD: &str = r#"{"id": "audit-1", "updated_at": "2026-01-02T03:04:05.123456+00:00", "action": "updated", "table_name": "LiteLLM_TeamTable", "object_id": "team-1"}"#;
-
-const ACTIONS: [&str; 7] = [
-    "created",
-    "updated",
-    "deleted",
-    "blocked",
-    "unblocked",
-    "rotated",
-    "kill_switch_fired",
-];
-
-const TABLES: [&str; 12] = [
-    "LiteLLM_TeamTable",
-    "LiteLLM_UserTable",
-    "LiteLLM_VerificationToken",
-    "LiteLLM_ProxyModelTable",
-    "LiteLLM_ManagedFileTable",
-    "LiteLLM_ToolTable",
-    "LiteLLM_CacheConfig",
-    "LiteLLM_ConfigOverrides",
-    "LiteLLM_Config",
-    "LiteLLM_SSOConfig",
-    "LiteLLM_UISettings",
-    "LiteLLM_AgentsTable",
-];
 
 fn record_text(action: &str, table_name: &str) -> String {
     json!({
@@ -47,42 +24,50 @@ fn record_text(action: &str, table_name: &str) -> String {
     .to_string()
 }
 
-#[test]
-fn audit_record_defaults_and_enums() {
-    let record = decode_audit_record(RECORD.as_bytes()).unwrap();
+#[rstest]
+#[case::action_created("created", "LiteLLM_TeamTable")]
+#[case::action_updated("updated", "LiteLLM_TeamTable")]
+#[case::action_deleted("deleted", "LiteLLM_TeamTable")]
+#[case::action_blocked("blocked", "LiteLLM_TeamTable")]
+#[case::action_unblocked("unblocked", "LiteLLM_TeamTable")]
+#[case::action_rotated("rotated", "LiteLLM_TeamTable")]
+#[case::action_kill_switch_fired("kill_switch_fired", "LiteLLM_TeamTable")]
+#[case::table_user("updated", "LiteLLM_UserTable")]
+#[case::table_key("updated", "LiteLLM_VerificationToken")]
+#[case::table_proxy_model("updated", "LiteLLM_ProxyModelTable")]
+#[case::table_managed_file("updated", "LiteLLM_ManagedFileTable")]
+#[case::table_tool("updated", "LiteLLM_ToolTable")]
+#[case::table_cache_config("updated", "LiteLLM_CacheConfig")]
+#[case::table_config_overrides("updated", "LiteLLM_ConfigOverrides")]
+#[case::table_config("updated", "LiteLLM_Config")]
+#[case::table_sso_config("updated", "LiteLLM_SSOConfig")]
+#[case::table_ui_settings("updated", "LiteLLM_UISettings")]
+#[case::table_agent("updated", "LiteLLM_AgentsTable")]
+fn audit_record_defaults_and_enums(#[case] action: &str, #[case] table_name: &str) {
+    let text = record_text(action, table_name);
+    let record = decode_audit_record(text.as_bytes()).unwrap();
+    assert_eq!(record.action.as_str(), action);
+    assert_eq!(record.table_name.as_str(), table_name);
     assert!(record.changed_by.is_none());
     assert!(record.changed_by_api_key.is_none());
     assert!(record.before_value.is_none());
     assert!(record.updated_values.is_none());
-    for action in ACTIONS {
-        let text = record_text(action, "LiteLLM_TeamTable");
-        let decoded = decode_audit_record(text.as_bytes()).unwrap();
-        assert_eq!(decoded.action.as_str(), action);
-    }
-    for table_name in TABLES {
-        let text = record_text("updated", table_name);
-        let decoded = decode_audit_record(text.as_bytes()).unwrap();
-        assert_eq!(decoded.table_name.as_str(), table_name);
-    }
 }
 
-#[test]
-fn audit_changed_by_cast() {
-    for (value, expected) in [
-        (json!("text"), Some("text")),
-        (json!(42), Some("42")),
-        (json!(1.5), Some("1.5")),
-        (json!(true), Some("True")),
-        (json!(false), Some("False")),
-        (json!(null), None),
-        (json!({"team": 1}), Some(r#"{"team":1}"#)),
-        (json!([1, 2]), Some("[1,2]")),
-    ] {
-        let mut given: JsonValue = serde_json::from_str(RECORD).unwrap();
-        given["changed_by"] = value;
-        let decoded = decode_audit_record(given.to_string().as_bytes()).unwrap();
-        assert_eq!(decoded.changed_by.as_deref(), expected);
-    }
+#[rstest]
+#[case::string(json!("text"), Some("text"))]
+#[case::integer(json!(42), Some("42"))]
+#[case::float(json!(1.5), Some("1.5"))]
+#[case::true_bool(json!(true), Some("True"))]
+#[case::false_bool(json!(false), Some("False"))]
+#[case::null(json!(null), None)]
+#[case::object(json!({"team": 1}), Some(r#"{"team":1}"#))]
+#[case::array(json!([1, 2]), Some("[1,2]"))]
+fn audit_changed_by_cast(#[case] value: JsonValue, #[case] expected: Option<&str>) {
+    let mut given: JsonValue = serde_json::from_str(RECORD).unwrap();
+    given["changed_by"] = value;
+    let decoded = decode_audit_record(given.to_string().as_bytes()).unwrap();
+    assert_eq!(decoded.changed_by.as_deref(), expected);
 }
 
 #[test]
@@ -108,13 +93,17 @@ fn audit_changed_by_api_key_field() {
 }
 
 #[test]
-fn audit_json_timestamp_formats_the_zone() {
+fn audit_timestamp_text_formats_the_zone() {
     let utc = DateTime::parse_from_rfc3339("2026-01-02T03:04:05+00:00").unwrap();
-    assert_eq!(json_timestamp(utc), "2026-01-02T03:04:05Z");
+    assert_eq!(timestamp_text(utc, "Z"), "2026-01-02T03:04:05Z");
+    assert_eq!(timestamp_text(utc, "+00:00"), "2026-01-02T03:04:05+00:00");
     let micros = DateTime::parse_from_rfc3339("2026-01-02T03:04:05.123456Z").unwrap();
-    assert_eq!(json_timestamp(micros), "2026-01-02T03:04:05.123456Z");
+    assert_eq!(timestamp_text(micros, "Z"), "2026-01-02T03:04:05.123456Z");
     let offset = DateTime::parse_from_rfc3339("2026-01-02T05:04:05.100000+02:00").unwrap();
-    assert_eq!(json_timestamp(offset), "2026-01-02T05:04:05.100000+02:00");
+    assert_eq!(
+        timestamp_text(offset, "Z"),
+        "2026-01-02T05:04:05.100000+02:00"
+    );
 }
 
 fn masked_record(before_value: JsonValue, updated_values: JsonValue) -> JsonValue {

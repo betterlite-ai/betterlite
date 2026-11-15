@@ -30,7 +30,7 @@ use self::support::{
 use crate::audit_events::callbacks::{
     AuditCallbackConfig, AuditCallbackDispatcher, AuditLogCallback,
 };
-use crate::audit_events::enums::{AuditAction, AuditTable};
+use crate::audit_events::enums::{AuditAction, AuditName, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
 use crate::audit_events::record::{AuditLogRecord, payload_text};
 use crate::audit_events::settings::{AuditSettings, ConfiguredAuditSettings};
@@ -193,7 +193,9 @@ fn audit_configured_settings_forward_the_policy() {
     let disabled = ConfiguredAuditSettings {
         config: Settings {
             store_audit_logs: Some(false),
-            ..Settings::default()
+            store_audit_logs_env: None,
+            audit_log_callbacks: Vec::new(),
+            s3_audit_callback_params: None,
         },
         callbacks: Vec::new(),
     };
@@ -212,8 +214,10 @@ fn audit_configured_settings_expose_the_callbacks() {
     let callback = recorder("configured", false);
     let settings = ConfiguredAuditSettings {
         config: Settings {
+            store_audit_logs: None,
+            store_audit_logs_env: None,
+            audit_log_callbacks: Vec::new(),
             s3_audit_callback_params: Some(json!({"bucket_name": "audit-bucket"})),
-            ..Settings::default()
         },
         callbacks: vec![instance(callback)],
     };

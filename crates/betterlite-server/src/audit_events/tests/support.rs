@@ -16,7 +16,7 @@ use crate::audit_events::callbacks::{
 };
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::payload::AuditLogPayload;
-use crate::audit_events::record::{AuditLogRecord, AuditRecordFields};
+use crate::audit_events::record::AuditLogRecord;
 use crate::audit_events::settings::AuditSettings;
 use crate::audit_events::sink::{
     AuditClock, AuditEventSink, AuditLogRepository, AuditRepositoryError,
@@ -227,7 +227,7 @@ impl AuditClock for FixedClock {
 }
 
 pub(super) fn plain_record() -> AuditLogRecord {
-    let record = AuditLogRecord::new(AuditRecordFields {
+    let record = AuditLogRecord::masked(AuditLogRecord {
         id: "audit-1".to_owned(),
         updated_at: DateTime::parse_from_rfc3339(SAMPLE_TIMESTAMP).unwrap(),
         changed_by: None,
@@ -245,7 +245,7 @@ pub(super) fn sample_record(
     before_value: Option<&str>,
     updated_values: Option<&str>,
 ) -> AuditLogRecord {
-    let record = AuditLogRecord::new(AuditRecordFields {
+    let record = AuditLogRecord::masked(AuditLogRecord {
         id: "audit-1".to_owned(),
         updated_at: DateTime::parse_from_rfc3339(SAMPLE_TIMESTAMP).unwrap(),
         changed_by: Some("admin".to_owned()),

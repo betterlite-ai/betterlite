@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use betterlite_config::sections::settings::JsonValue;
+use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::json;
 
@@ -72,16 +74,18 @@ fn audit_header_falsey() {
     );
 }
 
-#[test]
-fn audit_header_truthy_nonbool_denied() {
-    for value in [json!("true"), json!(1), json!(1.0), json!([true])] {
-        let mut metadata = caller();
-        metadata.metadata = Some(json!({"allow_litellm_changed_by_header": value}));
-        assert_eq!(
-            get_audit_log_changed_by(Some("ops"), &metadata, Some("admin")),
-            Some("user-1".to_owned())
-        );
-    }
+#[rstest]
+#[case::string(json!("true"))]
+#[case::integer(json!(1))]
+#[case::float(json!(1.0))]
+#[case::array(json!([true]))]
+fn audit_header_truthy_nonbool_denied(#[case] value: JsonValue) {
+    let mut metadata = caller();
+    metadata.metadata = Some(json!({"allow_litellm_changed_by_header": value}));
+    assert_eq!(
+        get_audit_log_changed_by(Some("ops"), &metadata, Some("admin")),
+        Some("user-1".to_owned())
+    );
 }
 
 #[test]
