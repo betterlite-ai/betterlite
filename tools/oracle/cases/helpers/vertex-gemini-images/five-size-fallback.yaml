@@ -1,0 +1,28 @@
+kind: helper
+name: vertex-gemini-images-five-size-fallback
+call:
+  vertex_gemini_images:
+    model: gemini-2.5-flash-image
+    mappings:
+      - prompt: a red fox
+        non_default_params: {size: 1024x1024}
+        optional_params: {}
+      - prompt: a red fox
+        non_default_params: {size: 1792x1024}
+        optional_params: {}
+      - prompt: a red fox
+        non_default_params: {size: 1024x1792}
+        optional_params: {}
+      - prompt: a red fox
+        non_default_params: {size: 1280x896}
+        optional_params: {}
+      - prompt: a red fox
+        non_default_params: {size: 896x1280}
+        optional_params: {}
+      - prompt: a red fox
+        non_default_params: {size: 999x999}
+        optional_params: {}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}
