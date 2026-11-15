@@ -127,6 +127,16 @@ pub(super) fn azure_effort_none_drop() {
     assert_eq!(
         mapped(
             "gpt5_series/gpt-5.1",
+            r#"{"logprobs":true}"#,
+            r#"{"logprobs":false}"#,
+            DropParams::default()
+        )
+        .unwrap(),
+        object(r#"{"logprobs":false}"#)
+    );
+    assert_eq!(
+        mapped(
+            "gpt5_series/gpt-5.1",
             r#"{"logprobs":true,"reasoning_effort":"none"}"#,
             "{}",
             DropParams::default()
