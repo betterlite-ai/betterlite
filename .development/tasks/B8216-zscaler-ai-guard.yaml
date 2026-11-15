@@ -43,6 +43,14 @@ description: >-
   without change.
 scope:
   paths:
+    - "tools/oracle/src/helpers/mod.rs"
+    - "tools/oracle/src/case/helper.rs"
+    - "crates/betterlite-guardrails/src/guardrail_initializers.rs"
+    - "crates/betterlite-guardrails/src/guardrail_initializers/extras.rs"
+    - "crates/betterlite-guardrails/src/generic_guardrail_contracts/tests.rs"
+    - "crates/betterlite-guardrails/src/generic_guardrail_contracts/headers.rs"
+    - "crates/betterlite-guardrails/fuzz/fuzz_targets/zscaler_policy_response.rs"
+    - "crates/betterlite-guardrails/fuzz/corpus/zscaler_policy_response"
     - crates/betterlite-guardrails/src/zscaler_ai_guard.rs
     - crates/betterlite-guardrails/src/zscaler_ai_guard/**
     - tools/oracle/cases/guardrails/zscaler-*.yaml
@@ -108,4 +116,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1800
-  max_new_expects: 0
+  max_new_expects: 1

@@ -1,0 +1,22 @@
+kind: helper
+name: max-token-option-precedence
+call:
+  anthropic_params:
+    fixture:
+      model_cost:
+        plain-model: {litellm_provider: anthropic}
+      packaged: {}
+    default_max_tokens: 4096
+    steps:
+      - {function: map_openai_params, model: plain-model, non_default_params: {max_tokens: 100, max_completion_tokens: 50}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {max_completion_tokens: 50, max_tokens: 100}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {max_tokens: -3}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {max_tokens: 0}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {max_tokens: 2.5}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {max_tokens: 3.5}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {max_tokens: 0.4}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {seed: 7}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {thinking: {type: enabled, budget_tokens: 1000}}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {thinking: {type: enabled, budget_tokens: 1000}, max_tokens: 2000}, optional_params: {}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

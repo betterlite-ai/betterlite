@@ -1,0 +1,29 @@
+kind: helper
+name: guard-input-request-structured-messages
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      structured_messages:
+      - role: system
+        content: sys
+      - role: user
+        content: hello
+    request_data: {}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: false
+env: {}
+compare:
+  ignore: []

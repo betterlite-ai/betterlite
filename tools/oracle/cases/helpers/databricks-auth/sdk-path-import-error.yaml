@@ -1,0 +1,15 @@
+kind: helper
+name: databricks-sdk-path-import-error
+call:
+  b5980:
+    function: validate
+    cases:
+      - api_base: https://host
+      - custom_endpoint: false
+      - api_key: pat
+        custom_endpoint: false
+      - api_key: pat
+        api_base: https://host
+        endpoint: embeddings
+env: {}
+compare: {ignore: []}
