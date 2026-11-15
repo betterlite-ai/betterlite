@@ -766,6 +766,36 @@ async fn execution_streaming_reads_the_body_failure(
 }
 
 #[tokio::test]
+async fn execution_streaming_delivers_queued_lines_before_a_failure() {
+    let body = object(BODY);
+    let optional = object("{}");
+    let call = vertex_call(&body, &optional);
+    let fixture = auth();
+    let recorder = Arc::new(Recorder::scripted(
+        Vec::new(),
+        vec![stream_reply(
+            200,
+            vec![line(STREAM_CHUNK), Piece::Failed(HttpError::Timeout)],
+        )],
+    ));
+    let clients = pooled(&recorder);
+    let mut stream = async_streaming(
+        &call,
+        &catalog(),
+        &llm(&fixture),
+        &clients,
+        Box::new(fixed_id),
+    )
+    .await
+    .unwrap();
+    let chunk = stream.next_chunk().await.unwrap().unwrap();
+    assert_eq!(chunk.id, "r1");
+    let error = stream.next_chunk().await.unwrap().unwrap_err();
+    assert!(matches!(error, GeminiStreamError::Timeout));
+    assert!(stream.next_chunk().await.is_none());
+}
+
+#[tokio::test]
 async fn execution_streaming_refuses_an_overlong_line() {
     let body = object(BODY);
     let optional = object("{}");
