@@ -1,0 +1,28 @@
+kind: helper
+name: pcm16-append-validation
+call:
+  realtime_transcription_protocol:
+    function: decode
+    audio:
+      - 'AAA='
+      - 'AAAA'
+      - 'AA=='
+      - ''
+      - 'AB=='
+      - 'AAAAAAAA'
+      - 'AAAAAAAAA'
+      - 'A A A A A'
+      - 'ééééé'
+      - null
+      - 5
+      - true
+      - []
+      - {}
+      - 'A A='
+      - 'ab-_'
+      - 'AAA'
+      - 'AA==='
+      - 'éAA='
+    max_encoded_bytes: 8
+env: {}
+compare: {ignore: []}
