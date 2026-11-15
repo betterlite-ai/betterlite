@@ -84,27 +84,7 @@ impl QualifireGuardrail {
         };
         let plan = self.plan(&check)?;
         let verdict = self.send(&plan.url, &plan.payload()).await?;
-        let response = verdict.response();
-        let score = &response.score;
-        let status = &response.status;
-        tracing::debug!(
-            "Qualifire Guardrail: Got result from API, score={score:?}, status={status:?}"
-        );
-        if verdict.is_flagged() {
-            match on_flagged {
-                OnFlagged::Monitor => tracing::warn!(
-                    "Qualifire Guardrail: Monitoring mode - violation detected but allowing request. Response: {response:?}"
-                ),
-                OnFlagged::Block => {
-                    return Err(QualifireError::Blocked {
-                        detail: wire::BlockDetail {
-                            error: "Violated guardrail policy".to_owned(),
-                            qualifire_response: response,
-                        },
-                    });
-                }
-            }
-        }
+        enforce(&verdict, on_flagged)?;
         Ok(inputs)
     }
 
@@ -135,6 +115,30 @@ impl QualifireGuardrail {
         };
         self.base.update_params(params);
         Ok(())
+    }
+}
+
+fn enforce(verdict: &wire::Verdict, on_flagged: OnFlagged) -> Result<(), QualifireError> {
+    let response = verdict.response();
+    let score = &response.score;
+    let status = &response.status;
+    tracing::debug!("Qualifire Guardrail: Got result from API, score={score:?}, status={status:?}");
+    if !verdict.is_flagged() {
+        return Ok(());
+    }
+    match on_flagged {
+        OnFlagged::Monitor => {
+            tracing::warn!(
+                "Qualifire Guardrail: Monitoring mode - violation detected but allowing request. Response: {response:?}"
+            );
+            Ok(())
+        }
+        OnFlagged::Block => Err(QualifireError::Blocked {
+            detail: wire::BlockDetail {
+                error: "Violated guardrail policy".to_owned(),
+                qualifire_response: response,
+            },
+        }),
     }
 }
 
