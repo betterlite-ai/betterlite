@@ -1,0 +1,20 @@
+kind: helper
+name: jwt-timeout-custom
+call:
+  b3775: {
+      "kind": "hiddenlayer",
+      "version": 1,
+      "saas": true,
+      "api_id": "id",
+      "api_key": "key",
+      "timeout": 0.05,
+      "env": {},
+      "tokens": [
+        {
+          "kind": "timeout"
+        }
+      ],
+      "detection": null
+    }
+env: {}
+compare: {ignore: []}
