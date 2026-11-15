@@ -107,6 +107,10 @@ fn assert_continuation_kept_kwargs(call: &ResponsesContinuation) {
         Some("http://provider.invalid/v1")
     );
     assert_eq!(
+        number(&call.kwargs, "_code_interpreter_interception_item_parts"),
+        Some(3)
+    );
+    assert_eq!(
         text(&call.kwargs, "_agentic_loop_api_surface").as_deref(),
         Some("responses")
     );

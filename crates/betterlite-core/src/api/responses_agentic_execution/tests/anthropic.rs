@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_context::agentic_loop_plan::{AgenticLoopPlan, AgenticLoopRequestPatch, JsonMap};
 use betterlite_models::decisions::Json;
 
+use super::super::AgenticResult;
 use super::super::DEFAULT_MAX_TOKENS;
 use super::super::executor::AnthropicContinuation;
 use super::support::{
@@ -10,7 +11,9 @@ use super::support::{
     callback_list, dispatch, fixture, plan_harness, plan_with_patch, recording, typed_kwargs,
 };
 use super::{assert_log, json, number, patched, stream_frames, text, without_model};
-use crate::api::chat_agentic_loop::tests::support::{Script, capture, gate, json_map, overrides};
+use crate::api::chat_agentic_loop::tests::support::{
+    Script, capture, gate, json_map, overrides, raw,
+};
 
 async fn anthropic_call(fixture: Fixture, plan: &AgenticLoopPlan) -> AnthropicContinuation {
     let executor = ScriptedExecutor::anthropic_responding(ANTHROPIC_BODY);
@@ -200,27 +203,38 @@ pub(super) async fn anthropic_post_failure_keeps_answer() {
     assert!(records.cleanup.is_empty());
 }
 
-pub(super) async fn unconverted_answers_keep_response() {
+async fn dispatch_without_rerun(fixture: Fixture) -> Option<AgenticResult> {
     let order = Arc::new(Mutex::new(Vec::new()));
     let quiet = quiet_callback(&order);
-    let mut converted = anthropic_fixture();
-    converted.converted = false;
-    let plain = dispatch(
-        &converted,
+    dispatch(
+        &fixture,
         &callback_list(&[&quiet]),
         &ScriptedExecutor::responding(NEXT_BODY),
     )
     .await
-    .expect("an unconverted anthropic answer keeps the response");
+    .expect("the dispatcher runs")
+}
+
+pub(super) async fn unconverted_answers_keep_response() {
+    let mut converted = anthropic_fixture();
+    converted.converted = false;
+    let plain = dispatch_without_rerun(converted).await;
     assert!(plain.is_none());
     let mut responses_converted = fixture();
     responses_converted.converted = true;
-    let native = dispatch(
-        &responses_converted,
-        &callback_list(&[&quiet]),
-        &ScriptedExecutor::responding(NEXT_BODY),
-    )
-    .await
-    .expect("the responses surface is never wrapped");
+    let native = dispatch_without_rerun(responses_converted).await;
     assert!(native.is_none());
+}
+
+pub(super) async fn absent_logging_and_non_objects_keep_response() {
+    let mut unlogged = anthropic_fixture();
+    unlogged.converted = true;
+    unlogged.call_id = None;
+    let unlogged_outcome = dispatch_without_rerun(unlogged).await;
+    assert!(unlogged_outcome.is_none());
+    let mut listed = anthropic_fixture();
+    listed.converted = true;
+    listed.response = raw("[1,2]");
+    let listed_outcome = dispatch_without_rerun(listed).await;
+    assert!(listed_outcome.is_none());
 }

@@ -111,6 +111,7 @@ fn followup_fixture() -> (Fixture, JsonMap) {
         ("_agentic_loop_depth", "0"),
         ("_agentic_loop_fingerprints", "[\"old\"]"),
         ("_code_interpreter_interception_converted_stream", "true"),
+        ("_code_interpreter_interception_item_parts", "3"),
         ("_compression_interception_item_parts", "1"),
         ("_headroom_interception_state", "2"),
         ("_websearch_interception_converted_stream", "true"),
@@ -203,5 +204,6 @@ async fn anthropic_continuation_and_wrapping() {
     anthropic::merged_mapping().await;
     anthropic::converted_stream_wrapped().await;
     anthropic::unconverted_answers_keep_response().await;
+    anthropic::absent_logging_and_non_objects_keep_response().await;
     anthropic::anthropic_post_failure_keeps_answer().await;
 }
