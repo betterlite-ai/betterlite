@@ -4,16 +4,15 @@ use std::collections::BTreeMap;
 use std::future::ready;
 use std::sync::{Arc, Mutex};
 
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_prompts::arguments::json::Object;
-use reqwest::Client;
 use secrecy::SecretString;
+use thiserror::Error;
 use tokio::runtime::Builder;
 use uuid::Uuid;
 
-use crate::gemma_call::error::GemmaCallError;
+use crate::gemma_call::error::{FailureStatus, GemmaCallError};
 use crate::gemma_call::execute::completion;
 use crate::gemma_call::plan::{GemmaCall, Invocation, SuppliedClient, SuppliedClientKind};
 use crate::gemma_envelope::post::{GemmaPost, PostFuture, PostReply, PostRequest, Timeout};
@@ -49,7 +48,27 @@ pub(super) struct SentRequest {
     pub(super) timeout: Timeout,
 }
 
-pub(super) type FixtureError = GemmaCallError<TransportError, TransportError>;
+// the seam reports what a production failure would: a timeout carries 408, a failure without a status carries none
+#[derive(Debug, Error)]
+pub(super) enum FixtureFailure {
+    #[error("the request ran past its deadline")]
+    Timeout,
+    #[error("the connection was not made within the connect timeout")]
+    ConnectTimeout,
+    #[error("the connection closed before an answer")]
+    Closed,
+}
+
+impl FailureStatus for FixtureFailure {
+    fn status_code(&self) -> Option<u16> {
+        match self {
+            Self::Timeout | Self::ConnectTimeout => Some(408),
+            Self::Closed => None,
+        }
+    }
+}
+
+pub(super) type FixtureError = GemmaCallError<FixtureFailure, FixtureFailure>;
 
 pub(super) struct FixtureClient {
     pub(super) reply: Reply,
@@ -58,7 +77,7 @@ pub(super) struct FixtureClient {
 }
 
 impl GemmaPost for FixtureClient {
-    type Failure = TransportError;
+    type Failure = FixtureFailure;
 
     fn post<'request>(
         &'request self,
@@ -88,13 +107,9 @@ impl GemmaPost for FixtureClient {
                 status,
                 body: body.to_vec(),
             }),
-            Reply::Failure => Err(TransportError::Closed),
-            Reply::Timeout => Err(TransportError::Deadline(
-                Client::new().get("x").build().unwrap_err(),
-            )),
-            Reply::ConnectTimeout => Err(TransportError::ConnectTimeout(
-                Client::new().get("x").build().unwrap_err(),
-            )),
+            Reply::Failure => Err(FixtureFailure::Closed),
+            Reply::Timeout => Err(FixtureFailure::Timeout),
+            Reply::ConnectTimeout => Err(FixtureFailure::ConnectTimeout),
         };
         Box::pin(ready(reply))
     }

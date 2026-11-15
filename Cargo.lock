@@ -3544,7 +3544,6 @@ dependencies = [
  "jiff",
  "percent-encoding",
  "regex",
- "reqwest",
  "rstest",
  "rust_decimal",
  "secrecy",

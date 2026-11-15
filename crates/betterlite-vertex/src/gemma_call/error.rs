@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 
+use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use thiserror::Error;
 
@@ -12,6 +13,12 @@ use super::reply::GemmaReplyError;
 // LiteLLM's handler and pooled client raise a timeout as litellm.Timeout, which carries 408; a raw httpx client raises one without a status
 pub trait FailureStatus: StdError + 'static {
     fn status_code(&self) -> Option<u16>;
+}
+
+impl FailureStatus for HttpError {
+    fn status_code(&self) -> Option<u16> {
+        matches!(self, Self::Timeout).then_some(408)
+    }
 }
 
 impl FailureStatus for TransportError {
