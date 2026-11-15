@@ -49,7 +49,7 @@ pub(crate) struct JwtClaims {
 pub(crate) struct RefreshRequest {
     pub(crate) grant_type: String,
     pub(crate) refresh_token: String,
-    pub(crate) scope: String,
+    pub(crate) scopes: String,
 }
 
 #[derive(Clone)]

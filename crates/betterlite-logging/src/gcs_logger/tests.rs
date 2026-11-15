@@ -153,7 +153,7 @@ async fn an_authorized_user_refreshes_with_the_cloud_platform_scope() {
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].grant_type, "refresh_token");
     assert_eq!(requests[0].refresh_token, "refresh-1");
-    assert_eq!(requests[0].scope, CLOUD_PLATFORM);
+    assert_eq!(requests[0].scopes, CLOUD_PLATFORM);
 }
 
 #[tokio::test]
