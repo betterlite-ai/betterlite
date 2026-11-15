@@ -144,7 +144,8 @@ fn rerank_validate_environment_names_both_key_variables_when_missing() {
 
 #[test]
 fn rerank_validate_environment_sets_the_default_headers() {
-    let built = validate_environment(&headers(), key("direct"), &FireworksEnv::default()).unwrap();
+    let built =
+        validate_environment(&Headers::new(), key("direct"), &FireworksEnv::default()).unwrap();
     assert_eq!(
         built.get(AUTHORIZATION_HEADER).map(String::as_str),
         Some("Bearer direct")
@@ -354,10 +355,14 @@ fn transform_rerank_response_requires_index_and_relevance_score() {
 
 #[test]
 fn transform_rerank_response_needs_an_integer_index() {
-    let error = transform(200, r#"{"data":[{"index":1.5,"relevance_score":1}]}"#).unwrap_err();
-    assert!(matches!(error, FireworksRerankError::IndexShape));
+    let fractional = transform(200, r#"{"data":[{"index":1.5,"relevance_score":1}]}"#).unwrap_err();
+    assert!(matches!(fractional, FireworksRerankError::IndexShape));
     let text = transform(200, r#"{"data":[{"index":"0","relevance_score":1}]}"#).unwrap_err();
-    assert!(matches!(text, FireworksRerankError::ResponseDecode { .. }));
+    let FireworksRerankError::Fireworks(error) = text else {
+        panic!("expected a FireworksError for a string index");
+    };
+    assert_eq!(error.status_code, 200);
+    assert!(error.message.starts_with("Failed to parse response"));
 }
 
 #[rstest]
