@@ -219,7 +219,8 @@ def outcome(job: Job, logging: RecordingLogging, client: HTTPHandler) -> JsonVal
         response = call(BlackForestLabsImageGeneration(), job, logging, client)
     except BlackForestLabsError as error:
         return JSON.validate_python({"ok": False, "status": error.status_code})
-    urls: JsonValue = JSON.validate_python([image.url for image in response.data])
+    images = list(response.data) if response.data is not None else []
+    urls: JsonValue = JSON.validate_python([image.url for image in images])
     return JSON.validate_python({"ok": True, "urls": urls})
 
 
