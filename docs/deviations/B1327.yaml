@@ -42,7 +42,7 @@ deviations:
     why: >-
       One stream reader serves both facades instead of a second copy of it. Error messages are betterlite's own
       words (rule errors-match-litellm), and only the message text differs.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2614-L2628
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2631-L2636
 kept_bugs:
   - what: >-
       A caller timeout never reaches a streamed Gemini call in either facade, so the streamed request opens with
