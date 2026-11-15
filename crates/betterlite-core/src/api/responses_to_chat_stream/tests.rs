@@ -471,6 +471,47 @@ fn passthrough_custom_tool_calls_keep_their_shape() {
         null_type["choices"][0]["delta"]["tool_calls"][0],
         json!({"type": null, "custom": {"name": "x"}, "index": 0})
     );
+    // the payload is a pydantic model whose name and input are text or null, and its extras pass through
+    let nulls = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "custom": {"name": null, "input": null}}]}}],
+    }))
+    .unwrap();
+    assert_eq!(
+        nulls["choices"][0]["delta"]["tool_calls"][0]["custom"],
+        json!({"name": null, "input": null})
+    );
+    let bare = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "custom": 5}]}}],
+    }))
+    .unwrap_err();
+    assert!(matches!(
+        bare,
+        ResponsesChatStreamError::Field { field: "custom" }
+    ));
+    let named = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "custom": {"name": 5}}]}}],
+    }))
+    .unwrap_err();
+    assert!(matches!(
+        named,
+        ResponsesChatStreamError::Field {
+            field: "custom.name"
+        }
+    ));
+    let listed = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "custom": {"input": ["x"]}}]}}],
+    }))
+    .unwrap_err();
+    assert!(matches!(
+        listed,
+        ResponsesChatStreamError::Field {
+            field: "custom.input"
+        }
+    ));
 }
 
 #[test]

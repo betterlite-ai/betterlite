@@ -189,6 +189,17 @@ fn tool_calls(items: &[Value]) -> Result<Vec<ChatToolCall>, ResponsesChatStreamE
         };
         // ChatCompletionDeltaCustomToolCall: a nonnull custom payload picks the custom shape
         if let Some(custom) = fields.get("custom").filter(|value| !value.is_null()) {
+            let Some(payload) = custom.as_object() else {
+                return Err(ResponsesChatStreamError::Field { field: "custom" });
+            };
+            for (key, field) in [("name", "custom.name"), ("input", "custom.input")] {
+                if let Some(value) = payload.get(key)
+                    && !value.is_null()
+                    && !value.is_string()
+                {
+                    return Err(ResponsesChatStreamError::Field { field });
+                }
+            }
             let kind = match fields.get("type") {
                 Some(Value::String(text)) => Some(Some(text.clone())),
                 None => None,
