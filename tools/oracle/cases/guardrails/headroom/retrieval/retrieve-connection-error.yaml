@@ -1,0 +1,66 @@
+kind: helper
+name: retrieve-connection-error
+call:
+  b3775: {
+      "kind": "plan",
+      "api_key": null,
+      "timeout": null,
+      "seed": {
+        "call_id": "call-1",
+        "hashes": [
+          "abcdef123456"
+        ]
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "hello"
+        }
+      ],
+      "tools": {
+        "tool_calls": [
+          {
+            "id": "toolu_1",
+            "type": "function",
+            "name": "headroom_retrieve",
+            "arguments": {
+              "hash": "abcdef123456"
+            }
+          }
+        ]
+      },
+      "model": "gpt-4o",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "content": "thinking",
+              "tool_calls": [
+                {
+                  "id": "toolu_1",
+                  "type": "function",
+                  "function": {
+                    "name": "headroom_retrieve",
+                    "arguments": "{\"hash\": \"abcdef123456\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "optional_params": {},
+      "kwargs": {
+        "litellm_call_id": "call-1"
+      },
+      "logging": null,
+      "replies": [
+        {
+          "kind": "close"
+        }
+      ]
+    }
+env: {}
+compare:
+  ignore:
+    - {pointer: "/value/plan/request_patch/messages/1/tool_calls/0/function/arguments", why: "json.dumps writes a space after each colon where betterlite writes compact JSON"}
