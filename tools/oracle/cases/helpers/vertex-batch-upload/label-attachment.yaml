@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-batch-upload-label-attachment
+call:
+  vertex_batch_upload:
+    calls:
+      - content: |-
+          {"custom_id":"abc","url":"/v1/chat/completions","body":{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"hi"}]}}
+          {"custom_id":"Héllo.req-1","url":"/v1/chat/completions","body":{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"hi"}],"temperature":0.5,"max_tokens":16}}
+          {"custom_id":"a-very-long-custom-identifier-that-needs-several-base32-label-chunks-to-round-trip","url":"/v1/chat/completions","body":{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"hi"}]}}
+          {"url":"/v1/chat/completions","body":{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"no id"}]}}
+        passthrough: false
+env: {}
+compare: {ignore: []}

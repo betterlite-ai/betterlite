@@ -1,0 +1,50 @@
+kind: helper
+name: database-diagnostics-message-and-exception
+call:
+  database_diagnostics:
+    function: format
+    format_scenarios:
+      - format: json
+        message: "worker %s beat %d times"
+        level: INFO
+        created: 1700000000.0
+        offset_seconds: 0
+        arguments: {positional: [alpha, 3]}
+      - format: json
+        message: "count %(count)d for %(worker)s"
+        level: WARNING
+        created: 1700000000.0
+        offset_seconds: 0
+        arguments: {named: {count: 2, worker: alpha}}
+      - format: json
+        message: "100%% %r"
+        level: INFO
+        created: 1700000000.0
+        offset_seconds: 0
+        arguments: {positional: [done]}
+      - format: json
+        message: beat failed
+        level: ERROR
+        created: 1700000000.0
+        offset_seconds: 0
+        exception: {kind: ValueError, message: boom}
+      - format: text
+        message: "worker %s beat %d"
+        level: INFO
+        created: 1700000000.125
+        offset_seconds: 19800
+        arguments: {positional: [alpha, 3]}
+      - format: text
+        message: beat failed
+        level: ERROR
+        created: 1700000000.125
+        offset_seconds: 19800
+        exception: {kind: ValueError, message: boom}
+      - format: text
+        message: beat
+        level: INFO
+        created: 1700000000.005
+        offset_seconds: 19800
+    enabled_scenarios: []
+env: {}
+compare: {ignore: []}

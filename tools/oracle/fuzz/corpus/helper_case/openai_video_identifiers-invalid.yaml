@@ -1,0 +1,23 @@
+kind: helper
+name: openai-video-identifiers-invalid-seed
+call:
+  openai_video_identifiers:
+    calls:
+      - op: decode_video_id
+        encoded: video_AAAAA
+        capture_debug: true
+      - op: rewrite_characters
+        request:
+          model: sora-2
+          prompt: make a video
+          characters:
+            - {id: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7Y2hhcmFjdGVyX2lkOmNoYXItMQ==, role: hero}
+            - raw
+      - op: video_file_tuple
+        fixture:
+          kind: buffered_reader
+          data_base64: bm90IHZpZGVv
+          position: 0
+          name: clip.webm
+env: {}
+compare: {ignore: []}

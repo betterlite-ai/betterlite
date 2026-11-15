@@ -86,7 +86,7 @@ pub trait BaseContainerConfig: Send + Sync {
         container_id: &str,
         api_base: &str,
         context: ContainerRequestContext<'_>,
-    ) -> (String, Map<String, Value>);
+    ) -> Result<(String, Map<String, Value>), ContainerError>;
 
     // ast-grep-ignore: no-long-names
     fn transform_container_retrieve_response(
@@ -100,7 +100,7 @@ pub trait BaseContainerConfig: Send + Sync {
         container_id: &str,
         api_base: &str,
         context: ContainerRequestContext<'_>,
-    ) -> (String, Map<String, Value>);
+    ) -> Result<(String, Map<String, Value>), ContainerError>;
 
     // ast-grep-ignore: no-long-names
     fn transform_container_delete_response(
@@ -115,7 +115,7 @@ pub trait BaseContainerConfig: Send + Sync {
         api_base: &str,
         context: ContainerRequestContext<'_>,
         query: &ContainerListQuery<'_>,
-    ) -> (String, Map<String, Value>);
+    ) -> Result<(String, Map<String, Value>), ContainerError>;
 
     // ast-grep-ignore: no-long-names
     fn transform_container_file_list_response(
@@ -130,7 +130,7 @@ pub trait BaseContainerConfig: Send + Sync {
         file_id: &str,
         api_base: &str,
         context: ContainerRequestContext<'_>,
-    ) -> (String, Map<String, Value>);
+    ) -> Result<(String, Map<String, Value>), ContainerError>;
 
     // ast-grep-ignore: no-long-names
     fn transform_container_file_content_response(

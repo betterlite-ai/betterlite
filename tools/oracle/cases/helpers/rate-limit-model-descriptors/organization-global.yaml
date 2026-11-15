@@ -1,0 +1,30 @@
+kind: helper
+name: rate-limit-model-descriptors-organization-global
+call:
+  b3038:
+    function: organization
+    auth:
+      org_id: org-1
+      organization_rpm_limit: 10
+      organization_tpm_limit: 20
+    requested: null
+    groups: {}
+    window_size: 60
+calls:
+  - b3038:
+      function: organization
+      auth:
+        org_id: org-1
+        organization_tpm_limit: 20
+      requested: null
+      groups: {}
+      window_size: 60
+  - b3038:
+      function: organization
+      auth:
+        org_id: org-1
+      requested: null
+      groups: {}
+      window_size: 60
+env: {}
+compare: {ignore: []}
