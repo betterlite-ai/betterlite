@@ -17,6 +17,7 @@ use betterlite_http::proxy::base_builder;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
@@ -799,6 +800,27 @@ async fn a_failed_call_returns_the_inputs_when_block_on_error_is_false() {
         .expect("fail open");
     assert_eq!(updated, inputs);
     server.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_answer_cut_off_before_its_length_is_a_failed_call() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let answer = async {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 64\r\n\r\n{\"decision\":\"allow\"}")
+            .await
+            .expect("write");
+        socket.shutdown().await.expect("shutdown");
+    };
+    let guardrail = guardrail_at(&base, true);
+    let (result, ()) = tokio::join!(
+        guardrail.apply_guardrail(text_inputs(), GuardrailInputType::Request),
+        answer
+    );
+    let error = result.unwrap_err();
+    assert!(matches!(error, PromptGuardError::Request { .. }));
 }
 
 #[tokio::test]
