@@ -23,7 +23,5 @@ where
         namespace: namespace.map(str::to_owned),
     });
     coordinator.tunables = tunables.clone();
-    let coordinator: Arc<dyn RefreshCoordinator<Output = Output, Error = Error>> =
-        Arc::new(coordinator);
-    Some(coordinator)
+    Some(Arc::new(coordinator))
 }

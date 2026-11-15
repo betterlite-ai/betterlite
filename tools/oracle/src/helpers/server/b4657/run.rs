@@ -177,20 +177,17 @@ fn reread_step<'call>(rereads: &'call AtomicUsize) -> RefreshStep<'call, String,
     })
 }
 
-fn token_key() -> TokenKey {
-    TokenKey {
-        user_id: "user".to_owned(),
-        server_id: "server".to_owned(),
-    }
-}
-
 async fn run_pair(
     coordinator: &Coordinator,
     refreshes: &AtomicUsize,
     rereads: &AtomicUsize,
 ) -> Value {
-    let winner = coordinator.run(token_key(), refresh_step(refreshes), reread_step(rereads));
-    let loser = coordinator.run(token_key(), refresh_step(refreshes), reread_step(rereads));
+    let key = TokenKey {
+        user_id: "user".to_owned(),
+        server_id: "server".to_owned(),
+    };
+    let winner = coordinator.run(key.clone(), refresh_step(refreshes), reread_step(rereads));
+    let loser = coordinator.run(key, refresh_step(refreshes), reread_step(rereads));
     let (winner, loser) = tokio::join!(winner, loser);
     let (Ok(winner), Ok(loser)) = (winner, loser) else {
         return serde_json::json!({"error": "coordinator returned an error"});
