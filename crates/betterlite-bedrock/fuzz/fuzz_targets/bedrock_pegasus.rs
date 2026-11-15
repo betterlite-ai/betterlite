@@ -23,7 +23,25 @@ impl TokenCounter for ZeroCounter {
     }
 }
 
-fuzz_target!(|bytes: &[u8]| {
+fn seeded_response() -> PegasusResponse {
+    PegasusResponse {
+        id: "fuzz".to_owned(),
+        choices: vec![PegasusChoice {
+            index: 0,
+            message: PegasusMessage {
+                role: "assistant".to_owned(),
+                content: None,
+                tool_calls: None,
+            },
+            finish_reason: None,
+        }],
+        created: 0,
+        model: String::new(),
+        usage: PegasusUsage::default(),
+    }
+}
+
+fn replay(bytes: &[u8]) {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread().build() else {
         return;
     };
@@ -38,21 +56,7 @@ fuzz_target!(|bytes: &[u8]| {
         ),
     ];
     let messages: [Message; 0] = [];
-    let mut response = PegasusResponse {
-        id: "fuzz".to_owned(),
-        choices: vec![PegasusChoice {
-            index: 0,
-            message: PegasusMessage {
-                role: "assistant".to_owned(),
-                content: None,
-                tool_calls: None,
-            },
-            finish_reason: None,
-        }],
-        created: 0,
-        model: String::new(),
-        usage: PegasusUsage::default(),
-    };
+    let mut response = seeded_response();
     let context = ReplyContext {
         status: 200,
         headers: &headers,
@@ -66,4 +70,8 @@ fuzz_target!(|bytes: &[u8]| {
         &mut response,
         &ZeroCounter,
     ));
+}
+
+fuzz_target!(|bytes: &[u8]| {
+    replay(bytes);
 });

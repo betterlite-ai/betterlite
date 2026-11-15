@@ -15,15 +15,18 @@ pub fn build_media_source(optional: &Params) -> Result<Option<Field>, PegasusErr
 }
 
 fn inline_media_source(optional: &Params) -> Result<Option<Field>, PegasusError> {
-    let base64_input = choose(optional.get("video_base64"), optional.get("base64_string"))
-        .filter(|value| value.truthy());
-    let Some(value) = base64_input else {
+    let video = optional.get("video_base64").filter(|value| value.truthy());
+    let fallback = optional.get("base64_string").filter(|value| value.truthy());
+    let Some(value) = video.or(fallback) else {
         return Ok(None);
     };
     let Field::Text(text) = value else {
-        return Err(PegasusError::NotText {
-            field: "video_base64",
-        });
+        let field = if video.is_some() {
+            "video_base64"
+        } else {
+            "base64_string"
+        };
+        return Err(PegasusError::NotText { field });
     };
     let mut source = Params::new();
     source.insert(

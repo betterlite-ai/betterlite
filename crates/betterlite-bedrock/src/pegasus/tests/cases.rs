@@ -113,6 +113,18 @@ fn pegasus_media_source() {
     for &(json, expected) in DIRECT_MEDIA.iter().chain(INLINE_MEDIA).chain(S3_MEDIA) {
         assert_eq!(media_source(json), expected.map(field), "{json}");
     }
+    assert!(matches!(
+        build_media_source(&params(r#"{"video_base64":5}"#)),
+        Err(PegasusError::NotText {
+            field: "video_base64"
+        })
+    ));
+    assert!(matches!(
+        build_media_source(&params(r#"{"video_base64":"","base64_string":{"a":1}}"#)),
+        Err(PegasusError::NotText {
+            field: "base64_string"
+        })
+    ));
 }
 
 fn media_source(json: &str) -> Option<Field> {
@@ -142,6 +154,10 @@ fn text_video_prompt() {
     assert_eq!(
         prompt(r#"[{"content":["a",{"type":"text"},"b"]}]"#),
         "user: a  b"
+    );
+    assert_eq!(
+        prompt(r#"[{"content":[{"type":"text","text":null},"a"]}]"#),
+        "user:  a"
     );
 }
 
