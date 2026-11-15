@@ -94,7 +94,7 @@ class AnalysisServer:
             name, separator, value = line.partition(":")
             if separator:
                 headers[name.strip().lower()] = value.strip()
-        length = int(headers.get("content-length", "0"))
+        length = int(headers["content-length"])
         body = TypeAdapter(Json).validate_json(await reader.readexactly(length))
         self.requests.append(RecordedCall(url=request_line[1], headers=headers, body=body))
         encoded = dumps(self.answer).encode()
