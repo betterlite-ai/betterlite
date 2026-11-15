@@ -8,6 +8,7 @@ use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time;
 use tokio_tungstenite::accept_hdr_async;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
@@ -15,7 +16,7 @@ use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 use super::fixture;
 use crate::aim::error::AimError;
 use crate::aim::settings::AimHook;
-use crate::aim::stream::{MAX_STREAM_FRAME_BYTES, StreamFrame};
+use crate::aim::stream::{AimSocketConnector, MAX_STREAM_FRAME_BYTES, StreamFrame};
 use crate::aim::transport::AimWebSocketConnector;
 use crate::aim::wire::AnalyzeResponse;
 
@@ -114,7 +115,7 @@ async fn aim_guardrail_websocket_connector_exchanges_text_frames_with_a_local_se
 
 #[tokio::test]
 async fn aim_guardrail_websocket_connector_rejects_a_frame_larger_than_the_limit() {
-    let oversized = "x".repeat(MAX_STREAM_FRAME_BYTES + 1);
+    let oversized = "x".repeat(MAX_STREAM_FRAME_BYTES.saturating_add(1));
     let server = frame_server(vec![oversized]).await;
     let connector = AimWebSocketConnector;
     let mut socket = connector
@@ -140,7 +141,7 @@ async fn aim_guardrail_websocket_connector_bounds_the_handshake_wait() {
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         let (_stream, _peer) = listener.accept().await.unwrap();
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        time::sleep(Duration::from_secs(5)).await;
     });
     let error = AimWebSocketConnector
         .connect(

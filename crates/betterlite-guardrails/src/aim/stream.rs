@@ -81,63 +81,57 @@ pub struct StreamFrame {
     pub blocking_message: Option<String>,
 }
 
-impl AimGuardrail {
-    pub async fn inspect_output_stream<S>(
-        &self,
-        chunks: S,
-        request_data: &BTreeMap<String, GuardrailValue>,
-        key_alias: Option<&str>,
-    ) -> Result<impl Stream<Item = Result<VerifiedChunk, AimError>>, AimError>
-    where
-        S: Stream<Item = AimStreamChunk> + Send + 'static,
-    {
-        let headers = self.build_headers(
-            AimHook::Output,
-            key_alias,
-            input::user_email(request_data),
-            input::text_field(request_data, "litellm_call_id"),
-        )?;
-        let url = format!("{}/fw/v1/analyze/stream", self.ws_api_base);
-        let AimSocket { reader, mut writer } = self
-            .connector
-            .connect(
-                &url,
-                &headers,
-                CONNECT_TIMEOUT,
-                self.timeout.unwrap_or(DEFAULT_TIMEOUT),
-            )
-            .await?;
-        let mut sender = JoinSet::new();
-        sender.spawn(async move { forward_chunks(writer.as_mut(), chunks).await });
-        Ok(stream::unfold(
-            StreamState {
-                reader,
-                sender: Some(sender),
-                finished: false,
-            },
-            |mut state| async move { state.next_item().await.map(|item| (item, state)) },
-        ))
-    }
+pub async fn inspect_output_stream<S>(
+    guardrail: &AimGuardrail,
+    chunks: S,
+    request_data: &BTreeMap<String, GuardrailValue>,
+    key_alias: Option<&str>,
+) -> Result<impl Stream<Item = Result<VerifiedChunk, AimError>>, AimError>
+where
+    S: Stream<Item = AimStreamChunk> + Send + 'static,
+{
+    let headers = guardrail.build_headers(
+        AimHook::Output,
+        key_alias,
+        input::user_email(request_data),
+        input::text_field(request_data, "litellm_call_id"),
+    )?;
+    let url = format!("{}/fw/v1/analyze/stream", guardrail.ws_api_base);
+    let AimSocket { reader, mut writer } = guardrail
+        .connector
+        .connect(
+            &url,
+            &headers,
+            CONNECT_TIMEOUT,
+            guardrail.timeout.unwrap_or(DEFAULT_TIMEOUT),
+        )
+        .await?;
+    let mut sender = JoinSet::new();
+    sender.spawn(async move { forward_chunks(writer.as_mut(), chunks).await });
+    Ok(stream::unfold(
+        StreamState {
+            reader,
+            sender: Some(sender),
+            finished: false,
+        },
+        |mut state| async move { state.next_item().await.map(|item| (item, state)) },
+    ))
 }
 
-async fn forward_chunks<S>(writer: &mut dyn AimFrameWriter, chunks: S)
+async fn forward_chunks<S>(writer: &mut dyn AimFrameWriter, chunks: S) -> Result<(), AimError>
 where
     S: Stream<Item = AimStreamChunk>,
 {
-    let mut chunks = Box::pin(chunks);
-    while let Some(chunk) = chunks.next().await {
-        if writer.send_text(chunk.0).await.is_err() {
-            return;
-        }
+    let mut pinned = Box::pin(chunks);
+    while let Some(chunk) = pinned.next().await {
+        writer.send_text(chunk.0).await?;
     }
-    if writer.send_text(DONE_FRAME.to_owned()).await.is_err() {
-        return;
-    }
+    writer.send_text(DONE_FRAME.to_owned()).await
 }
 
 struct StreamState {
     reader: Box<dyn AimFrameReader>,
-    sender: Option<JoinSet<()>>,
+    sender: Option<JoinSet<Result<(), AimError>>>,
     finished: bool,
 }
 

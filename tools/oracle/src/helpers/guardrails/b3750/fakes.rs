@@ -138,7 +138,8 @@ pub(super) fn build(
         inspect_embeddings: settings.inspect_embeddings,
         litellm_version: settings.litellm_version.clone(),
     };
-    let poster: Arc<dyn AimPoster> = Arc::clone(&fake);
+    let shared: Arc<Fake> = Arc::clone(&fake);
+    let poster: Arc<dyn AimPoster> = shared;
     let connector: Arc<dyn AimSocketConnector> = fake;
     let guardrail = AimGuardrail::new(
         params,

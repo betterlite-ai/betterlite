@@ -4,13 +4,16 @@ use std::sync::PoisonError;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::aim::error::AimError;
 use betterlite_guardrails::aim::output::AimOutput;
+use betterlite_guardrails::aim::output::call_aim_guardrail_on_output;
+use betterlite_guardrails::aim::request::call_aim_guardrail;
 use betterlite_guardrails::aim::settings::AimHook;
 use betterlite_guardrails::aim::stream::AimStreamChunk;
+use betterlite_guardrails::aim::stream::inspect_output_stream;
 use futures_util::StreamExt as _;
 use serde_json::json;
 
 use super::fakes::{Built, build};
-use super::{HookArg, Input, Op, OutputArgs, RequestArgs, Settings, StreamArgs, failure};
+use super::{HookArg, Input, Op, Settings, StreamArgs, failure};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 const ANALYZE_PATH: &str = "/fw/v1/analyze";
@@ -97,7 +100,8 @@ fn execute(input: &Input) -> HelperResult {
                 HookArg::PreCall => AimHook::PreCall,
                 HookArg::Moderation => AimHook::Moderation,
             };
-            let outcome = runtime.block_on(built.guardrail.call_aim_guardrail(
+            let outcome = runtime.block_on(call_aim_guardrail(
+                &built.guardrail,
                 &mut data,
                 hook,
                 args.key_alias.as_deref(),
@@ -123,7 +127,8 @@ fn execute(input: &Input) -> HelperResult {
                 args.answer_status,
                 &[],
             )?;
-            let verdict = runtime.block_on(built.guardrail.call_aim_guardrail_on_output(
+            let verdict = runtime.block_on(call_aim_guardrail_on_output(
+                &built.guardrail,
                 &args.request_data,
                 &args.output,
                 args.key_alias.as_deref(),
@@ -164,19 +169,18 @@ fn stream(args: &StreamArgs) -> HelperResult {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| failure("ValueError", error.to_string()))?;
     runtime.block_on(async {
-        let stream = built
-            .guardrail
-            .inspect_output_stream(
-                futures_util::stream::iter(chunks),
-                &args.request_data,
-                args.key_alias.as_deref(),
-            )
-            .await
-            .map_err(|error| failure("AimError", error.to_string()))?;
-        let mut stream = Box::pin(stream);
+        let stream = inspect_output_stream(
+            &built.guardrail,
+            futures_util::stream::iter(chunks),
+            &args.request_data,
+            args.key_alias.as_deref(),
+        )
+        .await
+        .map_err(|error| failure("AimError", error.to_string()))?;
+        let mut pinned = Box::pin(stream);
         let mut contents = Vec::new();
         let mut blocked = false;
-        while let Some(item) = stream.next().await {
+        while let Some(item) = pinned.next().await {
             match item {
                 Ok(chunk) => contents.push(
                     chunk

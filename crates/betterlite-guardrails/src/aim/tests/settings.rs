@@ -13,7 +13,9 @@ use crate::aim::input;
 use crate::aim::settings::{
     AimGuardrail, AimHook, AimParams, DEFAULT_TIMEOUT, SUPPORTED_EVENT_HOOKS,
 };
-use crate::aim::stream::{AimSocketConnector, CONNECT_TIMEOUT, MAX_STREAM_FRAME_BYTES};
+use crate::aim::stream::{
+    AimSocketConnector, CONNECT_TIMEOUT, MAX_STREAM_FRAME_BYTES, inspect_output_stream,
+};
 use crate::aim::transport::AimPoster;
 
 #[rstest]
@@ -156,13 +158,13 @@ async fn aim_guardrail_stream_defaults_the_frame_wait_to_the_guardrail_timeout()
         status: StatusCode::OK,
         body: Vec::new(),
     });
-    let poster: Arc<dyn AimPoster> = Arc::clone(&fake);
+    let shared: Arc<Fake> = Arc::clone(&fake);
+    let poster: Arc<dyn AimPoster> = shared;
     let connector: Arc<dyn AimSocketConnector> = fake;
     let guardrail =
         AimGuardrail::new(AimParams::default(), &environment, poster, connector, None).unwrap();
     let request = data(r#"{"messages": [{"role": "user", "content": "hi"}]}"#);
-    let _stream = guardrail
-        .inspect_output_stream(stream::empty(), &request, None)
+    let _stream = inspect_output_stream(&guardrail, stream::empty(), &request, None)
         .await
         .unwrap();
     let timings = state.timings.lock().unwrap_or_else(PoisonError::into_inner);

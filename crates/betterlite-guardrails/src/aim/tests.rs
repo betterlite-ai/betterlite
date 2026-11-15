@@ -4,6 +4,7 @@ mod settings;
 mod transport;
 
 use std::collections::{BTreeMap, VecDeque};
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -15,15 +16,19 @@ use futures_util::stream::{self, Stream};
 use reqwest::header::HeaderMap;
 use reqwest::{ClientBuilder, StatusCode};
 use rstest::rstest;
-use serde_json::json;
+use secrecy::ExposeSecret as _;
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::{JoinSet, yield_now};
+use tokio::time;
 
 use super::error::{AimError, CONTENT_POLICY_VIOLATION};
-use super::output::AimOutput;
+use super::output::{AimOutput, call_aim_guardrail_on_output};
+use super::request::call_aim_guardrail;
 use super::settings::{AimGuardrail, AimHook, AimParams};
+use super::stream as aim_stream;
 use super::stream::{
     AimFrameReader, AimFrameWriter, AimSocket, AimSocketConnector, AimStreamChunk, CONNECT_TIMEOUT,
     VerifiedChunk,
@@ -140,7 +145,8 @@ fn guardrail_with(
         status: reply.0,
         body: reply.1.as_bytes().to_vec(),
     });
-    let poster: Arc<dyn AimPoster> = Arc::clone(&fake);
+    let shared: Arc<Fake> = Arc::clone(&fake);
+    let poster: Arc<dyn AimPoster> = shared;
     let connector: Arc<dyn AimSocketConnector> = fake;
     AimGuardrail::new(
         params,
@@ -174,7 +180,7 @@ fn data(text: &str) -> BTreeMap<String, GuardrailValue> {
     serde_json::from_str(text).unwrap()
 }
 
-fn body_of(state: &State) -> serde_json::Value {
+fn body_of(state: &State) -> Value {
     let posts = state.posts.lock().unwrap_or_else(PoisonError::into_inner);
     serde_json::from_slice(&posts[0].2).unwrap()
 }
@@ -212,11 +218,14 @@ async fn aim_guardrail_posts_role_projected_inspection_messages() {
         "metadata": {"headers": {"x-aim-user-email": "user@example.com"}}
     }))
     .unwrap();
-    fixture
-        .guardrail
-        .call_aim_guardrail(&mut data, AimHook::PreCall, Some("alias"))
-        .await
-        .unwrap();
+    call_aim_guardrail(
+        &fixture.guardrail,
+        &mut data,
+        AimHook::PreCall,
+        Some("alias"),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         body_of(&fixture.state),
         json!({"messages": [
@@ -260,9 +269,7 @@ async fn aim_guardrail_block_action_is_a_content_policy_rejection() {
     );
     let mut data: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"messages": [{"role": "user", "content": "bad"}]})).unwrap();
-    let error = fixture
-        .guardrail
-        .call_aim_guardrail(&mut data, AimHook::PreCall, None)
+    let error = call_aim_guardrail(&fixture.guardrail, &mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
     assert_eq!(rejection(error), CONTENT_POLICY_VIOLATION);
@@ -278,9 +285,7 @@ async fn aim_guardrail_block_action_survives_a_missing_analysis_result() {
     );
     let mut data: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"messages": [{"role": "user", "content": "bad"}]})).unwrap();
-    let error = fixture
-        .guardrail
-        .call_aim_guardrail(&mut data, AimHook::PreCall, None)
+    let error = call_aim_guardrail(&fixture.guardrail, &mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
     assert_eq!(rejection(error), CONTENT_POLICY_VIOLATION);
@@ -298,9 +303,7 @@ async fn aim_guardrail_anonymize_rewrites_messages_and_input() {
         "input": "raw secret"
     }))
     .unwrap();
-    fixture
-        .guardrail
-        .call_aim_guardrail(&mut data, AimHook::PreCall, None)
+    call_aim_guardrail(&fixture.guardrail, &mut data, AimHook::PreCall, None)
         .await
         .unwrap();
     assert_eq!(
@@ -333,9 +336,7 @@ async fn aim_guardrail_anonymize_rejects_multimodal_input() {
     }))
     .unwrap();
     let before = data.clone();
-    let error = fixture
-        .guardrail
-        .call_aim_guardrail(&mut data, AimHook::PreCall, None)
+    let error = call_aim_guardrail(&fixture.guardrail, &mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
     assert_eq!(rejection(error), "400");
@@ -351,9 +352,7 @@ async fn aim_guardrail_anonymize_rewrites_a_string_batch_by_element() {
     );
     let mut data: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"input": ["one", "", "two"]})).unwrap();
-    fixture
-        .guardrail
-        .call_aim_guardrail(&mut data, AimHook::PreCall, None)
+    call_aim_guardrail(&fixture.guardrail, &mut data, AimHook::PreCall, None)
         .await
         .unwrap();
     assert_eq!(
@@ -377,9 +376,7 @@ async fn aim_guardrail_anonymize_rejects_a_different_batch_size() {
         "messages": [{"role": "user", "content": "one"}, {"role": "user", "content": "two"}]
     }))
     .unwrap();
-    let error = fixture
-        .guardrail
-        .call_aim_guardrail(&mut data, AimHook::PreCall, None)
+    let error = call_aim_guardrail(&fixture.guardrail, &mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
     assert_eq!(rejection(error), "400");
@@ -394,9 +391,7 @@ async fn aim_guardrail_anonymize_rejects_malformed_redacted_messages() {
     );
     let mut data: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"messages": [{"role": "user", "content": "hi"}]})).unwrap();
-    let error = fixture
-        .guardrail
-        .call_aim_guardrail(&mut data, AimHook::PreCall, None)
+    let error = call_aim_guardrail(&fixture.guardrail, &mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
     assert_eq!(rejection(error), "400");
@@ -416,9 +411,8 @@ async fn aim_guardrail_anonymize_rejects_malformed_redacted_messages() {
 async fn aim_guardrail_anonymize_rejects_a_malformed_redacted_chat(#[case] response: &str) {
     let mut data: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"messages": [{"role": "user", "content": "hi"}]})).unwrap();
-    let error = fixture(StatusCode::OK, response, &[])
-        .guardrail
-        .call_aim_guardrail(&mut data, AimHook::PreCall, None)
+    let fixture = fixture(StatusCode::OK, response, &[]);
+    let error = call_aim_guardrail(&fixture.guardrail, &mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
     assert_eq!(rejection(error), "400");
@@ -434,9 +428,7 @@ async fn aim_guardrail_output_anonymize_returns_the_redacted_message() {
     let request: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"messages": [{"role": "user", "content": "question"}]}))
             .unwrap();
-    let output = fixture
-        .guardrail
-        .call_aim_guardrail_on_output(&request, "answer", None)
+    let output = call_aim_guardrail_on_output(&fixture.guardrail, &request, "answer", None)
         .await
         .unwrap();
     assert_eq!(
@@ -461,9 +453,7 @@ async fn aim_guardrail_output_block_returns_the_detection_message() {
     let request: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"messages": [{"role": "user", "content": "question"}]}))
             .unwrap();
-    let output = fixture
-        .guardrail
-        .call_aim_guardrail_on_output(&request, "answer", None)
+    let output = call_aim_guardrail_on_output(&fixture.guardrail, &request, "answer", None)
         .await
         .unwrap();
     assert_eq!(
@@ -488,9 +478,8 @@ async fn aim_guardrail_output_block_returns_the_detection_message() {
 #[tokio::test]
 async fn aim_guardrail_output_anonymize_rejects_bad_redactions(#[case] response: &str) {
     let request = data(r#"{"messages": [{"role": "user", "content": "question"}]}"#);
-    let error = fixture(StatusCode::OK, response, &[])
-        .guardrail
-        .call_aim_guardrail_on_output(&request, "answer", None)
+    let fixture = fixture(StatusCode::OK, response, &[]);
+    let error = call_aim_guardrail_on_output(&fixture.guardrail, &request, "answer", None)
         .await
         .unwrap_err();
     assert_eq!(rejection(error), "400");
@@ -503,9 +492,8 @@ async fn aim_guardrail_output_anonymize_rejects_bad_redactions(#[case] response:
 #[tokio::test]
 async fn aim_guardrail_output_without_an_action_is_unchanged(#[case] response: &str) {
     let request = data(r#"{"messages": [{"role": "user", "content": "question"}]}"#);
-    let output = fixture(StatusCode::OK, response, &[])
-        .guardrail
-        .call_aim_guardrail_on_output(&request, "answer", None)
+    let fixture = fixture(StatusCode::OK, response, &[]);
+    let output = call_aim_guardrail_on_output(&fixture.guardrail, &request, "answer", None)
         .await
         .unwrap();
     assert_eq!(output, AimOutput::Unchanged);
@@ -525,9 +513,8 @@ async fn aim_guardrail_leaves_the_request_unchanged_without_a_rewrite(#[case] re
     let mut request =
         data(r#"{"messages": [{"role": "user", "content": "keep"}], "input": "keep"}"#);
     let before = request.clone();
-    fixture(StatusCode::OK, response, &[])
-        .guardrail
-        .call_aim_guardrail(&mut request, AimHook::Moderation, None)
+    let fixture = fixture(StatusCode::OK, response, &[]);
+    call_aim_guardrail(&fixture.guardrail, &mut request, AimHook::Moderation, None)
         .await
         .unwrap();
     assert_eq!(request, before);
@@ -537,18 +524,14 @@ async fn aim_guardrail_leaves_the_request_unchanged_without_a_rewrite(#[case] re
 async fn aim_guardrail_rejects_a_failed_status_and_an_unparsable_answer() {
     let mut request = data(r#"{"messages": [{"role": "user", "content": "hi"}]}"#);
     let failed = fixture(StatusCode::INTERNAL_SERVER_ERROR, "{}", &[]);
-    let status_error = failed
-        .guardrail
-        .call_aim_guardrail(&mut request, AimHook::PreCall, None)
+    let status_error = call_aim_guardrail(&failed.guardrail, &mut request, AimHook::PreCall, None)
         .await
         .unwrap_err();
     assert!(
         matches!(status_error, AimError::HttpStatus(status) if status == StatusCode::INTERNAL_SERVER_ERROR)
     );
     let garbled = fixture(StatusCode::OK, "not json", &[]);
-    let json_error = garbled
-        .guardrail
-        .call_aim_guardrail(&mut request, AimHook::PreCall, None)
+    let json_error = call_aim_guardrail(&garbled.guardrail, &mut request, AimHook::PreCall, None)
         .await
         .unwrap_err();
     assert!(matches!(json_error, AimError::ResponseJson(_)));
@@ -583,11 +566,10 @@ where
     S: Stream<Item = AimStreamChunk> + Send + 'static,
 {
     let request = data(r#"{"messages": [{"role": "user", "content": "hi"}]}"#);
-    let stream = fixture
-        .guardrail
-        .inspect_output_stream(chunks, &request, Some("alias"))
-        .await
-        .unwrap();
+    let stream =
+        aim_stream::inspect_output_stream(&fixture.guardrail, chunks, &request, Some("alias"))
+            .await
+            .unwrap();
     Box::pin(stream).take(8).collect().await
 }
 
@@ -704,7 +686,7 @@ async fn aim_guardrail_stream_cancels_the_sender_when_aim_stops_sending_chunks()
             Some(r#"{"done": true}"#),
         ],
     );
-    let (sender, receiver) = mpsc::channel::<AimStreamChunk>(1);
+    let (sender, mut receiver) = mpsc::channel::<AimStreamChunk>(1);
     assert!(
         sender
             .try_send(AimStreamChunk(r#"{"choices":[]}"#.to_owned()))
@@ -713,7 +695,7 @@ async fn aim_guardrail_stream_cancels_the_sender_when_aim_stops_sending_chunks()
     let chunks = stream::poll_fn(move |context| receiver.poll_recv(context));
     let items = drain(&fixture, chunks).await;
     assert_eq!(texts(&items), ["he"]);
-    let closed = tokio::time::timeout(Duration::from_secs(1), sender.closed()).await;
+    let closed = time::timeout(Duration::from_secs(1), sender.closed()).await;
     assert!(closed.is_ok());
 }
 
@@ -723,7 +705,7 @@ struct Server {
 }
 
 fn request_complete(request: &[u8]) -> bool {
-    let Ok(text) = std::str::from_utf8(request) else {
+    let Ok(text) = from_utf8(request) else {
         return false;
     };
     let Some((head, body)) = text.split_once("\r\n\r\n") else {

@@ -6,6 +6,7 @@ use futures_util::stream::{SplitSink, SplitStream, StreamExt as _};
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap};
 use tokio::net::TcpStream;
+use tokio::time;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
@@ -53,8 +54,8 @@ impl AimPoster for HttpPoster {
             .headers(headers.clone())
             .header(CONTENT_TYPE, "application/json")
             .body(body.to_vec());
-        if let Some(timeout) = timeout {
-            request = request.timeout(timeout);
+        if let Some(limit) = timeout {
+            request = request.timeout(limit);
         }
         let mut response = request.send().await.map_err(request_error)?;
         let status = response.status();
@@ -99,7 +100,7 @@ impl AimSocketConnector for AimWebSocketConnector {
             .max_message_size(Some(MAX_STREAM_FRAME_BYTES))
             .max_frame_size(Some(MAX_STREAM_FRAME_BYTES));
         let opening = connect_async_with_config(request, Some(config), false);
-        let (socket, _answer) = tokio::time::timeout(open, opening)
+        let (socket, _answer) = time::timeout(open, opening)
             .await
             .map_err(|_elapsed| AimError::ConnectTimeout)?
             .map_err(AimError::WebSocket)?;
@@ -123,7 +124,7 @@ struct TungsteniteReader {
 impl AimFrameReader for TungsteniteReader {
     async fn recv_text(&mut self) -> Result<Option<String>, AimError> {
         loop {
-            let next = tokio::time::timeout(self.read_timeout, self.stream.next())
+            let next = time::timeout(self.read_timeout, self.stream.next())
                 .await
                 .map_err(|_elapsed| AimError::StreamTimeout)?;
             let Some(message) = next else {
