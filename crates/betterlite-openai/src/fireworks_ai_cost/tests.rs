@@ -37,7 +37,7 @@ fn usage(prompt: i64, completion: i64) -> CostUsage {
     CostUsage {
         prompt_tokens: prompt,
         completion_tokens: completion,
-        total_tokens: prompt + completion,
+        total_tokens: prompt.saturating_add(completion),
         prompt_details: None,
         completion_details: None,
         cache_read_tokens: None,
