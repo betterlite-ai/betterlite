@@ -1,0 +1,21 @@
+kind: helper
+name: openai-realtime-ssl-and-size
+call:
+  openai_realtime:
+    kind: connect
+    api_key: sk-realtime-1234567890
+    model: gpt-4o-realtime-preview
+    scope_headers: []
+    ssl_verification: disabled
+    max_message_size_bytes: 2048
+    openai_api_base: null
+    openai_api_key: null
+    queries:
+      - {api_base: "ws://localhost:8080/base", query_params: null}
+      - {api_base: "https://api.openai.com/", query_params: null}
+    failures: []
+    http_setups: []
+env:
+  SSL_VERIFY: "false"
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "2048"
+compare: {ignore: []}

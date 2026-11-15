@@ -1,0 +1,21 @@
+kind: helper
+name: transcription-token-evidence-before-duration-seed
+call:
+  response_charge:
+    function: completion_cost
+    model: oracle-transcribe
+    custom_llm_provider: openai
+    region_name: null
+    catalog:
+      oracle-transcribe: {litellm_provider: openai, mode: audio_transcription, input_cost_per_token: 0.5, output_cost_per_token: 4.0, output_cost_per_second: 2.0}
+    usage: {prompt_tokens: 16, completion_tokens: 8, cached_tokens: null}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {}
+    margin: {}
+    call_type: transcription
+    response_kind: transcription
+    transcription_seconds: 100.0
+compare: {ignore: []}
+env: {}

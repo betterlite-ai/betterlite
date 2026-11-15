@@ -1,0 +1,6 @@
+kind: helper
+name: query-fallback-to-last-user-message
+call:
+  compresr_transport: {"function": "fallback_query", "messages": [{"role": "user", "content": "first question"}, {"role": "assistant", "content": "answer"}, {"role": "user", "content": [{"type": "text", "text": "second"}, {"type": "text", "text": "question"}]}, {"role": "assistant", "content": "done"}]}
+env: {}
+compare: {ignore: []}
