@@ -11,7 +11,9 @@ use redis::{Cmd, Value};
 
 use super::runtime_refresh_coordinator;
 use crate::mcp::outbound_credentials::distributed_lock::{CommandError, RedisCommands};
-use crate::mcp::outbound_credentials::refresh_coordinator::RedisTunables;
+use crate::mcp::outbound_credentials::refresh_coordinator::{
+    DEFAULT_POLL_INTERVAL, DEFAULT_REFRESH_BUDGET, DEFAULT_WAIT_TIMEOUT, RedisTunables,
+};
 use crate::mcp::outbound_credentials::{RefreshCoordinator, RefreshStep, TokenKey};
 
 struct FakeRedis {
@@ -108,7 +110,9 @@ async fn the_tunables_travel_with_the_coordinator() {
     let tunables = RedisTunables {
         key_prefix: "shared:".to_owned(),
         lock_ttl: Duration::from_millis(250),
-        ..RedisTunables::default()
+        refresh_budget: DEFAULT_REFRESH_BUDGET,
+        wait_timeout: DEFAULT_WAIT_TIMEOUT,
+        poll_interval: DEFAULT_POLL_INTERVAL,
     };
     let redis = FakeRedis::new(vec![Ok(Value::Okay), Ok(Value::Int(1))]);
     let coordinator = build(Some(Arc::clone(&redis)), None, &tunables).unwrap();
