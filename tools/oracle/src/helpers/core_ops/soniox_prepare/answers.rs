@@ -70,7 +70,7 @@ pub(super) fn answer(call: &Call) -> HelperResult {
             prepare,
             model,
             file_id,
-        } => create_body_answer(prepare, model, file_id.as_deref()),
+        } => Ok(create_body_answer(prepare, model, file_id.as_deref())),
         Call::Redact { body } => {
             let redacted = redacted_body(body);
             Ok(json!({ "redacted": redacted, "body": Value::Object(body.clone()) }))
@@ -86,13 +86,18 @@ pub(super) fn answer(call: &Call) -> HelperResult {
             api_base,
             body,
             failing,
-        } => pre_call_answer(api_base, body, *failing),
+        } => Ok(pre_call_answer(api_base, body, *failing)),
         Call::PostCall {
             audio,
             original_response,
             body,
             failing,
-        } => post_call_answer(audio.as_deref(), original_response, body, *failing),
+        } => Ok(post_call_answer(
+            audio.as_deref(),
+            original_response,
+            body,
+            *failing,
+        )),
     }
 }
 
@@ -103,13 +108,13 @@ fn prepare_answer(args: &PrepareArgs) -> HelperResult {
     }
 }
 
-fn create_body_answer(args: &PrepareArgs, model: &str, file_id: Option<&str>) -> HelperResult {
+fn create_body_answer(args: &PrepareArgs, model: &str, file_id: Option<&str>) -> Value {
     match resolve(args) {
         Ok(prepared) => {
             let body = build_create_body(model, &prepared.params, &prepared.options, file_id);
-            Ok(json!({ "ok": true, "body": Value::Object(body) }))
+            json!({ "ok": true, "body": Value::Object(body) })
         }
-        Err(error) => Ok(raised(&error)),
+        Err(error) => raised(&error),
     }
 }
 
@@ -188,13 +193,13 @@ fn raise_answer(
     }))
 }
 
-fn pre_call_answer(api_base: &str, body: &Object, failing: bool) -> HelperResult {
+fn pre_call_answer(api_base: &str, body: &Object, failing: bool) -> Value {
     let mut recorder = Recorder {
         failing,
         recorded: None,
     };
     log_pre_call(&mut recorder, api_base, body);
-    Ok(json!({ "recorded": recorder.recorded, "body": body }))
+    json!({ "recorded": recorder.recorded, "body": body })
 }
 
 fn post_call_answer(
@@ -202,14 +207,14 @@ fn post_call_answer(
     original_response: &Object,
     body: &Object,
     failing: bool,
-) -> HelperResult {
+) -> Value {
     let mut recorder = Recorder {
         failing,
         recorded: None,
     };
     let file = audio.map(AudioFile::Text);
     log_post_call(&mut recorder, file.as_ref(), original_response, body);
-    Ok(json!({ "recorded": recorder.recorded, "body": body }))
+    json!({ "recorded": recorder.recorded, "body": body })
 }
 
 fn raised(error: &PrepareError) -> Value {
