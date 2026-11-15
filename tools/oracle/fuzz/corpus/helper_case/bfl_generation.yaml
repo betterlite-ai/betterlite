@@ -1,0 +1,10 @@
+kind: helper
+name: bfl-generation-fuzz-seed
+call:
+  bfl_generation:
+    operation: poll_host
+    urls:
+      - https://gateway.bfl.ai/v1/get_result?id=1
+      - https://bfl.ai.example.test/v1/get_result
+env: {}
+compare: {ignore: []}
