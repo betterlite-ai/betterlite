@@ -581,6 +581,7 @@ fn a_list_result_projects_strings_and_url_objects_only() {
 #[case::null_result(r#"{"result":null}"#)]
 #[case::object_result(r#"{"result":{"width":1}}"#)]
 #[case::absent_result(r#"{"status":"Pending"}"#)]
+#[case::null_sample_result(r#"{"result":{"sample":null}}"#)]
 fn results_without_images_raise_the_source_500(#[case] body: &str) {
     let decoded = reply(body);
     let error = apply_image_response(&decoded, Vec::new(), 1).unwrap_err();
@@ -594,10 +595,12 @@ fn malformed_replies_keep_their_decode_error() {
     let error = decode_bfl_reply(b"{").unwrap_err();
     let trailing = decode_bfl_reply(br#"{"status":"Ready"} {}"#).unwrap_err();
     let wrong_status = decode_bfl_reply(br#"{"status":7}"#).unwrap_err();
+    let wrong_sample = decode_bfl_reply(br#"{"result":{"sample":5}}"#).unwrap_err();
 
     assert!(matches!(&error, BflError::ReplyDecode { .. }));
     assert!(matches!(&trailing, BflError::ReplyTrailing { .. }));
     assert!(matches!(&wrong_status, BflError::ReplyDecode { .. }));
+    assert!(matches!(&wrong_sample, BflError::ReplyDecode { .. }));
     assert_eq!(error.status(), None);
     assert_eq!(trailing.status(), None);
 }
@@ -640,6 +643,7 @@ fn accepts_https_bfl_hosts(#[case] polling_url: &str) {
 #[case::other_domain("https://example.test/v1/get_result", BflError::PollingHost)]
 #[case::userinfo_host("https://bfl.ai@evil.test/v1/get_result", BflError::PollingHost)]
 #[case::relative("v1/get_result", BflError::PollingUrl { source: url::ParseError::RelativeUrlWithoutBase })]
+#[case::invalid_port("https://bfl.ai:not-a-port/v1/get_result", BflError::PollingUrl { source: url::ParseError::InvalidPort })]
 fn rejects_untrusted_polling_urls(#[case] polling_url: &str, #[case] expected: BflError) {
     let error = check_bfl_poll_url(polling_url).unwrap_err();
 

@@ -1,6 +1,6 @@
 task: B1517
 deviations:
-  - what: A polling URL the URL library cannot parse is rejected with BFL's 502 error; LiteLLM's urlparse raises ValueError for the same malformed IPv6 input and the scheme check only runs on URLs it accepts.
+  - what: A polling URL the URL library cannot parse is rejected with BFL's 502 error; Python's urlparse raises ValueError for malformed IPv6 input but accepts some URLs the url crate rejects, such as an invalid port, so LiteLLM's scheme and host checks see those.
     why: The trust boundary must reject before an x-key-bearing request, and no working setup can rely on a provider handing back an unparsable URL.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/common_utils.py#L33-L44
   - what: Size dimensions parse ASCII digits with an optional sign and surrounding whitespace and must fit a signed 64-bit integer; Python's int() also accepts underscores, non-ASCII digits and values beyond 64 bits.
@@ -15,3 +15,6 @@ deviations:
   - what: A reply larger than 16 MiB is refused before it is parsed; LiteLLM parses whatever size the provider sends.
     why: The boundary reads bytes from a provider it does not control, so rule bounded-inputs needs a limit before they are buffered and parsed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L271
+  - what: A result with a null or non-string sample or list url yields the source's 500 or the typed decode error; LiteLLM appends an image carrying that null or non-string url and answers 200.
+    why: docs/compatibility.md reads null as the field's default, and a delivery url that is not a string cannot be fetched by any working setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L284-L292
