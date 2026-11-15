@@ -15,8 +15,8 @@ use super::advisory;
 use super::error::LakeraV2Error;
 
 mod call;
-mod construction;
-mod update;
+pub(crate) mod construction;
+pub(crate) mod update;
 
 pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
     GuardrailEventHooks::PreCall,
@@ -51,18 +51,16 @@ pub struct LakeraV2Guardrail {
     pub clock: fn() -> SystemTime,
 }
 
-impl LakeraV2Guardrail {
-    pub fn build_advisory_message(
-        &self,
-        response: Option<&LakeraResponse>,
-    ) -> Result<String, LakeraV2Error> {
-        let breakdown = response.and_then(|value| value.breakdown.as_deref());
-        let reason = advisory::humanize_lakera_block_reasons(breakdown);
-        let template = self
-            .advisory_system_message
-            .as_deref()
-            .unwrap_or(DEFAULT_ADVISORY_MESSAGE);
-        advisory::format::format_reason(template, &reason)
-            .map_err(|source| LakeraV2Error::AdvisoryFormat { source })
-    }
+pub fn build_advisory_message(
+    guardrail: &LakeraV2Guardrail,
+    response: Option<&LakeraResponse>,
+) -> Result<String, LakeraV2Error> {
+    let breakdown = response.and_then(|value| value.breakdown.as_deref());
+    let reason = advisory::humanize_lakera_block_reasons(breakdown);
+    let template = guardrail
+        .advisory_system_message
+        .as_deref()
+        .unwrap_or(DEFAULT_ADVISORY_MESSAGE);
+    advisory::format::format_reason(template, &reason)
+        .map_err(|source| LakeraV2Error::AdvisoryFormat { source })
 }

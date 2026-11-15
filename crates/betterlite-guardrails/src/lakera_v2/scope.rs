@@ -93,9 +93,9 @@ pub fn unmaskable_reason(
     if !has_responses_instructions(data, scope) {
         return Some(NO_WRITE_BACK_REASON);
     }
-    if !response
+    if response
         .and_then(|value| value.payload.as_ref())
-        .is_some_and(|payload| !payload.is_empty())
+        .is_none_or(|payload| payload.is_empty())
     {
         return Some(NO_PAYLOAD_REASON);
     }
@@ -184,7 +184,8 @@ pub fn apply_redacted_back(
         for message in redacted {
             values.push(message_value(message)?);
         }
-        apply_redacted_messages_back(data, &values);
+        // LiteLLM ignores the applied flag of this wholesale fallback write-back.
+        let _applied = apply_redacted_messages_back(data, &values);
         return Ok(());
     };
     let indices = pre_masking_scope_indices(&original, scope);
@@ -199,12 +200,12 @@ pub fn apply_redacted_back(
         let Some(GuardrailValue::Object(fields)) = original.get(*index) else {
             return Err(LakeraV2Error::ResponseShape { at: "messages" });
         };
-        let mut fields = fields.clone();
-        fields.insert(
+        let mut merged_fields = fields.clone();
+        merged_fields.insert(
             "content".to_owned(),
             GuardrailValue::Text(content_text(message)?),
         );
-        scoped.push(GuardrailValue::Object(fields));
+        scoped.push(GuardrailValue::Object(merged_fields));
     }
     let merged = merge_scoped_messages(&original, &indices, &scoped);
     data.insert("messages".to_owned(), GuardrailValue::Array(merged));
