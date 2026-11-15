@@ -1,9 +1,11 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::future::IntoFuture as _;
 use std::io::{self, Read as _, Write as _};
 use std::net::TcpListener as StdTcpListener;
+use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
@@ -52,6 +54,14 @@ async fn serve(
     status: StatusCode,
     body: String,
 ) -> (String, mpsc::Receiver<Captured>, JoinSet<io::Result<()>>) {
+    serve_after(status, body, Duration::ZERO).await
+}
+
+async fn serve_after(
+    status: StatusCode,
+    body: String,
+    delay: Duration,
+) -> (String, mpsc::Receiver<Captured>, JoinSet<io::Result<()>>) {
     let (sender, receiver) = mpsc::channel(1);
     let router = Router::new().route(
         "/api/v1/protect",
@@ -59,6 +69,7 @@ async fn serve(
             let request_sender = sender.clone();
             let reply = body.clone();
             async move {
+                tokio::time::sleep(delay).await;
                 let captured = Captured {
                     method: String::from("POST"),
                     path: uri.path().to_owned(),
@@ -123,7 +134,7 @@ fn http_client() -> reqwest::Client {
 
 #[tokio::test]
 async fn the_call_posts_the_payload_to_the_protect_route() {
-    let (base, receiver, mut server) = serve(
+    let (base, mut receiver, mut server) = serve(
         StatusCode::OK,
         r#"{"flagged": false, "session_id": "s1"}"#.to_owned(),
     )
@@ -289,6 +300,24 @@ async fn a_refused_connection_is_a_request_error() {
 }
 
 #[tokio::test]
+async fn a_slow_answer_past_the_timeout_is_a_request_error() {
+    let (base, _receiver, mut server) = serve_after(
+        StatusCode::OK,
+        String::from("{}"),
+        Duration::from_millis(200),
+    )
+    .await;
+    let mut settings = pillar_settings(&base);
+    settings.timeout = Duration::from_millis(50);
+    let client = http_client();
+    let error = call_pillar_api(&client, &settings, &headers(), &payload())
+        .await
+        .expect_err("an answer past the per-request timeout is an error");
+    assert!(matches!(error, PillarError::Request { .. }));
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn an_invalid_header_value_is_rejected_before_the_call() {
     let (base, _receiver, mut server) = serve(StatusCode::OK, String::from("{}")).await;
     let bad = BTreeMap::from([("Authorization".to_owned(), "Bearer a\nb".to_owned())]);
@@ -298,4 +327,15 @@ async fn an_invalid_header_value_is_rejected_before_the_call() {
         .expect_err("a header with a newline is invalid");
     assert!(matches!(error, PillarError::InvalidHeaderValue { .. }));
     server.shutdown().await;
+}
+
+#[test]
+fn replays_the_pillar_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/pillar_response");
+    let paths: Vec<_> = fs::read_dir(corpus).expect("corpus").collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.expect("entry").path()).expect("seed file");
+        serde_json::from_slice::<ProtectResponse>(&bytes).is_ok()
+    }));
 }

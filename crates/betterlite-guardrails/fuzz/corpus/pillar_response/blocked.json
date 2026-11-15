@@ -1,0 +1,1 @@
+{"flagged": true, "session_id": "session-2", "scanners": {"pii": true}, "evidence": [{"evidence": "secret", "score": 1}], "masked_session_messages": [{"role": "user", "content": "[masked]"}]}

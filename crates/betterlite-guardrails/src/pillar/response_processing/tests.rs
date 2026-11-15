@@ -167,6 +167,28 @@ fn block_mode_raises_the_400_detail_after_writing_the_metadata() {
 }
 
 #[test]
+fn block_mode_with_excluded_scanners_and_evidence_sends_only_the_session_key() {
+    let mut settings = pillar_settings(OnFlaggedAction::Block);
+    settings.include_scanners = false;
+    settings.include_evidence = false;
+    let mut answer = response(true);
+    answer.session_id = None;
+    let mut request = data(&[("messages", messages())]);
+    let error =
+        process_pillar_response(&answer, &mut request, &settings).expect_err("block mode raises");
+    let PillarError::Http(GuardrailFailure::HttpObject { detail, .. }) = error else {
+        panic!("the block is an HTTP 400");
+    };
+    let Some(GuardrailValue::Object(pillar_response)) = detail.get("pillar_response") else {
+        panic!("the detail carries the pillar response");
+    };
+    assert_eq!(
+        *pillar_response,
+        BTreeMap::from([("session_id".to_owned(), GuardrailValue::Null)])
+    );
+}
+
+#[test]
 fn mask_mode_replaces_the_request_messages() {
     let mut response = response(true);
     response.masked_session_messages = Some(vec![GuardrailValue::Object(
