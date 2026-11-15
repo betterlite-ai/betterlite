@@ -28,8 +28,8 @@ use crate::budget_email::event::{EntityType, WebhookEvent, WebhookEventType};
 use crate::budget_email::sender::EmailSender;
 use crate::smtp_send::SendEmailError;
 
-const EMAIL_ONLY: [AlertDestination; 1] = [AlertDestination::Email];
-const SLACK_ONLY: [AlertDestination; 1] = [AlertDestination::Slack];
+const EMAIL_ONLY: &[AlertDestination] = &[AlertDestination::Email];
+const SLACK_ONLY: &[AlertDestination] = &[AlertDestination::Slack];
 
 #[derive(Clone, Default)]
 struct LogBuffer(Arc<Mutex<Vec<u8>>>);
@@ -207,35 +207,6 @@ fn emailer<'deps>(
     }
 }
 
-fn plain_mailer<'deps>(
-    environment: &'deps BTreeMap<String, String>,
-    sender: &'deps RecordingSender,
-    invitation_creator: &'deps FakeCreator,
-) -> KeyInvitationEmailer<'deps, FakeCreator> {
-    emailer(
-        Some(EMAIL_ONLY.as_slice()),
-        environment,
-        None,
-        sender,
-        invitation_creator,
-    )
-}
-
-fn database_mailer<'deps>(
-    environment: &'deps BTreeMap<String, String>,
-    database: &'deps PostgresStore,
-    sender: &'deps RecordingSender,
-    invitation_creator: &'deps FakeCreator,
-) -> KeyInvitationEmailer<'deps, FakeCreator> {
-    emailer(
-        Some(EMAIL_ONLY.as_slice()),
-        environment,
-        Some(database),
-        sender,
-        invitation_creator,
-    )
-}
-
 fn key_created_event() -> WebhookEvent {
     WebhookEvent {
         event: WebhookEventType::KeyCreated,
@@ -260,26 +231,15 @@ fn key_created_event() -> WebhookEvent {
 }
 
 fn invited_event() -> WebhookEvent {
-    WebhookEvent {
-        event: WebhookEventType::InternalUserCreated,
-        event_message: "internal_user_created".to_owned(),
-        event_group: EntityType::User,
-        spend: Decimal::ZERO,
-        max_budget: None,
-        soft_budget: None,
-        token: None,
-        customer_id: None,
-        user_id: Some("user-1".to_owned()),
-        team_id: Some("team-1".to_owned()),
-        team_alias: None,
-        organization_id: None,
-        user_email: Some("bob@example.com".to_owned()),
-        key_alias: None,
-        projected_exceeded_date: None,
-        projected_spend: None,
-        alert_emails: None,
-        max_budget_alert_emails: None,
-    }
+    let mut event = key_created_event();
+    event.event = WebhookEventType::InternalUserCreated;
+    event.event_message = "internal_user_created".to_owned();
+    event.event_group = EntityType::User;
+    event.max_budget = None;
+    event.token = None;
+    event.team_id = Some("team-1".to_owned());
+    event.user_email = Some("bob@example.com".to_owned());
+    event
 }
 
 fn budget_email(budget: Option<f64>) -> KeyCreatedEmail<'static> {
@@ -437,7 +397,7 @@ async fn send_returns_false_when_alerting_lacks_email() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = emailer(Some(SLACK_ONLY.as_slice()), &env, None, &sender, &creator);
+    let mailer = emailer(Some(SLACK_ONLY), &env, None, &sender, &creator);
     let event = key_created_event();
     assert!(!mailer.send_key_created_or_user_invited_email(&event).await);
     assert!(sender.sent().is_empty());
@@ -454,7 +414,7 @@ async fn send_key_created_uses_the_default_branding() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = plain_mailer(&env, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, None, &sender, &creator);
     let event = key_created_event();
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
@@ -480,7 +440,7 @@ async fn send_uses_customized_branding_without_a_license_check() {
     ]);
     let sender = recording_sender();
     let creator = creating_creator();
-    let mailer = plain_mailer(&env, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, None, &sender, &creator);
     let event = key_created_event();
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
@@ -501,7 +461,7 @@ async fn send_empty_branding_values_fall_back_to_the_defaults() {
     ]);
     let sender = recording_sender();
     let creator = creating_creator();
-    let mailer = plain_mailer(&env, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, None, &sender, &creator);
     let event = key_created_event();
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
@@ -515,7 +475,7 @@ async fn send_key_created_without_budget_or_token_prints_none() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = plain_mailer(&env, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, None, &sender, &creator);
     let mut event = key_created_event();
     event.max_budget = None;
     event.token = None;
@@ -538,7 +498,7 @@ async fn send_reads_a_missing_recipient_from_the_user_row() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = database_mailer(&env, &store, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
     let mut event = key_created_event();
     event.user_email = None;
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
@@ -562,7 +522,7 @@ async fn send_without_a_recipient_logs_and_fails_inside_the_sender() {
     let sender = strict_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = plain_mailer(&env, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, None, &sender, &creator);
     let mut event = key_created_event();
     event.user_email = None;
     event.user_id = None;
@@ -588,7 +548,7 @@ async fn send_internal_user_created_uses_the_team_alias() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = database_mailer(&env, &store, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
     let event = invited_event();
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
@@ -620,7 +580,7 @@ async fn send_internal_user_created_uses_a_dash_for_an_empty_or_null_alias() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = database_mailer(&env, &store, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
     let mut event = invited_event();
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     event.team_id = Some("team-2".to_owned());
@@ -645,7 +605,7 @@ async fn send_internal_user_created_uses_the_default_team_without_a_team() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = plain_mailer(&env, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, None, &sender, &creator);
     let mut event = invited_event();
     event.team_id = None;
     event.user_id = None;
@@ -664,7 +624,7 @@ async fn send_internal_user_created_uses_the_default_team_for_a_missing_row() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = database_mailer(&env, &store, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
     let event = invited_event();
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
@@ -692,7 +652,7 @@ async fn send_internal_user_created_links_an_existing_invitation() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = database_mailer(&env, &store, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
     let mut event = invited_event();
     event.team_id = None;
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
@@ -715,7 +675,7 @@ async fn send_internal_user_created_keeps_the_base_url_when_linking_fails() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = database_mailer(&env, &store, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
     let mut event = invited_event();
     event.team_id = None;
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
@@ -736,7 +696,7 @@ async fn send_unknown_event_sends_the_default_body() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = plain_mailer(&env, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, None, &sender, &creator);
     let mut event = key_created_event();
     event.event = WebhookEventType::BudgetCrossed;
     event.event_message = "Budget alert".to_owned();
@@ -761,7 +721,7 @@ async fn send_sender_error_is_logged_and_returns_false() {
     let sender = failing_sender(SendEmailError::MissingSenderEmail);
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = plain_mailer(&env, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, None, &sender, &creator);
     let event = key_created_event();
     assert!(!mailer.send_key_created_or_user_invited_email(&event).await);
     assert_eq!(sender.sent().len(), 1);
@@ -781,7 +741,7 @@ async fn send_user_lookup_failure_is_logged_and_returns_false() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = database_mailer(&env, &store, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
     let mut event = key_created_event();
     event.user_email = None;
     assert!(!mailer.send_key_created_or_user_invited_email(&event).await);
@@ -800,7 +760,7 @@ async fn send_team_lookup_failure_is_logged_and_returns_false() {
     let sender = recording_sender();
     let creator = creating_creator();
     let env = environment(&[]);
-    let mailer = database_mailer(&env, &store, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
     let event = invited_event();
     assert!(!mailer.send_key_created_or_user_invited_email(&event).await);
     assert!(sender.sent().is_empty());
@@ -814,7 +774,7 @@ async fn send_empty_proxy_base_url_falls_back_to_the_default() {
     let env = environment(&[("PROXY_BASE_URL", "")]);
     let sender = recording_sender();
     let creator = creating_creator();
-    let mailer = plain_mailer(&env, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, None, &sender, &creator);
     let mut event = invited_event();
     event.team_id = None;
     event.user_id = None;
@@ -830,7 +790,7 @@ async fn send_custom_proxy_base_url_trims_trailing_slashes() {
     let env = environment(&[("PROXY_BASE_URL", "https://proxy.example/")]);
     let sender = recording_sender();
     let creator = creating_creator();
-    let mailer = database_mailer(&env, &store, &sender, &creator);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
     let mut event = invited_event();
     event.team_id = None;
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
