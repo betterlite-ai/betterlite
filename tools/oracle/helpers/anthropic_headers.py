@@ -148,7 +148,8 @@ def project_headers(headers: Mapping[str, str]) -> dict[str, Json]:
     projected: dict[str, Json] = {}
     for name, value in headers.items():
         if name == BETA_HEADER:
-            projected[name] = BETA_ADAPTER.validate_python(sorted(set(value.split(","))))
+            tokens = sorted(set(value.split(",")))
+            projected[name] = BETA_ADAPTER.validate_python(tokens)
         else:
             projected[name] = value
     return projected
