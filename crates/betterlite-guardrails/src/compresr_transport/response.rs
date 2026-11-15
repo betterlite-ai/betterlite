@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::str;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_http::proxy::limits::read_bounded;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
 
@@ -38,19 +40,7 @@ pub fn safe_int(value: Option<&GuardrailValue>) -> i64 {
 }
 
 pub(super) async fn read_body(mut response: reqwest::Response) -> Option<String> {
-    let mut body = Vec::new();
-    loop {
-        match response.chunk().await {
-            Ok(Some(chunk)) => {
-                if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-                    return None;
-                }
-                body.extend_from_slice(&chunk);
-            }
-            Ok(None) => break,
-            Err(_error) => return None,
-        }
-    }
+    let body = read_bounded(&mut response, MAX_RESPONSE_BYTES).await.ok()?;
     String::from_utf8(body).ok()
 }
 
@@ -86,6 +76,12 @@ pub(super) fn parse_results(
         return Ok(vec![CompressionResult::from_fields(data)]);
     }
     batch_results(data, expected)
+}
+
+// Fuzz and corpus entry: arbitrary bytes go through the response parse without panicking
+#[must_use]
+pub fn parse_body(body: &[u8], expected: usize) -> Option<Vec<CompressionResult>> {
+    parse_results(str::from_utf8(body).ok(), expected).ok()
 }
 
 fn batch_results(

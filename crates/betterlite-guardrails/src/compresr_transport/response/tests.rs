@@ -1,9 +1,12 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::Path;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
-use super::{parse_results, safe_int, safe_response_text};
+use super::{parse_body, parse_results, safe_int, safe_response_text};
 use crate::compresr_transport::failure::{BATCH_MISMATCH, UNEXPECTED_SHAPE, UNREADABLE};
 
 fn value(source: &str) -> GuardrailValue {
@@ -12,6 +15,17 @@ fn value(source: &str) -> GuardrailValue {
 
 fn body(source: &str) -> Option<&str> {
     Some(source)
+}
+
+fn corpus_reparses(bytes: &[u8]) -> bool {
+    [1, 2].into_iter().any(|expected| {
+        parse_body(bytes, expected).is_some_and(|results| {
+            !results.is_empty()
+                && results
+                    .iter()
+                    .all(|result| result.compressed_context.is_some())
+        })
+    })
 }
 
 #[rstest]
@@ -137,4 +151,16 @@ fn an_unreadable_body_fails(#[case] source: &str) {
 fn an_unread_body_is_unreadable() {
     let failure = parse_results(None, 1).expect_err("failure");
     assert_eq!(failure.message, UNREADABLE);
+}
+
+#[test]
+fn replays_the_compresr_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/compresr_response");
+    let paths: Vec<_> = fs::read_dir(corpus).unwrap().collect();
+    assert!(!paths.is_empty());
+    assert!(
+        paths
+            .into_iter()
+            .all(|entry| corpus_reparses(&fs::read(entry.unwrap().path()).unwrap()))
+    );
 }
