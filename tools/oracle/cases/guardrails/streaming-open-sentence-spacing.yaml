@@ -5,6 +5,16 @@ call:
     patterns: []
     blocked_words: []
     categories:
+      - category: harm_policy
+        action: BLOCK
+        severity_threshold: high
+        file_text: |
+          category_name: harm_policy
+          description: harm policy
+          default_action: BLOCK
+          keywords:
+            - keyword: child harm
+              severity: high
       - category: stream_policy
         action: MASK
         severity_threshold: high
@@ -16,16 +26,6 @@ call:
             - child
           additional_block_words:
             - harm
-      - category: harm_policy
-        action: BLOCK
-        severity_threshold: high
-        file_text: |
-          category_name: harm_policy
-          description: harm policy
-          default_action: BLOCK
-          keywords:
-            - keyword: child harm
-              severity: high
     guardrail_id: null
     policy_template: null
     pattern_redaction_format: null

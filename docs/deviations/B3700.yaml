@@ -34,6 +34,16 @@ deviations:
       check still finds.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1991-L2026
   - what: >-
+      The guardrail record's derived policy_template lists the category descriptions in
+      sorted category-name order, not in the order the categories appear in the
+      configuration.
+    why: >-
+      The content category loader keeps the loaded categories in a name-keyed map, so
+      the configuration order is gone when the record template is built. A configuration
+      whose category order is not the sorted order gets its descriptions joined in a
+      different order than LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1598-L1603
+  - what: >-
       The guardrail record lists a choice's detections in whole-buffer scan order:
       category checks, then patterns in config order, then blocked words in config
       order. LiteLLM lists the detections its trim committed before the ones the latest
