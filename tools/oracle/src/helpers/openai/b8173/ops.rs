@@ -12,7 +12,8 @@ use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
 };
 use betterlite_openai::tencent_chat::{self, TencentParams};
-use betterlite_openai::tencent_cost::{GenericTokenPricing, cost_per_token};
+use betterlite_openai::tencent_cost::cost_per_token;
+use betterlite_openai::xai_usage::GenericTokenPricing;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 

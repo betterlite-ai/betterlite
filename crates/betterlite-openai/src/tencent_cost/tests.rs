@@ -7,7 +7,8 @@ use betterlite_models::token_cost::GenericCostResult;
 use betterlite_models::token_cost::error::TokenCostError;
 use rust_decimal::Decimal;
 
-use super::{GenericTokenPricing, PROVIDER, TencentCostError, cost_per_token};
+use super::{PROVIDER, TencentCostError, cost_per_token};
+use crate::xai_usage::GenericTokenPricing;
 
 fn usage() -> CostUsage {
     CostUsage {
@@ -31,7 +32,7 @@ impl GenericTokenPricing for FixedPricing {
         billed_usage: &CostUsage,
     ) -> Result<GenericCostResult, TokenCostError> {
         assert_eq!(model, "hunyuan-turbos");
-        assert_eq!(custom_llm_provider, PROVIDER);
+        assert_eq!(custom_llm_provider, "tencent");
         assert_eq!(billed_usage.prompt_tokens, 11);
         assert_eq!(billed_usage.completion_tokens, 4);
         Ok(GenericCostResult {
@@ -56,6 +57,7 @@ impl GenericTokenPricing for FailingPricing {
 
 #[test]
 fn the_generic_function_is_called_with_the_tencent_provider_and_its_two_costs_return() {
+    assert_eq!(PROVIDER, "tencent");
     let (prompt, completion) = cost_per_token(&FixedPricing, "hunyuan-turbos", &usage()).unwrap();
     assert_eq!(prompt, Decimal::new(15, 1));
     assert_eq!(completion, Decimal::new(25, 1));

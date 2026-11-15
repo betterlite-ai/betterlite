@@ -1,8 +1,9 @@
 use betterlite_models::cost_usage::CostUsage;
-use betterlite_models::token_cost::GenericCostResult;
 use betterlite_models::token_cost::error::TokenCostError;
 use rust_decimal::Decimal;
 use thiserror::Error;
+
+use crate::xai_usage::GenericTokenPricing;
 
 mod tests;
 
@@ -18,16 +19,7 @@ pub enum TencentCostError {
     },
 }
 
-// the caller supplies B1672's generic function, so this crate never depends on its implementation
-pub trait GenericTokenPricing {
-    fn generic_cost_per_token(
-        &self,
-        model: &str,
-        custom_llm_provider: &str,
-        usage: &CostUsage,
-    ) -> Result<GenericCostResult, TokenCostError>;
-}
-
+// the caller supplies B1672's generic function through the seam xai_usage already declares
 pub fn cost_per_token<P>(
     pricing: &P,
     model: &str,
