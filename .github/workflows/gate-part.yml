@@ -246,7 +246,7 @@ jobs:
               if [[ $PART == edited ]]; then
                 affected=$(cargo gate affected --edited) || exit 1
               else
-                affected=$(cargo gate affected --shard "${PART#tests-}" --shards "$TEST_SHARDS") || exit 1
+                affected=$(cargo gate affected --shard "${PART#tests-}" --shards "$(jq '[.[] | select(startswith("tests-"))] | length' <<<"$PARTS")") || exit 1
               fi
               if [[ -z $affected ]]; then echo "no package the change touches falls in this part"; exit 0; fi
               read -r -a packages <<< "$affected"
@@ -265,7 +265,8 @@ jobs:
               if ! cargo gate list "$TASK" | awk '$1 == "mutants" {found = 1} END {exit !found}'; then echo "the task has no mutants check"; exit 0; fi
               export UV_NO_DEV=1
               # cargo mutants numbers its shards from 0
-              export MUTANTS_SHARD="$(( ${PART#mutants-} - 1 ))/$MUTANTS_SHARDS"
+              shards=$(jq '[.[] | select(startswith("mutants-"))] | length' <<<"$PARTS") || exit 1
+              export MUTANTS_SHARD="$(( ${PART#mutants-} - 1 ))/$shards"
               selection=(--only mutants) ;;
           esac
           if [[ $PART == task ]]; then
