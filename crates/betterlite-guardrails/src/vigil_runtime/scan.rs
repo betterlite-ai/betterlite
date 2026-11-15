@@ -99,13 +99,11 @@ impl Run<'_> {
         match decision {
             Some(Decision::Allowed) => Ok(text.to_owned()),
             Some(Decision::Sanitized) => Ok(resolve_sanitized_text(text, &analysis)),
-            Some(Decision::Blocked) => Err(ScanStop::Blocked(GuardrailFailure::GuardrailRaised {
-                guardrail_name: self.guardrail.base.settings.guardrail_name.clone(),
-                message: build_block_reason(&analysis),
-                wrap_default_message: false,
-                status_code: RAISED_STATUS_CODE,
-                blocked_content: true,
-            })),
+            Some(Decision::Blocked) => Err(ScanStop::Blocked(self.raised(
+                build_block_reason(&analysis),
+                RAISED_STATUS_CODE,
+                true,
+            ))),
             None => Err(ScanStop::Unrecognized),
         }
     }
@@ -118,12 +116,17 @@ impl Run<'_> {
         match self.texts(texts).await {
             Ok(rewritten) => self.tool_calls(&rewritten, scanned).await,
             Err(TextStop::Blocked(failure)) => Err(failure),
-            Err(TextStop::Interrupted { error, partial }) => {
-                self.interrupted(error, &partial, self.bridged.tool_calls.as_deref())
-            }
-            Err(TextStop::Unrecognized { partial }) => {
-                self.unrecognized(&partial, self.bridged.tool_calls.as_deref())
-            }
+            Err(TextStop::Interrupted { error, partial }) => self.interrupted(
+                error,
+                Partial {
+                    texts: &partial,
+                    tool_calls: self.bridged.tool_calls.as_deref(),
+                },
+            ),
+            Err(TextStop::Unrecognized { partial }) => self.unrecognized(Partial {
+                texts: &partial,
+                tool_calls: self.bridged.tool_calls.as_deref(),
+            }),
         }
     }
 
@@ -168,10 +171,19 @@ impl Run<'_> {
                 }
                 Err(ScanStop::Blocked(failure)) => return Err(failure),
                 Err(ScanStop::Failed(error)) => {
-                    return self.interrupted(error, texts, rewritten.as_deref());
+                    return self.interrupted(
+                        error,
+                        Partial {
+                            texts,
+                            tool_calls: rewritten.as_deref(),
+                        },
+                    );
                 }
                 Err(ScanStop::Unrecognized) => {
-                    return self.unrecognized(texts, rewritten.as_deref());
+                    return self.unrecognized(Partial {
+                        texts,
+                        tool_calls: rewritten.as_deref(),
+                    });
                 }
             }
         }
@@ -179,11 +191,20 @@ impl Run<'_> {
         Ok(bridge::to_output(self.original, self.bridged, built))
     }
 
+    fn raised(&self, message: String, status_code: u16, blocked_content: bool) -> GuardrailFailure {
+        GuardrailFailure::GuardrailRaised {
+            guardrail_name: self.guardrail.base.settings.guardrail_name.clone(),
+            message,
+            wrap_default_message: false,
+            status_code,
+            blocked_content,
+        }
+    }
+
     fn interrupted(
         &self,
         error: VigilGuardError,
-        texts: &[String],
-        tool_calls: Option<&[ToolCall]>,
+        partial: Partial<'_>,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         // httpx raises a LocalProtocolError for an unencodable header, so Python treats it as a backend failure
         if !matches!(
@@ -205,48 +226,44 @@ impl Run<'_> {
                 .unwrap_or("None"),
             source: self.source,
         };
-        match handle_backend_failure(&context, &error, self.bridged, texts, tool_calls) {
+        match handle_backend_failure(
+            &context,
+            &error,
+            self.bridged,
+            partial.texts,
+            partial.tool_calls,
+        ) {
             Ok(built) => Ok(bridge::to_output(self.original, self.bridged, built)),
-            Err(backend) => Err(GuardrailFailure::GuardrailRaised {
-                guardrail_name: self.guardrail.base.settings.guardrail_name.clone(),
-                message: backend.to_string(),
-                wrap_default_message: false,
-                status_code: backend.status_code().as_u16(),
-                blocked_content: false,
-            }),
+            Err(backend) => {
+                Err(self.raised(backend.to_string(), backend.status_code().as_u16(), false))
+            }
         }
     }
 
-    fn unrecognized(
-        &self,
-        texts: &[String],
-        tool_calls: Option<&[ToolCall]>,
-    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
+    fn unrecognized(&self, partial: Partial<'_>) -> Result<GuardrailApiInputs, GuardrailFailure> {
+        let guardrail_name = self.guardrail.base.settings.guardrail_name.as_deref();
         tracing::error!(
-            guardrail_name = self
-                .guardrail
-                .base
-                .settings
-                .guardrail_name
-                .as_deref()
-                .unwrap_or("None"),
+            guardrail_name = ?guardrail_name,
             source = ?self.source,
             "Vigil Guard returned an unrecognized decision"
         );
         match self.guardrail.unreachable_fallback {
             UnreachableFallback::FailOpen => {
-                let built = build_output(self.bridged, texts, tool_calls);
+                let built = build_output(self.bridged, partial.texts, partial.tool_calls);
                 Ok(bridge::to_output(self.original, self.bridged, built))
             }
-            UnreachableFallback::FailClosed => Err(GuardrailFailure::GuardrailRaised {
-                guardrail_name: self.guardrail.base.settings.guardrail_name.clone(),
-                message: UNRECOGNIZED_DECISION_MESSAGE.to_owned(),
-                wrap_default_message: false,
-                status_code: RAISED_STATUS_CODE,
-                blocked_content: false,
-            }),
+            UnreachableFallback::FailClosed => Err(self.raised(
+                UNRECOGNIZED_DECISION_MESSAGE.to_owned(),
+                RAISED_STATUS_CODE,
+                false,
+            )),
         }
     }
+}
+
+struct Partial<'partial> {
+    texts: &'partial [String],
+    tool_calls: Option<&'partial [ToolCall]>,
 }
 
 fn partial_texts(processed: &[String], texts: &[String], index: usize) -> Vec<String> {
