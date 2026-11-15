@@ -3,4 +3,10 @@ deviations:
   - what: A task output member that is an object with a value that is not a string is skipped instead of contributing an image entry.
     why: B1534 decodes an output member into its field map only when every value is a string, so {url: null} or {width: 1} arrives as an unsupported member and is dropped. LiteLLM appends an ImageObject with url and b64_json unset for such a member, and the entry counts toward the charge. A Runway task that a working setup relies on publishes string urls, so the skipped shapes carry no image and no price.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L142-L149
+  - what: The poll fallback for a missing X-Runway-Version header is the configured api_version rather than a fixed constant.
+    why: RunwaySettings (B1534) reads RUNWAYML_DEFAULT_API_VERSION with 2024-11-06 as its default, and the task asks for the configured default when the header is missing. LiteLLM uses the RUNWAYML_DEFAULT_API_VERSION module constant here, so the two agree unless an operator sets the env var.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L352-L355
+  - what: The polling timeout is the configured polling_timeout_seconds rather than the fixed 600 second constant.
+    why: RunwaySettings (B1534) reads RUNWAYML_POLLING_TIMEOUT with 600 as its default, and the image transform passes that value to the shared poller. LiteLLM always passes its RUNWAYML_POLLING_TIMEOUT constant, so the two agree unless an operator sets the env var.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L357-L363
 kept_bugs: []
