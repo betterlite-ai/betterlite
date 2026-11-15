@@ -1,0 +1,8 @@
+router_settings:
+  enable_pre_call_checks: true
+
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: sk-static-eligibility

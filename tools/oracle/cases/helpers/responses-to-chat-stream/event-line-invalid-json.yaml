@@ -1,0 +1,9 @@
+kind: helper
+name: event-line-invalid-json
+call:
+  responses_to_chat_stream:
+    mode: line
+    lines:
+      - "{"
+env: {}
+compare: {ignore: []}
