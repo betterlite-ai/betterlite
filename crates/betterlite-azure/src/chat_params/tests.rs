@@ -4,6 +4,7 @@ use rstest::rstest;
 
 mod allowlist;
 mod content;
+mod lookup;
 mod mapping;
 mod stream;
 mod support;

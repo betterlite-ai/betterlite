@@ -70,8 +70,8 @@ where
     // not OpenAIGPT5Config's; undo B502's copy for names only the OpenAI list carries and
     // restore what the caller already had.
     for (name, value) in mapping.non_default_params.iter() {
-        let in_azure = azure_supported.iter().any(|param| *param == name.as_str());
-        let in_openai = openai_supported.iter().any(|param| *param == name.as_str());
+        let in_azure = azure_supported.contains(&name.as_str());
+        let in_openai = openai_supported.contains(&name.as_str());
         if in_azure {
             mapping.optional_params.insert(name.clone(), value.clone());
         }

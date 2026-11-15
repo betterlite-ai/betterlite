@@ -200,6 +200,22 @@ pub(super) fn resolves_none(model: &str) -> bool {
     runtime().block_on(effort_resolves_to_none(&mut azure, model, None))
 }
 
+pub(super) fn resolves_none_with(map_text: &str, model: &str) -> bool {
+    let entries: BTreeMap<String, Value> = serde_json::from_str(map_text).unwrap();
+    let chat_models = entries.keys().cloned().collect();
+    let mut capabilities = CapabilityFixture {
+        catalog: CatalogCapabilities {
+            chat_models,
+            text_models: BTreeSet::new(),
+        },
+        entries,
+    };
+    let mut azure = AzureCapabilities {
+        inner: &mut capabilities,
+    };
+    runtime().block_on(effort_resolves_to_none(&mut azure, model, None))
+}
+
 pub(super) fn fake(model: Option<&str>, stream: Option<bool>, provider: Option<&str>) -> bool {
     fake_in(MODEL_COST, model, stream, provider)
 }

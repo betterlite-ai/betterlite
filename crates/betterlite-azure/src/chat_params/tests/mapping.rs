@@ -59,6 +59,29 @@ pub(super) fn azure_effort_none_drop() {
         .unwrap(),
         object(r#"{"reasoning_effort":"none","temperature":0.2}"#)
     );
+    assert_eq!(
+        mapped(
+            "gpt5_series/gpt-5.3",
+            NONE_EFFORT,
+            r#"{"reasoning_effort":"medium"}"#,
+            DropParams {
+                global: true,
+                request: false
+            }
+        )
+        .unwrap(),
+        object(r#"{"reasoning_effort":"medium"}"#)
+    );
+    assert_eq!(
+        mapped(
+            "gpt5_series/gpt-5.3",
+            r#"{"reasoning_effort":"medium"}"#,
+            "{}",
+            DropParams::default()
+        )
+        .unwrap(),
+        object(r#"{"reasoning_effort":"medium"}"#)
+    );
     let from_optional = mapped(
         "gpt5_series/gpt-5.3",
         r#"{"reasoning_effort":null}"#,
