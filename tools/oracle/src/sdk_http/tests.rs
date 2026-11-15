@@ -328,7 +328,8 @@ fn decoded_kind(text: &str) -> Nullable {
         | SdkResult::Vectors { .. }
         | SdkResult::BetaConfig { .. }
         | SdkResult::MessagesHeaderStream { .. }
-        | SdkResult::MessagesStreamLogging { .. } => None,
+        | SdkResult::MessagesStreamLogging { .. }
+        | SdkResult::MessagesNativeStream { .. } => None,
     }
 }
 

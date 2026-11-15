@@ -184,13 +184,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "sambanova_reply"
-path = "fuzz_targets/sambanova_reply.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "sse_events"
 path = "fuzz_targets/sse_events.rs"
 test = false
@@ -513,13 +506,6 @@ bench = false
 [[bin]]
 name = "hosted_vllm_embedding_reply"
 path = "fuzz_targets/hosted_vllm_embedding_reply.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "perplexity_chat_reply"
-path = "fuzz_targets/perplexity_chat_reply.rs"
 test = false
 doc = false
 bench = false
