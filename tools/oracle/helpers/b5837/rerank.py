@@ -77,14 +77,19 @@ def provider(kind: Kind) -> RerankConfig:
     return NvidiaNimRerankConfig()
 
 
-def complete_url(model: str, api_base: str | None) -> str:
-    config: RerankConfig = get_nvidia_nim_rerank_config(model)
+def url_of(config: RerankConfig, model: str, api_base: str | None) -> str:
     return config.get_complete_url(api_base, model)
 
 
 def rerank_select(input_value: RerankSelectInput) -> JsonValue:
-    selected = [complete_url(model, None) for model in input_value["models"]]
-    urls = [complete_url(case["model"], case["api_base"]) for case in input_value["urls"]]
+    selected = [
+        url_of(get_nvidia_nim_rerank_config(model), model, None)
+        for model in input_value["models"]
+    ]
+    urls = [
+        url_of(get_nvidia_nim_rerank_config(case["model"]), case["model"], case["api_base"])
+        for case in input_value["urls"]
+    ]
     return {"selected": JSON.validate_python(selected), "urls": JSON.validate_python(urls)}
 
 

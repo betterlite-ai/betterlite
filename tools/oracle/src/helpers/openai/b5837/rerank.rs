@@ -96,9 +96,9 @@ pub(crate) fn select(input: &Input) -> Value {
 }
 
 pub(crate) fn params(cases: &[Case], header_cases: &[Case]) -> Value {
-    let mut mapped = Vec::with_capacity(cases.len());
+    let mut mapped_cases = Vec::with_capacity(cases.len());
     for case in cases {
-        mapped.push(match mapped(case) {
+        mapped_cases.push(match mapped(case) {
             Ok(found) => json!(found),
             Err(_) => Value::Null,
         });
@@ -106,15 +106,15 @@ pub(crate) fn params(cases: &[Case], header_cases: &[Case]) -> Value {
     let found: Vec<Value> = header_cases
         .iter()
         .map(|case| {
-            let call_key = case.api_key.as_ref().map(SecretString::from);
+            let call_key = case.api_key.as_deref().map(SecretString::from);
             let env_key = case
                 .env_key
-                .as_ref()
+                .as_deref()
                 .filter(|key| !key.is_empty())
                 .map(SecretString::from);
             let global_key = case
                 .global_key
-                .as_ref()
+                .as_deref()
                 .filter(|key| !key.is_empty())
                 .map(SecretString::from);
             match NvidiaNimRerankConfig::validate_environment_with_keys(
@@ -128,7 +128,7 @@ pub(crate) fn params(cases: &[Case], header_cases: &[Case]) -> Value {
             }
         })
         .collect();
-    json!({"mapped": mapped, "headers": found})
+    json!({"mapped": mapped_cases, "headers": found})
 }
 
 pub(crate) fn request(cases: &[Case]) -> Value {

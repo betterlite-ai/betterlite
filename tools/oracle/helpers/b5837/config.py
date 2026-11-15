@@ -71,7 +71,7 @@ class PassthroughConfig(Protocol):
         self,
         *,
         headers: Mapping[str, str], model: str, messages: Sequence[Never],
-        optional_params: Mapping[str, object], litellm_params: Mapping[str, object],
+        optional_params: Mapping[str, JsonValue], litellm_params: Mapping[str, JsonValue],
         api_key: str | None = None
     ) -> dict[str, str]: ...
 

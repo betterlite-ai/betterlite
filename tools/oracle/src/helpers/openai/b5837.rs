@@ -94,7 +94,7 @@ impl crate::helpers::Helper for Op {
 fn chat_supported(models: &[String]) -> Vec<Vec<&'static str>> {
     models
         .iter()
-        .map(|model| NvidiaNimConfig::supported_params(model))
+        .map(|model| NvidiaNimConfig::supported_params(model.as_str()))
         .collect()
 }
 

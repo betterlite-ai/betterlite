@@ -58,7 +58,7 @@ pub(crate) fn credentials(cases: &[Case]) -> Value {
     let mut headers = Vec::with_capacity(cases.len());
     let mut streaming = Vec::with_capacity(cases.len());
     for case in cases {
-        let api_key = case.api_key.as_ref().map(SecretString::from);
+        let api_key = case.api_key.as_deref().map(SecretString::from);
         let merged = merge_headers(case.headers.clone(), api_key.as_ref());
         let request_data =
             super::object(json!({"stream": case.stream.clone().unwrap_or(Value::Null)}));
