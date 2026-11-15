@@ -3,7 +3,9 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::super::tests::support::{Answer, dynamic, event, event_with_response, metadata, open};
+use super::super::tests::support::{
+    Answer, capture_logs, dynamic, event, event_with_response, metadata, open,
+};
 use super::enqueue;
 
 #[tokio::test]
@@ -98,6 +100,7 @@ async fn an_unbounded_queue_never_flushes_on_enqueue() {
         Some("bucket"),
         Answer::ok("{}"),
     );
+    let (logs, _guard) = capture_logs();
     for id in ["chatcmpl-1", "chatcmpl-2", "chatcmpl-3"] {
         enqueue(
             &harness.logger,
@@ -107,6 +110,49 @@ async fn an_unbounded_queue_never_flushes_on_enqueue() {
     }
     assert!(harness.requests().is_empty());
     assert_eq!(harness.queue_len(), 3);
+    assert!(!logs.text().contains("still full"));
+}
+
+#[tokio::test]
+async fn a_queue_still_full_after_the_flush_warns() {
+    let harness = open(
+        &[
+            ("LITELLM_ASYNCIO_QUEUE_MAXSIZE", "1"),
+            ("GCS_BATCH_SIZE", "0"),
+        ],
+        Some("bucket"),
+        Answer::ok("{}"),
+    );
+    let (logs, _guard) = capture_logs();
+    for id in ["chatcmpl-1", "chatcmpl-2"] {
+        enqueue(
+            &harness.logger,
+            &event(id, None, Json::Null, IndexMap::new()),
+        )
+        .await;
+    }
+    assert!(logs.text().contains("still full"));
+}
+
+#[tokio::test]
+async fn a_flush_that_frees_room_does_not_warn() {
+    let harness = open(
+        &[
+            ("LITELLM_ASYNCIO_QUEUE_MAXSIZE", "1"),
+            ("GCS_BATCH_SIZE", "1"),
+        ],
+        Some("bucket"),
+        Answer::ok("{}"),
+    );
+    let (logs, _guard) = capture_logs();
+    for id in ["chatcmpl-1", "chatcmpl-2"] {
+        enqueue(
+            &harness.logger,
+            &event(id, None, Json::Null, IndexMap::new()),
+        )
+        .await;
+    }
+    assert!(!logs.text().contains("still full"));
 }
 
 #[tokio::test]

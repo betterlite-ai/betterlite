@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -12,6 +13,8 @@ use rust_decimal::Decimal;
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 use url::Url;
 
 use crate::callback_logger::event::LoggerEvent;
@@ -434,4 +437,52 @@ pub(crate) fn body_text(request: &GcsRequest) -> Option<String> {
         return None;
     };
     Some(text.clone())
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+impl CapturedLogs {
+    pub(crate) fn text(&self) -> String {
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).expect("captured logs are UTF-8")
+    }
+}
+
+impl io::Write for CapturedLogs {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for CapturedLogs {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+pub(crate) fn capture_logs() -> (CapturedLogs, DefaultGuard) {
+    let captured = CapturedLogs::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(move || writer.clone())
+        .finish();
+    (captured, set_default(subscriber))
 }
