@@ -82,29 +82,34 @@ fn text_field(message: &GuardrailMessage, key: &str) -> Option<String> {
     Some(text.clone())
 }
 
+fn has_text(fields: &Object, key: &str, wanted: &str) -> bool {
+    if let Some(GuardrailValue::Text(found)) = fields.get(key) {
+        found == wanted
+    } else {
+        false
+    }
+}
+
 fn intent_from_tool_calls(
     message: &GuardrailMessage,
     tool_call_id: Option<&str>,
 ) -> Option<String> {
     let wanted = tool_call_id?;
-    let Some(GuardrailValue::Array(calls)) = message.extra.get("tool_calls") else {
+    let GuardrailValue::Array(calls) = message.extra.get("tool_calls")? else {
         return None;
     };
-    for call in calls {
+    calls.iter().find_map(|call| {
         let GuardrailValue::Object(fields) = call else {
-            continue;
+            return None;
         };
-        if !matches!(fields.get("id"), Some(GuardrailValue::Text(found)) if found == wanted) {
-            continue;
+        if !has_text(fields, "id", wanted) {
+            return None;
         }
         let intent = fields
             .get("function")
             .map_or_else(String::new, render_tool_intent);
-        if !intent.is_empty() {
-            return Some(intent);
-        }
-    }
-    None
+        (!intent.is_empty()).then_some(intent)
+    })
 }
 
 // A legacy function_call has no id, so only a matching name may attach its intent to the output
@@ -116,7 +121,7 @@ fn intent_from_function_call(
     let Some(GuardrailValue::Object(fields)) = message.extra.get("function_call") else {
         return None;
     };
-    if !matches!(fields.get("name"), Some(GuardrailValue::Text(found)) if found == wanted) {
+    if !has_text(fields, "name", wanted) {
         return None;
     }
     let intent = render_intent_fields(fields);
