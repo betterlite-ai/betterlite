@@ -1,0 +1,12 @@
+task: B396
+deviations:
+  - what: The simple-shuffle metrics a pass-through selection reads from a deployment are unsigned 32-bit counts, so a negative, floating-point (even 5.0) or 2^32-or-larger weight, rpm or tpm is an error naming litellm_params.<field>.
+    why: The selection hands simple_shuffle's u32 candidates on, the same whole-number contract B008 documents for the shuffle itself, while LiteLLM's _metric_weight takes any int or float and multiplies it into the draw.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L26
+  - what: The synchronous get_available_deployment_for_pass_through is served by the same selection step as the async entry, so it applies the pass-through flag filter after the eligibility filters and reports the async entry's "has no deployments configured ... to the deployment configuration" wording naming the requested model. LiteLLM's sync facade filters the flag first, then health, cooldown, blocked and pre-call checks, uses the singular "has no deployment configured ... in the deployment configuration" wording naming the alias target that its common checks resolved, and raises its rate-limit error when those later filters empty the pool.
+    why: betterlite has one synchronous selection and both facades call it, and the async entry is the one the pass-through endpoints use, so the shared step follows it. The observable difference is that one unflagged deployment which passes every filter plus one flagged deployment which fails a pre-call check raises NotConfigured (BadRequest) in betterlite, while the sync facade raises its rate-limit error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14372-L14431
+kept_bugs:
+  - what: A router built with the lar1 strategy answers every pass-through selection with its no-deployments error, because _get_routing_context hands _select_deployment_async a None selector and a None selector selects nothing.
+    why: LiteLLM 1.105.1 cannot select a pass-through deployment for lar1, and a deployment that routes its normal traffic through lar1 observes this answer, so betterlite reproduces it rather than selecting through a strategy the pass-through entry point never wires up.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1817-L1818
