@@ -1,0 +1,10 @@
+kind: helper
+name: claude_capability
+call:
+  copilot_chat:
+    action: supported_params
+    model: Claude-Sonnet-4-5
+    reasoning_models: [claude-sonnet-4-5]
+env: {}
+compare:
+  ignore: []
