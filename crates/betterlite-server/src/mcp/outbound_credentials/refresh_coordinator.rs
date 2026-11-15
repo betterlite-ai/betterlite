@@ -105,17 +105,15 @@ impl<Lock: DistributedLock, Output, Error> RedisRefreshCoordinator<Lock, Output,
             if started.elapsed() >= self.tunables.refresh_budget {
                 break flight.await;
             }
-            match timeout(half_ttl, &mut flight).await {
-                Ok(result) => break result,
-                Err(_elapsed) => {
-                    if !self
-                        .lock
-                        .extend(lock_key, token, self.tunables.lock_ttl)
-                        .await
-                    {
-                        break flight.await;
-                    }
-                }
+            if let Ok(result) = timeout(half_ttl, &mut flight).await {
+                break result;
+            }
+            if !self
+                .lock
+                .extend(lock_key, token, self.tunables.lock_ttl)
+                .await
+            {
+                break flight.await;
             }
         };
         self.lock.release(lock_key, token).await;

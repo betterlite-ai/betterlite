@@ -68,7 +68,10 @@ fn minted(
 fn cache() -> (ExchangedTokenCache, Arc<ManualClock>) {
     let clock = ManualClock::new();
     (
-        ExchangedTokenCache::new(Arc::clone(&clock), TokenExchangeTunables::default()),
+        ExchangedTokenCache::new(
+            Arc::<ManualClock>::clone(&clock),
+            TokenExchangeTunables::default(),
+        ),
         clock,
     )
 }
