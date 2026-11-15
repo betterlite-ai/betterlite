@@ -195,16 +195,16 @@ pub(super) fn failure(error: &CrowdStrikeError) -> GuardrailFailure {
                 detail: error.detail(),
             }
         }
-        other @ CrowdStrikeError::MissingEnvironment { .. }
-        | other @ CrowdStrikeError::Timeout { .. }
-        | other @ CrowdStrikeError::Request { .. }
-        | other @ CrowdStrikeError::InvalidHeader { .. }
-        | other @ CrowdStrikeError::HttpStatus { .. }
-        | other @ CrowdStrikeError::ResponseTooLarge { .. }
-        | other @ CrowdStrikeError::ResponseJson { .. }
-        | other @ CrowdStrikeError::JsonEncode { .. }
-        | other @ CrowdStrikeError::InvalidParam { .. }
-        | other @ CrowdStrikeError::Record { .. } => GuardrailFailure::Http {
+        other @ (CrowdStrikeError::MissingEnvironment { .. }
+        | CrowdStrikeError::Timeout { .. }
+        | CrowdStrikeError::Request { .. }
+        | CrowdStrikeError::InvalidHeader { .. }
+        | CrowdStrikeError::HttpStatus { .. }
+        | CrowdStrikeError::ResponseTooLarge { .. }
+        | CrowdStrikeError::ResponseJson { .. }
+        | CrowdStrikeError::JsonEncode { .. }
+        | CrowdStrikeError::InvalidParam { .. }
+        | CrowdStrikeError::Record { .. }) => GuardrailFailure::Http {
             status: other.status_code().as_u16(),
             detail: other.to_string(),
         },
