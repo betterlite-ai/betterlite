@@ -34,7 +34,7 @@ enum InputCase {
 fn realtime_input_cases(#[case] case: InputCase) {
     match case {
         InputCase::AudioAppendBeforeAfterSession => {
-            audio_cases::audio_append_before_after_session()
+            audio_cases::audio_append_before_after_session();
         }
         InputCase::AudioCommit => audio_cases::audio_commit(),
         InputCase::ConversationTextItem => conversation_cases::conversation_text_item(),

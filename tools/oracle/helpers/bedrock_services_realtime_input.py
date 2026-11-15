@@ -5,6 +5,7 @@ from uuid import UUID
 
 from litellm.llms.bedrock.realtime.transformation import BedrockRealtimeConfig
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 JsonAdapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 MODEL = "amazon.nova-2-sonic-v1:0"
@@ -54,6 +55,7 @@ class WarningLog(logging.Handler):
         super().__init__(level=logging.WARNING)
         self.messages: list[str] = []
 
+    @override
     def emit(self, record: logging.LogRecord) -> None:
         self.messages.append(record.getMessage())
 

@@ -133,12 +133,12 @@ pub fn decode_realtime_client_input(bytes: &[u8]) -> Result<ClientEvent, InputEr
 }
 
 fn item_create(item: Option<ItemObject>) -> ItemCreate {
-    let Some(item) = item else {
+    let Some(object) = item else {
         return ItemCreate::Ignored;
     };
-    match item.kind {
+    match object.kind {
         Some(Tag::Known(ItemType::Message)) => ItemCreate::Message {
-            texts: item
+            texts: object
                 .content
                 .into_iter()
                 .filter(|part| matches!(part.kind, Some(Tag::Known(PartType::InputText))))
@@ -146,10 +146,14 @@ fn item_create(item: Option<ItemObject>) -> ItemCreate {
                 .collect(),
         },
         Some(Tag::Known(ItemType::FunctionCallOutput)) => ItemCreate::ToolResult {
-            call_id: item.call_id.unwrap_or_default(),
-            content: match item.output {
+            call_id: object.call_id.unwrap_or_default(),
+            content: match object.output {
                 Json::Text(text) => text,
-                other => dumps(&other),
+                other @ (Json::Null
+                | Json::Bool(_)
+                | Json::Number(_)
+                | Json::List(_)
+                | Json::Object(_)) => dumps(&other),
             },
         },
         Some(Tag::Other(_)) | None => ItemCreate::Ignored,

@@ -69,12 +69,12 @@ fn run_step(state: &mut RealtimeInput, step: &Step, source: &FixedIds) -> Helper
             Vec::new(),
         ),
         Step::Send { message } => {
-            let warnings = Warnings::default();
-            let subscriber = registry().with(warnings.clone());
+            let recorder = Warnings::default();
+            let subscriber = registry().with(recorder.clone());
             let outcome = with_default(subscriber, || {
                 state.transform_realtime_request(message.as_bytes(), source)
             });
-            let captured = warnings
+            let captured = recorder
                 .0
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)

@@ -1,8 +1,11 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use sha2::{Digest, Sha256};
+use sha2::{Digest as _, Sha256};
 
-use super::support::{AUDIO, audio_start, capture, new_input, send, try_send, wire};
+use super::support::{
+    AUDIO, Captured, CountingIds, audio_start, capture, new_input, send, try_send, wire,
+};
+use crate::realtime_input::RealtimeInput;
 use crate::realtime_input::error::InputError;
 use crate::realtime_input::frames::{Event, EventFrame, InputFrame};
 use crate::realtime_session::records::Setting;
@@ -106,35 +109,8 @@ pub(super) fn response_cancel() {
 pub(super) fn unknown_client_event() {
     let (captured, _guard) = capture();
     let (mut input, ids) = new_input();
-    for broken in [
-        "not json",
-        r#"{"type":"input_audio_buffer.append","audio":"AAA"#,
-        "",
-    ] {
-        assert!(send(&mut input, &ids, broken).is_empty());
-    }
-    let log = captured.text();
-    assert_eq!(log.matches("Invalid JSON message").count(), 3);
-    assert!(!log.contains("not json"));
-    assert!(!log.contains("AAA"));
-    for not_object in [
-        "[]",
-        "5",
-        "null",
-        r#""text""#,
-        r#"[{"type":"response.create"}]"#,
-    ] {
-        let result = try_send(&mut input, &ids, not_object);
-        assert!(matches!(result, Err(InputError::Malformed { .. })));
-    }
-    assert!(send(&mut input, &ids, "{}").is_empty());
-    assert!(send(&mut input, &ids, r#"{"type":"response.delete"}"#).is_empty());
-    assert!(send(&mut input, &ids, r#"{"type":5}"#).is_empty());
-    assert!(send(&mut input, &ids, r#"{"type":null}"#).is_empty());
-    let log = captured.text();
-    assert_eq!(log.matches("Unknown message type: None").count(), 2);
-    assert!(log.contains("Unknown message type: response.delete"));
-    assert!(log.contains("Unknown message type: 5"));
+    assert_invalid_json(&mut input, &ids, &captured);
+    assert_unknown_messages(&mut input, &ids, &captured);
     let update = send(
         &mut input,
         &ids,
@@ -142,4 +118,39 @@ pub(super) fn unknown_client_event() {
     );
     assert_eq!(update.len(), 2);
     assert!(input.session.prompt_started);
+}
+
+fn assert_invalid_json(input: &mut RealtimeInput, ids: &CountingIds, captured: &Captured) {
+    for broken in [
+        "not json",
+        r#"{"type":"input_audio_buffer.append","audio":"AAA"#,
+        "",
+    ] {
+        assert!(send(input, ids, broken).is_empty());
+    }
+    let log = captured.text();
+    assert_eq!(log.matches("Invalid JSON message").count(), 3);
+    assert!(!log.contains("not json"));
+    assert!(!log.contains("AAA"));
+}
+
+fn assert_unknown_messages(input: &mut RealtimeInput, ids: &CountingIds, captured: &Captured) {
+    for not_object in [
+        "[]",
+        "5",
+        "null",
+        r#""text""#,
+        r#"[{"type":"response.create"}]"#,
+    ] {
+        let result = try_send(input, ids, not_object);
+        assert!(matches!(result, Err(InputError::Malformed { .. })));
+    }
+    assert!(send(input, ids, "{}").is_empty());
+    assert!(send(input, ids, r#"{"type":"response.delete"}"#).is_empty());
+    assert!(send(input, ids, r#"{"type":5}"#).is_empty());
+    assert!(send(input, ids, r#"{"type":null}"#).is_empty());
+    let log = captured.text();
+    assert_eq!(log.matches("Unknown message type: None").count(), 2);
+    assert!(log.contains("Unknown message type: response.delete"));
+    assert!(log.contains("Unknown message type: 5"));
 }

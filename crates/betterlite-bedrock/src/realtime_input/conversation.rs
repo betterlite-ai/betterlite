@@ -16,14 +16,14 @@ pub fn item_frames(
     match item {
         ItemCreate::Message { texts } => texts
             .into_iter()
-            .flat_map(|text| content_frames(session, ids, ItemKind::Text, text))
+            .flat_map(|text| content_frames(session, ids, &ItemKind::Text, text))
             .collect(),
         ItemCreate::ToolResult { call_id, content } => {
             tracing::debug!("Handling conversation.item.create for tool result");
             Vec::from(content_frames(
                 session,
                 ids,
-                ItemKind::ToolResult(call_id),
+                &ItemKind::ToolResult(call_id),
                 content,
             ))
         }
@@ -39,12 +39,12 @@ enum ItemKind {
 fn content_frames(
     session: &RealtimeSession,
     ids: &dyn IdSource,
-    kind: ItemKind,
+    kind: &ItemKind,
     content: String,
 ) -> [InputFrame; 3] {
     let prompt_name = session.names.prompt.clone();
     let content_name = ids.next_id().to_string();
-    let start = content_start(session, &kind, &prompt_name, &content_name);
+    let start = content_start(session, kind, &prompt_name, &content_name);
     let body = content_event(kind, &prompt_name, &content_name, content);
     let end = ContentEnd {
         prompt_name,
@@ -103,7 +103,7 @@ fn tool_configuration(call_id: &str) -> InputConfiguration {
     })
 }
 
-fn content_event(kind: ItemKind, prompt_name: &str, content_name: &str, content: String) -> Event {
+fn content_event(kind: &ItemKind, prompt_name: &str, content_name: &str, content: String) -> Event {
     match kind {
         ItemKind::Text => Event::TextInput(UserTextInput {
             prompt_name: prompt_name.to_owned(),
