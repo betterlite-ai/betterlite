@@ -3,7 +3,7 @@ name: recovery-store-no-scope
 call:
   b3764: {
       "seed": {
-        "scope": "hash-a",
+        "scope": "",
         "call_id": "call-1",
         "originals": {
           "47080470c1aeb2a10e9df746": "original one",
