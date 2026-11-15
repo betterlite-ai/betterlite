@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::path::Path;
+
 use betterlite_models::prompt_spec::PromptInfo;
 
 use super::support::{CallbackCall, RecordingCallbacks, client, prompt_spec};
@@ -102,6 +104,18 @@ fn keys_by_both_the_prompt_id_and_the_environment() {
             .in_memory_prompts
             .contains_key("greeting.v1::production")
     );
+}
+
+#[test]
+fn a_config_file_path_is_accepted_and_ignored() {
+    let prompt = prompt_spec("greeting.v1", "development", "dotprompt");
+    let path = Path::new("/does/not/exist.prompt");
+    let mut callbacks = RecordingCallbacks::default();
+    let mut registry = InMemoryPromptRegistry::default();
+    let parsed = registry
+        .initialize_prompt(&prompt, Some(path), &mut callbacks)
+        .expect("the path is not read");
+    assert_eq!(parsed.prompt_id, "greeting.v1");
 }
 
 #[test]
