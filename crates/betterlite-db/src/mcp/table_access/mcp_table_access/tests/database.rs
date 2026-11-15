@@ -12,10 +12,14 @@ use crate::budget_permission_rows::JsonData;
 use crate::database_replica::availability::Availability;
 use crate::mcp::table_access::filter::{FindServers, ServerFilter};
 use crate::mcp::table_access::mcp_server_write_if_identifier_free;
-use crate::mcp::table_access::rows::{RowFields, ServerUpdate};
+use crate::mcp::table_access::rows::{KeyValues, RowFields, ServerUpdate};
 use crate::mcp::table_access::store::{LockedTable, McpTableStore, db_transaction_manager};
 use crate::mcp::table_access::types::{
     IdentifierField, LockedWrite, LockedWriteOutcome, McpServerAccess, ServerWrite,
+};
+use crate::mcp::table_access::user_tables::{
+    db_find_user_credential_row, db_find_user_credential_rows, db_find_user_env_var_rows,
+    db_upsert_user_credential_row,
 };
 use crate::postgres_store::session::PostgresStore;
 
@@ -33,6 +37,26 @@ CREATE TABLE "LiteLLM_MCPServerTable" (
 );
 INSERT INTO "LiteLLM_MCPServerTable" (server_id, server_name, approval_status)
 VALUES ('s1', 'TAKEN', 'pending_review');
+CREATE TABLE "LiteLLM_MCPUserCredentials" (
+    id text PRIMARY KEY,
+    user_id text NOT NULL,
+    server_id text NOT NULL,
+    credential_b64 text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (user_id, server_id)
+);
+CREATE TABLE "LiteLLM_MCPUserEnvVars" (
+    id text PRIMARY KEY,
+    user_id text NOT NULL,
+    server_id text NOT NULL,
+    values_b64 text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (user_id, server_id)
+);
+INSERT INTO "LiteLLM_MCPUserEnvVars" (id, user_id, server_id, values_b64)
+VALUES ('e1', 'u1', 's1', 'blob-1'), ('e2', 'u2', 's1', 'blob-2');
 "#;
 
 #[derive(Parser)]
@@ -216,4 +240,65 @@ async fn the_transaction_table_reads_and_updates_inside_the_open_transaction() {
     assert_eq!(seen, vec![updated]);
     transaction.rollback().await.expect("the transaction ends");
     assert_eq!(stored_count(&writer, "s1").await, 1);
+}
+
+#[tokio::test]
+async fn a_credential_upsert_keeps_the_row_and_rewrites_only_the_blob() {
+    let (_fixture, writer) = seeded().await;
+    let availability = Availability::default();
+    let client = PrismaClient {
+        writer: &writer,
+        reader: &writer,
+        availability: &availability,
+    };
+    let table = McpTableStore::new(Some(client), publisher()).expect("a client builds a store");
+    db_upsert_user_credential_row(&table, "u1", "s1", "first")
+        .await
+        .expect("the create arm inserts");
+    let created = db_find_user_credential_row(&table, "u1", "s1")
+        .await
+        .expect("the credential is readable")
+        .expect("u1 has a credential for s1");
+    db_upsert_user_credential_row(&table, "u1", "s1", "second")
+        .await
+        .expect("the update arm rewrites");
+    let updated = db_find_user_credential_row(&table, "u1", "s1")
+        .await
+        .expect("the credential is readable")
+        .expect("the credential is still stored");
+    assert_eq!(text_field(&updated, "credential_b64"), Some("second"));
+    assert_eq!(text_field(&updated, "id"), text_field(&created, "id"));
+    let missing = db_find_user_credential_row(&table, "u1", "s2")
+        .await
+        .expect("the read runs");
+    assert_eq!(missing, None);
+    let every = db_find_user_credential_rows(&table, None)
+        .await
+        .expect("the read runs");
+    assert_eq!(every.len(), 1);
+}
+
+#[tokio::test]
+async fn env_var_rows_are_read_with_the_given_where_or_unfiltered() {
+    let (_fixture, writer) = seeded().await;
+    let availability = Availability::default();
+    let client = PrismaClient {
+        writer: &writer,
+        reader: &writer,
+        availability: &availability,
+    };
+    let table = McpTableStore::new(Some(client), publisher()).expect("a client builds a store");
+    let key = KeyValues::from([("user_id", "u2".to_owned())]);
+    let filtered = db_find_user_env_var_rows(&table, Some(&key))
+        .await
+        .expect("the read runs");
+    let blobs: Vec<Option<&str>> = filtered
+        .iter()
+        .map(|stored| text_field(stored, "values_b64"))
+        .collect();
+    assert_eq!(blobs, vec![Some("blob-2")]);
+    let every = db_find_user_env_var_rows(&table, None)
+        .await
+        .expect("the read runs");
+    assert_eq!(every.len(), 2);
 }
