@@ -27,6 +27,7 @@ from betterlite.types.utils.media import (
     ImageUsageInputTokensDetails,
 )
 from betterlite.types.utils.message import Delta, Message, add_provider_specific_fields
+from betterlite.types.utils.pricing import CustomPricingLiteLLMParams, MirroredPricingParams
 from betterlite.types.utils.response import (
     OPENAI_RESPONSE_HEADERS,
     ModelResponse,
@@ -36,6 +37,8 @@ from betterlite.types.utils.response import (
     _generate_id,
     process_response_headers,
 )
+from betterlite.types.utils.routing import StandardLoggingRoutingDecision
+from betterlite.types.utils.search import SearchProviders
 from betterlite.types.utils.small_types import (
     BudgetConfig,
     DynamicPromptManagementParamLiteral,
@@ -87,14 +90,17 @@ __all__ = [
     "ChatCompletionDeltaCustomToolCall", "ChatCompletionDeltaCustomToolCallPayload",
     "ChatCompletionDeltaToolCall", "ChatCompletionMessageCustomToolCall",
     "ChatCompletionMessageToolCall", "ChatCompletionTokenLogprob", "ChoiceLogprobs",
-    "Choices", "CompletionTokensDetailsWrapper", "CustomStreamingDecoder", "Delta",
+    "Choices", "CompletionTokensDetailsWrapper", "CustomPricingLiteLLMParams",
+    "CustomStreamingDecoder", "Delta",
     "DynamicPromptManagementParamLiteral", "Embedding", "EmbeddingResponse",
     "FinishReason", "Function", "FunctionCall", "ImageObject", "ImageResponse",
     "ImageUsage", "ImageUsageInputTokensDetails", "JsonValue",
     "LiteLLMFineTuningJob", "LiteLLMLoggingBaseClass",
-    "LiteLLMRealtimeStreamLoggingObject", "Logprobs", "Message", "ModelResponse",
+    "LiteLLMRealtimeStreamLoggingObject", "Logprobs", "Message",
+    "MirroredPricingParams", "ModelResponse",
     "ModelResponseBase", "ModelResponseStream", "PromptTokensDetailsWrapper",
-    "ResponseObject", "RootModel", "ServerToolUse", "StreamingChatCompletionChunk",
+    "ResponseObject", "RootModel", "SearchProviders", "ServerToolUse",
+    "StandardLoggingRoutingDecision", "StreamingChatCompletionChunk",
     "StreamingChoices", "TextChoices", "TextCompletionResponse", "TopLogprob",
     "TranscriptionResponse", "TranscriptionUsageDurationObject",
     "TranscriptionUsageInputTokenDetailsObject", "TranscriptionUsageTokensObject",
