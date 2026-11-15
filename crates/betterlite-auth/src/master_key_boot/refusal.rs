@@ -2,8 +2,8 @@ use betterlite_db::database_reencryption::{PREVIOUS_KEY_VARIABLE, SALT_KEY_ENV_V
 use secrecy::ExposeSecret as _;
 
 use super::verdict::{
-    KeyOrigin, MASTER_KEY_SETTING, OVERRIDE_SETTING, Refusal, StoredSecretsMigration, UnsafeReason,
-    is_blank,
+    KeyOrigin, MASTER_KEY_SETTING, OVERRIDE_SETTING, Refusal, STRIP_SPACE, StoredSecretsMigration,
+    UnsafeReason,
 };
 
 pub const MASTER_KEY_ENV_VAR: &str = "LITELLM_MASTER_KEY";
@@ -130,7 +130,7 @@ fn save_migrated_keys_step(migration: &StoredSecretsMigration) -> String {
 
 fn migrate_from_assignment(migration: &StoredSecretsMigration) -> String {
     let key = migration.from_master_key.expose_secret();
-    let value = if key == key.trim_matches(is_blank) {
+    let value = if key == key.trim_matches(STRIP_SPACE) {
         key.to_owned()
     } else {
         format!("\"{key}\"")

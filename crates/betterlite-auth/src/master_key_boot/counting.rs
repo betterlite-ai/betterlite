@@ -16,7 +16,7 @@ pub async fn with_stored_secrets_counted(
 ) -> BootVerdict {
     match verdict {
         BootVerdict::Refused(refusal) => BootVerdict::Refused(counted(refusal, counter).await),
-        other => other,
+        untouched @ (BootVerdict::Safe | BootVerdict::Allowed { .. }) => untouched,
     }
 }
 

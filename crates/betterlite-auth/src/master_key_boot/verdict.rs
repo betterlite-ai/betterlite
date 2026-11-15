@@ -144,7 +144,7 @@ fn unsafe_reason(master_key: Option<&SecretString>) -> Option<UnsafeReason> {
     let Some(configured) = master_key else {
         return Some(UnsafeReason::NotSet);
     };
-    let stripped = configured.expose_secret().trim_matches(is_blank);
+    let stripped = configured.expose_secret().trim_matches(STRIP_SPACE);
     if stripped.is_empty() {
         return Some(UnsafeReason::Empty);
     }
@@ -154,9 +154,10 @@ fn unsafe_reason(master_key: Option<&SecretString>) -> Option<UnsafeReason> {
     None
 }
 
-pub(crate) const fn is_blank(character: char) -> bool {
-    if matches!(character, '\u{1c}'..='\u{1f}') {
-        return true;
-    }
-    character.is_whitespace()
-}
+// str.strip() in Python also removes U+001C to U+001F, which char::is_whitespace keeps
+pub(crate) const STRIP_SPACE: [char; 29] = [
+    '\u{9}', '\u{a}', '\u{b}', '\u{c}', '\u{d}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{1f}', ' ',
+    '\u{85}', '\u{a0}', '\u{1680}', '\u{2000}', '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}',
+    '\u{2005}', '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200a}', '\u{2028}', '\u{2029}',
+    '\u{202f}', '\u{205f}', '\u{3000}',
+];
