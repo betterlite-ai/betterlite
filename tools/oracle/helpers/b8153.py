@@ -1,10 +1,12 @@
 import os
+from collections.abc import Awaitable
 from typing import NotRequired, Protocol, TypedDict
 from urllib.parse import parse_qsl
 
 import httpx
 import litellm
 import openai
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.petals.completion.transformation import PetalsConfig
@@ -233,30 +235,14 @@ def request_value(call: RequestCase) -> JsonValue:
     return {"ok": True, "form": responder.form}
 
 
-def reply_of(response: ModelResponse) -> JsonValue:
-    usage = TypeAdapter(ReplyDump).validate_json(response.model_dump_json())["usage"]
-    return {
-        "ok": True,
-        "model": response.model,
-        "created": response.created,
-        "choices": [
-            {"index": c.index, "content": c.message.content, "finish_reason": c.finish_reason}
-            for c in response.choices
-        ],
-        "usage": {
-            "prompt_tokens": usage.prompt_tokens,
-            "completion_tokens": usage.completion_tokens,
-            "total_tokens": usage.total_tokens,
-        },
-    }
-
-
 def reply_value(call: ReplyCase) -> JsonValue:
     responder = Responder(call["body"], call["status"], call["headers"])
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(responder.handle)))
     try:
         # litellm.completion's decorated return is Any to mypy, so its type is named here.
-        reply: ModelResponse = litellm.completion(
+        response: (
+            ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
+        ) = litellm.completion(
             model=f"petals/{call['model']}",
             messages=call["messages"],
             api_base="http://petals.test/v1/generate",
@@ -266,7 +252,22 @@ def reply_value(call: ReplyCase) -> JsonValue:
         return {"ok": False, "status": error.status_code}
     except openai.APIConnectionError:
         return {"ok": False, "status": 500}
-    return reply_of(reply)
+    reply = TypeAdapter(ModelResponse).validate_python(response)
+    usage = TypeAdapter(ReplyDump).validate_json(reply.model_dump_json())["usage"]
+    return {
+        "ok": True,
+        "model": reply.model,
+        "created": reply.created,
+        "choices": [
+            {"index": c.index, "content": c.message.content, "finish_reason": c.finish_reason}
+            for c in reply.choices
+        ],
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        },
+    }
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
