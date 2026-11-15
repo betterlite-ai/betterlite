@@ -15,10 +15,11 @@ fuzz_target!(|body: &[u8]| {
         body: body.to_vec(),
     };
     let _decoded = response.json();
-    let prompt = serde_json::from_slice::<Prompt>(body);
+    let Ok(prompt) = serde_json::from_slice::<Prompt>(body) else {
+        return;
+    };
     let _projects = serde_json::from_slice::<Projects>(body);
-    let variables = serde_json::from_str::<PromptParams>(VARIABLES);
-    let (Ok(prompt), Ok(variables)) = (prompt, variables) else {
+    let Ok(variables) = serde_json::from_str::<PromptParams>(VARIABLES) else {
         return;
     };
     let _compiled = compile_prompt(&prompt, Some(&variables));
