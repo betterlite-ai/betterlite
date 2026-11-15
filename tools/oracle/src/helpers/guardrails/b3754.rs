@@ -165,7 +165,7 @@ fn analyze_answer(analyze: &Analyze) -> HelperResult {
     let recorded = calls.first();
     let rejected = match outcome {
         Ok(()) => Value::Null,
-        Err(CatoError::Blocked { .. } | CatoError::RedactionMismatch) => json!({"status": 400}),
+        Err(CatoError::Blocked { .. } | CatoError::RedactionMismatch) => json!({"status": 400_i32}),
         Err(error) => return Err(helper_error(&error)),
     };
     Ok(json!({
