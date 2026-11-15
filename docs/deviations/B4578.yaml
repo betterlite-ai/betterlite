@@ -2,9 +2,10 @@ task: B4578
 deviations:
   - what: >-
       Every table is drawn with comfy-table (default features off). The title, column headers, row
-      order and cell text are as LiteLLM writes them, but borders, column widths and wrapping differ
-      from rich's, there is no color, and the Total row of the import summary is marked with
-      comfy-table's bold attribute instead of rich markup.
+      order and cell text are as LiteLLM writes them, but borders, column widths, wrapping and
+      alignment differ from rich's: the Input Cost and Output Cost columns sit on the left where
+      rich right-justifies them, there is no color, and the Total row of the import summary is
+      marked with comfy-table's bold attribute instead of rich markup.
     why: >-
       Porting rich's layout engine buys nothing for output a person reads, and the models, keys,
       credentials and model-group commands all draw their tables with the same crate. Scripts read
@@ -80,3 +81,22 @@ deviations:
       fancy-regex is the bounded engine the other betterlite crates use for user patterns, so a bad
       pattern cannot hang the command.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L393-L397
+  - what: >-
+      A per-token cost whose JSON number rust_decimal cannot represent is an error that names the
+      field. Values such as 1e-30 (scale 30) and 1e39 (magnitude past the decimal maximum) are
+      outside the type: LiteLLM reads the declared float and prints a dollar amount for both.
+    why: >-
+      Money is a rust_decimal::Decimal under the money-is-decimal rule, and the declared float type
+      has values Decimal cannot hold; refusing the field keeps the cost exact instead of inventing
+      a rounded amount. No working setup prices a token at 1e-30 or 1e39.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L87-L97
+  - what: >-
+      A created timestamp outside Python's datetime range is rendered from chrono's wider range, so
+      a year past 9999 shows as a five-digit-year date, and a value past chrono's range is an error
+      that names the field. LiteLLM catches ValueError from datetime.fromtimestamp and prints the
+      integer text; past that, OSError and OverflowError escape as an unhandled crash.
+    why: >-
+      The field is an integer timestamp, so betterlite renders every instant chrono can represent
+      as a date and refuses the rest with a typed error instead of echoing the integer or crashing.
+      No working setup lists a creation date past year 9999.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L76-L84
