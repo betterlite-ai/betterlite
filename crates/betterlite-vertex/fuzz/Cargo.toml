@@ -88,6 +88,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "google_guardrail_sse"
+path = "fuzz_targets/google_guardrail_sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "google_native_content"
 path = "fuzz_targets/google_native_content.rs"
 test = false
@@ -174,6 +181,13 @@ bench = false
 [[bin]]
 name = "vertex_batch_payload"
 path = "fuzz_targets/vertex_batch_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_agent_buffer"
+path = "fuzz_targets/vertex_agent_buffer.rs"
 test = false
 doc = false
 bench = false

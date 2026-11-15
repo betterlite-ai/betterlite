@@ -1,0 +1,36 @@
+kind: helper
+name: qualifire-response-tools
+call:
+  b8213:
+    settings:
+      api_key: oracle-key
+      hallucinations_check: true
+      tool_selection_quality_check: true
+    messages:
+      - {role: user, content: "Book a table for two."}
+    tools:
+      - type: function
+        function:
+          name: book_table
+          description: Book a restaurant table
+          parameters: {type: object, properties: {seats: {type: integer}}}
+    response:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o
+      choices:
+        - index: 0
+          finish_reason: stop
+          message: {role: assistant, content: "Your table for two is booked."}
+    answer:
+      status: 200
+      headers: {}
+      body:
+        score: 55
+        status: failed
+        evaluationResults:
+          - results:
+              - {name: hallucinations, flagged: true}
+env: {}
+compare: {ignore: []}
