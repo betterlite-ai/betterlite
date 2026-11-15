@@ -125,10 +125,9 @@ fn citation_tokens(raw: &Map<String, Value>) -> Result<i64, PerplexityReplyError
                 entry.to_string().chars().count()
             }
         };
-        let characters =
-            i64::try_from(characters).map_err(|_error| PerplexityReplyError::Overflow)?;
+        let count = i64::try_from(characters).map_err(|_error| PerplexityReplyError::Overflow)?;
         total = total
-            .checked_add(characters)
+            .checked_add(count)
             .ok_or(PerplexityReplyError::Overflow)?;
     }
     if total <= 0 {

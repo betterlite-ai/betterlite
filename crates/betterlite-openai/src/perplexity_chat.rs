@@ -87,13 +87,9 @@ where
 
 // The base conversion already ran; a failure here leaves the converted reply untouched
 #[must_use]
-pub fn with_perplexity_fields(reply: Value, raw_body: &[u8]) -> Value {
-    let mut enhanced = reply.clone();
-    match enhance::apply(&mut enhanced, raw_body) {
-        Ok(()) => enhanced,
-        Err(error) => {
-            tracing::debug!(%error, "error extracting Perplexity-specific usage fields");
-            reply
-        }
+pub fn with_perplexity_fields(mut reply: Value, raw_body: &[u8]) -> Value {
+    if let Err(error) = enhance::apply(&mut reply, raw_body) {
+        tracing::debug!(%error, "error extracting Perplexity-specific usage fields");
     }
+    reply
 }

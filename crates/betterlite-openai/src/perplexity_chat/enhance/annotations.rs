@@ -78,8 +78,8 @@ pub(super) fn plan(
     check_existing_annotations(reply, &annotations)?;
     Ok(AnnotationPlan {
         annotations,
-        citations: copy(citations),
-        search_results: copy(search_results),
+        citations: (!citations.is_empty()).then(|| Value::Array(citations.to_vec())),
+        search_results: (!search_results.is_empty()).then(|| Value::Array(search_results.to_vec())),
     })
 }
 
@@ -169,10 +169,6 @@ fn check_existing_annotations(
     })
 }
 
-fn copy(entries: &[Value]) -> Option<Value> {
-    (!entries.is_empty()).then(|| Value::Array(entries.to_vec()))
-}
-
 fn existing_annotations(reply: &Map<String, Value>) -> Option<&Value> {
     let choices = reply.get("choices")?.as_array()?;
     let choice = choices.first()?.as_object()?;
@@ -187,8 +183,8 @@ fn markers(
 ) -> Result<Vec<Value>, PerplexityReplyError> {
     let pattern = Regex::new(MARKER_PATTERN).map_err(PerplexityReplyError::MarkerPattern)?;
     let mut annotations = Vec::new();
-    for found in pattern.find_iter(content) {
-        let found = found.map_err(PerplexityReplyError::Marker)?;
+    for candidate in pattern.find_iter(content) {
+        let found = candidate.map_err(PerplexityReplyError::Marker)?;
         let text = found.as_str();
         let digits = text
             .strip_prefix('[')
