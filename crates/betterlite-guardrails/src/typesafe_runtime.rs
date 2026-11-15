@@ -137,17 +137,16 @@ fn resolve_fallback(fallback: Option<&str>) -> UnreachableFallback {
 }
 
 fn resolve_timeout(timeout: Option<f64>) -> Result<Duration, TypeSafeRuntimeError> {
-    match timeout {
-        Some(seconds) => Duration::try_from_secs_f64(seconds)
-            .map_err(|source| TypeSafeRuntimeError::Timeout { seconds, source }),
-        None => Ok(DEFAULT_JEV_TIMEOUT),
-    }
+    timeout.map_or(Ok(DEFAULT_JEV_TIMEOUT), |seconds| {
+        Duration::try_from_secs_f64(seconds)
+            .map_err(|source| TypeSafeRuntimeError::Timeout { seconds, source })
+    })
 }
 
 fn max_result_chars(value: Option<i64>) -> Result<MaxResultChars, TypeSafeRuntimeError> {
-    let Some(value) = value else {
+    let Some(limit) = value else {
         return Ok(MaxResultChars::default());
     };
-    let chars = usize::try_from(value).map_err(|_negative| TypeSafeConfigError::MaxResultChars)?;
+    let chars = usize::try_from(limit).map_err(|_negative| TypeSafeConfigError::MaxResultChars)?;
     MaxResultChars::try_from(chars).map_err(TypeSafeRuntimeError::from)
 }

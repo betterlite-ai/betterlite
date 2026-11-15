@@ -9,10 +9,10 @@ use crate::generic_guardrail_contracts::GuardrailMessage;
 
 // B3798's content pointer takes JSON while the framework's content_to_text takes a guardrail value.
 pub(super) fn content_text(content: Option<&Json>) -> String {
-    let Some(content) = content else {
+    let Some(value) = content else {
         return String::new();
     };
-    content_to_text(&content_value(content))
+    content_to_text(&content_value(value))
 }
 
 // content_to_text reads a string or a list of text parts; every other JSON shape holds no text.
@@ -20,7 +20,7 @@ fn content_value(content: &Json) -> GuardrailValue {
     match content {
         Json::Text(text) => GuardrailValue::Text(text.clone()),
         Json::List(parts) => GuardrailValue::Array(parts.iter().filter_map(text_part).collect()),
-        _ => GuardrailValue::Null,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => GuardrailValue::Null,
     }
 }
 
@@ -65,7 +65,7 @@ fn json_value(value: &GuardrailValue) -> Json {
         GuardrailValue::Object(fields) => Json::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), json_value(value)))
+                .map(|(key, item)| (key.clone(), json_value(item)))
                 .collect(),
         ),
     }

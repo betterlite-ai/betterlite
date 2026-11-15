@@ -93,7 +93,7 @@ async fn evaluate(
         duration,
     };
     match response {
-        Ok(Some(response)) => Ok(Evaluated::Answers(response, timing)),
+        Ok(Some(answers)) => Ok(Evaluated::Answers(answers, timing)),
         Ok(None) => Ok(Evaluated::Unavailable(timing)),
         Err(error) => Err(GuardrailFailure::from(error)),
     }

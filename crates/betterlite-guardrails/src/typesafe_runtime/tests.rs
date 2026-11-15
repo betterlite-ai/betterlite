@@ -39,7 +39,8 @@ use crate::typesafe::typesafe_config::{MaxResultChars, MinCharsToEvaluate, Relev
 use crate::typesafe::{DEFAULT_API_BASE, DEFAULT_JEV_TIMEOUT, DROPPED_RESULT_TEXT};
 
 const API_KEY: &str = "test-key";
-const FIRST_RESULT: &str = "結果: the first tool result";
+// The escaped prefix is two CJK code points, so the character counts below prove counting by chars.
+const FIRST_RESULT: &str = "\u{7d50}\u{679c}: the first tool result";
 const SECOND_RESULT: &str = "the second tool result, still needed by the assistant";
 const FUNCTION_RESULT: &str = "the legacy function result that is no longer needed";
 const PART_ONE: &str = "the first paragraph of the tool output";
@@ -98,8 +99,8 @@ fn base(timeout: Option<f64>) -> GuardrailBase {
     }
 }
 
-fn guard_at(base_url: &str, args: TypeSafeArgs) -> TypeSafeGuard {
-    TypeSafeGuard::new(&args, no_defaults(), base(None), reqwest::Client::default())
+fn guard_at(args: &TypeSafeArgs) -> TypeSafeGuard {
+    TypeSafeGuard::new(args, no_defaults(), base(None), reqwest::Client::default())
         .expect("guardrail")
 }
 
@@ -257,7 +258,13 @@ fn records(request_data: &BTreeMap<String, GuardrailValue>) -> Vec<GuardrailValu
 fn field<'value>(record: &'value GuardrailValue, key: &str) -> Option<&'value GuardrailValue> {
     match record {
         GuardrailValue::Object(fields) => fields.get(key),
-        _ => None,
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_) => None,
     }
 }
 
@@ -382,9 +389,9 @@ async fn serve(status: StatusCode, body: String) -> (String, Capture, JoinSet<io
         "/v1/systemone",
         post(move |request_body: String| {
             let answer = body.clone();
-            let requests = recorder.clone();
+            let sink = recorder.clone();
             async move {
-                requests.push(request_body);
+                sink.push(request_body);
                 (status, answer)
             }
         }),
@@ -458,7 +465,7 @@ fn new_uses_litellm_defaults_when_only_the_key_is_configured() {
     assert_eq!(guard.runtime.settings.model, "jev-latest");
     assert_eq!(
         guard.runtime.settings.relevance_threshold,
-        RelevanceThreshold(0.2)
+        RelevanceThreshold(0.2_f64)
     );
     assert_eq!(
         guard.runtime.settings.min_chars_to_evaluate,
@@ -483,7 +490,7 @@ fn new_prefers_the_arguments_over_the_resolved_defaults() {
         api_base: Some("https://args.example/".to_owned()),
         api_key: Some(SecretString::from("arg-key")),
         model: Some("arg-model".to_owned()),
-        relevance_threshold: Some(0.5),
+        relevance_threshold: Some(0.5_f64),
         min_chars_to_evaluate: Some(7),
         max_result_chars_in_state: Some(99),
         unreachable_fallback: Some("fail_closed".to_owned()),
@@ -500,7 +507,7 @@ fn new_prefers_the_arguments_over_the_resolved_defaults() {
     assert_eq!(guard.runtime.settings.model, "arg-model");
     assert_eq!(
         guard.runtime.settings.relevance_threshold,
-        RelevanceThreshold(0.5)
+        RelevanceThreshold(0.5_f64)
     );
     assert_eq!(
         guard.runtime.settings.min_chars_to_evaluate,
@@ -559,7 +566,7 @@ fn new_requires_an_api_key(#[case] argument: Option<&str>, #[case] default: Opti
 #[test]
 fn new_keeps_a_zero_relevance_threshold_and_zero_min_chars() {
     let args = TypeSafeArgs {
-        relevance_threshold: Some(0.0),
+        relevance_threshold: Some(0.0_f64),
         min_chars_to_evaluate: Some(0),
         ..args("http://unused")
     };
@@ -567,7 +574,7 @@ fn new_keeps_a_zero_relevance_threshold_and_zero_min_chars() {
         .expect("guardrail");
     assert_eq!(
         guard.runtime.settings.relevance_threshold,
-        RelevanceThreshold(0.0)
+        RelevanceThreshold(0.0_f64)
     );
     assert_eq!(
         guard.runtime.settings.min_chars_to_evaluate,
@@ -597,7 +604,7 @@ fn new_reads_only_the_exact_fail_closed_text(
 
 #[rstest]
 #[case::default_timeout(None, DEFAULT_JEV_TIMEOUT)]
-#[case::configured(Some(2.5), Duration::from_millis(2_500))]
+#[case::configured(Some(2.5_f64), Duration::from_millis(2_500))]
 #[test]
 fn new_takes_the_base_timeout_or_the_litellm_default(
     #[case] timeout: Option<f64>,
@@ -614,7 +621,7 @@ fn new_takes_the_base_timeout_or_the_litellm_default(
 }
 
 #[rstest]
-#[case::negative(-1.0)]
+#[case::negative(-1.0_f64)]
 #[case::not_a_number(f64::NAN)]
 #[case::huge(f64::MAX)]
 #[test]
@@ -631,7 +638,7 @@ fn new_rejects_a_timeout_that_is_not_a_duration(#[case] seconds: f64) {
 
 #[rstest]
 #[case::threshold(
-    Some(1.5),
+    Some(1.5_f64),
     None,
     None,
     "relevance_threshold must be between 0.0 and 1.0, got 1.5"
@@ -671,32 +678,32 @@ fn new_rejects_compaction_tuning_outside_the_litellm_bounds(
 #[case::response_input(
     GuardrailInputType::Response,
     two_exchanges(),
-    reply(&[("e0", 0.0), ("e1", 0.0)]),
+    reply(&[("e0", 0.0_f64), ("e1", 0.0_f64)]),
     false
 )]
 #[case::empty_messages(
     GuardrailInputType::Request,
     Vec::new(),
-    reply(&[("e0", 0.0)]),
+    reply(&[("e0", 0.0_f64)]),
     false
 )]
 #[case::no_candidates(
     GuardrailInputType::Request,
     no_candidates(),
-    reply(&[("e0", 0.0)]),
+    reply(&[("e0", 0.0_f64)]),
     false
 )]
 #[case::all_relevant(
     GuardrailInputType::Request,
     two_exchanges(),
-    reply(&[("e0", 1.0), ("e1", 0.9)]),
+    reply(&[("e0", 1.0_f64), ("e1", 0.9_f64)]),
     true
 )]
 #[case::missing_answers(GuardrailInputType::Request, two_exchanges(), reply(&[]), true)]
 #[case::at_threshold(
     GuardrailInputType::Request,
     two_exchanges(),
-    reply(&[("e0", 0.2), ("e1", 0.2)]),
+    reply(&[("e0", 0.2_f64), ("e1", 0.2_f64)]),
     true
 )]
 #[tokio::test]
@@ -707,7 +714,7 @@ async fn typesafe_runtime_cases(
     #[case] expects_call: bool,
 ) {
     let (base_url, requests, mut server) = serve(StatusCode::OK, reply_body).await;
-    let guard = guard_at(&base_url, args(&base_url));
+    let guard = guard_at(&args(&base_url));
     let original = inputs(messages);
     let mut data = request_data();
     let returned = guard
@@ -723,8 +730,8 @@ async fn typesafe_runtime_cases(
 #[tokio::test]
 async fn one_exchange_is_dropped_and_the_kept_one_is_untouched() {
     let (base_url, requests, mut server) =
-        serve(StatusCode::OK, reply(&[("e0", 0.0), ("e1", 0.9)])).await;
-    let guard = guard_at(&base_url, args(&base_url));
+        serve(StatusCode::OK, reply(&[("e0", 0.0_f64), ("e1", 0.9_f64)])).await;
+    let guard = guard_at(&args(&base_url));
     let original = inputs(two_exchanges());
     let mut data = request_data();
     let returned = apply_request(&guard, original.clone(), &mut data)
@@ -758,8 +765,8 @@ async fn one_exchange_is_dropped_and_the_kept_one_is_untouched() {
 
 #[tokio::test]
 async fn a_function_role_result_is_dropped_with_its_exchange() {
-    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
-    let guard = guard_at(&base_url, args(&base_url));
+    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0_f64)])).await;
+    let guard = guard_at(&args(&base_url));
     let original = function_exchange();
     let mut data = request_data();
     let returned = apply_request(&guard, inputs(original.clone()), &mut data)
@@ -782,8 +789,8 @@ async fn a_function_role_result_is_dropped_with_its_exchange() {
 
 #[tokio::test]
 async fn a_dropped_result_joins_its_text_parts() {
-    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
-    let guard = guard_at(&base_url, args(&base_url));
+    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0_f64)])).await;
+    let guard = guard_at(&args(&base_url));
     let original = parts_exchange();
     let mut data = request_data();
     let returned = apply_request(&guard, inputs(original.clone()), &mut data)
@@ -805,8 +812,8 @@ async fn a_dropped_result_joins_its_text_parts() {
 
 #[tokio::test]
 async fn an_exchange_without_an_answer_is_kept() {
-    let (base_url, _requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
-    let guard = guard_at(&base_url, args(&base_url));
+    let (base_url, _requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0_f64)])).await;
+    let guard = guard_at(&args(&base_url));
     let original = two_exchanges();
     let mut data = request_data();
     let returned = apply_request(&guard, inputs(original.clone()), &mut data)
@@ -828,7 +835,7 @@ async fn an_exchange_without_an_answer_is_kept() {
 async fn a_failed_call_is_recorded_and_forwarded_under_fail_open() {
     let (base_url, _requests, mut server) =
         serve(StatusCode::INTERNAL_SERVER_ERROR, "down".to_owned()).await;
-    let mut guard = guard_at(&base_url, args(&base_url));
+    let mut guard = guard_at(&args(&base_url));
     guard.clock = ticking_now;
     let original = inputs(two_exchanges());
     let mut data = request_data();
@@ -848,14 +855,14 @@ async fn a_failed_call_is_recorded_and_forwarded_under_fail_open() {
     );
     assert_eq!(
         field(record, "start_time"),
-        Some(&GuardrailValue::Decimal(1_700_000_000.0))
+        Some(&GuardrailValue::Decimal(1_700_000_000.0_f64))
     );
     assert_eq!(
         field(record, "end_time"),
-        Some(&GuardrailValue::Decimal(1_700_000_001.0))
+        Some(&GuardrailValue::Decimal(1_700_000_001.0_f64))
     );
     let duration = recorded_duration(record).expect("the record carries a duration");
-    assert!((0.0..1.0).contains(&duration));
+    assert!((0.0_f64..1.0_f64).contains(&duration));
     server.shutdown().await;
 }
 
@@ -863,7 +870,7 @@ async fn a_failed_call_is_recorded_and_forwarded_under_fail_open() {
 async fn a_pre_epoch_clock_records_zero_times() {
     let (base_url, _requests, mut server) =
         serve(StatusCode::INTERNAL_SERVER_ERROR, "down".to_owned()).await;
-    let mut guard = guard_at(&base_url, args(&base_url));
+    let mut guard = guard_at(&args(&base_url));
     guard.clock = pre_epoch_now;
     let mut data = request_data();
     apply_request(&guard, inputs(two_exchanges()), &mut data)
@@ -872,11 +879,11 @@ async fn a_pre_epoch_clock_records_zero_times() {
     let record = &records(&data)[0];
     assert_eq!(
         field(record, "start_time"),
-        Some(&GuardrailValue::Decimal(0.0))
+        Some(&GuardrailValue::Decimal(0.0_f64))
     );
     assert_eq!(
         field(record, "end_time"),
-        Some(&GuardrailValue::Decimal(0.0))
+        Some(&GuardrailValue::Decimal(0.0_f64))
     );
     server.shutdown().await;
 }
@@ -889,7 +896,7 @@ async fn a_failed_call_answers_502_under_fail_closed() {
         unreachable_fallback: Some("fail_closed".to_owned()),
         ..args(&base_url)
     };
-    let guard = guard_at(&base_url, args);
+    let guard = guard_at(&args);
     let mut data = request_data();
     let failure = apply_request(&guard, inputs(two_exchanges()), &mut data)
         .await
@@ -910,8 +917,8 @@ async fn a_failed_call_answers_502_under_fail_closed() {
 
 #[tokio::test]
 async fn a_message_that_is_not_an_object_leaves_the_request_unchanged() {
-    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
-    let guard = guard_at(&base_url, args(&base_url));
+    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0_f64)])).await;
+    let guard = guard_at(&args(&base_url));
     let typed = two_exchanges();
     let mut rows: Vec<Json> = typed.iter().map(row).collect();
     rows.push(Json::Text("not a message".to_owned()));
@@ -930,8 +937,8 @@ async fn a_message_that_is_not_an_object_leaves_the_request_unchanged() {
 async fn no_candidates_log_at_debug_without_calling_the_service() {
     let captured = Captured::default();
     let _subscriber = set_default(log_subscriber(tracing::Level::DEBUG, captured.clone()));
-    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
-    let guard = guard_at(&base_url, args(&base_url));
+    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0_f64)])).await;
+    let guard = guard_at(&args(&base_url));
     let original = inputs(no_candidates());
     let mut data = request_data();
     let returned = apply_request(&guard, original.clone(), &mut data)
@@ -948,8 +955,8 @@ async fn all_relevant_answers_log_at_debug_and_leave_every_message() {
     let captured = Captured::default();
     let _subscriber = set_default(log_subscriber(tracing::Level::DEBUG, captured.clone()));
     let (base_url, requests, mut server) =
-        serve(StatusCode::OK, reply(&[("e0", 1.0), ("e1", 1.0)])).await;
-    let guard = guard_at(&base_url, args(&base_url));
+        serve(StatusCode::OK, reply(&[("e0", 1.0_f64), ("e1", 1.0_f64)])).await;
+    let guard = guard_at(&args(&base_url));
     let original = inputs(two_exchanges());
     let mut data = request_data();
     let returned = apply_request(&guard, original.clone(), &mut data)
@@ -966,8 +973,8 @@ async fn a_compaction_logs_the_exchange_and_character_counts() {
     let captured = Captured::default();
     let _subscriber = set_default(log_subscriber(tracing::Level::INFO, captured.clone()));
     let (base_url, _requests, mut server) =
-        serve(StatusCode::OK, reply(&[("e0", 0.0), ("e1", 0.9)])).await;
-    let guard = guard_at(&base_url, args(&base_url));
+        serve(StatusCode::OK, reply(&[("e0", 0.0_f64), ("e1", 0.9_f64)])).await;
+    let guard = guard_at(&args(&base_url));
     let mut data = request_data();
     let returned = apply_request(&guard, inputs(two_exchanges()), &mut data)
         .await
