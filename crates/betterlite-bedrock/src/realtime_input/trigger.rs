@@ -6,7 +6,7 @@ use base64::engine::general_purpose::STANDARD;
 use super::frames::{AudioInput, Event, InputFrame};
 use crate::realtime_session::records::Setting;
 
-pub const TRIGGER_AUDIO_SAMPLE_RATE_HERTZ: i64 = 16000;
+pub const TRIGGER_SAMPLE_RATE_HERTZ: i64 = 16000;
 const LEADING_SILENCE_BYTES: usize = 16_000;
 const TRAILING_SILENCE_BYTES: usize = 96_000;
 const CHUNK_SIZE: usize = 1024;

@@ -15,7 +15,7 @@ use frames::{
     AudioInput, AudioInputConfiguration, ContentRole, ContentStart, ContentType, Event,
     InputConfiguration, InputFrame, PromptEnd,
 };
-use trigger::{TRIGGER_AUDIO_SAMPLE_RATE_HERTZ, trigger_audio_frames};
+use trigger::{TRIGGER_SAMPLE_RATE_HERTZ, trigger_audio_frames};
 
 mod tests;
 
@@ -105,7 +105,7 @@ impl RealtimeInput {
         }
         let mut frames = Vec::new();
         if self.open_audio.is_none() {
-            frames.push(self.start_audio(Setting(Some(TRIGGER_AUDIO_SAMPLE_RATE_HERTZ))));
+            frames.push(self.start_audio(Setting(Some(TRIGGER_SAMPLE_RATE_HERTZ))));
         }
         frames.extend(trigger_audio_frames(
             &self.session.names.prompt,
