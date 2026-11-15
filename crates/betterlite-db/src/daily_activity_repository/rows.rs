@@ -64,13 +64,36 @@ impl DatabaseRow {
             })
     }
 
-    pub fn optional<T: ColumnValue>(&self, column: &str) -> Result<Option<T>, RowError> {
+    pub fn optional<T>(&self, column: &str) -> Result<Option<T>, RowError>
+    where
+        T: ColumnValue,
+    {
         match self.value(column)? {
             DatabaseValue::Null => Ok(None),
             value => T::from_value(value)
                 .map(Some)
                 .ok_or_else(|| column_error(column, T::EXPECTED)),
         }
+    }
+
+    pub fn text(&self, column: &str) -> Result<String, RowError> {
+        self.required(column, "a non-null text")
+    }
+
+    pub fn integer(&self, column: &str) -> Result<i64, RowError> {
+        self.required(column, "a non-null integer")
+    }
+
+    pub fn decimal(&self, column: &str) -> Result<Decimal, RowError> {
+        self.required(column, "a non-null number")
+    }
+
+    fn required<T>(&self, column: &str, expected: &'static str) -> Result<T, RowError>
+    where
+        T: ColumnValue,
+    {
+        self.optional(column)?
+            .ok_or_else(|| column_error(column, expected))
     }
 
     // a column that is missing or null reads as absent, like a mapping lookup without a default
