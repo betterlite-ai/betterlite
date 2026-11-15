@@ -1,0 +1,36 @@
+task: B1037
+deviations:
+  - what: >-
+      A timeout that float() cannot read, or a non-finite one, fails with the shared TimeoutError that names
+      the field, and the route answers it with a 400. LiteLLM's inline float(timeout) raises a bare
+      ValueError, which the retrieve route reports as a 500, and a non-finite number reaches the client.
+    why: >-
+      A malformed or infinite timeout is a bad request, not a server fault, so it gets the 400 the other
+      boundary failures of this slice use. A working setup sends a finite number or a decimal string, which
+      both readers accept, so nothing that works today depends on the 500 or on the infinite value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L603
+  - what: >-
+      A text timeout is parsed with Rust's float grammar, so Python's digit separators such as 1_0 are
+      rejected with the rest of the invalid timeout text.
+    why: >-
+      Python's float() spelling is a runtime habit betterlite does not port; every timeout text a config or
+      caller writes in plain decimal parses the same on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L603
+kept_bugs:
+  - what: >-
+      The anthropic branch reads litellm.azure_key as a fallback for its API key, so a deployment that
+      configures litellm_settings.azure_key reaches Anthropic with that key.
+    why: >-
+      This is a copy-paste in the source. A working setup that sets only azure_key and reads Anthropic
+      batches through it would stop authenticating if the chain were corrected here, so the fallback is
+      copied as it stands and covered by a test.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L531
+  - what: >-
+      AZURE_AD_TOKEN is never read on a batch retrieve. The azure branch only falls back to it in an else
+      arm that optional_params.get('extra_body', {}) cannot reach, because that getter answers {} for a
+      kwargs field retrieve_batch never puts on GenericLiteLLMParams.
+    why: >-
+      The missing-value behavior of the pitfall is kept: the token setting stays part of the section
+      contract, and the typed projection reads exactly the values the branch actually uses, so an azure
+      token configured on its own does not authenticate a retrieve, as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L489-L493
