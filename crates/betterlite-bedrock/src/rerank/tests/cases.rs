@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::str;
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{
@@ -15,7 +16,8 @@ use serde_json::value::RawValue;
 use tokio::runtime::{Builder, Runtime};
 
 use super::fixture::{
-    DiscardingSink, Factory, FixtureClient, Reply, Source, logging_state, now, prepost_env,
+    Captured, DiscardingSink, Factory, FixtureClient, Reply, Source, logging_state, now,
+    prepost_env,
 };
 use crate::rerank::error::RerankCallError;
 use crate::rerank::execute::{dispatch_request, resolve_and_prepare, transform_response};
@@ -130,6 +132,7 @@ pub(super) struct Run {
     pub(super) sync_calls: u32,
     pub(super) async_calls: u32,
     pub(super) state: LoggingState,
+    pub(super) captured: Captured,
 }
 
 impl Run {
@@ -167,12 +170,20 @@ impl Run {
         self.result.as_ref().unwrap()
     }
 
-    pub(super) fn pre_call(&self) -> Option<&Json> {
-        self.state.model_call_details.get("input")
+    pub(super) fn pre_call(&self) -> Option<Json> {
+        let details = self.captured.lock().unwrap().clone()?;
+        let Json::Object(fields) = details else {
+            return None;
+        };
+        fields.get("input").cloned()
     }
 
-    pub(super) fn pre_call_args(&self) -> Option<&Json> {
-        self.state.model_call_details.get("additional_args")
+    pub(super) fn pre_call_args(&self) -> Option<Json> {
+        let details = self.captured.lock().unwrap().clone()?;
+        let Json::Object(fields) = details else {
+            return None;
+        };
+        fields.get("additional_args").cloned()
     }
 
     pub(super) fn post_call(&self) -> Option<&Json> {
@@ -199,9 +210,7 @@ pub(super) fn run_with_source(
     let client = FixtureClient::new(reply.clone());
     let factory = Factory::new(reply);
     let mut state = logging_state();
-    let redactor = super::fixture::redactor();
-    let sink = DiscardingSink;
-    let env = prepost_env(&state, &redactor, &sink);
+    let captured = Captured::default();
     let runtime = Builder::new_current_thread().build().unwrap();
     let supplied_ref = supplied.map(|kind| SuppliedClient {
         kind,
@@ -213,6 +222,22 @@ pub(super) fn run_with_source(
         factory: &factory,
     };
     let result = {
+        let redactor = super::fixture::redactor();
+        let sink = DiscardingSink;
+        let logger = |details: &Json| -> Result<(), PrePostError> {
+            let Json::Object(fields) = details else {
+                return Ok(());
+            };
+            let pre_call = matches!(
+                fields.get("log_event_type"),
+                Some(Json::Text(event)) if event == "pre_api_call"
+            );
+            if pre_call {
+                *captured.lock().unwrap() = Some(details.clone());
+            }
+            Ok(())
+        };
+        let env = prepost_env(&state, &redactor, &sink, Some(&logger));
         let mut log = LogContext {
             state: &mut state,
             env: &env,
@@ -226,6 +251,7 @@ pub(super) fn run_with_source(
         sync_calls: *factory.sync_calls.lock().unwrap(),
         async_calls: *factory.async_calls.lock().unwrap(),
         state,
+        captured,
     }
 }
 
@@ -251,13 +277,13 @@ fn drive(
 const VALID_REPLY: &str = r#"{"id":"resp-1","results":[{"index":1,"relevanceScore":0.5},{"index":0,"relevanceScore":0.25}]}"#;
 
 #[rstest]
-#[case::case_1_text_and_json_document_source("text_and_json_document_source")]
-#[case::case_2_rerank_model_arn("rerank_model_arn")]
-#[case::case_3_top_n("top_n")]
-#[case::case_4_results_index_score("results_index_score")]
-#[case::case_5_return_document_content("return_document_content")]
-#[case::case_6_rerank_error("rerank_error")]
-#[case::case_7_rerank_transport_logging("rerank_transport_logging")]
+#[case::text_and_json_document_source("text_and_json_document_source")]
+#[case::rerank_model_arn("rerank_model_arn")]
+#[case::top_n("top_n")]
+#[case::results_index_score("results_index_score")]
+#[case::return_document_content("return_document_content")]
+#[case::rerank_error("rerank_error")]
+#[case::rerank_transport_logging("rerank_transport_logging")]
 fn rerank_cases(#[case] name: &str) {
     match name {
         "text_and_json_document_source" => document_sources(),
@@ -780,7 +806,7 @@ fn transport_logging_sync() {
     assert_eq!(run.posted().timeout, Some(Duration::from_millis(2500)));
     assert_eq!(
         run.pre_call(),
-        Some(&Json::Object(run.body())),
+        Some(Json::Object(run.body())),
         "pre_call receives the request body"
     );
     let arguments = run.pre_call_args().expect("pre_call records its arguments");

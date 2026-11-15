@@ -5,13 +5,14 @@ use std::time::{Duration, SystemTime};
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+    DebugSettings, GlobalFlags, LogRecord, LogSink, LoggerFn, PrePostEnv,
 };
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 
@@ -30,6 +31,9 @@ pub(super) fn now() -> SystemTime {
 }
 
 pub(super) type Seen = Arc<Mutex<Vec<(RerankHttpRequest, bool)>>>;
+
+// post_call overwrites the pre_call fields in the logging state, as LiteLLM's does, so the fixture keeps the callback snapshot
+pub(super) type Captured = Arc<Mutex<Option<Json>>>;
 
 #[derive(Clone, Debug)]
 pub(super) enum Reply {
@@ -221,6 +225,7 @@ pub(super) fn prepost_env<'env>(
     state: &LoggingState,
     redactor: &'env Redactor,
     sink: &'env DiscardingSink,
+    logger_fn: Option<LoggerFn<'env>>,
 ) -> PrePostEnv<'env> {
     PrePostEnv {
         debug: DebugSettings::default(),
@@ -233,7 +238,7 @@ pub(super) fn prepost_env<'env>(
         log: sink,
         input_callbacks: &[],
         sentry: None,
-        logger_fn: None,
+        logger_fn,
         now: state.start_time,
     }
 }
