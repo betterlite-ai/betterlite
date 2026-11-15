@@ -1,6 +1,6 @@
 task: B3271
 deviations:
-  - what: A search tool whose JSON nests deeper than 64 levels or exceeds 1 MiB is refused with an error that names the field, where safe_dumps writes the text "MaxDepthExceeded" for anything below depth 100.
+  - what: A search tool whose JSON nests deeper than 64 levels or exceeds 1 MiB is refused with an error that names the field, where safe_dumps writes the text "MaxDepthExceeded" in place of anything deeper than 100 levels.
     why: Stored JSON decodes through the bounded stored-contract decoder, so a document the decoder refuses never reaches the table.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L39-L40
   - what: A litellm_params key outside the five that SearchToolLiteLLMParams declares is refused with an error that names the field, where LiteLLM stores it unchanged.
