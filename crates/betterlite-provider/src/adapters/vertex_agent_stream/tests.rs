@@ -819,12 +819,11 @@ async fn timed_out_request() -> HttpError {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
-    let client = ProxiedClient::build(
-        base_builder().timeout(Duration::from_millis(50)),
-        &policy,
-        TransportLimits::DEFAULT,
-    )
-    .unwrap();
+    let limits = TransportLimits {
+        read_timeout: Duration::from_millis(50),
+        ..TransportLimits::DEFAULT
+    };
+    let client = ProxiedClient::build(base_builder(), &policy, limits).unwrap();
     let source = client
         .client
         .get(format!("http://{address}/"))
