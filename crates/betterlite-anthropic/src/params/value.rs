@@ -58,15 +58,6 @@ where
     serde_json::from_value(encoded).map_err(ParamsError::Decode)
 }
 
-// Writes a wire map a base helper changed back into the caller's ordered parameters
-pub(crate) fn from_wire<T>(wire: T) -> Result<IndexMap<String, Json>, ParamsError>
-where
-    T: serde::Serialize,
-{
-    let encoded = serde_json::to_value(wire).map_err(ParamsError::Encode)?;
-    serde_json::from_value(encoded).map_err(ParamsError::Decode)
-}
-
 // A mapped record as the Json tree the parameter maps carry
 pub(crate) fn encode<T>(record: &T) -> Result<Json, ParamsError>
 where

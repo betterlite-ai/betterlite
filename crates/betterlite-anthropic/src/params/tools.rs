@@ -34,16 +34,9 @@ where
         .collect::<Result<Vec<_>, _>>()
         .map_err(ParamsError::Encode)?;
     append_tools(&mut base, encoded)?;
-    *optional_params = value::from_wire(base)?;
+    let rewritten = serde_json::to_value(base).map_err(ParamsError::Encode)?;
+    *optional_params = serde_json::from_value(rewritten).map_err(ParamsError::Decode)?;
     Ok(())
-}
-
-// A single mapped tool goes through the same append as a whole request's tools
-fn append_tool<T>(optional_params: &mut IndexMap<String, Json>, tool: &T) -> Result<(), ParamsError>
-where
-    T: serde::Serialize,
-{
-    append_params(optional_params, vec![tool])
 }
 
 pub fn apply_tools(
@@ -143,7 +136,7 @@ where
         choice.insert("type".to_owned(), Json::Text("tool".to_owned()));
         optional_params.insert("tool_choice".to_owned(), Json::Object(choice));
     }
-    append_tool(optional_params, &tool)?;
+    append_params(optional_params, vec![tool])?;
     optional_params.insert("json_mode".to_owned(), Json::Bool(true));
     Ok(())
 }
@@ -158,5 +151,5 @@ pub fn apply_web_search(
     let options: WebSearchOptions =
         serde_json::from_value(serde_json::to_value(value).map_err(ParamsError::Encode)?)
             .map_err(ParamsError::Decode)?;
-    append_tool(optional_params, &map_web_search_tool(&options)?)
+    append_params(optional_params, vec![map_web_search_tool(&options)?])
 }

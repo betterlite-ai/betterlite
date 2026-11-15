@@ -238,6 +238,7 @@ pub fn update_max_tokens(
     let requested = value::to_wire(non_default_params)?;
     let mut options = value::to_wire(optional_params)?;
     add_thinking_max_tokens(&requested, &mut options, request.default_max_tokens)?;
-    *optional_params = value::from_wire(options)?;
+    let rewritten = serde_json::to_value(options).map_err(ParamsError::Encode)?;
+    *optional_params = serde_json::from_value(rewritten).map_err(ParamsError::Decode)?;
     Ok(())
 }
