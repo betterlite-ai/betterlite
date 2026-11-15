@@ -209,13 +209,10 @@ fn quoted_end(bytes: &[u8]) -> Option<NonZeroUsize> {
 
 // A broken bare token ends where the next value can start; one with no boundary runs to the end.
 fn bare_end(trimmed: &str) -> Option<NonZeroUsize> {
-    trimmed
-        .char_indices()
-        .skip(1)
-        .find(|&(_, character)| {
-            matches!(character, '{' | '[' | '"') || character.is_ascii_whitespace()
-        })
-        .and_then(|(index, _)| NonZeroUsize::new(index))
+    let (index, _) = trimmed.char_indices().skip(1).find(|&(_, character)| {
+        matches!(character, '{' | '[' | '"') || character.is_ascii_whitespace()
+    })?;
+    NonZeroUsize::new(index)
 }
 
 type ChunkItem<SourceFailure> = Result<TransportChunk, ReceiveError<SourceFailure>>;
