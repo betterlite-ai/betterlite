@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-table-access-find-conflict-alias-first
+call:
+  b4711:
+    function: find_conflict
+    server_name: "live"
+    alias: "same"
+    exclude_server_id: null
+    rows:
+      - {server_id: srv-live, server_name: live, transport: sse, approval_status: active}
+      - {server_id: srv-same, server_name: other, transport: sse, alias: Same, approval_status: pending_review}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

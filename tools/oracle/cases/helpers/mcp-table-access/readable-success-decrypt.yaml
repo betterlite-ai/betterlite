@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-table-access-readable-success-decrypt
+call:
+  b4711:
+    function: get_all
+    salt_key: b4711-salt
+    approval_status: null
+    server_ids: null
+    rows:
+      - {server_id: srv-good, server_name: good, transport: sse, approval_status: active, env: 'cmI1ExsFEux-SoG1p_OyXZI7KwxtAAxGlSuXTDgW4egNppMir7m-LoE5nSxIPjaBR_25y3yE4s2fHA=='}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

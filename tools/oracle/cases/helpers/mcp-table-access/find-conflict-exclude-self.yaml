@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-table-access-find-conflict-exclude-self
+call:
+  b4711:
+    function: find_conflict
+    server_name: one
+    alias: null
+    exclude_server_id: srv-1
+    rows:
+      - {server_id: srv-1, server_name: one, transport: sse, approval_status: active}
+      - {server_id: srv-7, server_name: one, transport: sse, approval_status: active}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

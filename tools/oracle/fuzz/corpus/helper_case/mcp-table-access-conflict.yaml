@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-table-access-conflict-seed
+call: {b4711: {function: find_conflict, server_name: seed, alias: null, exclude_server_id: null, rows: [{server_id: srv-1, server_name: SEED, transport: sse, approval_status: active}]}}
+env: {}
+compare: {ignore: []}

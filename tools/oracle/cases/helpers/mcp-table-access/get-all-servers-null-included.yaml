@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-table-access-get-all-servers-null-included
+call:
+  b4711:
+    function: get_all
+    salt_key: b4711-salt
+    approval_status: null
+    server_ids: null
+    rows:
+      - {server_id: srv-null, server_name: legacy, transport: sse, approval_status: null}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

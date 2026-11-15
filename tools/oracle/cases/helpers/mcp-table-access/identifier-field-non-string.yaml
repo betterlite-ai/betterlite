@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-table-access-identifier-field-non-string
+call:
+  b4711:
+    function: create_if_free
+    server_name: 7
+    alias: null
+    rows: []
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

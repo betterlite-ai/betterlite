@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-table-access-conflict-where-draft-excluded
+call:
+  b4711:
+    function: find_conflict
+    server_name: ghost
+    alias: null
+    exclude_server_id: null
+    rows:
+      - {server_id: srv-draft, server_name: ghost, transport: sse, approval_status: draft}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

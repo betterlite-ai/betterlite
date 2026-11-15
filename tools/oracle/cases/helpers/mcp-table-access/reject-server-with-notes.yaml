@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-table-access-reject-server-with-notes
+call:
+  b4711:
+    function: review
+    salt_key: b4711-salt
+    action: reject
+    server_id: srv-4
+    touched_by: admin
+    review_notes: not allowed
+    rows:
+      - {server_id: srv-4, server_name: four, transport: sse, approval_status: pending_review, review_notes: earlier note, submitted_by: user-1, submitted_at: "2026-01-01T00:00:00Z"}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

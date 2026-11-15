@@ -1,0 +1,27 @@
+kind: helper
+name: mcp-table-access-get-all-servers-filter
+call:
+  b4711:
+    function: get_all
+    salt_key: b4711-salt
+    approval_status: active
+    server_ids: null
+    rows:
+      - {server_id: srv-a, server_name: a, transport: sse, approval_status: pending_review}
+      - {server_id: srv-b, server_name: b, transport: sse, approval_status: active}
+      - {server_id: srv-c, server_name: c, transport: sse, approval_status: null}
+      - {server_id: srv-d, server_name: d, transport: sse, approval_status: draft}
+calls:
+  - b4711:
+      function: get_all
+      salt_key: b4711-salt
+      approval_status: null
+      server_ids: [srv-d, srv-b]
+      rows:
+        - {server_id: srv-a, server_name: a, transport: sse, approval_status: pending_review}
+        - {server_id: srv-b, server_name: b, transport: sse, approval_status: active}
+        - {server_id: srv-c, server_name: c, transport: sse, approval_status: null}
+        - {server_id: srv-d, server_name: d, transport: sse, approval_status: draft}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}
