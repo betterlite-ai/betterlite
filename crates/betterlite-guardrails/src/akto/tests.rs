@@ -199,11 +199,11 @@ fn akto_guardrail_payload_uses_the_route_metadata(
 }
 
 #[rstest]
-#[case::forwarded_for_list("203.0.113.7, 10.0.0.1", None, "203.0.113.7")]
-#[case::forwarded_for_spaces("203.0.113.7 , 10.0.0.1", None, "203.0.113.7")]
-#[case::real_ip_fallback("", Some("198.51.100.9"), "198.51.100.9")]
+#[case::forwarded_for_list(Some("203.0.113.7, 10.0.0.1"), None, "203.0.113.7")]
+#[case::forwarded_for_spaces(Some("203.0.113.7 , 10.0.0.1"), None, "203.0.113.7")]
+#[case::real_ip_fallback(Some(""), Some("198.51.100.9"), "198.51.100.9")]
 #[case::no_forwarded_for(None, Some("198.51.100.9"), "198.51.100.9")]
-#[case::no_comma_is_not_trimmed(" 203.0.113.7 ", None, " 203.0.113.7 ")]
+#[case::no_comma_is_not_trimmed(Some(" 203.0.113.7 "), None, " 203.0.113.7 ")]
 #[case::no_headers(None, None, "")]
 fn akto_guardrail_payload_extracts_the_client_ip(
     #[case] forwarded_for: Option<&str>,
@@ -694,7 +694,9 @@ fn akto_guardrail_unreachable_fails_closed_with_503() {
 fn akto_guardrail_requires_a_base_url() {
     let mut settings = configured();
     settings.api_base = String::new();
-    let error = AktoMirroring::new(settings, reqwest::Client::default()).expect_err("base url");
+    let error = AktoMirroring::new(settings, reqwest::Client::default())
+        .err()
+        .expect("base url");
     assert!(matches!(error, AktoError::MissingBaseUrl));
 }
 
@@ -702,7 +704,9 @@ fn akto_guardrail_requires_a_base_url() {
 fn akto_guardrail_requires_an_api_key() {
     let mut settings = configured();
     settings.api_key = SecretString::from("");
-    let error = AktoMirroring::new(settings, reqwest::Client::default()).expect_err("api key");
+    let error = AktoMirroring::new(settings, reqwest::Client::default())
+        .err()
+        .expect("api key");
     assert!(matches!(error, AktoError::MissingApiKey));
 }
 
