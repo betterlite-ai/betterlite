@@ -1,0 +1,10 @@
+kind: helper
+name: voyage-media-rank-seed
+call:
+  voyage_media_rank:
+    multimodal:
+      - {model: voyage-multimodal-3, input: [hello, {content: []}], options: {}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{}'}}
+    rerank:
+      - {model: voyage-rerank-2, query: q, documents: [a], top_n: null, return_documents: null, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: null, api_key: null, env: {}, headers: {}, reply: {status: 200, body: '{"data":[]}'}, uuid: "00000000-0000-4000-8000-000000000002"}
+env: {}
+compare: {ignore: []}
