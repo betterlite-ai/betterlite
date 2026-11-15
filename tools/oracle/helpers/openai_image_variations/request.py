@@ -246,7 +246,7 @@ def request_value(probe: Probe) -> Json:
     previous_session = litellm.client_session
     if supplied is None:
         litellm.client_session = httpx.Client(transport=transport)
-    # the handler reads its module's globals on every call; mypy forbids assigning an imported class by name
+    # the handler reads its module globals on every call; mypy rejects the typed assignment
     if probe.missing_config:
         setattr(  # ast-grep-ignore: no-reflection
             variation_handler, CONFIG_MANAGER, AbsentProviderConfigManager
