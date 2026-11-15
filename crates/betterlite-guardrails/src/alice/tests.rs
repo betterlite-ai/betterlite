@@ -76,7 +76,7 @@ async fn serve(answer: Answer) -> Harness {
     let recorded: Recorder = Arc::new(Mutex::new(Vec::new()));
     let handler_recorder = Arc::clone(&recorded);
     let handler = move |uri: Uri, headers: AxumHeaderMap, bytes: Bytes| {
-        let recorder = Arc::clone(&handler_recorder);
+        let shared = Arc::clone(&handler_recorder);
         let scripted = answer.clone();
         async move {
             let entry = Recorded {
@@ -85,7 +85,7 @@ async fn serve(answer: Answer) -> Harness {
                 content_type: header_text(&headers, "content-type"),
                 body: bytes.to_vec(),
             };
-            recorder.lock().expect("the recorder").push(entry);
+            shared.lock().expect("the recorder").push(entry);
             scripted_response(scripted).await
         }
     };
@@ -207,7 +207,6 @@ fn raised(outcome: Outcome) -> (String, u16, bool) {
     match failure(outcome) {
         GuardrailFailure::GuardrailRaised {
             guardrail_name,
-            message,
             status_code,
             blocked_content,
             ..
@@ -829,7 +828,7 @@ async fn alice_guardrail_any_one_selectable_field_starts_the_call(
 
 #[test]
 fn alice_guardrail_response_cap_is_one_mebibyte() {
-    assert_eq!(MAX_RESPONSE_BYTES, 1_048_576);
+    assert_eq!(MAX_RESPONSE_BYTES, 1024 * 1024);
 }
 
 #[tokio::test]

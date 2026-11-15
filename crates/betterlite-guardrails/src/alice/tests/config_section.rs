@@ -24,14 +24,14 @@ fn alice_guardrail_config_model_deserializes_the_litellm_fields() {
         with_key
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("secret")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("secret".to_owned())
     );
 }
 
 #[test]
 fn alice_guardrail_config_section_loads_values_and_environment() {
-    let yaml = r"
+    let yaml = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
@@ -56,8 +56,8 @@ guardrails:
         configured
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("env-key")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("env-key".to_owned())
     );
     assert_eq!(configured.api_base.as_deref(), Some("https://env.example"));
     assert_eq!(configured.unreachable_fallback, ConfigFallback::FailClosed);
@@ -65,7 +65,7 @@ guardrails:
 
 #[test]
 fn alice_guardrail_config_section_prefers_config_and_defaults_are_litellm_s() {
-    let yaml = r"
+    let yaml = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
@@ -80,8 +80,8 @@ guardrails:
         configured
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("config-key")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("config-key".to_owned())
     );
     assert_eq!(configured.api_base, None);
     assert_eq!(configured.unreachable_fallback, ConfigFallback::FailOpen);
@@ -90,7 +90,7 @@ guardrails:
 
 #[test]
 fn alice_guardrail_config_section_lowercases_the_fallback_value() {
-    let yaml = r"
+    let yaml = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
@@ -108,7 +108,7 @@ guardrails:
 
 #[test]
 fn alice_guardrail_config_section_rejects_an_unknown_fallback_value() {
-    let yaml = r"
+    let yaml = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
