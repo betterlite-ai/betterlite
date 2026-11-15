@@ -176,8 +176,8 @@ macro_rules! record {
     };
 }
 
-fn recorded(call: &BatchProviderReadCall) -> Recorded {
-    match call {
+fn recorded(read: &BatchProviderReadCall) -> Recorded {
+    match read {
         BatchProviderReadCall::ProviderConfig(call) => record!(
             ProviderConfig, call;
             provider, model, batch_id, headers, api_base, timeout, is_async;

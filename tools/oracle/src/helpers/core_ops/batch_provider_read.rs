@@ -62,13 +62,8 @@ impl BatchReadDispatch for Scripted {
         _call: &BatchProviderReadCall,
     ) -> impl Future<Output = Result<BatchObject, ScriptedStatus>> + Send {
         let batch = self.batch.clone();
-        let status = self.script.status;
-        async move {
-            match status {
-                None => Ok(batch),
-                Some(status) => Err(ScriptedStatus { status }),
-            }
-        }
+        let scripted = self.script.status;
+        async move { scripted.map_or_else(|| Ok(batch), |status| Err(ScriptedStatus { status })) }
     }
 }
 
@@ -86,10 +81,7 @@ fn timeout_value(timeout: &Timeout) -> Value {
 }
 
 fn raw_timeout_value(value: Option<&BatchReadTimeoutValue>) -> Value {
-    match value {
-        None => Value::Null,
-        Some(raw) => json!(raw),
-    }
+    value.map_or(Value::Null, |raw| json!(raw))
 }
 
 fn request_value(request: &RetrieveBatchRequest) -> Value {

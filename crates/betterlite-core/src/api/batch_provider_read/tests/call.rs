@@ -114,29 +114,29 @@ async fn azure_ad_token_setting_does_not_become_the_api_key() {
 }
 
 #[rstest]
-#[case::defaults(BatchReadOptionalParams::default(), Timeout::Seconds(600.0))]
-#[case::request_timeout(params_with_request_timeout(5.0), Timeout::Seconds(5.0))]
+#[case::defaults(BatchReadOptionalParams::default(), Timeout::Seconds(600.0_f64))]
+#[case::request_timeout(params_with_request_timeout(5.0_f64), Timeout::Seconds(5.0_f64))]
 #[case::optional_timeout_wins(
     BatchReadOptionalParams {
-        request_timeout: Some(5.0),
-        timeout: Some(BatchReadTimeoutValue::Seconds(7.0)),
+        request_timeout: Some(5.0_f64),
+        timeout: Some(BatchReadTimeoutValue::Seconds(7.0_f64)),
         ..bare_params()
     },
-    Timeout::Seconds(7.0)
+    Timeout::Seconds(7.0_f64)
 )]
 #[case::zero_is_used_as_given(
-    params_with_timeout(BatchReadTimeoutValue::Seconds(0.0)),
-    Timeout::Seconds(0.0)
+    params_with_timeout(BatchReadTimeoutValue::Seconds(0.0_f64)),
+    Timeout::Seconds(0.0_f64)
 )]
-#[case::text_number(params_with_timeout(BatchReadTimeoutValue::Text("8.5".to_owned())), Timeout::Seconds(8.5))]
-#[case::text_is_trimmed(params_with_timeout(BatchReadTimeoutValue::Text(" 9 ".to_owned())), Timeout::Seconds(9.0))]
+#[case::text_number(params_with_timeout(BatchReadTimeoutValue::Text("8.5".to_owned())), Timeout::Seconds(8.5_f64))]
+#[case::text_is_trimmed(params_with_timeout(BatchReadTimeoutValue::Text(" 9 ".to_owned())), Timeout::Seconds(9.0_f64))]
 #[case::phases_kept(
-    params_with_timeout(BatchReadTimeoutValue::Phases(phases(Some(1.0), Some(2.0)))),
-    Timeout::Phases(phases(Some(1.0), Some(2.0)))
+    params_with_timeout(BatchReadTimeoutValue::Phases(phases(Some(1.0_f64), Some(2.0_f64)))),
+    Timeout::Phases(phases(Some(1.0_f64), Some(2.0_f64)))
 )]
 #[case::phases_without_read_kept(
-    params_with_timeout(BatchReadTimeoutValue::Phases(phases(Some(1.0), None))),
-    Timeout::Phases(phases(Some(1.0), None))
+    params_with_timeout(BatchReadTimeoutValue::Phases(phases(Some(1.0_f64), None))),
+    Timeout::Phases(phases(Some(1.0_f64), None))
 )]
 #[tokio::test]
 async fn openai_timeout(#[case] params: BatchReadOptionalParams, #[case] expected: Timeout) {
@@ -146,12 +146,12 @@ async fn openai_timeout(#[case] params: BatchReadOptionalParams, #[case] expecte
 // a provider that collapses the pieces reads only read, then the 600 second default
 #[rstest]
 #[case::read_phase(
-    params_with_timeout(BatchReadTimeoutValue::Phases(phases(Some(1.0), Some(4.0)))),
-    Timeout::Seconds(4.0)
+    params_with_timeout(BatchReadTimeoutValue::Phases(phases(Some(1.0_f64), Some(4.0_f64)))),
+    Timeout::Seconds(4.0_f64)
 )]
 #[case::missing_read(
-    params_with_timeout(BatchReadTimeoutValue::Phases(phases(Some(1.0), None))),
-    Timeout::Seconds(600.0)
+    params_with_timeout(BatchReadTimeoutValue::Phases(phases(Some(1.0_f64), None))),
+    Timeout::Seconds(600.0_f64)
 )]
 #[tokio::test]
 async fn collapsed_timeout(#[case] params: BatchReadOptionalParams, #[case] expected: Timeout) {
@@ -160,12 +160,12 @@ async fn collapsed_timeout(#[case] params: BatchReadOptionalParams, #[case] expe
 
 // only openai, azure and bedrock keep the httpx.Timeout pieces
 #[rstest]
-#[case::azure("azure", false, Timeout::Phases(phases(Some(1.0), Some(2.0))))]
-#[case::bedrock("bedrock", true, Timeout::Phases(phases(Some(1.0), Some(2.0))))]
-#[case::mistral("mistral", true, Timeout::Seconds(2.0))]
-#[case::xai("xai", false, Timeout::Seconds(2.0))]
-#[case::vertex_ai("vertex_ai", false, Timeout::Seconds(2.0))]
-#[case::anthropic("anthropic", false, Timeout::Seconds(2.0))]
+#[case::azure("azure", false, Timeout::Phases(phases(Some(1.0_f64), Some(2.0_f64))))]
+#[case::bedrock("bedrock", true, Timeout::Phases(phases(Some(1.0_f64), Some(2.0_f64))))]
+#[case::mistral("mistral", true, Timeout::Seconds(2.0_f64))]
+#[case::xai("xai", false, Timeout::Seconds(2.0_f64))]
+#[case::vertex_ai("vertex_ai", false, Timeout::Seconds(2.0_f64))]
+#[case::anthropic("anthropic", false, Timeout::Seconds(2.0_f64))]
 #[tokio::test]
 async fn structured_timeout_per_provider(
     #[case] provider: &str,
@@ -176,7 +176,10 @@ async fn structured_timeout_per_provider(
     if configured_provider {
         call.model = Some("provider/model".to_owned());
     }
-    let params = params_with_timeout(BatchReadTimeoutValue::Phases(phases(Some(1.0), Some(2.0))));
+    let params = params_with_timeout(BatchReadTimeoutValue::Phases(phases(
+        Some(1.0_f64),
+        Some(2.0_f64),
+    )));
     let (_, calls) = answered(base_settings(), &with_params(call, params)).await;
     assert_eq!(timeout_of(&calls[0]), expected);
 }
@@ -186,7 +189,7 @@ async fn structured_timeout_per_provider(
 #[case::non_finite_seconds(params_with_timeout(BatchReadTimeoutValue::Seconds(f64::INFINITY)))]
 #[case::non_finite_phase(params_with_timeout(BatchReadTimeoutValue::Phases(phases(
     Some(f64::INFINITY),
-    Some(1.0)
+    Some(1.0_f64)
 ))))]
 #[tokio::test]
 async fn invalid_timeout_is_rejected(#[case] params: BatchReadOptionalParams) {
@@ -200,9 +203,12 @@ async fn invalid_timeout_is_rejected(#[case] params: BatchReadOptionalParams) {
 async fn dropped_phase_is_not_validated() {
     let params = params_with_timeout(BatchReadTimeoutValue::Phases(phases(
         Some(f64::INFINITY),
-        Some(3.0),
+        Some(3.0_f64),
     )));
-    assert_eq!(selected_timeout("xai", params).await, Timeout::Seconds(3.0));
+    assert_eq!(
+        selected_timeout("xai", params).await,
+        Timeout::Seconds(3.0_f64)
+    );
 }
 
 #[rstest]
@@ -239,7 +245,7 @@ async fn configured_provider_retrieve(#[case] provider: &str) {
                 session_token: Some("token".to_owned()),
                 ..bare_aws()
             },
-            timeout: Timeout::Seconds(600.0),
+            timeout: Timeout::Seconds(600.0_f64),
             is_async: true,
         }]
     );
@@ -260,7 +266,7 @@ async fn provider_config_without_extras() {
             api_base: None,
             api_key: None,
             aws: bare_aws(),
-            timeout: Timeout::Seconds(600.0),
+            timeout: Timeout::Seconds(600.0_f64),
             is_async: false,
         }]
     );
@@ -268,10 +274,16 @@ async fn provider_config_without_extras() {
 
 // every AWS credential kwarg reaches both the provider config and the ARN handlers
 #[rstest]
-#[case::provider_config("batch_1")]
-#[case::async_invoke("arn:aws:bedrock:us-east-1:111122223333:async-invoke/abc")]
+#[case::provider_config("batch_1", None)]
+#[case::async_invoke(
+    "arn:aws:bedrock:us-east-1:111122223333:async-invoke/abc",
+    Some("us-east-1")
+)]
 #[tokio::test]
-async fn aws_credentials_reach_every_bedrock_call(#[case] batch_id: &str) {
+async fn aws_credentials_reach_every_bedrock_call(
+    #[case] batch_id: &str,
+    #[case] region: Option<&str>,
+) {
     let mut call = input("bedrock");
     call.model = Some("anthropic.claude".to_owned());
     call.batch_id = batch_id.to_owned();
@@ -288,6 +300,7 @@ async fn aws_credentials_reach_every_bedrock_call(#[case] batch_id: &str) {
     call.optional_params.aws_bedrock_runtime_endpoint = Some("https://runtime.example".to_owned());
     call.optional_params.aws_bedrock_project_id = Some("project".to_owned());
     let expected = RecordedAws {
+        region_name: region.map(str::to_owned),
         session_name: Some("session".to_owned()),
         profile_name: Some("profile".to_owned()),
         role_name: Some("role".to_owned()),
@@ -439,7 +452,7 @@ async fn non_routed_arns_reach_the_provider(#[case] batch_id: &str) {
             api_base: "https://api.openai.com/v1".to_owned(),
             api_key: None,
             organization: None,
-            timeout: Timeout::Seconds(600.0),
+            timeout: Timeout::Seconds(600.0_f64),
             max_retries: None,
             is_async: false,
         }]
@@ -569,7 +582,7 @@ fn raw_azure_params() -> BatchReadOptionalParams {
         api_base: Some("https://raw.example".to_owned()),
         api_version: Some("raw-version".to_owned()),
         max_retries: Some(2),
-        timeout: Some(BatchReadTimeoutValue::Seconds(3.0)),
+        timeout: Some(BatchReadTimeoutValue::Seconds(3.0_f64)),
         azure_ad_token: Some(SecretString::from("ad-token".to_owned())),
         tenant_id: Some("tenant".to_owned()),
         client_id: Some("client".to_owned()),
@@ -602,7 +615,7 @@ async fn azure_forwards_the_raw_kwargs() {
     assert_eq!(api_base.as_deref(), Some("https://raw.example"));
     assert_eq!(api_key.as_deref(), Some("sk-raw"));
     assert_eq!(*max_retries, Some(2));
-    assert_eq!(timeout, &Timeout::Seconds(3.0));
+    assert_eq!(timeout, &Timeout::Seconds(3.0_f64));
     assert_eq!(
         litellm_params,
         &RecordedParams {
@@ -610,7 +623,7 @@ async fn azure_forwards_the_raw_kwargs() {
             api_base: Some("https://raw.example".to_owned()),
             api_version: Some("raw-version".to_owned()),
             max_retries: Some(2),
-            timeout: Some(BatchReadTimeoutValue::Seconds(3.0)),
+            timeout: Some(BatchReadTimeoutValue::Seconds(3.0_f64)),
             azure_ad_token: Some("ad-token".to_owned()),
             tenant_id: Some("tenant".to_owned()),
             client_id: Some("client".to_owned()),
