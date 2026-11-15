@@ -1,0 +1,30 @@
+kind: probe
+name: tool-pairs-kept
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      compaction_history:
+        function: history
+        model: parent-model
+        surface: chat
+        messages:
+          - {role: system, content: You are terse.}
+          - {role: user, content: first question}
+          - role: assistant
+            content: null
+            tool_calls:
+              - id: call_1
+                type: function
+                function: {name: lookup, arguments: "{}"}
+          - {role: tool, tool_call_id: call_1, content: "42"}
+          - {role: user, content: latest question}
+        items: []
+        tools: []
+        text: null
+        config_model: null
+        max_tokens: null
+        count: null
+        groups: []
+compare:
+  ignore: []
