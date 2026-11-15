@@ -15,13 +15,13 @@ const OWN_MARKER: &str = "$OWN";
 
 // What the proxy puts into the request data once it has authenticated the virtual key
 fn carried_kwargs(kwargs: &JsonMap, scope: &str) -> Result<JsonMap, Box<HelperError>> {
-    let mut carried = kwargs.clone();
-    let carrier = json!({"metadata": {"user_api_key_auth": {"api_key": scope}}});
-    carried.insert(
+    let mut forwarded = kwargs.clone();
+    let auth = json!({"metadata": {"user_api_key_auth": {"api_key": scope}}});
+    forwarded.insert(
         "litellm_params".to_owned(),
-        to_raw_value(&carrier).or_config_error()?,
+        to_raw_value(&auth).or_config_error()?,
     );
-    Ok(carried)
+    Ok(forwarded)
 }
 
 #[derive(Deserialize)]
@@ -34,7 +34,7 @@ pub(crate) struct Seed {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Call {
+pub(crate) struct Turn {
     scope: String,
     call_id: String,
     model: String,
@@ -51,7 +51,7 @@ pub(crate) struct Call {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     seed: Seed,
-    call: Call,
+    call: Turn,
 }
 
 pub(crate) struct Op;
