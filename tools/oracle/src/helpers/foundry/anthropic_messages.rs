@@ -114,9 +114,9 @@ fn environment(calls: &[EnvironmentStep]) -> HelperResult {
 
 fn key_shape<'data>(
     litellm_params: &'data BTreeMap<String, Option<String>>,
-    secret: &'data Option<SecretString>,
+    secret: Option<&'data SecretString>,
 ) -> ParamsKey<'data> {
-    match (litellm_params.get("api_key"), secret.as_ref()) {
+    match (litellm_params.get("api_key"), secret) {
         (None, _) => ParamsKey::DictAbsent,
         (Some(_), None) => ParamsKey::DictNull,
         (Some(_), Some(value)) => ParamsKey::Dict(value),
@@ -129,7 +129,7 @@ fn environment_answer(step: &EnvironmentStep) -> Result<Value, Box<HelperError>>
         .get("api_key")
         .and_then(|entry| entry.as_deref())
         .map(SecretString::from);
-    let params_key = key_shape(&step.litellm_params, &params_secret);
+    let params_key = key_shape(&step.litellm_params, params_secret.as_ref());
     let configured = configured_key(&step.globals, &step.environment)?;
     let credentials = token_settings(&step.litellm_params, &step.environment)?;
     let argument = step.api_key.as_deref().map(SecretString::from);
