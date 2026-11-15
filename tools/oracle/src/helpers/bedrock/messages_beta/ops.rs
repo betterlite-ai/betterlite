@@ -64,7 +64,7 @@ fn beta_headers(model_cost: &ParamMap, calls: &[BetaHeadersCall]) -> HelperResul
     Ok(json!({ "calls": answers }))
 }
 
-fn context_filter(cases: &[ContextCase]) -> HelperResult {
+fn context_filter(cases: &[ContextCase]) -> serde_json::Value {
     let mut answers = Vec::with_capacity(cases.len());
     for case in cases {
         let mut request = case.request.clone();
@@ -75,7 +75,7 @@ fn context_filter(cases: &[ContextCase]) -> HelperResult {
             "betas": beta_set.into_iter().collect::<Vec<_>>(),
         }));
     }
-    Ok(json!({ "cases": answers }))
+    json!({ "cases": answers })
 }
 
 fn web_search(request: &Object, model: &str) -> HelperResult {
@@ -123,7 +123,7 @@ fn provider_identity(model_cost: &ParamMap, cases: &[IdentityCase]) -> HelperRes
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::BetaHeaders { model_cost, calls } => beta_headers(model_cost, calls),
-        Input::ContextFilter { cases } => context_filter(cases),
+        Input::ContextFilter { cases } => Ok(context_filter(cases)),
         Input::WebSearch { request, model } => web_search(request, model),
         Input::UnsupportedFields { cases } => unsupported_fields(cases),
         Input::ProviderIdentity { model_cost, cases } => provider_identity(model_cost, cases),
