@@ -1,0 +1,19 @@
+kind: helper
+name: shadow-unmapped-model-zero-cost
+call:
+  b4081:
+    operation: call_cost
+    response:
+      model: shadow-unmapped-model
+      usage:
+        prompt_tokens: 10
+        completion_tokens: 20
+        total_tokens: 30
+    metadata: {}
+    routed_model: ""
+    prices:
+      gpt-4o:
+        prompt: 2.5e-06
+        completion: 1e-05
+env: {}
+compare: {ignore: []}

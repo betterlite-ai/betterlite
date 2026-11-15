@@ -12,6 +12,7 @@ aws-smithy-runtime-api = "1.19.1"
 betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-redis = { path = "../betterlite-redis" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono.workspace = true
@@ -34,18 +35,22 @@ soft-canonicalize = "0.5.6"
 strum = { version = "0.28.0", features = ["derive"] }
 tempfile = "3.27.0"
 thiserror.workspace = true
+tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tracing.workspace = true
 unicode-general-category = "1.1.0"
 unicode_titlecase = "2.5.0"
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-vertex = { path = "../betterlite-vertex" }
+deadpool-postgres.workspace = true
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
