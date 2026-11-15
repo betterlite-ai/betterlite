@@ -197,18 +197,20 @@ fn size_outcomes(sizes: &[Json]) -> Value {
 }
 
 fn mapping_outcome(mapped: Result<ImageParams, FalImageError>) -> Value {
-    match mapped {
-        Ok(params) => json!({"params": params}),
-        Err(_) => json!({"error": {"status": null}}),
-    }
+    mapped.map_or_else(
+        |_| json!({"error": {"status": null}}),
+        |params| json!({"params": params}),
+    )
 }
 
 fn key_outcome(case: &KeyCase, settings: &FalImageSettings) -> Value {
     let explicit = case.api_key.as_deref().map(SecretString::from);
-    match settings.authorize(&case.headers, explicit.as_ref()) {
-        Ok(headers) => json!({"headers": headers}),
-        Err(_) => json!({"error": {"status": null}}),
-    }
+    settings
+        .authorize(&case.headers, explicit.as_ref())
+        .map_or_else(
+            |_| json!({"error": {"status": null}}),
+            |headers| json!({"headers": headers}),
+        )
 }
 
 fn reply_outcome(case: &ReplyCase) -> Value {
