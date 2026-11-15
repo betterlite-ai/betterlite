@@ -1,0 +1,21 @@
+kind: helper
+name: provider-create-error
+call:
+  batch_provider_create:
+    env: {}
+    module: {}
+    steps:
+      - completion_window: "24h"
+        endpoint: "/v1/chat/completions"
+        input_file_id: file-1
+        custom_llm_provider: bedrock
+      - completion_window: "24h"
+        endpoint: "/v1/chat/completions"
+        input_file_id: file-2
+        custom_llm_provider: mistral
+      - completion_window: "24h"
+        endpoint: "/v1/chat/completions"
+        input_file_id: file-3
+        custom_llm_provider: openai
+env: {}
+compare: {ignore: []}

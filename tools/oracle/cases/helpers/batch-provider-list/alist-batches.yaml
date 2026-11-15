@@ -1,0 +1,13 @@
+kind: helper
+name: alist-batches
+call:
+  batch_provider_list:
+    request:
+      provider: hosted_vllm
+      alist_batches: true
+      api_key: request-key
+    litellm_settings:
+      api_base: https://vllm.example/v1
+    environment: {}
+env: {}
+compare: {ignore: []}

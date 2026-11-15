@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-invoke-schema-seed
+call:
+  bedrock_invoke_schema:
+    model_cost:
+      plain-model: {litellm_provider: bedrock}
+    steps:
+      - function: apply_structured_output
+        model: plain-model
+        body:
+          messages: [{role: user, content: hi}]
+          output_config:
+            format: {type: json_schema, schema: {type: object}}
+env: {}
+compare: {ignore: []}
