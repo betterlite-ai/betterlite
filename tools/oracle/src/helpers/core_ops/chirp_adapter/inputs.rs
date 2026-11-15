@@ -19,17 +19,21 @@ pub(crate) enum Function {
         location: Option<String>,
         cases: Vec<UrlCase>,
     },
-    Responses {
-        project: String,
-        #[serde(default)]
-        location: Option<String>,
-        model: String,
-        session_id: String,
-        #[serde(default)]
-        configure: Option<String>,
-        state: RealtimeResponseTransformInput,
-        frames: Vec<FrameInput>,
-    },
+    Responses(ResponsesCall),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ResponsesCall {
+    pub(crate) project: String,
+    #[serde(default)]
+    pub(crate) location: Option<String>,
+    pub(crate) model: String,
+    pub(crate) session_id: String,
+    #[serde(default)]
+    pub(crate) configure: Option<String>,
+    pub(crate) state: RealtimeResponseTransformInput,
+    pub(crate) frames: Vec<FrameInput>,
 }
 
 #[derive(Deserialize)]

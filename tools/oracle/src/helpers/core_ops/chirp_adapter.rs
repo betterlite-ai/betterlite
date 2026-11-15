@@ -20,7 +20,7 @@ use betterlite_models::catalog::BundledCatalog;
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
-use inputs::{FrameInput, Function, UrlCase};
+use inputs::{FrameInput, Function, ResponsesCall, UrlCase};
 use outputs::{
     CommandOutput, CommandsOutput, ResponseErrorOutput, ResponseOutput, ResponsesOutput,
     StepOutput, UrlOutput, UrlsOutput,
@@ -57,24 +57,9 @@ impl Helper for Op {
                 let config = adapter(project, location.as_deref()).or_config_error()?;
                 urls(&config, cases)
             }
-            Function::Responses {
-                project,
-                location,
-                model,
-                session_id,
-                configure,
-                state,
-                frames,
-            } => {
-                let config = adapter(project, location.as_deref()).or_config_error()?;
-                responses(
-                    &config,
-                    model,
-                    session_id,
-                    configure.as_deref(),
-                    state,
-                    frames,
-                )
+            Function::Responses(call) => {
+                let config = adapter(&call.project, call.location.as_deref()).or_config_error()?;
+                responses(&config, call)
             }
         }
     }
@@ -119,15 +104,10 @@ fn commands(
 }
 
 fn step_output(config: &ChirpConfig, model: &str, step: &str) -> StepOutput {
-    match config.transform_realtime_request(step, model, None) {
-        Ok(commands) => StepOutput {
-            commands: commands.iter().map(command_output).collect(),
-            error: false,
-        },
-        Err(_) => StepOutput {
-            commands: Vec::new(),
-            error: true,
-        },
+    let commands = config.transform_realtime_request(step, model, None);
+    StepOutput {
+        error: commands.is_err(),
+        commands: commands.iter().flatten().map(command_output).collect(),
     }
 }
 
@@ -145,39 +125,31 @@ fn command_output(command: &RealtimeMessage) -> CommandOutput {
 fn urls(config: &ChirpConfig, cases: &[UrlCase]) -> HelperResult {
     let urls: Vec<UrlOutput> = cases
         .iter()
-        .map(
-            |case| match config.complete_url(case.api_base.as_deref(), &case.model) {
-                Ok(url) => UrlOutput {
-                    url: Some(url),
-                    error: false,
-                },
-                Err(_) => UrlOutput {
-                    url: None,
-                    error: true,
-                },
-            },
-        )
+        .map(|case| {
+            let url = config
+                .complete_url(case.api_base.as_deref(), &case.model)
+                .ok();
+            UrlOutput {
+                error: url.is_none(),
+                url,
+            }
+        })
         .collect();
     serde_json::to_value(&UrlsOutput { urls }).or_value_error()
 }
 
-fn responses(
-    config: &ChirpConfig,
-    model: &str,
-    session_id: &str,
-    configure: Option<&str>,
-    state: &RealtimeResponseTransformInput,
-    frames: &[FrameInput],
-) -> HelperResult {
-    let created = config.session_created_event(model, session_id, None);
-    if let Some(request) = configure {
+fn responses(config: &ChirpConfig, call: &ResponsesCall) -> HelperResult {
+    let model = call.model.as_str();
+    let created = config.session_created_event(model, &call.session_id, None);
+    if let Some(request) = call.configure.as_deref() {
         config
             .transform_realtime_request(request, model, None)
             .or_value_error()?;
     }
-    let responses = frames
+    let responses = call
+        .frames
         .iter()
-        .map(|frame| response_output(config, model, state, frame))
+        .map(|frame| response_output(config, model, &call.state, frame))
         .collect::<Result<Vec<_>, _>>()?;
     let usage = config.session_close_usage(model);
     let repeated_usage = config.session_close_usage(model);
