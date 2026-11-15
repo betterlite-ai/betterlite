@@ -355,6 +355,21 @@ fn transform_rerank_response_needs_an_integer_index() {
     assert!(matches!(text, FireworksRerankError::ResponseDecode { .. }));
 }
 
+#[test]
+fn transform_rerank_response_rejects_a_non_string_id_and_a_non_number_score() {
+    for payload in [
+        r#"{"id":5,"data":[{"index":0,"relevance_score":1}]}"#,
+        r#"{"data":[{"index":0,"relevance_score":"0.5"}]}"#,
+    ] {
+        let error = transform(200, payload).unwrap_err();
+        let FireworksRerankError::Fireworks(error) = error else {
+            panic!("expected a FireworksError for {payload}");
+        };
+        assert_eq!(error.status_code, 200);
+        assert!(error.message.starts_with("Failed to parse response"));
+    }
+}
+
 #[rstest]
 #[case::text_document(r#""text""#, Some("text"))]
 #[case::object_document(r#"{"text":"text"}"#, Some("text"))]
