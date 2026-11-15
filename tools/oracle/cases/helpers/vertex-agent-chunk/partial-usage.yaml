@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-agent-chunk-partial-usage
+call:
+  vertex_agent_chunk:
+    chunks:
+      - usage_metadata: {prompt_token_count: 7}
+      - usage_metadata: {}
+      - usage_metadata:
+          prompt_token_count: 1
+          candidates_token_count: 2
+          total_token_count: 3
+          traffic_type: ON_DEMAND
+          thoughts_token_count: 40
+      - content: {parts: [{text: x}]}
+        usage_metadata: {total_token_count: 9}
+      - usage_metadata: {prompt_token_count: 0}
+env: {}
+compare: {ignore: []}
