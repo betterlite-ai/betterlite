@@ -218,6 +218,6 @@ fn polling_headers(headers: &HeaderMap) -> HeaderMap {
 fn response_text(body: &[u8]) -> String {
     str::from_utf8(body).map_or_else(
         |_| format!("{} bytes that are not UTF-8", body.len()),
-        str::to_owned,
+        ToOwned::to_owned,
     )
 }

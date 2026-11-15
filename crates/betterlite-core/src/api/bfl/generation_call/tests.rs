@@ -206,6 +206,42 @@ async fn extra_headers_replace_the_validated_headers_and_the_polling_key() {
 }
 
 #[tokio::test]
+async fn an_extra_header_the_wire_cannot_carry_is_a_500_before_the_submission() {
+    let script = Script::ready();
+    let clock = StepClock::stepping(0);
+    let sleeper = Recorder::new(&clock);
+    let optional_params = IndexMap::new();
+    let call = generation_call(&optional_params, key());
+    let failures = [
+        (String::from("bad name"), String::from("value")),
+        (String::from("x-trace"), String::from("bad\nvalue")),
+    ];
+    for (name, value) in failures {
+        let extra = [(name, value)];
+        let mut broken = generation_call(&optional_params, key());
+        broken.extra_headers = Some(&extra);
+
+        let outcome = run(&script, &clock, &sleeper, &broken, Vec::new()).await;
+
+        let error = outcome
+            .result
+            .expect_err("a header the wire cannot carry fails");
+        assert!(matches!(
+            &error,
+            GenerationCallError::HeaderName { .. } | GenerationCallError::HeaderValue { .. }
+        ));
+        assert_eq!(error.status(), Some(500));
+    }
+    assert!(
+        script
+            .posts
+            .lock()
+            .expect("the posts lock is not poisoned")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn a_rejected_submission_is_a_500_and_stops_before_a_poll() {
     let script = Script::new(reply(400, r#"{"detail":"bad prompt"}"#), Vec::new());
     let clock = StepClock::stepping(0);

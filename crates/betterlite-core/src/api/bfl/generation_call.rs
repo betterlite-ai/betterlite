@@ -151,6 +151,6 @@ fn log_pre_call(
 fn header_text(value: &HeaderValue) -> String {
     str::from_utf8(value.as_bytes()).map_or_else(
         |_| format!("{} bytes that are not UTF-8", value.as_bytes().len()),
-        str::to_owned,
+        ToOwned::to_owned,
     )
 }

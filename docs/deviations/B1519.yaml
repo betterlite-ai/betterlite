@@ -1,0 +1,15 @@
+task: B1519
+deviations:
+  - what: An extra_headers entry whose name differs only in case from a validated header replaces that header, and polling sends the caller value; LiteLLM's header dict keeps both entries, httpx writes both lines on the wire, and polling still reads the validated lowercase x-key.
+    why: Header names are case-insensitive on the wire, so a duplicated x-key is a broken credential that no working setup can rely on; betterlite canonicalizes the overlay to one header.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/handler.py#L135-L136
+  - what: A poll body that is not BFL JSON, and a failed polling GET, surface as typed errors with no status; LiteLLM lets the JSON and httpx exceptions escape the handler unwrapped.
+    why: betterlite names a failure in its module enum, and the task keeps these off the submission's 500 wrapper, so no BFL status is invented for them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/handler.py#L361-L372
+kept_bugs:
+  - what: A submission answered 4xx or 5xx becomes a BFL 500 "Request failed" error instead of keeping the provider status.
+    why: LiteLLM's HTTP client raises on the status and the handler's except catches every exception, so callers today see a 500 and a working setup cannot distinguish the provider status; the port keeps that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/handler.py#L168-L179
+  - what: A submission body carrying an errors key is rejected with the initial status even when the value is null or an empty list.
+    why: LiteLLM tests membership alone, and a provider that only adds the key on failure is what working setups talk to, so the presence check is copied unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/handler.py#L334-L339

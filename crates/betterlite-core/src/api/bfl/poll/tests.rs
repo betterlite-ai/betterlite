@@ -254,6 +254,31 @@ async fn the_initial_status_is_checked_before_the_body_is_parsed() {
     assert!(script.urls().is_empty());
 }
 
+#[tokio::test]
+async fn an_unparseable_submission_keeps_the_initial_status() {
+    let script = Script::once(200, PENDING);
+    let clock = clock(0);
+    let sleeper = Recorder {
+        clock: &clock,
+        slept: Mutex::default(),
+    };
+    let poller = BflPoller {
+        transport: &script,
+        clock: &clock,
+        sleeper: &sleeper,
+    };
+    let error = poller
+        .poll(&initial(201, "not json"), &HeaderMap::new())
+        .await
+        .expect_err("a body that is not a task fails");
+    assert!(matches!(
+        &error,
+        PollError::InitialDecode { status: 201, .. }
+    ));
+    assert_eq!(error.status(), Some(201));
+    assert!(script.urls().is_empty());
+}
+
 #[rstest]
 #[case(r#"{"errors":null,"polling_url":"https://gateway.bfl.ai/v1/get_result"}"#)]
 #[case(r#"{"errors":[],"polling_url":"https://gateway.bfl.ai/v1/get_result"}"#)]
