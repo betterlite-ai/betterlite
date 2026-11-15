@@ -1,0 +1,39 @@
+task: B3734
+deviations:
+  - what: The per-request Model Armor state lives in the request's own metadata bucket and is read and written through the request data on every hook call, never on the guardrail instance.
+    why: LiteLLM keeps the response and status per request for the same reason, since concurrent requests share one guardrail instance; betterlite passes the bucket through the call, so the state is not reachable from any other request at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L692-L695
+  - what: A hook pre-computes the status in the metadata bucket as "success" or "blocked" before it blocks or masks, and a blocked status stays sticky across the later scans of the same request.
+    why: LiteLLM writes the status before it raises, so a fail_on_error=false deployment still logs the verdict, and a later scan must not downgrade a blocked request to success.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L704-L710
+  - what: The guardrail name is added to applied_guardrails before any block decision, in the file scan, the text scan and the post-call hook.
+    why: A refused request still records which guardrails examined it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L712-L714
+  - what: A post-call response with no text content (a non-chat response or an empty message) skips the scan.
+    why: LiteLLM's content extractor returns an empty string for TTS and image responses, and no text guardrail work is left to do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L215-L219
+  - what: apply_guardrail raises the 400 block only when logging_only is not one of the configured event hooks.
+    why: The same guardrail instance serves blocking and audit-only deployments, so a flagged verdict must be logged without refusing the request in logging_only mode.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1283-L1290
+  - what: Masking replaces the scanned text only when Model Armor returned a non-empty sanitized text that differs from the text it scanned.
+    why: Model Armor returns the original text when it found nothing to sanitize, and writing it back is a no-op.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L725-L726
+  - what: The post-call standard logging entry carries guardrail_status "success" at the top level and puts the real outcome in guardrail_response.model_armor_status; apply_guardrail records success, guardrail_flagged or guardrail_failed_to_respond.
+    why: The post-call hook runs only on a successful model response, while apply_guardrail also runs for audit-only deployments and has to record a refusal and an API failure as themselves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L879-L886
+  - what: A stored "blocked" status is recorded as the GuardrailStatus value guardrail_intervened.
+    why: LiteLLM stores the string "blocked" in a field its GuardrailStatus type does not declare; betterlite's record type only accepts the declared values, and "success" would report a refusal as a pass.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L527-L528
+  - what: The post-call standard logging entry is the shared nine-key record, so end_time, duration and masked_entity_count are present as null; LiteLLM hands over a six-key dict without them.
+    why: The entry is built through B8994's append_guardrail_response, the seam every betterlite guardrail logs through, and the task asks for start_time, end_time and duration in this entry; LiteLLM only fills start_time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L879-L886
+  - what: A non-list applied_guardrails value is replaced by a one-name list after a warning, and a metadata bucket that is not a JSON object is replaced by a fresh bucket.
+    why: The bucket is shared request metadata another guardrail may have written; replacing the wrong-typed value keeps the scan running instead of failing the request on metadata betterlite never wrote, and the warning keeps the lost value visible in the log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599
+  - what: A logging-only scan that fails with a connection error records betterlite's typed transport error text, such as "the Model Armor request failed", as guardrail_response; LiteLLM records str(e) of the httpx exception.
+    why: The typed error names the failing stage, and the httpx exception text depends on internals the transport does not expose; both record a failed verdict and let the request continue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1259-L1269
+kept_bugs:
+  - what: A post-call-only deployment logs a second standard_logging_guardrail_information entry whose guardrail_response is an empty object, because _process_response reads a metadata key only the pre-call and moderation hooks write.
+    why: A working setup's log consumers see that entry on every post-call-only request, so betterlite keeps it rather than changing the log stream beyond this task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L520-L528
