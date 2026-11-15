@@ -29,10 +29,10 @@ fn crowdstrike_takes_the_defaults_of_an_empty_config() {
     assert_eq!(built.api_base, None);
     assert!(built.api_key.is_none());
     assert!(built.fail_on_error);
-    assert_eq!(built.streaming_buffer_until_moderated, None);
-    assert_eq!(built.streaming_buffer_release_on_scan, None);
-    assert_eq!(built.streaming_end_of_stream_only, None);
-    assert_eq!(built.streaming_sampling_rate, None);
+    assert_eq!(built.buffer_until_moderated, None);
+    assert_eq!(built.buffer_release_on_scan, None);
+    assert_eq!(built.end_of_stream_only, None);
+    assert_eq!(built.sampling_rate, None);
     assert_eq!(built.timeout, None);
     assert!(!built.default_on);
     assert_eq!(
@@ -84,13 +84,13 @@ fn crowdstrike_takes_each_streaming_flag_from_the_streaming_helper(
     let built = initialize_crowdstrike(&params(&extras), Some("crowdstrike-guard")).unwrap();
     assert_eq!(
         [
-            built.streaming_buffer_until_moderated,
-            built.streaming_buffer_release_on_scan,
-            built.streaming_end_of_stream_only,
+            built.buffer_until_moderated,
+            built.buffer_release_on_scan,
+            built.end_of_stream_only,
         ],
         expected.map(Some)
     );
-    assert_eq!(built.streaming_sampling_rate, Some(3));
+    assert_eq!(built.sampling_rate, Some(3));
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn crowdstrike_lets_the_optional_params_streaming_flag_win_over_the_top_level() 
         Some("crowdstrike-guard"),
     )
     .unwrap();
-    assert_eq!(built.streaming_buffer_until_moderated, Some(true));
+    assert_eq!(built.buffer_until_moderated, Some(true));
 }
 
 #[test]

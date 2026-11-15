@@ -202,6 +202,11 @@ fn grayswan_resolves_the_flagged_action_in_the_order_litellm_reads_it(
     false,
     5
 )]
+#[case::negative_rate_passes_through(
+    r#", "streaming_sampling_rate": -2"#,
+    false,
+    -2
+)]
 #[case::optional_values(
     r#", "optional_params": {"streaming_end_of_stream_only": true, "streaming_sampling_rate": 12}"#,
     true,
@@ -215,7 +220,7 @@ fn grayswan_resolves_the_flagged_action_in_the_order_litellm_reads_it(
 fn grayswan_applies_the_or_defaults_of_the_two_streaming_fields(
     #[case] extras: &str,
     #[case] end_of_stream_only: bool,
-    #[case] sampling_rate: u64,
+    #[case] sampling_rate: i64,
 ) {
     let built = initialize_grayswan(&params(extras), Some("gray-guard")).unwrap();
     assert_eq!(built.streaming_end_of_stream_only, end_of_stream_only);
@@ -230,8 +235,16 @@ fn grayswan_reads_the_timeout_from_guardrail_timeout_only() {
 
 #[test]
 fn grayswan_reads_categories_from_optional_params_only() {
-    let built =
-        initialize_grayswan(&params(r#", "optional_params": {}"#), Some("gray-guard")).unwrap();
+    let built = initialize_grayswan(
+        &params(
+            r#",
+            "categories": [{"category": "harmful_violence", "action": "BLOCK"}],
+            "optional_params": {}
+            "#,
+        ),
+        Some("gray-guard"),
+    )
+    .unwrap();
     assert_eq!(built.categories, None);
 }
 
@@ -244,10 +257,6 @@ fn grayswan_reads_categories_from_optional_params_only() {
 #[case::categories_list(r#", "optional_params": {"categories": ["a"]}"#, "categories")]
 #[case::category_value_number(r#", "optional_params": {"categories": {"a": 1}}"#, "categories")]
 #[case::rate_text(r#", "streaming_sampling_rate": "often""#, "streaming_sampling_rate")]
-#[case::rate_negative(
-    r#", "optional_params": {"streaming_sampling_rate": -2}"#,
-    "streaming_sampling_rate"
-)]
 #[case::eos_number(
     r#", "streaming_end_of_stream_only": 1"#,
     "streaming_end_of_stream_only"

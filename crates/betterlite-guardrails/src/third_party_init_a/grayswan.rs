@@ -10,7 +10,7 @@ use super::{InitResult, ParamMap, config_value, decode, optional_params};
 
 mod tests;
 
-const DEFAULT_SAMPLING_RATE: u64 = 5;
+const DEFAULT_SAMPLING_RATE: i64 = 5;
 // LitellmParams reads optional_params through the Cisco model, whose on_flagged_action defaults to block
 const CISCO_FLAGGED_ACTION: &str = "block";
 // the top-level on_flagged_action is the Pillar mixin's field, which defaults to monitor
@@ -27,7 +27,7 @@ pub struct GraySwanArgs {
     pub categories: Option<BTreeMap<String, String>>,
     pub policy_id: Option<String>,
     pub streaming_end_of_stream_only: bool,
-    pub streaming_sampling_rate: u64,
+    pub streaming_sampling_rate: i64,
     pub fail_open: Option<bool>,
     pub guardrail_timeout: Option<f64>,
     pub event_hook: LitellmParamsMode,
@@ -42,10 +42,10 @@ fn flagged_action(optional: Option<&ParamMap>, extra: &ParamMap) -> InitResult<O
             Some(entry) => return decode("on_flagged_action", Some(entry)),
         }
     }
-    match extra.get("on_flagged_action") {
-        None => Ok(Some(PILLAR_FLAGGED_ACTION.to_owned())),
-        Some(top_level) => decode("on_flagged_action", Some(top_level)),
-    }
+    extra.get("on_flagged_action").map_or_else(
+        || Ok(Some(PILLAR_FLAGGED_ACTION.to_owned())),
+        |top_level| decode("on_flagged_action", Some(top_level)),
+    )
 }
 
 pub fn initialize_grayswan(
@@ -64,7 +64,7 @@ pub fn initialize_grayswan(
         "streaming_end_of_stream_only",
         lookup("streaming_end_of_stream_only"),
     )?;
-    let sampling_rate: Option<u64> =
+    let sampling_rate: Option<i64> =
         decode("streaming_sampling_rate", lookup("streaming_sampling_rate"))?;
     Ok(GraySwanArgs {
         name: name.to_owned(),

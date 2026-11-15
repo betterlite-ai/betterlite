@@ -4,8 +4,8 @@ use betterlite_config::sections::guardrail_params::mode::{LitellmParamsMode, Mod
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use secrecy::SecretString;
-use serde::Deserialize;
-use serde::de::IntoDeserializer;
+use serde::Deserialize as _;
+use serde::de::IntoDeserializer as _;
 use serde::de::value::{Error as ValueError, StrDeserializer};
 
 use super::error::ThirdPartyInitAError;

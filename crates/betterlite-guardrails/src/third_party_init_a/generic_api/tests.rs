@@ -6,7 +6,8 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::{StreamingTransformMode, initialize_generic_api};
+use super::initialize_generic_api;
+use crate::generic_guardrail_contracts::StreamingTransformMode;
 use crate::third_party_init_a::error::ThirdPartyInitAError;
 use crate::third_party_init_a::tests::{exposed, params};
 
@@ -17,7 +18,7 @@ fn generic_api_takes_the_defaults_of_an_empty_config() {
     assert_eq!(built.api_base, None);
     assert!(built.api_key.is_none());
     assert!(built.headers.is_none());
-    assert!(built.additional_provider_specific_params.0.is_empty());
+    assert!(built.provider_specific_params.0.is_empty());
     assert_eq!(built.unreachable_fallback, UnreachableFallback::FailClosed);
     assert!(built.fail_on_error);
     assert_eq!(built.extra_headers, None);
@@ -60,11 +61,11 @@ fn generic_api_copies_the_configured_fields() {
         Some("acme")
     );
     assert_eq!(
-        built.additional_provider_specific_params.0.get("policy"),
+        built.provider_specific_params.0.get("policy"),
         Some(&GuardrailValue::Text("strict".to_owned()))
     );
     assert_eq!(
-        built.additional_provider_specific_params.0.get("level"),
+        built.provider_specific_params.0.get("level"),
         Some(&GuardrailValue::SignedInteger(2))
     );
     assert_eq!(built.unreachable_fallback, UnreachableFallback::FailOpen);
@@ -200,7 +201,7 @@ fn generic_api_reads_null_additional_params_as_the_empty_map() {
         None,
     )
     .unwrap();
-    assert!(built.additional_provider_specific_params.0.is_empty());
+    assert!(built.provider_specific_params.0.is_empty());
 }
 
 #[rstest]

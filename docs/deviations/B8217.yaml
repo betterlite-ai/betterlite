@@ -17,6 +17,9 @@ deviations:
   - what: The grayswan categories param is read from optional_params only. The top-level categories key is the content filter's list in betterlite's config types, so it never holds Gray Swan's dict.
     why: LiteLLM's top-level fallback reads the same content filter field, so a dict there fails validation in LiteLLM too.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/__init__.py#L48-L52
+  - what: The generic_api streaming_sampling_rate must be a non-negative integer that fits GenericGuardrailAPISettings (u32). A negative or oversized value is refused with an error that names the field.
+    why: The settings type that B3682 builds takes a u32, and LiteLLM's own generic guardrail model declares the rate as at least 1, so no working setup passes such a value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L77-L87
 kept_bugs:
   - what: A Gray Swan config that writes optional_params without on_flagged_action gets "block", not Gray Swan's own default "passthrough", because LitellmParams reads optional_params through the Cisco model whose on_flagged_action defaults to "block".
     why: A setup that tuned only the threshold or the timeout runs with block today, so switching would turn blocked requests into passthrough ones.

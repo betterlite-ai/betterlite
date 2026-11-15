@@ -29,6 +29,6 @@ pub enum ThirdPartyInitAError {
     #[error("the CrowdStrike AIDR streaming parameters could not be read")]
     Streaming {
         #[source]
-        source: CrowdStrikeError,
+        source: Box<CrowdStrikeError>,
     },
 }

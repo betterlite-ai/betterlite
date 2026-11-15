@@ -3,7 +3,8 @@
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use rstest::rstest;
 
-use super::{GuardrailsAiInputFormat, initialize_guardrails_ai};
+use super::initialize_guardrails_ai;
+use crate::guardrails_ai_guardrail::InputFormat;
 use crate::third_party_init_a::error::ThirdPartyInitAError;
 use crate::third_party_init_a::tests::{exposed, params};
 
@@ -36,10 +37,7 @@ fn guardrails_ai_takes_the_defaults_of_a_guard_name_alone() {
     assert_eq!(built.guard_name, "pii");
     assert_eq!(built.api_base, None);
     assert!(built.api_key.is_none());
-    assert_eq!(
-        built.guardrails_ai_api_input_format,
-        GuardrailsAiInputFormat::LlmOutput
-    );
+    assert_eq!(built.guardrails_ai_api_input_format, InputFormat::LlmOutput);
     assert_eq!(built.timeout, None);
     assert!(!built.default_on);
     assert_eq!(
@@ -68,32 +66,20 @@ fn guardrails_ai_copies_the_configured_fields() {
     assert_eq!(built.guard_name, "pii");
     assert_eq!(built.api_base.as_deref(), Some("https://guardrails.test"));
     assert_eq!(exposed(built.api_key.as_ref()), Some("guardrails-key"));
-    assert_eq!(
-        built.guardrails_ai_api_input_format,
-        GuardrailsAiInputFormat::Inputs
-    );
+    assert_eq!(built.guardrails_ai_api_input_format, InputFormat::Inputs);
     assert_eq!(built.timeout, Some(7.5_f64));
     assert!(built.default_on);
 }
 
 #[rstest]
-#[case::absent("", GuardrailsAiInputFormat::LlmOutput)]
-#[case::null(
-    r#", "guardrails_ai_api_input_format": null"#,
-    GuardrailsAiInputFormat::LlmOutput
-)]
+#[case::absent("", InputFormat::LlmOutput)]
+#[case::null(r#", "guardrails_ai_api_input_format": null"#, InputFormat::LlmOutput)]
 #[case::llm_output(
     r#", "guardrails_ai_api_input_format": "llmOutput""#,
-    GuardrailsAiInputFormat::LlmOutput
+    InputFormat::LlmOutput
 )]
-#[case::inputs(
-    r#", "guardrails_ai_api_input_format": "inputs""#,
-    GuardrailsAiInputFormat::Inputs
-)]
-fn guardrails_ai_reads_the_input_format(
-    #[case] extras: &str,
-    #[case] expected: GuardrailsAiInputFormat,
-) {
+#[case::inputs(r#", "guardrails_ai_api_input_format": "inputs""#, InputFormat::Inputs)]
+fn guardrails_ai_reads_the_input_format(#[case] extras: &str, #[case] expected: InputFormat) {
     let built =
         initialize_guardrails_ai(&params(&format!(r#", "guard_name": "pii"{extras}"#)), None)
             .unwrap();
