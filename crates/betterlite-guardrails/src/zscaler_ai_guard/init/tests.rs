@@ -5,7 +5,8 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::ExposeSecret as _;
 
-use super::{ZscalerInitError, initialize_zscaler};
+use super::initialize_zscaler;
+use crate::guardrail_initializers::error::InitializerError;
 
 fn params(extra: &str) -> LitellmParams {
     let body = format!(r#"{{"guardrail": "zscaler_ai_guard", "mode": "post_call"{extra}}}"#);
@@ -73,17 +74,14 @@ fn initialize_keeps_an_explicit_null_policy_id() {
 #[test]
 fn initialize_refuses_a_non_integer_policy_id() {
     let error = initialize_zscaler(&params(r#", "policy_id": "seven""#), None).unwrap_err();
-    assert!(matches!(error, ZscalerInitError::InvalidParam { name } if name == "policy_id"));
+    assert!(matches!(error, InitializerError::InvalidParam(name) if name == "policy_id"));
 }
 
 #[test]
 fn initialize_refuses_a_non_boolean_send_flag() {
     let error =
         initialize_zscaler(&params(r#", "send_user_api_key_team_id": "yes""#), None).unwrap_err();
-    assert!(matches!(
-        error,
-        ZscalerInitError::InvalidParam {
-            name: "send_user_api_key_team_id"
-        }
-    ));
+    assert!(
+        matches!(error, InitializerError::InvalidParam(name) if name == "send_user_api_key_team_id")
+    );
 }
