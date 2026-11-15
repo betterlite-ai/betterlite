@@ -31,8 +31,8 @@ pub(crate) struct Op;
 impl Helper for Op {
     type Input = Input;
 
-    fn run(command: &Self::Input) -> HelperResult {
-        match command {
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
             Input::Registry(registry) => registry_answer(registry),
             Input::Create(create) => create_answer(create),
             Input::CreateAndRun(run) => create_and_run_answer(run),

@@ -408,8 +408,8 @@ async fn create_with_an_unsupported_provider_names_it() {
     let mut request = create_request("bedrock", None, &kwargs);
     let error = sandbox.acreate_sandbox(&mut request).await.unwrap_err();
     assert!(matches!(
-        error,
-        SandboxLifecycleError::UnsupportedProvider { ref provider } if provider == "bedrock"
+        &error,
+        SandboxLifecycleError::UnsupportedProvider { provider } if provider == "bedrock"
     ));
     assert!(error.to_string().contains("bedrock"));
 }
@@ -431,8 +431,8 @@ async fn run_with_an_unsupported_provider_names_it() {
     );
     let error = sandbox.arun_code(&mut request).await.unwrap_err();
     assert!(matches!(
-        error,
-        SandboxLifecycleError::UnsupportedProvider { ref provider } if provider == "bedrock"
+        &error,
+        SandboxLifecycleError::UnsupportedProvider { provider } if provider == "bedrock"
     ));
 }
 
@@ -453,8 +453,8 @@ async fn delete_with_an_unsupported_provider_names_it() {
     };
     let error = sandbox.adelete_sandbox(&mut request).await.unwrap_err();
     assert!(matches!(
-        error,
-        SandboxLifecycleError::UnsupportedProvider { ref provider } if provider == "bedrock"
+        &error,
+        SandboxLifecycleError::UnsupportedProvider { provider } if provider == "bedrock"
     ));
 }
 
@@ -569,7 +569,8 @@ async fn logging_runs_before_an_unsupported_provider_is_reported() {
     let mut logging = RecordingLogging::default();
     let mut request = create_request("bedrock", None, &kwargs);
     request.call.logging = Some(&mut logging);
-    assert!(sandbox.acreate_sandbox(&mut request).await.is_err());
+    let error = sandbox.acreate_sandbox(&mut request).await.unwrap_err();
+    assert!(error.to_string().contains("bedrock"));
     assert_eq!(logging.updates.len(), 1_usize);
     assert_eq!(logging.updates[0].model, "bedrock/create_sandbox");
 }

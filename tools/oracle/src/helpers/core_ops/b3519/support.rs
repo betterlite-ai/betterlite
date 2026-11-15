@@ -51,12 +51,12 @@ pub(crate) struct FakeHttp {
 
 impl FakeHttp {
     pub(crate) fn new(replies: &[Reply]) -> Self {
-        let replies = replies.iter().map(|reply| StoredReply {
+        let stored = replies.iter().map(|reply| StoredReply {
             status: reply.status.unwrap_or(200),
             body: reply.body.clone().unwrap_or_default().into_bytes(),
         });
         Self {
-            replies: Arc::new(Mutex::new(replies.collect())),
+            replies: Arc::new(Mutex::new(stored.collect())),
             requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -73,15 +73,14 @@ impl FakeHttp {
         method: &Method,
         url: &Url,
         headers: &HeaderMap,
-        body: Vec<u8>,
+        body: &[u8],
     ) -> StoredReply {
-        let headers = headers
+        let recorded_headers = headers
             .iter()
             .map(|(name, value)| {
                 let text = value
                     .to_str()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|error| format!("<{error}>"));
+                    .map_or_else(|error| format!("<{error}>"), str::to_owned);
                 (name.as_str().to_owned(), text)
             })
             .collect();
@@ -91,8 +90,8 @@ impl FakeHttp {
             .push(RecordedRequest {
                 method: method.as_str().to_owned(),
                 url: url.to_string(),
-                headers,
-                json: serde_json::from_slice(&body).ok(),
+                headers: recorded_headers,
+                json: serde_json::from_slice(body).ok(),
             });
         self.next_reply()
     }
@@ -119,7 +118,7 @@ impl E2bHttp for FakeHttp {
             &request.method,
             &request.url,
             &request.headers,
-            request.body,
+            &request.body,
         );
         Ok(E2bStream {
             status: reply.status,
@@ -135,7 +134,7 @@ impl OpenHttp for FakeHttp {
             &request.method,
             &request.url,
             &request.headers,
-            request.body,
+            &request.body,
         );
         let status = recorded.status;
         let body = recorded.body;
