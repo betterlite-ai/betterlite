@@ -38,17 +38,14 @@ pub enum Nullable<T> {
 impl<T> Nullable<T> {
     #[must_use]
     pub const fn is_missing(&self) -> bool {
-        matches!(self, Self::Missing)
+        if matches!(self, Self::Missing) {
+            return true;
+        }
+        false
     }
 }
 
-impl<T> Default for Nullable<T> {
-    fn default() -> Self {
-        Self::Missing
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 // ast-grep-ignore: no-long-names
 pub struct StabilityImageGenerationRequest {
     pub prompt: String,

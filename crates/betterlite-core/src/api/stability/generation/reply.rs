@@ -83,10 +83,10 @@ pub fn decode_stability_image(
     Ok(())
 }
 
-fn parse<T: DeserializeOwned>(
-    body: &[u8],
-    response: &ImageHttpResponse,
-) -> Result<T, StabilityReplyError> {
+fn parse<T>(body: &[u8], response: &ImageHttpResponse) -> Result<T, StabilityReplyError>
+where
+    T: DeserializeOwned,
+{
     serde_json::from_slice(body).map_err(|source| StabilityReplyError::Malformed {
         status: response.status_code,
         headers: response.headers.clone(),

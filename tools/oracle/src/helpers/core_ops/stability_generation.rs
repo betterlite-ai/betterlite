@@ -123,7 +123,12 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
 
 // LiteLLM's get_supported_openai_params answers the same three names for every model
 fn supported_answer(_model: &str) -> Value {
-    json!(StabilityImageGenerationConfig::SUPPORTED_OPENAI_PARAMS)
+    Value::Array(
+        StabilityImageGenerationConfig::SUPPORTED_OPENAI_PARAMS
+            .iter()
+            .map(|name| Value::String((*name).to_owned()))
+            .collect(),
+    )
 }
 
 fn map_answer(
@@ -150,7 +155,9 @@ fn url_answer(
     environment: &BTreeMap<String, String>,
 ) -> Value {
     let config = generation_config(model, environment);
-    json!({"url": config.get_complete_url(api_base, model)})
+    json!({
+        "url": config.get_complete_url(api_base, model)
+    })
 }
 
 fn environment_answer(
@@ -168,8 +175,8 @@ fn environment_answer(
 }
 
 fn request_answer(prompt: &str, optional_params: &ImageParams) -> Value {
-    // ast-grep-ignore: no-long-names
     let attempt =
+        // ast-grep-ignore: no-long-names
         StabilityImageGenerationConfig::transform_image_generation_request(prompt, optional_params);
     if let Ok(request) = attempt {
         return json!({"request": request});
