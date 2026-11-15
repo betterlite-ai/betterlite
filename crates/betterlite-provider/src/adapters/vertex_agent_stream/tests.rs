@@ -17,6 +17,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::chat::response::ChatUsage;
+use betterlite_openai::stream::chunk::Chunk;
 use betterlite_prompts::message_content::{Content, Message};
 use betterlite_vertex::vertex_agent_engine::error::AgentEngineError;
 use betterlite_vertex::vertex_agent_engine::records::{AgentQueryInput, AgentQueryPayload};
@@ -274,7 +275,7 @@ async fn stream_of(source: &str) -> VertexAgentStream {
     stream_from(vec![Ok(source.as_bytes().to_vec())]).await
 }
 
-async fn collect(mut stream: VertexAgentStream) -> Vec<super::Chunk> {
+async fn collect(mut stream: VertexAgentStream) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     while let Some(chunk) = stream.next_chunk().await {
         chunks.push(chunk);
@@ -282,7 +283,7 @@ async fn collect(mut stream: VertexAgentStream) -> Vec<super::Chunk> {
     chunks
 }
 
-async fn chunk_list(source: &str) -> Vec<super::Chunk> {
+async fn chunk_list(source: &str) -> Vec<Chunk> {
     collect(stream_of(source).await).await
 }
 
