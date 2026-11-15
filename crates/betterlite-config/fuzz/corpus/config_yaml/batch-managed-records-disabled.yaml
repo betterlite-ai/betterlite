@@ -1,0 +1,2 @@
+environment_variables:
+  PROXY_BATCH_POLLING_ENABLED: "false"
