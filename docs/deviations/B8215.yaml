@@ -15,6 +15,9 @@ deviations:
   - what: A request that fails to connect is sent once, not twice.
     why: B173's pooled guardrail client disables implicit retries, and the retry lives in LiteLLM's shared AsyncHTTPHandler rather than in the Singulr guardrail.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
-  - what: A plain-http base the shared urlsplit port rejects, such as http://[localhost with an unclosed bracket, is refused at start.
-    why: LiteLLM's urlsplit does not check brackets, reads the hostname localhost and starts; its first request then fails on the malformed URL, so no working setup relies on it. The workspace's urlsplit port rejects the base, and refusing it keeps the plain-HTTP check fail-closed.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L64-L77
+  - what: The configured timeout is one reqwest request deadline covering connect, send and body read; the call sets it at crates/betterlite-guardrails/src/singulr/call.rs:25, and LiteLLM passes httpx timeout=self.timeout, which applies the value to connect, read, write and pool wait separately.
+    why: betterlite bounds every outbound request with one timeout, and a working Singulr answer returns well inside the configured seconds. An endpoint whose phases each fit the timeout but whose total does not is cut off here where LiteLLM answers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L181-L186
+  - what: A configured timeout that a Duration cannot represent (negative, NaN, infinite or too large) is refused while the guardrail is built, at crates/betterlite-guardrails/src/singulr/settings.rs:84.
+    why: LiteLLM stores any float in self.timeout and starts; betterlite's timeout is a std Duration, which cannot hold a negative or non-finite value, so the invalid configuration is reported where it enters instead of failing every call later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L102
