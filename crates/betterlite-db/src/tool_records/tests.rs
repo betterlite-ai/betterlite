@@ -19,8 +19,9 @@ use crate::resource_rows::ResourceRowsError;
 use super::decode::{ToolRecordDecodeError, decode_tool_record};
 use super::owners::{attach_owners, owners_from_rows};
 use super::records::{
-    LiteLLMToolTableRow, ToolDiscoveryUser, ToolInputPolicy, ToolOutputPolicy, ToolSpendResponse,
-    ToolUsageLogsResponse,
+    LiteLLMToolTableRow, ToolDetailResponse, ToolDiscoveryUser, ToolInputPolicy, ToolListResponse,
+    ToolOutputPolicy, ToolPolicyOption, ToolPolicyOptionsResponse, ToolPolicyOverrideRow,
+    ToolPolicyUpdateRequest, ToolPolicyUpdateResponse, ToolSpendResponse, ToolUsageLogsResponse,
 };
 
 fn tool(text: &str) -> LiteLLMToolTableRow {
@@ -160,6 +161,66 @@ fn spend_records_keep_decimal_amounts() {
     .unwrap();
     assert_eq!(logs.logs[0].spend, Some("0.5".parse::<Decimal>().unwrap()));
     assert_eq!(logs.logs[1].spend, None);
+}
+
+#[test]
+fn declared_records_take_the_fields_litellm_declares() {
+    let update: ToolPolicyUpdateRequest = serde_json::from_str(r#"{"tool_name":"echo"}"#).unwrap();
+    assert_eq!(update.tool_name, "echo");
+    assert_eq!(update.input_policy, None);
+    assert_eq!(update.output_policy, None);
+    assert_eq!(update.team_id, None);
+    assert_eq!(update.key_hash, None);
+    assert_eq!(update.key_alias, None);
+    let answer: ToolPolicyUpdateResponse =
+        serde_json::from_str(r#"{"tool_name":"echo","updated":true}"#).unwrap();
+    assert!(answer.updated);
+    assert_eq!(answer.input_policy, None);
+    let detail: ToolDetailResponse =
+        serde_json::from_str(r#"{"tool":{"tool_id":"t","tool_name":"n"}}"#).unwrap();
+    assert_eq!(detail.tool.tool_id, "t");
+    assert!(detail.overrides.is_empty());
+    let list: ToolListResponse = serde_json::from_str(r#"{"tools":[],"total":0}"#).unwrap();
+    assert_eq!(list.total, 0);
+    let options: ToolPolicyOptionsResponse =
+        serde_json::from_str(r#"{"input_policies":[],"output_policies":[]}"#).unwrap();
+    assert!(options.input_policies.is_empty());
+    let option: ToolPolicyOption =
+        serde_json::from_str(r#"{"value":"trusted","label":"Trusted","description":"allows"}"#)
+            .unwrap();
+    assert_eq!(option.label, "Trusted");
+    let spend: ToolSpendResponse = serde_json::from_str("{}").unwrap();
+    assert!(spend.by_tool.is_empty());
+    assert!(spend.daily.is_empty());
+    assert_eq!(spend.start_date, None);
+    assert_eq!(spend.end_date, None);
+}
+
+#[test]
+fn override_records_serialize_every_field_like_litellm() {
+    let row = ToolPolicyOverrideRow {
+        override_id: "perm-1".to_owned(),
+        tool_name: "echo".to_owned(),
+        team_id: None,
+        key_hash: Some("key-1".to_owned()),
+        input_policy: ToolInputPolicy::Blocked,
+        key_alias: None,
+        created_at: None,
+        updated_at: None,
+    };
+    assert_eq!(
+        serde_json::to_value(row).unwrap(),
+        serde_json::json!({
+            "override_id": "perm-1",
+            "tool_name": "echo",
+            "team_id": null,
+            "key_hash": "key-1",
+            "input_policy": "blocked",
+            "key_alias": null,
+            "created_at": null,
+            "updated_at": null,
+        })
+    );
 }
 
 #[test]
