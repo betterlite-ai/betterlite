@@ -224,3 +224,4 @@ pub static BACKEND_EXACT_PATHS: phf::Set<&'static str> = phf::phf_set! {
 pub static BACKEND_MOUNT_PATHS: phf::Set<&'static str> = phf::phf_set! { "/swagger", "/mcp" };
 
 mod tests;
+pub mod wildcard;

@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-gemini-images-reply-seed
+call:
+  vertex_gemini_images:
+    model: gemini-2.5-flash-image
+    mappings: []
+    target: null
+    response:
+      candidates:
+        - content: {parts: [{inlineData: {data: AAA}}]}
+      usageMetadata:
+        promptTokenCount: 3
+        promptTokensDetails: [{modality: TEXT, tokenCount: 3}]
+        candidatesTokenCount: 1
+        totalTokenCount: 4
+env: {}
+compare: {ignore: []}
