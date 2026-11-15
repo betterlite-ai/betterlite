@@ -104,9 +104,11 @@ def _command(command: str | bytes) -> Json:
     match command:
         case bytes() as audio:
             encoded = base64.b64encode(audio).decode("ascii")
-            return _JSON.validate_python({"kind": "audio", "base64": encoded})
+            audio_command = {"kind": "audio", "base64": encoded}
+            return _JSON.validate_python(audio_command)
         case str() as text:
-            return _JSON.validate_python({"kind": "text", "value": text})
+            text_command = {"kind": "text", "value": text}
+            return _JSON.validate_python(text_command)
 
 
 def _command_step(
@@ -116,29 +118,49 @@ def _command_step(
 ) -> Json:
     try:
         commands = config.transform_realtime_request(message, model)
-    except realtime_transformation.ChirpProtocolError as error:
-        return _JSON.validate_python({"commands": [], "error": str(error)})
+    except realtime_transformation.ChirpProtocolError:
+        no_commands: list[Json] = []
+        rejected: dict[str, Json] = {"commands": no_commands, "error": True}
+        return _JSON.validate_python(rejected)
     encoded: list[Json] = [_command(command) for command in commands]
-    return _JSON.validate_python({"commands": encoded, "error": None})
+    accepted: dict[str, Json] = {"commands": encoded, "error": False}
+    return _JSON.validate_python(accepted)
+
+
+def _session_created(
+    config: realtime_transformation.VertexChirpRealtimeConfig,
+    model: str,
+    session_id: str | None,
+) -> Json:
+    if session_id is None:
+        return None
+    return _JSON.validate_python(config.transform_session_created_event(model, session_id))
+
+
+def _session_close(
+    config: realtime_transformation.VertexChirpRealtimeConfig,
+    model: str,
+    body: dict[str, Json],
+) -> Json:
+    document: dict[str, Json] = {
+        **body,
+        "usage": _usage(config, model),
+        "repeated_usage": _usage(config, model),
+    }
+    return _JSON.validate_python(document)
 
 
 def _commands(input_value: CommandsInput) -> Json:
     config = _adapter(input_value["project"], input_value["location"])
-    session_id = input_value["session_id"]
-    created: Json = None
-    if session_id is not None:
-        created = _JSON.validate_python(
-            config.transform_session_created_event(input_value["model"], session_id)
-        )
+    created = _session_created(config, input_value["model"], input_value["session_id"])
     steps: list[Json] = [
         _command_step(config, input_value["model"], step) for step in input_value["steps"]
     ]
-    document: dict[str, Json] = {
-        "created": created,
-        "steps": steps,
-        "usage": _usage(config, input_value["model"]),
-        "repeated_usage": _usage(config, input_value["model"]),
-    }
+    return _session_close(config, input_value["model"], {"created": created, "steps": steps})
+
+
+def _url_document(url: str | None) -> Json:
+    document: dict[str, Json] = {"url": url, "error": url is None}
     return _JSON.validate_python(document)
 
 
@@ -147,15 +169,16 @@ def _url_outcome(
 ) -> Json:
     try:
         url = config.get_complete_url(case["api_base"], case["model"])
-    except ValueError as error:
-        return _JSON.validate_python({"url": None, "error": str(error)})
-    return _JSON.validate_python({"url": url, "error": None})
+    except ValueError:
+        return _url_document(None)
+    return _url_document(url)
 
 
 def _urls(input_value: UrlsInput) -> Json:
     config = _adapter(input_value["project"], input_value["location"])
     urls: list[Json] = [_url_outcome(config, case) for case in input_value["cases"]]
-    return _JSON.validate_python({"urls": urls})
+    document: dict[str, Json] = {"urls": urls}
+    return _JSON.validate_python(document)
 
 
 def _frame_message(frame: Frame) -> str | bytes:
@@ -173,21 +196,20 @@ def _response(
 ) -> Json:
     message = _frame_message(frame)
     try:
-        result = config.transform_realtime_response(message, model, logging_obj, state)
-    except realtime_transformation.ChirpProtocolError as error:
-        return _JSON.validate_python(
-            {"result": None, "error": {"kind": "protocol", "message": str(error)}}
-        )
+        result: Json = _JSON.validate_python(config.transform_realtime_response(message, model, logging_obj, state))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/realtime.py#L29-L37
+    except realtime_transformation.ChirpProtocolError:
+        protocol_failure: dict[str, Json] = {"result": None, "error": {"kind": "protocol"}}
+        return _JSON.validate_python(protocol_failure)
     except ValidationError:
-        return _JSON.validate_python({"result": None, "error": {"kind": "invalid"}})
-    return _JSON.validate_python({"result": _JSON.validate_python(result), "error": None})
+        invalid_failure: dict[str, Json] = {"result": None, "error": {"kind": "invalid"}}
+        return _JSON.validate_python(invalid_failure)
+    answered: dict[str, Json] = {"result": result, "error": None}
+    return _JSON.validate_python(answered)
 
 
 def _responses(input_value: ResponsesInput) -> Json:
     config = _adapter(input_value["project"], input_value["location"])
-    created = _JSON.validate_python(
-        config.transform_session_created_event(input_value["model"], input_value["session_id"])
-    )
+    created = _session_created(config, input_value["model"], input_value["session_id"])
     configure = input_value["configure"]
     if configure is not None:
         config.transform_realtime_request(configure, input_value["model"])
@@ -196,13 +218,8 @@ def _responses(input_value: ResponsesInput) -> Json:
         _response(config, input_value["model"], frame, input_value["state"], logging_obj)
         for frame in input_value["frames"]
     ]
-    document: dict[str, Json] = {
-        "created": created,
-        "responses": responses,
-        "usage": _usage(config, input_value["model"]),
-        "repeated_usage": _usage(config, input_value["model"]),
-    }
-    return _JSON.validate_python(document)
+    body: dict[str, Json] = {"created": created, "responses": responses}
+    return _session_close(config, input_value["model"], body)
 
 
 def run(input_value: CommandsInput | UrlsInput | ResponsesInput) -> Json:

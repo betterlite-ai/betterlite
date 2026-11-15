@@ -15,7 +15,7 @@ pub(crate) struct CommandsOutput {
 #[derive(Serialize)]
 pub(crate) struct StepOutput {
     pub(crate) commands: Vec<CommandOutput>,
-    pub(crate) error: Option<String>,
+    pub(crate) error: bool,
 }
 
 #[derive(Serialize)]
@@ -33,7 +33,7 @@ pub(crate) struct UrlsOutput {
 #[derive(Serialize)]
 pub(crate) struct UrlOutput {
     pub(crate) url: Option<String>,
-    pub(crate) error: Option<String>,
+    pub(crate) error: bool,
 }
 
 #[derive(Serialize)]
@@ -53,6 +53,6 @@ pub(crate) struct ResponseOutput {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum ResponseErrorOutput {
-    Protocol { message: String },
+    Protocol,
     Invalid,
 }

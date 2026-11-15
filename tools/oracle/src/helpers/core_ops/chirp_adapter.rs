@@ -122,11 +122,11 @@ fn step_output(config: &ChirpConfig, model: &str, step: &str) -> StepOutput {
     match config.transform_realtime_request(step, model, None) {
         Ok(commands) => StepOutput {
             commands: commands.iter().map(command_output).collect(),
-            error: None,
+            error: false,
         },
-        Err(error) => StepOutput {
+        Err(_) => StepOutput {
             commands: Vec::new(),
-            error: Some(error.to_string()),
+            error: true,
         },
     }
 }
@@ -149,11 +149,11 @@ fn urls(config: &ChirpConfig, cases: &[UrlCase]) -> HelperResult {
             |case| match config.complete_url(case.api_base.as_deref(), &case.model) {
                 Ok(url) => UrlOutput {
                     url: Some(url),
-                    error: None,
+                    error: false,
                 },
-                Err(error) => UrlOutput {
+                Err(_) => UrlOutput {
                     url: None,
-                    error: Some(error.to_string()),
+                    error: true,
                 },
             },
         )
@@ -207,11 +207,9 @@ fn response_output(
                 result: None,
                 error: Some(ResponseErrorOutput::Invalid),
             },
-            Err(error) => ResponseOutput {
+            Err(_) => ResponseOutput {
                 result: None,
-                error: Some(ResponseErrorOutput::Protocol {
-                    message: error.to_string(),
-                }),
+                error: Some(ResponseErrorOutput::Protocol),
             },
         },
     )
