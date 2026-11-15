@@ -41,7 +41,7 @@ pub struct RawMarkerPair {
     open: String,
     close: String,
     #[serde(flatten)]
-    pub siblings: BTreeMap<String, JsonValue>,
+    _unknown: BTreeMap<String, JsonValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

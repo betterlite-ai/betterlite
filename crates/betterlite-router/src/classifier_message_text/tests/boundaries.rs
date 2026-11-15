@@ -264,16 +264,18 @@ fn assert_encrypted_item_not_object() {
 }
 
 fn assert_encrypted_content_not_list() {
-    assert_encrypted_absent_with_ask(body(
-        serde_json::json!({"type": "agent_message", "content": "plain"}),
-    ));
+    assert_encrypted_absent_with_ask(body(serde_json::json!([
+        {"type": "agent_message", "content": "plain"}
+    ])));
 }
 
 fn assert_encrypted_part_not_object() {
-    assert_encrypted_absent_with_ask(body(serde_json::json!({
-        "type": "agent_message",
-        "content": [7, {"type": "encrypted_content", "encrypted_content": "blob"}]
-    })));
+    assert_encrypted_absent_with_ask(body(serde_json::json!([
+        {
+            "type": "agent_message",
+            "content": [7, {"type": "encrypted_content", "encrypted_content": "blob"}]
+        }
+    ])));
 }
 
 fn assert_encrypted_resolved_without_ask() {
@@ -286,25 +288,31 @@ fn assert_encrypted_resolved_without_ask() {
 }
 
 fn assert_encrypted_non_agent_selected() {
-    assert_encrypted_absent_with_ask(body(serde_json::json!({
-        "type": "message",
-        "content": [{"type": "encrypted_content", "encrypted_content": "blob"}]
-    })));
+    assert_encrypted_absent_with_ask(body(serde_json::json!([
+        {
+            "type": "message",
+            "content": [{"type": "encrypted_content", "encrypted_content": "blob"}]
+        }
+    ])));
 }
 
 fn assert_encrypted_empty_string_absent() {
-    assert_encrypted_absent_with_ask(body(serde_json::json!({
-        "type": "agent_message",
-        "content": [{"type": "encrypted_content", "encrypted_content": ""}]
-    })));
+    assert_encrypted_absent_with_ask(body(serde_json::json!([
+        {
+            "type": "agent_message",
+            "content": [{"type": "encrypted_content", "encrypted_content": ""}]
+        }
+    ])));
 }
 
 fn assert_encrypted_non_string_errors() {
     assert_encrypted_input_error(
-        body(serde_json::json!({
-            "type": "agent_message",
-            "content": [{"type": "encrypted_content", "encrypted_content": 7}]
-        })),
+        body(serde_json::json!([
+            {
+                "type": "agent_message",
+                "content": [{"type": "encrypted_content", "encrypted_content": 7}]
+            }
+        ])),
         ClassifierTextError::EncryptedContentNotString,
     );
 }

@@ -102,16 +102,16 @@ fn assert_strip_default_reminder() {
 }
 
 fn assert_strip_codex_envelope() {
-    assert_strip(
-        "ask <environment_context>ctx</environment_context> now",
-        "ask now",
-    );
     assert_eq!(
         strip_reminder_blocks(
             "ask <environment_context>ctx</environment_context> now",
-            default_markers()
+            codex_markers()
         ),
-        "ask <environment_context>ctx</environment_context> now"
+        "ask now"
+    );
+    assert_strip(
+        "ask <environment_context>ctx</environment_context> now",
+        "ask <environment_context>ctx</environment_context> now",
     );
 }
 
