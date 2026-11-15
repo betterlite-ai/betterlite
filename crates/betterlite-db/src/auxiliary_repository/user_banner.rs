@@ -59,6 +59,17 @@ impl BannerActions<'_> {
             .map_err(|source| TableError::Database(backend(source)))
     }
 
+    async fn optional_row(
+        &self,
+        sql: &str,
+        params: &Params<'_>,
+    ) -> Result<Option<JsonData>, TableError> {
+        let Some(row) = self.row(sql, params).await? else {
+            return Ok(None);
+        };
+        Self::row_json(&row).map(Some)
+    }
+
     async fn changed(&self, sql: &str, params: &Params<'_>) -> Result<usize, TableError> {
         let client = self.access.write.session().await?;
         let rows = client
@@ -108,8 +119,7 @@ impl TableActions for BannerActions<'_> {
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> Result<Option<Self::Row>, Self::Failure> {
-        let row = self.row(UPDATE_SQL, &[&filter, &data]).await?;
-        row.as_ref().map(Self::row_json).transpose()
+        self.optional_row(UPDATE_SQL, &[&filter, &data]).await
     }
 
     async fn update_many(
@@ -133,8 +143,7 @@ impl TableActions for BannerActions<'_> {
     }
 
     async fn delete(&self, filter: Self::Filter) -> Result<Option<Self::Row>, Self::Failure> {
-        let row = self.row(DELETE_SQL, &[&filter]).await?;
-        row.as_ref().map(Self::row_json).transpose()
+        self.optional_row(DELETE_SQL, &[&filter]).await
     }
 
     async fn delete_many(&self, filter: Self::Filter) -> Result<usize, Self::Failure> {
