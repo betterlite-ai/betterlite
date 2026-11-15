@@ -61,15 +61,44 @@ fn complete_url_uses_the_default_base_or_the_given_one(
 
 #[test]
 fn transform_request_carries_the_parent_body_and_the_extra_body() {
-    let body = transform(object(
-        json!({"temperature": 0.5, "extra_body": {"top_k": 4}}),
-    ))
+    let body = transform(object(json!({
+        "temperature": 0.5,
+        "max_retries": 2,
+        "tool_choice": "auto",
+        "extra_body": {"top_k": 4},
+    })))
     .expect("a body");
     let expected = object(json!({
         "model": "ovhcloud/Mistral-7B-Instruct-v0.3",
         "messages": [{"role": "user", "content": "hi"}],
         "temperature": 0.5,
         "top_k": 4,
+    }));
+    assert_eq!(body, expected);
+}
+
+#[test]
+fn transform_request_runs_the_parent_tool_stripping() {
+    let body = transform(object(json!({
+        "tool_choice": "auto",
+        "tools": [{
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "cache_control": {"type": "ephemeral"},
+                "parameters": {"type": "object", "cache_control": {"type": "ephemeral"}},
+            },
+        }],
+    })))
+    .expect("a body");
+    let expected = object(json!({
+        "model": "ovhcloud/Mistral-7B-Instruct-v0.3",
+        "messages": [{"role": "user", "content": "hi"}],
+        "tool_choice": "auto",
+        "tools": [{
+            "type": "function",
+            "function": {"name": "lookup", "parameters": {"type": "object"}},
+        }],
     }));
     assert_eq!(body, expected);
 }

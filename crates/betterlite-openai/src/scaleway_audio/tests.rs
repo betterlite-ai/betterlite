@@ -113,13 +113,17 @@ fn get_error_class_keeps_the_message_status_and_headers() {
 
 #[test]
 fn map_openai_params_keeps_the_given_order_and_drops_the_rest() {
-    let non_default =
-        object(json!({"timestamp_granularities": ["word"], "top_k": 3, "language": "en"}));
+    let non_default = object(json!({
+        "timestamp_granularities": ["word"],
+        "top_k": 3,
+        "language": "en",
+        "prompt": "p",
+    }));
     let mut optional = object(json!({}));
     map_openai_params(&non_default, &mut optional);
     assert_eq!(
         serde_json::to_value(&optional).expect("options"),
-        json!({"language": "en", "timestamp_granularities": ["word"]})
+        json!({"language": "en", "prompt": "p", "timestamp_granularities": ["word"]})
     );
 }
 
@@ -129,19 +133,35 @@ fn transcription_request_puts_temperature_before_timestamp_granularities() {
         "timestamp_granularities": ["word"],
         "temperature": 0.1,
         "response_format": "json",
-        "prompt": null,
+        "prompt": "bonjour",
+        "language": "fr",
     }));
     let request = transcription_request("whisper-large-v3", &audio(), &optional);
     assert_eq!(
         request.fields,
         vec![
             (String::from("model"), json!("whisper-large-v3")),
+            (String::from("language"), json!("fr")),
+            (String::from("prompt"), json!("bonjour")),
             (String::from("response_format"), json!("json")),
             (String::from("temperature"), json!(0.1)),
             (String::from("timestamp_granularities"), json!(["word"])),
         ]
     );
     assert_eq!(request.file, audio());
+}
+
+#[test]
+fn transcription_request_omits_a_null_param() {
+    let optional = object(json!({"language": null, "prompt": "p"}));
+    let request = transcription_request("whisper-large-v3", &audio(), &optional);
+    assert_eq!(
+        request.fields,
+        vec![
+            (String::from("model"), json!("whisper-large-v3")),
+            (String::from("prompt"), json!("p")),
+        ]
+    );
 }
 
 #[rstest]
