@@ -1,0 +1,23 @@
+kind: helper
+name: foundry-image-generation-dalle-gpt-model-selection
+call:
+  foundry_image_generation:
+    models:
+      - ""
+      - DALL-E-2
+      - dall_e_2
+      - DALL-E-3
+      - dall_e_3_preview
+      - MAI-Image-2.5
+      - mai_image_2_5
+      - FLUX.2-pro
+      - azure_ai/FLUX-2-flex
+      - flux
+      - gpt-image-1
+      - azure_ai/gpt-image-1
+      - dall-e-2-dall-e-3-flux
+      - dall-e-3-flux
+      - mai-image-flux
+      - "dall e 3"
+env: {}
+compare: {ignore: []}

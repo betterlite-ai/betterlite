@@ -1,0 +1,24 @@
+kind: helper
+name: foundry-image-generation-flux-size-parameter-map
+call:
+  foundry_image_generation:
+    supported: [FLUX.2-pro, azure_ai/flux.2-flex, flux-1-schnell, gpt-image-1]
+    params:
+      - {model: FLUX.2-pro, non_default_params: {n: "2"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {n: 2}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {num_images: "3"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {width: "1024", height: "0_768", steps: " 8 ", safety_tolerance: "+4", seed: "-42"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {guidance: "3.5"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {guidance: "2"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {guidance: " 1_0.5 "}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {seed: "123456789012345678901234567890"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {output_format: PNG, aspect_ratio: "16:9"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {background: opaque, moderation: low, output_compression: 80, quality: high, user: u-1}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {background: opaque, moderation: low, output_compression: 80, quality: high, user: u-1}, optional_params: {}, drop_params: true}
+      - {model: FLUX.2-pro, non_default_params: {n: "2"}, optional_params: {num_images: 1, seed: 7}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {n: "two"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {safety_tolerance: "6.5"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {guidance: fast}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {n: "2", style: vivid}, optional_params: {}, drop_params: true}
+env: {}
+compare: {ignore: []}

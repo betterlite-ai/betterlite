@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-image-generation-params-seed
+call:
+  foundry_image_generation:
+    params:
+      - {model: FLUX.2-pro, non_default_params: {size: 1024x1024, n: "1"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {quality: hd, n: 2}, optional_params: {width: 800}, drop_params: true}
+      - {model: flux-1-schnell, non_default_params: {size: auto, style: vivid}, optional_params: {}, drop_params: false}
+env: {}
+compare: {ignore: []}

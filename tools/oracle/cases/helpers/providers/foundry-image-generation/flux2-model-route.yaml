@@ -1,0 +1,25 @@
+kind: helper
+name: foundry-image-generation-flux2-model-route
+call:
+  foundry_image_generation:
+    flux2:
+      - flux.2-pro
+      - FLUX-2-flex
+      - azure_ai/FLUX_2_max
+      - black-forest-labs/FLUX2-dev
+      - flux2
+      - flux-1-schnell
+      - fluxpro
+      - FLUX.1-pro
+      - ""
+    urls:
+      - {model: FLUX.2-flex, api_base: null, api_version: null}
+      - {model: FLUX.2-flex, api_base: "https://hub.services.ai.azure.com", api_version: null}
+      - {model: flux.2-pro, api_base: "https://hub.example//", api_version: ""}
+      - {model: FLUX.2-flex, api_base: "https://hub.example", api_version: "2025-11-15"}
+      - {model: flux.2-pro, api_base: "https://hub.example/providers/blackforestlabs/v1/flux-2-pro", api_version: v}
+      - {model: flux.2-pro, api_base: "https://hub.example/edge/providers/x?api-version=1/", api_version: null}
+      - {model: FLUX2-flex, api_base: "https://hub.example/p?x=1", api_version: null}
+      - {model: flux-1-schnell, api_base: "https://hub.example", api_version: null}
+env: {}
+compare: {ignore: []}

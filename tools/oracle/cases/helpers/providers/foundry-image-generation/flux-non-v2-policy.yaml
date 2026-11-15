@@ -1,0 +1,19 @@
+kind: helper
+name: foundry-image-generation-flux-non-v2-policy
+call:
+  foundry_image_generation:
+    supported: [flux-1-schnell, azure_ai/flux-1-dev, gpt-image-1]
+    params:
+      - {model: flux-1-schnell, non_default_params: {size: "1024x1024", quality: high, n: 2}, optional_params: {}, drop_params: false}
+      - {model: flux-1-schnell, non_default_params: {size: auto}, optional_params: {}, drop_params: false}
+      - {model: flux-1-schnell, non_default_params: {size: bad}, optional_params: {}, drop_params: false}
+      - {model: flux-1-schnell, non_default_params: {background: opaque, user: u-1, output_format: png}, optional_params: {}, drop_params: false}
+      - {model: flux-1-schnell, non_default_params: {quality: high}, optional_params: {quality: low, custom: true}, drop_params: true}
+      - {model: flux-1-schnell, non_default_params: {style: vivid}, optional_params: {}, drop_params: true}
+      - {model: flux-1-schnell, non_default_params: {width: 10}, optional_params: {}, drop_params: false}
+      - {model: flux-1-schnell, non_default_params: {steps: 4}, optional_params: {}, drop_params: false}
+      - {model: flux-1-schnell, non_default_params: {style: vivid, response_format: b64_json}, optional_params: {}, drop_params: false}
+      - {model: azure_ai/flux-1-dev, non_default_params: {size: 512x512, output_format: webp}, optional_params: {user: u-2}, drop_params: false}
+      - {model: gpt-image-1, non_default_params: {moderation: low}, optional_params: {}, drop_params: false}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: foundry-image-generation-route-seed
+call:
+  foundry_image_generation:
+    models: [DALL-E-2, DALL-E-3, MAI-Image-2.5, FLUX.2-pro, gpt-image-1]
+    flux2: [flux.2-pro, flux2, flux-1-schnell]
+    paths: [FLUX.2-flex, flux2-flex, flux.2-pro]
+    urls:
+      - {model: FLUX.2-flex, api_base: null, api_version: null}
+      - {model: FLUX.2-pro, api_base: "https://hub.example", api_version: null}
+      - {model: flux.2-pro, api_base: "https://hub.example/providers/blackforestlabs/v1/flux-2-pro", api_version: "2025-11-15"}
+    supported: [FLUX.2-pro, flux-1-schnell]
+env: {}
+compare: {ignore: []}
