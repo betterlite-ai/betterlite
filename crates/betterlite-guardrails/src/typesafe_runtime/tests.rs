@@ -419,10 +419,7 @@ fn new_uses_litellm_defaults_when_only_the_key_is_configured() {
     );
     assert_eq!(guard.runtime.timeout, DEFAULT_JEV_TIMEOUT);
     assert_eq!(guard.runtime.api_key.expose_secret(), API_KEY);
-    assert_eq!(
-        guard.base.settings.guardrail_name.as_deref(),
-        Some("typesafe")
-    );
+    assert_eq!(guard.base, base(None));
 }
 
 #[test]
