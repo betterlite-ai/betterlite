@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::error::Error;
+use std::vec::IntoIter;
 
 use async_trait::async_trait;
 use betterlite_http::proxy::StreamResponse;
@@ -71,7 +72,7 @@ pub struct InteractionBufferedResponse {
 
 impl InteractionsSyncResponse for InteractionBufferedResponse {
     type Error = InteractionSourceError;
-    type Lines = std::vec::IntoIter<Result<String, InteractionSourceError>>;
+    type Lines = IntoIter<Result<String, InteractionSourceError>>;
 
     fn headers(&self) -> IndexMap<String, String> {
         self.headers.clone()
