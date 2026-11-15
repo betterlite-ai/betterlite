@@ -1,5 +1,14 @@
 task: B532
-deviations: []
+deviations:
+  - what: >-
+      A message file part whose file_id is an https://, http:// or www. URL fails an Azure o-series request
+      with the 400 ImageFetchError of the download seam instead of being fetched and inlined as base64
+      file_data with the my_file.pdf filename.
+    why: >-
+      The o-series request transform reuses B503's ChatContent with RefuseDownloads, the same no-download
+      decision B503 records for the OpenAI GPT transform; betterlite builds no downloader, so a setup that
+      relies on LiteLLM fetching a PDF URL gets this 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L240-L248
 kept_bugs:
   - what: >-
       The Azure GPT-5 allowlist appends logprobs and top_logprobs for a gpt-5.2+ model even when the shared

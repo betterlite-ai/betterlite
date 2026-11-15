@@ -60,6 +60,7 @@ call:
         o1-mini:
           litellm_provider: openai
           supports_reasoning: true
+          supports_system_messages: false
         gpt-4o:
           litellm_provider: openai
           supports_tool_choice: true
@@ -114,6 +115,15 @@ call:
       reasoning_effort: null
     - model: gpt5_series/gpt-5.2
       messages:
+      - role: user
+        content: hi
+      tools: null
+      tool_choice: null
+      reasoning_effort: null
+    - model: o_series/o1-mini
+      messages:
+      - role: system
+        content: be brief
       - role: user
         content: hi
       tools: null

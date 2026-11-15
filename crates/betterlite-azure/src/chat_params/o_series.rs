@@ -1,20 +1,24 @@
+use std::collections::BTreeMap;
 use std::future::Future;
 
 use betterlite_models::model_capability_predicates::{CapabilityRequest, NamedCapability};
+use betterlite_openai::chat::ChatMessage;
+use betterlite_openai::chat_content::{ChatContent, ChatContentError, Mode, RefuseDownloads};
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
 use betterlite_openai::reasoning_models::ReasoningCapabilities;
+use betterlite_openai::reasoning_models::o_series::transform_messages;
 use betterlite_openai::response_events::NativeStreamingSupport;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
+use betterlite_prompts::message_fields::system_runs::system_messages_first;
 
 use super::error::ChatParamsError;
-use crate::azure_chat_base_policy::messages::{
-    sanitized_tools_update, transform_request as base_transform,
-};
+use crate::azure_chat_base_policy::messages::sanitized_tools_update;
 
 pub const O_SERIES_ROUTE: &str = "o_series/";
+const AZURE_PROVIDER: &str = "azure";
 const UNSUPPORTED: [&str; 5] = [
     "logprobs",
     "top_p",
@@ -103,20 +107,47 @@ where
     }
 }
 
-pub fn transform_request(
+pub async fn transform_request<Capabilities>(
+    capabilities: &mut Capabilities,
     model: &str,
     messages: &[Message],
     optional: &Object,
     openai_system_messages_first: bool,
-) -> Result<Object, ChatParamsError> {
+) -> Result<Object, ChatParamsError>
+where
+    Capabilities: ReasoningCapabilities,
+{
     let mut flattened = optional.clone();
     flattened.extend(sanitized_tools_update(optional));
     let stripped = model.replace(O_SERIES_ROUTE, "");
-    let body = base_transform(
-        &stripped,
-        messages,
-        &flattened,
-        openai_system_messages_first,
-    )?;
-    Ok(body)
+    // LiteLLM orders the instructions before the o-series position turns a system message into a user one
+    let ordered = if openai_system_messages_first {
+        system_messages_first(messages)
+    } else {
+        messages.to_vec()
+    };
+    let converted = ordered
+        .iter()
+        .map(chat_message)
+        .collect::<Result<Vec<_>, _>>()?;
+    let transformed = transform_messages(capabilities, &stripped, &converted).await;
+    let environment: BTreeMap<String, String> = BTreeMap::new();
+    let content = ChatContent {
+        model: &stripped,
+        messages: &transformed,
+        optional_params: &flattened,
+        provider: Some(AZURE_PROVIDER),
+        api_base: None,
+        global_api_base: None,
+        openai_system_messages_first: false,
+        environment: &environment,
+        downloads: &RefuseDownloads,
+    };
+    Ok(content.transform(Mode::Sync)?.to_body()?)
+}
+
+fn chat_message(message: &Message) -> Result<ChatMessage, ChatContentError> {
+    let value = serde_json::to_value(message)
+        .map_err(|source| ChatContentError::MessageShape { source })?;
+    serde_json::from_value(value).map_err(|source| ChatContentError::MessageShape { source })
 }

@@ -57,7 +57,7 @@ pub(super) const MODEL_COST: &str = r#"{
   },
   "azure/o1-preview": {"supports_native_streaming": true, "supports_reasoning": true},
   "azure/o1-mini": {"supports_native_streaming": false, "supports_reasoning": true},
-  "o1-mini": {"supports_reasoning": true},
+  "o1-mini": {"supports_reasoning": true, "supports_system_messages": false},
   "gpt-4o": {"supports_tool_choice": true, "supports_function_calling": true}
 }"#;
 
@@ -278,6 +278,20 @@ pub(super) fn composed(
     gpt5::transform_request(model, &messages(messages_text), &optional, system_first).unwrap()
 }
 
-pub(super) fn o_series_body(model: &str, optional: &str, messages_text: &str) -> Object {
-    o_series::transform_request(model, &messages(messages_text), &object(optional), false).unwrap()
+pub(super) fn o_series_body(
+    model: &str,
+    optional: &str,
+    messages_text: &str,
+    system_first: bool,
+) -> Object {
+    let mut capabilities = fixture();
+    runtime()
+        .block_on(o_series::transform_request(
+            &mut capabilities,
+            model,
+            &messages(messages_text),
+            &object(optional),
+            system_first,
+        ))
+        .unwrap()
 }

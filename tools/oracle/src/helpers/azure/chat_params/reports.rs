@@ -1,5 +1,6 @@
 use betterlite_azure::chat_params::capabilities::AzureCapabilities;
 use betterlite_azure::chat_params::{gpt5, o_series};
+use betterlite_context::chat_config_selection::azure::is_o_series_model;
 use betterlite_openai::openai_base_config::{
     ModelFamily, Object as ParamsObject, azure_model_family,
 };
@@ -174,12 +175,23 @@ fn transform_step(
     }
     let optional: Object = serde_json::from_value(Value::Object(existing))
         .map_err(|error| invalid_input(error.to_string()))?;
-    match gpt5::transform_request(
-        &step.model,
-        &step.messages,
-        &optional,
-        call.install.openai_system_messages_first,
-    ) {
+    let transformed = if is_o_series_model(&step.model) {
+        runtime.block_on(o_series::transform_request(
+            &mut fixture,
+            &step.model,
+            &step.messages,
+            &optional,
+            call.install.openai_system_messages_first,
+        ))
+    } else {
+        gpt5::transform_request(
+            &step.model,
+            &step.messages,
+            &optional,
+            call.install.openai_system_messages_first,
+        )
+    };
+    match transformed {
         Ok(body) => Ok(json!({"ok": true, "value": projected(&body), "status": Value::Null})),
         Err(error) => Ok(json!({"ok": false, "value": Value::Null, "status": error.status_code()})),
     }

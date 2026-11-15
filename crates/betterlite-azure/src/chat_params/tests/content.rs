@@ -78,7 +78,8 @@ pub(super) fn azure_reasoning_route_strip() {
         o_series_body(
             "o_series/deploy/o_series/my-model",
             r#"{"temperature":0.1}"#,
-            MESSAGES
+            MESSAGES,
+            false
         ),
         object(
             r#"{"model":"deploy/my-model","messages":[{"role":"user","content":"hi"}],"temperature":0.1}"#
@@ -88,7 +89,8 @@ pub(super) fn azure_reasoning_route_strip() {
         o_series_body(
             "o_series/my-model",
             &[r#"{"tools":"#, TOOLS, r#","temperature":0.1}"#].concat(),
-            MESSAGES
+            MESSAGES,
+            false
         ),
         object(
             &[
@@ -97,6 +99,54 @@ pub(super) fn azure_reasoning_route_strip() {
                 "}",
             ]
             .concat()
+        )
+    );
+    assert_eq!(
+        o_series_body(
+            "o_series/o1-mini",
+            "{}",
+            r#"[{"role":"system","content":"be brief"},{"role":"user","content":"hi"}]"#,
+            false
+        ),
+        object(
+            r#"{"model":"o1-mini","messages":[{"role":"user","content":"be brief"},{"role":"user","content":"hi"}]}"#
+        )
+    );
+    assert_eq!(
+        o_series_body("o_series/o1-mini", "{}", SYSTEM_AFTER_USER, true),
+        object(
+            r#"{"model":"o1-mini","messages":[{"role":"user","content":"be brief"},{"role":"user","content":"hi"}]}"#
+        )
+    );
+    assert_eq!(
+        o_series_body(
+            "o_series/o1-mini",
+            r#"{"max_retries":3,"tool_choice":"auto"}"#,
+            SYSTEM_AFTER_USER,
+            false
+        ),
+        object(
+            r#"{"model":"o1-mini","messages":[{"role":"user","content":"hi"},{"role":"user","content":"be brief"}]}"#
+        )
+    );
+    assert_eq!(
+        o_series_body(
+            "o_series/o1-mini",
+            "{}",
+            r#"[{"role":"user","content":"hi","cache_control":{"type":"ephemeral"}}]"#,
+            false
+        ),
+        object(r#"{"model":"o1-mini","messages":[{"role":"user","content":"hi"}]}"#)
+    );
+    assert_eq!(
+        o_series_body(
+            "o_series/o1-mini",
+            "{}",
+            r#"[{"role":"assistant","function_call":{"name":"f"}}]"#,
+            false
+        ),
+        object(
+            r#"{"model":"o1-mini","messages":[{"role":"assistant","function_call":{"name":"f"}}]}"#
         )
     );
 }

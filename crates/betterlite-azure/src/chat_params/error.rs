@@ -1,3 +1,4 @@
+use betterlite_openai::chat_content::ChatContentError;
 use betterlite_openai::reasoning_models::ReasoningError;
 use thiserror::Error;
 
@@ -13,6 +14,8 @@ pub enum ChatParamsError {
     Reasoning(#[from] ReasoningError),
     #[error(transparent)]
     Messages(#[from] PolicyError),
+    #[error(transparent)]
+    Content(#[from] ChatContentError),
 }
 
 impl ChatParamsError {
@@ -22,6 +25,7 @@ impl ChatParamsError {
             Self::UnsupportedNone => Some(400),
             Self::Reasoning(error) => Some(error.status_code()),
             Self::Messages(error) => error.status_code(),
+            Self::Content(error) => Some(error.status_code()),
         }
     }
 }
