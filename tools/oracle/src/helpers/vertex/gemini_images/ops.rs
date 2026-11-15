@@ -20,7 +20,9 @@ use betterlite_vertex::token_cache::record::CredentialSnapshot;
 use betterlite_vertex::vertex_gemini_images::options::{MappedOptions, map_openai_params};
 use betterlite_vertex::vertex_gemini_images::request::transform_image_generation_request;
 use betterlite_vertex::vertex_gemini_images::response::transform_image_generation_response;
-use betterlite_vertex::vertex_image_identity::settings::{ImageEnvironment, ImageIdentitySettings};
+use betterlite_vertex::vertex_image_identity::settings::{
+    ImageEnvironment, ImageIdentitySettings, ImageInstance, ImageModule, ImageSecrets,
+};
 use betterlite_vertex::vertex_image_identity::target::{
     ImageTarget, ValidationRequest, complete_url, validate_environment,
 };
@@ -106,7 +108,14 @@ fn target_value(model: &str, target: &Target) -> Result<Value, Box<HelperError>>
         &ImageTarget {
             model,
             api_base: target.api_base.as_deref(),
-            params: VertexParams::default(),
+            params: VertexParams {
+                project: None,
+                ai_project: None,
+                location: None,
+                ai_location: None,
+                credentials: None,
+                ai_credentials: None,
+            },
         },
     )
     .or_value_error()?;
@@ -116,12 +125,29 @@ fn target_value(model: &str, target: &Target) -> Result<Value, Box<HelperError>>
 
 fn target_settings(target: &Target) -> ImageIdentitySettings {
     ImageIdentitySettings {
+        instance: ImageInstance {
+            project: None,
+            location: None,
+            credentials: None,
+        },
         environment: ImageEnvironment {
             project: target.project.clone(),
             location: target.location.clone(),
-            ..ImageEnvironment::default()
+            legacy_location: None,
+            credentials: None,
+            application_credentials: None,
         },
-        ..ImageIdentitySettings::default()
+        module: ImageModule {
+            project: None,
+            location: None,
+            credentials: None,
+        },
+        secrets: ImageSecrets {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+        },
     }
 }
 
@@ -130,7 +156,14 @@ fn target_headers(
     settings: &ImageIdentitySettings,
 ) -> Result<BTreeMap<String, String>, Box<HelperError>> {
     let request = ValidationRequest {
-        params: VertexParams::default(),
+        params: VertexParams {
+            project: None,
+            ai_project: None,
+            location: None,
+            ai_location: None,
+            credentials: None,
+            ai_credentials: None,
+        },
         api_base: target.api_base.as_deref(),
         params_api_base: target.params_api_base.as_deref(),
         headers: &target.headers,

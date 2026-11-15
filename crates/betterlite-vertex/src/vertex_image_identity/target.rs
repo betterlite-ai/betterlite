@@ -49,8 +49,7 @@ pub fn complete_url(
     ))
 }
 
-// validate_environment: any non-None api_base skips credential validation, while the URL builder
-// above only uses a non-empty one, so an empty base skips auth without becoming the URL
+// any non-None api_base skips auth, but only a non-empty one becomes the URL
 pub async fn validate_environment(
     cache: &CredentialCache,
     settings: &ImageIdentitySettings,

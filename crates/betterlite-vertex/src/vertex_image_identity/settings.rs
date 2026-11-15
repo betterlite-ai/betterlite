@@ -47,8 +47,7 @@ pub struct ImageIdentitySettings {
 
 // every tier joins an `or` chain in LiteLLM, so an empty value falls through to the next one
 impl ImageIdentitySettings {
-    // LiteLLM's safe getter already reads the module and secret tiers, and _resolve_vertex_project
-    // repeats them only after the instance override and VERTEXAI_PROJECT
+    // the safe getter reads the module and secret tiers; the resolver repeats them after the instance
     #[must_use]
     pub fn resolve_project<'settings>(
         &'settings self,
@@ -67,8 +66,7 @@ impl ImageIdentitySettings {
         .find(|value| !value.is_empty())
     }
 
-    // The explicit location params drop empty strings, and the safe getter then reads the module
-    // value and both secret spellings before the instance override and the two environment names
+    // the explicit location params drop empty strings; then the module, both secrets, instance and environments
     #[must_use]
     pub fn resolve_location<'settings>(
         &'settings self,
@@ -88,8 +86,7 @@ impl ImageIdentitySettings {
         .find(|value| !value.is_empty())
     }
 
-    // litellm.vertex_credentials is absent from the safe credential getter, so it sits after the
-    // environment spelling and before GOOGLE_APPLICATION_CREDENTIALS
+    // litellm.vertex_credentials sits after the environment spelling and before GOOGLE_APPLICATION_CREDENTIALS
     #[must_use]
     pub fn resolve_credentials<'settings>(
         &'settings self,

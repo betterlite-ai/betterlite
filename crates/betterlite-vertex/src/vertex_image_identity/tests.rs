@@ -61,12 +61,29 @@ fn full_settings() -> ImageIdentitySettings {
 
 fn target_settings() -> ImageIdentitySettings {
     ImageIdentitySettings {
+        instance: ImageInstance {
+            project: None,
+            location: None,
+            credentials: None,
+        },
+        environment: ImageEnvironment {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+            application_credentials: None,
+        },
         module: ImageModule {
             project: Some("proj".to_owned()),
             location: Some("us-central1".to_owned()),
             credentials: None,
         },
-        ..ImageIdentitySettings::default()
+        secrets: ImageSecrets {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+        },
     }
 }
 
@@ -93,12 +110,19 @@ fn the_project_tiers_follow_the_safe_getter_then_fallback_chain() {
     let both = VertexParams {
         project: Some("param-project"),
         ai_project: Some("ai-param-project"),
-        ..VertexParams::default()
+        location: None,
+        ai_location: None,
+        credentials: None,
+        ai_credentials: None,
     };
     assert_eq!(settings.resolve_project(both), Some("param-project"));
     let second = VertexParams {
+        project: None,
         ai_project: Some("ai-param-project"),
-        ..VertexParams::default()
+        location: None,
+        ai_location: None,
+        credentials: None,
+        ai_credentials: None,
     };
     assert_eq!(settings.resolve_project(second), Some("ai-param-project"));
     assert_eq!(
@@ -130,7 +154,10 @@ fn an_empty_project_parameter_falls_through_to_the_ai_spelling() {
     let params = VertexParams {
         project: Some(""),
         ai_project: Some("ai-param-project"),
-        ..VertexParams::default()
+        location: None,
+        ai_location: None,
+        credentials: None,
+        ai_credentials: None,
     };
     assert_eq!(settings.resolve_project(params), Some("ai-param-project"));
 }
@@ -139,9 +166,12 @@ fn an_empty_project_parameter_falls_through_to_the_ai_spelling() {
 fn an_empty_location_parameter_falls_through_to_the_ai_spelling() {
     let settings = full_settings();
     let params = VertexParams {
+        project: None,
+        ai_project: None,
         location: Some(""),
         ai_location: Some("ai-param-location"),
-        ..VertexParams::default()
+        credentials: None,
+        ai_credentials: None,
     };
     assert_eq!(settings.resolve_location(params), Some("ai-param-location"));
 }
@@ -218,8 +248,12 @@ fn a_parameter_credential_beats_every_fallback() {
     let settings = full_settings();
     let stored = credential("param-credentials");
     let params = VertexParams {
+        project: None,
+        ai_project: None,
+        location: None,
+        ai_location: None,
         credentials: Some(&stored),
-        ..VertexParams::default()
+        ai_credentials: None,
     };
     assert_eq!(
         text(settings.resolve_credentials(params)),
@@ -270,12 +304,29 @@ fn the_vertex_ai_prefix_is_stripped_from_the_url_model() {
 #[test]
 fn the_global_location_uses_the_control_plane_host() {
     let settings = ImageIdentitySettings {
+        instance: ImageInstance {
+            project: None,
+            location: None,
+            credentials: None,
+        },
+        environment: ImageEnvironment {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+            application_credentials: None,
+        },
         module: ImageModule {
             project: Some("proj".to_owned()),
             location: Some("global".to_owned()),
             credentials: None,
         },
-        ..ImageIdentitySettings::default()
+        secrets: ImageSecrets {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+        },
     };
     let target = ImageTarget {
         model: "gemini-2.5-flash-image",
@@ -301,24 +352,58 @@ fn a_required_project_or_location_that_is_absent_or_empty_is_one_error() {
         Err(ImageIdentityError::MissingTarget)
     ));
     let project_only = ImageIdentitySettings {
+        instance: ImageInstance {
+            project: None,
+            location: None,
+            credentials: None,
+        },
+        environment: ImageEnvironment {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+            application_credentials: None,
+        },
         module: ImageModule {
             project: Some("proj".to_owned()),
             location: None,
             credentials: None,
         },
-        ..ImageIdentitySettings::default()
+        secrets: ImageSecrets {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+        },
     };
     assert!(matches!(
         complete_url(&project_only, &target),
         Err(ImageIdentityError::MissingTarget)
     ));
     let empty_project = ImageIdentitySettings {
+        instance: ImageInstance {
+            project: None,
+            location: None,
+            credentials: None,
+        },
+        environment: ImageEnvironment {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+            application_credentials: None,
+        },
         module: ImageModule {
             project: Some(String::new()),
             location: Some("us-central1".to_owned()),
             credentials: None,
         },
-        ..ImageIdentitySettings::default()
+        secrets: ImageSecrets {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+        },
     };
     assert!(matches!(
         complete_url(&empty_project, &target),
@@ -329,12 +414,29 @@ fn a_required_project_or_location_that_is_absent_or_empty_is_one_error() {
 #[test]
 fn a_location_outside_the_lowercase_host_alphabet_never_chooses_the_host() {
     let settings = ImageIdentitySettings {
+        instance: ImageInstance {
+            project: None,
+            location: None,
+            credentials: None,
+        },
+        environment: ImageEnvironment {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+            application_credentials: None,
+        },
         module: ImageModule {
             project: Some("proj".to_owned()),
             location: Some("us-central1.evil.example".to_owned()),
             credentials: None,
         },
-        ..ImageIdentitySettings::default()
+        secrets: ImageSecrets {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+        },
     };
     let target = ImageTarget {
         model: "gemini-2.5-flash-image",
@@ -497,12 +599,29 @@ async fn the_normal_path_mints_a_token_for_the_resolved_project_and_credentials(
         headers: &headers,
     };
     let settings = ImageIdentitySettings {
+        instance: ImageInstance {
+            project: None,
+            location: None,
+            credentials: None,
+        },
         environment: ImageEnvironment {
             project: Some("env-project".to_owned()),
+            location: None,
+            legacy_location: None,
             credentials: Some(credential("env-credentials")),
-            ..ImageEnvironment::default()
+            application_credentials: None,
         },
-        ..ImageIdentitySettings::default()
+        module: ImageModule {
+            project: None,
+            location: None,
+            credentials: None,
+        },
+        secrets: ImageSecrets {
+            project: None,
+            location: None,
+            legacy_location: None,
+            credentials: None,
+        },
     };
     let resolved = validate_environment(&cache, &settings, &request)
         .await
