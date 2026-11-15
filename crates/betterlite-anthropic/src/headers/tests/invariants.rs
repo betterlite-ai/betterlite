@@ -89,14 +89,14 @@ fn anthropic_headers_secret_safe_failure() {
 
     let oauth_key = fixture::secret("sk-ant-oat-fixture-secret");
     let oauth_headers = get_anthropic_headers(&fixture::request(Some(&oauth_key), None, &features));
-    let debug = format!("{oauth_headers:?}");
-    assert!(!debug.contains("fixture-secret"));
-    assert!(debug.contains("authorization"));
+    let oauth_debug = format!("{oauth_headers:?}");
+    assert!(!oauth_debug.contains("fixture-secret"));
+    assert!(oauth_debug.contains("authorization"));
 
     let token = fixture::secret("auth-token-fixture-secret");
     let token_headers = get_anthropic_headers(&fixture::request(None, Some(&token), &features));
-    let debug = format!("{token_headers:?}");
-    assert!(!debug.contains("fixture-secret"));
+    let token_debug = format!("{token_headers:?}");
+    assert!(!token_debug.contains("fixture-secret"));
 
     // a missing-credential failure names the variables and never the caller's headers
     let caller_headers = fixture::headers(&[("x-api-key", "stale-fixture-secret")]);

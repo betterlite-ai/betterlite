@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::loader::ConfigLoader;
+use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::anthropic_headers::Settings as HeaderConfig;
 use http::{HeaderMap, HeaderValue};
 
@@ -8,6 +8,12 @@ use crate::headers::catalog::{ModelRecord, anthropic_model_list_response, model_
 use crate::headers::response::process_anthropic_headers;
 
 pub(super) fn response_header_prefixes_case() {
+    prefixed_headers_projected();
+    request_id_only();
+    repeated_headers();
+}
+
+fn rate_limit_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
         "anthropic-ratelimit-requests-limit",
@@ -27,7 +33,11 @@ pub(super) fn response_header_prefixes_case() {
     );
     headers.insert("request-id", HeaderValue::from_static("req_1"));
     headers.insert("content-type", HeaderValue::from_static("application/json"));
-    let projected = process_anthropic_headers(&headers);
+    headers
+}
+
+fn prefixed_headers_projected() {
+    let projected = process_anthropic_headers(&rate_limit_headers());
     assert_eq!(
         projected.get("llm_provider-request-id").map(String::as_str),
         Some("req_1")
@@ -62,7 +72,9 @@ pub(super) fn response_header_prefixes_case() {
             .map(String::as_str),
         Some("999")
     );
+}
 
+fn request_id_only() {
     let mut without_limits = HeaderMap::new();
     without_limits.insert("request-id", HeaderValue::from_static("req_2"));
     let projected = process_anthropic_headers(&without_limits);
@@ -74,9 +86,10 @@ pub(super) fn response_header_prefixes_case() {
     assert!(!projected.contains_key("x-ratelimit-remaining-requests"));
     assert!(!projected.contains_key("x-ratelimit-limit-tokens"));
     assert!(!projected.contains_key("x-ratelimit-remaining-tokens"));
-
     assert!(process_anthropic_headers(&HeaderMap::new()).is_empty());
+}
 
+fn repeated_headers() {
     let mut repeated = HeaderMap::new();
     repeated.append("x-repeated", HeaderValue::from_static("one"));
     repeated.append("x-repeated", HeaderValue::from_static("two"));
@@ -111,34 +124,38 @@ pub(super) fn catalog_created_at_default_case() {
         "2023-02-28T18:56:42Z"
     );
 
-    let lookup = BTreeMap::from([("DEFAULT_MODEL_CREATED_AT_TIME".to_owned(), "42".to_owned())]);
-    let configured = ConfigLoader { lookup }
-        .load("")
-        .unwrap()
-        .sections
-        .anthropic_headers;
+    let configured = configured_settings("42");
     assert_eq!(configured.default_model_created_at_time, 42);
     assert_eq!(
         model_created_at(configured.default_model_created_at_time).unwrap(),
         "1970-01-01T00:00:42Z"
     );
 
-    let lookup = BTreeMap::from([("DEFAULT_MODEL_CREATED_AT_TIME".to_owned(), String::new())]);
-    let empty = ConfigLoader { lookup }
-        .load("")
-        .unwrap()
-        .sections
-        .anthropic_headers;
+    let empty = configured_settings("");
     assert_eq!(empty.default_model_created_at_time, 1_677_610_602);
 
-    let lookup = BTreeMap::from([(
-        "DEFAULT_MODEL_CREATED_AT_TIME".to_owned(),
-        "not-a-number".to_owned(),
-    )]);
-    let error = ConfigLoader { lookup }.load("").unwrap_err();
+    let error = config_error("not-a-number");
     assert_eq!(error.category(), "environment");
     assert!(error.to_string().contains("DEFAULT_MODEL_CREATED_AT_TIME"));
 
+    default_created_at_in_list(&settings);
+}
+
+fn configured_settings(value: &str) -> HeaderConfig {
+    let lookup = BTreeMap::from([("DEFAULT_MODEL_CREATED_AT_TIME".to_owned(), value.to_owned())]);
+    ConfigLoader { lookup }
+        .load("")
+        .unwrap()
+        .sections
+        .anthropic_headers
+}
+
+fn config_error(value: &str) -> ConfigError {
+    let lookup = BTreeMap::from([("DEFAULT_MODEL_CREATED_AT_TIME".to_owned(), value.to_owned())]);
+    ConfigLoader { lookup }.load("").unwrap_err()
+}
+
+fn default_created_at_in_list(settings: &HeaderConfig) {
     let models = vec![ModelRecord {
         id: "claude-sonnet-4".to_owned(),
         max_input_tokens: None,
