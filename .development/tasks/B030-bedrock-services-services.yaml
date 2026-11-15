@@ -37,7 +37,7 @@ description: >-
   The current managed-batch source message is LiteLLM-executed batches need a database: set DATABASE_URL so LiteLLM
   can keep the batch and its files. Public route owners apply B184 message rewriting while matching status/type/param/code.
   The installed Responses family fetches request image URLs through the injected RemoteMediaFetcher before dispatch,
-  while local file/multipart bytes stay local. The decision to add managed files and batches remains open for Max.
+  while local file/multipart bytes stay local. betterlite builds no managed files (decision 2026-10-31).
 
 
   Write standalone Rust test bedrock_services_dispatch_credential_identity_isolation in betterlite-provider: Distinct
