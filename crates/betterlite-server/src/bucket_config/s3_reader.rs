@@ -22,7 +22,6 @@ use betterlite_logging::s3_transport::signing::{
 };
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use url::Url;
 
 use super::object::BucketObjectReader;
@@ -34,14 +33,6 @@ const METHOD: &str = "GET";
 const CONTENT_SHA256_HEADER: &str = "x-amz-content-sha256";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CREDENTIALS_TIMEOUT: Duration = Duration::from_secs(60);
-
-// Python's quote leaves the unreserved characters alone, so only these and "/" stay as themselves
-const OBJECT_KEY_SAFE: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'-')
-    .remove(b'~')
-    .remove(b'/');
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct S3GetRequest {
@@ -172,15 +163,6 @@ impl S3Reader {
         }
     }
 
-    #[must_use]
-    pub fn object_url(&self, object_key: &str) -> String {
-        let key = utf8_percent_encode(object_key, OBJECT_KEY_SAFE);
-        if self.bucket_name.contains('.') {
-            return format!("https://s3.{}/{}/{}", self.region, self.bucket_name, key);
-        }
-        format!("https://{}.s3.{}/{}", self.bucket_name, self.region, key)
-    }
-
     fn signed_headers(
         &self,
         url: &str,
@@ -206,7 +188,7 @@ impl S3Reader {
         let Some(credentials) = self.credentials.as_ref() else {
             return None;
         };
-        let url = self.object_url(object_key);
+        let url = addressing::object_url(&self.bucket_name, &self.region, object_key);
         let headers = match self.signed_headers(&url, credentials) {
             Ok(headers) => headers,
             Err(error) => {
@@ -295,4 +277,5 @@ async fn resolve_credentials(
     native.load(&credential_settings(region)).await
 }
 
+mod addressing;
 mod tests;

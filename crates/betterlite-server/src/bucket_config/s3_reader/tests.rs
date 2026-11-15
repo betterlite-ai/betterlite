@@ -17,6 +17,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
+use super::addressing::object_url;
 use super::{
     DEFAULT_REGION, ProxiedS3Get, REGION_VARIABLE, S3Get, S3GetRequest, S3Reader,
     S3TransportFailure, credential_settings, region_from_environment,
@@ -61,19 +62,57 @@ fn reader(transport: Arc<FakeS3>, bucket_name: &str) -> S3Reader {
 
 #[test]
 fn a_virtual_hosted_url_carries_the_bucket_in_the_host() {
-    let reader = reader(Arc::new(FakeS3::default()), "config-bucket");
     assert_eq!(
-        reader.object_url("models/config.yaml"),
+        object_url("config-bucket", "us-east-1", "models/config.yaml"),
         "https://config-bucket.s3.us-east-1.amazonaws.com/models/config.yaml"
     );
 }
 
 #[test]
 fn a_dotted_bucket_name_is_read_path_style() {
-    let reader = reader(Arc::new(FakeS3::default()), "config.bucket");
     assert_eq!(
-        reader.object_url("models/config.yaml"),
+        object_url("config.bucket", "us-east-1", "models/config.yaml"),
         "https://s3.us-east-1.amazonaws.com/config.bucket/models/config.yaml"
+    );
+}
+
+#[rstest]
+#[case::uppercase("ConfigBucket")]
+#[case::underscore("config_bucket")]
+#[case::too_short("ab")]
+#[case::leading_hyphen("-config")]
+#[case::trailing_hyphen("config-")]
+#[case::too_long("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+fn a_bucket_name_boto3_would_not_virtual_host_is_read_path_style(#[case] bucket_name: &str) {
+    assert_eq!(
+        object_url(bucket_name, "us-east-1", "config.yaml"),
+        format!("https://s3.us-east-1.amazonaws.com/{bucket_name}/config.yaml")
+    );
+}
+
+#[rstest]
+#[case::shortest_dns_name("abc")]
+#[case::longest_dns_name("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+fn a_bucket_name_boto3_would_virtual_host_uses_the_bucket_host(#[case] bucket_name: &str) {
+    assert_eq!(
+        object_url(bucket_name, "us-east-1", "config.yaml"),
+        format!("https://{bucket_name}.s3.us-east-1.amazonaws.com/config.yaml")
+    );
+}
+
+#[test]
+fn a_china_region_virtual_hosted_url_uses_the_partition_dns_suffix() {
+    assert_eq!(
+        object_url("config-bucket", "cn-north-1", "models/config.yaml"),
+        "https://config-bucket.s3.cn-north-1.amazonaws.com.cn/models/config.yaml"
+    );
+}
+
+#[test]
+fn a_china_region_path_style_url_uses_the_partition_dns_suffix() {
+    assert_eq!(
+        object_url("config.bucket", "cn-north-1", "models/config.yaml"),
+        "https://s3.cn-north-1.amazonaws.com.cn/config.bucket/models/config.yaml"
     );
 }
 
@@ -86,9 +125,8 @@ fn a_dotted_bucket_name_is_read_path_style() {
 #[case::percent("%.yaml", "%25.yaml")]
 #[case::double_slash("a//b.yaml", "a//b.yaml")]
 fn object_url_encodes_each_key_segment(#[case] object_key: &str, #[case] expected: &str) {
-    let reader = reader(Arc::new(FakeS3::default()), "bucket");
     assert_eq!(
-        reader.object_url(object_key),
+        object_url("bucket", "us-east-1", object_key),
         format!("https://bucket.s3.us-east-1.amazonaws.com/{expected}")
     );
 }
@@ -165,13 +203,19 @@ async fn initialize_keeps_the_session_token() {
 async fn initialize_reads_the_region_from_the_environment() {
     let mut environment = credential_environment();
     environment.insert(REGION_VARIABLE.to_owned(), "eu-west-1".to_owned());
+    let transport = FakeS3::answering(200, b"ok");
+    let transport_trait: Arc<dyn S3Get> = Arc::clone(&transport);
 
-    let reader = S3Reader::initialize("bucket", &environment, Arc::new(FakeS3::default())).await;
+    let reader = S3Reader::initialize("bucket", &environment, transport_trait).await;
 
     assert_eq!(reader.region, "eu-west-1");
     assert_eq!(
-        reader.object_url("config.yaml"),
-        "https://bucket.s3.eu-west-1.amazonaws.com/config.yaml"
+        reader.read_object("config.yaml").await.as_deref(),
+        Some(b"ok".as_slice())
+    );
+    assert_eq!(
+        transport.urls(),
+        vec!["https://bucket.s3.eu-west-1.amazonaws.com/config.yaml".to_owned()]
     );
 }
 
