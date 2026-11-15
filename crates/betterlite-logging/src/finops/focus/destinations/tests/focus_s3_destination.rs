@@ -323,14 +323,14 @@ async fn upload_forwards_bucket_key_and_body() {
         .deliver(CONTENT, &window(START_EPOCH, "daily"), FILENAME)
         .await
         .unwrap();
-    let puts = client.seen();
-    let put = &puts[0];
-    assert_eq!(put.bucket_name, BUCKET);
+    let recorded = client.seen();
+    let upload = &recorded[0];
+    assert_eq!(upload.bucket_name, BUCKET);
     assert_eq!(
-        put.object_key,
+        upload.object_key,
         format!("{PREFIX}/date=2026-01-02/{FILENAME}")
     );
-    assert_eq!(put.body, CONTENT);
+    assert_eq!(upload.body, CONTENT);
 }
 
 #[tokio::test]

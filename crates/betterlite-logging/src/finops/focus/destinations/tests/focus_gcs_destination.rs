@@ -72,6 +72,22 @@ fn init_accepts_a_bucket_without_a_service_account() {
     assert!(destination.service_account_json.is_none());
 }
 
+#[test]
+fn init_keeps_an_empty_service_account_path() {
+    let settings = GcsSettings {
+        bucket_name: Some(BUCKET.to_owned()),
+        service_account_json: Some(SecretString::from("")),
+    };
+    let (destination, _client) = gcs_destination(PREFIX, settings);
+    assert_eq!(
+        destination
+            .service_account_json
+            .as_ref()
+            .map(|value| value.expose_secret().as_str()),
+        Some("")
+    );
+}
+
 #[tokio::test]
 async fn deliver_requests_headers_for_the_bucket() {
     let (destination, client) = gcs_destination(PREFIX, gcs_settings());
