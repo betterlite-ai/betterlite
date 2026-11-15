@@ -96,22 +96,14 @@ pub async fn get_mcp_toolset<T>(table: &T, toolset_id: &str) -> ToolsetLookup
 where
     T: ToolsetTable,
 {
-    table
-        .find_unique(toolset_id)
-        .await?
-        .map(toolset_from_row)
-        .transpose()
+    optional_toolset(table.find_unique(toolset_id).await?)
 }
 
 pub async fn get_mcp_toolset_by_name<T>(table: &T, name: &str) -> ToolsetLookup
 where
     T: ToolsetTable,
 {
-    table
-        .find_first_by_name(name)
-        .await?
-        .map(toolset_from_row)
-        .transpose()
+    optional_toolset(table.find_first_by_name(name).await?)
 }
 
 pub async fn list_mcp_toolsets<T>(
@@ -123,14 +115,15 @@ where
     T: ToolsetTable,
 {
     let filter = toolset_ids.map_or(ToolsetFilter::All, |ids| ToolsetFilter::Ids(ids.to_vec()));
-    match listed_toolsets(table, filter, use_writer).await {
-        Ok(toolsets) => Ok(toolsets),
-        Err(error) if !use_writer => {
-            tracing::warn!(error = %error, "the toolset list read failed, returning no toolsets");
-            Ok(Vec::new())
-        }
-        Err(error) => Err(error),
+    let listed = listed_toolsets(table, filter, use_writer).await;
+    if use_writer {
+        return listed;
     }
+    let toolsets = listed.unwrap_or_else(|error| {
+        tracing::warn!(error = %error, "the toolset list read failed, returning no toolsets");
+        Vec::new()
+    });
+    Ok(toolsets)
 }
 
 async fn listed_toolsets<T>(
@@ -158,19 +151,14 @@ where
     T: ToolsetTable,
 {
     let update = ToolsetUpdate::from_request(data, touched_by)?;
-    let stored = table.update(&data.toolset_id, update).await?;
-    optional_toolset(stored)
+    optional_toolset(table.update(&data.toolset_id, update).await?)
 }
 
 pub async fn delete_mcp_toolset<T>(table: &T, toolset_id: &str) -> ToolsetLookup
 where
     T: ToolsetTable,
 {
-    table
-        .delete(toolset_id)
-        .await?
-        .map(toolset_from_row)
-        .transpose()
+    optional_toolset(table.delete(toolset_id).await?)
 }
 
 fn optional_toolset(row: Option<ToolsetRow>) -> ToolsetLookup {

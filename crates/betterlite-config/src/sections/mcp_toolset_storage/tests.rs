@@ -87,9 +87,13 @@ impl FakeTable {
     }
 
     fn take_row(&self, toolset_id: &str) -> Option<ToolsetRow> {
-        let mut rows = self.rows.lock().unwrap();
-        let index = rows.iter().position(|row| row.toolset_id == toolset_id);
-        index.map(|found| rows.remove(found))
+        let index = self
+            .rows
+            .lock()
+            .unwrap()
+            .iter()
+            .position(|row| row.toolset_id == toolset_id);
+        index.map(|found| self.rows.lock().unwrap().remove(found))
     }
 }
 
@@ -132,6 +136,7 @@ impl ToolsetTable for FakeTable {
                 ToolsetFilter::All => filters.push((None, use_writer)),
                 ToolsetFilter::Ids(ids) => filters.push((Some(ids.clone()), use_writer)),
             }
+            drop(filters);
             let ids = match filter {
                 ToolsetFilter::All => None,
                 ToolsetFilter::Ids(ids) => Some(ids),
@@ -143,9 +148,9 @@ impl ToolsetTable for FakeTable {
             return ready(Err(MCPToolsetStorageError::Table(TableError::MissingRow)));
         }
         let matched = match ids {
-            Some(ids) => rows
+            Some(wanted) => rows
                 .into_iter()
-                .filter(|row| ids.contains(&row.toolset_id))
+                .filter(|row| wanted.contains(&row.toolset_id))
                 .collect(),
             None => rows,
         };
@@ -157,27 +162,12 @@ impl ToolsetTable for FakeTable {
         toolset_id: &str,
         update: ToolsetUpdate,
     ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
-        let result = {
-            let mut rows = self.rows.lock().unwrap();
-            rows.iter_mut()
-                .find(|row| row.toolset_id == toolset_id)
-                .map(|row| {
-                    if let Some(name) = &update.toolset_name {
-                        row.toolset_name = name.clone();
-                    }
-                    match &update.description {
-                        Patch::Keep => {}
-                        Patch::Clear => row.description = None,
-                        Patch::Set(text) => row.description = Some(text.clone()),
-                    }
-                    if let Some(tools) = &update.tools {
-                        row.tools = Some(tools.clone());
-                    }
-                    row.updated_by = Some(update.updated_by.clone());
-                    row.updated_at = Some(clock());
-                    row.clone()
-                })
-        };
+        let mut rows = self.rows.lock().unwrap();
+        let result = rows
+            .iter_mut()
+            .find(|row| row.toolset_id == toolset_id)
+            .map(|row| apply_update(row, &update));
+        drop(rows);
         ready(Ok(result))
     }
 
@@ -187,6 +177,23 @@ impl ToolsetTable for FakeTable {
     ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         ready(Ok(self.take_row(toolset_id)))
     }
+}
+
+fn apply_update(row: &mut ToolsetRow, update: &ToolsetUpdate) -> ToolsetRow {
+    if let Some(name) = &update.toolset_name {
+        row.toolset_name.clone_from(name);
+    }
+    match &update.description {
+        Patch::Keep => {}
+        Patch::Clear => row.description = None,
+        Patch::Set(text) => row.description = Some(text.clone()),
+    }
+    if let Some(tools) = &update.tools {
+        row.tools = Some(tools.clone());
+    }
+    row.updated_by = Some(update.updated_by.clone());
+    row.updated_at = Some(clock());
+    row.clone()
 }
 
 #[derive(Clone, Default)]

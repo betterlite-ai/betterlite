@@ -112,7 +112,7 @@ async fn create(input: &Input, store: &store::Store) -> HelperResult {
     let request: NewMCPToolsetRequest = request(input)?;
     let created = create_mcp_toolset(store, &request, &input.touched_by)
         .await
-        .map_err(storage_error)?;
+        .map_err(|error| storage_error(&error))?;
     serde_json::to_value(created).or_value_error()
 }
 
@@ -120,7 +120,7 @@ async fn get(input: &Input, store: &store::Store) -> HelperResult {
     let toolset_id = required(input.toolset_id.as_deref())?;
     let found = get_mcp_toolset(store, toolset_id)
         .await
-        .map_err(storage_error)?;
+        .map_err(|error| storage_error(&error))?;
     optional(found)
 }
 
@@ -128,14 +128,14 @@ async fn get_by_name(input: &Input, store: &store::Store) -> HelperResult {
     let toolset_name = required(input.toolset_name.as_deref())?;
     let found = get_mcp_toolset_by_name(store, toolset_name)
         .await
-        .map_err(storage_error)?;
+        .map_err(|error| storage_error(&error))?;
     optional(found)
 }
 
 async fn list(input: &Input, store: &store::Store) -> HelperResult {
     let toolsets = list_mcp_toolsets(store, input.toolset_ids.as_deref(), input.use_writer)
         .await
-        .map_err(storage_error)?;
+        .map_err(|error| storage_error(&error))?;
     Ok(json!({"toolsets": toolsets, "store": store.seen()}))
 }
 
@@ -143,7 +143,7 @@ async fn update(input: &Input, store: &store::Store) -> HelperResult {
     let request: UpdateMCPToolsetRequest = request(input)?;
     let updated = update_mcp_toolset(store, &request, &input.touched_by)
         .await
-        .map_err(storage_error)?;
+        .map_err(|error| storage_error(&error))?;
     optional(updated)
 }
 
@@ -151,7 +151,7 @@ async fn delete(input: &Input, store: &store::Store) -> HelperResult {
     let toolset_id = required(input.toolset_id.as_deref())?;
     let removed = delete_mcp_toolset(store, toolset_id)
         .await
-        .map_err(storage_error)?;
+        .map_err(|error| storage_error(&error))?;
     optional(removed)
 }
 
@@ -180,7 +180,7 @@ fn optional(found: Option<MCPToolset>) -> HelperResult {
     )
 }
 
-fn storage_error(error: MCPToolsetStorageError) -> Box<HelperError> {
+fn storage_error(error: &MCPToolsetStorageError) -> Box<HelperError> {
     let message = error.to_string();
     Box::new(HelperError {
         class: "DatabaseUnavailableError".to_owned(),

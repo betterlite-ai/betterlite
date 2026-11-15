@@ -50,9 +50,18 @@ impl Store {
     }
 
     fn take_row(&self, toolset_id: &str) -> Option<ToolsetRow> {
-        let mut writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
-        let index = writer.iter().position(|row| row.toolset_id == toolset_id);
-        index.map(|found| writer.remove(found))
+        let index = self
+            .writer
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .position(|row| row.toolset_id == toolset_id);
+        index.map(|found| {
+            self.writer
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(found)
+        })
     }
 }
 
@@ -132,7 +141,7 @@ impl ToolsetTable for Store {
                 .find(|row| row.toolset_id == toolset_id)
                 .map(|row| {
                     if let Some(name) = &update.toolset_name {
-                        row.toolset_name = name.clone();
+                        row.toolset_name.clone_from(name);
                     }
                     match &update.description {
                         Patch::Keep => {}
