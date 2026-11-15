@@ -37,16 +37,22 @@ class AktoCall(TypedDict, total=False):
     ingest_data: bool
 
 
-# LiteLLM's methods take the Any-carrying GenericGuardrailAPIInputs and bare dicts, so the instance is cast to this
+# LiteLLM's methods take the Any-carrying inputs and bare dicts, so the instance is cast to this
 class Akto(Protocol):
     akto_base_url: str
     akto_account_id: str
     akto_vxlan_id: str
     unreachable_fallback: Literal["fail_closed", "fail_open"]
     guardrail_timeout: int
-    def build_akto_payload(self, data: Json, request: Json, *, status_code: int, include_response: bool) -> Json: ...
-    async def send_request(self, *, guardrails: bool, ingest_data: bool, payload: Json) -> httpx.Response: ...
-    async def fire_and_forget_request(self, *, guardrails: bool, ingest_data: bool, payload: Json) -> None: ...
+    def build_akto_payload(
+        self, inputs: Json, request_data: Json, *, status_code: int, include_response: bool
+    ) -> Json: ...
+    async def send_request(
+        self, *, guardrails: bool, ingest_data: bool, payload: Json
+    ) -> httpx.Response: ...
+    async def fire_and_forget_request(
+        self, *, guardrails: bool, ingest_data: bool, payload: Json
+    ) -> None: ...
     def handle_guardrail_response(self, response: httpx.Response) -> tuple[bool, str]: ...
     def handle_unreachable(self, inputs: Json, error: Exception) -> Json: ...
 
@@ -137,20 +143,16 @@ def capture_request(request: httpx.Request) -> Json:
 
 
 async def deliver(
-    instance: Akto, transport: ScriptedTransport, payload: dict[str, Json], call: AktoCall, *, fire_and_forget: bool
+    akto: Akto, script: ScriptedTransport, payload: Json, call: AktoCall, *, fire_and_forget: bool
 ) -> Json:
-    guardrails = call.get("guardrails") is True
-    ingest_data = call.get("ingest_data") is True
+    check = call.get("guardrails") is True
+    ingest = call.get("ingest_data") is True
     if fire_and_forget:
-        await instance.fire_and_forget_request(
-            guardrails=guardrails, ingest_data=ingest_data, payload=payload
-        )
-        return {"request": capture_request(transport.requests[0]), "succeeded": True}
-    response = await instance.send_request(
-        guardrails=guardrails, ingest_data=ingest_data, payload=payload
-    )
-    captured = capture_request(transport.requests[0])
-    allowed, reason = instance.handle_guardrail_response(response)
+        await akto.fire_and_forget_request(guardrails=check, ingest_data=ingest, payload=payload)
+        return {"request": capture_request(script.requests[0]), "succeeded": True}
+    response = await akto.send_request(guardrails=check, ingest_data=ingest, payload=payload)
+    captured = capture_request(script.requests[0])
+    allowed, reason = akto.handle_guardrail_response(response)
     return {"request": captured, "allowed": allowed, "reason": reason}
 
 
@@ -163,10 +165,7 @@ def payload_of(call: AktoCall, instance: Akto) -> dict[str, Json]:
     if request_data is None:
         request_data = {}
     built = instance.build_akto_payload(
-        inputs_of(call),
-        request_data,
-        status_code=status,
-        include_response=include_response,
+        inputs_of(call), request_data, status_code=status, include_response=include_response
     )
     return TypeAdapter(dict[str, Json]).validate_python(built)
 
