@@ -161,6 +161,19 @@ async fn label_attachment(#[case] line: &str, #[case] labels: Option<&str>) {
 }
 
 #[rstest]
+#[case::temperature(r#""temperature":0.5"#, r#""temperature": 0.5"#)]
+#[case::max_tokens(r#""max_tokens":16"#, r#""max_output_tokens": 16"#)]
+#[tokio::test]
+async fn chat_options(#[case] option: &str, #[case] expected: &str) {
+    let body = r#""model":"gemini-2.0-flash","messages":[{"role":"user","content":"hi"}]"#;
+    let rows = rows_of(&format!(
+        r#"{{"url":"/v1/chat/completions","body":{{{body},{option}}}}}"#
+    ))
+    .await;
+    assert!(rows.first().unwrap().contains(expected));
+}
+
+#[rstest]
 #[case::literally_true("batch", Json::Bool(true), true)]
 #[case::the_number_one("batch", Json::Number(Number::from(1_i32)), false)]
 #[case::the_text_true("batch", Json::Text("true".to_owned()), false)]
