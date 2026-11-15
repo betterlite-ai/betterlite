@@ -1,0 +1,45 @@
+kind: sdk_http
+name: normal-terminal-and-incomplete
+env:
+  ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE: "4"
+  ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS: "100"
+call:
+  messages_native_stream:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    queue_maxsize: 4
+    max_detached_stream_drains: 100
+    steps:
+      - {op: start, stream: t}
+      - {op: release, stream: t, count: 2}
+      - {op: finish, stream: t}
+      - {op: read, stream: t}
+      - {op: read, stream: t}
+      - {op: read, stream: t}
+      - {op: start, stream: i}
+      - {op: release, stream: i, count: 1}
+      - {op: finish, stream: i}
+      - {op: read, stream: i}
+      - {op: read, stream: i}
+      - {op: read, stream: i}
+      - {op: settle}
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "a"}}'
+      - "\nevent: message_stop\ndata: {\"type\":\"message_stop\"}"
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "b"}}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
