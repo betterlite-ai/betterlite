@@ -37,7 +37,6 @@ impl<T: TaskTransport + Sync, C: PollClock + Sync> RunwayImageTransform<'_, T, C
         })?;
         let task_id = task
             .id
-            .clone()
             .filter(|id| !id.is_empty())
             .ok_or(RunwayImageError::MissingTaskId)?;
         let headers = poll_headers(request_headers, &self.settings.api_version)?;
