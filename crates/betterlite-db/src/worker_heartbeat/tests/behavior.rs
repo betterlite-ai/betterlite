@@ -172,6 +172,7 @@ async fn count_empty_none_malformed_unknown(
 
 #[rstest]
 #[case::first_wins(vec![Some(3_i32), Some(9_i32)], Some(3_i32))]
+#[case::negative_count(vec![Some(-1_i32)], Some(-1_i32))]
 #[case::later_row_validated(vec![Some(3_i32), None], None)]
 #[tokio::test]
 async fn count_validates_all_rows_uses_first(
