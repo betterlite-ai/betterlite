@@ -20,24 +20,28 @@ call:
           data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           position: 3
           failure: tell
+          name: clip.bin
       - op: video_file_tuple
         fixture:
           kind: failing_reader
           data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           position: 3
           failure: seek
+          name: clip.bin
       - op: video_file_tuple
         fixture:
           kind: failing_reader
           data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           position: 3
           failure: read
+          name: clip.bin
       - op: video_file_tuple
         fixture:
           kind: failing_reader
           data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           position: 3
           failure: restore
+          name: clip.bin
 env: {}
 compare:
   ignore: []

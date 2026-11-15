@@ -28,6 +28,7 @@ pub(super) enum Fixture {
         data_base64: String,
         position: usize,
         failure: Failure,
+        name: String,
     },
 }
 
@@ -170,8 +171,9 @@ pub(super) fn prepared(fixture: &Fixture) -> Prepared {
             data_base64,
             position,
             failure,
+            name,
         } => Prepared {
-            name: None,
+            name: Some(name.clone()),
             kind: PreparedKind::Reader(ProbeReader::new(
                 STANDARD.decode(data_base64).unwrap_or_default(),
                 *position,

@@ -47,6 +47,7 @@ class FailingFixture(TypedDict):
     data_base64: str
     position: int
     failure: Failure
+    name: str
 
 
 Fixture: TypeAlias = Annotated[
@@ -69,10 +70,11 @@ class NamedBytesIO(io.BytesIO):
 
 
 class FaultyBytesIO(io.BytesIO):
-    def __init__(self, data: bytes, position: int, failure: Failure) -> None:
+    def __init__(self, data: bytes, position: int, failure: Failure, name: str) -> None:
         super().__init__(data)
         self.failure = failure
         self.seeks = 0
+        self.name = name
         self.position = position
         io.BytesIO.seek(self, position)
 
@@ -102,6 +104,14 @@ class FaultyBytesIO(io.BytesIO):
 
     def cursor(self) -> int:
         return self.position
+
+
+class BufferedCursor:
+    def __init__(self, buffered: io.BufferedReader) -> None:
+        self.buffered = buffered
+
+    def cursor(self) -> int:
+        return self.buffered.tell()
 
 
 class FixtureState:
@@ -148,15 +158,15 @@ def fixtures(spec: Fixture) -> FixtureState:
             return FixtureState(spec["value"], "text", spec["value"], None)
         case "bytes_io":
             data = base64.b64decode(spec["data_base64"])
-            stream = FaultyBytesIO(data, spec["position"], "none")
+            stream = FaultyBytesIO(data, spec["position"], "none", "")
             return FixtureState(stream, "stream", None, stream)
         case "buffered_reader":
             data = base64.b64decode(spec["data_base64"])
             raw = NamedBytesIO(data, spec["name"])
             buffered = io.BufferedReader(raw)
             buffered.seek(spec["position"])
-            return FixtureState(buffered, "stream", None, raw)
+            return FixtureState(buffered, "stream", None, BufferedCursor(buffered))
         case "failing_reader":
             data = base64.b64decode(spec["data_base64"])
-            faulty = FaultyBytesIO(data, spec["position"], spec["failure"])
+            faulty = FaultyBytesIO(data, spec["position"], spec["failure"], spec["name"])
             return FixtureState(faulty, "stream", None, faulty)
