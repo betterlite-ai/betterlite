@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::time::SystemTime;
 
+use betterlite_db::daily_activity_contracts::DailyActivityScopeInput;
 use betterlite_db::daily_activity_contracts::identifiers::DailyActivityTable;
-use betterlite_db::daily_activity_contracts::{DailyActivityScope, DailyActivityScopeInput};
 use betterlite_server::daily_activity::recovery::scope::{
     ScopeIds, ScopeRequest, daily_activity_scope,
 };
@@ -19,21 +19,23 @@ pub(crate) struct Op;
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    SpendLogsWindow {
-        dates: Vec<Option<String>>,
-    },
-    DailyActivityScope {
-        table: DailyActivityTable,
-        entity_id_field: String,
-        entity_id: Option<ScopeIdInput>,
-        exclude_entity_ids: Vec<String>,
-        api_key: Option<ScopeIdInput>,
-        start_date: String,
-        end_date: String,
-        model: Option<String>,
-        timezone_offset_minutes: Option<i64>,
-        include_current_utc_day: bool,
-    },
+    SpendLogsWindow { dates: Vec<Option<String>> },
+    DailyActivityScope(ScopeInput),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ScopeInput {
+    table: DailyActivityTable,
+    entity_id_field: String,
+    entity_id: Option<ScopeIdInput>,
+    exclude_entity_ids: Vec<String>,
+    api_key: Option<ScopeIdInput>,
+    start_date: String,
+    end_date: String,
+    model: Option<String>,
+    timezone_offset_minutes: Option<i64>,
+    include_current_utc_day: bool,
 }
 
 #[derive(Deserialize)]
@@ -57,43 +59,14 @@ impl Helper for Op {
 
     fn run(input: &Input) -> HelperResult {
         match input {
-            Input::SpendLogsWindow { dates } => window(dates),
-            Input::DailyActivityScope {
-                table,
-                entity_id_field,
-                entity_id,
-                exclude_entity_ids,
-                api_key,
-                start_date,
-                end_date,
-                model,
-                timezone_offset_minutes,
-                include_current_utc_day,
-            } => {
-                let request = ScopeRequest {
-                    table: *table,
-                    entity_id_field: entity_id_field.as_str(),
-                    entity_id: entity_id.as_ref().map(ScopeIds::from),
-                    exclude_entity_ids: exclude_entity_ids.clone(),
-                    api_key: api_key.as_ref().map(ScopeIds::from),
-                    start_date: start_date.as_str(),
-                    end_date: end_date.as_str(),
-                    model: model.as_deref(),
-                    timezone_offset_minutes: *timezone_offset_minutes,
-                    include_current_utc_day: *include_current_utc_day,
-                };
-                let scope = daily_activity_scope(request).map_err(failure)?;
-                scope_value(&scope)
+            Input::SpendLogsWindow { dates } => {
+                let parsed: BTreeSet<String> = dates.iter().flatten().cloned().collect();
+                let computed =
+                    spend_logs_window(&parsed).map(|(start, end)| [text(start), text(end)]);
+                Ok(json!({"window": computed}))
             }
+            Input::DailyActivityScope(call) => scope(call),
         }
-    }
-}
-
-fn window(dates: &[Option<String>]) -> HelperResult {
-    let parsed: BTreeSet<String> = dates.iter().flatten().cloned().collect();
-    match spend_logs_window(&parsed) {
-        Some((start, end)) => Ok(json!({"window": [text(start), text(end)]})),
-        None => Ok(json!({"window": null})),
     }
 }
 
@@ -103,8 +76,21 @@ fn text(time: SystemTime) -> String {
         .to_string()
 }
 
-fn scope_value(scope: &DailyActivityScope) -> HelperResult {
-    let input: &DailyActivityScopeInput = scope.as_ref();
+fn scope(call: &ScopeInput) -> HelperResult {
+    let request = ScopeRequest {
+        table: call.table,
+        entity_id_field: call.entity_id_field.as_str(),
+        entity_id: call.entity_id.as_ref().map(ScopeIds::from),
+        exclude_entity_ids: call.exclude_entity_ids.clone(),
+        api_key: call.api_key.as_ref().map(ScopeIds::from),
+        start_date: call.start_date.as_str(),
+        end_date: call.end_date.as_str(),
+        model: call.model.as_deref(),
+        timezone_offset_minutes: call.timezone_offset_minutes,
+        include_current_utc_day: call.include_current_utc_day,
+    };
+    let built = daily_activity_scope(request).map_err(failure)?;
+    let input: &DailyActivityScopeInput = built.as_ref();
     Ok(json!({
         "scope": {
             "table": input.table.metadata().table_name,

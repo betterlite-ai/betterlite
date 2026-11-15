@@ -86,6 +86,18 @@ pub(crate) fn reads(store: &Store) -> ProxyDailyActivityReads {
     }
 }
 
+pub(crate) fn resolved_row(api_key: &str, user_id: &str) -> KeyMetadataRow {
+    KeyMetadataRow {
+        api_key: api_key.to_owned(),
+        key_alias: None,
+        team_id: None,
+        user_id: Some(user_id.to_owned()),
+        user_email: None,
+        key_exists: false,
+        tags: Vec::new(),
+    }
+}
+
 pub(crate) async fn recover(
     reader: &ProxyDailyActivityReads,
     resolved: BTreeMap<String, KeyMetadataRow>,
@@ -144,8 +156,8 @@ async fn insert_one(store: &Store, statement: &str, params: &[&(dyn ToSql + Sync
 }
 
 pub(crate) async fn insert_user(store: &Store, user_id: &str, email: Option<&str>, teams: &[&str]) {
-    let teams: Vec<String> = teams.iter().map(|team| (*team).to_owned()).collect();
-    insert_one(store, INSERT_USER, &[&user_id, &email, &teams]).await;
+    let members: Vec<String> = teams.iter().map(|team| (*team).to_owned()).collect();
+    insert_one(store, INSERT_USER, &[&user_id, &email, &members]).await;
 }
 
 pub(crate) async fn insert_broken_user(store: &Store, user_id: &str) {
@@ -196,12 +208,12 @@ impl CapturedLogs {
 }
 
 impl Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|error| io::Error::other(error.to_string()))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

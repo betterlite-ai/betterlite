@@ -1,19 +1,20 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use betterlite_db::daily_activity_contracts::KeyMetadataRow;
+use betterlite_db::daily_activity_contracts::{KeyMetadataRow, SpendLogsWindow};
 use betterlite_db::daily_activity_repository::database::PostgresDailyActivityDatabase;
 use betterlite_db::key_attribution::history::recovery::SpendLogHistory;
 use betterlite_db::postgres_store::session::PostgresStore;
+use deadpool_postgres::Client;
 use tracing::subscriber::set_default;
 
 use super::repository::daily_activity_repository;
 use super::support::{
     DIGEST, at, capture_logs, client, close, database, digest_of, insert_daily_spend,
     insert_spend_log, insert_token, insert_tombstone, insert_user, keys, moment, reads, recover,
-    window,
+    resolved_row, window,
 };
 
 #[path = "scope.rs"]
@@ -130,8 +131,8 @@ async fn recover_key_metadata_reverse_hashes_deleted_tokens_when_active_missing(
             api_key: digest.clone(),
             key_alias: Some("gone-alias".to_owned()),
             team_id: None,
-            user_id: Some("gone-user".to_owned()),
-            user_email: Some("gone@example.com".to_owned()),
+            user_id: None,
+            user_email: None,
             key_exists: false,
             tags: Vec::new(),
         })
@@ -329,31 +330,20 @@ async fn recover_key_metadata_keeps_resolved_rows_fields_and_tags() {
         &[],
     )
     .await;
-    let resolved = BTreeMap::from([(
-        "sk-live".to_owned(),
-        KeyMetadataRow {
-            api_key: "sk-live".to_owned(),
-            key_alias: Some("resolved-alias".to_owned()),
-            team_id: Some("resolved-team".to_owned()),
-            user_id: Some("resolved-user".to_owned()),
-            user_email: None,
-            key_exists: true,
-            tags: vec!["prod".to_owned()],
-        },
-    )]);
+    let row = KeyMetadataRow {
+        key_alias: Some("resolved-alias".to_owned()),
+        team_id: Some("resolved-team".to_owned()),
+        key_exists: true,
+        tags: vec!["prod".to_owned()],
+        ..resolved_row("sk-live", "resolved-user")
+    };
+    let resolved = BTreeMap::from([("sk-live".to_owned(), row.clone())]);
     let recovered = recover(&reads(&database.store), resolved, &keys(&["sk-live"]), None).await;
-    assert_eq!(
-        recovered.get("sk-live"),
-        Some(&KeyMetadataRow {
-            api_key: "sk-live".to_owned(),
-            key_alias: Some("resolved-alias".to_owned()),
-            team_id: Some("resolved-team".to_owned()),
-            user_id: Some("resolved-user".to_owned()),
-            user_email: Some("resolved@example.com".to_owned()),
-            key_exists: true,
-            tags: vec!["prod".to_owned()],
-        })
-    );
+    let expected = KeyMetadataRow {
+        user_email: Some("resolved@example.com".to_owned()),
+        ..row
+    };
+    assert_eq!(recovered.get("sk-live"), Some(&expected));
     close(database).await;
 }
 
@@ -403,6 +393,24 @@ async fn recover_key_metadata_looks_up_no_owner_for_an_ownerless_key_outside_the
     assert!(logs.contents().is_empty());
 }
 
+async fn read_through(
+    connection: &Client,
+    store: &PostgresStore,
+    history: &Arc<SpendLogHistory>,
+    api_keys: &BTreeSet<String>,
+    spent: Option<SpendLogsWindow>,
+) -> BTreeMap<String, KeyMetadataRow> {
+    let repository = daily_activity_repository(
+        PostgresDailyActivityDatabase {
+            writer: connection,
+            reader: None,
+        },
+        store.clone(),
+        Arc::clone(history),
+    );
+    repository.key_metadata(api_keys, spent).await.unwrap()
+}
+
 #[tokio::test]
 async fn recover_key_metadata_repository_factory_attaches_user_details() {
     let database = database().await;
@@ -420,33 +428,20 @@ async fn recover_key_metadata_repository_factory_attaches_user_details() {
         Some("factory-user"),
     )
     .await;
-    let recovered = {
-        let client = client(&database.store).await;
-        let repository = daily_activity_repository(
-            PostgresDailyActivityDatabase {
-                writer: &client,
-                reader: None,
-            },
-            database.store.clone(),
-            Arc::new(SpendLogHistory::default()),
-        );
-        repository
-            .key_metadata(&keys(&["sk-factory"]), None)
-            .await
-            .unwrap()
-    };
+    let connection = client(&database.store).await;
+    let history = Arc::new(SpendLogHistory::default());
+    let wanted = keys(&["sk-factory"]);
+    let recovered = read_through(&connection, &database.store, &history, &wanted, None).await;
     assert_eq!(
         recovered.get("sk-factory"),
         Some(&KeyMetadataRow {
-            api_key: "sk-factory".to_owned(),
             key_alias: Some("factory-alias".to_owned()),
-            team_id: None,
-            user_id: Some("factory-user".to_owned()),
             user_email: Some("factory@example.com".to_owned()),
             key_exists: true,
-            tags: Vec::new(),
+            ..resolved_row("sk-factory", "factory-user")
         })
     );
+    drop(connection);
     close(database).await;
 }
 
@@ -461,62 +456,46 @@ async fn recover_key_metadata_history_cache_is_shared_by_repositories() {
         None,
     )
     .await;
-    let spent = window(at(2026, 1, 4, 0, 0), at(2026, 1, 7, 0, 0));
+    let spent = Some(window(at(2026, 1, 4, 0, 0), at(2026, 1, 7, 0, 0)));
+    let connection = client(&database.store).await;
     let history = Arc::new(SpendLogHistory::default());
-    let (first, second, shared, fresh) = {
-        let client = client(&database.store).await;
-        let repository = daily_activity_repository(
-            PostgresDailyActivityDatabase {
-                writer: &client,
-                reader: None,
-            },
-            database.store.clone(),
-            Arc::clone(&history),
-        );
-        let first = repository
-            .key_metadata(&keys(&[DIGEST]), Some(spent))
-            .await
-            .unwrap();
-        client
-            .execute(r#"DELETE FROM "LiteLLM_SpendLogs""#, &[])
-            .await
-            .unwrap();
-        let second = repository
-            .key_metadata(&keys(&[DIGEST]), Some(spent))
-            .await
-            .unwrap();
-        let sharing_repository = daily_activity_repository(
-            PostgresDailyActivityDatabase {
-                writer: &client,
-                reader: None,
-            },
-            database.store.clone(),
-            Arc::clone(&history),
-        );
-        let shared = sharing_repository
-            .key_metadata(&keys(&[DIGEST]), Some(spent))
-            .await
-            .unwrap();
-        let fresh_repository = daily_activity_repository(
-            PostgresDailyActivityDatabase {
-                writer: &client,
-                reader: None,
-            },
-            database.store.clone(),
-            Arc::new(SpendLogHistory::default()),
-        );
-        let fresh = fresh_repository
-            .key_metadata(&keys(&[DIGEST]), Some(spent))
-            .await
-            .unwrap();
-        (first, second, shared, fresh)
-    };
-    assert_eq!(
-        first.get(DIGEST).unwrap().key_alias.as_deref(),
-        Some("cached-alias")
-    );
+    let wanted = keys(&[DIGEST]);
+    let first = read_through(&connection, &database.store, &history, &wanted, spent).await;
+    connection
+        .execute(r#"DELETE FROM "LiteLLM_SpendLogs""#, &[])
+        .await
+        .unwrap();
+    let second = read_through(&connection, &database.store, &history, &wanted, spent).await;
+    assert_eq!(first[DIGEST].key_alias.as_deref(), Some("cached-alias"));
     assert_eq!(second.get(DIGEST), first.get(DIGEST));
-    assert_eq!(shared.get(DIGEST), first.get(DIGEST));
+    drop(connection);
+    close(database).await;
+}
+
+#[tokio::test]
+async fn recover_key_metadata_history_cache_does_not_cross_to_a_new_history() {
+    let database = database().await;
+    insert_spend_log(
+        &database.store,
+        DIGEST,
+        moment(2026, 1, 5, 10, 0),
+        "cached-alias",
+        None,
+    )
+    .await;
+    let spent = Some(window(at(2026, 1, 4, 0, 0), at(2026, 1, 7, 0, 0)));
+    let connection = client(&database.store).await;
+    let wanted = keys(&[DIGEST]);
+    let warm = Arc::new(SpendLogHistory::default());
+    let first = read_through(&connection, &database.store, &warm, &wanted, spent).await;
+    connection
+        .execute(r#"DELETE FROM "LiteLLM_SpendLogs""#, &[])
+        .await
+        .unwrap();
+    let cold = Arc::new(SpendLogHistory::default());
+    let fresh = read_through(&connection, &database.store, &cold, &wanted, spent).await;
+    assert!(first.contains_key(DIGEST));
     assert!(!fresh.contains_key(DIGEST));
+    drop(connection);
     close(database).await;
 }

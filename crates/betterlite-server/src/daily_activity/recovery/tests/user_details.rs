@@ -6,7 +6,9 @@ use betterlite_db::daily_activity_contracts::KeyMetadataRow;
 use betterlite_db::postgres_store::session::PostgresStore;
 use tracing::subscriber::set_default;
 
-use super::support::{DIGEST, capture_logs, close, database, insert_user, keys, reads, recover};
+use super::support::{
+    DIGEST, capture_logs, close, database, insert_user, keys, reads, recover, resolved_row,
+};
 
 #[tokio::test]
 async fn user_details_fills_email_and_skips_team_for_a_non_cli_key() {
@@ -56,31 +58,13 @@ async fn user_details_fills_team_only_for_the_cli_key_of_a_shared_user() {
         &["team-a"],
     )
     .await;
+    let cli = KeyMetadataRow {
+        key_alias: Some("cli-session-user-1".to_owned()),
+        ..resolved_row("cli-session-user-1", "user-1")
+    };
     let resolved = BTreeMap::from([
-        (
-            DIGEST.to_owned(),
-            KeyMetadataRow {
-                api_key: DIGEST.to_owned(),
-                key_alias: None,
-                team_id: None,
-                user_id: Some("user-1".to_owned()),
-                user_email: None,
-                key_exists: false,
-                tags: Vec::new(),
-            },
-        ),
-        (
-            "cli-session-user-1".to_owned(),
-            KeyMetadataRow {
-                api_key: "cli-session-user-1".to_owned(),
-                key_alias: Some("cli-session-user-1".to_owned()),
-                team_id: None,
-                user_id: Some("user-1".to_owned()),
-                user_email: None,
-                key_exists: false,
-                tags: Vec::new(),
-            },
-        ),
+        (DIGEST.to_owned(), resolved_row(DIGEST, "user-1")),
+        ("cli-session-user-1".to_owned(), cli),
     ]);
     let recovered = recover(
         &reads(&database.store),

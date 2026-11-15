@@ -36,10 +36,7 @@ async fn window_boundaries_include_the_start_moment() {
         window,
     )
     .await;
-    assert_eq!(
-        recovered.get(DIGEST).unwrap().key_alias.as_deref(),
-        Some("at-start")
-    );
+    assert_eq!(recovered[DIGEST].key_alias.as_deref(), Some("at-start"));
     assert!(!recovered.contains_key(OTHER_DIGEST));
     close(database).await;
 }
@@ -73,7 +70,7 @@ async fn window_boundaries_exclude_the_end_moment() {
     .await;
     assert!(!recovered.contains_key(DIGEST));
     assert_eq!(
-        recovered.get(OTHER_DIGEST).unwrap().key_alias.as_deref(),
+        recovered[OTHER_DIGEST].key_alias.as_deref(),
         Some("before-end")
     );
     close(database).await;
@@ -98,10 +95,7 @@ async fn window_boundaries_cover_the_day_after_the_latest_date() {
         window,
     )
     .await;
-    assert_eq!(
-        recovered.get(DIGEST).unwrap().key_alias.as_deref(),
-        Some("next-day")
-    );
+    assert_eq!(recovered[DIGEST].key_alias.as_deref(), Some("next-day"));
     close(database).await;
 }
 
@@ -156,7 +150,7 @@ async fn window_boundaries_keep_a_fractional_pre_epoch_start() {
     )
     .await;
     assert_eq!(
-        recovered.get(DIGEST).unwrap().key_alias.as_deref(),
+        recovered[DIGEST].key_alias.as_deref(),
         Some("pre-epoch-start")
     );
     close(database).await;

@@ -102,7 +102,11 @@ fn spend_window_keeps_fractional_seconds() {
 }
 
 #[test]
-fn spend_window_is_none_when_the_expansion_leaves_the_calendar() {
-    assert!(spend_logs_window(&dates(&["0001-01-01"])).is_none());
-    assert!(spend_logs_window(&dates(&["9999-12-31"])).is_none());
+fn spend_window_expands_past_the_calendar_edges_python_cannot_represent() {
+    let low = spend_logs_window(&dates(&["0001-01-01"])).unwrap();
+    assert_eq!(low.0, SystemTime::from(at(0, 12, 31, 0, 0)));
+    assert_eq!(low.1, SystemTime::from(at(1, 1, 3, 0, 0)));
+    let high = spend_logs_window(&dates(&["9999-12-31"])).unwrap();
+    assert_eq!(high.0, SystemTime::from(at(9999, 12, 30, 0, 0)));
+    assert_eq!(high.1, SystemTime::from(at(10000, 1, 2, 0, 0)));
 }
