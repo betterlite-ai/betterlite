@@ -1,0 +1,50 @@
+kind: helper
+name: agentic-loop-detects-retrieve-calls
+call:
+  b3775: {
+      "kind": "should_run",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "content": "thinking",
+              "tool_calls": [
+                {
+                  "id": "toolu_1",
+                  "type": "function",
+                  "function": {
+                    "name": "headroom_retrieve",
+                    "arguments": "{\"hash\": \"abcdef123456\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "headroom_retrieve",
+            "description": "Retrieve original content.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "hash": {
+                  "type": "string"
+                },
+                "query": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "hash"
+              ]
+            }
+          }
+        }
+      ]
+    }
+env: {}
+compare: {ignore: []}
