@@ -120,14 +120,11 @@ class Recorded(BaseModel):
 Input = UrlsInput | CreateInput | RepliesInput | GetInput
 
 
-def activate(environment: dict[str, str]) -> None:
+def activate(environment: dict[str, str], sdk: Sdk) -> None:
     for name in MANAGED_ENV:
         os.environ.pop(name, None)
     for name, value in environment.items():
         os.environ[name] = value
-
-
-def activate_sdk(sdk: Sdk) -> None:
     litellm.api_key = sdk["api_key"]
     litellm.api_base = sdk["api_base"]
 
@@ -175,8 +172,7 @@ def url_value(found: ManusConfig, probe: UrlProbe) -> JsonValue:
 
 
 def urls(input_value: UrlsInput) -> JsonValue:
-    activate(input_value["environment"])
-    activate_sdk(input_value["sdk"])
+    activate(input_value["environment"], input_value["sdk"])
     found = config()
     return {"urls": [url_value(found, probe) for probe in input_value["probes"]]}
 
@@ -189,8 +185,7 @@ def create_value(found: ManusConfig, probe: CreateProbe) -> JsonValue:
 
 
 def creates(input_value: CreateInput) -> JsonValue:
-    activate(input_value["environment"])
-    activate_sdk(input_value["sdk"])
+    activate(input_value["environment"], input_value["sdk"])
     found = config()
     return {"requests": [create_value(found, probe) for probe in input_value["probes"]]}
 
@@ -267,8 +262,7 @@ def reply_value(
 
 
 def replies(input_value: RepliesInput) -> JsonValue:
-    activate(input_value["environment"])
-    activate_sdk(input_value["sdk"])
+    activate(input_value["environment"], input_value["sdk"])
     found = config()
     values: list[JsonValue] = [
         {
