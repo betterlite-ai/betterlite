@@ -36,6 +36,7 @@ pub(crate) enum Input {
 pub(crate) enum Flag {
     Nova2,
     Gpt,
+    #[serde(rename = "minmax")]
     MinMax,
     Sampling,
     WebSearch,
