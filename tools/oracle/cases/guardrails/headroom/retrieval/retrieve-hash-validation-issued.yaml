@@ -84,3 +84,4 @@ env: {}
 compare:
   ignore:
     - {pointer: "/value/plan/request_patch/messages/1/tool_calls/0/function/arguments", why: "json.dumps writes a space after each colon where betterlite writes compact JSON"}
+    - {pointer: "/value/plan/request_patch/messages/1/tool_calls/1/function/arguments", why: "json.dumps writes a space after each colon where betterlite writes compact JSON"}

@@ -141,7 +141,7 @@ fn responses_items(
     view: &ResponseView,
     retrieved: &[Retrieved],
 ) -> Result<Vec<FollowupMessage>, RetrievalError> {
-    let mut items = Vec::with_capacity(2 * retrieved.len() + 1);
+    let mut items = Vec::with_capacity(retrieved.len());
     if let Some(content) = assistant_text(view) {
         items.push(followup(&ResponsesAssistantOut {
             role: ASSISTANT_ROLE,
@@ -169,7 +169,7 @@ fn anthropic_messages(
     view: &ResponseView,
     retrieved: &[Retrieved],
 ) -> Result<Vec<FollowupMessage>, RetrievalError> {
-    let mut content: Vec<AnthropicBlock> = Vec::with_capacity(retrieved.len() + 1);
+    let mut content: Vec<AnthropicBlock> = Vec::with_capacity(retrieved.len());
     if let Some(text) = assistant_text(view) {
         content.push(AnthropicBlock::Text { text });
     }
@@ -228,7 +228,7 @@ fn chat_messages(
         content: assistant_text(view),
         tool_calls: calls,
     };
-    let mut messages = Vec::with_capacity(results.len() + 1);
+    let mut messages = Vec::with_capacity(results.len());
     messages.push(followup(&assistant)?);
     for result in &results {
         messages.push(followup(result)?);
