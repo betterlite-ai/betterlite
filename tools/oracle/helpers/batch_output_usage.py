@@ -1,16 +1,12 @@
 import asyncio
-from collections.abc import Callable, Coroutine
 from decimal import Decimal
 from typing import Final, Literal, TypeAlias, TypedDict
 
-import litellm.batches.batch_utils as batch_utils
+from litellm.batches import batch_utils
 from litellm.batches.batch_utils import BatchCostUsageResult
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-
-# LiteLLM's signature carries a bare dict and Any-typed ModelInfo, so the callable types erase both.
-CALCULATORS: Final[tuple[Callable[..., Coroutine[None, None, BatchCostUsageResult]], Callable[..., BatchCostUsageResult]]] = (batch_utils.calculate_batch_cost_and_usage, batch_utils.calculate_vertex_ai_batch_cost_and_usage)  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportAny, reportAssignmentType, reportGeneralTypeIssues, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L71-L76 https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L348-L352
 
 
 class BytesContent(TypedDict):
@@ -24,11 +20,12 @@ class LinesContent(TypedDict):
 
 
 Content: TypeAlias = BytesContent | LinesContent
+Provider: TypeAlias = Literal["openai", "azure", "vertex_ai", "hosted_vllm", "anthropic", "mistral"]
 
 
 class OutputUsageInput(TypedDict):
     kind: Literal["output_usage"]
-    provider: Literal["openai", "azure", "vertex_ai", "hosted_vllm", "anthropic", "mistral"]
+    provider: Provider
     model_name: str | None
     model_info: dict[str, JsonValue] | None
     content: Content
@@ -104,17 +101,11 @@ def run(input_value: Input) -> JsonValue:
     else:
         joined = b"\n".join(JSON.dump_json(line) for line in content["lines"])
         entries, diagnostics = _parse_bytes(joined)
-    if input_value["kind"] == "vertex_usage":
-        result = CALCULATORS[1](
-            entries, input_value["model_name"], model_info=input_value["model_info"]
-        )
-    else:
-        result = asyncio.run(
-            CALCULATORS[0](
-                entries,
-                input_value["provider"],
-                input_value["model_name"],
-                model_info=input_value["model_info"],
-            )
-        )
+    # A vertex_ai batch whose first row carries a request object takes LiteLLM's native Vertex path.
+    provider: Provider = "vertex_ai"
+    if input_value["kind"] == "output_usage":
+        provider = input_value["provider"]
+    name = input_value["model_name"]
+    info = input_value["model_info"]
+    result = asyncio.run(batch_utils.calculate_batch_cost_and_usage(entries, provider, name, info))  # type: ignore[misc, arg-type]  # noqa: E501  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # bare dict entries and a deployment model_info LiteLLM types as a full ModelInfo: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L71-L76
     return _result_value(result, diagnostics)

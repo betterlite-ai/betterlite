@@ -112,6 +112,8 @@ pub(super) fn integer_field(
             .as_i64()
             .map(Some)
             .ok_or(BatchOutputUsageError::NotAnInteger { field: key }),
-        _ => Err(BatchOutputUsageError::NotAnInteger { field: key }),
+        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+            Err(BatchOutputUsageError::NotAnInteger { field: key })
+        }
     }
 }

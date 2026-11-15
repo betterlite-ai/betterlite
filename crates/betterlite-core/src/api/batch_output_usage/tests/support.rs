@@ -143,18 +143,19 @@ pub(super) fn json_entry(value: Value) -> Json {
     serde_json::from_value(value).expect("the batch entry decodes")
 }
 
-pub(super) fn batch_model_info() -> ModelInfo {
-    serde_json::from_str(
-        r#"{"input_cost_per_token_batches":0.5,"output_cost_per_token_batches":0.25}"#,
-    )
-    .expect("the batch rates decode")
+pub(super) fn batch_model_info() -> Value {
+    json!({"input_cost_per_token_batches": 0.5, "output_cost_per_token_batches": 0.25})
 }
 
-pub(super) fn ocr_model_info() -> ModelInfo {
-    serde_json::from_str(r#"{"ocr_cost_per_page_batches":0.5}"#).expect("the OCR rates decode")
+pub(super) fn ocr_model_info() -> Value {
+    json!({"ocr_cost_per_page_batches": 0.5})
 }
 
-pub(super) fn totals(prompt_tokens: i64, completion_tokens: i64, total_tokens: i64) -> SummedUsage {
+pub(super) const fn totals(
+    prompt_tokens: i64,
+    completion_tokens: i64,
+    total_tokens: i64,
+) -> SummedUsage {
     SummedUsage {
         prompt_tokens,
         completion_tokens,

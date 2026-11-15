@@ -138,7 +138,7 @@ async fn count_prompt_item(
         Json::List(items) if !pre_tokenized => {
             Box::pin(count_prompt_items(model, items, true, counter)).await
         }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => Ok(0),
+        Json::Null | Json::Number(_) | Json::List(_) | Json::Object(_) => Ok(0),
     }
 }
 

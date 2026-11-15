@@ -61,7 +61,7 @@ pub(super) fn aggregate_output(
                 tracing::warn!(kind = *kind, "skipping non-object batch output line");
                 state
                     .diagnostics
-                    .push(BatchOutputDiagnostic::NonObjectLine { kind: *kind });
+                    .push(BatchOutputDiagnostic::NonObjectLine { kind });
             }
         }
     }

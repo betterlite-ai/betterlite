@@ -28,7 +28,7 @@ pub(crate) fn aggregate_vertex(
                 tracing::warn!(kind = *kind, "skipping non-object batch output line");
                 totals
                     .diagnostics
-                    .push(BatchOutputDiagnostic::NonObjectLine { kind: *kind });
+                    .push(BatchOutputDiagnostic::NonObjectLine { kind });
             }
             DecodedBatchLine::Entry(row) => {
                 let stats = service.providers.vertex_row_stats(
