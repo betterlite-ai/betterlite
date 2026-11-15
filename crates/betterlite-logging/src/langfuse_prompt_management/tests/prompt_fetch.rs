@@ -1,6 +1,7 @@
 use betterlite_models::prompt_contracts::PromptCompileRequest;
 
 use super::support;
+use crate::langfuse_prompt_management::compilation::compile_prompt_helper;
 
 #[tokio::test]
 async fn the_prompt_is_fetched_with_its_label_and_version() {
@@ -20,9 +21,7 @@ async fn the_prompt_is_fetched_with_its_label_and_version() {
         prompt_label: Some("production"),
         prompt_version: Some(3),
     };
-    let client = fixture
-        .manager
-        .compile_prompt_helper(&request)
+    let client = compile_prompt_helper(&fixture.manager, &request)
         .await
         .expect("the prompt compiles");
     let requests = server.requests();
@@ -54,9 +53,7 @@ async fn the_prompt_is_fetched_without_a_query_when_no_label_or_version_is_given
         prompt_label: None,
         prompt_version: None,
     };
-    fixture
-        .manager
-        .compile_prompt_helper(&request)
+    compile_prompt_helper(&fixture.manager, &request)
         .await
         .expect("the prompt compiles");
     let requests = server.requests();

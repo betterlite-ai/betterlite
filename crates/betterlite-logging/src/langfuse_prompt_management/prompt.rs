@@ -8,21 +8,18 @@ use super::LangfusePromptManagementError;
 use super::template;
 
 // LangfusePromptManagement._compile_prompt: a text prompt becomes the system message, a chat prompt its list
-pub fn compile_prompt(
-    prompt: &Prompt,
-    variables: Option<&PromptParams>,
-) -> Result<Vec<AllMessageValues>, LangfusePromptManagementError> {
+pub fn compile_prompt(prompt: &Prompt, variables: Option<&PromptParams>) -> Vec<AllMessageValues> {
     let empty = PromptParams::new();
-    let variables = variables.unwrap_or(&empty);
+    let resolved = variables.unwrap_or(&empty);
     match prompt {
         Prompt::Text(text) => {
-            let content = template::compile_template(&text.prompt, variables);
-            Ok(vec![Json::Object(IndexMap::from([
+            let content = template::compile_template(&text.prompt, resolved);
+            vec![Json::Object(IndexMap::from([
                 ("role".to_owned(), Json::Text("system".to_owned())),
                 ("content".to_owned(), Json::Text(content)),
-            ]))])
+            ]))]
         }
-        Prompt::Chat(chat) => template::compile_chat_prompt(&chat.prompt, variables),
+        Prompt::Chat(chat) => template::compile_chat_prompt(&chat.prompt, resolved),
     }
 }
 
@@ -62,7 +59,7 @@ pub(crate) fn optional_params_from_langfuse(
     Ok(params)
 }
 
-fn meta(prompt: &Prompt) -> &PromptMeta {
+const fn meta(prompt: &Prompt) -> &PromptMeta {
     match prompt {
         Prompt::Chat(chat) => &chat.meta,
         Prompt::Text(text) => &text.meta,

@@ -115,19 +115,19 @@ impl CallbackLogger for LangfusePromptManagement {
 
     // CustomLogger.log_success_event: asyncify.run_async_function drives the async hook to completion
     fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        let event = Arc::new(event.clone());
-        run_async_function(self.async_log_success_event(event)).map_err(delivery_error)?
+        let shared = Arc::new(event.clone());
+        run_async_function(self.async_log_success_event(shared)).map_err(delivery_error)?
     }
 
     fn log_failure_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        let event = Arc::new(event.clone());
-        run_async_function(self.async_log_failure_event(event)).map_err(delivery_error)?
+        let shared = Arc::new(event.clone());
+        run_async_function(self.async_log_failure_event(shared)).map_err(delivery_error)?
     }
 
     // exceptions are logged and counted, never propagated to the request
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         let parts = event_parts(&event, EventOutcome::Success);
-        self.deliver_logged_event(&event, parts).await
+        deliver_logged_event(self, &event, parts).await
     }
 
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
@@ -138,82 +138,81 @@ impl CallbackLogger for LangfusePromptManagement {
             .filter(|value| !value.is_empty())
             .unwrap_or("Unknown error");
         let parts = event_parts(&event, EventOutcome::Failure { status_message });
-        self.deliver_logged_event(&event, parts).await
+        deliver_logged_event(self, &event, parts).await
     }
 }
 
-impl LangfusePromptManagement {
-    // LangFuseHandler.get_langfuse_logger_for_request with this instance as the global logger
-    async fn selected_logger(
-        &self,
-        event: &LoggerEvent,
-    ) -> Result<Arc<LangFuseLogger>, LoggerError> {
-        // the cache is built per call: this class never keeps dynamic loggers between requests
-        let removal: RemovalEffect<Arc<LangFuseLogger>> = Arc::new(|logger| logger.stop());
-        let cache = DynamicLoggerCache::new(removal, Arc::new(unix_seconds));
-        LangFuseHandler::logger_for_request(
-            &self.services,
-            &cache,
-            event.dynamic_params.as_ref(),
-            Some(Arc::clone(&self.logger)),
-        )
-        .await
-        .map_err(delivery_error)
-    }
+// LangFuseHandler.get_langfuse_logger_for_request with this instance as the global logger
+async fn selected_logger(
+    manager: &LangfusePromptManagement,
+    event: &LoggerEvent,
+) -> Result<Arc<LangFuseLogger>, LoggerError> {
+    // the cache is built per call: this class never keeps dynamic loggers between requests
+    let removal: RemovalEffect<Arc<LangFuseLogger>> = Arc::new(|logger| logger.stop());
+    let cache = DynamicLoggerCache::new(removal, Arc::new(unix_seconds));
+    LangFuseHandler::logger_for_request(
+        &manager.services,
+        &cache,
+        event.dynamic_params.as_ref(),
+        Some(Arc::clone(&manager.logger)),
+    )
+    .await
+    .map_err(delivery_error)
+}
 
-    // the try block of async_log_success_event and async_log_failure_event
-    async fn deliver_logged_event(
-        &self,
-        event: &LoggerEvent,
-        parts: EventParts,
-    ) -> Result<(), LoggerError> {
-        let logger = self.selected_logger(event).await?;
-        let object = parts
-            .response
-            .as_ref()
-            .and_then(|response| response_object(&event.payload.call_type, response));
-        let call = LangfuseCall {
-            payload: event.payload.as_ref(),
-            litellm_params: Some(&parts.litellm_params),
-            messages: event.payload.messages.as_ref(),
-            optional_params: &event.payload.model_parameters,
-            response: parts.response.as_ref(),
-            response_object: object,
-            start_time: Some(timestamp_at(event.payload.start_time)),
-            end_time: Some(timestamp_at(event.payload.end_time)),
-            completion_start_time: parts.completion_start_time,
-            level: parts.level,
-            status_message: parts.status_message.as_deref(),
-            litellm_trace_id: Some(event.payload.trace_id.as_str()),
-            vertex_location: None,
-            aws_region_name: None,
-            preset_cache_key: None,
-            input: None,
-            masker: None,
-        };
-        let logged = logger.log_event_on_langfuse(&call).await;
-        let remembered = self.remember_trace_id(event, &logged);
-        // LiteLLM stops a dynamic-cache logger on expiry; this cache lasts one call, so stop it here
-        if !Arc::ptr_eq(&logger, &self.logger) {
-            logger.stop();
-        }
-        remembered.map_err(delivery_error)
+// the try block of async_log_success_event and async_log_failure_event
+async fn deliver_logged_event(
+    manager: &LangfusePromptManagement,
+    event: &LoggerEvent,
+    parts: EventParts,
+) -> Result<(), LoggerError> {
+    let logger = selected_logger(manager, event).await?;
+    let object = parts
+        .response
+        .as_ref()
+        .and_then(|response| response_object(&event.payload.call_type, response));
+    let call = LangfuseCall {
+        payload: event.payload.as_ref(),
+        litellm_params: Some(&parts.litellm_params),
+        messages: event.payload.messages.as_ref(),
+        optional_params: &event.payload.model_parameters,
+        response: parts.response.as_ref(),
+        response_object: object,
+        start_time: Some(timestamp_at(event.payload.start_time)),
+        end_time: Some(timestamp_at(event.payload.end_time)),
+        completion_start_time: parts.completion_start_time,
+        level: parts.level,
+        status_message: parts.status_message.as_deref(),
+        litellm_trace_id: Some(event.payload.trace_id.as_str()),
+        vertex_location: None,
+        aws_region_name: None,
+        preset_cache_key: None,
+        input: None,
+        masker: None,
+    };
+    let logged_event = logger.log_event_on_langfuse(&call).await;
+    let remembered = remember_trace_id(manager, event, &logged_event);
+    // LiteLLM stops a dynamic-cache logger on expiry; this cache lasts one call, so stop it here
+    if !Arc::ptr_eq(&logger, &manager.logger) {
+        logger.stop();
     }
+    remembered.map_err(delivery_error)
+}
 
-    // _remember_trace_id stores the trace only when the call id is a string and a trace id came back
-    fn remember_trace_id(
-        &self,
-        event: &LoggerEvent,
-        logged: &LangfuseLoggedEvent,
-    ) -> Result<(), LangfusePromptManagementError> {
-        let Some(call_id) = event.payload.litellm_call_id.as_deref() else {
-            return Ok(());
-        };
-        let Some(trace_id) = logged.trace_id.as_deref() else {
-            return Ok(());
-        };
-        self.trace_cache
-            .set_cache(call_id, INTEGRATION_NAME, trace_id)?;
-        Ok(())
-    }
+// _remember_trace_id stores the trace only when the call id is a string and a trace id came back
+fn remember_trace_id(
+    manager: &LangfusePromptManagement,
+    event: &LoggerEvent,
+    logged_event: &LangfuseLoggedEvent,
+) -> Result<(), LangfusePromptManagementError> {
+    let Some(call_id) = event.payload.litellm_call_id.as_deref() else {
+        return Ok(());
+    };
+    let Some(trace_id) = logged_event.trace_id.as_deref() else {
+        return Ok(());
+    };
+    manager
+        .trace_cache
+        .set_cache(call_id, INTEGRATION_NAME, trace_id)?;
+    Ok(())
 }

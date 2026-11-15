@@ -6,6 +6,7 @@ use betterlite_models::prompt_contracts::{
 };
 use betterlite_models::prompt_spec::PromptSpec;
 
+use super::compilation::{compile_prompt_helper, should_run_prompt_management};
 use super::{INTEGRATION_NAME, LangfusePromptManagement, LangfusePromptManagementError};
 
 // PromptManagementBase.get_chat_completion_prompt's arguments
@@ -35,75 +36,75 @@ pub struct AsyncPromptRequest<'request> {
     pub tools: Option<&'request [Json]>,
 }
 
-impl LangfusePromptManagement {
-    // PromptManagementBase.get_chat_completion_prompt
-    pub async fn get_chat_completion_prompt(
-        &self,
-        request: ChatCompletionPromptRequest<'_>,
-    ) -> Result<ChatCompletionPrompt, LangfusePromptManagementError> {
-        let Some(prompt_id) = request.prompt_id else {
-            return Ok(unchanged_prompt(request));
-        };
-        if !self
-            .should_run_prompt_management(
-                Some(prompt_id),
-                request.prompt_spec,
-                request.dynamic_callback_params,
-            )
-            .await
-        {
-            return Ok(unchanged_prompt(request));
-        }
-        let prompt_template = self.compile_prompt_client(prompt_id, &request).await?;
-        let ignore_flags = resolve_ignore_flags(request.prompt_spec, request.ignore_flags);
-        let (model, messages, non_default_params) = post_compile_prompt_processing(
-            &prompt_template,
-            request.messages,
-            request.non_default_params,
-            request.model.to_owned(),
-            &PromptProcessingOptions {
-                integration_name: INTEGRATION_NAME.to_owned(),
-                ignore_flags,
-            },
-        );
-        Ok(ChatCompletionPrompt {
-            model,
-            messages,
-            non_default_params,
-        })
+// PromptManagementBase.get_chat_completion_prompt
+pub async fn get_chat_completion_prompt(
+    manager: &LangfusePromptManagement,
+    request: ChatCompletionPromptRequest<'_>,
+) -> Result<ChatCompletionPrompt, LangfusePromptManagementError> {
+    let Some(prompt_id) = request.prompt_id else {
+        return Ok(unchanged_prompt(request));
+    };
+    if !should_run_prompt_management(
+        manager,
+        Some(prompt_id),
+        request.prompt_spec,
+        request.dynamic_callback_params,
+    )
+    .await
+    {
+        return Ok(unchanged_prompt(request));
     }
+    let prompt_template = compile_prompt_client(manager, prompt_id, &request).await?;
+    let ignore_flags = resolve_ignore_flags(request.prompt_spec, request.ignore_flags);
+    let (model, messages, non_default_params) = post_compile_prompt_processing(
+        &prompt_template,
+        request.messages,
+        request.non_default_params,
+        request.model.to_owned(),
+        &PromptProcessingOptions {
+            integration_name: INTEGRATION_NAME.to_owned(),
+            ignore_flags,
+        },
+    );
+    Ok(ChatCompletionPrompt {
+        model,
+        messages,
+        non_default_params,
+    })
+}
 
-    // PromptManagementBase.compile_prompt: the helper, then the client messages it appends
-    async fn compile_prompt_client(
-        &self,
-        prompt_id: &str,
-        request: &ChatCompletionPromptRequest<'_>,
-    ) -> Result<PromptManagementClient, LangfusePromptManagementError> {
-        // compile_prompt calls the sync helper without a prompt spec
-        let mut prompt_template = self
-            .compile_prompt_helper(&PromptCompileRequest {
-                prompt_id: Some(prompt_id),
-                prompt_spec: None,
-                prompt_variables: request.prompt_variables,
-                dynamic_callback_params: request.dynamic_callback_params,
-                prompt_label: request.prompt_label,
-                prompt_version: request.prompt_version,
-            })
-            .await?;
-        let mut completed = prompt_template.prompt_template.clone();
-        completed.extend(request.messages.clone());
-        prompt_template.completed_messages = Some(completed);
-        Ok(prompt_template)
-    }
+// PromptManagementBase.compile_prompt: the helper, then the client messages it appends
+async fn compile_prompt_client(
+    manager: &LangfusePromptManagement,
+    prompt_id: &str,
+    request: &ChatCompletionPromptRequest<'_>,
+) -> Result<PromptManagementClient, LangfusePromptManagementError> {
+    // compile_prompt calls the sync helper without a prompt spec
+    let mut prompt_template = compile_prompt_helper(
+        manager,
+        &PromptCompileRequest {
+            prompt_id: Some(prompt_id),
+            prompt_spec: None,
+            prompt_variables: request.prompt_variables,
+            dynamic_callback_params: request.dynamic_callback_params,
+            prompt_label: request.prompt_label,
+            prompt_version: request.prompt_version,
+        },
+    )
+    .await?;
+    let mut completed = prompt_template.prompt_template.clone();
+    completed.extend(request.messages.clone());
+    prompt_template.completed_messages = Some(completed);
+    Ok(prompt_template)
+}
 
-    // LangfusePromptManagement.async_get_chat_completion_prompt delegates to the sync base
-    pub async fn async_chat_completion_prompt(
-        &self,
-        request: AsyncPromptRequest<'_>,
-    ) -> Result<ChatCompletionPrompt, LangfusePromptManagementError> {
-        let AsyncPromptRequest { request, .. } = request;
-        self.get_chat_completion_prompt(request).await
-    }
+// LangfusePromptManagement.async_get_chat_completion_prompt delegates to the sync base
+pub async fn async_chat_completion_prompt(
+    manager: &LangfusePromptManagement,
+    request: AsyncPromptRequest<'_>,
+) -> Result<ChatCompletionPrompt, LangfusePromptManagementError> {
+    let AsyncPromptRequest { request: inner, .. } = request;
+    get_chat_completion_prompt(manager, inner).await
 }
 
 fn unchanged_prompt(request: ChatCompletionPromptRequest<'_>) -> ChatCompletionPrompt {

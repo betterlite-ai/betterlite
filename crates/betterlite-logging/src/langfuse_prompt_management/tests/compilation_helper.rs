@@ -4,6 +4,7 @@ use indexmap::IndexMap;
 
 use super::support;
 use crate::langfuse_prompt_management::LangfusePromptManagementError;
+use crate::langfuse_prompt_management::compilation::compile_prompt_helper;
 
 #[tokio::test]
 async fn the_helper_returns_the_compiled_prompt_model_and_optional_params() {
@@ -26,9 +27,7 @@ async fn the_helper_returns_the_compiled_prompt_model_and_optional_params() {
         prompt_label: None,
         prompt_version: None,
     };
-    let client = fixture
-        .manager
-        .compile_prompt_helper(&request)
+    let client = compile_prompt_helper(&fixture.manager, &request)
         .await
         .expect("the prompt compiles");
     assert_eq!(client.prompt_id.as_deref(), Some("greeting"));
@@ -61,9 +60,7 @@ async fn a_missing_prompt_id_is_reported() {
         prompt_label: None,
         prompt_version: None,
     };
-    let error = fixture
-        .manager
-        .compile_prompt_helper(&request)
+    let error = compile_prompt_helper(&fixture.manager, &request)
         .await
         .expect_err("a prompt id is required");
     assert!(matches!(

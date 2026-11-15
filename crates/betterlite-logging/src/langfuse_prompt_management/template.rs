@@ -4,8 +4,6 @@ use indexmap::IndexMap;
 
 use crate::langfuse_rest::records::PromptMessage;
 
-use super::LangfusePromptManagementError;
-
 const NOT_GIVEN: &str = "NOT_GIVEN";
 
 // langfuse.model.TemplateParser.compile_template: unresolved variables stay verbatim, values become text
@@ -24,13 +22,12 @@ pub(crate) fn compile_template(content: &str, variables: &PromptParams) -> Strin
             compiled.push_str(after_open);
             return compiled;
         };
-        match variables.get(name.trim()) {
-            Some(value) => compiled.push_str(&compile_value(value)),
-            None => {
-                compiled.push_str("{{");
-                compiled.push_str(name);
-                compiled.push_str("}}");
-            }
+        if let Some(value) = variables.get(name.trim()) {
+            compiled.push_str(&compile_value(value));
+        } else {
+            compiled.push_str("{{");
+            compiled.push_str(name);
+            compiled.push_str("}}");
         }
         rest = after_close;
     }
@@ -51,7 +48,7 @@ fn compile_value(value: &Json) -> String {
 pub(crate) fn compile_chat_prompt(
     messages: &[PromptMessage],
     variables: &PromptParams,
-) -> Result<Vec<AllMessageValues>, LangfusePromptManagementError> {
+) -> Vec<AllMessageValues> {
     let mut compiled = Vec::with_capacity(messages.len());
     let mut unresolved = Vec::new();
     for message in messages {
@@ -61,7 +58,7 @@ pub(crate) fn compile_chat_prompt(
                 &compile_template(&chat.content, variables),
             )),
             PromptMessage::Placeholder(placeholder) => {
-                compile_placeholder(&placeholder.name, variables, &mut compiled, &mut unresolved)?
+                compile_placeholder(&placeholder.name, variables, &mut compiled, &mut unresolved);
             }
         }
     }
@@ -70,7 +67,7 @@ pub(crate) fn compile_chat_prompt(
             "Placeholders {unresolved:?} have not been resolved. Pass them as variables to compile()."
         );
     }
-    Ok(compiled)
+    compiled
 }
 
 // TemplateParser: a placeholder with no variable stays a placeholder message so the caller can fill it
@@ -79,16 +76,16 @@ fn compile_placeholder(
     variables: &PromptParams,
     compiled: &mut Vec<AllMessageValues>,
     unresolved: &mut Vec<String>,
-) -> Result<(), LangfusePromptManagementError> {
+) {
     let Some(value) = variables.get(name) else {
         compiled.push(placeholder_object(name));
         unresolved.push(name.to_owned());
-        return Ok(());
+        return;
     };
     let Json::List(items) = value else {
         tracing::warn!("Placeholder '{name}' must contain a list of chat messages");
         compiled.push(message_object(NOT_GIVEN, &compile_value(value)));
-        return Ok(());
+        return;
     };
     for item in items {
         match item {
@@ -103,7 +100,6 @@ fn compile_placeholder(
             }
         }
     }
-    Ok(())
 }
 
 // a resolved placeholder message keeps its own fields, with role defaulting to NOT_GIVEN

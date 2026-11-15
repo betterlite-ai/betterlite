@@ -3,6 +3,9 @@ use betterlite_models::prompt_contracts::{
 };
 
 use super::support;
+use crate::langfuse_prompt_management::compilation::{
+    async_compile_prompt_helper, compile_prompt_helper,
+};
 
 #[tokio::test]
 async fn the_async_helper_answers_exactly_like_the_sync_one() {
@@ -25,9 +28,7 @@ async fn the_async_helper_answers_exactly_like_the_sync_one() {
         prompt_label: Some("production"),
         prompt_version: Some(3),
     };
-    let asynchronous = fixture
-        .manager
-        .async_compile_prompt_helper(&async_request)
+    let asynchronous = async_compile_prompt_helper(&fixture.manager, &async_request)
         .await
         .expect("the async helper compiles");
     let sync_request = PromptCompileRequest {
@@ -38,9 +39,7 @@ async fn the_async_helper_answers_exactly_like_the_sync_one() {
         prompt_label: Some("production"),
         prompt_version: Some(3),
     };
-    let synchronous = fixture
-        .manager
-        .compile_prompt_helper(&sync_request)
+    let synchronous = compile_prompt_helper(&fixture.manager, &sync_request)
         .await
         .expect("the sync helper compiles");
     assert_eq!(asynchronous, synchronous);
