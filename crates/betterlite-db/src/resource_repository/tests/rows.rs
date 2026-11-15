@@ -12,14 +12,14 @@ use crate::resource_repository::config::{ConfigParam, ConfigRepository, ConfigUp
 use crate::resource_repository::credential::CredentialsRepository;
 use crate::resource_repository::model::ModelRepository;
 use crate::resource_repository::permission::ObjectPermissionRepository;
-use crate::resource_repository::table::RowWrite;
+use crate::resource_repository::table::{KeyFilter, RowWrite};
 use crate::resource_rows::credential::CredentialItem;
 use crate::resource_rows::model::ProxyModelTable;
 
 use super::support::{
-    Case, batch, cipher, defaults_actions, field, insert_budget, insert_config, insert_credential,
-    insert_model, insert_permission, keyed, seal, seal_with, text_row, text_rows, value, write,
-    written,
+    Case, INSERT_CREDENTIAL_SQL, INSERT_MODEL_SQL, batch, cipher, defaults_actions, field,
+    insert_budget, insert_config, insert_named, insert_permission, keyed, seal, seal_with,
+    text_row, text_rows, value, write, written,
 };
 
 fn model_repository(case: &Case, key: Option<SecretString>) -> ModelRepository<'_> {
@@ -52,15 +52,16 @@ async fn permission_row(
     let table = repository.table().unwrap();
     table
         .as_ref()
-        .find_unique::<LiteLLMObjectPermissionTable>(id)
+        .find::<LiteLLMObjectPermissionTable>(KeyFilter::Equal(id))
         .await
         .unwrap()
+        .pop()
 }
 
 fn pinned_model(id: &str, name: &str, params: &str, info: Option<&str>) -> ProxyModelTable {
-    let info = info.unwrap_or("null");
+    let info_json = info.unwrap_or("null");
     let text = format!(
-        r#"{{"model_id":"{id}","model_name":"{name}","litellm_params":{params},"model_info":{info},"blocked":false,"created_at":"2026-01-02T03:04:05.123","created_by":"seed","updated_at":"2026-01-03T04:05:06.789","updated_by":"seed"}}"#
+        r#"{{"model_id":"{id}","model_name":"{name}","litellm_params":{params},"model_info":{info_json},"blocked":false,"created_at":"2026-01-02T03:04:05.123","created_by":"seed","updated_at":"2026-01-03T04:05:06.789","updated_by":"seed"}}"#
     );
     serde_json::from_str(&text).unwrap()
 }
@@ -89,8 +90,9 @@ pub(crate) async fn raw_model_table(case: &Case) {
         .unwrap();
     assert_eq!(field(&created, "model_id"), &value("\"raw-created\""));
     assert_eq!(field(&created, "litellm_params"), &stored);
-    insert_model(
-        case,
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
         "raw-inserted",
         "raw",
         r#"{"api_key":"sk-raw","n":1}"#,
@@ -98,7 +100,11 @@ pub(crate) async fn raw_model_table(case: &Case) {
     )
     .await;
     let rows = keyed(
-        table.as_ref().find_many::<JsonData>().await.unwrap(),
+        table
+            .as_ref()
+            .find::<JsonData>(KeyFilter::All)
+            .await
+            .unwrap(),
         "model_id",
     );
     assert_eq!(
@@ -112,8 +118,24 @@ pub(crate) async fn raw_model_table(case: &Case) {
 }
 
 pub(crate) async fn excluded_model_id(case: &Case) {
-    insert_model(case, "excluded-keep", "keep", r#"{"api_key":"a"}"#, None).await;
-    insert_model(case, "excluded-skip", "skip", r#"{"api_key":"b"}"#, None).await;
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
+        "excluded-keep",
+        "keep",
+        r#"{"api_key":"a"}"#,
+        None,
+    )
+    .await;
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
+        "excluded-skip",
+        "skip",
+        r#"{"api_key":"b"}"#,
+        None,
+    )
+    .await;
     let repository = model_repository(case, None);
     let models = repository.find_all_except("excluded-skip").await.unwrap();
     let ids: Vec<&str> = models
@@ -135,7 +157,15 @@ pub(crate) async fn model_json_columns(case: &Case) {
     let params =
         serde_json::to_string(&value(r#"{"api_key":"plain-string","list":[1,2]}"#)).unwrap();
     let info = serde_json::to_string(&value(r#"{"id":"decoded"}"#)).unwrap();
-    insert_model(case, "json-columns", "json", &params, Some(&info)).await;
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
+        "json-columns",
+        "json",
+        &params,
+        Some(&info),
+    )
+    .await;
     let repository = model_repository(case, None);
     let models = matching(
         &repository.find_all_except("absent").await.unwrap(),
@@ -154,7 +184,15 @@ pub(crate) async fn model_json_columns(case: &Case) {
 
 pub(crate) async fn model_nonstring_params(case: &Case) {
     let params = r#"{"s":"text","n":0.25,"i":7,"b":true,"z":null,"arr":[1,"x"],"obj":{"k":"v"}}"#;
-    insert_model(case, "nonstring", "mixed", params, None).await;
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
+        "nonstring",
+        "mixed",
+        params,
+        None,
+    )
+    .await;
     let models = matching(
         &model_repository(case, None)
             .find_all_except("absent")
@@ -175,7 +213,15 @@ pub(crate) async fn model_decrypt_valid_plaintext_and_corrupt(case: &Case) {
         r#"{{"api_key":"{}","corrupt":"v2:gcm:bm90LXJlYWw","plain":"ordinary-text"}}"#,
         seal("decrypted-value")
     );
-    insert_model(case, "sealed", "cipher", &params, None).await;
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
+        "sealed",
+        "cipher",
+        &params,
+        None,
+    )
+    .await;
     let repository = model_repository(case, None);
     let models = matching(
         &repository.find_all_except("absent").await.unwrap(),
@@ -197,7 +243,15 @@ pub(crate) async fn constructor_key_not_read_key(case: &Case) {
         r#"{{"api_key":"{}","caller":"{caller_value}"}}"#,
         seal("cipher-secret")
     );
-    insert_model(case, "constructor-key", "keys", &params, None).await;
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
+        "constructor-key",
+        "keys",
+        &params,
+        None,
+    )
+    .await;
     let repository = model_repository(case, Some(SecretString::from("caller-key")));
     let models = matching(
         &repository.find_all_except("absent").await.unwrap(),
@@ -244,36 +298,17 @@ async fn budget_b700_actions(case: &Case) {
         .await
         .unwrap();
     assert_eq!(one.len(), 1);
-    let update_key = Key {
-        column: KeyColumn::Id,
-        value: &"budget-one",
-    };
-    assert!(
-        b700.by_key(KeyAction::Update(&()), update_key)
-            .await
-            .unwrap()
-            .is_some()
-    );
-    let delete_key = Key {
-        column: KeyColumn::Id,
-        value: &"budget-two",
-    };
-    assert!(
-        b700.by_key(KeyAction::Delete, delete_key)
-            .await
-            .unwrap()
-            .is_some()
-    );
-    let find_key = Key {
-        column: KeyColumn::Id,
-        value: &"budget-two",
-    };
-    assert!(
-        b700.by_key(KeyAction::Find, find_key)
-            .await
-            .unwrap()
-            .is_none()
-    );
+    for (action, id, found) in [
+        (KeyAction::Update(&()), "budget-one", true),
+        (KeyAction::Delete, "budget-two", true),
+        (KeyAction::Find, "budget-two", false),
+    ] {
+        let key = Key {
+            column: KeyColumn::Id,
+            value: &id,
+        };
+        assert_eq!(b700.by_key(action, key).await.unwrap().is_some(), found);
+    }
 }
 
 pub(crate) async fn permission_writer_choice(case: &Case) {
@@ -582,8 +617,10 @@ pub(crate) async fn credential_upsert_preserves_id(case: &Case) {
         )
         .await
         .unwrap();
-    let id = field(&fresh, "credential_id").clone();
-    assert!(matches!(id, JsonData::String(ref text) if !text.is_empty()));
+    assert!(matches!(
+        field(&fresh, "credential_id"),
+        JsonData::String(text) if !text.is_empty()
+    ));
 }
 
 pub(crate) async fn credential_raw_list(case: &Case) {
@@ -612,8 +649,9 @@ async fn create_listed_credential(repository: &CredentialsRepository<'_>, name: 
 }
 
 pub(crate) async fn credential_named_lookup(case: &Case) {
-    insert_credential(
+    insert_named(
         &case.writer,
+        INSERT_CREDENTIAL_SQL,
         "cred-lookup-id",
         "cred-lookup-name",
         r#"{"api_key":"sk-raw"}"#,
@@ -676,10 +714,19 @@ pub(crate) async fn falsey_credential_maps(case: &Case) {
         ("cred-null-info-id", "cred-null-info", None),
     ];
     for (id, name, info) in falsey {
-        insert_credential(&case.writer, id, name, r#"{"api_key":"k"}"#, info).await;
+        insert_named(
+            &case.writer,
+            INSERT_CREDENTIAL_SQL,
+            id,
+            name,
+            r#"{"api_key":"k"}"#,
+            info,
+        )
+        .await;
     }
-    insert_credential(
+    insert_named(
         &case.writer,
+        INSERT_CREDENTIAL_SQL,
         "cred-empty-values-id",
         "cred-empty-values",
         "{}",
@@ -714,7 +761,11 @@ pub(crate) async fn empty_document_create(case: &Case) {
         .await
         .unwrap();
     assert_eq!(count, 2);
-    let rows = table.as_ref().find_many::<JsonData>().await.unwrap();
+    let rows = table
+        .as_ref()
+        .find::<JsonData>(KeyFilter::All)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 3);
 }
 
@@ -753,8 +804,9 @@ pub(crate) async fn empty_document_write(case: &Case) {
 }
 
 pub(crate) async fn partial_update_preserves_columns(case: &Case) {
-    insert_model(
-        case,
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
         "partial-update",
         "before",
         r#"{"api_key":"a","n":1}"#,

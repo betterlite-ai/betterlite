@@ -17,9 +17,9 @@ use crate::resource_repository::model::{ModelError, ModelRepository};
 use crate::resource_rows::ResourceRowsError;
 
 use super::support::{
-    Case, Journal, NO_DB, batch, captured_logs, cipher, dead_redis, failing_publisher, field,
-    insert_config, insert_credential, insert_model, observing_publisher, recording_publisher,
-    text_row, value, write, written,
+    Case, INSERT_CREDENTIAL_SQL, INSERT_MODEL_SQL, Journal, NO_DB, batch, captured_logs, cipher,
+    dead_redis, failing_publisher, field, insert_config, insert_named, observing_publisher,
+    recording_publisher, text_row, value, write, written,
 };
 
 pub(crate) async fn missing_client_before_query(_case: &Case) {
@@ -53,7 +53,15 @@ pub(crate) async fn missing_client_before_query(_case: &Case) {
 }
 
 pub(crate) async fn invalid_model_json(case: &Case) {
-    insert_model(case, "invalid-model", "invalid", "\"not-an-object\"", None).await;
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
+        "invalid-model",
+        "invalid",
+        "\"not-an-object\"",
+        None,
+    )
+    .await;
     let repository = ModelRepository::new(
         Some(case.client()),
         redis_config_change_publisher(None),
@@ -115,7 +123,7 @@ pub(crate) async fn config_upsert_failure(case: &Case) {
     ));
 }
 
-pub(crate) async fn credential_missing_name(_case: &Case) {
+pub(crate) fn credential_missing_name() {
     let missing = credential_from_row(value(r#"{"credential_id":"shape-only"}"#)).unwrap_err();
     assert!(matches!(missing, CredentialError::MissingName));
     assert_eq!(
@@ -258,8 +266,8 @@ pub(crate) async fn injected_publisher_error_after_commit(case: &Case) {
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
-        CredentialError::Table(TableError::Publish { ref message }) if message == "publish boom"
+        &error,
+        CredentialError::Table(TableError::Publish { message }) if message == "publish boom"
     ));
     assert!(
         repository
@@ -271,15 +279,24 @@ pub(crate) async fn injected_publisher_error_after_commit(case: &Case) {
 }
 
 pub(crate) async fn read_has_no_publication(case: &Case) {
-    insert_credential(
+    insert_named(
         &case.writer,
+        INSERT_CREDENTIAL_SQL,
         "cred-read-id",
         "cred-read",
         r#"{"api_key":"k"}"#,
         None,
     )
     .await;
-    insert_model(case, "read-model", "read", r#"{"api_key":"k"}"#, None).await;
+    insert_named(
+        &case.writer,
+        INSERT_MODEL_SQL,
+        "read-model",
+        "read",
+        r#"{"api_key":"k"}"#,
+        None,
+    )
+    .await;
     let journal = Journal::default();
     let credentials =
         CredentialsRepository::new(Some(case.client()), recording_publisher(&journal));

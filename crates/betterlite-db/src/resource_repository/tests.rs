@@ -53,7 +53,7 @@ async fn postgres_failure_effects() {
     failures::missing_client_before_query(&case).await;
     failures::invalid_model_json(&case).await;
     failures::config_bare_string_read_failure(&case).await;
-    failures::credential_missing_name(&case).await;
+    failures::credential_missing_name();
     failures::model_raw_write_before_publication(&case).await;
     failures::credential_write_before_publication(&case).await;
     failures::credential_redis_absent_noop(&case).await;
@@ -155,7 +155,10 @@ fn native_config_value_limits() {
         "[".repeat(MAX_CONFIG_VALUE_DEPTH),
         "]".repeat(MAX_CONFIG_VALUE_DEPTH)
     );
-    assert!(decode_config_json(exact_depth.as_bytes()).is_ok());
+    assert_eq!(
+        decode_config_json(exact_depth.as_bytes()).unwrap(),
+        value(&exact_depth)
+    );
     let over_depth = format!(
         "{}0{}",
         "[".repeat(MAX_CONFIG_VALUE_DEPTH + 1),
@@ -166,8 +169,14 @@ fn native_config_value_limits() {
         Err(ConfigDecodeError::TooDeep)
     ));
     let balanced = format!("{}0{}", "[".repeat(40), "]".repeat(40));
-    assert!(decode_config_json(balanced.as_bytes()).is_ok());
-    assert!(decode_config_json(b"]]]]").is_err());
+    assert_eq!(
+        decode_config_json(balanced.as_bytes()).unwrap(),
+        value(&balanced)
+    );
+    assert!(matches!(
+        decode_config_json(b"]]]]"),
+        Err(ConfigDecodeError::Json(_))
+    ));
 }
 
 #[rstest]

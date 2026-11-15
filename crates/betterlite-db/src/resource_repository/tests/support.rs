@@ -25,6 +25,7 @@ use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, Stor
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::task::yield_now;
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 use tracing::subscriber::DefaultGuard;
@@ -154,7 +155,7 @@ impl Case {
         self.writer.pool.unwrap().close();
         self.reader.pool.unwrap().close();
         // The closed pools' drivers need a turn to close their sockets before DROP DATABASE.
-        tokio::task::yield_now().await;
+        yield_now().await;
         for fixture in self.fixtures {
             fixture.close_async().await.unwrap();
         }
@@ -377,7 +378,7 @@ pub(crate) fn keyed(rows: Vec<JsonData>, column: &str) -> BTreeMap<String, JsonD
         .collect()
 }
 
-pub(crate) fn field<'a>(row: &'a JsonData, name: &str) -> &'a JsonData {
+pub(crate) fn field<'row>(row: &'row JsonData, name: &str) -> &'row JsonData {
     let JsonData::Object(object) = row else {
         panic!("a row is a JSON object");
     };
@@ -396,24 +397,22 @@ pub(crate) async fn execute(store: &PostgresStore, sql: &str, params: &[&(dyn To
     client.execute(sql, params).await.unwrap();
 }
 
-const INSERT_MODEL_SQL: &str = "INSERT INTO \"LiteLLM_ProxyModelTable\" (model_id, model_name, \
-     litellm_params, model_info, created_at, updated_at, created_by, updated_by) \
+pub(crate) const INSERT_MODEL_SQL: &str = "INSERT INTO \"LiteLLM_ProxyModelTable\" \
+     (model_id, model_name, litellm_params, model_info, created_at, updated_at, created_by, \
+     updated_by) \
      VALUES ($1, $2, $3::text::jsonb, $4::text::jsonb, '2026-01-02 03:04:05.123', \
      '2026-01-03 04:05:06.789', 'seed', 'seed')";
 
-pub(crate) async fn insert_model(
-    case: &Case,
+// Model and credential rows both seed an id, a name, one JSON document and an optional info map.
+pub(crate) async fn insert_named(
+    store: &PostgresStore,
+    sql: &str,
     id: &str,
     name: &str,
-    params: &str,
+    document: &str,
     info: Option<&str>,
 ) {
-    execute(
-        &case.writer,
-        INSERT_MODEL_SQL,
-        &[&id, &name, &params, &info],
-    )
-    .await;
+    execute(store, sql, &[&id, &name, &document, &info]).await;
 }
 
 const INSERT_BUDGET_SQL: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (budget_id, max_budget, \
@@ -433,19 +432,9 @@ pub(crate) async fn insert_config(store: &PostgresStore, name: &str, content: &s
     execute(store, INSERT_CONFIG_SQL, &[&name, &content]).await;
 }
 
-const INSERT_CREDENTIAL_SQL: &str = "INSERT INTO \"LiteLLM_CredentialsTable\" (credential_id, \
-     credential_name, credential_values, credential_info, created_by, updated_by) \
+pub(crate) const INSERT_CREDENTIAL_SQL: &str = "INSERT INTO \"LiteLLM_CredentialsTable\" \
+     (credential_id, credential_name, credential_values, credential_info, created_by, updated_by) \
      VALUES ($1, $2, $3::text::jsonb, $4::text::jsonb, 'seed', 'seed')";
-
-pub(crate) async fn insert_credential(
-    store: &PostgresStore,
-    id: &str,
-    name: &str,
-    values: &str,
-    info: Option<&str>,
-) {
-    execute(store, INSERT_CREDENTIAL_SQL, &[&id, &name, &values, &info]).await;
-}
 
 const INSERT_PERMISSION_SQL: &str = "INSERT INTO \"LiteLLM_ObjectPermissionTable\" \
      (object_permission_id, mcp_servers) VALUES ($1, ARRAY[$2]::TEXT[])";
