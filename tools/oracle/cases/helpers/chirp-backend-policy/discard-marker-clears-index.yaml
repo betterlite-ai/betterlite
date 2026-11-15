@@ -1,0 +1,14 @@
+kind: helper
+name: chirp-backend-policy-discard-marker-clears-index
+call:
+  chirp_backend_policy:
+    kind: deliver
+    elapsed_seconds: 0.0
+    speech_active: false
+    item_kind: discard_marker
+    turn: 1
+    event: '{"kind":"turn_discarded","billed_seconds":0.5}'
+    reason: ''
+    discarded_turns: [1]
+env: {}
+compare: {ignore: []}
