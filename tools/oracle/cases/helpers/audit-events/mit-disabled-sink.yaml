@@ -1,0 +1,48 @@
+kind: helper
+name: audit-mit-disabled-sink
+call:
+  audit_events:
+    aspect: sink_disabled
+    record:
+      id: audit-1
+      updated_at: "2026-01-02T03:04:05+00:00"
+      changed_by: admin
+      changed_by_api_key: sk-key
+      action: updated
+      table_name: LiteLLM_TeamTable
+      object_id: team-1
+      before_value: '{"api_key": "sk-1234567890"}'
+      updated_values: '{"key": "abcdefgh"}'
+    object:
+      object_id: team-1
+      action: updated
+      table_name: LiteLLM_TeamTable
+      before_value: '{"name": "team"}'
+      after_value: '{"name": "team", "key": "abcdefgh"}'
+    caller:
+      user_id: user-1
+      api_key: sk-key
+calls:
+  - audit_events:
+      aspect: sink_disabled
+      record:
+        id: audit-2
+        updated_at: "2026-01-02T05:04:05+02:00"
+        changed_by: null
+        changed_by_api_key: null
+        action: created
+        table_name: LiteLLM_UserTable
+        object_id: user-1
+        before_value: null
+        updated_values: null
+      object:
+        object_id: user-1
+        action: created
+        table_name: LiteLLM_UserTable
+        before_value: null
+        after_value: null
+      caller:
+        user_id: null
+        api_key: null
+env: {}
+compare: {ignore: []}

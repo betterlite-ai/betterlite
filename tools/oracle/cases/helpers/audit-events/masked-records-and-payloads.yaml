@@ -1,0 +1,122 @@
+kind: helper
+name: audit-masked-records-and-payloads
+call:
+  audit_events:
+    aspect: record
+    record:
+      id: audit-1
+      updated_at: "2026-01-02T03:04:05+00:00"
+      changed_by: null
+      changed_by_api_key: null
+      action: created
+      table_name: LiteLLM_UserTable
+      object_id: user-1
+      before_value: null
+      updated_values: null
+calls:
+  - audit_events:
+      aspect: record
+      record:
+        id: audit-2
+        updated_at: "2026-01-02T05:04:05+02:00"
+        changed_by: 42
+        changed_by_api_key: sk-key
+        action: updated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: null
+        updated_values: null
+  - audit_events:
+      aspect: record
+      record:
+        id: audit-3
+        updated_at: "2026-01-02T05:04:05.123456+02:00"
+        changed_by: true
+        changed_by_api_key: null
+        action: deleted
+        table_name: LiteLLM_VerificationToken
+        object_id: key-1
+        before_value: null
+        updated_values: null
+  - audit_events:
+      aspect: record
+      record:
+        id: audit-4
+        updated_at: "2026-01-02T03:04:05.123456+00:00"
+        changed_by: 1.5
+        changed_by_api_key: null
+        action: rotated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: null
+        updated_values: null
+  - audit_events:
+      aspect: record
+      record:
+        id: audit-5
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: admin
+        changed_by_api_key: sk-key
+        action: rotated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: null
+        updated_values: null
+  - audit_events:
+      aspect: record
+      record:
+        id: audit-6
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: admin
+        changed_by_api_key: sk-key
+        action: updated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: '{"api_key": "sk-1234567890", "name": "team", "nested": {"key": "abcdefgh"}}'
+        updated_values: '{"cost": 1.5, "key": "abcdefghij", "name": "team"}'
+  - audit_events:
+      aspect: dispatch
+      record:
+        id: audit-7
+        updated_at: "2026-01-02T03:04:05.123456+00:00"
+        changed_by: admin
+        changed_by_api_key: sk-key
+        action: updated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: '{"api_key": "sk-1234567890"}'
+        updated_values: '{"key": "abcdefgh"}'
+      callbacks:
+        - {kind: instance, label: first, fails: false}
+        - {kind: instance, label: bad, fails: true}
+        - {kind: named, name: not-a-callback}
+        - {kind: instance, label: last, fails: false}
+  - audit_events:
+      aspect: dispatch
+      record:
+        id: audit-8
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: null
+        changed_by_api_key: null
+        action: created
+        table_name: LiteLLM_UserTable
+        object_id: user-1
+        before_value: null
+        updated_values: null
+      callbacks:
+        - {kind: instance, label: only, fails: false}
+  - audit_events:
+      aspect: dispatch
+      record:
+        id: audit-9
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: admin
+        changed_by_api_key: ""
+        action: kill_switch_fired
+        table_name: LiteLLM_Config
+        object_id: config-1
+        before_value: null
+        updated_values: null
+      callbacks: []
+env: {}
+compare: {ignore: []}

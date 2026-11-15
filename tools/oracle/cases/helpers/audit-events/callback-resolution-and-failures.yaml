@@ -1,0 +1,79 @@
+kind: helper
+name: audit-callback-resolution-and-failures
+call:
+  audit_events:
+    aspect: dispatch
+    record:
+      id: audit-1
+      updated_at: "2026-01-02T03:04:05+00:00"
+      changed_by: admin
+      changed_by_api_key: sk-key
+      action: updated
+      table_name: LiteLLM_TeamTable
+      object_id: team-1
+      before_value: null
+      updated_values: null
+    callbacks:
+      - {kind: named, name: not-a-callback}
+      - {kind: instance, label: first, fails: false}
+calls:
+  - audit_events:
+      aspect: dispatch
+      record:
+        id: audit-2
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: admin
+        changed_by_api_key: sk-key
+        action: updated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: null
+        updated_values: null
+      callbacks:
+        - {kind: instance, label: bad, fails: true}
+        - {kind: instance, label: good, fails: false}
+  - audit_events:
+      aspect: dispatch
+      record:
+        id: audit-3
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: admin
+        changed_by_api_key: sk-key
+        action: updated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: null
+        updated_values: null
+      callbacks:
+        - {kind: named, name: not-a-callback}
+  - audit_events:
+      aspect: dispatch
+      record:
+        id: audit-4
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: admin
+        changed_by_api_key: sk-key
+        action: updated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: null
+        updated_values: null
+      callbacks:
+        - {kind: instance, label: alpha, fails: false}
+        - {kind: instance, label: beta, fails: false}
+  - audit_events:
+      aspect: dispatch
+      record:
+        id: audit-5
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: admin
+        changed_by_api_key: sk-key
+        action: updated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: null
+        updated_values: null
+      callbacks:
+        - {kind: instance, label: bad, fails: true}
+env: {}
+compare: {ignore: []}
