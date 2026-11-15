@@ -49,8 +49,19 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use crate::auth::auth_identity::{INSTALLED_STAGES, StageInput, dispatch};
-use crate::error_body::authentication_error;
+use std::collections::BTreeSet;
+use std::sync::Arc;
+
+use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
+use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+
+use crate::auth::auth_identity::{
+    AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
+};
+use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput};
+use crate::error_body::{AuthenticationFailure, authentication_error};
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
@@ -73,16 +84,79 @@ pub(crate) async fn authenticate(
         return next.run(request).await;
     };
     let presented_key = extract_key(request.headers());
+    let resolver = request
+        .extensions()
+        .get::<Arc<RequestModelResolver>>()
+        .map_or_else(default_resolver, Arc::clone);
+    let mut authenticated: Option<AuthContext> = None;
     for backend in INSTALLED_STAGES {
-        let input = StageInput::MasterKey(presented_key.clone());
-        match dispatch(*backend, &input, master_key) {
-            Ok(context) => {
-                request.extensions_mut().insert(context);
+        let input = match backend {
+            AuthBackend::MasterKey => StageInput::MasterKey(presented_key.clone()),
+            AuthBackend::AuthRequestModels => {
+                let Some(context) = authenticated.as_ref() else {
+                    return authentication_error(&AuthenticationFailure::Missing);
+                };
+                let stage = model_stage_input(&request, context.clone(), &resolver);
+                StageInput::AuthRequestModels(Box::new(stage))
             }
+        };
+        match dispatch(*backend, &input, master_key) {
+            Ok(context) => authenticated = Some(context),
             Err(failure) => return authentication_error(&failure),
         }
     }
+    if let Some(context) = authenticated {
+        request.extensions_mut().insert(context);
+    }
     next.run(request).await
+}
+fn default_resolver() -> Arc<RequestModelResolver> {
+    Arc::new(RequestModelResolver {
+        catalog: Arc::new(EmptyCatalog),
+        decoders: Arc::new(CoreDecoders),
+    })
+}
+fn model_stage_input(
+    request: &Request<Body>,
+    context: AuthContext,
+    resolver: &Arc<RequestModelResolver>,
+) -> RequestModelStageInput {
+    RequestModelStageInput {
+        context,
+        route: request.uri().path().to_owned(),
+        body: JsonObject::new(),
+        headers: Some(headers_json(request.headers())),
+        query: Some(query_json(request.uri().query())),
+        endpoint_marker: None,
+        path_params: BTreeSet::new(),
+        team_id: None,
+        resolver: Arc::clone(resolver),
+    }
+}
+fn headers_json(headers: &HeaderMap) -> JsonObject {
+    let mut object = JsonObject::new();
+    if let Some(value) = headers.get(MODEL_ROUTING_HEADER_NAME) {
+        // LiteLLM decodes header bytes as latin-1, and only this header feeds the model candidates
+        let text: String = value
+            .as_bytes()
+            .iter()
+            .map(|byte| char::from(*byte))
+            .collect();
+        object.insert(MODEL_ROUTING_HEADER_NAME.to_owned(), Json::Text(text));
+    }
+    object
+}
+const MODEL_QUERY_KEYS: [&str; 2] = ["model", "target_model_names"];
+
+fn query_json(query: Option<&str>) -> JsonObject {
+    let mut object = JsonObject::new();
+    for (name, value) in form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
+        // LiteLLM reads these two query keys into the model candidates and nothing else
+        if MODEL_QUERY_KEYS.contains(&name.to_lowercase().as_str()) {
+            object.insert(name.into_owned(), Json::Text(value.into_owned()));
+        }
+    }
+    object
 }
 fn extract_key(headers: &HeaderMap) -> Option<SecretString> {
     for name in [
