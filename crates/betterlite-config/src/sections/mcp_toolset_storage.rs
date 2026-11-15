@@ -92,18 +92,18 @@ where
     toolset_from_row(table.create(row).await?)
 }
 
-pub async fn get_mcp_toolset<T>(table: &T, toolset_id: &str) -> ToolsetLookup
-where
-    T: ToolsetTable,
-{
-    optional_toolset(table.find_unique(toolset_id).await?)
+pub async fn get_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) -> ToolsetLookup {
+    let Some(row) = table.find_unique(toolset_id).await? else {
+        return Ok(None);
+    };
+    toolset_from_row(row).map(Some)
 }
 
-pub async fn get_mcp_toolset_by_name<T>(table: &T, name: &str) -> ToolsetLookup
-where
-    T: ToolsetTable,
-{
-    optional_toolset(table.find_first_by_name(name).await?)
+pub async fn get_mcp_toolset_by_name<T: ToolsetTable>(table: &T, name: &str) -> ToolsetLookup {
+    let Some(row) = table.find_first_by_name(name).await? else {
+        return Ok(None);
+    };
+    toolset_from_row(row).map(Some)
 }
 
 pub async fn list_mcp_toolsets<T>(
@@ -150,15 +150,20 @@ pub async fn update_mcp_toolset<T>(
 where
     T: ToolsetTable,
 {
-    let update = ToolsetUpdate::from_request(data, touched_by)?;
-    optional_toolset(table.update(&data.toolset_id, update).await?)
+    let stored = table
+        .update(
+            &data.toolset_id,
+            ToolsetUpdate::from_request(data, touched_by)?,
+        )
+        .await?;
+    optional_toolset(stored)
 }
 
-pub async fn delete_mcp_toolset<T>(table: &T, toolset_id: &str) -> ToolsetLookup
-where
-    T: ToolsetTable,
-{
-    optional_toolset(table.delete(toolset_id).await?)
+pub async fn delete_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) -> ToolsetLookup {
+    let Some(row) = table.delete(toolset_id).await? else {
+        return Ok(None);
+    };
+    toolset_from_row(row).map(Some)
 }
 
 fn optional_toolset(row: Option<ToolsetRow>) -> ToolsetLookup {
