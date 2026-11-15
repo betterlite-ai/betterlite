@@ -11,7 +11,6 @@ use betterlite_core::api::batch_provider_read::call::{
 use betterlite_core::api::batch_provider_read::error::BatchProviderReadError;
 use betterlite_core::api::batch_provider_read::{
     BatchProviderRead, BatchProviderReadInput, BatchProviderReadResult, BatchReadDispatch,
-    BatchReadTimeoutValue,
 };
 use betterlite_openai::api::batch_records::RetrieveBatchRequest;
 use betterlite_openai::batches::records::BatchObject;
@@ -80,10 +79,6 @@ fn timeout_value(timeout: &Timeout) -> Value {
     }
 }
 
-fn raw_timeout_value(value: Option<&BatchReadTimeoutValue>) -> Value {
-    value.map_or(Value::Null, |raw| json!(raw))
-}
-
 fn request_value(request: &RetrieveBatchRequest) -> Value {
     json!({
         "batch_id": request.batch_id,
@@ -98,7 +93,7 @@ fn params_value(params: &AzureReadParams) -> Value {
         "api_base": params.api_base,
         "api_version": params.api_version,
         "max_retries": params.max_retries,
-        "timeout": raw_timeout_value(params.timeout.as_ref()),
+        "timeout": params.timeout.as_ref().map_or(Value::Null, |raw| json!(raw)),
         "azure_ad_token": secret_value(params.azure_ad_token.as_ref()),
         "tenant_id": params.tenant_id,
         "client_id": params.client_id,
