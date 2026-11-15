@@ -138,7 +138,7 @@ pub(super) fn logging_state() -> Result<LoggingState, Failure> {
     let init: LoggingInit = serde_json::from_str(
         r#"{"model":"rerank-model","call_type":"rerank","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
     )?;
-    let redactor = redactor()?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(Failure::from)?;
     LoggingState::new(
         init,
         CorrelationSetup {
@@ -172,8 +172,4 @@ pub(super) fn prepost_env<'env>(
         logger_fn,
         now: state.start_time,
     }
-}
-
-pub(super) fn redactor() -> Result<Redactor, Failure> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(Failure::from)
 }
