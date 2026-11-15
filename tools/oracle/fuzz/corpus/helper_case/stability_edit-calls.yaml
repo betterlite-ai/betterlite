@@ -7,6 +7,7 @@ call:
         model: stability/inpaint
         options:
           size: 1024x1024
+        drop_params: false
       - function: url
         model: stability/inpaint
         environment:

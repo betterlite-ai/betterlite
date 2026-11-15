@@ -13,5 +13,6 @@ call:
         model: stability/inpaint
         prompt: ""
         options: {}
+        drop_params: false
 env: {}
 compare: {ignore: []}

@@ -24,5 +24,6 @@ call:
         model: stability/inpaint
         options:
           size: 1024x1024
+        drop_params: false
 env: {}
 compare: {ignore: []}

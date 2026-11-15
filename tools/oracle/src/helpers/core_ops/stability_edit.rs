@@ -8,9 +8,10 @@ use betterlite_core::api::stability::edit::reply::{
 };
 use betterlite_core::api::stability::edit::request::transform_image_edit_request;
 use betterlite_core::api::stability::edit::types::{EditOptions, EditValue};
-// ast-grep-ignore: no-long-names
 use betterlite_core::api::stability::edit::{
-    StabilityImageEditConfig, get_stability_image_edit_config as edit_config,
+    StabilityImageEditConfig,
+    // ast-grep-ignore: no-long-names
+    get_stability_image_edit_config as edit_config,
 };
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::model_registration::JsonObject;
@@ -113,12 +114,9 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let values = input
-            .calls
-            .iter()
-            .map(run_call)
-            .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
-        Ok(Value::Array(values))
+        let values: Result<Vec<Value>, Box<HelperError>> =
+            input.calls.iter().map(run_call).collect();
+        Ok(Value::Array(values?))
     }
 }
 
@@ -213,9 +211,16 @@ fn mapped_json(options: &EditOptions) -> ImageParams {
 }
 
 fn file_of(spec: &FileSpec) -> Result<ImageFile, Box<HelperError>> {
-    let content = BASE64
-        .decode(&spec.content_base64)
-        .map_err(|error| invalid(error.to_string()))?;
+    let content = BASE64.decode(&spec.content_base64).map_err(|error| {
+        Box::new(HelperError {
+            class: "InvalidInput".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })?;
     Ok(ImageFile {
         filename: None,
         content,
@@ -288,16 +293,5 @@ fn reply_error(error: &StabilityEditError<NotMapped>) -> Box<HelperError> {
         param: None,
         code: None,
         message: error.to_string(),
-    })
-}
-
-fn invalid(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
     })
 }
