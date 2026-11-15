@@ -186,6 +186,8 @@ fn provider_wildcard() {
     assert!(is_wildcard_pattern("openai/*"));
     assert!(!is_wildcard_pattern("openai/gpt-4o"));
     assert!(!is_model_allowed_by_pattern("gpt-4o", "openai/gpt-4o"));
+    // an exact pattern grants nothing: only one carrying `*` is a wildcard
+    assert!(!is_model_allowed_by_pattern("gpt-4o", "gpt-4o"));
     assert!(is_model_allowed_by_pattern("gpt-4o", "gpt-*"));
     // Python's re.match with a trailing `$` also accepts one trailing newline
     assert!(is_model_allowed_by_pattern("gpt-4o\n", "gpt-*"));
