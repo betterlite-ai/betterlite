@@ -1,0 +1,16 @@
+task: B1707
+deviations:
+  - what: decode_spend_event refuses a line over 64 MiB with a typed error, where LiteLLM's model_validate_json reads a line of any size.
+    why: A collector reads lines from a socket, so an unbounded line is memory an unauthenticated peer can make the process allocate. A real compact event is far smaller than the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_event.py#L386
+  - what: A combined-usage count that is not an integer within 64 bits is a build error when the event is made and a typed error when it is restored, where LiteLLM's Usage accepts any Python integer and validates it on the collector.
+    why: Usage counts are i64 in betterlite, so a count past 64 bits cannot be held, and failing at build time keeps one bad request from reaching the collector.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_event.py#L408
+  - what: A response cost that a 28-digit decimal cannot hold (past about 7.9e28) is a build error, where LiteLLM carries any float.
+    why: Money is a Decimal from the moment it is read, and a cost that large is not a real charge. The error names the value instead of storing a rounded one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_event.py#L366
+  - what: A decoded litellm_params writes every declared key with null for one the line omitted, and standard_callback_dynamic_params drops a null turn_off_message_logging, where LiteLLM's TypedDicts keep exactly the keys the line carried.
+    why: The collector reads these objects with .get, so a missing key and a null read the same, and one fixed shape avoids a second type per partially filled object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_event.py#L42
+
+kept_bugs: []

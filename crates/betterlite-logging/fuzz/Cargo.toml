@@ -150,3 +150,10 @@ path = "fuzz_targets/azure_storage_token_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "spend_event"
+path = "fuzz_targets/spend_event.rs"
+test = false
+doc = false
+bench = false
