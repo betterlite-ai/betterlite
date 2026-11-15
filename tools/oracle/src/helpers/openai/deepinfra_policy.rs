@@ -38,7 +38,7 @@ pub(crate) enum Input {
 }
 
 #[derive(Debug, Deserialize)]
-struct ChatMapCase {
+pub(crate) struct ChatMapCase {
     model: String,
     params: Object,
     optional_params: Object,
@@ -55,14 +55,14 @@ struct DropFlags {
 }
 
 #[derive(Debug, Deserialize)]
-struct ToolContentCase {
+pub(crate) struct ToolContentCase {
     model: String,
     messages: Vec<ChatMessage>,
     optional_params: Object,
 }
 
 #[derive(Debug, Deserialize)]
-struct RerankRequestCase {
+pub(crate) struct RerankRequestCase {
     api_base: Option<String>,
     model: String,
     headers: Headers,
@@ -74,14 +74,14 @@ struct RerankRequestCase {
 }
 
 #[derive(Debug, Deserialize)]
-struct RerankResponseCase {
+pub(crate) struct RerankResponseCase {
     model: String,
     body: String,
     fail_logging: bool,
 }
 
 #[derive(Debug, Deserialize)]
-struct ErrorExtractionCase {
+pub(crate) struct ErrorExtractionCase {
     message: String,
     status_code: u16,
     headers: HeaderMap,
