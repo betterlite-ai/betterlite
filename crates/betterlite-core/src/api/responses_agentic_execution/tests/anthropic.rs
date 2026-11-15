@@ -159,141 +159,101 @@ fn quiet_callback(order: &Arc<Mutex<Vec<String>>>) -> Arc<RecordingCallback> {
     )
 }
 
-pub(super) async fn converted_stream_wrapped() {
+async fn converted_dispatch(
+    fixture: &Fixture,
+    callbacks: &[&Arc<RecordingCallback>],
+    executor: &ScriptedExecutor,
+) -> String {
+    let outcome = dispatch(fixture, &callback_list(callbacks), executor)
+        .await
+        .expect("the converted answer is wrapped");
+    let joined = wrapped_frames(outcome.expect("a wrapped converted stream"));
+    assert!(joined.starts_with("event: message_start\n"));
+    joined
+}
+
+pub(super) async fn converted_wrap_sites() {
+    let (log, _guard) = capture();
     let order = Arc::new(Mutex::new(Vec::new()));
     let quiet = quiet_callback(&order);
-    let mut converted = anthropic_fixture();
-    converted.converted = true;
-    let (log, _guard) = capture();
-    let outcome = dispatch(
-        &converted,
-        &callback_list(&[&quiet]),
+    let mut streamed = anthropic_fixture();
+    streamed.converted = true;
+    let stream_frames = converted_dispatch(
+        &streamed,
+        &[&quiet],
         &ScriptedExecutor::responding(NEXT_BODY),
     )
-    .await
-    .expect("the converted stream is wrapped");
-    assert_log(
-        &log,
-        "WebSearchInterception: Agentic loop completed, converting non-streaming response to fake stream",
-    );
-    let joined = wrapped_frames(outcome.expect("a wrapped stream"));
-    assert!(joined.starts_with("event: message_start\n"));
-    assert!(joined.contains("event: message_stop\ndata: "));
-    assert!(joined.contains("hello"));
-}
-
-pub(super) async fn converted_legacy_wrapped() {
-    let order = Arc::new(Mutex::new(Vec::new()));
+    .await;
+    assert!(stream_frames.contains("event: message_stop\ndata: "));
+    assert!(stream_frames.contains("hello"));
     let legacy = recording("l", legacy_script(ANTHROPIC_BODY), &order);
-    let joined = wrapped_frames(
-        dispatch(
-            &converted_fixture(),
-            &callback_list(&[&legacy]),
-            &ScriptedExecutor::responding(NEXT_BODY),
-        )
-        .await
-        .expect("the legacy answer is wrapped")
-        .expect("a wrapped legacy stream"),
-    );
-    assert!(joined.starts_with("event: message_start\n"));
-    assert!(joined.contains("hello"));
-}
-
-pub(super) async fn converted_override_wrapped() {
+    let legacy_frames = converted_dispatch(
+        &converted_fixture(),
+        &[&legacy],
+        &ScriptedExecutor::responding(NEXT_BODY),
+    )
+    .await;
+    assert!(legacy_frames.contains("hello"));
     let tools = refused_tools("web_search", "call-ws");
-    let order = Arc::new(Mutex::new(Vec::new()));
     let overridden = recording(
         "o",
         Script::default()
             .with_overrides(overrides(true, true, false))
-            .with_gate(gate(true, tools))
+            .with_gate(gate(true, tools.clone()))
             .with_plan(plan(None, Some(raw(ANTHROPIC_BODY)), false, false)),
         &order,
     );
-    let joined = wrapped_frames(
-        dispatch(
-            &converted_fixture(),
-            &callback_list(&[&overridden]),
-            &ScriptedExecutor::responding(NEXT_BODY),
-        )
-        .await
-        .expect("the override answer is wrapped")
-        .expect("a wrapped override stream"),
-    );
-    assert!(joined.starts_with("event: message_start\n"));
-    assert!(joined.contains("hello"));
-}
-
-pub(super) async fn converted_termination_wrapped() {
-    let tools = refused_tools("web_search", "call-ws");
+    let override_frames = converted_dispatch(
+        &converted_fixture(),
+        &[&overridden],
+        &ScriptedExecutor::responding(NEXT_BODY),
+    )
+    .await;
+    assert!(override_frames.contains("hello"));
     let mut terminate = plan(None, None, true, false);
     terminate.stop_reason = Some("done".to_owned());
-    let order = Arc::new(Mutex::new(Vec::new()));
     let terminated = recording(
         "t",
         Script::default()
             .with_overrides(overrides(true, true, true))
-            .with_gate(gate(true, tools))
+            .with_gate(gate(true, tools.clone()))
             .with_plan(terminate)
             .with_post(raw(ANTHROPIC_BODY)),
         &order,
     );
-    let (log, _guard) = capture();
-    let joined = wrapped_frames(
-        dispatch(
-            &converted_fixture(),
-            &callback_list(&[&terminated]),
-            &ScriptedExecutor::responding(NEXT_BODY),
-        )
-        .await
-        .expect("the termination answer is wrapped")
-        .expect("a wrapped termination stream"),
+    let terminate_frames = converted_dispatch(
+        &converted_fixture(),
+        &[&terminated],
+        &ScriptedExecutor::responding(NEXT_BODY),
+    )
+    .await;
+    assert!(terminate_frames.contains("hello"));
+    let mut refused = converted_fixture();
+    refused.response = raw(REFUSED_BODY);
+    refused.kwargs = typed_kwargs(&[("_agentic_loop_depth", "1"), ("max_agentic_loops", "1")]);
+    let gated = recording("s", gated_script(&tools), &order);
+    let refusal_frames = converted_dispatch(
+        &refused,
+        &[&gated],
+        &ScriptedExecutor::responding(NEXT_BODY),
+    )
+    .await;
+    assert!(refusal_frames.contains("after"));
+    assert!(refusal_frames.contains("end_turn"));
+    let planned = recording("x", plan_script(&tools, patched()), &order);
+    let execution_frames = converted_dispatch(
+        &converted_fixture(),
+        &[&planned],
+        &ScriptedExecutor::anthropic_responding(ANTHROPIC_BODY),
+    )
+    .await;
+    assert!(execution_frames.contains("hello"));
+    assert_log(
+        &log,
+        "WebSearchInterception: Agentic loop completed, converting non-streaming response to fake stream",
     );
     assert_log(&log, "Agentic loop terminated by callback=t reason=done");
-    assert!(joined.starts_with("event: message_start\n"));
-    assert!(joined.contains("hello"));
-}
-
-pub(super) async fn converted_refusal_wrapped() {
-    let tools = refused_tools("web_search", "call-ws");
-    let mut converted = converted_fixture();
-    converted.response = raw(REFUSED_BODY);
-    converted.kwargs = typed_kwargs(&[("_agentic_loop_depth", "1"), ("max_agentic_loops", "1")]);
-    let order = Arc::new(Mutex::new(Vec::new()));
-    let gated = recording("s", gated_script(&tools), &order);
-    let (log, _guard) = capture();
-    let joined = wrapped_frames(
-        dispatch(
-            &converted,
-            &callback_list(&[&gated]),
-            &ScriptedExecutor::responding(NEXT_BODY),
-        )
-        .await
-        .expect("the refused turn is wrapped")
-        .expect("a wrapped refusal stream"),
-    );
     assert_log(&log, "LiteLLM.AgenticLoopRefused: ending turn");
-    assert!(joined.starts_with("event: message_start\n"));
-    assert!(joined.contains("after"));
-    assert!(joined.contains("end_turn"));
-}
-
-pub(super) async fn converted_execution_wrapped() {
-    let tools = refused_tools("web_search", "call-ws");
-    let order = Arc::new(Mutex::new(Vec::new()));
-    let planned = recording("x", plan_script(&tools, patched()), &order);
-    let joined = wrapped_frames(
-        dispatch(
-            &converted_fixture(),
-            &callback_list(&[&planned]),
-            &ScriptedExecutor::anthropic_responding(ANTHROPIC_BODY),
-        )
-        .await
-        .expect("the follow-up answer is wrapped")
-        .expect("a wrapped follow-up stream"),
-    );
-    assert!(joined.starts_with("event: message_start\n"));
-    assert!(joined.contains("hello"));
 }
 
 fn converted_fixture() -> Fixture {

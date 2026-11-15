@@ -4,7 +4,9 @@ use betterlite_context::agentic_loop_plan::JsonMap;
 use betterlite_models::decisions::Json;
 
 use super::super::dispatch::call_agentic_completion_hooks;
-use super::super::executor::{AnthropicContinuation, ContinuationExecutor, ResponsesContinuation};
+use super::super::executor::{
+    AnthropicContinuation, ContinuationExecutor as _, ResponsesContinuation,
+};
 use super::super::http::HttpExecutorError;
 use super::support::{
     NEXT_BODY, PROVIDER_AUTHORIZATION, ScriptedExecutor, SeenRequest, Upstream, callback_list,

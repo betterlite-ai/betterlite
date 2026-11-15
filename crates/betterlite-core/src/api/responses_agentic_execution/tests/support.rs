@@ -199,11 +199,9 @@ fn take_script(
     slot: &Mutex<Option<Result<Box<RawValue>, StopError>>>,
 ) -> Result<Box<RawValue>, StopError> {
     let scripted = slot.lock().unwrap_or_else(PoisonError::into_inner).take();
-    scripted.unwrap_or_else(|| {
-        Err(StopError {
-            message: "the executor was called again",
-        })
-    })
+    scripted.unwrap_or(Err(StopError {
+        message: "the executor was called again",
+    }))
 }
 
 #[async_trait]
@@ -567,6 +565,7 @@ impl Upstream {
         for request in seen.drain(..) {
             requests.push(request);
         }
+        drop(seen);
         requests
     }
 }

@@ -23,7 +23,7 @@ pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
 pub(crate) mod native;
 pub(crate) mod python;
-pub(crate) mod responses_agentic_continuation;
+pub mod responses_agentic_continuation;
 pub mod result;
 mod tests;
 pub(crate) mod vector_query_embedding;

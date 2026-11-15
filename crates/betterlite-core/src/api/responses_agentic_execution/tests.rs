@@ -210,12 +210,7 @@ async fn anthropic_continuation_and_wrapping() {
     anthropic::patch_beats_optional_then_optional_used().await;
     anthropic::kwargs_then_default_max_tokens().await;
     anthropic::merged_mapping().await;
-    anthropic::converted_stream_wrapped().await;
-    anthropic::converted_legacy_wrapped().await;
-    anthropic::converted_override_wrapped().await;
-    anthropic::converted_termination_wrapped().await;
-    anthropic::converted_refusal_wrapped().await;
-    anthropic::converted_execution_wrapped().await;
+    anthropic::converted_wrap_sites().await;
     anthropic::unconverted_answers_keep_response().await;
     anthropic::absent_logging_and_non_objects_keep_response().await;
     anthropic::anthropic_post_failure_keeps_answer().await;

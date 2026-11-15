@@ -32,7 +32,7 @@ pub(crate) const PROVIDER: &str = "openai";
 const AUTHORIZATION_VALUE: &str = "Bearer sk-test";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct AgenticContinuationCall {
+pub struct AgenticContinuationCall {
     pub(crate) model: String,
     pub(crate) input: Json,
     #[serde(default)]
