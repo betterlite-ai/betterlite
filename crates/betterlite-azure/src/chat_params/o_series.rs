@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::{CapabilityRequest, NamedCapability};
@@ -30,39 +29,37 @@ const UNSUPPORTED: [&str; 5] = [
 const REASONING_EFFORT: &str = "reasoning_effort";
 const NATIVE_STREAMING_MARKER: &str = "o3";
 
-pub fn supported_params<Capabilities>(
+pub async fn supported_params<Capabilities>(
     capabilities: &mut Capabilities,
     model: &str,
     catalog: &CatalogCapabilities,
-) -> impl Future<Output = Vec<&'static str>> + Send
+) -> Vec<&'static str>
 where
     Capabilities: ReasoningCapabilities + Send,
 {
-    async move {
-        let mut params = OpenAiConfig {
-            family: ConfigFamily::OpenAi,
-            api_key: None,
-            headers: Headers::new(),
-            settings: OpenAiSettings::default(),
-        }
-        .supported_params(model, catalog);
-        let reasoning = if catalog.is_catalog_model(model) {
-            let request = CapabilityRequest {
-                model,
-                custom_llm_provider: None,
-            };
-            capabilities
-                .supports_factory(&request, NamedCapability::Reasoning.key())
-                .await
-        } else {
-            true
-        };
-        if reasoning && !params.contains(&REASONING_EFFORT) {
-            params.push(REASONING_EFFORT);
-        }
-        params.retain(|param| !UNSUPPORTED.contains(param));
-        params
+    let mut params = OpenAiConfig {
+        family: ConfigFamily::OpenAi,
+        api_key: None,
+        headers: Headers::new(),
+        settings: OpenAiSettings::default(),
     }
+    .supported_params(model, catalog);
+    let reasoning = if catalog.is_catalog_model(model) {
+        let request = CapabilityRequest {
+            model,
+            custom_llm_provider: None,
+        };
+        capabilities
+            .supports_factory(&request, NamedCapability::Reasoning.key())
+            .await
+    } else {
+        true
+    };
+    if reasoning && !params.contains(&REASONING_EFFORT) {
+        params.push(REASONING_EFFORT);
+    }
+    params.retain(|param| !UNSUPPORTED.contains(param));
+    params
 }
 
 pub async fn should_fake_stream<Capabilities>(

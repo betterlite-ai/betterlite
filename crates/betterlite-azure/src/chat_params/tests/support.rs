@@ -308,11 +308,12 @@ pub(super) fn o_series_body(
 ) -> Object {
     let mut capabilities = fixture();
     let converted = messages(messages_text);
+    let optional = object(optional);
     let request = o_series::transform_request(
         &mut capabilities,
         model,
         &converted,
-        &object(optional),
+        &optional,
         system_first,
     );
     runtime().block_on(request).unwrap()

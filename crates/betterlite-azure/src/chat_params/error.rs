@@ -20,7 +20,7 @@ pub enum ChatParamsError {
 
 impl ChatParamsError {
     #[must_use]
-    pub fn status_code(&self) -> Option<u16> {
+    pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::UnsupportedNone => Some(400),
             Self::Reasoning(error) => Some(error.status_code()),

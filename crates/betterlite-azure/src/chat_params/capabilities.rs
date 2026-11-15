@@ -58,11 +58,8 @@ where
     forward_lookup!(declared_value_factory -> Option<String>);
     forward_lookup!(is_explicitly_disabled_factory -> bool);
 
-    fn supports_response_schema(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        async move { self.inner.supports_response_schema(request).await }
+    async fn supports_response_schema(&mut self, request: &CapabilityRequest<'_>) -> bool {
+        self.inner.supports_response_schema(request).await
     }
 
     fn catalogue_declares_default(&mut self) -> bool {
