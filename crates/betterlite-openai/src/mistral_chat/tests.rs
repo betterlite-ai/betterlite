@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -671,9 +672,9 @@ fn a_client_reply_drops_the_reasoning_content_it_decoded() {
 
 #[rstest]
 fn replays_mistral_chat_corpus(#[files("fuzz/corpus/mistral_chat/*")] path: PathBuf) {
-    let bytes = std::fs::read(path).expect("a seed");
-    let _ = decode_mistral_chat(&bytes);
+    let bytes = fs::read(path).expect("a seed");
+    let _replay = decode_mistral_chat(&bytes);
     if let Ok(mut chunk) = serde_json::from_slice::<Value>(&bytes) {
-        let _ = chunk_parser(&mut chunk, Uuid::nil, i64::default);
+        let _stream = chunk_parser(&mut chunk, Uuid::nil, i64::default);
     }
 }

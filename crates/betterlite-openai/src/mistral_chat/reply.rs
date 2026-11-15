@@ -31,7 +31,7 @@ pub fn transform_response(
     options: &ReplyOptions<'_>,
 ) -> Result<CompatibleReply, MistralChatError> {
     let call = PostCall {
-        original_response: std::str::from_utf8(reply.body)
+        original_response: str::from_utf8(reply.body)
             .map_or(Json::Null, |text| Json::Text(text.to_owned())),
         input: input.messages,
         additional_args: AdditionalArgs {
