@@ -1,16 +1,101 @@
 from collections.abc import Iterator
-from typing import Protocol, TypeAlias, TypedDict, Unpack
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.base_llm.chat.transformation import BaseLLMException
-from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import ModelResponse
 from pydantic import JsonValue
 
-from anthropic_completion.shapes import ChunkView
 
-Messages: TypeAlias = list[AllMessageValues]
+class Turn(TypedDict):
+    role: str
+    content: str
+
+
+class CustomPrompt(TypedDict):
+    roles: dict[str, dict[str, str]]
+    initial_prompt_value: str
+    final_prompt_value: str
+
+
+class SelectInput(TypedDict):
+    function: Literal["select"]
+    models: list[str]
+
+
+class PromptCase(TypedDict):
+    model: str
+    messages: list[Turn]
+    custom_prompt: CustomPrompt | None
+
+
+class PromptInput(TypedDict):
+    function: Literal["prompt"]
+    cases: list[PromptCase]
+
+
+class AuthCase(TypedDict):
+    api_key: str | None
+    headers: dict[str, str]
+
+
+class AuthInput(TypedDict):
+    function: Literal["auth"]
+    cases: list[AuthCase]
+
+
+class Constructor(TypedDict):
+    max_tokens_to_sample: int | None
+    stop_sequences: list[str] | None
+    top_k: int | None
+    metadata: dict[str, JsonValue] | None
+
+
+class OptionCase(TypedDict):
+    model: str
+    messages: list[Turn]
+    non_default: dict[str, JsonValue]
+    existing: dict[str, JsonValue]
+
+
+class OptionsInput(TypedDict):
+    function: Literal["options"]
+    constructor: Constructor
+    cases: list[OptionCase]
+
+
+class ReplyCase(TypedDict):
+    model: str
+    messages: list[Turn]
+    status: int
+    body: str
+    initial_content: str
+
+
+class ReplyInput(TypedDict):
+    function: Literal["reply"]
+    cases: list[ReplyCase]
+
+
+class ChunkInput(TypedDict):
+    function: Literal["chunk"]
+    chunks: list[dict[str, JsonValue]]
+
+
+class ErrorCase(TypedDict):
+    message: str
+    status_code: int
+    headers: dict[str, str]
+
+
+class ErrorInput(TypedDict):
+    function: Literal["error"]
+    cases: list[ErrorCase]
+
+
+Input: TypeAlias = (
+    SelectInput | PromptInput | AuthInput | OptionsInput | ReplyInput | ChunkInput | ErrorInput
+)
 
 
 class BodyView(TypedDict):
@@ -40,19 +125,25 @@ class ResponseView(TypedDict):
     usage: UsageView
 
 
+class ChunkView(TypedDict):
+    text: str
+    is_finished: bool
+    finish_reason: str
+    index: int
+
+
 class EnvArgs(TypedDict):
     headers: dict[str, str]
     model: str
-    messages: Messages
+    messages: list[Turn]
     optional_params: dict[str, JsonValue]
     litellm_params: dict[str, JsonValue]
     api_key: str | None
-    api_base: str | None
 
 
 class RequestArgs(TypedDict):
     model: str
-    messages: Messages
+    messages: list[Turn]
     optional_params: dict[str, JsonValue]
     litellm_params: dict[str, JsonValue]
     headers: dict[str, str]
@@ -64,19 +155,36 @@ class ResponseArgs(TypedDict):
     model_response: ModelResponse
     logging_obj: Logging
     request_data: dict[str, JsonValue]
-    messages: Messages
+    messages: list[Turn]
     optional_params: dict[str, JsonValue]
     litellm_params: dict[str, JsonValue]
     encoding: None
-    api_key: str | None
-    json_mode: bool | None
+
+
+class TemplateArgs(TypedDict):
+    model: str
+    roles: dict[str, dict[str, str]]
+    initial_prompt_value: str
+    final_prompt_value: str
+
+
+class ErrorEnvelope(Protocol):
+    status_code: int
+    message: str
+    request: httpx.Request
+    response: httpx.Response
+    headers: dict[str, str] | None
 
 
 class ChunkParser(Protocol):
     def chunk_parser(self, chunk: dict[str, JsonValue]) -> ChunkView: ...
 
 
-# LiteLLM leaves its dicts bare, so this typed view is the public entry to the text config
+class Registry(Protocol):
+    def register_prompt_template(self, **kwargs: Unpack[TemplateArgs]) -> JsonValue: ...
+
+
+# LiteLLM leaves its parameters untyped, so this typed view is the public entry to the text config
 class TextConfig(Protocol):
     def validate_environment(self, **kwargs: Unpack[EnvArgs]) -> dict[str, str]: ...
 
@@ -97,7 +205,7 @@ class TextConfig(Protocol):
 
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, str]
-    ) -> BaseLLMException: ...
+    ) -> ErrorEnvelope: ...
 
     def get_model_response_iterator(
         self, streaming_response: Iterator[str], *, sync_stream: bool, json_mode: bool | None
