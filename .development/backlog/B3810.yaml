@@ -1,7 +1,7 @@
 id: B3810
 milestone: M6 guardrails
 title: Compile tool permission rules and expose validated configuration
-status: todo
+status: done
 depends_on: [B002, B3660, B3664]
 file: tasks/B3810-tool-permission-rules.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py"
 parent: B109
 split_from: B109
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1609
