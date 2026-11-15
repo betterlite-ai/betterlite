@@ -200,11 +200,11 @@ fn list_keeps_an_explicit_page() {
             )
             .await
             .unwrap();
-        let Effect::FindMany { page, .. } = page_effects(&repository)[0] else {
+        let Effect::FindMany { page, .. } = &page_effects(&repository)[0] else {
             panic!("list must query once");
         };
         assert_eq!(
-            page,
+            *page,
             SkillPage {
                 limit: 5,
                 offset: 10
@@ -222,10 +222,10 @@ fn list_does_not_filter_an_admin() {
             .list_skills(SkillPage::default(), Some(&admin("root")))
             .await
             .unwrap();
-        let Effect::FindMany { created_by, .. } = page_effects(&repository)[0] else {
+        let Effect::FindMany { created_by, .. } = &page_effects(&repository)[0] else {
             panic!("list must query once");
         };
-        assert_eq!(created_by, None);
+        assert!(created_by.is_none());
     });
 }
 
@@ -235,10 +235,10 @@ fn list_does_not_filter_a_caller_without_a_principal() {
         let repository = ScriptedRepository::default();
         let store = store(repository.clone());
         store.list_skills(SkillPage::default(), None).await.unwrap();
-        let Effect::FindMany { created_by, .. } = page_effects(&repository)[0] else {
+        let Effect::FindMany { created_by, .. } = &page_effects(&repository)[0] else {
             panic!("list must query once");
         };
-        assert_eq!(created_by, None);
+        assert!(created_by.is_none());
     });
 }
 
