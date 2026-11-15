@@ -1,7 +1,7 @@
 id: B6070
 milestone: M3 providers
 title: Fireworks AI shared auth, embedding params, pricing tiers and rerank
-status: todo
+status: done
 depends_on: [B2202, B1013, B1672, B2219, B171]
 file: tasks/B6070-fireworks-common-rerank-cost.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/fireworks_ai/rerank/**"
 parent: B5832
 split_from: B5832
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1894
