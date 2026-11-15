@@ -101,6 +101,7 @@ fn compaction_history_behaviors(#[case] name: &str) {
     "counts_text_and_object_thinking_blocks_by_truthiness"
 )]
 #[case::a_non_text_responses_type_is_unavailable("a_non_text_responses_type_is_unavailable")]
+#[case::skips_a_group_without_a_known_window("skips_a_group_without_a_known_window")]
 fn compaction_history_boundaries(#[case] name: &str) {
     boundaries::run(name);
 }

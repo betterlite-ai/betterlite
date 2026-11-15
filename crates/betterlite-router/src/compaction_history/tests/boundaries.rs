@@ -12,6 +12,7 @@ use super::support::{FixedCounter, candidate, deployment, items, messages, reque
 
 const NO_CLOSED_HISTORY: &str =
     "No closed older conversation is available without changing the latest request";
+const NO_COMPACTOR: &str = "No configured compactor supports native compaction with enough context and compatible defaults";
 
 pub(super) fn run(name: &str) {
     match name {
@@ -47,6 +48,7 @@ pub(super) fn run(name: &str) {
             counts_text_and_object_thinking_blocks_by_truthiness();
         }
         "a_non_text_responses_type_is_unavailable" => a_non_text_responses_type_is_unavailable(),
+        "skips_a_group_without_a_known_window" => skips_a_group_without_a_known_window(),
         other => panic!("unknown boundary case {other}"),
     }
 }
@@ -179,7 +181,9 @@ fn split_skips_a_user_message_holding_a_tool_result() {
             {"role":"user","content":"first"},
             {"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"f","input":{}}]},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]},
-            {"role":"user","content":"latest"}
+            {"role":"user","content":"second"},
+            {"role":"assistant","content":[{"type":"tool_use","id":"toolu_2","name":"f","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_2","content":"ok"}]}
         ]"#,
     );
     let history = portable_history(
@@ -189,7 +193,9 @@ fn split_skips_a_user_message_holding_a_tool_result() {
     .unwrap();
     assert_eq!(history.instruction_count, 0);
     assert_eq!(history.prefix_count, 3);
-    assert_eq!(history.tail_count, 1);
+    assert_eq!(history.tail_count, 3);
+    assert_eq!(history.calls, vec!["toolu_1".to_owned()]);
+    assert_eq!(history.results, vec!["toolu_1".to_owned()]);
 }
 
 fn an_empty_tool_result_id_is_unavailable() {
@@ -411,6 +417,22 @@ fn a_non_text_responses_type_is_unavailable() {
         error.reason,
         "Opaque or provider-managed Responses items require client-managed native compaction"
     );
+}
+
+fn skips_a_group_without_a_known_window() {
+    let candidates = vec![candidate(
+        "large",
+        vec![deployment(
+            true,
+            NativeCapability::Supported,
+            None,
+            Some(4096),
+        )],
+    )];
+    let error = outcome(&candidates, None, 0).unwrap_err();
+    assert_error(&error, ErrorKind::Unavailable, NO_COMPACTOR);
+    let error = outcome(&candidates, None, 500).unwrap_err();
+    assert_error(&error, ErrorKind::Unavailable, NO_COMPACTOR);
 }
 
 fn counts_text_and_object_thinking_blocks_by_truthiness() {
