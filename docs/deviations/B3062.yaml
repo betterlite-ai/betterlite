@@ -1,0 +1,18 @@
+task: B3062
+deviations:
+  - what: The S3 upload runs through an injected async S3 client instead of boto3 in a worker thread; deliver builds the object and awaits the client, which receives the same bucket, key, body and Content-Type.
+    why: betterlite passes its transport in through constructors and has no blocking SDK call to move to a thread; the destination keeps LiteLLM's request and error contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/s3_destination.py#L43-L51
+  - what: S3 client options are filtered once at construction, so absent and empty-string region, endpoint and credential values never reach the client.
+    why: LiteLLM's _client_kwargs omits falsy entries the same way, and the task requires only truthy options to be forwarded so an unset entry falls back to the AWS environment chain.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/s3_destination.py#L62-L75
+  - what: The GCS request headers and the media POST run through an injected GCS bucket client; the destination itself builds the key, replaces Content-Type with application/octet-stream, percent-encodes the object name and builds the same media upload URL.
+    why: Request authentication is B3997's GcsBucketBase port and the HTTP client is B173's; the destination keeps LiteLLM's request shape and status contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/gcs_destination.py#L44-L51
+  - what: A GCS response whose status is not 200 is reported as a typed status error carrying the code and, when the body is valid UTF-8, its text; any other body reports empty text.
+    why: LiteLLM raises RuntimeError with the status and the httpx text, which decodes bad bytes lossily; the rules refuse lossy decoding and typed errors replace the exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/gcs_destination.py#L52-L53
+  - what: An omitted service_account_json reaches the injected GCS client as None, which resolves the credential path, including the base class's GCS_PATH_SERVICE_ACCOUNT default.
+    why: LiteLLM's super().__init__ fills path_service_account_json from the environment before the config override; that base default belongs to B3997's GcsBucketBase, which the injected client wraps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/gcs_destination.py#L30-L33
+kept_bugs: []
