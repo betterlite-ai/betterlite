@@ -246,7 +246,7 @@ fn content_and_choices() {
     assert_eq!(full.choices[1], choice(1, Some("kept"), "length"));
     assert_eq!(full.id, "chatcmpl-pegasus");
     assert_eq!((full.usage.prompt_tokens, full.usage.total_tokens), (3, 8));
-    let mut missing = single_choice();
+    let mut missing = response(vec![choice(0, None, "length")]);
     block_on(decode_pegasus_reply(
         br#"{"message":"visible"}"#,
         &context(200, &headers, &given, 10.0),
@@ -267,7 +267,7 @@ fn non_text_finish_reasons() {
         br#"{"message":"visible","finishReason":false}"#.as_slice(),
         br#"{"message":"visible","finishReason":1.5}"#.as_slice(),
     ] {
-        let mut numeric = single_choice();
+        let mut numeric = response(vec![choice(0, None, "length")]);
         block_on(decode_pegasus_reply(
             body,
             &context(200, &headers, &given, 10.0),
