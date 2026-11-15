@@ -1,0 +1,19 @@
+kind: helper
+name: shadow-cost-from-price-map
+call:
+  b4081:
+    operation: call_cost
+    response:
+      model: gpt-4o
+      usage:
+        prompt_tokens: 1000
+        completion_tokens: 500
+        total_tokens: 1500
+    metadata: {}
+    routed_model: ""
+    prices:
+      gpt-4o:
+        prompt: 2.5e-06
+        completion: 1e-05
+env: {}
+compare: {ignore: []}

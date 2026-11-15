@@ -1,0 +1,36 @@
+kind: helper
+name: absent-image-key
+call:
+  proxy_options:
+    operation: image_request
+    params:
+      - endpoint: generations
+        api_base: https://proxy.example
+        api_key: null
+        environment_base: null
+        environment_key: null
+        headers:
+          X-Trace: abc
+      - endpoint: generations
+        api_base: null
+        api_key: null
+        environment_base: https://env.example
+        environment_key: sk-env
+        headers: {}
+      - endpoint: edits
+        api_base: https://proxy.example
+        api_key: sk-explicit
+        environment_base: null
+        environment_key: sk-env
+        headers:
+          Authorization: Token other
+          X-Trace: keep
+      - endpoint: edits
+        api_base: https://proxy.example
+        api_key: null
+        environment_base: null
+        environment_key: null
+        headers:
+          authorization: token-lower
+env: {}
+compare: {ignore: []}

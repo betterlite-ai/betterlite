@@ -48,7 +48,7 @@ impl BaseContainerConfig for FixtureConfig {
 
     fn transform_container_retrieve_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
-    ) -> Prepared { (String::new(), Map::new()) }
+    ) -> Reply<Prepared> { Ok((String::new(), Map::new())) }
 
     fn transform_container_retrieve_response(&self, _raw: &[u8]) -> Reply<ContainerObject> {
         Err(ContainerError::ApiBaseRequired)
@@ -56,7 +56,7 @@ impl BaseContainerConfig for FixtureConfig {
 
     fn transform_container_delete_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
-    ) -> Prepared { (String::new(), Map::new()) }
+    ) -> Reply<Prepared> { Ok((String::new(), Map::new())) }
 
     fn transform_container_delete_response(&self, _raw: &[u8]) -> Reply<DeleteContainerResult> {
         Err(ContainerError::ApiBaseRequired)
@@ -64,7 +64,7 @@ impl BaseContainerConfig for FixtureConfig {
 
     fn transform_container_file_list_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>,
-    ) -> Prepared { (String::new(), Map::new()) }
+    ) -> Reply<Prepared> { Ok((String::new(), Map::new())) }
 
     fn transform_container_file_list_response(&self, _raw: &[u8]) -> Reply<ContainerFileListResponse> {
         Err(ContainerError::ApiBaseRequired)
@@ -72,7 +72,7 @@ impl BaseContainerConfig for FixtureConfig {
 
     fn transform_container_file_content_request(
         &self, _id: &str, _file: &str, _base: &str, _context: ContainerRequestContext<'_>,
-    ) -> Prepared { (String::new(), Map::new()) }
+    ) -> Reply<Prepared> { Ok((String::new(), Map::new())) }
 
     fn transform_container_file_content_response(&self, _raw: &[u8]) -> Reply<Vec<u8>> {
         Err(ContainerError::ApiBaseRequired)
@@ -699,8 +699,10 @@ fn config_default_validate_environment_returns_an_empty_map() {
 #[case::trailing_slash("https://api.example.test/v1/")]
 fn config_default_get_complete_url_returns_api_base_unchanged(#[case] api_base: &str) {
     assert_eq!(
-        FixtureConfig.get_complete_url(Some(api_base), &Map::new()),
-        Ok(api_base.to_owned())
+        FixtureConfig
+            .get_complete_url(Some(api_base), &Map::new())
+            .unwrap(),
+        api_base
     );
 }
 
@@ -709,7 +711,7 @@ fn config_default_get_complete_url_requires_api_base() {
     let error = FixtureConfig
         .get_complete_url(None, &Map::new())
         .unwrap_err();
-    assert_eq!(error, ContainerError::ApiBaseRequired);
+    assert!(matches!(error, ContainerError::ApiBaseRequired));
     assert_eq!(error.to_string(), "api_base is required");
 }
 
@@ -726,13 +728,16 @@ fn config_default_get_error_class_carries_status_message_and_headers() {
         }
     );
     assert_eq!(raised.to_string(), "bad request");
+    let ContainerError::Upstream(converted) = ContainerError::from(raised) else {
+        panic!("the raised error converts to the upstream variant");
+    };
     assert_eq!(
-        ContainerError::from(raised),
-        ContainerError::Upstream(BaseLlmException {
+        converted,
+        BaseLlmException {
             status_code: 429,
             message: "bad request".to_owned(),
             headers,
-        })
+        }
     );
 }
 
