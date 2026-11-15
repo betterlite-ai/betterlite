@@ -3,7 +3,7 @@ import base64
 import logging
 import sys
 from types import ModuleType
-from typing import TypedDict
+from typing import Required, TypedDict
 
 from litellm.llms.litellm_proxy.skills.handler import LiteLLMSkillsHandler
 from litellm.models.skills import LiteLLM_SkillsTable
@@ -19,35 +19,57 @@ LOGGER_NAME = "LiteLLM"
 NO_DATABASE = "Prisma client is not initialized. Database connection required for LiteLLM skills."
 MISSING_IDENTITY = "Unable to record skill ownership: caller has no identity scope."
 NOT_FOUND = "Skill not found: "
-JSON = TypeAdapter(JsonValue)
-OBJECT = TypeAdapter(dict[str, JsonValue])
-TEXT = TypeAdapter(str)
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+TEXT: TypeAdapter[str] = TypeAdapter(str)
 
-PrincipalFields = TypedDict("PrincipalFields", {
-    "user_id": str, "team_id": str, "org_id": str, "api_key": str, "token": str, "admin": bool,
-}, total=False)
-RowFields = TypedDict("RowFields", {
-    "skill_id": str, "display_title": str | None, "description": str | None,
-    "instructions": str | None, "source": str | None, "file_content": str | None,
-    "file_name": str | None, "file_type": str | None, "metadata": dict[str, JsonValue] | None,
-    "created_at": str | None, "created_by": str | None, "updated_at": str | None,
-    "updated_by": str | None,
-}, total=False)
-CreateData = TypedDict("CreateData", {
-    "skill_id": str, "display_title": str | None, "description": str | None,
-    "instructions": str | None, "source": str | None, "file_content": str | None,
-    "file_name": str | None, "file_type": str | None, "metadata": dict[str, JsonValue] | None,
-    "created_by": str | None, "updated_by": str | None,
-}, total=False)
-Step = TypedDict("Step", {
-    "action": str, "data": CreateData, "user_id": str, "principal": PrincipalFields,
-    "skill_id": str, "limit": int, "offset": int,
-}, total=False)
-Input = TypedDict("Input", {
-    "now": str, "uuid": str, "rows": list[RowFields], "page": list[RowFields],
-    "faults": dict[str, bool], "steps": list[Step],
-}, total=False)
-SkillWhere = TypedDict("SkillWhere", {"skill_id": str})
+
+class PrincipalFields(TypedDict, total=False):
+    user_id: str
+    team_id: str
+    org_id: str
+    api_key: str
+    token: str
+    admin: bool
+
+
+class CreateData(TypedDict, total=False):
+    display_title: str | None
+    description: str | None
+    instructions: str | None
+    metadata: dict[str, JsonValue] | None
+    file_content: str | None
+    file_name: str | None
+    file_type: str | None
+
+
+class RowFields(CreateData, total=False):
+    skill_id: Required[str]
+    source: str | None
+    latest_version: str | None
+    created_at: str | None
+    created_by: str | None
+    updated_at: str | None
+    updated_by: str | None
+
+
+class Step(TypedDict, total=False):
+    action: Required[str]
+    data: CreateData
+    user_id: str
+    principal: PrincipalFields
+    skill_id: str
+    limit: int
+    offset: int
+
+
+class Input(TypedDict, total=False):
+    now: Required[str]
+    uuid: Required[str]
+    rows: list[RowFields]
+    page: list[RowFields]
+    faults: dict[str, bool]
+    steps: Required[list[Step]]
 
 
 class FakeRow(dict[str, JsonValue]):
@@ -59,14 +81,11 @@ class FakeRow(dict[str, JsonValue]):
         return dict(self)
 
 
-def make_row(fields: dict[str, JsonValue], now: str) -> FakeRow:
-    row = FakeRow(fields)
-    if row.get("source") is None:
-        row["source"] = "custom"
-    if row.get("created_at") is None:
-        row["created_at"] = now
-    if row.get("updated_at") is None:
-        row["updated_at"] = now
+def make_row(fields: RowFields | dict[str, JsonValue], now: str) -> FakeRow:
+    row = FakeRow(OBJECT.validate_python(fields))
+    for key, value in (("source", "custom"), ("created_at", now), ("updated_at", now)):
+        if row.get(key) is None:
+            row[key] = value
     return row
 
 
@@ -77,40 +96,32 @@ class TableState:
         self.effects: list[JsonValue] = []
         self.rows: dict[str, FakeRow] = {}
         self.page: list[FakeRow] = []
-        self.faults: dict[str, bool] = {}
         seeded = input_value.get("rows")
         if seeded is not None:
-            self.rows = {
-                fields["skill_id"]: make_row(OBJECT.validate_python(fields), self.now)
-                for fields in seeded
-            }
+            self.rows = {fields["skill_id"]: make_row(fields, self.now) for fields in seeded}
         listed = input_value.get("page")
         if listed is not None:
-            self.page = [make_row(OBJECT.validate_python(fields), self.now) for fields in listed]
+            self.page = [make_row(fields, self.now) for fields in listed]
         faults = input_value.get("faults")
-        if faults is not None:
-            self.faults = faults
+        self.faults: dict[str, bool] = {} if faults is None else faults
 
     def fail(self, kind: str) -> None:
         if self.faults.get(kind):
             raise RuntimeError(f"the scripted repository failed the {kind}")
 
     async def create(self, data: dict[str, JsonValue]) -> FakeRow:
-        generated = TEXT.validate_python(data["skill_id"])
-        if not generated.startswith(SKILL_PREFIX):
-            raise ValueError(f"unexpected skill id {generated}")
         stored = {**data, "skill_id": self.fixed_id}
         if "metadata" in stored:
             stored["metadata"] = OBJECT.validate_json(TEXT.validate_python(stored["metadata"]))
         self.effects.append(JSON.validate_python({"kind": "create", "data": stored}))
         self.fail("create")
-        row = make_row(OBJECT.validate_python(stored), self.now)
+        row = make_row(stored, self.now)
         if row.get("metadata") is None:
             row["metadata"] = {}
         self.rows[self.fixed_id] = row
         return row
 
-    async def find_unique(self, where: SkillWhere) -> FakeRow | None:
+    async def find_unique(self, where: dict[str, str]) -> FakeRow | None:
         self.effects.append(JSON.validate_python({"kind": "find_unique", "where": where}))
         self.fail("find_unique")
         return self.rows.get(where["skill_id"])
@@ -118,13 +129,12 @@ class TableState:
     async def find_many(
         self, take: int, skip: int, order: JsonValue, where: JsonValue
     ) -> list[FakeRow]:
-        self.effects.append(JSON.validate_python({
-            "kind": "find_many", "take": take, "skip": skip, "order": order, "where": where,
-        }))
+        effect = {"kind": "find_many", "take": take, "skip": skip, "order": order, "where": where}
+        self.effects.append(JSON.validate_python(effect))
         self.fail("find_many")
         return self.page
 
-    async def delete(self, where: SkillWhere) -> FakeRow | None:
+    async def delete(self, where: dict[str, str]) -> FakeRow | None:
         self.effects.append(JSON.validate_python({"kind": "delete", "where": where}))
         self.fail("delete")
         return self.rows.pop(where["skill_id"], None)
@@ -143,15 +153,9 @@ class FakeBase64:
         return encoded.decode("ascii")
 
 
-class FieldsModule(ModuleType):
+class FakeModule(ModuleType):
     Base64 = FakeBase64
-
-
-class PrismaModule(ModuleType):
-    fields: FieldsModule
-
-
-class ProxyModule(ModuleType):
+    fields: ModuleType | None = None
     prisma_client: FakeClient | None = None
 
 
@@ -161,20 +165,21 @@ class WarningRecorder(logging.Handler):
         self.messages: list[JsonValue] = []
 
     @override
-    def emit(self, record: logging.LogRecord) -> None:
-        del record
+    def emit(self, _record: logging.LogRecord) -> None:
         self.messages.append({"level": "warn"})
 
 
 def principal_of(fields: PrincipalFields) -> UserAPIKeyAuth:
-    return UserAPIKeyAuth.model_construct(
+    # The handler receives resolved auth fields; construction would replace token with the api key.
+    principal = UserAPIKeyAuth(
         user_id=fields.get("user_id"),
         team_id=fields.get("team_id"),
         org_id=fields.get("org_id"),
-        api_key=fields.get("api_key"),
-        token=fields.get("token"),
         user_role=LitellmUserRoles.PROXY_ADMIN if fields.get("admin") else None,
     )
+    principal.api_key = fields.get("api_key")
+    principal.token = fields.get("token")
+    return principal
 
 
 def new_request(fields: CreateData) -> NewSkillRequest:
@@ -199,12 +204,13 @@ def row_value(row: LiteLLM_SkillsTable) -> JsonValue:
 
 def error_token(error: ValueError) -> str:
     message = str(error)
-    if message.startswith(NO_DATABASE):
-        return "no_database"
-    if message.startswith(MISSING_IDENTITY):
-        return "missing_identity"
-    if message.startswith(NOT_FOUND):
-        return "not_found"
+    for prefix, code in (
+        (NO_DATABASE, "no_database"),
+        (MISSING_IDENTITY, "missing_identity"),
+        (NOT_FOUND, "not_found"),
+    ):
+        if message.startswith(prefix):
+            return code
     return "exception"
 
 
@@ -267,23 +273,20 @@ async def skill_answer(step: Step, principal: UserAPIKeyAuth | None) -> JsonValu
 
 
 async def run_steps(steps: list[Step]) -> list[JsonValue]:
-    results: list[JsonValue] = []
-    for step in steps:
-        results.append(await run_step(step))
+    results: list[JsonValue] = [await run_step(step) for step in steps]
     return results
 
 
 def run(input_value: Input) -> JsonValue:
     state = TableState(input_value)
-    proxy = ProxyModule(PROXY_MODULE)
+    proxy = FakeModule(PROXY_MODULE)
     proxy.prisma_client = FakeClient(state)
-    fields = FieldsModule(FIELDS_MODULE)
-    prisma = PrismaModule(PRISMA_MODULE)
+    fields = FakeModule(FIELDS_MODULE)
+    prisma = FakeModule(PRISMA_MODULE)
     prisma.fields = fields
-    logger = logging.getLogger(LOGGER_NAME)
     recorder = WarningRecorder()
-    logger.handlers = [recorder]
-    logger.setLevel(logging.WARNING)
+    logging.getLogger(LOGGER_NAME).handlers = [recorder]
+    logging.getLogger(LOGGER_NAME).setLevel(logging.WARNING)
     sys.modules[PROXY_MODULE] = proxy
     sys.modules[PRISMA_MODULE] = prisma
     sys.modules[FIELDS_MODULE] = fields
