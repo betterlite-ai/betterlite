@@ -189,43 +189,43 @@ async def analysis_endpoint(
             http.close()
 
 
-async def run_request_async(input_value: CaseInput) -> Json:
+async def run_call_async(input_value: CaseInput) -> Json:
+    function = input_value["function"]
     data = TypeAdapter(dict[str, Json]).validate_python(input_value["request_data"])
     try:
         async with analysis_endpoint(input_value) as (server, inspector):
+            if function == "output":
+                result = await inspector.call_aim_guardrail_on_output(
+                    data,
+                    input_value["output"],
+                    hook="output",
+                    key_alias=input_value["key_alias"],
+                )
+                if result is None:
+                    raise RuntimeError("the guardrail returned no output verdict")
+                output: dict[str, Json] = {
+                    "detected": result.get("detection_message") is not None,
+                    "redacted_output": result.get("redacted_output"),
+                }
+                output_view: dict[str, Json] = {
+                    "request": request_output(server),
+                    "output": output,
+                }
+                return output_view
             outcome = await asyncio.gather(
                 inspector.call_aim_guardrail(
                     data, hook=input_value["hook"], key_alias=input_value["key_alias"]
                 ),
                 return_exceptions=True,
             )
-            view: dict[str, Json] = {
+            request_view: dict[str, Json] = {
                 "request": request_output(server),
                 "request_data": data,
                 "blocked": rejection(outcome[0]),
             }
-            return view
+            return request_view
     except AimGuardrailMissingSecrets:
         return {"missing_secrets": True}
-
-
-async def run_output_async(input_value: CaseInput) -> Json:
-    request_data = TypeAdapter(dict[str, Json]).validate_python(input_value["request_data"])
-    async with analysis_endpoint(input_value) as (server, inspector):
-        result = await inspector.call_aim_guardrail_on_output(
-            request_data,
-            input_value["output"],
-            hook="output",
-            key_alias=input_value["key_alias"],
-        )
-        if result is None:
-            raise RuntimeError("the guardrail returned no output verdict")
-        output: dict[str, Json] = {
-            "detected": result.get("detection_message") is not None,
-            "redacted_output": result.get("redacted_output"),
-        }
-        view: dict[str, Json] = {"request": request_output(server), "output": output}
-        return view
 
 
 async def run_stream_async(input_value: CaseInput) -> Json:
@@ -257,9 +257,6 @@ async def run_stream_async(input_value: CaseInput) -> Json:
 
 
 def run(input_value: CaseInput) -> Json:
-    function = input_value["function"]
-    if function == "request":
-        return asyncio.run(run_request_async(input_value))
-    if function == "output":
-        return asyncio.run(run_output_async(input_value))
-    return asyncio.run(run_stream_async(input_value))
+    if input_value["function"] == "stream":
+        return asyncio.run(run_stream_async(input_value))
+    return asyncio.run(run_call_async(input_value))
