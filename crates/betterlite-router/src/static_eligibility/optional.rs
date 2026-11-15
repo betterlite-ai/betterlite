@@ -92,7 +92,10 @@ pub fn routing_strategy_checks(
     deployment: &DeploymentSpec,
     checks: &[&dyn DeploymentPreCallCheck],
 ) -> Result<(), PreCallError> {
-    checks.iter().try_for_each(|check| check.check(deployment))
+    for check in checks {
+        check.check(deployment)?;
+    }
+    Ok(())
 }
 
 const fn rate_limit(failure: &PreCallError) -> Option<(&str, u16)> {
