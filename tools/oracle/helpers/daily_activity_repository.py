@@ -27,7 +27,7 @@ class PrismaErrorsModule(types.ModuleType):
 
 
 class PrismaModule(types.ModuleType):
-    errors = PrismaErrorsModule("prisma.errors")
+    errors: PrismaErrorsModule = PrismaErrorsModule("prisma.errors")
 
 
 # the recovery path imports prisma.errors lazily; the oracle environment has no prisma package
@@ -57,7 +57,8 @@ class Table:
     def __init__(self, rows: Sequence[TokenRecord]) -> None:
         self.rows = tuple(rows)
 
-    async def find_many(self, **_where: object) -> Sequence[TokenRecord]:
+    async def find_many(self, **_where: Mapping[str, JsonValue]) -> Sequence[TokenRecord]:
+        await asyncio.sleep(0)
         return self.rows
 
 
@@ -82,6 +83,7 @@ class FakeWrapper(PrismaWrapper):
     async def query_raw(
         self, sql: str, *params: JsonValue
     ) -> Sequence[Mapping[str, JsonValue]] | None:
+        await asyncio.sleep(0)
         self.queries.append((sql, tuple(JSON.validate_python(param) for param in params)))
         if not self.batches:
             return None
