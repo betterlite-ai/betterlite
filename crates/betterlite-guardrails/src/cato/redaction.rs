@@ -36,11 +36,10 @@ fn rewrite_messages(
     let Some(GuardrailValue::Array(messages)) = data.get_mut("messages") else {
         return 0;
     };
-    for (index, message) in messages.iter_mut().enumerate() {
-        let GuardrailValue::Object(object) = message else {
-            continue;
-        };
-        if let Some(content) = redacted.get(index).and_then(|entry| entry.content.as_ref()) {
+    for (message, redaction) in messages.iter_mut().zip(redacted) {
+        if let (GuardrailValue::Object(object), Some(content)) =
+            (message, redaction.content.as_ref())
+        {
             object.insert("content".to_owned(), content.clone());
         }
     }
@@ -105,24 +104,22 @@ fn apply_prompt_redaction(
     data: &mut BTreeMap<String, GuardrailValue>,
     redacted: &[RedactedMessage],
 ) {
-    if redacted.is_empty() {
+    let Some(prompt) = data.get("prompt").cloned() else {
         return;
-    }
+    };
     let contents = redacted
         .iter()
         .map(|message| message.content.as_ref())
         .collect::<Vec<_>>();
-    match data.get("prompt").cloned() {
-        Some(GuardrailValue::Text(_)) => {
-            if let Some(Some(content)) = contents.first() {
-                data.insert("prompt".to_owned(), (*content).clone());
-            }
-        }
-        Some(GuardrailValue::Array(parts)) => {
-            let rewritten = rewrite_prompt_parts(parts, &contents);
-            data.insert("prompt".to_owned(), GuardrailValue::Array(rewritten));
-        }
-        _ => {}
+    let rewritten = match prompt {
+        GuardrailValue::Text(_) => contents.first().and_then(|first| *first).cloned(),
+        GuardrailValue::Array(parts) => Some(GuardrailValue::Array(rewrite_prompt_parts(
+            parts, &contents,
+        ))),
+        _ => None,
+    };
+    if let Some(value) = rewritten {
+        data.insert("prompt".to_owned(), value);
     }
 }
 

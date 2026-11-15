@@ -198,7 +198,7 @@ fn cato_guardrail_constructor_uses_the_default_timeout() {
 #[test]
 fn cato_guardrail_constructor_reads_a_configured_timeout() {
     let mut params = params();
-    params.timeout = Some(2.5);
+    params.timeout = Some(2.5_f64);
     let guardrail = build(params, &BTreeMap::new());
     assert_eq!(guardrail.timeout, Duration::from_millis(2500));
 }
@@ -206,7 +206,7 @@ fn cato_guardrail_constructor_reads_a_configured_timeout() {
 #[test]
 fn cato_guardrail_constructor_rejects_a_negative_timeout() {
     let mut params = params();
-    params.timeout = Some(-1.0);
+    params.timeout = Some(-1.0_f64);
     let error = CatoGuardrail::new(params, &BTreeMap::new()).expect_err("timeout");
     assert!(matches!(error, CatoError::TimeoutSetting { .. }));
 }

@@ -94,8 +94,8 @@ async fn serve_raw(raw: String) -> (String, Server) {
     let router = Router::new().route(
         "/fw/v1/analyze",
         post(move || {
-            let raw = raw.clone();
-            async move { ([(CONTENT_TYPE, "application/json")], raw) }
+            let payload = raw.clone();
+            async move { ([(CONTENT_TYPE, "application/json")], payload) }
         }),
     );
     let mut server = JoinSet::new();
@@ -104,7 +104,10 @@ async fn serve_raw(raw: String) -> (String, Server) {
 }
 
 fn raw_answer_of_size(size: usize) -> String {
-    format!("{{\"padding\":\"{}\"}}", "a".repeat(size - 14))
+    format!(
+        "{{\"padding\":\"{}\"}}",
+        "a".repeat(size.saturating_sub(14))
+    )
 }
 
 async fn handle(
@@ -114,8 +117,8 @@ async fn handle(
 ) -> (StatusCode, Json<Answer>) {
     let mut recorded = BTreeMap::new();
     for (name, value) in &headers {
-        if let Ok(value) = value.to_str() {
-            recorded.insert(name.as_str().to_owned(), value.to_owned());
+        if let Ok(header_value) = value.to_str() {
+            recorded.insert(name.as_str().to_owned(), header_value.to_owned());
         }
     }
     captured
@@ -175,38 +178,22 @@ async fn cato_guardrail_call_posts_the_analyze_messages_and_headers() {
     server.shutdown().await;
     assert_eq!(recorded.len(), 1);
     let (headers, body) = recorded.first().expect("request");
-    assert_eq!(
-        headers.get("authorization").map(String::as_str),
-        Some("Bearer test-key")
-    );
-    assert_eq!(
-        headers.get("x-cato-litellm-hook").map(String::as_str),
-        Some("pre_call")
-    );
-    assert_eq!(
-        headers.get("x-cato-litellm-version").map(String::as_str),
-        Some(LITELLM_VERSION)
-    );
-    assert_eq!(
-        headers.get("x-cato-call-id").map(String::as_str),
-        Some("call-1")
-    );
-    assert_eq!(
-        headers.get("x-cato-user-email").map(String::as_str),
-        Some("user@example.test")
-    );
-    assert_eq!(
-        headers.get("x-cato-gateway-key-alias").map(String::as_str),
-        Some("alias")
-    );
-    assert_eq!(
-        headers.get("content-type").map(String::as_str),
-        Some("application/json")
-    );
-    assert_eq!(
-        headers.get("user-agent").map(String::as_str),
-        Some(concat!("betterlite/", env!("CARGO_PKG_VERSION")))
-    );
+    let expected = [
+        ("authorization", "Bearer test-key"),
+        ("x-cato-litellm-hook", "pre_call"),
+        ("x-cato-litellm-version", LITELLM_VERSION),
+        ("x-cato-call-id", "call-1"),
+        ("x-cato-user-email", "user@example.test"),
+        ("x-cato-gateway-key-alias", "alias"),
+        ("content-type", "application/json"),
+        (
+            "user-agent",
+            concat!("betterlite/", env!("CARGO_PKG_VERSION")),
+        ),
+    ];
+    for (name, value) in expected {
+        assert_eq!(headers.get(name).map(String::as_str), Some(value));
+    }
     let posted: PostedBody = serde_json::from_str(body).expect("posted body");
     assert_eq!(
         posted.messages,
@@ -472,7 +459,7 @@ async fn cato_guardrail_uses_the_default_timeout_when_none_is_configured() {
 
 #[test]
 fn cato_guardrail_caps_an_answer_at_one_mebibyte() {
-    assert_eq!(MAX_RESPONSE_BYTES, 1_048_576);
+    assert_eq!(MAX_RESPONSE_BYTES, 0x0010_0000);
 }
 
 #[tokio::test]

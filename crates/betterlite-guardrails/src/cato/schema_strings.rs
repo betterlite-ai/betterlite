@@ -94,21 +94,19 @@ fn object_refs<'value>(
             continue;
         };
         for (index, item) in items.iter().enumerate() {
-            let GuardrailValue::Text(text) = item else {
-                continue;
-            };
-            if text.is_empty() {
-                continue;
+            if let GuardrailValue::Text(text) = item
+                && !text.is_empty()
+            {
+                refs.push((
+                    SchemaSlot::Item {
+                        root: root.clone(),
+                        path: path.to_vec(),
+                        key: key.to_owned(),
+                        index,
+                    },
+                    text.clone(),
+                ));
             }
-            refs.push((
-                SchemaSlot::Item {
-                    root: root.clone(),
-                    path: path.to_vec(),
-                    key: key.to_owned(),
-                    index,
-                },
-                text.clone(),
-            ));
         }
     }
     for (key, value) in object.iter().rev() {

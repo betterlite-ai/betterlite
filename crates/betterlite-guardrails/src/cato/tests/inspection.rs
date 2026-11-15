@@ -81,7 +81,7 @@ fn cato_guardrail_appends_extra_sources_in_a_fixed_order() {
     assert_eq!(
         message_pairs(&messages),
         [
-            ("".to_owned(), "chat".to_owned()),
+            (String::new(), "chat".to_owned()),
             ("user".to_owned(), "input text".to_owned()),
             ("system".to_owned(), "be careful".to_owned()),
             ("user".to_owned(), "legacy prompt".to_owned()),
@@ -137,11 +137,11 @@ fn cato_guardrail_appends_prompt_and_responses_input_messages(
     #[case] expected: Vec<(&str, &str)>,
 ) {
     let messages = inspection_messages(&body(&[(field, value)]));
-    let expected = expected
+    let pairs = expected
         .into_iter()
         .map(|(role, content)| (role.to_owned(), content.to_owned()))
         .collect::<Vec<_>>();
-    assert_eq!(message_pairs(&messages), expected);
+    assert_eq!(message_pairs(&messages), pairs);
 }
 
 #[test]
@@ -155,58 +155,50 @@ fn cato_guardrail_appends_an_instruction_message_only_for_non_empty_text() {
     );
 }
 
+fn schema_tool() -> GuardrailValue {
+    let query = object(&[
+        ("description", text("query description")),
+        ("enum", list(&[text("one"), text(""), text("two")])),
+        ("examples", list(&[text("example")])),
+    ]);
+    let parameters = object(&[
+        ("properties", object(&[("q", query)])),
+        ("title", text("params title")),
+    ]);
+    object(&[(
+        "function",
+        object(&[
+            ("description", text("tool description")),
+            ("name", text("tool")),
+            ("parameters", parameters),
+        ]),
+    )])
+}
+
+fn response_schema() -> GuardrailValue {
+    object(&[
+        ("title", text("response title")),
+        (
+            "properties",
+            object(&[(
+                "a",
+                object(&[("const", text("fixed")), ("default", text("fallback"))]),
+            )]),
+        ),
+    ])
+}
+
 #[test]
 fn cato_guardrail_finds_schema_strings_recursively_in_a_fixed_order() {
     let data = body(&[
-        (
-            "tools",
-            list(&[object(&[(
-                "function",
-                object(&[
-                    ("description", text("tool description")),
-                    ("name", text("tool")),
-                    (
-                        "parameters",
-                        object(&[
-                            (
-                                "properties",
-                                object(&[(
-                                    "q",
-                                    object(&[
-                                        ("description", text("query description")),
-                                        ("enum", list(&[text("one"), text(""), text("two")])),
-                                        ("examples", list(&[text("example")])),
-                                    ]),
-                                )]),
-                            ),
-                            ("title", text("params title")),
-                        ]),
-                    ),
-                ]),
-            )])]),
-        ),
+        ("tools", list(&[schema_tool()])),
         (
             "functions",
             list(&[object(&[("description", text("function description"))])]),
         ),
         (
             "response_format",
-            object(&[(
-                "json_schema",
-                object(&[(
-                    "schema",
-                    object(&[
-                        ("title", text("response title")),
-                        (
-                            "properties",
-                            object(&[(
-                                "a",
-                                object(&[("const", text("fixed")), ("default", text("fallback"))]),
-                            )]),
-                        ),
-                    ]),
-                )]),
-            )]),
+            object(&[("json_schema", object(&[("schema", response_schema())]))]),
         ),
     ]);
     assert_eq!(
