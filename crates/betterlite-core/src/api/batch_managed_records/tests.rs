@@ -179,7 +179,7 @@ async fn existing_input_id_mapping() {
 }
 
 #[tokio::test]
-async fn existing_output_error_id__5d60() {
+async fn existing_output_error_id_5d60() {
     let files = RecordingFiles::scripted(
         &[
             ("file-raw-out", "litellm_proxy:file:unified-out"),
