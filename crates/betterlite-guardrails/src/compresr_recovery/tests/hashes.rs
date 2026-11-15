@@ -65,3 +65,9 @@ fn recovery_marker_names_the_hash_and_the_tool_hash() {
 fn entry_bytes_counts_utf8_bytes_of_every_original_hash() {
     assert_eq!(entry_bytes(&originals(&[("a", "\u{e9}"), ("b", "xyz")])), 5);
 }
+
+// Python holds a lone surrogate from a JSON \ud800 escape; a Rust string cannot, so the parser refuses it first
+#[test]
+fn a_lone_surrogate_escape_is_rejected_before_hashing_hash() {
+    assert!(serde_json::from_str::<String>("\"\\ud800\"").is_err());
+}
