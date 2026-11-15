@@ -11,6 +11,7 @@ use betterlite_openai::compatible_line_stream::Mode;
 use betterlite_openai::compatible_wire::error::OpenAiLikeError;
 use betterlite_openai::compatible_wire::{CompatibleReply, LogInput, transform_response};
 use futures_util::StreamExt as _;
+use futures_util::stream::iter;
 use indexmap::IndexMap;
 
 use super::error::CompatibleChatError;
@@ -110,9 +111,9 @@ fn selected_stream(
     stream::CompatibleChatStream::Lines(stream::lines(body, limit, plan.mode))
 }
 
-fn finish_fake(body: Vec<u8>) -> Result<stream::CompatibleChatStream, CompatibleChatError> {
+fn finish_fake(body: &[u8]) -> Result<stream::CompatibleChatStream, CompatibleChatError> {
     let response: FakeResponse =
-        serde_json::from_slice(&body).map_err(CompatibleChatError::Encode)?;
+        serde_json::from_slice(body).map_err(CompatibleChatError::Encode)?;
     let fake = FakeStream {
         response,
         json_mode: None,
@@ -134,12 +135,10 @@ fn finish_buffered(
         }
         // make_sync_call tests the decoder first, so a supplied one reads the buffered body in 1024-byte pieces
         let selected = match plan.decoder {
-            Some(decoder) => {
-                stream::CompatibleChatStream::Decoder(decoder.decode(stream::rechunk(
-                    futures_util::stream::iter([Ok::<Vec<u8>, HttpError>(body)]).boxed(),
-                )))
-            }
-            None => finish_fake(body)?,
+            Some(decoder) => stream::CompatibleChatStream::Decoder(decoder.decode(
+                stream::rechunk(iter([Ok::<Vec<u8>, HttpError>(body)]).boxed()),
+            )),
+            None => finish_fake(&body)?,
         };
         log_stream_post(plan, SYNC_STREAM_LOGGED, state, env);
         return Ok(CompatibleChatOutcome::Stream(Box::new(selected)));

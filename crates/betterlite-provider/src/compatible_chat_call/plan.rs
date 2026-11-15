@@ -104,7 +104,7 @@ impl ChatPlan<'_> {
     }
 
     // a stream send wraps nothing, so its timeout surfaces as the timeout itself; both nonstream functions map it to 500
-    pub(crate) fn send_failure(&self, error: TransportError) -> CompatibleChatError {
+    pub(crate) const fn send_failure(&self, error: TransportError) -> CompatibleChatError {
         let timed_out = matches!(
             error,
             TransportError::ConnectTimeout(_) | TransportError::Deadline(_)

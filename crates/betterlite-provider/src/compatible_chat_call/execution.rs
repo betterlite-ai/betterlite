@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::time::Duration;
 
 use betterlite_http::proxy::ProxiedClient;
@@ -10,6 +11,7 @@ use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::compatible_line_stream::Mode;
 use betterlite_openai::compatible_wire::{EndpointType, validate_environment};
 use betterlite_openai::openai_base_config::Headers;
+use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -30,7 +32,7 @@ pub trait MessageTransformer {
         &self,
         model: &str,
         messages: Vec<ChatMessage>,
-    ) -> Result<Vec<ChatMessage>, Box<dyn std::error::Error + Send + Sync>>;
+    ) -> Result<Vec<ChatMessage>, Box<dyn Error + Send + Sync>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,14 +235,17 @@ impl<'source> CompatibleChatExecution<'source> {
         }
     }
 
-    pub async fn execute(
-        &self,
-        client: &ProxiedClient,
-        state: &mut LoggingState,
-        env: &PrePostEnv<'_>,
-    ) -> Result<CompatibleChatOutcome, CompatibleChatError> {
-        let plan = self.plan(state, env)?;
-        let answer = send_chat(client, &plan).await?;
-        finish_chat(&plan, answer, state, env)
+    #[must_use]
+    pub fn execute<'execution>(
+        &'execution self,
+        client: &'execution ProxiedClient,
+        state: &'execution mut LoggingState,
+        env: &'execution PrePostEnv<'_>,
+    ) -> LocalBoxFuture<'execution, Result<CompatibleChatOutcome, CompatibleChatError>> {
+        Box::pin(async move {
+            let plan = self.plan(state, env)?;
+            let answer = send_chat(client, &plan).await?;
+            finish_chat(&plan, answer, state, env)
+        })
     }
 }

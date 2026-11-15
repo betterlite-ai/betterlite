@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use std::error::Error as StdError;
+use std::future::ready;
 use std::mem;
 
 use betterlite_bedrock::invoke_events::error::InvokeStreamError;
@@ -18,8 +20,7 @@ pub type Bytes = BoxStream<'static, Result<Vec<u8>, HttpError>>;
 pub type LineItems = BoxStream<'static, Result<String, ReceiveError<LineError>>>;
 pub type LineChunks = BoxStream<'static, Result<CompatibleLineChunk, StreamError<LineError>>>;
 pub type FakeChunks = BoxStream<'static, Result<GenericChunk, InvokeStreamError>>;
-pub type DecodedChunks =
-    BoxStream<'static, Result<GenericChunk, Box<dyn std::error::Error + Send + Sync>>>;
+pub type DecodedChunks = BoxStream<'static, Result<GenericChunk, Box<dyn StdError + Send + Sync>>>;
 
 // httpx's chunk_size for aiter_bytes and iter_bytes on a custom decoder
 pub const DECODER_CHUNK_BYTES: usize = 1024;
@@ -49,7 +50,6 @@ struct LineState {
     body: Bytes,
     decoder: LineDecoder,
     pending: VecDeque<String>,
-    limit: usize,
     failure: Option<LineError>,
     done: bool,
 }
@@ -73,7 +73,16 @@ async fn next_line(
                 if let Err(error) = state.decoder.push(&bytes, &mut state.pending) {
                     state.failure = Some(match error {
                         AlephAlphaError::LineTooLong { limit } => LineError::TooLong { limit },
-                        other => LineError::Decode(other),
+                        other @ (AlephAlphaError::Provider { .. }
+                        | AlephAlphaError::Content { .. }
+                        | AlephAlphaError::StreamType
+                        | AlephAlphaError::Endpoint { .. }
+                        | AlephAlphaError::Header { .. }
+                        | AlephAlphaError::Encode { .. }
+                        | AlephAlphaError::NoChoices
+                        | AlephAlphaError::Usage
+                        | AlephAlphaError::Tokenize { .. }
+                        | AlephAlphaError::Transport { .. }) => LineError::Decode(other),
                     });
                 }
             }
@@ -90,7 +99,7 @@ async fn next_line(
 fn sync_chunks(items: LineItems) -> LineChunks {
     items
         .filter_map(|item| {
-            std::future::ready(match item {
+            ready(match item {
                 Ok(line) => match decode_legacy_compatible_line(&line, Mode::Sync) {
                     Outcome::Chunk(chunk) => Some(Ok(chunk)),
                     Outcome::End => None,
@@ -115,7 +124,6 @@ pub fn lines(body: Bytes, limit: usize, mode: Mode) -> LineChunks {
         body,
         decoder: LineDecoder::new(limit),
         pending: VecDeque::new(),
-        limit,
         failure: None,
         done: false,
     };

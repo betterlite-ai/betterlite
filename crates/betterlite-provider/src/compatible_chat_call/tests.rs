@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error;
+use std::io::Error as IoError;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -25,6 +27,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use chrono::DateTime;
 use futures_util::StreamExt as _;
+use futures_util::stream;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -385,7 +388,7 @@ fn async_stream_writes_the_stream_flag_after_the_pre_call_log() {
     };
     assert_eq!(logged.get("stream"), Some(&Json::Bool(false)));
     let answer = ChatAnswer::Stream {
-        body: futures_util::stream::empty::<Result<Vec<u8>, HttpError>>().boxed(),
+        body: stream::empty::<Result<Vec<u8>, HttpError>>().boxed(),
         limit: 4096,
     };
     let outcome = finish_chat(&plan, answer, &mut state, &env).unwrap();
@@ -463,7 +466,7 @@ impl MessageTransformer for Suffix {
         &self,
         model: &str,
         mut messages: Vec<ChatMessage>,
-    ) -> Result<Vec<ChatMessage>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Vec<ChatMessage>, Box<dyn Error + Send + Sync>> {
         messages[0].content = Some(MessageContent::Text(format!("{model}!")));
         Ok(messages)
     }
@@ -476,8 +479,8 @@ impl MessageTransformer for Refuse {
         &self,
         _model: &str,
         _messages: Vec<ChatMessage>,
-    ) -> Result<Vec<ChatMessage>, Box<dyn std::error::Error + Send + Sync>> {
-        Err(Box::from(std::io::Error::other("no transform")))
+    ) -> Result<Vec<ChatMessage>, Box<dyn Error + Send + Sync>> {
+        Err(Box::from(IoError::other("no transform")))
     }
 }
 
@@ -929,8 +932,8 @@ async fn a_sync_stream_send_timeout_is_the_timeout_error() {
 
 #[tokio::test]
 async fn a_full_chunk_is_yielded_before_another_read() {
-    let body = futures_util::stream::iter([Ok::<Vec<u8>, HttpError>(vec![b'a'; 1024])])
-        .chain(futures_util::stream::pending())
+    let body = stream::iter([Ok::<Vec<u8>, HttpError>(vec![b'a'; 1024])])
+        .chain(stream::pending())
         .boxed();
     let mut chunked = rechunk(body);
     let first = timeout(EXCHANGE_TIMEOUT, chunked.next()).await.unwrap();

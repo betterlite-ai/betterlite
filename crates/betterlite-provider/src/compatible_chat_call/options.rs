@@ -16,8 +16,8 @@ impl OptionValue for bool {
 
     fn pick(value: Json) -> Option<Self> {
         match value {
-            Json::Bool(value) => Some(value),
-            _ => None,
+            Json::Bool(flag) => Some(flag),
+            Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
         }
     }
 }
@@ -27,8 +27,8 @@ impl OptionValue for String {
 
     fn pick(value: Json) -> Option<Self> {
         match value {
-            Json::Text(value) => Some(value),
-            _ => None,
+            Json::Text(text) => Some(text),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
         }
     }
 }
@@ -38,17 +38,20 @@ impl OptionValue for IndexMap<String, Json> {
 
     fn pick(value: Json) -> Option<Self> {
         match value {
-            Json::Object(value) => Some(value),
-            _ => None,
+            Json::Object(object) => Some(object),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
         }
     }
 }
 
 // optional_params.pop(name, None): absent and null leave the default, and a value of the wrong type names the field
-pub(crate) fn take<T: OptionValue>(
+pub(crate) fn take<T>(
     options: &mut IndexMap<String, Json>,
     field: &'static str,
-) -> Result<Option<T>, CompatibleChatError> {
+) -> Result<Option<T>, CompatibleChatError>
+where
+    T: OptionValue,
+{
     match options.shift_remove(field) {
         None | Some(Json::Null) => Ok(None),
         Some(value) => T::pick(value)

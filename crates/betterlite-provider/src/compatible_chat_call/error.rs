@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::string::FromUtf8Error;
 
 use betterlite_http::proxy::transport_error::TransportError;
@@ -36,7 +37,7 @@ pub enum CompatibleChatError {
     #[error("{0}")]
     Encode(#[source] serde_json::Error),
     #[error("the message transform failed: {0}")]
-    Transform(#[source] Box<dyn std::error::Error + Send + Sync>),
+    Transform(#[source] Box<dyn StdError + Send + Sync>),
 }
 
 impl CompatibleChatError {
