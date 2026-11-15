@@ -154,10 +154,39 @@ fn credentials_json(credentials: Option<&VertexCredentials>) -> Value {
 fn call_json(record: &BatchProviderCreateCall) -> Value {
     match record {
         BatchProviderCreateCall::ProviderConfig(call) => provider_config_json(call),
-        BatchProviderCreateCall::Xai(call) => xai_json(call),
-        BatchProviderCreateCall::OpenAiCompatible(call) => openai_json(call),
-        BatchProviderCreateCall::Azure(call) => azure_json(call),
-        BatchProviderCreateCall::VertexAi(call) => vertex_json(call),
+        BatchProviderCreateCall::Xai(call) => transport_json("xai", call, &[api_key_field(call)]),
+        BatchProviderCreateCall::OpenAiCompatible(call) => transport_json(
+            "openai_compatible",
+            call,
+            &[
+                api_key_field(call),
+                ("organization", json!(call.organization)),
+                ("max_retries", json!(call.max_retries)),
+            ],
+        ),
+        BatchProviderCreateCall::Azure(call) => transport_json(
+            "azure",
+            call,
+            &[
+                api_key_field(call),
+                ("api_version", json!(call.api_version)),
+                ("max_retries", json!(call.max_retries)),
+            ],
+        ),
+        BatchProviderCreateCall::VertexAi(call) => transport_json(
+            "vertex_ai",
+            call,
+            &[
+                ("vertex_project", json!(call.vertex_project)),
+                ("vertex_location", json!(call.vertex_location)),
+                (
+                    "vertex_credentials",
+                    credentials_json(call.vertex_credentials.as_ref()),
+                ),
+                ("max_retries", json!(call.max_retries)),
+                ("custom_endpoint", json!(call.custom_endpoint)),
+            ],
+        ),
     }
 }
 
@@ -175,56 +204,27 @@ fn provider_config_json(call: &ProviderConfigCall) -> Value {
     })
 }
 
-fn xai_json(call: &ProviderBatchCall) -> Value {
-    json!({
-        "branch": "xai",
-        "body": body_json(&call.body),
-        "api_base": call.api_base,
-        "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
-        "timeout": call.timeout,
-        "is_async": call.is_async,
-    })
+// the vertex handler takes no api_key, so that key is recorded only by the branches that pass one
+fn api_key_field(call: &ProviderBatchCall) -> (&'static str, Value) {
+    let key = call
+        .api_key
+        .as_ref()
+        .map(secrecy::ExposeSecret::expose_secret);
+    ("api_key", json!(key))
 }
 
-fn openai_json(call: &ProviderBatchCall) -> Value {
-    json!({
-        "branch": "openai_compatible",
-        "body": body_json(&call.body),
-        "api_base": call.api_base,
-        "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
-        "organization": call.organization,
-        "timeout": call.timeout,
-        "max_retries": call.max_retries,
-        "is_async": call.is_async,
-    })
-}
-
-fn azure_json(call: &ProviderBatchCall) -> Value {
-    json!({
-        "branch": "azure",
-        "body": body_json(&call.body),
-        "api_base": call.api_base,
-        "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
-        "api_version": call.api_version,
-        "timeout": call.timeout,
-        "max_retries": call.max_retries,
-        "is_async": call.is_async,
-    })
-}
-
-fn vertex_json(call: &ProviderBatchCall) -> Value {
-    json!({
-        "branch": "vertex_ai",
-        "body": body_json(&call.body),
-        "api_base": call.api_base,
-        "vertex_project": call.vertex_project,
-        "vertex_location": call.vertex_location,
-        "vertex_credentials": credentials_json(call.vertex_credentials.as_ref()),
-        "timeout": call.timeout,
-        "max_retries": call.max_retries,
-        "custom_endpoint": call.custom_endpoint,
-        "is_async": call.is_async,
-    })
+// the keys every transport branch records, plus the ones only its provider sends
+fn transport_json(branch: &str, call: &ProviderBatchCall, extras: &[(&str, Value)]) -> Value {
+    let mut fields = Map::new();
+    fields.insert("branch".to_owned(), json!(branch));
+    fields.insert("body".to_owned(), body_json(&call.body));
+    fields.insert("api_base".to_owned(), json!(call.api_base));
+    fields.insert("timeout".to_owned(), json!(call.timeout));
+    fields.insert("is_async".to_owned(), json!(call.is_async));
+    for (key, value) in extras {
+        fields.insert((*key).to_owned(), value.clone());
+    }
+    Value::Object(fields)
 }
 
 fn step_outcome(
