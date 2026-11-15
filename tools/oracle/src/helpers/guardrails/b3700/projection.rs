@@ -25,19 +25,15 @@ fn chunk(item: &GuardrailValue) -> Value {
     } else {
         Vec::new()
     };
-    json!({ "id": optional(item, "id"), "choices": choices })
+    json!({ "id": entry(item, "id").map_or(Value::Null, to_json), "choices": choices })
 }
 
 fn choice(item: &GuardrailValue) -> Value {
     json!({
-        "index": optional(item, "index"),
-        "finish_reason": optional(item, "finish_reason"),
+        "index": entry(item, "index").map_or(Value::Null, to_json),
+        "finish_reason": entry(item, "finish_reason").map_or(Value::Null, to_json),
         "content": delta_content(item),
     })
-}
-
-fn optional(item: &GuardrailValue, key: &str) -> Value {
-    entry(item, key).map_or(Value::Null, to_json)
 }
 
 fn delta_content(item: &GuardrailValue) -> Value {

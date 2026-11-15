@@ -354,14 +354,7 @@ async fn hook_drops_a_trimmed_keyword_when_litellm_would_commit_the_cut() {
 #[tokio::test]
 async fn hook_stops_masking_a_carried_keyword_once_the_phrase_is_dropped() {
     let mut categories = exception_category();
-    categories.category_keywords.insert(
-        "alpha".to_owned(),
-        (
-            "alpha_policy".to_owned(),
-            "high".to_owned(),
-            ContentFilterAction::Mask,
-        ),
-    );
+    insert_keywords(&mut categories);
     let opening = format!("alpha {}", "a".repeat(900));
     let padding = "b".repeat(200);
     let phrase = format!(" allowed phrase {}", "c".repeat(700));
@@ -375,13 +368,11 @@ async fn hook_stops_masking_a_carried_keyword_once_the_phrase_is_dropped() {
     let run = run_stream(&case).await;
     // LiteLLM commits the cut that drops the masked alpha, so its held-back text moves with the mask
     let contents = chunk_contents(&run.chunks);
-    assert_eq!(
-        contents
-            .iter()
-            .map(|content| content.chars().count())
-            .collect::<Vec<_>>(),
-        vec![869, 200, 716, 63]
-    );
+    let lengths: Vec<usize> = contents
+        .iter()
+        .map(|content| content.chars().count())
+        .collect();
+    assert_eq!(lengths, vec![869, 200, 716, 63]);
     assert_eq!(
         contents[2],
         format!(
