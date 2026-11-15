@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-server-encoding-create-env-vars
+call:
+  b4710:
+    function: prepare_create
+    salt_key: encoding-salt
+    request:
+      server_name: srv
+      env_vars:
+        - name: GLOBAL
+          value: global-secret
+        - name: USER
+          value: placeholder
+          scope: user
+        - name: EMPTY
+          value: ''
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}
