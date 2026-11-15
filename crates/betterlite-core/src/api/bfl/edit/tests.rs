@@ -469,16 +469,18 @@ async fn async_transform_rejects_a_remote_image_before_transforming() {
     let mut image = listed(vec![SuppliedMedia::Text(
         "https://example.test/in.png".to_owned(),
     )]);
+    let mut mask = SuppliedMedia::Text("https://example.test/mask.png".to_owned());
     let error = async_transform_image_edit_request(
         Some("edit it"),
         Some(&mut image),
-        MaskInput::Absent,
+        MaskInput::Media(&mut mask),
         &empty_params(),
         DEPTH,
     )
     .await
     .unwrap_err();
 
+    // LiteLLM fetches the image before the mask, so the image error wins when both are remote
     assert!(matches!(error, EditError::UnsupportedMediaUrl { field } if field == "image"));
     assert_eq!(error.code(), Some("unsupported_media_url"));
 }
