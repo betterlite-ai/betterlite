@@ -4,7 +4,7 @@ use std::io;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::catalog::{BundledCatalog, ModelCatalog, UnknownFields};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
@@ -18,7 +18,7 @@ use super::events::{
     ChirpBackendEvent, ChirpEvent, ChirpSpeechEvent, ChirpStreamingResponse, ChirpStreamingResult,
     ChirpTurnDiscarded,
 };
-use super::transformer::{ChirpEventTransformer, ItemIdSource};
+use super::transformer::{ChirpEventTransformer, ItemIdSource, UuidItemIds};
 use super::words::{join_transcript, new_words};
 use super::{
     ChirpProtocolError, ChirpSessionConfig, DEFAULT_SAMPLE_RATE_HERTZ, DISCARD_TURN_COMMAND,
@@ -127,6 +127,30 @@ fn recognizes_only_audio_transcription_models_with_both_endpoints(
 ) {
     let catalog = BundledCatalog::default().get();
     assert_eq!(is_vertex_speech_to_text_model(&catalog, model), expected);
+}
+
+#[test]
+fn an_entry_without_both_speech_to_text_endpoints_is_not_recognized() {
+    let streaming = r#"{
+        "vertex_ai/chirp_2": {
+            "litellm_provider": "vertex_ai",
+            "mode": "audio_transcription",
+            "supported_endpoints": ["/v1/audio/transcriptions", "/v1/realtime"]
+        }
+    }"#;
+    let recognized =
+        ModelCatalog::parse(streaming.as_bytes(), UnknownFields::Reject).expect("a catalog");
+    assert!(is_vertex_speech_to_text_model(&recognized, "chirp_2"));
+    let other = r#"{
+        "vertex_ai/chirp_2": {
+            "litellm_provider": "vertex_ai",
+            "mode": "audio_transcription",
+            "supported_endpoints": ["/v1/chat/completions"]
+        }
+    }"#;
+    let unrecognized =
+        ModelCatalog::parse(other.as_bytes(), UnknownFields::Reject).expect("a catalog");
+    assert!(!is_vertex_speech_to_text_model(&unrecognized, "chirp_2"));
 }
 
 #[rstest]
@@ -569,6 +593,33 @@ fn speech_started_is_emitted_once_per_turn() {
 }
 
 #[test]
+fn an_unchanged_interim_emits_nothing() {
+    let mut transformer = chirp_transformer(true);
+    let first = transformer
+        .transform(frame(ChirpSpeechEvent::None, &[("hello", false)], "0.5"))
+        .unwrap();
+    assert_eq!(event_types(&wire_events(&first)), [STARTED, DELTA]);
+    let second = transformer
+        .transform(frame(ChirpSpeechEvent::None, &[("hello", false)], "0.5"))
+        .unwrap();
+    assert!(second.is_empty());
+}
+
+#[test]
+fn a_final_matching_the_preview_emits_no_delta() {
+    let mut transformer = chirp_transformer(true);
+    transformer
+        .transform(frame(ChirpSpeechEvent::None, &[("hello", false)], "0.5"))
+        .unwrap();
+    let events = transformer
+        .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "0.5"))
+        .unwrap();
+    let events = wire_events(&events);
+    assert_eq!(event_types(&events), [STOPPED, COMPLETED]);
+    assert_eq!(events[1]["transcript"], "hello");
+}
+
+#[test]
 fn a_final_before_any_interim_starts_a_new_turn() {
     let mut transformer = chirp_transformer(true);
     let first = transformer
@@ -585,6 +636,17 @@ fn a_final_before_any_interim_starts_a_new_turn() {
     assert_eq!(event_types(&second), [STARTED, DELTA]);
     assert_eq!(second[0]["item_id"], "item_1");
     assert_eq!(second[1]["delta"], "two");
+}
+
+#[test]
+fn a_begin_frame_without_results_starts_the_turn() {
+    let mut transformer = chirp_transformer(true);
+    let events = transformer
+        .transform(frame(ChirpSpeechEvent::Begin, &[], "0.5"))
+        .unwrap();
+    let events = wire_events(&events);
+    assert_eq!(event_types(&events), [STARTED]);
+    assert_eq!(events[0]["item_id"], "item_0");
 }
 
 #[test]
@@ -825,6 +887,33 @@ fn blank_results_are_skipped_and_transcripts_are_trimmed() {
     assert_eq!(event_types(&events), [STARTED, DELTA, STOPPED, COMPLETED]);
     assert_eq!(events[1]["delta"], "hello");
     assert_eq!(events[3]["transcript"], "hello");
+    let interim = transformer
+        .transform(frame(
+            ChirpSpeechEvent::None,
+            &[("hello", false), ("   ", false)],
+            "1",
+        ))
+        .unwrap();
+    let interim = wire_events(&interim);
+    assert_eq!(event_types(&interim), [STARTED, DELTA]);
+    assert_eq!(interim[1]["delta"], "hello");
+}
+
+#[test]
+fn uuid_item_ids_look_like_openai_item_ids() {
+    let mut item_ids = UuidItemIds;
+    let first = item_ids.next_item_id();
+    let second = item_ids.next_item_id();
+    assert_ne!(first, second);
+    for identifier in [first, second] {
+        let suffix = identifier.strip_prefix("item_").expect("item prefix");
+        assert_eq!(suffix.len(), 32);
+        assert!(
+            suffix
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
+        );
+    }
 }
 
 #[derive(Clone, Default)]
