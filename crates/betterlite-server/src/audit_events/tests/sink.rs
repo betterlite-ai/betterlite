@@ -6,8 +6,9 @@ use chrono::DateTime;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::support::{
-    CollectingSpawner, RecordingRepository, SAMPLE_TIMESTAMP, TestSettings, audit_sink, capture,
-    instance, parsed, plain_record, recorder, recording_repository, sample_record,
+    CollectingSpawner, RecordingCallback, RecordingRepository, SAMPLE_TIMESTAMP, TestSettings,
+    audit_sink, capture, instance, parsed, plain_record, recorder, recording_repository,
+    sample_record,
 };
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
@@ -49,7 +50,7 @@ fn enabled_sink(
         },
         Arc::clone(repository),
         Arc::clone(callback),
-        Arc::clone(spawner),
+        spawner,
     )
 }
 
@@ -155,7 +156,7 @@ async fn audit_disabled_no_effects() {
         },
         Arc::clone(&repository),
         Arc::clone(&callback),
-        Arc::clone(&spawner),
+        &spawner,
     );
     sink.create_audit_log_for_update(plain_record()).await;
     log_team_update(&sink, &caller(), None).await;

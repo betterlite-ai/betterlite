@@ -25,11 +25,9 @@ use tokio_postgres::types::ToSql;
 
 use self::support::{
     CollectingSpawner, FixedClock, RecordingCallback, SAMPLE_TIMESTAMP, TestRegistry, instance,
-    parsed, recorder,
+    parsed, recorder, spawner_handle,
 };
-use crate::audit_events::callbacks::{
-    AuditCallbackConfig, AuditCallbackDispatcher, AuditLogCallback,
-};
+use crate::audit_events::callbacks::AuditCallbackDispatcher;
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
 use crate::audit_events::record::{AuditLogRecord, payload_text};
@@ -157,7 +155,6 @@ async fn enabled_sink(pool: &Pool) -> (Arc<RecordingCallback>, DateTime<FixedOff
         delivered: Mutex::new(Vec::new()),
         order: Arc::new(Mutex::new(Vec::new())),
     });
-    let callback: Arc<dyn AuditLogCallback> = Arc::clone(&recorder);
     let registry = Arc::new(TestRegistry {
         instances: Mutex::new(BTreeMap::new()),
         resolves: Mutex::new(Vec::new()),
@@ -169,11 +166,14 @@ async fn enabled_sink(pool: &Pool) -> (Arc<RecordingCallback>, DateTime<FixedOff
     let now = DateTime::parse_from_rfc3339(SAMPLE_TIMESTAMP).unwrap();
     let settings = ConfiguredAuditSettings {
         config: Settings::default(),
-        callbacks: vec![AuditCallbackConfig::Instance(callback)],
+        callbacks: vec![instance(Arc::clone(&recorder))],
     };
     let sink = AuditEventSink {
         settings: Arc::new(settings),
-        callbacks: Arc::new(AuditCallbackDispatcher::new(registry, Arc::clone(&spawner))),
+        callbacks: Arc::new(AuditCallbackDispatcher::new(
+            registry,
+            spawner_handle(&spawner),
+        )),
         repository: Arc::new(PostgresAuditRepository { pool: pool.clone() }),
         clock: Arc::new(FixedClock { now }),
         new_id: Arc::new(|| "audit-id-1".to_owned()),

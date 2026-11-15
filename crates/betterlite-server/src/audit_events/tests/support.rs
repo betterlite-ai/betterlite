@@ -99,6 +99,14 @@ pub(super) fn instance(callback: Arc<RecordingCallback>) -> AuditCallbackConfig 
     AuditCallbackConfig::Instance(erased)
 }
 
+pub(super) fn registry_handle(registry: &Arc<TestRegistry>) -> Arc<dyn AuditCallbackRegistry> {
+    Arc::<TestRegistry>::clone(registry)
+}
+
+pub(super) fn spawner_handle(spawner: &Arc<CollectingSpawner>) -> Arc<dyn AuditTaskSpawner> {
+    Arc::<CollectingSpawner>::clone(spawner)
+}
+
 pub(super) fn recording_repository() -> Arc<RecordingRepository> {
     let repository = RecordingRepository {
         available: true,
@@ -112,7 +120,7 @@ pub(super) fn audit_sink(
     settings: TestSettings,
     repository: Arc<RecordingRepository>,
     s3_logger: Arc<RecordingCallback>,
-    spawner: Arc<CollectingSpawner>,
+    spawner: &Arc<CollectingSpawner>,
 ) -> AuditEventSink {
     let registry = Arc::new(TestRegistry {
         instances: Mutex::new(BTreeMap::new()),
@@ -124,7 +132,10 @@ pub(super) fn audit_sink(
     let now = DateTime::parse_from_rfc3339(SAMPLE_TIMESTAMP).unwrap();
     AuditEventSink {
         settings: Arc::new(settings),
-        callbacks: Arc::new(AuditCallbackDispatcher::new(registry, spawner)),
+        callbacks: Arc::new(AuditCallbackDispatcher::new(
+            registry,
+            spawner_handle(spawner),
+        )),
         repository,
         clock: Arc::new(FixedClock { now }),
         new_id: Arc::new(|| "audit-id-1".to_owned()),
@@ -155,7 +166,7 @@ impl AuditCallbackRegistry for TestRegistry {
         if self.s3_fails {
             return Err(AuditCallbackError::Failed);
         }
-        let logger: Arc<dyn AuditLogCallback> = Arc::clone(&self.s3_logger);
+        let logger: Arc<dyn AuditLogCallback> = Arc::<RecordingCallback>::clone(&self.s3_logger);
         Ok(logger)
     }
 }
