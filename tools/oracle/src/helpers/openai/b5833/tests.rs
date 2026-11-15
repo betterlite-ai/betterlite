@@ -122,13 +122,13 @@ fn a_native_schema_model_keeps_its_response_format() {
 #[test]
 fn user_tools_with_a_schema_fail_with_400() {
     let entry = &run_case("response-format-with-tools-error.yaml")["options"][0];
-    assert_eq!(entry["error"]["status"], 400);
+    assert_eq!(entry["error"]["status"], 400_u64);
 }
 
 #[test]
 fn a_json_schema_without_a_schema_is_a_bad_request() {
     let entries = &run_case("response-format-tool-workaround.yaml")["options"];
-    assert_eq!(entries[1]["error"]["status"], 400);
+    assert_eq!(entries[1]["error"]["status"], 400_u64);
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn web_search_options_add_one_tool_without_duplicating_it() {
 #[test]
 fn max_completion_tokens_is_sent_as_max_tokens() {
     let mapped = &run_case("max-completion-tokens-swap.yaml")["options"][0];
-    assert_eq!(mapped["optional_params"]["max_tokens"], 128);
+    assert_eq!(mapped["optional_params"]["max_tokens"], 128_u64);
     assert!(
         mapped["optional_params"]
             .get("max_completion_tokens")
@@ -169,10 +169,10 @@ fn service_tier_maps_to_auto_for_null_and_unknown_values() {
 #[test]
 fn browser_actions_are_counted_and_a_missing_usage_is_not_billed() {
     let replies = &run_case("executed-tools-counts.yaml")["replies"];
-    assert_eq!(replies[0]["web_search_requests"], 2);
-    assert_eq!(replies[0]["browser_open_requests"], 1);
-    assert_eq!(replies[1]["web_search_requests"], 0);
-    assert_eq!(replies[1]["browser_open_requests"], 1);
+    assert_eq!(replies[0]["web_search_requests"], 2_u64);
+    assert_eq!(replies[0]["browser_open_requests"], 1_u64);
+    assert_eq!(replies[1]["web_search_requests"], 0_u64);
+    assert_eq!(replies[1]["browser_open_requests"], 1_u64);
     assert_eq!(replies[2]["web_search_requests"], Value::Null);
     assert_eq!(replies[2]["browser_open_requests"], Value::Null);
 }
@@ -182,8 +182,8 @@ fn a_malformed_executed_tools_list_bills_nothing_for_that_reply() {
     let replies = &run_case("executed-tools-bad-shape.yaml")["replies"];
     assert_eq!(replies[0]["web_search_requests"], Value::Null);
     assert_eq!(replies[1]["web_search_requests"], Value::Null);
-    assert_eq!(replies[2]["web_search_requests"], 1);
-    assert_eq!(replies[2]["browser_open_requests"], 0);
+    assert_eq!(replies[2]["web_search_requests"], 1_u64);
+    assert_eq!(replies[2]["browser_open_requests"], 0_u64);
 }
 
 #[test]
@@ -191,7 +191,7 @@ fn an_error_chunk_becomes_an_item_beside_the_parsed_chunks() {
     let chunks = &run_case("stream-chunk-error-and-reasoning.yaml")["chunks"];
     assert_eq!(chunks[0]["reasoning_content"], "thinking");
     assert_eq!(chunks[1]["content"], "done");
-    assert_eq!(chunks[2]["error"]["status"], 429);
+    assert_eq!(chunks[2]["error"]["status"], 429_u64);
 }
 
 #[test]
@@ -209,14 +209,14 @@ fn transcription_params_copy_or_drop_by_response_format() {
 #[test]
 fn an_unsupported_transcription_format_is_dropped_or_fails() {
     let entries = &run_case("stt-unsupported-format.yaml")["stt"];
-    assert_eq!(entries[0]["error"]["status"], 400);
-    assert_eq!(entries[1]["optional_params"]["temperature"], 1);
+    assert_eq!(entries[0]["error"]["status"], 400_u64);
+    assert_eq!(entries[1]["optional_params"]["temperature"], 1_u64);
     assert!(
         entries[1]["optional_params"]
             .get("response_format")
             .is_none()
     );
-    assert_eq!(entries[2]["optional_params"]["temperature"], 1);
+    assert_eq!(entries[2]["optional_params"]["temperature"], 1_u64);
 }
 
 #[test]

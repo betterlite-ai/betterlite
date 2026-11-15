@@ -87,10 +87,10 @@ trait Failure {
 
 impl Failure for GroqChatError {
     fn status(&self) -> Value {
-        match self {
-            Self::Capability(_) => json!(null),
-            other => json!(other.status_code()),
+        if matches!(self, Self::Capability(_)) {
+            return json!(null);
         }
+        json!(self.status_code())
     }
 }
 
