@@ -2,38 +2,46 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Sections;
 use crate::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 
-// the environment an image call reads: VERTEXAI_PROJECT, VERTEXAI_LOCATION, VERTEX_LOCATION,
-// VERTEXAI_CREDENTIALS and GOOGLE_APPLICATION_CREDENTIALS
-pub(crate) type ImageEnvironmentTier = (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<ConfiguredCredentials>,
-    Option<ConfiguredCredentials>,
-);
+// the environment an image call reads: the three vertex names and the two credential names
+#[derive(Debug, Clone, Default)]
+pub struct ImageIdentityEnvironment {
+    pub project: Option<String>,
+    pub location: Option<String>,
+    pub legacy_location: Option<String>,
+    pub credentials: Option<ConfiguredCredentials>,
+    pub application_credentials: Option<ConfiguredCredentials>,
+}
 
 // litellm_settings.vertex_project and litellm_settings.vertex_location, the litellm.vertex_* globals
-pub(crate) type ImageModuleTier = (Option<String>, Option<String>);
+#[derive(Debug, Clone, Default)]
+pub struct ImageIdentityModule {
+    pub project: Option<String>,
+    pub location: Option<String>,
+}
 
 // what get_secret_str answers for the four names after the environment's own reads came back empty
-pub(crate) type ImageSecretTier = (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<ConfiguredCredentials>,
-);
+#[derive(Debug, Clone, Default)]
+pub struct ImageIdentitySecrets {
+    pub project: Option<String>,
+    pub location: Option<String>,
+    pub legacy_location: Option<String>,
+    pub credentials: Option<ConfiguredCredentials>,
+}
 
 // LiteLLM constructs its image config classes empty, so the _vertex_* instance tier always loads empty
-pub(crate) type VertexImageIdentitySettings =
-    (ImageEnvironmentTier, ImageModuleTier, ImageSecretTier);
+#[derive(Debug, Clone, Default)]
+pub struct VertexImageIdentitySettings {
+    pub environment: ImageIdentityEnvironment,
+    pub module: ImageIdentityModule,
+    pub secrets: ImageIdentitySecrets,
+}
 
 #[expect(
     clippy::multiple_inherent_impl,
     reason = "Each provider keeps its settings resolver beside its own module; google_pse holds the first impl"
 )]
 impl Sections {
-    // _resolve_vertex_project and friends read the instance override, the environment and the module
-    // value, and get_secret_str falls back to the same environment a name was already read from
+    // the resolver reads the instance, environment and module; get_secret_str repeats the environment
     pub fn vertex_image_identity_settings(
         &self,
         lookup: &dyn EnvironmentLookup,
@@ -47,32 +55,30 @@ impl Sections {
                 path: "GOOGLE_APPLICATION_CREDENTIALS".to_owned(),
                 value: false,
             })?;
-        let environment = (
-            present("VERTEXAI_PROJECT"),
-            present("VERTEXAI_LOCATION"),
-            present("VERTEX_LOCATION"),
-            credentials.clone(),
-            application_credentials,
-        );
-        let module = (
-            present_setting(&self.resource_sdk_settings.vertex_project),
-            present_setting(&self.resource_sdk_settings.vertex_location),
-        );
-        let secrets = (
-            present("VERTEXAI_PROJECT"),
-            present("VERTEXAI_LOCATION"),
-            present("VERTEX_LOCATION"),
-            credentials,
-        );
-        Ok((environment, module, secrets))
+        Ok(VertexImageIdentitySettings {
+            environment: ImageIdentityEnvironment {
+                project: present("VERTEXAI_PROJECT"),
+                location: present("VERTEXAI_LOCATION"),
+                legacy_location: present("VERTEX_LOCATION"),
+                credentials: credentials.clone(),
+                application_credentials,
+            },
+            module: ImageIdentityModule {
+                project: present_setting(self.resource_sdk_settings.vertex_project.as_deref()),
+                location: present_setting(self.resource_sdk_settings.vertex_location.as_deref()),
+            },
+            secrets: ImageIdentitySecrets {
+                project: present("VERTEXAI_PROJECT"),
+                location: present("VERTEXAI_LOCATION"),
+                legacy_location: present("VERTEX_LOCATION"),
+                credentials,
+            },
+        })
     }
 }
 
-fn present_setting(value: &Option<String>) -> Option<String> {
-    value
-        .as_deref()
-        .filter(|text| !text.is_empty())
-        .map(str::to_owned)
+fn present_setting(value: Option<&str>) -> Option<String> {
+    value.filter(|text| !text.is_empty()).map(str::to_owned)
 }
 
 mod tests;

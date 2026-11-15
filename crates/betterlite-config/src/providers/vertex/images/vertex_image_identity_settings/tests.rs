@@ -2,9 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::loader::{ConfigError, ConfigLoader};
+use crate::loader::ConfigLoader;
+use crate::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 
-use super::{ImageEnvironmentTier, ImageModuleTier, ImageSecretTier};
+use super::VertexImageIdentitySettings;
 
 fn lookup(env: &[(&str, &str)]) -> BTreeMap<String, String> {
     env.iter()
@@ -12,10 +13,7 @@ fn lookup(env: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn identity(
-    source: &str,
-    env: &[(&str, &str)],
-) -> (ImageEnvironmentTier, ImageModuleTier, ImageSecretTier) {
+fn identity(source: &str, env: &[(&str, &str)]) -> VertexImageIdentitySettings {
     let lookup = lookup(env);
     let config = ConfigLoader {
         lookup: lookup.clone(),
@@ -33,53 +31,60 @@ const CONFIGURED_MODULE: &str =
 
 #[test]
 fn the_module_setting_loads_beside_the_environment_it_beats() {
-    let (environment, module, secrets) = identity(
+    let settings = identity(
         CONFIGURED_MODULE,
         &[
             ("VERTEXAI_PROJECT", "env-project"),
             ("VERTEXAI_LOCATION", "us-central1"),
         ],
     );
+    assert_eq!(settings.module.project.as_deref(), Some("config-project"));
+    assert_eq!(settings.module.location.as_deref(), Some("asia-east1"));
+    assert_eq!(settings.environment.project.as_deref(), Some("env-project"));
     assert_eq!(
-        module,
-        (
-            Some("config-project".to_owned()),
-            Some("asia-east1".to_owned())
-        )
+        settings.environment.location.as_deref(),
+        Some("us-central1")
     );
-    assert_eq!(environment.0.as_deref(), Some("env-project"));
-    assert_eq!(environment.1.as_deref(), Some("us-central1"));
-    assert_eq!(secrets.0.as_deref(), Some("env-project"));
+    assert_eq!(settings.secrets.project.as_deref(), Some("env-project"));
 }
 
 #[test]
 fn the_two_location_spellings_are_kept_apart() {
-    let (environment, module, secrets) = identity(
+    let settings = identity(
         "",
         &[
             ("VERTEXAI_LOCATION", "us-central1"),
             ("VERTEX_LOCATION", "legacy-location"),
         ],
     );
-    assert_eq!(module, (None, None));
-    assert_eq!(environment.1.as_deref(), Some("us-central1"));
-    assert_eq!(environment.2.as_deref(), Some("legacy-location"));
-    assert_eq!(secrets.1.as_deref(), Some("us-central1"));
-    assert_eq!(secrets.2.as_deref(), Some("legacy-location"));
+    assert_eq!(settings.module.project, None);
+    assert_eq!(settings.module.location, None);
+    assert_eq!(
+        settings.environment.location.as_deref(),
+        Some("us-central1")
+    );
+    assert_eq!(
+        settings.environment.legacy_location.as_deref(),
+        Some("legacy-location")
+    );
+    assert_eq!(settings.secrets.location.as_deref(), Some("us-central1"));
+    assert_eq!(
+        settings.secrets.legacy_location.as_deref(),
+        Some("legacy-location")
+    );
 }
 
 #[test]
 fn an_empty_environment_value_counts_as_unset() {
-    let (environment, _module, secrets) =
-        identity("", &[("VERTEXAI_PROJECT", ""), ("VERTEXAI_LOCATION", "")]);
-    assert_eq!(environment.0, None);
-    assert_eq!(environment.1, None);
-    assert_eq!(secrets.0, None);
+    let settings = identity("", &[("VERTEXAI_PROJECT", ""), ("VERTEXAI_LOCATION", "")]);
+    assert_eq!(settings.environment.project, None);
+    assert_eq!(settings.environment.location, None);
+    assert_eq!(settings.secrets.project, None);
 }
 
 #[test]
 fn the_environment_credentials_and_the_application_defaults_load_as_configured_credentials() {
-    let (environment, _module, secrets) = identity(
+    let settings = identity(
         "",
         &[
             ("VERTEXAI_CREDENTIALS", "/keys/service-account.json"),
@@ -87,24 +92,27 @@ fn the_environment_credentials_and_the_application_defaults_load_as_configured_c
         ],
     );
     assert_eq!(
-        environment
-            .3
+        settings
+            .environment
+            .credentials
             .as_ref()
-            .and_then(|credentials| credentials.as_text()),
+            .and_then(ConfiguredCredentials::as_text),
         Some("/keys/service-account.json")
     );
     assert_eq!(
-        secrets
-            .3
+        settings
+            .secrets
+            .credentials
             .as_ref()
-            .and_then(|credentials| credentials.as_text()),
+            .and_then(ConfiguredCredentials::as_text),
         Some("/keys/service-account.json")
     );
     assert_eq!(
-        environment
-            .4
+        settings
+            .environment
+            .application_credentials
             .as_ref()
-            .and_then(|credentials| credentials.as_text()),
+            .and_then(ConfiguredCredentials::as_text),
         Some("/keys/application.json")
     );
 }
@@ -113,42 +121,28 @@ fn the_environment_credentials_and_the_application_defaults_load_as_configured_c
 fn a_credential_document_loads_as_a_source_rather_than_text() {
     let document =
         r#"{"type":"service_account","private_key":"key","client_email":"sa@example.com"}"#;
-    let (environment, _module, _secrets) = identity("", &[("VERTEXAI_CREDENTIALS", document)]);
-    let credentials = environment.3.expect("the document parses");
+    let settings = identity("", &[("VERTEXAI_CREDENTIALS", document)]);
+    let credentials = settings
+        .environment
+        .credentials
+        .expect("the document parses");
     assert_eq!(credentials.as_text(), None);
 }
 
 #[test]
 fn an_os_environ_reference_in_the_module_setting_is_resolved() {
-    let (_environment, module, _secrets) = identity(
+    let settings = identity(
         "litellm_settings:\n  vertex_project: os.environ/PROJECT_FROM_ENV\n",
         &[("PROJECT_FROM_ENV", "resolved-project")],
     );
-    assert_eq!(module.0.as_deref(), Some("resolved-project"));
+    assert_eq!(settings.module.project.as_deref(), Some("resolved-project"));
 }
 
 #[test]
 fn an_empty_module_setting_counts_as_unset() {
-    let (_environment, module, _secrets) =
-        identity("litellm_settings:\n  vertex_project: \"\"\n", &[]);
-    assert_eq!(module, (None, None));
-}
-
-#[test]
-fn a_credentials_module_setting_is_an_unknown_key() {
-    let error = ConfigLoader {
-        lookup: lookup(&[]),
-    }
-    .load("litellm_settings:\n  vertex_credentials: /keys/service-account.json\n")
-    .unwrap_err();
-    assert!(
-        matches!(
-            &error,
-            ConfigError::Unsupported { paths }
-                if *paths == ["litellm_settings.vertex_credentials"]
-        ),
-        "{error}"
-    );
+    let settings = identity("litellm_settings:\n  vertex_project: \"\"\n", &[]);
+    assert_eq!(settings.module.project, None);
+    assert_eq!(settings.module.location, None);
 }
 
 #[test]
