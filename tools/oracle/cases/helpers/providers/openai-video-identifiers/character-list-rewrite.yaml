@@ -1,0 +1,24 @@
+kind: helper
+name: openai-video-identifiers-character-list-rewrite
+call:
+  openai_video_identifiers:
+    calls:
+      - op: rewrite_characters
+        request:
+          model: sora-2
+          prompt: make a video
+          seconds: '4'
+          characters:
+            - {id: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7Y2hhcmFjdGVyX2lkOmNoYXItMQ==, role: hero}
+            - {role: plain}
+            - {id: 7}
+            - raw
+            - 3
+      - op: rewrite_characters
+        request:
+          model: sora-2
+          prompt: make a video
+          characters: none
+env: {}
+compare:
+  ignore: []

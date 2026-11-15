@@ -1,0 +1,56 @@
+task: B672
+deviations:
+  - what: >-
+      A video filename's MIME type comes from the fixed mime_guess table instead of Python's
+      mimetypes.guess_type, so an extension whose entry differs between the two tables keeps
+      mime_guess's answer as long as it still starts with video/.
+    why: >-
+      Python's guess_type reads the host's mime.types on this platform, so its answer for an
+      extension outside the built-in table depends on the machine running LiteLLM; no single
+      answer can be copied. Any video/ guess wins in both implementations, and an unknown or
+      non-video extension falls back to video/mp4 in both, so a working upload keeps its MIME
+      for the common video extensions and its mp4 fallback everywhere else.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L605-L608
+  - what: >-
+      A payload with a completed padding quad in the middle decodes only up to that quad and the
+      rest of the input is ignored, so video_YWJjO2I7Yw==AA and video_YWJjO2I7Yw==AAAA both answer
+      provider abc, model b and video_id c. LiteLLM's decode_video_id_with_provider on the pinned
+      CPython 3.13 keeps decoding after the quad: the first payload comes back as a video_id of c
+      followed by two NUL bytes, and the second raises Incorrect padding and falls back with a
+      debug line.
+    why: >-
+      The padding quad closes the base64 group, and CPython 3.12 and earlier stopped there while
+      the pinned 3.13 changed the decoder under LiteLLM; the task's review specifies the stop
+      rule. A padding-in-the-middle payload only comes from a malformed identifier, not from a
+      value a provider or LiteLLM itself encodes, and the two oracle calls in
+      decode-permissive-fields.yaml that differ on the pinned CPython 3.13 are ignored.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L75-L78
+  - what: >-
+      A provider, model id or video id whose text contains a ';' or the literal label the decoder
+      removes from its field (litellm:custom_llm_provider:, model_id:, and video_id: or
+      character_id: for the id) is encoded as video_ or character_ plus base64 of litellm:quoted:
+      and a JSON object holding custom_llm_provider, model_id and value, so encode then decode
+      returns the same three strings; decoding reads a payload that starts with the marker as
+      that JSON object and every other payload through LiteLLM's split. LiteLLM joins the fields
+      with ';', splits the decoded text
+      on every ';' and keeps the first three parts while removing every literal label from them,
+      so litellm:custom_llm_provider:openai;model_id:m;video_id:a;b decodes to video_id a and
+      loses the b.
+    why: >-
+      That provider video id is data a provider gave betterlite, and a shorter id would address a
+      different video on later requests. The marked payload appears only when the plain payload
+      would not decode back to the fields it was built from, so every payload without a ';' or a
+      stripped label keeps LiteLLM's exact bytes, and an id LiteLLM wrote decodes exactly as
+      LiteLLM decoded it, its lossy answer for a ';' included.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L87-L100
+
+kept_bugs:
+  - what: >-
+      The ftyp check in _get_video_content_type never changes the answer: its matching branch and
+      the fall-through both return video/mp4, so the 64-byte probe only moves the stream cursor
+      and every BytesIO, BufferedReader, bytes or other body is uploaded as video/mp4.
+    why: >-
+      OpenAI's video endpoints accept video/mp4 for these uploads, and a caller who reuses the
+      stream after the transform sees the cursor restored; betterlite keeps both, probing and
+      restoring the cursor the way LiteLLM does and answering video/mp4 whatever the bytes say.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L610-L628

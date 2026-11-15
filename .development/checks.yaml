@@ -76,6 +76,9 @@ settings:
     - "**/fuzz/corpus/**"
     - tools/oracle/cases/**
     - tools/oracle/litellm/uv.lock
+    - packaging/terraform-provider/litellm/**
+    - packaging/terraform-provider/go.sum
+    - ui/vscode-extension/package-lock.json
   scope_roots: [crates, docs, packaging, tools, ui]
   file_size:
     roots: [crates, tools]
