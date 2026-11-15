@@ -1,21 +1,42 @@
 import asyncio
-from typing import Literal
+from collections.abc import Mapping
+from typing import Literal, Protocol
 
 import litellm
-from litellm.proxy.spend_tracking.budget_reservation import (
-    count_request_input_tokens,
-    estimate_request_input_cost,
-    estimate_request_max_cost,
-)
+from litellm.proxy.spend_tracking import budget_reservation
 from litellm.router import Router
 from pydantic import Field, JsonValue
 from typing_extensions import override
 
 from probes.protocol import Operation, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
-
 litellm.suppress_debug_info = True
+
+
+class BudgetEstimates(Protocol):
+    def estimate_request_max_cost(
+        self,
+        request_body: dict[str, JsonValue],
+        route: str,
+        llm_router: Router | None,
+        input_token_counts: Mapping[str, int] | None = None,
+    ) -> float | None: ...
+
+    def estimate_request_input_cost(
+        self,
+        request_body: dict[str, JsonValue],
+        route: str,
+        llm_router: Router | None,
+        input_token_counts: Mapping[str, int] | None = None,
+    ) -> float | None: ...
+
+    async def count_request_input_tokens(
+        self,
+        request_body: dict[str, JsonValue],
+        route: str,
+        llm_router: Router | None,
+        raw_body: bytes | None = None,
+    ) -> Mapping[str, int]: ...
 
 
 class Deployment(Strict):
@@ -51,33 +72,7 @@ class ReservationCost(Operation):
     @override
     def run(self) -> Strict:
         litellm.model_cost = dict(self.model_cost)
-        router = self.build_router()
-        if self.function == "max_cost":
-            return CostOutput(
-                cost=estimate_request_max_cost(
-                    request_body=self.request,
-                    route=self.route,
-                    llm_router=router,
-                    input_token_counts=self.input_token_counts,
-                )
-            )
-        if self.function == "input_cost":
-            return CostOutput(
-                cost=estimate_request_input_cost(
-                    request_body=self.request,
-                    route=self.route,
-                    llm_router=router,
-                    input_token_counts=self.input_token_counts,
-                )
-            )
-        counts = asyncio.run(
-            count_request_input_tokens(
-                request_body=self.request,
-                route=self.route,
-                llm_router=router,
-            )
-        )
-        return CountOutput(counts=dict(counts))
+        return estimate(budget_reservation, self)
 
     def build_router(self) -> Router | None:
         if not self.model_list:
@@ -86,3 +81,33 @@ class ReservationCost(Operation):
             deployment_entry(deployment) for deployment in self.model_list
         ]
         return Router(model_list=entries)
+
+
+def estimate(budget: BudgetEstimates, operation: ReservationCost) -> Strict:
+    router = operation.build_router()
+    if operation.function == "max_cost":
+        return CostOutput(
+            cost=budget.estimate_request_max_cost(
+                request_body=operation.request,
+                route=operation.route,
+                llm_router=router,
+                input_token_counts=operation.input_token_counts,
+            )
+        )
+    if operation.function == "input_cost":
+        return CostOutput(
+            cost=budget.estimate_request_input_cost(
+                request_body=operation.request,
+                route=operation.route,
+                llm_router=router,
+                input_token_counts=operation.input_token_counts,
+            )
+        )
+    counts = asyncio.run(
+        budget.count_request_input_tokens(
+            request_body=operation.request,
+            route=operation.route,
+            llm_router=router,
+        )
+    )
+    return CountOutput(counts=dict(counts))

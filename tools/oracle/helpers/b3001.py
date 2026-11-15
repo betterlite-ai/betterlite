@@ -1,16 +1,39 @@
 import asyncio
-from typing import Literal, TypedDict
+from collections.abc import Mapping
+from typing import Literal, Protocol, TypedDict
 
 import litellm
-from litellm.proxy.spend_tracking.budget_reservation import (
-    count_request_input_tokens,
-    estimate_request_input_cost,
-    estimate_request_max_cost,
-)
+from litellm.proxy.spend_tracking import budget_reservation
 from litellm.router import Router
 from pydantic import JsonValue
 
 litellm.suppress_debug_info = True
+
+
+class BudgetEstimates(Protocol):
+    def estimate_request_max_cost(
+        self,
+        request_body: dict[str, JsonValue],
+        route: str,
+        llm_router: Router | None,
+        input_token_counts: Mapping[str, int] | None = None,
+    ) -> float | None: ...
+
+    def estimate_request_input_cost(
+        self,
+        request_body: dict[str, JsonValue],
+        route: str,
+        llm_router: Router | None,
+        input_token_counts: Mapping[str, int] | None = None,
+    ) -> float | None: ...
+
+    async def count_request_input_tokens(
+        self,
+        request_body: dict[str, JsonValue],
+        route: str,
+        llm_router: Router | None,
+        raw_body: bytes | None = None,
+    ) -> Mapping[str, int]: ...
 
 
 class Deployment(TypedDict):
@@ -30,11 +53,15 @@ class Input(TypedDict):
 
 def run(input_value: Input) -> float | None | dict[str, int]:
     litellm.model_cost = dict(input_value["model_cost"])
+    return estimate(input_value, budget_reservation)
+
+
+def estimate(input_value: Input, budget: BudgetEstimates) -> float | None | dict[str, int]:
     router = build_router(input_value["model_list"])
     function = input_value["function"]
     if function == "max_cost":
         return rounded(
-            estimate_request_max_cost(
+            budget.estimate_request_max_cost(
                 request_body=input_value["request"],
                 route=input_value["route"],
                 llm_router=router,
@@ -43,7 +70,7 @@ def run(input_value: Input) -> float | None | dict[str, int]:
         )
     if function == "input_cost":
         return rounded(
-            estimate_request_input_cost(
+            budget.estimate_request_input_cost(
                 request_body=input_value["request"],
                 route=input_value["route"],
                 llm_router=router,
@@ -51,7 +78,7 @@ def run(input_value: Input) -> float | None | dict[str, int]:
             )
         )
     counts = asyncio.run(
-        count_request_input_tokens(
+        budget.count_request_input_tokens(
             request_body=input_value["request"],
             route=input_value["route"],
             llm_router=router,
