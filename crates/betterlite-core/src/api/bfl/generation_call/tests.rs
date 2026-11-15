@@ -7,16 +7,18 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use betterlite_config::types::LiteLlmParams;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::reply::ImageDatum;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
+use serde_json::Number;
 
 use super::error::GenerationCallError;
 use super::params::{CallParams, ParamsError};
-use super::submit::{SuppliedTransport, TransportKind};
-use super::{GenerationCall, GenerationExecutor, LogContext};
+use super::submit::{SubmitError, SuppliedTransport, TransportKind};
+use super::{GenerationCall, GenerationExecutor, LogContext, prepare_call};
 use crate::api::bfl::generation::BflImageResponse;
 use crate::api::bfl::poll::PollError;
 use support::{
@@ -75,9 +77,14 @@ async fn run(
             state: &mut state,
             env: &env,
         };
-        executor
-            .image_generation(call, supplied, data, &mut log)
-            .await
+        match prepare_call(call, &mut log) {
+            Ok(prepared) => {
+                executor
+                    .image_generation(call, &prepared, supplied, data)
+                    .await
+            }
+            Err(error) => Err(error),
+        }
     };
     Outcome {
         result,
@@ -207,40 +214,40 @@ async fn extra_headers_replace_the_validated_headers_and_the_polling_key() {
     assert_eq!(gets[0].headers.len(), 1);
 }
 
+#[rstest]
+#[case("bad name", "value")]
+#[case("x-trace", "bad\nvalue")]
+#[case("x-trace", "café")]
 #[tokio::test]
-async fn an_extra_header_the_wire_cannot_carry_is_a_500_before_the_submission() {
+async fn an_extra_header_the_wire_cannot_carry_is_a_500_before_the_submission(
+    #[case] name: &str,
+    #[case] value: &str,
+) {
     let script = Script::ready();
     let clock = StepClock::stepping(0);
     let sleeper = Recorder::new(&clock);
     let optional_params = IndexMap::new();
-    let failures = [
-        (String::from("bad name"), String::from("value")),
-        (String::from("x-trace"), String::from("bad\nvalue")),
-        (String::from("x-trace"), String::from("café")),
-    ];
-    for (name, value) in failures {
-        let extra = [(name.clone(), value.clone())];
-        let mut broken = generation_call(&optional_params, key());
-        broken.extra_headers = &extra;
+    let extra = [(String::from(name), String::from(value))];
+    let mut call = generation_call(&optional_params, key());
+    call.extra_headers = &extra;
 
-        let outcome = run(&script, &clock, &sleeper, &broken, Vec::new()).await;
+    let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
 
-        let error = outcome
-            .result
-            .expect_err("a header the wire cannot carry fails");
-        assert!(matches!(
-            &error,
-            GenerationCallError::HeaderName { .. }
-                | GenerationCallError::HeaderValue { .. }
-                | GenerationCallError::HeaderNotAscii { .. }
-        ));
-        assert_eq!(error.status(), Some(500));
-        // LiteLLM logs the request before the POST refuses the header, so the record still names it
-        assert_eq!(text(outcome.details.get("log_event_type")), "pre_api_call");
-        let additional = object(outcome.details.get("additional_args"));
-        let headers = object(additional.get("headers"));
-        assert_eq!(text(headers.get(name.as_str())), value);
-    }
+    let error = outcome
+        .result
+        .expect_err("a header the wire cannot carry fails");
+    assert!(matches!(
+        &error,
+        GenerationCallError::HeaderName { .. }
+            | GenerationCallError::HeaderValue { .. }
+            | GenerationCallError::HeaderNotAscii { .. }
+    ));
+    assert_eq!(error.status(), Some(500));
+    // LiteLLM logs the request before the POST refuses the header, so the record still names it
+    assert_eq!(text(outcome.details.get("log_event_type")), "pre_api_call");
+    let additional = object(outcome.details.get("additional_args"));
+    let headers = object(additional.get("headers"));
+    assert_eq!(text(headers.get(name)), value);
     assert!(
         script
             .posts
@@ -266,6 +273,40 @@ async fn a_rejected_submission_is_a_500_and_stops_before_a_poll() {
         GenerationCallError::SubmissionStatus { status: 400 }
     ));
     assert_eq!(error.status(), Some(500));
+    assert!(
+        script
+            .gets
+            .lock()
+            .expect("the gets lock is not poisoned")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn a_failed_submission_post_is_a_500_after_the_pre_call_record() {
+    let mut script = Script::ready();
+    script.fail_post = true;
+    let clock = StepClock::stepping(0);
+    let sleeper = Recorder::new(&clock);
+    let optional_params = IndexMap::new();
+    let call = generation_call(&optional_params, key());
+
+    let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
+
+    let error = outcome.result.expect_err("a failed submission fails");
+    assert!(matches!(
+        &error,
+        GenerationCallError::Submission {
+            source: SubmitError::Transport(TransportError::Closed)
+        }
+    ));
+    assert_eq!(error.status(), Some(500));
+    assert_eq!(text(outcome.details.get("log_event_type")), "pre_api_call");
+    assert_eq!(text(outcome.details.get("input")), PROMPT);
+    let additional = object(outcome.details.get("additional_args"));
+    let body = object(additional.get("complete_input_dict"));
+    assert_eq!(text(body.get("prompt")), PROMPT);
+    assert_eq!(script.post_count(), 1);
     assert!(
         script
             .gets
@@ -471,7 +512,7 @@ fn a_dict_params_reads_the_key_and_base() {
 #[test]
 fn a_dict_params_naming_its_fields_rejects_a_non_text_value() {
     let mut dict = IndexMap::new();
-    dict.insert(String::from("api_key"), Json::Number(7.into()));
+    dict.insert(String::from("api_key"), Json::Number(Number::from(7)));
 
     let error = CallParams::from_dict(&dict).expect_err("a number is not a key");
 
@@ -527,8 +568,9 @@ async fn a_sync_call_uses_a_sync_supplied_transport() {
         env: &env,
     };
 
+    let prepared = prepare_call(&call, &mut log).expect("the call is prepared");
     let result = executor
-        .image_generation(&call, Some(handed), Vec::new(), &mut log)
+        .image_generation(&call, &prepared, Some(handed), Vec::new())
         .await;
 
     assert!(result.is_ok());
@@ -561,8 +603,9 @@ async fn a_sync_call_discards_an_async_supplied_transport() {
         env: &env,
     };
 
+    let prepared = prepare_call(&call, &mut log).expect("the call is prepared");
     let result = executor
-        .image_generation(&call, Some(handed), Vec::new(), &mut log)
+        .image_generation(&call, &prepared, Some(handed), Vec::new())
         .await;
 
     assert!(result.is_ok());
@@ -596,8 +639,9 @@ async fn an_async_call_uses_an_async_supplied_transport() {
         env: &env,
     };
 
+    let prepared = prepare_call(&call, &mut log).expect("the call is prepared");
     let result = executor
-        .image_generation(&call, Some(handed), Vec::new(), &mut log)
+        .image_generation(&call, &prepared, Some(handed), Vec::new())
         .await;
 
     assert!(result.is_ok());
@@ -631,8 +675,9 @@ async fn an_async_call_discards_a_sync_supplied_transport() {
         env: &env,
     };
 
+    let prepared = prepare_call(&call, &mut log).expect("the call is prepared");
     let result = executor
-        .image_generation(&call, Some(handed), Vec::new(), &mut log)
+        .image_generation(&call, &prepared, Some(handed), Vec::new())
         .await;
 
     assert!(result.is_ok());
@@ -662,7 +707,8 @@ fn dropping_a_pending_generation_call_cancels_the_submission() {
     };
     let supplied: Option<SuppliedTransport<'_, Script>> = None;
 
-    let mut future = Box::pin(executor.image_generation(&call, supplied, Vec::new(), &mut log));
+    let prepared = prepare_call(&call, &mut log).expect("the call is prepared");
+    let mut future = Box::pin(executor.image_generation(&call, &prepared, supplied, Vec::new()));
     assert!(poll_once(future.as_mut()).is_pending());
     drop(future);
 
@@ -691,7 +737,8 @@ fn dropping_a_pending_generation_call_cancels_the_poll() {
     };
     let supplied: Option<SuppliedTransport<'_, Script>> = None;
 
-    let mut future = Box::pin(executor.image_generation(&call, supplied, Vec::new(), &mut log));
+    let prepared = prepare_call(&call, &mut log).expect("the call is prepared");
+    let mut future = Box::pin(executor.image_generation(&call, &prepared, supplied, Vec::new()));
     assert!(poll_once(future.as_mut()).is_pending());
     drop(future);
 

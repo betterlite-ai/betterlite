@@ -7,7 +7,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
-use tokio::time::Instant;
+use tokio::time::{Instant, sleep};
 use url::Url;
 
 use crate::api::bfl::common::{
@@ -55,7 +55,7 @@ pub enum PollError {
 }
 
 impl PollError {
-    // LiteLLM synthesizes the initial status for both a rejected and an unparseable submission, and the poll status for a rejected poll
+    // LiteLLM synthesizes the initial status for both a rejected and an unparsable submission, and the poll status for a rejected poll
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
         match self {
@@ -119,7 +119,7 @@ pub struct TokioSleeper;
 
 impl PollSleeper for TokioSleeper {
     async fn sleep(&self, duration: Duration) {
-        tokio::time::sleep(duration).await;
+        sleep(duration).await;
     }
 }
 
@@ -175,14 +175,19 @@ where
             .get(url.clone(), headers.clone())
             .await
             .map_err(|source| PollError::PollTransport { source })?;
-        if response.status != 200 {
-            return Err(PollError::PollStatus {
-                status: response.status,
-                body: response_text(&response.body),
-            });
-        }
-        decode_bfl_reply(&response.body).map_err(|source| PollError::PollDecode { source })
+        poll_reply(response)
     }
+}
+
+// exactly a 200 carrying a task is a poll; every other answer keeps LiteLLM's shared poll error path
+fn poll_reply(response: UpstreamResponse) -> Result<BflReply, PollError> {
+    if response.status != 200 {
+        return Err(PollError::PollStatus {
+            status: response.status,
+            body: response_text(&response.body),
+        });
+    }
+    decode_bfl_reply(&response.body).map_err(|source| PollError::PollDecode { source })
 }
 
 // the status check comes first, so a rejection keeps its own status even when its body is not JSON

@@ -67,11 +67,12 @@ pub struct RecordedGet {
 
 pub struct Script {
     pub submission: Reply,
-    polls: Mutex<VecDeque<Reply>>,
+    pub polls: Mutex<VecDeque<Reply>>,
     pub posts: Mutex<Vec<RecordedPost>>,
     pub gets: Mutex<Vec<RecordedGet>>,
     pub hang_post: bool,
     pub hang_get: bool,
+    pub fail_post: bool,
     pub cancelled: Arc<AtomicBool>,
 }
 
@@ -79,11 +80,12 @@ impl Script {
     pub fn new(submission: Reply, polls: Vec<Reply>) -> Self {
         Self {
             submission,
-            polls: Mutex::new(polls.into()),
+            polls: Mutex::new(VecDeque::from(polls)),
             posts: Mutex::default(),
             gets: Mutex::default(),
             hang_post: false,
             hang_get: false,
+            fail_post: false,
             cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -132,6 +134,9 @@ impl SubmitTransport for Script {
             let _keep = Token(Arc::clone(&self.cancelled));
             return pending::<Result<UpstreamResponse, SubmitError>>().await;
         }
+        if self.fail_post {
+            return Err(SubmitError::Transport(TransportError::Closed));
+        }
         Ok(self.submission.response())
     }
 }
@@ -178,7 +183,7 @@ impl PollClock for StepClock {
 }
 
 pub struct Recorder<'clock> {
-    clock: &'clock StepClock,
+    pub clock: &'clock StepClock,
     pub slept: Mutex<Vec<Duration>>,
 }
 
@@ -252,7 +257,10 @@ pub fn logging_env<'setup>(redactor: &'setup Redactor, sink: &'setup Sink) -> Pr
     }
 }
 
-pub fn poll_once<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
+pub fn poll_once<F>(future: Pin<&mut F>) -> Poll<F::Output>
+where
+    F: Future,
+{
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
     future.poll(&mut context)

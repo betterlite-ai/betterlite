@@ -60,23 +60,21 @@ where
     pub async fn image_generation<T>(
         &self,
         call: &GenerationCall<'_>,
+        prepared: &PreparedGeneration,
         supplied: Option<SuppliedTransport<'_, T>>,
         data: Vec<ImageDatum>,
-        log: &mut LogContext<'_, '_>,
     ) -> Result<BflImageResponse, GenerationCallError>
     where
         T: SubmitTransport + PollTransport + Sync,
     {
-        let prepared = prepare(call)?;
-        log_pre_call(call, &prepared, log)?;
         let expected = if call.aimg_generation {
             TransportKind::Async
         } else {
             TransportKind::Sync
         };
         match supplied.filter(|client| client.kind == expected) {
-            Some(client) => self.execute(call, &prepared, client.transport, data).await,
-            None => self.execute(call, &prepared, self.provider, data).await,
+            Some(client) => self.execute(call, prepared, client.transport, data).await,
+            None => self.execute(call, prepared, self.provider, data).await,
         }
     }
 
@@ -120,6 +118,16 @@ where
         let result = apply_image_response(&polled, data, call.now_seconds)?;
         Ok(result)
     }
+}
+
+// LiteLLM records the pre-call before the POST, and its logger sinks are not Sync, so the record is written outside the async operation
+pub fn prepare_call(
+    call: &GenerationCall<'_>,
+    log: &mut LogContext<'_, '_>,
+) -> Result<PreparedGeneration, GenerationCallError> {
+    let prepared = prepare(call)?;
+    log_pre_call(call, &prepared, log)?;
+    Ok(prepared)
 }
 
 fn log_pre_call(

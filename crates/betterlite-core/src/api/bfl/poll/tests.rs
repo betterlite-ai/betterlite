@@ -49,7 +49,7 @@ impl Script {
 
     fn new(replies: Vec<Reply>, fallback: Reply) -> Self {
         Self {
-            replies: Mutex::new(replies.into()),
+            replies: Mutex::new(VecDeque::from(replies)),
             fallback,
             requests: Mutex::default(),
         }
@@ -183,7 +183,10 @@ fn submission() -> UpstreamResponse {
     initial(200, SUBMITTED)
 }
 
-fn poll_once<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
+fn poll_once<F>(future: Pin<&mut F>) -> Poll<F::Output>
+where
+    F: Future,
+{
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
     future.poll(&mut context)
@@ -329,7 +332,7 @@ async fn the_initial_status_is_checked_before_the_body_is_parsed() {
 }
 
 #[tokio::test]
-async fn an_unparseable_submission_keeps_the_initial_status() {
+async fn an_unparsable_submission_keeps_the_initial_status() {
     let script = Script::once(200, PENDING);
     let clock = clock(0);
     let sleeper = Recorder {
@@ -699,7 +702,9 @@ fn dropping_a_pending_poll_cancels_its_request() {
         clock: &clock,
         sleeper: &sleeper,
     };
-    let mut future = Box::pin(poller.poll(&submission(), &HeaderMap::new()));
+    let submitted = submission();
+    let headers = HeaderMap::new();
+    let mut future = Box::pin(poller.poll(&submitted, &headers));
     assert!(poll_once(future.as_mut()).is_pending());
     drop(future);
     assert!(cancelled.load(Ordering::SeqCst));
@@ -718,7 +723,9 @@ fn dropping_a_pending_poll_cancels_its_timer() {
         clock: &clock,
         sleeper: &sleeper,
     };
-    let mut future = Box::pin(poller.poll(&submission(), &HeaderMap::new()));
+    let submitted = submission();
+    let headers = HeaderMap::new();
+    let mut future = Box::pin(poller.poll(&submitted, &headers));
     assert!(poll_once(future.as_mut()).is_pending());
     drop(future);
     assert!(cancelled.load(Ordering::SeqCst));
