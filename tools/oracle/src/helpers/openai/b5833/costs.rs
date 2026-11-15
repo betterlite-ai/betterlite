@@ -3,7 +3,7 @@ use betterlite_openai::groq_cost::{ServerToolUse, web_search_cost};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
-use super::Call;
+use super::{Call, helper_error};
 use crate::helpers::HelperError;
 
 pub(super) fn cost_values(calls: &[Call]) -> Result<Vec<Value>, Box<HelperError>> {
@@ -20,16 +20,8 @@ pub(super) fn cost_values(calls: &[Call]) -> Result<Vec<Value>, Box<HelperError>
             browser_open_requests: call.browser_open_requests,
         };
         let used_pricing = call.medium_rate.is_some().then_some(&pricing);
-        let cost = web_search_cost(Some(&usage), used_pricing).map_err(|error| {
-            Box::new(HelperError {
-                class: String::from("CostFailure"),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
+        let cost = web_search_cost(Some(&usage), used_pricing)
+            .map_err(|error| helper_error("CostFailure", None, error.to_string()))?;
         values.push(json!({"cost": format!("{cost:.12}")}));
     }
     Ok(values)
@@ -37,13 +29,10 @@ pub(super) fn cost_values(calls: &[Call]) -> Result<Vec<Value>, Box<HelperError>
 
 fn parse_rate(text: &str) -> Result<Decimal, Box<HelperError>> {
     text.parse::<Decimal>().map_err(|_error| {
-        Box::new(HelperError {
-            class: String::from("InvalidRate"),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: format!("the medium rate is not a decimal: {text}"),
-        })
+        helper_error(
+            "InvalidRate",
+            None,
+            format!("the medium rate is not a decimal: {text}"),
+        )
     })
 }

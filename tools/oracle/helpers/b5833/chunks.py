@@ -5,7 +5,7 @@ from litellm.types.utils import ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
 
 from .views import ChunkParser
-from .wire import ChunkCall, Object
+from .wire import Call, Object
 
 HANDLER: ChunkParser = GroqChatCompletionStreamingHandler(
     streaming_response=iter(()),
@@ -30,7 +30,7 @@ class ChunkRecord(TypedDict, total=False):
 CHUNK_RECORD: TypeAdapter[ChunkRecord] = TypeAdapter(ChunkRecord)
 
 
-def chunk_value(call: ChunkCall) -> JsonValue:
+def chunk_value(call: Call) -> JsonValue:
     parsed: ModelResponseStream = HANDLER.chunk_parser(call["chunk"])
     record = CHUNK_RECORD.validate_json(parsed.model_dump_json())
     delta: ChunkDelta = {}

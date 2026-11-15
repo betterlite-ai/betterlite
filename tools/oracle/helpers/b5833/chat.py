@@ -6,17 +6,10 @@ from pydantic import JsonValue
 
 from .capabilities import LookupFailureError
 from .views import CHAT
-from .wire import (
-    MODEL,
-    CredentialCall,
-    MessageCall,
-    Object,
-    OptionCall,
-    SupportedCall,
-)
+from .wire import MODEL, Call, Object
 
 
-def credential(call: CredentialCall) -> JsonValue:
+def credential(call: Call) -> JsonValue:
     os.environ.clear()
     base = call.get("environment_base")
     if base is not None:
@@ -32,7 +25,7 @@ def credential(call: CredentialCall) -> JsonValue:
     return {"api_base": resolved[3], "api_key": resolved[2]}
 
 
-def supported_value(call: SupportedCall) -> JsonValue:
+def supported_value(call: Call) -> JsonValue:
     try:
         params: list[JsonValue] = [*CHAT.get_supported_openai_params(call["model"])]
     except LookupFailureError:
@@ -40,12 +33,12 @@ def supported_value(call: SupportedCall) -> JsonValue:
     return {"params": params}
 
 
-def messages_value(call: MessageCall) -> JsonValue:
+def messages_value(call: Call) -> JsonValue:
     body = CHAT.transform_request(call["model"], call["messages"], {}, {}, {})
     return {"messages": body.get("messages")}
 
 
-def options_value(call: OptionCall) -> JsonValue:
+def options_value(call: Call) -> JsonValue:
     given_non_default = call.get("non_default")
     non_default: Object = {} if given_non_default is None else dict(given_non_default)
     given_optional = call.get("optional_params")

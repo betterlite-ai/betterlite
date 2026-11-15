@@ -8,7 +8,7 @@ from litellm.llms.groq.stt.transformation import GroqSTTConfig
 from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import CallTypes, ModelResponse, ModelResponseStream
 
-from .wire import MODEL, Messages, Object
+from .wire import MODEL, Object
 
 
 class ChatConfig(Protocol):
@@ -26,7 +26,7 @@ class ChatConfig(Protocol):
     def transform_request(
         self,
         model: str,
-        messages: Messages,
+        messages: list[AllMessageValues],
         optional_params: Object,
         litellm_params: Object,
         headers: Object,

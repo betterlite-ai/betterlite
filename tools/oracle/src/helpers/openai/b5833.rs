@@ -9,7 +9,7 @@ use betterlite_openai::openai_base_config::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperResult;
+use crate::helpers::{HelperError, HelperResult};
 
 mod capabilities;
 mod chunks;
@@ -115,6 +115,17 @@ where
         values.push(value);
     }
     values
+}
+
+fn helper_error(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: String::from(class),
+        status,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
 }
 
 fn config() -> OpenAiConfig {

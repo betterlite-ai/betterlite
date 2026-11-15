@@ -5,7 +5,7 @@ from litellm.types.utils import ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
 from .views import CHAT, logging_object
-from .wire import MODEL, Messages, Object, ReplyCall
+from .wire import MODEL, Call, Object
 
 
 class ServerUse(TypedDict, total=False):
@@ -25,7 +25,7 @@ class ReplyRecord(TypedDict, total=False):
 REPLY_RECORD: TypeAdapter[ReplyRecord] = TypeAdapter(ReplyRecord)
 
 
-def reply_value(call: ReplyCall) -> JsonValue:
+def reply_value(call: Call) -> JsonValue:
     body = call["reply"]
     response: ModelResponse = CHAT.transform_response(
         MODEL,
@@ -33,7 +33,7 @@ def reply_value(call: ReplyCall) -> JsonValue:
         ModelResponse(),
         logging_object(),
         {},
-        Messages(),
+        [],
         {},
         {},
         None,

@@ -3,10 +3,10 @@ from openai import BadRequestError
 from pydantic import JsonValue
 
 from .views import STT
-from .wire import STT_MODEL, Object, SttCall
+from .wire import STT_MODEL, Call, Object
 
 
-def stt_value(call: SttCall) -> JsonValue:
+def stt_value(call: Call) -> JsonValue:
     given_non_default = call.get("non_default")
     non_default: Object = {} if given_non_default is None else dict(given_non_default)
     given_optional = call.get("optional_params")

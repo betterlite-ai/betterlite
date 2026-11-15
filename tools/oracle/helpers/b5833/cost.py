@@ -4,10 +4,10 @@ from litellm.litellm_core_utils.llm_cost_calc.tool_call_cost_tracking import (
 from litellm.types.utils import ModelResponse, ServerToolUse, Usage
 from pydantic import JsonValue
 
-from .wire import CostCall, Object
+from .wire import Call, Object
 
 
-def cost_value(call: CostCall) -> JsonValue:
+def cost_value(call: Call) -> JsonValue:
     usage = Usage(
         server_tool_use=ServerToolUse(
             web_search_requests=call.get("web_search_requests"),
