@@ -384,6 +384,16 @@ async fn a_qualifire_error_status_reaches_the_client() {
 }
 
 #[tokio::test]
+async fn a_redirect_answer_keeps_its_status() {
+    let server = mock(StatusCode::FOUND, String::new(), Duration::ZERO).await;
+    let result = run_request(&guardrail(&server, args()), user_text("hello")).await;
+    let Err(error) = result else {
+        panic!("a 302 answer fails the request");
+    };
+    assert_eq!(error.status_code(), StatusCode::FOUND);
+}
+
+#[tokio::test]
 async fn a_slow_answer_times_out() {
     let server = mock(StatusCode::OK, CLEAN.to_owned(), Duration::from_secs(30)).await;
     let mut args = args();

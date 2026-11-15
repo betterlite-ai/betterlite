@@ -62,14 +62,8 @@ impl QualifireError {
             Self::Blocked { .. } => StatusCode::BAD_REQUEST,
             // AsyncHTTPHandler.post turns httpx.TimeoutException into litellm.Timeout, which carries 408.
             Self::Timeout { .. } => StatusCode::REQUEST_TIMEOUT,
-            // LiteLLM raises on a non-2xx answer, and the proxy answers with the upstream status.
-            Self::HttpStatus { status } => {
-                if status.as_u16() >= 400 && status.as_u16() <= 599 {
-                    *status
-                } else {
-                    StatusCode::INTERNAL_SERVER_ERROR
-                }
-            }
+            // LiteLLM raises on any non-2xx answer, and the proxy answers with the upstream status.
+            Self::HttpStatus { status } => *status,
             Self::Request { .. }
             | Self::InvalidHeader { .. }
             | Self::ResponseTooLarge { .. }

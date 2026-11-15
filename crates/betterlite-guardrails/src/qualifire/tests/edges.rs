@@ -241,13 +241,10 @@ fn blocked_is_a_bad_request_and_a_non_2xx_answer_keeps_its_status() {
         status: StatusCode::BAD_GATEWAY,
     };
     assert_eq!(upstream.status_code(), StatusCode::BAD_GATEWAY);
-    let outside_the_passed_range = QualifireError::HttpStatus {
+    let redirect = QualifireError::HttpStatus {
         status: StatusCode::FOUND,
     };
-    assert_eq!(
-        outside_the_passed_range.status_code(),
-        StatusCode::INTERNAL_SERVER_ERROR
-    );
+    assert_eq!(redirect.status_code(), StatusCode::FOUND);
 }
 
 #[test]
@@ -483,6 +480,19 @@ fn settings_enable_each_check_from_its_flag() {
     args.tool_selection_quality_check = Some(true);
     let resolved = resolve(&args, &NoSecrets, &environment(&[]));
     assert_eq!(resolved.checks.len(), 6);
+}
+
+#[test]
+fn a_timeout_a_duration_cannot_represent_is_rejected_at_build() {
+    for seconds in [-1.0, f64::NAN, f64::INFINITY, f64::MAX] {
+        let mut args = args();
+        args.timeout = Some(seconds);
+        let result = resolve(&args, &NoSecrets, &environment(&[]));
+        assert!(
+            matches!(result, Err(QualifireError::InvalidTimeout { .. })),
+            "timeout {seconds} is rejected"
+        );
+    }
 }
 
 #[test]
