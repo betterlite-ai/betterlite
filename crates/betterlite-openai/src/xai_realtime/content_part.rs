@@ -132,10 +132,8 @@ pub fn normalize_event(
         match event_type {
             Some(CONTENT_PART_ADDED | CONTENT_PART_DONE) => {
                 cache.remember(fields)?;
-                if !matches!(fields.get("part"), Some(Json::Object(_))) {
-                    let part = cache.resolve(fields);
-                    fields.insert(String::from("part"), part);
-                }
+                let part = cache.resolve(fields);
+                fields.insert(String::from("part"), part);
             }
             Some(TEXT_DONE) => cache.update(fields, "text", "text")?,
             Some(TRANSCRIPT_DONE) => cache.update(fields, "audio", "transcript")?,
