@@ -18,7 +18,7 @@ use tokio::task::JoinSet;
 
 use super::{
     Clock, DEFAULT_REGION, EMPTY_SHA256, ProxiedS3Get, REGION_VARIABLE, S3Get, S3GetRequest,
-    S3Reader, S3TransportFailure, SystemClock, region_from_environment,
+    S3Reader, S3TransportFailure, SystemClock, credential_settings, region_from_environment,
 };
 use crate::bucket_config::object::BucketObjectReader;
 use crate::bucket_config::test_support::{
@@ -112,6 +112,19 @@ fn the_region_variable_names_the_signing_region() {
 #[test]
 fn the_system_clock_reads_the_wall_clock() {
     assert!(SystemClock.now() > UNIX_EPOCH);
+}
+
+#[test]
+fn the_credential_settings_carry_only_the_region() {
+    let settings = credential_settings("eu-west-1");
+
+    assert_eq!(settings.region_name.as_deref(), Some("eu-west-1"));
+    assert!(settings.access_key_id.is_none());
+    assert!(settings.secret_access_key.is_none());
+    assert!(settings.session_token.is_none());
+    assert!(settings.profile_name.is_none());
+    assert!(settings.role_arn.is_none());
+    assert!(settings.web_identity_token_file.is_none());
 }
 
 #[tokio::test]

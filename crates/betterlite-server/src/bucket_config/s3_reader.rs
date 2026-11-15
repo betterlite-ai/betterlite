@@ -15,7 +15,6 @@ use aws_sigv4::sign::v4::signing_params::BuildError;
 use aws_smithy_async::rt::sleep::{SharedAsyncSleep, TokioSleep};
 use aws_smithy_async::time::SharedTimeSource;
 use aws_smithy_http_client::tls::{Provider, rustls_provider::CryptoMode};
-use aws_smithy_runtime_api::client::http::SharedHttpClient;
 use aws_smithy_runtime_api::client::identity::Identity;
 use aws_types::os_shim_internal::Fs;
 use betterlite_bedrock::aws_settings::sources::{Credentials, NativeSources, SourceError};
@@ -345,18 +344,14 @@ async fn resolve_credentials(
     let native = NativeSources {
         environment: environment.clone(),
         filesystem: Fs::real(),
-        client: credential_http_client(),
+        client: aws_smithy_http_client::Builder::new()
+            .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
+            .build_https(),
         clock: SharedTimeSource::default(),
         sleep: SharedAsyncSleep::new(TokioSleep::new()),
         timeout: CREDENTIALS_TIMEOUT,
     };
     native.load(&credential_settings(region)).await
-}
-
-fn credential_http_client() -> SharedHttpClient {
-    aws_smithy_http_client::Builder::new()
-        .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
-        .build_https()
 }
 
 mod tests;
