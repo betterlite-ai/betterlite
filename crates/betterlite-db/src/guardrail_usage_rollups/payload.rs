@@ -161,11 +161,7 @@ pub(crate) fn billed_cost(entry: &GuardrailEntry, unit: &str) -> Option<Decimal>
         return None;
     }
     let costs = entry.guardrail_cost_by_unit.as_ref()?;
-    if costs
-        .values()
-        .flatten()
-        .any(|cost| cost.0.is_sign_negative())
-    {
+    if costs.values().flatten().any(|cost| cost.0 < Decimal::ZERO) {
         return None;
     }
     costs.get(unit).copied().flatten().map(|cost| cost.0)

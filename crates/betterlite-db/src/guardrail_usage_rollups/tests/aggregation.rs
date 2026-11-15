@@ -139,13 +139,16 @@ fn treats_the_whole_entry_as_unpriced(#[case] entry: &str) {
     );
 }
 
-#[test]
-fn keeps_a_zero_cost_unit_priced() {
-    let payload = payload_with_entries(
-        r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0}}"#,
-    );
+#[rstest]
+#[case::zero(
+    r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0}}"#
+)]
+#[case::negative_zero(
+    r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": -0.0}}"#
+)]
+fn keeps_a_zero_cost_unit_priced(#[case] entry: &str) {
     assert_eq!(
-        units_of(&[payload]),
+        units_of(&[payload_with_entries(entry)]),
         [unit_call("g1", "a", increment(1, Decimal::ZERO, 0))]
     );
 }
