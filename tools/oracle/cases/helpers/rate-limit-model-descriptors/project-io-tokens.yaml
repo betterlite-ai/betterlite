@@ -1,0 +1,50 @@
+kind: helper
+name: rate-limit-model-descriptors-project-io-tokens
+call:
+  b3038:
+    function: project_io
+    auth:
+      project_id: proj-1
+      project_metadata:
+        model_itpm_limit:
+          gpt-4: 6
+        model_otpm_limit:
+          gpt-4: 5
+    requested: gpt4
+    groups:
+      gpt4: gpt-4
+    window_size: 60
+calls:
+  - b3038:
+      function: project_io
+      auth:
+        project_metadata:
+          model_itpm_limit:
+            gpt-4: 6
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 60
+  - b3038:
+      function: project_io
+      auth:
+        project_id: proj-1
+        project_metadata:
+          model_otpm_limit:
+            gpt-4: 5
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 60
+  - b3038:
+      function: project_io
+      auth:
+        project_id: proj-1
+        project_metadata:
+          model_itpm_limit:
+            gpt-4: 6
+      requested: null
+      groups: {}
+      window_size: 60
+env: {}
+compare: {ignore: []}

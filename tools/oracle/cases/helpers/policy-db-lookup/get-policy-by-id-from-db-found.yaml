@@ -1,0 +1,44 @@
+kind: helper
+name: get-policy-by-id-from-db-found
+call:
+  b3242:
+    group: policy_records_lookup
+    operation: lookup
+    policy_id: policy_1
+    row:
+      policy_id: policy_1
+      policy_name: healthcare
+      version_number: 3
+      version_status: draft
+      parent_version_id: policy_0
+      is_latest: false
+      published_at: "2024-02-03T04:05:06Z"
+      production_at: "2024-03-04T05:06:07Z"
+      inherit: baseline
+      description: HIPAA
+      guardrails_add: [hipaa, audit]
+      guardrails_remove: [pii]
+      condition:
+        model: gpt-4
+      pipeline:
+        mode: pre_call
+      created_at: "2024-01-01T00:00:00Z"
+      updated_at: "2024-01-02T00:00:00Z"
+      created_by: alice
+      updated_by: bob
+    failure: null
+calls:
+  - b3242:
+      group: policy_records_lookup
+      operation: lookup
+      policy_id: policy_2
+      row:
+        policy_id: policy_2
+        policy_name: baseline
+        version_number: 1
+        version_status: production
+        created_at: "2024-05-06T07:08:09Z"
+        updated_at: "2024-05-06T07:08:09Z"
+      failure: null
+env: {}
+compare: {ignore: []}

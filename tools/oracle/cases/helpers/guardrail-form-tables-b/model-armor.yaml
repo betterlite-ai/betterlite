@@ -1,0 +1,8 @@
+kind: helper
+name: model-armor
+call:
+  b6562:
+    provider: model_armor
+env: {}
+compare:
+  ignore: []

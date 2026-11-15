@@ -1,0 +1,8 @@
+kind: helper
+name: pillar
+call:
+  b6562:
+    provider: pillar
+env: {}
+compare:
+  ignore: []

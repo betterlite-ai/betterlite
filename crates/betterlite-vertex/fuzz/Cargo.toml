@@ -207,6 +207,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_batch_upload"
+path = "fuzz_targets/vertex_batch_upload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_embedding"
 path = "fuzz_targets/vertex_embedding.rs"
 test = false
