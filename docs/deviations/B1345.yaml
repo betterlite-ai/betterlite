@@ -3,4 +3,22 @@ deviations:
   - what: A reply without a truthy usageMetadata keeps usage absent, while LiteLLM's image pipeline hands the transform an ImageResponse whose constructor filled in a zero usage and then attaches the search count to it.
     why: The task requires preserving absent usage, and a zero usage would report token counts the reply never sent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2685-L2693
+  - what: A reply body over 16 MiB is refused with a typed TooLarge error before it is decoded, where LiteLLM passes the body to httpx.Response.json() with no size limit.
+    why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the shared generate-content decoder's reply cap; a reply that large is not an image result any working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_gemini_transformation.py#L293-L300
+  - what: A reply whose root is not a JSON object, or whose candidates or parts are not lists, fails with a typed Shape error naming the path, where LiteLLM's candidate loop raises an uncaught AttributeError or TypeError as HTTP 500.
+    why: The declared shapes are an object holding a candidates list of objects, so such a reply is malformed; betterlite names the failure instead of answering 500, and no working setup receives one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_gemini_transformation.py#L306-L313
+  - what: A truthy usageMetadata that is not an object fails with a typed UsageShape error, where LiteLLM calls .get on the value and the proxy answers HTTP 500.
+    why: The declared usage type is an object, so such a reply is malformed; betterlite names the failure instead of crashing the request, and no working setup receives one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_gemini_transformation.py#L324-L325
+  - what: An imageConfig that reaches the request transform as a non-object value fails with a typed FieldType error naming imageConfig, where LiteLLM's dict(value) raises and the proxy answers HTTP 500; the option mapper still drops such a value with LiteLLM's warning.
+    why: The declared imageConfig type is an object, so a typed error naming the field is the right answer, and the mapper path LiteLLM users rely on behaves the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_gemini_transformation.py#L222-L223
+  - what: TEXT or IMAGE promptTokensDetails counts whose sum leaves the signed 64-bit range fail with a typed TokenOverflow error, where LiteLLM adds unbounded Python integers.
+    why: betterlite's token counts are i64, and a reply summing past that is not one any working setup returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_gemini_transformation.py#L261-L275
+  - what: A config document that sets litellm_settings.vertex_credentials is rejected by ConfigLoader as an unknown key, and the image identity settings' module credential tier stays empty; LiteLLM puts the value on the litellm module and _resolve_vertex_credentials reads it between VERTEXAI_CREDENTIALS and GOOGLE_APPLICATION_CREDENTIALS.
+    why: The sections that parse litellm_settings (crates/betterlite-config/src/sections/resource_sdk_settings.rs and sections/vertex_credential_sources.rs) are outside this task's scope and declare no vertex_credentials field, the same arrangement B1310 and B1325 recorded for their unregistered litellm_settings keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_gemini_transformation.py#L131-L138
 kept_bugs: []
