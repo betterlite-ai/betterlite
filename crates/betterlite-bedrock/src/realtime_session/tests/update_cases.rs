@@ -1,0 +1,203 @@
+use rust_decimal::Decimal;
+
+use super::support::{
+    AUDIO_CONTENT, CONTENT, INSTRUCTION, PROMPT, apply, instruction_content, output_audio,
+    prompt_start, session, session_start,
+};
+use crate::realtime_session::RealtimeSession;
+use crate::realtime_session::records::{
+    ContentRole, ContentType, ExactDecimal, InferenceConfiguration, Infinite, MaxResponseTokens,
+    Setting, UpdateFrame,
+};
+
+pub(super) fn session_update_options() {
+    updates_apply_by_key();
+    updates_keep_absent_values();
+    updates_accept_null_and_inf();
+    instructions_add_content_frames();
+}
+
+pub(super) fn system_instructions() {
+    let mut state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
+    let frames = apply(
+        &mut state,
+        r#"{"session":{"instructions":"You are a helpful assistant."}}"#,
+        &[INSTRUCTION],
+    );
+    assert_eq!(frames.len(), 5);
+    assert_instruction_frames(&frames, "You are a helpful assistant.");
+    let mut empty = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
+    let empty_frames = apply(&mut empty, r#"{"session":{"instructions":""}}"#, &[]);
+    assert_eq!(empty_frames.len(), 2);
+    let mut absent = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
+    let absent_frames = apply(&mut absent, r#"{"session":{}}"#, &[]);
+    assert_eq!(absent_frames.len(), 2);
+}
+
+fn updates_apply_by_key() {
+    let mut state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
+    let mut frames = apply(&mut state, r#"{"type":"session.update"}"#, &[]);
+    assert_eq!(frames.len(), 2);
+    assert!(state.prompt_started);
+    assert_eq!(
+        inference(&frames).max_tokens,
+        Setting(Some(MaxResponseTokens::Count(1024)))
+    );
+    assert_eq!(prompt_start(&frames).prompt_name, PROMPT);
+    frames = apply(
+        &mut state,
+        r#"{"session":{"max_response_output_tokens":2048,"temperature":1.1,"voice":"amy","top_p":0.5}}"#,
+        &[],
+    );
+    assert_eq!(
+        inference(&frames).max_tokens,
+        Setting(Some(MaxResponseTokens::Count(2048)))
+    );
+    assert_eq!(
+        inference(&frames).temperature,
+        Setting(Some(ExactDecimal(Decimal::new(11, 1))))
+    );
+    assert_eq!(inference(&frames).top_p, ExactDecimal(Decimal::new(9, 1)));
+    assert_eq!(
+        output_audio(&frames).voice_id,
+        Setting(Some("amy".to_owned()))
+    );
+}
+
+fn updates_keep_absent_values() {
+    let mut state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
+    let applied = apply(
+        &mut state,
+        r#"{"session":{"max_response_output_tokens":2048,"temperature":1.1,"voice":"amy","output_audio_format":"g711_ulaw","input_audio_format":"g711_ulaw"}}"#,
+        &[],
+    );
+    assert_eq!(applied.len(), 2);
+    let frames = apply(&mut state, r#"{"session":{}}"#, &[]);
+    assert_eq!(
+        inference(&frames).max_tokens,
+        Setting(Some(MaxResponseTokens::Count(2048)))
+    );
+    assert_eq!(
+        inference(&frames).temperature,
+        Setting(Some(ExactDecimal(Decimal::new(11, 1))))
+    );
+    assert_eq!(
+        output_audio(&frames).voice_id,
+        Setting(Some("amy".to_owned()))
+    );
+    assert_eq!(output_audio(&frames).sample_rate_hertz, Setting(Some(8000)));
+    assert_eq!(state.input_audio.sample_rate_hertz, Setting(Some(8000)));
+}
+
+fn updates_accept_null_and_inf() {
+    let mut state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
+    let mut frames = apply(
+        &mut state,
+        r#"{"session":{"max_response_output_tokens":null,"temperature":null,"voice":""}}"#,
+        &[],
+    );
+    assert_eq!(inference(&frames).max_tokens, Setting(None));
+    assert_eq!(inference(&frames).temperature, Setting(None));
+    assert_eq!(output_audio(&frames).voice_id, Setting(Some(String::new())));
+    frames = apply(
+        &mut state,
+        r#"{"session":{"max_response_output_tokens":"inf"}}"#,
+        &[],
+    );
+    assert_eq!(
+        inference(&frames).max_tokens,
+        Setting(Some(MaxResponseTokens::Infinite(Infinite::Inf)))
+    );
+    frames = apply(
+        &mut state,
+        r#"{"session":{"unknown_field":1,"unknown_nested":{"a":1},"tools":[],"instructions":""}}"#,
+        &[],
+    );
+    assert_eq!(
+        inference(&frames).max_tokens,
+        Setting(Some(MaxResponseTokens::Infinite(Infinite::Inf)))
+    );
+    assert!(prompt_start(&frames).tool_configuration.is_none());
+    assert!(
+        prompt_start(&frames)
+            .tool_use_output_configuration
+            .is_none()
+    );
+    assert_eq!(frames.len(), 2);
+}
+
+fn instructions_add_content_frames() {
+    let mut state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
+    state.client_audio_streamed = true;
+    state.transcript.active = true;
+    state.transcript.generation_stage = Some("TEXT".to_owned());
+    state.transcript.item_id = Some("item-1".to_owned());
+    state.transcript.buffer = "partial".to_owned();
+    state.cumulative_usage.total_input_tokens = 5;
+    state.cumulative_usage.details.total.input.speech_tokens = 3;
+    state.reported_usage.total_input_tokens = 7;
+    state.reported_usage.details.total.output.text_tokens = 4;
+    let prompt_name = state.names.prompt.clone();
+    let frames = apply(
+        &mut state,
+        r#"{"session":{"instructions":"be helpful"}}"#,
+        &[INSTRUCTION],
+    );
+    assert_eq!(frames.len(), 5);
+    assert_eq!(state.names.prompt, prompt_name);
+    assert_eq!(state.names.content, CONTENT);
+    assert_eq!(state.names.audio_content, AUDIO_CONTENT);
+    assert!(state.prompt_started);
+    assert_instruction_frames(&frames, "be helpful");
+    assert_activity_kept(&state);
+    let repeated = apply(
+        &mut state,
+        r#"{"session":{"instructions":"be helpful"}}"#,
+        &[INSTRUCTION],
+    );
+    assert_eq!(repeated.len(), 5);
+    assert_activity_kept(&state);
+    let empty = apply(&mut state, r#"{"session":{"instructions":""}}"#, &[]);
+    assert_eq!(empty.len(), 2);
+    assert_activity_kept(&state);
+    let null = apply(&mut state, r#"{"session":{"instructions":null}}"#, &[]);
+    assert_eq!(null.len(), 2);
+    assert_activity_kept(&state);
+    let absent = apply(&mut state, r#"{"session":{}}"#, &[]);
+    assert_eq!(absent.len(), 2);
+    assert_activity_kept(&state);
+}
+
+fn assert_activity_kept(state: &RealtimeSession) {
+    assert!(state.client_audio_streamed);
+    assert!(state.transcript.active);
+    assert_eq!(state.transcript.generation_stage.as_deref(), Some("TEXT"));
+    assert_eq!(state.transcript.item_id.as_deref(), Some("item-1"));
+    assert_eq!(state.transcript.buffer, "partial");
+    assert_eq!(state.cumulative_usage.total_input_tokens, 5);
+    assert_eq!(state.cumulative_usage.details.total.input.speech_tokens, 3);
+    assert_eq!(state.reported_usage.total_input_tokens, 7);
+    assert_eq!(state.reported_usage.details.total.output.text_tokens, 4);
+}
+
+fn inference(frames: &[UpdateFrame]) -> &InferenceConfiguration {
+    &session_start(frames).inference_configuration
+}
+
+fn assert_instruction_frames(frames: &[UpdateFrame], content: &str) {
+    let instruction = instruction_content(frames);
+    assert_eq!(instruction.content_start.prompt_name, PROMPT);
+    assert_eq!(instruction.content_start.content_name, INSTRUCTION);
+    assert_eq!(instruction.content_start.content_type, ContentType::Text);
+    assert_eq!(instruction.content_start.role, ContentRole::System);
+    assert!(!instruction.content_start.interactive);
+    assert_eq!(
+        instruction
+            .content_start
+            .text_input_configuration
+            .media_type,
+        "text/plain"
+    );
+    assert_eq!(instruction.text_input, (PROMPT, INSTRUCTION, content));
+    assert_eq!(instruction.content_end, (PROMPT, INSTRUCTION));
+}
