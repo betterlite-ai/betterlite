@@ -1,0 +1,6 @@
+task: B6562
+deviations:
+  - what: Provider settings are written as data tables and no longer read off the classes.
+    why: Rust has no annotation reflection. Each table is checked against LiteLLM's real class by an oracle case, so a drift shows up as a failing case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1976-L2003
+kept_bugs: []
