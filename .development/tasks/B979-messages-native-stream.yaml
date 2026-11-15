@@ -151,5 +151,5 @@ pitfalls:
 - "B979 owns _is_message_stop_chunk and _is_provider_error_chunk from litellm/llms/anthropic/pass_through/messages/streaming_iterator.py. B3608 calls them through its AnthropicFrameProbe trait."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1900
   max_new_expects: 0
