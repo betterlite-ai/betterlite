@@ -66,10 +66,9 @@ fn the_key_follows_the_explicit_global_environment_chain(
     #[case] environment_pairs: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    let litellm_params = match explicit {
-        Some(key) => params(&format!(r#"{{"api_key":"{key}"}}"#)),
-        None => Params::new(),
-    };
+    let litellm_params = explicit.map_or_else(Params::new, |key| {
+        params(&format!(r#"{{"api_key":"{key}"}}"#))
+    });
     let settings = config(globals(None, global), environment(environment_pairs), NOW);
     let headers = settings
         .validate_environment(&Headers::new(), "", Some(&litellm_params))

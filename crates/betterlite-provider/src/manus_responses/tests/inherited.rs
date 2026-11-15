@@ -2,6 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use betterlite_openai::response_params::params::supported_openai_params;
 use rstest::rstest;
+use serde_json::Number;
 
 use crate::api::responses_provider_contract::config::ResponsesProviderConfig as _;
 use crate::api::responses_provider_contract::records::Params;
@@ -50,7 +51,7 @@ fn map_params_clamps_max_output_tokens_up_to_the_minimum(
     ));
     assert_eq!(
         mapped.get("max_output_tokens"),
-        Some(&Json::Number(expected.into()))
+        Some(&Json::Number(Number::from(expected)))
     );
 }
 

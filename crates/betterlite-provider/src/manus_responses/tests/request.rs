@@ -145,7 +145,7 @@ fn an_empty_response_id_names_the_field() {
         .transform_get_request(&request)
         .expect_err("an empty id cannot be a path segment");
     assert!(matches!(
-        error,
-        ManusResponsesError::ResponseId { ref response_id, .. } if response_id.is_empty()
+        &error,
+        ManusResponsesError::ResponseId { response_id, .. } if response_id.is_empty()
     ));
 }

@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use indexmap::IndexMap;
+use serde_json::Number;
 use std::collections::BTreeMap;
 
 use crate::api::responses_provider_contract::config::ResponsesProviderConfig as _;
@@ -9,9 +10,10 @@ use crate::api::responses_provider_contract::records::{
     Headers, Params, ResponsesLogging, ResponsesUpstream,
 };
 use crate::manus_responses::error::ManusResponsesError;
-use crate::manus_responses::{UnknownIdSource, UuidIdSource};
+use crate::manus_responses::reply::transform;
+use crate::manus_responses::{UnknownIdSource as _, UuidIdSource};
 
-use super::support::{SUFFIX, headered_response, plain_config, response};
+use super::support::{SUFFIX, headered_response, plain_config, response, upstream_headers};
 
 fn created(upstream: &ResponsesUpstream) -> (Params, ResponsesLogging) {
     let mut logging = ResponsesLogging::default();
@@ -35,7 +37,7 @@ fn created_at_comes_from_camel_case_created_at() {
     let (reply, _logging) = created(&upstream);
     assert_eq!(
         reply.get("created_at"),
-        Some(&Json::Number(1_234_567_890_i64.into()))
+        Some(&Json::Number(Number::from(1_234_567_890_i64)))
     );
 }
 
@@ -46,7 +48,10 @@ fn a_present_created_at_wins_and_is_still_converted() {
         r#"{"id":"resp_1","created_at":"7.9","createdAt":5,"output":[]}"#,
     );
     let (reply, _logging) = created(&upstream);
-    assert_eq!(reply.get("created_at"), Some(&Json::Number(7.into())));
+    assert_eq!(
+        reply.get("created_at"),
+        Some(&Json::Number(Number::from(7_i64)))
+    );
 }
 
 #[test]
@@ -59,9 +64,18 @@ fn missing_fields_get_the_manus_defaults() {
     let Some(Json::Object(usage)) = reply.get("usage") else {
         panic!("the default usage stays an object");
     };
-    assert_eq!(usage.get("input_tokens"), Some(&Json::Number(0.into())));
-    assert_eq!(usage.get("output_tokens"), Some(&Json::Number(0.into())));
-    assert_eq!(usage.get("total_tokens"), Some(&Json::Number(0.into())));
+    assert_eq!(
+        usage.get("input_tokens"),
+        Some(&Json::Number(Number::from(0_i32)))
+    );
+    assert_eq!(
+        usage.get("output_tokens"),
+        Some(&Json::Number(Number::from(0_i32)))
+    );
+    assert_eq!(
+        usage.get("total_tokens"),
+        Some(&Json::Number(Number::from(0_i32)))
+    );
 }
 
 #[test]
@@ -170,19 +184,14 @@ fn a_body_that_is_not_utf8_raises_the_openai_error_with_the_status() {
     };
     assert_eq!(inner.status_code, 502);
     assert!(inner.message.starts_with("the response body is not UTF-8"));
-    assert!(
-        logging
-            .model_call_details
-            .get("original_response")
-            .is_none()
-    );
+    assert!(!logging.model_call_details.contains_key("original_response"));
 }
 
 #[test]
 fn a_body_that_fails_validation_is_still_returned() {
     let upstream = response(200, r#"{"id":7,"created_at":5,"output":"bad"}"#);
     let mut logging = ResponsesLogging::default();
-    let reply = crate::manus_responses::reply::transform(&plain_config(), &upstream, &mut logging)
+    let reply = transform(&plain_config(), &upstream, &mut logging)
         .expect("a mistyped body is still returned");
     assert_eq!(reply.id, format!("unknown-{SUFFIX}"));
     assert_eq!(reply.created_at, 5);
@@ -195,12 +204,8 @@ fn a_failed_validation_keeps_the_output_and_usage_that_parse() {
         200,
         r#"{"id":7,"created_at":5,"output":[{"type":"vendor.item"}],"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7}}"#,
     );
-    let reply = crate::manus_responses::reply::transform(
-        &plain_config(),
-        &upstream,
-        &mut ResponsesLogging::default(),
-    )
-    .expect("a mistyped id is still returned");
+    let reply = transform(&plain_config(), &upstream, &mut ResponsesLogging::default())
+        .expect("a mistyped id is still returned");
     assert_eq!(reply.output.len(), 1);
     assert_eq!(reply.usage.map(|usage| usage.total_tokens), Some(7));
 }
@@ -211,12 +216,8 @@ fn a_failed_validation_resets_a_mistyped_usage_reasoning_and_text() {
         200,
         r#"{"id":7,"created_at":5,"usage":"bad","reasoning":"bad","text":5}"#,
     );
-    let reply = crate::manus_responses::reply::transform(
-        &plain_config(),
-        &upstream,
-        &mut ResponsesLogging::default(),
-    )
-    .expect("mistyped fields are still returned");
+    let reply = transform(&plain_config(), &upstream, &mut ResponsesLogging::default())
+        .expect("mistyped fields are still returned");
     assert_eq!(reply.usage.map(|usage| usage.total_tokens), Some(0));
     assert_eq!(reply.reasoning, Some(BTreeMap::new()));
     assert_eq!(reply.text, Some(BTreeMap::new()));
@@ -228,12 +229,8 @@ fn a_failed_validation_keeps_a_well_typed_status_and_error() {
         200,
         r#"{"id":"resp_1","created_at":5,"status":"failed","error":{"code":"x"},"output":[],"metadata":"bad"}"#,
     );
-    let reply = crate::manus_responses::reply::transform(
-        &plain_config(),
-        &upstream,
-        &mut ResponsesLogging::default(),
-    )
-    .expect("a mistyped metadata is still returned");
+    let reply = transform(&plain_config(), &upstream, &mut ResponsesLogging::default())
+        .expect("a mistyped metadata is still returned");
     assert_eq!(reply.status.as_deref(), Some("failed"));
     assert_eq!(
         reply.error.as_ref().and_then(|error| error.get("code")),
@@ -270,14 +267,7 @@ fn the_processed_and_raw_headers_are_recorded() {
     let upstream = headered_response(
         200,
         r#"{"id":"resp_1","created_at":5,"output":[]}"#,
-        Headers::from([
-            (String::from("x-request-id"), String::from("req-1")),
-            (
-                String::from("x-ratelimit-remaining-requests"),
-                String::from("9"),
-            ),
-            (String::from("llm_provider-x-custom"), String::from("keep")),
-        ]),
+        upstream_headers(),
     );
     let (_, logging) = created(&upstream);
     assert_eq!(
@@ -325,8 +315,14 @@ fn a_usage_object_is_kept_as_sent() {
     let Some(Json::Object(usage)) = reply.get("usage") else {
         panic!("the usage stays an object");
     };
-    assert_eq!(usage.get("input_tokens"), Some(&Json::Number(3.into())));
-    assert_eq!(usage.get("output_tokens"), Some(&Json::Number(4.into())));
+    assert_eq!(
+        usage.get("input_tokens"),
+        Some(&Json::Number(Number::from(3_i32)))
+    );
+    assert_eq!(
+        usage.get("output_tokens"),
+        Some(&Json::Number(Number::from(4_i32)))
+    );
 }
 
 #[test]

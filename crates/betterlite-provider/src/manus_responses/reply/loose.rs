@@ -80,14 +80,9 @@ pub(super) fn construct_loose(
         .cloned()
         .unwrap_or_else(|| Json::List(Vec::new()));
     record.insert(String::from(OUTPUT_FIELD), output);
-    record.insert(
-        String::from(REASONING_FIELD),
-        object_or_empty(fields, REASONING_FIELD),
-    );
-    record.insert(
-        String::from(TEXT_FIELD),
-        object_or_empty(fields, TEXT_FIELD),
-    );
+    for name in [REASONING_FIELD, TEXT_FIELD] {
+        record.insert(String::from(name), object_or_empty(fields, name));
+    }
     let usage = fields
         .get(USAGE_FIELD)
         .filter(|value| parseable::<ResponseApiUsage>(value))

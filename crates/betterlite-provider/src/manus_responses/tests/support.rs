@@ -109,6 +109,17 @@ pub(super) fn response(status: u16, body: &str) -> ResponsesUpstream {
     }
 }
 
+pub(super) fn upstream_headers() -> Headers {
+    Headers::from([
+        (String::from("x-request-id"), String::from("req-1")),
+        (
+            String::from("x-ratelimit-remaining-requests"),
+            String::from("9"),
+        ),
+        (String::from("llm_provider-x-custom"), String::from("keep")),
+    ])
+}
+
 pub(super) fn headered_response(status: u16, body: &str, headers: Headers) -> ResponsesUpstream {
     ResponsesUpstream {
         status_code: status,
