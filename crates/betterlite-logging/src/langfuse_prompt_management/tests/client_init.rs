@@ -82,7 +82,10 @@ async fn identical_credentials_and_host_share_one_client() {
     allow_env_credentials: true,
     ..BASE
 })]
-fn every_one_of_the_six_arguments_separates_the_cache(#[case] variant: PromptClientRequest<'_>) {
+#[tokio::test]
+async fn every_one_of_the_six_arguments_separates_the_cache(
+    #[case] variant: PromptClientRequest<'_>,
+) {
     let builder = support::RecordingBuilder::default();
     let variables = support::env(support::HOST);
     let services = support::services(&support::borrowed(&variables), Arc::new(builder.clone()));
