@@ -83,7 +83,7 @@ fn execute(input: &Input) -> HelperResult {
                 &args.settings,
                 &args.environment,
                 &args.answer,
-                args.answer_status.unwrap_or(200),
+                args.answer_status,
                 &[],
             ) {
                 Ok(prepared) => prepared,
@@ -120,7 +120,7 @@ fn execute(input: &Input) -> HelperResult {
                 &args.settings,
                 &args.environment,
                 &args.answer,
-                args.answer_status.unwrap_or(200),
+                args.answer_status,
                 &[],
             )?;
             let verdict = runtime.block_on(built.guardrail.call_aim_guardrail_on_output(

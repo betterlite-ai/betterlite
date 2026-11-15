@@ -45,7 +45,7 @@ pub(crate) struct RequestArgs {
     hook: HookArg,
     key_alias: Option<String>,
     answer: GuardrailValue,
-    answer_status: Option<u16>,
+    answer_status: u16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,7 +58,7 @@ pub(crate) struct OutputArgs {
     output: String,
     key_alias: Option<String>,
     answer: GuardrailValue,
-    answer_status: Option<u16>,
+    answer_status: u16,
 }
 
 #[derive(Debug, Deserialize)]
