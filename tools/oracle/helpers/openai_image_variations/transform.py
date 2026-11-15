@@ -33,7 +33,9 @@ def transform_value(probe: Probe) -> Json:
         dict(probe.optional_params),
         {},
     )
-    answer["data"] = data_view(fields["data"], probe)
+    data = fields.get("data")
+    if data is not None:
+        answer["data"] = data_view(data, probe)
     return answer
 
 

@@ -1,6 +1,5 @@
-from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Final, Protocol, TypeAlias
+from typing import Final
 
 import httpx
 import litellm
@@ -8,10 +7,12 @@ import openai
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.image_variations.transformation import BaseImageVariationConfig
 from litellm.llms.openai.common_utils import OpenAIError
+from litellm.llms.openai.image_variations import handler as variation_handler
 from litellm.llms.openai.image_variations.handler import OpenAIImageVariationsHandler
 from litellm.types.utils import ImageResponse, LlmProviders
 from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel, JsonValue as Json
+from typing_extensions import override
 
 from .config import variation_config
 from .probe import DOCUMENT, NOW, Probe, file_object, text_of
@@ -22,23 +23,20 @@ litellm.suppress_debug_info = True
 # LiteLLM's class carries Any in its constructor, so the catch names it through a typed alias
 PROVIDER_ERROR: Final[type[Exception]] = OpenAIError
 
-ImageVariations: TypeAlias = Callable[..., ImageResponse]
+HANDLER = OpenAIImageVariationsHandler()
 
 
-class Handler(Protocol):
-    @property
-    def image_variations(self) -> ImageVariations: ...
-
-
-class Manager(Protocol):
-    get_provider_image_variation_config: Callable[
-        [str, LlmProviders], BaseImageVariationConfig | None
-    ]  # ast-grep-ignore
-
-
-HANDLER: Handler = OpenAIImageVariationsHandler()
-MANAGER: Manager = ProviderConfigManager
-REAL_CONFIG: Final = ProviderConfigManager.get_provider_image_variation_config
+class AbsentVariationConfig(ProviderConfigManager):
+    @staticmethod
+    @override
+    def get_provider_image_variation_config(  # ast-grep-ignore: no-long-names
+        model: str, provider: LlmProviders
+    ) -> BaseImageVariationConfig | None:
+        if provider == LlmProviders.OPENAI:
+            return None
+        return ProviderConfigManager.get_provider_image_variation_config(
+            model=model, provider=provider
+        )
 
 
 class ErrorRecord(BaseModel):
@@ -60,17 +58,14 @@ class Upstream:
             case "failed":
                 raise httpx.ReadError("the transport failed", request=request)
             case None:
+                body = self.probe.reply.body.encode()
+                if self.probe.reply.body_bytes is not None:
+                    body = bytes(self.probe.reply.body_bytes)
                 return httpx.Response(
                     self.probe.reply.status,
                     headers=self.probe.reply.headers,
-                    content=self.probe.reply.body.encode(),
+                    content=body,
                 )
-
-
-def absent_config(model: str, provider: LlmProviders) -> BaseImageVariationConfig | None:
-    if provider is LlmProviders.OPENAI:
-        return None
-    return REAL_CONFIG(model=model, provider=provider)
 
 
 def supplied_client(probe: Probe, transport: httpx.MockTransport) -> openai.OpenAI | None:
@@ -199,8 +194,9 @@ def request_value(probe: Probe) -> Json:
     previous_session = litellm.client_session
     if supplied is None:
         litellm.client_session = httpx.Client(transport=transport)
+    installed = variation_handler.ProviderConfigManager
     if probe.missing_config:
-        MANAGER.get_provider_image_variation_config = absent_config
+        variation_handler.ProviderConfigManager = AbsentVariationConfig
     optional_params: dict[str, Json] = dict(probe.optional_params)
     litellm_params: dict[str, Json] = {}
     error: Json = None
@@ -234,7 +230,7 @@ def request_value(probe: Probe) -> Json:
         result = DOCUMENT.validate_json(response.model_dump_json())
     finally:
         litellm.client_session = previous_session
-        MANAGER.get_provider_image_variation_config = REAL_CONFIG
+        variation_handler.ProviderConfigManager = installed
     answer["supplied"] = probe.client is not None
     answer["kind"] = "sync"
     answer["calls"] = calls_view(upstream.seen)

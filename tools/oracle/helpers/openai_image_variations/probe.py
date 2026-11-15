@@ -17,6 +17,7 @@ class Reply:
     status: int = 200
     headers: dict[str, str] = field(default_factory=dict)
     body: str = ""
+    body_bytes: list[int] | None = None
 
 
 @dataclass
