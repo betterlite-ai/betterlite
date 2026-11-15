@@ -1,5 +1,5 @@
 import json
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, TypeAlias, TypedDict
 
 from litellm.llms.anthropic.pass_through.adapters.transformation import (
     LiteLLMAnthropicMessagesAdapter as MessagesAdapter,
@@ -9,19 +9,15 @@ from litellm.types.llms.anthropic import (
     AppliedEdit,
     CompactionBlock,
     ContentBlockContentBlockDict,
-    ContentBlockDelta,
     ContentJsonBlockDelta,
     ContentTextBlockDelta,
     ContentThinkingBlockDelta,
-    ContentThinkingSignatureBlockDelta as SignatureDelta,
-    MessageBlockDelta,
     StreamingContentBlockDeltaType,
     UsageIteration,
 )
-from litellm.types.llms.openai import (
-    ChatCompletionRedactedThinkingBlock as RedactedBlock,
-    ChatCompletionThinkingBlock,
-)
+from litellm.types.llms.anthropic import ContentThinkingSignatureBlockDelta as SignatureDelta
+from litellm.types.llms.openai import ChatCompletionRedactedThinkingBlock as RedactedBlock
+from litellm.types.llms.openai import ChatCompletionThinkingBlock
 from litellm.types.utils import (
     ChatCompletionDeltaToolCall,
     ChatCompletionMessageToolCall,
@@ -60,14 +56,6 @@ class Adapter(MessagesAdapter):
         | SignatureDelta,
     ]:
         return self._translate_streaming_openai_chunk_to_anthropic(choices)
-
-    def stream_frame(
-        self,
-        response: ModelResponse,
-        index: int,
-        applied_edits: list[AppliedEdit] | None,
-    ) -> ContentBlockDelta | MessageBlockDelta:
-        return self.translate_streaming_openai_response_to_anthropic(response, index, applied_edits)
 
 
 ADAPTER: Final = Adapter()
@@ -150,13 +138,8 @@ class ResponseCall(TypedDict):
     polyfill_result: PolyfillInput | None
 
 
-class BlockCall(TypedDict):
-    operation: Literal["block"]
-    choices: list[StreamChoiceInput]
-
-
-class DeltaCall(TypedDict):
-    operation: Literal["delta"]
+class StreamCall(TypedDict):
+    operation: Literal["block", "delta"]
     choices: list[StreamChoiceInput]
 
 
@@ -168,7 +151,8 @@ class TerminalCall(TypedDict):
     index: int
 
 
-Input = ResponseCall | BlockCall | DeltaCall | TerminalCall
+Input = ResponseCall | StreamCall | TerminalCall
+StreamChoices: TypeAlias = list[OpenAIStreamChoice | StreamingChoices]
 
 
 def usage_object(value: UsageInput) -> Usage:
@@ -185,15 +169,17 @@ def usage_object(value: UsageInput) -> Usage:
 
 
 def message_object(value: MessageInput) -> Message:
-    tool_calls: list[ChatCompletionMessageToolCall] = []
-    for tool in value["tool_calls"]:
-        tool_calls.append(
-            ChatCompletionMessageToolCall(
-                function=Function(name=tool["function"]["name"], arguments=tool["function"]["arguments"]),
-                id=tool["id"],
-                provider_specific_fields=tool["provider_specific_fields"],
-            )
+    tool_calls: list[ChatCompletionMessageToolCall] = [
+        ChatCompletionMessageToolCall(
+            function=Function(
+                name=tool["function"]["name"],
+                arguments=tool["function"]["arguments"],
+            ),
+            id=tool["id"],
+            provider_specific_fields=tool["provider_specific_fields"],
         )
+        for tool in value["tool_calls"]
+    ]
     return Message(
         content=value["content"],
         tool_calls=tool_calls,
@@ -205,15 +191,17 @@ def message_object(value: MessageInput) -> Message:
 
 
 def delta_object(value: DeltaInput) -> Delta:
-    tool_calls: list[ChatCompletionDeltaToolCall] = []
-    for tool in value["tool_calls"]:
-        tool_calls.append(
-            ChatCompletionDeltaToolCall(
-                index=tool["index"],
-                id=tool["id"],
-                function=Function(name=tool["function"]["name"], arguments=tool["function"]["arguments"]),
-            )
+    tool_calls: list[ChatCompletionDeltaToolCall] = [
+        ChatCompletionDeltaToolCall(
+            index=tool["index"],
+            id=tool["id"],
+            function=Function(
+                name=tool["function"]["name"],
+                arguments=tool["function"]["arguments"],
+            ),
         )
+        for tool in value["tool_calls"]
+    ]
     return Delta(
         content=value["content"],
         tool_calls=tool_calls,
@@ -240,39 +228,35 @@ def stream_choice(value: StreamChoiceInput) -> StreamingChoices:
 
 def response_object(value: ResponseInput) -> ModelResponse:
     usage_value = value["usage"]
-    choices = [choice_object(choice) for choice in value["choices"]]
     return ModelResponse(
         id=value["id"],
         model=value["model"],
-        choices=choices,
+        choices=[choice_object(choice) for choice in value["choices"]],
         usage=usage_object(usage_value) if usage_value is not None else None,
     )
 
 
-def answer_block(call: BlockCall) -> Json:
-    choices: list[OpenAIStreamChoice | StreamingChoices] = []
-    for choice in call["choices"]:
-        choices.append(stream_choice(choice))
+def answer_block(call: StreamCall) -> Json:
+    choices: StreamChoices = [stream_choice(choice) for choice in call["choices"]]
     block_type, block = ADAPTER.block_start(choices)
     return ANSWER.validate_json(json.dumps({"block_type": block_type, "block": block}))
 
 
-def answer_delta(call: DeltaCall) -> Json:
-    choices: list[OpenAIStreamChoice | StreamingChoices] = []
-    for choice in call["choices"]:
-        choices.append(stream_choice(choice))
+def answer_delta(call: StreamCall) -> Json:
+    choices: StreamChoices = [stream_choice(choice) for choice in call["choices"]]
     projected = ADAPTER.chunk_delta(choices)
     return ANSWER.validate_json(json.dumps(projected[1]))
 
 
 def answer_terminal(call: TerminalCall) -> Json:
     usage_value = call["usage"]
-    choices = [choice_object(choice) for choice in call["choices"]]
     response = ModelResponse(
-        choices=choices,
+        choices=[choice_object(choice) for choice in call["choices"]],
         usage=usage_object(usage_value) if usage_value is not None else None,
     )
-    frame = ADAPTER.stream_frame(response, call["index"], call["applied_edits"])
+    frame = ADAPTER.translate_streaming_openai_response_to_anthropic(
+        response, call["index"], call["applied_edits"]
+    )
     return ANSWER.validate_json(json.dumps(frame))
 
 

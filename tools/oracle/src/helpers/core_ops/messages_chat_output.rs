@@ -1,4 +1,4 @@
-use betterlite_anthropic::stream_state::IdSource;
+use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_core::api::messages_chat_output::error::ChatOutputError;
 use betterlite_core::api::messages_chat_output::output::ContentBlock;
 use betterlite_core::api::messages_chat_output::records::{
