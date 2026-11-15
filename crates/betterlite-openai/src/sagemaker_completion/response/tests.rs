@@ -114,6 +114,13 @@ fn an_empty_list_fails_with_the_parse_error() {
 }
 
 #[test]
+fn a_first_list_item_that_is_not_an_object_fails_with_the_parse_error() {
+    let reply = json!([7]);
+    let error = transform_response(&input(&reply, "hi"), &WordCounter).expect_err("a failure");
+    assert_eq!(error.status_code, 500);
+}
+
+#[test]
 fn a_non_string_generation_fails_with_the_parse_error() {
     let reply = json!([{"generation": null}]);
     let error = transform_response(&input(&reply, "hi"), &WordCounter).expect_err("a failure");
