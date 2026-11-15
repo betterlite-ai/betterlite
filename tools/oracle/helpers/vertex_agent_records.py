@@ -111,7 +111,7 @@ class FixedUuid:
         return litellm_uuid.UUID(self.value)
 
 
-# the cast carries LiteLLM's message and logging types; this view names the shapes the case sends
+# this view names the shapes the case sends, not LiteLLM's own message and logging types
 TransformResponse: TypeAlias = Callable[
     [
         str,
@@ -157,10 +157,6 @@ class Config(Protocol):
     ) -> dict[str, JsonValue]: ...
 
     transform_response: TransformResponse
-
-
-class TokenCounterHost(Protocol):
-    token_counter: Callable[[str], int]
 
 
 CFG: Final[Config] = VertexAgentEngineConfig()  # type: ignore[no-untyped-call, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L57-L65
@@ -209,9 +205,8 @@ def answer_state(answer: AnswerView) -> JsonValue:
 
 def response_outcome(call: ResponseCall) -> JsonValue:
     counter = Counter(call["counter"], call["prompt_tokens"], call["completion_tokens"])
-    # LiteLLM re-imports its counter from this module on each call, so the fixture swaps it there
-    host: TokenCounterHost = litellm.utils
-    host.token_counter = functools.partial(counter)
+    # LiteLLM re-imports its counter from litellm.utils on each call, so the fixture swaps it there
+    litellm.utils.token_counter = functools.partial(counter)
     raw = httpx.Response(
         call["status"],
         text=call["body"],
