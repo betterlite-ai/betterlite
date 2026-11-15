@@ -15,6 +15,15 @@ deviations:
       LiteLLM's crash is Python duck typing no working setup relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1591-L1592
   - what: >-
+      A logprobs content entry that is not an object, or whose token, logprob or top_logprobs
+      fields are missing or wrong-typed, is passed through as given instead of the pydantic
+      ValidationError LiteLLM raises when it builds ChoiceLogprobs.
+    why: >-
+      docs/compatibility.md sends input of the declared type; for a token outside that type a client
+      can still read the chunk, and LiteLLM's pydantic ValidationError here is not a behavior a
+      working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1105-L1146
+  - what: >-
       The terminal and passthrough chunks' usage is B906's shared Responses-to-chat projection, so a
       token detail block keeps only the counters B906 models and always lists cached_tokens_details,
       while LiteLLM dumps the pydantic PromptTokensDetails and CompletionTokensDetails wrappers with

@@ -159,6 +159,54 @@ fn passthrough_tool_function_defaults_its_arguments_to_an_empty_string() {
         chunk["choices"][0]["delta"]["tool_calls"][0]["function"],
         json!({"name": "f", "arguments": ""})
     );
+    assert_eq!(
+        chunk["choices"][0]["delta"]["tool_calls"][0]["type"],
+        json!("function")
+    );
+}
+
+#[test]
+fn passthrough_tool_call_indices_follow_the_list_order() {
+    let chunk = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{
+            "index": 0,
+            "delta": {"tool_calls": [
+                {"function": {"name": "f", "arguments": "{}"}},
+                {"function": {"name": "g", "arguments": "{}"}},
+            ]},
+        }],
+    }))
+    .unwrap();
+    let calls = &chunk["choices"][0]["delta"]["tool_calls"];
+    assert_eq!(calls[0]["index"], json!(0));
+    assert_eq!(calls[1]["index"], json!(1));
+}
+
+#[test]
+fn passthrough_keeps_and_validates_provider_specific_fields() {
+    let chunk = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [],
+        "provider_specific_fields": {"p": 1, "q": null},
+    }))
+    .unwrap();
+    assert_eq!(
+        chunk["provider_specific_fields"],
+        json!({"p": 1, "q": null})
+    );
+    let failure = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [],
+        "provider_specific_fields": [1],
+    }))
+    .unwrap_err();
+    assert!(matches!(
+        failure,
+        ResponsesChatStreamError::Field {
+            field: "provider_specific_fields"
+        }
+    ));
 }
 
 #[test]
@@ -371,13 +419,16 @@ fn passthrough_choice_omits_a_null_enhancements() {
     let chunk = translated(&json!({
         "object": "chat.completion.chunk",
         "choices": [
-            {"index": 0, "enhancements": null, "score": 2},
+            {"index": 0, "enhancements": null, "score": 2, "custom_null": null},
             {"index": 1, "enhancements": {"logit_bias": 1}},
         ],
     }))
     .unwrap();
     assert_eq!(chunk["choices"][0]["score"], json!(2));
     assert!(chunk["choices"][0].get("enhancements").is_none());
+    // an unset extra attribute still dumps as null
+    assert!(chunk["choices"][0].get("custom_null").is_some());
+    assert_eq!(chunk["choices"][0]["custom_null"], json!(null));
     assert_eq!(
         chunk["choices"][1]["enhancements"],
         json!({"logit_bias": 1})

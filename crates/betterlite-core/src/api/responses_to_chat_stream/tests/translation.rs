@@ -375,6 +375,7 @@ fn stateless_translation_finishes_on_completed_output() {
     .unwrap();
     assert_eq!(plain["choices"][0]["finish_reason"], json!("stop"));
     assert_eq!(plain["usage"], json!(null));
+    assert_eq!(plain["provider_specific_fields"], json!(null));
 
     let calls = translated(&json!({
         "type": "response.completed",
