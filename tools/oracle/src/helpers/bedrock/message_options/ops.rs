@@ -47,6 +47,7 @@ fn remove_ttl(model_cost: &ParamMap, cases: &[TtlCase]) -> HelperResult {
 }
 
 // One helper call: which production function runs, and the case it reads.
+#[derive(Clone, Copy)]
 enum Ask<'case> {
     Thinking(&'case EnsureCase),
     Clamp(&'case ClampCase),
@@ -88,10 +89,10 @@ fn answer(
             let mut request = case.request.clone();
             let outcome =
                 runtime.block_on(ensure_clear_thinking(&mut request, &case.model, sources));
-            Ok(match outcome {
-                Ok(injected) => json!({"injected": injected, "request": request}),
-                Err(_) => json!({"raised": true}),
-            })
+            Ok(outcome.map_or_else(
+                |_| json!({"raised": true}),
+                |injected| json!({"injected": injected, "request": request}),
+            ))
         }
         Ask::Clamp(case) => {
             let mut params = case.params.clone();
@@ -113,7 +114,10 @@ fn answer(
     }
 }
 
-fn ask_cases<Case: AskCase>(model_cost: &ParamMap, cases: &[Case]) -> HelperResult {
+fn ask_cases<Case>(model_cost: &ParamMap, cases: &[Case]) -> HelperResult
+where
+    Case: AskCase,
+{
     let fixture = Fixture::load(model_cost).map_err(failure)?;
     let resolution = fixture.resolution();
     let lookup = CostLookup {

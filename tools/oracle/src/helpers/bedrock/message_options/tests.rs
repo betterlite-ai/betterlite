@@ -53,7 +53,7 @@ fn an_unknown_function_is_not_a_bedrock_message_options_input() {
 fn a_message_options_function_selects_its_variant() {
     let input = serde_json::json!({
         "function": "remove_ttl",
-        "model_cost": {"listed": {"cache_creation_input_token_cost_above_1hr": 0}},
+        "model_cost": {"listed": {"cache_creation_input_token_cost_above_1hr": 0_i32}},
         "cases": [{"model": "listed", "request": {"tools": []}}],
     });
     Op::check(&input).expect("a well-typed input should check");

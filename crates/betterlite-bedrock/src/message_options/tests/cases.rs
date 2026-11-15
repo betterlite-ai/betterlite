@@ -11,8 +11,7 @@
 mod injection_limit;
 
 use betterlite_config::sections::anthropic_capability_catalog::{
-    HIGH_THINKING_BUDGET, LOW_THINKING_BUDGET, MAX_THINKING_BUDGET, MEDIUM_THINKING_BUDGET,
-    MINIMAL_THINKING_BUDGET, Settings, XHIGH_THINKING_BUDGET,
+    LOW_THINKING_BUDGET, MAX_THINKING_BUDGET, MINIMAL_THINKING_BUDGET, Settings,
 };
 use tracing::Level;
 
