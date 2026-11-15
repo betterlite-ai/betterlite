@@ -27,8 +27,10 @@ const BROWSER_SEARCH: &str = "browser_search";
 
 #[must_use]
 pub fn is_compound_model(model: &str) -> bool {
-    let name = model.strip_prefix(PROVIDER_PREFIX).unwrap_or(model);
-    COMPOUND_MODELS.contains(&name)
+    model.strip_prefix(PROVIDER_PREFIX).map_or_else(
+        || COMPOUND_MODELS.contains(&model),
+        |name| COMPOUND_MODELS.contains(&name),
+    )
 }
 
 pub struct SupportedParams<'request> {
