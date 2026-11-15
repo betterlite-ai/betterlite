@@ -4,6 +4,7 @@ use rstest::rstest;
 
 mod cases;
 mod fixture;
+mod logging;
 mod message_cap;
 
 #[derive(Debug, Clone, Copy)]
