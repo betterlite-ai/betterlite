@@ -414,11 +414,17 @@ async fn a_realtime_session_is_priced_from_its_own_stream_not_the_token_stage() 
 
 #[test]
 fn the_clock_reading_is_a_utc_moment_and_never_before_the_epoch() {
-    let mut later = || UNIX_EPOCH + Duration::new(1_700_000_000, 5);
+    let after = UNIX_EPOCH
+        .checked_add(Duration::new(1_700_000_000, 5))
+        .expect("the test moment is in range");
+    let mut later = || after;
     let moment = reading(&mut later).unwrap();
     assert_eq!(moment.timestamp(), 1_700_000_000);
     assert_eq!(moment.timestamp_subsec_nanos(), 5);
-    let mut earlier = || UNIX_EPOCH - Duration::from_secs(1);
+    let before = UNIX_EPOCH
+        .checked_sub(Duration::from_secs(1))
+        .expect("one second before the epoch is representable");
+    let mut earlier = || before;
     assert!(matches!(
         reading(&mut earlier),
         Err(ChargeInputError::Clock)
