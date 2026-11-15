@@ -86,14 +86,14 @@ class SyntheticNestedGuardrail(CustomGuardrail):
         return SyntheticNested
 
 
-class SyntheticGenericUnfilledGuardrail(CustomGuardrail):
+class SyntheticUnfilledGuardrail(CustomGuardrail):
     @staticmethod
     @override
     def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
         return SyntheticGenericUnfilled
 
 
-class SyntheticGenericFilledGuardrail(CustomGuardrail):
+class SyntheticFilledGuardrail(CustomGuardrail):
     @staticmethod
     @override
     def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
@@ -103,8 +103,8 @@ class SyntheticGenericFilledGuardrail(CustomGuardrail):
 SYNTHETIC_GUARDRAILS: dict[str, type[CustomGuardrail]] = {
     "synthetic_literal_list": SyntheticLiteralListGuardrail,
     "synthetic_nested": SyntheticNestedGuardrail,
-    "synthetic_generic_unfilled": SyntheticGenericUnfilledGuardrail,
-    "synthetic_generic_filled": SyntheticGenericFilledGuardrail,
+    "synthetic_generic_unfilled": SyntheticUnfilledGuardrail,
+    "synthetic_generic_filled": SyntheticFilledGuardrail,
 }
 
 
