@@ -154,6 +154,11 @@ fn audit_json_masking() {
         list,
         json!({"before": [{"api_key": "sk-1*****7890"}], "updated": null})
     );
+    let nulls = masked_record(json!({"name": null, "key": null}), json!(null));
+    assert_eq!(
+        nulls,
+        json!({"before": {"name": "None", "key": ""}, "updated": null})
+    );
 }
 
 #[test]

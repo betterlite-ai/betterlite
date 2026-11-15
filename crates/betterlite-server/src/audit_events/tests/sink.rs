@@ -82,6 +82,41 @@ async fn audit_object_projection() {
 }
 
 #[tokio::test]
+async fn audit_invalid_json_is_logged() {
+    let (captured, guard) = capture();
+    let callback = recorder("otel", false);
+    let repository = recording_repository();
+    let spawner = Arc::new(CollectingSpawner::default());
+    let settings = TestSettings {
+        enabled: true,
+        callbacks: vec![instance(callback.clone())],
+        s3: None,
+    };
+    let sink = audit_sink(
+        settings,
+        repository.clone(),
+        callback.clone(),
+        spawner.clone(),
+    );
+    sink.create_object_audit_log(ObjectAuditLog {
+        object_id: "team-1",
+        action: AuditAction::Updated,
+        litellm_changed_by: None,
+        caller: &caller(),
+        litellm_proxy_admin_name: Some("admin"),
+        table_name: AuditTable::Team,
+        before_value: Some("{oops"),
+        after_value: None,
+    })
+    .await;
+    spawner.run_all().await;
+    assert!(repository.inserted.lock().unwrap().is_empty());
+    assert!(callback.delivered.lock().unwrap().is_empty());
+    drop(guard);
+    assert!(captured.text().contains("Failed Creating audit log"));
+}
+
+#[tokio::test]
 async fn audit_disabled_no_effects() {
     let callback = recorder("otel", false);
     let repository = recording_repository();

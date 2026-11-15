@@ -93,6 +93,32 @@ fn audit_unresolved_not_cached() {
 }
 
 #[tokio::test]
+async fn audit_unresolved_warning() {
+    let (captured, guard) = capture();
+    let registry = registry();
+    let good = recorder("good", false);
+    let spawner = Arc::new(CollectingSpawner::default());
+    let dispatcher = AuditCallbackDispatcher::new(registry, spawner.clone());
+    dispatcher.dispatch(
+        &[
+            AuditCallbackConfig::Named("missing".to_owned()),
+            AuditCallbackConfig::Instance(good.clone()),
+        ],
+        None,
+        build_audit_log_payload(&plain_record()),
+    );
+    spawner.run_all().await;
+    assert_eq!(good.delivered.lock().unwrap().len(), 1);
+    assert!(spawner.tasks.lock().unwrap().is_empty());
+    drop(guard);
+    assert!(
+        captured
+            .text()
+            .contains("Could not resolve audit log callback: missing")
+    );
+}
+
+#[tokio::test]
 async fn audit_s3_override_empty() {
     let registry = registry();
     let spawner = Arc::new(CollectingSpawner::default());
