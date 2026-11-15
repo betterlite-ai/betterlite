@@ -12,6 +12,9 @@ deviations:
   - what: The body of a non-200 blocking stream answer is decoded as UTF-8 text for the error message, and a body that is not UTF-8 becomes its own error that keeps the status, where LiteLLM passes the body bytes to OpenAILikeError.
     why: Lossy text would hide a corrupt answer behind a made-up message, and a message is betterlite's own, so the error's status stays LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L97
+  - what: Every send carries one deadline built from the timeout's total, where httpx applies the total, the connect limit and the read, write and pool limits separately, with 5 seconds to connect by default.
+    why: betterlite's shared transport bounds a request with a single deadline (B173), so the 5-second connect limit the source's handler is built with is not applied and the total covers every phase.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
 kept_bugs:
   - what: acompletion_stream_function takes fake_stream but never forwards it to make_call, so an async fake stream is sent and read as an ordinary stream.
     why: A working setup that asks for an async fake stream gets real streaming chunks back and may depend on that; async fake mode makes no difference in the payload.
