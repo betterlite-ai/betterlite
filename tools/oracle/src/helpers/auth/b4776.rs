@@ -98,10 +98,10 @@ fn stable_ids(registry: &AgentRegistry, agent_ids: &[String]) -> Vec<String> {
         .collect()
 }
 
-fn lookups(
-    keys: &[String],
-    find: impl Fn(&str) -> Option<AgentResponse>,
-) -> BTreeMap<String, Value> {
+fn lookups<Find>(keys: &[String], find: Find) -> BTreeMap<String, Value>
+where
+    Find: Fn(&str) -> Option<AgentResponse>,
+{
     keys.iter()
         .map(|key| {
             let found = find(key);
