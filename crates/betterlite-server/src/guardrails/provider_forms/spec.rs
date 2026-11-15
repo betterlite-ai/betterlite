@@ -21,13 +21,8 @@ pub enum FormShape {
     Text,
     Number,
     Boolean,
-    Mapping {
-        keys: Vec<Value>,
-        value: Box<FormShape>,
-    },
-    List {
-        options: Vec<Value>,
-    },
+    Mapping { keys: Vec<Value>, value: Box<Self> },
+    List { options: Vec<Value> },
     Choice(Vec<Value>),
     Nested(Box<FormModel>),
     RawObject,

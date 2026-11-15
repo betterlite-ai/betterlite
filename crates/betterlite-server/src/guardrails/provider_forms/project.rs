@@ -56,15 +56,11 @@ fn insert_field(
 }
 
 fn insert_scalar(entry: &mut Map<String, Value>, field: &FormField) {
-    let mut field_type = type_name(&field.shape);
-    if let Some(ui_type) = &field.extra.ui_type {
-        field_type = ui_type.as_str();
-    }
-    if field.extra.ui_type.is_none()
-        && let Some(type_override) = &field.extra.type_override
-    {
-        field_type = type_override.as_str();
-    }
+    let field_type = match (&field.extra.ui_type, &field.extra.type_override) {
+        (Some(ui_type), _) => ui_type.as_str(),
+        (None, Some(type_override)) => type_override.as_str(),
+        (None, None) => type_name(&field.shape),
+    };
     entry.insert("type".to_owned(), Value::String(field_type.to_owned()));
     insert_type_details(entry, field, field_type);
     insert_limits(entry, field);

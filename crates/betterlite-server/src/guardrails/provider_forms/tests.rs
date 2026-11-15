@@ -478,92 +478,39 @@ fn projected_table(name: &str) -> Value {
 
 #[test]
 fn core_table_bedrock_projects_like_litellm() {
-    assert_eq!(
-        projected_table("bedrock"),
-        json!({
-            "aws_access_key_id": {"description": "AWS access key ID for authentication", "required": false, "type": "string"},
-            "aws_bedrock_runtime_endpoint": {"description": "AWS Bedrock runtime endpoint URL", "required": false, "type": "string"},
-            "aws_external_id": {"description": "External ID required by the target role's trust policy on sts:AssumeRole", "required": false, "type": "string"},
-            "aws_profile_name": {"description": "AWS profile name for credential retrieval", "required": false, "type": "string"},
-            "aws_region_name": {"description": "AWS region where your guardrail is deployed", "required": false, "type": "string"},
-            "aws_role_name": {"description": "AWS role name for assuming roles", "required": false, "type": "string"},
-            "aws_secret_access_key": {"description": "AWS secret access key for authentication", "required": false, "type": "string"},
-            "aws_session_name": {"description": "Name of the AWS session", "required": false, "type": "string"},
-            "aws_session_token": {"description": "AWS session token for temporary credentials", "required": false, "type": "string"},
-            "aws_sts_endpoint": {"description": "AWS STS endpoint URL", "required": false, "type": "string"},
-            "aws_web_identity_token": {"description": "Web identity token for AWS role assumption", "required": false, "type": "string"},
-            "checks": {"description": "Inline safeguards for the resource-less InvokeGuardrailChecks API (contentFilter / promptAttack / sensitiveInformation). When set, the guardrail calls InvokeGuardrailChecks instead of ApplyGuardrail and no guardrailIdentifier is required. Mutually exclusive with guardrailIdentifier.", "fields": {"contentFilter": {"description": "contentFilter", "fields": {"categories": {"default_value": null, "description": "categories", "required": true, "type": "array"}}, "required": false, "type": "nested"}, "promptAttack": {"description": "promptAttack", "fields": {"categories": {"default_value": null, "description": "categories", "required": true, "type": "array"}}, "required": false, "type": "nested"}, "sensitiveInformation": {"description": "sensitiveInformation", "fields": {"entities": {"default_value": null, "description": "entities", "required": true, "type": "array"}}, "required": false, "type": "nested"}}, "required": false, "type": "nested"},
-            "chunk_budget_chars": {"default_value": 25_000_i64, "description": "ApplyGuardrail: batch size, in characters, used to re-send content after AWS has rejected a request as too large. Requests AWS accepts are always sent in a single call, so this has no effect until a rejection happens. Defaults to 25,000; a batch AWS still rejects is bisected automatically, so this value only trades round trips against batch size and cannot fail a request on its own.", "required": false, "type": "number"},
-            "content_filter_threshold": {"default_value": 0.5_f64, "description": "InvokeGuardrailChecks: block when any contentFilter severityScore >= this value (scores are in [0,1]). Set to null to make the content filter detect-only (logged, never blocks).", "required": false, "type": "number"},
-            "contextual_grounding_from_messages": {"default_value": false, "description": "ApplyGuardrail: when True, post-call scans of a request with no grounding_source / query content parts send the system and developer messages as the grounding source and the latest user message as the query, so the guardrail's contextual grounding policy can score the response. Bedrock bills contextual grounding units for these scans and rejects queries, sources and responses over its contextual grounding length limits, so leave this off for guardrails without a contextual grounding policy. Default False: plain messages are never sent as grounding context.", "required": false, "type": "boolean"},
-            "disable_exception_on_block": {"default_value": false, "description": "If True, will not raise an exception when the guardrail is blocked. Useful for OpenWebUI where exceptions can end the chat flow.", "required": false, "type": "boolean"},
-            "guardrailIdentifier": {"description": "The ID of your guardrail on Bedrock", "required": false, "type": "string"},
-            "guardrailVersion": {"description": "The version of your Bedrock guardrail (e.g., DRAFT or version number)", "required": false, "type": "string"},
-            "pii_confidence_threshold": {"default_value": 0.5_f64, "description": "InvokeGuardrailChecks: block when any sensitiveInformation confidenceScore >= this value (scores are in [0,1]). Set to null to make PII detection detect-only.", "required": false, "type": "number"},
-            "prompt_attack_threshold": {"default_value": 0.5_f64, "description": "InvokeGuardrailChecks: block when any promptAttack severityScore >= this value (scores are in [0,1]). Set to null to make prompt-attack detection detect-only.", "required": false, "type": "number"},
-            "streaming_buffer_release_on_scan": {"default_value": false, "description": "When buffering, scan the accumulated response every streaming_sampling_rate chunks and release the withheld chunks once the scan passes, instead of holding everything to end of stream. Flagged content is never released. Ignored when streaming_end_of_stream_only is true.", "required": false, "type": "boolean"},
-            "streaming_buffer_until_moderated": {"default_value": true, "description": "If True (default), withhold every streamed chunk until the end-of-stream ApplyGuardrail scan passes, so no flagged content reaches the client before a block. If False, chunks stream through unbuffered, so flagged content can reach the client before the scan finishes; a flagged scan still ends the stream, with a block message when disable_exception_on_block is true and an in-stream error frame otherwise.", "required": false, "type": "boolean"},
-            "streaming_end_of_stream_only": {"default_value": false, "description": "When not buffering, skip per-chunk sampling and run one ApplyGuardrail scan on the assembled response at end of stream. Combined with streaming_buffer_until_moderated=false the full response streams live before the scan and the scan result lands in guardrail_information; a flagged response still ends the stream with a block message (disable_exception_on_block=true) or an error frame.", "required": false, "type": "boolean"},
-            "streaming_sampling_rate": {"default_value": 5_i64, "description": "When not buffering and not end-of-stream-only, scan the accumulated response every Nth streamed chunk. Each sampled scan is a full ApplyGuardrail call that delays that chunk, so lower values add latency and AWS text-unit cost.", "required": false, "type": "number"},
-        })
-    );
+    let expected: Value = serde_json::from_str(include_str!("fixtures/core-table-bedrock.json"))
+        .expect("the expected form dictionary is JSON");
+    assert_eq!(projected_table("bedrock"), expected);
 }
 
 #[test]
 fn core_table_presidio_projects_like_litellm() {
-    assert_eq!(
-        projected_table("presidio"),
-        json!({
-            "output_parse_pii": {"description": "When True, LiteLLM will replace the masked text with the original text in the response", "required": false, "type": "bool"},
-            "presidio_analyzer_api_base": {"description": "Base URL for the Presidio analyzer API", "required": false, "type": "string"},
-            "presidio_anonymizer_api_base": {"description": "Base URL for the Presidio anonymizer API", "required": false, "type": "string"},
-            "presidio_filter_scope": {"description": "Where to apply Presidio checks: 'input' (user -> model), 'output' (model -> user), or 'both' (default).", "options": ["input", "output", "both"], "required": false, "type": "select"},
-            "presidio_language": {"default_value": "en", "description": "Language code for Presidio PII analysis (e.g., 'en', 'de', 'es', 'fr')", "required": false, "type": "string"},
-            "presidio_run_on": {"description": "Where to apply Presidio checks: input, output, or both (default).", "options": ["input", "output", "both"], "required": false, "type": "select"},
-        })
-    );
+    let expected: Value = serde_json::from_str(include_str!("fixtures/core-table-presidio.json"))
+        .expect("the expected form dictionary is JSON");
+    assert_eq!(projected_table("presidio"), expected);
 }
 
 #[test]
 fn core_table_lakera_v2_projects_like_litellm() {
-    assert_eq!(
-        projected_table("lakera_v2"),
-        json!({
-            "advisory_system_message": {"description": "Custom advisory message template used when on_flagged='inject_system_message'. Must contain a {reason} placeholder. Defaults to a generic advisory message if unset.", "required": false, "type": "string"},
-            "api_base": {"description": "Base URL for the Lakera AI API", "required": false, "type": "string"},
-            "api_key": {"description": "API key for the Lakera AI service", "required": false, "type": "string"},
-            "breakdown": {"default_value": true, "description": "Whether to include breakdown in the response", "required": false, "type": "boolean"},
-            "dev_info": {"default_value": true, "description": "Whether to include developer information in the response", "required": false, "type": "boolean"},
-            "metadata": {"description": "Additional metadata to include in the request", "required": false, "type": "object"},
-            "on_flagged": {"default_value": "block", "description": "Action to take when content is flagged: 'block' (raise exception), 'monitor' (log only), or 'inject_system_message' (append an advisory system message and let the LLM decide)", "options": ["block", "monitor", "inject_system_message"], "required": false, "type": "select"},
-            "payload": {"default_value": true, "description": "Whether to include payload in the response", "required": false, "type": "boolean"},
-            "project_id": {"description": "Project ID for the Lakera AI project", "required": false, "type": "string"},
-        })
-    );
+    let expected: Value = serde_json::from_str(include_str!("fixtures/core-table-lakera_v2.json"))
+        .expect("the expected form dictionary is JSON");
+    assert_eq!(projected_table("lakera_v2"), expected);
 }
 
 #[test]
 fn core_table_tool_permission_projects_like_litellm() {
-    assert_eq!(
-        projected_table("tool_permission"),
-        json!({
-            "default_action": {"default_value": "deny", "description": "Fallback decision when no rule matches", "options": ["allow", "deny"], "required": false, "type": "select"},
-            "on_disallowed_action": {"default_value": "block", "description": "Choose whether disallowed tools block the request or get rewritten out of the payload", "options": ["block", "rewrite"], "required": false, "type": "select"},
-            "rules": {"description": "Ordered allow/deny rules. Patterns use regex for tool names/types and optional regex constraints on tool arguments.", "required": false, "type": "array"},
-            "ui_friendly_name": "LiteLLM Tool Permission Guardrail",
-        })
-    );
+    let expected: Value =
+        serde_json::from_str(include_str!("fixtures/core-table-tool_permission.json"))
+            .expect("the expected form dictionary is JSON");
+    assert_eq!(projected_table("tool_permission"), expected);
 }
 
 #[test]
 fn core_table_hide_secrets_projects_like_litellm() {
-    assert_eq!(
-        projected_table("hide-secrets"),
-        json!({
-            "detect_secrets_config": {"description": "Optional detect-secrets configuration (plugins_used, filters_used) overriding the bundled plugin set", "required": false, "type": "object"},
-            "ui_friendly_name": "Hide Secrets",
-        })
-    );
+    let expected: Value =
+        serde_json::from_str(include_str!("fixtures/core-table-hide-secrets.json"))
+            .expect("the expected form dictionary is JSON");
+    assert_eq!(projected_table("hide-secrets"), expected);
 }
 
 #[test]
