@@ -84,20 +84,6 @@ fn expected_value(text: &str) -> Field {
     serde_json::from_str(text).unwrap()
 }
 
-fn verify(scenario: &Scenario, check: &Check) {
-    match check {
-        Check::Supported { marengo_3 } => verify_supported(scenario, *marengo_3),
-        Check::Mapped(expected) => verify_mapped(scenario, expected),
-        Check::Request(expected) => verify_request(scenario, expected),
-        Check::RequestError(tag) => verify_request_error(scenario, tag),
-        Check::Response(expected) => verify_response(scenario, expected),
-        Check::ReplyError => verify_reply_error(scenario),
-        Check::BatchError => verify_batch_error(scenario),
-        Check::Usage(expected) => verify_usage(scenario, expected),
-        Check::Enabled(expected) => verify_enabled(scenario, *expected),
-    }
-}
-
 fn verify_supported(scenario: &Scenario, marengo_3: bool) {
     let supported = supported_openai_params(scenario.model.as_deref());
     let expected: Vec<&str> = if marengo_3 {
@@ -622,7 +608,17 @@ const WRAPPED_VIDEO: &str = r#"{
 )]
 fn marengo_embeddings_cases(#[case] scenario: &str, #[case] check: Check) {
     let parsed: Scenario = serde_json::from_str(scenario).unwrap();
-    verify(&parsed, &check);
+    match check {
+        Check::Supported { marengo_3 } => verify_supported(&parsed, marengo_3),
+        Check::Mapped(expected) => verify_mapped(&parsed, expected),
+        Check::Request(expected) => verify_request(&parsed, expected),
+        Check::RequestError(tag) => verify_request_error(&parsed, tag),
+        Check::Response(expected) => verify_response(&parsed, expected),
+        Check::ReplyError => verify_reply_error(&parsed),
+        Check::BatchError => verify_batch_error(&parsed),
+        Check::Usage(expected) => verify_usage(&parsed, expected),
+        Check::Enabled(expected) => verify_enabled(&parsed, expected),
+    }
 }
 
 #[test]
