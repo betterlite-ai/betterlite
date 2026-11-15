@@ -152,10 +152,10 @@ pub(super) fn run(settings: &Settings, goals: &[Goal], reply: &Reply) -> HelperR
             "detail": {"error": error.to_string()},
         }),
     };
-    let seen = seen.lock().unwrap_or_else(PoisonError::into_inner);
-    answer["path"] = Value::Array(seen.paths.clone());
-    answer["body"] = Value::Array(seen.bodies.clone());
-    answer["headers"] = Value::Array(seen.headers.clone());
+    let recorded = seen.lock().unwrap_or_else(PoisonError::into_inner);
+    answer["path"] = Value::Array(recorded.paths.clone());
+    answer["body"] = Value::Array(recorded.bodies.clone());
+    answer["headers"] = Value::Array(recorded.headers.clone());
     answer["logs"] = logs.records();
     Ok(answer)
 }

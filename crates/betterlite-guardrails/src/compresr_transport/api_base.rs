@@ -38,11 +38,11 @@ pub fn validate_api_base(url: &str) -> Result<String, CompresrTransportError> {
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(CompresrTransportError::Scheme);
     }
-    let Some(host) = parsed.host_str() else {
+    let Some(raw_host) = parsed.host_str() else {
         return Err(CompresrTransportError::NoHost);
     };
     // host_str keeps the brackets of an IPv6 literal, and LiteLLM lowercases the hostname before matching
-    let host = host
+    let host = raw_host
         .trim_start_matches('[')
         .trim_end_matches(']')
         .to_ascii_lowercase();

@@ -42,28 +42,28 @@ pub(super) fn parse_results(
     body: Option<&str>,
     expected: usize,
 ) -> Result<Vec<CompressionResult>, Failure> {
-    let Some(body) = body else {
+    let Some(text) = body else {
         return Err(Failure {
             message: UNREADABLE,
             detail: safe_response_text(None, SAFE_RESPONSE_TEXT_LIMIT),
         });
     };
-    let Ok(parsed) = serde_json::from_str::<GuardrailValue>(body) else {
+    let Ok(parsed) = serde_json::from_str::<GuardrailValue>(text) else {
         return Err(Failure {
             message: UNREADABLE,
-            detail: safe_response_text(Some(body), SAFE_RESPONSE_TEXT_LIMIT),
+            detail: safe_response_text(Some(text), SAFE_RESPONSE_TEXT_LIMIT),
         });
     };
     let GuardrailValue::Object(fields) = parsed else {
         return Err(Failure {
             message: UNEXPECTED_SHAPE,
-            detail: safe_response_text(Some(body), SAFE_RESPONSE_TEXT_LIMIT),
+            detail: safe_response_text(Some(text), SAFE_RESPONSE_TEXT_LIMIT),
         });
     };
     let Some(GuardrailValue::Object(data)) = fields.get("data") else {
         return Err(Failure {
             message: UNEXPECTED_SHAPE,
-            detail: safe_response_text(Some(body), SAFE_RESPONSE_TEXT_LIMIT),
+            detail: safe_response_text(Some(text), SAFE_RESPONSE_TEXT_LIMIT),
         });
     };
     if expected == 1 {
