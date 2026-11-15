@@ -28,8 +28,8 @@ pub struct AgenticContinuationRun {
     pub error: Option<AgenticFailure>,
 }
 
+// the provider answer carries the whole response object, so only these two fields are read
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AgenticIdentity {
     pub created_at: i64,
     pub status: String,
