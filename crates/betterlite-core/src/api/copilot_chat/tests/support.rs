@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::future::{Future, ready};
 
 use betterlite_config::sections::copilot_chat::Settings;
+use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::{CapabilityPredicates, CapabilityRequest};
 use betterlite_openai::copilot::api_key::error::ApiKeyError;
 use betterlite_openai::copilot::device_auth::error::DeviceAuthError;
