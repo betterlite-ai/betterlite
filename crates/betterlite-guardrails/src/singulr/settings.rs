@@ -54,7 +54,7 @@ impl SingulrSettings {
         let api_base = resolve_text(args.singulr_api_base.as_deref(), environment, API_BASE_ENV)
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         let trimmed = api_base.trim().trim_end_matches('/').to_owned();
-        // urlsplit lowercases the scheme before the first ':'; the text check still holds when the port rejects the base
+        // urlparse lowercases the scheme before the first ':'; the text read also works when urlparse rejects the base
         let scheme_text = trimmed
             .trim_start_matches(|c: char| matches!(c, '\0'..=' '))
             .replace(['\t', '\r', '\n'], "");
