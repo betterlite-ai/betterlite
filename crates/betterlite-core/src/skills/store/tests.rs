@@ -4,8 +4,10 @@ mod postgres;
 mod support;
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_auth::auth_identity::records::Principal;
+use betterlite_context::dynamic_logging_cache::Clock;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::postgres_store::errors::DbError;
@@ -19,6 +21,13 @@ use support::{Effect, SKILL_ID, ScriptedRepository, admin, principal, stored_row
 
 fn store(repository: ScriptedRepository) -> HostedSkillStore<ScriptedRepository> {
     HostedSkillStore::new(repository, support::fixed_ids(), support::fixed_clock()).unwrap()
+}
+
+fn stepping_clock() -> (Clock, Arc<Mutex<f64>>) {
+    let value = Arc::new(Mutex::new(1000.0_f64));
+    let reading = Arc::clone(&value);
+    let clock: Clock = Arc::new(move || *reading.lock().unwrap_or_else(PoisonError::into_inner));
+    (clock, value)
 }
 
 fn anonymous() -> Principal {
@@ -311,6 +320,40 @@ fn get_reads_once_then_serves_the_cache() {
         assert_eq!(
             page_effects(&repository),
             vec![Effect::FindUnique(SKILL_ID.to_owned())]
+        );
+    });
+}
+
+#[test]
+fn get_rereads_the_row_after_sixty_seconds() {
+    support::runtime().block_on(async {
+        let (clock, now) = stepping_clock();
+        let repository = ScriptedRepository::with_row(stored_row("alice"));
+        let store = HostedSkillStore::new(repository.clone(), support::fixed_ids(), clock).unwrap();
+        store
+            .get_skill(SKILL_ID, Some(&principal("alice")))
+            .await
+            .unwrap();
+        *now.lock().unwrap_or_else(PoisonError::into_inner) += 60.0;
+        store
+            .get_skill(SKILL_ID, Some(&principal("alice")))
+            .await
+            .unwrap();
+        assert_eq!(
+            page_effects(&repository),
+            vec![Effect::FindUnique(SKILL_ID.to_owned())]
+        );
+        *now.lock().unwrap_or_else(PoisonError::into_inner) += 1.0;
+        store
+            .get_skill(SKILL_ID, Some(&principal("alice")))
+            .await
+            .unwrap();
+        assert_eq!(
+            page_effects(&repository),
+            vec![
+                Effect::FindUnique(SKILL_ID.to_owned()),
+                Effect::FindUnique(SKILL_ID.to_owned()),
+            ]
         );
     });
 }
