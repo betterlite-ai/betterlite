@@ -110,7 +110,8 @@ def run(input_value: Input) -> JsonValue:
     if content["kind"] == "bytes":
         entries, diagnostics = _parse_bytes(bytes(content["bytes"]))
     else:
-        entries, diagnostics = _parse_bytes(b"\n".join(JSON.dump_json(line) for line in content["lines"]))
+        joined = b"\n".join(JSON.dump_json(line) for line in content["lines"])
+        entries, diagnostics = _parse_bytes(joined)
     if input_value["kind"] == "vertex_usage":
         result = calculate_vertex_ai_batch_cost_and_usage(
             entries, input_value["model_name"], model_info=input_value["model_info"]
