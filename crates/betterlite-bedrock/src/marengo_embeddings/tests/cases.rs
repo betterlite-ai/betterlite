@@ -25,13 +25,13 @@ struct Scenario {
     inference: Params,
     non_default: Params,
     optional: Params,
-    async_invoke_route: bool,
+    async_invoke_route: Option<bool>,
     model_id: Option<String>,
     output_s3_uri: Option<String>,
-    drop_params: bool,
+    drop_params: Option<bool>,
     replies: Vec<Field>,
     batch: Vec<Field>,
-    global_drop_params: bool,
+    global_drop_params: Option<bool>,
     deployment_drop_params: Option<bool>,
 }
 
@@ -52,10 +52,10 @@ fn transform(scenario: &Scenario) -> Result<Field, MarengoEmbeddingsError> {
         model: scenario.model.as_deref(),
         input: &scenario.input,
         inference_params: &scenario.inference,
-        async_invoke_route: scenario.async_invoke_route,
+        async_invoke_route: scenario.async_invoke_route.unwrap_or(false),
         model_id: scenario.model_id.as_deref(),
         output_s3_uri: scenario.output_s3_uri.as_deref(),
-        drop_params: scenario.drop_params,
+        drop_params: scenario.drop_params.unwrap_or(false),
     })?;
     Ok(to_field(&request))
 }
@@ -65,7 +65,8 @@ fn to_field<T: Serialize>(value: &T) -> Field {
 }
 
 fn parse<T: DeserializeOwned>(value: &Field) -> Result<T, String> {
-    serde_json::from_value(serde_json::to_value(value).unwrap()).map_err(|error| error.to_string())
+    let json = serde_json::to_value(value).map_err(|error| error.to_string())?;
+    serde_json::from_value(json).map_err(|error| error.to_string())
 }
 
 fn batch(scenario: &Scenario, request: &Field) -> Result<Vec<MarengoBilledRequest>, String> {
@@ -85,93 +86,113 @@ fn expected_value(text: &str) -> Field {
 
 fn verify(scenario: &Scenario, check: &Check) {
     match check {
-        Check::Supported { marengo_3 } => {
-            let supported = supported_openai_params(scenario.model.as_deref());
-            let expected: Vec<&str> = if *marengo_3 {
-                MARENGO_SHARED_PARAMS.to_vec()
-            } else {
-                MARENGO_SHARED_PARAMS
-                    .iter()
-                    .chain(MARENGO_2_7_ONLY_PARAMS.iter())
-                    .copied()
-                    .collect()
-            };
-            assert_eq!(supported, expected);
-        }
-        Check::Mapped(expected) => {
-            let mapped = map_openai_params(
-                is_marengo_3_model(scenario.model.as_deref()),
-                &scenario.non_default,
-                scenario.optional.clone(),
-            );
-            assert_eq!(to_field(&mapped), expected_value(expected));
-        }
-        Check::Request(expected) => {
-            let built = transform(scenario).unwrap();
-            assert_eq!(built, expected_value(expected));
-        }
-        Check::RequestError(tag) => match transform(scenario) {
-            Ok(built) => panic!("expected {tag}, built {built:?}"),
-            Err(MarengoEmbeddingsError::AsyncRouteRequired { .. }) => {
-                assert_eq!(*tag, "async_route");
-            }
-            Err(MarengoEmbeddingsError::EmptyOutputS3Uri) => assert_eq!(*tag, "empty_output"),
-            Err(MarengoEmbeddingsError::Marengo3(Marengo3Error::Provider { status, .. })) => {
-                assert_eq!(*tag, "marengo3");
-                assert_eq!(status, 400_u16);
-            }
-            Err(MarengoEmbeddingsError::Marengo3(Marengo3Error::Header(_))) => {
-                panic!("unexpected header error")
-            }
-            Err(MarengoEmbeddingsError::Parameters { .. }) => assert_eq!(*tag, "parameters"),
-            Err(MarengoEmbeddingsError::UsageOverflow) => panic!("usage overflow"),
-            Err(MarengoEmbeddingsError::VectorValue) => panic!("vector value error"),
-        },
-        Check::Response(expected) => {
-            let request = transform(scenario).unwrap();
-            let response = if async_branch(scenario) {
-                let reply: Params = parse(&scenario.replies[0]).unwrap();
-                transform_async_response(&reply, scenario.model.as_deref().unwrap_or_default())
-            } else {
-                let parsed_batch = batch(scenario, &request).unwrap();
-                let parsed = responses(scenario).unwrap();
-                transform_response(
-                    &parsed,
-                    scenario.model.as_deref().unwrap_or_default(),
-                    Some(&parsed_batch),
-                )
-                .unwrap()
-            };
-            assert_eq!(to_field(&response), expected_value(expected));
-        }
-        Check::ReplyError => {
-            let request = transform(scenario).unwrap();
-            let parsed_batch = batch(scenario, &request).unwrap();
-            let parsed = responses(scenario).unwrap();
-            assert!(transform_response(&parsed, "", Some(&parsed_batch)).is_err());
-        }
-        Check::BatchError => {
-            let request = transform(scenario).unwrap();
-            assert!(batch(scenario, &request).is_err());
-        }
-        Check::Usage(expected) => {
-            let request = transform(scenario).unwrap();
-            let parsed_batch = batch(scenario, &request).unwrap();
-            let usage = billed_usage(Some(&parsed_batch)).unwrap();
-            assert_eq!(to_field(&usage), expected_value(expected));
-        }
-        Check::Enabled(expected) => {
-            let policy = DropPolicy {
-                drop_params: scenario.deployment_drop_params,
-                litellm_drop_params: scenario.global_drop_params,
-            };
-            assert_eq!(drop_params_enabled(policy), *expected);
-        }
+        Check::Supported { marengo_3 } => verify_supported(scenario, *marengo_3),
+        Check::Mapped(expected) => verify_mapped(scenario, expected),
+        Check::Request(expected) => verify_request(scenario, expected),
+        Check::RequestError(tag) => verify_request_error(scenario, tag),
+        Check::Response(expected) => verify_response(scenario, expected),
+        Check::ReplyError => verify_reply_error(scenario),
+        Check::BatchError => verify_batch_error(scenario),
+        Check::Usage(expected) => verify_usage(scenario, expected),
+        Check::Enabled(expected) => verify_enabled(scenario, *expected),
     }
 }
 
+fn verify_supported(scenario: &Scenario, marengo_3: bool) {
+    let supported = supported_openai_params(scenario.model.as_deref());
+    let expected: Vec<&str> = if marengo_3 {
+        MARENGO_SHARED_PARAMS.to_vec()
+    } else {
+        MARENGO_SHARED_PARAMS
+            .iter()
+            .chain(MARENGO_2_7_ONLY_PARAMS.iter())
+            .copied()
+            .collect()
+    };
+    assert_eq!(supported, expected);
+}
+
+fn verify_mapped(scenario: &Scenario, expected: &str) {
+    let mapped = map_openai_params(
+        is_marengo_3_model(scenario.model.as_deref()),
+        &scenario.non_default,
+        scenario.optional.clone(),
+    );
+    assert_eq!(to_field(&mapped), expected_value(expected));
+}
+
+fn verify_request(scenario: &Scenario, expected: &str) {
+    let built = transform(scenario).unwrap();
+    assert_eq!(built, expected_value(expected));
+}
+
+fn verify_request_error(scenario: &Scenario, tag: &str) {
+    match transform(scenario) {
+        Ok(built) => panic!("expected {tag}, built {built:?}"),
+        Err(MarengoEmbeddingsError::AsyncRouteRequired { .. }) => assert_eq!(tag, "async_route"),
+        Err(MarengoEmbeddingsError::EmptyOutputS3Uri) => assert_eq!(tag, "empty_output"),
+        Err(MarengoEmbeddingsError::Marengo3(Marengo3Error::Provider { status, .. })) => {
+            assert_eq!(tag, "marengo3");
+            assert_eq!(status, 400_u16);
+        }
+        Err(MarengoEmbeddingsError::Marengo3(Marengo3Error::Header(_))) => {
+            panic!("unexpected header error")
+        }
+        Err(MarengoEmbeddingsError::Parameters { .. }) => assert_eq!(tag, "parameters"),
+        Err(MarengoEmbeddingsError::UsageOverflow) => panic!("usage overflow"),
+        Err(MarengoEmbeddingsError::VectorValue) => panic!("vector value error"),
+    }
+}
+
+fn verify_response(scenario: &Scenario, expected: &str) {
+    let request = transform(scenario).unwrap();
+    let response = if async_branch(scenario) {
+        let reply: Params = parse(&scenario.replies[0]).unwrap();
+        transform_async_response(&reply, scenario.model.as_deref().unwrap_or_default())
+    } else {
+        let parsed_batch = batch(scenario, &request).unwrap();
+        let parsed = responses(scenario).unwrap();
+        transform_response(
+            &parsed,
+            scenario.model.as_deref().unwrap_or_default(),
+            Some(&parsed_batch),
+        )
+        .unwrap()
+    };
+    assert_eq!(to_field(&response), expected_value(expected));
+}
+
+fn verify_reply_error(scenario: &Scenario) {
+    let request = transform(scenario).unwrap();
+    let parsed_batch = batch(scenario, &request).unwrap();
+    let parsed = responses(scenario).unwrap();
+    let error = transform_response(&parsed, "", Some(&parsed_batch)).unwrap_err();
+    assert!(matches!(error, MarengoEmbeddingsError::VectorValue));
+}
+
+fn verify_batch_error(scenario: &Scenario) {
+    let request = transform(scenario).unwrap();
+    let error = batch(scenario, &request).unwrap_err();
+    assert!(!error.is_empty());
+}
+
+fn verify_usage(scenario: &Scenario, expected: &str) {
+    let request = transform(scenario).unwrap();
+    let parsed_batch = batch(scenario, &request).unwrap();
+    let usage = billed_usage(Some(&parsed_batch)).unwrap();
+    assert_eq!(to_field(&usage), expected_value(expected));
+}
+
+fn verify_enabled(scenario: &Scenario, expected: bool) {
+    let policy = DropPolicy {
+        drop_params: scenario.deployment_drop_params,
+        litellm_drop_params: scenario.global_drop_params.unwrap_or(false),
+    };
+    assert_eq!(drop_params_enabled(policy), expected);
+}
+
 fn async_branch(scenario: &Scenario) -> bool {
-    scenario.async_invoke_route
+    scenario.async_invoke_route.unwrap_or(false)
         && scenario.replies.len() == 1
         && matches!(&scenario.replies[0], Field::Mapping(entries) if entries.contains_key("invocationArn"))
 }
@@ -575,9 +596,33 @@ const WRAPPED_VIDEO: &str = r#"{
         "invocation_arn": null
     }"#)
 )]
+#[case::marengo_s3_video_owner(
+    r#"{
+        "model": "amazon.marengo-embed-3-0-v1:0",
+        "input": "s3://bucket/clip.mp4",
+        "inference": {"inputType": "video", "bucketOwner": "123456789012"}
+    }"#,
+    Check::RequestError("async_route")
+)]
+#[case::marengo_async_output_wrapper(
+    r#"{"input": "hello", "async_invoke_route": true, "model_id": "a/async_invoke/b", "output_s3_uri": "s3://out"}"#,
+    Check::Request(r#"{
+        "modelId": "a/async_invoke/b",
+        "modelInput": {"inputType": "text", "inputText": "hello", "textTruncate": "end"},
+        "outputDataConfig": {"s3OutputDataConfig": {"s3Uri": "s3://out"}}
+    }"#)
+)]
+#[case::marengo_billed_units(
+    r#"{"input": "one", "batch": [{"inputType": "multi_input"}]}"#,
+    Check::Usage(r#"{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "prompt_tokens_details": null}"#)
+)]
+#[case::marengo_billed_units(
+    r#"{"input": "one", "batch": [{"inputType": "multi_input", "multi_input": {"mediaSources": [{}]}}]}"#,
+    Check::Usage(r#"{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "prompt_tokens_details": {"query_count": null, "image_count": 1}}"#)
+)]
 fn marengo_embeddings_cases(#[case] scenario: &str, #[case] check: Check) {
-    let scenario: Scenario = serde_json::from_str(scenario).unwrap();
-    verify(&scenario, &check);
+    let parsed: Scenario = serde_json::from_str(scenario).unwrap();
+    verify(&parsed, &check);
 }
 
 #[test]
