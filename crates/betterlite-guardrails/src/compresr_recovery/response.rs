@@ -61,7 +61,11 @@ impl ModelResponse {
 fn items(value: &JsonValue) -> &[JsonValue] {
     match value {
         JsonValue::Array(found) => found,
-        _ => &[],
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Object(_) => &[],
     }
 }
 

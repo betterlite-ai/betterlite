@@ -13,8 +13,8 @@ pub(super) fn caller_scope(kwargs: &JsonMap) -> String {
     let params = kwargs
         .get(LITELLM_PARAMS_KEY)
         .and_then(|raw| serde_json::from_str::<JsonMap>(raw.get()).ok());
-    for container in [params.as_ref(), Some(kwargs)] {
-        let Some(container) = container else {
+    for candidate in [params.as_ref(), Some(kwargs)] {
+        let Some(container) = candidate else {
             continue;
         };
         for metadata_key in METADATA_KEYS {

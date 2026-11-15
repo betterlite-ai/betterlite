@@ -12,7 +12,7 @@ pub const MAX_RETRIEVALS_PER_LOOP: usize = 8;
 const LIMIT_NOTICE: &str = "[compresr: retrieval limit reached for this turn]";
 const REPEAT_NOTICE: &str = "[compresr: already retrieved above for this hash]";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Retrieved {
     pub call: RetrieveCall,
     pub content: String,
