@@ -33,6 +33,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::runtime::Runtime;
 use tokio::time::timeout;
 use uuid::Uuid;
 
@@ -702,50 +703,51 @@ async fn an_async_fake_stream_is_dropped_and_reads_lines() {
     );
 }
 
+// the logging env holds sinks that are not Sync, so the exchange runs on a runtime the sync test blocks on
 #[rstest]
 #[case::rejected(201)]
 #[case::accepted(200)]
-#[tokio::test]
-async fn a_sync_stream_requires_exactly_200_and_logs_the_first_response(#[case] status: u16) {
+fn a_sync_stream_requires_exactly_200_and_logs_the_first_response(#[case] status: u16) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let mut call = Call::new(Mode::Sync);
-    call.api_base = Some(base(&listener));
-    call.options.insert("stream".to_owned(), Json::Bool(true));
-    let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
-        tokio::join!(serve(&listener, status, LINES.as_bytes()), async {
-            let plan = plan(&call, &mut state, &env);
-            let answer = send_chat(&client(), &plan).await?;
-            finish_chat(&plan, answer, &mut state, &env)
-        })
-    })
-    .await
-    .unwrap();
-    if status == 201 {
-        let Err(CompatibleChatError::OpenAiLike(error)) = answer else {
-            panic!("a 201 is the status error");
+    Runtime::new().unwrap().block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut call = Call::new(Mode::Sync);
+        call.api_base = Some(base(&listener));
+        call.options.insert("stream".to_owned(), Json::Bool(true));
+        let exchange = async {
+            tokio::join!(serve(&listener, status, LINES.as_bytes()), async {
+                let plan = plan(&call, &mut state, &env);
+                let answer = send_chat(&client(), &plan).await?;
+                finish_chat(&plan, answer, &mut state, &env)
+            })
         };
-        assert_eq!(error.status_code, 201);
-        assert_eq!(
-            state.model_call_details.get("log_event_type"),
-            Some(&Json::Text(String::from("pre_api_call")))
-        );
-        return;
-    }
-    let CompatibleChatOutcome::Stream(stream) = answer.unwrap() else {
-        panic!("the line stream");
-    };
-    let CompatibleChatStream::Lines(mut lines) = *stream else {
-        panic!("the line stream");
-    };
-    assert_eq!(lines.next().await.unwrap().unwrap().text, "hi");
-    assert!(lines.next().await.unwrap().unwrap().text.is_empty());
-    assert!(lines.next().await.is_none());
-    assert_eq!(
-        state.model_call_details.get("original_response"),
-        Some(&Json::Text(String::from("first stream response received")))
-    );
+        let (_, answer) = timeout(EXCHANGE_TIMEOUT, exchange).await.unwrap();
+        if status == 201 {
+            let Err(CompatibleChatError::OpenAiLike(error)) = answer else {
+                panic!("a 201 is the status error");
+            };
+            assert_eq!(error.status_code, 201);
+            assert_eq!(
+                state.model_call_details.get("log_event_type"),
+                Some(&Json::Text(String::from("pre_api_call")))
+            );
+        } else {
+            let CompatibleChatOutcome::Stream(stream) = answer.unwrap() else {
+                panic!("the line stream");
+            };
+            let CompatibleChatStream::Lines(mut lines) = *stream else {
+                panic!("the line stream");
+            };
+            assert_eq!(lines.next().await.unwrap().unwrap().text, "hi");
+            assert!(lines.next().await.unwrap().unwrap().text.is_empty());
+            assert!(lines.next().await.is_none());
+            assert_eq!(
+                state.model_call_details.get("original_response"),
+                Some(&Json::Text(String::from("first stream response received")))
+            );
+        }
+    });
 }
 
 #[tokio::test]
