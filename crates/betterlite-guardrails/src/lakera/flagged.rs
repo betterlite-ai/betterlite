@@ -11,13 +11,13 @@ impl LegacyLakeraModeration {
         &self,
         response: &LakeraModerationResponse,
     ) -> Option<LakeraRejection> {
-        let result = response.results.as_ref()?.first()?;
+        let result = response.results.as_ref()?.as_ref()?.first()?;
         let Some(thresholds) = self.category_thresholds else {
-            return (result.flagged == Some(true))
+            return matches!(result.flagged, Some(Some(true)))
                 .then(|| LakeraRejection::new(LakeraViolation::ContentSafetyPolicy, response));
         };
         // with thresholds configured, a response that carries no scores passes even when it is flagged
-        let scores = result.category_scores.as_ref()?;
+        let scores = result.category_scores.as_ref()?.as_ref()?;
         violation_of(scores, thresholds).map(|violation| LakeraRejection::new(violation, response))
     }
 }
@@ -26,10 +26,13 @@ fn violation_of(
     scores: &CategoryScores,
     thresholds: LakeraCategoryThresholds,
 ) -> Option<LakeraViolation> {
-    if exceeds(scores.jailbreak, thresholds.jailbreak) {
+    if exceeds(scores.jailbreak.flatten(), thresholds.jailbreak) {
         return Some(LakeraViolation::Jailbreak);
     }
-    if exceeds(scores.prompt_injection, thresholds.prompt_injection) {
+    if exceeds(
+        scores.prompt_injection.flatten(),
+        thresholds.prompt_injection,
+    ) {
         return Some(LakeraViolation::PromptInjection);
     }
     None
