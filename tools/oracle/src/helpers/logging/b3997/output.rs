@@ -49,8 +49,8 @@ pub(super) fn project_payload(value: Value) -> Value {
         Value::Object(fields) if fields.contains_key("id") && fields.contains_key("trace_id") => {
             let mut kept = Map::new();
             for key in KEPT_KEYS {
-                let value = fields.get(key).cloned().unwrap_or(Value::Null);
-                kept.insert(key.to_owned(), value);
+                let field_value = fields.get(key).cloned().unwrap_or(Value::Null);
+                kept.insert(key.to_owned(), field_value);
             }
             Value::Object(kept)
         }

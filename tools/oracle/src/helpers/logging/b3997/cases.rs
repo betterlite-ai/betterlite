@@ -35,10 +35,10 @@ pub(super) async fn initialize_case(input: &super::Input) -> HelperResult {
 }
 
 async fn download_value(session: &Session, object_name: Option<&str>) -> Value {
-    let Some(object_name) = object_name else {
+    let Some(object) = object_name else {
         return Value::Null;
     };
-    let body = download_gcs_object(&session.base, object_name, &GcsLoggingKwargs::default()).await;
+    let body = download_gcs_object(&session.base, object, &GcsLoggingKwargs::default()).await;
     download_json(session, body.as_deref())
 }
 
@@ -90,10 +90,12 @@ pub(super) async fn upload_case(input: &super::Input) -> HelperResult {
 }
 
 async fn send_upload(session: &Session, input: &super::Input) -> Result<Json, Box<HelperError>> {
-    let bucket = input.bucket.as_deref();
-    let bucket = bucket.ok_or_else(|| failure("ValueError", "bucket"))?;
-    let object_name = input.object_name.as_deref();
-    let object_name = object_name.ok_or_else(|| failure("ValueError", "object_name"))?;
+    let bucket = input
+        .bucket
+        .as_deref()
+        .ok_or_else(|| failure("ValueError", "bucket"))?;
+    let object = input.object_name.as_deref();
+    let object_name = object.ok_or_else(|| failure("ValueError", "object_name"))?;
     let payload = logging_payload(input.payload.as_ref())?;
     let headers = RequestHeaders::new();
     let sent = log_json_data_on_gcs(&session.base, &headers, bucket, object_name, &payload);
@@ -232,7 +234,7 @@ fn logging_payload(value: Option<&Value>) -> Result<GcsLoggingPayload, Box<Helpe
     match value {
         None => Err(failure("ValueError", "payload is required")),
         Some(Value::String(text)) => Ok(GcsLoggingPayload::Text(text.clone())),
-        Some(value) => serde_json::from_value::<StandardLoggingPayload>(value.clone())
+        Some(inner) => serde_json::from_value::<StandardLoggingPayload>(inner.clone())
             .map(|payload| GcsLoggingPayload::Standard(Box::new(payload)))
             .map_err(|error| failure("ValueError", error)),
     }
