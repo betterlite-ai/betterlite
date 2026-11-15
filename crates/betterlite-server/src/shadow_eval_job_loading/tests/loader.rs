@@ -105,6 +105,29 @@ async fn shadow_eval_job_loading_serves_the_second_read_from_the_cache() {
 }
 
 #[tokio::test]
+async fn shadow_eval_job_loading_keeps_cached_costs_exact() {
+    let mut row = job_row("forward", None);
+    let max_budget = Decimal::new(100_000_000_000_000_005, 18);
+    let spend = Decimal::new(1_000_000_000_000_000_051, 19);
+    row.max_budget = Some(max_budget);
+    let tables = fake_tables(vec![row]);
+    tables.state.lock().unwrap().stats = vec![JobAttemptStats {
+        job_id: "job-1".to_owned(),
+        attempts: 2,
+        spend,
+    }];
+    let loader = make_loader(tables);
+    let first = loader.active_jobs(now()).await;
+    let second = loader.active_jobs(now()).await;
+    let group = ("key".to_owned(), "key-1".to_owned());
+    let cached = second.jobs.get(&group).unwrap();
+    assert!(!second.refilled);
+    assert_eq!(first.jobs.get(&group).unwrap()[0].spend, spend);
+    assert_eq!(cached[0].spend, spend);
+    assert_eq!(cached[0].max_budget, Some(max_budget));
+}
+
+#[tokio::test]
 async fn shadow_eval_job_loading_refills_after_the_ten_second_ttl() {
     let clock = Arc::new(Mutex::new(0.0_f64));
     let tables = Arc::new(fake_tables(vec![job_row("forward", None)]));

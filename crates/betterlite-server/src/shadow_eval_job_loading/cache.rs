@@ -32,6 +32,8 @@ pub enum JobsCacheError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the cached active jobs entry holds no text")]
+    UnexpectedEntry,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -84,14 +86,20 @@ fn encode_jobs(jobs: &ActiveJobs) -> Result<CacheValue, JobsCacheError> {
             jobs: entries.clone(),
         })
         .collect();
-    let bytes = serde_json::to_vec(&groups).map_err(|source| JobsCacheError::Encode { source })?;
-    serde_json::from_slice(&bytes).map_err(|source| JobsCacheError::Decode { source })
+    let text =
+        serde_json::to_string(&groups).map_err(|source| JobsCacheError::Encode { source })?;
+    // the cache decodes stored text as JSON, so the JSON text itself is stored as a JSON string
+    serde_json::to_string(&text)
+        .map(CacheValue::Text)
+        .map_err(|source| JobsCacheError::Encode { source })
 }
 
 fn decode_jobs(value: &CacheValue) -> Result<ActiveJobs, JobsCacheError> {
-    let bytes = serde_json::to_vec(value).map_err(|source| JobsCacheError::Encode { source })?;
+    let CacheValue::Text(text) = value else {
+        return Err(JobsCacheError::UnexpectedEntry);
+    };
     let groups: Vec<JobGroup> =
-        serde_json::from_slice(&bytes).map_err(|source| JobsCacheError::Decode { source })?;
+        serde_json::from_str(text).map_err(|source| JobsCacheError::Decode { source })?;
     Ok(groups
         .into_iter()
         .map(|group| ((group.target_type, group.target_id), group.jobs))
