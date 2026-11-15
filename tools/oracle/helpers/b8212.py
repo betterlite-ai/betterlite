@@ -1,5 +1,5 @@
 import asyncio
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Protocol, TypedDict, cast
 
 import httpx
 from litellm.proxy.guardrails.guardrail_hooks.qohash.qohash import QostodianNexus
@@ -100,7 +100,7 @@ def run(input_value: Input) -> Output:
         extra_headers=settings["extra_headers"],
     )
     real.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(recorder))
-    guardrail: Nexus = real
+    guardrail = cast(Nexus, real)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qohash/qohash.py#L49-L70
     result = asyncio.run(
         guardrail.apply_guardrail(
             inputs=Inputs(texts=texts), request_data=request_data, input_type=input_type
