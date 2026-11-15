@@ -1,0 +1,1 @@
+{"id":"chatcmpl-1","created":17,"model":"m","choices":[{"index":0,"delta":{"reasoning":"why","content":"hi"}}],"usage":{"prompt_tokens":3,"total_tokens":4}}

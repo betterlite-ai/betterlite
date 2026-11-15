@@ -1,0 +1,19 @@
+kind: helper
+name: agent-entra-scope
+call:
+  foundry_credentials:
+    agent_headers:
+      - params: {tenant_id: tenant, client_id: client, client_secret: secret}
+      - params: {tenant_id: tenant, client_id: client, client_secret: secret, azure_scope: https://custom/.default}
+      - params: {client_id: client, azure_username: user, azure_password: password}
+      - params: {azure_ad_token: oidc/assertion, tenant_id: tenant, client_id: client}
+      - params: {azure_ad_token: static-token}
+      - params: {}
+      - params: {tenant_id: tenant, client_id: client, client_secret: secret}
+        environment: {TENANT: tenant-env, CLIENT: client-env, SECRET: secret-env, SCOPE: https://env/.default}
+      - params: {tenant_id: os.environ/TENANT, client_id: os.environ/CLIENT, client_secret: os.environ/SECRET, azure_scope: os.environ/SCOPE}
+        environment: {TENANT: tenant-env, CLIENT: client-env, SECRET: secret-env, SCOPE: https://env/.default}
+      - params: {azure_ad_token: oidc/assertion, tenant_id: tenant}
+      - params: {tenant_id: tenant, client_id: client}
+env: {}
+compare: {ignore: []}
