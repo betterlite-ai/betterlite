@@ -1,5 +1,5 @@
 use betterlite_db::auxiliary_repository::repository::TableError;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -29,11 +29,11 @@ pub struct MCPToolset {
     #[serde(default)]
     pub tools: Vec<MCPToolsetTool>,
     #[serde(default)]
-    pub created_at: Option<NaiveDateTime>,
+    pub created_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub created_by: Option<String>,
     #[serde(default)]
-    pub updated_at: Option<NaiveDateTime>,
+    pub updated_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub updated_by: Option<String>,
 }
@@ -68,19 +68,19 @@ pub enum MCPToolsetStorageError {
     Tools(#[source] serde_json::Error),
 }
 
-pub async fn create_mcp_toolset<T>(
+pub type ToolsetLookup = Result<Option<MCPToolset>, MCPToolsetStorageError>;
+
+pub async fn create_mcp_toolset<T: ToolsetTable>(
     table: &T,
     data: &NewMCPToolsetRequest,
     touched_by: &str,
-) -> Result<MCPToolset, MCPToolsetStorageError>
-where
-    T: ToolsetTable,
-{
+) -> Result<MCPToolset, MCPToolsetStorageError> {
+    let tools = serde_json::to_string(&data.tools).map_err(MCPToolsetStorageError::Tools)?;
     let row = ToolsetRow {
         toolset_id: Uuid::new_v4().to_string(),
         toolset_name: data.toolset_name.clone(),
         description: data.description.clone(),
-        tools: Some(serde_json::to_string(&data.tools).map_err(MCPToolsetStorageError::Tools)?),
+        tools: Some(tools),
         created_at: None,
         created_by: Some(touched_by.to_owned()),
         updated_at: None,
@@ -89,13 +89,7 @@ where
     toolset_from_row(table.create(row).await?)
 }
 
-pub async fn get_mcp_toolset<T>(
-    table: &T,
-    toolset_id: &str,
-) -> Result<Option<MCPToolset>, MCPToolsetStorageError>
-where
-    T: ToolsetTable,
-{
+pub async fn get_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) -> ToolsetLookup {
     table
         .find_unique(toolset_id)
         .await?
@@ -103,32 +97,20 @@ where
         .transpose()
 }
 
-pub async fn get_mcp_toolset_by_name<T>(
-    table: &T,
-    toolset_name: &str,
-) -> Result<Option<MCPToolset>, MCPToolsetStorageError>
-where
-    T: ToolsetTable,
-{
+pub async fn get_mcp_toolset_by_name<T: ToolsetTable>(table: &T, name: &str) -> ToolsetLookup {
     table
-        .find_first_by_name(toolset_name)
+        .find_first_by_name(name)
         .await?
         .map(toolset_from_row)
         .transpose()
 }
 
-pub async fn list_mcp_toolsets<T>(
+pub async fn list_mcp_toolsets<T: ToolsetTable>(
     table: &T,
     toolset_ids: Option<&[String]>,
     use_writer: bool,
-) -> Result<Vec<MCPToolset>, MCPToolsetStorageError>
-where
-    T: ToolsetTable,
-{
-    let filter = match toolset_ids {
-        Some(ids) => ToolsetFilter::Ids(ids.to_vec()),
-        None => ToolsetFilter::All,
-    };
+) -> Result<Vec<MCPToolset>, MCPToolsetStorageError> {
+    let filter = toolset_ids.map_or(ToolsetFilter::All, |ids| ToolsetFilter::Ids(ids.to_vec()));
     match listed_toolsets(table, filter, use_writer).await {
         Ok(toolsets) => Ok(toolsets),
         Err(error) if !use_writer => {
@@ -139,14 +121,11 @@ where
     }
 }
 
-async fn listed_toolsets<T>(
+async fn listed_toolsets<T: ToolsetTable>(
     table: &T,
     filter: ToolsetFilter,
     use_writer: bool,
-) -> Result<Vec<MCPToolset>, MCPToolsetStorageError>
-where
-    T: ToolsetTable,
-{
+) -> Result<Vec<MCPToolset>, MCPToolsetStorageError> {
     table
         .find_many(filter, use_writer)
         .await?
@@ -155,45 +134,27 @@ where
         .collect()
 }
 
-pub async fn update_mcp_toolset<T>(
+pub async fn update_mcp_toolset<T: ToolsetTable>(
     table: &T,
     data: &UpdateMCPToolsetRequest,
     touched_by: &str,
-) -> Result<Option<MCPToolset>, MCPToolsetStorageError>
-where
-    T: ToolsetTable,
-{
-    let update = ToolsetUpdate {
-        toolset_name: match &data.toolset_name {
-            Patch::Set(name) => Some(name.clone()),
-            Patch::Keep | Patch::Clear => None,
-        },
-        description: data.description.clone(),
-        tools: match &data.tools {
-            Patch::Set(tools) => {
-                Some(serde_json::to_string(tools).map_err(MCPToolsetStorageError::Tools)?)
-            }
-            Patch::Keep | Patch::Clear => None,
-        },
-        updated_by: touched_by.to_owned(),
-    };
-    table
-        .update(&data.toolset_id, update)
-        .await?
-        .map(toolset_from_row)
-        .transpose()
+) -> Result<Option<MCPToolset>, MCPToolsetStorageError> {
+    let update = ToolsetUpdate::from_request(data, touched_by)?;
+    let stored = table.update(&data.toolset_id, update).await?;
+    optional_toolset(stored)
 }
 
-pub async fn delete_mcp_toolset<T>(
-    table: &T,
-    toolset_id: &str,
-) -> Result<Option<MCPToolset>, MCPToolsetStorageError>
-where
-    T: ToolsetTable,
-{
+pub async fn delete_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) -> ToolsetLookup {
     table
         .delete(toolset_id)
         .await?
         .map(toolset_from_row)
         .transpose()
+}
+
+fn optional_toolset(row: Option<ToolsetRow>) -> ToolsetLookup {
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    toolset_from_row(row).map(Some)
 }

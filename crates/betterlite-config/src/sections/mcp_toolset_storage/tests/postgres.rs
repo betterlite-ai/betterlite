@@ -259,7 +259,7 @@ async fn postgres_update_keeps_unset_fields_and_clears_the_description() {
     assert_eq!(updated.description, None);
     assert_eq!(updated.updated_by.as_deref(), Some("editor"));
     let pinned = NaiveDateTime::parse_from_str("2020-01-01T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap();
-    assert!(updated.updated_at.unwrap() > pinned);
+    assert!(updated.updated_at.unwrap() > pinned.and_utc());
     let update = format!(r#"{{"toolset_id": "{}", "tools": []}}"#, created.toolset_id);
     let request: UpdateMCPToolsetRequest = serde_json::from_str(&update).unwrap();
     let emptied = update_mcp_toolset(&repository, &request, "editor")

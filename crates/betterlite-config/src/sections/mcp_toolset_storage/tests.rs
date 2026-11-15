@@ -73,6 +73,24 @@ impl FakeTable {
     fn recorded_filters(&self) -> Vec<(Option<Vec<String>>, bool)> {
         self.filters.lock().unwrap().clone()
     }
+
+    fn find_row<F>(&self, matches: F) -> Option<ToolsetRow>
+    where
+        F: Fn(&ToolsetRow) -> bool,
+    {
+        self.rows
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|row| matches(row))
+            .cloned()
+    }
+
+    fn take_row(&self, toolset_id: &str) -> Option<ToolsetRow> {
+        let mut rows = self.rows.lock().unwrap();
+        let index = rows.iter().position(|row| row.toolset_id == toolset_id);
+        index.map(|index| rows.remove(index))
+    }
 }
 
 impl ToolsetTable for FakeTable {
@@ -93,28 +111,14 @@ impl ToolsetTable for FakeTable {
         &self,
         toolset_id: &str,
     ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
-        let found = self
-            .rows
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|row| row.toolset_id == toolset_id)
-            .cloned();
-        ready(Ok(found))
+        ready(Ok(self.find_row(|row| row.toolset_id == toolset_id)))
     }
 
     fn find_first_by_name(
         &self,
         toolset_name: &str,
     ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
-        let found = self
-            .rows
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|row| row.toolset_name == toolset_name)
-            .cloned();
-        ready(Ok(found))
+        ready(Ok(self.find_row(|row| row.toolset_name == toolset_name)))
     }
 
     fn find_many(
@@ -181,15 +185,7 @@ impl ToolsetTable for FakeTable {
         &self,
         toolset_id: &str,
     ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
-        let removed = {
-            let mut rows = self.rows.lock().unwrap();
-            let index = rows.iter().position(|row| row.toolset_id == toolset_id);
-            match index {
-                Some(index) => rows.remove(index),
-                None => None,
-            }
-        };
-        ready(Ok(removed))
+        ready(Ok(self.take_row(toolset_id)))
     }
 }
 
@@ -227,7 +223,7 @@ async fn create_generates_a_uuid_and_stores_the_tools_json() {
     assert_eq!(created.tools, vec![tool("s1", "t1")]);
     assert_eq!(created.created_by.as_deref(), Some("creator"));
     assert_eq!(created.updated_by.as_deref(), Some("creator"));
-    assert_eq!(created.created_at, Some(clock()));
+    assert_eq!(created.created_at, Some(clock().and_utc()));
     assert_eq!(
         uuid::Uuid::parse_str(&created.toolset_id)
             .unwrap()
@@ -363,7 +359,7 @@ async fn update_applies_a_partial_change_to_only_the_set_fields() {
     assert_eq!(updated.description.as_deref(), Some("changed"));
     assert_eq!(updated.tools, vec![tool("s1", "t1")]);
     assert_eq!(updated.updated_by.as_deref(), Some("editor"));
-    assert_eq!(updated.updated_at, Some(clock()));
+    assert_eq!(updated.updated_at, Some(clock().and_utc()));
 }
 
 #[tokio::test]

@@ -38,6 +38,16 @@ impl<'db> MCPToolsetRepository<'db> {
             PrismaTableRepository::new(self.client, Arc::clone(&self.publish), MCPToolsetTable);
         if use_writer { base.with_writer() } else { base }
     }
+
+    async fn lookup(
+        &self,
+        sql: &str,
+        param: &str,
+    ) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
+        let client = self.table(false).access()?.read.session().await?;
+        let found = client.query_opt(sql, &[&param]).await?;
+        found_row(found)
+    }
 }
 
 impl From<DbError> for MCPToolsetStorageError {
@@ -63,30 +73,24 @@ impl ToolsetTable for MCPToolsetRepository<'_> {
             &row.created_by,
             &row.updated_by,
         ];
-        match client.query_opt(CREATE_SQL, &params).await? {
-            Some(stored) => toolset_row(&stored),
-            None => Err(MCPToolsetStorageError::Table(TableError::MissingRow)),
-        }
+        client.query_opt(CREATE_SQL, &params).await?.map_or_else(
+            || Err(MCPToolsetStorageError::Table(TableError::MissingRow)),
+            |stored| toolset_row(&stored),
+        )
     }
 
     async fn find_unique(
         &self,
         toolset_id: &str,
     ) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
-        let client = self.table(false).access()?.read.session().await?;
-        let found = client.query_opt(SELECT_BY_ID_SQL, &[&toolset_id]).await?;
-        found.as_ref().map(toolset_row).transpose()
+        self.lookup(SELECT_BY_ID_SQL, toolset_id).await
     }
 
     async fn find_first_by_name(
         &self,
         toolset_name: &str,
     ) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
-        let client = self.table(false).access()?.read.session().await?;
-        let found = client
-            .query_opt(SELECT_BY_NAME_SQL, &[&toolset_name])
-            .await?;
-        found.as_ref().map(toolset_row).transpose()
+        self.lookup(SELECT_BY_NAME_SQL, toolset_name).await
     }
 
     async fn find_many(
@@ -122,14 +126,20 @@ impl ToolsetTable for MCPToolsetRepository<'_> {
             &update.updated_by,
         ];
         let stored = client.query_opt(UPDATE_SQL, &params).await?;
-        stored.as_ref().map(toolset_row).transpose()
+        found_row(stored)
     }
 
     async fn delete(&self, toolset_id: &str) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
         let client = self.table(false).access()?.write.session().await?;
-        let removed = client.query_opt(DELETE_SQL, &[&toolset_id]).await?;
-        removed.as_ref().map(toolset_row).transpose()
+        found_row(client.query_opt(DELETE_SQL, &[&toolset_id]).await?)
     }
+}
+
+fn found_row(row: Option<Row>) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    toolset_row(&row).map(Some)
 }
 
 fn toolset_row(row: &Row) -> Result<ToolsetRow, MCPToolsetStorageError> {

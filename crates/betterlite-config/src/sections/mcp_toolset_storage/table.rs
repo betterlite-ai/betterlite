@@ -3,7 +3,7 @@ use std::future::Future;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Deserializer};
 
-use super::{MCPToolset, MCPToolsetStorageError, MCPToolsetTool};
+use super::{MCPToolset, MCPToolsetStorageError, MCPToolsetTool, UpdateMCPToolsetRequest};
 
 #[derive(Debug, Clone)]
 pub struct ToolsetRow {
@@ -22,13 +22,6 @@ pub enum ToolsetFilter {
     Ids(Vec<String>),
 }
 
-pub struct ToolsetUpdate {
-    pub toolset_name: Option<String>,
-    pub description: Patch<String>,
-    pub tools: Option<String>,
-    pub updated_by: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Patch<T> {
     #[default]
@@ -37,15 +30,44 @@ pub enum Patch<T> {
     Set(T),
 }
 
+pub struct ToolsetUpdate {
+    pub toolset_name: Option<String>,
+    pub description: Patch<String>,
+    pub tools: Option<String>,
+    pub updated_by: String,
+}
+
+impl ToolsetUpdate {
+    pub fn from_request(
+        data: &UpdateMCPToolsetRequest,
+        touched_by: &str,
+    ) -> Result<Self, MCPToolsetStorageError> {
+        let toolset_name = match &data.toolset_name {
+            Patch::Set(name) => Some(name.clone()),
+            Patch::Keep | Patch::Clear => None,
+        };
+        let tools = match &data.tools {
+            Patch::Set(tools) => {
+                Some(serde_json::to_string(tools).map_err(MCPToolsetStorageError::Tools)?)
+            }
+            Patch::Keep | Patch::Clear => None,
+        };
+        Ok(Self {
+            toolset_name,
+            description: data.description.clone(),
+            tools,
+            updated_by: touched_by.to_owned(),
+        })
+    }
+}
+
 pub fn deserialize_patch<'de, D, T>(deserializer: D) -> Result<Patch<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
 {
-    match Option::<T>::deserialize(deserializer)? {
-        Some(value) => Ok(Patch::Set(value)),
-        None => Ok(Patch::Clear),
-    }
+    Option::<T>::deserialize(deserializer)?
+        .map_or_else(|| Ok(Patch::Clear), |value| Ok(Patch::Set(value)))
 }
 
 pub trait ToolsetTable: Send + Sync {
@@ -93,9 +115,9 @@ pub fn toolset_from_row(row: ToolsetRow) -> Result<MCPToolset, MCPToolsetStorage
         toolset_name: row.toolset_name,
         description: row.description,
         tools,
-        created_at: row.created_at,
+        created_at: row.created_at.as_ref().map(NaiveDateTime::and_utc),
         created_by: row.created_by,
-        updated_at: row.updated_at,
+        updated_at: row.updated_at.as_ref().map(NaiveDateTime::and_utc),
         updated_by: row.updated_by,
     })
 }
