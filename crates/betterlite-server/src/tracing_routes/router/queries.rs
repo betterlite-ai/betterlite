@@ -31,7 +31,7 @@ pub(super) async fn query_traces(
 ) -> Response {
     let access = match query_access(caller, state.receiver.as_ref(), state.master_key.as_ref()) {
         Ok(access) => access,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let Ok(request) = serde_json::from_slice::<TraceQueryRequest>(&body) else {
         let issue = ValidationIssue {
@@ -54,39 +54,40 @@ pub(super) async fn query_traces(
 pub(super) async fn query_help(
     caller: Option<Extension<AuthContext>>,
     State(state): State<TraceRoutesState>,
-) -> Result<Response, Response> {
-    let grant = query_access(caller, state.receiver.as_ref(), state.master_key.as_ref())?;
-    Ok(
-        match grant.store.query_help(&grant.scope, &grant.secret).await {
-            Ok(payload) => raw_json_response(payload),
-            Err(QueryRunError::Unavailable(message)) => {
-                tracing::warn!(error = %message, "trace query help unavailable");
-                let body = DetailBody {
-                    detail: "Trace query help is temporarily unavailable".to_owned(),
-                };
-                (StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response()
-            }
-            Err(QueryRunError::Invalid(_message)) => json_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error",
-                "internal_server_error",
-                "500",
-            ),
-        },
-    )
+) -> Response {
+    let grant = match query_access(caller, state.receiver.as_ref(), state.master_key.as_ref()) {
+        Ok(grant) => grant,
+        Err(response) => return *response,
+    };
+    match grant.store.query_help(&grant.scope, &grant.secret).await {
+        Ok(payload) => raw_json_response(payload),
+        Err(QueryRunError::Unavailable(message)) => {
+            tracing::warn!(error = %message, "trace query help unavailable");
+            let body = DetailBody {
+                detail: "Trace query help is temporarily unavailable".to_owned(),
+            };
+            (StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response()
+        }
+        Err(QueryRunError::Invalid(_message)) => json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error",
+            "internal_server_error",
+            "500",
+        ),
+    }
 }
 
 fn query_access(
     caller: Option<Extension<AuthContext>>,
     receiver: Option<&Arc<dyn TraceRuntime>>,
     master_key: Option<&SecretString>,
-) -> Result<TraceQueryAccess, Response> {
+) -> Result<TraceQueryAccess, Box<Response>> {
     let Some(Extension(context)) = caller else {
-        return Err(unauthenticated());
+        return Err(Box::new(unauthenticated()));
     };
     let auth = TraceAuth::from_principal(&context.principal);
     provide_trace_query_access(&auth, receiver, master_key)
-        .map_err(|error| query_access_failure(&error))
+        .map_err(|error| Box::new(query_access_failure(&error)))
 }
 
 fn raw_json_response(body: String) -> Response {

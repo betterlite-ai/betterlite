@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use axum::Router;
@@ -39,7 +39,6 @@ pub(super) enum IngestAnswer {
     Ok(usize),
     TooLarge(String),
     Invalid(String),
-    Overloaded,
     Storage,
 }
 
@@ -119,11 +118,14 @@ impl FakeQueryStore {
         secret: &SecretString,
         reply: &QueryAnswer,
     ) -> Result<String, QueryRunError> {
-        self.seen.lock().expect("lock").push(SeenQuery {
-            sql,
-            scope: scope.clone(),
-            secret: secret_text(secret),
-        });
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(SeenQuery {
+                sql,
+                scope: scope.clone(),
+                secret: secret_text(secret),
+            });
         match reply {
             QueryAnswer::Ok(result) => Ok(result.clone()),
             QueryAnswer::Invalid(message) => Err(QueryRunError::Invalid(message.clone())),
@@ -232,7 +234,6 @@ impl TraceRuntime for FakeRuntime {
             IngestAnswer::Ok(rows) => Ok(*rows),
             IngestAnswer::TooLarge(message) => Err(IngestError::TooLarge(message.clone())),
             IngestAnswer::Invalid(message) => Err(IngestError::Invalid(message.clone())),
-            IngestAnswer::Overloaded => Err(IngestError::Overloaded),
             IngestAnswer::Storage => Err(IngestError::Storage),
         }
     }
@@ -255,11 +256,11 @@ impl TraceRuntime for FakeRuntime {
 
     async fn get_trace(
         &self,
-        trace: &str,
+        trace_id: &str,
         _scope: &TraceScope,
-        reference: &str,
+        trace_ref: &str,
     ) -> Result<Option<Trace>, TraceReadError> {
-        self.record_trace(trace, reference);
+        self.record_trace(trace_id, trace_ref);
         read_answer(&self.trace)
     }
 
@@ -299,7 +300,7 @@ impl TraceRuntime for FakeRuntime {
     }
 
     fn query_store(&self) -> Arc<dyn TraceQueryStore> {
-        Arc::clone(&self.queries) as Arc<dyn TraceQueryStore>
+        Arc::clone(&self.queries)
     }
 }
 
@@ -349,9 +350,9 @@ pub(super) fn build_request(
             HeaderValue::try_from(*value).expect("header value"),
         );
     }
-    if let Some(principal) = principal {
+    if let Some(identity) = principal {
         request.extensions_mut().insert(AuthContext {
-            principal: principal.clone(),
+            principal: identity.clone(),
         });
     }
     request

@@ -105,10 +105,10 @@ pub fn provide_trace_query_access(
     master_key: Option<&SecretString>,
 ) -> Result<TraceQueryAccess, QueryAccessError> {
     let secret = provide_trace_query_secret(master_key)?;
-    let receiver = receiver.ok_or(QueryAccessError::Unavailable)?;
+    let found = receiver.ok_or(QueryAccessError::Unavailable)?;
     let scope = trace_query_scope(auth)?;
     Ok(TraceQueryAccess {
-        store: receiver.query_store(),
+        store: found.query_store(),
         scope,
         secret,
     })

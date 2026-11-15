@@ -64,7 +64,7 @@ fn viewer() -> Principal {
 }
 
 fn app(runtime: &Arc<FakeRuntime>, master_key: Option<&str>) -> Router {
-    let receiver: Arc<dyn TraceRuntime> = Arc::clone(runtime) as Arc<dyn TraceRuntime>;
+    let receiver: Arc<dyn TraceRuntime> = Arc::clone(runtime);
     application(Some(receiver), master_key)
 }
 
@@ -108,6 +108,28 @@ async fn ingest_success_returns_an_empty_object() {
             org_id: String::new(),
         }
     );
+}
+
+#[tokio::test]
+async fn ingest_passes_the_content_encoding_to_the_receiver() {
+    let runtime = Arc::new(FakeRuntime::new());
+    let headers = [
+        ("content-type", "application/json"),
+        ("content-encoding", "gzip"),
+    ];
+    let answer = send(
+        app(&runtime, None),
+        build_request(Method::POST, "/v1/traces", Some(&admin()), &headers, b"{}"),
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::OK);
+    let seen = runtime
+        .seen_ingest
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("seen");
+    assert_eq!(seen.content_encoding.as_deref(), Some("gzip"));
 }
 
 #[tokio::test]
@@ -173,13 +195,13 @@ async fn ingest_without_a_receiver_is_not_implemented() {
 #[case::invalid(StatusCode::BAD_REQUEST, "ingest invalid")]
 #[tokio::test]
 async fn ingest_failures_keep_their_status(#[case] status: StatusCode, #[case] message: &str) {
-    let mut runtime = FakeRuntime::new();
-    runtime.ingest = if status == StatusCode::PAYLOAD_TOO_LARGE {
+    let mut fake = FakeRuntime::new();
+    fake.ingest = if status == StatusCode::PAYLOAD_TOO_LARGE {
         super::support::IngestAnswer::TooLarge(message.to_owned())
     } else {
         super::support::IngestAnswer::Invalid(message.to_owned())
     };
-    let runtime = Arc::new(runtime);
+    let runtime = Arc::new(fake);
     let answer = post_traces(&runtime, Some(&admin()), "application/json", b"{}").await;
     assert_eq!(answer.status, status);
     assert_eq!(
@@ -190,9 +212,9 @@ async fn ingest_failures_keep_their_status(#[case] status: StatusCode, #[case] m
 
 #[tokio::test]
 async fn ingest_unavailable_is_503_with_retry_after() {
-    let mut runtime = FakeRuntime::new();
-    runtime.ingest = super::support::IngestAnswer::Storage;
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.ingest = super::support::IngestAnswer::Storage;
+    let runtime = Arc::new(fake);
     let answer = post_traces(&runtime, Some(&admin()), "application/json", b"{}").await;
     assert_eq!(answer.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
@@ -207,9 +229,9 @@ async fn ingest_unavailable_is_503_with_retry_after() {
 
 #[tokio::test]
 async fn list_success_returns_the_page() {
-    let mut runtime = FakeRuntime::new();
-    runtime.list = ReadAnswer::Ok(page());
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.list = ReadAnswer::Ok(page());
+    let runtime = Arc::new(fake);
     let answer = send(
         app(&runtime, None),
         build_request(
@@ -311,9 +333,9 @@ async fn list_without_a_receiver_is_not_implemented() {
 
 #[tokio::test]
 async fn list_with_an_invalid_cursor_is_a_bad_request() {
-    let mut runtime = FakeRuntime::new();
-    runtime.list = ReadAnswer::InvalidCursor("Invalid trace cursor".to_owned());
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.list = ReadAnswer::InvalidCursor("Invalid trace cursor".to_owned());
+    let runtime = Arc::new(fake);
     let answer = send(
         app(&runtime, None),
         build_request(Method::GET, "/v1/traces", Some(&admin()), &[], b""),
@@ -346,9 +368,9 @@ async fn list_rejects_a_non_integer_window() {
 
 #[tokio::test]
 async fn list_storage_failure_is_a_shared_error() {
-    let mut runtime = FakeRuntime::new();
-    runtime.list = ReadAnswer::Storage;
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.list = ReadAnswer::Storage;
+    let runtime = Arc::new(fake);
     let answer = send(
         app(&runtime, None),
         build_request(Method::GET, "/v1/traces", Some(&admin()), &[], b""),
@@ -363,9 +385,9 @@ async fn list_storage_failure_is_a_shared_error() {
 
 #[tokio::test]
 async fn get_trace_found_is_200_and_passes_the_ref() {
-    let mut runtime = FakeRuntime::new();
-    runtime.trace = ReadAnswer::Ok(Some(trace()));
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.trace = ReadAnswer::Ok(Some(trace()));
+    let runtime = Arc::new(fake);
     let answer = send(
         app(&runtime, None),
         build_request(
@@ -405,15 +427,15 @@ async fn get_trace_missing_is_404() {
 
 #[tokio::test]
 async fn get_span_found_is_200() {
-    let mut runtime = FakeRuntime::new();
-    runtime.span = ReadAnswer::Ok(Some(span_detail()));
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.span = ReadAnswer::Ok(Some(span_detail()));
+    let runtime = Arc::new(fake);
     let answer = send(
         app(&runtime, None),
         build_request(
             Method::GET,
             "/v1/traces/trace-1/spans/span-1?trace_ref=env-a",
-            Some(&admin()),
+            Some(&team_member()),
             &[],
             b"",
         ),
@@ -430,6 +452,8 @@ async fn get_span_found_is_200() {
     assert_eq!(seen.trace_id, "trace-1");
     assert_eq!(seen.span_id, "span-1");
     assert_eq!(seen.trace_ref, "env-a");
+    assert_eq!(seen.scope.team_ids, vec!["team-1".to_owned()]);
+    assert_eq!(seen.scope.api_key_hash, "");
 }
 
 #[tokio::test]
@@ -452,15 +476,15 @@ async fn get_span_missing_is_404() {
 
 #[tokio::test]
 async fn get_span_error_found_is_200_and_passes_the_cursor() {
-    let mut runtime = FakeRuntime::new();
-    runtime.span_error = ReadAnswer::Ok(Some(span_error_page()));
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.span_error = ReadAnswer::Ok(Some(span_error_page()));
+    let runtime = Arc::new(fake);
     let answer = send(
         app(&runtime, None),
         build_request(
             Method::GET,
             "/v1/traces/trace-1/spans/span-1/error?cursor=abc&trace_ref=env-a",
-            Some(&admin()),
+            Some(&team_member()),
             &[],
             b"",
         ),
@@ -477,6 +501,8 @@ async fn get_span_error_found_is_200_and_passes_the_cursor() {
     assert_eq!(seen.cursor.as_deref(), Some("abc"));
     assert_eq!(seen.trace_ref, "env-a");
     assert_eq!(seen.span_id, "span-1");
+    assert_eq!(seen.trace_id, "trace-1");
+    assert_eq!(seen.scope.team_ids, vec!["team-1".to_owned()]);
 }
 
 #[tokio::test]
@@ -772,9 +798,9 @@ async fn query_help_runtime_failure_is_503() {
         QueryAnswer::Ok("{}".to_owned()),
         QueryAnswer::Unavailable("reader limits".to_owned()),
     ));
-    let mut runtime = FakeRuntime::new();
-    runtime.queries = queries;
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.queries = queries;
+    let runtime = Arc::new(fake);
     let answer = send(
         app(&runtime, Some("sk-master")),
         build_request(
@@ -816,9 +842,9 @@ async fn query_invalid_sql_is_400() {
         QueryAnswer::Invalid("only SELECT is allowed".to_owned()),
         QueryAnswer::Ok("{}".to_owned()),
     ));
-    let mut runtime = FakeRuntime::new();
-    runtime.queries = queries;
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.queries = queries;
+    let runtime = Arc::new(fake);
     let answer = send(
         app(&runtime, Some("sk-master")),
         build_request(
@@ -840,9 +866,9 @@ async fn query_runtime_failure_is_503() {
         QueryAnswer::Unavailable("clickhouse down".to_owned()),
         QueryAnswer::Ok("{}".to_owned()),
     ));
-    let mut runtime = FakeRuntime::new();
-    runtime.queries = queries;
-    let runtime = Arc::new(runtime);
+    let mut fake = FakeRuntime::new();
+    fake.queries = queries;
+    let runtime = Arc::new(fake);
     let answer = send(
         app(&runtime, Some("sk-master")),
         build_request(

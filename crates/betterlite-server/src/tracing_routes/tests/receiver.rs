@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -20,7 +21,7 @@ use super::support::{FakeQueryStore, QueryAnswer, decoded_span, span_row};
 use crate::tracing_routes::access::Tenant;
 use crate::tracing_routes::query::QueryScope;
 use crate::tracing_routes::receiver::{
-    IngestError, ReceiverConfigError, StoreTraceReceiver, TraceReadError, TraceRuntime,
+    IngestError, ReceiverConfigError, StoreTraceReceiver, TraceReadError, TraceRuntime as _,
     TraceSpanSink,
 };
 
@@ -76,15 +77,18 @@ impl FakeStorage {
 impl TraceSpanSink for FakeStorage {
     type Error = SinkError;
 
-    async fn insert_spans(&self, rows: &[SpanRow]) -> Result<(), Self::Error> {
-        match &self.sink {
+    fn insert_spans(
+        &self,
+        rows: &[SpanRow],
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        std::future::ready(match &self.sink {
             SinkMode::Ok => {
                 self.inserted.lock().expect("lock").extend_from_slice(rows);
                 Ok(())
             }
             SinkMode::Overflow(message) => Err(SinkError::Overflow(message.clone())),
             SinkMode::Unavailable => Err(SinkError::Unavailable),
-        }
+        })
     }
 
     fn overflow_message(error: &Self::Error) -> Option<String> {
@@ -98,12 +102,18 @@ impl TraceSpanSink for FakeStorage {
 impl TraceStorage for FakeStorage {
     type Error = StubError;
 
-    async fn list_traces(&self, _query: ListTracesQuery) -> Result<Vec<TraceListRow>, StubError> {
-        self.read_rows()
+    fn list_traces(
+        &self,
+        _query: ListTracesQuery,
+    ) -> impl Future<Output = Result<Vec<TraceListRow>, StubError>> + Send {
+        std::future::ready(self.read_rows())
     }
 
-    async fn trace_spans(&self, _query: TraceSpansQuery) -> Result<Vec<SpanQueryRow>, StubError> {
-        if matches!(self.read, ReadMode::Rows) {
+    fn trace_spans(
+        &self,
+        _query: TraceSpansQuery,
+    ) -> impl Future<Output = Result<Vec<SpanQueryRow>, StubError>> + Send {
+        std::future::ready(if matches!(self.read, ReadMode::Rows) {
             let row = SpanQueryRow {
                 span_id: "span-1".to_owned(),
                 parent_span_id: None,
@@ -124,25 +134,33 @@ impl TraceStorage for FakeStorage {
                 api_key_hash: "hash-1".to_owned(),
                 service: "svc".to_owned(),
             };
-            return Ok(vec![row]);
-        }
-        self.read_rows()
+            Ok(vec![row])
+        } else {
+            self.read_rows()
+        })
     }
 
-    async fn span_detail(&self, _query: SpanDetailQuery) -> Result<Vec<SpanDetailRow>, StubError> {
-        if matches!(self.read, ReadMode::Rows) {
-            return Ok(vec![SpanDetailRow {
+    fn span_detail(
+        &self,
+        _query: SpanDetailQuery,
+    ) -> impl Future<Output = Result<Vec<SpanDetailRow>, StubError>> + Send {
+        std::future::ready(if matches!(self.read, ReadMode::Rows) {
+            Ok(vec![SpanDetailRow {
                 span_id: "span-1".to_owned(),
                 input: "in".to_owned(),
                 output: "out".to_owned(),
                 attributes: IndexMap::new(),
-            }]);
-        }
-        self.read_rows()
+            }])
+        } else {
+            self.read_rows()
+        })
     }
 
-    async fn span_error(&self, _query: SpanErrorQuery) -> Result<Vec<SpanErrorRow>, StubError> {
-        if matches!(self.read, ReadMode::Rows) {
+    fn span_error(
+        &self,
+        _query: SpanErrorQuery,
+    ) -> impl Future<Output = Result<Vec<SpanErrorRow>, StubError>> + Send {
+        std::future::ready(if matches!(self.read, ReadMode::Rows) {
             Ok(vec![SpanErrorRow {
                 span_id: "span-1".to_owned(),
                 message: "boom".to_owned(),
@@ -151,14 +169,14 @@ impl TraceStorage for FakeStorage {
             }])
         } else {
             self.read_rows()
-        }
+        })
     }
 
-    async fn spend_by_request_ids(
+    fn spend_by_request_ids(
         &self,
         _query: SpendByRequestIdsQuery,
-    ) -> Result<Vec<SpendRow>, StubError> {
-        self.read_rows()
+    ) -> impl Future<Output = Result<Vec<SpendRow>, StubError>> + Send {
+        std::future::ready(self.read_rows())
     }
 }
 
@@ -223,8 +241,12 @@ async fn ingest_decodes_stamps_and_inserts() {
     );
     let count = ingest(&receiver, b"{}".to_vec()).await.expect("ingest");
     assert_eq!(count, 1);
-    let inserted = inserted_rows.lock().expect("lock");
-    let row = inserted.first().expect("inserted row");
+    let row = inserted_rows
+        .lock()
+        .expect("lock")
+        .first()
+        .cloned()
+        .expect("inserted row");
     assert_eq!(row.team_id, "team-1");
     assert_eq!(row.api_key_hash, "hash-1");
     assert_eq!(

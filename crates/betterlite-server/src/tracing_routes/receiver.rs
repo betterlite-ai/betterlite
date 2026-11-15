@@ -107,6 +107,8 @@ pub struct StoreTraceReceiver<S, C, Q> {
 impl<S, C, Q> StoreTraceReceiver<S, C, Q>
 where
     S: TraceSpanSink,
+    C: Send + Sync,
+    Q: Send + Sync,
 {
     pub fn new(
         store: TraceStore<S>,
@@ -137,10 +139,10 @@ where
     async fn insert(&self, rows: &[SpanRow]) -> Result<(), IngestError> {
         match self.store.storage.insert_spans(rows).await {
             Ok(()) => Ok(()),
-            Err(error) => match S::overflow_message(&error) {
-                Some(message) => Err(IngestError::TooLarge(message)),
-                None => Err(IngestError::Storage),
-            },
+            Err(error) => S::overflow_message(&error).map_or_else(
+                || Err(IngestError::Storage),
+                |message| Err(IngestError::TooLarge(message)),
+            ),
         }
     }
 }
@@ -222,7 +224,7 @@ where
     }
 
     fn query_store(&self) -> Arc<dyn TraceQueryStore> {
-        Arc::clone(&self.queries) as Arc<dyn TraceQueryStore>
+        Arc::clone(&self.queries)
     }
 }
 
@@ -230,13 +232,13 @@ async fn read_bounded(body: Body) -> Result<Bytes, IngestError> {
     let mut stream = body.into_data_stream();
     let mut collected: Vec<u8> = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(IngestError::BodyRead)?;
-        if collected.len().saturating_add(chunk.len()) > OTLP_MAX_BODY_BYTES {
+        let bytes = chunk.map_err(IngestError::BodyRead)?;
+        if collected.len().saturating_add(bytes.len()) > OTLP_MAX_BODY_BYTES {
             return Err(IngestError::TooLarge(format!(
                 "OTLP body exceeds {OTLP_MAX_BODY_BYTES} bytes"
             )));
         }
-        collected.extend_from_slice(&chunk);
+        collected.extend_from_slice(&bytes);
     }
     Ok(Bytes::from(collected))
 }

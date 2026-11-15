@@ -29,15 +29,15 @@ struct ErrorQuery {
 pub(super) fn reader(
     caller: Option<Extension<AuthContext>>,
     state: &TraceRoutesState,
-) -> Result<(Arc<dyn TraceRuntime>, TraceScope), Response> {
+) -> Result<(Arc<dyn TraceRuntime>, TraceScope), Box<Response>> {
     let Some(Extension(context)) = caller else {
-        return Err(unauthenticated());
+        return Err(Box::new(unauthenticated()));
     };
     let auth = TraceAuth::from_principal(&context.principal);
     let access = provide_trace_access(&auth, state.receiver.clone());
     match access.reader() {
         Ok((receiver, scope)) => Ok((Arc::clone(receiver), scope.clone())),
-        Err(error) => Err(access_failure(&error)),
+        Err(error) => Err(Box::new(access_failure(&error))),
     }
 }
 
@@ -46,21 +46,24 @@ pub(super) async fn get_trace(
     Path(trace_id): Path<String>,
     identity: Option<Extension<AuthContext>>,
     request_uri: Uri,
-) -> Result<Response, Response> {
-    let (receiver, scope) = reader(identity, &app)?;
+) -> Response {
+    let (receiver, scope) = match reader(identity, &app) {
+        Ok(pair) => pair,
+        Err(response) => return *response,
+    };
     match receiver
         .get_trace(&trace_id, &scope, &trace_ref(&request_uri))
         .await
     {
-        Ok(Some(trace)) => Ok(Json(trace).into_response()),
-        Ok(None) => Ok((
+        Ok(Some(trace)) => Json(trace).into_response(),
+        Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(DetailBody {
                 detail: format!("Trace {trace_id} not found"),
             }),
         )
-            .into_response()),
-        Err(error) => Ok(read_failure(&error)),
+            .into_response(),
+        Err(error) => read_failure(&error),
     }
 }
 
@@ -72,7 +75,7 @@ pub(super) async fn get_span(
 ) -> Response {
     let (receiver, scope) = match reader(caller, &state) {
         Ok(pair) => pair,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let reference = trace_ref(&uri);
     match receiver.get_span(&ids.0, &ids.1, &scope, &reference).await {
@@ -107,7 +110,7 @@ pub(super) async fn get_span_error(
     }
     let (receiver, scope) = match reader(caller, &state) {
         Ok(pair) => pair,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let target = SpanErrorTarget {
         trace_id: &trace_id,
@@ -136,7 +139,7 @@ fn trace_ref(uri: &Uri) -> String {
 }
 
 fn cursor_limit(cursor: Option<&str>) -> Option<Response> {
-    if cursor.is_some_and(|cursor| cursor.chars().count() > MAX_CURSOR_CHARS) {
+    if cursor.is_some_and(|value| value.chars().count() > MAX_CURSOR_CHARS) {
         let issue = ValidationIssue {
             kind: "string_too_long",
             loc: vec!["query".to_owned(), "cursor".to_owned()],
