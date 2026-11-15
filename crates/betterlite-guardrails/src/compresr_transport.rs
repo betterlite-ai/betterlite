@@ -23,7 +23,7 @@ mod tests;
 pub const DEFAULT_COMPRESS_TIMEOUT: Duration = Duration::from_secs(60);
 
 // Request-content fields a passthrough compression_params key must never replace
-const RESERVED_COMPRESSION_PARAM_KEYS: [&str; 3] = ["context", "query", "inputs"];
+const RESERVED_COMPRESSION_KEYS: [&str; 3] = ["context", "query", "inputs"];
 const SAFE_RESPONSE_TEXT_LIMIT: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -187,7 +187,7 @@ fn without_reserved_params(
 ) -> BTreeMap<String, GuardrailValue> {
     let reserved: Vec<&str> = params
         .keys()
-        .filter(|key| RESERVED_COMPRESSION_PARAM_KEYS.contains(&key.as_str()))
+        .filter(|key| RESERVED_COMPRESSION_KEYS.contains(&key.as_str()))
         .map(String::as_str)
         .collect();
     if reserved.is_empty() {
@@ -199,7 +199,7 @@ fn without_reserved_params(
     );
     params
         .into_iter()
-        .filter(|(key, _)| !RESERVED_COMPRESSION_PARAM_KEYS.contains(&key.as_str()))
+        .filter(|(key, _)| !RESERVED_COMPRESSION_KEYS.contains(&key.as_str()))
         .collect()
 }
 
