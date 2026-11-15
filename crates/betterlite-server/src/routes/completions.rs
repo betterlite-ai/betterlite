@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Instant, SystemTime};
 
 use async_trait::async_trait;
@@ -20,7 +20,6 @@ use betterlite_core::operation::text_completion::{
 use betterlite_core::operation::{CallResult, Operation};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::text_completion_execution::CompletionExecutor;
-use betterlite_openai::text_completion_execution::catalog::CompletionCatalog;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRequestError};
 use uuid::Uuid;
@@ -47,7 +46,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         state: Arc::clone(state),
         execution: Arc::new(CompletionExecutor {
             client: executor.client.clone(),
-            catalog: CompletionCatalog::bundled(),
+            catalog: OnceLock::new(),
         }),
         dispatch: Arc::new(Dispatch::new(
             executor.deployments.clone(),

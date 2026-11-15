@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use ::http::HeaderMap;
@@ -63,7 +63,7 @@ impl CompletionAnswer {
 
 pub struct CompletionExecutor {
     pub client: ProxiedClient,
-    pub catalog: CompletionCatalog,
+    pub catalog: OnceLock<CompletionCatalog>,
 }
 
 impl CompletionExecutor {
@@ -75,7 +75,8 @@ impl CompletionExecutor {
         redactor: &Redactor,
         logger: &mut (dyn CompletionLogger + Send),
     ) -> Result<CompletionAnswer, CompletionFailure> {
-        let route = route_for(deployment, &self.catalog);
+        let bundled = self.catalog.get_or_init(CompletionCatalog::bundled);
+        let route = route_for(deployment, bundled);
         let CompletionRoute::Text { model } = &route else {
             return Err(CompletionFailure::route(&route));
         };
