@@ -1,0 +1,35 @@
+task: B1327
+deviations:
+  - what: >-
+      The synchronous branch emits sanitized tracing facts (model, host, body size, status) and calls no logging
+      object's pre_call or post_call. LiteLLM hands pre_call the complete input dict and the header map that
+      carries the bearer token.
+    why: >-
+      betterlite's logging pipeline belongs to the dispatch and logging tasks, and these are the same facts B1316
+      emits for the async pair. The header map never reaches a log sink.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2999-L3007
+  - what: >-
+      The context-cache lookup and creation run on the pooled transport with the call timeout as their deadline.
+      LiteLLM hands check_and_create_cache the caller's sync HTTPHandler when one was supplied, or a per-call
+      handler built from the same timeout, so a caller-supplied handler also serves the cache requests.
+    why: >-
+      B1321's CacheCreateRequest carries a deadline rather than a client, and a supplied handler is selected only
+      for the completion or stream request. A handler that carries its own proxy or TLS settings does not reach
+      the cache calls through it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L359-L367
+  - what: >-
+      A caller timeout reaches the shared transport as a total deadline, with the connect phase taken from the
+      pooled client's limits. LiteLLM builds a per-call httpx client whose timeout bounds every phase.
+    why: >-
+      The transport's per-request input carries one deadline, as B1344 records for the embedding handlers. The
+      caller's value is still carried on ClientTimeout and pinned by the ordered-effect tests, and the pooled
+      client's limits belong to the task that installs it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L3032-L3038
+kept_bugs:
+  - what: >-
+      A caller timeout never reaches a streamed Gemini call in either facade, so the streamed request opens with
+      the handler's default timeout. LiteLLM builds sync make_call's partial without a timeout.
+    why: >-
+      A setup that streams for longer than its request timeout relies on the stream not being cut at that value
+      today. Copying the omission keeps the stream bounded by the handler instead of the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L3012-L3023
