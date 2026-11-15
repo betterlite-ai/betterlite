@@ -120,7 +120,7 @@ async fn the_provider_client_bounds_a_poll_with_its_own_read_limit() {
     let (listener, address, client) = local_server(SHORT_READ_LIMIT).await;
     let url = Url::parse(&format!("http://{address}/v1/get_result?id=1")).expect("the URL");
 
-    let (result, ()) = tokio::join!(client.get(url, key_header()), hold_open(listener));
+    let (result, _) = tokio::join!(client.get(url, key_header()), hold_open(listener));
 
     let error = result.expect_err("the read limit ends the poll");
     assert!(matches!(error, TransportError::Deadline(_)));
