@@ -20,8 +20,10 @@ use tracing_subscriber::fmt;
 
 use super::AktoMirroring;
 use super::error::AktoError;
-use super::payload::{AktoInputs, AktoPayload};
-use super::transport::{AktoAnswer, AktoCallFlags, build_query_params, prepare_headers};
+use super::payload::{AktoInputs, AktoPayload, build_akto_payload};
+use super::transport::{
+    AktoAnswer, AktoCallFlags, build_query_params, handle_guardrail_response, prepare_headers,
+};
 
 fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())
@@ -104,9 +106,14 @@ fn decode_double(encoded: &str) -> GuardrailValue {
 
 #[test]
 fn akto_guardrail_payload_double_encodes_request_and_response() {
-    let payload = guardrail_at(fixed_clock)
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, true)
-        .expect("payload");
+    let payload = build_akto_payload(
+        &guardrail_at(fixed_clock),
+        &inputs(),
+        &BTreeMap::new(),
+        200,
+        true,
+    )
+    .expect("payload");
     let fields = payload_fields(&payload);
     assert_eq!(
         decode_double(&string_field(&fields, "requestPayload")),
@@ -144,9 +151,8 @@ fn akto_guardrail_payload_double_encodes_request_and_response() {
 
 #[test]
 fn akto_guardrail_payload_leaves_an_empty_response_without_include_response() {
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &BTreeMap::new(), 200, false).expect("payload");
     let fields = payload_fields(&payload);
     assert_eq!(string_field(&fields, "responsePayload"), "{}");
     assert_eq!(string_field(&fields, "responseHeaders"), "{}");
@@ -189,9 +195,8 @@ fn akto_guardrail_payload_uses_the_route_metadata(
             )]),
         );
     }
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &request_data, 200, false).expect("payload");
     assert_eq!(
         string_field(&payload_fields(&payload), "path"),
         expected.to_owned()
@@ -221,9 +226,8 @@ fn akto_guardrail_payload_extracts_the_client_ip(
         "proxy_server_request".to_owned(),
         object(vec![("headers", GuardrailValue::Object(headers))]),
     )]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &request_data, 200, false).expect("payload");
     assert_eq!(
         string_field(&payload_fields(&payload), "ip"),
         expected.to_owned()
@@ -242,9 +246,8 @@ fn akto_guardrail_payload_builds_tags_from_both_metadata_containers() {
             object(vec![("user_api_key_team_id", text("team-1"))]),
         ),
     ]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &request_data, 200, false).expect("payload");
     let fields = payload_fields(&payload);
     let expected = object(vec![
         ("gen-ai", text("Gen AI")),
@@ -273,9 +276,8 @@ fn akto_guardrail_payload_prefers_litellm_metadata_and_omits_blank_tags() {
             ]),
         ),
     ]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &request_data, 200, false).expect("payload");
     let tag = decode(&string_field(&payload_fields(&payload), "tag"));
     assert_eq!(
         tag,
@@ -296,9 +298,8 @@ fn akto_guardrail_payload_prefers_structured_messages() {
         "messages".to_owned(),
         array(vec![object(vec![("role", text("user"))])]),
     )]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs, &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs, &request_data, 200, false).expect("payload");
     assert_eq!(
         decode_double(&string_field(&payload_fields(&payload), "requestPayload")),
         object(vec![
@@ -320,9 +321,8 @@ fn akto_guardrail_payload_falls_back_to_request_messages_and_model() {
         ),
         ("model".to_owned(), text("request-model")),
     ]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &request_data, 200, false).expect("payload");
     assert_eq!(
         decode_double(&string_field(&payload_fields(&payload), "requestPayload")),
         object(vec![
@@ -348,9 +348,8 @@ fn akto_guardrail_payload_takes_tools_and_tool_calls_from_the_inputs() {
         "tools".to_owned(),
         array(vec![object(vec![("type", text("request-tool"))])]),
     )]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs, &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs, &request_data, 200, false).expect("payload");
     assert_eq!(
         decode_double(&string_field(&payload_fields(&payload), "requestPayload")),
         object(vec![
@@ -381,9 +380,8 @@ fn akto_guardrail_payload_uses_request_tools_when_the_inputs_have_none() {
         "tools".to_owned(),
         array(vec![object(vec![("type", text("request-tool"))])]),
     )]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs, &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs, &request_data, 200, false).expect("payload");
     assert_eq!(
         decode_double(&string_field(&payload_fields(&payload), "requestPayload")),
         object(vec![
@@ -410,9 +408,8 @@ fn akto_guardrail_payload_copies_request_headers_lowercased() {
             ]),
         )]),
     )]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &request_data, 200, false).expect("payload");
     assert_eq!(
         decode(&string_field(&payload_fields(&payload), "requestHeaders")),
         object(vec![
@@ -427,9 +424,8 @@ fn akto_guardrail_payload_carries_the_account_and_vxlan_ids() {
     let mut guardrail = guardrail();
     guardrail.account_id = "4242".to_owned();
     guardrail.vxlan_id = "7".to_owned();
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
     let fields = payload_fields(&payload);
     assert_eq!(string_field(&fields, "akto_account_id"), "4242");
     assert_eq!(string_field(&fields, "akto_vxlan_id"), "7");
@@ -442,9 +438,8 @@ fn akto_guardrail_payload_carries_the_account_and_vxlan_ids() {
 
 #[test]
 fn akto_guardrail_payload_carries_the_status_code() {
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 403, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &BTreeMap::new(), 403, false).expect("payload");
     let fields = payload_fields(&payload);
     assert_eq!(string_field(&fields, "statusCode"), "403");
     assert_eq!(string_field(&fields, "status"), "403");
@@ -452,9 +447,8 @@ fn akto_guardrail_payload_carries_the_status_code() {
 
 #[test]
 fn akto_guardrail_payload_stamps_the_current_time() {
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &BTreeMap::new(), 200, false).expect("payload");
     let time = string_field(&payload_fields(&payload), "time");
     assert!(time.chars().all(|character| character.is_ascii_digit()));
     assert!(time.len() >= 12);
@@ -489,9 +483,8 @@ fn akto_guardrail_payload_skips_falsy_values(#[case] value: GuardrailValue, #[ca
         tool_calls: None,
         structured_messages: None,
     };
-    let payload = guardrail()
-        .build_akto_payload(&inputs, &BTreeMap::new(), 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs, &BTreeMap::new(), 200, false).expect("payload");
     let decoded = decode_double(&string_field(&payload_fields(&payload), "requestPayload"));
     let GuardrailValue::Object(body) = decoded else {
         panic!("the request payload is not an object");
@@ -505,9 +498,8 @@ fn akto_guardrail_payload_ignores_empty_request_values() {
         ("messages".to_owned(), array(Vec::new())),
         ("tools".to_owned(), array(Vec::new())),
     ]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &request_data, 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &request_data, 200, false).expect("payload");
     assert_eq!(
         decode_double(&string_field(&payload_fields(&payload), "requestPayload")),
         object(vec![
@@ -532,9 +524,8 @@ fn akto_guardrail_payload_uses_the_answer_as_the_response_body() {
             ("object", text("chat.completion")),
         ]),
     )]);
-    let payload = guardrail()
-        .build_akto_payload(&inputs(), &request_data, 200, true)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail(), &inputs(), &request_data, 200, true).expect("payload");
     assert_eq!(
         decode_double(&string_field(&payload_fields(&payload), "responsePayload")),
         object(vec![
@@ -575,7 +566,7 @@ fn akto_guardrail_response_parses_the_verdict(
         status: StatusCode::OK,
         body: body.as_bytes().to_vec(),
     };
-    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
+    let verdict = handle_guardrail_response(&answer).expect("verdict");
     assert_eq!(verdict.allowed, allowed);
     assert_eq!(verdict.reason, reason);
 }
@@ -590,7 +581,7 @@ fn akto_guardrail_response_permits_non_object_json(#[case] body: &str) {
         status: StatusCode::OK,
         body: body.as_bytes().to_vec(),
     };
-    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
+    let verdict = handle_guardrail_response(&answer).expect("verdict");
     assert!(verdict.allowed);
     assert!(verdict.reason.is_empty());
 }
@@ -604,7 +595,7 @@ fn akto_guardrail_response_rejects_a_non_200_status(#[case] status: StatusCode) 
         status,
         body: Vec::new(),
     };
-    let error = AktoMirroring::handle_guardrail_response(&answer).expect_err("http status");
+    let error = handle_guardrail_response(&answer).expect_err("http status");
     assert!(matches!(error, AktoError::HttpStatus { status: reported } if reported == status));
 }
 
@@ -614,7 +605,7 @@ fn akto_guardrail_response_rejects_malformed_json() {
         status: StatusCode::OK,
         body: b"not json".to_vec(),
     };
-    let error = AktoMirroring::handle_guardrail_response(&answer).expect_err("response json");
+    let error = handle_guardrail_response(&answer).expect_err("response json");
     assert!(matches!(&error, AktoError::ResponseJson { .. }));
 }
 
@@ -624,7 +615,7 @@ fn akto_guardrail_response_rejects_a_non_boolean_allowed() {
         status: StatusCode::OK,
         body: br#"{"data":{"guardrailsResult":{"Allowed":"false"}}}"#.to_vec(),
     };
-    let error = AktoMirroring::handle_guardrail_response(&answer).expect_err("response field");
+    let error = handle_guardrail_response(&answer).expect_err("response field");
     assert!(
         matches!(error, AktoError::ResponseField { field } if field == "data.guardrailsResult.Allowed")
     );
@@ -636,7 +627,7 @@ fn akto_guardrail_response_rejects_a_non_text_reason() {
         status: StatusCode::OK,
         body: br#"{"data":{"guardrailsResult":{"Allowed":false,"Reason":7}}}"#.to_vec(),
     };
-    let error = AktoMirroring::handle_guardrail_response(&answer).expect_err("response field");
+    let error = handle_guardrail_response(&answer).expect_err("response field");
     assert!(
         matches!(error, AktoError::ResponseField { field } if field == "data.guardrailsResult.Reason")
     );

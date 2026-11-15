@@ -15,10 +15,12 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use super::{fixed_clock, guardrail, guardrail_at, inputs, log_path, log_to};
-use crate::akto::AktoMirroring;
 use crate::akto::error::AktoError;
-use crate::akto::payload::AktoPayload;
-use crate::akto::transport::{AktoAnswer, AktoCallFlags, parse_verdict};
+use crate::akto::payload::{AktoPayload, build_akto_payload};
+use crate::akto::transport::{
+    AktoAnswer, AktoCallFlags, fire_and_forget_request, handle_guardrail_response, parse_verdict,
+    send_request,
+};
 
 struct Recorded {
     path: String,
@@ -95,26 +97,25 @@ async fn send_to_body(body: String) -> AktoAnswer {
     let (base, _server) = serve_fixed_body(body).await;
     let mut guardrail = guardrail();
     guardrail.base_url = base;
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
-    guardrail
-        .send_request(
-            AktoCallFlags {
-                guardrails: true,
-                ingest_data: false,
-            },
-            &payload,
-        )
-        .await
-        .expect("answer")
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect("answer")
 }
 
 #[tokio::test]
 async fn akto_guardrail_send_request_accepts_a_body_at_the_limit() {
     let answer = send_to_body(padded_body(SPEC_MAX_RESPONSE_BYTES)).await;
     assert_eq!(answer.body.len(), SPEC_MAX_RESPONSE_BYTES);
-    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
+    let verdict = handle_guardrail_response(&answer).expect("verdict");
     assert!(verdict.allowed);
 }
 
@@ -122,7 +123,7 @@ async fn akto_guardrail_send_request_accepts_a_body_at_the_limit() {
 async fn akto_guardrail_send_request_accepts_a_body_over_2048_bytes() {
     let answer = send_to_body(padded_body(3000)).await;
     assert_eq!(answer.body.len(), 3000);
-    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
+    let verdict = handle_guardrail_response(&answer).expect("verdict");
     assert!(verdict.allowed);
 }
 
@@ -131,19 +132,18 @@ async fn akto_guardrail_send_request_refuses_a_body_over_the_limit() {
     let (base, _server) = serve_fixed_body(padded_body(SPEC_MAX_RESPONSE_BYTES + 1)).await;
     let mut guardrail = guardrail();
     guardrail.base_url = base;
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
-    let error = guardrail
-        .send_request(
-            AktoCallFlags {
-                guardrails: true,
-                ingest_data: false,
-            },
-            &payload,
-        )
-        .await
-        .expect_err("response too large");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let error = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect_err("response too large");
     assert!(
         matches!(error, AktoError::ResponseTooLarge { limit } if limit == SPEC_MAX_RESPONSE_BYTES)
     );
@@ -155,19 +155,18 @@ async fn akto_guardrail_send_request_posts_the_mirroring_payload() {
     let (base, _server) = serve(Arc::clone(&captures)).await;
     let mut guardrail = guardrail_at(fixed_clock);
     guardrail.base_url = base;
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
-    let answer = guardrail
-        .send_request(
-            AktoCallFlags {
-                guardrails: true,
-                ingest_data: false,
-            },
-            &payload,
-        )
-        .await
-        .expect("answer");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let answer = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect("answer");
     assert_eq!(answer.status, StatusCode::OK);
     let recorded = captures.lock().expect("captures").pop().expect("request");
     assert_eq!(recorded.path, "/api/http-proxy");
@@ -187,20 +186,19 @@ async fn akto_guardrail_send_request_parses_the_verdict_after_sending() {
     let (base, _server) = serve(Arc::clone(&captures)).await;
     let mut guardrail = guardrail();
     guardrail.base_url = base;
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
-    let answer = guardrail
-        .send_request(
-            AktoCallFlags {
-                guardrails: false,
-                ingest_data: true,
-            },
-            &payload,
-        )
-        .await
-        .expect("answer");
-    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let answer = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: false,
+            ingest_data: true,
+        },
+        &payload,
+    )
+    .await
+    .expect("answer");
+    let verdict = handle_guardrail_response(&answer).expect("verdict");
     assert!(verdict.allowed);
     assert!(verdict.reason.is_empty());
     let recorded = captures.lock().expect("captures").pop().expect("request");
@@ -226,19 +224,18 @@ async fn akto_guardrail_send_request_times_out_at_the_guardrail_timeout() {
     let mut guardrail = guardrail();
     guardrail.base_url = base;
     guardrail.timeout = Duration::from_millis(100);
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
-    let error = guardrail
-        .send_request(
-            AktoCallFlags {
-                guardrails: true,
-                ingest_data: false,
-            },
-            &payload,
-        )
-        .await
-        .expect_err("timeout");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let error = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect_err("timeout");
     assert!(matches!(error, AktoError::Transport { .. }));
 }
 
@@ -255,28 +252,34 @@ async fn akto_guardrail_send_request_applies_one_total_deadline() {
                 b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 12\r\n\r\n",
             )
             .await?;
-        for _ in 0..12 {
-            tokio::time::sleep(Duration::from_millis(40)).await;
-            stream.write_all(b" ").await?;
-        }
+        stream.write_all(b"  ").await?;
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
         Ok::<(), std::io::Error>(())
     });
     let mut guardrail = guardrail();
     guardrail.base_url = base;
     guardrail.timeout = Duration::from_millis(150);
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
-    let error = guardrail
-        .send_request(
-            AktoCallFlags {
-                guardrails: true,
-                ingest_data: false,
-            },
-            &payload,
-        )
-        .await
-        .expect_err("total deadline");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let error = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect_err("total deadline");
     assert!(matches!(error, AktoError::Transport { .. }));
 }
 
@@ -303,21 +306,20 @@ async fn akto_guardrail_fire_and_forget_swallows_an_error_status() {
     server.spawn(axum::serve(listener, router).into_future());
     let mut guardrail = guardrail();
     guardrail.base_url = base;
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
     let path = log_path("fire-and-forget-error");
     {
         let _guard = log_to(&path);
-        guardrail
-            .fire_and_forget_request(
-                AktoCallFlags {
-                    guardrails: true,
-                    ingest_data: true,
-                },
-                &payload,
-            )
-            .await;
+        fire_and_forget_request(
+            &guardrail,
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: true,
+            },
+            &payload,
+        )
+        .await;
     }
     let written = fs::read_to_string(&path).expect("log contents");
     fs::remove_file(&path).expect("remove log");
@@ -330,21 +332,20 @@ async fn akto_guardrail_fire_and_forget_sends_the_request() {
     let (base, _server) = serve(Arc::clone(&captures)).await;
     let mut guardrail = guardrail();
     guardrail.base_url = base;
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
     let path = log_path("fire-and-forget-success");
     {
         let _guard = log_to(&path);
-        guardrail
-            .fire_and_forget_request(
-                AktoCallFlags {
-                    guardrails: true,
-                    ingest_data: true,
-                },
-                &payload,
-            )
-            .await;
+        fire_and_forget_request(
+            &guardrail,
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: true,
+            },
+            &payload,
+        )
+        .await;
     }
     let recorded = captures.lock().expect("captures").pop().expect("request");
     assert_eq!(
@@ -363,18 +364,17 @@ async fn akto_guardrail_fire_and_forget_swallows_a_transport_error() {
     drop(listener);
     let mut guardrail = guardrail();
     guardrail.base_url = format!("http://{address}");
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
-        .expect("payload");
-    guardrail
-        .fire_and_forget_request(
-            AktoCallFlags {
-                guardrails: true,
-                ingest_data: true,
-            },
-            &payload,
-        )
-        .await;
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    fire_and_forget_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: true,
+        },
+        &payload,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -383,20 +383,19 @@ async fn akto_guardrail_tracks_background_ingest_tasks_until_they_finish() {
     let (base, _server) = serve(Arc::clone(&captures)).await;
     let mut guardrail = guardrail();
     guardrail.base_url = base;
-    let payload = guardrail
-        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, true)
-        .expect("payload");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, true).expect("payload");
     let background = guardrail.clone();
     guardrail.tasks.spawn(async move {
-        background
-            .fire_and_forget_request(
-                AktoCallFlags {
-                    guardrails: true,
-                    ingest_data: true,
-                },
-                &payload,
-            )
-            .await;
+        fire_and_forget_request(
+            &background,
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: true,
+            },
+            &payload,
+        )
+        .await;
     });
     assert_eq!(guardrail.tasks.len(), 1);
     guardrail.tasks.close();

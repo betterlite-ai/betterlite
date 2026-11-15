@@ -2,8 +2,10 @@ use std::collections::BTreeMap;
 
 use betterlite_guardrails::akto::AktoMirroring;
 use betterlite_guardrails::akto::error::AktoError;
-use betterlite_guardrails::akto::payload::AktoPayload;
-use betterlite_guardrails::akto::transport::{AktoAnswer, AktoCallFlags};
+use betterlite_guardrails::akto::payload::{AktoPayload, build_akto_payload};
+use betterlite_guardrails::akto::transport::{
+    AktoAnswer, AktoCallFlags, fire_and_forget_request, handle_guardrail_response, send_request,
+};
 use serde_json::{Value, json};
 
 use super::Input;
@@ -27,21 +29,20 @@ pub(super) fn build_payload(input: &Input) -> crate::helpers::HelperResult {
 // the wall clock is compared by shape, not by value, so a stamped time reads as a placeholder
 fn normalized_time(time: String) -> String {
     if time.chars().all(|character| character.is_ascii_digit()) {
-        String::from("<millis>")
-    } else {
-        time
+        return String::from("<millis>");
     }
+    time
 }
 
 fn payload_of(input: &Input, guardrail: &AktoMirroring) -> Result<AktoPayload, Box<HelperError>> {
-    guardrail
-        .build_akto_payload(
-            &akto_inputs(input),
-            &input.request_data,
-            input.status_code.unwrap_or(200),
-            input.include_response,
-        )
-        .map_err(|error| failure("AktoError", None, error.to_string()))
+    build_akto_payload(
+        guardrail,
+        &akto_inputs(input),
+        &input.request_data,
+        input.status_code.unwrap_or(200),
+        input.include_response,
+    )
+    .map_err(|error| failure("AktoError", None, error.to_string()))
 }
 
 pub(super) fn normalize(payload: AktoPayload) -> crate::helpers::HelperResult {
@@ -115,15 +116,16 @@ pub(super) fn send(input: &Input, fire_and_forget: bool) -> crate::helpers::Help
 }
 
 pub(super) fn unreachable(input: &Input) -> crate::helpers::HelperResult {
-    let handled = settings(input)?.handle_unreachable(akto_inputs(input), &AktoError::Unreachable);
-    if let Err(error) = handled {
-        return Err(failure(
-            "HTTPException",
-            Some(error.status_code().as_u16()),
-            error.to_string(),
-        ));
-    }
-    Ok(json!({"passthrough": inputs_json(input)}))
+    let Err(error) =
+        settings(input)?.handle_unreachable(akto_inputs(input), &AktoError::Unreachable)
+    else {
+        return Ok(json!({"passthrough": inputs_json(input)}));
+    };
+    Err(failure(
+        "HTTPException",
+        Some(error.status_code().as_u16()),
+        error.to_string(),
+    ))
 }
 
 fn deliver(
@@ -142,10 +144,10 @@ fn deliver(
         .map_err(|error| failure("RuntimeError", None, error.to_string()))?;
     Ok(runtime.block_on(async {
         if fire_and_forget {
-            guardrail.fire_and_forget_request(flags, payload).await;
+            fire_and_forget_request(guardrail, flags, payload).await;
             None
         } else {
-            Some(guardrail.send_request(flags, payload).await)
+            Some(send_request(guardrail, flags, payload).await)
         }
     }))
 }
@@ -161,7 +163,7 @@ fn report(
     match answer {
         None => Ok(json!({"request": request, "succeeded": true})),
         Some(Ok(answer)) => {
-            let verdict = AktoMirroring::handle_guardrail_response(&answer)
+            let verdict = handle_guardrail_response(&answer)
                 .map_err(|error| failure("AktoError", None, error.to_string()))?;
             Ok(json!({"request": request, "allowed": verdict.allowed, "reason": verdict.reason}))
         }

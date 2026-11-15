@@ -52,55 +52,57 @@ pub fn prepare_headers(api_key: &SecretString) -> Result<HeaderMap, AktoError> {
     Ok(headers)
 }
 
-impl AktoMirroring {
-    pub async fn send_request(
-        &self,
-        flags: AktoCallFlags,
-        payload: &AktoPayload,
-    ) -> Result<AktoAnswer, AktoError> {
-        let endpoint = format!("{}{HTTP_PROXY_PATH}", self.base_url);
-        let request_body =
-            serde_json::to_string(payload).map_err(|source| AktoError::Encode { source })?;
-        let mut response = self
-            .client
-            .post(endpoint)
-            .query(&build_query_params(flags))
-            .headers(prepare_headers(&self.api_key)?)
-            .timeout(self.timeout)
-            .body(request_body)
-            .send()
-            .await
-            .map_err(|source| AktoError::Transport { source })?;
-        let status = response.status();
-        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
-            .await
-            .map_err(read_error)?;
-        Ok(AktoAnswer { status, body })
-    }
+pub async fn send_request(
+    guardrail: &AktoMirroring,
+    flags: AktoCallFlags,
+    payload: &AktoPayload,
+) -> Result<AktoAnswer, AktoError> {
+    let endpoint = format!("{}{HTTP_PROXY_PATH}", guardrail.base_url);
+    let request_body =
+        serde_json::to_string(payload).map_err(|source| AktoError::Encode { source })?;
+    let mut response = guardrail
+        .client
+        .post(endpoint)
+        .query(&build_query_params(flags))
+        .headers(prepare_headers(&guardrail.api_key)?)
+        .timeout(guardrail.timeout)
+        .body(request_body)
+        .send()
+        .await
+        .map_err(|source| AktoError::Transport { source })?;
+    let status = response.status();
+    let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
+        .await
+        .map_err(read_error)?;
+    Ok(AktoAnswer { status, body })
+}
 
-    pub fn handle_guardrail_response(answer: &AktoAnswer) -> Result<GuardrailVerdict, AktoError> {
-        if answer.status != StatusCode::OK {
-            tracing::error!(
-                status = answer.status.as_u16(),
-                "Akto returned an unexpected status"
-            );
-            return Err(AktoError::HttpStatus {
-                status: answer.status,
-            });
-        }
-        parse_verdict(&answer.body)
+pub fn handle_guardrail_response(answer: &AktoAnswer) -> Result<GuardrailVerdict, AktoError> {
+    if answer.status != StatusCode::OK {
+        tracing::error!(
+            status = answer.status.as_u16(),
+            "Akto returned an unexpected status"
+        );
+        return Err(AktoError::HttpStatus {
+            status: answer.status,
+        });
     }
+    parse_verdict(&answer.body)
+}
 
-    pub async fn fire_and_forget_request(&self, flags: AktoCallFlags, payload: &AktoPayload) {
-        match self.send_request(flags, payload).await {
-            Ok(answer) if answer.status == StatusCode::OK => {}
-            Ok(answer) => tracing::error!(
-                status = answer.status.as_u16(),
-                "Akto fire-and-forget returned a non-200 status"
-            ),
-            Err(error) => {
-                tracing::error!(error = %error, "Akto fire-and-forget error");
-            }
+pub async fn fire_and_forget_request(
+    guardrail: &AktoMirroring,
+    flags: AktoCallFlags,
+    payload: &AktoPayload,
+) {
+    match send_request(guardrail, flags, payload).await {
+        Ok(answer) if answer.status == StatusCode::OK => {}
+        Ok(answer) => tracing::error!(
+            status = answer.status.as_u16(),
+            "Akto fire-and-forget returned a non-200 status"
+        ),
+        Err(error) => {
+            tracing::error!(error = %error, "Akto fire-and-forget error");
         }
     }
 }

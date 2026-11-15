@@ -7,7 +7,7 @@ use betterlite_config::sections::akto_mirroring::UnreachableFallback;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::akto::AktoMirroring;
 use betterlite_guardrails::akto::payload::AktoInputs;
-use betterlite_guardrails::akto::transport::AktoAnswer;
+use betterlite_guardrails::akto::transport::{AktoAnswer, handle_guardrail_response};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -43,7 +43,7 @@ impl crate::helpers::Helper for Op {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
-pub(super) struct Input {
+pub(crate) struct Input {
     pub(super) op: String,
     pub(super) settings: SettingsInput,
     pub(super) env: BTreeMap<String, String>,
@@ -175,7 +175,7 @@ fn parse_response(input: &Input) -> crate::helpers::HelperResult {
     let status = StatusCode::from_u16(input.answer.status.unwrap_or(200))
         .map_err(|error| failure("AktoError", None, error.to_string()))?;
     let body = answer_body(input)?.into_bytes();
-    let verdict = AktoMirroring::handle_guardrail_response(&AktoAnswer { status, body })
+    let verdict = handle_guardrail_response(&AktoAnswer { status, body })
         .map_err(|error| failure("AktoError", None, error.to_string()))?;
     Ok(json!({"allowed": verdict.allowed, "reason": verdict.reason}))
 }
