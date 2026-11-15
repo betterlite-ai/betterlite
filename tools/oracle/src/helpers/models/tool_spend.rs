@@ -87,7 +87,8 @@ struct Refused {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum MeasuredRow {
-    Row(ToolIndexRow),
+    // boxed to stay within 3x of Refused, the limit variant_size_differences enforces
+    Row(Box<ToolIndexRow>),
     Refused(Refused),
 }
 
@@ -164,16 +165,16 @@ fn measured_row(row: &RowInput) -> Result<MeasuredRow, Box<crate::helpers::Helpe
     let ToolSpendTime { start_time, .. } = decode_tool_spend_time(&row.start_time)
         .ok_or("the row start time is not an ISO datetime")
         .or_value_error()?;
-    Ok(MeasuredRow::Row(ToolIndexRow::new(
+    Ok(MeasuredRow::Row(Box::new(ToolIndexRow::new(
         row.request_id.clone(),
         row.tool_name.clone(),
         start_time,
-    )))
+    ))))
 }
 
 fn batch_indices(rows: &[MeasuredRow], limits: StatementLimits) -> Vec<Vec<usize>> {
     let mut batches = Vec::new();
-    let mut start = 0;
+    let mut start: usize = 0;
     for batch in spend_log_write_batches(rows, limits) {
         let end = start.saturating_add(batch.len());
         batches.push((start..end).collect());
