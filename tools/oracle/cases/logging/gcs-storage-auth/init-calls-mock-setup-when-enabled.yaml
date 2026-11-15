@@ -1,0 +1,7 @@
+# with GCS_MOCK on, initialization installs the mock, so a download is answered by it
+kind: helper
+name: gcs-storage-auth-init-calls-mock-setup-when-enabled
+call:
+  b3997: {"action": "initialize", "environment": {"GCS_MOCK": "true", "GCS_BUCKET_NAME": "mock-bucket"}, "object_name": "mock-object", "status": 418, "body": "original-response"}
+env: {}
+compare: {ignore: []}
