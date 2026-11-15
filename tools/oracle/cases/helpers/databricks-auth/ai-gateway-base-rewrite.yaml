@@ -1,0 +1,32 @@
+kind: helper
+name: databricks-ai-gateway-base-rewrite
+call:
+  b5980:
+    function: api_base
+    cases:
+      - api_base: https://adb-1.databricks.net
+        use_ai_gateway: true
+      - api_base: https://adb-1.databricks.net/
+        use_ai_gateway: true
+      - api_base: https://adb-1.databricks.net///
+        use_ai_gateway: true
+      - api_base: https://adb-1.databricks.net/serving-endpoints
+        use_ai_gateway: true
+      - api_base: https://adb-1.databricks.net/serving-endpoints/
+        use_ai_gateway: true
+      - api_base: https://adb-1.databricks.net/ai-gateway/mlflow/v1
+        use_ai_gateway: true
+      - api_base: https://adb-1.databricks.net/ai-gateway/mlflow/v1/
+        use_ai_gateway: true
+      - api_base: https://adb-1.databricks.net/custom/
+        use_ai_gateway: true
+      - api_base: null
+        use_ai_gateway: true
+      - api_base: https://adb-1.databricks.net
+        use_ai_gateway: false
+      - api_base: https://adb-1.databricks.net/serving-endpoints/
+        use_ai_gateway: false
+      - api_base: null
+        use_ai_gateway: false
+env: {}
+compare: {ignore: []}

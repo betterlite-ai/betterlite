@@ -1,0 +1,2 @@
+litellm_settings:
+  openai_realtime_unrelated_key: 1
