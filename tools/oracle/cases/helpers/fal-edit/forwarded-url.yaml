@@ -1,0 +1,40 @@
+kind: helper
+name: fal-edit-forwarded-url
+call:
+  fal_edit:
+    operation: to_data_url
+    sources:
+      - kind: value
+        value: "https://example.test/images/in.png?x=1&y=2"
+      - kind: value
+        value: "data:image/png;base64,iVBORw0KGgo="
+      - kind: value
+        value: "/looks/local/but/forwarded.png"
+      - kind: value
+        value: ""
+      - kind: value
+        value: 0
+      - kind: value
+        value: 2.5
+      - kind: value
+        value: true
+      - kind: value
+        value: null
+      - kind: value
+        value: ["https://listed.test/a.png"]
+      - kind: value
+        value: {url: "https://mapped.test/a.png"}
+calls:
+  - fal_edit:
+      operation: prepare
+      model: openai/gpt-image-2/edit
+      prompt: "forwarded prompt"
+      image:
+        kind: bytes
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      params:
+        background: transparent
+        quality: low
+env: {}
+compare:
+  ignore: []

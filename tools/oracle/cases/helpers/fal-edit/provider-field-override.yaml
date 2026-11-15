@@ -1,0 +1,39 @@
+kind: helper
+name: fal-edit-provider-field-override
+call:
+  fal_edit:
+    operation: prepare
+    model: openai/gpt-image-2/edit
+    prompt: generated prompt
+    image:
+      kind: bytes
+      content: [137, 80, 78, 71, 13, 10, 26, 10]
+    params:
+      prompt: overridden prompt
+      image_urls: ["https://override.test/replacement.png"]
+      mask: "https://mask.test/generated.png"
+      mask_url: "https://override.test/mask.png"
+      seed: 7
+calls:
+  - fal_edit:
+      operation: prepare
+      model: fal-ai/flux-lora-depth
+      prompt: depth prompt
+      image:
+        kind: bytes
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      params:
+        prompt: overridden depth prompt
+        image_url: "https://override.test/depth.png"
+        mask: "https://mask.test/dropped.png"
+  - fal_edit:
+      operation: reply
+      replies:
+        - status: 200
+          headers: {x-request-id: req-1}
+          body: '{"images": ["https://a.test/1.png", {"url": "https://b.test/2.png", "b64_json": "aGk="}, {"width": 640, "height": 480, "content_type": "image/webp"}, {"url": 5}, 7, null]}'
+        - status: 502
+          body: "not json"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,50 @@
+kind: helper
+name: fal-edit-generic-unknown-option
+call:
+  fal_edit:
+    operation: map
+    model: openai/gpt-image-2/edit
+    options:
+      - background: transparent
+        n: 2
+        quality: high
+        size: 512x768
+      - quality: standard
+        size: auto
+        mask: "https://mask.test/m.png"
+      - n: null
+        quality: low
+        size: big
+      - n: 0
+        user: u1
+        response_format: b64_json
+        input_fidelity: high
+        imageConfig: {detail: high}
+      - quality: auto
+        size: 10x20x30
+calls:
+  - fal_edit:
+      operation: map
+      model: fal-ai/flux-lora-depth
+      options:
+        - background: transparent
+          n: 2
+          quality: high
+          size: 512x768
+        - n: null
+          size: null
+        - size: 1024x1024
+  - fal_edit:
+      operation: prepare
+      model: openai/gpt-image-2/edit
+      prompt: unsupported options kept
+      image:
+        kind: bytes
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      params:
+        user: u1
+        response_format: b64_json
+        image_size: {width: 512, height: 768}
+env: {}
+compare:
+  ignore: []

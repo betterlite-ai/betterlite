@@ -1,0 +1,39 @@
+kind: helper
+name: fal-edit-local-path-and-cursor
+call:
+  fal_edit:
+    operation: to_data_url
+    sources:
+      - kind: path
+        name: fal-edit-local-png.bin
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      - kind: reader
+        content: [255, 216, 255, 1, 2, 3]
+        position: 2
+      - kind: tuple
+        content: [71, 73, 70, 56, 57, 97, 1]
+      - kind: bytes
+        content: [0, 0, 0, 24, 102, 116, 121, 112, 104, 101, 105, 99]
+      - kind: bytes
+        content: [82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80]
+calls:
+  - fal_edit:
+      operation: prepare
+      model: openai/gpt-image-2/edit
+      image:
+        kind: reader
+        content: [255, 216, 255, 1, 2, 3]
+        position: 2
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: openai/gpt-image-2/edit
+      prompt: local file
+      image:
+        kind: path
+        name: fal-edit-local-png.bin
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      params: {}
+env: {}
+compare:
+  ignore: []
