@@ -56,26 +56,29 @@ impl GeminiHttpStream {
     }
 
     pub async fn next_chunk(&mut self) -> Option<Result<StreamChunk, GeminiStreamError>> {
-        if let StreamState::Pending(setup) = mem::replace(&mut self.state, StreamState::Finished) {
-            let call = StreamCall {
-                url: &setup.url,
-                headers: &setup.headers,
-                body: &setup.body,
-                model: &setup.model,
-            };
-            let opened = make_call(setup.supplied.as_deref(), setup.pooled.as_ref(), &call).await;
-            match opened {
-                Ok(reply) => {
-                    let reading = Reading::new(*setup, reply, self.options);
-                    self.state = StreamState::Reading(Box::new(reading));
-                }
-                Err(error) => return Some(Err(error)),
-            }
+        if let StreamState::Reading(reading) = &mut self.state {
+            return reading.next().await;
         }
-        let StreamState::Reading(reading) = &mut self.state else {
+        let StreamState::Pending(setup) = mem::replace(&mut self.state, StreamState::Finished)
+        else {
             return None;
         };
-        reading.next().await
+        let call = StreamCall {
+            url: &setup.url,
+            headers: &setup.headers,
+            body: &setup.body,
+            model: &setup.model,
+        };
+        let opened = make_call(setup.supplied.as_deref(), setup.pooled.as_ref(), &call).await;
+        match opened {
+            Ok(reply) => {
+                let mut reading = Reading::new(*setup, reply, self.options);
+                let next = reading.next().await;
+                self.state = StreamState::Reading(Box::new(reading));
+                next
+            }
+            Err(error) => Some(Err(error)),
+        }
     }
 }
 
