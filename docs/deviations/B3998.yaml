@@ -72,7 +72,7 @@ deviations:
   - what: >-
       A GCS_PATH_SERVICE_ACCOUNT document whose type is external_account or impersonated_service_account
       is refused with an error that names the type. LiteLLM hands any credential document to
-      VertexBase.get_credentials, which builds workload identity pool credentials for external_account
+      VertexBase.load_auth, which builds workload identity pool credentials for external_account
       and falls through to the service account reader for any other type.
     why: >-
       The GCS logging token is built from the shared typed credential decoder and google-cloud-auth
@@ -80,7 +80,7 @@ deviations:
       workload identity exchange and its AWS and executable credential sources are not wired into this
       logger, so the document is refused up front with its type named instead of failing inside a token
       exchange.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L156-L205
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L124-L210
 kept_bugs:
   - what: >-
       A group whose upload fails, and a single item whose send raises, are logged and dropped. Nothing is requeued,
