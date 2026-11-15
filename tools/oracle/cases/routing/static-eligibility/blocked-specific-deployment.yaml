@@ -1,0 +1,25 @@
+kind: probe
+name: blocked-specific-deployment
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: false
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: paused, blocked: true}
+        lookups:
+          - {model: paused}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: false
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: live, blocked: false}
+        lookups:
+          - {model: live}
+          - {model: gpt}
+compare: {ignore: []}
