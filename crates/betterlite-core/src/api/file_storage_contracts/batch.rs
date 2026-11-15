@@ -58,10 +58,10 @@ pub fn responses_batch_to_chat_body(
 }
 
 fn model_text(model: Option<&Json>) -> String {
-    match model {
-        Some(Json::Text(text)) => text.clone(),
-        _ => String::new(),
-    }
+    let Some(Json::Text(text)) = model else {
+        return String::new();
+    };
+    text.clone()
 }
 
 fn typed_request(
