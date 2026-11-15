@@ -191,11 +191,18 @@ fn recurse_depth_invalid_stops_startup(#[case] raw: &str) {
 }
 
 #[test]
-fn recurse_depth_empty_stops_startup() {
-    let error = loaded(&[("DEFAULT_MAX_RECURSE_DEPTH", "")]).expect_err("startup stops");
-    assert!(
-        matches!(error, ConfigError::Environment { .. }),
-        "{error:?}"
+fn recurse_depth_empty_is_unset() {
+    let settings = loaded(&[("DEFAULT_MAX_RECURSE_DEPTH", "")]).expect("empty counts as unset");
+    assert_eq!(settings.max_recurse_depth, 100);
+    assert_eq!(
+        replaced_at(settings.max_recurse_depth, wrapped(101)),
+        rendered(&wrapped(101)),
+        "the default depth reaches traversal"
+    );
+    assert_ne!(
+        replaced_at(settings.max_recurse_depth, wrapped(100)),
+        rendered(&wrapped(100)),
+        "a leaf exactly at the default depth is replaced"
     );
 }
 

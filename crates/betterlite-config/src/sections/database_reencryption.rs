@@ -48,14 +48,16 @@ impl Section for Raw {
     }
 }
 
-// LiteLLM calls int() once at import: a bad or empty value stops startup instead of taking the default
-fn depth_from_env<L: EnvironmentLookup>(lookup: &L) -> Result<i64, ConfigError> {
+// LiteLLM calls int() at import, where an empty value raises; the shared env rule counts empty as unset
+fn depth_from_env<L>(lookup: &L) -> Result<i64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let Some(text) = lookup.lookup(RECURSE_DEPTH_VARIABLE) else {
         return Ok(DEFAULT_RECURSE_DEPTH);
     };
-    betterlite_env::number::<i64>(RECURSE_DEPTH_VARIABLE, &text)?.ok_or_else(|| {
-        ConfigError::from(betterlite_env::EnvError::Number {
-            name: RECURSE_DEPTH_VARIABLE.to_owned(),
-        })
-    })
+    Ok(
+        betterlite_env::number::<i64>(RECURSE_DEPTH_VARIABLE, &text)?
+            .unwrap_or(DEFAULT_RECURSE_DEPTH),
+    )
 }
