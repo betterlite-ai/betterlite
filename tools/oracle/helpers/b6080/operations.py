@@ -145,19 +145,20 @@ def decisions(cases: list[DecisionsCase]) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     result: JsonValue
-    if input_value["op"] == "chat_params":
-        result = chat_params(input_value["cases"])
-    elif input_value["op"] == "chunk":
-        handler = OpenRouterChatCompletionStreamingHandler(iter([]), sync_stream=True)
-        result = chunks(input_value["cases"], handler)
-    elif input_value["op"] == "embedding":
-        result = embeddings(input_value["cases"], input_value["replies"])
-    elif input_value["op"] == "responses":
-        result = responses_cases(input_value["cases"])
-    elif input_value["op"] == "decisions":
-        result = decisions(input_value["cases"])
-    elif input_value["op"] == "request":
-        result = requests(input_value["cases"])
-    else:
-        result = responses(input_value["cases"])
+    match input_value["op"]:
+        case "chat_params":
+            result = chat_params(input_value["cases"])
+        case "chunk":
+            handler = OpenRouterChatCompletionStreamingHandler(iter([]), sync_stream=True)
+            result = chunks(input_value["cases"], handler)
+        case "embedding":
+            result = embeddings(input_value["cases"], input_value["replies"])
+        case "responses":
+            result = responses_cases(input_value["cases"])
+        case "decisions":
+            result = decisions(input_value["cases"])
+        case "request":
+            result = requests(input_value["cases"])
+        case "response":
+            result = responses(input_value["cases"])
     return result
