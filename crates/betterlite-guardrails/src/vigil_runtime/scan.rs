@@ -29,7 +29,7 @@ pub(super) async fn apply(
     logging_obj: Option<&GuardrailLogTarget>,
 ) -> Result<GuardrailApiInputs, GuardrailFailure> {
     let bridged = bridge::from_inputs(&inputs, input_type)?;
-    let texts = inputs.texts.clone().unwrap_or_default();
+    let texts = bridged.texts.as_deref().unwrap_or_default();
     let scanned = match input_type {
         GuardrailInputType::Response => tool_call_arguments(bridged.tool_calls.as_deref()),
         GuardrailInputType::Request => Vec::new(),
@@ -52,7 +52,7 @@ pub(super) async fn apply(
         source,
         metadata,
     };
-    run.texts_then_tools(&texts, &scanned).await
+    run.texts_then_tools(texts, &scanned).await
 }
 
 struct Run<'run> {
@@ -79,6 +79,12 @@ enum TextStop {
     Unrecognized {
         partial: Vec<String>,
     },
+}
+
+// Every analyze failure is either a backend failure the fallback policy handles or a local error it must not swallow
+enum FailureKind {
+    Backend,
+    Local,
 }
 
 impl Run<'_> {
@@ -207,13 +213,9 @@ impl Run<'_> {
         partial: Partial<'_>,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         // httpx raises a LocalProtocolError for an unencodable header, so Python treats it as a backend failure
-        if !matches!(
-            error,
-            VigilGuardError::InvalidHeader { .. }
-                | VigilGuardError::Transport { .. }
-                | VigilGuardError::ResponseJson { .. }
-        ) {
-            return Err(GuardrailFailure::from(error));
+        match failure_kind(&error) {
+            FailureKind::Backend => {}
+            FailureKind::Local => return Err(GuardrailFailure::from(error)),
         }
         let context = FailureContext {
             fallback: self.guardrail.unreachable_fallback,
@@ -258,6 +260,19 @@ impl Run<'_> {
                 false,
             )),
         }
+    }
+}
+
+fn failure_kind(error: &VigilGuardError) -> FailureKind {
+    match error {
+        VigilGuardError::InvalidHeader { .. }
+        | VigilGuardError::Transport { .. }
+        | VigilGuardError::ResponseJson { .. } => FailureKind::Backend,
+        VigilGuardError::MissingConfig { .. }
+        | VigilGuardError::ToolCallIndex { .. }
+        | VigilGuardError::InvalidToolFunction { .. }
+        | VigilGuardError::Blocked { .. }
+        | VigilGuardError::BackendUnavailable => FailureKind::Local,
     }
 }
 
