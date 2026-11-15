@@ -320,5 +320,7 @@ fn the_slot_builds_the_shared_service_from_the_bundled_catalog() {
     .load("")
     .expect("the empty configuration loads");
     let slot = Slot::new(&config, &Shared);
-    assert!(slot.service.is_ok());
+    let _service = slot
+        .service
+        .expect("the bundled catalog builds the service");
 }
