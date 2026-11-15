@@ -10,9 +10,8 @@ pub const AGENT_365_PROD_API_BASE: &str = "https://agent365.svc.cloud.microsoft"
 pub const AGENT_365_PROD_RESOURCE_APP_ID: &str = "ea9ffc3e-8a23-4a7d-836d-234d7c7565c1";
 pub const AGENT_365_SCOPE_NAME: &str = "ThreatProtection.Evaluate.All";
 
-// The admin UI schema LiteLLM returns from get_config_model; pydantic ignores unknown keys there.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Agent365GuardrailConfigModel {
     pub optional_params: Option<GuardrailValue>,
     pub tenant_id: Option<String>,

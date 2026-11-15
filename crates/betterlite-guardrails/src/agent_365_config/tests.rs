@@ -60,9 +60,11 @@ fn explicit_values() {
     );
 }
 
-fn unknown_keys_are_ignored() {
-    let parsed = model(r#"{"tenant_id":"tenant","unknown_key":true}"#);
-    assert_eq!(parsed.tenant_id.as_deref(), Some("tenant"));
+fn unknown_keys_are_rejected() {
+    let parsed = serde_json::from_str::<Agent365GuardrailConfigModel>(
+        r#"{"tenant_id":"tenant","unknown_key":true}"#,
+    );
+    assert!(parsed.is_err());
 }
 
 fn unknown_unreachable_fallback_is_rejected() {
@@ -75,7 +77,7 @@ fn unknown_unreachable_fallback_is_rejected() {
 #[rstest]
 #[case::defaults(defaults)]
 #[case::explicit_values(explicit_values)]
-#[case::unknown_keys_are_ignored(unknown_keys_are_ignored)]
+#[case::unknown_keys_are_rejected(unknown_keys_are_rejected)]
 #[case::unknown_unreachable_fallback_is_rejected(unknown_unreachable_fallback_is_rejected)]
 fn agent_365_token_behaviors(#[case] scenario: Scenario) {
     scenario();
