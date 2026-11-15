@@ -52,6 +52,7 @@ pub struct TraceAuth {
 }
 
 impl TraceAuth {
+    #[must_use]
     pub fn from_principal(principal: &Principal) -> Self {
         let role = if principal.subject == MASTER_KEY_SUBJECT
             || principal.roles.contains(&Role::PlatformAdmin)
@@ -115,6 +116,7 @@ impl TraceAccessContext {
     }
 }
 
+#[must_use]
 pub fn provide_trace_access(
     auth: &TraceAuth,
     receiver: Option<Arc<dyn TraceRuntime>>,
@@ -124,7 +126,16 @@ pub fn provide_trace_access(
         api_key_hash: auth.token.clone().unwrap_or_default(),
         org_id: auth.org_id.clone().unwrap_or_default(),
     };
-    let (read_scope, write_tenant) = match auth.role {
+    let (read_scope, write_tenant) = trace_scopes(auth, tenant);
+    TraceAccessContext {
+        receiver,
+        read_scope,
+        write_tenant,
+    }
+}
+
+fn trace_scopes(auth: &TraceAuth, tenant: Tenant) -> (Option<TraceScope>, Option<Tenant>) {
+    match auth.role {
         TraceRole::Admin => (
             Some(TraceScope {
                 team_ids: Vec::new(),
@@ -156,11 +167,6 @@ pub fn provide_trace_access(
             ),
             (None, None) => (None, Some(tenant)),
         },
-    };
-    TraceAccessContext {
-        receiver,
-        read_scope,
-        write_tenant,
     }
 }
 

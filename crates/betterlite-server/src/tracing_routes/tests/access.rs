@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_logging::trace_types::TraceScope;
 use rstest::rstest;
@@ -183,13 +185,13 @@ fn tenant_stamps_rows_and_resource_attributes() {
 
 #[test]
 fn the_system_clock_reads_unix_milliseconds() {
-    let before = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let before = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .expect("a clock after the epoch")
         .as_millis();
     let now = u128::try_from(SystemClock.now_ms()).expect("a positive reading");
-    let after = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let after = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .expect("a clock after the epoch")
         .as_millis();
     assert!(before <= now && now <= after);

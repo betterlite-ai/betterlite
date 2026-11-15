@@ -13,6 +13,7 @@ use betterlite_tracing::storage::trace_store::{SpanErrorTarget, TraceStorage, Tr
 use futures_util::StreamExt as _;
 use thiserror::Error;
 use tokio::sync::Semaphore;
+use tokio::time::timeout;
 
 use crate::tracing_routes::access::Tenant;
 use crate::tracing_routes::query::TraceQueryStore;
@@ -127,7 +128,7 @@ where
     }
 
     async fn read_payload(&self, body: Body) -> Result<Bytes, IngestError> {
-        match tokio::time::timeout(self.body_read_timeout, read_bounded(body)).await {
+        match timeout(self.body_read_timeout, read_bounded(body)).await {
             Ok(result) => result,
             Err(_elapsed) => Err(IngestError::Overloaded),
         }
@@ -148,7 +149,6 @@ where
 impl<S, C, Q> TraceRuntime for StoreTraceReceiver<S, C, Q>
 where
     S: TraceStorage + TraceSpanSink + Send + Sync,
-    S::Error: Send + Sync + 'static,
     C: SpanCodec + Send + Sync,
     Q: TraceQueryStore + 'static,
 {
@@ -223,8 +223,7 @@ where
     }
 
     fn query_store(&self) -> Arc<dyn TraceQueryStore> {
-        let store: Arc<dyn TraceQueryStore> = self.queries.clone();
-        store
+        Arc::clone(&self.queries)
     }
 }
 

@@ -23,6 +23,19 @@ pub(crate) struct DetailBody {
     pub(crate) detail: String,
 }
 
+#[derive(Serialize)]
+pub(crate) struct ValidationIssue {
+    #[serde(rename = "type")]
+    pub(crate) kind: &'static str,
+    pub(crate) loc: Vec<String>,
+    pub(crate) msg: &'static str,
+}
+
+#[derive(Serialize)]
+pub(crate) struct ValidationBody {
+    pub(crate) detail: Vec<ValidationIssue>,
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct TraceRefQuery {
     #[serde(default)]
@@ -36,7 +49,7 @@ struct ListQuery {
     cursor: Option<String>,
 }
 
-pub(crate) fn router(state: TraceRoutesState) -> Router {
+pub fn router(state: TraceRoutesState) -> Router {
     Router::new()
         .route("/v1/traces", post(ingest_traces).get(list_traces))
         .route("/v1/traces/query", post(queries::query_traces))
@@ -60,12 +73,7 @@ async fn ingest_traces(
     body: Body,
 ) -> Response {
     let Some(Extension(context)) = caller else {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            "the API key is not valid",
-            "auth_error",
-            "401",
-        );
+        return unauthenticated();
     };
     let content_type = headers
         .get(header::CONTENT_TYPE)
@@ -77,7 +85,13 @@ async fn ingest_traces(
     let access = provide_trace_access(&auth, state.receiver.clone());
     let (receiver, tenant) = match access.writer() {
         Ok(pair) => pair,
-        Err(error) => return otlp_access_failure(content_type, &error),
+        Err(error) => {
+            return otlp_encoded_response(
+                content_type,
+                access_status(&error),
+                Some(&error.to_string()),
+            );
+        }
     };
     match receiver
         .ingest(body, content_type, content_encoding, tenant)
@@ -94,12 +108,7 @@ async fn list_traces(
     uri: Uri,
 ) -> Response {
     let Some(Extension(context)) = caller else {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            "the API key is not valid",
-            "auth_error",
-            "401",
-        );
+        return unauthenticated();
     };
     let Ok(Query(params)) = Query::<ListQuery>::try_from_uri(&uri) else {
         let body = DetailBody {
@@ -128,6 +137,15 @@ async fn list_traces(
     }
 }
 
+pub(crate) fn unauthenticated() -> Response {
+    json_error(
+        StatusCode::UNAUTHORIZED,
+        "the API key is not valid",
+        "auth_error",
+        "401",
+    )
+}
+
 pub(crate) fn access_failure(error: &AccessError) -> Response {
     let status = access_status(error);
     let body = DetailBody {
@@ -136,7 +154,7 @@ pub(crate) fn access_failure(error: &AccessError) -> Response {
     (status, Json(body)).into_response()
 }
 
-pub(crate) fn access_status(error: &AccessError) -> StatusCode {
+pub(crate) const fn access_status(error: &AccessError) -> StatusCode {
     match error {
         AccessError::Unavailable => StatusCode::NOT_IMPLEMENTED,
         AccessError::NotAllowedToView | AccessError::NotAllowedToIngest => StatusCode::FORBIDDEN,
@@ -158,10 +176,6 @@ pub(crate) fn read_failure(error: &TraceReadError) -> Response {
             "500",
         ),
     }
-}
-
-fn otlp_access_failure(content_type: Option<&str>, error: &AccessError) -> Response {
-    otlp_encoded_response(content_type, access_status(error), Some(&error.to_string()))
 }
 
 fn ingest_failure(content_type: Option<&str>, error: &IngestError) -> Response {

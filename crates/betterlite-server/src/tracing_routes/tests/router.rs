@@ -1,20 +1,21 @@
 use std::sync::Arc;
 
 use axum::Router;
-use axum::http::{Method, StatusCode, header};
+use axum::http::{HeaderValue, Method, StatusCode, header};
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_logging::trace_types::{SpanDetail, SpanErrorPage, Trace, TracePage};
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::support::{
-    Answer, FakeRuntime, QueryAnswer, application, body_text, master_principal, principal, send,
+    Answer, FakeRuntime, QueryAnswer, ReadAnswer, application, body_text, build_request,
+    master_principal, principal, send,
 };
-use crate::tracing_routes::access::Tenant;
+use crate::tracing_routes::access::{Tenant, TraceAuth, TraceRole};
+use crate::tracing_routes::otlp::OTLP_RETRY_AFTER;
 use crate::tracing_routes::query::QueryScope;
 use crate::tracing_routes::receiver::TraceRuntime;
-use crate::tracing_routes::tests::support::ReadAnswer;
 
 const NOW_MS: i64 = 1_700_000_000_000;
 const DAY_MS: i64 = 86_400_000;
@@ -76,11 +77,7 @@ async fn post_traces(
     let headers = [("content-type", content_type)];
     send(
         app(runtime, None),
-        Method::POST,
-        "/v1/traces",
-        caller,
-        &headers,
-        body,
+        build_request(Method::POST, "/v1/traces", caller, &headers, body),
     )
     .await
 }
@@ -118,11 +115,7 @@ async fn ingest_without_a_content_type_answers_protobuf() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = send(
         app(&runtime, None),
-        Method::POST,
-        "/v1/traces",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(Method::POST, "/v1/traces", Some(&admin()), &[], b""),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -138,7 +131,10 @@ async fn ingest_requires_an_authenticated_principal() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = post_traces(&runtime, None, "application/json", b"{}").await;
     assert_eq!(answer.status, StatusCode::UNAUTHORIZED);
-    assert!(body_text(&answer).contains("auth_error"));
+    assert_eq!(
+        body_text(&answer),
+        r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":null,"code":"401"}}"#
+    );
 }
 
 #[tokio::test]
@@ -156,11 +152,13 @@ async fn ingest_view_only_is_forbidden() {
 async fn ingest_without_a_receiver_is_not_implemented() {
     let answer = send(
         application(None, None),
-        Method::POST,
-        "/v1/traces",
-        Some(&admin()),
-        &[("content-type", "application/json")],
-        b"{}",
+        build_request(
+            Method::POST,
+            "/v1/traces",
+            Some(&admin()),
+            &[("content-type", "application/json")],
+            b"{}",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::NOT_IMPLEMENTED);
@@ -214,11 +212,13 @@ async fn list_success_returns_the_page() {
     let runtime = Arc::new(runtime);
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces?start_ms=100&end_ms=200&cursor=abc",
-        Some(&team_member()),
-        &[],
-        b"",
+        build_request(
+            Method::GET,
+            "/v1/traces?start_ms=100&end_ms=200&cursor=abc",
+            Some(&team_member()),
+            &[],
+            b"",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -240,11 +240,7 @@ async fn list_defaults_the_window_to_the_last_day() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(Method::GET, "/v1/traces", Some(&admin()), &[], b""),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -266,11 +262,13 @@ async fn list_token_scope_reaches_the_receiver() {
     let caller = principal(vec![Role::TeamMember], None, Some("hash-1"), None, None);
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces?start_ms=1&end_ms=2",
-        Some(&caller),
-        &[],
-        b"",
+        build_request(
+            Method::GET,
+            "/v1/traces?start_ms=1&end_ms=2",
+            Some(&caller),
+            &[],
+            b"",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -290,11 +288,7 @@ async fn list_without_a_read_scope_is_forbidden() {
     let caller = principal(vec![Role::TeamMember], None, None, None, None);
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces",
-        Some(&caller),
-        &[],
-        b"",
+        build_request(Method::GET, "/v1/traces", Some(&caller), &[], b""),
     )
     .await;
     assert_eq!(answer.status, StatusCode::FORBIDDEN);
@@ -308,11 +302,7 @@ async fn list_without_a_read_scope_is_forbidden() {
 async fn list_without_a_receiver_is_not_implemented() {
     let answer = send(
         application(None, None),
-        Method::GET,
-        "/v1/traces",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(Method::GET, "/v1/traces", Some(&admin()), &[], b""),
     )
     .await;
     assert_eq!(answer.status, StatusCode::NOT_IMPLEMENTED);
@@ -326,11 +316,7 @@ async fn list_with_an_invalid_cursor_is_a_bad_request() {
     let runtime = Arc::new(runtime);
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(Method::GET, "/v1/traces", Some(&admin()), &[], b""),
     )
     .await;
     assert_eq!(answer.status, StatusCode::BAD_REQUEST);
@@ -344,11 +330,13 @@ async fn get_trace_found_is_200_and_passes_the_ref() {
     let runtime = Arc::new(runtime);
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces/trace-1?trace_ref=env-a",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(
+            Method::GET,
+            "/v1/traces/trace-1?trace_ref=env-a",
+            Some(&admin()),
+            &[],
+            b"",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -367,11 +355,7 @@ async fn get_trace_missing_is_404() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces/trace-9",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(Method::GET, "/v1/traces/trace-9", Some(&admin()), &[], b""),
     )
     .await;
     assert_eq!(answer.status, StatusCode::NOT_FOUND);
@@ -388,11 +372,13 @@ async fn get_span_found_is_200() {
     let runtime = Arc::new(runtime);
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces/trace-1/spans/span-1?trace_ref=env-a",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(
+            Method::GET,
+            "/v1/traces/trace-1/spans/span-1?trace_ref=env-a",
+            Some(&admin()),
+            &[],
+            b"",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -413,11 +399,13 @@ async fn get_span_missing_is_404() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces/trace-1/spans/span-9",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(
+            Method::GET,
+            "/v1/traces/trace-1/spans/span-9",
+            Some(&admin()),
+            &[],
+            b"",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::NOT_FOUND);
@@ -431,11 +419,13 @@ async fn get_span_error_found_is_200_and_passes_the_cursor() {
     let runtime = Arc::new(runtime);
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces/trace-1/spans/span-1/error?cursor=abc&trace_ref=env-a",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(
+            Method::GET,
+            "/v1/traces/trace-1/spans/span-1/error?cursor=abc&trace_ref=env-a",
+            Some(&admin()),
+            &[],
+            b"",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -456,11 +446,13 @@ async fn get_span_error_missing_is_404() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        "/v1/traces/trace-1/spans/span-1/error",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(
+            Method::GET,
+            "/v1/traces/trace-1/spans/span-1/error",
+            Some(&admin()),
+            &[],
+            b"",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::NOT_FOUND);
@@ -477,15 +469,25 @@ async fn get_span_error_rejects_an_overlong_cursor() {
     let uri = format!("/v1/traces/trace-1/spans/span-1/error?cursor={cursor}");
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        &uri,
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(Method::GET, &uri, Some(&admin()), &[], b""),
     )
     .await;
     assert_eq!(answer.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body_text(&answer).contains("string_too_long"));
+}
+
+#[tokio::test]
+async fn get_span_error_checks_the_cursor_before_the_read_scope() {
+    let runtime = Arc::new(FakeRuntime::new());
+    let caller = principal(vec![Role::TeamMember], None, None, None, None);
+    let cursor = "a".repeat(513);
+    let uri = format!("/v1/traces/trace-1/spans/span-1/error?cursor={cursor}");
+    let answer = send(
+        app(&runtime, None),
+        build_request(Method::GET, &uri, Some(&caller), &[], b""),
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]
@@ -495,11 +497,7 @@ async fn get_span_error_accepts_a_cursor_of_exactly_512_characters() {
     let uri = format!("/v1/traces/trace-1/spans/span-1/error?cursor={cursor}");
     let answer = send(
         app(&runtime, None),
-        Method::GET,
-        &uri,
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(Method::GET, &uri, Some(&admin()), &[], b""),
     )
     .await;
     assert_eq!(answer.status, StatusCode::NOT_FOUND);
@@ -509,11 +507,7 @@ async fn get_span_error_accepts_a_cursor_of_exactly_512_characters() {
 async fn get_trace_without_a_receiver_is_not_implemented() {
     let answer = send(
         application(None, None),
-        Method::GET,
-        "/v1/traces/trace-1",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(Method::GET, "/v1/traces/trace-1", Some(&admin()), &[], b""),
     )
     .await;
     assert_eq!(answer.status, StatusCode::NOT_IMPLEMENTED);
@@ -525,11 +519,13 @@ async fn query_without_a_master_key_is_503() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = send(
         app(&runtime, None),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&admin()),
-        &[("content-type", "application/json")],
-        br#"{"sql":"SELECT 1"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&admin()),
+            &[("content-type", "application/json")],
+            br#"{"sql":"SELECT 1"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::SERVICE_UNAVAILABLE);
@@ -543,11 +539,13 @@ async fn query_without_a_master_key_is_503() {
 async fn query_without_a_receiver_but_with_a_secret_is_501() {
     let answer = send(
         application(None, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&admin()),
-        &[("content-type", "application/json")],
-        br#"{"sql":"SELECT 1"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&admin()),
+            &[("content-type", "application/json")],
+            br#"{"sql":"SELECT 1"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::NOT_IMPLEMENTED);
@@ -558,11 +556,13 @@ async fn query_admin_scope_reaches_the_storage() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&admin()),
-        &[("content-type", "application/json")],
-        br#"{"sql":"SELECT 1"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&admin()),
+            &[("content-type", "application/json")],
+            br#"{"sql":"SELECT 1"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -584,11 +584,13 @@ async fn query_team_scope_is_derived_from_the_team() {
     let caller = principal(vec![Role::TeamMember], Some("team-1"), None, None, None);
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&caller),
-        &[("content-type", "application/json")],
-        br#"{"sql":"SELECT 1"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&caller),
+            &[("content-type", "application/json")],
+            br#"{"sql":"SELECT 1"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -607,11 +609,13 @@ async fn query_key_scope_is_derived_from_the_token() {
     let caller = principal(vec![Role::TeamMember], None, Some("hash-1"), None, None);
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&caller),
-        &[("content-type", "application/json")],
-        br#"{"sql":"SELECT 1"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&caller),
+            &[("content-type", "application/json")],
+            br#"{"sql":"SELECT 1"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -637,11 +641,13 @@ async fn query_project_scope_uses_the_project_key() {
     );
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&caller),
-        &[("content-type", "application/json")],
-        br#"{"sql":"SELECT 1"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&caller),
+            &[("content-type", "application/json")],
+            br#"{"sql":"SELECT 1"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -661,11 +667,13 @@ async fn query_project_without_a_key_is_forbidden() {
     let caller = principal(vec![Role::TeamMember], None, None, None, Some("project-1"));
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&caller),
-        &[("content-type", "application/json")],
-        br#"{"sql":"SELECT 1"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&caller),
+            &[("content-type", "application/json")],
+            br#"{"sql":"SELECT 1"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::FORBIDDEN);
@@ -681,11 +689,13 @@ async fn query_without_a_scope_is_forbidden() {
     let caller = principal(vec![Role::TeamMember], None, None, None, None);
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&caller),
-        &[("content-type", "application/json")],
-        br#"{"sql":"SELECT 1"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&caller),
+            &[("content-type", "application/json")],
+            br#"{"sql":"SELECT 1"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::FORBIDDEN);
@@ -700,11 +710,13 @@ async fn query_help_returns_the_storage_result() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::GET,
-        "/v1/traces/query/help",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(
+            Method::GET,
+            "/v1/traces/query/help",
+            Some(&admin()),
+            &[],
+            b"",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
@@ -727,11 +739,13 @@ async fn query_help_runtime_failure_is_503() {
     let runtime = Arc::new(runtime);
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::GET,
-        "/v1/traces/query/help",
-        Some(&admin()),
-        &[],
-        b"",
+        build_request(
+            Method::GET,
+            "/v1/traces/query/help",
+            Some(&admin()),
+            &[],
+            b"",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::SERVICE_UNAVAILABLE);
@@ -746,11 +760,13 @@ async fn query_invalid_body_is_422() {
     let runtime = Arc::new(FakeRuntime::new());
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&admin()),
-        &[("content-type", "application/json")],
-        b"{}",
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&admin()),
+            &[("content-type", "application/json")],
+            b"{}",
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -767,11 +783,13 @@ async fn query_invalid_sql_is_400() {
     let runtime = Arc::new(runtime);
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&admin()),
-        &[("content-type", "application/json")],
-        br#"{"sql":"DROP"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&admin()),
+            &[("content-type", "application/json")],
+            br#"{"sql":"DROP"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::BAD_REQUEST);
@@ -789,11 +807,13 @@ async fn query_runtime_failure_is_503() {
     let runtime = Arc::new(runtime);
     let answer = send(
         app(&runtime, Some("sk-master")),
-        Method::POST,
-        "/v1/traces/query",
-        Some(&admin()),
-        &[("content-type", "application/json")],
-        br#"{"sql":"SELECT 1"}"#,
+        build_request(
+            Method::POST,
+            "/v1/traces/query",
+            Some(&admin()),
+            &[("content-type", "application/json")],
+            br#"{"sql":"SELECT 1"}"#,
+        ),
     )
     .await;
     assert_eq!(answer.status, StatusCode::SERVICE_UNAVAILABLE);
@@ -806,22 +826,22 @@ async fn query_runtime_failure_is_503() {
 #[test]
 fn the_master_principal_is_an_admin_without_roles() {
     assert_eq!(
-        crate::tracing_routes::access::TraceAuth::from_principal(&master_principal()).role,
-        crate::tracing_routes::access::TraceRole::Admin
+        TraceAuth::from_principal(&master_principal()).role,
+        TraceRole::Admin
     );
 }
 
 #[test]
 fn the_retry_constant_is_two_seconds() {
-    assert_eq!(crate::tracing_routes::otlp::OTLP_RETRY_AFTER, "2");
+    assert_eq!(OTLP_RETRY_AFTER, "2");
 }
 
 #[test]
 fn the_secret_is_not_empty() {
-    let value = secrecy::SecretString::from("sk-master".to_owned());
+    let value = SecretString::from("sk-master".to_owned());
     assert_eq!(value.expose_secret(), "sk-master");
 }
 
-fn header_value(value: &str) -> axum::http::HeaderValue {
-    axum::http::HeaderValue::from_str(value).expect("header value")
+fn header_value(value: &str) -> HeaderValue {
+    HeaderValue::from_str(value).expect("header value")
 }

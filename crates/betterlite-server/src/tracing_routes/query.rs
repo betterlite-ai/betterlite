@@ -62,7 +62,6 @@ pub struct TraceQueryAccess {
     pub secret: SecretString,
 }
 
-#[must_use]
 pub fn trace_query_scope(auth: &TraceAuth) -> Result<QueryScope, QueryAccessError> {
     if matches!(auth.role, TraceRole::Admin | TraceRole::AdminViewOnly) {
         return Ok(QueryScope::Admin);

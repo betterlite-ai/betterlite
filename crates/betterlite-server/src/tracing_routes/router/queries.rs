@@ -3,32 +3,19 @@ use axum::body::{Body, Bytes};
 use axum::extract::{Extension, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse as _, Response};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::error_body::json_error;
 use crate::tracing_routes::TraceRoutesState;
 use crate::tracing_routes::access::TraceAuth;
 use crate::tracing_routes::query::{QueryAccessError, QueryRunError, provide_trace_query_access};
-use crate::tracing_routes::router::DetailBody;
+use crate::tracing_routes::router::{DetailBody, ValidationBody, ValidationIssue, unauthenticated};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TraceQueryRequest {
     sql: String,
-}
-
-#[derive(Serialize)]
-struct ValidationIssue {
-    #[serde(rename = "type")]
-    kind: &'static str,
-    loc: Vec<String>,
-    msg: &'static str,
-}
-
-#[derive(Serialize)]
-struct ValidationBody {
-    detail: Vec<ValidationIssue>,
 }
 
 pub(super) async fn query_traces(
@@ -37,12 +24,7 @@ pub(super) async fn query_traces(
     body: Bytes,
 ) -> Response {
     let Some(Extension(context)) = caller else {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            "the API key is not valid",
-            "auth_error",
-            "401",
-        );
+        return unauthenticated();
     };
     let auth = TraceAuth::from_principal(&context.principal);
     let access =
@@ -77,12 +59,7 @@ pub(super) async fn query_help(
     caller: Option<Extension<AuthContext>>,
 ) -> Response {
     let Some(Extension(context)) = caller else {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            "the API key is not valid",
-            "auth_error",
-            "401",
-        );
+        return unauthenticated();
     };
     let auth = TraceAuth::from_principal(&context.principal);
     let access =

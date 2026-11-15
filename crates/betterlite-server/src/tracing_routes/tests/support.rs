@@ -2,19 +2,24 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::Router;
-use axum::body::{Body, Bytes, to_bytes};
+use axum::body::{Body, to_bytes};
 use axum::extract::Request;
-use axum::http::{HeaderMap, Method, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, OrganizationIdentity, Principal, ProjectIdentity, SourceKey,
     TeamIdentity,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role, TeamRole};
-use betterlite_logging::trace_types::{SpanDetail, SpanErrorPage, Trace, TracePage, TraceScope};
+use betterlite_logging::otlp_normalize::{DecodedSpan, NormalizedSpan, SpanRow};
+use betterlite_logging::trace_types::{
+    SpanDetail, SpanErrorPage, SpanType, Trace, TracePage, TraceScope,
+};
 use betterlite_tracing::storage::trace_store::SpanErrorTarget;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
+use crate::auth::auth_identity::AuthContext;
 use crate::tracing_routes::TraceRoutesState;
 use crate::tracing_routes::access::{Tenant, TraceClock};
 use crate::tracing_routes::query::{QueryRunError, QueryScope, TraceQueryStore};
@@ -193,7 +198,7 @@ impl FakeRuntime {
 impl TraceRuntime for FakeRuntime {
     async fn ingest(
         &self,
-        body: axum::body::Body,
+        body: Body,
         content_type: Option<&str>,
         content_encoding: Option<&str>,
         tenant: &Tenant,
@@ -273,8 +278,7 @@ impl TraceRuntime for FakeRuntime {
     }
 
     fn query_store(&self) -> Arc<dyn TraceQueryStore> {
-        let store: Arc<dyn TraceQueryStore> = self.queries.clone();
-        store
+        Arc::clone(&self.queries)
     }
 }
 
@@ -303,14 +307,13 @@ pub(super) struct Answer {
     pub(super) body: Vec<u8>,
 }
 
-pub(super) async fn send(
-    application: Router,
+pub(super) fn build_request(
     method: Method,
     uri: &str,
     principal: Option<&Principal>,
     headers: &[(&str, &str)],
     body: &[u8],
-) -> Answer {
+) -> Request<Body> {
     let mut request = Request::builder()
         .method(method)
         .uri(uri)
@@ -318,17 +321,19 @@ pub(super) async fn send(
         .expect("request");
     for (name, value) in headers {
         request.headers_mut().insert(
-            axum::http::HeaderName::try_from(*name).expect("header name"),
-            axum::http::HeaderValue::try_from(*value).expect("header value"),
+            HeaderName::try_from(*name).expect("header name"),
+            HeaderValue::try_from(*value).expect("header value"),
         );
     }
     if let Some(principal) = principal {
-        request
-            .extensions_mut()
-            .insert(crate::auth::auth_identity::AuthContext {
-                principal: principal.clone(),
-            });
+        request.extensions_mut().insert(AuthContext {
+            principal: principal.clone(),
+        });
     }
+    request
+}
+
+pub(super) async fn send(application: Router, request: Request<Body>) -> Answer {
     let response = application.oneshot(request).await.expect("response");
     let status = response.status();
     let headers = response.headers().clone();
@@ -397,9 +402,8 @@ pub(super) fn body_text(answer: &Answer) -> String {
     String::from_utf8(answer.body.clone()).expect("utf8 body")
 }
 
-pub(super) fn span_row() -> betterlite_logging::otlp_normalize::SpanRow {
-    use indexmap::IndexMap;
-    betterlite_logging::otlp_normalize::SpanRow {
+pub(super) fn span_row() -> SpanRow {
+    SpanRow {
         timestamp: 1_000_000,
         trace_id: "trace-1".to_owned(),
         span_id: "span-1".to_owned(),
@@ -417,7 +421,7 @@ pub(super) fn span_row() -> betterlite_logging::otlp_normalize::SpanRow {
         status_message: String::new(),
         team_id: String::new(),
         api_key_hash: String::new(),
-        observation_type: betterlite_logging::trace_types::SpanType::Llm,
+        observation_type: SpanType::Llm,
         agent_name: "researcher".to_owned(),
         model: "gpt-4o".to_owned(),
         litellm_request_id: "req-1".to_owned(),
@@ -428,9 +432,8 @@ pub(super) fn span_row() -> betterlite_logging::otlp_normalize::SpanRow {
     }
 }
 
-pub(super) fn decoded_span() -> betterlite_logging::otlp_normalize::DecodedSpan {
-    use indexmap::IndexMap;
-    betterlite_logging::otlp_normalize::DecodedSpan {
+pub(super) fn decoded_span() -> DecodedSpan {
+    DecodedSpan {
         trace_id: "trace-1".to_owned(),
         span_id: "span-1".to_owned(),
         parent_span_id: String::new(),
@@ -446,8 +449,8 @@ pub(super) fn decoded_span() -> betterlite_logging::otlp_normalize::DecodedSpan 
         status_code: "STATUS_CODE_OK".to_owned(),
         status_message: String::new(),
         events: Vec::new(),
-        normalized: betterlite_logging::otlp_normalize::NormalizedSpan {
-            observation_type: betterlite_logging::trace_types::SpanType::Llm,
+        normalized: NormalizedSpan {
+            observation_type: SpanType::Llm,
             agent_name: "researcher".to_owned(),
             litellm_request_id: "req-1".to_owned(),
             model: "gpt-4o".to_owned(),

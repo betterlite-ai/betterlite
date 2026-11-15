@@ -1,23 +1,24 @@
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use axum::body::{Body, Bytes};
 use betterlite_logging::otlp_errors::CodecError;
 use betterlite_logging::otlp_normalize::{DecodedSpan, OTLP_MAX_BODY_BYTES, SpanCodec, SpanRow};
 use betterlite_logging::trace_types::{SpanType, TraceScope};
-use betterlite_tracing::storage::error::StorageError;
+use betterlite_tracing::spend::SpendRow;
 use betterlite_tracing::storage::query::{
     ListTracesQuery, SpanDetailQuery, SpanErrorQuery, SpendByRequestIdsQuery, TraceSpansQuery,
 };
 use betterlite_tracing::storage::rows::{SpanDetailRow, SpanErrorRow, SpanQueryRow, TraceListRow};
-use betterlite_tracing::storage::trace_store::{SpanErrorTarget, TraceStorage};
+use betterlite_tracing::storage::trace_store::{SpanErrorTarget, TraceStorage, TraceStore};
 use futures_util::stream;
+use indexmap::IndexMap;
 use thiserror::Error;
 
 use super::support::{FakeQueryStore, QueryAnswer, decoded_span, span_row};
 use crate::tracing_routes::access::Tenant;
-use crate::tracing_routes::query::TraceQueryStore;
+use crate::tracing_routes::query::QueryScope;
 use crate::tracing_routes::receiver::{
     IngestError, ReceiverConfigError, StoreTraceReceiver, TraceReadError, TraceRuntime,
     TraceSpanSink,
@@ -50,7 +51,7 @@ enum SinkError {
 }
 
 struct FakeStorage {
-    inserted: Mutex<Vec<SpanRow>>,
+    inserted: Arc<Mutex<Vec<SpanRow>>>,
     sink: SinkMode,
     read: ReadMode,
 }
@@ -58,7 +59,7 @@ struct FakeStorage {
 impl FakeStorage {
     fn new(sink: SinkMode, read: ReadMode) -> Self {
         Self {
-            inserted: Mutex::new(Vec::new()),
+            inserted: Arc::new(Mutex::new(Vec::new())),
             sink,
             read,
         }
@@ -133,7 +134,7 @@ impl TraceStorage for FakeStorage {
                 span_id: "span-1".to_owned(),
                 input: "in".to_owned(),
                 output: "out".to_owned(),
-                attributes: indexmap::IndexMap::new(),
+                attributes: IndexMap::new(),
             }]),
             ReadMode::Ok | ReadMode::Storage => self.read_rows(),
         }
@@ -154,7 +155,7 @@ impl TraceStorage for FakeStorage {
     async fn spend_by_request_ids(
         &self,
         _query: SpendByRequestIdsQuery,
-    ) -> Result<Vec<betterlite_tracing::spend::SpendRow>, StubError> {
+    ) -> Result<Vec<SpendRow>, StubError> {
         self.read_rows()
     }
 }
@@ -184,7 +185,7 @@ impl SpanCodec for FakeCodec {
 type Receiver = StoreTraceReceiver<FakeStorage, FakeCodec, FakeQueryStore>;
 
 fn receiver(storage: FakeStorage, codec: CodecAnswer, timeout: Duration) -> Receiver {
-    let store = betterlite_tracing::storage::trace_store::TraceStore {
+    let store = TraceStore {
         storage,
         page_size: 50,
     };
@@ -211,14 +212,16 @@ async fn ingest(receiver: &Receiver, body: Vec<u8>) -> Result<usize, IngestError
 
 #[tokio::test]
 async fn ingest_decodes_stamps_and_inserts() {
+    let storage = FakeStorage::new(SinkMode::Ok, ReadMode::Ok);
+    let inserted_rows = Arc::clone(&storage.inserted);
     let receiver = receiver(
-        FakeStorage::new(SinkMode::Ok, ReadMode::Ok),
+        storage,
         CodecAnswer::Ok(vec![decoded_span()]),
         Duration::from_secs(30),
     );
     let count = ingest(&receiver, b"{}".to_vec()).await.expect("ingest");
     assert_eq!(count, 1);
-    let inserted = receiver.store.storage.inserted.lock().expect("lock");
+    let inserted = inserted_rows.lock().expect("lock");
     let row = inserted.first().expect("inserted row");
     assert_eq!(row.team_id, "team-1");
     assert_eq!(row.api_key_hash, "hash-1");
@@ -320,7 +323,7 @@ async fn ingest_times_out_to_an_overload() {
         CodecAnswer::Ok(Vec::new()),
         Duration::ZERO,
     );
-    let body: Body = Body::from_stream(stream::pending::<Result<Bytes, std::io::Error>>());
+    let body: Body = Body::from_stream(stream::pending::<Result<Bytes, io::Error>>());
     let result = receiver
         .ingest(body, Some("application/json"), None, &tenant())
         .await;
@@ -329,7 +332,7 @@ async fn ingest_times_out_to_an_overload() {
 
 #[test]
 fn the_constructor_rejects_zero_concurrency() {
-    let store = betterlite_tracing::storage::trace_store::TraceStore {
+    let store = TraceStore {
         storage: FakeStorage::new(SinkMode::Ok, ReadMode::Ok),
         page_size: 50,
     };
@@ -390,7 +393,7 @@ async fn the_query_store_is_the_injected_one() {
     );
     let store = receiver.query_store();
     let secret = SecretString::from("sk-master".to_owned());
-    let scope = crate::tracing_routes::query::QueryScope::Admin;
+    let scope = QueryScope::Admin;
     let result = store.query_sql("SELECT 1", &scope, &secret).await;
     assert_eq!(result.expect("query"), "{}");
 }
