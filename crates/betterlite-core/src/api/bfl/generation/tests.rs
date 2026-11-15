@@ -155,6 +155,15 @@ fn rejects_other_generation_models(#[case] model: &str) {
 }
 
 #[test]
+fn for_model_accepts_a_generation_model() {
+    assert!(GenerationConfig::for_model("black_forest_labs/FLUX-Pro-1.1-ULTRA").is_ok());
+    assert!(matches!(
+        GenerationConfig::for_model("flux-unknown"),
+        Err(BflError::UnknownModel { .. })
+    ));
+}
+
+#[test]
 fn unknown_model_error_names_the_lowercased_final_component() {
     let error = generation_endpoint("black_forest_labs/FLUX-Unknown").unwrap_err();
 
@@ -474,6 +483,15 @@ fn missing_credentials_raise_the_source_401() {
     assert!(matches!(&error, BflError::MissingCredentials));
     assert!(matches!(&empty, BflError::MissingCredentials));
     assert_eq!(error.status(), Some(401));
+}
+
+#[test]
+fn an_api_key_a_header_cannot_carry_is_named() {
+    let key = secret("with\nnewline");
+    let error = validate_environment(HeaderMap::new(), Some(&key), None).unwrap_err();
+
+    assert!(matches!(&error, BflError::InvalidApiKey { .. }));
+    assert_eq!(error.status(), None);
 }
 
 #[test]
