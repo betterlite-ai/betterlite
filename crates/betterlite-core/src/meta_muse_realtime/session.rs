@@ -130,14 +130,16 @@ pub fn parse_session_update(
     if changes_model {
         return Err(MuseProtocolError::ModelChanged);
     }
+    let mode = parse_mode(&update)?;
+    let sample_rate = parse_sample_rate(&update)?;
     let language_bias = match update.language.as_deref() {
         Some(language) => vec![normalize_language(language)?],
         None => Vec::new(),
     };
     Ok(MuseSessionConfig {
         model: normalized_model,
-        mode: parse_mode(&update)?,
-        sample_rate: parse_sample_rate(&update)?,
+        mode,
+        sample_rate,
         language_bias,
     })
 }

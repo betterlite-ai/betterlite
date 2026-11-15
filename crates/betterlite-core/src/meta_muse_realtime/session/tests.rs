@@ -300,6 +300,20 @@ fn rejects_non_server_vad_turn_detection() {
     ));
 }
 
+#[test]
+fn session_update_errors_follow_the_litellm_order() {
+    let mode_first = r#"{"type":"session.update","session":{"audio":{"input":{"transcription":{"language":"klingon"},"turn_detection":{"type":"semantic_vad"}}}}}"#;
+    assert!(matches!(
+        configured(mode_first).unwrap_err(),
+        MuseProtocolError::TurnDetectionUnsupported
+    ));
+    let rate_first = r#"{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":8000},"transcription":{"language":"klingon"},"turn_detection":{"type":"server_vad"}}}}}"#;
+    assert!(matches!(
+        configured(rate_first).unwrap_err(),
+        MuseProtocolError::SampleRateUnsupported
+    ));
+}
+
 fn warnings(captured: &Capture) -> Vec<String> {
     let mut messages = captured_messages(captured);
     messages.retain(|message| message.contains("Meta realtime:"));
