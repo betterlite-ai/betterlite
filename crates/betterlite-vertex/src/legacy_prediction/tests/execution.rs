@@ -214,6 +214,38 @@ async fn execution_streaming_quota_failure_is_rate_limit_429() {
 }
 
 #[tokio::test]
+async fn execution_streaming_permission_denied_body_keeps_403() {
+    let encoding = FakeEncoding {
+        counts: IndexMap::new(),
+    };
+    let services = projection_services(&encoding);
+    let context = legacy_context(&services);
+    let client = FixtureClient::with_stream_failure(PredictionError::Http {
+        status: 403,
+        message: String::from(
+            r#"{"error":{"code":403,"message":"Permission 'aiplatform.endpoints.predict' denied on resource (or it may not exist).","status":"PERMISSION_DENIED"}}"#,
+        ),
+    });
+    let Err(error) = execute_stream(
+        &client,
+        chat_invocation(Extra::new()),
+        &context,
+        access_lookup(),
+    )
+    .await
+    else {
+        panic!("a failed stream");
+    };
+    assert_eq!(error.status_code(), 403);
+    assert!(matches!(
+        error,
+        LegacyPredictionError::Streaming {
+            source: PredictionError::Http { status: 403, .. }
+        }
+    ));
+}
+
+#[tokio::test]
 async fn execution_unhandled_mode_cannot_generate() {
     let encoding = FakeEncoding {
         counts: IndexMap::new(),
