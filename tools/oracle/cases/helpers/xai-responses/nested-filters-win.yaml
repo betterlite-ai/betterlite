@@ -1,0 +1,28 @@
+kind: helper
+name: nested-filters-win
+call:
+  xai_responses:
+    env: {}
+    xai_key: null
+    generic_key: null
+    steps:
+      - step: tools
+        params:
+          tools:
+            - type: web_search
+              filters: {allowed_domains: [nested.example], excluded_domains: [gone.example]}
+              allowed_domains: [flat.example]
+              excluded_domains: [flat-gone.example]
+              search_context_size: medium
+              enable_image_understanding: true
+              extra: dropped
+            - type: web_search
+              filters: {allowed_domains: null}
+            - type: web_search
+              filters: null
+              allowed_domains: [fallback.example]
+            - type: web_search
+              filters: {}
+              allowed_domains: [suppressed.example]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,39 @@
+kind: helper
+name: exact-endpoint-membership
+call:
+  compatible_api_selection:
+    calls:
+      - family: responses
+        provider: meta
+        model: meta-llama
+        identity: enum
+        native: null
+        providers:
+          - provider: meta
+            supported_endpoints: ["/v1/chat/completions", "/v1/responses", "/v1/messages", "/v1/realtime"]
+      - family: responses
+        provider: groq
+        model: llama-3.1-70b
+        identity: name
+        native: null
+        providers:
+          - provider: groq
+            supported_endpoints: ["/v1/responses/v2"]
+      - family: messages
+        provider: sail
+        model: sail-chat
+        identity: name
+        native: null
+        providers:
+          - provider: sail
+            supported_endpoints: ["/v1/messages"]
+      - family: messages
+        provider: scx-ai
+        model: scx-model
+        identity: name
+        native: null
+        providers:
+          - provider: scx-ai
+            supported_endpoints: ["/v1/chat/completions"]
+env: {}
+compare: {ignore: []}
