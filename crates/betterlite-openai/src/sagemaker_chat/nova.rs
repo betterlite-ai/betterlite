@@ -21,11 +21,8 @@ const NOVA_PARAMS: [&str; 4] = [
 #[must_use]
 pub fn supported_openai_params(model: &str, catalog: &CatalogCapabilities) -> Vec<&'static str> {
     let mut params = chat_supported_openai_params(model, catalog);
-    for name in NOVA_PARAMS {
-        if !params.contains(&name) {
-            params.push(name);
-        }
-    }
+    // the nova names are never in the chat list, so the pinned not-in check never drops one
+    params.extend(NOVA_PARAMS);
     params
 }
 
