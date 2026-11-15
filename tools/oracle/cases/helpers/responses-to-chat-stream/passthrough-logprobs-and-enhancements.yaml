@@ -1,0 +1,10 @@
+kind: helper
+name: passthrough-logprobs-and-enhancements
+call:
+  responses_to_chat_stream:
+    mode: event
+    events:
+      - {"object": "chat.completion.chunk", "id": "chatcmpl-fixed", "created": 5, "model": "m", "choices": [{"index": 0, "delta": {"content": "a"}, "logprobs": {"content": [{"token": "a", "bytes": [97], "logprob": -0.5, "top_logprobs": null}]}}]}
+      - {"object": "chat.completion.chunk", "id": "chatcmpl-fixed", "created": 6, "enhancements": null, "choices": [{"index": 0, "enhancements": null, "score": 2}]}
+env: {}
+compare: {ignore: []}

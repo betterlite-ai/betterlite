@@ -1,0 +1,49 @@
+kind: helper
+name: chirp-events-discard-still-billed
+call:
+  chirp_events:
+    function: trace
+    session_id: sess_discard
+    session:
+      model: chirp_2
+      language: null
+      sample_rate: 8000
+      server_vad: true
+    frames:
+      - kind: response
+        speech_event: begin
+        results:
+          - transcript: abc
+            is_final: false
+        billed_seconds: 1.5
+      - kind: turn_discarded
+        billed_seconds: 2.5
+      - kind: response
+        speech_event: none
+        results:
+          - transcript: new
+            is_final: false
+        billed_seconds: 1.5
+      - kind: response
+        speech_event: none
+        results:
+          - transcript: new take
+            is_final: true
+        billed_seconds: 2.5
+env: {}
+compare:
+  ignore:
+    - pointer: /value/events/0/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/events/1/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/events/2/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/events/3/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/events/4/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/events/5/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/events/6/event_id
+      why: both sides generate their own event ids

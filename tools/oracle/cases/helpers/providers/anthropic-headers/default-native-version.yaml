@@ -1,0 +1,41 @@
+kind: helper
+name: default-native-version
+call:
+  anthropic_headers:
+    environment: {}
+    calls:
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: "2024-01-01"
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: [prompt_caching, pdf]
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+env: {}
+compare: {ignore: []}

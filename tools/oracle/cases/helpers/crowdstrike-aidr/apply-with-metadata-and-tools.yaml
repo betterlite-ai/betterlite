@@ -1,0 +1,33 @@
+kind: helper
+name: apply-with-metadata-and-tools
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      texts:
+      - hi
+      tools:
+      - type: function
+        function:
+          name: lookup
+    request_data:
+      metadata:
+        user_api_key_user_id: u-1
+        user_api_key_user_email: user@example.com
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: false
+env: {}
+compare:
+  ignore: []

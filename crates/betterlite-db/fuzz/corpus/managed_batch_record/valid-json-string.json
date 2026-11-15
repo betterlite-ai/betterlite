@@ -1,0 +1,1 @@
+"{\"id\":\"batch_1\",\"completion_window\":\"24h\",\"created_at\":1,\"endpoint\":\"/v1/chat/completions\",\"input_file_id\":\"file_1\",\"object\":\"batch\",\"status\":\"completed\"}"
