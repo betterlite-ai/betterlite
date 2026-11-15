@@ -68,8 +68,23 @@ impl Entry {
         L: EnvironmentLookup,
     {
         let prefix = format!("guardrails.{index}.litellm_params");
-        let api_key = resolve_api_key(self.litellm_params.api_key, &prefix, lookup)?;
-        let api_base = resolve_api_base(self.litellm_params.api_base, &prefix, lookup)?;
+        let api_key = resolve_value(
+            self.litellm_params
+                .api_key
+                .map(|key| key.expose_secret().to_owned()),
+            &prefix,
+            "api_key",
+            API_KEY_ENV,
+            lookup,
+        )?
+        .map(SecretString::from);
+        let api_base = resolve_value(
+            self.litellm_params.api_base,
+            &prefix,
+            "api_base",
+            API_BASE_ENV,
+            lookup,
+        )?;
         let fallback_path = format!("{prefix}.unreachable_fallback");
         let unreachable_fallback = match self.litellm_params.unreachable_fallback {
             Some(value) => parse_unreachable_fallback(&value, &fallback_path)?,
@@ -84,31 +99,11 @@ impl Entry {
     }
 }
 
-fn resolve_api_key<L>(
-    configured: Option<SecretString>,
-    prefix: &str,
-    lookup: &L,
-) -> Result<Option<SecretString>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let configured = configured.filter(|key| !key.expose_secret().is_empty());
-    match configured {
-        Some(key) => Ok(Some(SecretString::from(resolve_string(
-            key.expose_secret().to_owned(),
-            &format!("{prefix}.api_key"),
-            lookup,
-        )?))),
-        None => Ok(lookup
-            .lookup(API_KEY_ENV)
-            .filter(|key| !key.is_empty())
-            .map(SecretString::from)),
-    }
-}
-
-fn resolve_api_base<L>(
+fn resolve_value<L>(
     configured: Option<String>,
     prefix: &str,
+    field: &str,
+    env: &str,
     lookup: &L,
 ) -> Result<Option<String>, ConfigError>
 where
@@ -117,12 +112,10 @@ where
     match configured.filter(|value| !value.is_empty()) {
         Some(value) => Ok(Some(resolve_string(
             value,
-            &format!("{prefix}.api_base"),
+            &format!("{prefix}.{field}"),
             lookup,
         )?)),
-        None => Ok(lookup
-            .lookup(API_BASE_ENV)
-            .filter(|value| !value.is_empty())),
+        None => Ok(lookup.lookup(env).filter(|value| !value.is_empty())),
     }
 }
 
