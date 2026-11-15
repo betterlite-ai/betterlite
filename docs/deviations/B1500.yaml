@@ -32,6 +32,17 @@ deviations:
       operator meant as a flag. A setup that spells the value "true" or "false" reads
       the same on both sides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L136
+  - what: >-
+      supported_params keeps at most two copies of a name, the inherited OpenAI entry
+      and the one from the extra completion names. LiteLLM extends the inherited list
+      with the whole OPENAI_CHAT_COMPLETION_PARAMS constant, so every name the constant
+      repeats from the base appears again (temperature three times, response_format
+      twice), in the constant's order after the base names.
+    why: >-
+      The task asks for the union of the two lists, and the repeats come from the source
+      literals rather than from anything a request can observe: every use of the list is
+      a membership test, so the same parameters are kept and dropped either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/chat/transformation.py#L18-L21
 kept_bugs:
   - what: >-
       Image generation and image edit requests set Authorization to "Bearer None" when
