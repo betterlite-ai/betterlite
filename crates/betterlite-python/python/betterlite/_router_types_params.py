@@ -39,15 +39,14 @@ def _validated_flag(value: JsonValue) -> bool | None:
         return None
 
 
-def _normalize_drop_params(value: JsonValue) -> bool | None:
-    if value is None:
-        return None
+def _drop_params_value(value: JsonValue) -> bool | str | None:
     match value:
         case bool():
             return value
         case str():
-            return _validated_flag(value.strip())
-        case int() | float() | list() | dict():
+            flag: Final = _validated_flag(value.strip())
+            return value if flag is None else flag
+        case int() | float() | list() | dict() | None:
             return _validated_flag(value)
 
 
@@ -215,18 +214,10 @@ class GenericLiteLLMParams(CredentialLiteLLMParams, CustomPricingLiteLLMParams):
     @field_validator("drop_params", mode="before")
     @classmethod
     def coerce_drop_params(cls, value: JsonValue) -> bool | str | None:
-        normalized: Final = _normalize_drop_params(value)
-        if normalized is not None:
-            return normalized
-        match value:
-            case str():
-                return value
-            case bool() | int() | float() | list() | dict() | None:
-                if value is not None:
-                    LOGGER.warning(
-                        "drop_params=%r is not a flag value, treating it as unset", value
-                    )
-                return None
+        normalized: Final = _drop_params_value(value)
+        if normalized is None and value is not None:
+            LOGGER.warning("drop_params=%r is not a flag value, treating it as unset", value)
+        return normalized
 
 
 class LiteLLMParams(GenericLiteLLMParams):

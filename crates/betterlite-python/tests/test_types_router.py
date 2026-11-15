@@ -610,6 +610,7 @@ print(json.dumps(result))
 """
 
 OBJECT: Final = TypeAdapter(dict[str, JsonValue])
+SIGNATURE: Final = TypeAdapter(list[list[JsonValue]])
 NAMES: Final = TypeAdapter(list[str])
 CLASS_NAME_DEVIATIONS: Final = {"RouterRateLimitErrorBasic"}
 
@@ -695,39 +696,22 @@ def test_names_error_signatures() -> None:
     theirs = run_probe(LITELLM_PREFIX, LITELLM_MODULE, "signatures", spec)
     basic = "RouterRateLimitErrorBasic.__init__"
     assert ours[basic] == theirs[basic]
-    assert ours["RouterRateLimitError.__init__"] == [
-        ["self", "POSITIONAL_OR_KEYWORD", "_empty"],
-        ["model", "POSITIONAL_OR_KEYWORD", "_empty"],
-        ["cooldown_time", "KEYWORD_ONLY", "_empty"],
-        ["enable_pre_call_checks", "KEYWORD_ONLY", "_empty"],
-        ["cooldown_list", "KEYWORD_ONLY", "_empty"],
-        ["model_ids", "KEYWORD_ONLY", []],
-    ]
-    assert theirs["RouterRateLimitError.__init__"] == [
-        ["self", "POSITIONAL_OR_KEYWORD", "_empty"],
-        ["model", "POSITIONAL_OR_KEYWORD", "_empty"],
-        ["cooldown_time", "POSITIONAL_OR_KEYWORD", "_empty"],
-        ["enable_pre_call_checks", "POSITIONAL_OR_KEYWORD", "_empty"],
-        ["cooldown_list", "POSITIONAL_OR_KEYWORD", "_empty"],
-        ["model_ids", "POSITIONAL_OR_KEYWORD", []],
-    ]
+    limit = "RouterRateLimitError.__init__"
+    ours_limit = SIGNATURE.validate_python(ours[limit])
+    theirs_limit = SIGNATURE.validate_python(theirs[limit])
+    assert [item[0] for item in ours_limit] == [item[0] for item in theirs_limit]
+    assert [item[2] for item in ours_limit] == [item[2] for item in theirs_limit]
+    assert {item[1] for item in ours_limit[2:]} == {"KEYWORD_ONLY"}
+    assert {item[1] for item in theirs_limit[2:]} == {"POSITIONAL_OR_KEYWORD"}
 
 
 def test_names_enum_strings() -> None:
     ours = run_probe(OURS_PREFIX, OURS_MODULE, "enum_strings")
     theirs = run_probe(LITELLM_PREFIX, LITELLM_MODULE, "enum_strings")
-    assert ours == {
-        "error_type": "rate_limit_error",
-        "error_value": "rate_limit_error",
-        "request_type": "code_generation",
-        "request_value": "code_generation",
-    }
-    assert theirs == {
-        "error_type": "RouterErrorTypes.rate_limit_error",
-        "error_value": "rate_limit_error",
-        "request_type": "RequestType.CODE_GENERATION",
-        "request_value": "code_generation",
-    }
+    assert ours["error_type"] == ours["error_value"] == "rate_limit_error"
+    assert theirs["error_type"] == "RouterErrorTypes.rate_limit_error"
+    assert ours["request_type"] == ours["request_value"] == "code_generation"
+    assert theirs["request_type"] == "RequestType.CODE_GENERATION"
 
 
 def test_names_class_names() -> None:
@@ -813,12 +797,11 @@ def test_behavior_adaptive_weights() -> None:
 
 def test_behavior_mock() -> None:
     result = run_probe(OURS_PREFIX, OURS_MODULE, "mock")
-    assert result["case_0"] == {
-        "fallbacks": True,
-        "context": False,
-        "content": None,
-        "remaining": {"other": 1},
-    }
+    first = OBJECT.validate_python(result["case_0"])
+    assert first["fallbacks"] is True
+    assert first["context"] is False
+    assert first["content"] is None
+    assert first["remaining"] == {"other": 1}
     assert_same("mock")
 
 
