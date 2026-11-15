@@ -17,17 +17,6 @@ fn body(source: &str) -> Option<&str> {
     Some(source)
 }
 
-fn corpus_reparses(bytes: &[u8]) -> bool {
-    [1, 2].into_iter().any(|expected| {
-        parse_body(bytes, expected).is_some_and(|results| {
-            !results.is_empty()
-                && results
-                    .iter()
-                    .all(|result| result.compressed_context.is_some())
-        })
-    })
-}
-
 #[rstest]
 #[case::signed(r#"42"#, 42)]
 #[case::negative(r#"-5"#, -5)]
@@ -158,9 +147,15 @@ fn replays_the_compresr_response_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/compresr_response");
     let paths: Vec<_> = fs::read_dir(corpus).unwrap().collect();
     assert!(!paths.is_empty());
-    assert!(
-        paths
-            .into_iter()
-            .all(|entry| corpus_reparses(&fs::read(entry.unwrap().path()).unwrap()))
-    );
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
+        [1, 2].into_iter().any(|expected| {
+            parse_body(&bytes, expected).is_some_and(|results| {
+                !results.is_empty()
+                    && results
+                        .iter()
+                        .all(|result| result.compressed_context.is_some())
+            })
+        })
+    }));
 }
