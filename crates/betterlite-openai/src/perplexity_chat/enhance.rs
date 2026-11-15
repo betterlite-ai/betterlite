@@ -70,9 +70,9 @@ impl UsagePlan {
 
 fn zero_usage() -> Value {
     Value::Object(Map::from_iter([
-        (String::from("prompt_tokens"), Value::from(0)),
-        (String::from("completion_tokens"), Value::from(0)),
-        (String::from("total_tokens"), Value::from(0)),
+        (String::from("prompt_tokens"), Value::from(0_i64)),
+        (String::from("completion_tokens"), Value::from(0_i64)),
+        (String::from("total_tokens"), Value::from(0_i64)),
     ]))
 }
 

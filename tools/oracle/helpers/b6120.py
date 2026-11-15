@@ -102,21 +102,21 @@ class Recorder:
 
 @runtime_checkable
 class ChatConfig(Protocol):
-    def get_supported_openai_params(self, *, model: str) -> list[JsonValue]: ...
-
-    def transform_response(
-        self,
-        *,
-        model: str,
-        raw_response: httpx.Response,
-        model_response: ModelResponse,
-        logging_obj: Recorder,
-        request_data: dict[str, JsonValue],
-        messages: list[JsonValue],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        encoding: None,
-    ) -> ModelResponse: ...
+    get_supported_openai_params: Callable[[str], list[JsonValue]]
+    transform_response: Callable[
+        [
+            str,
+            httpx.Response,
+            ModelResponse,
+            Recorder,
+            dict[str, JsonValue],
+            list[JsonValue],
+            dict[str, JsonValue],
+            dict[str, JsonValue],
+            None,
+        ],
+        ModelResponse,
+    ]
 
 
 @runtime_checkable
@@ -180,21 +180,21 @@ def credential_outcome(step: CredentialStep) -> JsonValue:
 def param_outcome(step: ParamStep) -> JsonValue:
     litellm.supports_reasoning = CapabilityFixture("reasoning", step["reasoning"])
     litellm.supports_web_search = CapabilityFixture("web search", step["web_search"])
-    supported = CONFIG.get_supported_openai_params(model=step["model"])
+    supported = CONFIG.get_supported_openai_params(step["model"])
     return {"supported": supported}
 
 
 def reply_outcome(step: ReplyStep) -> JsonValue:
     result = CONFIG.transform_response(
-        model=step["model"],
-        raw_response=httpx.Response(200, text=step["body"]),
-        model_response=ModelResponse(id=step["id"]),
-        logging_obj=Recorder(),
-        request_data={},
-        messages=[],
-        optional_params={},
-        litellm_params={},
-        encoding=None,
+        step["model"],
+        httpx.Response(200, text=step["body"]),
+        ModelResponse(id=step["id"]),
+        Recorder(),
+        {},
+        [],
+        {},
+        {},
+        None,
     )
     return reply_projection(REPLY_ROW.validate_json(result.model_dump_json()))
 

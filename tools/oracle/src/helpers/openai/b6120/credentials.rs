@@ -38,6 +38,6 @@ fn outcome(step: &Step) -> Value {
     let (base, resolved) = provider_info(step.api_base.as_deref(), key.as_ref(), &step.environment);
     json!({
         "base": base,
-        "key": resolved.as_ref().map(|key| key.expose_secret().clone()),
+        "key": resolved.as_ref().map(|key| key.expose_secret().to_owned()),
     })
 }

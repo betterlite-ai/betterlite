@@ -165,7 +165,7 @@ fn supported_openai_params_appends_capabilities(
 #[case("tool_choice")]
 #[case("function_call")]
 #[case("functions")]
-fn supported_openai_params_never_lists_tools(#[case] unsupported: &str) {
+fn supported_openai_params_never_lists_tools(#[case] unsupported: &'static str) {
     let lookup = Lookup {
         reasoning: Some(true),
         web_search: Some(true),
