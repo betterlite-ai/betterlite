@@ -31,11 +31,7 @@ fn scalar(value: Option<&Json>) -> Scalar<'_> {
             (None, None) => Scalar::Other,
         },
         Some(Json::Text(text)) => Scalar::Text(text.as_str()),
-        Some(Json::Null)
-        | Some(Json::Bool(_))
-        | Some(Json::List(_))
-        | Some(Json::Object(_))
-        | None => Scalar::Other,
+        Some(Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_)) | None => Scalar::Other,
     }
 }
 

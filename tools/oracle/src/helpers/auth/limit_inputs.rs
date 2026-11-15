@@ -122,7 +122,7 @@ enum Projection<'request> {
     Batch(BatchLimitRequest<'request>),
 }
 
-fn estimate_projection(fields: &OutputEstimateRequestInput) -> Projection<'_> {
+const fn estimate_projection(fields: &OutputEstimateRequestInput) -> Projection<'_> {
     Projection::Estimate(OutputTokenEstimateRequest {
         metadata: fields.metadata.as_ref(),
         estimate: fields.estimate,
@@ -131,7 +131,7 @@ fn estimate_projection(fields: &OutputEstimateRequestInput) -> Projection<'_> {
     })
 }
 
-fn batch_projection(fields: &BatchRequestInput) -> Projection<'_> {
+const fn batch_projection(fields: &BatchRequestInput) -> Projection<'_> {
     Projection::Batch(BatchLimitRequest {
         metadata: fields.metadata.as_ref(),
         model_fields_set: &fields.model_fields_set,
