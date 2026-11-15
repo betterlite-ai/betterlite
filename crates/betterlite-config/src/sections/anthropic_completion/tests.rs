@@ -189,11 +189,8 @@ fn metadata_case() {
             r#"{"user_id": "from-env", "nested": {"note": "hi"}, "tags": ["os.environ/LEGACY_ABSENT"], "entries": [{"note": "entry"}]}"#
         ))
     );
-    let error = load(
-        &deployment("metadata", "{user_id: os.environ/LEGACY_MISSING}"),
-        &[],
-    )
-    .unwrap_err();
+    let missing = deployment("metadata", "{user_id: os.environ/LEGACY_MISSING}");
+    let error = load(&missing, &[]).unwrap_err();
     assert!(
         matches!(&error, ConfigError::MissingEnvironment { variable, .. } if variable == "LEGACY_MISSING"),
         "{error}"
