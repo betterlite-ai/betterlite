@@ -1,0 +1,402 @@
+use std::fs;
+use std::path::PathBuf;
+
+use betterlite_models::decisions::Json;
+use rstest::rstest;
+use uuid::Uuid;
+
+use super::MuseEvent;
+use super::MuseEventTransformer;
+use crate::api::transcription_protocol::JsonObject;
+use crate::api::transcription_protocol::events::CompletedEvent;
+use crate::api::transcription_protocol::events::SpeechEventType;
+use crate::api::transcription_protocol::events::UuidEventIds;
+use crate::api::transcription_protocol::json_object;
+use crate::api::transcription_protocol::usage::DurationUsage;
+use crate::api::transcription_protocol::usage::TranscriptionUsage;
+use crate::meta_muse_realtime::MuseMode;
+use crate::meta_muse_realtime::MuseProtocolError;
+use crate::meta_muse_realtime::TURN_LIMIT;
+use crate::meta_muse_realtime::support::CountingIds;
+
+struct Harness {
+    transformer: MuseEventTransformer,
+    ids: CountingIds,
+    mode: MuseMode,
+}
+
+impl Default for Harness {
+    fn default() -> Self {
+        Self {
+            transformer: MuseEventTransformer::default(),
+            ids: CountingIds::default(),
+            mode: MuseMode::Endpointing,
+        }
+    }
+}
+
+impl Harness {
+    fn transform(&mut self, payload: &str) -> Vec<MuseEvent> {
+        let events = self.try_transform(payload);
+        events.unwrap()
+    }
+
+    fn try_transform(&mut self, payload: &str) -> Result<Vec<MuseEvent>, MuseProtocolError> {
+        let frame = parse_frame(payload);
+        self.transformer.transform(&frame, self.mode, &mut self.ids)
+    }
+
+    fn rendered(&mut self, payload: &str) -> Vec<String> {
+        let events = self.transform(payload);
+        events
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap())
+            .collect()
+    }
+}
+
+fn parse_frame(payload: &str) -> JsonObject {
+    let parsed = serde_json::from_str::<Json>(payload).unwrap();
+    let Json::Object(fields) = parsed else {
+        panic!("the test frame is a JSON object");
+    };
+    fields
+}
+
+fn kinds(events: &[MuseEvent]) -> Vec<&'static str> {
+    events.iter().map(kind_of).collect()
+}
+
+fn kind_of(event: &MuseEvent) -> &'static str {
+    match event {
+        MuseEvent::Created(_) => "created",
+        MuseEvent::Error(_) => "error",
+        MuseEvent::Speech(speech) => match speech.kind {
+            SpeechEventType::Started => "started",
+            SpeechEventType::Stopped => "stopped",
+        },
+        MuseEvent::Delta(_) => "delta",
+        MuseEvent::Completed(_) => "completed",
+    }
+}
+
+fn turn_item(event: &MuseEvent) -> &str {
+    match event {
+        MuseEvent::Speech(speech) => speech.item_id.as_str(),
+        MuseEvent::Delta(delta) => delta.item_id.as_str(),
+        MuseEvent::Completed(completed) => completed.item_id.as_str(),
+        MuseEvent::Created(_) | MuseEvent::Error(_) => panic!("a turn event"),
+    }
+}
+
+fn delta_text(event: &MuseEvent) -> &str {
+    let MuseEvent::Delta(delta) = event else {
+        panic!("a delta event");
+    };
+    delta.delta.as_str()
+}
+
+fn completed_of(event: &MuseEvent) -> &CompletedEvent {
+    let MuseEvent::Completed(completed) = event else {
+        panic!("a completed event");
+    };
+    completed
+}
+
+fn started_kind(event: &MuseEvent) -> SpeechEventType {
+    let MuseEvent::Speech(speech) = event else {
+        panic!("a speech event");
+    };
+    speech.kind
+}
+
+#[test]
+fn emits_speech_started_before_the_first_delta() {
+    let mut harness = Harness::default();
+    let started = harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#);
+    assert_eq!(kinds(&started), vec!["started"]);
+    assert_eq!(started_kind(&started[0]), SpeechEventType::Started);
+    assert_eq!(turn_item(&started[0]), "t1");
+    let partial = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hel"}"#);
+    assert_eq!(kinds(&partial), vec!["delta"]);
+    assert_eq!(turn_item(&partial[0]), "t1");
+    assert_eq!(delta_text(&partial[0]), "hel");
+}
+
+#[test]
+fn repeated_partials_emit_only_the_new_suffix() {
+    let mut harness = Harness::default();
+    drop(harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#));
+    let first = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hel"}"#);
+    assert_eq!(delta_text(&first[0]), "hel");
+    let repeated = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hel"}"#);
+    assert!(repeated.is_empty());
+    let extended = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hello"}"#);
+    assert_eq!(delta_text(&extended[0]), "lo");
+    let shortened = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hell"}"#);
+    assert!(shortened.is_empty());
+    let recovered =
+        harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hello world"}"#);
+    assert_eq!(delta_text(&recovered[0]), " world");
+}
+
+#[test]
+fn final_transcripts_stop_the_turn_and_complete_it() {
+    let mut harness = Harness::default();
+    drop(harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#));
+    drop(harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hello"}"#));
+    let finished = harness.transform(
+        r#"{"type":"transcript","turnId":"t1","transcript":"hello world","final":true}"#,
+    );
+    assert_eq!(kinds(&finished), vec!["stopped", "completed"]);
+    assert_eq!(turn_item(&finished[0]), "t1");
+    let completed = completed_of(&finished[1]);
+    assert_eq!(completed.transcript, "hello world");
+    assert_eq!(completed.content_index, 0);
+    assert!(completed.usage.is_none());
+}
+
+#[test]
+fn speech_complete_emits_started_stopped_and_completed() {
+    let mut harness = Harness::default();
+    let events =
+        harness.transform(r#"{"type":"speechComplete","turnId":"t1","transcript":"done"}"#);
+    assert_eq!(kinds(&events), vec!["started", "stopped", "completed"]);
+    assert_eq!(completed_of(&events[2]).transcript, "done");
+}
+
+#[test]
+fn repeated_end_events_do_not_repeat_turn_events() {
+    let mut harness = Harness::default();
+    drop(harness.transform(r#"{"type":"speechComplete","turnId":"t1","transcript":"done"}"#));
+    let again = harness.transform(r#"{"type":"speechComplete","turnId":"t1","transcript":"done"}"#);
+    assert!(again.is_empty());
+    let ended = harness.transform(r#"{"type":"speechEnd","turnId":"t1"}"#);
+    assert!(ended.is_empty());
+    let restarted = harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#);
+    assert!(restarted.is_empty());
+}
+
+#[test]
+fn transcripts_without_a_turn_id_use_the_active_turn() {
+    let mut harness = Harness::default();
+    drop(harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#));
+    let partial = harness.transform(r#"{"type":"transcript","transcript":"hi"}"#);
+    assert_eq!(kinds(&partial), vec!["delta"]);
+    assert_eq!(turn_item(&partial[0]), "t1");
+    let finished =
+        harness.transform(r#"{"type":"transcript","transcript":"hi there","final":true}"#);
+    assert_eq!(kinds(&finished), vec!["stopped", "completed"]);
+    assert_eq!(completed_of(&finished[1]).transcript, "hi there");
+    let orphan = harness
+        .try_transform(r#"{"type":"transcript","transcript":"next"}"#)
+        .unwrap_err();
+    assert!(matches!(orphan, MuseProtocolError::MissingTurnId));
+}
+
+#[test]
+fn empty_transcripts_without_a_turn_or_active_turn_are_ignored() {
+    let mut harness = Harness::default();
+    let empty = harness.transform(r#"{"type":"transcript","transcript":""}"#);
+    assert!(empty.is_empty());
+    let explicit = harness.transform(r#"{"type":"transcript","turnId":"t2","transcript":""}"#);
+    assert_eq!(kinds(&explicit), vec!["started"]);
+    assert_eq!(turn_item(&explicit[0]), "t2");
+}
+
+#[test]
+fn push_to_talk_transcripts_create_random_item_ids() {
+    let mut harness = Harness::default();
+    harness.mode = MuseMode::PushToTalk;
+    let events = harness.transform(r#"{"type":"transcript","transcript":"hi"}"#);
+    assert_eq!(kinds(&events), vec!["started", "delta"]);
+    let item_id = turn_item(&events[0]);
+    assert!(item_id.starts_with("item_"));
+    assert_eq!(item_id.len(), 37);
+    assert!(Uuid::parse_str(&item_id[5..]).is_ok());
+    assert_eq!(turn_item(&events[1]), item_id);
+    drop(harness.transform(r#"{"type":"transcript","transcript":"hi there","final":true}"#));
+    let next = harness.transform(r#"{"type":"transcript","transcript":"again"}"#);
+    assert_eq!(kinds(&next), vec!["started", "delta"]);
+    assert_ne!(turn_item(&next[0]), item_id);
+}
+
+#[test]
+fn turns_beyond_the_limit_drop_the_oldest() {
+    let mut harness = Harness::default();
+    let starts: Vec<String> = (0..TURN_LIMIT)
+        .map(|index| format!(r#"{{"type":"speechStart","turnId":"t{index}"}}"#))
+        .collect();
+    starts
+        .iter()
+        .map(|payload| harness.transform(payload))
+        .for_each(drop);
+    let recent = harness.transform(r#"{"type":"transcript","turnId":"t127","transcript":"y"}"#);
+    assert_eq!(kinds(&recent), vec!["delta"]);
+    let newest = harness.transform(r#"{"type":"speechStart","turnId":"t128"}"#);
+    assert_eq!(kinds(&newest), vec!["started"]);
+    let evicted = harness.transform(r#"{"type":"transcript","turnId":"t0","transcript":"x"}"#);
+    assert_eq!(kinds(&evicted), vec!["started", "delta"]);
+    assert_eq!(turn_item(&evicted[0]), "t0");
+    assert_eq!(delta_text(&evicted[1]), "x");
+}
+
+#[test]
+fn audio_progress_accumulates_seconds_and_resets() {
+    let mut harness = Harness::default();
+    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":500}"#));
+    assert_eq!(
+        harness.transformer.take_unbilled_usage(),
+        Some(TranscriptionUsage::Duration(DurationUsage { seconds: 0.5 }))
+    );
+    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":500}"#));
+    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":499}"#));
+    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":1_500}"#));
+    assert_eq!(
+        harness.transformer.take_unbilled_usage(),
+        Some(TranscriptionUsage::Duration(DurationUsage { seconds: 1.0 }))
+    );
+    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":1_750}"#));
+    assert_eq!(
+        harness.transformer.take_unbilled_usage(),
+        Some(TranscriptionUsage::Duration(DurationUsage {
+            seconds: 0.25
+        }))
+    );
+    assert!(harness.transformer.take_unbilled_usage().is_none());
+}
+
+#[test]
+fn invalid_audio_progress_is_an_error() {
+    let mut harness = Harness::default();
+    let invalid = [
+        r#"{"type":"audioProgress"}"#,
+        r#"{"type":"audioProgress","audioProcessedMs":null}"#,
+        r#"{"type":"audioProgress","audioProcessedMs":true}"#,
+        r#"{"type":"audioProgress","audioProcessedMs":"1000"}"#,
+        r#"{"type":"audioProgress","audioProcessedMs":-1}"#,
+    ];
+    let errors: Vec<MuseProtocolError> = invalid
+        .iter()
+        .map(|payload| harness.try_transform(payload).unwrap_err())
+        .collect();
+    assert!(
+        errors
+            .iter()
+            .all(|error| matches!(error, MuseProtocolError::InvalidAudioProgress))
+    );
+}
+
+#[test]
+fn unknown_frames_and_provider_errors() {
+    let mut harness = Harness::default();
+    assert!(harness.transform(r#"{"type":"sessionOpen"}"#).is_empty());
+    assert!(harness.transform("{}").is_empty());
+    let errors = harness.rendered(r#"{"type":"error","message":"provider secret"}"#);
+    assert_eq!(
+        errors,
+        vec![
+            r#"{"type":"error","error":{"type":"server_error","message":"Meta Muse realtime transcription failed"}}"#
+                .to_owned()
+        ]
+    );
+}
+
+#[test]
+fn invalid_turn_ids_and_transcripts_are_errors() {
+    let mut harness = Harness::default();
+    let invalid_turn_ids = [
+        r#"{"type":"speechStart","turnId":true}"#,
+        r#"{"type":"speechStart","turnId":""}"#,
+        r#"{"type":"speechStart","turnId":"   "}"#,
+        r#"{"type":"speechStart","turnId":1.5}"#,
+        r#"{"type":"speechStart","turnId":{"a":1}}"#,
+        r#"{"type":"speechEnd"}"#,
+    ];
+    let turn_errors: Vec<MuseProtocolError> = invalid_turn_ids
+        .iter()
+        .map(|payload| harness.try_transform(payload).unwrap_err())
+        .collect();
+    assert!(
+        turn_errors
+            .iter()
+            .all(|error| matches!(error, MuseProtocolError::InvalidTurnId { .. }))
+    );
+    let numeric = harness.transform(r#"{"type":"speechStart","turnId":7}"#);
+    assert_eq!(turn_item(&numeric[0]), "7");
+    let padded = harness.transform(r#"{"type":"speechStart","turnId":" t2 "}"#);
+    assert_eq!(turn_item(&padded[0]), "t2");
+    let bad_transcript = harness
+        .try_transform(r#"{"type":"transcript","turnId":"t2","transcript":5}"#)
+        .unwrap_err();
+    assert_eq!(
+        bad_transcript.to_string(),
+        "transcript event has invalid transcript"
+    );
+    let bad_complete = harness
+        .try_transform(r#"{"type":"speechComplete","turnId":"t2","transcript":[]}"#)
+        .unwrap_err();
+    assert_eq!(
+        bad_complete.to_string(),
+        "speechComplete event has invalid transcript"
+    );
+}
+
+#[test]
+fn turns_serialize_to_the_openai_wire_shape() {
+    let mut harness = Harness::default();
+    let events = harness.rendered(r#"{"type":"speechComplete","turnId":"t1","transcript":"done"}"#);
+    assert_eq!(
+        events,
+        vec![
+            r#"{"type":"input_audio_buffer.speech_started","event_id":"event_1","item_id":"t1"}"#
+                .to_owned(),
+            r#"{"type":"input_audio_buffer.speech_stopped","event_id":"event_2","item_id":"t1"}"#
+                .to_owned(),
+            r#"{"type":"conversation.item.input_audio_transcription.completed","event_id":"event_3","item_id":"t1","content_index":0,"transcript":"done"}"#
+                .to_owned(),
+        ]
+    );
+    let mut delta_harness = Harness::default();
+    drop(delta_harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#));
+    let delta = delta_harness.rendered(r#"{"type":"transcript","turnId":"t1","transcript":"hi"}"#);
+    assert_eq!(
+        delta,
+        vec![
+            r#"{"type":"conversation.item.input_audio_transcription.delta","event_id":"event_2","item_id":"t1","content_index":0,"delta":"hi"}"#
+                .to_owned()
+        ]
+    );
+}
+
+#[test]
+fn completed_events_carry_the_unbilled_duration() {
+    let mut harness = Harness::default();
+    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":1000}"#));
+    let events = harness.rendered(r#"{"type":"speechComplete","turnId":"t1","transcript":"done"}"#);
+    assert_eq!(
+        events[2],
+        r#"{"type":"conversation.item.input_audio_transcription.completed","event_id":"event_3","item_id":"t1","content_index":0,"transcript":"done","usage":{"type":"duration","seconds":1.0}}"#
+    );
+    assert!(harness.transformer.take_unbilled_usage().is_none());
+}
+
+#[rstest]
+fn replays_the_muse_frames_corpus(#[files("fuzz/corpus/muse_frames/*")] path: PathBuf) {
+    let bytes = fs::read(&path).unwrap();
+    let Some((&selector, rest)) = bytes.split_first() else {
+        panic!("every corpus file starts with a selector byte");
+    };
+    let mode = match selector {
+        0 => MuseMode::Endpointing,
+        1 => MuseMode::PushToTalk,
+        other => panic!("unknown selector {other}"),
+    };
+    let Ok(frame) = json_object::<MuseProtocolError>(rest) else {
+        return;
+    };
+    let mut transformer = MuseEventTransformer::default();
+    let mut ids = UuidEventIds;
+    drop(transformer.transform(&frame, mode, &mut ids));
+    drop(transformer.take_unbilled_usage());
+}
