@@ -3,6 +3,7 @@ use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHeaders, ImageHttpResponse, ImageResponse,
 };
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 const CONTENT_FILTERED: &str = "CONTENT_FILTERED";
@@ -63,33 +64,9 @@ pub fn decode_stability_image(
     response: &ImageHttpResponse,
     model_response: &mut ImageResponse,
 ) -> Result<(), StabilityReplyError> {
-    let value: Json = serde_json::from_slice(&response.body).map_err(|source| {
-        StabilityReplyError::Malformed {
-            status: response.status_code,
-            headers: response.headers.clone(),
-            source,
-        }
-    })?;
-    let Json::Object(fields) = value else {
-        return Err(StabilityReplyError::NotObject {
-            status: response.status_code,
-            headers: response.headers.clone(),
-        });
-    };
-    if let Some(errors) = fields.get("errors") {
-        return Err(StabilityReplyError::Upstream {
-            status: response.status_code,
-            headers: response.headers.clone(),
-            errors: errors.clone(),
-        });
-    }
-    let reply: ReplyFields = serde_json::from_slice(&response.body).map_err(|source| {
-        StabilityReplyError::Malformed {
-            status: response.status_code,
-            headers: response.headers.clone(),
-            source,
-        }
-    })?;
+    let value: Json = parse(&response.body, response)?;
+    reject_errors(&value, response)?;
+    let reply: ReplyFields = parse(&response.body, response)?;
     if reply.finish_reason.as_deref() == Some(CONTENT_FILTERED) {
         return Err(StabilityReplyError::ContentFiltered {
             headers: response.headers.clone(),
@@ -104,4 +81,32 @@ pub fn decode_stability_image(
         });
     }
     Ok(())
+}
+
+fn parse<T: DeserializeOwned>(
+    body: &[u8],
+    response: &ImageHttpResponse,
+) -> Result<T, StabilityReplyError> {
+    serde_json::from_slice(body).map_err(|source| StabilityReplyError::Malformed {
+        status: response.status_code,
+        headers: response.headers.clone(),
+        source,
+    })
+}
+
+fn reject_errors(value: &Json, response: &ImageHttpResponse) -> Result<(), StabilityReplyError> {
+    let Json::Object(fields) = value else {
+        return Err(StabilityReplyError::NotObject {
+            status: response.status_code,
+            headers: response.headers.clone(),
+        });
+    };
+    let Some(errors) = fields.get("errors") else {
+        return Ok(());
+    };
+    Err(StabilityReplyError::Upstream {
+        status: response.status_code,
+        headers: response.headers.clone(),
+        errors: errors.clone(),
+    })
 }
