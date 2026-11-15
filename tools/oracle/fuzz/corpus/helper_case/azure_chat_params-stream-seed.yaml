@@ -1,0 +1,18 @@
+kind: helper
+name: azure-chat-params-stream-seed
+call:
+  azure_chat_params:
+    function: native_stream
+    install:
+      model_cost:
+        azure/o1-mini: {supports_native_streaming: false, supports_reasoning: true}
+      chat_models: []
+      text_models: []
+      drop_params: false
+      openai_system_messages_first: false
+    steps:
+      - {model: o1-mini, stream: true, provider: azure}
+      - {model: o3-mini, stream: true, provider: null}
+      - {model: null, stream: null, provider: null}
+env: {}
+compare: {ignore: []}

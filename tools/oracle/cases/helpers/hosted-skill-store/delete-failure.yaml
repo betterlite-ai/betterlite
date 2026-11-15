@@ -1,0 +1,15 @@
+kind: helper
+name: hosted-skill-store-delete-failure
+call:
+  hosted_skill_store:
+    now: "2026-02-03T04:05:06"
+    uuid: "00000000-0000-4000-8000-000000000005"
+    rows:
+      - {skill_id: litellm_skill_a, display_title: Alpha, created_by: alice}
+    faults: {delete: true}
+    steps:
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: alice}}
+      - {action: delete, skill_id: litellm_skill_a, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: alice}}
+env: {}
+compare: {ignore: []}
