@@ -6,7 +6,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm.proxy import utils as proxy_utils
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.db.routing_prisma_wrapper import RoutingPrismaWrapper
-from litellm.proxy.utils import _StaleReadEngine
+from litellm.proxy.utils import _StaleReadEngine  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4351-L4392
 from pydantic import JsonValue as Json
 
 from .client import FakeClient, wrapper_for
