@@ -1,0 +1,12 @@
+task: B1505
+deviations:
+  - what: A score the embedding model returns as NaN or infinity becomes SkillSearchEmbeddingFailed with the reason "embedding model <model> returned a score that is not a finite number"; LiteLLM ranks the NaN into the hits and its response serializer fails on it, answering a 500 a client cannot parse.
+    why: Standard JSON cannot carry NaN or infinity, so the failed search names the cause instead of failing inside serialization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/skill_search.py#L107-L112
+  - what: Concurrent searches take turns on one mutex around the index, so two requests do not embed at the same time. Results are the same.
+    why: SemanticTextIndex::scores takes &mut self, and LiteLLM's single-threaded event loop has no such lock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/skill_search.py#L89-L93
+  - what: top_k is a usize, so a negative count cannot be passed; LiteLLM's ranked[:top_k] would return all but the last hits for a negative value.
+    why: The REST route bounds top_k to 1..=100 and the MCP tool clamps it to the same range, so no caller reaches the search with a negative count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/skill_search.py#L112
+kept_bugs: []
