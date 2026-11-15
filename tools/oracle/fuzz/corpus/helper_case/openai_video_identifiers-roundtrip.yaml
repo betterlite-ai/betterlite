@@ -1,0 +1,18 @@
+kind: helper
+name: openai-video-identifiers-roundtrip-seed
+call:
+  openai_video_identifiers:
+    calls:
+      - op: encode_video_id
+        video_id: vid-123
+        provider: openai
+        model_id: sora-2
+      - op: decode_video_id
+        encoded: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTEyMw==
+        capture_debug: true
+      - op: add_image_to_files
+        fixture:
+          kind: text
+          value: https://example.invalid/a.png
+env: {}
+compare: {ignore: []}
