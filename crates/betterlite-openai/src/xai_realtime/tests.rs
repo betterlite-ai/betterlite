@@ -162,6 +162,27 @@ fn completed_updates_keep_a_previously_declared_type() {
 }
 
 #[test]
+fn completed_updates_keep_other_cached_fields() {
+    let mut normalizer = XaiRealtimeNormalizer::default();
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.added","response_id":"r1","item_id":"i1","part":{"type":"audio","transcript":"he","extra":1}}"#,
+    );
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.output_audio_transcript.done","response_id":"r1","item_id":"i1","transcript":"hello"}"#,
+    );
+    let done = normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":"r1","item_id":"i1"}"#,
+    );
+    assert_eq!(
+        part_of(&done),
+        json(r#"{"type":"audio","transcript":"hello","extra":1}"#)
+    );
+}
+
+#[test]
 fn completed_updates_keep_an_explicit_null_type() {
     let mut normalizer = XaiRealtimeNormalizer::default();
     normalized(
@@ -308,7 +329,7 @@ fn non_text_ids_key_parts_by_value() {
 }
 
 #[test]
-fn object_ids_hash_by_their_entries_not_their_order() {
+fn object_ids_match_by_their_entries_not_their_order() {
     let mut normalizer = XaiRealtimeNormalizer::default();
     normalized(
         &mut normalizer,

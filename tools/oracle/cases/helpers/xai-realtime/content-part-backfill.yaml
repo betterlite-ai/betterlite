@@ -21,6 +21,11 @@ call:
       - {type: response.content_part.done, response_id: r-nulltype, item_id: i-nulltype}
       - {type: response.output_text.done, response_id: r-audio, item_id: i-audio, text: null}
       - {type: response.content_part.done, response_id: r-audio, item_id: i-audio}
+      - {type: response.content_part.added, response_id: r-extra, item_id: i-extra, part: {type: audio, transcript: he, extra: 1}}
+      - {type: response.output_audio_transcript.done, response_id: r-extra, item_id: i-extra, transcript: hello}
+      - {type: response.content_part.done, response_id: r-extra, item_id: i-extra}
+      - {type: response.content_part.added, response_id: null, item_id: null, part: {type: text, text: null-ids}}
+      - {type: response.content_part.done}
     sessions: []
     model: grok-4-1-fast-non-reasoning
     api_key: null

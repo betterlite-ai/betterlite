@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
@@ -20,51 +17,6 @@ struct ContentPartKey {
     response_id: Option<Json>,
     item_id: Option<Json>,
     content_index: Json,
-}
-
-impl Hash for ContentPartKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_part(self.response_id.as_ref(), state);
-        hash_part(self.item_id.as_ref(), state);
-        hash_part(Some(&self.content_index), state);
-    }
-}
-
-fn hash_part<H: Hasher>(value: Option<&Json>, state: &mut H) {
-    match value {
-        None => state.write_u8(0),
-        Some(Json::Null) => state.write_u8(1),
-        Some(Json::Bool(flag)) => {
-            state.write_u8(2);
-            flag.hash(state);
-        }
-        Some(Json::Number(number)) => {
-            state.write_u8(3);
-            number.hash(state);
-        }
-        Some(Json::Text(text)) => {
-            state.write_u8(4);
-            text.hash(state);
-        }
-        Some(Json::List(items)) => {
-            state.write_u8(5);
-            items.len().hash(state);
-            for item in items {
-                hash_part(Some(item), state);
-            }
-        }
-        Some(Json::Object(entries)) => {
-            state.write_u8(6);
-            entries.len().hash(state);
-            // IndexMap equality ignores entry order, so the hash sorts the entries to match it
-            let mut ordered: Vec<(&String, &Json)> = entries.iter().collect();
-            ordered.sort_unstable_by(|left, right| left.0.cmp(right.0));
-            for (name, entry) in ordered {
-                name.hash(state);
-                hash_part(Some(entry), state);
-            }
-        }
-    }
 }
 
 fn key_of(fields: &IndexMap<String, Json>) -> ContentPartKey {
@@ -87,7 +39,8 @@ fn non_null(value: Option<&Json>) -> Option<Json> {
 
 #[derive(Debug, Default)]
 pub struct ContentPartCache {
-    parts: HashMap<ContentPartKey, Json>,
+    // only part events scan the cache, so the 4096 bound keeps each lookup cheap
+    parts: Vec<(ContentPartKey, Json)>,
 }
 
 impl ContentPartCache {
@@ -114,9 +67,14 @@ impl ContentPartCache {
             return Ok(());
         }
         let key = key_of(fields);
-        let updated = match self.parts.get(&key) {
+        let existing = self
+            .parts
+            .iter()
+            .find(|(candidate, _)| *candidate == key)
+            .map(|(_, part)| part.clone());
+        let updated = match existing {
             Some(Json::Object(entries)) => {
-                let mut entries = entries.clone();
+                let mut entries = entries;
                 entries
                     .entry(String::from("type"))
                     .or_insert_with(|| Json::Text(part_type.to_owned()));
@@ -137,7 +95,13 @@ impl ContentPartCache {
         {
             return part.clone();
         }
-        if let Some(part) = self.parts.get(&key_of(fields)) {
+        let key = key_of(fields);
+        if let Some(part) = self
+            .parts
+            .iter()
+            .find(|(candidate, _)| *candidate == key)
+            .map(|(_, part)| part)
+        {
             return part.clone();
         }
         Json::Object(IndexMap::from([
@@ -147,12 +111,21 @@ impl ContentPartCache {
     }
 
     fn store(&mut self, key: ContentPartKey, part: Json) -> Result<(), XaiRealtimeError> {
-        if !self.parts.contains_key(&key) && self.parts.len() >= MAX_CACHED_CONTENT_PARTS {
+        let existing = self
+            .parts
+            .iter_mut()
+            .find(|entry| entry.0 == key)
+            .map(|entry| &mut entry.1);
+        if let Some(existing) = existing {
+            *existing = part;
+            return Ok(());
+        }
+        if self.parts.len() >= MAX_CACHED_CONTENT_PARTS {
             return Err(XaiRealtimeError::ContentPartLimit {
                 limit: MAX_CACHED_CONTENT_PARTS,
             });
         }
-        self.parts.insert(key, part);
+        self.parts.push((key, part));
         Ok(())
     }
 }

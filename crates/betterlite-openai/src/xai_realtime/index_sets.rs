@@ -34,11 +34,8 @@ pub fn inject_missing_indices(event: Json, event_type: Option<&str>) -> Json {
     };
     let needs_output = OUTPUT_INDEX_EVENTS.contains(&event_type);
     let needs_content = CONTENT_INDEX_EVENTS.contains(&event_type);
-    if !needs_output && !needs_content {
-        return event;
-    }
     match event {
-        Json::Object(mut fields) => {
+        Json::Object(mut fields) if needs_output || needs_content => {
             if needs_output && !fields.contains_key("output_index") {
                 fields.insert(
                     String::from("output_index"),
