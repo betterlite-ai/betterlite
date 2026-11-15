@@ -1,0 +1,38 @@
+kind: helper
+name: native-responses-eligibility
+call:
+  foundry_credentials:
+    native_responses:
+      - {}
+      - model: gpt-4o
+      - api_base: https://res.services.ai.azure.com/openai/v1
+      - model: gpt-4o
+        api_base: https://res.services.ai.azure.com/openai/v1
+      - model: gpt-4o
+        api_base: https://foo.bar
+      - model: gpt-4o
+        api_base: https://res.openai.azure.com/openai/v1
+      - environment: {AZURE_AI_API_BASE: https://foo.bar}
+      - model: gpt-4o
+        global_api_base: https://res.services.ai.azure.com/openai/v1
+        environment: {AZURE_AI_API_BASE: https://foo.bar}
+      - model: gpt-4o
+        api_base: https://foo.bar
+        global_api_base: https://res.services.ai.azure.com/openai/v1
+      - model: azure_ai/CLAUDE-sonnet
+        api_base: https://res.services.ai.azure.com/openai/v1
+      - model: azure_ai/agents/agent-1
+      - model: azure_ai/agents/agent-1
+        api_base: https://res.openai.azure.com/openai/v1
+      - model: azure_ai/AGENTS/agent-1
+        api_base: https://res.services.ai.azure.com/openai/v1
+      - model: azure_ai/model_router/gpt-4o
+        api_base: https://res.services.ai.azure.com/openai/v1
+      - model: azure_ai/model-router/gpt-4o
+        api_base: https://res.services.ai.azure.com/openai/v1
+      - model: azure_ai/MODEL_ROUTER/gpt-4o
+        api_base: https://res.services.ai.azure.com/openai/v1
+      - model: gpt-4o
+        global_api_base: https://foo.bar
+env: {}
+compare: {ignore: []}
