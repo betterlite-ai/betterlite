@@ -320,3 +320,119 @@ fn passthrough_finish_reason_needs_a_nonempty_string() {
     .unwrap();
     assert_eq!(chunk["choices"][0]["finish_reason"], json!(null));
 }
+
+#[test]
+fn passthrough_choice_normalizes_a_null_top_logprobs() {
+    let chunk = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{
+            "index": 0,
+            "logprobs": {"content": [
+                {"token": "a", "bytes": [97], "logprob": -0.5, "top_logprobs": null, "refusal": null},
+                {"token": "b", "bytes": null, "logprob": -1.5, "top_logprobs": [{"token": "c", "logprob": -2.5}]},
+                {"token": "d", "bytes": [], "logprob": -3.5},
+                7,
+            ]},
+        }],
+    }))
+    .unwrap();
+    assert_eq!(
+        chunk["choices"][0]["logprobs"],
+        json!({"content": [
+            {"token": "a", "bytes": [97], "logprob": -0.5, "top_logprobs": [], "refusal": null},
+            {"token": "b", "bytes": null, "logprob": -1.5, "top_logprobs": [{"token": "c", "logprob": -2.5}]},
+            {"token": "d", "bytes": [], "logprob": -3.5},
+            7,
+        ]})
+    );
+}
+
+#[test]
+fn passthrough_choice_keeps_logprobs_that_are_not_content_objects() {
+    let chunk = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [
+            {"index": 0, "logprobs": {"content": null, "other": 1}},
+            {"index": 1, "logprobs": [1, 2]},
+            {"index": 2, "logprobs": null},
+        ],
+    }))
+    .unwrap();
+    assert_eq!(
+        chunk["choices"][0]["logprobs"],
+        json!({"content": null, "other": 1})
+    );
+    assert_eq!(chunk["choices"][1]["logprobs"], json!([1, 2]));
+    assert_eq!(chunk["choices"][2]["logprobs"], json!(null));
+}
+
+#[test]
+fn passthrough_choice_omits_a_null_enhancements() {
+    let chunk = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [
+            {"index": 0, "enhancements": null, "score": 2},
+            {"index": 1, "enhancements": {"logit_bias": 1}},
+        ],
+    }))
+    .unwrap();
+    assert_eq!(chunk["choices"][0]["score"], json!(2));
+    assert!(chunk["choices"][0].get("enhancements").is_none());
+    assert_eq!(
+        chunk["choices"][1]["enhancements"],
+        json!({"logit_bias": 1})
+    );
+}
+
+#[test]
+fn passthrough_usage_maps_provider_cache_tokens() {
+    let chunk = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [],
+        "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "prompt_cache_hit_tokens": 2,
+            "cache_read_input_tokens": 7,
+            "cache_creation_input_tokens": 3,
+        },
+    }))
+    .unwrap();
+    let usage = &chunk["usage"];
+    assert_eq!(usage["prompt_tokens_details"]["cached_tokens"], json!(7));
+    assert_eq!(
+        usage["prompt_tokens_details"]["cache_write_tokens"],
+        json!(3)
+    );
+    assert_eq!(
+        usage["prompt_tokens_details"]["cache_creation_tokens"],
+        json!(3)
+    );
+    assert_eq!(usage["prompt_cache_hit_tokens"], json!(2));
+    assert_eq!(usage["cache_read_input_tokens"], json!(7));
+    assert_eq!(usage["cache_creation_input_tokens"], json!(3));
+}
+
+#[test]
+fn passthrough_usage_keeps_an_existing_details_block() {
+    let deepseek = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [],
+        "usage": {"prompt_cache_hit_tokens": 4, "prompt_tokens_details": {"audio_tokens": 1}},
+    }))
+    .unwrap();
+    let details = &deepseek["usage"]["prompt_tokens_details"];
+    assert_eq!(details["cached_tokens"], json!(4));
+    assert_eq!(details["audio_tokens"], json!(1));
+    let unmapped = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [],
+        "usage": {"prompt_tokens_details": {"cached_tokens": 9}},
+    }))
+    .unwrap();
+    assert_eq!(
+        unmapped["usage"]["prompt_tokens_details"]["cached_tokens"],
+        json!(9)
+    );
+}

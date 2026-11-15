@@ -51,6 +51,7 @@ pub fn decode_event_line(
     let event = serde_json::from_str::<Value>(payload).map_err(|source| {
         ResponsesChatStreamError::Json {
             message: text::json_error_message(payload, &source),
+            source,
         }
     })?;
     Ok(DecodedEventLine::Event(event))

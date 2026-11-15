@@ -75,6 +75,12 @@ fn event_line_rejects_invalid_json_with_the_json_decode_error_text() {
 }
 
 #[test]
+fn event_line_json_error_keeps_its_source() {
+    let failure = decode_event_line(b"{", &ApiLimits::default()).unwrap_err();
+    assert!(std::error::Error::source(&failure).is_some());
+}
+
+#[test]
 fn event_line_checks_the_event_byte_limit() {
     let limits = ApiLimits {
         max_json_bytes: 16,

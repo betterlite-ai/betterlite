@@ -82,47 +82,62 @@ fn dispatch_event(
     tool_call_index_map: Option<&mut ToolCallIndices>,
     factory: ChunkFactory,
 ) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
+    let Some(event_type) = event_type else {
+        return Ok(None);
+    };
     match event_type {
-        Some("response.created") => {
+        "response.created" => {
             content_chunk(parsed_chunk, fields, factory, ContentKind::Created).map(Some)
         }
-        Some("response.output_text.delta") => {
+        "response.output_text.delta" => {
             content_chunk(parsed_chunk, fields, factory, ContentKind::Text).map(Some)
         }
-        Some("response.output_item.added") => {
+        "response.output_item.added" => {
             item_chunk(fields, tool_call_index_map, factory, ItemEvent::Added)
         }
-        Some("response.output_item.done") => {
+        "response.output_item.done" => {
             item_chunk(fields, tool_call_index_map, factory, ItemEvent::Done)
         }
-        Some(
-            "response.function_call_arguments.delta" | "response.custom_tool_call_input.delta",
-        ) => {
-            let arguments = field::<&str>(fields, "delta")?
-                .filter(|text| !text.is_empty())
-                .ok_or_else(|| ResponsesChatStreamError::InvalidArgumentDelta {
-                    event: repr_value(parsed_chunk),
-                })?;
-            let output_index = field::<i64>(fields, "output_index")?.unwrap_or(0);
-            let index = sequential_index(tool_call_index_map, output_index)?;
-            let mut delta = delta(None);
-            delta.tool_calls = Some(vec![tool_call::delta_call(index, arguments)?]);
-            Ok(Some(response_chunk(factory, None, Some(0), delta, None)))
+        "response.function_call_arguments.delta" | "response.custom_tool_call_input.delta" => {
+            argument_chunk(parsed_chunk, fields, tool_call_index_map, factory)
         }
-        Some("response.reasoning_summary_text.delta") => {
-            let Some(text) = field::<&str>(fields, "delta")?.filter(|text| !text.is_empty()) else {
-                return Ok(None);
-            };
-            let index = field::<i64>(fields, "summary_index")?;
-            let mut delta = delta(None);
-            delta.reasoning_content = Some(text.to_owned());
-            Ok(Some(response_chunk(factory, None, index, delta, None)))
+        "response.reasoning_summary_text.delta" => reasoning_chunk(fields, factory),
+        "response.completed" | "response.incomplete" => {
+            Ok(Some(terminal_chunk(fields, Some(event_type), factory)?))
         }
-        Some("response.completed" | "response.incomplete") => {
-            Ok(Some(terminal_chunk(fields, event_type, factory)?))
-        }
-        None | Some(_) => Ok(None),
+        _ => Ok(None),
     }
+}
+
+fn argument_chunk(
+    parsed_chunk: &Value,
+    fields: &Fields,
+    tool_call_index_map: Option<&mut ToolCallIndices>,
+    factory: ChunkFactory,
+) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
+    let arguments = field::<&str>(fields, "delta")?
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| ResponsesChatStreamError::InvalidArgumentDelta {
+            event: repr_value(parsed_chunk),
+        })?;
+    let output_index = field::<i64>(fields, "output_index")?.unwrap_or(0);
+    let index = sequential_index(tool_call_index_map, output_index)?;
+    let mut delta = delta(None);
+    delta.tool_calls = Some(vec![tool_call::delta_call(index, arguments)?]);
+    Ok(Some(response_chunk(factory, None, Some(0), delta, None)))
+}
+
+fn reasoning_chunk(
+    fields: &Fields,
+    factory: ChunkFactory,
+) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
+    let Some(text) = field::<&str>(fields, "delta")?.filter(|text| !text.is_empty()) else {
+        return Ok(None);
+    };
+    let index = field::<i64>(fields, "summary_index")?;
+    let mut delta = delta(None);
+    delta.reasoning_content = Some(text.to_owned());
+    Ok(Some(response_chunk(factory, None, index, delta, None)))
 }
 
 fn content_chunk(
@@ -224,29 +239,38 @@ fn item_chunk(
     if !matches!(item_type, Some("function_call" | "custom_tool_call")) {
         return Ok(None);
     }
-    let output_index = field::<i64>(fields, "output_index")?.unwrap_or(0);
-    let shape = match event {
-        ItemEvent::Added => {
-            let index = sequential_index(tool_call_index_map, output_index)?;
-            CallShape::Added {
-                event: fields,
-                index,
-            }
-        }
-        ItemEvent::Done if tool_call_index_map.is_some() => {
-            return Ok(Some(response_chunk(
-                factory,
-                None,
-                Some(0),
-                delta(None),
-                None,
-            )));
-        }
-        ItemEvent::Done => CallShape::Done {
-            index: output_index,
-        },
+    let Some(shape) = call_shape(fields, tool_call_index_map, event)? else {
+        return Ok(Some(response_chunk(
+            factory,
+            None,
+            Some(0),
+            delta(None),
+            None,
+        )));
     };
     let mut delta = delta(None);
     delta.tool_calls = Some(vec![tool_call::convert(item, shape)?]);
     Ok(Some(response_chunk(factory, None, Some(0), delta, None)))
+}
+
+// a done item is complete on its own only when the stream kept no map; with a map it repeats what the deltas carried
+fn call_shape<'fields>(
+    fields: &'fields Fields,
+    tool_call_index_map: Option<&mut ToolCallIndices>,
+    event: ItemEvent,
+) -> Result<Option<CallShape<'fields>>, ResponsesChatStreamError> {
+    let output_index = field::<i64>(fields, "output_index")?.unwrap_or(0);
+    match event {
+        ItemEvent::Added => {
+            let index = sequential_index(tool_call_index_map, output_index)?;
+            Ok(Some(CallShape::Added {
+                event: fields,
+                index,
+            }))
+        }
+        ItemEvent::Done if tool_call_index_map.is_some() => Ok(None),
+        ItemEvent::Done => Ok(Some(CallShape::Done {
+            index: output_index,
+        })),
+    }
 }

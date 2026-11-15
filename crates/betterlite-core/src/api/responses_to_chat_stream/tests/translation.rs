@@ -479,6 +479,27 @@ fn usage_details_follow_the_shared_projection() {
 }
 
 #[test]
+fn terminal_usage_keeps_response_api_cache_keys_verbatim() {
+    let chunk = translated(&json!({
+        "type": "response.completed",
+        "response": {
+            "usage": {
+                "input_tokens": 2,
+                "output_tokens": 5,
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 3,
+            },
+        },
+    }))
+    .unwrap();
+    let usage = &chunk["usage"];
+    assert_eq!(usage["prompt_tokens"], json!(2));
+    assert_eq!(usage["cache_read_input_tokens"], json!(7));
+    assert_eq!(usage["cache_creation_input_tokens"], json!(3));
+    assert_eq!(usage["prompt_tokens_details"], json!(null));
+}
+
+#[test]
 fn stateless_translation_keeps_the_provider_metadata() {
     let chunk = translated(&json!({
         "type": "response.completed",

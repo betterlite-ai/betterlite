@@ -14,7 +14,11 @@ pub enum ResponsesChatStreamError {
     #[error("the provider event line is not UTF-8")]
     Utf8(#[from] Utf8Error),
     #[error("{message}")]
-    Json { message: String },
+    Json {
+        message: String,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("Chat provider: Empty parsed_chunk")]
     EmptyChunk,
     #[error("Chat provider: Invalid chunk type <class '{kind}'>")]

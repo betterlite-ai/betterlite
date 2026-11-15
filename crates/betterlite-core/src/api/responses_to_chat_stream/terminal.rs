@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
@@ -8,7 +10,7 @@ use crate::api::response_chat_history::metadata::{
     IncompleteFinish, finish_reason_for_incomplete, incomplete_reason, provider_metadata,
 };
 use crate::api::response_chat_history::reasoning::{
-    ReasoningOutputItem, chat_reasoning_items, reasoning_records,
+    ReasoningOutputItem, ReasoningRecord, chat_reasoning_items, reasoning_records,
 };
 use crate::api::responses_input_content::is_truthy;
 
@@ -18,52 +20,102 @@ pub(super) fn terminal_chunk(
     factory: ChunkFactory,
 ) -> Result<ChatChunk, ResponsesChatStreamError> {
     let response_value = fields.get("response").unwrap_or(&Value::Null);
-    let absent = Map::new();
-    let response = match response_value {
-        Value::Null => &absent,
-        Value::Object(payload) => payload,
+    let response = response_payload(response_value)?;
+    let output = response_output(&response)?;
+    let mut delta = delta(Some(""));
+    delta.reasoning_items = reasoning_items(output)?;
+    let mut chunk = response_chunk(
+        factory,
+        None,
+        Some(0),
+        delta,
+        Some(finish_reason(response_value, event_type, output).to_owned()),
+    );
+    chunk.usage = Some(terminal_usage(&response)?.unwrap_or(Value::Null));
+    chunk.provider_specific_fields = terminal_metadata(&response);
+    chunk.service_tier = terminal_service_tier(&response);
+    Ok(chunk)
+}
+
+fn response_payload(
+    response_value: &Value,
+) -> Result<Cow<'_, Map<String, Value>>, ResponsesChatStreamError> {
+    match response_value {
+        Value::Null => Ok(Cow::Owned(Map::new())),
+        Value::Object(payload) => Ok(Cow::Borrowed(payload)),
         Value::Array(_) | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
-            return Err(ResponsesChatStreamError::Field { field: "response" });
+            Err(ResponsesChatStreamError::Field { field: "response" })
         }
-    };
-    let output: &[Value] = match response.get("output") {
-        Some(Value::Array(items)) => items.as_slice(),
-        None | Some(Value::Null) => &[],
-        Some(_) => {
-            return Err(ResponsesChatStreamError::Field {
-                field: "response.output",
-            });
-        }
-    };
-    let finish_reason = if event_type == Some("response.incomplete") {
-        match finish_reason_for_incomplete(incomplete_reason(response_value).as_deref()) {
+    }
+}
+
+fn response_output(response: &Map<String, Value>) -> Result<&[Value], ResponsesChatStreamError> {
+    match response.get("output") {
+        Some(Value::Array(items)) => Ok(items.as_slice()),
+        None | Some(Value::Null) => Ok(&[]),
+        Some(_) => Err(ResponsesChatStreamError::Field {
+            field: "response.output",
+        }),
+    }
+}
+
+fn finish_reason(
+    response_value: &Value,
+    event_type: Option<&str>,
+    output: &[Value],
+) -> &'static str {
+    if event_type == Some("response.incomplete") {
+        return match finish_reason_for_incomplete(incomplete_reason(response_value).as_deref()) {
             IncompleteFinish::Length => "length",
             IncompleteFinish::ContentFilter => "content_filter",
-        }
-    } else if output.iter().any(|item| {
-        matches!(
-            item,
-            Value::Object(fields)
-                if matches!(
-                    fields.get("type").and_then(Value::as_str),
-                    Some("function_call" | "custom_tool_call")
-                )
-        )
-    }) {
+        };
+    }
+    if output.iter().any(is_tool_call_item) {
         "tool_calls"
     } else {
         "stop"
-    };
-    let usage = match response.get("usage") {
-        Some(value) if is_truthy(Some(value)) => Some(usage::chat_usage(value)?),
-        None | Some(_) => None,
-    };
+    }
+}
+
+fn is_tool_call_item(item: &Value) -> bool {
+    matches!(
+        item,
+        Value::Object(fields)
+            if matches!(
+                fields.get("type").and_then(Value::as_str),
+                Some("function_call" | "custom_tool_call")
+            )
+    )
+}
+
+fn terminal_usage(
+    response: &Map<String, Value>,
+) -> Result<Option<Value>, ResponsesChatStreamError> {
+    match response.get("usage") {
+        Some(value) if is_truthy(Some(value)) => Ok(Some(usage::chat_usage(value)?)),
+        None | Some(_) => Ok(None),
+    }
+}
+
+fn terminal_metadata(response: &Map<String, Value>) -> Option<Map<String, Value>> {
     let metadata = provider_metadata(Some(response));
-    let service_tier = match response.get("service_tier") {
-        Some(Value::String(tier)) => Some(tier.clone()),
+    if metadata.is_empty() {
+        return None;
+    }
+    Some(metadata)
+}
+
+fn terminal_service_tier(response: &Map<String, Value>) -> Option<Option<String>> {
+    match response.get("service_tier") {
+        Some(Value::String(tier)) => Some(Some(tier.clone())),
         None | Some(_) => None,
-    };
-    // the terminal payload's output items carry reasoning records a chat client replays
+    }
+}
+
+// the terminal payload's output items carry reasoning records a chat client replays
+fn reasoning_items(
+    output: &[Value],
+) -> Result<Option<Vec<ReasoningRecord>>, ResponsesChatStreamError> {
     let mut candidates = Vec::with_capacity(output.len());
     for item in output {
         candidates.push(match item {
@@ -77,21 +129,5 @@ pub(super) fn terminal_chunk(
             | Value::Null => ReasoningOutputItem::TypedOther,
         });
     }
-    let mut delta = delta(Some(""));
-    delta.reasoning_items = chat_reasoning_items(&reasoning_records(&candidates)?);
-    let mut chunk = response_chunk(
-        factory,
-        None,
-        Some(0),
-        delta,
-        Some(finish_reason.to_owned()),
-    );
-    chunk.usage = Some(usage.unwrap_or(Value::Null));
-    chunk.provider_specific_fields = if metadata.is_empty() {
-        None
-    } else {
-        Some(metadata)
-    };
-    chunk.service_tier = service_tier.map(Some);
-    Ok(chunk)
+    Ok(chat_reasoning_items(&reasoning_records(&candidates)?))
 }
