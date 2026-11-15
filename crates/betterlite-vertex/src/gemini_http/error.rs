@@ -56,7 +56,10 @@ impl GeminiHttpError {
                 message: String::from(TIMEOUT_MESSAGE),
                 headers: None,
             }),
-            source => Self::Transport { source },
+            other @ (PostError::Url(_)
+            | PostError::HeaderName { .. }
+            | PostError::HeaderValue { .. }
+            | PostError::Send { .. }) => Self::Transport { source: other },
         }
     }
 
@@ -101,7 +104,12 @@ impl GeminiStreamError {
         let timed_out = match &source {
             HttpError::Timeout => true,
             HttpError::Request(error) => error.is_timeout(),
-            _ => false,
+            HttpError::Required { .. }
+            | HttpError::DotSegment { .. }
+            | HttpError::UnsupportedProxyScheme { .. }
+            | HttpError::InvalidProxyUrl { .. }
+            | HttpError::Client(_)
+            | HttpError::TooLarge { .. } => false,
         };
         if timed_out {
             return Self::Timeout;

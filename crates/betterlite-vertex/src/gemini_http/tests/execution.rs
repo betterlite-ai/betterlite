@@ -152,6 +152,7 @@ async fn execution_gemini_streaming_reads_no_credentials() {
 #[case::unauthorized(401)]
 #[case::rate_limited(429)]
 #[case::server_error(500)]
+#[case::redirect_without_a_location(304)]
 #[tokio::test]
 async fn execution_complete_preserves_status_and_headers(#[case] status: u16) {
     let body = object(BODY);

@@ -185,7 +185,8 @@ pub async fn async_completion(
         status = reply.status,
         "received the Gemini answer"
     );
-    if reply.status >= 400 {
+    // LiteLLM's raise_for_status rejects every non-2xx reply, an unfollowed redirect included
+    if !(200..300).contains(&reply.status) {
         let message = decode_text(&reply.body);
         return Err(GeminiHttpError::Provider(get_error_class(
             message,
