@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
-use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
+use betterlite_guardrails::guardrail_base::contract::GuardrailContract as _;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use betterlite_guardrails::hiddenlayer::evaluation::metadata;
@@ -13,7 +13,7 @@ use betterlite_guardrails::hiddenlayer::hiddenlayer_authentication::token::{
     JwtError, JwtTransport, TokenRequest,
 };
 use betterlite_guardrails::hiddenlayer::hiddenlayer_version_dispatch::{
-    HiddenlayerGuardrailInstance, initialize_guardrail,
+    HiddenlayerGuardrailInstance, HiddenlayerServices, initialize_guardrail,
 };
 use betterlite_http::proxy::base_builder;
 use reqwest::Client;
@@ -78,13 +78,7 @@ fn apply(input: &Input) -> HelperResult {
         base.clone()
     };
     let params = params(input, &api_base, &base)?;
-    let builder = base_builder();
-    let builder = if input.saas {
-        builder.resolve(SAAS_HOST, address)
-    } else {
-        builder
-    };
-    let client = builder.build().or_config_error()?;
+    let client = client_for(input, address)?;
     let mut request_data = input.request_data.clone();
     let mut logging = logging_target(&request_data);
     let guardrail = instance(&params, input, client)?;
@@ -96,31 +90,49 @@ fn apply(input: &Input) -> HelperResult {
         logging.as_mut(),
     ));
     let calls = mock.finish().or_value_error()?;
-    let (raised, result) = match evaluated {
-        Ok(evaluated) => {
-            let messages = match evaluated.structured_messages.as_ref() {
-                Some(messages) => serde_json::to_value(messages).or_value_error()?,
-                None => Value::Null,
-            };
-            let result = json!({
-                "texts": evaluated.texts,
-                "structured_messages": messages,
-                "tool_calls": evaluated.tool_calls,
-            });
-            (Value::Null, result)
-        }
-        Err(GuardrailFailure::HttpObject { status, detail }) => (
-            json!({"kind": "http", "status": status, "detail": detail}),
-            Value::Null,
-        ),
-        Err(_error) => (json!({"kind": "failed"}), Value::Null),
-    };
+    let (raised, result) = outcome(evaluated)?;
     Ok(json!({
         "requests": described(&calls, &input.tokens),
         "raised": raised,
         "result": result,
         "roundtrip": roundtrip(&request_data),
     }))
+}
+
+fn client_for(input: &Input, address: SocketAddr) -> Result<Client, Box<HelperError>> {
+    let builder = base_builder();
+    if input.saas {
+        return builder
+            .resolve(SAAS_HOST, address)
+            .build()
+            .or_config_error();
+    }
+    builder.build().or_config_error()
+}
+
+// what the case compares: the answer's texts and messages, or the failure LiteLLM would raise
+fn outcome(
+    evaluated: Result<GuardrailApiInputs, GuardrailFailure>,
+) -> Result<(Value, Value), Box<HelperError>> {
+    match evaluated {
+        Ok(inputs) => {
+            let messages = match inputs.structured_messages.as_ref() {
+                Some(messages) => serde_json::to_value(messages).or_value_error()?,
+                None => Value::Null,
+            };
+            let result = json!({
+                "texts": inputs.texts,
+                "structured_messages": messages,
+                "tool_calls": inputs.tool_calls,
+            });
+            Ok((Value::Null, result))
+        }
+        Err(GuardrailFailure::HttpObject { status, detail }) => Ok((
+            json!({"kind": "http", "status": status, "detail": detail}),
+            Value::Null,
+        )),
+        Err(_error) => Ok((json!({"kind": "failed"}), Value::Null)),
+    }
 }
 
 fn dispatch(input: &Input) -> HelperResult {
@@ -147,9 +159,11 @@ fn instance(
         params,
         Some(&input.guardrail_name),
         &environment,
-        client,
-        transport,
-        || Uuid::from_bytes(FIXED_ID),
+        HiddenlayerServices {
+            client,
+            transport,
+            new_id: || Uuid::from_bytes(FIXED_ID),
+        },
     )
     .or_config_error()
 }
@@ -159,10 +173,12 @@ struct ScriptedTokens(Mutex<VecDeque<String>>);
 
 impl JwtTransport for ScriptedTokens {
     fn fetch_token(&self, _request: &TokenRequest) -> Result<String, JwtError> {
-        Ok(self.0.lock().map_or_else(
-            |_poisoned| String::new(),
-            |mut tokens| tokens.pop_front().unwrap_or_default(),
-        ))
+        Ok(self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_default())
     }
 }
 

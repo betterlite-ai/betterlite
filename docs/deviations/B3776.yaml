@@ -15,3 +15,6 @@ deviations:
   - what: A content part that names type text without a string text is skipped in both redaction paths, where LiteLLM's item["text"] raises KeyError and fails the request.
     why: docs/compatibility.md reads an absent field as unset, and the part carries no text to redact or write back; the other parts are still read instead of failing the whole call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L337-L342
+  - what: A modified_data side that carries no messages list fails the response decode, where LiteLLM skips an empty side and raises KeyError on a non-empty one without messages.
+    why: LiteLLM declares the side as a TypedDict with a required messages list, and docs/compatibility.md reads a value outside the declared type as an error that names the field; an empty side is such a value, so betterlite refuses the answer instead of treating it as no redaction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L335-L345

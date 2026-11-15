@@ -6,11 +6,10 @@ use std::sync::Arc;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use uuid::Uuid;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
-use crate::guardrail_base::contract::GuardrailContract;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::hiddenlayer::evaluation::tests::fixtures::{self, text, text_inputs};
 use crate::hiddenlayer::evaluation::tests::{server, tokens};
@@ -22,22 +21,28 @@ fn params(extra: &str) -> LitellmParams {
     serde_json::from_str(&body).expect("params")
 }
 
+fn services() -> HiddenlayerServices {
+    HiddenlayerServices {
+        client: fixtures::client(),
+        transport: Arc::new(tokens::ScriptedTokens::new(&[])),
+        new_id: Uuid::new_v4,
+    }
+}
+
 fn instance(params: &LitellmParams) -> HiddenlayerGuardrailInstance {
     initialize_guardrail(
         params,
         Some("hiddenlayer-guard"),
         &fixtures::environment(),
-        fixtures::client(),
-        Arc::new(tokens::ScriptedTokens::new(&[])),
-        Uuid::new_v4,
+        services(),
     )
     .expect("an instance")
 }
 
 #[test]
-fn absent_version_dispatches_to_v1() {
+fn absent_version_dispatches_to_v2() {
     let guardrail = instance(&params(r#", "api_base": "http://127.0.0.1:1""#));
-    assert!(matches!(guardrail, HiddenlayerGuardrailInstance::V1(_)));
+    assert!(matches!(guardrail, HiddenlayerGuardrailInstance::V2(_)));
 }
 
 #[test]
@@ -86,9 +91,7 @@ fn a_wrong_version_type_is_a_typed_initializer_error() {
         &params(r#", "version": "two""#),
         Some("hiddenlayer-guard"),
         &fixtures::environment(),
-        fixtures::client(),
-        Arc::new(tokens::ScriptedTokens::new(&[])),
-        Uuid::new_v4,
+        services(),
     );
     let Err(EvaluationError::Initializer(error)) = wrong else {
         panic!("a rejected version");
@@ -110,9 +113,7 @@ fn evaluation_args_read_every_parameter() {
     );
     assert_eq!(args.api_id.as_deref(), Some("api-id"));
     assert_eq!(
-        args.api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        args.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("api-key")
     );
     assert_eq!(args.api_base.as_deref(), Some("http://api.example"));
@@ -126,7 +127,7 @@ fn evaluation_args_default_the_optionals() {
     let args = evaluation_args(&params(""), None).expect("args");
     assert_eq!(args.guardrail_name.as_deref(), Some(""));
     assert_eq!(args.api_id, None);
-    assert_eq!(args.api_key, None);
+    assert!(args.api_key.is_none());
     assert_eq!(args.api_base, None);
     assert_eq!(args.auth_url, None);
     assert_eq!(args.timeout, None);

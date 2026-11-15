@@ -14,10 +14,10 @@ use crate::hiddenlayer::evaluation::tests::fixtures::{
     canonical, headers_value, logging_data, message, object, proxy_data, text, text_inputs,
 };
 use crate::hiddenlayer::evaluation::tests::{fixtures, server, tokens};
+use crate::hiddenlayer::evaluation::{BLOCK_MESSAGE, VIOLATED_POLICY, as_guardrail_message};
 use crate::hiddenlayer::hiddenlayer_authentication::error::HiddenlayerError;
 use crate::hiddenlayer::hiddenlayer_v2::roundtrip_headers;
 
-use super::response::*;
 use super::*;
 
 fn interaction(json: &str) -> InteractionBody {
@@ -539,7 +539,6 @@ fn apply_result_redact_rewrites_only_the_response_texts() {
 #[case::output_only(
     r#"{"evaluation": {"action": "Redact"}, "modified_data": {"output": {"messages": [{"content": "out"}]}}}"#
 )]
-#[case::empty_input(r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {}}}"#)]
 fn redact_without_modified_messages_keeps_the_inputs(#[case] body: &str) {
     let inputs = text_inputs(&["hello"]);
     assert_eq!(
@@ -556,14 +555,6 @@ fn redact_without_modified_messages_keeps_the_inputs(#[case] body: &str) {
 #[rstest]
 #[case::empty_messages(
     r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"messages": []}}}"#,
-    GuardrailInputType::Request
-)]
-#[case::other_keys(
-    r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"other": 1}}}"#,
-    GuardrailInputType::Request
-)]
-#[case::null_messages(
-    r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"messages": null}}}"#,
     GuardrailInputType::Request
 )]
 #[case::empty_output(
@@ -590,6 +581,17 @@ fn redacted_texts_of(message: &str) -> Result<Vec<String>, EvaluationError> {
     ));
     let evaluated = apply_result(text_inputs(&["hello"]), &body, GuardrailInputType::Request)?;
     Ok(evaluated.texts.expect("texts"))
+}
+
+#[rstest]
+#[case::empty_side(r#"{"modified_data": {"input": {}}}"#)]
+#[case::other_keys(r#"{"modified_data": {"output": {"other": 1}}}"#)]
+#[case::null_messages(r#"{"modified_data": {"input": {"messages": null}}}"#)]
+fn a_modified_side_without_messages_fails_to_decode(#[case] body: &str) {
+    assert!(
+        serde_json::from_str::<InteractionBody>(body).is_err(),
+        "{body}"
+    );
 }
 
 #[test]
@@ -665,19 +667,21 @@ fn as_guardrail_message_defaults_a_missing_role_to_user() {
 fn detection_headers_name_the_provider_and_project() {
     let headers = detection_headers(VERSION, None, None).expect("headers");
     assert_eq!(
-        headers.get("content-type").and_then(|v| v.to_str().ok()),
+        headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
         Some("application/json")
     );
     assert_eq!(
         headers
             .get("hl-runtime-edge-provider")
-            .and_then(|v| v.to_str().ok()),
+            .and_then(|value| value.to_str().ok()),
         Some("litellm")
     );
     assert_eq!(
         headers
             .get("hl-runtime-edge-provider-version")
-            .and_then(|v| v.to_str().ok()),
+            .and_then(|value| value.to_str().ok()),
         Some("1")
     );
     assert!(headers.get("hl-project-id").is_none());
@@ -685,7 +689,7 @@ fn detection_headers_name_the_provider_and_project() {
     assert_eq!(
         with_project
             .get("hl-project-id")
-            .and_then(|v| v.to_str().ok()),
+            .and_then(|value| value.to_str().ok()),
         Some("project")
     );
 }

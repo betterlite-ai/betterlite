@@ -11,7 +11,7 @@ pub const ROUNDTRIP_HEADER: &str = "hl-roundtrip-id";
 pub const RUNTIME_ACTION_HEADER: &str = "hl-runtime-action";
 pub const DEFAULT_REQUESTER: &str = "LiteLLM";
 
-fn object(value: Option<&GuardrailValue>) -> Option<&BTreeMap<String, GuardrailValue>> {
+const fn object(value: Option<&GuardrailValue>) -> Option<&BTreeMap<String, GuardrailValue>> {
     match value {
         Some(GuardrailValue::Object(fields)) => Some(fields),
         _ => None,
@@ -72,8 +72,8 @@ pub fn evaluation_model(request_data: &BTreeMap<String, GuardrailValue>) -> Stri
 
 #[must_use]
 pub fn header_value(headers: &HeaderMap, name: &str, default: &str) -> String {
-    match headers.get(name).and_then(|value| value.to_str().ok()) {
-        Some(value) => value.to_owned(),
-        None => default.to_owned(),
-    }
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map_or_else(|| default.to_owned(), str::to_owned)
 }

@@ -17,10 +17,10 @@ where
 
 pub fn header_map(pairs: &[(&str, &str)]) -> Result<HeaderMap, EvaluationError> {
     let mut headers = HeaderMap::new();
-    for (name, value) in pairs {
-        let name = HeaderName::from_bytes(name.as_bytes())
+    for (raw_name, raw_value) in pairs {
+        let name = HeaderName::from_bytes(raw_name.as_bytes())
             .map_err(|source| EvaluationError::InvalidHeaderName { source })?;
-        let value = HeaderValue::from_str(value)
+        let value = HeaderValue::from_str(raw_value)
             .map_err(|source| EvaluationError::InvalidHeader { source })?;
         headers.insert(name, value);
     }

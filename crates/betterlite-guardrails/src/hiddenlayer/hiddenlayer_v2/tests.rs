@@ -8,7 +8,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailToolParam};
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::hiddenlayer::evaluation::tests::fixtures::{
-    canonical, message, object, proxy_data, text, text_inputs,
+    canonical, hl_headers, message, object, proxy_data, text, text_inputs,
 };
 use crate::hiddenlayer::evaluation::tests::{fixtures, server, tokens};
 use crate::hiddenlayer::hiddenlayer_authentication::error::HiddenlayerError;
@@ -25,8 +25,10 @@ fn value(json: &str) -> GuardrailValue {
     serde_json::from_str(json).expect("JSON")
 }
 
+const ROUNDTRIP_ID: &str = "11111111-1111-1111-1111-111111111111";
+
 fn fixed_id() -> Uuid {
-    Uuid::parse_str("11111111-1111-1111-1111-111111111111").expect("a uuid")
+    Uuid::parse_str(ROUNDTRIP_ID).expect("a uuid")
 }
 
 fn build(
@@ -177,20 +179,14 @@ fn roundtrip_headers_default_the_requester_and_inject_an_id() {
         BTreeMap::from([
             ("hl-project-id".to_owned(), "project".to_owned()),
             ("hl-requester-id".to_owned(), "LiteLLM".to_owned()),
-            (
-                "hl-roundtrip-id".to_owned(),
-                "11111111-1111-1111-1111-111111111111".to_owned()
-            ),
+            ("hl-roundtrip-id".to_owned(), ROUNDTRIP_ID.to_owned()),
         ])
     );
     assert_eq!(
         metadata::proxy_request_headers(&data),
         BTreeMap::from([
             ("hl-project-id".to_owned(), "project".to_owned()),
-            (
-                "hl-roundtrip-id".to_owned(),
-                "11111111-1111-1111-1111-111111111111".to_owned()
-            ),
+            ("hl-roundtrip-id".to_owned(), ROUNDTRIP_ID.to_owned()),
         ])
     );
 }
@@ -340,6 +336,15 @@ fn last_choice_content_reads_only_a_text_content() {
         String::new()
     );
     assert_eq!(
+        last_choice_content(&value(r#"{"choices": null}"#)).expect("content"),
+        String::new()
+    );
+    assert_eq!(
+        last_choice_content(&value(r#"{"choices": [{"message": {"content": null}}]}"#))
+            .expect("content"),
+        String::new()
+    );
+    assert_eq!(
         last_choice_content(&value(r#"{"choices": [{"message": {"content": "c"}}]}"#))
             .expect("content"),
         "c"
@@ -349,7 +354,6 @@ fn last_choice_content_reads_only_a_text_content() {
 #[rstest]
 #[case::plain_text(r#""plain""#)]
 #[case::empty_choices(r#"{"choices": []}"#)]
-#[case::null_choices(r#"{"choices": null}"#)]
 #[case::plain_choice(r#"{"choices": ["plain"]}"#)]
 #[case::numeric_content(r#"{"choices": [{"message": {"content": 3}}]}"#)]
 #[case::plain_message(r#"{"choices": [{"message": "plain"}]}"#)]
@@ -449,37 +453,25 @@ async fn sends_the_v2_request_evaluation() {
         Some(vec![message("user", text("redacted"))])
     );
     assert_eq!(evaluated.texts, Some(vec!["redacted".to_owned()]));
-    assert_eq!(
-        metadata::proxy_request_headers(&data),
-        BTreeMap::from([
-            ("hl-project-id".to_owned(), "project".to_owned()),
-            (
-                "hl-roundtrip-id".to_owned(),
-                "11111111-1111-1111-1111-111111111111".to_owned()
-            ),
-        ])
-    );
     let seen = server.requests();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].path, "/detection/v2/request-evaluations");
     assert_eq!(
-        seen[0]
-            .headers
-            .get("hl-runtime-edge-provider-version")
-            .map(String::as_str),
-        Some("2")
+        hl_headers(&seen[0]),
+        BTreeMap::from([
+            ("hl-project-id".to_owned(), "project".to_owned()),
+            ("hl-requester-id".to_owned(), "LiteLLM".to_owned()),
+            ("hl-roundtrip-id".to_owned(), ROUNDTRIP_ID.to_owned()),
+            ("hl-runtime-edge-provider".to_owned(), "litellm".to_owned()),
+            (
+                "hl-runtime-edge-provider-version".to_owned(),
+                "2".to_owned()
+            ),
+        ])
     );
     assert_eq!(
-        seen[0].headers.get("hl-project-id").map(String::as_str),
-        Some("project")
-    );
-    assert_eq!(
-        seen[0].headers.get("hl-requester-id").map(String::as_str),
-        Some("LiteLLM")
-    );
-    assert_eq!(
-        seen[0].headers.get("hl-roundtrip-id").map(String::as_str),
-        Some("11111111-1111-1111-1111-111111111111")
+        metadata::proxy_request_headers(&data).get("hl-roundtrip-id"),
+        Some(&ROUNDTRIP_ID.to_owned())
     );
     assert!(seen[0].headers.get("authorization").is_none());
     assert_eq!(
@@ -509,10 +501,16 @@ async fn sends_the_v2_response_evaluation() {
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].path, "/detection/v2/response-evaluations");
     assert_eq!(
-        seen[0].headers.get("hl-requester-id").map(String::as_str),
-        Some("LiteLLM")
+        hl_headers(&seen[0]),
+        BTreeMap::from([
+            ("hl-requester-id".to_owned(), "LiteLLM".to_owned()),
+            ("hl-runtime-edge-provider".to_owned(), "litellm".to_owned()),
+            (
+                "hl-runtime-edge-provider-version".to_owned(),
+                "2".to_owned()
+            ),
+        ])
     );
-    assert!(seen[0].headers.get("hl-roundtrip-id").is_none());
     assert_eq!(
         canonical(&seen[0].body),
         r#"{"choices":[{"index":0,"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}]}"#

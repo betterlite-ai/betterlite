@@ -37,18 +37,18 @@ pub struct ScanMessage {
 }
 
 #[derive(Serialize)]
-struct ScanPayload<'a> {
-    messages: [&'a ScanMessage; 1],
+struct ScanPayload<'scan> {
+    messages: [&'scan ScanMessage; 1],
 }
 
 // LiteLLM's data dict: the metadata body beside either the input or the output scan
 #[derive(Serialize)]
-struct InteractionRequest<'a> {
-    metadata: &'a BTreeMap<String, String>,
+struct InteractionRequest<'request> {
+    metadata: &'request BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    input: Option<ScanPayload<'a>>,
+    input: Option<ScanPayload<'request>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    output: Option<ScanPayload<'a>>,
+    output: Option<ScanPayload<'request>>,
 }
 
 // LiteLLM's HiddenlayerGuardrail: one scan of the last user message per call
@@ -59,12 +59,15 @@ pub struct HiddenlayerV1Guardrail {
 }
 
 impl HiddenlayerV1Guardrail {
-    pub fn new<L: EnvironmentLookup>(
+    pub fn new<L>(
         args: &EvaluationArgs,
         environment: &L,
         client: Client,
         transport: Arc<dyn JwtTransport>,
-    ) -> Result<Self, EvaluationError> {
+    ) -> Result<Self, EvaluationError>
+    where
+        L: EnvironmentLookup,
+    {
         let auth = HiddenlayerAuth::new(&args.credentials(), environment, client, transport)?;
         let timeout = evaluation_timeout(args.timeout)?;
         let settings = guardrail_settings(args, Some(SUPPORTED_EVENT_HOOKS.to_vec()));
@@ -112,12 +115,12 @@ impl HiddenlayerV1Guardrail {
         payload: &ScanMessage,
         input_type: GuardrailInputType,
     ) -> Result<InteractionBody, EvaluationError> {
-        let payload = ScanPayload {
+        let scan = ScanPayload {
             messages: [payload],
         };
         let (input, output) = match input_type {
-            GuardrailInputType::Request => (Some(payload), None),
-            GuardrailInputType::Response => (None, Some(payload)),
+            GuardrailInputType::Request => (Some(scan), None),
+            GuardrailInputType::Response => (None, Some(scan)),
         };
         let body = wire::to_json(&InteractionRequest {
             metadata: metadata_body,

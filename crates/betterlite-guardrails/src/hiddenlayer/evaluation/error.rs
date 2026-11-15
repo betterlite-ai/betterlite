@@ -46,6 +46,7 @@ pub enum EvaluationError {
 }
 
 // Both versions refuse a call with this body, v1 after adding its two scan fields
+#[must_use]
 pub fn blocked(entries: Vec<(&str, GuardrailValue)>) -> EvaluationError {
     let detail = entries
         .into_iter()

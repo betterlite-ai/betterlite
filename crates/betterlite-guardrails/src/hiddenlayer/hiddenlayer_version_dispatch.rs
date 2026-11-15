@@ -26,23 +26,38 @@ pub enum HiddenlayerGuardrailInstance {
     V2(HiddenlayerV2Guardrail),
 }
 
-// LiteLLM's initialize_guardrail: a missing or first version runs v1, version 2 and up run v2
-pub fn initialize_guardrail<L: EnvironmentLookup>(
+// What the host lends both guardrails: the HTTP client, the JWT transport and the roundtrip id source
+pub struct HiddenlayerServices {
+    pub client: Client,
+    pub transport: Arc<dyn JwtTransport>,
+    pub new_id: fn() -> Uuid,
+}
+
+// LiteLLM's initialize_guardrail: a null, 0 or 1 version runs v1, and an absent version or 2 and up runs v2
+pub fn initialize_guardrail<L>(
     params: &LitellmParams,
     guardrail_name: Option<&str>,
     environment: &L,
-    client: Client,
-    transport: Arc<dyn JwtTransport>,
-    new_id: fn() -> Uuid,
-) -> Result<HiddenlayerGuardrailInstance, EvaluationError> {
+    services: HiddenlayerServices,
+) -> Result<HiddenlayerGuardrailInstance, EvaluationError>
+where
+    L: EnvironmentLookup,
+{
     let args = evaluation_args(params, guardrail_name)?;
-    let version: Option<i64> = extras::read(&params.base.extra, "version", None)?;
+    // HiddenlayerGuardrailConfigModel.version defaults to 2, and a null version reads as None
+    let version: Option<i64> = extras::read(&params.base.extra, "version", Some(2))?;
     match version {
-        Some(version) if version >= 2 => Ok(HiddenlayerGuardrailInstance::V2(
-            HiddenlayerV2Guardrail::new(&args, environment, client, transport, new_id)?,
+        Some(selected) if selected >= 2 => Ok(HiddenlayerGuardrailInstance::V2(
+            HiddenlayerV2Guardrail::new(
+                &args,
+                environment,
+                services.client,
+                services.transport,
+                services.new_id,
+            )?,
         )),
         _ => Ok(HiddenlayerGuardrailInstance::V1(
-            HiddenlayerV1Guardrail::new(&args, environment, client, transport)?,
+            HiddenlayerV1Guardrail::new(&args, environment, services.client, services.transport)?,
         )),
     }
 }
@@ -89,9 +104,16 @@ impl GuardrailContract for HiddenlayerGuardrailInstance {
             EvaluationError::Blocked { status, detail } => {
                 GuardrailFailure::HttpObject { status, detail }
             }
-            other => GuardrailFailure::Http {
+            failure @ (EvaluationError::Base(_)
+            | EvaluationError::Initializer(_)
+            | EvaluationError::Auth(_)
+            | EvaluationError::Decode { .. }
+            | EvaluationError::Shape { .. }
+            | EvaluationError::InvalidHeaderName { .. }
+            | EvaluationError::InvalidHeader { .. }
+            | EvaluationError::Encode { .. }) => GuardrailFailure::Http {
                 status: 500,
-                detail: other.to_string(),
+                detail: failure.to_string(),
             },
         })
     }

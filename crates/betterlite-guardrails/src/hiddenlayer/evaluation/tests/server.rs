@@ -89,24 +89,17 @@ impl Drop for Server {
 }
 
 pub(crate) fn start(replies: Vec<Reply>) -> Server {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("a listener");
-    listener
-        .set_nonblocking(true)
-        .expect("a nonblocking listener");
+    let listener = local_listener();
     let address = listener.local_addr().expect("an address");
     let seen = Arc::new(Mutex::new(Vec::new()));
     let answers = Arc::new(Mutex::new(VecDeque::from(replies)));
     let recorder = Arc::clone(&seen);
-    let answer = move |method: Method, uri: Uri, headers: HeaderMap, bytes: Bytes| {
+    let handler = move |method: Method, uri: Uri, headers: HeaderMap, bytes: Bytes| {
         let capture = Arc::clone(&recorder);
         let queue = Arc::clone(&answers);
         async move {
             record(&capture, &method, &uri, &headers, &bytes);
-            let next = queue
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .pop_front()
-                .unwrap_or_else(|| reply("{}"));
+            let next = next_reply(&queue);
             if let Some(delay) = next.after {
                 sleep(delay).await;
             }
@@ -118,22 +111,9 @@ pub(crate) fn start(replies: Vec<Reply>) -> Server {
         }
     };
     let (stop, stopped) = oneshot::channel();
-    let router = Router::new().fallback(answer);
+    let router = Router::new().fallback(handler);
     let thread = ThreadBuilder::new()
-        .spawn(move || {
-            let runtime = RuntimeBuilder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("a runtime");
-            runtime.block_on(async move {
-                let listener = TokioListener::from_std(listener).expect("a tokio listener");
-                axum::serve(listener, router)
-                    .with_graceful_shutdown(async move {
-                        let _stopped = stopped.await;
-                    })
-                    .await
-            })
-        })
+        .spawn(move || serve(listener, router, stopped))
         .expect("a server thread");
     Server {
         base: format!("http://{address}"),
@@ -144,11 +124,45 @@ pub(crate) fn start(replies: Vec<Reply>) -> Server {
     }
 }
 
+fn local_listener() -> TcpListener {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("a listener");
+    listener
+        .set_nonblocking(true)
+        .expect("a nonblocking listener");
+    listener
+}
+
+fn next_reply(queue: &Mutex<VecDeque<Reply>>) -> Reply {
+    queue
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .pop_front()
+        .unwrap_or_else(|| reply("{}"))
+}
+
+fn serve(listener: TcpListener, router: Router, stopped: oneshot::Receiver<()>) -> io::Result<()> {
+    let runtime = RuntimeBuilder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    runtime.block_on(async move {
+        let async_listener = TokioListener::from_std(listener).expect("a tokio listener");
+        axum::serve(async_listener, router)
+            .with_graceful_shutdown(async move {
+                let _stopped = stopped.await;
+            })
+            .await
+    })
+}
+
 fn response_headers(headers: &[(&'static str, &'static str)]) -> HeaderMap {
     let mut response = HeaderMap::new();
-    for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes()).expect("a header name");
-        response.insert(name, HeaderValue::from_str(value).expect("a header value"));
+    for (raw_name, raw_value) in headers {
+        let name = HeaderName::from_bytes(raw_name.as_bytes()).expect("a header name");
+        response.insert(
+            name,
+            HeaderValue::from_str(raw_value).expect("a header value"),
+        );
     }
     response.insert(
         HeaderName::from_static("content-type"),

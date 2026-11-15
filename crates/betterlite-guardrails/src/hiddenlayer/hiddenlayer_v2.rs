@@ -32,28 +32,28 @@ pub const VERSION: &str = "2";
 
 // every request part is sent, null when the input lacks it
 #[derive(Serialize)]
-struct RequestPayload<'a> {
-    messages: &'a Option<Vec<GuardrailMessage>>,
-    model: &'a Option<String>,
-    tools: &'a Option<Vec<GuardrailToolParam>>,
+struct RequestPayload<'request> {
+    messages: &'request Option<Vec<GuardrailMessage>>,
+    model: &'request Option<String>,
+    tools: &'request Option<Vec<GuardrailToolParam>>,
 }
 
 #[derive(Serialize)]
-struct ChoicesPayload<'a> {
-    choices: [Choice<'a>; 1],
+struct ChoicesPayload<'choices> {
+    choices: [Choice<'choices>; 1],
 }
 
 #[derive(Serialize)]
-struct Choice<'a> {
+struct Choice<'choice> {
     index: u8,
-    message: ChoiceMessage<'a>,
+    message: ChoiceMessage<'choice>,
     finish_reason: &'static str,
 }
 
 #[derive(Serialize)]
-struct ChoiceMessage<'a> {
+struct ChoiceMessage<'message> {
     role: &'static str,
-    content: &'a str,
+    content: &'message str,
 }
 
 // LiteLLM's HiddenlayerGuardrailV2: the whole request or response payload is evaluated
@@ -61,17 +61,20 @@ pub struct HiddenlayerV2Guardrail {
     pub base: GuardrailBase,
     pub auth: HiddenlayerAuth,
     pub timeout: Duration,
-    new_id: fn() -> Uuid,
+    pub new_id: fn() -> Uuid,
 }
 
 impl HiddenlayerV2Guardrail {
-    pub fn new<L: EnvironmentLookup>(
+    pub fn new<L>(
         args: &EvaluationArgs,
         environment: &L,
         client: Client,
         transport: Arc<dyn JwtTransport>,
         new_id: fn() -> Uuid,
-    ) -> Result<Self, EvaluationError> {
+    ) -> Result<Self, EvaluationError>
+    where
+        L: EnvironmentLookup,
+    {
         let auth = HiddenlayerAuth::new(&args.credentials(), environment, client, transport)?;
         let timeout = evaluation_timeout(args.timeout)?;
         let base = GuardrailBase::new(guardrail_settings(args, None), true)?;
@@ -161,9 +164,9 @@ pub fn roundtrip_headers(
     if !hl_headers.contains_key(metadata::ROUNDTRIP_HEADER) {
         let id = new_id().to_string();
         if let Some(GuardrailValue::Object(proxy)) = request_data.get_mut("proxy_server_request")
-            && let Some(GuardrailValue::Object(headers)) = proxy.get_mut("headers")
+            && let Some(GuardrailValue::Object(proxy_headers)) = proxy.get_mut("headers")
         {
-            headers.insert(
+            proxy_headers.insert(
                 metadata::ROUNDTRIP_HEADER.to_owned(),
                 GuardrailValue::Text(id.clone()),
             );
@@ -218,17 +221,8 @@ fn write_request(
     let mut texts = Vec::new();
     for message in &messages {
         let converted = as_guardrail_message(message)?;
-        if let Some(content) = converted.extra.get("content") {
-            match content {
-                GuardrailValue::Array(parts) => {
-                    let parts_texts: Vec<String> = parts.iter().filter_map(text_part).collect();
-                    if !parts_texts.is_empty() {
-                        texts.push(parts_texts.join(" "));
-                    }
-                }
-                GuardrailValue::Text(text) if !text.is_empty() => texts.push(text.clone()),
-                _ => {}
-            }
+        if let Some(text) = converted.extra.get("content").and_then(message_text) {
+            texts.push(text);
         }
         structured.push(converted);
     }
@@ -237,39 +231,58 @@ fn write_request(
     Ok(())
 }
 
+// A list content joins its text parts with a space; an empty text or no text part adds nothing
+fn message_text(content: &GuardrailValue) -> Option<String> {
+    match content {
+        GuardrailValue::Array(parts) => {
+            let texts: Vec<String> = parts.iter().filter_map(text_part).collect();
+            (!texts.is_empty()).then(|| texts.join(" "))
+        }
+        GuardrailValue::Text(text) => (!text.is_empty()).then(|| text.clone()),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Object(_) => None,
+    }
+}
+
 fn write_response(
     inputs: &mut GuardrailApiInputs,
     output: &GuardrailValue,
 ) -> Result<(), EvaluationError> {
-    if inputs.texts.as_ref().is_some_and(|texts| !texts.is_empty()) {
-        inputs.texts = Some(vec![last_choice_content(output)?]);
-    } else if inputs
+    let has_texts = inputs.texts.as_ref().is_some_and(|texts| !texts.is_empty());
+    let has_calls = inputs
         .tool_calls
         .as_ref()
-        .is_some_and(|calls| !calls.is_empty())
-    {
-        let GuardrailValue::Array(items) = output else {
-            return Err(EvaluationError::Shape {
-                field: "tool_calls",
-            });
-        };
-        inputs.tool_calls = Some(items.clone());
+        .is_some_and(|calls| !calls.is_empty());
+    match (has_texts, has_calls) {
+        (true, _) => inputs.texts = Some(vec![last_choice_content(output)?]),
+        (false, true) => {
+            let GuardrailValue::Array(items) = output else {
+                return Err(EvaluationError::Shape {
+                    field: "tool_calls",
+                });
+            };
+            inputs.tool_calls = Some(items.clone());
+        }
+        (false, false) => {}
     }
     Ok(())
 }
 
-// LiteLLM reads choices[-1]; a missing body or message reads as an empty content, an empty list fails
+// LiteLLM reads choices[-1]; a missing or null choices, message or content reads as an empty content, an empty list fails
 fn last_choice_content(output: &GuardrailValue) -> Result<String, EvaluationError> {
     let GuardrailValue::Object(body) = output else {
         return Err(EvaluationError::Shape { field: "choices" });
     };
-    let Some(choices) = body.get("choices") else {
-        return Ok(String::new());
+    let list = match body.get("choices") {
+        None | Some(GuardrailValue::Null) => return Ok(String::new()),
+        Some(GuardrailValue::Array(list)) => list,
+        Some(_) => return Err(EvaluationError::Shape { field: "choices" }),
     };
-    let GuardrailValue::Array(choices) = choices else {
-        return Err(EvaluationError::Shape { field: "choices" });
-    };
-    let Some(GuardrailValue::Object(choice)) = choices.last() else {
+    let Some(GuardrailValue::Object(choice)) = list.last() else {
         return Err(EvaluationError::Shape { field: "choices" });
     };
     let message = match choice.get("message") {
@@ -283,7 +296,7 @@ fn last_choice_content(output: &GuardrailValue) -> Result<String, EvaluationErro
     };
     match message.get("content") {
         Some(GuardrailValue::Text(content)) => Ok(content.clone()),
-        None => Ok(String::new()),
+        None | Some(GuardrailValue::Null) => Ok(String::new()),
         Some(_) => Err(EvaluationError::Shape {
             field: "choices.message.content",
         }),

@@ -19,7 +19,6 @@ pub mod error;
 pub mod metadata;
 pub mod wire;
 
-#[cfg(test)]
 pub(crate) mod tests;
 
 pub const BLOCK_MESSAGE: &str = "Blocked by Hiddenlayer.";
@@ -88,11 +87,10 @@ pub fn guardrail_settings(
 }
 
 pub fn evaluation_timeout(seconds: Option<f64>) -> Result<Duration, HiddenlayerError> {
-    match seconds {
-        Some(seconds) => Duration::try_from_secs_f64(seconds)
-            .map_err(|source| HiddenlayerError::InvalidTimeout { source }),
-        None => Ok(DEFAULT_AUTH_TIMEOUT),
-    }
+    let Some(limit) = seconds else {
+        return Ok(DEFAULT_AUTH_TIMEOUT);
+    };
+    Duration::try_from_secs_f64(limit).map_err(|source| HiddenlayerError::InvalidTimeout { source })
 }
 
 #[must_use]
@@ -120,8 +118,8 @@ pub fn detection_headers(
         ("hl-runtime-edge-provider", PROVIDER),
         ("hl-runtime-edge-provider-version", version),
     ];
-    if let Some(project_id) = project_id {
-        pairs.push((metadata::PROJECT_HEADER, project_id));
+    if let Some(project) = project_id {
+        pairs.push((metadata::PROJECT_HEADER, project));
     }
     for (name, value) in hl_headers.into_iter().flatten() {
         pairs.push((name.as_str(), value.as_str()));

@@ -10,6 +10,7 @@ use secrecy::SecretString;
 use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::hiddenlayer::evaluation::EvaluationArgs;
+use crate::hiddenlayer::evaluation::tests::server::Seen;
 use crate::primitives::json_value::JsonValue;
 
 pub(crate) const SAAS_HOST: &str = "api.hiddenlayer.ai";
@@ -69,6 +70,15 @@ pub(crate) fn text_inputs(texts: &[&str]) -> GuardrailApiInputs {
     }
 }
 
+// the hl- request headers a call carried, whatever else the HTTP client added
+pub(crate) fn hl_headers(seen: &Seen) -> BTreeMap<String, String> {
+    seen.headers
+        .iter()
+        .filter(|(name, _value)| name.starts_with("hl-"))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
+}
+
 pub(crate) fn canonical(body: &str) -> String {
     let parsed: JsonValue = serde_json::from_str(body).expect("a JSON body");
     serde_json::to_string(&parsed).expect("JSON text")
@@ -87,7 +97,7 @@ pub(crate) fn args(api_base: &str) -> EvaluationArgs {
     }
 }
 
-pub(crate) fn environment() -> BTreeMap<String, String> {
+pub(crate) const fn environment() -> BTreeMap<String, String> {
     BTreeMap::new()
 }
 
