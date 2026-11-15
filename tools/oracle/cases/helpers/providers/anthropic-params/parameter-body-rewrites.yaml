@@ -23,5 +23,6 @@ call:
       - {function: map_openai_params, model: no-sampling, non_default_params: {top_p: 0.9}, optional_params: {}, drop_params: false, global_drop_params: false}
       - {function: map_openai_params, model: no-sampling, non_default_params: {temperature: 0.5, top_p: 0.9}, optional_params: {}, drop_params: true, global_drop_params: false}
       - {function: map_openai_params, model: no-sampling, non_default_params: {temperature: 0.5, top_p: 0.9}, optional_params: {}, drop_params: false, global_drop_params: true}
+      - {function: map_openai_params, model: plain-model, non_default_params: {user: "+1 555 0100", stream: true}, optional_params: {}, drop_params: false, global_drop_params: false}
 env: {}
 compare: {ignore: []}

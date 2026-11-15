@@ -633,6 +633,7 @@ async fn check_rewritten_fields() {
     assert_eq!(mapped.len(), 10, "{mapped:?}");
     check_maps(&[
         ("plain-model", r#"{"stream":false,"user":"someone@example.com","extra_headers":null,"cache_control":"ephemeral"}"#, "{}", r#"{"extra_headers":null}"#),
+        ("plain-model", r#"{"user":"+1 555 0100","stream":true}"#, "{}", r#"{"stream":true}"#),
         ("plain-model", r#"{"stop":["END","  "]}"#, "{}", r#"{"stop_sequences":["END","  "]}"#),
         (
             "plain-model",
