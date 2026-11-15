@@ -132,10 +132,12 @@ impl FluxProfile {
 
 #[must_use]
 fn output_format(value: &Json) -> Json {
-    match value {
-        Json::Text(text) if text == "url" || text == "b64_json" => Json::Text("jpeg".to_owned()),
-        other => other.clone(),
+    if let Json::Text(text) = value
+        && (text == "url" || text == "b64_json")
+    {
+        return Json::Text("jpeg".to_owned());
     }
+    value.clone()
 }
 
 #[must_use]

@@ -42,9 +42,13 @@ class FluxConfig(Protocol):
     @property
     def get_complete_url(self) -> Callable[[str | None, str | None, str, Params, Params], str]: ...
     @property
-    def transform_image_generation_request(self) -> GenerationRequest: ...  # ast-grep-ignore: no-long-names
+    def transform_image_generation_request(  # ast-grep-ignore: no-long-names
+        self
+    ) -> GenerationRequest: ...
     @property
-    def transform_image_generation_response(self) -> GenerationResponse: ...  # ast-grep-ignore: no-long-names
+    def transform_image_generation_response(  # ast-grep-ignore: no-long-names
+        self
+    ) -> GenerationResponse: ...
 
 
 class HiddenRecord(BaseModel):

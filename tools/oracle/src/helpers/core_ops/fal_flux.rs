@@ -5,6 +5,7 @@ use betterlite_core::api::fal::flux::{
     FluxImageResponse, FluxProfile, SUPPORTED_OPENAI_PARAMS, project_response,
 };
 use betterlite_core::api::fal::images::decode::{FalImage, fal_images_to_image_objects};
+use betterlite_core::api::fal::images::error::FalImageError;
 use betterlite_core::api::fal::images::params::image_generation_body;
 use betterlite_core::api::fal::images::settings::FalImageSettings;
 use betterlite_models::decisions::{HiddenParams, Json};
@@ -105,12 +106,12 @@ impl Helper for Op {
                 cases,
             } => Ok(precedence_outcomes(prompt, profiles, cases)),
             Input::ExactVsCustomRatio { profiles, sizes }
-            | Input::PortraitOverlap { profiles, sizes } => Ok(size_outcomes(profiles, sizes)),
+            | Input::PortraitOverlap { profiles, sizes } => Ok(size_outcomes(profiles, sizes, &[])),
             Input::UnknownSizeFallback {
                 profiles,
                 sizes,
                 image_sizes,
-            } => Ok(fallback_outcomes(profiles, sizes, image_sizes)),
+            } => Ok(size_outcomes(profiles, sizes, image_sizes)),
             Input::DevEndpoint {
                 environments,
                 api_bases,
@@ -155,17 +156,7 @@ fn precedence_outcome(profile: FluxProfile, prompt: &str, case: &MappingCase) ->
         )
 }
 
-fn size_outcomes(profiles: &[Profile], sizes: &[Json]) -> Value {
-    let mut cases = Vec::new();
-    for profile in profiles {
-        for size in sizes {
-            cases.push(size_outcome(*profile, size));
-        }
-    }
-    json!({"cases": cases})
-}
-
-fn fallback_outcomes(profiles: &[Profile], sizes: &[Json], image_sizes: &[Json]) -> Value {
+fn size_outcomes(profiles: &[Profile], sizes: &[Json], image_sizes: &[Json]) -> Value {
     let mut cases = Vec::new();
     for profile in profiles {
         for size in sizes {
@@ -249,7 +240,14 @@ fn hidden_outcome(reply: &ReplyCase) -> Value {
                 "hidden_params": response.hidden_params,
             })
         }
-        Err(_) => json!({"error": {"status": reply.status}}),
+        Err(
+            FalImageError::ReplyTooLarge { status, .. }
+            | FalImageError::ReplyDecode { status, .. }
+            | FalImageError::ReplyNotAnObject { status, .. },
+        ) => json!({"error": {"status": status}}),
+        Err(FalImageError::MissingApiKey | FalImageError::UnsupportedParameters { .. }) => {
+            json!({"error": "not a reply error"})
+        }
     }
 }
 

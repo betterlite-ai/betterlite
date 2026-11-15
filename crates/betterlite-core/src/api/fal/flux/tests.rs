@@ -140,8 +140,8 @@ fn flux_unsupported_parameters_fail_unless_dropped() {
         )
         .expect_err("an unsupported parameter");
     assert!(matches!(
-        error,
-        FluxError::UnsupportedParameter { parameter, ref model } if parameter == "seed" && model == MODEL
+        &error,
+        FluxError::UnsupportedParameter { parameter, model } if parameter == "seed" && model == MODEL
     ));
     assert_eq!(
         FluxProfile::Ultra
@@ -275,7 +275,7 @@ fn flux_ultra_portrait_overlap_prefers_the_first_interval() {
 #[case("1024-x-768")]
 #[case("x")]
 #[case("99999999999999999999x1000")]
-#[case("١٠٢٤x٧٦٨")]
+#[case("\u{661}\u{660}\u{662}\u{664}x\u{667}\u{666}\u{668}")]
 fn flux_ultra_invalid_sizes_fall_back_to_sixteen_nine(#[case] size: &str) {
     assert_eq!(map_aspect_ratio(size), "16:9");
 }
@@ -364,7 +364,7 @@ fn flux_image_size_custom_dimensions_become_objects(
 #[case("1024-x-768")]
 #[case("10x")]
 #[case("99999999999999999999x1000")]
-#[case("١٠٢٤x٧٦٨")]
+#[case("\u{661}\u{660}\u{662}\u{664}x\u{667}\u{666}\u{668}")]
 fn flux_image_size_invalid_sizes_fall_back_to_landscape(#[case] size: &str) {
     assert_eq!(map_image_size(&text(size)), text("landscape_4_3"));
 }
