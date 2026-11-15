@@ -566,6 +566,25 @@ async fn a_very_negative_expires_in_is_a_past_instant_and_is_not_cached() {
 }
 
 #[tokio::test]
+async fn a_very_positive_expires_in_is_the_maximum_instant_and_stays_cached() {
+    let post = RecordingPost::new(vec![Scripted::Body(body(
+        r#"{"access_token":"x","expires_in":10000000000000}"#,
+    ))]);
+    let exchanger = exchanger(post, clock(1000));
+    let first = exchanger
+        .exchange("jwt", &server(), &config(), "")
+        .await
+        .unwrap();
+    assert_eq!(first.expires_at, Some(DateTime::<Utc>::MAX_UTC));
+    let second = exchanger
+        .exchange("jwt", &server(), &config(), "")
+        .await
+        .unwrap();
+    assert_eq!(first, second);
+    assert_eq!(exchanger.post.calls().len(), 1);
+}
+
+#[tokio::test]
 async fn a_subject_rejection_maps_to_unauthorized_with_its_claims() {
     let post = RecordingPost::new(vec![Scripted::SubjectRejected {
         detail: "IdP rejected the subject token (HTTP 400)".to_owned(),

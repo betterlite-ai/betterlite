@@ -27,7 +27,7 @@ pub(super) fn parse_expires_in(value: &CredentialValue) -> Option<i64> {
 
 // A negative delta that leaves chrono's range is a past instant, never the maximum one.
 fn expires_at(now: DateTime<Utc>, seconds: i64) -> DateTime<Utc> {
-    let overflow = if seconds < 0 {
+    let overflow = if seconds.is_negative() {
         DateTime::<Utc>::MIN_UTC
     } else {
         DateTime::<Utc>::MAX_UTC
