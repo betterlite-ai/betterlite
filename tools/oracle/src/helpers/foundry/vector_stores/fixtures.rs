@@ -30,7 +30,7 @@ pub(crate) struct FixtureExecutor {
 }
 
 impl FixtureExecutor {
-    pub(crate) fn new(vectors: Vec<Vec<f64>>) -> Self {
+    pub(crate) const fn new(vectors: Vec<Vec<f64>>) -> Self {
         Self {
             vectors,
             calls: Mutex::new(Vec::new()),
@@ -148,7 +148,7 @@ impl CredentialSources for NoSources {
     }
 }
 
-pub(crate) fn empty_credentials() -> DeploymentSettings {
+pub(crate) const fn empty_credentials() -> DeploymentSettings {
     DeploymentSettings {
         azure_ad_token: None,
         tenant_id: None,
