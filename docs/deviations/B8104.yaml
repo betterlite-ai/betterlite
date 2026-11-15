@@ -15,3 +15,6 @@ deviations:
   - what: The processed and raw response headers travel in the logging details under headers and additional_headers, where LiteLLM stores them on the response's private _hidden_params.
     why: The B1114 contract returns only the typed reply record, so the provider config has no field for hidden params.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L227-L230
+  - what: A response body that is not UTF-8 raises the upstream-status OpenAI error before the post-call record is written and names the decoding failure, where LiteLLM records the lossily decoded text, then fails in raw_response.json() and raises the same error with that text.
+    why: betterlite refuses bytes that are not UTF-8 instead of mangling them, so there is no text to record; the error class and status match LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L176-L189
