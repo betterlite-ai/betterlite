@@ -11,7 +11,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L198-L206
   - what: A response over 1 MiB is refused with a typed ResponseTooLarge error before it is decoded; LiteLLM reads any size with raw_response.json().
     why: The cap bounds memory for a hostile or broken upstream and sits far above a rerank reply, which holds one index, one score and at most one text per document.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L184-L188
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L181
   - what: Token counting and the response id come from injected TextTokenCounter and RequestIdSource dependencies; LiteLLM calls the module-level token_counter and uuid.uuid4.
     why: betterlite passes outside dependencies in through the caller so a request runs the same way in a test as in production; the counts, the fallback estimates and the uuid4 text stay the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L189-L254
