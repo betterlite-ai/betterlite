@@ -1,3 +1,4 @@
+use std::iter::repeat_n;
 use std::time::Duration;
 
 use betterlite_config::sections::content_category::loading::CategoryLoadResult;
@@ -167,69 +168,26 @@ fn exception_category() -> CategoryLoadResult {
     categories
 }
 
-fn keyword_categories() -> CategoryLoadResult {
-    let mut categories = CategoryLoadResult::default();
-    categories.category_keywords.insert(
-        "alpha".to_owned(),
-        (
-            "alpha_policy".to_owned(),
-            "high".to_owned(),
-            ContentFilterAction::Mask,
-        ),
-    );
-    categories.category_keywords.insert(
-        "beta".to_owned(),
-        (
-            "beta_policy".to_owned(),
-            "high".to_owned(),
-            ContentFilterAction::Block,
-        ),
-    );
-    categories
-}
-
-fn keyword_order_categories() -> CategoryLoadResult {
-    let mut categories = child_categories(ContentFilterAction::Mask, "medium");
-    categories.category_keywords.insert(
-        "alpha".to_owned(),
-        (
-            "alpha_policy".to_owned(),
-            "high".to_owned(),
-            ContentFilterAction::Mask,
-        ),
-    );
-    categories.category_keywords.insert(
-        "beta".to_owned(),
-        (
-            "beta_policy".to_owned(),
-            "high".to_owned(),
-            ContentFilterAction::Block,
-        ),
-    );
-    categories
-}
-
-// Forty non-final chunks put a phrase or identifier in the opening more than two contexts behind
-fn padded_items(opening: &str, final_text: &str) -> Vec<GuardrailValue> {
-    let mut items = vec![chunk(vec![choice(Some(0), Some(opening), None)])];
-    for index in 0..40_usize {
-        let content = if index == 2 {
-            format!("secret{}", "x".repeat(94))
-        } else {
-            "x".repeat(100)
-        };
-        items.push(chunk(vec![choice(Some(0), Some(content.as_str()), None)]));
+fn insert_keywords(categories: &mut CategoryLoadResult) {
+    for (keyword, category, action) in [
+        ("alpha", "alpha_policy", ContentFilterAction::Mask),
+        ("beta", "beta_policy", ContentFilterAction::Block),
+    ] {
+        categories.category_keywords.insert(
+            keyword.to_owned(),
+            (category.to_owned(), "high".to_owned(), action),
+        );
     }
-    items.push(chunk(vec![choice(Some(0), Some(final_text), Some("stop"))]));
-    items
 }
 
-fn short_items(opening: &str, final_text: &str) -> Vec<GuardrailValue> {
+// One opening chunk, the padding chunks, then a final chunk that ends the stream
+fn padding_items(opening: &str, padding: &[String], final_text: &str) -> Vec<GuardrailValue> {
     let mut items = vec![chunk(vec![choice(Some(0), Some(opening), None)])];
-    for _ in 0..2_usize {
-        let padding = "x".repeat(100);
-        items.push(chunk(vec![choice(Some(0), Some(padding.as_str()), None)]));
-    }
+    items.extend(
+        padding
+            .iter()
+            .map(|content| chunk(vec![choice(Some(0), Some(content.as_str()), None)])),
+    );
     items.push(chunk(vec![choice(Some(0), Some(final_text), Some("stop"))]));
     items
 }
@@ -263,7 +221,9 @@ fn hook_keeps_the_buffer_bounded_while_an_exception_phrase_stays_behind_the_tail
         ),
     );
     let opening = format!("allowed phrase {}", "a".repeat(85));
-    let mut case = stream_case(padded_items(&opening, " target the end"));
+    let mut padding = vec!["x".repeat(100); 40];
+    padding[2] = format!("secret{}", "x".repeat(94));
+    let mut case = stream_case(padding_items(&opening, &padding, " target the end"));
     case.categories = categories;
     case.blocked_words = vec![masked_word("secret")];
     let driven = drive_chunks(&case);
@@ -294,7 +254,8 @@ async fn hook_does_not_mask_a_keyword_while_the_phrase_is_in_the_buffer() {
         ),
     );
     let opening = format!("allowed phrase alpha {}", "a".repeat(900));
-    let mut case = stream_case(short_items(&opening, " done"));
+    let padding = vec!["x".repeat(100); 2];
+    let mut case = stream_case(padding_items(&opening, &padding, " done"));
     case.categories = categories;
     let run = run_stream(&case).await;
     assert!(run.outcome.is_ok(), "the stream has no block");
@@ -307,10 +268,9 @@ async fn hook_does_not_mask_a_keyword_while_the_phrase_is_in_the_buffer() {
 #[test]
 fn hook_keeps_the_buffer_bounded_while_an_open_conditional_sentence_has_no_end() {
     let sentence = format!("attack {}", "a".repeat(93));
-    let mut items = vec![chunk(vec![choice(Some(0), Some(sentence.as_str()), None)])];
-    for _ in 0..40_usize {
-        items.push(chunk(vec![choice(Some(0), Some(sentence.as_str()), None)]));
-    }
+    let mut items: Vec<GuardrailValue> = repeat_n(sentence.as_str(), 41)
+        .map(|content| chunk(vec![choice(Some(0), Some(content), None)]))
+        .collect();
     items.push(chunk(vec![choice(Some(0), Some(" the end"), Some("stop"))]));
     let mut case = stream_case(items);
     case.categories = conditional_categories();
@@ -324,7 +284,8 @@ fn hook_keeps_the_buffer_bounded_while_an_open_conditional_sentence_has_no_end()
 #[test]
 fn hook_keeps_a_block_word_inside_a_longer_word_of_the_carried_sentence() {
     let opening = format!("child harmless {}", "a".repeat(900));
-    let mut case = stream_case(short_items(&opening, " more text"));
+    let padding = vec!["x".repeat(100); 2];
+    let mut case = stream_case(padding_items(&opening, &padding, " more text"));
     case.categories = child_categories(ContentFilterAction::Block, "high");
     let driven = drive_chunks(&case);
     assert_buffer_bounded(&driven);
@@ -352,8 +313,11 @@ async fn hook_does_not_pair_a_block_word_the_carried_truncation_splits() {
 #[test]
 fn hook_keeps_the_dropped_prefixs_first_keyword_ahead_of_a_later_block() {
     let opening = format!("alpha child {}", "x".repeat(955));
-    let mut case = stream_case(short_items(&opening, "beta done"));
-    case.categories = keyword_order_categories();
+    let mut categories = child_categories(ContentFilterAction::Mask, "medium");
+    insert_keywords(&mut categories);
+    let padding = vec!["x".repeat(100); 2];
+    let mut case = stream_case(padding_items(&opening, &padding, "beta done"));
+    case.categories = categories;
     let driven = drive_chunks(&case);
     let state = driven.states.get(&0).expect("choice 0 has a state");
     let carried = state
@@ -368,8 +332,11 @@ fn hook_keeps_the_dropped_prefixs_first_keyword_ahead_of_a_later_block() {
 #[tokio::test]
 async fn hook_drops_a_trimmed_keyword_when_litellm_would_commit_the_cut() {
     let opening = format!("alpha {}", "x".repeat(960));
-    let mut case = stream_case(short_items(&opening, "beta done"));
-    case.categories = keyword_categories();
+    let mut categories = CategoryLoadResult::default();
+    insert_keywords(&mut categories);
+    let padding = vec!["x".repeat(100); 2];
+    let mut case = stream_case(padding_items(&opening, &padding, "beta done"));
+    case.categories = categories;
     let run = run_stream(&case).await;
     let Err(StreamFilterError::Blocked { detail }) = &run.outcome else {
         panic!("the later beta keyword is the first match once alpha leaves the buffer");

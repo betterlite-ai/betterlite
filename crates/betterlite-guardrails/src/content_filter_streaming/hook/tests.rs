@@ -71,10 +71,10 @@ fn stream_case(items: Vec<GuardrailValue>) -> StreamCase {
 const fn stream_source(case: &StreamCase) -> ContentFilterSource<'_> {
     ContentFilterSource {
         categories: &case.categories,
-        patterns: &case.patterns,
-        blocked_words: &case.blocked_words,
-        pattern_redaction_format: &case.settings.pattern_redaction_format,
-        keyword_redaction_tag: &case.settings.keyword_redaction_tag,
+        patterns: case.patterns.as_slice(),
+        blocked_words: case.blocked_words.as_slice(),
+        pattern_redaction_format: case.settings.pattern_redaction_format.as_str(),
+        keyword_redaction_tag: case.settings.keyword_redaction_tag.as_str(),
     }
 }
 
@@ -389,19 +389,15 @@ async fn hook_keys_a_missing_or_non_integer_index_as_choice_zero() {
     assert_eq!(content_at(&run.chunks[2], 0), "b".repeat(50));
 }
 
-fn blocked_word_case() -> StreamCase {
-    let mut case = stream_case(vec![chunk(vec![choice(
-        Some(0),
-        Some("hello secret world"),
-        Some("stop"),
-    )])]);
-    case.blocked_words = vec![masked_word("secret")];
+fn word_case(text: &str, blocked_word: BlockedWord) -> StreamCase {
+    let mut case = stream_case(vec![chunk(vec![choice(Some(0), Some(text), Some("stop"))])]);
+    case.blocked_words = vec![blocked_word];
     case
 }
 
 #[tokio::test]
 async fn hook_masks_a_blocked_word_in_the_chunk_it_arrives() {
-    let case = blocked_word_case();
+    let case = word_case("hello secret world", masked_word("secret"));
     let run = run_stream(&case).await;
     assert_eq!(
         content_at(&run.chunks[0], 0),
@@ -439,7 +435,7 @@ async fn hook_masks_a_blocked_word_in_the_chunk_it_arrives() {
 
 #[tokio::test]
 async fn hook_times_a_masked_blocked_word_after_the_epoch() {
-    let case = blocked_word_case();
+    let case = word_case("hello secret world", masked_word("secret"));
     let run = run_stream(&case).await;
     let record = record(&run);
     let start_time = float_field(record, &["start_time"]).expect("the record has a start time");
@@ -575,19 +571,12 @@ fn store_choice_trims_only_non_final_chunks() {
     assert_eq!(scan.states[&1].yielded_masked_text_len, 512);
 }
 
-fn blocking_case() -> StreamCase {
-    let mut case = stream_case(vec![chunk(vec![choice(
-        Some(0),
-        Some("hello blockedword"),
-        Some("stop"),
-    )])]);
-    case.blocked_words = vec![word("blockedword", ContentFilterAction::Block)];
-    case
-}
-
 #[tokio::test]
 async fn hook_raises_a_blocked_error_and_logs_the_intervention() {
-    let case = blocking_case();
+    let case = word_case(
+        "hello blockedword",
+        word("blockedword", ContentFilterAction::Block),
+    );
     let run = run_stream(&case).await;
     assert!(run.chunks.is_empty());
     let Err(StreamFilterError::Blocked { detail }) = &run.outcome else {
@@ -610,7 +599,10 @@ async fn hook_raises_a_blocked_error_and_logs_the_intervention() {
 
 #[tokio::test]
 async fn hook_logs_the_intervention_when_a_blocked_word_stops_the_stream() {
-    let case = blocking_case();
+    let case = word_case(
+        "hello blockedword",
+        word("blockedword", ContentFilterAction::Block),
+    );
     let run = run_stream(&case).await;
     let record = record(&run);
     assert_eq!(
