@@ -115,18 +115,28 @@ fn detected_features_set(
     tools: &[Json],
     params: &FeatureParams,
 ) -> Result<BTreeSet<HeaderFeature>, HeadersError> {
-    let mut features = BTreeSet::new();
+    let mut features = message_features(request.messages)?;
+    features.extend(tool_features(tools));
+    features.extend(parameter_features(request.optional_params, params));
+    if request.effort_used {
+        features.insert(HeaderFeature::Effort);
+    }
+    Ok(features)
+}
+
+fn message_features(messages: &[Json]) -> Result<BTreeSet<HeaderFeature>, HeadersError> {
     let detected = [
-        (
-            HeaderFeature::PromptCaching,
-            is_cache_control_set(request.messages),
-        ),
-        (HeaderFeature::Pdf, is_pdf_used(request.messages)),
-        (HeaderFeature::FileId, is_file_id_used(request.messages)?),
-        (
-            HeaderFeature::McpServer,
-            is_mcp_server_used(request.optional_params.mcp_servers.as_deref()),
-        ),
+        (HeaderFeature::PromptCaching, is_cache_control_set(messages)),
+        (HeaderFeature::Pdf, is_pdf_used(messages)),
+        (HeaderFeature::FileId, is_file_id_used(messages)?),
+        (HeaderFeature::OutputConfig, has_output_config(messages)),
+        (HeaderFeature::ToolChanges, has_tool_change(messages)),
+    ];
+    Ok(selected(detected))
+}
+
+fn tool_features(tools: &[Json]) -> BTreeSet<HeaderFeature> {
+    let detected = [
         (HeaderFeature::ToolSearch, is_tool_search_used(tools)),
         (
             HeaderFeature::ProgrammaticToolCalling,
@@ -137,25 +147,31 @@ fn detected_features_set(
             HeaderFeature::CodeExecution,
             is_code_execution_tool_used(tools),
         ),
+    ];
+    selected(detected)
+}
+
+fn parameter_features(optional: &HeaderParams, params: &FeatureParams) -> BTreeSet<HeaderFeature> {
+    let detected = [
+        (
+            HeaderFeature::McpServer,
+            is_mcp_server_used(optional.mcp_servers.as_deref()),
+        ),
         (HeaderFeature::Skills, is_container_with_skills_used(params)),
         (
-            HeaderFeature::OutputConfig,
-            has_output_config(request.messages),
-        ),
-        (
             HeaderFeature::ThinkingDisplayUpdates,
-            has_thinking_display_updates(request.optional_params.thinking.as_ref()),
+            has_thinking_display_updates(optional.thinking.as_ref()),
         ),
-        (
-            HeaderFeature::ToolChanges,
-            has_tool_change(request.messages),
-        ),
-        (HeaderFeature::Effort, request.effort_used),
     ];
+    selected(detected)
+}
+
+fn selected<const N: usize>(detected: [(HeaderFeature, bool); N]) -> BTreeSet<HeaderFeature> {
+    let mut features = BTreeSet::new();
     for (feature, used) in detected {
         if used {
             features.insert(feature);
         }
     }
-    Ok(features)
+    features
 }
