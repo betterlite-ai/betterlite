@@ -1,5 +1,6 @@
 #[path = "b4298/cases.rs"]
 mod cases;
+mod sinks;
 #[path = "b4298/support.rs"]
 mod support;
 

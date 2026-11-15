@@ -46,7 +46,7 @@ enum Output<'input> {
     },
 }
 
-fn run(input: &Input) -> Result<Output<'_>, OwnedParameterNamesError> {
+fn resolve(input: &Input) -> Result<Output<'_>, OwnedParameterNamesError> {
     match input {
         Input::WireNameProjection { name, owner, root } => Ok(Output::Projection {
             wire: WireMetadata { wire_name: name },
@@ -81,7 +81,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let output = run(input).map_err(|error| {
+        let output = resolve(input).map_err(|error| {
             Box::new(HelperError {
                 class: "TypeError".to_owned(),
                 status: None,

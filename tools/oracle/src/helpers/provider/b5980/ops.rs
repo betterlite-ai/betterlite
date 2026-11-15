@@ -21,7 +21,7 @@ use betterlite_provider::databricks_responses::DatabricksResponsesAPIConfig;
 use secrecy::SecretString;
 use serde_json::json;
 
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::{
@@ -29,7 +29,7 @@ use super::{
     ValidateInput,
 };
 use betterlite_provider::databricks_auth::error::DatabricksError;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 const WATCHED_HEADERS: [&str; 3] = ["authorization", "content-type", "user-agent"];
 
@@ -74,25 +74,22 @@ impl OauthTokenSource for ScriptedTokens {
     }
 }
 
-fn configure<T, F>(
-    outcome: Result<Result<T, DatabricksError>, Box<HelperError>>,
-    render: F,
-) -> Result<serde_json::Value, Box<HelperError>>
+fn configure<T, F>(outcome: Result<T, DatabricksError>, render: F) -> serde_json::Value
 where
     F: FnOnce(T) -> serde_json::Value,
 {
     match outcome {
-        Ok(Ok(value)) => Ok(render(value)),
-        Ok(Err(error)) => Ok(json!({"status": error.status_code})),
-        Err(failure) => Err(failure),
+        Ok(value) => render(value),
+        Err(error) => json!({"status": error.status_code}),
     }
 }
 
 pub(super) fn validate(input: &ValidateInput) -> HelperResult {
     let env = input.env.build();
+    let runtime = Builder::new_current_thread().build().or_config_error()?;
     let mut results = Vec::with_capacity(input.cases.len());
     for case in &input.cases {
-        results.push(validate_case(case, &env)?);
+        results.push(validate_case(case, &env, &runtime));
     }
     Ok(json!(results))
 }
@@ -110,27 +107,19 @@ impl ValidateCase {
     }
 }
 
-fn validate_case(
-    case: &ValidateCase,
-    env: &DatabricksEnv,
-) -> Result<serde_json::Value, Box<HelperError>> {
+fn validate_case(case: &ValidateCase, env: &DatabricksEnv, runtime: &Runtime) -> serde_json::Value {
     let key = case.api_key.clone().map(SecretString::from);
     let tokens = ScriptedTokens::new(case.oauth.reply());
-    let outcome = Builder::new_current_thread()
-        .build()
-        .or_config_error()
-        .map(|runtime| {
-            runtime.block_on(validate_environment(
-                case.request(key.as_ref()),
-                env,
-                &tokens,
-            ))
-        });
+    let outcome = runtime.block_on(validate_environment(
+        case.request(key.as_ref()),
+        env,
+        &tokens,
+    ));
     let rendered = configure(
         outcome,
         |(url, headers)| json!({"url": url, "headers": headers}),
     );
-    rendered.map(|value| tokens.attach(value))
+    tokens.attach(rendered)
 }
 
 pub(super) fn api_base_case(case: &ApiBaseCase) -> serde_json::Value {
@@ -163,7 +152,7 @@ pub(super) fn redaction(headers: &BTreeMap<String, String>, data: &Json) -> serd
     })
 }
 
-fn embedding_case(case: &EmbeddingCase) -> Result<serde_json::Value, Box<HelperError>> {
+fn embedding_case(case: &EmbeddingCase, runtime: &Runtime) -> serde_json::Value {
     let key = case.api_key.clone().map(SecretString::from);
     let preparation = EmbeddingPreparation {
         optional_params: case.optional_params.clone(),
@@ -177,12 +166,7 @@ fn embedding_case(case: &EmbeddingCase) -> Result<serde_json::Value, Box<HelperE
         body: SecretString::default(),
     });
     configure(
-        Builder::new_current_thread()
-            .build()
-            .or_config_error()
-            .map(|runtime| {
-                runtime.block_on(prepare_embedding(preparation, &case.env.build(), &tokens))
-            }),
+        runtime.block_on(prepare_embedding(preparation, &case.env.build(), &tokens)),
         |prepared| render_embedding(&prepared),
     )
 }
@@ -222,9 +206,10 @@ pub(super) fn endpoints(
     embedding_cases: &[EmbeddingCase],
     response_cases: &[UrlCase],
 ) -> HelperResult {
+    let runtime = Builder::new_current_thread().build().or_config_error()?;
     let mut embedding_results = Vec::with_capacity(embedding_cases.len());
     for case in embedding_cases {
-        embedding_results.push(embedding_case(case)?);
+        embedding_results.push(embedding_case(case, &runtime));
     }
     Ok(json!({
         "embedding": embedding_results,

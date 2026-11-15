@@ -16,12 +16,11 @@ use betterlite_openai::copilot::device_auth::transport::{
     Post, Reply, Transport, TransportFailure,
 };
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-use betterlite_oracle_helper_api::error::HelperError;
-use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use tokio::runtime::Builder;
 
 mod tests;
