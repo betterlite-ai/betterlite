@@ -1,7 +1,11 @@
+use std::cell::Cell;
 use std::convert::Infallible;
+use std::pin::Pin;
+use std::rc::Rc;
+use std::task::{Context, Poll};
 
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
-use futures_util::{StreamExt as _, stream};
+use futures_util::{Stream, StreamExt as _, stream};
 use indexmap::IndexMap;
 use tokio::runtime::Builder;
 use uuid::Uuid;
@@ -18,6 +22,61 @@ use crate::usage::ReasoningTokenCounter;
 
 pub(super) const RESPONSE_UUID: u128 = 0x0123_4567_89ab_4def_8123_4567_89ab_cdef;
 pub(super) const RESPONSE_ID: &str = "chatcmpl-01234567-89ab-4def-8123-456789abcdef";
+// The shared ApiLimits default max_event_bytes.
+pub(super) const MAX_EVENT_BYTES: usize = 0x0010_0000;
+
+// A source is pending once before every item, so the Stream implementation and cancellation run for real.
+pub(super) struct PendFirst<S> {
+    pub(super) inner: S,
+    pub(super) pending: bool,
+}
+
+impl<S, Item> Stream for PendFirst<S>
+where
+    S: Stream<Item = Item> + Unpin,
+{
+    type Item = Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Item>> {
+        let this = self.get_mut();
+        if this.pending {
+            this.pending = false;
+            return Pin::new(&mut this.inner).poll_next(cx);
+        }
+        this.pending = true;
+        cx.waker().wake_by_ref();
+        Poll::Pending
+    }
+}
+
+// Counts the items the inner source yielded and records its drop, so a test can see what a cancel pulls.
+pub(super) struct Tracked<S> {
+    pub(super) inner: S,
+    pub(super) yielded: Rc<Cell<usize>>,
+    pub(super) dropped: Rc<Cell<bool>>,
+}
+
+impl<S, Item> Stream for Tracked<S>
+where
+    S: Stream<Item = Item> + Unpin,
+{
+    type Item = Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Item>> {
+        let this = self.get_mut();
+        let polled = Pin::new(&mut this.inner).poll_next(cx);
+        if polled.is_ready() {
+            this.yielded.set(this.yielded.get().saturating_add(1));
+        }
+        polled
+    }
+}
+
+impl<S> Drop for Tracked<S> {
+    fn drop(&mut self) {
+        self.dropped.set(true);
+    }
+}
 
 struct FixedIds(Uuid);
 
@@ -70,6 +129,7 @@ pub(super) fn drive_sync(items: Vec<Source>) -> Vec<Outcome> {
         converter: converter(),
         source: items.into_iter(),
         source_ended: false,
+        max_event_bytes: MAX_EVENT_BYTES,
     }
     .collect()
 }
@@ -81,8 +141,12 @@ pub(super) fn drive_async(items: Vec<Source>) -> Vec<Outcome> {
         .block_on(async {
             let mut stream = ChunkStream {
                 converter: converter(),
-                source: stream::iter(items),
+                source: PendFirst {
+                    inner: stream::iter(items),
+                    pending: false,
+                },
                 source_ended: false,
+                max_event_bytes: MAX_EVENT_BYTES,
             };
             let mut outcomes = Vec::new();
             while let Some(outcome) = stream.next().await {
@@ -124,5 +188,8 @@ pub(super) fn stream_failure(
             panic!("an event error was expected, got {source}")
         }
         DecodeError::Parsing { source, .. } => panic!("an event error was expected, got {source}"),
+        DecodeError::TooLarge { limit } => {
+            panic!("an event error was expected, got the {limit}-byte event limit")
+        }
     }
 }

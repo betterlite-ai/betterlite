@@ -17,6 +17,7 @@ pub(super) enum Progress {
 
 pub(super) fn step<SourceFailure, Counter>(
     converter: &mut StreamEventConverter<Counter>,
+    max_event_bytes: usize,
     incoming: Option<ChunkItem<SourceFailure>>,
 ) -> Result<Progress, DecodeError<SourceFailure, Counter::Failure>>
 where
@@ -27,7 +28,7 @@ where
         return drained(converter);
     };
     match polled {
-        Ok(chunk) => received_line(converter, chunk),
+        Ok(chunk) => received_line(converter, max_event_bytes, chunk),
         Err(ReceiveError::Value { source }) => Err(DecodeError::Receiving { source }),
         Err(ReceiveError::Other { source }) => Err(DecodeError::Other { source }),
     }
@@ -53,6 +54,7 @@ where
 
 fn received_line<SourceFailure, Counter>(
     converter: &mut StreamEventConverter<Counter>,
+    max_event_bytes: usize,
     chunk: TransportChunk,
 ) -> Result<Progress, DecodeError<SourceFailure, Counter::Failure>>
 where
@@ -91,9 +93,8 @@ where
             },
         ))));
     };
-    match parse_data(converter, data) {
-        Ok(Some(parsed)) => Ok(Progress::Produced(DecodedChunk::Event(Box::new(parsed)))),
-        Ok(None) => Ok(Progress::Skipped),
-        Err(error) => Err(DecodeError::Event(error)),
+    match parse_data::<SourceFailure, Counter>(converter, data, max_event_bytes)? {
+        Some(parsed) => Ok(Progress::Produced(DecodedChunk::Event(Box::new(parsed)))),
+        None => Ok(Progress::Skipped),
     }
 }

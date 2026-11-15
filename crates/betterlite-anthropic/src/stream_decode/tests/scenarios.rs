@@ -17,6 +17,7 @@ fn kinds(outcomes: &[Outcome]) -> Vec<&'static str> {
             Ok(DecodedChunk::Generic(_)) => "generic",
             Err(DecodeError::Receiving { .. }) => "receiving",
             Err(DecodeError::Other { .. }) => "other",
+            Err(DecodeError::TooLarge { .. }) => "too-large",
             Err(DecodeError::Parsing { .. }) => "parsing",
             Err(DecodeError::Event(StreamEventError::Anthropic(_))) => "anthropic",
             Err(DecodeError::Event(_)) => "shape",

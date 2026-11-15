@@ -8,6 +8,9 @@ use betterlite_anthropic::stream_state::state::{StreamOptions, StreamState, Uuid
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use libfuzzer_sys::fuzz_target;
 
+// The shared ApiLimits default max_event_bytes.
+const MAX_EVENT_BYTES: usize = 0x0010_0000;
+
 struct NoFailures;
 
 impl ReasoningTokenCounter for NoFailures {
@@ -25,5 +28,5 @@ fuzz_target!(|data: &[u8]| {
         counter: NoFailures,
         json_could_close: false,
     };
-    let _outcome = decode_anthropic_event(&mut converter, data);
+    let _outcome = decode_anthropic_event(&mut converter, data, MAX_EVENT_BYTES);
 });

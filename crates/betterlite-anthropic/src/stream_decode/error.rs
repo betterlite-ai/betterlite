@@ -28,6 +28,9 @@ pub enum DecodeError<SourceFailure, CounterFailure: CountFailure = Infallible> {
     // Every non-ValueError from the source keeps its own class.
     #[error("{source}")]
     Other { source: SourceFailure },
+    // LiteLLM keeps an unterminated value for the rest of the stream; the shared max_event_bytes bounds it.
+    #[error("the accumulated event buffer exceeds {limit} bytes")]
+    TooLarge { limit: usize },
     // RuntimeError from the parse branch, with the chunk LiteLLM puts in its message.
     #[error("Error parsing chunk: {source},\nReceived chunk: {chunk:?}")]
     Parsing { source: Utf8Error, chunk: Vec<u8> },
