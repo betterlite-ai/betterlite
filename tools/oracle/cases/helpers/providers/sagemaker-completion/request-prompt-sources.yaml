@@ -71,5 +71,33 @@ call:
             roles: {user: {pre_message: "G: "}}
         hf_model_name: null
         now: 1700000000
+      - kind: completion_request
+        model: model-endpoint
+        messages: [{role: user, content: hi}]
+        optional: {}
+        custom_prompt_dict:
+          model-endpoint:
+            roles: {user: {pre_message: "M: "}}
+          hf-entry:
+            roles: {user: {pre_message: "H: "}}
+        global_custom_prompt_dict: {}
+        hf_model_name: hf-entry
+        now: 1700000000
+      - kind: completion_request
+        model: ACME/Llama-2-13B-Chat
+        messages: [{role: user, content: hi}]
+        optional: {}
+        custom_prompt_dict: {}
+        global_custom_prompt_dict: {}
+        hf_model_name: null
+        now: 1700000000
+      - kind: completion_request
+        model: ACME/Llama-2-13B
+        messages: [{role: user, content: hi}]
+        optional: {}
+        custom_prompt_dict: {}
+        global_custom_prompt_dict: {}
+        hf_model_name: null
+        now: 1700000000
 env: {}
 compare: {ignore: []}
