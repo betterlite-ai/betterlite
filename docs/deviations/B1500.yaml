@@ -33,6 +33,15 @@ deviations:
       the same on both sides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L136
   - what: >-
+      A thinking parameter whose optional_params already carry a non-object extra_body
+      fails with the typed ProxyError::ExtraBodyNotObject. LiteLLM's setdefault followed
+      by item assignment raises TypeError for a string, number, boolean, null or array.
+    why: >-
+      extra_body is declared as an object, so a wrong shape is reported as a typed error
+      that names the field instead of a TypeError that depends on Python's runtime. Both
+      sides fail the mapping, and only the error shape differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/chat/transformation.py#L33
+  - what: >-
       supported_params keeps at most two copies of a name, the inherited OpenAI entry
       and the one from the extra completion names. LiteLLM extends the inherited list
       with the whole OPENAI_CHAT_COMPLETION_PARAMS constant, so every name the constant
