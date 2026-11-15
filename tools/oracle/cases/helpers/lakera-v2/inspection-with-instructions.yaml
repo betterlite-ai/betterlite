@@ -1,0 +1,11 @@
+kind: helper
+name: inspection-with-instructions
+call:
+  b8522:
+    function: build_lakera_inspection_messages
+    data:
+      instructions: "Always answer in English."
+      input:
+        - {role: user, content: "hello"}
+env: {}
+compare: {ignore: []}
