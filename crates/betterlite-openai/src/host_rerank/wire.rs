@@ -47,6 +47,28 @@ impl Counted {
             Self::Count(count) => count,
         }
     }
+
+    const fn is_present(&self) -> bool {
+        match self {
+            Self::Absent => false,
+            Self::Null | Self::Count(_) => true,
+        }
+    }
+
+    const fn count(self) -> Option<i64> {
+        match self {
+            Self::Absent | Self::Null => None,
+            Self::Count(count) => Some(count),
+        }
+    }
+}
+
+// an absent counter stays out of the answer and an explicit null is sent as null
+const fn counted_tokens(input: Counted, output: Counted) -> RerankTokens {
+    RerankTokens {
+        input_tokens: input.is_present().then_some(input.count()),
+        output_tokens: output.is_present().then_some(output.count()),
+    }
 }
 
 pub(super) fn decode_wire(status: u16, bytes: &[u8], text: &str) -> Result<Wire, HostRerankError> {
@@ -69,17 +91,11 @@ pub(super) fn usage_meta(
     provider: HostProvider,
     usage: IndexMap<String, Json>,
 ) -> Result<(RerankResponseMeta, BTreeMap<String, Json>), HostRerankError> {
+    let search = counter(&usage, "search_units")?;
+    let total = counter(&usage, "total_tokens")?;
     let billed_units = RerankBilledUnits {
-        search_units: match counter(&usage, "search_units")? {
-            Counted::Absent => None,
-            Counted::Null => Some(None),
-            Counted::Count(count) => Some(Some(count)),
-        },
-        total_tokens: match counter(&usage, "total_tokens")? {
-            Counted::Absent => None,
-            Counted::Null => Some(None),
-            Counted::Count(count) => Some(Some(count)),
-        },
+        search_units: search.is_present().then_some(search.count()),
+        total_tokens: total.is_present().then_some(total.count()),
     };
     let (tokens, consumed) = match provider {
         HostProvider::Jina => (jina_tokens(&usage)?, JINA_USAGE),
@@ -102,18 +118,10 @@ pub(super) fn usage_meta(
 }
 
 fn jina_tokens(usage: &IndexMap<String, Json>) -> Result<RerankTokens, HostRerankError> {
-    Ok(RerankTokens {
-        input_tokens: match counter(usage, "input_tokens")? {
-            Counted::Absent => None,
-            Counted::Null => Some(None),
-            Counted::Count(count) => Some(Some(count)),
-        },
-        output_tokens: match counter(usage, "output_tokens")? {
-            Counted::Absent => None,
-            Counted::Null => Some(None),
-            Counted::Count(count) => Some(Some(count)),
-        },
-    })
+    Ok(counted_tokens(
+        counter(usage, "input_tokens")?,
+        counter(usage, "output_tokens")?,
+    ))
 }
 
 // LiteLLM subtracts the prompt from the total without clamping, so a total below the prompt is negative here too
@@ -123,10 +131,10 @@ fn infinity_tokens(usage: &IndexMap<String, Json>) -> Result<RerankTokens, HostR
     let output = total
         .checked_sub(prompt)
         .ok_or(HostRerankError::CounterOverflow)?;
-    Ok(RerankTokens {
-        input_tokens: Some(Some(prompt)),
-        output_tokens: Some(Some(output)),
-    })
+    Ok(counted_tokens(
+        Counted::Count(prompt),
+        Counted::Count(output),
+    ))
 }
 
 fn counter(usage: &IndexMap<String, Json>, name: &'static str) -> Result<Counted, HostRerankError> {
