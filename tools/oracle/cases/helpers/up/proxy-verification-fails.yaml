@@ -1,0 +1,14 @@
+kind: helper
+name: proxy-verification-fails
+call:
+  b4577:
+    operation: up
+    stored:
+      base_url: http://gateway.test:4000
+      key: sk-live
+      timestamp: 1000.0
+      expires_at: 4000000000.0
+    api_key: sk-live
+    verify_status: 401
+env: {}
+compare: {ignore: []}

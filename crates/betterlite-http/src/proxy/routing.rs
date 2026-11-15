@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute, ProxyServer};
-use reqwest::Proxy;
+use reqwest::{ClientBuilder, Proxy};
 use secrecy::ExposeSecret as _;
 
 #[derive(Clone, Copy)]
@@ -10,7 +10,7 @@ pub(super) enum Follow {
     Never,
 }
 
-pub(super) fn forward_proxy(policy: &Arc<ProxyPolicy>, server: &Arc<ProxyServer>) -> Proxy {
+fn forward_proxy(policy: &Arc<ProxyPolicy>, server: &Arc<ProxyServer>) -> Proxy {
     let target = format!("http://{}:{}", server.host, server.port);
     let routing = Arc::clone(policy);
     let chosen = Arc::clone(server);
@@ -27,4 +27,21 @@ pub(super) fn forward_proxy(policy: &Arc<ProxyPolicy>, server: &Arc<ProxyServer>
         }
         None => proxy,
     }
+}
+
+// the policy's forward routes become reqwest proxies, and its warnings are logged once per client
+pub(crate) fn with_forward_routes(
+    builder: ClientBuilder,
+    policy: &Arc<ProxyPolicy>,
+) -> ClientBuilder {
+    for warning in &policy.warnings {
+        tracing::warn!(?warning, "proxy setting ignored");
+    }
+    let mut configured = builder;
+    for route in policy.primary.values().chain(policy.fallback.values()) {
+        if let ProxyRoute::Forward(server) = route {
+            configured = configured.proxy(forward_proxy(policy, server));
+        }
+    }
+    configured
 }

@@ -1,0 +1,48 @@
+kind: helper
+name: bedrock-other-transcription-transcription-binding-arguments
+call:
+  bedrock_other_transcription:
+    calls:
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: a.wav, content: RIFF}
+        custom_llm_provider: bedrock
+        api_key: key-one
+        api_base: https://base.example
+        extra_headers: {x-trace: t1}
+        optional_params: {language: en, aws_region_name: us-east-1}
+        timeout: 3.5
+        reply_text: hello
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: a.wav, content: RIFF}
+        custom_llm_provider: bedrock
+        api_key: key-one
+        api_base: https://base.example
+        extra_headers: {x-trace: t1}
+        optional_params: {language: en, aws_region_name: us-east-1}
+        timeout: 3.5
+        reply_text: hello
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: bytes, content: RIFF}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        phases: {connect: 1.5, read: 2.5, write: 3.5, pool: 4.5}
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: bytes, content: RIFF}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        phases: {connect: 1.5, read: null, write: 3.5, pool: 4.5}
+        reply_text: world
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: bytes, content: RIFF}
+        custom_llm_provider: bedrock
+        api_key: null
+        extra_headers: null
+        optional_params: {}
+        timeout: null
+env: {}
+compare: {ignore: []}

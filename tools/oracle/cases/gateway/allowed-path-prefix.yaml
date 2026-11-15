@@ -1,0 +1,8 @@
+kind: helper
+name: gateway-allowed-path-prefix
+call:
+  b4471:
+    component: gateway
+    paths: [/v1/chat/completions, /openai/v1/files, "/{provider}/v1/files"]
+env: {}
+compare: {ignore: []}

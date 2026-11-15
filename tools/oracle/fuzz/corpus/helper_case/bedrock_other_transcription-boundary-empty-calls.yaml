@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-other-transcription-empty
+call:
+  bedrock_other_transcription:
+    calls: []
+env: {}
+compare: {ignore: []}

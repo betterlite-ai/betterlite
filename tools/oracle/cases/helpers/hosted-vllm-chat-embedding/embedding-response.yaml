@@ -1,0 +1,17 @@
+kind: helper
+name: hosted-vllm-embedding-response
+call:
+  b8150:
+    function: "embedding_response"
+    calls:
+      - body: '{"object": "list", "model": "m", "data": [{"object": "embedding", "embedding": [0.5, 0.25], "index": 0}], "usage": {"prompt_tokens": 2, "completion_tokens": 0, "total_tokens": 2}}'
+      - body: '{"model": "m", "data": [{"object": "embedding", "embedding": [0.5], "index": 0}]}'
+      - body: '{"object": "list", "model": "m", "data": [], "usage": {"prompt_tokens": 3}}'
+      - body: '{"object": "list", "model": "m", "data": [], "usage": null}'
+      - body: '{"object": "list", "model": "m"}'
+      - body: '{"object": "list", "model": "m", "data": [], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3, "extra": 4}}'
+      - body: '{"object": "list", "model": "m", "data": [{"object": "embedding", "embedding": "AAAA", "index": 0}]}'
+      - body: 'not json'
+      - body: '{"object": "embedding_list", "model": "m", "data": [], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+id: B9955
+milestone: R2 bug fixes
+title: Sandbox output cap counts every line's newline
+status: done
+depends_on: [B3516]
+file: tasks/B9955-sandbox-newline-cap.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1872

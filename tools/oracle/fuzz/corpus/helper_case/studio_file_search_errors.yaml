@@ -1,0 +1,20 @@
+kind: helper
+name: studio-file-search-seed-errors
+call:
+  studio_file_search:
+    calls:
+      - function: search
+        vector_store_id: fileSearchStores/seed
+        query: q
+        api_key: ""
+        environment: {GOOGLE_API_KEY: "", GEMINI_API_KEY: ""}
+      - function: search_reply
+        status: 500
+        body: "not json"
+        query: q
+      - function: create_reply
+        status: 429
+        body: "[]"
+        timezone: UTC
+env: {}
+compare: {ignore: []}

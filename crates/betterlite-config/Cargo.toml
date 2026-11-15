@@ -19,6 +19,7 @@ fancy-regex = "0.19.2"
 indexmap = { version = "2.14.2", features = ["serde"] }
 netrc-rs = "0.1.2"
 percent-encoding.workspace = true
+regex.workspace = true
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
@@ -29,6 +30,7 @@ serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 shellexpand = { version = "3.1.2", default-features = false, features = ["full"] }
+soft-canonicalize = "0.5.6"
 strum = { version = "0.28.0", features = ["derive"] }
 tempfile = "3.27.0"
 thiserror.workspace = true
@@ -40,9 +42,12 @@ url = "2.5.8"
 [dev-dependencies]
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-db = { path = "../betterlite-db" }
+betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-vertex = { path = "../betterlite-vertex" }
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
+tokio.workspace = true
 tracing-subscriber.workspace = true
 
 [lints]

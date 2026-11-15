@@ -1,0 +1,20 @@
+kind: helper
+name: duplicates-survive-only-resolved-bucket
+call:
+  scim_member_partition:
+    members: []
+    metadata: []
+    entries:
+      - {kind: resolved, user_id: u1}
+      - {kind: resolved, user_id: u1}
+      - {kind: skipped, value: g1, reason: nested_group}
+      - {kind: skipped, value: g1, reason: non_user_type}
+      - {kind: unknown, value: u9}
+      - {kind: unknown, value: u9}
+      - {kind: ambiguous, value: a1}
+      - {kind: ambiguous, value: a1}
+    created_ids: [u9]
+    removals: []
+env: {}
+compare:
+  ignore: []

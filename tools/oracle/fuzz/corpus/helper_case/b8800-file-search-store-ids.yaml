@@ -1,0 +1,14 @@
+kind: helper
+name: b8800-file-search-store-ids-seed
+call:
+  b8800:
+    function: file_search_store_ids
+    data:
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_2, vs_1, vs_1]
+        - type: function
+          vector_store_ids: 5
+env: {}
+compare:
+  ignore: []

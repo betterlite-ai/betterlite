@@ -1,0 +1,20 @@
+task: B4841
+deviations:
+  - what: The bundled catalog lookup prices a model from its flat price fields; the entry's tiered_pricing and off_peak_pricing tables are not decoded, so a tiered or off-peak model is charged its base rates.
+    why: Decoding those two tables into Tier and OffPeakBlock is the catalog binding B068 assigns to its CostCalculator, and the harness reads the bundled catalog directly because no production PriceLookup exists yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L228-L239
+  - what: A model whose price comes from a provider policy (Vertex character pricing and the token formulas other providers install) records zero cost; only native OpenAI, Anthropic, Bedrock, Azure and generic catalog prices are computed.
+    why: Those policies are installed by the provider crates through B1686's ProviderPricePolicy, which betterlite-harness does not depend on; an uninstalled operation returns a typed unavailable failure and compute_cost reports zero.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L232-L239
+  - what: Repeated headers keep every value when they are filtered for the gateway request or the relayed response; LiteLLM builds a dict from the header mapping, so a repeated header such as Set-Cookie keeps only its last value.
+    why: Dropping earlier values loses data an HTTP response legitimately carries, and http's HeaderMap holds each one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L270-L295
+  - what: An event type that is empty or contains a line break is framed as "message" instead of being written into the event line as sent.
+    why: A provider-controlled type with a newline would inject an extra SSE event into the stream the CLI harness reads; no working setup relies on such a name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L324-L331
+  - what: A token counter that is negative, fractional beyond truncation or larger than u64::MAX becomes zero, and the running totals saturate at u64::MAX instead of growing without bound.
+    why: betterlite's Usage counts are u64 from B4830, so a provider that sends a nonsense count cannot move the session's accounting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L134-L139
+  - what: The SSE usage parser splits its whole pending buffer on every chunk and keeps a line without a newline for as long as the stream sends one. betterlite looks for the newline only in the bytes the chunk just added and holds a partial line up to 32 MiB (0x200_0000); past that it drops the line, skips bytes up to the next newline and parses normally again.
+    why: A provider that streams without ever sending a newline grows LiteLLM's buffer without bound and rescans it on each chunk; the cap is large enough for a response.completed event that carries a whole response with base64 image output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L171-L174

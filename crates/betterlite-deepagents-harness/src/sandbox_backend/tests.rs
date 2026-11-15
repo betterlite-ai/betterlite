@@ -5,7 +5,7 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rstest::rstest;
 use tempfile::TempDir;
@@ -656,11 +656,14 @@ async fn execute_maps_a_sandbox_failure_to_exit_124() {
         .parse::<u32>()
         .unwrap();
     let child_proc = Path::new(&format!("/proc/{child_pid}")).to_owned();
-    sleep(Duration::from_millis(50)).await;
-    assert!(
-        !child_proc.exists(),
-        "timed out waiting for child process {child_pid} to exit"
-    );
+    let started = Instant::now();
+    while child_proc.exists() {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "timed out waiting for child process {child_pid} to exit"
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
 }
 
 #[tokio::test]

@@ -1,0 +1,20 @@
+kind: helper
+name: set-worker-billing-success
+call:
+  b4501:
+    seed:
+      workers:
+        worker-a:
+          token_hash: hash-a
+          data:
+            id: worker-a
+            name: worker
+            scope: {}
+            last_seen: "2026-01-01T00:00:00Z"
+            revoked: false
+    call:
+      operation: set_worker_billing
+      worker_id: worker-a
+      key_id: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: genai-setup-vertex-partner-adapter-fallback
+call:
+  b3483:
+    setups:
+      - model: vertex_ai/claude-sonnet-4
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: {temperature: 0.2}
+        custom_llm_provider: null
+        tools: null
+        kwargs: {}
+        extra_body: null
+        with_logging: true
+env: {}
+compare: {ignore: []}

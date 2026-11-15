@@ -1,0 +1,5 @@
+task: B8994
+deviations:
+  - what: x-litellm-policy-sources lists the policy sources in key order, not in the order they were recorded.
+    why: The guardrail request data holds metadata as GuardrailValue::Object, a BTreeMap, so insertion order is gone before the header is built. Each name=reason pair keeps its text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L518

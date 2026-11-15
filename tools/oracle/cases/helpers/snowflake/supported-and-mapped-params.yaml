@@ -1,0 +1,13 @@
+kind: helper
+name: snowflake-supported-and-mapped-params
+call:
+  b5844:
+    steps:
+      - {kind: params, model: mistral-large2, embedding: false, non_default: {temperature: 0.5, max_tokens: 20, stop: [x], response_format: {type: json_object}, thinking: {type: enabled}}}
+      - {kind: params, model: claude-3-5-sonnet, embedding: false, non_default: {temperature: 0.5, thinking: {type: enabled, budget_tokens: 1024}, top_p: 0.9, max_completion_tokens: 30, user: u1}}
+      - {kind: params, model: snowflake/Claude_3, embedding: false, non_default: {stream: true, tools: [], tool_choice: auto, n: 2}}
+      - {kind: params, model: mistral-large2, embedding: false, non_default: {}}
+      - {kind: params, model: snowflake-arctic-embed-m, embedding: true, non_default: {temperature: 0.5, max_tokens: 20, response_format: {type: json_object}, max_completion_tokens: 30, thinking: {type: enabled}, dimensions: 8}}
+      - {kind: params, model: snowflake-arctic-embed-m, embedding: true, non_default: {top_p: 0.5, stream: false, tools: [], tool_choice: none, user: u1}}
+env: {}
+compare: {ignore: []}

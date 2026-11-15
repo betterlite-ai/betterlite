@@ -1,0 +1,28 @@
+kind: helper
+name: prompt-dispatch-identity-null-request-falls-back
+call:
+  b8466:
+    check: prompt_factory
+    model: langfuse/my-prompt
+    messages: []
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: deployment-id
+        prompt_variables:
+          name: deployment
+        prompt_label: deployment-label
+    request:
+      prompt_id: null
+      prompt_variables: null
+      prompt_label: null
+    compiled:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: compiled
+      optional_params: {}
+env: {}
+compare:
+  ignore: []

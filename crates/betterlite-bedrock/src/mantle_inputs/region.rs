@@ -44,7 +44,7 @@ pub fn resolve_region(
     Ok(fallback_region(globals))
 }
 
-fn region_from_host(base: &str) -> Option<String> {
+pub(crate) fn region_from_host(base: &str) -> Option<String> {
     let pattern = Regex::new(MANTLE_HOST_PATTERN).ok()?;
     let captures = pattern.captures(base.trim_end_matches('/')).ok()??;
     captures.get(1).map(|region| region.as_str().to_owned())

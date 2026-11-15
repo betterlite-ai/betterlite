@@ -1,0 +1,8 @@
+task: B5831
+deviations:
+  - what: The fallback rerank id, the global drop_params flag, the capability answers and the env tier limits arrive as arguments, not process globals.
+    why: Provider modules take clocks, ids, settings and catalog answers from the caller, so tests need no process state and parallel calls cannot share one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/rerank/transformation.py#L54-L57
+  - what: A rerank relevance score is parsed into an exact decimal instead of a Python float.
+    why: The shared rerank reply type keeps scores as decimals, so a score the decimal cannot represent is refused instead of rounded; the wire number is unchanged for every score a provider sends as plain decimal text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/rerank/transformation.py#L43-L46

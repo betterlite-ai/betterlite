@@ -1,0 +1,21 @@
+kind: helper
+name: genai-hidden-params-default-empty-dict
+call:
+  b3480:
+    constructs:
+      - record: response
+        fields:
+          candidates: [{content: {parts: [{text: "hi"}]}}]
+      - record: response
+        fields: {}
+      - record: response
+        fields:
+          candidates: []
+          _hidden_params: {response_cost: "0.01", nested: {tags: [1, 2]}}
+      - record: response
+        fields:
+          _hidden_params: {}
+    top_level: []
+    errors: []
+env: {}
+compare: {ignore: []}

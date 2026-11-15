@@ -1,0 +1,41 @@
+task: B7938
+deviations:
+  - what: >-
+      PrometheusMetricLabels.get_labels takes the custom-label and opt-in toggles as a
+      PrometheusLabelSettings argument instead of reading the process-wide litellm module globals
+      on every call.
+    why: >-
+      betterlite has no litellm module globals; PrometheusLabelSettings in settings.py lets
+      callers pass the six settings explicitly, which keeps get_labels pure and testable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L956-L1023
+  - what: >-
+      An unknown metric name raises UnknownMetricError (a ValueError) instead of the AttributeError
+      that LiteLLM's getattr call raises.
+    why: >-
+      The labels live in a dict, so the lookup needs an explicit error; a ValueError that carries
+      the metric name says more than the attribute access error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L957-L961
+  - what: >-
+      With prometheus_emit_stream_label on and a custom metadata label that sanitizes to stream,
+      betterlite emits the stream label once; LiteLLM appends a second copy.
+    why: >-
+      LiteLLM's append checks only the metric's default labels, not the custom labels it just
+      added, so the same label name appears twice and Prometheus rejects the sample. No working
+      setup can rely on a duplicated label name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L972-L978
+  - what: >-
+      UserAPIKeyLabelValues rejects an unknown keyword and the api_key_hash alias with a TypeError;
+      LiteLLM's **kwargs constructor drops unknown keys and maps api_key_hash to hashed_api_key.
+    why: >-
+      docs/compatibility.md makes a wrong field an error that names it, and the alias plus silent
+      dropping are untyped-input behavior that a typed constructor cannot express without an
+      **kwargs Any parameter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1026-L1098
+  - what: >-
+      UserAPIKeyLabelValues.model_dump is declared to return the UserAPIKeyLabelValuesDump
+      TypedDict of the 33 keys rather than dict[str, object]; the value is still a plain dict with
+      the same keys and normalizations.
+    why: >-
+      A TypedDict names the exact keys the dump carries, which dict[str, object] leaves open, and
+      the runtime value is unchanged for callers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1122-L1127

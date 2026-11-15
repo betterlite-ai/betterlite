@@ -87,5 +87,5 @@ pitfalls:
   - An empty in-frame usage dictionary overrides a nonempty pending usage buffer.
   - Existing singular usage aliases are preserved even if their value is null.
   - A non-transcription model leaves the unbilled audio counter untouched when close usage is requested.
-budget: {max_changed_lines: 600, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

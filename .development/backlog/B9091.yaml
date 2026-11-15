@@ -1,7 +1,7 @@
 id: B9091
 milestone: M10 admin ui
 title: Build a reproducible dashboard sidecar with the upstream npm lockfile
-status: todo
+status: done
 depends_on: [B9090]
 file: tasks/B9091-dashboard-build-bundle.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "ui/litellm-dashboard/*"
 parent: B144
 split_from: B144
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1724

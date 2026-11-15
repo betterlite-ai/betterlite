@@ -1,0 +1,22 @@
+kind: helper
+name: lyria-format-catalog-rejection
+call:
+  vertex_lyria_speech:
+    function: mapped
+    cases:
+      - {model: lyria-002, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {response_format: mp3}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {response_format: mp3}, voice: null, drop_params: true, global_drop_params: false}
+      - {model: lyria-002, params: {response_format: mp3}, voice: null, drop_params: false, global_drop_params: true}
+      - {model: lyria-3-clip-preview, params: {response_format: mp3}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-3-clip-preview, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-3-pro-preview, params: {response_format: mp3}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-3-pro-preview, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: vertex_ai/lyria-002, params: {response_format: mp3}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-9, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {response_format: null}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {response_format: 0}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {response_format: WAV}, voice: null, drop_params: false, global_drop_params: false}
+      - {model: lyria-3-pro-preview, params: {response_format: wav, instructions: whisper}, voice: null, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

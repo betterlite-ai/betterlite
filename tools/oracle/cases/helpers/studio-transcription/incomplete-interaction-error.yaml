@@ -1,0 +1,27 @@
+kind: helper
+name: incomplete-interaction-error
+call:
+  studio_transcription:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"in_progress","steps":[]}'
+      - step: reply
+        status: 500
+        headers: []
+        body: 'not json'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[]}'
+      - step: reply
+        status: 201
+        headers: []
+        body: ''
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","usage":{"total_tokens":"many"}}'
+env: {}
+compare: {ignore: []}

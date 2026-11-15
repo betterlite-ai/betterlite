@@ -8,6 +8,7 @@ use crate::OracleError;
 use crate::artifacts::{self, SdkArtifactInput};
 use crate::cli::Options;
 use crate::compare::{self, Difference};
+use crate::mock::MockProvider;
 use crate::paths::artifact_root;
 use crate::process::sync_litellm;
 use crate::routing_mock_scripts::MockScript;
@@ -42,14 +43,14 @@ fn run_case(
     let mut captures = Vec::new();
     for side in sides(options.self_check) {
         let sdk = Sdk::for_side(side, &python);
+        let mock = MockProvider::start(MockScript::try_from(case.upstream.as_slice())?)?;
         let run = Run {
             call: &case.call,
-            script: MockScript::try_from(case.upstream.as_slice())?,
             env: &case.env,
             limits: &limits,
             cancelled,
         };
-        captures.push(capture(&sdk, run)?);
+        captures.push(capture(&sdk, mock, &run)?);
     }
     let [left, right] = &*captures else {
         return Ok(false);

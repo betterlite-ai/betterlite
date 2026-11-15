@@ -1,0 +1,40 @@
+task: B7920
+deviations:
+  - what: >-
+      Names LiteLLM only imports from the openai package (Batch, FileObject, Assistant, Run,
+      ChatCompletionContentPartInputAudioParam and the like) are not exported, and a field typed by one
+      holds a JSON mapping.
+    why: The wheel does not depend on openai, so no such import can exist at import time.
+    link: ""
+  - what: >-
+      ChatCompletionAudioObject declares input_audio and type as required keys, and its private _InputAudio
+      declares data and format required, where LiteLLM's class and the SDK's InputAudio report every key as
+      optional at runtime.
+    why: >-
+      The SDK declares those keys Required, and CPython's TypedDict metadata loses Required through the
+      subclass LiteLLM uses without redeclaring them; betterlite writes the declared keys out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L774
+  - what: >-
+      Fields LiteLLM types as Any, object or a bare dict or list are typed as JSON: provider_specific_fields
+      and video_metadata as dict[str, JsonValue], the thinking blocks' cache_control as dict[str, JsonValue],
+      the vector store and Thread metadata as JsonValue, and the system, developer and generic message
+      content as str | list[JsonValue].
+    why: >-
+      betterlite declares JSON types in place of Python's untyped object, Any and bare containers, so a value
+      that is not JSON is rejected where LiteLLM accepts it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L609
+  - what: MessageData.metadata is typed dict[str, JsonValue] | None where LiteLLM declares dict | None.
+    why: >-
+      betterlite types the bare dict as a JSON mapping, so a value that is not JSON is rejected where
+      LiteLLM accepts it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L283
+  - what: FileContent names PathLike[str] and PathLike[bytes] where LiteLLM writes a bare PathLike.
+    why: A bare PathLike means PathLike[Any], which betterlite spells as the two concrete path forms instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L96
+  - what: >-
+      Unknown keyword arguments passed to OpenAIFileObject, FileListPage, Thread, BatchGuardrailRecord or
+      BatchGuardrailReport are kept and appear in model_dump(), where LiteLLM's pydantic models ignore them.
+    why: >-
+      These models subclass betterlite's shared ResponseObject, whose model_config is extra="allow";
+      LiteLLM's BaseModel keeps pydantic's default and drops the extras.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L362

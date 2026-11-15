@@ -1,0 +1,10 @@
+kind: helper
+name: studio-chat-input-inherited-reasoning
+call:
+  studio_chat_input:
+    reasoning_models: [gemini-2.5-pro]
+    steps:
+      - op: params
+        model: gemini-2.5-pro
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: api-error-http-failure
+call:
+  b3769:
+    detect:
+      settings: {api_key: key, api_base: "https://api.enkryptai.com"}
+      texts: [hello]
+      answer:
+        status: 500
+        headers: {}
+        body: {detail: "upstream exploded"}
+env: {}
+compare: {ignore: []}

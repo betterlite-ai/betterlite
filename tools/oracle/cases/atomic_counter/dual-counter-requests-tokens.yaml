@@ -1,0 +1,22 @@
+kind: helper
+name: dual-counter-requests-tokens
+call:
+  b3033:
+    descriptor:
+      key: model
+      value: gpt-4
+      rate_limit:
+        requests_per_unit: 10
+        tokens_per_unit: 300
+        window_size: null
+    increment:
+      requests: 1
+      tokens: 250
+    default_window_size: 90
+    now: 1700000300
+    cache: {}
+    reply: [0, 4, 1700000100, 250, 1700000100]
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "90"
+compare:
+  ignore: []

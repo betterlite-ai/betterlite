@@ -1,0 +1,20 @@
+kind: helper
+name: hosted-vllm-chat-param-mapping
+call:
+  b8150:
+    function: "chat_map"
+    calls:
+      - model: "my-model"
+        params: {"temperature": 0.5, "max_tokens": 5, "unknown_parameter": 1}
+        preset: {"seed": 4}
+      - {model: "my-model", params: {"thinking": {"type": "enabled", "budget_tokens": 1024}}, preset: {}}
+      - {model: "my-model", params: {"thinking": {"type": "enabled", "budget_tokens": 4096}}, preset: {}}
+      - {model: "my-model", params: {"thinking": {"type": "enabled", "budget_tokens": 2048}, "reasoning_effort": "high"}, preset: {}}
+      - {model: "my-model", params: {"thinking": {"type": "disabled", "budget_tokens": 4096}}, preset: {}}
+      - {model: "my-model", params: {"thinking": {"type": "enabled"}}, preset: {}}
+      - {model: "my-model", params: {"thinking": "enabled"}, preset: {}}
+      - {model: "my-model", params: {"thinking": {"type": "enabled", "budget_tokens": 1023}}, preset: {}}
+      - {model: "gpt-4", params: {"response_format": {"type": "json_object"}, "temperature": 0}, preset: {}}
+      - {model: "my-model", params: {"thinking": null, "temperature": 1}, preset: {"temperature": 0.1}}
+env: {}
+compare: {ignore: []}

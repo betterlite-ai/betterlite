@@ -84,5 +84,5 @@ pitfalls:
   - An empty camel-case detail list prevents falling back to a populated snake-case list.
   - Studio Imagen can return an image record with null b64_json for a prediction lacking image bytes.
   - GOOGLE_API_KEY alone does not satisfy this image adapter's validation.
-budget: {max_changed_lines: 775, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

@@ -1,0 +1,18 @@
+kind: helper
+name: gemini-request-global-media-resolution
+call:
+  gemini_request:
+    model: gemini-2.5-pro
+    provider: vertex_ai
+    supports: {system_message: true, response_schema: true}
+    modify_params: false
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - type: image_url
+            image_url: {url: "data:image/png;base64,YWJj", detail: high}
+    optional_params: {}
+    litellm_params: {}
+env: {}
+compare: {ignore: []}

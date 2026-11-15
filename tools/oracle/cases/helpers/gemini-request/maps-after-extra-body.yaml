@@ -1,0 +1,25 @@
+kind: helper
+name: gemini-request-maps-after-extra-body
+call:
+  gemini_request:
+    model: gemini-2.5-pro
+    provider: vertex_ai
+    supports: {system_message: true, response_schema: true}
+    modify_params: false
+    messages:
+      - {role: user, content: "weather in Paris?"}
+    optional_params:
+      response_mime_type: application/json
+      response_json_schema:
+        type: object
+        properties:
+          temp: {type: number}
+      response_schema:
+        type: object
+        properties:
+          legacy: {type: string}
+      extra_body:
+        tools: [{googleMaps: {}}]
+    litellm_params: {}
+env: {}
+compare: {ignore: []}

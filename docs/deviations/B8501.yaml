@@ -1,0 +1,8 @@
+task: B8501
+deviations:
+  - what: A Redis connection authenticated by a cloud token sends AUTH again on a timer (3300 s GCP, 300 s Azure, 840 s AWS).
+    why: redis-py asks the provider on each new pooled connection; betterlite keeps one multiplexed connection, so it re-authenticates before the token expires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis_credential_provider.py#L218-L221
+  - what: Missing cloud libraries never raise the "pip install google-cloud-iam", "pip install azure-identity" or "pip install boto3" ImportError.
+    why: The clients are compiled in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis_credential_provider.py#L51-L57

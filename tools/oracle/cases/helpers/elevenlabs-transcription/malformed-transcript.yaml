@@ -1,0 +1,16 @@
+kind: helper
+name: elevenlabs-transcription-malformed-transcript
+call:
+  elevenlabs_transcription:
+    calls:
+    - {function: transcript, body: not json}
+    - {function: transcript, body: '[]'}
+    - {function: transcript, body: '{"words": "hi"}'}
+    - {function: transcript, body: '{"words": null}'}
+    - {function: transcript, body: '{"words": [1]}'}
+    - {function: transcript, body: '{"words": [["word", "hi", 0, 1]]}'}
+    - {function: transcript, body: '{"words": [[]]}'}
+    - {function: transcript, body: '{"text": 5}'}
+    - {function: transcript, body: '{} {}'}
+compare: {ignore: []}
+env: {}

@@ -2,7 +2,7 @@
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{self, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader, Lines};
 use tokio::net::{TcpListener, TcpStream};
@@ -15,54 +15,83 @@ struct LogEvent {
     level: String,
     message: String,
 }
+const CHAT_BODY: &str = r#"{"model":"held","messages":[{"role":"user","content":"hi"}]}"#;
+const CHAT_REPLY: &str = r#"{"id":"chatcmpl-held","object":"chat.completion","created":1,"model":"held","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
 #[tokio::test]
 async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
+    let upstream = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let upstream_port = upstream.local_addr().unwrap().port();
     let port = free_port().await;
-    let config_path = fixture(port, STANDARD_CONFIG).await;
+    let config = format!(
+        "{STANDARD_CONFIG}model_list:\n  - model_name: held\n    litellm_params:\n      model: openai/held\n      api_key: sk-held\n      api_base: http://127.0.0.1:{upstream_port}/v1\n"
+    );
+    let config_path = fixture(port, &config).await;
     let mut server = spawn_server(&config_path, port);
-    wait_until_ready(port, 1000).await;
-    let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    let mut health_request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    let mut readiness_request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    request
-        .write_all(b"GET /not-served HTTP/1.1\r\nHost: localhost\r\n")
-        .await
-        .unwrap();
-    health_request
-        .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\n")
-        .await
-        .unwrap();
-    readiness_request
-        .write_all(b"GET /health/readiness HTTP/1.1\r\nHost: localhost\r\n")
-        .await
-        .unwrap();
-    sleep(Duration::from_millis(10)).await;
+    wait_for_port(port, true).await;
+    let mut request = start_chat(port).await;
+    // the upstream holds the call, so SIGTERM lands while the request is in flight however slow the runner is
+    let (mut held, _address) = upstream.accept().await.unwrap();
+    read_request(&mut held).await;
     let (mut logs, mut lines) = server.terminate().await;
-    assert_shutdown_response(&mut health_request).await;
-    assert_shutdown_response(&mut readiness_request).await;
-    request
-        .write_all(b"Authorization: Bearer test-master\r\nConnection: close\r\n\r\n")
-        .await
-        .unwrap();
-    let mut response = Vec::new();
-    request.read_to_end(&mut response).await.unwrap();
-    assert!(response.starts_with(b"HTTP/1.1 404"));
-    assert!(response.ends_with(b"{\"detail\":\"Not Found\"}"));
+    answer_chat(&mut held).await;
+    let mut bytes = Vec::new();
+    request.read_to_end(&mut bytes).await.unwrap();
+    let response = String::from_utf8(bytes).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    assert!(response.contains(r#""content":"done""#), "{response}");
     while let Some(line) = lines.next_line().await.unwrap() {
         logs.push(line);
     }
     assert!(server.wait().await.is_empty());
     assert_json_logs(logs.join("\n").as_bytes());
 }
-async fn assert_shutdown_response(request: &mut TcpStream) {
+async fn start_chat(port: u16) -> TcpStream {
+    let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     request
-        .write_all(b"Connection: close\r\n\r\n")
+        .write_all(
+            format!(
+                "POST /v1/chat/completions HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-master\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{CHAT_BODY}",
+                CHAT_BODY.len()
+            )
+            .as_bytes(),
+        )
         .await
         .unwrap();
-    let mut response = Vec::new();
-    request.read_to_end(&mut response).await.unwrap();
-    assert!(response.starts_with(b"HTTP/1.1 503"));
-    assert!(response.ends_with(b"{\"status\":\"shutting_down\"}"));
+    request
+}
+async fn answer_chat(held: &mut TcpStream) {
+    held.write_all(
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{CHAT_REPLY}",
+            CHAT_REPLY.len()
+        )
+        .as_bytes(),
+    )
+    .await
+    .unwrap();
+}
+// closing a socket with unread bytes resets it, so the whole call is read before the reply
+async fn read_request(upstream: &mut TcpStream) {
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    loop {
+        let read = upstream.read(&mut chunk).await.unwrap();
+        assert_ne!(read, 0, "the server closed its upstream call");
+        received.extend_from_slice(&chunk[..read]);
+        let text = String::from_utf8(received.clone()).unwrap();
+        let Some((head, body)) = text.split_once("\r\n\r\n") else {
+            continue;
+        };
+        let length = head
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _value)| name.eq_ignore_ascii_case("content-length"))
+            .map(|(_name, value)| value.trim().parse::<usize>().unwrap())
+            .unwrap();
+        if body.len() >= length {
+            return;
+        }
+    }
 }
 #[tokio::test]
 async fn short_config_alias_starts_server() {
@@ -83,7 +112,7 @@ async fn short_config_alias_starts_server() {
         .spawn()
         .unwrap();
     let server = ServerGuard { child: Some(child) };
-    wait_until_ready(port, 1000).await;
+    wait_for_port(port, true).await;
     drop(server);
 }
 #[tokio::test]
@@ -91,16 +120,15 @@ async fn dropping_server_guard_kills_server() {
     let port = free_port().await;
     let config_path = fixture(port, STANDARD_CONFIG).await;
     let server = spawn_server(&config_path, port);
-    wait_until_ready(port, 1000).await;
+    wait_for_port(port, true).await;
     let connection = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    timeout(Duration::from_secs(3), connection.readable())
+    timeout(Duration::from_secs(30), connection.readable())
         .await
         .unwrap()
         .unwrap();
     assert_eq!(connection.try_read(&mut [0]).unwrap(), 0);
     drop(server);
-    sleep(Duration::from_millis(100)).await;
-    TcpStream::connect(("127.0.0.1", port)).await.unwrap_err();
+    wait_for_port(port, false).await;
 }
 #[tokio::test]
 async fn malformed_config_does_not_log_master_key() {
@@ -208,7 +236,7 @@ async fn reads_config_references_from_the_process_environment() {
         .spawn()
         .unwrap();
     let server = ServerGuard { child: Some(child) };
-    wait_until_ready(port, 1000).await;
+    wait_for_port(port, true).await;
     let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     request
         .write_all(b"GET /v1/models HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer environment-master\r\nConnection: close\r\n\r\n")
@@ -248,7 +276,7 @@ async fn partial_headers_are_closed_after_the_read_deadline() {
     let port = free_port().await;
     let config_path = fixture(port, STANDARD_CONFIG).await;
     let server = spawn_server(&config_path, port);
-    wait_until_ready(port, 1000).await;
+    wait_for_port(port, true).await;
     let mut connection = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     connection
         .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\n")
@@ -256,7 +284,7 @@ async fn partial_headers_are_closed_after_the_read_deadline() {
         .unwrap();
     let mut response = Vec::new();
     timeout(
-        Duration::from_secs(5),
+        Duration::from_secs(30),
         connection.read_to_end(&mut response),
     )
     .await
@@ -320,14 +348,15 @@ async fn send_sigterm(process_id: u32) {
         .unwrap();
     assert!(status.success());
 }
-async fn wait_until_ready(port: u16, attempts: u16) {
-    for _ in 0..attempts {
-        if TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
-            return;
-        }
+async fn wait_for_port(port: u16, reachable: bool) {
+    let started = Instant::now();
+    while TcpStream::connect(("127.0.0.1", port)).await.is_ok() != reachable {
+        assert!(
+            started.elapsed() < Duration::from_secs(60),
+            "port {port} did not become reachable={reachable}"
+        );
         sleep(Duration::from_millis(10)).await;
     }
-    panic!("betterlite did not start on port {port}");
 }
 struct ServerGuard {
     child: Option<Child>,

@@ -1,0 +1,35 @@
+kind: helper
+name: response-missing-messages
+call:
+  b3774: {
+      "inputs": {
+        "structured_messages": [
+          {
+            "role": "system",
+            "content": "sys"
+          },
+          {
+            "role": "user",
+            "content": "long text"
+          },
+          {
+            "role": "assistant",
+            "content": "answer"
+          },
+          {
+            "role": "user",
+            "content": "now"
+          }
+        ]
+      },
+      "input_type": "request",
+      "answer": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "other": "x"
+        }
+      }
+    }
+env: {}
+compare: {ignore: []}

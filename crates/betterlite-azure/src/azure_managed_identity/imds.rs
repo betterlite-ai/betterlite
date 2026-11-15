@@ -1,7 +1,9 @@
 use std::io;
+use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::azure_arc_identity::{MetadataRequest, MetadataResponse};
 use crate::azure_client_secret::token::AccessToken;
 
 use super::decode::{ImdsReply, ImdsTokenError, decode_imds_token};
@@ -24,23 +26,8 @@ pub const TOKEN_BUDGET: RetryBudget = RetryBudget {
 };
 const REFRESH_THRESHOLD_SECONDS: i64 = 7200;
 
-#[derive(Debug)]
-pub struct ImdsRequest {
-    pub url: String,
-    pub query: Vec<(String, String)>,
-    pub headers: Vec<(String, String)>,
-    pub timeout_seconds: u64,
-}
-
-#[derive(Debug)]
-pub struct ImdsResponse {
-    pub status: u16,
-    pub headers: Vec<(String, String)>,
-    pub body: SecretString,
-}
-
 pub trait ImdsTransport: Send + Sync {
-    fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse>;
+    fn get(&self, request: &MetadataRequest) -> io::Result<MetadataResponse>;
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -85,13 +72,19 @@ fn request(
     client_id: Option<&str>,
     request_id: &str,
     probe: bool,
-) -> ImdsRequest {
-    let mut headers = vec![("x-ms-client-request-id".to_owned(), request_id.to_owned())];
+) -> MetadataRequest {
+    let mut headers = vec![(
+        "x-ms-client-request-id".to_owned(),
+        SecretString::from(request_id),
+    )];
     if !probe {
         headers.extend([
-            ("Metadata".to_owned(), "true".to_owned()),
-            ("x-client-SKU".to_owned(), CLIENT_SKU.to_owned()),
-            ("x-client-Ver".to_owned(), CLIENT_VERSION.to_owned()),
+            ("Metadata".to_owned(), SecretString::from("true")),
+            ("x-client-SKU".to_owned(), SecretString::from(CLIENT_SKU)),
+            (
+                "x-client-Ver".to_owned(),
+                SecretString::from(CLIENT_VERSION),
+            ),
         ]);
     }
     let timeout_seconds = if probe {
@@ -99,15 +92,15 @@ fn request(
     } else {
         CONNECTION_TIMEOUT_SECONDS
     };
-    ImdsRequest {
+    MetadataRequest {
         url: url(environment),
         query: query(resource, client_id),
         headers,
-        timeout_seconds,
+        timeout: Duration::from_secs(timeout_seconds),
     }
 }
 
-fn content_type(response: &ImdsResponse) -> Option<&str> {
+fn content_type(response: &MetadataResponse) -> Option<&str> {
     response
         .headers
         .iter()
@@ -138,7 +131,7 @@ fn check_probe(
     Ok(())
 }
 
-fn reply_failure(response: &ImdsResponse, error: &ImdsTokenError) -> ManagedIdentityError {
+fn reply_failure(response: &MetadataResponse, error: &ImdsTokenError) -> ManagedIdentityError {
     let ImdsTokenError::Json(_) = error else {
         return ManagedIdentityError::ImdsUnavailable;
     };
@@ -160,7 +153,7 @@ fn reply_failure(response: &ImdsResponse, error: &ImdsTokenError) -> ManagedIden
 }
 
 fn reply(
-    response: &ImdsResponse,
+    response: &MetadataResponse,
     started: i64,
     finished: i64,
 ) -> Result<AccessToken, ManagedIdentityError> {

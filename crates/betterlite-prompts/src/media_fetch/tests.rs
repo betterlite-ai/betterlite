@@ -6,7 +6,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -802,20 +802,20 @@ async fn parallel_fetches_are_bounded(#[case] scenario: &str) {
             assert_eq!(server.request_count(), 40);
         }
         "cancelled" => {
-            // the failing URL sits behind 3-second URLs, so in-order buffering would miss the 2-second bound
+            // the failing URL sits behind 10-second URLs, so in-order buffering would miss the 5-second bound
             let routes = (0..25_u32)
                 .map(|index| {
                     let reply = if index == 10 {
                         Reply::Delayed {
                             status: 404,
                             body: Vec::new(),
-                            delay: Duration::from_millis(250),
+                            delay: Duration::from_secs(1),
                         }
                     } else {
                         Reply::Delayed {
                             status: 200,
                             body: index.to_string().into_bytes(),
-                            delay: Duration::from_secs(3),
+                            delay: Duration::from_secs(10),
                         }
                     };
                     (format!("/{index}.png"), reply)
@@ -826,7 +826,7 @@ async fn parallel_fetches_are_bounded(#[case] scenario: &str) {
             let urls: Vec<String> = (0..25_u32)
                 .map(|index| server.url(&format!("/{index}.png")))
                 .collect();
-            let outcome = timeout(Duration::from_secs(2), fetcher.fetch_all(&urls))
+            let outcome = timeout(Duration::from_secs(5), fetcher.fetch_all(&urls))
                 .await
                 .expect("the first failure cancels the fetches still in flight");
             let error = outcome.unwrap_err();
@@ -837,7 +837,15 @@ async fn parallel_fetches_are_bounded(#[case] scenario: &str) {
                     urls[10]
                 )
             );
-            sleep(Duration::from_millis(200)).await;
+            let started = Instant::now();
+            while server.request_count() < 20 {
+                assert!(
+                    started.elapsed() < Duration::from_secs(30),
+                    "{}",
+                    server.request_count()
+                );
+                sleep(Duration::from_millis(10)).await;
+            }
             assert_eq!(server.request_count(), 20);
         }
         other => panic!("unknown scenario {other}"),

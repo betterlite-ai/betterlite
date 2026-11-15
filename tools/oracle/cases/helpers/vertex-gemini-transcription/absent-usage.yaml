@@ -1,0 +1,10 @@
+kind: helper
+name: absent-usage
+call:
+  vertex_gemini_transcription:
+    steps:
+      - {step: reply, status: 200, headers: [], body: '{"candidates":[]}'}
+      - {step: reply, status: 200, headers: [], body: '{"candidates":[],"usageMetadata":null}'}
+      - {step: reply, status: 200, headers: [], body: '{"candidates":[],"usageMetadata":{}}'}
+env: {}
+compare: {ignore: []}

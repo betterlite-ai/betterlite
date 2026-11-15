@@ -1,0 +1,6 @@
+kind: helper
+name: id-stage-dedup
+call:
+  b8994: {"function": "record_scan_id", "request_data": {"metadata": {"guardrail_scan_ids": ["scan-1"], "guardrail_scan_metadata": [{"guardrail": "pii", "stage": "pre_call", "provider": "panw_prisma_airs", "scan_id": "scan-1"}]}}, "scan_id": "scan-1", "guardrail_name": "pii", "provider": "panw_prisma_airs", "stage": "post_call"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,27 @@
+kind: helper
+name: responses-two-searches
+call:
+  b4119:
+    operation: build_responses_plan
+    model: gpt-4o
+    input: []
+    tool_calls:
+      - type: function_call
+        call_id: call_1
+        name: litellm_web_search
+        arguments: '{"query":"first"}'
+        input: {query: first}
+      - type: function_call
+        call_id: call_2
+        name: litellm_web_search
+        arguments: '{"query":"second"}'
+        input: {query: second}
+    searches:
+      - kind: success
+        text: one
+      - kind: success
+        text: two
+    optional_params: {}
+    kwargs: {}
+env: {}
+compare: {ignore: []}

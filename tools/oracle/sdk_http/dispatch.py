@@ -9,6 +9,10 @@ from messages_header_stream import (
     MessagesHeaderStreamCall,
     run_messages_header_stream,
 )
+from messages_stream_logging import (
+    MessagesStreamLoggingCall,
+    run_messages_stream_logging,
+)
 from openai_chat import ChatCall, run_chat
 from query_embedding_call import QueryEmbeddingCall, run_query
 from vector_store_embedding_executor import EmbeddingCall, run_embedding
@@ -51,6 +55,12 @@ class MessagesHeaderStreamRequest(BaseModel):
     messages_header_stream: MessagesHeaderStreamCall
 
 
+class MessagesStreamLoggingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    messages_stream_logging: MessagesStreamLoggingCall
+
+
 class Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -60,6 +70,7 @@ class Request(BaseModel):
         | VectorQueryEmbeddingCall
         | AnthropicBetaConfigCall
         | MessagesHeaderStreamRequest
+        | MessagesStreamLoggingRequest
     )
     api_base: str
 
@@ -85,6 +96,8 @@ def main() -> None:
                 output = run_beta_config(beta, request.api_base)
             case MessagesHeaderStreamRequest(messages_header_stream=stream):
                 output = run_messages_header_stream(stream, request.api_base)
+            case MessagesStreamLoggingRequest(messages_stream_logging=logging_call):
+                output = run_messages_stream_logging(logging_call, request.api_base)
             case VectorQueryEmbeddingCall(vector_query_embedding=query):
                 output = run_query(query, request.api_base).model_dump_json(
                     by_alias=True, exclude_unset=True

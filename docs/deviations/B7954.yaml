@@ -1,0 +1,16 @@
+task: B7954
+deviations:
+  - what: >-
+      LiteLLM_MemoryRow is declared as the class _MemoryRow with a module-level alias named
+      LiteLLM_MemoryRow, so the class's __name__, repr and JSON schema title read _MemoryRow.
+    why: >-
+      ruff's N801 rejects the underscore in a class name and the task's expect budget is zero,
+      so the class cannot carry a noqa for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/memory_management.py#L10
+  - what: >-
+      The memory metadata fields are typed JsonValue instead of LiteLLM's object | None; JSON
+      payloads validate the same, while a Python caller passing a non-JSON object is rejected.
+    why: >-
+      The repository bans object in type position (the no-loose-types ast-grep rule) and names
+      pydantic's JsonValue as the type for open JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/memory_management.py#L14

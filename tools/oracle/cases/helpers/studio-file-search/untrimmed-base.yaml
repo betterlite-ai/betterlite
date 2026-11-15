@@ -1,0 +1,38 @@
+kind: helper
+name: untrimmed-base
+call:
+  studio_file_search:
+    calls:
+      - function: url
+        environment: {GEMINI_API_BASE: "https://cfg.example//"}
+      - function: url
+        api_base: ""
+        environment: {GEMINI_API_BASE: "https://ignored.example"}
+      - function: url
+        environment: {GEMINI_API_BASE: ""}
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: explicit-key
+        api_base: "https://search.example//"
+        extra_body: {retrievalConfig: {numberOfResults: 9}}
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: explicit-key
+        model: gemini/gemini-2.5-pro
+        api_base: "https://h"
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: explicit-key
+        model: openai/gemini-pro
+        api_base: "https://h"
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: q
+        api_key: explicit-key
+        model: ""
+        api_base: "https://h"
+env: {}
+compare: {ignore: []}

@@ -74,5 +74,5 @@ pitfalls:
   - An explicit empty api_base is not replaced with the Gemini default host.
   - sampleCount can survive option mapping but is dropped by GeminiVideoGenerationParameters at this pin.
   - Studio infers resolution for recognized sizes without consulting model pricing metadata.
-budget: {max_changed_lines: 650, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: security

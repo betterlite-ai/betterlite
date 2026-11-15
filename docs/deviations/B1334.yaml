@@ -1,0 +1,8 @@
+task: B1334
+deviations:
+  - what: A size dimension above 4294967295 pixels is treated as invalid, so the size produces no imageConfig or aspectRatio mapping, where LiteLLM parses any Python integer and still maps it.
+    why: The dimension bounds every rational comparison inside u128, so no arithmetic can overflow. No image has a side that long, so no working setup sends one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L311-L327
+  - what: A tool carrying several search keys is deduplicated by the first key in LiteLLM's declaration order (googleSearch, googleSearchRetrieval, enterpriseWebSearch, url_context, the snake forms, then urlContext), while LiteLLM uses whichever key its process-wide set iteration reaches first.
+    why: LiteLLM builds the key set at every call and Python's string hashing is salted per process, so the same input classifies differently between two runs and no fixed answer can match it. The declaration order is the only order the source states.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L186-L209

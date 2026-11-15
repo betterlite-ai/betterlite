@@ -1,0 +1,33 @@
+kind: helper
+name: failure-http-error-fail-closed
+call:
+  b3774: {
+      "inputs": {
+        "structured_messages": [
+          {
+            "role": "system",
+            "content": "sys"
+          },
+          {
+            "role": "user",
+            "content": "long text"
+          },
+          {
+            "role": "assistant",
+            "content": "answer"
+          },
+          {
+            "role": "user",
+            "content": "now"
+          }
+        ]
+      },
+      "input_type": "request",
+      "answer": {
+        "status": 500,
+        "headers": {},
+        "body": "boom"
+      }
+    }
+env: {}
+compare: {ignore: []}

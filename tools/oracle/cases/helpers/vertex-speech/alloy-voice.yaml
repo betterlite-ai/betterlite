@@ -1,0 +1,22 @@
+kind: helper
+name: alloy-voice
+call:
+  vertex_speech:
+    function: alloy_voice
+    voices:
+      - null
+      - alloy
+      - echo
+      - fable
+      - onyx
+      - nova
+      - shimmer
+      - en-US-Wavenet-D
+      - de-DE-Standard-A
+      - custom
+      - ''
+      - {name: only-name}
+      - {languageCode: de-DE, name: de-DE-Wavenet-A}
+      - {}
+env: {}
+compare: {ignore: []}

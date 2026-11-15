@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-fine-tuning-absent-state
+call:
+  vertex_fine_tuning:
+    operation: response
+    calls:
+      - zone: UTC
+        response: {name: projects/p/locations/us-central1/tuningJobs/1, baseModel: gemini-1.5-flash-002}
+      - zone: UTC
+        response: {baseModel: gemini-1.5-flash-002, supervisedTuningSpec: {trainingDatasetUri: gs://b/train.jsonl}}
+      - zone: UTC
+        response: {}
+env: {}
+compare: {ignore: []}

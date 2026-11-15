@@ -98,7 +98,7 @@ async fn load_skill_files(skill: &str) -> Result<(String, Vec<(String, Vec<u8>)>
     Ok((name, files))
 }
 
-pub(super) async fn copy_skills<S>(
+pub async fn copy_skills<S>(
     sandbox: &S,
     skills: &[String],
     skills_root: &str,

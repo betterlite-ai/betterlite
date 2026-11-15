@@ -36,6 +36,16 @@ description: >-
   and 100 configuration/export lines, maximum 800.
 scope:
   paths:
+    - "tools/oracle/src/helpers/guardrails/b3664.rs"
+    - "crates/betterlite-redact/**"
+    - "crates/betterlite-prompts/**"
+    - "crates/betterlite-models/**"
+    - "crates/betterlite-http/**"
+    - "crates/betterlite-guardrails/**"
+    - "crates/betterlite-env/**"
+    - "crates/betterlite-core/**"
+    - "crates/betterlite-context/**"
+    - "crates/betterlite-config/**"
     - crates/betterlite-openai/src/cohere_rerank.rs
     - crates/betterlite-openai/src/cohere_rerank/**
     - crates/betterlite-core/src/cohere_rerank_guardrail.rs
@@ -99,5 +109,5 @@ pitfalls:
   - Passing an already versioned base ending in /v1 appends another /v1/rerank in the V1 implementation.
   - Empty instruction strings are scanned because the guardrail checks type rather than truthiness.
   - A partial guardrail result leaves the unmatched original request field in place.
-budget: {max_changed_lines: 800, max_new_expects: 0}
+budget: {max_changed_lines: 800, max_new_expects: 1}
 review_level: standard

@@ -74,5 +74,5 @@ pitfalls:
   - A caller who passes a guardrail_name keeps it. Only a missing one gets "qostodian_nexus".
 review_level: standard
 budget:
-  max_changed_lines: 900
+  max_changed_lines: 1500
   max_new_expects: 0

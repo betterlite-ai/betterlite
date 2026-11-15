@@ -1,0 +1,1 @@
+{"status":"completed","usage":{"total_tokens":10,"total_input_tokens":2,"total_output_tokens":8,"input_tokens_by_modality":[{"modality":"audio","tokens":5},{"modality":"Audio","tokens":3},{"modality":"text","tokens":1}]}}

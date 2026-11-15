@@ -25,7 +25,7 @@ use clap::Parser;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
-use tokio::time::{Instant, timeout};
+use tokio::time::{Instant, sleep, timeout};
 use tokio_postgres::{Client, Config, NoTls};
 
 use super::{DatabaseViewsService, OFFLINE_TIMEOUT, offline_views};
@@ -317,7 +317,32 @@ async fn service_deadline_bounds_each_statement() {
     locker.batch_execute("ROLLBACK").await.expect("the unlock");
     drop(locker);
     drop(locker_tasks);
+    wait_for_other_sessions(&database.client).await;
     database.close().await;
+}
+
+// the deadline drops the service's connection, but its server session still runs the blocked CREATE once the lock frees
+async fn wait_for_other_sessions(client: &Client) {
+    let started = Instant::now();
+    loop {
+        let busy: bool = client
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks l JOIN pg_class c ON c.oid = l.relation \
+                 WHERE c.relnamespace = current_schema()::regnamespace AND l.pid <> pg_backend_pid())",
+                &[],
+            )
+            .await
+            .expect("the lock check")
+            .get(0);
+        if !busy {
+            return;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(60),
+            "another session kept a lock in the test schema"
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
 }
 
 #[tokio::test]

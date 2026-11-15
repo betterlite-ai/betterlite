@@ -1,0 +1,12 @@
+kind: helper
+name: rerank-guardrail-fields-seed
+call:
+  rerank_guardrail_fields:
+    calls:
+      - operation: input
+        data: {query: how tall, instruction: rank by height, documents: [tall]}
+        texts: [clean query, clean instruction]
+      - operation: output
+        output: {id: r1, results: [{index: 0, relevance_score: 0.5}]}
+compare: {ignore: []}
+env: {}

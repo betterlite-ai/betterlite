@@ -1,0 +1,16 @@
+kind: helper
+name: gemini-image-policy-exact-size-seed
+call:
+  gemini_image_policy:
+    settings: {}
+    cases:
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {size: 1280x896}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+env: {}
+compare: {ignore: []}

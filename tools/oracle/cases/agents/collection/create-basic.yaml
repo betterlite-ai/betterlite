@@ -1,0 +1,16 @@
+kind: helper
+name: agents-collection-create-basic
+call:
+  b3504:
+    function: create
+    name: demo-agent
+    kwargs: {}
+    extra_headers:
+      x-goog-user-project: demo-project
+    reply:
+      status: 200
+      body:
+        id: demo-agent
+        base_agent: waverunner
+env: {}
+compare: {ignore: []}

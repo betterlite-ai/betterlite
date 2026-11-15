@@ -1,0 +1,23 @@
+kind: helper
+name: headroom-messages-retrieve-ids-openai-mcp-suffix
+call:
+  b3773:
+    function: retrieve_ids
+    messages:
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: call-direct
+            type: function
+            function: {name: headroom_retrieve, arguments: "{}"}
+          - id: call-mcp
+            type: function
+            function: {name: mcp__headroom__headroom_retrieve, arguments: "{}"}
+          - id: call-other
+            type: function
+            function: {name: lookup, arguments: "{}"}
+          - id: ""
+            type: function
+            function: {name: headroom_retrieve, arguments: "{}"}
+env: {}
+compare: {ignore: []}

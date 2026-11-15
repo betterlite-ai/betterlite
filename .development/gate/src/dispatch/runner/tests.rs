@@ -19,6 +19,7 @@ fn every_placeholder_gets_its_own_value() {
     let invocation = Invocation {
         worktree: Path::new("/w"),
         git_common_dir: Path::new("/g"),
+        net: Path::new("/n"),
         home: Path::new("/h"),
         sandbox_settings: Path::new("/z"),
         writable_roots: "[\"/g\"]",

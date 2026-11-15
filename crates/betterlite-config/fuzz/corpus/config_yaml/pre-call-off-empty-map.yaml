@@ -1,0 +1,11 @@
+general_settings:
+  always_include_stream_usage: false
+
+litellm_settings:
+  model_alias_map: {}
+
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: sk-pre-call

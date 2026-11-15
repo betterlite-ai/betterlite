@@ -1,7 +1,7 @@
 id: B3274
 milestone: M5 api families
 title: Search query pricing and provider usage
-status: todo
+status: done
 depends_on: [B2225]
 file: tasks/B3274-search-pricing.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/parallel_ai/search/cost_calculator.py"
 parent: B091
 split_from: B091
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1705

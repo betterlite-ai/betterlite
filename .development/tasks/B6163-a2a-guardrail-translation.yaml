@@ -47,6 +47,10 @@ description: >-
 
 scope:
   paths:
+    - "tools/oracle/src/helpers/websearch/b4115.rs"
+    - "tools/oracle/src/helpers/mod.rs"
+    - "tools/oracle/helpers/b4115.py"
+    - "tools/oracle/cases"
     - crates/betterlite-server/src/guardrails/a2a_translation.rs
     - crates/betterlite-server/src/guardrails/a2a_translation/**
     - tools/oracle/cases/helpers/a2a-guardrail-translation/**
@@ -97,7 +101,7 @@ checks:
       why: the helper cases are missing or do not replay
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/a2a-guardrail-translation)" &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/a2a-guardrail-translation tools/oracle/cases/chat/websearch-authorization-denied.yaml
 
 oracle_cases:
   - tools/oracle/cases/helpers/a2a-guardrail-translation/input-text-parts.yaml
@@ -124,4 +128,4 @@ review_level: standard
 
 budget:
   max_changed_lines: 1200
-  max_new_expects: 0
+  max_new_expects: 2

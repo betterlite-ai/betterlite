@@ -182,4 +182,6 @@ pub fn merge_user_key_metadata(
     }
 }
 
+pub mod cohere_rerank_guardrail;
+
 mod tests;

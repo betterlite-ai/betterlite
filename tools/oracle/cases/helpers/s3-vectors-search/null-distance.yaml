@@ -1,0 +1,18 @@
+kind: helper
+name: null_distance
+call:
+  b7812:
+    calls:
+      - call: response
+        input:
+          status: 200
+          headers: {}
+          query: q
+          body: >-
+            {"vectors": [
+              {"distance": null, "metadata": {"source_text": "null distance"}},
+              {"metadata": {"source_text": "no distance"}},
+              {"distance": 0.5, "metadata": {"source_text": "with distance"}}
+            ]}
+env: {}
+compare: {ignore: []}

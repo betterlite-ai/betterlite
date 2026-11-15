@@ -1,0 +1,28 @@
+kind: helper
+name: realtime-guardrail-transcription-selection
+call:
+  realtime_guardrail_policy:
+    function: transcription_guardrail_selection
+    scenarios:
+      - callbacks:
+          - {custom: true, runs_for: [pre_call]}
+          - {custom: true, runs_for: [post_call]}
+          - {custom: true, runs_for: [realtime_input_transcription]}
+          - {custom: false, runs_for: [pre_call, post_call, realtime_input_transcription]}
+        request_data: {model: gpt-4, metadata: {tags: [release]}}
+        event_hooks: [pre_call, post_call, realtime_input_transcription]
+      - callbacks:
+          - {custom: true, runs_for: [pre_call, post_call]}
+          - {custom: true, runs_for: [pre_call, post_call, realtime_input_transcription]}
+        request_data: {model: gpt-4}
+        event_hooks: [pre_call, post_call, realtime_input_transcription]
+      - callbacks:
+          - {custom: true, runs_for: []}
+        request_data: {model: gpt-4}
+        event_hooks: [realtime_input_transcription]
+      - callbacks:
+          - {custom: true, runs_for: [realtime_input_transcription]}
+        request_data: {model: gpt-4}
+        event_hooks: []
+env: {}
+compare: {ignore: []}

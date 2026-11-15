@@ -1,0 +1,5 @@
+task: B853
+deviations:
+  - what: The conversion stops at the first failing statement and rolls the open transaction back. Running LiteLLM's script through psql without ON_ERROR_STOP carries on after a failed statement, so its trailing COMMIT can commit a half-converted schema.
+    why: B853 requires every change to roll back on error, so a failed conversion never leaves the tables renamed with the new canonical table missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/partition_spend_logs.sql#L37

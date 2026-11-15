@@ -1,0 +1,9 @@
+kind: helper
+name: language-config-empty
+call:
+  vertex_gemini_transcription:
+    steps:
+      - {step: request, content: audio, language: null}
+      - {step: request, content: audio, language: ''}
+env: {}
+compare: {ignore: []}

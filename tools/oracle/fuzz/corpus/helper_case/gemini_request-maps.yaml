@@ -1,0 +1,18 @@
+kind: helper
+name: gemini-request-maps
+call:
+  gemini_request:
+    model: gemini-2.5-pro
+    provider: gemini
+    supports: {system_message: true, response_schema: true}
+    modify_params: true
+    messages:
+      - {role: user, content: "weather in Paris?"}
+    optional_params:
+      response_mime_type: application/json
+      response_schema: {type: object}
+      extra_body:
+        tools: [{googleMaps: {}}]
+    litellm_params: {}
+env: {}
+compare: {ignore: []}

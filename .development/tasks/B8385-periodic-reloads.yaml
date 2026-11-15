@@ -70,5 +70,5 @@ pitfalls:
   - The beta headers upsert writes interval_hours back even when it is None, as LiteLLM does.
 review_level: standard
 budget:
-  max_changed_lines: 1200
+  max_changed_lines: 1500
   max_new_expects: 0

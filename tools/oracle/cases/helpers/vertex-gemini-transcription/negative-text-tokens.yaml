@@ -1,0 +1,15 @@
+kind: helper
+name: negative-text-tokens
+call:
+  vertex_gemini_transcription:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"candidates":[],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":5,"totalTokenCount":9,"promptTokensDetails":[{"modality":"AUDIO","tokenCount":7}]}}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"candidates":[],"usageMetadata":{"promptTokenCount":-4,"candidatesTokenCount":-1,"totalTokenCount":-5,"promptTokensDetails":[{"modality":"AUDIO","tokenCount":6}]}}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: corpus
+call:
+  scim_user_values:
+    user:
+      schemas:
+        - urn:ietf:params:scim:schemas:core:2.0:User
+      userName: corpus
+      emails:
+        - value: corpus@example.com
+    admin_group: corpus-admins
+    default_role: null
+    active: null
+env: {}
+compare:
+  ignore: []

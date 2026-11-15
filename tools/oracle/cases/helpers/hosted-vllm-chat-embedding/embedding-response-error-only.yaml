@@ -1,0 +1,9 @@
+kind: helper
+name: hosted-vllm-embedding-response-error-only
+call:
+  b8150:
+    function: "embedding_response"
+    calls:
+      - body: '{"error": {"message": "boom"}}'
+env: {}
+compare: {ignore: []}

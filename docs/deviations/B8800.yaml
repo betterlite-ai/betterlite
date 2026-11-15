@@ -1,0 +1,8 @@
+task: B8800
+deviations:
+  - what: The collaborators LiteLLM imports from proxy_server (the router, ProxyLogging, the prisma client and the key cache) sit behind the ports in ports.rs.
+    why: betterlite wires dependencies through constructors; B8802 fills the ports from shared server state, and what a client sees is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L1918
+  - what: The proxy CLI user_temperature, user_max_tokens, user_request_timeout and user_api_base values come in as CliOverrides, and the betterlite binary has no such flags, so they stay unset.
+    why: These are proxy_cli.py options; betterlite's CLI does not take them, and an unset value is LiteLLM's default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L767-L775

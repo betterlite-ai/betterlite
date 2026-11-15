@@ -6,11 +6,13 @@ use std::sync::Arc;
 use betterlite_db_admin::command_shell::{
     AdminEnvironment, DbAdminBackend, DbAdminService, Diagnostics as _, Streams, run,
 };
-use betterlite_db_admin::commands::{DAILY_TOOL_SPEND_KEY, Operation};
+use betterlite_db_admin::commands::{DAILY_TOOL_SPEND_KEY, Operation, VERIFICATION_TOKENS_KEY};
 use tokio::runtime::Builder;
 
+use crate::database_repair::DatabaseRepairService;
 use crate::database_views::{DatabaseViewsService, OFFLINE_TIMEOUT};
 use crate::spend_backfills::SpendBackfillsService;
+use crate::spend_partitions::SpendPartitionsService;
 
 mod database_repair;
 mod database_startup;
@@ -36,6 +38,18 @@ fn backend() -> DbAdminBackend {
     backend
         .services
         .insert(Operation::KeyTotalSpendFromLogs, backfills);
+    let partitions: Arc<dyn DbAdminService> = Arc::new(SpendPartitionsService);
+    backend
+        .services
+        .insert(Operation::PartitionSpendLogs, Arc::clone(&partitions));
+    backend
+        .services
+        .insert(Operation::UnpartitionSpendLogs, partitions);
+    let repair: Arc<dyn DbAdminService> = Arc::new(DatabaseRepairService);
+    backend
+        .services
+        .insert(Operation::UpdateUnassignedTeams, Arc::clone(&repair));
+    backend.services.insert(VERIFICATION_TOKENS_KEY, repair);
     backend
 }
 

@@ -1,0 +1,14 @@
+task: B3060
+deviations:
+  - what: FOCUS and CloudZero live in separate modules under betterlite-db::finops, mirroring LiteLLM's separate classes in separate files.
+    why: Limit validation differs (FOCUS rejects negative values, CloudZero passes them to the database) and organization joins are FOCUS-only; separate modules make the differences explicit and testable.
+    link: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations
+  - what: spend is selected as dus.spend::numeric and decoded into a Decimal, so a returned row carries the exact decimal amount where LiteLLM selects float8 and gets a Polars float column. CloudZero's select changes the same way (litellm/integrations/cloudzero/database.py L62).
+    why: betterlite reads money as Decimal everywhere, and the row writes it as an exact JSON number token; a float column cannot keep the stored decimal digits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/database.py#L72
+  - what: A missing database connection returns DbError::NoDbConnected instead of RuntimeError("Database not connected. Connect a database to your proxy - ...") on FOCUS and Exception(...) on CloudZero (litellm/integrations/cloudzero/database.py L35-L38).
+    why: betterlite reports an unconfigured pool through B700's typed DbError; a working LiteLLM setup always has a Prisma client, so no caller relies on the exception type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/database.py#L18-L21
+  - what: 'Query and alias-recovery failures return typed FocusUsageError and CloudZeroUsageError variants instead of RuntimeError/Exception("Error retrieving usage data: ...").'
+    why: 'Errors are typed thiserror enums in betterlite; wrapping them in a message loses the variant a caller matches on. CloudZero''s wrapper is at litellm/integrations/cloudzero/database.py L111.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/database.py#L112-L113

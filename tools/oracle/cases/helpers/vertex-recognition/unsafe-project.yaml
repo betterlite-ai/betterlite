@@ -1,0 +1,11 @@
+kind: helper
+name: unsafe-project
+call:
+  vertex_recognition:
+    steps:
+      - {step: url, api_base: null, location: null, project: bad/project}
+      - {step: url, api_base: null, location: null, project: '..'}
+      - {step: url, api_base: null, location: null, project: bad project}
+      - {step: url, api_base: 'https://proxy.example', location: null, project: 'bad:project'}
+env: {}
+compare: {ignore: []}

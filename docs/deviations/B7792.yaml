@@ -1,0 +1,36 @@
+task: B7792
+deviations:
+  - what: >-
+      Request-only mode returns betterlite's Request dataclass, not a requests.Request, and failures are
+      betterlite.proxy.client.HTTPError or RequestError, not the requests exceptions.
+    why: >-
+      The wheel depends on python-dotenv and pydantic only, so requests is not there. A script that catches the requests
+      classes must catch these instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/models.py#L52-L67
+  - what: >-
+      Every optional argument is keyword-only: return_request on the models methods, model_info on new and update, the
+      filters and paging of teams list_v2, and the completion options of ChatClient. LiteLLM also accepts each
+      positionally.
+    why: >-
+      ruff's FBT001 and FBT002 forbid positional booleans, and the wide signatures of completions and list_v2 pass
+      PLR0913 only through an unpacked TypedDict. A caller that relies on positional options must name them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/chat.py#L37-L49
+  - what: >-
+      The models list and info methods raise RequestError when the reply is not an object whose data field is a list.
+    why: >-
+      LiteLLM indexes the reply as a dict and raises KeyError or TypeError there. betterlite names the field in a typed
+      error, and the case is outside the declared types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/models.py#L240
+  - what: >-
+      ModelsManagementClient.get matches reply entries with mapping patterns instead of LiteLLM's assert isinstance
+      checks; an entry that is not an object, or whose model_info is not an object, is skipped rather than raising
+      AttributeError.
+    why: >-
+      The repository's Python rules forbid isinstance, and a skip keeps the not-found behavior for every entry the
+      declared type reaches. The isinstance asserts only narrow LiteLLM's checker.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/models.py#L180-L212
+  - what: This task has no helper oracle cases.
+    why: >-
+      The pytest file imports both clients and compares them against one recording server, and helper cases speak to
+      Rust functions only.
+    link: ""

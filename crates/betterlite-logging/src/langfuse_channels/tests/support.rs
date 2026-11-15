@@ -253,7 +253,7 @@ pub(super) async fn wait_until<F>(check: F)
 where
     F: Fn() -> bool,
 {
-    for _ in 0..600_u32 {
+    for _ in 0..6_000_u32 {
         if check() {
             return;
         }

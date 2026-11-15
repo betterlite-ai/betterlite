@@ -230,3 +230,45 @@ path = "fuzz_targets/messages_sse_events.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "deepgram_transcript"
+path = "fuzz_targets/deepgram_transcript.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "genai_sse"
+path = "fuzz_targets/genai_sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "eleven_transcript"
+path = "fuzz_targets/eleven_transcript.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nimble_reply"
+path = "fuzz_targets/nimble_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parallel_ai_reply"
+path = "fuzz_targets/parallel_ai_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "transcription_protocol"
+path = "fuzz_targets/transcription_protocol.rs"
+test = false
+doc = false
+bench = false

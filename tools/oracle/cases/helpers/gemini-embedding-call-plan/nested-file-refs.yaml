@@ -1,0 +1,15 @@
+kind: helper
+name: gemini-embedding-call-plan-nested-file-refs
+call:
+  gemini_embedding_call_plan:
+    inputs:
+    - - alpha
+      - - files/abc
+        - beta
+      - files/def
+    - - - files/one
+        - files/two
+    - files/solo
+compare:
+  ignore: []
+env: {}

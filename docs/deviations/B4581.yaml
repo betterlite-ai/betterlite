@@ -1,0 +1,115 @@
+task: B4581
+deviations:
+  - what: >-
+      When both --data and --json are given to http request, betterlite always sends --json's
+      value and ignores --data, instead of requests' own rule (a truthy data value wins over
+      json, but an empty-string data value doesn't, since requests checks "if not data").
+    why: >-
+      That precedence is an accident of the requests library's own body-encoding branch, not
+      something LiteLLM declares, and nothing sends both flags on one call on purpose; one
+      deterministic rule beats porting a Python truthiness check docs/compatibility.md already
+      puts outside the contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L76-L91
+  - what: >-
+      chat's welcome message, help text and history view print as plain lines: the wording, the
+      listed commands and the order stay chat.py's, but the color, the box border around the
+      welcome and help panels, and rich's inline markup are gone, and the Available Models
+      table is drawn with comfy-table instead of rich's Table.
+    why: >-
+      Matches the plain, uncolored convention this family's other tables already use (B4579,
+      B4580); nothing a person reads depends on color or a box border, and chat has no
+      --format json escape hatch the way the table commands do, so the content itself is
+      unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L174-L184
+  - what: >-
+      Ctrl+C has no handling anywhere in chat: it ends the process through the OS's default
+      SIGINT action at the per-turn prompt and during a streamed reply alike, instead of
+      printing "Chat session ended." or "Chat session interrupted." and returning normally.
+      Reaching end of input still ends the session with "Chat session ended." and a normal
+      exit, since that needs no signal handling.
+    why: >-
+      Both of chat.py's Ctrl+C messages exist only because Python's default signal handler
+      turns SIGINT into a raised exception that console.input() and the chat loop already
+      catch; Rust installs no such handler by default. Trapping a real OS signal around an
+      interactive-only command isn't wire format, a header, a status code or a config default
+      a script depends on, and the injected terminal port already covers the one case that
+      doesn't need a signal (end of input) through its own return value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L189-L193
+  - what: >-
+      A parsed --data value is sent as a JSON body with Content-Type application/json. requests
+      form-encodes a dict or a list of pairs passed as data and raises TypeError for a parsed
+      number or bool, so LiteLLM's own command sends "a=1" for -d '{"a":1}' and crashes on
+      -d '123'.
+    why: >-
+      The task fixes the behavior: --data is tried as JSON first and sent as that value when it
+      parses, never as a form and never with an error. The command's help text calls --data a
+      JSON string, and a caller who types JSON expects a JSON body; a working setup that sends a
+      JSON object through --data today gets a form body only by relying on requests' encoding
+      accident.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L83-L90
+  - what: >-
+      "/load" with no file name prints "Usage: /load <filename>" and leaves the conversation
+      history untouched. LiteLLM's _load_conversation returns an empty list for that usage error,
+      and _handle_special_commands hands it back to the loop, so the whole history and the system
+      message disappear.
+    why: >-
+      Rule owned-behavior-is-built fixes lost data without asking: a mistyped /load wipes a
+      conversation a person may have had for a long session, and no working setup relies on that
+      wipe. /save's usage error already does nothing, and the task requires a usage error to
+      leave the history alone.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L314-L316
+  - what: >-
+      The streamed chat request goes through betterlite-http's ProxiedClient::execute with no
+      request-level timeout, bounded by a 600-second tokio timeout on the response head and on
+      each body chunk, while the pooled client's own 10-second connect timeout and 100-minute
+      per-read timeout still apply. requests applies ChatClient's timeout=600 to the connect and
+      to each socket read.
+    why: >-
+      deny.toml lets only betterlite-http, betterlite-oracle and betterlite-guardrails depend on
+      reqwest, and StreamResponse cannot be built outside betterlite-http because its lease field
+      is crate-private, so the CLI reads the same reqwest response through its chunk method. The
+      head and each chunk still wait at most 600 seconds; only a connect that needs more than
+      betterlite-http's fixed 10 seconds fails where requests would have waited.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/chat.py#L167-L169
+  - what: >-
+      A stream line that never reaches a newline is capped at 16 MiB and ends the turn with
+      betterlite's own error instead of being buffered without a bound.
+    why: >-
+      Rule bounded-inputs caps everything allocated in proportion to untrusted input; a provider
+      that streams a line without a newline would otherwise grow the CLI's buffer until the
+      process dies. A working SSE stream never sends a 16 MiB line, since each line is one JSON
+      chunk of a completion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/chat.py#L173
+  - what: >-
+      A stream error body that is not valid UTF-8 prints "the error body is not valid UTF-8"
+      instead of the body text, and a body that parses as JSON but is not an object (an array, a
+      string, a number) prints "Unknown error" instead of raising. requests decodes the body's
+      text with replacement characters, and chat.py's error branch crashes with an
+      AttributeError when the parsed body has no dict-like get.
+    why: >-
+      docs/compatibility.md keeps requests' text decoding out of the contract and betterlite
+      refuses bytes that are not UTF-8; the JSON case follows the task's rule that a body that
+      parses but has no error.message prints "Unknown error". A proxy answering an HTTP error
+      with a JSON array is not something a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L408-L414
+  - what: >-
+      Chat's stream error lines print on stderr: the transport or decode error text, and an HTTP
+      status with its message on two lines ("Error: HTTP 401" then the detail). chat.py prints
+      them through rich's Console to stdout, with a leading blank line before "Error: HTTP ...".
+    why: >-
+      Every other command in this CLI writes errors to stderr (the http command's click.echo(...,
+      err=True) and the B4579, B4580 table commands), and a person running chat in a terminal
+      sees both streams. A script that captures chat's stdout gets the conversation without the
+      error text, which is the improvement, not a loss; interactive chat output is for a person
+      to read and no working setup parses it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L408-L417
+  - what: >-
+      The reply text chat collects from the stream is capped at 64 MiB; a longer reply ends the
+      turn with "Error: the streamed reply is larger than 67108864 bytes" instead of growing the
+      collected string without a bound.
+    why: >-
+      Rule bounded-inputs caps everything allocated in proportion to untrusted input. chat.py
+      appends every delta to one string for the whole reply. A working model reply never reaches
+      64 MiB of text, which is larger than the proxy's own buffered body limit, and the failure
+      prints an error the session survives rather than killing the process.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L401

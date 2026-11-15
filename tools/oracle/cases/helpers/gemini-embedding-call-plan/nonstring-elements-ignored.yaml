@@ -1,0 +1,16 @@
+kind: helper
+name: gemini-embedding-call-plan-nonstring-elements-ignored
+call:
+  gemini_embedding_call_plan:
+    inputs:
+    - - 1
+      - 2
+      - 3
+    - - - 1
+        - 2
+      - - 3
+    - - - 4
+        - 5
+compare:
+  ignore: []
+env: {}

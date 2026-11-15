@@ -1,0 +1,1 @@
+{"modelId":"cohere.command-r","modelVersion":"1.0","chatResponse":{"text":"hi","apiFormat":"COHERE","finishReason":"COMPLETE","usage":{"promptTokens":1,"completionTokens":1,"totalTokens":2}}}

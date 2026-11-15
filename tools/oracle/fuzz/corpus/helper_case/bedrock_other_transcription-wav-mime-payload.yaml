@@ -1,0 +1,31 @@
+kind: helper
+name: bedrock-other-transcription-wav-mime-payload
+call:
+  bedrock_other_transcription:
+    calls:
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: bytes, content: RIFF}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: clip.wav, content: RIFF}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: CLIP.WAV, content: "héllo"}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: bytes, content: ""}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+env: {}
+compare: {ignore: []}

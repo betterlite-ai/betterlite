@@ -1,0 +1,23 @@
+kind: helper
+name: last-word-missing-end
+call:
+  studio_transcription:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[{"content":[{"type":"text","text":"a b","annotations":[{"type":"word_info","text":"a","end_offset":"5s"},{"type":"word_info","text":"b","start_offset":"600ms"}]}]}]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[{"content":[{"type":"text","text":"a b","annotations":[{"type":"word_info","text":"a","end_offset":"5s"},{"type":"word_info","text":"b","end_offset":"2s"}]}]}]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[{"content":[{"type":"text","text":"a b c","annotations":[{"type":"word_info","text":"a","end_offset":"5s"},{"type":"word_info","text":"b","end_offset":"2s"},{"type":"word_info","text":"c","start_offset":"1s"}]}]}]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[{"content":[{"type":"image","annotations":[{"type":"word_info","text":"lost","end_offset":"4s"}]},{"type":"text","text":"plain"}]}]}'
+env: {}
+compare: {ignore: []}

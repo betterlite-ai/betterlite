@@ -1,0 +1,37 @@
+kind: helper
+name: snowflake-claude-response
+call:
+  b5844:
+    steps:
+      - kind: response
+        model: claude-3-5-sonnet
+        body: '{"id":"msg_01","type":"message","role":"assistant","model":"claude-3-5-sonnet","content":[{"type":"text","text":"Hello there"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}'
+        request_data: {model: claude-3-5-sonnet, messages: [{role: user, content: hi}], max_tokens: 4096}
+        messages: [{role: user, content: hi}]
+      - kind: response
+        model: snowflake/claude-3-5-sonnet
+        body: '{"id":"msg_02","type":"message","role":"assistant","model":"claude-3-5-sonnet","content":[{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{}}],"stop_reason":"tool_use","usage":{"input_tokens":20,"output_tokens":8}}'
+        request_data: {model: claude-3-5-sonnet, messages: [{role: user, content: weather?}]}
+        messages: [{role: user, content: weather?}]
+      - kind: response
+        model: claude-3-5-sonnet
+        body: '{"id":"msg_03","type":"message","role":"assistant","model":"claude-3-5-sonnet","content":[{"type":"text","text":"cut"}],"stop_reason":"max_tokens","usage":{"input_tokens":3,"output_tokens":4}}'
+        request_data: {}
+        messages: []
+      - kind: response
+        model: claude-3-5-sonnet
+        body: '{"id":"msg_04","type":"message","role":"assistant","model":"claude-3-5-sonnet","content":[{"type":"text","text":"stopped"}],"stop_reason":"stop_sequence","usage":{"input_tokens":3,"output_tokens":4}}'
+        request_data: {}
+        messages: []
+      - kind: response
+        model: claude-3-5-sonnet
+        body: '{"type":"message","role":"assistant","content":[{"type":"text","text":"no id, model or stop reason"}],"usage":{"input_tokens":1,"output_tokens":2}}'
+        request_data: {}
+        messages: []
+      - kind: response
+        model: claude-3-5-sonnet
+        body: '{"id":"msg_06","type":"message","role":"assistant","model":"claude-3-5-sonnet","content":[{"type":"text","text":"cached"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":3,"cache_read_input_tokens":2}}'
+        request_data: {}
+        messages: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: plan-pdf-document-block
+call:
+  b3733:
+    function: plan_file_scans
+    messages:
+      - role: user
+        content:
+          - type: document
+            source:
+              data: cGRmLWJ5dGVz
+              media_type: application/pdf
+      - role: user
+        content:
+          - type: document
+            source:
+              data: cGxhaW4gdGV4dA==
+              media_type: "text/plain; charset=utf-8"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+task: B8150
+deviations:
+  - what: A hosted_vllm embeddings reply whose model is missing or null ends in a typed Shape error.
+    why: LiteLLM assigns the model only when the key is present, so such a reply carries model null. betterlite's embedding response type declares model as a string and refuses the reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L764-L765
+  - what: An assistant tool_use content block whose id or name is missing, null or not a string ends in a typed PartString error.
+    why: LiteLLM builds the tool call with id=c.get("id") and name=c.get("name") and forwards null for either. betterlite requires both to be strings, since a tool call with a null id or name cannot be sent back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/chat/transformation.py#L186-L189
+  - what: A file content block with a video format but no file_id or file_data ends in a typed MissingVideoSource error.
+    why: LiteLLM raises a bare ValueError when neither source is present, which reaches the caller as HTTP 500. betterlite refuses the request with a typed error instead, so the caller gets a refusal rather than a server fault.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/chat/transformation.py#L143
+  - what: An error object inside a 2xx embeddings reply with a code that is not a u16 integer reports status 422.
+    why: LiteLLM copies the raw code onto the raised exception, so a null or string code becomes a status that is not a status code. betterlite types the status as u16 and keeps 422 as the rule's fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L606-L607

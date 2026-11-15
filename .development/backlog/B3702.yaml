@@ -1,14 +1,14 @@
 id: B3702
 milestone: M6 guardrails
 title: Code execution guardrail lifecycle and registration
-status: todo
+status: done
 depends_on: [B3690, B3701, B189, B3667, B002]
 file: tasks/B3702-code-execution-guardrail.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/block_code_execution/{__init__.py,block_code_execution.py}"
 parent: B105
 split_from: B105
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1588

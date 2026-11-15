@@ -92,7 +92,7 @@ async fn a_new_token_is_sent_after_the_refresh_interval() {
         .expect("a direct connection");
     client.query::<String>(&cmd("PING")).await.expect("a reply");
     let deadline = Instant::now()
-        .checked_add(Duration::from_secs(2))
+        .checked_add(Duration::from_secs(30))
         .expect("a deadline");
     let mut auth = server.commands_named("AUTH");
     while !auth

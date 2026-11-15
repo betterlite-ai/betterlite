@@ -1,0 +1,37 @@
+kind: helper
+name: rerank-request
+call:
+  b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map: []
+    chat_messages: []
+    completion: []
+    rerank_requests:
+    - model: together/reranker
+      query: which one
+      documents:
+      - one
+      - {text: two}
+      top_n: 2
+      rank_fields: [title, body]
+      api_key: sk-together
+      api_base: https://api.together.ai/v1
+    - model: together/reranker
+      query: which one
+      documents: [one]
+      return_documents: false
+      api_key: sk-together
+      api_base: https://api.together.ai/v1/
+    - model: together/reranker
+      query: which one
+      documents: [one]
+      return_documents: null
+      api_key: sk-together
+      api_base: https://api.together.ai/v1///
+    rerank_responses: []
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []

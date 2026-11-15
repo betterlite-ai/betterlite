@@ -1,0 +1,23 @@
+kind: helper
+name: sanitize-url-and-bodies
+call:
+  b3733:
+    function: sanitize_request
+    template_id: template-1
+    project_id: null
+    location: null
+    api_endpoint: null
+    resolved_project_id: resolved-9
+    access_token: oracle-token
+    requests:
+      - source: user_prompt
+        content: hello
+        file: null
+      - source: model_response
+        content: ""
+        file: null
+      - source: user_prompt
+        content: null
+        file: {bytes_b64: cGRmLWJ5dGVz, byte_data_type: PDF}
+env: {}
+compare: {ignore: []}

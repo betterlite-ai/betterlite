@@ -1,0 +1,20 @@
+kind: helper
+name: snowflake-stream-chunks-seed
+call:
+  b5844:
+    steps:
+      - {kind: chunk, chunk: {choices: [{index: 0, delta: {content: Hi}, finish_reason: null}]}}
+      - {kind: chunk, chunk: {choices: [{index: 0, delta: {tool_calls: [{id: call_1, index: 2, type: function, function: {name: f, arguments: '{"a"'}}]}, finish_reason: null}]}}
+      - {kind: chunk, chunk: {choices: [{index: 0, delta: {}, finish_reason: stop}]}}
+      - {kind: chunk, chunk: {choices: []}}
+      - {kind: chunk, chunk: {choices: [{index: 3, finish_reason: length}]}}
+      - {kind: chunk, chunk: {choices: [{delta: {tool_calls: [{index: 1}]}}]}}
+      - {kind: chunk, chunk: {choices: [{index: 0, delta: {content: null, tool_calls: []}, finish_reason: ''}]}}
+      - {kind: chunk, chunk: {choices: [{index: 1, delta: {content: ''}, finish_reason: tool_calls}]}}
+      - {kind: event, chunk: {type: content_block_delta, index: 0, delta: {type: text_delta, text: Hel}}}
+      - {kind: event, chunk: {type: content_block_delta, index: 0, delta: {type: text_delta, text: lo}}}
+      - {kind: event, chunk: {type: content_block_start, index: 1, content_block: {type: tool_use, id: toolu_1, name: get_weather, input: {}}}}
+      - {kind: event, chunk: {type: content_block_delta, index: 1, delta: {type: input_json_delta, partial_json: '{"city":'}}}
+      - {kind: event, chunk: {type: message_delta, delta: {stop_reason: end_turn, stop_sequence: null}, usage: {input_tokens: 10, output_tokens: 7}}}
+env: {}
+compare: {ignore: []}

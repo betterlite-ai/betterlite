@@ -1,0 +1,19 @@
+kind: helper
+name: empty-text-spacing
+call:
+  studio_transcription:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[{"content":[{"type":"text","text":"hello"},{"type":"image","text":"ignored"},{"type":"text","text":null}]},{"content":[{"type":"text","text":""},{"type":"text","text":"world"}]}]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[{"content":[{"type":"text","text":""}]}]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"status":"completed","steps":[{"content":[{"type":"text","text":""},{"type":"text","text":""}]}]}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+task: B4501
+deviations:
+  - what: Row validation uses serde JSON decoding of the data column as text instead of Pydantic TypeAdapter.model_validate_python over a JsonValue; behavior is equivalent.
+    why: Rust uses serde and the shared lens record decoder instead of Pydantic, so the same stored-record validation happens at the database boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L20
+  - what: WriterDatabase holds a writer session (any deadpool GenericClient) instead of PrismaWrapper; the session is the betterlite equivalent providing raw query and execute.
+    why: B714 supplies the writer-pinned client and betterlite replaces Prisma's ORM layer with tokio-postgres; raw SQL writes never fall back to a replica.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L168-L176
+  - what: Monetary amounts in Worker and Job records use rust_decimal::Decimal instead of Python float.
+    why: Budgets and costs must remain precise across persistence and calculations; Decimal avoids float accumulation errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L45

@@ -1,9 +1,8 @@
-use std::collections::BTreeMap;
-use std::env;
 use std::io;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
@@ -54,20 +53,4 @@ fn main() -> ExitCode {
         }
     };
     runtime.block_on(worker.run_forever())
-}
-
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the binary is where the process environment enters, and every variable is handed to the settings and the proxy policy"
-)]
-fn process_environment() -> BTreeMap<String, String> {
-    let mut environment = BTreeMap::new();
-    for (raw_name, raw_value) in env::vars_os() {
-        let (Ok(name), Ok(value)) = (raw_name.into_string(), raw_value.into_string()) else {
-            tracing::warn!("an environment variable is not UTF-8 and is ignored");
-            continue;
-        };
-        environment.insert(name, value);
-    }
-    environment
 }

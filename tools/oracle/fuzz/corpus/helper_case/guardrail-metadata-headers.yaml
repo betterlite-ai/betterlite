@@ -1,0 +1,6 @@
+kind: helper
+name: guardrail-metadata-headers-seed
+call:
+  b8994: {"function": "headers", "request_data": {"metadata": {"applied_guardrails": [], "guardrail_scan_ids": ["scan-1"], "guardrail_scan_metadata": [{"guardrail": null, "stage": "post_call", "provider": "openai_moderation", "scan_id": "scan-1"}]}}}
+env: {}
+compare: {ignore: []}

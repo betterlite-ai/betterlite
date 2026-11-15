@@ -11,6 +11,8 @@ description: >-
   `CacheTokenBuckets` to `CachePredictionResponse`. `prompt_caching_requests.py` has the request, cursor and response models.
 scope:
   paths:
+  - "crates/betterlite-python/python/betterlite/types/management_endpoints/__init__.py"
+  - "crates/betterlite-python/python/betterlite/types/management_endpoints"
   - crates/betterlite-python/python/betterlite/types/management_endpoints/auto_router_endpoints.py
   - crates/betterlite-python/python/betterlite/types/management_endpoints/prompt_cache_prediction.py
   - crates/betterlite-python/python/betterlite/types/management_endpoints/prompt_caching_requests.py

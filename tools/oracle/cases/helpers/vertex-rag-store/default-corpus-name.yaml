@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-rag-store-default-corpus-name
+call:
+  vertex_rag_store:
+    calls:
+      - function: create_request
+        api_base: https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1
+        optional_params: {}
+      - function: create_request
+        api_base: https://host/v1
+        optional_params: {name: named-corpus}
+env: {}
+compare: {ignore: []}

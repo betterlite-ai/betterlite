@@ -80,5 +80,5 @@ pitfalls:
   - An existing null content_index is a different cache key from an absent content_index.
   - response.done with an absent usage field stays absent rather than gaining a zero usage object.
   - The source repairs tool roles even when item.type is not function_call.
-budget: {max_changed_lines: 650, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: standard

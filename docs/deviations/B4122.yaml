@@ -1,0 +1,23 @@
+task: B4122
+deviations:
+  - what: async_pre_call_deployment_hook strips metadata at root agentic depth (when _agentic_loop_depth is falsy), not on every call; subsequent iterations preserve previous metadata.
+    why: Metadata markers must not leak between agentic-loop iterations, but root requests start with clean state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L262-L265
+  - what: Session-scoped sandbox keys use identity:session_id when identity is present (non-empty user_api_key_hash), session_id alone when identity is empty, and uuid for request scope.
+    why: Billing attribution ties sandbox lifecycle to user keys when available; anonymous requests get request-scoped sandboxes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L285-L291
+  - what: enabled_providers filter is checked both in the pre-call hook and the gate decision; absent field means no provider filtering.
+    why: Early exit in pre-call saves work rewriting tools; gate re-checks to handle manual override scenarios.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L275-L276,#L413-L414
+  - what: Plan builders delete the container on any exception (Exception, not a specific subtype), re-raising after delete so the exception reaches the caller.
+    why: Container cleanup must happen unconditionally to avoid resource leak and orphaned sandboxes; errors propagate up for caller handling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L487-L489,#L540-L542
+  - what: Responses plan builds the input_list with function_call (model call) then function_call_output (result) for each tool call, preserving sequential order even with multiple calls.
+    why: Models expect call/output pairing in conversation order; separate lists would lose causality.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L456-L486
+  - what: Chat Completions plan builds an assistant message before tool result messages, reconstructing the conversation shape from function_call fragments.
+    why: Chat API expects role=assistant with nested tool calls before role=tool messages; the fragments carry partial IDs that must be reconstructed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L548-L556
+  - what: A code_interpreter_interception_params entry that is present but null falls back to the callback-specific entry or the default config instead of raising AttributeError inside from_config_yaml.
+    why: LiteLLM only relies on the mapping shape of that entry; a null entry is a configuration mistake it crashes on, and betterlite reads null as absent per docs/compatibility.md.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L246-L257

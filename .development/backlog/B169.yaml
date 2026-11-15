@@ -1,7 +1,7 @@
 id: B169
 milestone: M12 python
 title: Python client for the proxy's management API
-status: todo
+status: done
 depends_on: [B7790, B7791, B7792]
 file: tasks/B169-proxy-client.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/client/README.md"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1845

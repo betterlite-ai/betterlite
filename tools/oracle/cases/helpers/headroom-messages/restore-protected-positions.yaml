@@ -1,0 +1,15 @@
+kind: helper
+name: headroom-messages-restore-protected-positions
+call:
+  b3773:
+    function: restore_protected
+    messages:
+      - {role: system, content: system prompt}
+      - {role: user, content: first}
+      - {role: assistant, content: reply}
+      - {role: user, content: last}
+    compressed:
+      - {role: user, content: compressed first}
+    protected: [0, 2, 3]
+env: {}
+compare: {ignore: []}

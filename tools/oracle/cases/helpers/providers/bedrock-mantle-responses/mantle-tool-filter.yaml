@@ -1,0 +1,34 @@
+kind: helper
+name: mantle-tool-filter
+call:
+  bedrock_mantle_responses:
+    mantle_tool_filter:
+      cases:
+        - model: openai.gpt-oss-120b
+          params:
+            tools:
+              - {type: function, name: kept}
+              - {type: web_search_preview}
+              - {type: mcp}
+              - {type: custom}
+        - model: openai.gpt-oss-120b
+          params: {tools: []}
+        - model: openai.gpt-oss-120b
+          params: {tools: null}
+        - model: openai.gpt-oss-120b
+          params: {tools: 0}
+        - model: openai.gpt-oss-120b
+          params: {tools: {type: function, name: one}}
+        - model: openai.gpt-oss-120b
+          params: {tools: {type: code_interpreter}}
+        - model: openai.gpt-oss-120b
+          params:
+            tools:
+              - {type: code_interpreter}
+              - {type: file_search}
+        - model: openai.gpt-oss-120b
+          params:
+            tools:
+              - {name: typeless}
+env: {}
+compare: {ignore: []}

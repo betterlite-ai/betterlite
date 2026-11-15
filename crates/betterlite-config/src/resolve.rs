@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
@@ -74,6 +75,14 @@ pub(super) fn parse_integer(text: &str, path: &str) -> Result<u32, ConfigError> 
             source,
         }),
     }
+}
+
+pub(super) fn parse_money(text: &str, path: &str) -> Result<Decimal, ConfigError> {
+    text.parse::<Decimal>()
+        .map_err(|_source| ConfigError::InvalidScalar {
+            path: path.to_owned(),
+            value: false,
+        })
 }
 
 pub(super) fn resolve_number<T, F>(

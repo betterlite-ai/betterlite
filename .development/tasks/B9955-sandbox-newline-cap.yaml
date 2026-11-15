@@ -1,0 +1,59 @@
+id: B9955
+title: Sandbox output cap counts every line's newline
+description: >-
+  read_capped_lines in crates/betterlite-models/src/sandbox.rs reads a sandbox's output line by line and stops with
+  SandboxOutputError::Exceeded once the lines pass SANDBOX_MAX_OUTPUT_BYTES (10 MiB). finish_line adds only each
+  line's UTF-8 length to the total, as LiteLLM's _read_capped_lines does. An empty line adds 0 bytes, so output made of
+  bare newlines never reaches the cap and the Vec grows by one String per newline until the request deadline. The code
+  in a sandbox comes from the client or the model, so one print of a billion newlines holds the request and its memory
+  growing. LiteLLM has the same gap, and rule owned-behavior-is-built says to fix it.
+
+
+  Count each finished line as its byte length plus one for the newline that ended it, and keep the check against
+  SANDBOX_MAX_OUTPUT_BYTES where it is. A trailing line without a newline counts its bytes only. The lines returned and
+  the error returned stay as they are. Output under the cap reads the same, and output that crosses it now stops at most
+  one byte per line earlier than LiteLLM would.
+
+
+  Add a row to docs/deviations/B9955.yaml: what = the sandbox output cap counts each line's newline, so output of bare
+  newlines also stops at 10 MiB; why = LiteLLM counts only each line's bytes, so empty lines never reach its cap; link =
+  the _read_capped_lines link below.
+scope:
+  paths:
+  - crates/betterlite-models/src/sandbox.rs
+  - crates/betterlite-models/src/sandbox/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/sandbox/transformation.py#L82-L91
+  why: LiteLLM's line reader, which adds only each line's encoded length to the total.
+dod:
+- text: More than 10 MiB of bare newlines ends in SandboxOutputError::Exceeded.
+  proof: [sandbox-tests]
+- text: Output under the cap gives the same lines as before, with a trailing line that has no newline and with CRLF line ends.
+  proof: [sandbox-tests]
+- text: docs/deviations/B9955.yaml lists the newline count with the pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: sandbox-tests
+    why: Bare newlines still pass the cap, or output under the cap reads differently.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^sandbox::tests::/)'
+  - id: deviation-row
+    why: The newline count is not listed as a deviation with the pinned LiteLLM link.
+    run: grep -q -F 'sandbox/transformation.py#L82-L91' docs/deviations/B9955.yaml
+oracle_cases: []
+deviations:
+- what: The sandbox output cap counts each line's newline, so output of bare newlines also stops at 10 MiB.
+  why: LiteLLM counts only each line's bytes, so empty lines never reach its cap.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/sandbox/transformation.py#L82-L91
+out_of_scope:
+- The E2B execution path and the sandbox result records (B3516).
+- A cap on the line count on its own. Counting the newline already bounds the number of lines by the byte cap.
+pitfalls:
+- A test that builds more than 10 MiB of newlines in one Vec is fine, but feed it to the stream in chunks of a few KiB, as a real response arrives, so the check after each chunk is what stops it.
+- The total uses checked_add today. Keep it checked when the extra byte is added, since no unchecked arithmetic is allowed.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

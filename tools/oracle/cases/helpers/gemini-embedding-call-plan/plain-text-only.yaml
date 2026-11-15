@@ -1,0 +1,18 @@
+kind: helper
+name: gemini-embedding-call-plan-plain-text-only
+call:
+  gemini_embedding_call_plan:
+    inputs:
+    - hello
+    - - hello
+      - world
+    - - - first
+        - second
+    - - Files/abc
+      - my files/abc
+      - file/abc
+      - gs://bucket/files/abc
+    - []
+compare:
+  ignore: []
+env: {}

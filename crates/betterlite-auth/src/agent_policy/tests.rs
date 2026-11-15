@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+mod policy;
+mod route;
+
 use super::caller::{AgentCaller, CALLER_TEAM_ID_HEADER, CALLER_USER_ID_HEADER};
 use super::{
     AgentIdentityBinding, AgentKeySummary, AgentKillSwitchAuth, AgentKillSwitchConfig,

@@ -1,0 +1,33 @@
+task: B3542
+deviations:
+  - what: >-
+      The retrieval tool name is a public constant, retrieval_tool::RETRIEVAL_TOOL_NAME,
+      whose value is 'litellm_content_retrieve'; every build site and B3540's stubs use it
+      instead of repeating the literal.
+    why: >-
+      Betterlite keeps LiteLLM's name so a model sees the same tool in a stub and in the
+      tool definition, and one constant keeps the two references from drifting apart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/message_stubbing.py#L68-L71
+  - what: >-
+      Token counting is delegated to B196's betterlite_tokenizer::count::Counter through
+      the compress::counting::TokenCounter seam, which may sample very large inputs rather
+      than counting every token.
+    why: >-
+      LiteLLM samples above roughly 4M characters, so exact counting has diminishing
+      returns there. The budgeting code measures the original count, every per-message
+      budget count and the compressed count with the same counter, so a sampled count
+      stays consistent within one call, exactly as LiteLLM's module-level token_counter
+      does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L584-L605
+  - what: >-
+      The orchestrator is split into compress() and compress_with_embeddings() instead of
+      one compress() taking an optional embedding_model, and the counter arrives as a
+      TokenCounter argument rather than as the module-level litellm.token_counter.
+      CompressRequest carries the trigger as a plain usize, so a caller passes
+      DEFAULT_COMPRESSION_TRIGGER (200_000) where LiteLLM's default parameter would apply.
+      The target stays optional because absent there really means trigger * 7 // 10.
+    why: >-
+      A caller that supplies an embedding model, or none, gets the same result and the
+      same order of work. Two typed entry points keep the embedding executor's failure
+      type out of the BM25-only path and let tests inject a recording counter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L354-L363

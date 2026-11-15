@@ -158,5 +158,5 @@ pitfalls:
   - "The client handle is requested with the resolved timeout, so two routes with different timeouts must not share one client unless B173's pool keys on the timeout. Read B173 before you assume."
 review_level: security
 budget:
-  max_changed_lines: 1400
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -13,6 +13,7 @@ description: >-
   has two Enums, two TypedDicts and `ServiceLoggerPayload`. `lar1.py` has four `str` Enums and `LAR1Metadata`.
 scope:
   paths:
+  - "crates/betterlite-python/python/betterlite/types/litellm_params_state.py"
   - crates/betterlite-python/python/betterlite/types/litellm_params.py
   - crates/betterlite-python/python/betterlite/types/router_weights.py
   - crates/betterlite-python/python/betterlite/types/lar1.py

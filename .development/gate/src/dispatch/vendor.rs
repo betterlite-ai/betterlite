@@ -2,7 +2,7 @@ mod backoff;
 mod tests;
 
 use std::fs::{self, File, TryLockError};
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind};
 use std::io::{BufReader, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process;
@@ -16,6 +16,7 @@ use crate::spec::agents::{Agents, Vendor};
 // a marker counts only near the end of a run's output, so one the agent read during its work doesn't
 const TAIL_LINES: usize = 20;
 const SEAT_WAIT: Duration = Duration::from_secs(5);
+const MEGABYTE: u64 = 1_000_000;
 
 pub(crate) fn find_vendor<'agents>(
     agents: &'agents Agents,
@@ -193,6 +194,7 @@ pub(crate) fn seat_free(
 
 pub(crate) fn take_seat(
     git_common_dir: &Path,
+    net: &Path,
     agents: &Agents,
     vendor: &Vendor,
     seat: Seat,
@@ -207,12 +209,14 @@ pub(crate) fn take_seat(
     let queue = git_common_dir.join("betterlite").join("seat-queue");
     let line = queue.join(format!("{}-{kind}", vendor.id));
     let (ticket, _waiting) = join_line(&queue, &line)?;
+    let backlog_limit = u64::from(agents.policy.max_upload_backlog_mb).saturating_mul(MEGABYTE);
     let taken = loop {
         super::maintenance::check(git_common_dir, "")?;
         if limited(git_common_dir, agents, &vendor.id)? {
             break None;
         }
         if first_in_line(&line, &ticket)?
+            && upload_backlog(net)? <= backlog_limit
             && let Some(held) = free_seats(&folder, agents, vendor, seat)?
         {
             if limited(git_common_dir, agents, &vendor.id)? {
@@ -227,6 +231,38 @@ pub(crate) fn take_seat(
         source,
     })?;
     Ok(taken)
+}
+
+// a socket's tx_queue is what it wrote and the far end has not acknowledged yet
+fn upload_backlog(net: &Path) -> Result<u64, GateError> {
+    let mut total: u64 = 0;
+    for family in ["tcp", "tcp6"] {
+        let path = net.join(family);
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(source) => return Err(GateError::Read { path, source }),
+        };
+        for line in text.lines().skip(1) {
+            let queues = line
+                .split_whitespace()
+                .nth(4)
+                .and_then(|field| field.split_once(':'));
+            let Some((unsent, _)) = queues else {
+                let source = io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("no tx_queue:rx_queue field in {line:?}"),
+                );
+                return Err(GateError::Read { path, source });
+            };
+            let bytes = u64::from_str_radix(unsent, 16).map_err(|error| GateError::Read {
+                path: path.clone(),
+                source: io::Error::new(ErrorKind::InvalidData, error),
+            })?;
+            total = total.saturating_add(bytes);
+        }
+    }
+    Ok(total)
 }
 
 fn join_line(queue: &Path, line: &Path) -> Result<(PathBuf, File), GateError> {

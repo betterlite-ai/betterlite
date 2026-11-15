@@ -1,0 +1,19 @@
+kind: helper
+name: headroom-messages-protected-retrieval-result-row
+call:
+  b3773:
+    function: protected_indices
+    messages:
+      - {role: user, content: first}
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: call-9
+            type: function
+            function: {name: headroom_retrieve, arguments: "{}"}
+      - {role: tool, tool_call_id: call-9, content: recovered content}
+      - {role: assistant, content: reply}
+      - {role: function, tool_call_id: call-9, content: recovered again}
+      - {role: user, content: next}
+env: {}
+compare: {ignore: []}

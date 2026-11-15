@@ -1,0 +1,11 @@
+kind: helper
+name: corpus
+call:
+  scim_projection:
+    kind: group
+    value:
+      team_id: corpus
+      team_alias: corpus
+env: {}
+compare:
+  ignore: []

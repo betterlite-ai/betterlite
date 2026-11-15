@@ -1,0 +1,62 @@
+task: B3907
+deviations:
+  - what: >-
+      The cache is injected (DynamicLoggerCache) and its key is the set of credential fields that are present;
+      LiteLLM keeps a module-level cache keyed on json.dumps of the whole LangfuseLoggingConfig dict, null values
+      included. A dynamic request whose four config fields are all absent, reachable only through an empty
+      langfuse_secret, therefore shares the global logger's empty-key entry here, while LiteLLM mints a second logger.
+    why: >-
+      The task injects the cache so no logger holds hidden state, and its key is a BTreeMap of the present fields.
+      That map cannot encode an absent field. Every credential set that resolves to the same values shares one logger
+      either way, and the empty-secret request resolves to the same environment credentials the global logger uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_handler.py#L85-L120
+  - what: >-
+      The client budget is reserved before the tracing channel and the REST client are built and released when
+      either fails; LiteLLM checks the count before the build and increments it only after build_langfuse_client
+      returns. A failed construction therefore never occupies a slot here, and a concurrent attempt sees the
+      in-flight reservation instead of racing for the last slot.
+    why: >-
+      Reserving first keeps MAX_LANGFUSE_INITIALIZED_CLIENTS a hard ceiling under concurrent requests and stops a
+      thundering herd from each building a client that the budget then rejects. Both schemes admit at most the limit
+      of live clients; only the accounting while a build is in flight differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L350-L387
+  - what: >-
+      The installed-SDK version check (installed_langfuse_version, raise_if_unsupported_langfuse_version,
+      the langfuse>=4.7,<5 import guard) is not built; LangFuseLogger::new starts at the prompt cache TTL check.
+    why: >-
+      betterlite links no Langfuse Python package, so there is no installed version to read. B3900 records the same
+      deviation for the module it owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L288-L305
+  - what: >-
+      A LANGFUSE_TIMEOUT that parses as a float but cannot be a Duration (negative, NaN, or infinite) fails logger
+      construction: a live export channel refuses it first, and in mock mode the REST client configuration does.
+      LiteLLM hands the float to the Langfuse client and fails on the first request instead, or not at all for a
+      value the client accepts.
+    why: >-
+      A std Duration cannot be negative or non-finite, and docs/compatibility.md makes a value of the wrong type an
+      error that names the field. A working setup never sets a timeout outside the positive finite range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L489-L494
+  - what: >-
+      The resolved project id is kept on LangFuseLogger.project_id and shown by its Debug output; LiteLLM writes it to
+      os.environ["LANGFUSE_PROJECT_ID"] for the alerting code to read. Mock mode still resolves to mock-project-id,
+      a failed lookup still logs at debug and leaves initialization successful.
+    why: >-
+      betterlite has no process-wide mutable environment; the id belongs to the logger that resolved it, so code
+      holding the logger reads it there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L338-L348
+  - what: >-
+      A logger holds its MAX_LANGFUSE_INITIALIZED_CLIENTS slot in a committed reservation. The reservation gives the slot back
+      once when stop takes it or when the logger is dropped without stop; stop then releases the tracing channel for
+      the grace period. LiteLLM's stop() releases only the tracing channel; its client count is decremented by
+      DynamicLoggingCache when the entry expires, so a logger stopped by hand there keeps its slot until eviction.
+    why: >-
+      The cache is injected and its removal hook calls stop(), so the slot release has to live on the logger; the
+      reservation releases it exactly once, so a second stop and a later drop free nothing, and a logger that is
+      never stopped does not leak its slot.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L27-L38
+  - what: >-
+      LangFuseLogger::flush returns whether every queued batch drained before the deadline and no batch failed;
+      LiteLLM's flush() returns None and drops the channel's result.
+    why: >-
+      A caller shutting a logger down can act on a failed drain; nothing that ignores the value behaves differently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L389-L396

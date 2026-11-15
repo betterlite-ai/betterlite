@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-rerank-zero-top-n
+call:
+  vertex_rerank:
+    model: semantic-ranker-512@latest
+    api_base: null
+    vertex_project: null
+    vertex_credentials: null
+    access_project: access-project
+    headers: {}
+    query: which one
+    documents: ["first", "second", "third"]
+    top_n: 0
+    return_documents: true
+    non_default_params: {top_n: 0}
+    litellm_params: null
+    response:
+      records:
+        - {id: "2", score: 0.3}
+        - {id: "0", score: 0.8}
+env: {}
+compare: {ignore: []}

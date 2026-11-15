@@ -1,0 +1,12 @@
+kind: helper
+name: studio-agents-malformed-get-fallback
+call:
+  studio_agents:
+    calls:
+      - function: reply
+        operation: get
+        name: request-name
+        status: 200
+        body: "not json"
+env: {}
+compare: {ignore: []}

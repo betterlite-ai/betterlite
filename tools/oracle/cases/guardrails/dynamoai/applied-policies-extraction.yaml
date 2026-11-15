@@ -1,0 +1,25 @@
+kind: helper
+name: dynamoai-applied-policies-extraction
+call:
+  b3768:
+    mode: pre_call
+    env: {}
+    api_key: dynamo-key
+    api_base: null
+    policy_ids: null
+    model_id: null
+    messages:
+      - {role: user, content: block me}
+    choices: []
+    answer:
+      status: 200
+      headers: {}
+      body:
+        finalAction: BLOCK
+        appliedPolicies:
+          - policy: {id: p-1, name: Toxicity, method: TOXICITY, description: no insults}
+            outputs: {action: BLOCK, message: blocked text}
+          - policy: {name: Warned}
+            outputs: {action: WARN}
+env: {}
+compare: {ignore: []}

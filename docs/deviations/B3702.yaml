@@ -1,0 +1,11 @@
+task: B3702
+deviations:
+  - what: "DEFAULT_EVENT_HOOKS holds GuardrailEventHooks enum variants and the constructor accepts a string or list of strings, validating each name into the enum before the parent settings store it as a LitellmParamsMode. LiteLLM stores the wire strings and converts them with GuardrailEventHooks(value)."
+    why: "Rust models the closed set as an enum and still accepts the same wire strings from config; an unknown name fails construction with the same event hook error whether or not LITELLM_STRICT_GUARDRAIL_MODES is on."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/__init__.py#L13-L16"
+  - what: "apply_guardrail records its richer payload by calling the guardrail record writer directly instead of relying on the @log_guardrail_information decorator. The record is written on success, on a block and on a failure, exactly where LiteLLM's finally block writes it."
+    why: "Rust has no decorator that wraps an inherent method and skips itself when the method recorded; calling add_guardrail_record from the method gives the same always-runs logging with the same fields."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L516-L588"
+  - what: "A blocked request returns GuardrailFailure::ModifyResponse and a blocked response returns GuardrailFailure::HttpObject with status 400 and the {error, guardrail, language} detail, instead of raising ModifyResponseException and HTTPException."
+    why: "betterlite guardrails report outcomes as typed values that the dispatch layer turns into the response; the status, the detail keys and the passthrough semantics are unchanged."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L496-L514"

@@ -107,6 +107,11 @@ fn entry_lines(
                 .iter()
                 .map(|deviation| format!("  deviates: {} ({})", deviation.what, deviation.why)),
         );
+        lines.extend(
+            log.kept_bugs
+                .iter()
+                .map(|kept| format!("  keeps a LiteLLM bug: {} ({})", kept.what, kept.why)),
+        );
     }
     Ok(lines)
 }

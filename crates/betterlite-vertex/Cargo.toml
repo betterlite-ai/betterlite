@@ -18,6 +18,7 @@ betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 data-encoding = "2.11.1"
 google-cloud-auth = { version = "=1.18.0", default-features = false, features = ["default-rustls-provider"] }

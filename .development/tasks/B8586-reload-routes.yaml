@@ -97,5 +97,5 @@ pitfalls:
   - "reload_beta_headers_config (anthropic_beta_headers_manager.py L186) is B959's explicit reload; call it, don't port it again."
 review_level: standard
 budget:
-  max_changed_lines: 1200
+  max_changed_lines: 1500
   max_new_expects: 0

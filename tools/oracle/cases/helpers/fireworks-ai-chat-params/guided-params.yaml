@@ -1,0 +1,17 @@
+kind: helper
+name: fireworks-ai-chat-params-guided-params
+call:
+  b6071:
+    catalog: []
+    steps:
+      - {op: map_extra_body, model: "plain-model", optional_params: {extra_body: {guided_json: {type: "object", properties: {name: {type: "string"}}}}}}
+      - {op: map_extra_body, model: "plain-model", optional_params: {extra_body: {guided_grammar: "start: \"yes\" | \"no\""}}}
+      - {op: map_extra_body, model: "plain-model", optional_params: {extra_body: {guided_choice: ["yes", "no"], custom: "kept"}}}
+      - {op: map_extra_body, model: "plain-model", optional_params: {extra_body: {guided_json: {type: "object"}, guided_grammar: "start: \"x\""}}}
+      - {op: map_extra_body, model: "plain-model", optional_params: {extra_body: {guided_json: null, guided_choice: ["one"]}}}
+      - {op: map_extra_body, model: "plain-model", optional_params: {response_format: {type: "text"}, extra_body: {guided_json: {type: "object"}}}}
+      - {op: map_extra_body, model: "plain-model", optional_params: {extra_body: {response_format: {type: "text"}, guided_json: {type: "object"}}}}
+      - {op: map_extra_body, model: "plain-model", optional_params: {extra_body: {guided_json: null}}}
+      - {op: map_extra_body, model: "plain-model", optional_params: {extra_body: {guided_json: {type: "object"}, temperature: 0.2}, temperature: 0.1}}
+env: {}
+compare: {ignore: []}

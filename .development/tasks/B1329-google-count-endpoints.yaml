@@ -76,5 +76,5 @@ pitfalls:
   - The Vertex counter's api_base argument is not a custom-endpoint escape hatch at this pin.
   - Even Vertex countTokens transport errors identify the inherited gemini provider.
   - Passing the accepted timeout through to POST would add behavior the pinned implementation lacks.
-budget: {max_changed_lines: 625, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: security

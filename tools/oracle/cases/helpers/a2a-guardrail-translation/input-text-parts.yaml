@@ -1,0 +1,13 @@
+kind: helper
+name: a2a-input-text-parts
+call:
+  b6163: {"function": "input", "scenarios": [
+    {"data": {"model": "agent-model", "params": {"message": {"kind": "message", "messageId": "m-1", "role": "user", "parts": [{"kind": "text", "text": "hello"}, {"kind": "data", "data": {}}, {"kind": "text", "text": "world"}]}}}, "reply": ["first", "second"]},
+    {"data": {"params": {"message": {"role": "user", "parts": [{"kind": "text", "text": "a"}, {"kind": "text", "text": "b"}]}}}, "reply": ["only-one"]},
+    {"data": {"params": {"message": {"role": "user", "parts": [{"kind": "text", "text": "a"}]}}}},
+    {"data": {"model": "", "params": {"message": {"role": "user", "parts": [{"kind": "text", "text": "single"}]}}}, "reply": ["rewritten"]},
+    {"data": {"model": "agent-model"}, "reply": ["unused"]},
+    {"data": {"params": {"message": {"role": "user", "parts": [{"kind": "data"}, {"kind": "text", "text": ""}]}}}, "reply": ["unused"]}
+  ]}
+env: {}
+compare: {ignore: []}

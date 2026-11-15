@@ -1,0 +1,29 @@
+kind: helper
+name: mantle-response-options
+call:
+  bedrock_mantle_responses:
+    mantle_response_options:
+      cases:
+        - model: openai.gpt-oss-120b
+          params: {temperature: 0.5, top_p: 0.9, max_output_tokens: 64}
+        - model: openai.gpt-oss-120b
+          params: {max_output_tokens: 8}
+        - model: openai.gpt-oss-120b
+          params: {service_tier: auto, temperature: 0.5}
+        - model: openai.gpt-oss-120b
+          params: {service_tier: null}
+        - model: openai.gpt-oss-120b
+          params: {reasoning: {summary: auto, effort: high}}
+        - model: us-east-1/openai.gpt-5.5-quux
+          params: {temperature: 0.5}
+          drop_params: true
+        - model: us-east-1/openai.gpt-5.5-quux
+          params: {temperature: 0.5, reasoning: {effort: high}}
+        - model: openai.gpt-5.5-quux
+          params: {top_p: 0.9, reasoning: {effort: high}}
+          drop_params: true
+        - model: openai.gpt-oss-120b
+          params: {reasoning: {summary: detailed}}
+          use_openai_path: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,25 @@
+kind: helper
+name: mcp-client-credentials-mint-outcome-errors
+call:
+  b4661:
+    function: mint
+    config:
+      client_id: gateway-client
+      client_secret: gateway-secret
+      token_url: https://idp.example.com/token
+    outcomes:
+      - {kind: unreachable, detail: Connect}
+      - {kind: denied, status_code: 503, detail: "token endpoint returned HTTP 503"}
+      - {kind: denied, status_code: 400, detail: "token endpoint returned HTTP 400"}
+      - {kind: success, body: '{}'}
+      - {kind: success, body: '{"access_token": ""}'}
+      - {kind: success, body: '{"access_token": 7}'}
+    operations:
+      - {server_id: unreachable}
+      - {server_id: server-error}
+      - {server_id: client-error}
+      - {server_id: no-token}
+      - {server_id: empty-token}
+      - {server_id: number-token}
+env: {}
+compare: {ignore: []}

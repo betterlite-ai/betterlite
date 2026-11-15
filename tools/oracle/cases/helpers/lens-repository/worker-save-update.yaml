@@ -1,0 +1,23 @@
+kind: helper
+name: worker-save-update
+call:
+  b4501:
+    seed:
+      workers:
+        worker-a:
+          token_hash: hash-a
+          data:
+            id: worker-a
+            name: worker
+            scope: {}
+            last_seen: "2026-01-01T00:00:00Z"
+    call:
+      operation: save_worker
+      worker:
+        id: worker-a
+        name: renamed
+        scope: {}
+        last_seen: "2026-01-01T00:00:00Z"
+      token_hash: null
+env: {}
+compare: {ignore: []}

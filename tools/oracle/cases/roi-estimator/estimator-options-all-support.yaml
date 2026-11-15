@@ -1,0 +1,5 @@
+kind: helper
+name: estimator-options-all-support
+call: {"b3154": {"operation": "estimator_options", "models": [["none-effort-model", "deepseek"]], "supported": ["none-effort-model"]}}
+env: {}
+compare: {ignore: []}

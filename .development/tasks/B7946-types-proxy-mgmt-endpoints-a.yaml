@@ -13,6 +13,8 @@ description: >-
   extends `ModelGroupInfo`; neither base has a Python owner, so give the port the fields of LiteLLM's base as plain fields.
 scope:
   paths:
+  - crates/betterlite-python/python/betterlite/types/proxy/__init__.py
+  - crates/betterlite-python/python/betterlite/types/proxy/management_endpoints/__init__.py
   - crates/betterlite-python/python/betterlite/types/proxy/management_endpoints/common_daily_activity.py
   - crates/betterlite-python/python/betterlite/types/proxy/management_endpoints/config_overrides.py
   - crates/betterlite-python/python/betterlite/types/proxy/management_endpoints/customer_endpoints.py

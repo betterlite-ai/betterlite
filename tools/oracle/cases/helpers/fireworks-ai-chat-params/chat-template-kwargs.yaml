@@ -1,0 +1,27 @@
+kind: helper
+name: fireworks-ai-chat-params-chat-template-kwargs
+call:
+  b6071:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/reasoner", model_info: {litellm_provider: fireworks_ai, supports_reasoning: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/plain", model_info: {litellm_provider: fireworks_ai, supports_reasoning: false}}
+    steps:
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {enable_thinking: true, reasoning_budget: 100}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {enable_thinking: false}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {enable_thinking: true}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {thinking: false}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {enable_thinking: "yes", thinking: false}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {reasoning_budget: 0.5}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {reasoning_budget: 2.7}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {reasoning_budget: -1}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {reasoning_budget: true}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {low_effort: true}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {low_effort: false}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: {enable_thinking: false, foo: 1}, custom: "kept"}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: "not-a-map", custom: "kept"}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {chat_template_kwargs: null, custom: "kept"}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {reasoning_effort: "high", extra_body: {chat_template_kwargs: {enable_thinking: false}}}}
+      - {op: map_extra_body, model: "reasoner", optional_params: {extra_body: {thinking: {type: "enabled"}, chat_template_kwargs: {enable_thinking: false}}}}
+      - {op: map_extra_body, model: "plain", optional_params: {extra_body: {chat_template_kwargs: {low_effort: true}, custom: "kept"}}}
+env: {}
+compare: {ignore: []}

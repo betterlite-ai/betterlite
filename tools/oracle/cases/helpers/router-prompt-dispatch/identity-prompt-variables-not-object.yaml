@@ -1,0 +1,24 @@
+kind: helper
+name: prompt-dispatch-identity-prompt-variables-not-object
+call:
+  b8466:
+    check: prompt_factory
+    model: langfuse/my-prompt
+    messages: []
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: greeting
+    request:
+      prompt_variables:
+      - name
+    compiled:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: compiled
+      optional_params: {}
+env: {}
+compare:
+  ignore: []

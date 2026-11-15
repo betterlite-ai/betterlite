@@ -1,0 +1,12 @@
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+
+litellm_settings:
+  scim_upsert_user: "false"
+  scim_admin_group: ""
+
+general_settings:
+  default_internal_user_params:
+    user_role: proxy_admin_viewer

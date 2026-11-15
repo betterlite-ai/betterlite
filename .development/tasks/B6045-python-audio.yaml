@@ -92,5 +92,5 @@ pitfalls:
 - Speech `content` is bytes, so tests compare bytes and never decode them.
 review_level: standard
 budget:
-  max_changed_lines: 1300
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -1,0 +1,21 @@
+kind: helper
+name: chunk_index_default
+call:
+  b7812:
+    calls:
+      - call: response
+        input:
+          status: 200
+          headers: {}
+          query: q
+          body: >-
+            {"vectors": [
+              {"metadata": {"source_text": "no index"}},
+              {"metadata": {"source_text": "text index", "chunk_index": "9"}},
+              {"metadata": {"source_text": "number index", "chunk_index": 12}},
+              {"metadata": {"source_text": "named", "chunk_index": 3, "filename": "n.pdf"}},
+              {"metadata": {"source_text": "empty name", "chunk_index": 3, "filename": ""}},
+              {"metadata": {"source_text": "extra", "chunk_index": "1", "filename": "e.txt", "tags": [1, 2], "nested": {"a": true}}}
+            ]}
+env: {}
+compare: {ignore: []}

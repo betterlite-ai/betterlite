@@ -1,0 +1,40 @@
+task: B7943
+deviations:
+  - what: >-
+      Fields LiteLLM types as Any or object take a JSON value here: MCPPublicServer.mcp_info, the MCPInfo dict,
+      MCPServer.env_vars and token_validation, PinnedMCPTool.input_schema, MCPTool.input_schema, ToolSchema.inputSchema,
+      ListToolsResponse._meta, CallToolRequest.params, MCPPreCallResponseObject.modified_arguments and the arguments and
+      user_api_key_auth dicts of the hook objects.
+    why: >-
+      The wheel's types carry no Any or object, and these fields hold JSON read from config, the database or a request.
+      A value that is not JSON now fails validation where LiteLLM keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L26
+  - what: >-
+      MCPPostCallResponseObject.mcp_tool_call_response is list[BaseModel | JsonValue]. LiteLLM types it as the mcp
+      package's TextContent, ImageContent and EmbeddedResource, which are Any at runtime; MCPTextContent, MCPImageContent
+      and MCPEmbeddedResource are not exported.
+    why: >-
+      betterlite does not depend on the mcp package. A pydantic content model from any source is accepted, as LiteLLM
+      accepts any value at runtime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L467
+  - what: >-
+      credential_redirect_hook returns a CredentialRedirectGuard instance (a frozen dataclass with an async call) typed
+      against a RedirectRequest protocol of headers and url, instead of a closure over httpx.Request or httpx2.Request.
+    why: >-
+      The rules allow no nested functions and the wheel does not import httpx. An httpx request satisfies the protocol,
+      and the guard drops the slot header on a cross-origin redirect exactly as LiteLLM's closure does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L364-L380
+  - what: >-
+      MCPTool.handler is a callable protocol that takes keyword arguments of JSON values and returns a JSON value or an
+      awaitable of one. LiteLLM types it as a bare Callable.
+    why: >-
+      A bare Callable is Callable[..., Any], and the wheel's types carry no Any. Every callable that LiteLLM calls as
+      handler(**arguments) still passes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/tool_registry.py#L12
+  - what: >-
+      parse_pinned_tools takes a JSON value or a mapping of PinnedMCPTool instead of object, and the enums are
+      StrEnum classes instead of (str, Enum) classes. The member names and values are unchanged.
+    why: >-
+      No object in the wheel's types, and ruff UP042 rejects the (str, Enum) base. StrEnum members equal their value
+      as a str in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L83-L85

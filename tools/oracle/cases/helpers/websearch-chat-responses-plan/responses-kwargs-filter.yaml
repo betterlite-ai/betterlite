@@ -1,0 +1,30 @@
+kind: helper
+name: responses-kwargs-filter
+call:
+  b4119:
+    operation: build_responses_plan
+    model: gpt-4o
+    input: []
+    tool_calls:
+      - type: function_call
+        call_id: call_1
+        name: litellm_web_search
+        arguments: '{"query":"weather"}'
+        input: {query: weather}
+    searches:
+      - kind: success
+        text: result
+    optional_params: {}
+    kwargs:
+      _websearch_interception: true
+      _websearch_interception_emit_native_blocks: true
+      _agentic_loop_api_surface: responses
+      litellm_logging_obj: {}
+      acompletion: true
+      custom_llm_provider: azure
+      model_alias_map: {}
+      stream_response: {}
+      custom_prompt_dict: {}
+      metadata: {session_id: s}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: prompt-dispatch-merge-direct-call
+call:
+  b8466:
+    check: prompt_factory
+    model: langfuse/my-prompt
+    messages: []
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+    request:
+      prompt_id: request-id
+    compiled:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: compiled
+      optional_params: {}
+env: {}
+compare:
+  ignore: []

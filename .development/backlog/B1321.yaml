@@ -1,7 +1,7 @@
 id: B1321
 milestone: M3 providers
 title: Gemini request bodies after cache and system extraction
-status: todo
+status: done
 depends_on: [B1310, B1311, B1312, B1317, B1324, B1325, B1306, B177, B171]
 file: tasks/B1321-gemini-request-body.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1854

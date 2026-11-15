@@ -1,0 +1,20 @@
+kind: helper
+name: plan-file-block-data-uri
+call:
+  b3733:
+    function: plan_file_scans
+    messages:
+      - role: user
+        content:
+          - type: file
+            file:
+              file_data: "data:application/pdf;base64,cGRmLWJ5dGVz"
+          - type: file
+            file:
+              file_data: "data:text/csv;base64,YSxiLGM="
+          - type: file
+            file:
+              file_data: cGxhaW4gdGV4dA==
+              format: text/plain
+env: {}
+compare: {ignore: []}

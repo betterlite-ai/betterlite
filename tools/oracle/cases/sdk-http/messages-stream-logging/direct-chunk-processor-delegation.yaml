@@ -1,0 +1,24 @@
+kind: sdk_http
+name: direct-chunk-processor-delegation
+env: {}
+call:
+  messages_stream_logging:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    steps:
+      - {op: delegate}
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "message_start", "message": {"content": []}}'
+      - '{"type": "message_stop"}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

@@ -8,6 +8,7 @@ use std::os::unix::process::ExitStatusExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,9 +23,9 @@ use super::{
     OracleLimits, SdkHttpCase, Side, child, decode_sdk_http_case, decode_sdk_http_result, sides,
 };
 use crate::case::{Ignore, UpstreamAnswer};
-use crate::mock::ProviderRequest;
+use crate::mock::{MockProvider, ProviderRequest};
 use crate::process::sync_litellm;
-use crate::routing_mock_scripts::{MockScript, parse_script, redact};
+use crate::routing_mock_scripts::{MockScript, Recording, parse_script, redact};
 use crate::runner::sdk_http::judge;
 
 const CASE_LIMIT: usize = 0x0010_0000;
@@ -75,14 +76,14 @@ fn run(
     limits: &OracleLimits,
     cancelled: &AtomicBool,
 ) -> Capture {
+    let mock = MockProvider::start(script).unwrap();
     let run = Run {
         call: &case.call,
-        script,
         env: &case.env,
         limits,
         cancelled,
     };
-    capture(sdk, run).unwrap()
+    capture(sdk, mock, &run).unwrap()
 }
 
 fn run_answers(sdk: &Sdk<'_>, case: &SdkHttpCase, answers: &[UpstreamAnswer]) -> Capture {
@@ -326,7 +327,8 @@ fn decoded_kind(text: &str) -> Nullable {
         | SdkResult::Embedding { .. }
         | SdkResult::Vectors { .. }
         | SdkResult::BetaConfig { .. }
-        | SdkResult::MessagesHeaderStream { .. } => None,
+        | SdkResult::MessagesHeaderStream { .. }
+        | SdkResult::MessagesStreamLogging { .. } => None,
     }
 }
 
@@ -542,11 +544,19 @@ fn assert_rejected_environment() {
 }
 
 fn assert_python_has_no_proxy_server() {
+    // the pinned SDK's Anthropic messages stream imports these two route-free proxy modules itself
+    let sdk_proxy_modules = [
+        "litellm.proxy.pass_through_endpoints.success_handler",
+        "litellm.proxy.pass_through_endpoints.streaming_handler",
+    ];
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("sdk_http");
     for entry in fs::read_dir(folder).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_some_and(|extension| extension == "py") {
-            let source = fs::read_to_string(&path).unwrap().to_lowercase();
+            let mut source = fs::read_to_string(&path).unwrap().to_lowercase();
+            for module in sdk_proxy_modules {
+                source = source.replace(module, "");
+            }
             assert!(
                 !source.contains("fastapi") && !source.contains("litellm.proxy"),
                 "{path:?}"
@@ -653,103 +663,93 @@ fn assert_capture_limits(limits: &OracleLimits) {
 
 fn assert_stops_children_and_mocks(case: &SdkHttpCase, short: &OracleLimits) {
     let sleeping = Fake::new(case, 1, "hello", true);
-    let script = MockScript::try_from(case.upstream.as_slice()).unwrap();
-    let timed_out = run(
-        &Sdk::Python(&sleeping.sdk),
-        case,
-        script,
-        short,
-        &AtomicBool::new(false),
-    );
+    let mock =
+        MockProvider::start(MockScript::try_from(case.upstream.as_slice()).unwrap()).unwrap();
+    let timed_out_base = format!("{}/v1", mock.base_url);
+    let run = Run {
+        call: &case.call,
+        env: &case.env,
+        limits: short,
+        cancelled: &AtomicBool::new(false),
+    };
+    let timed_out = capture(&Sdk::Python(&sleeping.sdk), mock, &run).unwrap();
     assert!(matches!(
         timed_out.execution.result,
         Err(SdkHttpError::Deadline)
     ));
+    assert!(mock_is_closed(&timed_out_base));
 
-    let cancelled = AtomicBool::new(false);
     let cancelling = Fake::new(case, 1, "hello", true);
-    let cancel_script = MockScript::try_from(case.upstream.as_slice()).unwrap();
-    let limits = OracleLimits::default();
-    let outcome = thread::scope(|scope| {
-        scope.spawn(|| {
-            thread::park_timeout(Duration::from_secs(2));
-            cancelled.store(true, Ordering::Release);
-        });
-        run(
-            &Sdk::Python(&cancelling.sdk),
-            case,
-            cancel_script,
-            &limits,
-            &cancelled,
-        )
-    });
+    let cancel = cancel_once_admitted(
+        &Sdk::Python(&cancelling.sdk),
+        case,
+        MockScript::try_from(case.upstream.as_slice()).unwrap(),
+        &OracleLimits::default(),
+    );
     assert!(matches!(
-        outcome.execution.result,
+        cancel.captured.execution.result,
         Err(SdkHttpError::Cancelled)
     ));
-    let api_bases = [sleeping.api_bases(), cancelling.api_bases()].concat();
-    assert_eq!(api_bases.len(), 2);
-    for api_base in &api_bases {
-        assert!(mock_is_closed(api_base));
-    }
+    assert!(mock_is_closed(&cancel.api_base));
 }
 
 // the mock holds the reply, so only stopping the client and shutting the mock down ends the run early
 const HELD_REPLY: &[u8] = br#"{"deadline_ms":30000,"replies":[{"wait":{"delay":{"millis":20000}},"then":{"answer":{"status":200,"headers":{},"body":{"id":"chat_a","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[]}}}}]}"#;
 
-fn mock_of(side: &Capture) -> String {
-    let [request] = side.requests.as_slice() else {
-        panic!("expected one provider request")
-    };
-    let host = request.headers.get("host").expect("captured host header");
-    format!("http://{host}/v1")
+struct CancelledRun {
+    captured: Capture,
+    api_base: String,
+    cancelled_at: Instant,
 }
 
-enum Trigger<'trigger> {
-    After(Duration),
-    Posted(&'trigger Path),
-}
-
-fn cancel_after(cancelled: &AtomicBool, trigger: &Trigger<'_>) {
-    match trigger {
-        Trigger::After(delay) => thread::park_timeout(*delay),
-        Trigger::Posted(log) => {
-            let started = Instant::now();
-            while !fs::read_to_string(log).is_ok_and(|text| text.contains("posting")) {
-                assert!(started.elapsed() < Duration::from_secs(30));
-                thread::park_timeout(Duration::from_millis(10));
-            }
-            thread::park_timeout(Duration::from_millis(300));
-        }
+// a timer could fire before a slow runner sends the request, so the cancel waits for the mock to admit it
+fn cancel_when_admitted(recording: &Mutex<Recording>, cancelled: &AtomicBool) -> Instant {
+    let started = Instant::now();
+    while recording.lock().unwrap().trace.is_empty() {
+        assert!(started.elapsed() < Duration::from_secs(60));
+        thread::park_timeout(Duration::from_millis(10));
     }
     cancelled.store(true, Ordering::Release);
+    Instant::now()
 }
 
-fn assert_cancels_mid_reply(
-    case: &SdkHttpCase,
+fn cancel_once_admitted(
     sdk: &Sdk<'_>,
+    case: &SdkHttpCase,
+    script: MockScript,
     limits: &OracleLimits,
-    trigger: &Trigger<'_>,
-) {
+) -> CancelledRun {
+    let mock = MockProvider::start(script).unwrap();
+    let api_base = format!("{}/v1", mock.base_url);
+    let recording = Arc::clone(&mock.recording);
     let cancelled = AtomicBool::new(false);
-    let started = Instant::now();
-    let captured = thread::scope(|scope| {
-        scope.spawn(|| cancel_after(&cancelled, trigger));
-        run(
-            sdk,
-            case,
-            parse_script(HELD_REPLY).unwrap(),
-            limits,
-            &cancelled,
-        )
+    let run = Run {
+        call: &case.call,
+        env: &case.env,
+        limits,
+        cancelled: &cancelled,
+    };
+    let (captured, cancelled_at) = thread::scope(|scope| {
+        let cancelling = scope.spawn(|| cancel_when_admitted(&recording, &cancelled));
+        let captured = capture(sdk, mock, &run).unwrap();
+        (captured, cancelling.join().unwrap())
     });
+    CancelledRun {
+        captured,
+        api_base,
+        cancelled_at,
+    }
+}
+
+fn assert_cancels_mid_reply(case: &SdkHttpCase, sdk: &Sdk<'_>, limits: &OracleLimits) {
+    let cancel = cancel_once_admitted(sdk, case, parse_script(HELD_REPLY).unwrap(), limits);
     assert!(matches!(
-        captured.execution.result,
+        cancel.captured.execution.result,
         Err(SdkHttpError::Cancelled)
     ));
-    assert_eq!(captured.requests.len(), 1);
-    assert!(mock_is_closed(&mock_of(&captured)));
-    assert!(started.elapsed() < Duration::from_secs(10));
+    assert_eq!(cancel.captured.requests.len(), 1);
+    assert!(mock_is_closed(&cancel.api_base));
+    assert!(cancel.cancelled_at.elapsed() < Duration::from_secs(10));
 }
 
 fn assert_native_stops_at_deadline(case: &SdkHttpCase, short: &OracleLimits) {
@@ -779,20 +779,9 @@ fn sdk_limits() {
     };
     assert_stops_children_and_mocks(&case, &short);
     assert_native_stops_at_deadline(&case, &short);
-    assert_cancels_mid_reply(
-        &case,
-        &Sdk::Native,
-        &limits,
-        &Trigger::After(Duration::from_secs(1)),
-    );
+    assert_cancels_mid_reply(&case, &Sdk::Native, &limits);
     let cancelling = Fake::new(&case, 1, "hello", false);
-    let log = cancelling.log_path();
-    assert_cancels_mid_reply(
-        &case,
-        &Sdk::Python(&cancelling.sdk),
-        &limits,
-        &Trigger::Posted(&log),
-    );
+    assert_cancels_mid_reply(&case, &Sdk::Python(&cancelling.sdk), &limits);
 }
 
 #[test]

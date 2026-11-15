@@ -1,7 +1,7 @@
 id: B388
 milestone: M2 routing
 title: Adaptive routing configuration and request types
-status: todo
+status: done
 depends_on: [B010, B301, B002, B361]
 file: tasks/B388-adaptive-classification.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/router_strategy/adaptive_router/config.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1804

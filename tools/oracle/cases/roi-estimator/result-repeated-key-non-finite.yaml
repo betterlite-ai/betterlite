@@ -1,0 +1,5 @@
+kind: helper
+name: result-repeated-key-non-finite
+call: {"b3154": {"operation": "validate_result", "raw": "{\"hours\": NaN, \"hours\": 2, \"reasoning\": \"x\"}"}}
+env: {}
+compare: {ignore: []}

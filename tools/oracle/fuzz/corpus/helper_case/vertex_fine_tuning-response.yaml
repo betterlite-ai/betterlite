@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-fine-tuning-response-seed
+call:
+  vertex_fine_tuning:
+    operation: response
+    calls:
+      - zone: UTC
+        response:
+          name: projects/p/locations/us-central1/tuningJobs/1
+          baseModel: gemini-1.5-flash-002
+          supervisedTuningSpec: {trainingDatasetUri: gs://bucket/train.jsonl, hyperParameters: {epoch_count: 2}}
+          state: JOB_STATE_SUCCEEDED
+          createTime: "2024-01-01T00:00:00Z"
+env: {}
+compare: {ignore: []}

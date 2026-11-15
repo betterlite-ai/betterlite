@@ -1,0 +1,35 @@
+kind: helper
+name: remaining-limits
+call:
+  b9802:
+    key:
+      tpm_limit: null
+      rpm_limit: null
+      max_budget: null
+      spend: 0.5
+      allowed_model_region: us
+    call_id: call-2
+    model_id: null
+    cache_key: null
+    api_base: null
+    version: null
+    model_region: us
+    response_cost: 0
+    hidden_params: {}
+    fastest_response_batch_completion: false
+    request_data:
+      metadata:
+        model_group: "openai/gpt:4o"
+        "litellm-key-remaining-requests-openai/gpt:4o": 5
+        "litellm-key-remaining-tokens-openai/gpt:4o": 100
+        applied_guardrails: ["gr-1", "gr-2"]
+    timeout: null
+    logging:
+      cost_breakdown: null
+      call_type: get_responses
+      litellm_params: {}
+      response_timing_metrics: {}
+    read_timing_from_logging: true
+    extra: []
+env: {}
+compare: {ignore: []}

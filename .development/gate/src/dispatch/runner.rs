@@ -17,6 +17,7 @@ use crate::spec::agents::{OutputMode, PLACEHOLDERS, Rung, Runner};
 pub(crate) struct Invocation<'paths> {
     pub(crate) worktree: &'paths Path,
     pub(crate) git_common_dir: &'paths Path,
+    pub(crate) net: &'paths Path,
     pub(crate) home: &'paths Path,
     pub(crate) sandbox_settings: &'paths Path,
     pub(crate) writable_roots: &'paths str,

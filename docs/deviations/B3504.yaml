@@ -1,0 +1,8 @@
+task: B3504
+deviations:
+  - what: "The collection call pipeline records call_type create_agent or list_agents on the logging state, where LiteLLM's logging object keeps the create or list call_type its @client decorator set."
+    why: "LiteLLM passes the call_type argument to _make_logging_obj and never reads it, so its logging state keeps the value the decorator gave the sync function. betterlite records the agent operation the caller names, as this task's logging contract requires. docs/deviations/B3501.yaml records the same choice at make_logging_obj, which the collection calls go through."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L73-L89
+  - what: "A create or acreate whose provider does not answer in time reports the agent's name as the model, gemini as the provider and a message naming that provider, where LiteLLM's HTTPHandler.post raises litellm.Timeout with model default-model-name, llm_provider litellm-httpx-handler and a message quoting the timeout."
+    why: "The exception-metadata contract names the agent and its provider on every failure, and LiteLLM's handler identity is a placeholder that names neither; the class and its 408 status match. A list timeout stays the connection error LiteLLM's HTTPHandler.get leaves it as."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1517

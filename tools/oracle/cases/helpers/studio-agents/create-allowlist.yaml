@@ -1,0 +1,20 @@
+kind: helper
+name: studio-agents-create-allowlist
+call:
+  studio_agents:
+    calls:
+      - function: validate
+        name: unused
+        headers: {X-Caller: kept, Content-Type: text/plain, x-goog-api-key: caller}
+        api_key: explicit
+        api_base: https://custom.example
+        environment: {GOOGLE_API_KEY: env-google}
+      - function: create_body
+        name: my-agent
+        api_key: secret
+        base_agent: waverunner
+        instructions: be nice
+        base_environment: {type: remote}
+        page_size: 5
+env: {}
+compare: {ignore: []}

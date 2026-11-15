@@ -1,0 +1,50 @@
+kind: helper
+name: nimble-snippet-fallback
+call:
+  b8025:
+    provider: nimble
+    calls:
+      - operation: reply
+        body:
+          results:
+            - title: Content wins
+              url: https://one.test
+              content: first content
+              description: ignored description
+            - title: Empty content falls through
+              url: https://two.test
+              content: ""
+              description: second description
+            - title: Description only
+              url: https://three.test
+              description: third description
+            - title: Neither present
+              url: https://four.test
+            - title: Null content
+              url: https://four.test
+              content: null
+              description: null
+            - title: null
+              url: null
+            - title: Date from additional data
+              url: https://five.test
+              content: dated
+              additional_data:
+                publish_date: "2024-03-04"
+                publish_date_raw: 1 day ago
+            - title: Numeric publish date
+              url: https://six.test
+              additional_data:
+                publish_date: 20240304
+            - title: Text additional data
+              url: https://seven.test
+              additional_data: free form
+            - title: Null additional data
+              url: https://eight.test
+              additional_data: null
+      - operation: reply
+        status: 201
+        body:
+          results: []
+env: {}
+compare: {ignore: []}

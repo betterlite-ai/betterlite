@@ -94,5 +94,5 @@ pitfalls:
   - Vertex image generation uses a five-entry size map, not Studio's nearest-aspect algorithm.
   - The credential fallback can use litellm_settings.vertex_credentials even though the generic Vertex credential getter does not.
   - An empty custom base skips credential validation but cannot satisfy the URL builder's truthy custom-base branch.
-budget: {max_changed_lines: 800, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: security

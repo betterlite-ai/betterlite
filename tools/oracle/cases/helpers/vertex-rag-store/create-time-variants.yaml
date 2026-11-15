@@ -1,0 +1,25 @@
+kind: helper
+name: vertex-rag-store-create-time-variants
+call:
+  vertex_rag_store:
+    calls:
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/a","createTime":1704067200}'
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/b","createTime":"2024-01-01T00:00:00Z"}'
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/c","createTime":"2024-01-01T00:00:00+02:00"}'
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/d","createTime":"not-a-time"}'
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/e"}'
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/l/ragCorpora/f","createTime":null}'
+env: {}
+compare: {ignore: []}

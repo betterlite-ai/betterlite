@@ -1,0 +1,28 @@
+kind: helper
+name: scim-data-null-is-not-provenance
+call:
+  scim_member_partition:
+    members:
+      - {value: " u1 ", type: " User "}
+      - {value: u2, type: null}
+      - {value: u3, type: "  "}
+      - {value: u4, type: GROUP}
+    metadata:
+      - {scim_data: null}
+      - {scim_managed: true}
+      - {scim_managed: false}
+      - {scim_managed: 0}
+      - {scim_managed: ""}
+      - {scim_managed: "yes"}
+      - {scim_data: false}
+      - {scim_data: []}
+      - {scim_data: {}}
+      - null
+      - []
+      - text
+    entries: []
+    created_ids: []
+    removals: []
+env: {}
+compare:
+  ignore: []

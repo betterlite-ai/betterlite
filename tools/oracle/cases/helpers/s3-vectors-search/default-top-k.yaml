@@ -1,0 +1,33 @@
+kind: helper
+name: default_top_k
+call:
+  b7812:
+    calls:
+      - call: request
+        input:
+          vector_store_id: "docs:index-1"
+          query: what is a vector
+          vector: [0.5, 1.0, -0.25]
+          litellm_params: {aws_region_name: eu-west-1}
+      - call: request
+        input:
+          vector_store_id: "docs:index-1"
+          query: what is a vector
+          vector: [0.5, 1.0, -0.25]
+          max_num_results: 7
+          litellm_params: {aws_region_name: eu-west-1}
+      - call: request
+        input:
+          vector_store_id: "docs:index-1"
+          query: what is a vector
+          vector: [0.5]
+          max_num_results: 0
+          litellm_params: {aws_region_name: us-east-2, maxResults: 99}
+      - call: request
+        input:
+          vector_store_id: "docs:index-1"
+          query: ""
+          vector: []
+          litellm_params: {aws_region_name: us-east-2}
+env: {}
+compare: {ignore: []}

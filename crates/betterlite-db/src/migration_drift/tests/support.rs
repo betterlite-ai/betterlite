@@ -1,5 +1,8 @@
+use std::time::{Duration, Instant};
+
 use rstest::rstest;
 use secrecy::SecretString;
+use tokio::time::sleep;
 use tokio_postgres::Client as PostgresClient;
 use tracing::dispatcher::set_default;
 
@@ -253,12 +256,37 @@ async fn assert_lock_skips_repair(
         .unwrap();
 }
 
+// a repair holds the lock for its session, and tokio-postgres closes a dropped connection in the background
+async fn wait_for_free_repair_lock(client: &PostgresClient) {
+    let started = Instant::now();
+    loop {
+        let free: bool = client
+            .query_one("SELECT pg_try_advisory_lock($1)", &[&INDEX_REPAIR_LOCK_KEY])
+            .await
+            .unwrap()
+            .get(0);
+        if free {
+            client
+                .execute("SELECT pg_advisory_unlock($1)", &[&INDEX_REPAIR_LOCK_KEY])
+                .await
+                .unwrap();
+            return;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(60),
+            "the index repair lock stayed taken"
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
+}
+
 async fn failed_repair(
     database: &TestDatabase,
     lock_timeout: &str,
     logs: &CapturedLogs,
     message: &str,
 ) {
+    wait_for_free_repair_lock(&database.pool.get().await.unwrap()).await;
     assert!(!repair_invalid_indexes(&database.check(), lock_timeout).await);
     let captured = logs.joined();
     assert!(captured.contains(message), "{captured}");
@@ -273,19 +301,11 @@ async fn assert_still_invalid(client: &PostgresClient, schema: &str) {
 }
 
 async fn assert_complete_repair(database: &TestDatabase, client: &PostgresClient) {
+    wait_for_free_repair_lock(client).await;
     assert!(repair_invalid_indexes(&database.check(), "30s").await);
     assert_eq!(
         index_valid(client, &database.schema, "LiteLLM_zzz_stuck").await,
         Some(true)
     );
-    let lock: bool = client
-        .query_one("SELECT pg_try_advisory_lock($1)", &[&INDEX_REPAIR_LOCK_KEY])
-        .await
-        .unwrap()
-        .get(0);
-    assert!(lock);
-    client
-        .execute("SELECT pg_advisory_unlock($1)", &[&INDEX_REPAIR_LOCK_KEY])
-        .await
-        .unwrap();
+    wait_for_free_repair_lock(client).await;
 }

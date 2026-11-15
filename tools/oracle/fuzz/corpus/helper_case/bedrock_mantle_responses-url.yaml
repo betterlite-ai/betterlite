@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-mantle-responses-url
+call:
+  bedrock_mantle_responses:
+    mantle_responses_url:
+      cases:
+        - {}
+        - api_base: https://bedrock-mantle.eu-west-1.api.aws/leftover/path
+          aws_region_name: us-west-2
+        - environment: {BEDROCK_MANTLE_API_BASE: https://mantle-proxy.example.com/v1}
+        - aws_region_name: US-EAST-1
+env: {}
+compare: {ignore: []}

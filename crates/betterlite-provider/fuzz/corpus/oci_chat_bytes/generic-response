@@ -1,0 +1,1 @@
+{"modelId":"meta.llama","modelVersion":"1","chatResponse":{"apiFormat":"GENERIC","timeCreated":"2025-01-01T00:00:00.000Z","choices":[{"index":0,"finishReason":"STOP","message":{"role":"ASSISTANT","content":[{"type":"TEXT","text":"hi"}]}}],"usage":{"promptTokens":1,"completionTokens":1,"totalTokens":2}}}

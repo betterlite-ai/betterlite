@@ -1,0 +1,31 @@
+kind: helper
+name: volcengine-responses-key-lookup
+call:
+  b8176:
+    steps:
+      - kind: headers
+        api_key: "params-key"
+        global_key: "global-key"
+        ark_key: "ark-key"
+        volcengine_key: "volc-key"
+      - kind: headers
+        global_key: "global-key"
+        ark_key: "ark-key"
+      - kind: headers
+        ark_key: "ark-key"
+        volcengine_key: "volc-key"
+      - kind: headers
+        volcengine_key: "volc-key"
+      - kind: headers
+        api_key: ""
+        volcengine_key: "volc-key"
+      - kind: headers
+        api_key: "params-key"
+        extra_headers:
+          x-call: "1"
+          Content-Type: "text/plain"
+          Authorization: "Custom"
+      - kind: headers
+        extra_headers: {x-call: "1"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: tiered-pricing-overlapping-tiers-use-the-first
+call:
+  b3274:
+    model_cost: {"exa_ai/search": {"litellm_provider": "exa_ai", "mode": "search", "tiered_pricing": [{"max_results_range": [1, 50], "input_cost_per_query": 0.01}, {"max_results_range": [40, 100], "input_cost_per_query": 0.02}]}}
+    model: "exa_ai/search"
+    custom_llm_provider: "exa_ai"
+    number_of_queries: 1
+    optional_params: {"max_results": 45}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,173 @@
+kind: helper
+name: volcengine-responses-chunk-patcher
+call:
+  b8176:
+    steps:
+      - kind: stream_event
+        event:
+          type: response.created
+          response: {id: "resp_1", created_at: 7}
+      - kind: stream_event
+        event:
+          type: response.completed
+          response:
+            id: "resp_2"
+            created_at: 8
+            output: []
+            usage: {input_tokens: 3}
+      - kind: stream_event
+        event:
+          type: response.output_text.delta
+          item_id: "item_1"
+          delta: "hi"
+      - kind: stream_event
+        event:
+          type: response.content_part.done
+          item_id: "item_1"
+          output_index: 0
+          content_index: 0
+          part: {type: output_text, text: "hi"}
+      - kind: stream_event
+        event:
+          type: response.output_item.added
+      - kind: stream_event
+        event:
+          type: response.custom.thing
+          extra: 1
+      - kind: stream_event
+        event:
+          type: error
+          sequence_number: 1
+          error: {type: invalid_request_error, code: null, message: "bad"}
+      - kind: stream_event
+        event:
+          type: response.failed
+          response: {created_at: 9}
+      - kind: stream_event
+        event:
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.in_progress
+          response: {id: "resp_3"}
+      - kind: stream_event
+        event:
+          type: response.incomplete
+          response: {id: "resp_3"}
+      - kind: stream_event
+        event:
+          type: response.output_item.done
+          item: {type: message}
+      - kind: stream_event
+        event:
+          type: response.content_part.added
+          item_id: "item_1"
+          part: {type: output_text, text: "hi"}
+      - kind: stream_event
+        event:
+          type: response.content_part.done
+          item_id: "item_1"
+          part: {type: refusal, refusal: "no"}
+      - kind: stream_event
+        event:
+          type: response.content_part.done
+          item_id: "item_1"
+          part: {type: reasoning_text, reasoning: "because"}
+      - kind: stream_event
+        event:
+          type: response.output_text.annotation.added
+          item_id: "item_1"
+          annotation: {type: url_citation}
+      - kind: stream_event
+        event:
+          type: response.output_text.done
+          item_id: "item_1"
+          text: "hi"
+      - kind: stream_event
+        event:
+          type: response.refusal.delta
+          item_id: "item_1"
+          delta: "n"
+      - kind: stream_event
+        event:
+          type: response.refusal.done
+          item_id: "item_1"
+          refusal: "no"
+      - kind: stream_event
+        event:
+          type: response.function_call_arguments.delta
+          item_id: "item_1"
+          delta: "{"
+      - kind: stream_event
+        event:
+          type: response.function_call_arguments.done
+          item_id: "item_1"
+          arguments: "{}"
+      - kind: stream_event
+        event:
+          type: response.file_search_call.in_progress
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.file_search_call.searching
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.file_search_call.completed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.web_search_call.in_progress
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.web_search_call.searching
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.web_search_call.completed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_list_tools.in_progress
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_list_tools.completed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_list_tools.failed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_call.in_progress
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_call.completed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_call.failed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_call_arguments.delta
+          item_id: "item_1"
+          delta: "{"
+      - kind: stream_event
+        event:
+          type: response.mcp_call_arguments.done
+          item_id: "item_1"
+          arguments: "{}"
+      - kind: stream_event
+        event:
+          type: image_generation.partial_image
+          b64_json: "aGk="
+      - kind: stream_event
+        event:
+          type: error
+          error: {type: invalid_request_error, code: context_length_exceeded, message: "bad"}
+env: {}
+compare: {ignore: []}

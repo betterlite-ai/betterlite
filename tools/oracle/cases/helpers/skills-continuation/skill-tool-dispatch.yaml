@@ -1,0 +1,17 @@
+kind: helper
+name: skills-continuation-skill-tool-dispatch
+call:
+  b3395:
+    max_iterations: 10
+    enabled: true
+    model: claude-sonnet
+    messages: [{role: user, content: make a gif}]
+    tools: [{name: litellm_skill_one}]
+    skill_files: {litellm_skill_one: {core/gif_builder.py: "class GifBuilder: pass"}}
+    response: {id: msg_1, type: message, role: assistant, model: claude-sonnet, stop_reason: tool_use, content: [{type: tool_use, id: t1, name: litellm_skill_one, input: {}}]}
+    replies:
+      - kind: response
+        response: {id: msg_2, type: message, role: assistant, model: claude-sonnet, stop_reason: end_turn, content: [{type: text, text: built}]}
+env: {}
+compare:
+  ignore: []

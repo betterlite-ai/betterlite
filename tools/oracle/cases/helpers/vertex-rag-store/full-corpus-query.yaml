@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-rag-store-full-corpus-query
+call:
+  vertex_rag_store:
+    calls:
+      - function: search
+        vector_store_id: projects/p/locations/us-central1/ragCorpora/corpus
+        query: [what, is, stored]
+        api_base: https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1
+        litellm_params: {vertex_project: p, vertex_location: us-central1}
+        optional_params: {max_num_results: 3, filters: {kind: chunk}}
+env: {}
+compare: {ignore: []}

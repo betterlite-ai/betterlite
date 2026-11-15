@@ -1,0 +1,47 @@
+kind: helper
+name: snowflake-claude-request-options
+call:
+  b5844:
+    steps:
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: hi}]
+        options: {}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: hi}]
+        options: {max_completion_tokens: 300}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: hi}]
+        options: {max_completion_tokens: 300, max_tokens: 50}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: hi}]
+        options: {max_completion_tokens: 0}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: system, content: from messages}, {role: user, content: hi}]
+        options: {system: custom system}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: system, content: from messages}, {role: user, content: hi}]
+        options: {}
+      - kind: request
+        model: snowflake/claude-3-7-sonnet
+        messages: [{role: user, content: hi}]
+        options: {thinking: {type: enabled, budget_tokens: 1024}, temperature: 0.2, stream: true, extra_body: {metadata: {user_id: u1}}}
+      - kind: request
+        model: SNOWFLAKE/Claude_3
+        messages: [{role: user, content: hi}]
+        options: {top_p: 0.9}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: hi}]
+        options: {extra_body: {max_tokens: 77, top_k: 5}}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: hi}]
+        options: {max_tokens: 0}
+env: {}
+compare: {ignore: []}

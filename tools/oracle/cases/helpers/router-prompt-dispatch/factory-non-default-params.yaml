@@ -1,0 +1,28 @@
+kind: helper
+name: prompt-dispatch-factory-non-default-params
+call:
+  b8466:
+    check: prompt_factory
+    model: langfuse/my-prompt
+    messages:
+    - role: user
+      content: hello
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: greeting
+    request:
+      temperature: 0.5
+      metadata:
+        tag: one
+      custom_field: kept
+    compiled:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: compiled
+      optional_params: {}
+env: {}
+compare:
+  ignore: []

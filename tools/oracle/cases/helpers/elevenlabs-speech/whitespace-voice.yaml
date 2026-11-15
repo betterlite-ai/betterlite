@@ -1,0 +1,39 @@
+kind: helper
+name: elevenlabs-speech-whitespace-voice
+call:
+  elevenlabs_speech:
+    calls:
+    - {function: map_params, voice: "  ", optional_params: {voice_id: lily}, kwargs: {}}
+    - {function: map_params, voice: "", optional_params: {voice_id: lily}, kwargs: {}}
+    - {function: map_params, voice: "\u001c", optional_params: {voice_id: lily}, kwargs: {}}
+    - {function: map_params, voice: null, optional_params: {voice_id: "\u001f"}, kwargs: {}}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: "  "}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: ""}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: "\u001c"}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: 4}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: "my voice/a?b"}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: "vöice"}
+compare: {ignore: []}
+env: {}

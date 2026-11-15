@@ -1,14 +1,14 @@
 id: B1540
 milestone: M3 providers
 title: Resolve ElevenLabs voices and separate speech query parameters
-status: todo
+status: done
 depends_on: [B002, B1135, B2228, B171]
 file: tasks/B1540-elevenlabs-speech.yaml
 covers:
   - "litellm/llms/elevenlabs/{common_utils.py,text_to_speech/**}"
 parent: B047
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1710

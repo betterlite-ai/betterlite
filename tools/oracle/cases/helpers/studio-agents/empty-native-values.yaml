@@ -1,0 +1,14 @@
+kind: helper
+name: studio-agents-empty-native-values
+call:
+  studio_agents:
+    calls:
+      - function: create_body
+        name: empty
+        base_agent: ""
+        instructions: ""
+        base_environment: {}
+      - function: create_body
+        name: absent
+env: {}
+compare: {ignore: []}

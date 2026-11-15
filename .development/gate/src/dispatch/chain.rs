@@ -1,6 +1,8 @@
+use std::path::Path;
+
 use crate::dispatch::progress::Progress;
 use crate::dispatch::seat::Seat;
-use crate::dispatch::{Places, find_runner, vendor};
+use crate::dispatch::{find_runner, vendor};
 use crate::error::GateError;
 use crate::spec::agents::{Agents, Rung, Runner};
 
@@ -87,11 +89,11 @@ impl<'agents> Chain<'agents> {
 
     pub(crate) fn pick<'chain>(
         &'chain self,
-        places: &Places<'_>,
+        git: &Path,
         progress: &Progress,
         own: &'chain Link<'agents>,
     ) -> Result<Option<&'chain Link<'agents>>, GateError> {
-        let (agents, git) = (self.agents, places.git_common_dir);
+        let agents = self.agents;
         let mut stand_ins = Vec::new();
         for link in self.across(progress, own) {
             if !vendor::limited(git, agents, &link.runner.vendor)? {

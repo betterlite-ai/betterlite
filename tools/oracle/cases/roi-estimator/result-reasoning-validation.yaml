@@ -1,0 +1,5 @@
+kind: helper
+name: result-reasoning-validation
+call: {"b3154": {"operation": "validate_result", "raw": "{\"hours\": 1, \"reasoning\": \"   \"}"}}
+env: {}
+compare: {ignore: []}

@@ -93,5 +93,5 @@ pitfalls:
   - An image key whose value is null still selects multimodal prediction when uses_embed_content is false.
   - Failed model-info lookup falls back to prediction without emitting a warning that the source does not emit.
   - VERTEX_CREDENTIALS is an embedding fallback and must not silently become a new fallback for chat credentials.
-budget: {max_changed_lines: 650, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: security

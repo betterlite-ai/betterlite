@@ -1,0 +1,14 @@
+task: B4441
+deviations:
+  - what: Narrowing to an unknown deployment ID keeps the input list; the HTTP routing layer in B4446 rejects it with 404 instead.
+    why: The cached-result authorization path needs the fallback list, and the HTTP layer adds its own validation on top of the shared helper.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L305-L314
+  - what: A malformed model_info.health_check_params logs a warning and is ignored, and the probe is built without that override.
+    why: LiteLLM allows arbitrary fields there, so a typo must not stop the whole health check; the drop is logged rather than silent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L775-L783
+  - what: run_with_timeout is an async Rust function that takes the probe future and returns a typed timeout error instead of a result dict with error and exception.
+    why: The health cycle supplies async probes and formats its own error rows; the timeout covers only the awaited probe, so sibling probes keep running.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L225-L236
+  - what: The probe request is built on a copy of the deployment's litellm_params, so the configured deployment catalog is never changed.
+    why: LiteLLM mutates the dict it is given; betterlite keeps the catalog row intact because several probes and readers share it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L754-L844

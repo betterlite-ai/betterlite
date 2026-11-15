@@ -1,0 +1,8 @@
+task: B3780
+deviations:
+  - what: A Noma scan writes its standard_logging_guardrail_information record but emits no OTEL guardrail span from here.
+    why: The shared record writer takes the span sink from its caller, and the sink belongs to the hook dispatcher that runs the guardrail, so the scan writes its record with a no-op sink until that caller passes one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1296-L1302
+  - what: An aggregatedScanResult that is present but not a boolean is recorded as guardrail_failed_to_respond and does not block, and the anonymization check treats it as unsafe. LiteLLM tests the value for truthiness, so a truthy non-boolean such as the string "yes" blocks with a 400 while a falsy one such as 0 counts as safe.
+    why: A non-boolean is outside the boolean the Noma API declares, so betterlite follows the verdict the record reports instead of Python truthiness on a value the type does not allow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L335-L346

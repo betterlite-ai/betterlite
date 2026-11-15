@@ -1,0 +1,8 @@
+kind: helper
+name: backend-blocked-unknown-path
+call:
+  b4471:
+    component: backend
+    paths: [/not-a-route]
+env: {}
+compare: {ignore: []}

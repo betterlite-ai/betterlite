@@ -1,0 +1,11 @@
+task: B642
+deviations:
+  - what: The native transcription binding runs only the async call, and its synchronous transcribe returns an error instead of sending.
+    why: The shared HTTP client is async, and blocking a runtime thread on it would stall other requests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/audio_transcription/__init__.py#L42
+  - what: An error body that is not UTF-8 is reported as a byte count; LiteLLM decodes it with replacement characters.
+    why: betterlite refuses bytes that are not UTF-8 instead of mangling them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/audio_transcription/handler.rs#L34
+  - what: A positive finite timeout too large for a Duration is an error; LiteLLM's native optional_timeout panics on the same value.
+    why: betterlite rejects a value it cannot represent instead of crashing the process.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/python-bridge/src/marshal.rs#L57-L65

@@ -340,7 +340,7 @@ pub(crate) fn script_after_connection_setup(server: &FakeServer, name: &str, rep
 }
 
 pub(crate) async fn wait_for_commands(server: &FakeServer, name: &str, count: usize) {
-    for _attempt in 0_usize..200 {
+    for _attempt in 0_usize..6_000 {
         if server.commands_named(name).len() >= count {
             return;
         }

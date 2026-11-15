@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-embedding-call-plan-seed-plain
+call:
+  gemini_embedding_call_plan:
+    inputs:
+    - hello
+    - - - first
+        - second
+    - []
+compare:
+  ignore: []
+env: {}

@@ -1,0 +1,11 @@
+router_settings:
+  provider_budget_config:
+    openai:
+      budget_limit: not-a-number
+      time_period: 1d
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o-mini
+      max_budget: [10]
+      budget_duration: ""

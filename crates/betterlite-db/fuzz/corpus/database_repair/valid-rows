@@ -1,0 +1,3 @@
+token,key_name,key_alias,soft_budget_cooldown,spend,expires,models,aliases,config,user_id,team_id,permissions,max_parallel_requests,metadata,tpm_limit,rpm_limit,max_budget,budget_duration,budget_reset_at,allowed_cache_controls,model_spend,model_max_budget,budget_id,blocked,created_at,updated_at,allowed_routes,object_permission_id,created_by,updated_by,organization_id
+"tok-one","first","","","1.5","","{gpt-4,claude}","","{""tier"":""pro""}","","team-a","","","","","","","","","","","","","","","","","","","",""
+"tok-two","first","","","1.5","","{gpt-4,claude}","","{""tier"":""pro""}","","team-a","","","","","","","","","","","","","","","","","","","",""

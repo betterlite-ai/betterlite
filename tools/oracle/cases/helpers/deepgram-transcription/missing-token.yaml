@@ -1,0 +1,22 @@
+kind: helper
+name: deepgram-transcription-missing-token
+call:
+  deepgram_transcription:
+    env: {}
+    steps:
+      - {step: auth, api_key: null}
+      - {step: auth, api_key: sk-direct}
+      - step: url
+        model: nova-3
+        api_base: null
+        options: {}
+      - step: error_class
+        message: invalid audio
+        status_code: 401
+        headers: {content-type: application/json, x-request-id: req-1}
+      - step: error_class
+        message: ''
+        status_code: 400
+        headers: {}
+env: {}
+compare: {ignore: []}

@@ -63,6 +63,7 @@ scope:
     - Cargo.toml
     - Cargo.lock
     - tools/management-cli/**
+    - python-legacy.txt
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L1-L21

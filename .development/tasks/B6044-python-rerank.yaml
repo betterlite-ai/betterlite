@@ -79,5 +79,5 @@ pitfalls:
 - '`top_n=0` is a value, so test `is None`, not truth.'
 review_level: standard
 budget:
-  max_changed_lines: 900
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -1,7 +1,7 @@
 id: B7812
 milestone: M3 providers
 title: S3 Vectors search provider
-status: todo
+status: done
 depends_on: [B1131, B3458, B591, B595]
 file: tasks/B7812-s3-vectors-search.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/s3_vectors/vector_stores/**"
 parent: B049
 split_from: B049
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1734

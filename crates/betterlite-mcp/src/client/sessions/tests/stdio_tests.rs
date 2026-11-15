@@ -3,7 +3,7 @@ use std::future::{Future, ready};
 use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{env, fs, process};
 
 use tokio::time::sleep;
@@ -132,17 +132,21 @@ async fn a_stdio_server_child_that_ignores_term_is_killed_after_the_leader_exits
     let streams = transport.enter().await.unwrap();
     let leader = streams.pid;
     drop(streams);
-    sleep(Duration::from_millis(300)).await;
+    wait_for(
+        || fs::read_to_string(&pid_file).is_ok_and(|pid| pid.ends_with('\n')),
+        "the child wrote its pid",
+    )
+    .await;
     let child = fs::read_to_string(&pid_file).expect("the child wrote its pid");
     let child_pid = child.trim().parse::<u32>().expect("the pid is a number");
     assert!(process_running(child_pid));
     transport.exit().await.unwrap();
-    sleep(Duration::from_millis(300)).await;
-    assert!(!process_exists(leader));
-    assert!(
-        !process_running(child_pid),
-        "the descendant survived the owner"
-    );
+    wait_for(|| !process_exists(leader), "the leader outlived exit").await;
+    wait_for(
+        || !process_running(child_pid),
+        "the descendant survived the owner",
+    )
+    .await;
     drop(fs::remove_file(&pid_file));
 }
 
@@ -164,17 +168,21 @@ async fn a_leader_that_exits_first_still_sweeps_its_surviving_child() {
     let streams = transport.enter().await.unwrap();
     let leader = streams.pid;
     drop(streams);
-    sleep(Duration::from_millis(300)).await;
+    wait_for(
+        || fs::read_to_string(&pid_file).is_ok_and(|pid| pid.ends_with('\n')),
+        "the child wrote its pid",
+    )
+    .await;
     let child = fs::read_to_string(&pid_file).expect("the child wrote its pid");
     let child_pid = child.trim().parse::<u32>().expect("the pid is a number");
     assert!(process_running(child_pid));
     transport.exit().await.unwrap();
-    sleep(Duration::from_millis(300)).await;
-    assert!(!process_exists(leader));
-    assert!(
-        !process_running(child_pid),
-        "the descendant outlived the leader"
-    );
+    wait_for(|| !process_exists(leader), "the leader outlived exit").await;
+    wait_for(
+        || !process_running(child_pid),
+        "the descendant outlived the leader",
+    )
+    .await;
     drop(fs::remove_file(&pid_file));
 }
 
@@ -227,8 +235,7 @@ async fn the_stdio_server_dies_when_its_owner_is_dropped() {
     let pid = streams.pid;
     drop(transport);
     drop(streams);
-    sleep(Duration::from_millis(500)).await;
-    assert!(!process_exists(pid));
+    wait_for(|| !process_exists(pid), "the server outlived its owner").await;
 }
 
 fn settings(script: String) -> SessionSettings {
@@ -324,4 +331,16 @@ async fn a_stdio_server_that_exits_on_stdin_eof_finishes_before_the_kill() {
     assert!(marker.exists(), "the server did not finish on stdin EOF");
     assert!(!process_exists(started));
     drop(fs::remove_file(&marker));
+}
+
+// the server and its children are other processes, so their exit is polled on the wall clock
+async fn wait_for<F>(condition: F, failure: &str)
+where
+    F: Fn() -> bool,
+{
+    let started = Instant::now();
+    while !condition() {
+        assert!(started.elapsed() < Duration::from_secs(30), "{failure}");
+        sleep(Duration::from_millis(10)).await;
+    }
 }

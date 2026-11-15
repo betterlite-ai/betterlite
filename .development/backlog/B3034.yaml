@@ -1,14 +1,14 @@
 id: B3034
 milestone: M4 keys, spend and management
 title: Rate-limit descriptor settlement and rollback
-status: todo
+status: done
 depends_on: [B393, B3031, B3032, B3033, B3037]
 file: tasks/B3034-rate-limit-settlement.yaml
 covers:
   - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
 parent: B072
 split_from: B072
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1832

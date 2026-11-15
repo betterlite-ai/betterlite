@@ -464,6 +464,7 @@ use std::fmt;
 
 use serde::de::DeserializeOwned;
 
+use crate::api::responses_hook_policy;
 use crate::api::vector_context_shaping;
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 
@@ -619,7 +620,7 @@ sections! {
     request_body, request_body_safety, request_form, request_headers, request_intake,
     request_metadata_safety, request_model_overrides, request_records, request_root_paths,
     request_scheduler, request_setup, request_setup_options, request_size_limit, resource_sdk_settings,
-    responses_id_security, responses_mcp_execute, responses_parameters, responses_ws_auth,
+    responses_hook_policy, responses_id_security, responses_mcp_execute, responses_parameters, responses_ws_auth,
     responses_ws_native, retry_policy, router_compaction, router_core, router_weights,
     routing_budgets, routing_groups, routing_plugins, routing_state, routing_state_store,
     routing_timeouts, s3_response_cache, sandbox_dispatch, scheduled_job_stagger, secret_manager_bootstrap,

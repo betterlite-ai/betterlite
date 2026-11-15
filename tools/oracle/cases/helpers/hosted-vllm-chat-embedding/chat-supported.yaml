@@ -1,0 +1,8 @@
+kind: helper
+name: hosted-vllm-chat-supported-params
+call:
+  b8150:
+    function: "chat_supported"
+    calls: [{"model": "my-model"}, {"model": "my-org/my-model"}]
+env: {}
+compare: {ignore: []}

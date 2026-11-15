@@ -1,0 +1,20 @@
+task: B1140
+deviations:
+  - what: >-
+      An archive source URL is checked with betterlite's URL parser (the url crate), which rejects a
+      malformed authority or a raw space, so such a source gets the 400 that a non-https URL gets.
+      LiteLLM's urlsplit accepts them whenever it can read a hostname.
+    why: >-
+      The url crate is the workspace's URL parser and the check is an exact scheme-and-host test.
+      A URL Python accepts but no client can fetch keeps failing at install time either way, and the
+      stricter answer names the field at registration instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L185-L190
+  - what: >-
+      A git-subdir path or an archive sha256 that ends in a newline, such as "plugins/x\n" or a
+      64-character hex digest followed by "\n", gets a 400. LiteLLM accepts both, since Python's
+      re.match lets "$" match before a final newline.
+    why: >-
+      The newline is not part of a path segment or a hex digest, so the stored source would point
+      at a path or checksum that never matches the plugin a client downloads. The anchored pattern
+      checks the whole value, as the error text describes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L181-L182

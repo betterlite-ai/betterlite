@@ -1,0 +1,13 @@
+kind: helper
+name: agents-item-get-with-name-metadata
+call:
+  b3505:
+    operation: get
+    name: agent-1
+    api_key: key-1
+    litellm_call_id: call-get-name
+    provider: gemini
+    status: 200
+    body: '{"base_agent": "waverunner", "instructions": "help users"}'
+env: {}
+compare: {ignore: []}

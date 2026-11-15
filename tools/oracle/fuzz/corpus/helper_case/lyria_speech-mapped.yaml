@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-lyria-mapped-seed
+call:
+  vertex_lyria_speech:
+    function: mapped
+    cases:
+      - {model: lyria-002, params: {response_format: mp3, speed: 1.5}, voice: alloy, drop_params: false, global_drop_params: false}
+      - {model: lyria-002, params: {speed: 1.5}, voice: null, drop_params: true, global_drop_params: false}
+env: {}
+compare: {ignore: []}

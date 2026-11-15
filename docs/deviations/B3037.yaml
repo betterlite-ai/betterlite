@@ -1,0 +1,20 @@
+task: B3037
+deviations:
+  - what: Shared cache increment and post-call batch transport ownership remains open; this task does not claim the external cache pipeline or active_post_call_redis_batch owners.
+    why: Cache and batch services are injected dependencies; their implementation owners are not yet assigned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4315-L4385
+  - what: TTL preservation falls back to regular pipeline increment on Redis error, not a hard failure.
+    why: LiteLLM does not propagate script errors; it logs and continues with the non-TTL-preserving path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4414-L4422
+  - what: Window-guarded increments on the Redis backend fall back to positive-only increment when window verification fails; only positive deltas are applied, never negative ones.
+    why: LiteLLM avoids under-reserving by refusing to apply window-guard-gated deltas when the window has moved, but still increments positive amounts as a best-effort recovery.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4489-L4495
+  - what: Window-guarded increments on the local backend skip the increment entirely (no fallback) when the window key is missing or the window start does not match.
+    why: Local in-memory state has no partial-recovery fallback; continuing without the increment keeps the count consistent with the actual window state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4440-L4441
+  - what: A token delta larger than 2^53 returns a typed error instead of being rounded to the nearest float.
+    why: LiteLLM's increment_value is declared as float; f64 cannot represent a whole count past 2^53, so betterlite refuses the value rather than silently charging the wrong amount.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L61-L68
+  - what: A failed TTL-preserving or window-guarded script run logs a plain tracing warning. LiteLLM passes the failure to log_redis_failure, which also drops an open circuit-breaker error to debug and throttles repeated timeout lines.
+    why: B393's log_redis_failure lives in betterlite-server, which depends on this crate, so calling it here would close a dependency cycle; B3031 and B3032 record the same trade.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4414-L4422

@@ -1,0 +1,22 @@
+kind: helper
+name: snowflake-openai-response-seed
+call:
+  b5844:
+    steps:
+      - kind: response
+        model: llama3.1-70b
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"llama3.1-70b","choices":[{"index":0,"message":{"role":"assistant","content":"Hello!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}'
+        request_data: {model: llama3.1-70b, messages: [{role: user, content: hi}], stream: false}
+        messages: [{role: user, content: hi}]
+      - kind: response
+        model: snowflake/mistral-large2
+        body: '{"id":"chatcmpl-2","object":"chat.completion","created":1700000001,"model":"mistral-large2","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_9","type":"function","function":{"name":"lookup","arguments":"{\"q\": 1}"}}]},"finish_reason":"tool_calls"},{"index":1,"message":{"role":"assistant","content":"cut off"},"finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":4,"total_tokens":14}}'
+        request_data: {model: mistral-large2, messages: [{role: user, content: look it up}]}
+        messages: [{role: user, content: look it up}]
+      - kind: response
+        model: llama3.1-70b
+        body: '{"id":"chatcmpl-3","object":"chat.completion","created":1700000002,"model":"","choices":[{"index":0,"message":{"role":"assistant","content":"empty model"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+        request_data: {}
+        messages: []
+env: {}
+compare: {ignore: []}

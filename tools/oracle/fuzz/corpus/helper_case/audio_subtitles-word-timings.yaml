@@ -1,0 +1,13 @@
+kind: helper
+name: audio-subtitles-seed-word-timings
+call:
+  audio_subtitles:
+    calls:
+      - {function: synthesize, response_format: "srt", words: [{"word": "Hello", "start": 0, "end": 1, "extra": 1}]}
+      - {function: synthesize, response_format: "vtt", words: [{"word": "Hi", "start": "0.5", "end": "1.25"}]}
+      - {function: synthesize, response_format: "srt", words: [{"word": "Hi", "start": "bad", "end": 1}]}
+      - {function: synthesize, response_format: "srt", words: [{"start": 0, "end": 1}]}
+      - {function: synthesize, response_format: "srt", words: [{"word": "A", "start": "nan", "end": 1}]}
+      - {function: synthesize, response_format: "vtt", words: [{"word": "A", "start": "inf", "end": 1}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+task: B1321
+deviations:
+  - what: "Async chat requests whose media policy requires inlining return 400 invalid_request_error with code unsupported_remote_media and param identifying that media input; the gateway performs no URL retrieval."
+    why: "The async_inline_remote_media call reaches the unresolved download choice and must remain disabled pending Max's decision."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1373-L1396
+  - what: "A string tool_choice sent together with include_server_side_tool_invocations=true is refused with a 400 that names tool_choice instead of reaching the provider."
+    why: "LiteLLM assigns the include key onto whatever toolConfig holds, so a string tool_choice raises a TypeError there; a working setup cannot rely on that crash."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1231-L1234
+  - what: "The request body's toolConfig carries the provider-mapped toolConfig, including the Maps retrievalConfig, merged with the tool_choice config; a key both set takes the tool_choice value."
+    why: "LiteLLM writes the mapped toolConfig into optional_params and reads only tool_choice for the body's toolConfig, so the Maps location never reaches Gemini chat."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1229-L1234

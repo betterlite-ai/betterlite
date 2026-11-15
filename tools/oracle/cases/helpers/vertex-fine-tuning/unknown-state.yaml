@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-fine-tuning-unknown-state
+call:
+  vertex_fine_tuning:
+    operation: response
+    calls:
+      - zone: UTC
+        response: {state: JOB_STATE_PAUSED}
+      - zone: UTC
+        response: {state: JOB_STATE_PARTIALLY_SUCCEEDED}
+      - zone: UTC
+        response: {state: ""}
+      - zone: UTC
+        response: {state: null}
+      - zone: UTC
+        response: {state: JOB_STATE_RUNNING}
+env: {}
+compare: {ignore: []}

@@ -46,3 +46,10 @@ path = "fuzz_targets/docker_sha256sum.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sse_parser"
+path = "fuzz_targets/sse_parser.rs"
+test = false
+doc = false
+bench = false

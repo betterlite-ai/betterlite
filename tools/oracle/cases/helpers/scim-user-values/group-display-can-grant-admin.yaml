@@ -1,0 +1,19 @@
+kind: helper
+name: group-display-can-grant-admin
+call:
+  scim_user_values:
+    user:
+      schemas:
+        - urn:ietf:params:scim:schemas:core:2.0:User
+      userName: bob
+      groups:
+        - value: team-eng
+          display: Engineering
+        - value: team-7
+          display: SCIM Admins
+    admin_group: SCIM Admins
+    default_role: internal_user
+    active: true
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,20 @@
+task: B4022
+deviations:
+  - what: A customized email logo or support contact is used as given; the premium customization check is not built and nothing raises.
+    why: betterlite has no paid tier and no license check, so SMTP_SENDER_LOGO, EMAIL_LOGO_URL and EMAIL_SUPPORT_CONTACT are always accepted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1224-L1234
+  - what: Missing branding falls back to LiteLLM's logo URL and support contact constants, with no implicit asset fetching.
+    why: B4020 supplies the two constants and this task uses them; an empty environment value counts as unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L86-L89
+  - what: The missing-recipient error names the event and the user id instead of dumping the webhook event, and the team path logs the joined recipient string instead of the member roster and the fetched email rows.
+    why: The dumped event carries the key token and the roster rows carry user ids and emails; betterlite never writes either to an error log. LiteLLM's team-side warning is also unreachable there, since a joined list is never None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1392-L1393
+  - what: Budget and spend amounts in the HTML render with the Decimal's text, so 100 prints as 100 where LiteLLM's f-string prints the float 100.0.
+    why: Money is a rust_decimal::Decimal from the moment it is read, and only the trailing .0 of a whole number differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1401
+  - what: A team roster that cannot be decoded fails the lookup with a typed error; LiteLLM skips entries that are not a dict with a string user_id and returns no email for them.
+    why: The roster is B724's typed team row, which refuses a value that is not a list, a member without a user identity and a role other than admin or user, instead of filtering them. A roster LiteLLM writes decodes to the same member list, and a broken one has no correct recipient list to send to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L35-L46
+  - what: The team alias, the user id, the logo URL and the support contact are HTML-escaped before they reach the budget email bodies; LiteLLM's f-strings write them into the HTML unescaped.
+    why: A team alias or user id holds request data, so leaving it raw would put its markup in every team member's inbox and could break the message. betterlite escapes all four values with minijinja's HtmlEscape in both templates; LiteLLM writes them raw in the user body at the linked line and in the team body at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L104-L118.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1401

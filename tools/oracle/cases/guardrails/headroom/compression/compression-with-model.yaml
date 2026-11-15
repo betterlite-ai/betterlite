@@ -1,0 +1,48 @@
+kind: helper
+name: compression-with-model
+call:
+  b3774: {
+      "inputs": {
+        "structured_messages": [
+          {
+            "role": "system",
+            "content": "sys"
+          },
+          {
+            "role": "user",
+            "content": "long text"
+          },
+          {
+            "role": "assistant",
+            "content": "answer"
+          },
+          {
+            "role": "user",
+            "content": "now"
+          }
+        ]
+      },
+      "request_data": {
+        "model": "gpt-4o"
+      },
+      "input_type": "request",
+      "model": "compressor",
+      "answer": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "short"
+            }
+          ]
+        }
+      }
+    }
+env: {}
+compare:
+  ignore:
+    - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/start_time", why: "The record time is the wall clock at the call"}
+    - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/end_time", why: "The record time is the wall clock at the call"}
+    - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/duration", why: "The duration is measured around the wall clock"}

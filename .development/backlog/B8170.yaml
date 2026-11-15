@@ -1,7 +1,7 @@
 id: B8170
 milestone: M3 providers
 title: DashScope chat config and tiered cost
-status: todo
+status: done
 depends_on: [B668, B503, B504, B2219, B1666, B1669, B1671, B204]
 file: tasks/B8170-dashscope-chat-cost.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/dashscope/cost_calculator.py"
 parent: B043
 split_from: B043
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1731

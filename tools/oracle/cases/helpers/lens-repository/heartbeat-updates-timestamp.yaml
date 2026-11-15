@@ -1,0 +1,20 @@
+kind: helper
+name: heartbeat-updates-timestamp
+call:
+  b4501:
+    seed:
+      workers:
+        worker-a:
+          token_hash: hash-a
+          data:
+            id: worker-a
+            name: worker
+            scope: {}
+            last_seen: "2026-01-01T00:00:00Z"
+            revoked: false
+    call:
+      operation: heartbeat
+      worker_id: worker-a
+      now: "2026-02-03T04:05:06Z"
+env: {}
+compare: {ignore: []}

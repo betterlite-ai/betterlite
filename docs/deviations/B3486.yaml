@@ -1,0 +1,17 @@
+task: B3486
+deviations:
+  - what: The handler is a pair of free functions that take the executor and every input as parameters, not static methods of GenerateContentToCompletionHandler over a module-level adapter.
+    why: Dependencies come through parameters; betterlite keeps no module-level state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L15-L54
+  - what: Stream detection is the variant of the completion answer (CompletionOutput::Stream or CompletionOutput::Response), not hasattr(response, "__iter__") or hasattr(response, "__aiter__").
+    why: The executor port is typed, so a stream and a whole response are different values and no runtime attribute check exists. A Python string, which has __iter__, cannot come out of a typed port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L140-L163
+  - what: Completion execution goes through the CompletionExecutor trait (completion and acompletion) and is not reimplemented here.
+    why: B014 owns the completion pipeline; the handler only prepares the call and translates the answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L77-L104
+  - what: A stream answer to a call that did not set stream fails with a wrapped error that says the completion answered a stream to a call that did not ask for one.
+    why: LiteLLM passes the stream object to translate_completion_to_generate_content and the ValueError carries an AttributeError text about the stream object; the typed port has no such object, so the message names the cause directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L90-L104
+  - what: The "Failed to transform streaming response" ValueError is not built.
+    why: translate_completion_output_params_streaming returns the SSE wrapper on every input, so LiteLLM's None branch never runs, and translate_stream always returns a stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L84-L88

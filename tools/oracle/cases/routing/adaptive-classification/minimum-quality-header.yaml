@@ -1,0 +1,34 @@
+kind: probe
+name: adaptive-classification-minimum-quality-header
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_classification:
+        check: minimum_quality
+        prompts: []
+        requests:
+          - {"prompt": "Write a Python function.", "headers": {"x-litellm-min-quality-tier": "3"}, "metadata": null}
+          - {"prompt": "Hello.", "headers": {"X-LiteLLM-Min-Quality-Tier": "2"}, "metadata": {"min_quality_tier": 1}}
+          - {"prompt": "Hello.", "headers": {"x-litellm-min-quality-tier": " 2 "}, "metadata": null}
+          - {"prompt": "", "headers": {"x-litellm-min-quality-tier": 2}, "metadata": null}
+          - {"prompt": "Hello.", "headers": {"x-litellm-min-quality-tier": "-1"}, "metadata": null}
+          - {"prompt": "Hello.", "headers": {"x-litellm-min-quality-tier": "many"}, "metadata": {"min_quality_tier": 2}}
+          - {"prompt": "Hello.", "headers": {"x-other-tier": "3"}, "metadata": {"min_quality_tier": 1}}
+          - {"prompt": "Hello.", "headers": "x-litellm-min-quality-tier: 2", "metadata": {"min_quality_tier": 1}}
+          - {"prompt": "Hello.", "headers": {}, "metadata": {"min_quality_tier": "3"}}
+          - {"prompt": "Hello.", "headers": null, "metadata": {"min_quality_tier": 2.7}}
+          - {"prompt": "Hello.", "headers": null, "metadata": {"min_quality_tier": -1.9}}
+          - {"prompt": "Hello.", "headers": null, "metadata": {"min_quality_tier": "2.7"}}
+          - {"prompt": "Hello.", "headers": null, "metadata": {"min_quality_tier": null}}
+          - {"prompt": "Hello.", "headers": null, "metadata": {}}
+          - {"prompt": "Hello.", "headers": null, "metadata": null}
+          - {"prompt": "Who is the president of France?", "headers": {"x-litellm-min-quality-tier": "2.5"}, "metadata": {"min_quality_tier": 1}}
+          - {"prompt": "Hello.", "headers": {"x-litellm-min-quality-tier": null}, "metadata": {"min_quality_tier": 1}}
+          - {"prompt": "Hello.", "headers": {"x-litellm-min-quality-tier": "3", "X-LiteLLM-Min-Quality-Tier": "1"}, "metadata": null}
+          - {"prompt": "Hello.", "headers": null, "metadata": {"min_quality_tier": 3.0}}
+          - {"prompt": "Hello.", "headers": {"x-litellm-min-quality-tier": "0"}, "metadata": null}
+          - {"prompt": "Hello.", "headers": null, "metadata": {"min_quality_tier": []}}
+          - {"prompt": "Hello.", "headers": [], "metadata": {"min_quality_tier": 1}}
+        deployments: []
+compare: {ignore: []}

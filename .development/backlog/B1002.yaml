@@ -1,14 +1,14 @@
 id: B1002
 milestone: M5 api families
 title: Audio subtitles
-status: todo
+status: done
 depends_on: [B171, B1087]
 file: tasks/B1002-audio-subtitles.yaml
 covers:
   - "litellm/litellm_core_utils/audio_utils/subtitle_utils.py"
 parent: B083
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1692

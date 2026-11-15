@@ -1,0 +1,1 @@
+{"text": "hello world", "language_code": "eng", "language_probability": 0.98, "words": [{"text": "hello", "start": 0.0, "end": 0.5, "type": "word", "logprob": -0.1}, {"text": " ", "start": 0.5, "end": 0.6, "type": "spacing"}, {"text": "(laughs)", "start": 0.6, "end": 0.7, "type": "audio_event"}, {"text": "world", "start": 0.7, "end": 1.2, "type": "word"}]}

@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-options-explicit-zero-temperature
+call:
+  gemini_options:
+    safety_settings: null
+    steps:
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {temperature: 0}
+        optional_params: {}
+      - op: options
+        model: gemini-3-pro-preview
+        non_default_params: {temperature: 0}
+        optional_params: {}
+      - op: options
+        model: gemini-3-pro-preview
+        non_default_params: {}
+        optional_params: {}
+      - op: options
+        model: gemini-3-flash-preview
+        non_default_params: {temperature: 1.0}
+        optional_params: {}
+env: {}
+compare: {ignore: []}

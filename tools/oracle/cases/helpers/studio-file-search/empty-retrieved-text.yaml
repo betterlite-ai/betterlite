@@ -1,0 +1,11 @@
+kind: helper
+name: empty-retrieved-text
+call:
+  studio_file_search:
+    calls:
+      - function: search_reply
+        status: 200
+        body: '{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{}},{"retrievedContext":{"uri":"files/c"}},{"retrievedContext":{"text":"","title":""}},{"retrievedContext":{"text":"kept passage","uri":"","title":"named.txt"}}],"groundingSupports":[{"segment":{"text":""}},{"segment":{}},{"segment":{"text":"kept"},"confidenceScores":[]}]}},{"groundingMetadata":{"groundingChunks":[{"retrievedContext":null},{}]}}]}'
+        query: ""
+env: {}
+compare: {ignore: []}

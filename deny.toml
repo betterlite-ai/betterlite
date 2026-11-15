@@ -103,7 +103,7 @@ deny = [
   # Google's Rust SDK sends through its own client: google-cloud-auth for Vertex credentials (B1301), google-cloud-gax-internal for Speech (B1358)
   { crate = "reqwest", wrappers = ["betterlite-http", "betterlite-oracle", "betterlite-oracle-core-ops", "betterlite-guardrails", "betterlite-secret-managers", "google-cloud-auth", "google-cloud-gax-internal", "hf-hub", "reqwest-middleware", "xet-client", "xet-runtime"] },
   { crate = "betterlite-router", wrappers = ["betterlite-oracle", "betterlite-router-fuzz", "betterlite-server"] },
-  { crate = "betterlite-server", wrappers = ["betterlite", "betterlite-oracle", "betterlite-oracle-server", "betterlite-server-fuzz"] },
+  { crate = "betterlite-server", wrappers = ["betterlite", "betterlite-backend", "betterlite-gateway", "betterlite-oracle", "betterlite-oracle-server", "betterlite-server-fuzz"] },
 ]
 [sources]
 unknown-registry = "deny"

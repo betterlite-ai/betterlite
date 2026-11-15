@@ -1,0 +1,36 @@
+kind: helper
+name: passthrough-guardrail-process-output-non-dict
+call:
+  b3573:
+    scenarios:
+      - function: output
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              response_fields: [output]
+        response: "just text"
+        request_data:
+          extra: 1
+        user_api_key: null
+      - function: output
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              response_fields: [output]
+        response: [1, 2]
+        request_data: null
+        user_api_key: null
+      - function: output
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              response_fields: [output]
+        response: null
+        request_data:
+          extra: 1
+        user_api_key: null
+env: {}
+compare: {ignore: []}

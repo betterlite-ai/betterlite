@@ -26,6 +26,8 @@ pub enum Capability {
     Vision,
     #[serde(rename = "supports_pdf_input")]
     PdfInput,
+    #[serde(rename = "supports_tool_choice")]
+    ToolChoice,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
@@ -209,6 +211,7 @@ const fn capability_value(capabilities: &CapabilityFields, capability: Capabilit
         Capability::Reasoning => capabilities.reasoning.supports_reasoning,
         Capability::Vision => capabilities.media.supports_vision,
         Capability::PdfInput => capabilities.media.supports_pdf_input,
+        Capability::ToolChoice => capabilities.tooling.supports_tool_choice,
     }
 }
 

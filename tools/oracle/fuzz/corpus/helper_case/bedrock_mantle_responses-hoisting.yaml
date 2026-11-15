@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-mantle-responses-hoisting
+call:
+  bedrock_mantle_responses:
+    mantle_input_hoisting:
+      cases:
+        - model: us-east-1/openai.gpt-oss-120b
+          input:
+            - {type: agent_message, content: [{type: output_text, text: hello}]}
+        - model: us-east-1/openai.gpt-oss-120b
+          input:
+            - {type: additional_tools, tools: [{type: function, name: hoisted, parameters: {}}, {type: web_search_preview}]}
+          params: {tools: [{type: function, name: existing, parameters: {}}]}
+env: {}
+compare: {ignore: []}

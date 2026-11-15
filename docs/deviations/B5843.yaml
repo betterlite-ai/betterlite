@@ -1,0 +1,26 @@
+task: B5843
+deviations:
+  - what: The oci_signer option is not supported; credentials are always the manual user, fingerprint, tenancy and key (or key file). The signer check in validate_environment is dropped with it, so a caller that passes only oci_signer gets the 401 missing-credentials error instead of a signed request.
+    why: See B5940. betterlite signs with its own RSA-SHA256 signer and has no OCI SDK signer object to accept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L410-L411
+  - what: A response body that is not JSON gives an OciError carrying the upstream HTTP status and a fixed "Invalid response format from OCI:" prefix. LiteLLM lets Python's JSONDecodeError escape, and litellm maps it to an APIConnectionError with status 500 and the decoder text. A chunk that is not JSON gives a 500 OciError with the same prefix instead of the decoder text. A request that does not fit its typed payload is a 400 that names the payload, where LiteLLM's pydantic ValidationError surfaces as an APIConnectionError with status 500.
+    why: The decoder and pydantic texts are Python runtime text with no Rust equivalent, and betterlite answers a request value its declared type cannot hold with a 400 that names the field, as docs/compatibility.md says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L609
+  - what: The user-agent validate_environment sets is litellm/1.105.1, the version B5940's OciEnvironment carries, where LiteLLM reports its installed package version.
+    why: A Rust gateway has no LiteLLM package version to report.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L52-L58
+  - what: A non-string error value in a response body is rendered as JSON text ({"message":"x"}), where LiteLLM runs Python's str() over it and writes the value's Python repr instead. A string error value renders the same on both sides.
+    why: Python's str() of a dict is runtime text that betterlite does not port; the status and the OCI error message for a string value match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L617-L621
+  - what: A chat completion response id is chatcmpl-<uuid4>, generated in this module, where LiteLLM leaves the id its ModelResponse constructor made; the wire body carries no id.
+    why: The shared betterlite ChatResponse requires an id before B5942's handlers fill the rest.
+    link: ""
+  - what: The tool_choice error messages render the offending value as JSON text and name the kind of a JSON number "int" or "float", where LiteLLM prints the Python repr of the value and type(tc).__name__.
+    why: Python repr and Python type names are runtime text that betterlite does not port; the status and the rest of each message match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L156-L182
+  - what: A non-string response_format type is a 400 that names the field, where LiteLLM runs str() on it and forwards the upper-cased text as an OCI type.
+    why: A value of the wrong type is an error in betterlite, so Python's str() coercion is not ported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L190
+  - what: A response body larger than 16 MiB is an error with the upstream status before JSON decoding, and an unfinished stream line longer than 1 MiB (1048576 bytes) is a 500 error; LiteLLM has no body size limit and keeps an unfinished line without a limit.
+    why: betterlite bounds the bytes it buffers instead of decoding an unbounded upstream body, and one line of an OCI event is far below the cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L98-L135

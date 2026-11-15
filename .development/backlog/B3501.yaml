@@ -1,14 +1,14 @@
 id: B3501
 milestone: M5 api families
 title: Prepare managed-agent providers and outbound header precedence
-status: todo
+status: done
 depends_on: [B1392, B247]
 file: tasks/B3501-agent-call-preparation.yaml
 covers:
   - "litellm/interactions/agents/{utils,main}.py"
 parent: B098
 split_from: B098
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1785

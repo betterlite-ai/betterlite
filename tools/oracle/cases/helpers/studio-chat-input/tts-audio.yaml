@@ -1,0 +1,9 @@
+kind: helper
+name: studio-chat-input-tts-audio
+call:
+  studio_chat_input:
+    steps:
+      - op: params
+        model: gemini-2.5-flash-preview-tts
+env: {}
+compare: {ignore: []}

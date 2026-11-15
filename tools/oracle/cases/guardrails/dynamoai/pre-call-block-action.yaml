@@ -1,0 +1,23 @@
+kind: helper
+name: dynamoai-pre-call-block-action
+call:
+  b3768:
+    mode: pre_call
+    env: {}
+    api_key: dynamo-key
+    api_base: http://dynamo.example
+    policy_ids: null
+    model_id: null
+    messages:
+      - {role: user, content: block me}
+    choices: []
+    answer:
+      status: 200
+      headers: {}
+      body:
+        finalAction: BLOCK
+        appliedPolicies:
+          - policy: {id: p-1, name: Toxicity, method: TOXICITY, description: no insults}
+            outputs: {action: BLOCK, message: blocked text}
+env: {}
+compare: {ignore: []}

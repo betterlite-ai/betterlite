@@ -1,0 +1,55 @@
+kind: helper
+name: snowflake-claude-tools
+call:
+  b5844:
+    steps:
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: weather?}]
+        options:
+          tools:
+            - type: function
+              function:
+                name: get_weather
+                description: Look up the weather
+                parameters: {$schema: 'http://json-schema.org/draft-07/schema#', type: object, properties: {city: {type: string}}, required: [city]}
+          tool_choice: required
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: weather?}]
+        options:
+          tools:
+            - {type: function, function: {name: ping}}
+            - {type: function, function: {name: no_params, description: nothing to pass}}
+          tool_choice: auto
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: weather?}]
+        options:
+          tools:
+            - {name: calc, description: adds, input_schema: {$schema: 'http://json-schema.org/draft-07/schema#', type: object}}
+            - {name: raw, description: no schema}
+            - {type: function}
+          tool_choice: none
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: weather?}]
+        options: {tool_choice: weird}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: weather?}]
+        options: {tool_choice: {type: function, function: {name: get_weather}}}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: weather?}]
+        options: {tool_choice: {type: function}}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: weather?}]
+        options: {tool_choice: {type: any}}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages: [{role: user, content: weather?}]
+        options: {tool_choice: null}
+env: {}
+compare: {ignore: []}

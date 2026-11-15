@@ -1,0 +1,27 @@
+kind: helper
+name: plan-plain
+call:
+  b4118:
+    cases:
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls:
+          - id: toolu_1
+            type: tool_use
+            name: web_search
+            input: {query: first}
+          - id: toolu_2
+            type: tool_use
+            name: web_search
+            input: {query: second}
+        optional_params: {}
+        kwargs: {}
+        searches:
+          - kind: success
+            text: one
+          - kind: success
+            text: two
+env: {}
+compare: {ignore: []}

@@ -79,7 +79,8 @@ jobs:
               fi
             fi
           elif [[ $EVENT == merge_group && -n $task ]]; then
-            parts='["lint","task"]'
+            # a task file names only its own tests, so edited runs every test of the crates the queued change edits
+            parts='["lint","task","edited"]'
           elif [[ $EVENT == merge_group ]]; then
             # a tests runner took 2.8 minutes to print that the change affects no package, so the paths rules.toml marks for no package decide here
             changed=$(git diff --name-only --no-renames "$base" HEAD)
@@ -309,9 +310,13 @@ jobs:
                 affected=$(cargo gate affected) || exit 1
                 if [[ -n $affected ]]; then echo "the change affects $affected, but find started no tests part"; exit 1; fi
               fi ;;
-            tests-*)
-              affected=$(cargo gate affected --shard "${PART#tests-}" --shards "$TEST_SHARDS") || exit 1
-              if [[ -z $affected ]]; then echo "no package the change affects falls in this shard"; exit 0; fi
+            tests-*|edited)
+              if [[ $PART == edited ]]; then
+                affected=$(cargo gate affected --edited) || exit 1
+              else
+                affected=$(cargo gate affected --shard "${PART#tests-}" --shards "$TEST_SHARDS") || exit 1
+              fi
+              if [[ -z $affected ]]; then echo "no package the change touches falls in this part"; exit 0; fi
               read -r -a packages <<< "$affected"
               # the oracle library and its unit-test build need about 8 GB each, so they take turns on a 16 GB runner
               export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"

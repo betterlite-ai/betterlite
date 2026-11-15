@@ -1,0 +1,8 @@
+task: B1619
+deviations:
+  - what: A cached pkce_verifier entry whose code_verifier member is not a JSON string (a number, boolean, list or object) is treated as a corrupt entry, so strict mode deletes it and answers 401 auth_error with param PKCE_CACHE_MISS, and permissive mode deletes it and continues without a verifier.
+    why: betterlite reads the cache through typed values, so the declared object shape is a string member; the pinned code passes any truthy value straight into the token exchange, where a non-string breaks fastapi-sso after the provider round trip. No working setup stores a non-string verifier, so classifying it as corrupt fails earlier without changing the status or param a client sees.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3788-L3816
+  - what: A legacy plain-string cache entry whose text is empty counts as an empty verifier, so strict mode answers the empty/null code_verifier error and permissive mode warns, where the pinned truthiness check lets an empty string fall into its unrecognized-format branch.
+    why: The status, error type, param and code are the same on both paths, and an empty verifier is unusable either way; naming the integrity problem instead of the shape keeps the typed classification honest.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3758-L3812

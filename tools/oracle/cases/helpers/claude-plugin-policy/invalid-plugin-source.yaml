@@ -1,0 +1,29 @@
+kind: helper
+name: invalid-plugin-source
+call:
+  claude_plugin_policy:
+    calls:
+      - function: validate_source
+        source: {source: github}
+      - function: validate_source
+        source: {source: url}
+      - function: validate_source
+        source: {source: git-subdir, url: "https://host/repo.git"}
+      - function: validate_source
+        source: {source: git-subdir, url: "https://host/repo.git", path: "../x"}
+      - function: validate_source
+        source: {source: archive, url: "http://host/plugin.zip"}
+      - function: validate_source
+        source: {source: archive, url: "https:host/plugin.zip"}
+      - function: validate_source
+        source: {source: archive, url: "https:/host/plugin.zip"}
+      - function: validate_source
+        source: {source: archive, url: "https:///plugin.zip"}
+      - function: validate_source
+        source: {source: archive, url: "https://host/plugin.zip", sha256: "abc"}
+      - function: validate_source
+        source: {source: svn}
+      - function: validate_source
+        source: {source: github, repo: "org/repo"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+task: B1325
+deviations:
+  - what: "Google AI Studio chat rejects ordinary remote media requiring download with HTTP 400, type invalid_request_error, the offending media field as param and code unsupported_remote_media; uploaded Gemini file URIs and inline data remain accepted."
+    why: "Max has not decided request URL downloads; this task preserves the current no-fetch boundary instead of enabling Studio's download-and-inline behavior."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L113-L173
+  - what: "The eight Studio class defaults parse through the loader's own view into StudioSettings in the tests tree only; ConfigLoader still rejects litellm_params.response_schema and the other generation keys as unsupported, and no runtime path reads the settings yet."
+    why: "The section registry in crates/betterlite-config/src/sections.rs is outside this task's scope and has no stub for these keys, the same arrangement B1310 recorded for its safety settings."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L51-L58
+  - what: "A file content part whose file key holds something other than an object returns HTTP 400 naming the field; LiteLLM dereferences it and answers HTTP 500."
+    why: "docs/compatibility.md makes a value of the wrong type an error naming the field, and a 500 is the wrong answer for caller error."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L146-L157
+  - what: "A non-finite temperature or top_p fails with an error naming the field; LiteLLM keeps the class attribute and serializes Infinity into the request body."
+    why: "JSON has no non-finite numbers, and docs/compatibility.md makes the output standard JSON."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L51-L58

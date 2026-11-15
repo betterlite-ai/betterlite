@@ -13,13 +13,12 @@ use super::python::PythonSdk;
 use super::result::SdkResult;
 use super::{OracleLimits, SdkHttpCall, Side};
 use super::{
-    anthropic_beta_config, embedding_executor, messages_header_stream, native,
-    vector_query_embedding,
+    anthropic_beta_config, embedding_executor, messages_header_stream, messages_stream_logging,
+    native, vector_query_embedding,
 };
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
 use crate::mock::{MockProvider, ProviderRequest};
-use crate::routing_mock_scripts::MockScript;
 
 pub(crate) struct Execution {
     pub(crate) result: Result<SdkResult, SdkHttpError>,
@@ -62,6 +61,9 @@ impl<'sdk> Sdk<'sdk> {
             }
             (Self::Native, SdkHttpCall::MessagesHeaderStream(stream)) => {
                 run_until_stopped(messages_header_stream::send(stream, api_base, env), stop)
+            }
+            (Self::Native, SdkHttpCall::MessagesStreamLogging(logging)) => {
+                run_until_stopped(messages_stream_logging::send(logging, api_base, env), stop)
             }
         }
     }
@@ -123,15 +125,17 @@ pub(crate) struct Capture {
 
 pub(crate) struct Run<'run> {
     pub(crate) call: &'run SdkHttpCall,
-    pub(crate) script: MockScript,
     pub(crate) env: &'run BTreeMap<String, String>,
     pub(crate) limits: &'run OracleLimits,
     pub(crate) cancelled: &'run AtomicBool,
 }
 
 // every implementation gets its own mock, so one side's traffic can never fill the other's answers
-pub(crate) fn capture(sdk: &Sdk<'_>, run: Run<'_>) -> Result<Capture, OracleError> {
-    let mock = MockProvider::start(run.script)?;
+pub(crate) fn capture(
+    sdk: &Sdk<'_>,
+    mock: MockProvider,
+    run: &Run<'_>,
+) -> Result<Capture, OracleError> {
     let api_base = format!("{}/v1", mock.base_url);
     let deadline = Instant::now()
         .checked_add(run.limits.max_execution)

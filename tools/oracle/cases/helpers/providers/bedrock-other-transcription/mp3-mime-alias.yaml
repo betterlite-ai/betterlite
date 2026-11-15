@@ -1,0 +1,31 @@
+kind: helper
+name: mp3-mime-alias
+call:
+  bedrock_other_transcription:
+    calls:
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: My Clip.mp3, content: ID3}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: talk.MP3, content: ID3}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: song.flac, content: fLaC}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: voice.ogg, content: OggS}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+env: {}
+compare: {ignore: []}

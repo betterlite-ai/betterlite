@@ -1,0 +1,33 @@
+task: B1043
+deviations:
+  - what: >-
+      A cached reservation record larger than ApiLimits::max_json_bytes is discarded with the malformed-record
+      warning instead of being parsed.
+    why: >-
+      LiteLLM validates whatever the store hands back; a gateway that reads an unbounded value from Redis
+      allocates in proportion to it. Every record this store writes stays far below the limit, so no working
+      setup notices.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_enqueued_tokens.py#L415-L421
+  - what: >-
+      A reservation record without reserved_at_monotonic is discarded as malformed; LiteLLM stamps the
+      missing field with the current time.monotonic() through the dataclass default factory.
+    why: >-
+      The stamp only shortens a saved record's ttl, every record this store writes carries it, and the
+      wall clock is not read outside the injected clock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_enqueued_tokens.py#L87-L92
+  - what: >-
+      An elapsed reservation time that has no whole i64 seconds (a non-finite or out-of-range stamp) takes the
+      one-second ttl floor instead of raising, and a stamp far in the future cannot push the ttl past i64.
+    why: >-
+      LiteLLM's math.ceil raises ValueError or OverflowError on a non-finite elapsed value, which the post-call
+      hook turns into a logged hook failure, and it hands an unbounded ttl to the cache for a stamp far in the
+      future. A record from a JSON store can carry neither.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_enqueued_tokens.py#L372-L374
+  - what: >-
+      The Redis save and pop fallback warnings are always logged at WARNING, including for a Redis
+      circuit-breaker-open error and for repeated Redis timeouts.
+    why: >-
+      LiteLLM's log_redis_failure drops a circuit-breaker-open error to DEBUG and throttles repeated timeout
+      failures; betterlite's transport error is opaque, so this slice cannot classify the failure, and B126
+      owns the Redis breaker and its failure classification.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L479-L497

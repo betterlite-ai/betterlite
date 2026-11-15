@@ -1,0 +1,21 @@
+kind: helper
+name: agents-collection-create-with-environment
+call:
+  b3504:
+    function: create
+    name: environment-agent
+    base_environment:
+      type: remote
+      sources:
+        - name: repository
+    kwargs: {}
+    reply:
+      status: 200
+      body:
+        id: environment-agent
+        base_environment:
+          type: remote
+          sources:
+            - name: repository
+env: {}
+compare: {ignore: []}

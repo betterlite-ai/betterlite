@@ -1,0 +1,14 @@
+kind: helper
+name: rejection-provider-alias-scan-seed
+call:
+  rejection_provider:
+    model: tpm-locked
+    router: deployments
+    deployments:
+      - {model_name: tpm-locked, litellm_params: {model: ''}}
+      - {model_name: tpm-locked, litellm_params: {model: openai/gpt-4o-mini}}
+    resolutions:
+      - {model: tpm-locked, outcome: failure}
+      - {model: openai/gpt-4o-mini, outcome: success, resolved: gpt-4o-mini, provider: openai}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: custom-voice-language
+call:
+  vertex_speech:
+    function: custom_voice_language
+    voices:
+      - de-DE-Standard-A
+      - en-US
+      - custom
+      - en
+      - -x
+      - en--US
+      - a-b-c
+      - fr-FR-Wavenet-E
+      - ''
+env: {}
+compare: {ignore: []}

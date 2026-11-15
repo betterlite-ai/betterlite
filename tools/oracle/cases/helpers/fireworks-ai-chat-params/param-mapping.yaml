@@ -1,0 +1,35 @@
+kind: helper
+name: fireworks-ai-chat-params-param-mapping
+call:
+  b6071:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/mapper", model_info: {litellm_provider: fireworks_ai, supports_function_calling: true}}
+    steps:
+      - op: map_params
+        model: "mapper"
+        non_default_params: {tool_choice: "required", temperature: 0.4, top_p: null, modalities: ["text"], user: "someone"}
+      - op: map_params
+        model: "mapper"
+        non_default_params: {tool_choice: "auto", max_completion_tokens: 128}
+      - op: map_params
+        model: "mapper"
+        non_default_params: {tool_choice: {type: "function", function: {name: "run"}}, frequency_penalty: 0}
+      - op: map_params
+        model: "mapper"
+        non_default_params: {tool_choice: null}
+      - op: map_params
+        model: "mapper"
+        ordered_params: [["max_tokens", 10], ["max_completion_tokens", 20]]
+      - op: map_params
+        model: "mapper"
+        ordered_params: [["max_completion_tokens", 20], ["max_tokens", 10]]
+      - op: map_params
+        model: "mapper"
+        non_default_params: {seed: 7, logprobs: true, echo: false, ignore_eos: 0}
+      - op: map_params
+        model: "mapper"
+        optional_params: {temperature: 0.1, tools: null}
+        non_default_params: {user: "someone", top_k: 5}
+      - {op: config, settings: {max_tokens: 64, frequency_penalty: 0, n: 2, stop: ["end"], context_length_exceeded_behavior: truncate, tools: null}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: parallel-ai-pricing-usage-boolean-count-is-skipped
+call:
+  b3274:
+    model_cost: {"parallel_ai/search": {"litellm_provider": "parallel_ai", "mode": "search", "input_cost_per_query": 0.005}, "parallel_ai/search-fast": {"litellm_provider": "parallel_ai", "mode": "search", "input_cost_per_query": 0.003}, "parallel_ai/search-turbo": {"litellm_provider": "parallel_ai", "mode": "search", "input_cost_per_query": 0.002}}
+    model: "parallel_ai/search"
+    custom_llm_provider: "parallel_ai"
+    number_of_queries: 1
+    optional_params: {"_parallel_ai_usage": [{"name": "sku_search", "count": true}], "max_results": 50}
+env: {}
+compare: {ignore: []}

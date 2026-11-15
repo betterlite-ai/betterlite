@@ -1,0 +1,12 @@
+kind: helper
+name: drop-subtitles
+call:
+  vertex_recognition:
+    steps:
+      - {step: params, optional: {}, non_default: {response_format: srt}, drop_params: true, global_drop_params: false}
+      - {step: params, optional: {}, non_default: {response_format: srt}, drop_params: false, global_drop_params: true}
+      - {step: params, optional: {}, non_default: {response_format: srt}, drop_params: false, global_drop_params: false}
+      - {step: params, optional: {response_format: srt}, non_default: {}, drop_params: false, global_drop_params: false}
+      - {step: params, optional: {language: de}, non_default: {response_format: text}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

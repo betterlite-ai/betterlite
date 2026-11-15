@@ -1,0 +1,5 @@
+task: B626
+deviations:
+  - what: An unhashable service_tier (a list or an object) returns a typed InvalidParams error with status 400 instead of an unhandled TypeError.
+    why: Python's `service_tier in {...}` raises TypeError before the UnsupportedParamsError branch, which surfaces as a server error. Rust has no exception to leak, so the failure is a typed 400 that names service_tier, as docs/compatibility.md asks for a wrong-typed value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/responses/transformation.py#L129-L134

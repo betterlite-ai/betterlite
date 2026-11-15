@@ -1,13 +1,16 @@
+use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::pin::{Pin, pin};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use futures_util::future::{Either, select};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::ExposeSecret;
 use tokio::net::TcpListener;
-use tokio::time::timeout;
 
+use crate::xai_login::callback::CallbackRequest;
 use crate::xai_login::error::XaiLoginError;
 use crate::xai_login::listener::{
     CALLBACK_TIMEOUT, CallbackServer, CallbackSettings, MAX_HEAD_BYTES, POLL_INTERVAL,
@@ -22,7 +25,8 @@ use super::support::{
 fn settings() -> CallbackSettings {
     CallbackSettings {
         preferred_port: 0,
-        poll: Duration::from_millis(50),
+        // the poll also bounds how long the server waits for a request head, and a busy runner can be slow
+        poll: Duration::from_secs(5),
         timeout: Duration::from_secs(30),
     }
 }
@@ -84,21 +88,24 @@ async fn reproduces_the_pinned_python_callback_transcript(#[case] name: &str) {
         .await
         .unwrap();
     let port = server_port(&server);
-    let (response, outcome) = bounded(async {
-        tokio::join!(
-            get(port, &case.target),
-            timeout(Duration::from_millis(1_000), server.wait(&clock)),
+    let wait = server.wait(&clock);
+    tokio::pin!(wait);
+    let (response, delivered) = if case.callback.is_some() {
+        let (response, outcome) =
+            bounded(async { tokio::join!(get(port, &case.target), wait) }).await;
+        (response, Some(outcome.unwrap()))
+    } else {
+        (
+            bounded(answered_while_waiting(wait, get(port, &case.target))).await,
+            None,
         )
-    })
-    .await;
+    };
     assert_eq!(response.status, case.status);
     assert_eq!(response.content_type, case.content_type);
     assert_eq!(response.body, case.body);
-    let Some(expected) = &case.callback else {
-        outcome.unwrap_err();
+    let (Some(expected), Some(request)) = (&case.callback, delivered) else {
         return;
     };
-    let request = outcome.unwrap().unwrap();
     assert_eq!(
         expected.code.as_deref(),
         request.code.as_ref().map(ExposeSecret::expose_secret),
@@ -138,16 +145,13 @@ async fn an_unrelated_path_keeps_the_wait_running() {
     let port = server_port(&server);
     let wait = server.wait(&clock);
     tokio::pin!(wait);
-    let (response, outcome) = bounded(async {
-        tokio::join!(
-            get(port, "/favicon.ico"),
-            timeout(Duration::from_millis(150), &mut wait),
-        )
-    })
+    let response = bounded(answered_while_waiting(
+        wait.as_mut(),
+        get(port, "/favicon.ico"),
+    ))
     .await;
     assert_eq!(response.status, 404);
     assert_eq!(response.content_type, None);
-    outcome.unwrap_err();
     let (received, waiting) = bounded(async {
         tokio::join!(
             get(port, "/callback?code=code-1&state=state-test"),
@@ -171,15 +175,12 @@ async fn a_method_other_than_get_keeps_the_wait_running() {
     let port = server_port(&server);
     let wait = server.wait(&clock);
     tokio::pin!(wait);
-    let (response, outcome) = bounded(async {
-        tokio::join!(
-            send(port, "POST /callback HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"),
-            timeout(Duration::from_millis(150), &mut wait),
-        )
-    })
+    let response = bounded(answered_while_waiting(
+        wait.as_mut(),
+        send(port, "POST /callback HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"),
+    ))
     .await;
     assert_eq!(response.status, 501);
-    outcome.unwrap_err();
 }
 
 #[tokio::test]
@@ -193,15 +194,8 @@ async fn an_oversized_request_head_is_refused_and_keeps_waiting() {
     let prefix = "GET /";
     let request = format!("{prefix}{}", "a".repeat(bound - prefix.len()));
     assert_eq!(request.len(), bound);
-    let (response, outcome) = bounded(async {
-        tokio::join!(
-            send(port, &request),
-            timeout(Duration::from_millis(300), &mut wait),
-        )
-    })
-    .await;
+    let response = bounded(answered_while_waiting(wait.as_mut(), send(port, &request))).await;
     assert_eq!(response.status, 400);
-    outcome.unwrap_err();
 }
 
 #[tokio::test]
@@ -213,15 +207,8 @@ async fn too_many_headers_are_refused_and_keep_waiting() {
     tokio::pin!(wait);
     let headers = "X-Probe: a\r\n".repeat(100);
     let request = format!("GET /callback?code=c&state=state-test HTTP/1.1\r\n{headers}\r\n");
-    let (response, outcome) = bounded(async {
-        tokio::join!(
-            send(port, &request),
-            timeout(Duration::from_millis(300), &mut wait),
-        )
-    })
-    .await;
+    let response = bounded(answered_while_waiting(wait.as_mut(), send(port, &request))).await;
     assert_eq!(response.status, 431);
-    outcome.unwrap_err();
 }
 
 #[tokio::test]
@@ -232,15 +219,12 @@ async fn the_receiver_writes_no_access_log() {
     let port = server_port(&server);
     let wait = server.wait(&clock);
     tokio::pin!(wait);
-    let (missing, outcome) = bounded(async {
-        tokio::join!(
-            get(port, "/favicon.ico"),
-            timeout(Duration::from_millis(150), &mut wait),
-        )
-    })
+    let missing = bounded(answered_while_waiting(
+        wait.as_mut(),
+        get(port, "/favicon.ico"),
+    ))
     .await;
     assert_eq!(missing.status, 404);
-    outcome.unwrap_err();
     let (received, request) = bounded(async {
         tokio::join!(
             get(port, "/callback?code=code-1&state=state-test"),
@@ -338,4 +322,16 @@ async fn the_listener_is_closed_when_the_wait_ends(#[case] deliver: bool) {
     TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
         .await
         .unwrap();
+}
+
+// the wait future serves the request, so it runs until the client has its answer and must still be waiting then
+async fn answered_while_waiting<W, C>(wait: Pin<&mut W>, client: C) -> C::Output
+where
+    W: Future<Output = Result<CallbackRequest, XaiLoginError>>,
+    C: Future,
+{
+    match select(pin!(client), wait).await {
+        Either::Left((answer, _wait)) => answer,
+        Either::Right((outcome, _client)) => panic!("the wait ended with {outcome:?}"),
+    }
 }

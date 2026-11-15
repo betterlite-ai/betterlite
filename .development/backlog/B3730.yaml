@@ -1,7 +1,7 @@
 id: B3730
 milestone: M6 guardrails
 title: Azure text moderation thresholds and hooks
-status: todo
+status: done
 depends_on: [B3728]
 file: tasks/B3730-azure-text-moderation.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/azure/azure_text_moderation.py"
 parent: B106
 split_from: B106
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1782

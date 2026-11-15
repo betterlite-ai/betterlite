@@ -1,0 +1,15 @@
+kind: helper
+name: agents-collection-create-with-instructions
+call:
+  b3504:
+    function: create
+    name: instructed-agent
+    instructions: You are a helpful assistant.
+    kwargs: {}
+    reply:
+      status: 200
+      body:
+        id: instructed-agent
+        system_instruction: You are a helpful assistant.
+env: {}
+compare: {ignore: []}

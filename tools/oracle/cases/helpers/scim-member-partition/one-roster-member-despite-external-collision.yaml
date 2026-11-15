@@ -1,0 +1,15 @@
+kind: helper
+name: one-roster-member-despite-external-collision
+call:
+  scim_member_partition:
+    members: []
+    metadata: []
+    entries: []
+    created_ids: []
+    removals:
+      - {value: ann@example.com, roster: [u1], resolved: [u1, u2]}
+      - {value: shared, roster: [u_other], resolved: [u_other]}
+      - {value: absent, roster: [u1], resolved: [u1, u2]}
+env: {}
+compare:
+  ignore: []

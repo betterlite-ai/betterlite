@@ -1,0 +1,25 @@
+kind: helper
+name: passthrough-guardrail-process-output-blocks-existing-metadata
+call:
+  b3573:
+    scenarios:
+      - function: output
+        guardrail_name: g1
+        logging: null
+        response:
+          output: answer
+        request_data:
+          litellm_metadata: {}
+        user_api_key: {"user_id": "u1"}
+      - function: output
+        guardrail_name: g1
+        logging: null
+        response:
+          output: answer
+        request_data:
+          litellm_metadata:
+            user_id: u2
+          response: kept
+        user_api_key: {"user_id": "u1"}
+env: {}
+compare: {ignore: []}

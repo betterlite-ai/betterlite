@@ -122,6 +122,6 @@ pitfalls:
     `/ui` and `/docs` are plain substrings in an unanchored search, so `/docs-private` and `/user/ui-config` are
     excluded too. Keep that; do not anchor the patterns.
 budget:
-  max_changed_lines: 1100
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

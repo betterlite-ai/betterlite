@@ -5,4 +5,5 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
     let _request = ChatRequest::parse(bytes);
+    let _keyed = ChatRequest::parse_with_api_key(bytes);
 });

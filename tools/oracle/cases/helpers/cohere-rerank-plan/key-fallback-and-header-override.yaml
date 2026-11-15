@@ -1,0 +1,52 @@
+kind: helper
+name: cohere-rerank-plan-key-fallback-and-header-override
+call:
+  cohere_rerank_plan:
+    calls:
+      - version: v1
+        model: rerank-v3.0
+        headers: {}
+        settings: {cohere_api_key: long-key, co_api_key: short-key, cohere_key: module-key}
+        options: {query: why, documents: [first]}
+        non_default: {}
+        responses: []
+      - version: v1
+        model: rerank-v3.0
+        headers: {}
+        settings: {cohere_api_key: "", co_api_key: short-key}
+        options: {query: why, documents: [first]}
+        non_default: {}
+        responses: []
+      - version: v1
+        model: rerank-v3.0
+        headers: {}
+        settings: {cohere_api_key: null, co_api_key: null, cohere_key: module-key}
+        options: {query: why, documents: [first]}
+        non_default: {}
+        responses: []
+      - version: v1
+        model: rerank-v3.0
+        api_key: explicit-key
+        headers: {}
+        settings: {cohere_api_key: long-key}
+        options: {query: why, documents: [first]}
+        non_default: {}
+        responses: []
+      - version: v1
+        model: rerank-v3.0
+        api_key: ""
+        headers: {}
+        settings: {cohere_api_key: long-key}
+        options: {query: why, documents: [first]}
+        non_default: {}
+        responses: []
+      - version: v1
+        model: rerank-v3.0
+        api_key: test-key
+        headers: {Authorization: Bearer caller, accept: text/plain, content-type: text/plain}
+        settings: {}
+        options: {query: why, documents: [first]}
+        non_default: {}
+        responses: []
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,6 @@
+data: not json
+data:
+: keep-alive
+event: message
+id: 7
+

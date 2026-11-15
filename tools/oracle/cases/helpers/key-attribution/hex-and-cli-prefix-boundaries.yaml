@@ -1,0 +1,35 @@
+kind: helper
+name: hex_and_cli_prefix_boundaries
+call:
+  key_attribution:
+    digest_values:
+      - '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      - '0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF'
+      - '0123456789aBcDeF0123456789AbCdEf0123456789aBcDeF0123456789AbCdEf'
+      - '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde'
+      - '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0'
+      - '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg'
+      - ''
+      - 'hashed-jwt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      - "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde\n"
+      - '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeａ'
+    cli_keys:
+      - 'cli-session-'
+      - 'cli-session-u1'
+      - 'cli-session-cli-session-u1'
+      - 'cli-session-u2'
+      - 'sk-u1'
+      - 'CLI-SESSION-u1'
+      - 'cli-session-u1 '
+    double_hashed_keys: []
+    daily_keys: []
+    users:
+      - {user_id: u1, user_email: null, teams: []}
+    active_token_rows: []
+    deleted_token_rows: []
+    daily_owner_rows: []
+    attach_metadata: {}
+    export_rows: []
+    export_fields: {api_key: api_key, alias: api_key_alias, team_id: team_id, user_email: user_email}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: elevenlabs-transcription-empty-explicit-base
+call:
+  elevenlabs_transcription:
+    calls:
+    - {function: url, api_base: null, environment: {}}
+    - {function: url, api_base: null, environment: {ELEVENLABS_API_BASE: "https://env.test/"}}
+    - {function: url, api_base: null, environment: {ELEVENLABS_API_BASE: "https://env.test//"}}
+    - {function: url, api_base: "", environment: {ELEVENLABS_API_BASE: "https://env.test"}}
+    - {function: url, api_base: "/", environment: {}}
+    - {function: url, api_base: "https://proxy.test/", environment: {}}
+    - {function: url, api_base: "https://proxy.test//", environment: {ELEVENLABS_API_BASE: "https://env.test"}}
+    - {function: url, api_base: null, environment: {ELEVENLABS_API_BASE: ""}}
+    - {function: url, api_base: null, environment: {ELEVENLABS_API_BASE: "true"}}
+compare: {ignore: []}
+env: {}

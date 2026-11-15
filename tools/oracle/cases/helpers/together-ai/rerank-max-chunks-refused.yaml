@@ -1,0 +1,22 @@
+kind: helper
+name: rerank-max-chunks-refused
+call:
+  b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map: []
+    chat_messages: []
+    completion: []
+    rerank_requests:
+    - model: together/reranker
+      query: which one
+      documents: [one]
+      max_chunks_per_doc: 2
+      api_key: sk-together
+      api_base: https://api.together.ai/v1
+    rerank_responses: []
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []

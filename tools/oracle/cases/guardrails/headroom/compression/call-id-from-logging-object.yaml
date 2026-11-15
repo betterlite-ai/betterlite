@@ -1,0 +1,48 @@
+kind: helper
+name: call-id-from-logging-object
+call:
+  b3774: {
+      "inputs": {
+        "structured_messages": [
+          {
+            "role": "system",
+            "content": "sys"
+          },
+          {
+            "role": "user",
+            "content": "long text"
+          },
+          {
+            "role": "assistant",
+            "content": "answer"
+          },
+          {
+            "role": "user",
+            "content": "now"
+          }
+        ]
+      },
+      "input_type": "request",
+      "logging_call_id": "log-id-1",
+      "answer": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "short"
+            }
+          ],
+          "ccr_hashes": [
+            "abcdef123456"
+          ]
+        }
+      }
+    }
+env: {}
+compare:
+  ignore:
+    - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/start_time", why: "The record time is the wall clock at the call"}
+    - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/end_time", why: "The record time is the wall clock at the call"}
+    - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/duration", why: "The duration is measured around the wall clock"}

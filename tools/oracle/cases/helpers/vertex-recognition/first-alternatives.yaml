@@ -1,0 +1,15 @@
+kind: helper
+name: first-alternatives
+call:
+  vertex_recognition:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[{"alternatives":[{"transcript":"hello"},{"transcript":"ignored"}],"languageCode":"en"},{"alternatives":[{"transcript":""},{"transcript":"never"}],"languageCode":"de"},{"alternatives":[],"languageCode":""},{"alternatives":[{"transcript":"world"}]}]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[{"alternatives":[{"transcript":null},{"transcript":"never"}]}]}'
+env: {}
+compare: {ignore: []}

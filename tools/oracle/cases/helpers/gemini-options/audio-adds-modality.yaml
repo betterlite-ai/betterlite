@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-options-audio-adds-modality
+call:
+  gemini_options:
+    safety_settings: null
+    steps:
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {audio: {format: pcm16, voice: en-US-Studio-O}}
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {modalities: [text], audio: {format: pcm16}}
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {modalities: [audio], audio: {}}
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {modalities: [text, video, unknown]}
+        optional_params: {}
+env: {}
+compare: {ignore: []}

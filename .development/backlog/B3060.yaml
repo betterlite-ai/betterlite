@@ -1,14 +1,14 @@
 id: B3060
 milestone: M4 keys, spend and management
 title: Read daily usage rows for FinOps exports
-status: todo
+status: done
 depends_on: [B700, B1710]
 file: tasks/B3060-finops-usage-queries.yaml
 covers:
   - "litellm/integrations/{focus,cloudzero}/database.py"
 parent: B073
 split_from: B073
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1835

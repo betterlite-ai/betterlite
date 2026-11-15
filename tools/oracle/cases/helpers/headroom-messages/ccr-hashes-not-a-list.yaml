@@ -1,0 +1,10 @@
+kind: helper
+name: headroom-messages-ccr-hashes-not-a-list
+call:
+  b3773:
+    function: ccr_hashes
+    body:
+      ccr_hashes: abcdef012345
+      messages: []
+env: {}
+compare: {ignore: []}

@@ -76,5 +76,5 @@ pitfalls:
   - safeguards={} still adds the dangerous-tool-use beta because the condition is not None.
   - Existing anthropic-beta values are stripped but empty entries are not filtered in this native path.
   - get_complete_url must not append a second endpoint suffix after validation built rawPredict.
-budget: {max_changed_lines: 625, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: standard

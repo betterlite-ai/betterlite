@@ -1,0 +1,5 @@
+kind: helper
+name: configured-models-passthrough
+call: {"b3154": {"operation": "configured_models", "settings": {"estimator_model": "unused", "estimator_prompt": "Estimate this."}, "models": [["gpt-5.2", "openai"], ["deepseek-chat", null]]}}
+env: {}
+compare: {ignore: []}

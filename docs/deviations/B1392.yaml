@@ -1,0 +1,8 @@
+task: B1392
+deviations:
+  - what: An agent reply body larger than 4 MiB is refused with a ResponseTooLarge error before it is parsed.
+    why: LiteLLM reads any body into memory, and betterlite bounds every upstream JSON read; a native agent record stays far below 4 MiB.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/agents/transformation.py#L146-L175
+  - what: A non-2xx reply body that is not valid UTF-8 is reported by its byte count instead of being decoded with replacement characters.
+    why: Python's httpx decodes error text lossily, and betterlite refuses to put lossy text into an error whose body callers read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/agents/transformation.py#L121-L130

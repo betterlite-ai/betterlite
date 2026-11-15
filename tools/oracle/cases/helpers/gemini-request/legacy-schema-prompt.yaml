@@ -1,0 +1,15 @@
+kind: helper
+name: gemini-request-legacy-schema-prompt
+call:
+  gemini_request:
+    model: gemma-2.5-pro
+    provider: vertex_ai
+    supports: {system_message: true, response_schema: false}
+    modify_params: false
+    messages:
+      - {role: user, content: hi}
+    optional_params:
+      response_schema: {type: object}
+    litellm_params: {}
+env: {}
+compare: {ignore: []}

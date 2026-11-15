@@ -1,0 +1,12 @@
+kind: helper
+name: agents-item-list-versions-basic
+call:
+  b3505:
+    operation: list_versions
+    name: agent-1
+    api_key: key-1
+    litellm_call_id: call-versions
+    status: 200
+    body: '{"agentVersions": []}'
+env: {}
+compare: {ignore: []}

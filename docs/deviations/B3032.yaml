@@ -1,0 +1,8 @@
+task: B3032
+deviations:
+  - what: A dual-cache batch read whose reply holds fewer or more values than the keys asked for is a failed read (None), where LiteLLM hands the short list back and its callers read it positionally.
+    why: The cache trait does not promise one value per key, so a reply of a different length would silently line counters up with the wrong keys. No working cache returns one, so nothing that works today changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1387-L1398
+  - what: The WARNING that read_counter_values_without_incrementing logs before it reads the local mirror is written through tracing with LiteLLM's message, without LiteLLM's Redis timeout throttling and its circuit-open DEBUG downgrade.
+    why: B393's log_redis_failure lives in betterlite-server, which takes the rate limiter as a dependency in B3055, so this crate cannot call it without a dependency cycle. The level, the message and the fallback that follows match; only repeated timeout lines are not throttled. B3031 records the same trade for the fail-closed rejection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L479-L504

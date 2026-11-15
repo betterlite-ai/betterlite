@@ -1,14 +1,14 @@
 id: B1619
 milestone: M4 keys, spend and management
 title: Preserve PKCE verifier state across OAuth retries
-status: todo
+status: done
 depends_on: [B002, B4302, B360, B4326, B171, B733]
 file: tasks/B1619-sso-pkce.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
 parent: B063
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1603

@@ -1,0 +1,19 @@
+kind: probe
+name: deployment-clients-api-key-override-keeps-config-base
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_clients:
+        calculate: []
+        limits: []
+        cached: []
+        credentials:
+          - model_group: gpt
+            config: {model: openai/gpt-4o, api_base: "https://configured.example/v1"}
+            request: {api_key: sk-caller}
+          - model_group: gpt
+            config: {model: openai/gpt-4o, api_key: sk-config, api_base: "https://configured.example/v1"}
+            request: {api_key: sk-caller}
+compare:
+  ignore: []

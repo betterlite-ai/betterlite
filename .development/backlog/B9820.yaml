@@ -1,13 +1,13 @@
 id: B9820
 milestone: M5 api families
 title: Agentic loop callback trait shared by the chat, Responses and Messages loops
-status: todo
+status: done
 depends_on: [B4119]
 file: tasks/B9820-agentic-callback-trait.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1777

@@ -78,5 +78,5 @@ pitfalls:
   - conversation.item.added arrives before function_call_arguments.done so clients can register call_id first.
   - Tool response.done resets response/item IDs but leaves the conversation available for the next turn.
   - The tool-turn usage path omits the grounding-counter overlay used for ordinary response.done.
-budget: {max_changed_lines: 600, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

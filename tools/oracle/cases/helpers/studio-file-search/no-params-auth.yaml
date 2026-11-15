@@ -1,0 +1,13 @@
+kind: helper
+name: no-params-auth
+call:
+  studio_file_search:
+    calls:
+      - function: capabilities
+      - function: environment
+        headers: {Content-Type: application/custom, x-goog-api-key: caller-key, X-Custom: kept}
+        environment: {GOOGLE_API_KEY: google-key}
+      - function: environment
+        environment: {GEMINI_API_KEY: gemini-key}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: studio-agents-malformed-create-warning
+call:
+  studio_agents:
+    calls:
+      - function: reply
+        operation: create
+        name: request-name
+        status: 200
+        body: "<html>not json</html>"
+env: {}
+compare: {ignore: []}

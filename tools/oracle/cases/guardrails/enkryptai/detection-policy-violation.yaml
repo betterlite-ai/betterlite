@@ -1,0 +1,16 @@
+kind: helper
+name: detection-policy-violation
+call:
+  b3769:
+    detect:
+      settings: {api_key: key, api_base: "https://api.enkryptai.com"}
+      texts: [illegal request]
+      answer:
+        status: 200
+        headers: {}
+        body:
+          summary: {policy_violation: 1}
+          details:
+            policy_violation: {violating_policy: no-illegal, explanation: "requests illegal content"}
+env: {}
+compare: {ignore: []}

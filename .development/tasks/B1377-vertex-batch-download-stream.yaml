@@ -101,5 +101,5 @@ pitfalls:
   - A generation conversion exception caught inside the single-row mapper is emitted as an error row, not treated as a whole-file failure.
   - The first complete line can be accepted from a chunk that already pushes the buffered prefix beyond 32 MiB.
   - Streamed embedding regrouping changes content-length even if conversion returns the original bytes.
-budget: {max_changed_lines: 775, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

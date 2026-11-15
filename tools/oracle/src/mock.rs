@@ -42,7 +42,7 @@ pub(crate) struct ProviderRequest {
 
 pub(crate) struct MockProvider {
     pub(crate) base_url: String,
-    recording: Arc<Mutex<Recording>>,
+    pub(crate) recording: Arc<Mutex<Recording>>,
     stop: Option<oneshot::Sender<()>>,
     pub(crate) thread: Option<JoinHandle<Result<(), Error>>>,
 }

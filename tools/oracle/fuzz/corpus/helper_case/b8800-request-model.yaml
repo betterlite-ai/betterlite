@@ -1,0 +1,10 @@
+kind: helper
+name: b8800-request-model-seed
+call:
+  b8800:
+    function: request_model
+    data:
+      model: [gpt-4o, gpt-4o-mini]
+env: {}
+compare:
+  ignore: []

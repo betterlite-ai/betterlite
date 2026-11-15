@@ -1,0 +1,15 @@
+kind: helper
+name: unified-evaluation-batch-texts
+call:
+  b3769:
+    detect:
+      settings: {api_key: key, api_base: "https://api.enkryptai.com"}
+      texts: [first text, second text]
+      answer:
+        status: 200
+        headers: {}
+        body:
+          summary: {toxicity: [], pii: 0}
+          details: {}
+env: {}
+compare: {ignore: []}

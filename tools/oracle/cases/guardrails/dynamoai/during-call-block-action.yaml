@@ -1,0 +1,23 @@
+kind: helper
+name: dynamoai-during-call-block-action
+call:
+  b3768:
+    mode: during_call
+    env: {}
+    api_key: dynamo-key
+    api_base: null
+    policy_ids: null
+    model_id: null
+    messages:
+      - {role: user, content: block me}
+    choices: []
+    answer:
+      status: 200
+      headers: {}
+      body:
+        finalAction: BLOCK
+        appliedPolicies:
+          - policy: {name: Toxicity}
+            outputs: {action: BLOCK}
+env: {}
+compare: {ignore: []}

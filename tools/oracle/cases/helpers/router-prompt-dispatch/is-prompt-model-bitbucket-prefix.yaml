@@ -1,0 +1,14 @@
+kind: helper
+name: prompt-dispatch-is-prompt-model-bitbucket-prefix
+call:
+  b8466:
+    check: is_prompt_model
+    model: bitbucket/my-prompt
+    model_list:
+    - model_name: bitbucket/my-prompt
+      litellm_params:
+        model: bitbucket/my-prompt
+        prompt_id: greeting
+env: {}
+compare:
+  ignore: []

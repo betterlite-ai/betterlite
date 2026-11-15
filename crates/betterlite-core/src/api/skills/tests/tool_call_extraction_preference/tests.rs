@@ -23,6 +23,7 @@ fn block(kind: &str, input: &str) -> ContentBlock {
         id: Some("toolu_1".to_owned()),
         name: Some("litellm_skill_gif".to_owned()),
         input: serde_json::from_str(input).unwrap(),
+        text: None,
     }
 }
 
@@ -30,6 +31,7 @@ fn anthropic_response(content: Vec<ContentBlock>) -> HookResponse {
     HookResponse::Object(ObjectResponse {
         content,
         choices: choices_with_tool_calls(),
+        stop_reason: None,
         generated_files: GeneratedFilesAttribute::Rejected,
         model_extra: None,
     })

@@ -1,0 +1,35 @@
+kind: helper
+name: gemini-image-policy-flash-size-omitted
+call:
+  gemini_image_policy:
+    settings: {}
+    cases:
+      - model: gemini-2.5-flash-b1334
+        catalog_supports_image_size: null
+        params: {size: 1024x1024}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+      - model: gemini-2.5-flash-b1334
+        catalog_supports_image_size: null
+        params:
+          imageConfig: {aspectRatio: '16:9', imageSize: 2K}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+      - model: gemini-2.5-flash-b1334
+        catalog_supports_image_size: null
+        params:
+          size: 1024x1024
+          imageConfig: {imageSize: 4K}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+env: {}
+compare: {ignore: []}

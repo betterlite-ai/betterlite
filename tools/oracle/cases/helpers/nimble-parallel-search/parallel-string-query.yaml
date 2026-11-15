@@ -1,0 +1,25 @@
+kind: helper
+name: parallel-string-query
+call:
+  b8025:
+    provider: parallel_ai
+    calls:
+      - operation: request
+        query: rust search
+      - operation: request
+        query: [rust, search]
+      - operation: request
+        query: [rust, search]
+        optional_params:
+          objective: find crates
+      - operation: request
+        query: fallback
+        optional_params:
+          search_queries: [override]
+      - operation: request
+        query: drop token param
+        optional_params:
+          max_tokens_per_page: 3
+          session_id: session-1
+env: {}
+compare: {ignore: []}
