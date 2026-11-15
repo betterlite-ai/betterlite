@@ -73,6 +73,12 @@ fn the_environment_flag_enables_forcing() {
     assert!(settings.should_use_litellm_proxy(0));
 }
 
+fn a_numeric_environment_flag_enables_forcing() {
+    let settings = loaded("model_list: []", &[("USE_LITELLM_PROXY", "1")]);
+    assert_eq!(settings.environment_use_litellm_proxy, Some(true));
+    assert!(settings.should_use_litellm_proxy(0));
+}
+
 fn a_false_environment_flag_does_not_disable_a_deployment_flag() {
     let settings = loaded(
         "model_list:\n  - litellm_params:\n      use_litellm_proxy: true",
@@ -143,6 +149,7 @@ fn settings_debug_hides_the_key() {
 )]
 #[case::an_empty_environment_counts_as_unset(an_empty_environment_counts_as_unset)]
 #[case::the_environment_flag_enables_forcing(the_environment_flag_enables_forcing)]
+#[case::a_numeric_environment_flag_enables_forcing(a_numeric_environment_flag_enables_forcing)]
 #[case::a_false_environment_flag_does_not_disable_a_deployment_flag(
     a_false_environment_flag_does_not_disable_a_deployment_flag
 )]
