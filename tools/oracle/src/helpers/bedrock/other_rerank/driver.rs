@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_bedrock::rerank::error::RerankCallError;
@@ -6,7 +7,9 @@ use betterlite_bedrock::rerank::execute::{
 };
 use betterlite_bedrock::rerank::plan::{LogContext, ParamMap, RerankCall, RerankEnvironment};
 use betterlite_bedrock::rerank::transport::{ClientKind, RerankHttpRequest, SuppliedClient};
+use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_state::{LoggingState, LoggingStateError};
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{RerankRequest, RerankResponse};
 use betterlite_redact::error::RedactionError;
 use serde::Serialize;
@@ -143,6 +146,7 @@ struct Run {
     supplied_seen: Vec<(RerankHttpRequest, bool)>,
     factory_seen: Vec<(RerankHttpRequest, bool)>,
     state: LoggingState,
+    captured: Arc<Mutex<Option<Json>>>,
 }
 
 impl Run {
@@ -152,6 +156,14 @@ impl Run {
             .first()
             .or_else(|| self.factory_seen.first());
         seen.map(|(request, _)| request)
+    }
+
+    // post_call overwrites the pre_call fields in the logging state, as LiteLLM's does, so the snapshot comes from the callback
+    fn captured(&self) -> Option<Json> {
+        self.captured
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -178,9 +190,7 @@ fn measure(
 fn run(probe: &Probe) -> Result<(Run, Result<RerankResponse, Failure>), Failure> {
     let harness = Harness::new(probe)?;
     let mut state = logging_state()?;
-    let redactor = redactor()?;
-    let sink = DiscardingSink;
-    let env = prepost_env(&state, &redactor, &sink);
+    let captured: Arc<Mutex<Option<Json>>> = Arc::default();
     let runtime = tokio::runtime::Builder::new_current_thread().build()?;
     let request = request(probe);
     let mut call = RerankCall {
@@ -195,6 +205,22 @@ fn run(probe: &Probe) -> Result<(Run, Result<RerankResponse, Failure>), Failure>
         now: harness.now,
     };
     let outcome = {
+        let redactor = redactor()?;
+        let sink = DiscardingSink;
+        let logger = |details: &Json| -> Result<(), PrePostError> {
+            let Json::Object(fields) = details else {
+                return Ok(());
+            };
+            let pre_call = matches!(
+                fields.get("log_event_type"),
+                Some(Json::Text(event)) if event == "pre_api_call"
+            );
+            if pre_call {
+                *captured.lock().unwrap_or_else(PoisonError::into_inner) = Some(details.clone());
+            }
+            Ok(())
+        };
+        let env = prepost_env(&state, &redactor, &sink, Some(&logger));
         let mut log = LogContext {
             state: &mut state,
             env: &env,
@@ -205,11 +231,12 @@ fn run(probe: &Probe) -> Result<(Run, Result<RerankResponse, Failure>), Failure>
         supplied_seen: harness.supplied.requests(),
         factory_seen: harness.factory.requests(),
         state,
+        captured,
     };
     Ok((run, outcome))
 }
 
-fn observe(probe: &Probe, function: Function) -> Result<Value, Failure> {
+pub(super) fn observe(probe: &Probe, function: Function) -> Result<Value, Failure> {
     let (run, outcome) = run(probe)?;
     match function {
         Function::ResultsIndexScore => serde_json::to_value(outcome?).map_err(Failure::from),
@@ -237,7 +264,7 @@ fn prepare_json(run: &Run, outcome: Result<RerankResponse, Failure>) -> Result<V
             "authorization": header(&request.headers, "Authorization").is_some(),
             "amz_date": header(&request.headers, "X-Amz-Date").is_some(),
         },
-        "pre_call": pre_call_json(&run.state)?,
+        "pre_call": pre_call_json(run)?,
     }))
 }
 
@@ -265,14 +292,15 @@ fn transport_json(run: &Run) -> Result<Value, Failure> {
         timeout_ms: request
             .timeout
             .and_then(|timeout| u64::try_from(timeout.as_millis()).ok()),
-        pre_call: details.get("input").is_some(),
+        pre_call: run.captured().is_some(),
         post_call: details.get("original_response").is_some(),
     })
     .map_err(Failure::from)
 }
 
-fn pre_call_json(state: &LoggingState) -> Result<Value, Failure> {
-    let details = serde_json::to_value(&state.model_call_details)?;
+fn pre_call_json(run: &Run) -> Result<Value, Failure> {
+    let details = run.captured().ok_or(Failure::Shape)?;
+    let details = serde_json::to_value(details)?;
     let input = details.get("input").cloned().ok_or(Failure::Shape)?;
     let arguments = details.get("additional_args").ok_or(Failure::Shape)?;
     Ok(json!({

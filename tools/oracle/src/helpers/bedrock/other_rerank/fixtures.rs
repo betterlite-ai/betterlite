@@ -11,7 +11,7 @@ use betterlite_bedrock::rerank::transport::{
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+    DebugSettings, GlobalFlags, LogRecord, LogSink, LoggerFn, PrePostEnv,
 };
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
@@ -156,6 +156,7 @@ pub(super) fn prepost_env<'env>(
     state: &LoggingState,
     redactor: &'env Redactor,
     sink: &'env DiscardingSink,
+    logger_fn: Option<LoggerFn<'env>>,
 ) -> PrePostEnv<'env> {
     PrePostEnv {
         debug: DebugSettings::default(),
@@ -168,7 +169,7 @@ pub(super) fn prepost_env<'env>(
         log: sink,
         input_callbacks: &[],
         sentry: None,
-        logger_fn: None,
+        logger_fn,
         now: state.start_time,
     }
 }

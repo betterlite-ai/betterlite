@@ -1,7 +1,7 @@
 import asyncio
 import os
 from collections.abc import Callable, Coroutine
-from typing import Literal
+from typing import Literal, Protocol, TypeAlias
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -23,6 +23,29 @@ Function = Literal[
     "rerank_error",
     "rerank_transport_logging",
 ]
+
+
+RerankArgs: TypeAlias = tuple[
+    str,
+    str,
+    list[Document],
+    JsonObject,
+    Logging,
+    int | None,
+    list[str] | None,
+    bool | None,
+    int | None,
+    bool | None,
+    float | httpx.Timeout | None,
+    str | None,
+    JsonObject | None,
+    HTTPHandler | AsyncHTTPHandler | None,
+]
+
+
+class RerankCall(Protocol):
+    # LiteLLM types the arguments as bare dict, so the call goes through this typed view
+    def rerank(self, *args: *RerankArgs) -> RerankResponse: ...
 
 
 class Credentials(TypedDict):
@@ -108,7 +131,7 @@ def settle(pending: RerankResponse | Coroutine[None, None, RerankResponse]) -> R
 
 
 def call_value(
-    handler: BedrockRerankHandler, probe: Probe, logging: RecordingLogging, transport: Transport
+    handler: RerankCall, probe: Probe, logging: RecordingLogging, transport: Transport
 ) -> RerankResponse:
     supplied = probe["supplied"]
     client: HTTPHandler | AsyncHTTPHandler
