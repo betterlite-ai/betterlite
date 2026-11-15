@@ -1,0 +1,9 @@
+kind: helper
+name: legacy-vertex-plan-hyphen-ambiguity-seed
+call:
+  legacy_vertex_plan:
+    model: "text-bison@001"
+    project: "p-1"
+    location: "us-central1"
+env: {}
+compare: {ignore: []}

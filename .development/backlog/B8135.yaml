@@ -1,7 +1,7 @@
 id: B8135
 milestone: M11 distribution
 title: Component Helm chart ingress and scaling
-status: blocked
+status: todo
 depends_on: [B8133, B8134]
 file: tasks/B8135-helm-component-ingress.yaml
 covers:
@@ -11,5 +11,5 @@ parent: B151
 split_from: B152
 resolution: null
 superseded_by: null
-blocked_reason: "waits for Max: the gate has no pinned helm or helm-unittest, and the bundled postgresql and redis subcharts need network or vendored chart archives"
+blocked_reason: null
 pr: null

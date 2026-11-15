@@ -1,0 +1,11 @@
+kind: helper
+name: soniox-prepare-callback-failure
+call:
+  soniox_prepare:
+    calls:
+    - {function: pre_call, api_base: "https://api.soniox.com", body: {model: m, webhook_auth_header_value: secret}, failing: true}
+    - {function: pre_call, api_base: "https://api.soniox.com", body: {model: m}, failing: false}
+    - {function: post_call, audio: clip.wav, original_response: {transcription: {}}, body: {model: m, webhook_auth_header_value: secret}, failing: true}
+    - {function: post_call, original_response: {}, body: {model: m, webhook_auth_header_value: secret}, failing: false}
+compare: {ignore: []}
+env: {}

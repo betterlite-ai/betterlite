@@ -1,0 +1,18 @@
+kind: helper
+name: file-storage-contracts-storage-uri
+call:
+  file_storage_contracts:
+    calls:
+      - function: storage_row_id
+        storage_url: "litellm_db://r"
+      - function: storage_row_id
+        storage_url: "https://example.invalid/r"
+      - function: responses_batch
+        body:
+          model: m
+          input: hello
+          stream: true
+          unknown: drop
+        custom_llm_provider: null
+env: {}
+compare: {ignore: []}
