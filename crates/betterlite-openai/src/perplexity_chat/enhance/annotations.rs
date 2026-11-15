@@ -4,7 +4,6 @@ use fancy_regex::Regex;
 use serde_json::{Map, Value};
 
 use super::PerplexityReplyError;
-use crate::perplexity_chat::json_truthy;
 
 const MARKER_PATTERN: &str = r"\[([0-9]+)\]";
 
@@ -50,60 +49,84 @@ pub(super) fn plan(
     reply: &Map<String, Value>,
     raw: &Map<String, Value>,
 ) -> Result<AnnotationPlan, PerplexityReplyError> {
-    let empty = AnnotationPlan {
-        annotations: Vec::new(),
-        citations: None,
-        search_results: None,
+    let Some(content) = message_content(reply)? else {
+        return Ok(AnnotationPlan {
+            annotations: Vec::new(),
+            citations: None,
+            search_results: None,
+        });
     };
-    let choices = match reply.get("choices") {
-        None | Some(Value::Null) => return Ok(empty),
-        Some(Value::Array(choices)) => choices.as_slice(),
-        Some(other) if !json_truthy(other) => return Ok(empty),
-        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_)) => {
-            return Err(PerplexityReplyError::Shape { field: "choices" });
-        }
-    };
-    let Some(choice) = choices.first() else {
-        return Ok(empty);
-    };
-    let Value::Object(choice) = choice else {
-        return Ok(empty);
-    };
-    let content = match choice.get("message") {
-        None | Some(Value::Null) => return Ok(empty),
-        Some(Value::Object(message)) => match message.get("content") {
-            None | Some(Value::Null) => return Ok(empty),
-            Some(Value::String(text)) => text.as_str(),
-            Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
-                return Err(PerplexityReplyError::Shape { field: "content" });
-            }
-        },
-        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
-            return Ok(empty);
-        }
-    };
-    if content.is_empty() {
-        return Ok(empty);
-    }
     let citations = match raw.get("citations") {
-        None => &[][..],
+        None | Some(Value::Null) => &[][..],
         Some(Value::Array(citations)) => citations.as_slice(),
-        Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_))
-        | Some(Value::Object(_)) => {
+        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_)) => {
             return Err(PerplexityReplyError::Shape { field: "citations" });
         }
     };
     let search_results = match raw.get("search_results") {
         None => &[][..],
         Some(Value::Array(results)) => results.as_slice(),
-        Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_))
-        | Some(Value::Object(_)) => {
+        Some(
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_),
+        ) => {
             return Err(PerplexityReplyError::Shape {
                 field: "search_results",
             });
         }
     };
-    let mut titles: BTreeMap<&str, &str> = BTreeMap::new();
+    let annotations = markers(content, &urls(citations), &titles(search_results))?;
+    check_existing_annotations(reply, &annotations)?;
+    Ok(AnnotationPlan {
+        annotations,
+        citations: copy(citations),
+        search_results: copy(search_results),
+    })
+}
+
+fn message_content(reply: &Map<String, Value>) -> Result<Option<&str>, PerplexityReplyError> {
+    let Some(choice) = first_choice(reply)? else {
+        return Ok(None);
+    };
+    let Some(message) = choice.get("message").and_then(Value::as_object) else {
+        return Ok(None);
+    };
+    match message.get("content") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => Ok((!text.is_empty()).then_some(text.as_str())),
+        Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
+            Err(PerplexityReplyError::Shape { field: "content" })
+        }
+    }
+}
+
+fn first_choice(
+    reply: &Map<String, Value>,
+) -> Result<Option<&Map<String, Value>>, PerplexityReplyError> {
+    match reply.get("choices") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(choices)) => Ok(choices.first().and_then(Value::as_object)),
+        Some(other) => {
+            // a falsy choices value is the pinned code's `if not model_response.choices`
+            if falsy(other) {
+                return Ok(None);
+            }
+            Err(PerplexityReplyError::Shape { field: "choices" })
+        }
+    }
+}
+
+fn falsy(value: &Value) -> bool {
+    match value {
+        Value::Bool(flag) => !*flag,
+        Value::Number(number) => number.as_f64().is_some_and(|parsed| parsed == 0.0_f64),
+        Value::String(text) => text.is_empty(),
+        Value::Object(fields) => fields.is_empty(),
+        Value::Null | Value::Array(_) => false,
+    }
+}
+
+fn titles(search_results: &[Value]) -> BTreeMap<&str, &str> {
+    let mut titles = BTreeMap::new();
     for result in search_results {
         if let Value::Object(fields) = result
             && let (Some(Value::String(url)), Some(Value::String(title))) =
@@ -112,7 +135,11 @@ pub(super) fn plan(
             titles.insert(url.as_str(), title.as_str());
         }
     }
-    let mut urls: BTreeMap<usize, &str> = BTreeMap::new();
+    titles
+}
+
+fn urls(citations: &[Value]) -> BTreeMap<usize, &str> {
+    let mut urls = BTreeMap::new();
     for (index, citation) in citations.iter().enumerate() {
         if let Value::String(url) = citation
             && let Some(number) = index.checked_add(1)
@@ -120,24 +147,30 @@ pub(super) fn plan(
             urls.insert(number, url.as_str());
         }
     }
-    let annotations = markers(content, &urls, &titles)?;
-    if !annotations.is_empty()
-        && let Some(existing) = existing_annotations(reply)
-        && !matches!(existing, Value::Array(_) | Value::Null)
-    {
-        // the pinned code calls .extend on whatever the message's annotations hold
-        return Err(PerplexityReplyError::Shape {
-            field: "annotations",
-        });
+    urls
+}
+
+fn check_existing_annotations(
+    reply: &Map<String, Value>,
+    annotations: &[Value],
+) -> Result<(), PerplexityReplyError> {
+    if annotations.is_empty() {
+        return Ok(());
     }
-    let citations_copy = (!citations.is_empty()).then(|| Value::Array(citations.to_vec()));
-    let search_results_copy =
-        (!search_results.is_empty()).then(|| Value::Array(search_results.to_vec()));
-    Ok(AnnotationPlan {
-        annotations,
-        citations: citations_copy,
-        search_results: search_results_copy,
+    let Some(existing) = existing_annotations(reply) else {
+        return Ok(());
+    };
+    if matches!(existing, Value::Array(_) | Value::Null) {
+        return Ok(());
+    }
+    // the pinned code calls .extend on whatever the message's annotations hold
+    Err(PerplexityReplyError::Shape {
+        field: "annotations",
     })
+}
+
+fn copy(entries: &[Value]) -> Option<Value> {
+    (!entries.is_empty()).then(|| Value::Array(entries.to_vec()))
 }
 
 fn existing_annotations(reply: &Map<String, Value>) -> Option<&Value> {

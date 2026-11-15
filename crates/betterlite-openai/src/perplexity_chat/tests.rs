@@ -160,19 +160,21 @@ fn supported_openai_params_appends_capabilities(
     assert_eq!(params, expected);
 }
 
-#[test]
-fn supported_openai_params_never_lists_tools() {
+#[rstest]
+#[case("tools")]
+#[case("tool_choice")]
+#[case("function_call")]
+#[case("functions")]
+fn supported_openai_params_never_lists_tools(#[case] unsupported: &str) {
     let lookup = Lookup {
         reasoning: Some(true),
         web_search: Some(true),
     };
     let params = supported_openai_params(&lookup, "sonar-pro");
-    for unsupported in ["tools", "tool_choice", "function_call", "functions"] {
-        assert!(
-            !params.contains(&unsupported),
-            "{unsupported} was advertised"
-        );
-    }
+    assert!(
+        !params.contains(&unsupported),
+        "{unsupported} was advertised"
+    );
 }
 
 #[rstest]
@@ -184,6 +186,16 @@ fn supported_openai_params_never_lists_tools() {
 #[case::empty_list(json!([]), None)]
 #[case::empty_entry(json!([""]), None)]
 #[case::absent_citations(Value::Null, None)]
+#[case::null_entry(json!([null]), None)]
+#[case::zero_entry(json!([0]), None)]
+#[case::zero_float_entry(json!([0.0]), None)]
+#[case::false_entry(json!([false]), None)]
+#[case::empty_object_entry(json!([{}]), None)]
+#[case::number_entry(json!([12_345_678]), Some(2))]
+#[case::true_entry(json!([true]), Some(1))]
+#[case::list_entry(json!([[12_345_678]]), Some(2))]
+#[case::object_entry(json!([{"a": 1}]), Some(1))]
+#[case::empty_array_entry(json!([[]]), None)]
 fn citation_tokens_are_quarter_characters(#[case] citations: Value, #[case] expected: Option<i64>) {
     let raw = if citations.is_null() {
         json!({"usage": {}})
@@ -474,26 +486,6 @@ fn a_null_search_results_fails_the_step_and_leaves_the_reply_unchanged() {
     let raw = json!({"citations": ["https://a.example"], "search_results": null});
     let enhanced = enhanced_reply(reply, &raw.to_string());
     assert_eq!(enhanced, reply_json(reply));
-}
-
-#[rstest]
-#[case::null(json!(null), None)]
-#[case::zero(json!(0), None)]
-#[case::zero_float(json!(0.0), None)]
-#[case::false_flag(json!(false), None)]
-#[case::empty_list(json!([]), None)]
-#[case::empty_object(json!({}), None)]
-#[case::number(json!(12_345_678), Some(2))]
-#[case::true_flag(json!(true), Some(1))]
-#[case::list(json!([12_345_678]), Some(2))]
-#[case::object(json!({"a": 1}), Some(1))]
-fn only_truthy_citation_entries_are_counted(#[case] entry: Value, #[case] expected: Option<i64>) {
-    let raw = json!({"usage": {}, "citations": [entry]});
-    let enhanced = enhanced_reply(
-        r#"{"object":"chat.completion","choices":[]}"#,
-        &raw.to_string(),
-    );
-    assert_eq!(enhanced["usage"]["citation_tokens"], json!(expected));
 }
 
 #[test]

@@ -3,8 +3,6 @@ mod annotations;
 use serde_json::{Map, Value};
 use thiserror::Error;
 
-use super::json_truthy;
-
 #[derive(Debug, Error)]
 pub(crate) enum PerplexityReplyError {
     #[error("the provider reply is not valid JSON")]
@@ -85,8 +83,9 @@ fn usage_plan(
     let raw_usage = match raw.get("usage") {
         None => None,
         Some(Value::Object(usage)) => Some(usage),
-        Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_))
-        | Some(Value::Array(_)) => {
+        Some(
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_),
+        ) => {
             // the pinned code calls .get on whatever the usage key holds and fails on a non-map
             return Err(PerplexityReplyError::Shape { field: "usage" });
         }
@@ -100,9 +99,9 @@ fn usage_plan(
     let citation_tokens = citation_tokens(raw)?;
     let count = search_count(raw_usage, raw)?;
     Ok(UsagePlan {
-        create_details: citation_tokens > 0 || count.is_some_and(|count| count > 0),
-        citation_tokens: (citation_tokens > 0).then_some(citation_tokens),
-        search_requests: count.filter(|count| *count > 0),
+        create_details: citation_tokens >= 1 || count.is_some_and(|count| count >= 1),
+        citation_tokens: (citation_tokens >= 1).then_some(citation_tokens),
+        search_requests: count.filter(|count| *count >= 1),
     })
 }
 
@@ -115,14 +114,16 @@ fn citation_tokens(raw: &Map<String, Value>) -> Result<i64, PerplexityReplyError
         }
     };
     let mut total: i64 = 0;
-    for entry in entries.iter().filter(|entry| json_truthy(entry)) {
+    for entry in entries {
         let characters = match entry {
             Value::String(text) => text.chars().count(),
-            Value::Null
-            | Value::Bool(_)
-            | Value::Number(_)
-            | Value::Array(_)
-            | Value::Object(_) => entry.to_string().chars().count(),
+            Value::Null | Value::Bool(false) => 0,
+            Value::Number(number) if number.as_f64().is_some_and(|parsed| parsed == 0.0_f64) => 0,
+            Value::Array(items) if items.is_empty() => 0,
+            Value::Object(fields) if fields.is_empty() => 0,
+            Value::Bool(true) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
+                entry.to_string().chars().count()
+            }
         };
         let characters =
             i64::try_from(characters).map_err(|_error| PerplexityReplyError::Overflow)?;

@@ -9,8 +9,7 @@ const DEFAULT_API_BASE: &str = "https://api.perplexity.ai";
 const API_BASE_ENV: &str = "PERPLEXITY_API_BASE";
 const API_KEY_ENVS: [&str; 2] = ["PERPLEXITYAI_API_KEY", "PERPLEXITY_API_KEY"];
 
-// LiteLLM advertises these names for every Perplexity model, and never tools, tool_choice,
-// function_call or functions
+// Every Perplexity model advertises these names, and never tools, tool_choice, function_call or functions
 const SUPPORTED_PARAMS: [&str; 10] = [
     "frequency_penalty",
     "max_tokens",
@@ -32,8 +31,7 @@ pub trait CapabilityLookup {
     fn supports_web_search(&self, model: &str) -> Result<bool, Self::Error>;
 }
 
-// The pinned config tries the explicit value, then the environment, then the default; an empty
-// explicit value or env var is unset, as docs/compatibility.md says for env text
+// Explicit value, then environment, then default; an empty explicit value or env var counts as unset
 #[must_use]
 pub fn provider_info(
     api_base: Option<&str>,
@@ -97,17 +95,5 @@ pub fn with_perplexity_fields(reply: Value, raw_body: &[u8]) -> Value {
             tracing::debug!(%error, "error extracting Perplexity-specific usage fields");
             reply
         }
-    }
-}
-
-// Python truthiness for a JSON value, which the pinned citation and search rules branch on
-pub(crate) fn json_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_some_and(|parsed| parsed != 0.0_f64),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(items) => !items.is_empty(),
-        Value::Object(fields) => !fields.is_empty(),
     }
 }
