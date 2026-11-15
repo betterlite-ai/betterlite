@@ -8,7 +8,12 @@ mod support;
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableAccess, TableError};
+use betterlite_db::auxiliary_repository::bindings::{
+    MCPServerOAuthClient, MCPServerTable, MCPUserCredentials,
+};
+use betterlite_db::auxiliary_repository::repository::{
+    PrismaClient, PrismaTableRepository, TableAccess, TableError,
+};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::mcp_server_encoding::credentials::CredentialBlob;
 use betterlite_db::mcp_stored_contracts::JsonValue;
@@ -28,7 +33,7 @@ use tokio_postgres::types::ToSql;
 use self::support::{NEW_KEY, OLD_KEY, TestCipher, cipher, new_key, open, sealed, string};
 use super::codec::encrypt_credentials;
 use super::rotation::Rotation;
-use super::tables::{McpUpdateActions, PostgresRotationStore};
+use super::tables::{McpUpdateActions, McpUserEnvVars, PostgresRotationStore};
 
 const SCHEMA: &str = r#"
 CREATE TABLE "LiteLLM_MCPServerTable" (
@@ -397,14 +402,18 @@ async fn postgres_rows_and_failures() {
     };
     let availability = Availability::default();
     let journal = Arc::new(Mutex::new(Vec::new()));
-    let store = PostgresRotationStore::new(
-        Some(PrismaClient {
-            writer: &writer,
-            reader: &writer,
-            availability: &availability,
-        }),
-        &recording_publisher(&journal),
-    );
+    let client = Some(PrismaClient {
+        writer: &writer,
+        reader: &writer,
+        availability: &availability,
+    });
+    let publish = recording_publisher(&journal);
+    let store = PostgresRotationStore {
+        servers: PrismaTableRepository::new(client, publish.clone(), MCPServerTable),
+        oauth_clients: PrismaTableRepository::new(client, publish.clone(), MCPServerOAuthClient),
+        user_credentials: PrismaTableRepository::new(client, publish.clone(), MCPUserCredentials),
+        user_env_vars: PrismaTableRepository::new(client, publish, McpUserEnvVars),
+    };
     let old = cipher(OLD_KEY);
     let key = new_key();
     let abort = Rotation {

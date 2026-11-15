@@ -4,12 +4,11 @@ use betterlite_db::auxiliary_repository::bindings::{
     MCPServerOAuthClient, MCPServerTable, MCPUserCredentials,
 };
 use betterlite_db::auxiliary_repository::repository::{
-    PrismaClient, PrismaTableRepository, TableAccess, TableBinding, TableError,
+    PrismaTableRepository, TableAccess, TableBinding, TableError,
 };
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_db::mcp_stored_contracts::decode::decode_mcp_stored_contract;
 use betterlite_db::postgres_store::errors::{DbError, backend};
-use betterlite_redis::config_sync::publish::PublishChange;
 use betterlite_redis::config_sync::table_actions::TableActions;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
@@ -167,30 +166,10 @@ macro_rules! user_update {
 }
 
 pub struct PostgresRotationStore<'db> {
-    servers: PrismaTableRepository<'db, MCPServerTable>,
-    oauth_clients: PrismaTableRepository<'db, MCPServerOAuthClient>,
-    user_credentials: PrismaTableRepository<'db, MCPUserCredentials>,
-    user_env_vars: PrismaTableRepository<'db, McpUserEnvVars>,
-}
-
-impl<'db> PostgresRotationStore<'db> {
-    #[must_use]
-    pub fn new(client: Option<PrismaClient<'db>>, publish: &PublishChange<TableError>) -> Self {
-        Self {
-            servers: PrismaTableRepository::new(client, publish.clone(), MCPServerTable),
-            oauth_clients: PrismaTableRepository::new(
-                client,
-                publish.clone(),
-                MCPServerOAuthClient,
-            ),
-            user_credentials: PrismaTableRepository::new(
-                client,
-                publish.clone(),
-                MCPUserCredentials,
-            ),
-            user_env_vars: PrismaTableRepository::new(client, publish.clone(), McpUserEnvVars),
-        }
-    }
+    pub servers: PrismaTableRepository<'db, MCPServerTable>,
+    pub oauth_clients: PrismaTableRepository<'db, MCPServerOAuthClient>,
+    pub user_credentials: PrismaTableRepository<'db, MCPUserCredentials>,
+    pub user_env_vars: PrismaTableRepository<'db, McpUserEnvVars>,
 }
 
 impl McpRotationStore for PostgresRotationStore<'_> {
