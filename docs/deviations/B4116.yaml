@@ -1,0 +1,39 @@
+task: B4116
+deviations:
+  - what: >-
+      enabled_providers defaults to ['bedrock'] when the config key is absent or null (LiteLLM only enables bedrock
+      by default, not all providers).
+    why: >-
+      Bedrock's Messages API cannot execute web_search natively, so interception is always needed there; other
+      providers handle web_search natively or will be explicitly enabled per deployment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L276-L279
+  - what: >-
+      An explicit empty enabled_providers list enables no provider (no interception happens), and None, the type's
+      absence, enables every provider.
+    why: >-
+      Users who list nothing can explicitly disable interception, while None stays the affordance for "all
+      providers", matching the guard the hooks apply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L276-L279
+  - what: >-
+      WEBSEARCH_EMIT_NATIVE_BLOCKS_KEY is "_websearch_interception_emit_native_blocks" and the buffered-stream flag
+      is "_websearch_interception_converted_stream".
+    why: >-
+      The leading underscore keeps both flags from reaching the upstream provider or the final response; they only
+      signal between the hooks and the agentic loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L87
+  - what: >-
+      The deployment hook derives a provider from the model name only through the declared "provider/" prefix; a
+      bare model name that LiteLLM's get_llm_provider infers from the model cost map resolves to no provider here,
+      so interception is skipped unless custom_llm_provider is present.
+    why: >-
+      A request hook has no model catalog to consult; B174's get_llm_provider runs where the catalog is available,
+      and betterlite deployments already carry custom_llm_provider on the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L278-L562
+  - what: >-
+      A list-valued setting under callback_settings.websearch_interception is rejected at config load by the
+      callback_settings section, so the callback-specific fallback only carries scalar values; the
+      litellm_settings.websearch_interception_params entry accepts the full shape.
+    why: >-
+      The callback_settings section owns those nested keys and only stores scalars; giving it the websearch keys is
+      a change outside this task's scope, and erroring loudly beats silently dropping the value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1970-L2010
