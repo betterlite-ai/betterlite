@@ -1,0 +1,36 @@
+kind: helper
+name: rate-limit-model-descriptors-project-model
+call:
+  b3038:
+    function: project_model
+    auth:
+      project_id: proj-1
+      project_metadata:
+        model_tpm_limit:
+          gpt4: 4
+          gpt-4: 8
+    requested: gpt4
+    groups:
+      gpt4: gpt-4
+    window_size: 60
+calls:
+  - b3038:
+      function: project_model
+      auth:
+        project_metadata:
+          model_rpm_limit:
+            gpt-4: 4
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 60
+  - b3038:
+      function: project_model
+      auth:
+        project_id: proj-1
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 60
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,30 @@
+kind: helper
+name: rate-limit-model-descriptors-organization-model
+call:
+  b3038:
+    function: organization
+    auth:
+      organization_metadata:
+        model_tpm_limit:
+          gpt-4: 50
+    requested: gpt4
+    groups:
+      gpt4: gpt-4
+    window_size: 45
+calls:
+  - b3038:
+      function: organization
+      auth:
+        org_id: org-1
+        organization_rpm_limit: 2
+        organization_metadata:
+          model_rpm_limit:
+            gpt4: 0
+            gpt-4: 100
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 45
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "45"
+compare: {ignore: []}

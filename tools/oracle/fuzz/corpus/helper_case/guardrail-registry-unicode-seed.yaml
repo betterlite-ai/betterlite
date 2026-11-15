@@ -1,0 +1,5 @@
+kind: helper
+name: guardrail-registry-unicode-seed
+call: {b3682: {function: stable_guardrail_id, guardrail_name: "fature-éxamen", existing_ids: []}}
+env: {}
+compare: {ignore: []}

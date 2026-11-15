@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-services-realtime-completion-usage
+call:
+  bedrock_services_realtime_completion:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+    steps:
+      - {op: usage, usage: {totalInputTokens: 100, totalOutputTokens: 50, totalTokens: 150, details: {total: {input: {speechTokens: 60, textTokens: 40}, output: {speechTokens: 30, textTokens: 20}}}}}
+      - {op: leftover}
+      - {op: take_usage}
+env: {}
+compare: {ignore: []}

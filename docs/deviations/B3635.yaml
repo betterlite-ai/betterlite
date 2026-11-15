@@ -1,0 +1,24 @@
+task: B3635
+deviations:
+  - what: Image and embedding cost helpers return zero with a warning on every pricing failure, even one a wrong-typed request field causes, and never propagate it to the caller.
+    why: LiteLLM catches the pricing exception in the passthrough logging handler and writes a zero cost so the spend log is kept; betterlite keeps that catch for every failure.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L233-L235"
+  - what: A shared Azure Cognitive Services hostname only classifies as OpenAI when its path carries /openai/ or /v1/.
+    why: LiteLLM adds the path-marker requirement so Speech, Vision and Language services on the shared Azure domains are not misclassified as Azure OpenAI; betterlite keeps it.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L96-L97"
+  - what: URL classification uses the url crate, which rejects hosts and ports Python's urlparse reads anyway; such a route is classified as not OpenAI in betterlite.
+    why: Inputs like https://api.openai.com:99999/x or https://api.openai.com:abc/x have no fetchable host, so no working setup routes through them; every fetchable URL keeps the host name and path it resolves to.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L90-L93"
+  - what: The url crate normalizes a host before classification (percent-decoding and IDNA mapping), so https://api%2Eopenai.com/v1/models and an IDNA dot spelling of the same host classify as OpenAI; urlparse compares the raw netloc and would not.
+    why: Both spellings resolve to api.openai.com for the HTTP client that sends the relayed request, so pricing the reply is correct; no working setup loses cost tracking by this, and a look-alike host still does not normalize to the OpenAI host.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L90-L94"
+  - what: The url crate resolves dot segments in the path before the Azure marker check, so a marker that only appears before a ".." segment (…/v1/../speech/recognition) does not classify as Azure OpenAI; urlparse checks the raw path and would classify it.
+    why: The normalized path is the one the URL resolves to, and LiteLLM's raw-path check would misread a Speech path as Azure OpenAI; no working setup routes an Azure OpenAI request through a dot-segment spelling.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L96-L97"
+  - what: The five route predicates match the url crate's dot-resolved path, so a route whose endpoint marker only appears before a dot segment (…/v1/chat/completions/.., …/v1/responses/%2e%2e, …/v1/embeddings/../) is not that endpoint's route; urlparse checks the raw path and the predicates would match it.
+    why: The normalized path is the one the relay resolves the request to, and no working setup routes an OpenAI endpoint through a dot-segment spelling of its path; every path that reaches an OpenAI endpoint keeps its marker.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L152-L191"
+  - what: An image count that the i64 conversion cannot hold, such as the JSON number 1e300 or the string "1_0", falls back to one image; LiteLLM's int() turns it into a Python integer and prices that many images.
+    why: The calculator counts images in i64 and the spend log stores a Decimal, so no real request asks for more images than that; the fallback keeps the spend log written like the source's failed conversion.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L212-L216"
+kept_bugs: []
