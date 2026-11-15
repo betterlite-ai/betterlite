@@ -120,6 +120,8 @@ async fn first_row_rewind() {
     let text = joined(upload(file, "batch", &Json::Bool(false), usize::MAX).await);
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 2);
+    assert_eq!(text.matches('\n').count(), 1);
+    assert!(!text.ends_with('\n'));
     assert!(lines.first().unwrap().starts_with(r#"{"key": "first""#));
     assert!(lines.last().unwrap().starts_with(r#"{"key": "second""#));
     assert_eq!(counters.seeks.load(Ordering::SeqCst), 2);
