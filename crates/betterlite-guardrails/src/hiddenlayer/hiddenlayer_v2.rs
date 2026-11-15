@@ -4,19 +4,20 @@ use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use indexmap::IndexMap;
 use reqwest::Client;
+use serde::Serialize;
 use uuid::Uuid;
 
-use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::generic_guardrail_contracts::{
+    GuardrailInputType, GuardrailMessage, GuardrailToolParam,
+};
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
-use crate::hiddenlayer::evaluation::error::{EvaluationError, as_guardrail_message, blocked};
-use crate::hiddenlayer::evaluation::metadata;
-use crate::hiddenlayer::evaluation::text_part;
-use crate::hiddenlayer::evaluation::wire;
+use crate::hiddenlayer::evaluation::error::{EvaluationError, blocked};
 use crate::hiddenlayer::evaluation::{
-    BLOCK_MESSAGE, EvaluationArgs, REQUEST_EVALUATIONS_PATH, RESPONSE_EVALUATIONS_PATH,
-    VIOLATED_POLICY, detection_headers, evaluation_timeout, guardrail_settings,
+    BLOCK_MESSAGE, EvaluationArgs, VIOLATED_POLICY, as_guardrail_message, detection_headers,
+    evaluation_timeout, guardrail_settings, metadata, text_part, wire,
 };
 use crate::hiddenlayer::hiddenlayer_authentication::HiddenlayerAuth;
 use crate::hiddenlayer::hiddenlayer_authentication::detection::{
@@ -28,14 +29,39 @@ use crate::primitives::json_value::JsonValue;
 mod tests;
 
 pub const VERSION: &str = "2";
-const BLOCK_ACTION: &str = "block";
+
+// every request part is sent, null when the input lacks it
+#[derive(Serialize)]
+struct RequestPayload<'a> {
+    messages: &'a Option<Vec<GuardrailMessage>>,
+    model: &'a Option<String>,
+    tools: &'a Option<Vec<GuardrailToolParam>>,
+}
+
+#[derive(Serialize)]
+struct ChoicesPayload<'a> {
+    choices: [Choice<'a>; 1],
+}
+
+#[derive(Serialize)]
+struct Choice<'a> {
+    index: u8,
+    message: ChoiceMessage<'a>,
+    finish_reason: &'static str,
+}
+
+#[derive(Serialize)]
+struct ChoiceMessage<'a> {
+    role: &'static str,
+    content: &'a str,
+}
 
 // LiteLLM's HiddenlayerGuardrailV2: the whole request or response payload is evaluated
 pub struct HiddenlayerV2Guardrail {
     pub base: GuardrailBase,
     pub auth: HiddenlayerAuth,
     pub timeout: Duration,
-    pub new_id: fn() -> Uuid,
+    new_id: fn() -> Uuid,
 }
 
 impl HiddenlayerV2Guardrail {
@@ -44,6 +70,7 @@ impl HiddenlayerV2Guardrail {
         environment: &L,
         client: Client,
         transport: Arc<dyn JwtTransport>,
+        new_id: fn() -> Uuid,
     ) -> Result<Self, EvaluationError> {
         let auth = HiddenlayerAuth::new(&args.credentials(), environment, client, transport)?;
         let timeout = evaluation_timeout(args.timeout)?;
@@ -52,7 +79,7 @@ impl HiddenlayerV2Guardrail {
             base,
             auth,
             timeout,
-            new_id: Uuid::new_v4,
+            new_id,
         })
     }
 
@@ -75,7 +102,7 @@ impl HiddenlayerV2Guardrail {
         let output: GuardrailValue = serde_json::from_slice(&response.body)
             .map_err(|source| EvaluationError::Decode { source })?;
         let action = metadata::header_value(&response.headers, metadata::RUNTIME_ACTION_HEADER, "");
-        if action.eq_ignore_ascii_case(BLOCK_ACTION) {
+        if action.eq_ignore_ascii_case("block") {
             return Err(blocked(vec![
                 ("error", GuardrailValue::Text(VIOLATED_POLICY.to_owned())),
                 (
@@ -98,8 +125,8 @@ impl HiddenlayerV2Guardrail {
         hl_headers: &BTreeMap<String, String>,
     ) -> Result<DetectionResponse, EvaluationError> {
         let path = match input_type {
-            GuardrailInputType::Request => REQUEST_EVALUATIONS_PATH,
-            GuardrailInputType::Response => RESPONSE_EVALUATIONS_PATH,
+            GuardrailInputType::Request => "detection/v2/request-evaluations",
+            GuardrailInputType::Response => "detection/v2/response-evaluations",
         };
         let request = DetectionRequest {
             path,
@@ -107,7 +134,7 @@ impl HiddenlayerV2Guardrail {
             body: payload,
         };
         self.auth
-            .post_detection_with_timeout(&request, Some(self.timeout))
+            .post_detection_with_timeout(&request, self.timeout)
             .await
             .map_err(EvaluationError::from)
     }
@@ -147,38 +174,32 @@ pub fn roundtrip_headers(
 }
 
 pub fn request_payload(inputs: &GuardrailApiInputs) -> Result<JsonValue, EvaluationError> {
-    Ok(wire::object(vec![
-        ("messages", wire::to_json(&inputs.structured_messages)?),
-        ("model", wire::to_json(&inputs.model)?),
-        ("tools", wire::to_json(&inputs.tools)?),
-    ]))
+    wire::to_json(&RequestPayload {
+        messages: &inputs.structured_messages,
+        model: &inputs.model,
+        tools: &inputs.tools,
+    })
 }
 
 pub fn response_payload(inputs: &GuardrailApiInputs) -> Result<JsonValue, EvaluationError> {
-    if let Some(texts) = inputs.texts.as_deref()
-        && let Some(first) = texts.first()
-    {
-        return Ok(wire::object(vec![(
-            "choices",
-            wire::array(vec![wire::object(vec![
-                ("index", wire::integer(0)),
-                (
-                    "message",
-                    wire::object(vec![
-                        ("role", wire::text("assistant")),
-                        ("content", wire::text(first)),
-                    ]),
-                ),
-                ("finish_reason", wire::text("stop")),
-            ])]),
-        )]));
+    if let Some(first) = inputs.texts.as_deref().and_then(|texts| texts.first()) {
+        return wire::to_json(&ChoicesPayload {
+            choices: [Choice {
+                index: 0,
+                message: ChoiceMessage {
+                    role: "assistant",
+                    content: first,
+                },
+                finish_reason: "stop",
+            }],
+        });
     }
     if let Some(tool_calls) = inputs.tool_calls.as_ref()
         && !tool_calls.is_empty()
     {
         return wire::to_json(tool_calls);
     }
-    Ok(wire::object(Vec::new()))
+    Ok(JsonValue::Object(IndexMap::new()))
 }
 
 // LiteLLM replaces the messages with the endpoint's evaluation and rebuilds the scanned texts
@@ -221,7 +242,7 @@ fn write_response(
     output: &GuardrailValue,
 ) -> Result<(), EvaluationError> {
     if inputs.texts.as_ref().is_some_and(|texts| !texts.is_empty()) {
-        inputs.texts = Some(vec![last_choice_content(output)]);
+        inputs.texts = Some(vec![last_choice_content(output)?]);
     } else if inputs
         .tool_calls
         .as_ref()
@@ -237,21 +258,28 @@ fn write_response(
     Ok(())
 }
 
-fn last_choice_content(output: &GuardrailValue) -> String {
+// LiteLLM reads choices[-1]; a missing body or message reads as an empty content, an empty list fails
+fn last_choice_content(output: &GuardrailValue) -> Result<String, EvaluationError> {
     let GuardrailValue::Object(body) = output else {
-        return String::new();
+        return Err(EvaluationError::Shape { field: "choices" });
     };
-    let Some(GuardrailValue::Array(choices)) = body.get("choices") else {
-        return String::new();
+    let Some(choices) = body.get("choices") else {
+        return Ok(String::new());
+    };
+    let GuardrailValue::Array(choices) = choices else {
+        return Err(EvaluationError::Shape { field: "choices" });
     };
     let Some(GuardrailValue::Object(choice)) = choices.last() else {
-        return String::new();
+        return Err(EvaluationError::Shape { field: "choices" });
     };
     let Some(GuardrailValue::Object(message)) = choice.get("message") else {
-        return String::new();
+        return Ok(String::new());
     };
     match message.get("content") {
-        Some(GuardrailValue::Text(content)) => content.clone(),
-        _ => String::new(),
+        Some(GuardrailValue::Text(content)) => Ok(content.clone()),
+        None => Ok(String::new()),
+        Some(_) => Err(EvaluationError::Shape {
+            field: "choices.message.content",
+        }),
     }
 }

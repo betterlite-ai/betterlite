@@ -129,13 +129,10 @@ fn scan_payload_scans_the_last_structured_message() {
     let payload = scan_payload(&inputs).expect("a payload");
     assert_eq!(
         payload,
-        wire::object(vec![(
-            "messages",
-            wire::array(vec![wire::object(vec![
-                ("role", wire::text("assistant")),
-                ("content", wire::text("second")),
-            ])])
-        )])
+        ScanMessage {
+            role: "assistant".to_owned(),
+            content: "second".to_owned(),
+        }
     );
 }
 
@@ -156,13 +153,10 @@ fn scan_payload_flattens_text_parts() {
     let payload = scan_payload(&inputs).expect("a payload");
     assert_eq!(
         payload,
-        wire::object(vec![(
-            "messages",
-            wire::array(vec![wire::object(vec![
-                ("role", wire::text("user")),
-                ("content", wire::text("a\n\nb")),
-            ])])
-        )])
+        ScanMessage {
+            role: "user".to_owned(),
+            content: "a\n\nb".to_owned(),
+        }
     );
 }
 
@@ -178,13 +172,10 @@ fn scan_payload_message_without_content_scans_empty_text() {
     let payload = scan_payload(&inputs).expect("a payload");
     assert_eq!(
         payload,
-        wire::object(vec![(
-            "messages",
-            wire::array(vec![wire::object(vec![
-                ("role", wire::text("user")),
-                ("content", wire::text("")),
-            ])])
-        )])
+        ScanMessage {
+            role: "user".to_owned(),
+            content: String::new(),
+        }
     );
 }
 
@@ -193,13 +184,10 @@ fn scan_payload_falls_back_to_the_last_text() {
     let payload = scan_payload(&text_inputs(&["first", "second"])).expect("a payload");
     assert_eq!(
         payload,
-        wire::object(vec![(
-            "messages",
-            wire::array(vec![wire::object(vec![
-                ("role", wire::text("user")),
-                ("content", wire::text("second")),
-            ])])
-        )])
+        ScanMessage {
+            role: "user".to_owned(),
+            content: "second".to_owned(),
+        }
     );
     let empty_messages = GuardrailApiInputs {
         structured_messages: Some(Vec::new()),
@@ -207,13 +195,10 @@ fn scan_payload_falls_back_to_the_last_text() {
     };
     assert_eq!(
         scan_payload(&empty_messages).expect("a payload"),
-        wire::object(vec![(
-            "messages",
-            wire::array(vec![wire::object(vec![
-                ("role", wire::text("user")),
-                ("content", wire::text("only")),
-            ])])
-        )])
+        ScanMessage {
+            role: "user".to_owned(),
+            content: "only".to_owned(),
+        }
     );
 }
 
@@ -523,8 +508,8 @@ fn redact_without_modified_messages_keeps_the_inputs() {
     for body in [
         r#"{"evaluation": {"action": "Redact"}}"#,
         r#"{"evaluation": {"action": "Redact"}, "modified_data": {}}"#,
+        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": null}}"#,
         r#"{"evaluation": {"action": "Redact"}, "modified_data": {"output": {"messages": [{"content": "out"}]}}}"#,
-        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"messages": []}}}"#,
         r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {}}}"#,
     ] {
         assert_eq!(
@@ -540,6 +525,38 @@ fn redact_without_modified_messages_keeps_the_inputs() {
 }
 
 #[test]
+fn redact_without_indexable_messages_is_a_shape_error() {
+    for body in [
+        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"messages": []}}}"#,
+        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"other": 1}}}"#,
+        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"messages": null}}}"#,
+    ] {
+        assert!(
+            matches!(
+                apply_result(
+                    text_inputs(&["hello"]),
+                    &interaction(body),
+                    GuardrailInputType::Request
+                ),
+                Err(EvaluationError::Shape { .. })
+            ),
+            "{body}"
+        );
+    }
+    let empty_output = interaction(
+        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"output": {"messages": []}}}"#,
+    );
+    assert!(matches!(
+        apply_result(
+            text_inputs(&["hello"]),
+            &empty_output,
+            GuardrailInputType::Response
+        ),
+        Err(EvaluationError::Shape { .. })
+    ));
+}
+
+#[test]
 fn redacted_texts_read_content_parts() {
     let last = object(vec![(
         "content",
@@ -549,23 +566,37 @@ fn redacted_texts_read_content_parts() {
             object(vec![("type", text("text")), ("text", text("b"))]),
         ]),
     )]);
-    assert_eq!(redacted_texts(&last), vec!["a".to_owned(), "b".to_owned()]);
+    assert_eq!(
+        redacted_texts(&last).expect("texts"),
+        vec!["a".to_owned(), "b".to_owned()]
+    );
     assert_eq!(
         redacted_texts(&object(vec![(
             "content",
             GuardrailValue::Array(vec![object(vec![("type", text("image_url"))])])
-        )])),
+        )]))
+        .expect("texts"),
         vec![String::new()]
     );
     assert_eq!(
-        redacted_texts(&object(vec![("content", text("plain"))])),
+        redacted_texts(&object(vec![("content", text("plain"))])).expect("texts"),
         vec!["plain".to_owned()]
     );
-    assert_eq!(
-        redacted_texts(&object(vec![("content", GuardrailValue::Null)])),
-        vec![String::new()]
-    );
-    assert_eq!(redacted_texts(&text("not a message")), vec![String::new()]);
+}
+
+#[test]
+fn redacted_texts_without_a_content_are_a_shape_error() {
+    for message in [
+        object(vec![("role", text("user"))]),
+        object(vec![("content", GuardrailValue::Null)]),
+        object(vec![("content", GuardrailValue::UnsignedInteger(3))]),
+        text("not a message"),
+    ] {
+        assert!(matches!(
+            redacted_texts(&message),
+            Err(EvaluationError::Shape { .. })
+        ));
+    }
 }
 
 #[test]

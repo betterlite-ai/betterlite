@@ -1,51 +1,43 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::Deserialize;
 
 use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailMessage};
 use crate::guardrail_base::inputs::GuardrailApiInputs;
-use crate::hiddenlayer::evaluation::error::{EvaluationError, as_guardrail_message, blocked};
-use crate::hiddenlayer::evaluation::text_part;
-use crate::hiddenlayer::evaluation::{ACTION_BLOCK, ACTION_REDACT, BLOCK_MESSAGE, VIOLATED_POLICY};
+use crate::hiddenlayer::evaluation::error::{EvaluationError, blocked};
+use crate::hiddenlayer::evaluation::{
+    ACTION_BLOCK, ACTION_REDACT, BLOCK_MESSAGE, VIOLATED_POLICY, as_guardrail_message, text_part,
+};
+
+const MESSAGES: &str = "messages";
+const CONTENT: &str = "content";
 
 // LiteLLM's _HiddenlayerResponse, the typed read of the v1 interaction body
 #[derive(Debug, Default, Deserialize)]
-#[serde(default)]
 pub(crate) struct InteractionBody {
     pub(crate) evaluation: Option<Evaluation>,
-    pub(crate) analysis: Option<Vec<AnalysisEntry>>,
+    #[serde(default)]
+    pub(crate) analysis: Vec<AnalysisEntry>,
     pub(crate) modified_data: Option<ModifiedData>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(default)]
 pub(crate) struct Evaluation {
     pub(crate) action: Option<String>,
     pub(crate) threat_level: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(default)]
 pub(crate) struct AnalysisEntry {
     pub(crate) name: Option<String>,
     pub(crate) detected: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(default)]
 pub(crate) struct ModifiedData {
-    pub(crate) input: Option<ModifiedSide>,
-    pub(crate) output: Option<ModifiedSide>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-pub(crate) struct ModifiedSide {
-    pub(crate) messages: Option<Vec<GuardrailValue>>,
-}
-
-// LiteLLM's _interaction_body, the typed decode of the v1 interaction reply
-pub(crate) fn interaction_body(body: &[u8]) -> Result<InteractionBody, EvaluationError> {
-    serde_json::from_slice(body).map_err(|source| EvaluationError::Decode { source })
+    pub(crate) input: Option<BTreeMap<String, GuardrailValue>>,
+    pub(crate) output: Option<BTreeMap<String, GuardrailValue>>,
 }
 
 pub(crate) fn apply_result(
@@ -76,16 +68,24 @@ fn redacted(
         GuardrailInputType::Request => modified.input.as_ref(),
         GuardrailInputType::Response => modified.output.as_ref(),
     };
-    let Some(messages) = side
-        .and_then(|side| side.messages.as_deref())
-        .filter(|messages| !messages.is_empty())
-    else {
+    let Some(side) = side else {
         return Ok(inputs);
+    };
+    // LiteLLM skips an empty modified side and fails to index one without messages
+    if side.is_empty() {
+        return Ok(inputs);
+    }
+    let Some(GuardrailValue::Array(messages)) = side.get(MESSAGES) else {
+        return Err(EvaluationError::Shape {
+            field: "modified_data.messages",
+        });
     };
     let Some(last) = messages.last() else {
-        return Ok(inputs);
+        return Err(EvaluationError::Shape {
+            field: "modified_data.messages",
+        });
     };
-    inputs.texts = Some(redacted_texts(last));
+    inputs.texts = Some(redacted_texts(last)?);
     if input_type == GuardrailInputType::Request {
         inputs.structured_messages = Some(
             messages
@@ -97,25 +97,35 @@ fn redacted(
     Ok(inputs)
 }
 
-fn redacted_texts(message: &GuardrailValue) -> Vec<String> {
+// LiteLLM reads the last message's content, and fails when the message has none
+fn redacted_texts(message: &GuardrailValue) -> Result<Vec<String>, EvaluationError> {
     let GuardrailValue::Object(fields) = message else {
-        return vec![String::new()];
+        return Err(EvaluationError::Shape {
+            field: "modified_data.messages.content",
+        });
     };
-    match fields.get("content") {
+    match fields.get(CONTENT) {
         Some(GuardrailValue::Array(parts)) => {
             let texts: Vec<String> = parts.iter().filter_map(text_part).collect();
             if texts.is_empty() {
-                vec![String::new()]
+                Ok(vec![String::new()])
             } else {
-                texts
+                Ok(texts)
             }
         }
-        Some(GuardrailValue::Text(text)) => vec![text.clone()],
-        _ => vec![String::new()],
+        Some(GuardrailValue::Text(text)) => Ok(vec![text.clone()]),
+        _ => Err(EvaluationError::Shape {
+            field: "modified_data.messages.content",
+        }),
     }
 }
 
 fn block_failure(result: &InteractionBody) -> EvaluationError {
+    let threat_level = result
+        .evaluation
+        .as_ref()
+        .and_then(|evaluation| evaluation.threat_level.clone())
+        .map_or(GuardrailValue::Null, GuardrailValue::Text);
     blocked(vec![
         ("error", GuardrailValue::Text(VIOLATED_POLICY.to_owned())),
         (
@@ -126,30 +136,17 @@ fn block_failure(result: &InteractionBody) -> EvaluationError {
             "block_reasons",
             GuardrailValue::Array(block_reasons(result)),
         ),
-        ("threat_level", threat_level(result)),
+        ("threat_level", threat_level),
     ])
 }
 
 fn block_reasons(result: &InteractionBody) -> Vec<GuardrailValue> {
     result
         .analysis
-        .as_deref()
-        .unwrap_or_default()
         .iter()
         .filter(|entry| entry.detected == Some(true))
         .map(|entry| {
             GuardrailValue::Text(entry.name.clone().unwrap_or_else(|| "unknown".to_owned()))
         })
         .collect()
-}
-
-fn threat_level(result: &InteractionBody) -> GuardrailValue {
-    match result
-        .evaluation
-        .as_ref()
-        .and_then(|evaluation| evaluation.threat_level.clone())
-    {
-        Some(level) => GuardrailValue::Text(level),
-        None => GuardrailValue::Null,
-    }
 }

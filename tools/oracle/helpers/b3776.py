@@ -1,12 +1,13 @@
 import asyncio
 from collections import deque
+from functools import partial
 from typing import Final, Literal, NotRequired, Required, TypedDict
 from uuid import UUID
 
 import httpx
 from litellm.integrations.custom_guardrail import CustomGuardrail
-from litellm.llms.custom_httpx.http_handler import get_async_httpx_client, httpxSpecialProvider
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.custom_httpx.http_handler import get_async_httpx_client, httpxSpecialProvider
 from litellm.proxy.guardrails.guardrail_hooks.hiddenlayer import hiddenlayer as hl
 from litellm.proxy.guardrails.guardrail_hooks.hiddenlayer import initialize_guardrail
 from litellm.types.guardrails import LitellmParams
@@ -15,7 +16,9 @@ from pydantic import JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
 
 JSON: Final = TypeAdapter(JsonValue)
+VIEW: Final = TypeAdapter(dict[str, JsonValue])
 LOCAL_BASE: Final = "http://127.0.0.1:1"
+FIXED_ID: Final = "11111111-1111-1111-1111-111111111111"
 
 
 class Reply(TypedDict):
@@ -37,15 +40,15 @@ class Input(TypedDict, total=False):
 
 
 class Recorder:
-    def __init__(self, tokens: list[str], answers: list[Reply]) -> None:
-        self.tokens: list[str] = tokens
-        self.answers: deque[Reply] = deque(answers)
+    def __init__(self, tokens: list[str] | None, answers: list[Reply] | None) -> None:
+        self.tokens: list[str] = [] if tokens is None else tokens
+        self.answers: deque[Reply] = deque([] if answers is None else answers)
         self.seen: list[JsonValue] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         authorization = request.headers.get("authorization")
         for index, token in enumerate(self.tokens):
-            if authorization is not None and authorization == f"Bearer {token}":
+            if authorization == f"Bearer {token}":
                 authorization = f"bearer:{index}"
                 break
         self.seen.append(
@@ -86,39 +89,37 @@ def build_params(input_value: Input, base: str) -> LitellmParams:
 
 
 def messages_of(value: JsonValue) -> JsonValue:
-    if value is None or isinstance(value, list):
-        return value
-    messages = TypeAdapter(dict[str, JsonValue]).validate_python(value).get("messages")
-    return [] if messages is None else messages
+    if value is None:
+        return None
+    match value:
+        case list(messages):
+            return messages
+        case dict(fields):
+            return fields.get("messages")
+        case str() | bool() | int() | float():
+            return value
 
 
 def apply(input_value: Input, recorder: Recorder) -> JsonValue:
     handler = get_async_httpx_client(llm_provider=httpxSpecialProvider.GuardrailCallback)
     handler.client = httpx.AsyncClient(transport=httpx.MockTransport(recorder.handle))
     params = build_params(input_value, LOCAL_BASE)
-    guardrail = initialize_guardrail(
+    guardrail: hl.HiddenlayerGuardrail | hl.HiddenlayerGuardrailV2 = initialize_guardrail(
         params, {"guardrail_name": input_value["guardrail_name"], "litellm_params": params}
     )
+    agent: CustomGuardrail = guardrail
     if input_value.get("saas"):
         guardrail.jwt_token = recorder.tokens[0]
-        refresh = deque(recorder.tokens[1:])
-        guardrail.refresh_jwt_func = lambda: refresh.popleft() if refresh else ""
-    hl.uuid4 = lambda: UUID("11111111-1111-1111-1111-111111111111")
+        guardrail.refresh_jwt_func = partial(next, iter(recorder.tokens[1:]), "")
+    hl.uuid4 = partial(UUID, FIXED_ID)
     request_data = dict(input_value["request_data"])
     logging = request_data.get("litellm_logging_obj")
+    stub = None if logging is None else Stub(VIEW.validate_python(logging))
     inputs = input_value["inputs"]
-    agent: CustomGuardrail = guardrail
     raised: JsonValue = None
     try:
         asyncio.run(
-            agent.apply_guardrail(
-                inputs,
-                request_data,
-                input_value["input_type"],
-                None
-                if logging is None
-                else Stub(TypeAdapter(dict[str, JsonValue]).validate_python(logging)),
-            )
+            agent.apply_guardrail(inputs, request_data, input_value["input_type"], stub)
         )
     except HTTPException as error:
         raised = JSON.validate_python(
@@ -126,7 +127,7 @@ def apply(input_value: Input, recorder: Recorder) -> JsonValue:
         )
     except httpx.HTTPStatusError:
         raised = JSON.validate_python({"kind": "failed"})
-    after = JSON.validate_python(inputs)
+    after = VIEW.validate_python(inputs)
     result: JsonValue = None
     if raised is None:
         result = JSON.validate_python(
@@ -139,11 +140,9 @@ def apply(input_value: Input, recorder: Recorder) -> JsonValue:
     roundtrip: JsonValue = None
     proxy = request_data.get("proxy_server_request")
     if proxy is not None:
-        headers = TypeAdapter(dict[str, JsonValue]).validate_python(proxy).get("headers")
+        headers = VIEW.validate_python(proxy).get("headers")
         if headers is not None:
-            roundtrip = TypeAdapter(dict[str, JsonValue]).validate_python(headers).get(
-                "hl-roundtrip-id"
-            )
+            roundtrip = VIEW.validate_python(headers).get("hl-roundtrip-id")
     return JSON.validate_python(
         {"requests": recorder.seen, "raised": raised, "result": result, "roundtrip": roundtrip}
     )
@@ -151,7 +150,7 @@ def apply(input_value: Input, recorder: Recorder) -> JsonValue:
 
 def dispatch(input_value: Input) -> JsonValue:
     params = build_params(input_value, LOCAL_BASE)
-    guardrail = initialize_guardrail(
+    guardrail: hl.HiddenlayerGuardrail | hl.HiddenlayerGuardrailV2 = initialize_guardrail(
         params, {"guardrail_name": input_value["guardrail_name"], "litellm_params": params}
     )
     hooks = guardrail.get_supported_event_hooks()
@@ -169,4 +168,4 @@ def run(input_value: Input) -> JsonValue:
         return dispatch(input_value)
     if function != "apply":
         raise ValueError(f"unsupported function {function}")
-    return apply(input_value, Recorder(input_value.get("tokens", []), input_value.get("answers", [])))
+    return apply(input_value, Recorder(input_value.get("tokens"), input_value.get("answers")))

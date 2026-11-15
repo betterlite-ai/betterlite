@@ -4,7 +4,6 @@ use thiserror::Error;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::guardrail_base::error::GuardrailBaseError;
 use crate::guardrail_initializers::error::InitializerError;
 use crate::hiddenlayer::hiddenlayer_authentication::error::HiddenlayerError;
@@ -56,19 +55,4 @@ pub fn blocked(entries: Vec<(&str, GuardrailValue)>) -> EvaluationError {
         status: 400,
         detail,
     }
-}
-
-// A v1 redacted message keeps every field the endpoint returned; a role it left out reads as user
-pub fn as_guardrail_message(message: &GuardrailValue) -> Result<GuardrailMessage, EvaluationError> {
-    let GuardrailValue::Object(fields) = message else {
-        return Err(EvaluationError::Shape {
-            field: "modified_data.messages",
-        });
-    };
-    let mut extra = fields.clone();
-    let role = match extra.remove("role") {
-        Some(GuardrailValue::Text(role)) => role,
-        _ => "user".to_owned(),
-    };
-    Ok(GuardrailMessage { role, extra })
 }

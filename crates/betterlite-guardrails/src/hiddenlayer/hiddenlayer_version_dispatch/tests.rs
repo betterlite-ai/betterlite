@@ -5,6 +5,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::ExposeSecret as _;
+use uuid::Uuid;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::contract::GuardrailContract;
@@ -26,6 +27,7 @@ fn instance(params: &LitellmParams) -> HiddenlayerGuardrailInstance {
         &fixtures::environment(),
         fixtures::client(),
         Arc::new(tokens::ScriptedTokens::new(&[])),
+        Uuid::new_v4,
     )
     .expect("an instance")
 }
@@ -77,17 +79,15 @@ fn version_three_dispatches_to_v2() {
 }
 
 #[test]
-fn version_reads_the_default_and_rejects_a_wrong_type() {
-    assert_eq!(version(&params("")).expect("a version"), Some(2));
-    assert_eq!(
-        version(&params(r#", "version": null"#)).expect("a version"),
-        None
+fn a_wrong_version_type_is_a_typed_initializer_error() {
+    let wrong = initialize_guardrail(
+        &params(r#", "version": "two""#),
+        Some("hiddenlayer-guard"),
+        &fixtures::environment(),
+        fixtures::client(),
+        Arc::new(tokens::ScriptedTokens::new(&[])),
+        Uuid::new_v4,
     );
-    assert_eq!(
-        version(&params(r#", "version": 1"#)).expect("a version"),
-        Some(1)
-    );
-    let wrong = version(&params(r#", "version": "two""#));
     let Err(EvaluationError::Initializer(error)) = wrong else {
         panic!("a rejected version");
     };

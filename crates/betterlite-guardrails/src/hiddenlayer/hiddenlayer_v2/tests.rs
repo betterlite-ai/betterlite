@@ -27,7 +27,7 @@ fn build(
     client: Client,
     tokens: Arc<tokens::ScriptedTokens>,
 ) -> HiddenlayerV2Guardrail {
-    HiddenlayerV2Guardrail::new(args, environment, client, tokens).expect("a guardrail")
+    HiddenlayerV2Guardrail::new(args, environment, client, tokens, fixed_id).expect("a guardrail")
 }
 
 fn guardrail(base: &str) -> HiddenlayerV2Guardrail {
@@ -59,6 +59,7 @@ fn invalid_timeout_is_rejected() {
         &fixtures::environment(),
         fixtures::client(),
         Arc::new(tokens::ScriptedTokens::new(&[])),
+        fixed_id,
     );
     assert!(matches!(
         result,
@@ -301,22 +302,39 @@ fn write_response_takes_the_last_choice_content() {
 
 #[test]
 fn last_choice_content_reads_only_a_text_content() {
-    assert_eq!(last_choice_content(&text("plain")), "");
-    assert_eq!(last_choice_content(&json("{}")), "");
-    assert_eq!(last_choice_content(&json(r#"{"choices": []}"#)), "");
-    assert_eq!(last_choice_content(&json(r#"{"choices": ["plain"]}"#)), "");
     assert_eq!(
-        last_choice_content(&json(r#"{"choices": [{"message": {}}]}"#)),
-        ""
+        last_choice_content(&json("{}")).expect("content"),
+        String::new()
     );
     assert_eq!(
-        last_choice_content(&json(r#"{"choices": [{"message": {"content": 3}}]}"#)),
-        ""
+        last_choice_content(&json(r#"{"choices": [{"message": {}}]}"#)).expect("content"),
+        String::new()
     );
     assert_eq!(
-        last_choice_content(&json(r#"{"choices": [{"message": {"content": "c"}}]}"#)),
+        last_choice_content(&json(r#"{"choices": [{"message": {"content": "c"}}]}"#))
+            .expect("content"),
         "c"
     );
+}
+
+#[test]
+fn last_choice_content_without_a_choice_is_a_shape_error() {
+    for output in [
+        text("plain"),
+        json(r#"{"choices": []}"#),
+        json(r#"{"choices": null}"#),
+        json(r#"{"choices": ["plain"]}"#),
+        json(r#"{"choices": [{"message": {"content": 3}}]}"#),
+        json(r#"{"choices": [{"message": "plain"}]}"#),
+    ] {
+        assert!(
+            matches!(
+                last_choice_content(&output),
+                Err(EvaluationError::Shape { .. })
+            ),
+            "{output:?}"
+        );
+    }
 }
 
 #[test]
@@ -332,6 +350,14 @@ fn write_response_replaces_only_the_tool_calls() {
     assert_eq!(inputs.texts, Some(Vec::new()));
     assert!(matches!(
         write_response(&mut text_inputs(&["old"]), &json(r#"{"id": "new"}"#)),
+        Err(EvaluationError::Shape { .. })
+    ));
+}
+
+#[test]
+fn write_response_fails_on_an_empty_choice_list() {
+    assert!(matches!(
+        write_response(&mut text_inputs(&["old"]), &json(r#"{"choices": []}"#)),
         Err(EvaluationError::Shape { .. })
     ));
 }
@@ -354,8 +380,7 @@ async fn sends_the_v2_request_evaluation() {
     let server = server::start(vec![server::reply(
         r#"{"messages": [{"role": "user", "content": "redacted"}]}"#,
     )]);
-    let mut guardrail = guardrail(&server.base);
-    guardrail.new_id = fixed_id;
+    let guardrail = guardrail(&server.base);
     let mut data = proxy_data(&[("hl-project-id", "project")]);
     let inputs = GuardrailApiInputs {
         structured_messages: Some(vec![message("user", text("secret"))]),

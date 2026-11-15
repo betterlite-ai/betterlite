@@ -87,10 +87,7 @@ fn apply(input: &Input) -> HelperResult {
     let client = builder.build().or_config_error()?;
     let mut request_data = input.request_data.clone();
     let mut logging = logging_target(&request_data);
-    let mut guardrail = instance(&params, input, client)?;
-    if let HiddenlayerGuardrailInstance::V2(v2) = &mut guardrail {
-        v2.new_id = || Uuid::from_bytes(FIXED_ID);
-    }
+    let guardrail = instance(&params, input, client)?;
     let input_type = input.input_type.unwrap_or(GuardrailInputType::Request);
     let evaluated = runtime()?.block_on(guardrail.apply_guardrail(
         input.inputs.clone(),
@@ -143,25 +140,22 @@ fn instance(
     client: Client,
 ) -> Result<HiddenlayerGuardrailInstance, Box<HelperError>> {
     let environment: BTreeMap<String, String> = BTreeMap::new();
-    let transport = Arc::new(ScriptedTokens::new(&input.tokens));
+    let transport = Arc::new(ScriptedTokens(Mutex::new(
+        input.tokens.iter().cloned().collect(),
+    )));
     initialize_guardrail(
         params,
         Some(&input.guardrail_name),
         &environment,
         client,
         transport,
+        || Uuid::from_bytes(FIXED_ID),
     )
     .or_config_error()
 }
 
 // the auth layer hands out the case's tokens without an HTTP round trip, which the oracle compares separately
 struct ScriptedTokens(Mutex<VecDeque<String>>);
-
-impl ScriptedTokens {
-    fn new(tokens: &[String]) -> Self {
-        Self(Mutex::new(tokens.iter().cloned().collect()))
-    }
-}
 
 impl JwtTransport for ScriptedTokens {
     fn fetch_token(&self, _request: &TokenRequest) -> Result<String, JwtError> {

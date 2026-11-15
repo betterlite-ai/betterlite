@@ -7,6 +7,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use reqwest::header::HeaderMap;
 use secrecy::SecretString;
 
+use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::hiddenlayer::evaluation::error::EvaluationError;
 use crate::hiddenlayer::hiddenlayer_authentication::error::HiddenlayerError;
@@ -26,11 +27,6 @@ pub const VIOLATED_POLICY: &str = "Violated guardrail policy";
 pub const PROVIDER: &str = "litellm";
 pub const ACTION_BLOCK: &str = "Block";
 pub const ACTION_REDACT: &str = "Redact";
-pub const INTERACTIONS_PATH: &str = "detection/v1/interactions";
-pub const REQUEST_EVALUATIONS_PATH: &str = "detection/v2/request-evaluations";
-pub const RESPONSE_EVALUATIONS_PATH: &str = "detection/v2/response-evaluations";
-pub const CONFIG_MODEL: &str = "HiddenlayerGuardrailConfigModel";
-pub const UI_FRIENDLY_NAME: &str = "Hiddenlayer Guardrail";
 
 // The parameters initialize_guardrail hands to either version's constructor
 #[derive(Debug, Clone)]
@@ -68,15 +64,29 @@ pub fn guardrail_settings(
         supported_event_hooks: supported,
         event_hook: Some(args.event_hook.clone()),
         default_on: args.default_on,
+        mask_request_content: false,
+        mask_response_content: false,
+        violation_message_template: None,
+        end_session_after_n_fails: None,
+        on_violation: None,
+        realtime_violation_message: None,
+        on_sensitive_data: None,
+        sensitive_data_route_to_model: None,
+        sticky_session_routing: true,
+        run_in_parallel: false,
+        scan_raw_request: false,
+        only_scan_new_messages: false,
+        timeout: None,
         switches: GuardrailSwitches {
+            use_native_during_call_hook: false,
+            use_native_lifecycle_hooks: false,
+            records_own_information: false,
             uses_apply_guardrail_interface: true,
-            ..GuardrailSwitches::default()
+            deny_text_on_error: false,
         },
-        ..GuardrailSettings::default()
     }
 }
 
-// LiteLLM passes the guardrail timeout to the client request and leaves it None when the config has none
 pub fn evaluation_timeout(seconds: Option<f64>) -> Result<Duration, HiddenlayerError> {
     match seconds {
         Some(seconds) => Duration::try_from_secs_f64(seconds)
@@ -90,11 +100,11 @@ pub fn config_model() -> GuardrailValue {
     GuardrailValue::Object(BTreeMap::from([
         (
             "model".to_owned(),
-            GuardrailValue::Text(CONFIG_MODEL.to_owned()),
+            GuardrailValue::Text("HiddenlayerGuardrailConfigModel".to_owned()),
         ),
         (
             "ui_friendly_name".to_owned(),
-            GuardrailValue::Text(UI_FRIENDLY_NAME.to_owned()),
+            GuardrailValue::Text("Hiddenlayer Guardrail".to_owned()),
         ),
     ]))
 }
@@ -131,4 +141,17 @@ pub fn text_part(part: &GuardrailValue) -> Option<String> {
         return None;
     };
     (kind == "text").then(|| text.clone())
+}
+
+// A redacted message keeps every field the endpoint returned; a role it left out reads as user
+pub fn as_guardrail_message(message: &GuardrailValue) -> Result<GuardrailMessage, EvaluationError> {
+    let GuardrailValue::Object(fields) = message else {
+        return Err(EvaluationError::Shape { field: "messages" });
+    };
+    let mut extra = fields.clone();
+    let role = match extra.remove("role") {
+        Some(GuardrailValue::Text(role)) => role,
+        _ => "user".to_owned(),
+    };
+    Ok(GuardrailMessage { role, extra })
 }

@@ -13,7 +13,7 @@ mod tests;
 pub mod token;
 
 use error::HiddenlayerError;
-use settings::{HiddenlayerCredentials, HiddenlayerSettings};
+use settings::{DEFAULT_AUTH_TIMEOUT, HiddenlayerCredentials, HiddenlayerSettings};
 use token::JwtTransport;
 
 #[must_use]
@@ -61,14 +61,15 @@ impl HiddenlayerAuth {
         &self,
         request: &detection::DetectionRequest<'_>,
     ) -> Result<detection::DetectionResponse, HiddenlayerError> {
-        self.post_detection_with_timeout(request, None).await
+        self.post_detection_with_timeout(request, DEFAULT_AUTH_TIMEOUT)
+            .await
     }
 
     // the guardrails pass their configured timeout here, where LiteLLM hands it to the httpx request
     pub async fn post_detection_with_timeout(
         &self,
         request: &detection::DetectionRequest<'_>,
-        timeout: Option<Duration>,
+        timeout: Duration,
     ) -> Result<detection::DetectionResponse, HiddenlayerError> {
         let first = self.send_once(request, timeout).await?;
         // an empty stored token is still "present" for the 401 refresh check, the way a Python "" is not None
@@ -101,17 +102,15 @@ impl HiddenlayerAuth {
     async fn send_once(
         &self,
         request: &detection::DetectionRequest<'_>,
-        timeout: Option<Duration>,
+        timeout: Duration,
     ) -> Result<reqwest::Response, HiddenlayerError> {
         let url = format!("{}/{}", self.settings.api_base, request.path);
         let mut builder = self
             .client
             .post(url)
+            .timeout(timeout)
             .headers(request.headers.clone())
             .json(request.body);
-        if let Some(timeout) = timeout {
-            builder = builder.timeout(timeout);
-        }
         // the Authorization header is only sent for a token with characters, since an empty one is falsy
         let token = self
             .jwt

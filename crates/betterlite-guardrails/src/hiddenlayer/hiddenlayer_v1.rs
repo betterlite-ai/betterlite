@@ -6,30 +6,50 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use reqwest::Client;
+use serde::Serialize;
 
 use crate::content_text::content_to_text;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use crate::hiddenlayer::evaluation::error::EvaluationError;
-use crate::hiddenlayer::evaluation::metadata;
-use crate::hiddenlayer::evaluation::wire;
 use crate::hiddenlayer::evaluation::{
-    EvaluationArgs, INTERACTIONS_PATH, detection_headers, evaluation_timeout, guardrail_settings,
+    EvaluationArgs, detection_headers, evaluation_timeout, guardrail_settings, metadata, wire,
 };
 use crate::hiddenlayer::hiddenlayer_authentication::HiddenlayerAuth;
 use crate::hiddenlayer::hiddenlayer_authentication::detection::DetectionRequest;
 use crate::hiddenlayer::hiddenlayer_authentication::token::JwtTransport;
-use crate::primitives::json_value::JsonValue;
 
 mod response;
 mod tests;
 
-use response::{InteractionBody, apply_result, interaction_body};
+use response::{InteractionBody, apply_result};
 
 pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 2] =
     [GuardrailEventHooks::PreCall, GuardrailEventHooks::PostCall];
 pub const VERSION: &str = "1";
+
+// the single scanned message LiteLLM sends to the v1 interaction endpoint
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ScanMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Serialize)]
+struct ScanPayload<'a> {
+    messages: [&'a ScanMessage; 1],
+}
+
+// LiteLLM's data dict: the metadata body beside either the input or the output scan
+#[derive(Serialize)]
+struct InteractionRequest<'a> {
+    metadata: &'a BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input: Option<ScanPayload<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output: Option<ScanPayload<'a>>,
+}
 
 // LiteLLM's HiddenlayerGuardrail: one scan of the last user message per call
 pub struct HiddenlayerV1Guardrail {
@@ -89,31 +109,37 @@ impl HiddenlayerV1Guardrail {
         &self,
         project_id: Option<&str>,
         metadata_body: &BTreeMap<String, String>,
-        payload: &JsonValue,
+        payload: &ScanMessage,
         input_type: GuardrailInputType,
     ) -> Result<InteractionBody, EvaluationError> {
-        let mut body = vec![("metadata", wire::to_json(metadata_body)?)];
-        match input_type {
-            GuardrailInputType::Request => body.push(("input", payload.clone())),
-            GuardrailInputType::Response => body.push(("output", payload.clone())),
-        }
-        let body = wire::object(body);
+        let payload = ScanPayload {
+            messages: [payload],
+        };
+        let (input, output) = match input_type {
+            GuardrailInputType::Request => (Some(payload), None),
+            GuardrailInputType::Response => (None, Some(payload)),
+        };
+        let body = wire::to_json(&InteractionRequest {
+            metadata: metadata_body,
+            input,
+            output,
+        })?;
         let request = DetectionRequest {
-            path: INTERACTIONS_PATH,
+            path: "detection/v1/interactions",
             headers: detection_headers(VERSION, project_id, None)?,
             body: &body,
         };
         let response = self
             .auth
-            .post_detection_with_timeout(&request, Some(self.timeout))
+            .post_detection_with_timeout(&request, self.timeout)
             .await?;
-        interaction_body(&response.body)
+        serde_json::from_slice(&response.body).map_err(|source| EvaluationError::Decode { source })
     }
 }
 
 // LiteLLM scans structured_messages first and falls back to the last text
 #[must_use]
-pub fn scan_payload(inputs: &GuardrailApiInputs) -> Option<JsonValue> {
+pub fn scan_payload(inputs: &GuardrailApiInputs) -> Option<ScanMessage> {
     if let Some(messages) = inputs.structured_messages.as_deref()
         && let Some(message) = messages.last()
     {
@@ -121,20 +147,16 @@ pub fn scan_payload(inputs: &GuardrailApiInputs) -> Option<JsonValue> {
             .extra
             .get("content")
             .map_or_else(String::new, content_to_text);
-        return Some(messages_payload(&message.role, &content));
+        return Some(ScanMessage {
+            role: message.role.clone(),
+            content,
+        });
     }
     if let Some(last) = inputs.texts.as_deref().and_then(|texts| texts.last()) {
-        return Some(messages_payload("user", last));
+        return Some(ScanMessage {
+            role: "user".to_owned(),
+            content: last.clone(),
+        });
     }
     None
-}
-
-fn messages_payload(role: &str, content: &str) -> JsonValue {
-    wire::object(vec![(
-        "messages",
-        wire::array(vec![wire::object(vec![
-            ("role", wire::text(role)),
-            ("content", wire::text(content)),
-        ])]),
-    )])
 }

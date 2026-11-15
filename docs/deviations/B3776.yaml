@@ -1,20 +1,14 @@
 task: B3776
 deviations:
-  - what: V1 and V2 both use case-insensitive header key matching for hl-* metadata headers extracted from request.
-    why: LiteLLM HTTP header lookup uses exact case-insensitive matching via dict.get; betterlite normalizes to lowercase for consistent access patterns.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L286-L291
-  - what: V2 block signal check on hl-runtime-action header uses case-insensitive comparison.
-    why: HTTP headers are case-insensitive per RFC 7230; betterlite normalizes header value comparison to lowercase for robustness.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L536
-  - what: Both v1 and v2 use AsyncHTTPHandler.post (missing owner H) for HTTP requests instead of the native httpx client.
-    why: Shared transport layer provides pooled httpx clients with consistent timeout and error handling across all guardrails; this task does not own the transport.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L385-L407
-  - what: V2 reads response body via response.json() directly without struct deserialization.
-    why: V2 endpoints return untyped JSON that varies by request type; betterlite defers schema validation to the guardrail logic rather than pre-parsing.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L531-L534
-  - what: The detection call always carries a timeout, 30 seconds unless litellm_params.timeout sets one, where LiteLLM passes self.timeout through and a request without a configured timeout gets httpx's own default.
-    why: Rule bounded-inputs requires every outbound call to carry a timeout; a stalled detection endpoint would otherwise hold the request task for the client default. A working setup sees the same behavior until the provider stalls for more than 30 seconds.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L389
+  - what: The requester id, project id and roundtrip id are matched under any header name case, where LiteLLM looks the v1 requester and project ids and the v2 roundtrip id up with the exact keys its header dict holds.
+    why: Header names are case-insensitive per RFC 7230 and a proxy forwards the casing its client sent, so betterlite lowercases the keys once before reading them; a differently cased hl-roundtrip-id is then kept and sent on, where LiteLLM injects a second, lowercase one beside it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L493-L498
+  - what: Every detection call carries a timeout, 30 seconds unless litellm_params.timeout sets one, and each attempt is sent once.
+    why: Rule bounded-inputs requires every outbound call to carry a timeout. LiteLLM hands its timeout, or the shared handler's 600 second total and 5 second connect default, to AsyncHTTPHandler, which retries once on a connection error; betterlite reports the failure instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L385-L411
+  - what: A v2 request evaluation replaces structured_messages with the messages array of the endpoint's body, where LiteLLM assigns the whole body dict.
+    why: The field is declared as a sequence of messages, and the body dict would put the endpoint's top-level keys there. No working setup can rely on that value, so betterlite keeps the declared type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L545-L548
   - what: V1 scans a structured message whose content is a list of parts as the text parts' texts joined by two newlines, where LiteLLM sends str() of the list of non-image parts, the Python repr of those mappings.
     why: The repr is a Python runtime detail no working setup can rely on and carries no text the scanner reads; docs/compatibility.md stops parity at the declared types, so betterlite sends the type's text instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L176-L181

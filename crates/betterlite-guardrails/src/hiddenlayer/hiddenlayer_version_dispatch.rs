@@ -6,6 +6,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use reqwest::Client;
+use uuid::Uuid;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::contract::GuardrailContract;
@@ -35,24 +36,17 @@ pub fn initialize_guardrail<L: EnvironmentLookup>(
     environment: &L,
     client: Client,
     transport: Arc<dyn JwtTransport>,
+    new_id: fn() -> Uuid,
 ) -> Result<HiddenlayerGuardrailInstance, EvaluationError> {
     let args = evaluation_args(params, guardrail_name)?;
-    match version(params)? {
+    match extras::read(&params.base.extra, "version", Some(DEFAULT_VERSION))? {
         Some(version) if version >= DEFAULT_VERSION => Ok(HiddenlayerGuardrailInstance::V2(
-            HiddenlayerV2Guardrail::new(&args, environment, client, transport)?,
+            HiddenlayerV2Guardrail::new(&args, environment, client, transport, new_id)?,
         )),
         _ => Ok(HiddenlayerGuardrailInstance::V1(
             HiddenlayerV1Guardrail::new(&args, environment, client, transport)?,
         )),
     }
-}
-
-fn version(params: &LitellmParams) -> Result<Option<i64>, EvaluationError> {
-    Ok(extras::read(
-        &params.base.extra,
-        "version",
-        Some(DEFAULT_VERSION),
-    )?)
 }
 
 fn evaluation_args(

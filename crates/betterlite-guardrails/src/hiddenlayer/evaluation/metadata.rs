@@ -30,17 +30,10 @@ fn lowercase_texts(fields: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String
 }
 
 #[must_use]
-pub fn proxy_server_request(
-    request_data: &BTreeMap<String, GuardrailValue>,
-) -> Option<&BTreeMap<String, GuardrailValue>> {
-    object(request_data.get("proxy_server_request"))
-}
-
-#[must_use]
 pub fn proxy_request_headers(
     request_data: &BTreeMap<String, GuardrailValue>,
 ) -> BTreeMap<String, String> {
-    proxy_server_request(request_data)
+    object(request_data.get("proxy_server_request"))
         .and_then(|proxy| object(proxy.get("headers")))
         .map_or_else(BTreeMap::new, lowercase_texts)
 }
