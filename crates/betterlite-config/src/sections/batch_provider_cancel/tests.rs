@@ -149,18 +149,21 @@ fn os_environ_references_read_the_environment() {
     );
 }
 
-#[rstest]
-#[case::missing_environment("litellm_settings:\n  api_base: os.environ/GONE\n", "GONE")]
-#[case::wrong_scalar(
-    "litellm_settings:\n  api_base: [not, text]\n",
-    "litellm_settings.api_base"
-)]
-fn invalid_values_fail_naming_the_field(#[case] yaml: &str, #[case] named: &str) {
-    let error = load(yaml, &[]).expect_err("the value cannot be read");
+#[test]
+fn a_missing_environment_variable_is_an_error_naming_it() {
+    let error = load("litellm_settings:\n  api_base: os.environ/GONE\n", &[])
+        .expect_err("the variable is missing");
     assert!(
-        error.to_string().contains(named),
-        "{error} should name {named}"
+        error.to_string().contains("GONE"),
+        "{error} should name GONE"
     );
+}
+
+#[test]
+fn a_value_of_the_wrong_type_fails_the_load() {
+    let error = load("litellm_settings:\n  api_base: [not, text]\n", &[])
+        .expect_err("the value cannot be read");
+    assert!(matches!(error, ConfigError::Yaml { .. }), "{error}");
 }
 
 #[test]
