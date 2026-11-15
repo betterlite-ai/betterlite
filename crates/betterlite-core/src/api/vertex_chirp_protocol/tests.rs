@@ -487,6 +487,7 @@ fn the_backend_commands_match_the_wire_format() {
 #[case::several_words("a b", "a b c d", " c d")]
 #[case::punctuation_between_words("um", "um, hello", " hello")]
 #[case::accents_are_kept("café", "cafe", "cafe")]
+#[case::vowel_signs_are_kept("हिंदी का", "हिंदी की", " की")]
 fn emits_only_new_words(#[case] previous: &str, #[case] current: &str, #[case] expected: &str) {
     assert_eq!(new_words(previous, current), expected);
 }
@@ -744,6 +745,20 @@ fn usage_is_reported_once_per_completion() {
     let events = wire_events(&events);
     assert_eq!(events[3]["usage"]["seconds"], 1.25);
     assert_eq!(transformer.take_unbilled_usage().unwrap(), None);
+}
+
+#[test]
+fn billing_reports_exact_decimal_seconds() {
+    let mut transformer = chirp_transformer(true);
+    transformer
+        .transform(frame(ChirpSpeechEvent::None, &[("hello", false)], "0.1"))
+        .unwrap();
+    let events = transformer
+        .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "0.3"))
+        .unwrap();
+    let events = wire_events(&events);
+    assert_eq!(event_types(&events), [STOPPED, COMPLETED]);
+    assert_eq!(events[1]["usage"]["seconds"], 0.2);
 }
 
 #[test]

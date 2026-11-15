@@ -1,0 +1,9 @@
+task: B1356
+deviations:
+  - what: new_words keeps spacing combining marks and the other marks the Unicode Alphabetic property covers, so a hypothesis that changes only a Devanagari vowel sign emits a correction delta; LiteLLM compares the words after str.isalnum, which drops those characters, and emits nothing.
+    why: Python's str.isalnum keeps only the L*, Nd, Nl and No categories, so का and की both normalize to क and the client keeps a stale interim transcript. betterlite keeps every character Rust's char::is_alphanumeric accepts, the Alphabetic and Numeric properties the task's Unicode alphanumerics name, so the correction reaches the client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py#L176-L177
+  - what: Billed seconds stay in rust_decimal::Decimal and become a float only when they are reported, so a report after bills of 0.1 then 0.3 carries seconds 0.2 where LiteLLM's float subtraction gives 0.19999999999999998.
+    why: The task asks for exact decimal billing; LiteLLM keeps cumulative billed and reported seconds as Python floats, which drift for values that are not binary fractions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py#L223-L229
+kept_bugs: []
