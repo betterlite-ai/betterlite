@@ -755,15 +755,8 @@ fn selection_source_credentials_are_named() {
 #[test]
 fn selection_model_info_stubs_stay_unsupported() {
     let vertex = VertexModelInfo {
-        settings: VertexSettings {
-            project: Some("model-info-project".to_owned()),
-            ..VertexSettings::default()
-        },
+        settings: VertexSettings::default(),
     };
-    assert_eq!(
-        vertex.get_token_counter().settings.project.as_deref(),
-        Some("model-info-project")
-    );
     assert!(matches!(
         vertex.validate_environment(),
         Err(ModelInfoError::NotSupported)
@@ -788,9 +781,23 @@ fn selection_model_info_stubs_stay_unsupported() {
         ModelInfoError::NotSupported.to_string(),
         "Vertex AI models are not supported yet"
     );
+}
+
+#[test]
+fn selection_model_info_factory_kinds() {
+    let vertex = VertexModelInfo {
+        settings: VertexSettings {
+            project: Some("model-info-project".to_owned()),
+            ..VertexSettings::default()
+        },
+    };
     let studio = GeminiModelInfo {
         settings: Settings::default(),
     };
+    assert_eq!(
+        vertex.get_token_counter().settings.project.as_deref(),
+        Some("model-info-project")
+    );
     assert_eq!(
         studio.get_token_counter().kind(),
         "GoogleAIStudioTokenCounter"
