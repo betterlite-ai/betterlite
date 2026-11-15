@@ -23,16 +23,17 @@ pub fn default_image_cost_calculator(
     request: &DefaultImageCostRequest<'_>,
     lookup: &dyn PriceLookup,
 ) -> Result<Decimal, ImageCostError> {
-    let size = request
+    let raw_size = request
         .size
         .filter(|value| !value.is_empty())
         .unwrap_or(DEFAULT_SIZE);
-    let (height, width) = parse_image_dimensions(size)?;
+    let size = normalize_size_separator(raw_size);
+    let (height, width) = parse_image_dimensions(&size)?;
     let candidates = catalog_candidates(
         request.model,
         request.custom_llm_provider,
         request.quality,
-        size,
+        &size,
     );
     let matched = candidates
         .iter()
@@ -50,20 +51,15 @@ pub fn default_image_cost_calculator(
         .checked_mul(width)
         .and_then(|value| value.checked_mul(image_count))
         .ok_or(ImageCostError::DimensionOverflow)?;
-    first_declared_price(
+    let charge = first_declared_price(
         request.model_info,
         matched.as_ref(),
         image_count,
         pixel_units,
-    )?
-    .map_or_else(
-        || {
-            Err(ImageCostError::NoPrice {
-                model: request.model.to_owned(),
-            })
-        },
-        Ok,
-    )
+    )?;
+    charge.ok_or_else(|| ImageCostError::NoPrice {
+        model: request.model.to_owned(),
+    })
 }
 
 // The supplied table before the public one, each searched key by key for the first present input/output-per-image or per-pixel price; an explicit zero wins immediately.

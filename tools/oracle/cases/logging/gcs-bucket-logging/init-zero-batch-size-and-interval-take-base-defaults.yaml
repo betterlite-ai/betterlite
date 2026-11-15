@@ -1,0 +1,7 @@
+# CustomBatchLogger.__init__ replaces a batch size and a flush interval of 0 with litellm.DEFAULT_BATCH_SIZE and DEFAULT_FLUSH_INTERVAL_SECONDS
+kind: helper
+name: gcs-bucket-logging-init-zero-batch-size-and-interval-take-base-defaults
+call:
+  b3998: {"environment": {"GCS_BATCH_SIZE": "0", "GCS_FLUSH_INTERVAL": "0"}, "steps": [{"do": "settings"}]}
+env: {"GCS_BATCH_SIZE": "0", "GCS_FLUSH_INTERVAL": "0"}
+compare: {ignore: []}

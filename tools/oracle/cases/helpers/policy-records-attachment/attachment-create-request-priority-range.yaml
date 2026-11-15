@@ -1,0 +1,41 @@
+kind: helper
+name: attachment-create-request-priority-range
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyAttachmentCreateRequest
+    value:
+      policy_name: baseline
+      priority: 100
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyAttachmentCreateRequest
+      value:
+        policy_name: baseline
+        priority: -2147483648
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyAttachmentCreateRequest
+      value:
+        policy_name: baseline
+        priority: 2147483647
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyAttachmentCreateRequest
+      value:
+        policy_name: baseline
+        priority: 2147483648
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyAttachmentCreateRequest
+      value:
+        policy_name: baseline
+        priority: -2147483649
+env: {}
+compare: {ignore: []}
