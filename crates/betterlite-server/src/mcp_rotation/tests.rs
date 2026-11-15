@@ -19,6 +19,7 @@ use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use tokio_postgres::NoTls;
+use tokio_postgres::types::ToSql;
 
 use self::support::{NEW_KEY, OLD_KEY, TestCipher, cipher, new_key, open, sealed, string};
 use super::codec::encrypt_credentials;
@@ -340,11 +341,7 @@ async fn column_param(client: &Client, sql: &str, param: &str) -> Option<String>
     client.query_one(sql, &[&param]).await.unwrap().get(0)
 }
 
-async fn execute(
-    client: &Client,
-    sql: &str,
-    params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-) {
+async fn execute(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) {
     client.execute(sql, params).await.unwrap();
 }
 

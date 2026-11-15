@@ -3,6 +3,8 @@
 use betterlite_db::mcp_server_encoding::credentials::CredentialBlob;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_secrets::error::SecretError;
+use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
+use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, StoredCipher};
 use rstest::rstest;
 
 use super::super::codec::{
@@ -322,13 +324,13 @@ fn secret_error_classes_surface() {
     let cipher = cipher(OLD_KEY);
     let mut credentials = CredentialBlob::new();
     credentials.insert("auth_value".to_owned(), string("value"));
-    let missing = betterlite_secrets::secret_codec::StoredCipher {
-        settings: betterlite_secrets::secret_codec::CipherSettings {
+    let missing = StoredCipher {
+        settings: CipherSettings {
             signing_key: None,
-            algorithm: betterlite_secrets::secret_codec::Algorithm::XSalsa20Poly1305,
+            algorithm: Algorithm::XSalsa20Poly1305,
         },
         nonces: super::support::FixedNonces,
-        diagnostics: betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics,
+        diagnostics: TracingDiagnostics,
     };
     let result = encrypt_credentials(&mut credentials, &missing, None);
     assert!(matches!(result, Err(SecretError::MissingKey)));
