@@ -12,7 +12,7 @@ use betterlite_provider::manus_responses::error::ManusResponsesError;
 use serde_json::{Value, json};
 
 use super::fixture;
-use super::{CreateProbe, Creates, GetProbe, Gets, Replies, ReplyProbe, UrlProbe, Urls};
+use super::{CreateProbe, GetProbe, Input, ReplyProbe, UrlProbe};
 
 fn create_body(
     config: &ManusResponsesConfig,
@@ -39,26 +39,6 @@ fn url_value(config: &ManusResponsesConfig, probe: &UrlProbe) -> Value {
 fn create_value(config: &ManusResponsesConfig, probe: &CreateProbe) -> Value {
     create_body(config, &probe.model, &probe.input, &probe.optional_params)
         .map_or_else(|| json!({"raised": true}), |body| json!({"body": body}))
-}
-
-pub(super) fn urls(call: &Urls) -> Value {
-    let config = fixture::config(&call.environment, &call.sdk, 0);
-    let evaluated: Vec<Value> = call
-        .probes
-        .iter()
-        .map(|probe| url_value(&config, probe))
-        .collect();
-    json!({"urls": evaluated})
-}
-
-pub(super) fn creates(call: &Creates) -> Value {
-    let config = fixture::config(&call.environment, &call.sdk, 0);
-    let evaluated: Vec<Value> = call
-        .probes
-        .iter()
-        .map(|probe| create_value(&config, probe))
-        .collect();
-    json!({"requests": evaluated})
 }
 
 fn upstream_response(probe: &ReplyProbe) -> ResponsesUpstream {
@@ -143,16 +123,6 @@ fn reply_value(config: &ManusResponsesConfig, probe: &ReplyProbe) -> Value {
     })
 }
 
-pub(super) fn replies(call: &Replies) -> Value {
-    let config = fixture::config(&call.environment, &call.sdk, call.now);
-    let evaluated: Vec<Value> = call
-        .probes
-        .iter()
-        .map(|probe| reply_value(&config, probe))
-        .collect();
-    json!({"replies": evaluated})
-}
-
 fn get_value(config: &ManusResponsesConfig, probe: &GetProbe) -> Value {
     let request = IdRequest {
         response_id: probe.response_id.clone(),
@@ -166,12 +136,35 @@ fn get_value(config: &ManusResponsesConfig, probe: &GetProbe) -> Value {
     )
 }
 
-pub(super) fn gets(call: &Gets) -> Value {
-    let config = fixture::config(&BTreeMap::new(), &fixture::empty_sdk(), 0);
-    let evaluated: Vec<Value> = call
-        .probes
-        .iter()
-        .map(|probe| get_value(&config, probe))
-        .collect();
-    json!({"requests": evaluated})
+fn evaluated<T>(
+    config: &ManusResponsesConfig,
+    probes: &[T],
+    value: fn(&ManusResponsesConfig, &T) -> Value,
+) -> Vec<Value> {
+    let mut values = Vec::with_capacity(probes.len());
+    for probe in probes {
+        values.push(value(config, probe));
+    }
+    values
+}
+
+pub(super) fn output(input: &Input) -> Value {
+    match input {
+        Input::Urls(call) => {
+            let config = fixture::config(&call.environment, &call.sdk, 0);
+            json!({"urls": evaluated(&config, &call.probes, url_value)})
+        }
+        Input::CreateRequests(call) => {
+            let config = fixture::config(&call.environment, &call.sdk, 0);
+            json!({"requests": evaluated(&config, &call.probes, create_value)})
+        }
+        Input::Replies(call) => {
+            let config = fixture::config(&call.environment, &call.sdk, call.now);
+            json!({"replies": evaluated(&config, &call.probes, reply_value)})
+        }
+        Input::GetRequests(call) => {
+            let config = fixture::config(&BTreeMap::new(), &fixture::empty_sdk(), 0);
+            json!({"requests": evaluated(&config, &call.probes, get_value)})
+        }
+    }
 }

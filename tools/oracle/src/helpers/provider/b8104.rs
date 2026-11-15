@@ -84,11 +84,6 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input {
-            Input::Urls(call) => Ok(ops::urls(call)),
-            Input::CreateRequests(call) => Ok(ops::creates(call)),
-            Input::Replies(call) => Ok(ops::replies(call)),
-            Input::GetRequests(call) => Ok(ops::gets(call)),
-        }
+        Ok(ops::output(input))
     }
 }
