@@ -71,8 +71,8 @@ fn parse_prompt_version_returns_none_without_a_stored_version() {
 
 #[rstest]
 #[case::absent(None, "development")]
-#[case::explicit("production", "production")]
-#[case::empty("", "")]
+#[case::explicit(Some("production"), "production")]
+#[case::empty(Some(""), "")]
 fn prompt_environment_or_default_only_defaults_the_absent_environment(
     #[case] environment: Option<&str>,
     #[case] expected: &str,
