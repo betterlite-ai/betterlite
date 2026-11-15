@@ -15,17 +15,23 @@ pub(super) fn parsed_chunks() {
     let parsed = chunk_parser(&chunk(r#"{"completion":"Hi","stop_reason":null}"#)).unwrap();
     let expected = GenericChunk {
         text: "Hi".to_owned(),
+        tool_use: None,
         is_finished: true,
+        finish_reason: String::new(),
+        usage: None,
         index: Some(0),
-        ..GenericChunk::default()
+        provider_specific_fields: None,
     };
     assert_eq!(parsed, expected);
     let other = chunk(r#"{"completion":5,"index":3,"stop_reason":"max_tokens"}"#);
     let expected = GenericChunk {
+        text: String::new(),
+        tool_use: None,
         is_finished: true,
         finish_reason: "max_tokens".to_owned(),
+        usage: None,
         index: Some(3),
-        ..GenericChunk::default()
+        provider_specific_fields: None,
     };
     assert_eq!(chunk_parser(&other).unwrap(), expected);
     assert_eq!(chunk_parser(&chunk("{}")).unwrap().text, "");
@@ -49,8 +55,13 @@ pub(super) fn stream_lines() {
     assert!(done.is_finished);
     assert_eq!(done.finish_reason, "stop");
     let blank = GenericChunk {
+        text: String::new(),
+        tool_use: None,
+        is_finished: false,
+        finish_reason: String::new(),
+        usage: None,
         index: Some(0),
-        ..GenericChunk::default()
+        provider_specific_fields: None,
     };
     for ignored in ["", "{}", "null", "event: ping"] {
         assert_eq!(decode_stream_line(ignored).unwrap(), blank, "{ignored}");

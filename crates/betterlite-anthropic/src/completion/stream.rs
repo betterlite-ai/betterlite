@@ -20,19 +20,6 @@ fn chunk_index(chunk: &IndexMap<String, Json>) -> Result<i64, CompletionError> {
     }
 }
 
-fn chunk_finish_reason(chunk: &IndexMap<String, Json>) -> Result<String, CompletionError> {
-    match chunk.get("stop_reason") {
-        None | Some(Json::Null) => Ok(String::new()),
-        Some(Json::Text(reason)) => Ok(reason.clone()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(CompletionError::FieldType {
-                field: "stop_reason",
-                expected: "text or null",
-            })
-        }
-    }
-}
-
 // the chunk is finished even without a stop_reason, because LiteLLM substitutes an empty string and then tests it against None
 pub fn chunk_parser(chunk: &IndexMap<String, Json>) -> Result<GenericChunk, CompletionError> {
     let index = chunk_index(chunk)?;
@@ -43,11 +30,21 @@ pub fn chunk_parser(chunk: &IndexMap<String, Json>) -> Result<GenericChunk, Comp
             String::new()
         }
     };
+    let finish_reason = match chunk.get("stop_reason") {
+        None | Some(Json::Null) => String::new(),
+        Some(Json::Text(reason)) => reason.clone(),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(CompletionError::FieldType {
+                field: "stop_reason",
+                expected: "text or null",
+            });
+        }
+    };
     Ok(GenericChunk {
         text,
         tool_use: None,
         is_finished: true,
-        finish_reason: chunk_finish_reason(chunk)?,
+        finish_reason,
         usage: None,
         index: Some(index),
         provider_specific_fields: None,
@@ -57,8 +54,13 @@ pub fn chunk_parser(chunk: &IndexMap<String, Json>) -> Result<GenericChunk, Comp
 // B2214's BaseModelResponseIterator._handle_string_chunk over one transport line, then chunk_parser
 pub fn decode_stream_line(line: &str) -> Result<GenericChunk, CompletionError> {
     let empty = GenericChunk {
+        text: String::new(),
+        tool_use: None,
+        is_finished: false,
+        finish_reason: String::new(),
+        usage: None,
         index: Some(0),
-        ..GenericChunk::default()
+        provider_specific_fields: None,
     };
     if line.contains("[DONE]") {
         return Ok(GenericChunk {

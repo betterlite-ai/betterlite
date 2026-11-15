@@ -88,8 +88,11 @@ pub(super) async fn request_defaults() {
     };
     let deployment = OptionValues {
         max_tokens_to_sample: Some(256),
+        stop_sequences: None,
         temperature: Some(0.25),
-        ..OptionValues::default()
+        top_p: None,
+        top_k: None,
+        metadata: None,
     };
     let global = OptionValues {
         max_tokens_to_sample: Some(512),
