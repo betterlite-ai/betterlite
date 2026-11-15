@@ -410,6 +410,12 @@ const UNSUPPORTED_EFFORTS: [(&str, &str, &str); 2] = [
 ];
 
 async fn invalid_output_effort() {
+    refuse_invalid_efforts().await;
+    refuse_unsupported_efforts().await;
+    keep_supported_efforts().await;
+}
+
+async fn refuse_invalid_efforts() {
     for (model, source, value) in BAD_EFFORTS {
         let error = output_run(model, false, source).await.expect_err(source);
         assert!(
@@ -418,6 +424,9 @@ async fn invalid_output_effort() {
         );
         assert_eq!(error.status_code(), Some(400));
     }
+}
+
+async fn refuse_unsupported_efforts() {
     for (model, source, level) in UNSUPPORTED_EFFORTS {
         let error = output_run(model, false, source).await.expect_err(source);
         let expected =
@@ -428,6 +437,9 @@ async fn invalid_output_effort() {
         );
         assert_eq!(error.status_code(), Some(400));
     }
+}
+
+async fn keep_supported_efforts() {
     for level in ["high", "medium", "low", "xhigh", "max"] {
         let config = format!(r#"{{"effort":"{level}","note":"kept"}}"#);
         let source = format!(r#"{{"output_config":{config}}}"#);
@@ -540,7 +552,7 @@ const ADAPTIVE_CASES: [MapCase; 11] = [
 
 async fn adaptive_to_legacy_cap() {
     check_maps(&ADAPTIVE_CASES).await;
-    for limit in [0, 1000, 1024] {
+    for limit in ["0", "1000", "1024"] {
         let (guard, warnings) = capture_warnings();
         let request = format!(r#"{{"thinking":{{"type":"adaptive"}},"max_tokens":{limit}}}"#);
         let mapped = map_with("plain-model", &request, NONE).await;
@@ -586,6 +598,13 @@ const REWRITTEN: [(&str, &str); 8] = [
 ];
 
 async fn parameter_body_rewrites() {
+    check_rewritten_fields().await;
+    check_forced_tool_gate().await;
+    check_sampling_gate().await;
+    check_tool_appends().await;
+}
+
+async fn check_rewritten_fields() {
     let mapped = map_with("plain-model", REWRITE_REQUEST, NONE).await;
     for (key, value) in REWRITTEN {
         assert_eq!(mapped.get(key), Some(&json(value)), "{key}");
@@ -607,6 +626,9 @@ async fn parameter_body_rewrites() {
         ),
     ])
     .await;
+}
+
+async fn check_forced_tool_gate() {
     // the forced-tool gate reads both a required string and a named tool choice
     for forced in [
         r#"{"tool_choice":"required"}"#,
@@ -637,6 +659,9 @@ async fn parameter_body_rewrites() {
             Some(DROP_FORCED_TOOL_WARNING.replacen("%s", "no-forced-tools", 1))
         );
     }
+}
+
+async fn check_sampling_gate() {
     // the sampling gate rejects each param alone and drops both under either drop
     for rejected in [r#"{"temperature":0.5}"#, r#"{"top_p":0.9}"#] {
         let error = refused("no-sampling", rejected).await;
@@ -650,6 +675,9 @@ async fn parameter_body_rewrites() {
         let dropped = map_with("no-sampling", r#"{"temperature":0.5,"top_p":0.9}"#, policy).await;
         assert!(dropped.is_empty(), "{dropped:?}");
     }
+}
+
+async fn check_tool_appends() {
     let stopped = map_with("plain-model", r#"{"stop":["END","  "]}"#, GLOBAL).await;
     assert_eq!(stopped.get("stop_sequences"), Some(&json(r#"["END"]"#)));
     let search = r#"{"web_search_options":{"search_context_size":"low"}}"#;
@@ -664,6 +692,12 @@ fn format_request(extra: &str) -> String {
 }
 
 async fn structured_format_selection() {
+    check_native_selection().await;
+    check_fallback_selection().await;
+    check_input_order().await;
+}
+
+async fn check_native_selection() {
     let native = map_with("native-model", &format_request(""), NONE).await;
     assert_eq!(native.get("json_mode"), Some(&Json::Bool(true)));
     assert!(matches!(native.get("output_format"), Some(Json::Object(_))));
@@ -671,21 +705,36 @@ async fn structured_format_selection() {
     let text = r#"{"response_format":{"type":"text"}}"#;
     let native_text = map_with("native-model", text, NONE).await;
     assert_eq!(Json::Object(native_text), json(r#"{"json_mode":true}"#));
+    let unforced = map_with("no-forced-tools", &format_request(""), NONE).await;
+    assert!(unforced.get("tool_choice").is_none());
+    assert_eq!(unforced.get("json_mode"), Some(&Json::Bool(true)));
+    let plain_text = map_with("plain-model", text, NONE).await;
+    assert!(plain_text.is_empty(), "{plain_text:?}");
+}
+
+async fn check_fallback_selection() {
     let fallback = map_with("plain-model", &format_request(""), NONE).await;
     let forced = json(r#"{"name":"json_tool_call","type":"tool"}"#);
     assert_eq!(fallback.get("tool_choice"), Some(&forced));
     assert_eq!(fallback.get("json_mode"), Some(&Json::Bool(true)));
     assert!(matches!(fallback.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
     let thinking = format_request(r#""reasoning_effort":"low","#);
-    let thinking = map_with("plain-model", &thinking, NONE).await;
-    assert!(thinking.get("tool_choice").is_none());
-    assert!(matches!(thinking.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
+    let thinking_mapped = map_with("plain-model", &thinking, NONE).await;
+    assert!(thinking_mapped.get("tool_choice").is_none());
+    assert!(matches!(thinking_mapped.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
     // response_format first still sees the reasoning_effort in the initial non_default_params
     let ordered = format!(r#"{{"response_format":{FORMAT},"reasoning_effort":"low"}}"#);
-    let ordered = map_with("plain-model", &ordered, NONE).await;
-    assert!(ordered.get("tool_choice").is_none(), "{ordered:?}");
-    assert!(matches!(ordered.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
-    assert_eq!(ordered.get("json_mode"), Some(&Json::Bool(true)));
+    let ordered_mapped = map_with("plain-model", &ordered, NONE).await;
+    assert!(
+        ordered_mapped.get("tool_choice").is_none(),
+        "{ordered_mapped:?}"
+    );
+    assert!(matches!(ordered_mapped.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
+    assert_eq!(ordered_mapped.get("json_mode"), Some(&Json::Bool(true)));
+}
+
+async fn check_input_order() {
+    let forced = json(r#"{"name":"json_tool_call","type":"tool"}"#);
     // thinking already in optional_params is not part of the initial check, so the choice stays forced
     let sent = r#"{"thinking":{"type":"enabled","budget_tokens":1024}}"#;
     let accumulated = try_map("plain-model", &format_request(""), sent, NONE)
@@ -693,11 +742,6 @@ async fn structured_format_selection() {
         .expect("the format maps");
     assert_eq!(accumulated.get("tool_choice"), Some(&forced));
     assert_eq!(accumulated.get("max_tokens"), Some(&json("5120")));
-    let unforced = map_with("no-forced-tools", &format_request(""), NONE).await;
-    assert!(unforced.get("tool_choice").is_none());
-    assert_eq!(unforced.get("json_mode"), Some(&Json::Bool(true)));
-    let plain_text = map_with("plain-model", text, NONE).await;
-    assert!(plain_text.is_empty(), "{plain_text:?}");
     // the loop keeps input order, so a response_format after tool_choice replaces the choice
     let later = format_request(r#""tool_choice":"auto","#);
     let replaced = map_with("plain-model", &later, NONE).await;

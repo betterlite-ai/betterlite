@@ -42,7 +42,7 @@ where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    let thinking_enabled = thinking_request(&value::base_params(non_default_params)?).thinking;
+    let thinking_enabled = thinking_request(&value::to_wire(non_default_params)?).thinking;
     for (param, value) in non_default_params {
         match param.as_str() {
             "response_format" => {

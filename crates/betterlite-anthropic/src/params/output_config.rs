@@ -29,6 +29,16 @@ fn rendered(value: &Json) -> String {
     }
 }
 
+fn effort_value(config: &IndexMap<String, Json>) -> Result<Option<&str>, ParamsError> {
+    match config.get("effort") {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) if VALID_EFFORTS.contains(&text.as_str()) => Ok(Some(text.as_str())),
+        Some(other) => Err(ParamsError::InvalidEffort {
+            value: rendered(other),
+        }),
+    }
+}
+
 fn preserve_format(
     config: &IndexMap<String, Json>,
     data: &mut IndexMap<String, Json>,
@@ -37,20 +47,17 @@ fn preserve_format(
     let preserved = config
         .get("format")
         .filter(|format| !matches!(format, Json::Null));
-    match preserved {
-        Some(format) => {
-            let mut format_only = IndexMap::new();
-            format_only.insert("format".to_owned(), format.clone());
-            optional_params.insert(
-                "output_config".to_owned(),
-                Json::Object(format_only.clone()),
-            );
-            data.insert("output_config".to_owned(), Json::Object(format_only));
-        }
-        None => {
-            optional_params.shift_remove("output_config");
-            data.shift_remove("output_config");
-        }
+    if let Some(format) = preserved {
+        let mut format_only = IndexMap::new();
+        format_only.insert("format".to_owned(), format.clone());
+        optional_params.insert(
+            "output_config".to_owned(),
+            Json::Object(format_only.clone()),
+        );
+        data.insert("output_config".to_owned(), Json::Object(format_only));
+    } else {
+        optional_params.shift_remove("output_config");
+        data.shift_remove("output_config");
     }
 }
 
@@ -68,12 +75,12 @@ where
     let Some(Json::Object(config)) = optional_params.get("output_config") else {
         return Ok(());
     };
-    let config = config.clone();
-    if config.is_empty() {
+    let fields = config.clone();
+    if fields.is_empty() {
         return Ok(());
     }
     if request.global_drop
-        && config.keys().any(|key| key != "format")
+        && fields.keys().any(|key| key != "format")
         && !model_supports_effort_param(request.model, request.provider, environment, catalogs)
             .await
     {
@@ -81,18 +88,10 @@ where
             "{}",
             DROP_OUTPUT_CONFIG_WARNING.replacen("%s", request.model, 1)
         );
-        preserve_format(&config, data, optional_params);
+        preserve_format(&fields, data, optional_params);
         return Ok(());
     }
-    let validated = match config.get("effort") {
-        None | Some(Json::Null) => None,
-        Some(Json::Text(text)) if VALID_EFFORTS.contains(&text.as_str()) => Some(text.as_str()),
-        Some(other) => {
-            return Err(ParamsError::InvalidEffort {
-                value: rendered(other),
-            });
-        }
-    };
+    let validated = effort_value(&fields)?;
     if let Some(message) = validate_effort_for_model(
         request.model,
         validated,
@@ -104,6 +103,6 @@ where
     {
         return Err(ParamsError::EffortUnsupported { message });
     }
-    data.insert("output_config".to_owned(), Json::Object(config));
+    data.insert("output_config".to_owned(), Json::Object(fields));
     Ok(())
 }

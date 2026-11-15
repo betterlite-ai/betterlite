@@ -57,9 +57,9 @@ fn drop_adaptive(model: &str, optional_params: &mut IndexMap<String, Json>) {
 
 // Python's `max_completion_tokens or max_tokens`: falsy still caps, null is absent
 fn cap_tokens(non_default_params: &IndexMap<String, Json>) -> Result<Option<i64>, ParamsError> {
-    let truthy = |value: &Json| match value {
+    let truthy = |entry: &Json| match entry {
         Json::Null => false,
-        Json::Bool(value) => *value,
+        Json::Bool(flag) => *flag,
         Json::Number(number) => number.as_f64() != Some(0.0_f64),
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
@@ -106,16 +106,12 @@ where
         drop_adaptive(request.model, optional_params);
         return Ok(());
     };
-    match cap_thinking_to_max_tokens(fields, limit) {
-        Some(capped) => {
-            optional_params.insert("thinking".to_owned(), capped);
-            Ok(())
-        }
-        None => {
-            drop_adaptive(request.model, optional_params);
-            Ok(())
-        }
+    if let Some(capped) = cap_thinking_to_max_tokens(fields, limit) {
+        optional_params.insert("thinking".to_owned(), capped);
+    } else {
+        drop_adaptive(request.model, optional_params);
     }
+    Ok(())
 }
 
 async fn translate<Source, Transport>(
@@ -152,13 +148,9 @@ where
     .await?;
     if params.thinking != before_thinking {
         match params.thinking {
-            Some(thinking) => {
-                optional_params.insert("thinking".to_owned(), thinking);
-            }
-            None => {
-                optional_params.shift_remove("thinking");
-            }
-        }
+            Some(thinking) => optional_params.insert("thinking".to_owned(), thinking),
+            None => optional_params.shift_remove("thinking"),
+        };
     }
     if params.output_config != before_output
         && let Some(output_config) = params.output_config
@@ -202,13 +194,13 @@ where
 {
     let effort = match value {
         Json::Object(fields) => fields.get("effort"),
-        other => Some(other),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Some(value),
     };
-    let Some(Json::Text(effort)) = effort else {
+    let Some(Json::Text(named)) = effort else {
         return Ok(());
     };
     let reasoning = ReasoningRequest {
-        reasoning_effort: Some(effort),
+        reasoning_effort: Some(named),
         model: request.model,
         custom_llm_provider: request.provider,
         llm_provider: request.provider,
@@ -224,9 +216,9 @@ where
     if !adaptive_model(request, environment).await {
         return Ok(());
     }
-    let Some(level) = effort_level(effort) else {
+    let Some(level) = effort_level(named) else {
         return Err(ParamsError::Effort(EffortError::InvalidReasoningEffort {
-            value: effort.clone(),
+            value: named.to_owned(),
             model: request.model.to_owned(),
             provider: request.provider.to_owned(),
         }));
@@ -243,10 +235,9 @@ pub fn update_max_tokens(
     non_default_params: &IndexMap<String, Json>,
     optional_params: &mut IndexMap<String, Json>,
 ) -> Result<(), ParamsError> {
-    let requested = value::base_params(non_default_params)?;
-    let mut options = value::base_params(optional_params)?;
+    let requested = value::to_wire(non_default_params)?;
+    let mut options = value::to_wire(optional_params)?;
     add_thinking_max_tokens(&requested, &mut options, request.default_max_tokens)?;
-    *optional_params =
-        serde_json::from_value(serde_json::Value::Object(options)).map_err(ParamsError::Decode)?;
+    *optional_params = value::from_wire(options)?;
     Ok(())
 }

@@ -1,7 +1,8 @@
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Literal, Protocol, TypeAlias, TypeVar, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict, TypeVar
+from unittest.mock import patch
 
 import litellm
 from litellm.exceptions import BadRequestError
@@ -64,10 +65,6 @@ class Transformer(Protocol[MessageT]):
         litellm_params: dict[str, Json],
         headers: dict[str, Json],
     ) -> dict[str, Json]: ...
-
-
-class CostMapHost(Protocol):
-    model_cost: dict[str, Json]
 
 
 class Warnings(logging.Handler):
@@ -148,10 +145,5 @@ def answer(step: Step) -> Json:
 
 
 def run(input_value: Input) -> list[Json]:
-    host: CostMapHost = litellm
-    previous = host.model_cost
-    host.model_cost = input_value["fixture"]["model_cost"]
-    try:
+    with patch.object(litellm, "model_cost", input_value["fixture"]["model_cost"]):
         return [answer(step) for step in input_value["steps"]]
-    finally:
-        host.model_cost = previous

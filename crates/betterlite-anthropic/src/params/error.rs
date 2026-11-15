@@ -62,7 +62,7 @@ pub enum ParamsError {
 
 impl ParamsError {
     #[must_use]
-    pub fn status_code(&self) -> Option<u16> {
+    pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::Sampling(error) => error.status_code(),
             Self::Speed(error) => error.status_code(),

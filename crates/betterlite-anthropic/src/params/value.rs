@@ -1,12 +1,11 @@
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use indexmap::IndexMap;
-use serde_json::{Map, Value};
 
 use crate::params::error::ParamsError;
 
 #[must_use]
-pub const fn as_str(value: &Json) -> Option<&str> {
+pub(crate) const fn as_str(value: &Json) -> Option<&str> {
     match value {
         Json::Text(text) => Some(text.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
@@ -14,7 +13,7 @@ pub const fn as_str(value: &Json) -> Option<&str> {
 }
 
 #[must_use]
-pub const fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
+pub(crate) const fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
@@ -22,7 +21,7 @@ pub const fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
 }
 
 // Python's int(value) over the shapes a request can carry: booleans and int-shaped numbers
-pub fn integer(value: &Json) -> Option<i64> {
+pub(crate) fn integer(value: &Json) -> Option<i64> {
     match value {
         Json::Bool(flag) => Some(i64::from(*flag)),
         Json::Number(number) => number.as_i64(),
@@ -31,7 +30,7 @@ pub fn integer(value: &Json) -> Option<i64> {
 }
 
 #[must_use]
-pub fn prompt_json(value: &Json) -> PromptJson {
+pub(crate) fn prompt_json(value: &Json) -> PromptJson {
     match value {
         Json::Null => PromptJson::Null,
         Json::Bool(flag) => PromptJson::Bool(*flag),
@@ -47,13 +46,33 @@ pub fn prompt_json(value: &Json) -> PromptJson {
     }
 }
 
-// B2202's base helpers take serde_json's map; key order is outside the compatibility contract
-pub fn base_params(params: &IndexMap<String, Json>) -> Result<Map<String, Value>, ParamsError> {
+// B2202's base helpers take serde_json's map; the caller's type names the wire map it hands over
+pub(crate) fn to_wire<T>(params: &IndexMap<String, Json>) -> Result<T, ParamsError>
+where
+    T: serde::de::DeserializeOwned,
+{
     let encoded = serde_json::to_value(params).map_err(ParamsError::Encode)?;
-    match encoded {
-        Value::Object(fields) => Ok(fields),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
-            Err(ParamsError::NotAnObject)
-        }
+    if !encoded.is_object() {
+        return Err(ParamsError::NotAnObject);
     }
+    serde_json::from_value(encoded).map_err(ParamsError::Decode)
+}
+
+// Writes a wire map a base helper changed back into the caller's ordered parameters
+pub(crate) fn from_wire<T>(wire: T) -> Result<IndexMap<String, Json>, ParamsError>
+where
+    T: serde::Serialize,
+{
+    let encoded = serde_json::to_value(wire).map_err(ParamsError::Encode)?;
+    serde_json::from_value(encoded).map_err(ParamsError::Decode)
+}
+
+// A mapped record as the Json tree the parameter maps carry
+pub(crate) fn encode<T>(record: &T) -> Result<Json, ParamsError>
+where
+    T: serde::Serialize + ?Sized,
+{
+    serde_json::to_value(record)
+        .and_then(serde_json::from_value)
+        .map_err(ParamsError::Encode)
 }

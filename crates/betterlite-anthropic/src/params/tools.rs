@@ -20,26 +20,30 @@ use crate::tools::{map_tool_choice, map_tools};
 pub const RESPONSE_FORMAT_TOOL_NAME: &str = "json_tool_call";
 
 // The base helper owns the append-or-concatenate rule that every tools branch goes through
-fn append_params(
+fn append_params<T>(
     optional_params: &mut IndexMap<String, Json>,
-    tools: Vec<serde_json::Value>,
-) -> Result<(), ParamsError> {
-    let mut base = value::base_params(optional_params)?;
-    append_tools(&mut base, tools)?;
-    *optional_params =
-        serde_json::from_value(serde_json::Value::Object(base)).map_err(ParamsError::Decode)?;
+    tools: Vec<T>,
+) -> Result<(), ParamsError>
+where
+    T: serde::Serialize,
+{
+    let mut base = value::to_wire(optional_params)?;
+    let encoded = tools
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(ParamsError::Encode)?;
+    append_tools(&mut base, encoded)?;
+    *optional_params = value::from_wire(base)?;
     Ok(())
 }
 
 // A single mapped tool goes through the same append as a whole request's tools
-fn append_tool<T: serde::Serialize>(
-    optional_params: &mut IndexMap<String, Json>,
-    tool: &T,
-) -> Result<(), ParamsError> {
-    append_params(
-        optional_params,
-        vec![serde_json::to_value(tool).map_err(ParamsError::Encode)?],
-    )
+fn append_tool<T>(optional_params: &mut IndexMap<String, Json>, tool: &T) -> Result<(), ParamsError>
+where
+    T: serde::Serialize,
+{
+    append_params(optional_params, vec![tool])
 }
 
 pub fn apply_tools(
@@ -51,24 +55,17 @@ pub fn apply_tools(
     };
     let mapped: Vec<PromptJson> = items.iter().map(value::prompt_json).collect();
     let mapping = map_tools(&mapped)?;
-    let tools = mapping
-        .tools
-        .iter()
-        .map(|tool| serde_json::to_value(tool).map_err(ParamsError::Encode))
-        .collect::<Result<Vec<_>, _>>()?;
-    append_params(optional_params, tools)?;
+    append_params(optional_params, mapping.tools)?;
     if !mapping.mcp_servers.is_empty() {
         optional_params.insert(
             "mcp_servers".to_owned(),
-            serde_json::to_value(&mapping.mcp_servers)
-                .and_then(serde_json::from_value::<Json>)
-                .map_err(ParamsError::Encode)?,
+            value::encode(&mapping.mcp_servers)?,
         );
     }
     Ok(())
 }
 
-fn parallel_flag(value: Option<&Json>) -> Result<Option<bool>, ParamsError> {
+const fn parallel_flag(value: Option<&Json>) -> Result<Option<bool>, ParamsError> {
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Bool(flag)) => Ok(Some(*flag)),
@@ -91,9 +88,7 @@ pub fn apply_tool_choice(
     let Some(chosen) = map_tool_choice(choice.as_ref(), parallel)? else {
         return Ok(());
     };
-    let encoded_choice = serde_json::to_value(&chosen)
-        .and_then(serde_json::from_value::<Json>)
-        .map_err(ParamsError::Encode)?;
+    let encoded_choice = value::encode(&chosen)?;
     let forced = apply_forced_tool_choice(
         request.model,
         &encoded_choice,
@@ -131,10 +126,7 @@ where
     .await;
     if native {
         if let Some(output) = map_output(Some(&format))? {
-            let encoded = serde_json::to_value(&output)
-                .and_then(serde_json::from_value::<Json>)
-                .map_err(ParamsError::Encode)?;
-            optional_params.insert("output_format".to_owned(), encoded);
+            optional_params.insert("output_format".to_owned(), value::encode(&output)?);
         }
         optional_params.insert("json_mode".to_owned(), Json::Bool(true));
         return Ok(());
