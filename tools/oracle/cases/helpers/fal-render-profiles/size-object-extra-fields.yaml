@@ -6,8 +6,8 @@ call:
     sizes:
       - {width: 10, height: 20, preset: square}
       - {height: 20, width: 10, extra: [1, 2]}
-      - {width: true, height: false}
-      - {width: 9223372036854775808, height: 2}
+      - {width: true, height: false, preset: square}
+      - {width: 9223372036854775808, height: 2, preset: square}
       - {width: 10, height: 20.5}
       - {width: 10, height: "20"}
       - {width: 10}

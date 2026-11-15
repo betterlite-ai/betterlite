@@ -183,6 +183,7 @@ fn ideogram_size_falls_back_for_malformed_text(#[case] requested: &str) {
     Json::Object(IndexMap::from([
         ("width".to_owned(), Json::Bool(true)),
         ("height".to_owned(), Json::Bool(false)),
+        ("preset".to_owned(), text("square")),
     ])),
     Json::Object(IndexMap::from([
         ("width".to_owned(), Json::Bool(true)),
@@ -193,6 +194,7 @@ fn ideogram_size_falls_back_for_malformed_text(#[case] requested: &str) {
     Json::Object(IndexMap::from([
         ("width".to_owned(), Json::Number(serde_json::Number::from(u64::MAX))),
         ("height".to_owned(), number(2)),
+        ("preset".to_owned(), text("square")),
     ])),
     Json::Object(IndexMap::from([
         ("width".to_owned(), Json::Number(serde_json::Number::from(u64::MAX))),
