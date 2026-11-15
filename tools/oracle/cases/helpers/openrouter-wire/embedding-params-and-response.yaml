@@ -1,0 +1,11 @@
+kind: helper
+name: openrouter-wire-embedding-params-and-response
+call:
+  b6080:
+    op: embedding
+    cases: []
+    replies:
+      - body: '{"error": {"message": "rate limited", "code": 429}}'
+env: {}
+compare:
+  ignore: []

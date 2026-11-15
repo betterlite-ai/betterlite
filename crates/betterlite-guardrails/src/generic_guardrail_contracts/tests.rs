@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use super::headers::{InboundRequestContext, extract_inbound_headers, sanitize_inbound_headers};
+use super::headers::{
+    InboundRequestContext, extract_inbound_headers, python_repr, python_str, quote_python_string,
+    sanitize_inbound_headers,
+};
 use super::*;
 use serde_json::from_str;
 use std::collections::BTreeMap;
@@ -82,6 +85,56 @@ fn generic_guardrail_header_extraction_coerces_json_values() {
         Some(&r#"{'a': "it's", "it's": 'eu', 'region': 'eu'}"#.to_owned())
     );
     assert_eq!(headers.get("X-Request-Id"), Some(&"[present]".to_owned()));
+}
+
+#[test]
+fn generic_guardrail_python_str_uses_the_text_of_a_string() {
+    assert_eq!(
+        python_str(&GuardrailExtraValue::Text("abc".to_owned())),
+        "abc"
+    );
+    assert_eq!(python_str(&GuardrailExtraValue::SignedInteger(7)), "7");
+    assert_eq!(python_str(&GuardrailExtraValue::Null), "None");
+    assert_eq!(python_str(&GuardrailExtraValue::Boolean(true)), "True");
+}
+
+#[test]
+fn generic_guardrail_python_repr_renders_each_value_like_python() {
+    assert_eq!(python_repr(&GuardrailExtraValue::Null), "None");
+    assert_eq!(python_repr(&GuardrailExtraValue::Boolean(false)), "False");
+    assert_eq!(python_repr(&GuardrailExtraValue::SignedInteger(-3)), "-3");
+    assert_eq!(python_repr(&GuardrailExtraValue::UnsignedInteger(3)), "3");
+    assert_eq!(python_repr(&GuardrailExtraValue::Decimal(2.0)), "2.0");
+    assert_eq!(python_repr(&GuardrailExtraValue::Decimal(1.25)), "1.25");
+    assert_eq!(
+        python_repr(&GuardrailExtraValue::Text("a".to_owned())),
+        "'a'"
+    );
+    assert_eq!(
+        python_repr(&GuardrailExtraValue::Array(vec![
+            GuardrailExtraValue::SignedInteger(1),
+            GuardrailExtraValue::Null,
+        ])),
+        "[1, None]"
+    );
+    let mut fields = BTreeMap::new();
+    let _previous = fields.insert("k".to_owned(), GuardrailExtraValue::Text("v".to_owned()));
+    assert_eq!(
+        python_repr(&GuardrailExtraValue::Object(fields)),
+        "{'k': 'v'}"
+    );
+}
+
+#[test]
+fn generic_guardrail_python_repr_quotes_and_escapes_strings() {
+    assert_eq!(quote_python_string("plain"), "'plain'");
+    assert_eq!(quote_python_string("a space"), "'a space'");
+    assert_eq!(quote_python_string("it's"), "\"it's\"");
+    assert_eq!(quote_python_string("a'b\"c"), r#"'a\'b"c'"#);
+    assert_eq!(quote_python_string("a\\b\n\t"), r"'a\\b\n\t'");
+    assert_eq!(quote_python_string("\u{7}"), r"'\x07'");
+    assert_eq!(quote_python_string("\u{2028}"), "'\u{5c}u2028'");
+    assert_eq!(quote_python_string("\u{e0001}"), r"'\U000e0001'");
 }
 
 #[test]
