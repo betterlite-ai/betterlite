@@ -203,6 +203,22 @@ fn a_non_object_response_slot_counts_failed() {
 }
 
 #[test]
+fn an_empty_response_model_is_no_model() {
+    let decoded = output_input(
+        "openai",
+        None,
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "e", "response": {"status_code": 200, "body": {
+            "model": "",
+            "usage": {"prompt_tokens": 4, "completion_tokens": 0, "total_tokens": 4}
+        }}}"#,
+    );
+    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    assert!(result.models.is_empty());
+    assert_eq!(result.successful_requests, 1);
+}
+
+#[test]
 fn line_cost_prefers_the_response_model() {
     let lookup = ByModelLookup {
         response: serde_json::from_str(r#"{"input_cost_per_token_batches":0.5}"#)
@@ -389,6 +405,36 @@ fn a_null_page_count_is_a_zero_page_ocr_line() {
         Level::WARN,
         "batch output line could not be costed"
     ));
+}
+
+#[test]
+fn ocr_annotation_pages_are_counted() {
+    let decoded = output_input(
+        "mistral",
+        Some("mistral-ocr-batch"),
+        Some(OCR_MODEL_INFO),
+        r#"{"custom_id": "o2", "response": {"status_code": 200, "body": {
+            "usage_info": {"pages_processed": 2, "pages_processed_annotation": 1, "credits": 3, "doc_size_bytes": 10}
+        }}}"#,
+    );
+    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    assert_eq!(result.cost, Decimal::new(15, 1));
+    assert_eq!(result.successful_requests, 1);
+}
+
+#[test]
+fn a_text_credit_count_is_an_uncostable_ocr_line() {
+    let decoded = output_input(
+        "mistral",
+        Some("mistral-ocr-batch"),
+        Some(OCR_MODEL_INFO),
+        r#"{"custom_id": "c", "response": {"status_code": 200, "body": {
+            "usage_info": {"pages_processed": 1, "credits": "3"}
+        }}}"#,
+    );
+    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    assert_eq!(result.cost, Decimal::ZERO);
+    assert_eq!(result.successful_requests, 1);
 }
 
 #[rstest::rstest]
