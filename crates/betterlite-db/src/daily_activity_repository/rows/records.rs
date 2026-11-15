@@ -7,7 +7,7 @@ use rust_decimal::prelude::FromPrimitive as _;
 use std::collections::BTreeMap;
 use tokio_postgres::Row;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerificationTokenRow {
     pub token: String,
     pub key_alias: Option<String>,
@@ -16,7 +16,7 @@ pub struct VerificationTokenRow {
     pub metadata: Option<BTreeMap<String, JsonData>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletedVerificationTokenRow {
     pub row: VerificationTokenRow,
     pub deleted_at: NaiveDateTime,

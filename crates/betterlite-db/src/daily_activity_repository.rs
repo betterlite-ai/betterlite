@@ -8,6 +8,7 @@ use crate::daily_activity_export::DailyActivityExportError;
 use crate::daily_activity_sql::DailyActivitySqlError;
 use crate::postgres_store::errors::DbError;
 use rows::RowError;
+use std::result::Result as StdResult;
 
 pub const USAGE_KEY_SEARCH_MAX: i64 = 100;
 pub const USAGE_MODEL_TOP_KEYS_MAX: i64 = 100;
@@ -36,6 +37,6 @@ pub enum DailyActivityRepositoryError {
     Pagination,
 }
 
-pub type Result<T> = std::result::Result<T, DailyActivityRepositoryError>;
+pub type Result<T> = StdResult<T, DailyActivityRepositoryError>;
 
 mod tests;

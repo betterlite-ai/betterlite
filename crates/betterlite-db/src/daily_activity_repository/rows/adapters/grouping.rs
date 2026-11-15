@@ -12,7 +12,7 @@ pub fn grouping_rows(rows: &[DatabaseRow]) -> Result<Vec<GroupingSetsRow>, RowEr
             custom_llm_provider: row.optional::<String>("custom_llm_provider")?,
             mcp_namespaced_tool_name: row.optional::<String>("mcp_namespaced_tool_name")?,
             endpoint: row.optional::<String>("endpoint")?,
-            group_level: row.integer("group_level")?,
+            group_level: row.required("group_level", "a non-null integer")?,
             distinct_api_keys: row.optional::<i64>("distinct_api_keys")?,
         });
     }

@@ -7,12 +7,12 @@ use std::collections::BTreeMap;
 use tokio_postgres::Row;
 use tokio_postgres::types::{FromSql, Type};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseRow {
     pub(crate) values: BTreeMap<String, DatabaseValue>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DatabaseValue {
     Null,
     Text(String),
@@ -70,22 +70,12 @@ impl DatabaseRow {
     {
         match self.value(column)? {
             DatabaseValue::Null => Ok(None),
-            value => T::from_value(value)
+            value @ DatabaseValue::Text(_)
+            | value @ DatabaseValue::Integer(_)
+            | value @ DatabaseValue::Number(_) => T::from_value(value)
                 .map(Some)
                 .ok_or_else(|| column_error(column, T::EXPECTED)),
         }
-    }
-
-    pub fn text(&self, column: &str) -> Result<String, RowError> {
-        self.required(column, "a non-null text")
-    }
-
-    pub fn integer(&self, column: &str) -> Result<i64, RowError> {
-        self.required(column, "a non-null integer")
-    }
-
-    pub fn decimal(&self, column: &str) -> Result<Decimal, RowError> {
-        self.required(column, "a non-null number")
     }
 
     fn required<T>(&self, column: &str, expected: &'static str) -> Result<T, RowError>
@@ -124,7 +114,7 @@ impl ColumnValue for String {
     fn from_value(value: &DatabaseValue) -> Option<Self> {
         match value {
             DatabaseValue::Text(text) => Some(text.clone()),
-            _ => None,
+            DatabaseValue::Null | DatabaseValue::Integer(_) | DatabaseValue::Number(_) => None,
         }
     }
 }
@@ -135,7 +125,7 @@ impl ColumnValue for i64 {
     fn from_value(value: &DatabaseValue) -> Option<Self> {
         match value {
             DatabaseValue::Integer(number) => Some(*number),
-            _ => None,
+            DatabaseValue::Null | DatabaseValue::Text(_) | DatabaseValue::Number(_) => None,
         }
     }
 }
@@ -146,7 +136,7 @@ impl ColumnValue for Decimal {
     fn from_value(value: &DatabaseValue) -> Option<Self> {
         match value {
             DatabaseValue::Number(number) => Some(*number),
-            _ => None,
+            DatabaseValue::Null | DatabaseValue::Text(_) | DatabaseValue::Integer(_) => None,
         }
     }
 }
@@ -209,12 +199,14 @@ where
 }
 
 fn number_value(value: Option<f64>, column: &str) -> Result<DatabaseValue, RowError> {
-    match value {
-        None => Ok(DatabaseValue::Null),
-        Some(value) => Decimal::from_f64(value)
-            .map(DatabaseValue::Number)
-            .ok_or_else(|| RowError::NonFiniteNumber {
-                column: column.to_owned(),
-            }),
-    }
+    value.map_or_else(
+        || Ok(DatabaseValue::Null),
+        |finite| {
+            Decimal::from_f64(finite)
+                .map(DatabaseValue::Number)
+                .ok_or_else(|| RowError::NonFiniteNumber {
+                    column: column.to_owned(),
+                })
+        },
+    )
 }
