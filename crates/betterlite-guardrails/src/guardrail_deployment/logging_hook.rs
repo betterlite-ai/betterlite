@@ -222,8 +222,8 @@ impl GuardrailBase {
             return Ok(call.kwargs);
         }
         let name = self.settings.guardrail_name.as_deref().unwrap_or("None");
-        let kind: StrDeserializer<'_, TextError> = call.call_type.into_deserializer();
-        let Some(input) = CallType::deserialize(kind)
+        let text: StrDeserializer<'_, TextError> = call.call_type.into_deserializer();
+        let Some(input) = CallType::deserialize(text)
             .ok()
             .and_then(|kind| registry.get(kind))
         else {
