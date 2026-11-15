@@ -7,28 +7,18 @@ const BLOCKS: [(&str, &str); 3] = [
     ("performanceConfig", "PerformanceConfigBlock"),
     ("serviceTier", "ServiceTierBlock"),
 ];
-const CONFIG_FIELDS: [&str; 5] = ["maxTokens", "stopSequences", "temperature", "topP", "topK"];
-const CUSTOM_LLM_PROVIDER_FIELD: &str = "custom_llm_provider";
-const DESCRIPTOR_KIND_FIELD: &str = "kind";
-const DESCRIPTOR_PROPERTY: &str = "property";
-const EXCLUDED_DESCRIPTOR_KINDS: [&str; 4] = [
-    "builtin_function",
-    "classmethod",
-    "function",
-    "staticmethod",
-];
 
 // LiteLLM's __init__ stores every non-None argument on the class; the bare annotations store nothing.
 #[must_use]
 pub fn class_attributes(arguments: &ParamMap) -> ParamMap {
     let mut attributes = ParamMap::from([(
-        CUSTOM_LLM_PROVIDER_FIELD.to_owned(),
+        "custom_llm_provider".to_owned(),
         ParamValue::Mapping(ParamMap::from([(
-            DESCRIPTOR_KIND_FIELD.to_owned(),
-            ParamValue::Text(DESCRIPTOR_PROPERTY.to_owned()),
+            "kind".to_owned(),
+            ParamValue::Text("property".to_owned()),
         )])),
     )]);
-    for name in CONFIG_FIELDS {
+    for name in ["maxTokens", "stopSequences", "temperature", "topP", "topK"] {
         let Some(value) = arguments.get(name) else {
             continue;
         };
@@ -49,8 +39,14 @@ pub fn get_config(attributes: &ParamMap) -> ParamMap {
             continue;
         }
         if let ParamValue::Mapping(fields) = value
-            && let Some(ParamValue::Text(kind)) = fields.get(DESCRIPTOR_KIND_FIELD)
-            && EXCLUDED_DESCRIPTOR_KINDS.contains(&kind.as_str())
+            && let Some(ParamValue::Text(kind)) = fields.get("kind")
+            && [
+                "builtin_function",
+                "classmethod",
+                "function",
+                "staticmethod",
+            ]
+            .contains(&kind.as_str())
         {
             continue;
         }

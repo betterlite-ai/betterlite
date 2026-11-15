@@ -59,18 +59,10 @@ where
     Transport: ModelInfoClient,
 {
     let ParamValue::Text(text) = effort else {
-        return Err(ConverseOptionsError::AdaptiveEffort {
-            label: effort_label(effort),
-            model: model.to_owned(),
-            provider: BEDROCK_CONVERSE_PROVIDER.to_owned(),
-        });
+        return Err(adaptive_error(model, effort));
     };
     if !ADAPTIVE_EFFORTS.contains(&text.as_str()) {
-        return Err(ConverseOptionsError::AdaptiveEffort {
-            label: effort_label(effort),
-            model: model.to_owned(),
-            provider: BEDROCK_CONVERSE_PROVIDER.to_owned(),
-        });
+        return Err(adaptive_error(model, effort));
     }
     match validate_effort_for_model(model, Some(text), "bedrock", environment, catalogs).await {
         Some(message) => Err(ConverseOptionsError::UnsupportedEffort {
@@ -79,6 +71,14 @@ where
             provider: BEDROCK_CONVERSE_PROVIDER.to_owned(),
         }),
         None => Ok(()),
+    }
+}
+
+fn adaptive_error(model: &str, effort: &ParamValue) -> ConverseOptionsError {
+    ConverseOptionsError::AdaptiveEffort {
+        label: effort_label(effort),
+        model: model.to_owned(),
+        provider: BEDROCK_CONVERSE_PROVIDER.to_owned(),
     }
 }
 

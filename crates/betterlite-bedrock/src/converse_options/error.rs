@@ -46,35 +46,8 @@ impl ConverseOptionsError {
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::NovaEffort { .. }
-            | Self::UnmappedEffort(_)
-            | Self::InvalidEffort(_)
-            | Self::AdaptiveEffort { .. }
-            | Self::UnsupportedEffort { .. } => Some(BAD_REQUEST_STATUS),
             Self::Capability(_) => None,
-        }
-    }
-
-    // LiteLLM's rejections carry the requested model and the bedrock_converse provider.
-    #[must_use]
-    pub fn model_and_provider(&self) -> Option<(&str, &str)> {
-        match self {
-            Self::NovaEffort {
-                model, provider, ..
-            }
-            | Self::UnmappedEffort(ReasoningEffortError::Unmapped {
-                model, provider, ..
-            })
-            | Self::InvalidEffort(EffortError::InvalidReasoningEffort {
-                model, provider, ..
-            })
-            | Self::AdaptiveEffort {
-                model, provider, ..
-            }
-            | Self::UnsupportedEffort {
-                model, provider, ..
-            } => Some((model.as_str(), provider.as_str())),
-            Self::Capability(_) => None,
+            _ => Some(BAD_REQUEST_STATUS),
         }
     }
 }

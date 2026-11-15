@@ -1,3 +1,4 @@
+use betterlite_anthropic::capabilities::effort::EffortError;
 use betterlite_config::sections::anthropic_capability_catalog::Settings;
 
 use crate::converse_options::budget::clamp_thinking_budget_tokens;
@@ -31,6 +32,8 @@ const CAPABILITY_MAP: &str = r#"{
     "deepseek.r1-v1:0": {"litellm_provider": "bedrock", "supports_reasoning": true, "supports_sampling_params": true},
     "openai.gpt-oss-120b-1:0": {"litellm_provider": "bedrock", "supports_sampling_params": true},
     "us.openai.gpt-5": {"litellm_provider": "bedrock", "supports_sampling_params": true},
+    "nova/openai.gpt-5": {"litellm_provider": "bedrock", "supports_reasoning": false, "supports_sampling_params": true, "supports_tool_choice": false},
+    "amazon.nova-custom": {"litellm_provider": "bedrock", "supports_reasoning": false, "supports_sampling_params": true, "supports_tool_choice": false},
     "cohere.command-r-v1:0": {"litellm_provider": "bedrock", "supports_sampling_params": true},
     "fixture-region": {"litellm_provider": "bedrock"},
     "global.fixture-region": {"litellm_provider": "bedrock", "supports_sampling_params": false},
@@ -154,10 +157,14 @@ pub(super) fn nova2_reasoning_config() {
             )
         );
         assert_eq!(error.status_code(), Some(400));
-        assert_eq!(
-            error.model_and_provider(),
-            Some((NOVA_2_REJECTION_MODEL, BEDROCK_CONVERSE_PROVIDER))
-        );
+        let ConverseOptionsError::NovaEffort {
+            model, provider, ..
+        } = &error
+        else {
+            panic!("a Nova rejection");
+        };
+        assert_eq!(model, NOVA_2_REJECTION_MODEL);
+        assert_eq!(provider, BEDROCK_CONVERSE_PROVIDER);
     }
 }
 
@@ -301,6 +308,20 @@ pub(super) fn gpt_oss_and_deepseek_effort() {
 }
 
 pub(super) fn anthropic_adaptive_effort() {
+    for (effort, mapped) in [
+        ("low", "low"),
+        ("minimal", "low"),
+        ("medium", "medium"),
+        ("high", "high"),
+        ("xhigh", "xhigh"),
+        ("max", "max"),
+    ] {
+        assert_eq!(output_config_effort(effort), Some(mapped), "{effort}");
+    }
+    for effort in ["none", "", "High", "high "] {
+        assert_eq!(output_config_effort(effort), None, "{effort}");
+    }
+
     let fixture = Fixture::new(ADAPTIVE_MAP, "{}");
     let mut session = Session::new(&fixture);
 
@@ -376,10 +397,14 @@ pub(super) fn anthropic_adaptive_effort() {
         error.to_string(),
         "Invalid reasoning_effort/output_config.effort value: 'ultra'. Must be one of: 'low', 'medium', 'high', 'xhigh', or 'max'."
     );
-    assert_eq!(
-        error.model_and_provider(),
-        Some(("fixture-adaptive", BEDROCK_CONVERSE_PROVIDER))
-    );
+    let ConverseOptionsError::AdaptiveEffort {
+        model, provider, ..
+    } = &error
+    else {
+        panic!("an invalid adaptive effort");
+    };
+    assert_eq!(model, "fixture-adaptive");
+    assert_eq!(provider, BEDROCK_CONVERSE_PROVIDER);
 
     let mut invalid = ParamMap::new();
     let error = handle(
@@ -391,10 +416,16 @@ pub(super) fn anthropic_adaptive_effort() {
     )
     .expect_err("an unmappable effort is refused");
     assert_eq!(error.status_code(), Some(400));
-    assert_eq!(
-        error.model_and_provider(),
-        Some(("fixture-adaptive", BEDROCK_CONVERSE_PROVIDER))
-    );
+    let ConverseOptionsError::InvalidEffort(EffortError::InvalidReasoningEffort {
+        model,
+        provider,
+        ..
+    }) = &error
+    else {
+        panic!("the mapping refuses the effort");
+    };
+    assert_eq!(model, "fixture-adaptive");
+    assert_eq!(provider, BEDROCK_CONVERSE_PROVIDER);
     assert!(matches!(error, ConverseOptionsError::InvalidEffort(_)));
 
     let mut xhigh = ParamMap::new();
@@ -676,6 +707,14 @@ pub(super) fn supported_param_list() {
     assert_eq!(
         supported(&fixture, &mut session, "us.openai.gpt-5"),
         gpt_oss
+    );
+
+    let mut wrapped_gpt = names(&BASE_PARAMS);
+    wrapped_gpt.extend(names(&["tools", "web_search_options", "reasoning_effort"]));
+    assert_eq!(
+        supported(&fixture, &mut session, "nova/openai.gpt-5"),
+        wrapped_gpt,
+        "the nova wrapper hides the GPT marker from the base model alone"
     );
 
     let mut arn = names(&BASE_PARAMS);

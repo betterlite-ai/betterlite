@@ -16,6 +16,13 @@ use crate::model_routes::{ParamMap, ParamValue};
 const CONVERSE_PROVIDER: &str = "bedrock_converse";
 const SAMPLING_CAPABILITY: &str = "supports_sampling_params";
 const THINKING_MODEL_MARKERS: [&str; 3] = ["claude-3-7", "claude-sonnet-4", "claude-opus-4"];
+const TOOL_SEARCH_PARAMS: [&str; 5] = [
+    "tools",
+    "tool_choice",
+    "thinking",
+    "reasoning_effort",
+    "output_config",
+];
 const TOOL_BASE_PREFIXES: [&str; 8] = [
     "anthropic",
     "mistral",
@@ -25,13 +32,6 @@ const TOOL_BASE_PREFIXES: [&str; 8] = [
     "meta.llama3-3",
     "meta.llama4",
     "amazon.nova",
-];
-const TOOL_SEARCH_PARAMS: [&str; 5] = [
-    "tools",
-    "tool_choice",
-    "thinking",
-    "reasoning_effort",
-    "output_config",
 ];
 
 // LiteLLM probes the raw cost map per candidate; the regionless base is what it prefixes.
@@ -76,32 +76,26 @@ where
         return false;
     }
     if THINKING_MODEL_MARKERS
-        .iter()
+        .into_iter()
         .any(|marker| model.contains(marker))
     {
         return true;
     }
-    if environment
-        .supports_factory(
-            &CapabilityRequest {
-                model,
-                custom_llm_provider: Some(CONVERSE_PROVIDER),
-            },
-            NamedCapability::Reasoning.key(),
-        )
-        .await
-    {
-        return true;
+    for name in [model, base_model] {
+        if environment
+            .supports_factory(
+                &CapabilityRequest {
+                    model: name,
+                    custom_llm_provider: Some(CONVERSE_PROVIDER),
+                },
+                NamedCapability::Reasoning.key(),
+            )
+            .await
+        {
+            return true;
+        }
     }
-    environment
-        .supports_factory(
-            &CapabilityRequest {
-                model: base_model,
-                custom_llm_provider: Some(CONVERSE_PROVIDER),
-            },
-            NamedCapability::Reasoning.key(),
-        )
-        .await
+    false
 }
 
 #[must_use]
@@ -177,22 +171,21 @@ async fn push_tool_params<Source, Transport>(
         model,
         custom_llm_provider: Some(CONVERSE_PROVIDER),
     };
-    let prefixed = TOOL_BASE_PREFIXES
-        .iter()
-        .any(|prefix| base_model.starts_with(prefix));
-    let tool_choice = environment
-        .supports_factory(&request, NamedCapability::ToolChoice.key())
-        .await
-        || environment
+    let mut tool_choice = false;
+    for name in [model, base_model] {
+        tool_choice |= environment
             .supports_factory(
                 &CapabilityRequest {
-                    model: base_model,
+                    model: name,
                     custom_llm_provider: Some(CONVERSE_PROVIDER),
                 },
                 NamedCapability::ToolChoice.key(),
             )
             .await;
-    if prefixed
+    }
+    if TOOL_BASE_PREFIXES
+        .into_iter()
+        .any(|prefix| base_model.starts_with(prefix))
         || environment
             .supports_factory(&request, NamedCapability::FunctionCalling.key())
             .await
@@ -207,32 +200,7 @@ async fn push_tool_params<Source, Transport>(
     }
 }
 
-enum ReasoningShape {
-    Effort,
-    Silent,
-    Anthropic,
-}
-
-fn reasoning_shape(model: &str, base_model: &str) -> ReasoningShape {
-    if model.contains("gpt-oss")
-        || is_openai_gpt_reasoning_model(model)
-        || is_openai_gpt_reasoning_model(base_model)
-    {
-        return ReasoningShape::Effort;
-    }
-    if is_deepseek_model(model, base_model) {
-        return if model_rejects_reasoning_effort_param(model, base_model) {
-            ReasoningShape::Silent
-        } else {
-            ReasoningShape::Effort
-        };
-    }
-    if is_nova_2_model(model) {
-        return ReasoningShape::Effort;
-    }
-    ReasoningShape::Anthropic
-}
-
+// LiteLLM checks gpt-oss and GPT first, then DeepSeek (R1 silent), then Nova 2, then Anthropic.
 async fn push_reasoning_param<Source, Transport>(
     params: &mut Vec<String>,
     model: &str,
@@ -242,13 +210,15 @@ async fn push_reasoning_param<Source, Transport>(
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    match reasoning_shape(model, base_model) {
-        ReasoningShape::Effort => params.push("reasoning_effort".to_owned()),
-        ReasoningShape::Silent => {}
-        ReasoningShape::Anthropic => {
-            if model_accepts_anthropic_thinking_param(model, base_model, environment).await {
-                params.extend(["thinking", "reasoning_effort", "output_config"].map(str::to_owned));
-            }
-        }
+    let deepseek = is_deepseek_model(model, base_model);
+    let raw_effort = model.contains("gpt-oss")
+        || is_openai_gpt_reasoning_model(model)
+        || is_openai_gpt_reasoning_model(base_model)
+        || (deepseek && !model_rejects_reasoning_effort_param(model, base_model))
+        || (!deepseek && is_nova_2_model(model));
+    if raw_effort {
+        params.push("reasoning_effort".to_owned());
+    } else if model_accepts_anthropic_thinking_param(model, base_model, environment).await {
+        params.extend(["thinking", "reasoning_effort", "output_config"].map(str::to_owned));
     }
 }

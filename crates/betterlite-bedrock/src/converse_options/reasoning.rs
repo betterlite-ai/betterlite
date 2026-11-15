@@ -21,10 +21,8 @@ use crate::converse_options::family::{
 };
 use crate::model_routes::{ParamMap, ParamValue};
 
-const ADAPTIVE_CAPABILITY: &str = "supports_adaptive_thinking";
 const CONVERSE_PROVIDER: &str = "bedrock_converse";
 const EFFORT_FIELD: &str = "effort";
-const NORMALIZED_FIELD: &str = "_output_config_normalized";
 const OUTPUT_CONFIG_FIELD: &str = "output_config";
 const THINKING_FIELD: &str = "thinking";
 
@@ -108,7 +106,7 @@ where
     optional_params.insert(THINKING_FIELD.to_owned(), param_value(thinking));
     let adaptive = supports_model_capability(
         model,
-        ADAPTIVE_CAPABILITY,
+        "supports_adaptive_thinking",
         "bedrock",
         environment,
         sources.catalogs,
@@ -125,6 +123,21 @@ where
         }
         .into());
     };
+    apply_adaptive_effort(model, mapped_effort, optional_params, environment, sources).await
+}
+
+async fn apply_adaptive_effort<Source, Transport, Lookup>(
+    model: &str,
+    mapped_effort: &str,
+    optional_params: &mut ParamMap,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+    sources: &ReasoningSources<'_, Lookup>,
+) -> Result<(), ConverseOptionsError>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Lookup: ModelInfoLookup,
+{
     let mut output_config = ParamValue::Mapping(match optional_params.get(OUTPUT_CONFIG_FIELD) {
         Some(ParamValue::Mapping(fields)) => fields.clone(),
         Some(
@@ -155,7 +168,10 @@ where
     };
     validate_anthropic_adaptive_effort(model, &effort, environment, sources.catalogs).await?;
     optional_params.insert(OUTPUT_CONFIG_FIELD.to_owned(), output_config);
-    optional_params.insert(NORMALIZED_FIELD.to_owned(), ParamValue::Bool(true));
+    optional_params.insert(
+        "_output_config_normalized".to_owned(),
+        ParamValue::Bool(true),
+    );
     Ok(())
 }
 

@@ -48,29 +48,23 @@ pub fn is_nova_2_model(model: &str) -> bool {
 
 #[must_use]
 pub fn is_deepseek_model(model: &str, base_model: &str) -> bool {
-    for name in [model, base_model] {
-        if name.contains(DEEPSEEK_MARKER) {
-            return true;
-        }
-    }
-    false
+    [model, base_model]
+        .into_iter()
+        .any(|name| name.contains(DEEPSEEK_MARKER))
 }
 
 // DeepSeek R1 always reasons, so it rejects every reasoning request shape the other DeepSeek models accept.
 #[must_use]
 pub fn model_rejects_reasoning_effort_param(model: &str, base_model: &str) -> bool {
-    let mut rejected = false;
-    for name in [model, base_model] {
-        rejected |= name.contains(DEEPSEEK_R1_MARKER);
-    }
-    rejected
+    [model, base_model]
+        .into_iter()
+        .any(|name| name.contains(DEEPSEEK_R1_MARKER))
 }
 
 fn strip_first_prefix<'model>(model: &'model str, prefixes: &[&str]) -> &'model str {
-    for prefix in prefixes {
-        if let Some(rest) = model.strip_prefix(prefix) {
-            return rest;
-        }
-    }
-    model
+    prefixes
+        .iter()
+        .copied()
+        .find_map(|prefix| model.strip_prefix(prefix))
+        .unwrap_or(model)
 }
