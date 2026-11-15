@@ -33,6 +33,7 @@ pub struct LakeraV2Flags {
     pub dev_info: GuardrailFlag,
 }
 
+#[derive(Debug)]
 pub struct LakeraV2Guardrail {
     pub base: GuardrailBase,
     pub client: reqwest::Client,

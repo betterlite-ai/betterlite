@@ -53,7 +53,7 @@ impl LakeraV2Guardrail {
             .call_v2_guard(&messages, data, GuardrailEventHooks::PostCall, context)
             .await?;
         if lakera_response.flagged == Some(true) {
-            self.enforce(Masked {
+            self.enforce_response(Masked {
                 response,
                 lakera_response: &lakera_response,
                 messages: &messages,
@@ -66,7 +66,7 @@ impl LakeraV2Guardrail {
         })
     }
 
-    fn enforce(&self, masked: Masked<'_>) -> Result<(), GuardrailFailure> {
+    fn enforce_response(&self, masked: Masked<'_>) -> Result<(), GuardrailFailure> {
         let Masked {
             response,
             lakera_response,
@@ -75,17 +75,13 @@ impl LakeraV2Guardrail {
             choice_indices,
         } = masked;
         if is_only_pii_violation(Some(lakera_response)) {
-            let mut counts = BTreeMap::new();
-            let masked_messages =
-                mask_pii_in_messages(messages, Some(lakera_response), &mut counts);
-            let assistant = masked_messages.get(original_len..).unwrap_or_default();
-            for (position, message) in assistant.iter().enumerate() {
-                let Some(choice) = choice_indices.get(position) else {
-                    continue;
-                };
-                write_choice_content(response, *choice, scope::content_text(message)?)?;
-            }
-            return Ok(());
+            return mask_assistant_messages(
+                response,
+                lakera_response,
+                messages,
+                original_len,
+                choice_indices,
+            );
         }
         match self.on_flagged {
             LakeraOnFlagged::Monitor | LakeraOnFlagged::InjectSystemMessage => {
@@ -100,6 +96,29 @@ impl LakeraV2Guardrail {
         }
         Ok(())
     }
+}
+
+fn mask_assistant_messages(
+    response: &mut Data,
+    lakera_response: &LakeraResponse,
+    messages: &[Message],
+    original_len: usize,
+    choice_indices: &[usize],
+) -> Result<(), GuardrailFailure> {
+    let mut counts = BTreeMap::new();
+    let masked = mask_pii_in_messages(messages, Some(lakera_response), &mut counts);
+    for (position, message) in masked
+        .get(original_len..)
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+    {
+        let Some(choice) = choice_indices.get(position) else {
+            continue;
+        };
+        write_choice_content(response, *choice, scope::content_text(message)?)?;
+    }
+    Ok(())
 }
 
 fn response_messages(response: &Data) -> (Vec<GuardrailValue>, Vec<usize>) {

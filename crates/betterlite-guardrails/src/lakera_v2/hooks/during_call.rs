@@ -2,6 +2,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_config::sections::guardrail_translation::LakeraOnFlagged;
 
 use crate::guardrail_base::failure::GuardrailFailure;
+use crate::lakera_pii::wire::LakeraResponse;
 
 use super::{HookContext, HookOutcome};
 use crate::lakera_v2::Data;
@@ -26,14 +27,7 @@ impl LakeraV2Guardrail {
             .await?;
         if response.flagged == Some(true) {
             match self.on_flagged {
-                LakeraOnFlagged::InjectSystemMessage => {
-                    if scope::breakdown_has_pii_violation(Some(&response)) {
-                        return Err(scope::blocked_failure(Some(&response))?);
-                    }
-                    tracing::warn!(
-                        "Lakera Guardrail: Advisory mode has no effect during during_call; violation detected but allowing request"
-                    );
-                }
+                LakeraOnFlagged::InjectSystemMessage => advisory_during_call(&response)?,
                 LakeraOnFlagged::Monitor => {
                     tracing::warn!(
                         "Lakera Guardrail: Monitoring mode - violation detected but allowing request"
@@ -48,4 +42,15 @@ impl LakeraV2Guardrail {
             applied_guardrail: self.base.settings.guardrail_name.clone(),
         })
     }
+}
+
+// advisory mode has nothing to inject during during_call, so only PII on the way through blocks
+fn advisory_during_call(response: &LakeraResponse) -> Result<(), GuardrailFailure> {
+    if scope::breakdown_has_pii_violation(Some(response)) {
+        return Err(scope::blocked_failure(Some(response))?);
+    }
+    tracing::warn!(
+        "Lakera Guardrail: Advisory mode has no effect during during_call; violation detected but allowing request"
+    );
+    Ok(())
 }

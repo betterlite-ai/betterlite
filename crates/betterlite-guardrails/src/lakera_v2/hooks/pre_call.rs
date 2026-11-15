@@ -43,7 +43,7 @@ impl LakeraV2Guardrail {
             .call_v2_guard(&messages, data, GuardrailEventHooks::PreCall, context)
             .await?;
         if response.flagged == Some(true) {
-            self.enforce(Flagged {
+            self.enforce_request(Flagged {
                 data,
                 messages: &messages,
                 response: &response,
@@ -57,7 +57,7 @@ impl LakeraV2Guardrail {
         })
     }
 
-    fn enforce(&self, flagged: Flagged<'_>) -> Result<(), GuardrailFailure> {
+    fn enforce_request(&self, flagged: Flagged<'_>) -> Result<(), GuardrailFailure> {
         let pii_only = is_only_pii_violation(Some(flagged.response));
         if pii_only && !flagged.multimodal {
             mask_back(
