@@ -1,5 +1,6 @@
 task: B202
 deviations:
+  - {what: "An empty prompt list answers 400 invalid_request_error naming the prompt; LiteLLM's dispatch raises its own Unmapped prompt format Exception, which the proxy answers with 500 and a null type.", why: "An empty prompt names no prompt to send, so betterlite answers the client mistake instead of the unhandled Exception, the line docs/deviations/B225.yaml draws for LiteLLM's AttributeError and TypeError 500s.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7646-L7649"}
   - what: A body's api_base, api_key, api_version, engine, litellm_params, metadata, num_retries and mock controls (mock_response, mock_tool_calls, mock_timeout, mock_delay) are read as controls and never reach the provider; LiteLLM forwards api_base and api_key to the SDK constructor and answers a mock control with a client mock.
     why: Outbound URLs and credentials come only from the deployment config, so a request body cannot redirect a call or supply a credential; betterlite's mock framework is configured per deployment, and none of the other controls changes the OpenAI text provider request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7460-L7487

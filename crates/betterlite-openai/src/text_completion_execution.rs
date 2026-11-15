@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::chat::deployment::ChatDeployment;
 use crate::text_completion_policy::transform_completion_request;
-use crate::text_completion_request::{CompletionRequest, PromptRefusal};
+use crate::text_completion_request::{CompletionPrompt, CompletionRequest, PromptRefusal};
 use crate::text_completion_response::CompletionResponse;
 use crate::text_completion_transport::call::{
     TextCompletionOutcome, TextCompletionRequest as TransportRequest,
@@ -119,12 +119,14 @@ fn transport_request(
 ) -> Result<TransportRequest, CompletionFailure> {
     let Some(messages) = request.prompt.messages() else {
         let message = String::from(MISSING_PROMPT);
-        // main.py's own "Unmapped prompt format" Exception reaches the client as an APIConnectionError, whose type is null
+        // main.py's own "Unmapped prompt format" Exception is the APIConnectionError shape; the empty list is the client's 400
+        let empty = matches!(&request.prompt, CompletionPrompt::Empty);
         let error_type = match request.prompt.refusal() {
             Some(PromptRefusal::Unreadable) => Some(INTERNAL_ERROR),
-            Some(PromptRefusal::Unmapped) | None => None,
+            Some(PromptRefusal::Unmapped) | None => empty.then_some(INVALID_REQUEST_ERROR),
         };
-        return Err(CompletionFailure::new(500, error_type, message));
+        let status = if empty { 400 } else { 500 };
+        return Err(CompletionFailure::new(status, error_type, message));
     };
     Ok(TransportRequest {
         model: Some(model.to_owned()),

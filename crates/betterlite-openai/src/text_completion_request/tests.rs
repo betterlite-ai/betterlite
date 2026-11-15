@@ -49,8 +49,15 @@ fn prompt_shapes_become_messages(#[case] prompt: &str, #[case] expected: &str) {
     assert_eq!(Value::Array(messages), wanted);
 }
 
+#[test]
+fn an_empty_prompt_list_is_its_own_shape() {
+    let request = parsed(r#"{"model":"m","prompt":[]}"#);
+    assert!(matches!(&request.prompt, CompletionPrompt::Empty));
+    assert_eq!(request.prompt.refusal(), Some(PromptRefusal::Unmapped));
+    assert!(request.prompt.messages().is_none());
+}
+
 #[rstest]
-#[case::empty_list("[]")]
 #[case::number("5")]
 #[case::float("[1.5]")]
 #[case::null("null")]

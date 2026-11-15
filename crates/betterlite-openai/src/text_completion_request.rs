@@ -50,6 +50,7 @@ pub enum CompletionPrompt {
     Texts(Vec<String>),
     Tokens(Vec<i64>),
     TokenLists(Vec<Vec<i64>>),
+    Empty,
     // a shape main.py's dispatch or its file-id pass refuses before any provider call
     Unmapped(Value),
     // a token-branch content that is not token ids, which the provider transform cannot read
@@ -74,7 +75,7 @@ const fn refused(shape: PromptRefusal, items: Vec<Value>) -> CompletionPrompt {
 // main.py 7623-7692 dispatches on the first element only, so a later element it cannot convert decides the failure shape
 fn classify(items: Vec<Value>) -> CompletionPrompt {
     let Some(first) = items.first() else {
-        return refused(PromptRefusal::Unmapped, items);
+        return CompletionPrompt::Empty;
     };
     if first.is_string() {
         return string_first(items);
@@ -155,7 +156,7 @@ impl CompletionPrompt {
             Self::Text(text) => Value::from(text.as_str()),
             Self::Tokens(tokens) => Value::from(tokens.clone()),
             Self::TokenLists(lists) => Value::from(lists.clone()),
-            Self::Texts(_) | Self::Unmapped(_) | Self::Unreadable(_) => return None,
+            Self::Texts(_) | Self::Empty | Self::Unmapped(_) | Self::Unreadable(_) => return None,
         };
         Some(vec![user_message(content)])
     }
@@ -163,7 +164,7 @@ impl CompletionPrompt {
     #[must_use]
     pub const fn refusal(&self) -> Option<PromptRefusal> {
         match self {
-            Self::Unmapped(_) => Some(PromptRefusal::Unmapped),
+            Self::Empty | Self::Unmapped(_) => Some(PromptRefusal::Unmapped),
             Self::Unreadable(_) => Some(PromptRefusal::Unreadable),
             Self::Text(_) | Self::Texts(_) | Self::Tokens(_) | Self::TokenLists(_) => None,
         }

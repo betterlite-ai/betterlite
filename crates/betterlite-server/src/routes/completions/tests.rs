@@ -273,15 +273,19 @@ async fn empty_string_prompt() {
 
 async fn empty_list_rejected() {
     let answered = text_answer("/v1/completions", "[]").await;
-    assert_eq!(answered.status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert!(answered.raw.contains(r#""type":null"#), "{}", answered.raw);
+    assert_eq!(answered.status, StatusCode::BAD_REQUEST);
+    assert!(
+        answered.raw.contains(r#""type":"invalid_request_error""#),
+        "{}",
+        answered.raw
+    );
     assert_eq!(
         answered
             .body
             .error
             .as_ref()
             .and_then(|error| error.code.as_deref()),
-        Some("500")
+        Some("400")
     );
     assert!(answered.sent.is_empty(), "no provider request");
 }
@@ -462,7 +466,7 @@ async fn stream_not_built() {
 #[tokio::test]
 async fn error_bodies_carry_the_call_id_when_the_setting_is_on() {
     let enabled = call_with_call_id_in_body(r#"{"model":"text-model","prompt":[]}"#, true).await;
-    assert_eq!(enabled.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(enabled.status, StatusCode::BAD_REQUEST);
     assert!(
         enabled.raw.contains(r#""litellm_call_id":"caller-id""#),
         "{}",

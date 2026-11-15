@@ -25,7 +25,7 @@ use super::http::HttpCompletionConstructor;
 use super::log::TracingCompletionLog;
 use super::transport_request;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
-use crate::text_completion_request::CompletionRequest;
+use crate::text_completion_request::{CompletionPrompt, CompletionRequest};
 use crate::text_completion_transport::error::{ErrorSource, ErrorStatus, TextCompletionError};
 use crate::text_completion_transport::logging::{
     CompletionLogger as _, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
@@ -153,7 +153,13 @@ fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
         }
         Scenario::EmptyListRejected => {
             let request = completion("[]");
-            assert!(request.prompt.messages().is_none());
+            assert!(matches!(&request.prompt, CompletionPrompt::Empty));
+            let failure =
+                transport_request(&deployment("openai/gpt-3.5-turbo-instruct"), &request, "m")
+                    .err()
+                    .expect("empty prompt");
+            assert_eq!(failure.status, 400);
+            assert_eq!(failure.error_type.as_deref(), Some("invalid_request_error"));
         }
         Scenario::MixedPromptRejected => {
             let request = completion(r#"["a",1]"#);
@@ -230,11 +236,20 @@ fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
 #[test]
 fn an_unmapped_prompt_fails_before_any_provider_call() {
     let request = completion("[]");
-    let failure = transport_request(&deployment("openai/gpt-3.5-turbo-instruct"), &request, "m")
+    let empty = transport_request(&deployment("openai/gpt-3.5-turbo-instruct"), &request, "m")
         .err()
-        .expect("unmapped prompt");
-    assert_eq!(failure.status, 500);
-    assert_eq!(failure.error_type, None);
+        .expect("empty prompt");
+    assert_eq!(empty.status, 400);
+    assert_eq!(empty.error_type.as_deref(), Some("invalid_request_error"));
+    assert!(empty.message.contains("prompt"), "{}", empty.message);
+
+    let unmapped = completion(r#"["a",1]"#);
+    let unmapped_failure =
+        transport_request(&deployment("openai/gpt-3.5-turbo-instruct"), &unmapped, "m")
+            .err()
+            .expect("unmapped prompt");
+    assert_eq!(unmapped_failure.status, 500);
+    assert_eq!(unmapped_failure.error_type, None);
 
     let unreadable = completion(r#"[["a"]]"#);
     let unreadable_failure = transport_request(

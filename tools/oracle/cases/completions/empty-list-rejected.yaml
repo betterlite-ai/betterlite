@@ -16,3 +16,19 @@ compare:
   upstream_headers: [authorization, content-type]
   ignore:
     - {pointer: /error/message, why: betterlite writes its own provider error message}
+  expected_difference:
+    - pointer: /status
+      reference: 500
+      rust: 400
+      why: an empty prompt names no prompt to send, so betterlite answers the client mistake instead of LiteLLM's unhandled Exception
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7646-L7649
+    - pointer: /error/type
+      reference: null
+      rust: invalid_request_error
+      why: the Exception reaches the client with a null type, so betterlite names the field instead
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7646-L7649
+    - pointer: /error/code
+      reference: "500"
+      rust: "400"
+      why: the proxy copies the exception's status into the body code, so the status change moves the code with it
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12265-L12272
