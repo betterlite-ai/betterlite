@@ -88,11 +88,11 @@ pub struct McpServerRequest {
     pub submitted_at: Option<Timestamp>,
 }
 
-fn default_transport() -> MCPTransport {
+const fn default_transport() -> MCPTransport {
     MCPTransport::Sse
 }
 
-fn default_public_internet() -> RequestFlag {
+const fn default_public_internet() -> RequestFlag {
     RequestFlag(true)
 }
 
