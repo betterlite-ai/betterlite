@@ -9,7 +9,6 @@ use betterlite_models::decisions::Json;
 use tokio::sync::{Mutex, MutexGuard};
 
 use crate::agent_policy::AgentResponse;
-use python_json::JsonEncodingError;
 
 mod config_load;
 mod grant_migration;
@@ -40,8 +39,6 @@ pub enum AgentRegistryError {
     AgentNameType,
     #[error("config agent entry field `agent_card_params` must be an object")]
     AgentCardType,
-    #[error(transparent)]
-    Entry(#[from] JsonEncodingError),
     #[error("config agent entry field `{path}` is invalid: {source}")]
     Record {
         path: String,

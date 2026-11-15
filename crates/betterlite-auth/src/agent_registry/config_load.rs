@@ -70,7 +70,7 @@ fn legacy_map(entries: &[Json]) -> Result<BTreeMap<String, String>, AgentRegistr
         let Some(agent_name) = config_agent_name(entry)? else {
             continue;
         };
-        map.insert(ids::legacy_id(entry)?, ids::stable_id(agent_name));
+        map.insert(ids::legacy_id(entry), ids::stable_id(agent_name));
     }
     Ok(map)
 }

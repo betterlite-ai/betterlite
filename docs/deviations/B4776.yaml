@@ -12,9 +12,6 @@ deviations:
   - what: A config entry with a key AgentResponse does not have, or that already holds `agent_id`, fails with an error that names the key. LiteLLM ignores unknown keys, and a duplicate `agent_id` raises a Python TypeError.
     why: B4770's records reject unknown fields. The legacy id still covers the full raw entry, so ids stay the same as LiteLLM's for entries both accept.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L493-L505
-  - what: Integers outside the i64 and u64 range in a config entry are rejected when computing the legacy id.
-    why: serde_json::Value cannot hold them. YAML configs do not use them for agent fields.
-    link: ""
   - what: The lookups cannot fail, so LiteLLM's `except Exception` wrappers that re-raise a generic "Error getting agent from DB" error are not built.
     why: Nothing inside those try blocks can raise in Rust, and the message was never reachable by a caller at the pin.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L921-L958

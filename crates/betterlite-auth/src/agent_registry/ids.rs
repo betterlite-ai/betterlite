@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 
+use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use sha2::{Digest as _, Sha256};
 
 use super::AgentRegistry;
-use super::python_json::{self, JsonEncodingError};
+use super::python_json;
 
 mod tests;
 
@@ -14,11 +15,11 @@ pub(crate) fn stable_id(agent_name: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-pub(crate) fn legacy_id(entry: &Json) -> Result<String, JsonEncodingError> {
-    let text = python_json::dumps(entry)?;
+pub(crate) fn legacy_id(entry: &Json) -> String {
+    let text = dumps(&python_json::sorted(entry));
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
-    Ok(hex::encode(hasher.finalize()))
+    hex::encode(hasher.finalize())
 }
 
 pub(super) fn ids_for_agent(registry: &AgentRegistry, agent_id: &str) -> BTreeSet<String> {

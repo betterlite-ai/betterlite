@@ -1136,6 +1136,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-db",
  "betterlite-error",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-paths",
  "betterlite-postgres-fixture",
