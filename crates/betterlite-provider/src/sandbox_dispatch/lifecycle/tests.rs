@@ -34,6 +34,7 @@ use crate::opensandbox::helpers::{
     OpenSandbox, OpenSandboxError, PollClock, SandboxHttp as OpenHttp,
     SandboxRequest as OpenRequest, SandboxStream as OpenStream,
 };
+use crate::opensandbox::lifecycle::LifecycleError as OpenLifecycleError;
 use crate::sandbox_dispatch::error::SandboxLifecycleError;
 use crate::sandbox_dispatch::logging::{SandboxLogUpdate, SandboxLogging};
 use crate::sandbox_dispatch::request::{
@@ -519,10 +520,9 @@ async fn run_logs_the_run_code_operation() {
     let sandbox = build_dispatch(&http, Environment::new());
     let api_key = secret("e2b-key");
     let kwargs = empty_kwargs();
-    let mut logging = RecordingLogging::default();
     let mut create_call = create_request("e2b", Some(&api_key), &kwargs);
-    create_call.call.logging = Some(&mut logging);
     let created = sandbox.acreate_sandbox(&mut create_call).await.unwrap();
+    let mut logging = RecordingLogging::default();
     let mut run = run_request(
         SandboxCall {
             provider: "e2b",
@@ -533,9 +533,11 @@ async fn run_logs_the_run_code_operation() {
         SandboxContainerRef::Container(&created),
         "print(1)",
     );
+    run.call.logging = Some(&mut logging);
     sandbox.arun_code(&mut run).await.unwrap();
     assert_eq!(logging.updates.len(), 1_usize);
     assert_eq!(logging.updates[0].model, "e2b/run_code");
+    assert_eq!(logging.updates[0].provider, "e2b");
 }
 
 #[tokio::test]
@@ -745,6 +747,72 @@ async fn run_from_an_opensandbox_handle_does_not_fetch_the_endpoint_again() {
         body(&recorded[2]),
         r#"{"code":"1+1","context":{"language":"bash"}}"#
     );
+}
+
+#[tokio::test]
+async fn run_from_an_opensandbox_id_uses_the_run_api_base_and_proxy_options() {
+    let http = FakeHttp::new(&[
+        (
+            200,
+            r#"{"endpoint":"http://127.0.0.1:44772","headers":{"x-execd":"tok"}}"#,
+        ),
+        (200, "{\"type\":\"stdout\",\"text\":\"hello\"}"),
+    ]);
+    let sandbox = build_dispatch(&http, Environment::new());
+    let api_key = secret("run-key");
+    let kwargs = empty_kwargs();
+    let mut run = run_request(
+        SandboxCall {
+            provider: "opensandbox",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        SandboxContainerRef::Id("sbx_9"),
+        "1",
+    );
+    run.call.api_key = Some(&api_key);
+    run.api_base = Some("https://open.test");
+    run.use_server_proxy = true;
+    sandbox.arun_code(&mut run).await.unwrap();
+    let recorded = http.requests();
+    assert_eq!(recorded.len(), 2_usize);
+    assert_eq!(
+        recorded[0].url,
+        "https://open.test/sandboxes/sbx_9/endpoints/44772?use_server_proxy=true"
+    );
+    assert_eq!(header(&recorded[0], "open-sandbox-api-key"), "run-key");
+    assert_eq!(recorded[1].url, "http://127.0.0.1:44772/code");
+    assert_eq!(header(&recorded[1], "x-execd"), "tok");
+}
+
+#[tokio::test]
+async fn run_from_an_opensandbox_id_polls_the_endpoint_with_the_run_timeouts() {
+    let http = FakeHttp::new(&[(200, "{}")]);
+    let sandbox = build_dispatch(&http, Environment::new());
+    let kwargs = empty_kwargs();
+    let mut run = run_request(
+        SandboxCall {
+            provider: "opensandbox",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        SandboxContainerRef::Id("sbx_9"),
+        "1",
+    );
+    run.api_base = Some("https://open.test");
+    run.ready_timeout = Some(Duration::from_millis(2));
+    run.poll_interval = Some(Duration::from_millis(1));
+    let error = sandbox.arun_code(&mut run).await.unwrap_err();
+    let SandboxLifecycleError::OpenSandbox(OpenLifecycleError::Sandbox(
+        OpenSandboxError::EndpointNotReady { timeout, .. },
+    )) = error
+    else {
+        panic!("the endpoint wait times out");
+    };
+    assert_eq!(timeout, Duration::from_millis(2));
+    assert_eq!(http.requests().len(), 3_usize);
 }
 
 #[tokio::test]

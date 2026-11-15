@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::sandbox::CodeExecutionResult;
@@ -14,7 +16,7 @@ use crate::opensandbox::lifecycle::{
 
 use super::error::SandboxLifecycleError;
 use super::request::{
-    CreateSandbox, DeleteSandbox, RunCode, SandboxContainer, SandboxContainerRef,
+    CreateSandbox, DeleteSandbox, RunCode, SandboxCall, SandboxContainer, SandboxContainerRef,
 };
 
 type AdapterResult<Value> = Result<Value, SandboxLifecycleError>;
@@ -37,7 +39,13 @@ where
 {
     async fn create(&self, request: &CreateSandbox<'_>) -> AdapterResult<SandboxContainer> {
         let created = self
-            .acreate_sandbox(e2b_create(request))
+            .acreate_sandbox(E2bCreate {
+                template: request.template,
+                timeout: request.timeout,
+                allow_internet_access: request.allow_internet_access,
+                api_key: request.call.api_key,
+                api_base: request.api_base,
+            })
             .await
             .map_err(SandboxLifecycleError::E2b)?;
         Ok(SandboxContainer::E2b(created))
@@ -84,17 +92,7 @@ where
     }
 }
 
-fn e2b_create(request: &CreateSandbox<'_>) -> E2bCreate<'_> {
-    E2bCreate {
-        template: request.template,
-        timeout: request.timeout,
-        allow_internet_access: request.allow_internet_access,
-        api_key: request.call.api_key,
-        api_base: request.api_base,
-    }
-}
-
-fn e2b_run(request: &RunCode<'_>) -> AdapterResult<E2bRun<'_>> {
+fn e2b_run<'call>(request: &RunCode<'call>) -> AdapterResult<E2bRun<'call>> {
     let SandboxContainerRef::Container(sandbox) = request.container else {
         return Err(SandboxLifecycleError::ContainerHandleRequired { provider: "e2b" });
     };
@@ -109,7 +107,7 @@ fn e2b_run(request: &RunCode<'_>) -> AdapterResult<E2bRun<'_>> {
     })
 }
 
-fn e2b_delete(request: &DeleteSandbox<'_>) -> E2bDelete<'_> {
+fn e2b_delete<'call>(request: &DeleteSandbox<'call>) -> E2bDelete<'call> {
     E2bDelete {
         container: e2b_ref(request.container),
         api_key: request.call.api_key,
@@ -127,7 +125,7 @@ fn e2b_ref(container: SandboxContainerRef<'_>) -> SandboxRef<'_> {
     }
 }
 
-fn open_create(request: &CreateSandbox<'_>) -> OpenCreate<'_> {
+fn open_create<'call>(request: &CreateSandbox<'call>) -> OpenCreate<'call> {
     OpenCreate {
         template: request.template,
         timeout: request.timeout,
@@ -139,42 +137,53 @@ fn open_create(request: &CreateSandbox<'_>) -> OpenCreate<'_> {
         entrypoint: request.entrypoint,
         network_policy: request.network_policy,
         secure_access: request.secure_access,
-        options: OpenOptions {
-            api_key: request.call.api_key,
-            api_base: request.api_base,
-            use_server_proxy: request.use_server_proxy,
-            ready_timeout: request.ready_timeout,
-            poll_interval: request.poll_interval,
-        },
+        options: open_options(
+            &request.call,
+            request.api_base,
+            request.use_server_proxy,
+            request.ready_timeout,
+            request.poll_interval,
+        ),
     }
 }
 
-fn open_run(request: &RunCode<'_>) -> OpenRun<'_> {
+fn open_run<'call>(request: &RunCode<'call>) -> OpenRun<'call> {
+    let container = open_container(request.container);
+    let options = open_options(
+        &request.call,
+        request.api_base,
+        request.use_server_proxy,
+        request.ready_timeout,
+        request.poll_interval,
+    );
     OpenRun {
-        container: open_container(request.container),
+        container,
         code: request.code,
         language: request.language,
-        options: OpenOptions {
-            api_key: request.call.api_key,
-            api_base: request.api_base,
-            use_server_proxy: request.use_server_proxy,
-            ready_timeout: request.ready_timeout,
-            poll_interval: request.poll_interval,
-        },
+        options,
     }
 }
 
-fn open_delete(request: &DeleteSandbox<'_>) -> OpenDelete<'_> {
-    let options = OpenOptions {
-        api_key: request.call.api_key,
-        api_base: request.api_base,
-        use_server_proxy: false,
-        ready_timeout: None,
-        poll_interval: None,
-    };
+fn open_delete<'call>(request: &DeleteSandbox<'call>) -> OpenDelete<'call> {
     OpenDelete {
         container: open_container(request.container),
-        options,
+        options: open_options(&request.call, request.api_base, false, None, None),
+    }
+}
+
+fn open_options<'call>(
+    call: &SandboxCall<'call>,
+    api_base: Option<&'call str>,
+    use_server_proxy: bool,
+    ready_timeout: Option<Duration>,
+    poll_interval: Option<Duration>,
+) -> OpenOptions<'call> {
+    OpenOptions {
+        api_key: call.api_key,
+        api_base,
+        use_server_proxy,
+        ready_timeout,
+        poll_interval,
     }
 }
 
