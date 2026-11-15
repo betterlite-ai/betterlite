@@ -1,0 +1,15 @@
+kind: helper
+name: agent-365-tokens-payload-assembly-seed
+call:
+  b3741:
+    function: agent_365_payload_assembly
+    key_alias: null
+    mcp_session_id: null
+    litellm_call_id: call-1
+    metadata: null
+    litellm_metadata: null
+    mcp_tool_name: search
+    mcp_server_name: mcp-server
+    mcp_arguments: null
+env: {}
+compare: {ignore: []}

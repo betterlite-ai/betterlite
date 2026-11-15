@@ -3,6 +3,7 @@ import datetime as dt
 import time
 import urllib.parse
 import uuid
+from functools import partial
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
@@ -23,6 +24,7 @@ FIELDS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 UUID_MARKER = "<uuid4>"
 UUID_VERSION = 4
 FIXED_START = dt.datetime(1970, 1, 12, 13, 46, 40, tzinfo=dt.UTC)
+FIXED_NOW = FIXED_START.timestamp()
 
 
 class ScriptedReply(TypedDict):
@@ -237,7 +239,13 @@ def exchange_result(args: TokenExchange) -> JsonValue:
     handler = ScriptedReplies(args["replies"], repeat_last_reply=args["repeat_last_reply"])
     guardrail = make_guardrail()
     guardrail.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    outcomes = asyncio.run(run_exchange(guardrail, args["steps"], handler))
+    # the Rust helper fixes its clock at the same second, so cache lifetimes compare exactly
+    wall_clock = time.time
+    time.time = partial(float, FIXED_NOW)
+    try:
+        outcomes = asyncio.run(run_exchange(guardrail, args["steps"], handler))
+    finally:
+        time.time = wall_clock
     return {
         "requests": JSON.validate_python(handler.requests),
         "steps": JSON.validate_python(outcomes),
@@ -277,8 +285,7 @@ def payload_request(args: PayloadAssembly) -> RequestPayload:
 
 
 def cache_entries(guardrail: Probe) -> list[list[JsonValue]]:
-    now = time.time()
-    return [[key, token, round(expiry - now)] for key, token, expiry in guardrail.cache_items()]
+    return [[key, token, int(expiry - FIXED_NOW)] for key, token, expiry in guardrail.cache_items()]
 
 
 def payload_result(args: PayloadAssembly) -> JsonValue:
