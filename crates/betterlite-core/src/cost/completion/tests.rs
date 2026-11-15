@@ -258,21 +258,24 @@ async fn the_logging_model_names_the_fee_unless_a_router_hidden_model_replaces_i
 }
 
 #[tokio::test]
-async fn a_router_shaped_priced_model_owes_no_extra_fee() {
+async fn a_router_shaped_priced_model_owes_the_router_fee_once() {
     let usage = chat_usage(10, 5);
     let view = chat_view(&usage, Some("model-router-x"), None);
     let mut call = args(Some(&view));
     call.billing.model = Some("model-router-x");
     call.billing.custom_llm_provider = Some("azure_ai");
+    let mut stored = Stored::default();
     let charge = rig(&[
         ("model-router-x", GPT),
         ("azure_ai/model-router-x", GPT),
         ("model_router", ROUTED),
     ])
-    .charge(&call, None::<&mut Stored>)
+    .charge(&call, Some(&mut stored))
     .await
     .unwrap();
-    assert_eq!(charge, dec("0.02"));
+    // The provider price already carries the flat fee, so the additional-cost hook must not add it again.
+    assert_eq!(charge, dec("0.021"));
+    assert!(stored.0.unwrap().additional_costs.is_none());
 }
 
 #[tokio::test]

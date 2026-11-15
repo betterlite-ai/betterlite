@@ -110,7 +110,7 @@ pub(crate) fn dictionary_view(usage: &Usage) -> ResponseView<'_> {
     })
 }
 
-struct Catalog(BTreeMap<String, PriceRecord>);
+pub(crate) struct Catalog(BTreeMap<String, PriceRecord>);
 
 impl PriceLookup for Catalog {
     fn effective_model_info(&self, model: &str, _provider: Option<&str>) -> Option<PriceRecord> {
@@ -158,8 +158,8 @@ impl ImagePricePolicy for Stamped {
     type Error = Infallible;
 
     fn image_cost(&self, route: &ImageRoute<'_>) -> Result<Decimal, Infallible> {
-        let width = i64::try_from(route.adapter().len()).expect("the adapter name is short");
-        Ok(Decimal::from(self.0.timestamp() + width))
+        let width = i64::try_from(route.adapter().len()).unwrap_or(i64::MAX);
+        Ok(Decimal::from(self.0.timestamp().saturating_add(width)))
     }
 }
 
@@ -216,7 +216,7 @@ impl BillingTokenCounter for Counter {
 }
 
 // A search-priced model: the medium context rate is one cent per call.
-struct Tools(Option<ToolModelInfo>);
+pub(crate) struct Tools(Option<ToolModelInfo>);
 
 impl ToolPriceSource for Tools {
     fn model_info(

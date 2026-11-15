@@ -129,8 +129,9 @@ fn a_tiered_entry_decodes_its_tiers_and_a_plain_one_has_none() {
     assert!(!plain.off_peak_cache_read_present);
 }
 
+// The projection LiteLLM's get_model_info returns keeps the search context and drops the other tool rates.
 #[test]
-fn a_tool_entry_keeps_every_rate_under_its_own_key() {
+fn the_tool_info_keeps_the_search_context_and_the_projection_drops_the_other_rates() {
     let info = lookup()
         .model_info("tool-priced", Some("openai"))
         .expect("the entry resolves");
@@ -138,11 +139,11 @@ fn a_tool_entry_keeps_every_rate_under_its_own_key() {
     assert_eq!(info.search_context.low, Rate::Value(dec("0.5")));
     assert_eq!(info.search_context.medium, Rate::Value(dec("0.75")));
     assert_eq!(info.search_context.high, Rate::Absent);
-    assert_eq!(info.file_search_per_gb_per_day, Rate::Value(dec("1.5")));
-    assert_eq!(info.file_search_per_1k_calls, Rate::Value(dec("2.5")));
-    assert_eq!(info.vector_store_per_gb_per_day, Rate::Value(dec("3.5")));
-    assert_eq!(info.computer_input_per_1k, Rate::Value(dec("4.5")));
-    assert_eq!(info.computer_output_per_1k, Rate::Value(dec("5.5")));
+    assert_eq!(info.file_search_per_gb_per_day, Rate::Absent);
+    assert_eq!(info.file_search_per_1k_calls, Rate::Absent);
+    assert_eq!(info.vector_store_per_gb_per_day, Rate::Absent);
+    assert_eq!(info.computer_input_per_1k, Rate::Absent);
+    assert_eq!(info.computer_output_per_1k, Rate::Absent);
     assert_eq!(info.code_interpreter_per_session, Rate::Absent);
     let _error = lookup().model_info("no-such-model", None).unwrap_err();
 }

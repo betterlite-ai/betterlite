@@ -12,3 +12,7 @@ deviations:
   - what: The Replicate per-second price is fixed at 0.0014 and the DEFAULT_REPLICATE_GPU_PRICE_PER_SECOND environment override is not read.
     why: The price is a typed constant and the service takes its time zone database as injected data, so it reads no environment of its own.
     link: ""
+kept_bugs:
+  - what: The built-in tool fees read the resolved model info, which is LiteLLM's fixed-field projection. That projection keeps search_context_cost_per_query but omits file_search_cost_per_gb_per_day, file_search_cost_per_1k_calls, vector_store_cost_per_gb_per_day and computer_use_input/output_cost_per_1k_tokens, so those fees always price at zero.
+    why: LiteLLM's tool fee code reads those keys from litellm.get_model_info, whose projection never returns them, and betterlite binds the same resolver so a setup's totals match. The projection is B205's and the fee code is B1687's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L586-L590

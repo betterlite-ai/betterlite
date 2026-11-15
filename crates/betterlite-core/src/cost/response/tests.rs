@@ -164,5 +164,5 @@ async fn the_calculation_errors_propagate() {
     let error = respond(&rig(&[]), &args(None), None, None::<&mut Stored>)
         .await
         .unwrap_err();
-    assert!(matches!(error, CompletionCostError::Prepare(_)));
+    assert!(matches!(error, CompletionCostError::Price(_)), "{error}");
 }

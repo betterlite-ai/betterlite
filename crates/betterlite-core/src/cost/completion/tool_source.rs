@@ -1,4 +1,5 @@
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
+use betterlite_models::price_lookup::PriceLookup as _;
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::tool_fees::error::LookupFailed;
 use betterlite_models::tool_fees::model_info::{Rate, SearchContextRates, ToolModelInfo};
@@ -7,17 +8,32 @@ use serde::Deserialize;
 
 use super::lookup::CatalogLookup;
 
+const CODE_SESSION_KEY: &str = "code_interpreter_cost_per_session";
+
 // A price key keeps whether it is missing, null or a number; any other shape reads as missing.
 type Cell = Option<Option<Scalar>>;
+
+fn scalar_rate(value: &Scalar) -> Rate {
+    match value {
+        Scalar::Number(number) => {
+            parse_decimal_lexeme(&number.to_string()).map_or(Rate::Absent, Rate::Value)
+        }
+        Scalar::Null => Rate::Null,
+        Scalar::Bool(_) | Scalar::Text(_) | Scalar::Array(_) | Scalar::Object(_) => Rate::Absent,
+    }
+}
 
 fn rate(cell: Cell) -> Rate {
     match cell {
         Some(None) => Rate::Null,
-        Some(Some(Scalar::Number(number))) => {
-            parse_decimal_lexeme(&number.to_string()).map_or(Rate::Absent, Rate::Value)
-        }
-        None | Some(Some(_)) => Rate::Absent,
+        Some(Some(value)) => scalar_rate(&value),
+        None => Rate::Absent,
     }
+}
+
+#[derive(Deserialize)]
+struct ProjectedKey {
+    key: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -109,9 +125,17 @@ impl ToolPriceSource for CatalogLookup {
         })
     }
 
+    // Ports _get_code_interpreter_cost_from_model_map: resolve the container entry, then read its raw rate.
     fn container_session_rate(&self, provider: &str) -> Result<Rate, LookupFailed> {
         let container = format!("{provider}/container");
-        self.model_info(&container, None)
-            .map(|info| info.code_interpreter_per_session)
+        let projected = self
+            .resolved(&container, Some(provider))
+            .ok_or(LookupFailed)?;
+        let located: ProjectedKey =
+            serde_json::from_str(projected.get()).map_err(|_source| LookupFailed)?;
+        let entry = self.raw_cost_map_entry(&located.key).ok_or(LookupFailed)?;
+        Ok(entry
+            .get(CODE_SESSION_KEY)
+            .map_or(Rate::Absent, scalar_rate))
     }
 }
