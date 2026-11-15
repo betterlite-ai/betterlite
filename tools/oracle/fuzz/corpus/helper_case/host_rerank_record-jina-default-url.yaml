@@ -1,0 +1,11 @@
+kind: helper
+name: host-rerank-record-seed-jina
+call:
+  host_rerank_record:
+    provider: jina
+    model: jina-reranker-v2
+    api_key: jk
+    options: {query: q, documents: [a, b]}
+    non_default: {top_n: 1}
+env: {}
+compare: {ignore: []}

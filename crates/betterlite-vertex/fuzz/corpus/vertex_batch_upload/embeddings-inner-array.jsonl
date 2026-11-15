@@ -1,0 +1,1 @@
+{"custom_id":"c","url":"/v1/embeddings?x=1/","body":{"input":[["x","y"],"z"],"dimensions":8,"task_type":"RETRIEVAL_QUERY","title":"T"}}
