@@ -52,7 +52,7 @@ pub fn pop_output_config_format(body: &mut Object) -> Option<Object> {
 pub fn inline_output_format(output_format: &Object, body: &mut Object) {
     let Some(schema) = output_format
         .get(SCHEMA)
-        .filter(|schema| schema.is_truthy())
+        .filter(|candidate| candidate.is_truthy())
     else {
         return;
     };
