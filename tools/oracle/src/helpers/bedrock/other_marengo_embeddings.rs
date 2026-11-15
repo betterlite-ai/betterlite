@@ -114,7 +114,7 @@ fn transform_all(call: &Call) -> Result<Vec<Value>, Failure> {
             output_s3_uri: call.output_s3_uri.as_deref(),
             drop_params: call.drop_params.unwrap_or(false),
         })?;
-        requests.push(serde_json::to_value(&request)?);
+        requests.push(serde_json::to_value(request)?);
     }
     Ok(requests)
 }
@@ -150,7 +150,7 @@ fn response_value(call: &Call, requests: &[Value]) -> Result<Value, Failure> {
             transform_response(&responses, &call.model, Some(&batch))?
         }
     };
-    Ok(serde_json::to_value(&response)?)
+    Ok(serde_json::to_value(response)?)
 }
 
 fn batch_value(call: &Call, requests: &[Value]) -> Result<Vec<MarengoBilledRequest>, Failure> {
