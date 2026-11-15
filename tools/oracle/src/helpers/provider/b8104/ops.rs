@@ -138,11 +138,11 @@ fn get_value(config: &ManusResponsesConfig, probe: &GetProbe) -> Value {
 fn evaluated<T>(
     config: &ManusResponsesConfig,
     probes: &[T],
-    value: fn(&ManusResponsesConfig, &T) -> Value,
+    evaluate: fn(&ManusResponsesConfig, &T) -> Value,
 ) -> Vec<Value> {
     let mut values = Vec::with_capacity(probes.len());
     for probe in probes {
-        values.push(value(config, probe));
+        values.push(evaluate(config, probe));
     }
     values
 }
