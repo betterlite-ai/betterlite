@@ -87,11 +87,10 @@ fn text_field(
 
 // The logging object's model_call_details reach the request data as mcp_tool_call_metadata, at the top level or under the request metadata.
 fn tool_metadata_session(data: &RequestData) -> Option<String> {
-    if let Some(metadata) = data.get("mcp_tool_call_metadata") {
-        return session_in(metadata);
+    if let Some(session) = session_in(data.get("mcp_tool_call_metadata")) {
+        return Some(session);
     }
-    let metadata = metadata_object(data)?;
-    session_in(metadata.get("mcp_tool_call_metadata"))
+    session_in(metadata_object(data)?.get("mcp_tool_call_metadata"))
 }
 
 fn session_in(metadata: Option<&GuardrailValue>) -> Option<String> {
