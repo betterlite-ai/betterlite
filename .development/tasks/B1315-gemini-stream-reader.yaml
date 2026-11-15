@@ -21,6 +21,9 @@ description: >-
   owners in Rust. Budget 330 decoder/assembly, 210 tests, 120 adapters and 100 fuzz/wiring lines.
 scope:
   paths:
+    - "tools/oracle/helpers/b8153.py"
+    - "tools/oracle/helpers/b6413.py"
+    - "crates/betterlite-vertex/src/legacy_prediction/google.rs"
     - crates/betterlite-vertex/src/gemini_stream.rs
     - crates/betterlite-vertex/src/gemini_stream/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
