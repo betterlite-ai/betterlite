@@ -85,9 +85,7 @@ def ttl_request(case: TtlCase) -> JsonValue:
 
 def remove_ttl(call: RemoveTtlCall) -> JsonValue:
     litellm.model_cost = call["model_cost"]
-    requests: list[JsonValue] = []
-    for case in call["cases"]:
-        requests.append(ttl_request(case))
+    requests: list[JsonValue] = [ttl_request(case) for case in call["cases"]]
     return {"requests": requests}
 
 
@@ -101,9 +99,7 @@ def thinking_request(case: EnsureCase) -> JsonValue:
 
 def ensure_thinking(call: EnsureThinkingCall) -> JsonValue:
     litellm.model_cost = call["model_cost"]
-    results: list[JsonValue] = []
-    for case in call["cases"]:
-        results.append(thinking_request(case))
+    results: list[JsonValue] = [thinking_request(case) for case in call["cases"]]
     return {"results": results}
 
 

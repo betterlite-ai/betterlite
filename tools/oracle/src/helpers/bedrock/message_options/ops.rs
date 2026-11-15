@@ -53,6 +53,29 @@ enum Ask<'case> {
     Supports(&'case String),
 }
 
+// The case a helper call runs, so one loop builds the sources for all three operations.
+trait AskCase {
+    fn ask(&self) -> Ask<'_>;
+}
+
+impl AskCase for EnsureCase {
+    fn ask(&self) -> Ask<'_> {
+        Ask::Thinking(self)
+    }
+}
+
+impl AskCase for ClampCase {
+    fn ask(&self) -> Ask<'_> {
+        Ask::Clamp(self)
+    }
+}
+
+impl AskCase for String {
+    fn ask(&self) -> Ask<'_> {
+        Ask::Supports(self)
+    }
+}
+
 fn answer(
     ask: Ask<'_>,
     sources: &mut OptionsSources<'_, '_, NoDynamicMetadata, NoHfTransport>,
@@ -90,11 +113,7 @@ fn answer(
     }
 }
 
-fn ask_cases<Case>(
-    model_cost: &ParamMap,
-    cases: &[Case],
-    to_ask: for<'case> fn(&'case Case) -> Ask<'case>,
-) -> HelperResult {
+fn ask_cases<Case: AskCase>(model_cost: &ParamMap, cases: &[Case]) -> HelperResult {
     let fixture = Fixture::load(model_cost).map_err(failure)?;
     let resolution = fixture.resolution();
     let lookup = CostLookup {
@@ -115,7 +134,7 @@ fn ask_cases<Case>(
             budgets: &budgets,
         };
         results.push(answer(
-            to_ask(case),
+            case.ask(),
             &mut sources,
             &runtime,
             &fixture.packaged,
@@ -128,10 +147,8 @@ fn ask_cases<Case>(
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::RemoveTtl { model_cost, cases } => remove_ttl(model_cost, cases),
-        Input::EnsureThinking { model_cost, cases } => ask_cases(model_cost, cases, Ask::Thinking),
-        Input::SupportsExtendedThinking { model_cost, models } => {
-            ask_cases(model_cost, models, Ask::Supports)
-        }
-        Input::ClampEffort { model_cost, cases } => ask_cases(model_cost, cases, Ask::Clamp),
+        Input::EnsureThinking { model_cost, cases } => ask_cases(model_cost, cases),
+        Input::SupportsExtendedThinking { model_cost, models } => ask_cases(model_cost, models),
+        Input::ClampEffort { model_cost, cases } => ask_cases(model_cost, cases),
     }
 }

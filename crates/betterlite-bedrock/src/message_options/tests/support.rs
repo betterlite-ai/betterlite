@@ -142,24 +142,24 @@ pub(super) enum Outcome {
 }
 
 impl Outcome {
-    pub(super) fn injected(self) -> Result<bool, MessageOptionsError> {
+    pub(super) fn injected(self) -> Option<Result<bool, MessageOptionsError>> {
         match self {
-            Self::Injected(result) => result,
-            Self::Clamped(_) | Self::Supported(_) => panic!("an ensure job answers an injection"),
+            Self::Injected(result) => Some(result),
+            Self::Clamped(_) | Self::Supported(_) => None,
         }
     }
 
-    pub(super) fn clamped(self) -> Result<(), MessageOptionsError> {
+    pub(super) fn clamped(self) -> Option<Result<(), MessageOptionsError>> {
         match self {
-            Self::Clamped(result) => result,
-            Self::Injected(_) | Self::Supported(_) => panic!("a clamp job answers a clamp"),
+            Self::Clamped(result) => Some(result),
+            Self::Injected(_) | Self::Supported(_) => None,
         }
     }
 
-    pub(super) fn supported(self) -> Vec<bool> {
+    pub(super) fn supported(self) -> Option<Vec<bool>> {
         match self {
-            Self::Supported(result) => result,
-            Self::Injected(_) | Self::Clamped(_) => panic!("a support job answers support"),
+            Self::Supported(result) => Some(result),
+            Self::Injected(_) | Self::Clamped(_) => None,
         }
     }
 }
