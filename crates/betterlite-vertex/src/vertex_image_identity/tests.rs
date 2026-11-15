@@ -115,7 +115,7 @@ fn the_project_tiers_follow_the_safe_getter_then_fallback_chain() {
         credentials: None,
         ai_credentials: None,
     };
-    assert_eq!(settings.resolve_project(both), Some("param-project"));
+    assert_eq!(settings.resolve(both).project, Some("param-project"));
     let second = VertexParams {
         project: None,
         ai_project: Some("ai-param-project"),
@@ -124,28 +124,28 @@ fn the_project_tiers_follow_the_safe_getter_then_fallback_chain() {
         credentials: None,
         ai_credentials: None,
     };
-    assert_eq!(settings.resolve_project(second), Some("ai-param-project"));
+    assert_eq!(settings.resolve(second).project, Some("ai-param-project"));
     assert_eq!(
-        settings.resolve_project(VertexParams::default()),
+        settings.resolve(VertexParams::default()).project,
         Some("module-project")
     );
     settings.module.project = None;
     assert_eq!(
-        settings.resolve_project(VertexParams::default()),
+        settings.resolve(VertexParams::default()).project,
         Some("secret-project")
     );
     settings.secrets.project = None;
     assert_eq!(
-        settings.resolve_project(VertexParams::default()),
+        settings.resolve(VertexParams::default()).project,
         Some("instance-project")
     );
     settings.instance.project = None;
     assert_eq!(
-        settings.resolve_project(VertexParams::default()),
+        settings.resolve(VertexParams::default()).project,
         Some("env-project")
     );
     settings.environment.project = None;
-    assert_eq!(settings.resolve_project(VertexParams::default()), None);
+    assert_eq!(settings.resolve(VertexParams::default()).project, None);
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn an_empty_project_parameter_falls_through_to_the_ai_spelling() {
         credentials: None,
         ai_credentials: None,
     };
-    assert_eq!(settings.resolve_project(params), Some("ai-param-project"));
+    assert_eq!(settings.resolve(params).project, Some("ai-param-project"));
 }
 
 #[test]
@@ -173,74 +173,79 @@ fn an_empty_location_parameter_falls_through_to_the_ai_spelling() {
         credentials: None,
         ai_credentials: None,
     };
-    assert_eq!(settings.resolve_location(params), Some("ai-param-location"));
+    assert_eq!(settings.resolve(params).location, Some("ai-param-location"));
 }
 
 #[test]
 fn the_location_tiers_read_both_secret_spellings_before_the_environment() {
     let mut settings = full_settings();
     assert_eq!(
-        settings.resolve_location(VertexParams::default()),
+        settings.resolve(VertexParams::default()).location,
         Some("module-location")
     );
     settings.module.location = None;
     assert_eq!(
-        settings.resolve_location(VertexParams::default()),
+        settings.resolve(VertexParams::default()).location,
         Some("secret-location")
     );
     settings.secrets.location = None;
     assert_eq!(
-        settings.resolve_location(VertexParams::default()),
+        settings.resolve(VertexParams::default()).location,
         Some("legacy-secret-location")
     );
     settings.secrets.legacy_location = None;
     assert_eq!(
-        settings.resolve_location(VertexParams::default()),
+        settings.resolve(VertexParams::default()).location,
         Some("instance-location")
     );
     settings.instance.location = None;
     assert_eq!(
-        settings.resolve_location(VertexParams::default()),
+        settings.resolve(VertexParams::default()).location,
         Some("env-location")
     );
     settings.environment.location = None;
     assert_eq!(
-        settings.resolve_location(VertexParams::default()),
+        settings.resolve(VertexParams::default()).location,
         Some("legacy-env-location")
     );
     settings.environment.legacy_location = None;
-    assert_eq!(settings.resolve_location(VertexParams::default()), None);
+    assert_eq!(settings.resolve(VertexParams::default()).location, None);
 }
 
 #[test]
 fn the_module_credentials_sit_between_the_environment_and_the_application_defaults() {
     let mut settings = full_settings();
     assert_eq!(
-        text(settings.resolve_credentials(VertexParams::default())),
+        text(settings.resolve(VertexParams::default()).credentials),
         Some("secret-credentials")
     );
     settings.secrets.credentials = None;
     assert_eq!(
-        text(settings.resolve_credentials(VertexParams::default())),
+        text(settings.resolve(VertexParams::default()).credentials),
         Some("instance-credentials")
     );
     settings.instance.credentials = None;
     assert_eq!(
-        text(settings.resolve_credentials(VertexParams::default())),
+        text(settings.resolve(VertexParams::default()).credentials),
         Some("env-credentials")
     );
     settings.environment.credentials = None;
     assert_eq!(
-        text(settings.resolve_credentials(VertexParams::default())),
+        text(settings.resolve(VertexParams::default()).credentials),
         Some("module-credentials")
     );
     settings.module.credentials = None;
     assert_eq!(
-        text(settings.resolve_credentials(VertexParams::default())),
+        text(settings.resolve(VertexParams::default()).credentials),
         Some("/keys/application.json")
     );
     settings.environment.application_credentials = None;
-    assert_eq!(settings.resolve_credentials(VertexParams::default()), None);
+    assert!(
+        settings
+            .resolve(VertexParams::default())
+            .credentials
+            .is_none()
+    );
 }
 
 #[test]
@@ -248,7 +253,7 @@ fn an_empty_credential_text_falls_through_to_the_next_tier() {
     let mut settings = full_settings();
     settings.secrets.credentials = Some(credential(""));
     assert_eq!(
-        text(settings.resolve_credentials(VertexParams::default())),
+        text(settings.resolve(VertexParams::default()).credentials),
         Some("instance-credentials")
     );
 }
@@ -266,7 +271,7 @@ fn a_parameter_credential_beats_every_fallback() {
         ai_credentials: None,
     };
     assert_eq!(
-        text(settings.resolve_credentials(params)),
+        text(settings.resolve(params).credentials),
         Some("param-credentials")
     );
 }

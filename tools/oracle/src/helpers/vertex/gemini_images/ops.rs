@@ -208,6 +208,9 @@ impl CredentialClock for FixedClock {
     }
 }
 
+type CredentialFuture<'borrow, Loaded> =
+    Pin<Box<dyn Future<Output = Result<Loaded, CredentialCacheError>> + Send + 'borrow>>;
+
 // the custom-base cases never mint a token, so a load or a refresh that runs fails the case
 struct NoCredentials;
 
@@ -216,18 +219,14 @@ impl CredentialExecutor for NoCredentials {
         &'borrow self,
         _credentials: Option<&'borrow ConfiguredCredentials>,
         _project: Option<&'borrow str>,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<LoadedCredential, CredentialCacheError>> + Send + 'borrow>,
-    > {
+    ) -> CredentialFuture<'borrow, LoadedCredential> {
         Box::pin(ready(Err(CredentialCacheError::MissingCredentials)))
     }
 
     fn refresh<'borrow>(
         &'borrow self,
         _credential: &'borrow CredentialSnapshot,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<CredentialSnapshot, CredentialCacheError>> + Send + 'borrow>,
-    > {
+    ) -> CredentialFuture<'borrow, CredentialSnapshot> {
         Box::pin(ready(Err(CredentialCacheError::MissingToken)))
     }
 }

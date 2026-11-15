@@ -45,34 +45,40 @@ pub struct ImageIdentitySettings {
     pub secrets: ImageSecrets,
 }
 
-// every tier joins an `or` chain in LiteLLM, so an empty value falls through to the next one
+// the first tier holding text, since LiteLLM's `or` chains skip an empty string
+fn first_non_empty<'tier>(tiers: &[Option<&'tier str>]) -> Option<&'tier str> {
+    tiers
+        .iter()
+        .flatten()
+        .copied()
+        .find(|value| !value.is_empty())
+}
+
+// the winner of each `or` chain: LiteLLM skips an empty string, so it falls through to the next tier
+#[derive(Debug, Clone, Copy)]
+pub struct ResolvedIdentity<'settings> {
+    pub project: Option<&'settings str>,
+    pub location: Option<&'settings str>,
+    pub credentials: Option<&'settings ConfiguredCredentials>,
+}
+
 impl ImageIdentitySettings {
-    // the safe getter reads the module and secret tiers; the resolver repeats them after the instance
+    // the safe getters read the module and secret tiers; the resolver repeats them after the instance
     #[must_use]
-    pub fn resolve_project<'settings>(
+    pub fn resolve<'settings>(
         &'settings self,
         params: VertexParams<'settings>,
-    ) -> Option<&'settings str> {
-        [
+    ) -> ResolvedIdentity<'settings> {
+        let project = first_non_empty(&[
             params.project,
             params.ai_project,
             self.module.project.as_deref(),
             self.secrets.project.as_deref(),
             self.instance.project.as_deref(),
             self.environment.project.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .find(|value| !value.is_empty())
-    }
-
-    // the explicit location params drop empty strings; then the module, both secrets, instance and environments
-    #[must_use]
-    pub fn resolve_location<'settings>(
-        &'settings self,
-        params: VertexParams<'settings>,
-    ) -> Option<&'settings str> {
-        [
+        ]);
+        // the explicit location params drop empty strings; then the module, both secrets, instance and environments
+        let location = first_non_empty(&[
             params.explicit_vertex_ai_location(),
             self.module.location.as_deref(),
             self.secrets.location.as_deref(),
@@ -80,19 +86,9 @@ impl ImageIdentitySettings {
             self.instance.location.as_deref(),
             self.environment.location.as_deref(),
             self.environment.legacy_location.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .find(|value| !value.is_empty())
-    }
-
-    // litellm.vertex_credentials sits after the environment spelling and before GOOGLE_APPLICATION_CREDENTIALS
-    #[must_use]
-    pub fn resolve_credentials<'settings>(
-        &'settings self,
-        params: VertexParams<'settings>,
-    ) -> Option<&'settings ConfiguredCredentials> {
-        [
+        ]);
+        // litellm.vertex_credentials sits after the environment spelling and before GOOGLE_APPLICATION_CREDENTIALS
+        let credentials = [
             params.credentials,
             params.ai_credentials,
             self.secrets.credentials.as_ref(),
@@ -103,6 +99,11 @@ impl ImageIdentitySettings {
         ]
         .into_iter()
         .flatten()
-        .find(|credentials| credentials.as_text().is_none_or(|text| !text.is_empty()))
+        .find(|credentials| credentials.as_text().is_none_or(|text| !text.is_empty()));
+        ResolvedIdentity {
+            project,
+            location,
+            credentials,
+        }
     }
 }

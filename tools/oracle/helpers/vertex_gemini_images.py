@@ -186,11 +186,13 @@ def datum_value(datum: ImageDatum) -> JsonObject:
 
 def usage_value(usage: ImageUsageFields) -> JsonObject:
     details = usage["input_tokens_details"]
+    input_details: JsonObject = {
+        "image_tokens": details["image_tokens"],
+        "text_tokens": details["text_tokens"],
+    }
     value: JsonObject = {
         "input_tokens": usage["input_tokens"],
-        "input_tokens_details": JSON.validate_python(
-            {"image_tokens": details["image_tokens"], "text_tokens": details["text_tokens"]}
-        ),
+        "input_tokens_details": input_details,
         "output_tokens": usage["output_tokens"],
         "total_tokens": usage["total_tokens"],
     }

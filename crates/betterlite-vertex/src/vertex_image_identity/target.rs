@@ -37,12 +37,9 @@ pub fn complete_url(
     if let Some(api_base) = target.api_base.filter(|base| !base.is_empty()) {
         return Ok(api_base.trim_end_matches('/').to_owned());
     }
-    let project = settings
-        .resolve_project(target.params)
-        .ok_or(ImageIdentityError::MissingTarget)?;
-    let location = settings
-        .resolve_location(target.params)
-        .ok_or(ImageIdentityError::MissingTarget)?;
+    let resolved = settings.resolve(target.params);
+    let project = resolved.project.ok_or(ImageIdentityError::MissingTarget)?;
+    let location = resolved.location.ok_or(ImageIdentityError::MissingTarget)?;
     let base_url = get_vertex_base_url(Some(location)).map_err(ImageIdentityError::Location)?;
     Ok(format!(
         "{base_url}/v1/projects/{project}/locations/{location}/publishers/google/models/{model_name}:generateContent"
@@ -64,10 +61,9 @@ pub async fn validate_environment(
             .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
             .collect());
     }
-    let project = settings.resolve_project(request.params);
-    let credentials = settings.resolve_credentials(request.params);
+    let resolved = settings.resolve(request.params);
     let access = cache
-        .get_access_token(credentials, project)
+        .get_access_token(resolved.credentials, resolved.project)
         .await
         .map_err(ImageIdentityError::Auth)?;
     Ok(set_headers(Some(&access.token), request.headers))

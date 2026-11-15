@@ -31,8 +31,8 @@ impl Section for Raw {
         let credentials = self
             .litellm_settings
             .vertex_credentials
-            .map(|text| {
-                let text = resolve_string(text, path, lookup)?;
+            .map(|configured| {
+                let text = resolve_string(configured, path, lookup)?;
                 ConfiguredCredentials::from_text(text).map_err(|_source| {
                     ConfigError::InvalidScalar {
                         path: path.to_owned(),
