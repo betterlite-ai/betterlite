@@ -1,23 +1,76 @@
 import time
+from collections.abc import Sequence
 from functools import partial
-from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
+from typing import (
+    Final,
+    Literal,
+    NotRequired,
+    Protocol,
+    TypeAlias,
+    TypedDict,
+    runtime_checkable,
+)
 
 import httpx
-from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.bedrock.chat.invoke_transformations import (
-    amazon_twelvelabs_pegasus_transformation as pegasus_module,
-)
-from litellm.types.llms.openai import AllMessageValues
-from litellm.types.utils import Choices, Message, ModelResponse
-from pydantic import JsonValue, TypeAdapter
+from litellm.types.utils import Choices, LlmProviders, Message, ModelResponse
+from litellm.utils import ProviderConfigManager
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-from .views import Transform
+# The Pegasus transformation reads neither logging_obj nor encoding, so its view passes None for both.
+@runtime_checkable
+class Transform(Protocol):
+    def get_supported_openai_params(self, model: str) -> list[str]: ...
 
+    def map_openai_params(
+        self,
+        non_default_params: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        model: str,
+        drop_params: bool,
+    ) -> dict[str, JsonValue]: ...
+
+    def transform_request(
+        self,
+        model: str,
+        messages: Sequence[JsonValue],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        headers: dict[str, str],
+    ) -> dict[str, JsonValue]: ...
+
+    def transform_response(
+        self,
+        model: str,
+        raw_response: httpx.Response,
+        model_response: ModelResponse,
+        logging_obj: None,
+        request_data: dict[str, JsonValue],
+        messages: Sequence[JsonValue],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        encoding: None,
+        api_key: str | None = None,
+        json_mode: bool | None = None,
+    ) -> ModelResponse: ...
+
+
+class TransformRecord(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    transform: Transform
+
+
+PEGASUS_MODEL: Final = "twelvelabs.pegasus-1-2-v1:0"
 REAL_TIME: Final = time.time
 Role: TypeAlias = Literal["assistant", "user", "system", "tool", "function"]
 
-# LiteLLM leaves these signatures bare, so views.pyi is the typed view of the public entry points
-VIEW: Transform = pegasus_module.AmazonTwelveLabsPegasusConfig()
+
+def pegasus_config(model: str) -> Transform:
+    config = ProviderConfigManager.get_provider_chat_config(
+        model=model, provider=LlmProviders.BEDROCK
+    )
+    if config is None:
+        raise ValueError("LiteLLM selects no Bedrock chat config")
+    return TransformRecord.model_validate({"transform": config}).transform
 
 
 class MessageSeed(TypedDict):
@@ -39,13 +92,13 @@ class ResponseSeed(TypedDict):
 
 class MediaSourceCall(TypedDict):
     function: Literal["pegasus_media_source"]
-    messages: list[AllMessageValues]
+    messages: list[JsonValue]
     optional_params: dict[str, JsonValue]
 
 
 class PromptCall(TypedDict):
     function: Literal["text_video_prompt"]
-    messages: list[AllMessageValues]
+    messages: list[JsonValue]
     optional_params: dict[str, JsonValue]
 
 
@@ -53,7 +106,7 @@ class MappingCall(TypedDict):
     function: Literal["response_format_json", "pegasus_options"]
     non_default: dict[str, JsonValue]
     optional_params: dict[str, JsonValue]
-    messages: list[AllMessageValues]
+    messages: list[JsonValue]
 
 
 class ReplyCall(TypedDict):
@@ -64,7 +117,7 @@ class ReplyCall(TypedDict):
     status: int
     headers: list[list[str]]
     model: str
-    messages: list[AllMessageValues]
+    messages: list[JsonValue]
     now: float
     response: ResponseSeed
 
@@ -118,10 +171,10 @@ def build_model_response(seed: ResponseSeed) -> ModelResponse:
 
 
 def request_params(
-    messages: list[AllMessageValues], optional_params: dict[str, JsonValue]
+    messages: Sequence[JsonValue], optional_params: dict[str, JsonValue]
 ) -> dict[str, JsonValue]:
-    return VIEW.transform_request(
-        model="",
+    return pegasus_config(PEGASUS_MODEL).transform_request(
+        model=PEGASUS_MODEL,
         messages=messages,
         optional_params=optional_params,
         litellm_params={},
@@ -129,20 +182,14 @@ def request_params(
     )
 
 
-def request_view(
-    messages: list[AllMessageValues], optional_params: dict[str, JsonValue]
-) -> JsonValue:
-    result: JsonValue = {"request": request_params(messages, optional_params)}
-    return result
-
-
 def mapping_view(call: MappingCall) -> JsonValue:
+    config = pegasus_config(PEGASUS_MODEL)
     supported: list[JsonValue] = []
-    supported.extend(VIEW.get_supported_openai_params(model=""))
-    mapped = VIEW.map_openai_params(
+    supported.extend(config.get_supported_openai_params(model=PEGASUS_MODEL))
+    mapped = config.map_openai_params(
         non_default_params=call["non_default"],
         optional_params=call["optional_params"],
-        model="",
+        model=PEGASUS_MODEL,
         drop_params=False,
     )
     result: JsonValue = {
@@ -154,18 +201,18 @@ def mapping_view(call: MappingCall) -> JsonValue:
 
 
 def reply_view(call: ReplyCall) -> JsonValue:
-    response = httpx.Response(
+    raw_response = httpx.Response(
         call["status"],
         content=call["body"].encode(),
         headers=[(name, value) for name, value in call["headers"]],
     )
     time.time = partial(float, call["now"])
     try:
-        transformed = VIEW.transform_response(
+        transformed = pegasus_config(PEGASUS_MODEL).transform_response(
             model=call["model"],
-            raw_response=response,
+            raw_response=raw_response,
             model_response=build_model_response(call["response"]),
-            logging_obj=Logging.__new__(Logging),
+            logging_obj=None,
             request_data={},
             messages=call["messages"],
             optional_params={},
@@ -204,9 +251,12 @@ def reply_view(call: ReplyCall) -> JsonValue:
 def run(input_value: Input) -> JsonValue:
     match input_value["function"]:
         case "pegasus_media_source" | "text_video_prompt":
-            return request_view(
-                input_value["messages"], input_value["optional_params"]
-            )
+            answer: JsonValue = {
+                "request": request_params(
+                    input_value["messages"], input_value["optional_params"]
+                )
+            }
+            return answer
         case "response_format_json" | "pegasus_options":
             return mapping_view(input_value)
         case "segments_and_response" | "usage_and_finish_reason" | "pegasus_reply_errors":
