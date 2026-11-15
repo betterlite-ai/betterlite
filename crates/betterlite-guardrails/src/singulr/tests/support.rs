@@ -14,6 +14,7 @@ use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::singulr::RequestData;
@@ -77,10 +78,10 @@ pub(crate) async fn mock(status: StatusCode, reply: &str) -> MockServer {
     let recorder = Arc::clone(&seen);
     let reply_for_response = reply.to_owned();
     let handle = move |uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let recorder = Arc::clone(&recorder);
+        let request_recorder = Arc::clone(&recorder);
         let answer = reply_for_response.clone();
         async move {
-            recorder.lock().unwrap().push(Seen {
+            request_recorder.lock().unwrap().push(Seen {
                 path: uri.path().to_owned(),
                 headers: header_text(&headers),
                 body: serde_json::from_slice(&bytes).unwrap(),
@@ -142,9 +143,13 @@ pub(crate) async fn stalled_base(stall: Duration) -> StallServer {
         if stream.write_all(headers.as_bytes()).await.is_err() {
             return Ok(());
         }
-        tokio::time::sleep(stall).await;
-        let _ = stream.write_all(body).await;
-        let _ = stream.flush().await;
+        sleep(stall).await;
+        if stream.write_all(body).await.is_err() {
+            return Ok(());
+        }
+        if stream.flush().await.is_err() {
+            return Ok(());
+        }
         Ok(())
     });
     StallServer {

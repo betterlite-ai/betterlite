@@ -46,7 +46,7 @@ pub(super) async fn send(
 fn read_error(source: ReadError) -> SingulrError {
     match source {
         ReadError::TooLarge { limit } => SingulrError::ResponseTooLarge { limit },
-        ReadError::Failed(source) => SingulrError::Transport { source },
+        ReadError::Failed(inner) => SingulrError::Transport { source: inner },
     }
 }
 
@@ -64,8 +64,8 @@ fn headers(settings: &SingulrSettings) -> Result<HeaderMap, SingulrError> {
         (GUARDRAIL_HEADER, settings.guardrail_id.as_deref(), false),
     ];
     for (name, value, sensitive) in optional {
-        if let Some(value) = value.filter(|value| !value.is_empty()) {
-            let mut header = HeaderValue::from_str(value)
+        if let Some(text) = value.filter(|text| !text.is_empty()) {
+            let mut header = HeaderValue::from_str(text)
                 .map_err(|source| SingulrError::InvalidHeader { name, source })?;
             header.set_sensitive(sensitive);
             headers.insert(

@@ -58,20 +58,7 @@ impl SingulrSettings {
     where
         L: EnvironmentLookup,
     {
-        let api_base = resolve_text(args.singulr_api_base.as_deref(), environment, API_BASE_ENV)
-            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
-        let trimmed = api_base.trim().trim_end_matches('/').to_owned();
-        // urlparse raises ValueError on a netloc it rejects, and LiteLLM's init fails there before the plain-HTTP check
-        let parsed = urlparse(&trimmed, "").map_err(|source| SettingsError::InvalidBase {
-            api_base: trimmed.clone(),
-            source,
-        })?;
-        let local = parsed
-            .hostname()
-            .is_some_and(|host| LOCAL_HOSTS.contains(&host.as_str()));
-        if parsed.scheme == "http" && !local {
-            return Err(SettingsError::PlainHttp { api_base: trimmed });
-        }
+        let api_base = resolve_api_base(args, environment)?;
         let api_key = resolve_text(
             args.singulr_api_key
                 .as_ref()
@@ -86,7 +73,7 @@ impl SingulrSettings {
             None => DEFAULT_TIMEOUT,
         };
         Ok(Self {
-            api_base: trimmed,
+            api_base,
             api_key,
             application_id: resolve_text(
                 args.singulr_application_id.as_deref(),
@@ -102,6 +89,27 @@ impl SingulrSettings {
             timeout,
         })
     }
+}
+
+// urlparse raises ValueError on a netloc it rejects, and LiteLLM's init fails there before the plain-HTTP check
+fn resolve_api_base<L>(args: &SingulrArgs, environment: &L) -> Result<String, SettingsError>
+where
+    L: EnvironmentLookup,
+{
+    let api_base = resolve_text(args.singulr_api_base.as_deref(), environment, API_BASE_ENV)
+        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+    let trimmed = api_base.trim().trim_end_matches('/').to_owned();
+    let parsed = urlparse(&trimmed, "").map_err(|source| SettingsError::InvalidBase {
+        api_base: trimmed.clone(),
+        source,
+    })?;
+    let local = parsed
+        .hostname()
+        .is_some_and(|host| LOCAL_HOSTS.contains(&host.as_str()));
+    if parsed.scheme == "http" && !local {
+        return Err(SettingsError::PlainHttp { api_base: trimmed });
+    }
+    Ok(trimmed)
 }
 
 // an explicit value is used as given; only an absent one reads the environment, where an empty value counts as unset

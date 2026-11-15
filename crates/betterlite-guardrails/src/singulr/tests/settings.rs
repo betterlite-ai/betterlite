@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::singulr::DEFAULT_API_BASE;
 use crate::singulr::settings::{SettingsError, SingulrSettings};
@@ -144,7 +144,7 @@ fn a_base_that_is_not_a_url_is_not_refused_at_start() {
 #[test]
 fn the_api_key_argument_wins_over_the_environment() {
     let mut args = support::args();
-    args.singulr_api_key = Some(secrecy::SecretString::from("argument-key"));
+    args.singulr_api_key = Some(SecretString::from("argument-key"));
     let settings =
         SingulrSettings::resolve(&args, &env(&[("SINGULR_API_KEY", "env-key")])).unwrap();
     assert_eq!(

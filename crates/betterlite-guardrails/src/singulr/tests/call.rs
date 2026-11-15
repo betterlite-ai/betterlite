@@ -1,9 +1,12 @@
 use std::fs;
+use std::io;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::http::StatusCode;
 use secrecy::SecretString;
+use tokio::runtime::Builder;
 
 use super::support;
 use crate::generic_guardrail_contracts::GuardrailInputType;
@@ -28,28 +31,17 @@ async fn the_call_posts_to_the_guard_endpoint_with_the_singulr_headers() {
     assert_eq!(calls.len(), 1);
     let call = &calls[0];
     assert_eq!(call.path, "/api/v1/ai-gateway/litellm-v2");
-    assert_eq!(
-        call.headers
-            .get("x-singulr-gateway-token")
-            .map(String::as_str),
-        Some(support::API_KEY)
-    );
-    assert_eq!(
-        call.headers
-            .get("x-singulr-enforcement-entity-id")
-            .map(String::as_str),
-        Some(support::APPLICATION_ID)
-    );
-    assert_eq!(
-        call.headers
-            .get("x-singulr-guardrail-id")
-            .map(String::as_str),
-        Some(support::GUARDRAIL_ID)
-    );
-    assert_eq!(
-        call.headers.get("content-type").map(String::as_str),
-        Some("application/json")
-    );
+    for (name, expected) in [
+        ("x-singulr-gateway-token", Some(support::API_KEY)),
+        (
+            "x-singulr-enforcement-entity-id",
+            Some(support::APPLICATION_ID),
+        ),
+        ("x-singulr-guardrail-id", Some(support::GUARDRAIL_ID)),
+        ("content-type", Some("application/json")),
+    ] {
+        assert_eq!(call.headers.get(name).map(String::as_str), expected);
+    }
     support::expects(
         call,
         r#"{"correlation_id": null, "model_name": null, "model_provider_name": null,
@@ -251,9 +243,9 @@ async fn a_transport_failure_passes_when_block_on_error_is_false() {
 #[tokio::test]
 async fn a_stalled_answer_reaches_the_request_deadline() {
     let stalled = support::stalled_base(Duration::from_secs(2)).await;
-    let mut args = support::args_for(&stalled.base);
-    args.timeout = Some(0.2);
-    let error = support::build(&args)
+    let mut blocking_args = support::args_for(&stalled.base);
+    blocking_args.timeout = Some(0.2);
+    let error = support::build(&blocking_args)
         .apply_guardrail(
             support::inputs(r#"{"texts": ["hello"]}"#),
             &support::data("{}"),
@@ -264,12 +256,12 @@ async fn a_stalled_answer_reaches_the_request_deadline() {
         .unwrap_err();
     assert!(matches!(error, SingulrError::Transport { .. }));
 
-    let stalled = support::stalled_base(Duration::from_secs(2)).await;
-    let mut args = support::args_for(&stalled.base);
-    args.timeout = Some(0.2);
-    args.block_on_error = Some(false);
+    let stalled_passthrough = support::stalled_base(Duration::from_secs(2)).await;
+    let mut passthrough_args = support::args_for(&stalled_passthrough.base);
+    passthrough_args.timeout = Some(0.2);
+    passthrough_args.block_on_error = Some(false);
     let inputs = support::inputs(r#"{"texts": ["hello"]}"#);
-    let returned = support::build(&args)
+    let returned = support::build(&passthrough_args)
         .apply_guardrail(
             inputs.clone(),
             &support::data("{}"),
@@ -376,15 +368,15 @@ async fn an_answer_larger_than_a_few_kilobytes_is_still_read() {
 }
 
 #[derive(Clone, Default)]
-struct Captured(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+struct Captured(Arc<Mutex<Vec<u8>>>);
 
-impl std::io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buffer);
-        Ok(buffer.len())
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
@@ -399,10 +391,7 @@ fn a_failed_call_logs_at_error_level() {
         .with_writer(move || writer.clone())
         .finish();
     let outcome = with_default(subscriber, || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = Builder::new_current_thread().enable_all().build().unwrap();
         let server = runtime.block_on(support::mock(
             StatusCode::INTERNAL_SERVER_ERROR,
             r#"{"detail": "boom"}"#,
@@ -414,7 +403,7 @@ fn a_failed_call_logs_at_error_level() {
             None,
         ))
     });
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
     assert!(output.contains("Singulr API returned an HTTP error status"));
 }
