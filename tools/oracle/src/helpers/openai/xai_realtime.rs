@@ -80,10 +80,10 @@ fn replay(
         if should_drop(event) {
             continue;
         }
-        let normalized = normalizer
+        let record = normalizer
             .normalize(event.clone())
             .map_err(|error| helper_error(&error.to_string()))?;
-        emitted.push(normalized);
+        emitted.push(record);
     }
     Ok(emitted)
 }
