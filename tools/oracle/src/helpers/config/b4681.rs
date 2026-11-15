@@ -167,17 +167,17 @@ where
 }
 
 fn required(value: Option<&str>) -> Result<&str, Box<HelperError>> {
-    match value {
-        Some(name) => Ok(name),
-        None => Err(value_error("the case names no toolset")),
-    }
+    let Some(name) = value else {
+        return Err(value_error("the case names no toolset"));
+    };
+    Ok(name)
 }
 
 fn optional(found: Option<MCPToolset>) -> HelperResult {
-    match found {
-        Some(toolset) => serde_json::to_value(toolset).or_value_error(),
-        None => Ok(Value::Null),
-    }
+    found.map_or_else(
+        || Ok(Value::Null),
+        |toolset| serde_json::to_value(toolset).or_value_error(),
+    )
 }
 
 fn storage_error(error: MCPToolsetStorageError) -> Box<HelperError> {
