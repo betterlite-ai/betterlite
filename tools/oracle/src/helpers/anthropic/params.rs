@@ -88,7 +88,7 @@ async fn run_steps(
 ) -> crate::helpers::HelperResult {
     let resolution = fixture.resolution();
     let mut keys = betterlite_models::model_catalog_keys::ModelCostKeys::default();
-    let dynamic = betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
+    let dynamic = NoDynamicMetadata;
     let catalogs = fixture.catalogs();
     let budgets = Settings::default();
     let context = StepContext {

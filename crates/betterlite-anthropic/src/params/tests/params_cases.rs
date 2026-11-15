@@ -432,7 +432,26 @@ async fn invalid_output_effort() {
 const fn invalid_value(error: &ParamsError) -> Option<&str> {
     match error {
         ParamsError::InvalidEffort { value } => Some(value.as_str()),
-        _ => None,
+        ParamsError::Base(_)
+        | ParamsError::Context(_)
+        | ParamsError::Effort(_)
+        | ParamsError::ForcedTool(_)
+        | ParamsError::Options(_)
+        | ParamsError::Reasoning(_)
+        | ParamsError::Sampling(_)
+        | ParamsError::Schema(_)
+        | ParamsError::Speed(_)
+        | ParamsError::Thinking(_)
+        | ParamsError::Tools(_)
+        | ParamsError::UserId(_)
+        | ParamsError::NotNumber { .. }
+        | ParamsError::NotList { .. }
+        | ParamsError::NotAnObject
+        | ParamsError::OutOfRange { .. }
+        | ParamsError::NotBool { .. }
+        | ParamsError::EffortUnsupported { .. }
+        | ParamsError::Encode(_)
+        | ParamsError::Decode(_) => None,
     }
 }
 
