@@ -9,7 +9,7 @@ use betterlite_auth::auth_identity::records::Principal;
 use betterlite_context::dynamic_logging_cache::Clock;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
-use betterlite_semantic::{EmbedError, Embedder, Vector};
+use betterlite_semantic::{DEFAULT_MAX_CACHED_VECTORS, EmbedError, Embedder, Vector};
 use serde_json::json;
 
 use super::{
@@ -19,7 +19,7 @@ use super::{
     search_skills, skill_search_result, skill_search_text,
 };
 use crate::skills::store::repository::{SkillRepository, SkillWrite};
-use crate::skills::store::{HostedSkillStore, SkillIdSource, SkillPage};
+use crate::skills::store::{HostedSkillStore, MAX_SKILLS_PER_SEARCH, SkillIdSource, SkillPage};
 
 const MODEL: &str = "test-embedding";
 const MODEL_MISSING: &str = "skill search needs litellm_settings.skill_search_embedding_model set to an embedding model from model_list";
@@ -203,8 +203,8 @@ fn vectors(items: &[(&str, [f64; 2])]) -> BTreeMap<String, Vector> {
 
 fn ranked_skills() -> Vec<SkillTable> {
     vec![
-        skill_row("litellm_skill_a", Some("Alpha"), None),
         skill_row("litellm_skill_b", Some("Beta"), None),
+        skill_row("litellm_skill_a", Some("Alpha"), None),
         skill_row("litellm_skill_c", Some("Gamma"), None),
         skill_row("litellm_skill_d", Some("Delta"), None),
     ]
@@ -350,6 +350,10 @@ fn constants_match_the_route_defaults() {
     assert_eq!(DEFAULT_SKILL_SEARCH_TOP_K, 5);
     assert_eq!(MAX_SKILL_SEARCH_TOP_K, 100);
     assert_eq!(MAX_SKILL_SEARCH_TEXT_CHARS, 4000);
+    assert_eq!(
+        DEFAULT_MAX_CACHED_VECTORS,
+        usize::try_from(MAX_SKILLS_PER_SEARCH).expect("the store search limit fits a usize")
+    );
 }
 
 #[test]
@@ -382,8 +386,8 @@ fn rank_orders_by_score_and_keeps_ties() {
         skill_ids(&outcome),
         vec![
             "litellm_skill_d",
-            "litellm_skill_a",
             "litellm_skill_b",
+            "litellm_skill_a",
             "litellm_skill_c"
         ]
     );
@@ -401,6 +405,27 @@ fn rank_orders_by_score_and_keeps_ties() {
         .map(score_bits)
         .to_vec()
     );
+}
+
+#[test]
+fn rank_keeps_the_store_order_for_large_ties() {
+    let skills = (0..25)
+        .map(|step| {
+            skill_row(
+                &format!("litellm_skill_{:02}", (step * 7) % 25),
+                Some("Tied"),
+                None,
+            )
+        })
+        .collect::<Vec<SkillTable>>();
+    let expected = skills
+        .iter()
+        .map(|skill| skill.skill_id.as_str())
+        .collect::<Vec<&str>>();
+    let embedder = FixedEmbedder::new(vectors(&[("q", [1.0, 0.0]), ("Tied", [1.0, 0.0])]));
+    let outcome = rank_in(&SkillSearchIndex::new(10), &embedder, &skills, 25, MODEL)
+        .expect("a ranked search");
+    assert_eq!(skill_ids(&outcome), expected);
 }
 
 #[test]
@@ -470,6 +495,30 @@ fn rank_rejects_a_non_finite_score() {
         MODEL,
     )
     .expect("a non-finite score is an outcome");
+    assert_eq!(
+        outcome,
+        SkillSearchOutcome::EmbeddingFailed {
+            reason: "embedding model test-embedding returned a score that is not a finite number"
+                .to_owned(),
+        }
+    );
+}
+
+#[test]
+fn rank_rejects_a_non_finite_score_before_the_slice() {
+    let skills = vec![
+        skill_row("litellm_skill_a", Some("Alpha"), None),
+        skill_row("litellm_skill_b", Some("Beta"), None),
+        skill_row("litellm_skill_c", Some("Gamma"), None),
+    ];
+    let embedder = FixedEmbedder::new(vectors(&[
+        ("q", [1e308, 1e308]),
+        ("Alpha", [1.0, 0.0]),
+        ("Beta", [1e308, 1e308]),
+        ("Gamma", [0.0, 1.0]),
+    ]));
+    let outcome = rank_in(&SkillSearchIndex::new(10), &embedder, &skills, 1, MODEL)
+        .expect("a non-finite score is an outcome");
     assert_eq!(
         outcome,
         SkillSearchOutcome::EmbeddingFailed {

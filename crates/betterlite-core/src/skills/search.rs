@@ -2,14 +2,14 @@ use std::cmp::Ordering;
 
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
-use betterlite_semantic::{Embedder, SemanticError, SemanticTextIndex};
+use betterlite_semantic::{DEFAULT_MAX_CACHED_VECTORS, Embedder, SemanticError, SemanticTextIndex};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
 use crate::api::skills::get_delete::call::LITELLM_PROXY_PROVIDER;
 use crate::skills::store::repository::SkillRepository;
-use crate::skills::store::{HostedSkillStore, MAX_SKILLS_PER_SEARCH, StoreError};
+use crate::skills::store::{HostedSkillStore, StoreError};
 
 pub const DEFAULT_SKILL_SEARCH_TOP_K: usize = 5;
 pub const MAX_SKILL_SEARCH_TOP_K: usize = 100;
@@ -78,8 +78,9 @@ pub struct SkillSearchIndex {
 }
 
 impl Default for SkillSearchIndex {
+    // LiteLLM sizes the skill index by MAX_SKILLS_PER_SEARCH, the semantic index's default bound
     fn default() -> Self {
-        Self::new(usize::try_from(MAX_SKILLS_PER_SEARCH).unwrap_or(usize::MAX))
+        Self::new(DEFAULT_MAX_CACHED_VECTORS)
     }
 }
 
@@ -137,21 +138,23 @@ fn ranked_hits(
     embedding_model: &str,
 ) -> Result<Vec<SkillSearchHit>, String> {
     let mut ranked: Vec<(&SkillTable, f64)> = skills.iter().zip(scores).collect();
-    ranked.sort_by(|left, right| right.1.partial_cmp(&left.1).unwrap_or(Ordering::Equal));
-    ranked.truncate(top_k);
-    let mut hits = Vec::with_capacity(ranked.len());
-    for (skill, score) in ranked {
+    // Every score is checked before the sort and the slice, so a NaN is never ranked into an answer
+    for (_, score) in &ranked {
         if !score.is_finite() {
             return Err(format!(
                 "embedding model {embedding_model} returned a score that is not a finite number"
             ));
         }
-        hits.push(SkillSearchHit {
+    }
+    ranked.sort_by(|left, right| right.1.partial_cmp(&left.1).unwrap_or(Ordering::Equal));
+    ranked.truncate(top_k);
+    Ok(ranked
+        .into_iter()
+        .map(|(skill, score)| SkillSearchHit {
             skill: skill.clone(),
             score,
-        });
-    }
-    Ok(hits)
+        })
+        .collect())
 }
 
 #[must_use]

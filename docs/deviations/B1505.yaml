@@ -1,6 +1,6 @@
 task: B1505
 deviations:
-  - what: A score the embedding model returns as NaN or infinity becomes SkillSearchEmbeddingFailed with the reason "embedding model <model> returned a score that is not a finite number"; LiteLLM ranks the NaN into the hits and its response serializer fails on it, answering a 500 a client cannot parse.
+  - what: Every candidate score is checked before ranking, and one the embedding model returns as NaN or infinity becomes SkillSearchEmbeddingFailed with the reason "embedding model <model> returned a score that is not a finite number"; LiteLLM ranks the NaN into the hits and its response serializer fails on it, answering a 500 a client cannot parse.
     why: Standard JSON cannot carry NaN or infinity, so the failed search names the cause instead of failing inside serialization.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/skill_search.py#L107-L112
   - what: Concurrent searches take turns on one mutex around the index, so two requests do not embed at the same time. Results are the same.
