@@ -1,17 +1,20 @@
 import asyncio
-import typing
+import sys
+import types
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Final, Literal, TypedDict
+from datetime import UTC, datetime, timedelta
+from types import TracebackType
+from typing import Final, Literal, Self, TypedDict
 
-from litellm.repositories.daily_activity_repository import DailyActivityRepository
+from litellm.proxy.db.prisma_client import PrismaWrapper
+from litellm.proxy.management_endpoints.common_daily_activity import daily_activity_repository
+from litellm.proxy.spend_tracking.spend_event import ObjectMapping
+from litellm.proxy.utils import PrismaClient
 from litellm.types.repositories.daily_activity import (
     DailyActivityScope,
     DailyActivityTable,
     ExportType,
     KeyMetadataRow,
-    SpendLogsWindow,
 )
 from pydantic import JsonValue, TypeAdapter
 
@@ -20,8 +23,20 @@ BATCH_SIZE: Final = 1000
 DELETED_AT: Final = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-@dataclass(slots=True)
-class TokenRecord:
+class PrismaErrorsModule(types.ModuleType):
+    PrismaError = RuntimeError
+
+
+class PrismaModule(types.ModuleType):
+    errors = PrismaErrorsModule("prisma.errors")
+
+
+# the recovery path imports prisma.errors lazily; the oracle environment has no prisma package
+sys.modules.setdefault("prisma", PrismaModule("prisma"))
+sys.modules.setdefault("prisma.errors", PrismaModule.errors)
+
+
+class TokenFields(TypedDict):
     token: str
     key_alias: str | None
     team_id: str | None
@@ -29,65 +44,108 @@ class TokenRecord:
     metadata: dict[str, JsonValue] | None
 
 
-@dataclass(slots=True)
+class TokenRecord:
+    def __init__(self, fields: TokenFields) -> None:
+        self.token = fields["token"]
+        self.key_alias = fields["key_alias"]
+        self.team_id = fields["team_id"]
+        self.user_id = fields["user_id"]
+        self.metadata: ObjectMapping | None = fields["metadata"]
+
+
 class DeletedTokenRecord(TokenRecord):
-    deleted_at: datetime
+    def __init__(self, fields: TokenFields, deleted_at: datetime) -> None:
+        super().__init__(fields)
+        self.deleted_at = deleted_at
 
 
-class FakeTable:
+class UserRecord:
+    def __init__(self, user_id: str, user_email: str | None, teams: list[str]) -> None:
+        self.user_id = user_id
+        self.user_email = user_email
+        self.teams = teams
+
+
+class TokenTable:
     def __init__(self, rows: Sequence[TokenRecord]) -> None:
-        self.rows = rows
+        self.rows = tuple(rows)
 
     async def find_many(
-        self, _where: Mapping[str, object] | None = None, **_extra: object
+        self, *, where: Mapping[str, Mapping[str, Sequence[str]]]
     ) -> Sequence[TokenRecord]:
-        return list(
-            self.rows
-        )
+        wanted = where["token"]["in"]
+        return [row for row in self.rows if row.token in wanted]
 
 
-class FakeDatabase:
+class UserTable:
+    def __init__(self, rows: Sequence[UserRecord]) -> None:
+        self.rows = tuple(rows)
+
+    async def find_many(
+        self, *, where: Mapping[str, Mapping[str, Sequence[str]]]
+    ) -> Sequence[UserRecord]:
+        wanted = where["user_id"]["in"]
+        return [row for row in self.rows if row.user_id in wanted]
+
+
+class FakeTransaction:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+        self.queries: list[tuple[str, tuple[JsonValue, ...]]] = []
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc_type, exc_value, traceback
+
+    async def execute_raw(self, sql: str) -> int:
+        self.statements.append(sql)
+        return 0
+
+    async def query_raw(
+        self, sql: str, *params: JsonValue
+    ) -> Sequence[Mapping[str, JsonValue]]:
+        self.queries.append((sql, tuple(JSON.validate_python(param) for param in params)))
+        return ()
+
+
+class FakeWrapper(PrismaWrapper):
     def __init__(
         self,
         active: Sequence[TokenRecord],
-        deleted: Sequence[DeletedTokenRecord],
-        batches: Sequence[Sequence[Mapping[str, object]]],
+        deleted: Sequence[TokenRecord],
+        batches: Sequence[Sequence[Mapping[str, JsonValue]]],
     ) -> None:
-        self.litellm_verificationtoken = FakeTable(active)
-        self.litellm_deletedverificationtoken = FakeTable(deleted)
-        self.batches = list(batches)
-        self.queries: list[tuple[str, tuple[object, ...]]] = []
+        self.batches = [list(batch) for batch in batches]
+        self.queries: list[tuple[str, tuple[JsonValue, ...]]] = []
+        self.timeouts: list[timedelta] = []
+        self.transaction = FakeTransaction()
+        self.litellm_verificationtoken = TokenTable(active)
+        self.litellm_deletedverificationtoken = TokenTable(deleted)
+        self.litellm_usertable = UserTable(())
+
+    def tx(self, *, timeout: timedelta) -> FakeTransaction:
+        self.timeouts.append(timeout)
+        return self.transaction
 
     async def query_raw(
-        self, query: str, *values: object
-    ) -> Sequence[Mapping[str, object]] | None:
-        self.queries.append((query, values))
+        self, sql: str, *params: JsonValue
+    ) -> Sequence[Mapping[str, JsonValue]] | None:
+        self.queries.append((sql, tuple(JSON.validate_python(param) for param in params)))
         if not self.batches:
             return None
         return self.batches.pop(0)
 
-    @property
-    def db(self) -> "FakeDatabase":
-        return self
 
-
-class PassthroughReads:
-    async def recover_key_metadata(
-        self,
-        resolved: Mapping[str, KeyMetadataRow],
-        _api_keys: frozenset[str],
-        _window: SpendLogsWindow | None,
-    ) -> Mapping[str, KeyMetadataRow]:
-        return dict(
-            resolved
-        )
-
-
-class FakeRepository(DailyActivityRepository):
-    @typing.no_type_check
-    def __init__(self, database: FakeDatabase) -> None:
-        self._prisma_client = database
-        self._proxy_reads = PassthroughReads()
+class FakePrismaClient(PrismaClient):
+    def __init__(self, wrapper: FakeWrapper) -> None:
+        self.db = wrapper
 
 
 class TagsCase(TypedDict):
@@ -95,13 +153,8 @@ class TagsCase(TypedDict):
     value: JsonValue
 
 
-class RowCase(TypedDict):
+class RowCase(TokenFields):
     function: Literal["metadata_row"]
-    token: str
-    key_alias: str | None
-    team_id: str | None
-    user_id: str | None
-    metadata: dict[str, JsonValue] | None
     key_exists: bool
 
 
@@ -118,60 +171,51 @@ class Input(TypedDict):
     cases: dict[str, Call]
 
 
-async def resolved_row(record: TokenRecord, *, key_exists: bool) -> KeyMetadataRow:
+async def token_metadata(fields: TokenFields, *, key_exists: bool) -> Mapping[str, KeyMetadataRow]:
+    record = TokenRecord(fields)
     active: list[TokenRecord] = [record] if key_exists else []
-    archived: list[DeletedTokenRecord] = []
+    deleted: list[DeletedTokenRecord] = []
     if not key_exists:
-        archived.append(
-            DeletedTokenRecord(
-                record.token,
-                record.key_alias,
-                record.team_id,
-                record.user_id,
-                record.metadata,
-                DELETED_AT,
-            )
-        )
-    database = FakeDatabase(active=active, deleted=archived, batches=[])
-    repository = FakeRepository(database)
-    resolved = await repository.key_metadata(frozenset({record.token}), None)
-    return resolved[record.token]
+        deleted.append(DeletedTokenRecord(fields, DELETED_AT))
+    repository = daily_activity_repository(FakePrismaClient(FakeWrapper(active, deleted, [])))
+    return await repository.key_metadata(frozenset({fields["token"]}), None)
 
 
 async def tags_answer(case: TagsCase) -> JsonValue:
-    record = TokenRecord("key", None, None, None, {"tags": case["value"]})
-    row = await resolved_row(record, key_exists=True)
-    return JSON.validate_python({"tags": list(row.tags)})
+    fields: TokenFields = {
+        "token": "key",
+        "key_alias": None,
+        "team_id": None,
+        "user_id": None,
+        "metadata": {"tags": case["value"]},
+    }
+    resolved = await token_metadata(fields, key_exists=True)
+    row = resolved["key"]
+    payload: ObjectMapping = {"tags": list(row.tags)}
+    return JSON.validate_python(payload)
 
 
 async def row_answer(case: RowCase) -> JsonValue:
-    record = TokenRecord(
-        token=case["token"],
-        key_alias=case["key_alias"],
-        team_id=case["team_id"],
-        user_id=case["user_id"],
-        metadata=case["metadata"],
-    )
-    row = await resolved_row(record, key_exists=case["key_exists"])
-    return JSON.validate_python(
-        {
-            "row": {
-                "api_key": row.api_key,
-                "key_alias": row.key_alias,
-                "team_id": row.team_id,
-                "user_id": row.user_id,
-                "user_email": row.user_email,
-                "key_exists": row.key_exists,
-                "tags": list(row.tags),
-            }
-        }
-    )
+    resolved = await token_metadata(case, key_exists=case["key_exists"])
+    row = resolved[case["token"]]
+    payload: ObjectMapping = {
+        "row": {
+            "api_key": row.api_key,
+            "key_alias": row.key_alias,
+            "team_id": row.team_id,
+            "user_id": row.user_id,
+            "user_email": row.user_email,
+            "key_exists": row.key_exists,
+            "tags": list(row.tags),
+        },
+    }
+    return JSON.validate_python(payload)
 
 
 async def cursor_answer(case: CursorCase) -> JsonValue:
-    batch: list[dict[str, JsonValue]] = [dict(case["last"]) for _ in range(BATCH_SIZE)]
-    database = FakeDatabase(active=[], deleted=[], batches=[batch, []])
-    repository = FakeRepository(database)
+    batch: list[dict[str, JsonValue]] = [case["last"] for _ in range(BATCH_SIZE)]
+    wrapper = FakeWrapper([], [], [batch, []])
+    repository = daily_activity_repository(FakePrismaClient(wrapper))
     scope = DailyActivityScope(
         table=DailyActivityTable.USER,
         entity_id_field="user_id",
@@ -187,32 +231,31 @@ async def cursor_answer(case: CursorCase) -> JsonValue:
     rows = repository.export_rows(scope, export_type=ExportType(case["export_type"]))
     for _ in range(BATCH_SIZE):
         await rows.__anext__()
-    remainder = await anext(rows, None)
-    if remainder is not None:
+    if await anext(rows, None) is not None:
         raise ValueError("the export produced more than one batch")
-    cursor_query = database.queries[-1]
-    return JSON.validate_python(
-        {
-            "cursor": {
-                "date": cursor_query[1][-4],
-                "entity_id": cursor_query[1][-3],
-                "group_key": cursor_query[1][-2],
-            }
-        }
-    )
+    binds = wrapper.queries[-1][1]
+    payload: ObjectMapping = {
+        "cursor": {
+            "date": binds[-4],
+            "entity_id": binds[-3],
+            "group_key": binds[-2],
+        },
+    }
+    return JSON.validate_python(payload)
 
 
-async def run_async(input_value: Input) -> JsonValue:
-    answers: dict[str, JsonValue] = {}
-    for name, case in input_value["cases"].items():
+async def answers(cases: Mapping[str, Call]) -> dict[str, JsonValue]:
+    resolved: dict[str, JsonValue] = {}
+    for name, case in cases.items():
         if case["function"] == "metadata_tags":
-            answers[name] = await tags_answer(case)
+            resolved[name] = await tags_answer(case)
         elif case["function"] == "metadata_row":
-            answers[name] = await row_answer(case)
+            resolved[name] = await row_answer(case)
         else:
-            answers[name] = await cursor_answer(case)
-    return answers
+            resolved[name] = await cursor_answer(case)
+    return resolved
 
 
 def run(input_value: Input) -> JsonValue:
-    return JSON.validate_python(asyncio.run(run_async(input_value)))
+    resolved = asyncio.run(answers(input_value["cases"]))
+    return JSON.validate_python(resolved)
