@@ -80,6 +80,7 @@ fn transform_request_carries_the_parent_body_and_the_extra_body() {
     json!({"model": "over", "messages": [], "temperature": 1})
 )]
 #[case::an_empty_map_changes_nothing(json!({"extra_body": {}}), json!({}))]
+#[case::a_null_extra_body_changes_nothing(json!({"extra_body": null}), json!({}))]
 fn transform_request_lays_extra_body_over_the_parent_body(
     #[case] optional_params: serde_json::Value,
     #[case] expected: serde_json::Value,
@@ -95,7 +96,7 @@ fn transform_request_lays_extra_body_over_the_parent_body(
 }
 
 #[rstest]
-#[case::null(json!({"extra_body": null}))]
+#[case::boolean(json!({"extra_body": true}))]
 #[case::number(json!({"extra_body": 4}))]
 #[case::text(json!({"extra_body": "x"}))]
 #[case::list(json!({"extra_body": [1]}))]

@@ -1,5 +1,8 @@
 task: B6412
 deviations:
+  - what: A chat request whose extra_body is a boolean, number, string or list gives a 400 naming the field.
+    why: LiteLLM pops the value and calls response.update on it, which raises a TypeError the proxy reports as a generic 500; a 4xx that names the field is what belongs for a request the client got wrong. A null extra_body takes the pop default and leaves the body unchanged, as docs/compatibility.md says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ovhcloud/chat/transformation.py#L63-L65
   - what: A stream chunk whose choices value is not a list gives an OVHCloudException with status 400 and a message that names the field.
     why: LiteLLM iterates the value and lets the TypeError escape the chunk parser, which the proxy reports as a generic 500; a 4xx that names the field is what belongs for a reply the provider got wrong.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ovhcloud/chat/transformation.py#L88-L117

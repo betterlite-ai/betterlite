@@ -39,9 +39,9 @@ pub fn complete_url(api_base: Option<&str>) -> String {
 pub fn transform_request(request: &ChatTransform<'_>) -> Result<Object, ChatRequestError> {
     let mut optional_params = request.optional_params.clone();
     let extra_body = match optional_params.shift_remove("extra_body") {
-        None => Object::new(),
+        None | Some(Json::Null) => Object::new(),
         Some(Json::Object(fields)) => fields,
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             return Err(ChatRequestError::ExtraBody);
         }
     };
