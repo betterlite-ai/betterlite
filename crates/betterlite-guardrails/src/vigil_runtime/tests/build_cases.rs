@@ -148,7 +148,10 @@ pub(crate) fn explicit_empty_credentials_fall_back_to_defaults() -> BuildCase {
 pub(crate) fn a_long_timeout_caps_the_connect_bound() -> BuildCase {
     BuildCase {
         args: explicit_args("fail_closed", Some(20.0)),
-        expected: built(standard_settings().with_timeout(seconds(20, 5))),
+        expected: built(BuiltSettings {
+            timeout: seconds(20, 5),
+            ..standard_settings()
+        }),
         ..standard()
     }
 }
@@ -181,7 +184,10 @@ pub(crate) fn explicit_supported_event_hooks_take_precedence() -> BuildCase {
     BuildCase {
         args: args_with_hook("during_call"),
         hooks: Some(THREE_HOOKS.to_vec()),
-        expected: built(standard_settings().with_hooks(THREE_HOOKS.to_vec())),
+        expected: built(BuiltSettings {
+            hooks: THREE_HOOKS.to_vec(),
+            ..standard_settings()
+        }),
         ..standard()
     }
 }
@@ -211,7 +217,10 @@ pub(crate) fn a_relaxed_strict_mode_allows_the_hook() -> BuildCase {
 
 pub(crate) fn the_fallback_value_is_matched_case_insensitively() -> BuildCase {
     let mut case = fallback_case("FAIL_OPEN");
-    case.expected = built(standard_settings().with_fallback(UnreachableFallback::FailOpen));
+    case.expected = built(BuiltSettings {
+        fallback: UnreachableFallback::FailOpen,
+        ..standard_settings()
+    });
     case
 }
 

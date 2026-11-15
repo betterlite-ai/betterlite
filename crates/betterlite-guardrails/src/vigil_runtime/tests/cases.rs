@@ -19,16 +19,6 @@ pub(crate) enum Case {
     Scan(Box<Scenario>),
 }
 
-impl Case {
-    pub(crate) fn build(build_case: BuildCase) -> Self {
-        Self::Build(Box::new(build_case))
-    }
-
-    pub(crate) fn scan(scenario: Scenario) -> Self {
-        Self::Scan(Box::new(scenario))
-    }
-}
-
 pub(crate) struct BuildCase {
     pub(crate) args: VigilGuardArgs,
     pub(crate) defaults: EnvironmentDefaults,
@@ -64,23 +54,6 @@ pub(crate) struct BuiltSettings {
     pub(crate) timeout: RequestTimeout,
     pub(crate) fallback: UnreachableFallback,
     pub(crate) hooks: Vec<GuardrailEventHooks>,
-}
-
-impl BuiltSettings {
-    pub(crate) fn with_timeout(mut self, timeout: RequestTimeout) -> Self {
-        self.timeout = timeout;
-        self
-    }
-
-    pub(crate) fn with_fallback(mut self, fallback: UnreachableFallback) -> Self {
-        self.fallback = fallback;
-        self
-    }
-
-    pub(crate) fn with_hooks(mut self, hooks: Vec<GuardrailEventHooks>) -> Self {
-        self.hooks = hooks;
-        self
-    }
 }
 
 impl Scenario {

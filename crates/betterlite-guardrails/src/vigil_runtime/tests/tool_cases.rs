@@ -26,10 +26,11 @@ pub(crate) fn an_allowed_tool_argument_leaves_tool_calls_out() -> Scenario {
 pub(crate) fn a_tool_stage_backend_failure_keeps_the_earlier_rewrites() -> Scenario {
     let mut case = response(Some(vec!["first"]), &[], Vec::new());
     case.inputs.tool_calls = Some(vec![tool_call("call_1", "a1"), tool_call("call_2", "a2")]);
-    case.responses = vec![allowed(), sanitized("b1"), unavailable()];
+    case.inputs.structured_messages = Some(vec![message()]);
+    case.responses = vec![sanitized("clean"), sanitized("b1"), unavailable()];
     case.fail_open(vec!["first", "a1", "a2"]);
     case.expected = rewritten(
-        &["first"],
+        &["clean"],
         Some(vec![tool_call("call_1", "b1"), tool_call("call_2", "a2")]),
     );
     case
@@ -52,9 +53,17 @@ pub(crate) fn blank_tool_arguments_are_not_scanned() -> Scenario {
 }
 
 pub(crate) fn a_tool_stage_unknown_decision_fails_open() -> Scenario {
-    let mut case = response(Some(vec!["hello"]), &[("call_1", "a1")], Vec::new());
-    case.responses = vec![allowed(), unknown_decision()];
-    case.fail_open(vec!["hello", "a1"]);
+    let mut case = response(
+        Some(vec!["secret"]),
+        &[("call_1", "a1"), ("call_2", "a2")],
+        Vec::new(),
+    );
+    case.responses = vec![sanitized("clean"), sanitized("b1"), unknown_decision()];
+    case.fail_open(vec!["secret", "a1", "a2"]);
+    case.expected = rewritten(
+        &["clean"],
+        Some(vec![tool_call("call_1", "b1"), tool_call("call_2", "a2")]),
+    );
     case
 }
 

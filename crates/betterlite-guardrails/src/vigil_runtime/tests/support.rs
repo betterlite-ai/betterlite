@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
@@ -47,7 +47,10 @@ impl FakeHandler {
     }
 
     pub(crate) fn calls(&self) -> Vec<Call> {
-        lock(&self.calls).clone()
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -59,19 +62,21 @@ impl AsyncPostHandler for FakeHandler {
         json: &AnalyzePayload,
         _timeout: RequestTimeout,
     ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, TransportError>> + Send + 'request>> {
-        lock(&self.calls).push(Call {
-            url: url.to_owned(),
-            payload: json.clone(),
-        });
-        let response = lock(&self.responses)
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Call {
+                url: url.to_owned(),
+                payload: json.clone(),
+            });
+        let response = self
+            .responses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or_else(|| Ok(json_body("{}")));
         Box::pin(async move { response })
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn json_body(body: &str) -> HttpResponse {
