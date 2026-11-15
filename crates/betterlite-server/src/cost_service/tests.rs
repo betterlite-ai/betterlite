@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_config::cost_adjustments::{AdjustmentEntry, Settings as AdjustmentSettings};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_core::cost::completion::args::{
     ChargeInputs, CompletionArgs, ResponseParts, ToolInputs,
 };
@@ -33,6 +34,9 @@ use betterlite_tokenizer::count::error::CountError;
 use indexmap::IndexMap;
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
+
+use crate::state::cost_service::Slot;
+use crate::state::shared::Shared;
 
 use super::response::response_cost;
 use super::{Call, CostService, Policies, name_normalizers};
@@ -306,4 +310,15 @@ async fn an_image_call_is_priced_by_the_provider_image_policy() {
         .await
         .unwrap();
     assert_eq!(charge, dec("0.04"));
+}
+
+#[test]
+fn the_slot_builds_the_shared_service_from_the_bundled_catalog() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("")
+    .expect("the empty configuration loads");
+    let slot = Slot::new(&config, &Shared);
+    assert!(slot.service.is_ok());
 }
