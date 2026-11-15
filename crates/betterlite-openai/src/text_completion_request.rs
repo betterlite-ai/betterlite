@@ -12,23 +12,17 @@ use crate::chat::{
 use crate::text_completion_policy::SUPPORTED_PARAMS;
 
 // main.py's text_completion reads these off the request and never forwards them to a provider
-const CONTROL_PARAMS: [&str; 16] = [
+const CONTROL_PARAMS: [&str; 10] = [
     "api_base",
-    "api_key",
     "api_version",
-    "custom_llm_provider",
-    "deployment_id",
     "engine",
-    "fallbacks",
     "litellm_params",
     "metadata",
     "mock_delay",
     "mock_response",
     "mock_timeout",
     "mock_tool_calls",
-    "model_list",
     "num_retries",
-    "timeout",
 ];
 
 #[derive(Debug, Error)]
@@ -74,14 +68,7 @@ fn classify(items: Vec<Value>) -> CompletionPrompt {
         return CompletionPrompt::Unmapped(Value::Array(items));
     };
     if first.is_string() {
-        return items
-            .iter()
-            .map(|item| item.as_str().map(str::to_owned))
-            .collect::<Option<Vec<String>>>()
-            .map_or_else(
-                || CompletionPrompt::Unmapped(Value::Array(items)),
-                CompletionPrompt::Texts,
-            );
+        return string_first(items);
     }
     // Python's int test accepts no bool or float, so only a JSON integer starts the token branch
     if matches!(first, Value::Number(number) if number.is_i64() || number.is_u64()) {
@@ -108,6 +95,30 @@ fn classify(items: Vec<Value>) -> CompletionPrompt {
             );
     }
     CompletionPrompt::Unmapped(Value::Array(items))
+}
+
+// the file-id pass walks every message before any transform, so a truthy number or bool fails the whole prompt first
+fn string_first(items: Vec<Value>) -> CompletionPrompt {
+    let scalars = items.iter().any(|item| {
+        matches!(item, Value::Bool(true))
+            || matches!(item, Value::Number(number) if number.as_f64() != Some(0.0))
+    });
+    if scalars {
+        return CompletionPrompt::Unmapped(Value::Array(items));
+    }
+    // a later non-empty list is one convert_content_list_to_str cannot read; every other later non-string reads as ""
+    if items
+        .iter()
+        .any(|item| matches!(item, Value::Array(content) if !content.is_empty()))
+    {
+        return CompletionPrompt::Unreadable(Value::Array(items));
+    }
+    CompletionPrompt::Texts(
+        items
+            .iter()
+            .map(|item| item.as_str().map_or_else(String::new, str::to_owned))
+            .collect(),
+    )
 }
 
 impl CompletionPrompt {
@@ -191,6 +202,8 @@ pub struct CompletionRequest {
     pub tools: Option<Vec<Tool>>,
     pub tool_choice: Option<ToolChoice>,
     pub max_retries: Option<i64>,
+    // the completion call's own deadline, which replaces the deployment's timeout
+    pub timeout: Option<f64>,
     pub extra_headers: Option<BTreeMap<String, String>>,
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,
@@ -205,8 +218,10 @@ pub enum FunctionCallChoice {
 
 impl CompletionRequest {
     pub fn parse(bytes: &[u8]) -> Result<Self, CompletionRequestError> {
-        let request: Self = serde_json::from_slice(bytes)
+        let mut request: Self = serde_json::from_slice(bytes)
             .map_err(|source| CompletionRequestError::Body { source })?;
+        // a client api_key is never used; taking it out here keeps the plaintext out of every log and Debug print
+        request.passthrough.retain(|name, _| name != "api_key");
         request.check_params()?;
         Ok(request)
     }

@@ -21,6 +21,26 @@ fn parsed(body: &str) -> CompletionRequest {
 #[case::tokens("[1,2]", r#"[{"role":"user","content":[1,2]}]"#)]
 #[case::token_lists("[[1,2],[3]]", r#"[{"role":"user","content":[[1,2],[3]]}]"#)]
 #[case::empty_string(r#""""#, r#"[{"role":"user","content":""}]"#)]
+#[case::strings_then_empty_list(
+    r#"["a",[]]"#,
+    r#"[{"role":"user","content":"a"},{"role":"user","content":""}]"#
+)]
+#[case::strings_then_object(
+    r#"["a",{"x":1}]"#,
+    r#"[{"role":"user","content":"a"},{"role":"user","content":""}]"#
+)]
+#[case::strings_then_zero(
+    r#"["a",0]"#,
+    r#"[{"role":"user","content":"a"},{"role":"user","content":""}]"#
+)]
+#[case::strings_then_false(
+    r#"["a",false]"#,
+    r#"[{"role":"user","content":"a"},{"role":"user","content":""}]"#
+)]
+#[case::strings_then_empty_strings(
+    r#"["a",""]"#,
+    r#"[{"role":"user","content":"a"},{"role":"user","content":""}]"#
+)]
 fn prompt_shapes_become_messages(#[case] prompt: &str, #[case] expected: &str) {
     let body = format!(r#"{{"model":"m","prompt":{prompt}}}"#);
     let request = parsed(&body);
@@ -36,6 +56,7 @@ fn prompt_shapes_become_messages(#[case] prompt: &str, #[case] expected: &str) {
 #[case::null("null")]
 #[case::object(r#"{"a":1}"#)]
 #[case::mixed_string_and_number(r#"["a",1]"#)]
+#[case::mixed_string_and_bool(r#"["a",true]"#)]
 fn unmapped_prompts_keep_their_shape_and_build_no_messages(#[case] prompt: &str) {
     let body = format!(r#"{{"model":"m","prompt":{prompt}}}"#);
     let request = parsed(&body);
@@ -48,12 +69,24 @@ fn unmapped_prompts_keep_their_shape_and_build_no_messages(#[case] prompt: &str)
 #[case::nested_non_tokens(r#"[["a"]]"#)]
 #[case::tokens_then_string(r#"[1,"a"]"#)]
 #[case::tokens_then_float("[1,2.5]")]
+#[case::strings_then_list(r#"["a",["b"]]"#)]
+#[case::strings_then_tokens(r#"["a",[1]]"#)]
+#[case::strings_then_text_blocks(r#"["a",[{"type":"text","text":"x"}]]"#)]
 fn prompts_with_unreadable_content_build_no_messages(#[case] prompt: &str) {
     let body = format!(r#"{{"model":"m","prompt":{prompt}}}"#);
     let request = parsed(&body);
     assert!(matches!(&request.prompt, CompletionPrompt::Unreadable(_)));
     assert_eq!(request.prompt.refusal(), Some(PromptRefusal::Unreadable));
     assert!(request.prompt.messages().is_none());
+}
+
+// the file-id pass walks every message before the transform, so a later truthy scalar decides the failure first
+#[test]
+fn a_truthy_scalar_outranks_a_later_block_list() {
+    let request = parsed(r#"{"model":"m","prompt":["a",["b"],1]}"#);
+    assert_eq!(request.prompt.refusal(), Some(PromptRefusal::Unmapped));
+    let falsy = parsed(r#"{"model":"m","prompt":["a",["b"],false]}"#);
+    assert_eq!(falsy.prompt.refusal(), Some(PromptRefusal::Unreadable));
 }
 
 #[test]
@@ -101,6 +134,23 @@ fn controls_never_reach_the_provider_params(#[case] control: &str) {
 }
 
 #[test]
+fn a_client_api_key_never_stays_on_the_request() {
+    let request = parsed(r#"{"model":"m","prompt":"x","api_key":"sk-secret"}"#);
+    let debug = format!("{request:?}");
+    assert!(!debug.contains("sk-secret"), "{debug}");
+    let params = request.optional_params().expect("optional params");
+    assert!(!params.contains_key("api_key"));
+}
+
+#[test]
+fn a_body_timeout_is_read_as_the_call_deadline() {
+    let request = parsed(r#"{"model":"m","prompt":"x","timeout":2.5}"#);
+    assert_eq!(request.timeout, Some(2.5_f64));
+    let params = request.optional_params().expect("optional params");
+    assert!(!params.contains_key("timeout"));
+}
+
+#[test]
 fn the_supported_parameters_keep_their_exact_json_values() {
     let request = parsed(
         r#"{"model":"m","prompt":"x","temperature":0.7,"top_p":0.9,"n":2,"logprobs":3,"top_logprobs":1,"max_tokens":16,"stop":["a","b"],"seed":42,"logit_bias":{"50256":-100},"user":"u","presence_penalty":0.1,"frequency_penalty":0.2,"extra_headers":{"x-caller":"yes"}}"#,
@@ -125,6 +175,16 @@ fn the_supported_parameters_keep_their_exact_json_values() {
 #[case::unknown_parameter(r#"{"model":"m","prompt":"x","top_k":5}"#)]
 #[case::best_of_is_not_a_text_parameter(r#"{"model":"m","prompt":"x","best_of":2}"#)]
 #[case::echo_is_not_a_text_parameter(r#"{"model":"m","prompt":"x","echo":true}"#)]
+#[case::fallbacks_are_not_served(
+    r#"{"model":"m","prompt":"x","fallbacks":["gpt-3.5-turbo-instruct"]}"#
+)]
+#[case::model_list_is_not_served(
+    r#"{"model":"m","prompt":"x","model_list":[{"api_base":"http://evil.example"}]}"#
+)]
+#[case::custom_llm_provider_is_not_served(
+    r#"{"model":"m","prompt":"x","custom_llm_provider":"azure"}"#
+)]
+#[case::deployment_id_is_not_served(r#"{"model":"m","prompt":"x","deployment_id":"d"}"#)]
 fn unsupported_parameters_are_refused_by_name(#[case] body: &str) {
     let error = CompletionRequest::parse(body.as_bytes()).expect_err("unsupported parameter");
     let CompletionRequestError::Unsupported { name } = &error else {
