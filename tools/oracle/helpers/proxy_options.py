@@ -24,6 +24,8 @@ MANAGED_ENV: Final = (
     "OPENAI_API_KEY",
 )
 VALUE: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+# every proxy image config ignores the model argument
+IMAGE_MODEL: Final = "gpt-image-1"
 GenerationEnvironment: TypeAlias = Callable[
     [dict[str, str], str, list[JsonValue], Object, Object, str | None, str | None],
     dict[str, str],
@@ -129,7 +131,6 @@ class ResponsesCase(TypedDict):
 
 class ImageCase(TypedDict):
     endpoint: Literal["generations", "edits"]
-    model: str
     api_base: str | None
     api_key: str | None
     environment_base: str | None
@@ -233,14 +234,14 @@ def image_transport(case: ImageCase) -> tuple[str, dict[str, str]]:
     headers: dict[str, str] = dict(case["headers"])
     if case["endpoint"] == "generations":
         url = GENERATION.get_complete_url(
-            case["api_base"], case["api_key"], case["model"], {}, {}, None
+            case["api_base"], case["api_key"], IMAGE_MODEL, {}, {}, None
         )
         return url, GENERATION.validate_environment(
-            headers, case["model"], [], {}, {}, case["api_key"], case["api_base"]
+            headers, IMAGE_MODEL, [], {}, {}, case["api_key"], case["api_base"]
         )
-    url = EDIT.get_complete_url(case["model"], case["api_base"], {})
+    url = EDIT.get_complete_url(IMAGE_MODEL, case["api_base"], {})
     return url, EDIT.validate_environment(
-        headers, case["model"], case["api_key"], {}, case["api_base"]
+        headers, IMAGE_MODEL, case["api_key"], {}, case["api_base"]
     )
 
 

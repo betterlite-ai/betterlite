@@ -5,7 +5,6 @@ call:
     operation: image_request
     params:
       - endpoint: generations
-        model: gpt-image-1
         api_base: https://proxy.example
         api_key: null
         environment_base: null
@@ -13,14 +12,12 @@ call:
         headers:
           X-Trace: abc
       - endpoint: generations
-        model: gpt-image-1
         api_base: null
         api_key: null
         environment_base: https://env.example
         environment_key: sk-env
         headers: {}
       - endpoint: edits
-        model: gpt-image-1
         api_base: https://proxy.example
         api_key: sk-explicit
         environment_base: null
@@ -29,7 +26,6 @@ call:
           Authorization: Token other
           X-Trace: keep
       - endpoint: edits
-        model: gpt-image-1
         api_base: https://proxy.example
         api_key: null
         environment_base: null

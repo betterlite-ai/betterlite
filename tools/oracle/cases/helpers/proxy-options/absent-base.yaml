@@ -13,14 +13,12 @@ calls:
       operation: image_request
       params:
         - endpoint: generations
-          model: gpt-image-1
           api_base: null
           api_key: sk-image
           environment_base: null
           environment_key: null
           headers: {}
         - endpoint: edits
-          model: gpt-image-1
           api_base: ""
           api_key: null
           environment_base: null

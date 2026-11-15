@@ -128,10 +128,10 @@ impl ModelListTransport for Script {
             .get("authorization")
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
-        {
-            let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
-            requests.push((url.to_string(), authorization));
-        }
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((url.to_string(), authorization));
         Ok(UpstreamResponse {
             status: self.status,
             headers: HeaderMap::new(),
