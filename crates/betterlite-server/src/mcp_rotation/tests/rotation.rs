@@ -15,22 +15,18 @@ use super::support::{
     empty_store, json, new_key, oauth_row, object, open, sealed, server_row, string,
 };
 
-type TestRotation<'a> = Rotation<'a, FakeStore, FixedNonces, TracingDiagnostics>;
+type TestRotation<'rotation> = Rotation<'rotation, FakeStore, FixedNonces, TracingDiagnostics>;
 
-fn test_rotation<'a>(
-    store: &'a FakeStore,
-    old: &'a TestCipher,
-    key: &'a SecretString,
-) -> TestRotation<'a> {
+fn test_rotation<'rotation>(
+    store: &'rotation FakeStore,
+    old: &'rotation TestCipher,
+    key: &'rotation SecretString,
+) -> TestRotation<'rotation> {
     Rotation {
         store,
         cipher: old,
         new_key: key,
     }
-}
-
-fn stored(value: &JsonValue) -> String {
-    serde_json::to_string(value).unwrap()
 }
 
 fn encrypted_credentials() -> JsonValue {
@@ -66,8 +62,8 @@ async fn server_secret_map_warning() {
         "s1",
         None,
         None,
-        Some(stored(&string("not-a-secret-map"))),
-        Some(stored(&json(r#"{"X-Key":"plain-value"}"#))),
+        Some(string("not-a-secret-map")),
+        Some(json(r#"{"X-Key":"plain-value"}"#)),
     )];
     let (logs, guard) = capture_logs();
     test_rotation(&store, &old, &key)
@@ -108,7 +104,7 @@ async fn server_secret_map_json_text_roundtrip() {
         "s1",
         None,
         None,
-        Some(stored(&string(&stored_headers))),
+        Some(string(&stored_headers)),
         None,
     )];
     test_rotation(&store, &old, &key)
@@ -138,7 +134,7 @@ async fn server_secret_map_legacy_ciphertext() {
         None,
         None,
         None,
-        Some(stored(&string(&sealed_map))),
+        Some(string(&sealed_map)),
     )];
     test_rotation(&store, &old, &key)
         .servers("rotator")
@@ -167,10 +163,10 @@ async fn server_empty_skip() {
         server_row("empty", None, None, None, None),
         server_row(
             "empty-objects",
-            Some(stored(&object(&[]))),
-            Some("[]".to_owned()),
-            Some(stored(&object(&[]))),
-            Some(stored(&object(&[]))),
+            Some(object(&[])),
+            Some(json("[]")),
+            Some(object(&[])),
+            Some(object(&[])),
         ),
     ];
     test_rotation(&store, &old, &key)
@@ -189,8 +185,8 @@ async fn server_null_secret_map_skips() {
         "s1",
         None,
         None,
-        Some("null".to_owned()),
-        Some("null".to_owned()),
+        Some(JsonValue::Null),
+        Some(JsonValue::Null),
     )];
     test_rotation(&store, &old, &key)
         .servers("rotator")
@@ -204,13 +200,7 @@ async fn server_json_text_empty_blob_is_rotated() {
     let old = cipher(OLD_KEY);
     let key = new_key();
     let mut store = empty_store();
-    store.servers = vec![server_row(
-        "s1",
-        Some(stored(&string("{}"))),
-        None,
-        None,
-        None,
-    )];
+    store.servers = vec![server_row("s1", Some(string("{}")), None, None, None)];
     test_rotation(&store, &old, &key)
         .servers("rotator")
         .await
@@ -228,7 +218,7 @@ async fn server_updated_by() {
     let mut store = empty_store();
     store.servers = vec![server_row(
         "s1",
-        Some(stored(&encrypted_credentials())),
+        Some(encrypted_credentials()),
         None,
         None,
         None,
@@ -261,14 +251,14 @@ async fn server_before_oauth_clients() {
     let mut store = empty_store();
     store.servers = vec![server_row(
         "s1",
-        Some(stored(&encrypted_credentials())),
+        Some(encrypted_credentials()),
         None,
         None,
         None,
     )];
     store.oauth_clients = vec![
-        oauth_row("o1", Some(stored(&encrypted_credentials()))),
-        oauth_row("o2", Some(stored(&encrypted_credentials()))),
+        oauth_row("o1", Some(encrypted_credentials())),
+        oauth_row("o2", Some(encrypted_credentials())),
     ];
     let (logs, guard) = capture_logs();
     test_rotation(&store, &old, &key)
@@ -297,16 +287,10 @@ async fn server_midstream_failure() {
     let key = new_key();
     let mut store = empty_store();
     store.servers = vec![
-        server_row(
-            "s1",
-            Some(stored(&encrypted_credentials())),
-            None,
-            None,
-            None,
-        ),
-        server_row("s2", Some(stored(&string("not json"))), None, None, None),
+        server_row("s1", Some(encrypted_credentials()), None, None, None),
+        server_row("s2", Some(string("not json")), None, None, None),
     ];
-    store.oauth_clients = vec![oauth_row("o1", Some(stored(&encrypted_credentials())))];
+    store.oauth_clients = vec![oauth_row("o1", Some(encrypted_credentials()))];
     let result = test_rotation(&store, &old, &key).servers("rotator").await;
     assert!(matches!(result, Err(RotationError::Codec(_))));
     let writes = store.written();

@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::path::Path;
-use std::str::from_utf8;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
@@ -10,7 +9,7 @@ use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_secrets::secret_codec::MAX_ENCODED_BYTES;
 use rstest::rstest;
 
-use super::super::blob::{decode_json_column, decode_legacy_base64_text, decode_mcp_rotation_blob};
+use super::super::blob::{decode_legacy_base64_text, decode_mcp_rotation_blob};
 use super::super::error::RotationCodecError;
 use super::support::json;
 
@@ -98,16 +97,6 @@ fn legacy_base64_size_limit_is_enforced() {
     assert!(decode_legacy_base64_text(&over_limit).is_err());
 }
 
-#[test]
-fn json_column_decoding() {
-    assert_eq!(decode_json_column(None).unwrap(), None);
-    assert_eq!(
-        decode_json_column(Some(r#"{"a":1}"#)).unwrap(),
-        Some(json(r#"{"a":1}"#))
-    );
-    assert!(decode_json_column(Some("{bad")).is_err());
-}
-
 #[rstest]
 #[case::deep_nesting("deep-nesting.json")]
 #[case::invalid_utf8("invalid-utf8.bin")]
@@ -121,5 +110,4 @@ fn replays_the_mcp_rotation_blob_corpus(#[case] name: &str) {
     assert!(entries >= 6, "the corpus lost seeded entries");
     let bytes = fs::read(corpus.join(name)).expect("a corpus file");
     let _decoded = decode_mcp_rotation_blob(&bytes);
-    let _column = decode_json_column(from_utf8(&bytes).ok());
 }

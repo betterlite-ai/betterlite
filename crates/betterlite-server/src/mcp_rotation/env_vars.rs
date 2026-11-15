@@ -11,7 +11,7 @@ use betterlite_secrets::secret_codec::{
 };
 use secrecy::SecretString;
 
-use super::codec::{encrypt_stored_value, is_falsey};
+use super::codec::{is_falsey, sealed_text};
 use super::error::RotationCodecError;
 
 const GLOBAL_ENV_VAR_KEY: &str = "mcp_global_env_var";
@@ -21,7 +21,7 @@ const DROP_UNREADABLE: DecryptPolicy = DecryptPolicy {
 };
 
 pub fn reencrypt_global_env_values<N, D>(
-    stored: Option<&str>,
+    stored: Option<&JsonValue>,
     cipher: &StoredCipher<N, D>,
     new_key: &SecretString,
 ) -> Result<Option<JsonValue>, RotationCodecError>
@@ -29,10 +29,10 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    let Some(text) = stored else {
+    let Some(stored) = stored else {
         return Ok(None);
     };
-    let Some(value) = decode_env_entries(text)? else {
+    let Some(value) = decode_env_entries(stored)? else {
         return Ok(None);
     };
     if is_falsey(&value) {
@@ -60,19 +60,14 @@ where
     Ok(Some(JsonValue::String(text)))
 }
 
-fn decode_env_entries(text: &str) -> Result<Option<JsonValue>, RotationCodecError> {
-    let value = match decode_mcp_stored_contract(text.as_bytes()) {
-        Ok(value) => value,
-        Err(McpStoredDecodeError::Json(_)) => return Ok(None),
-        Err(error) => return Err(RotationCodecError::Blob(error)),
+fn decode_env_entries(value: &JsonValue) -> Result<Option<JsonValue>, RotationCodecError> {
+    let JsonValue::String(inner) = value else {
+        return Ok(Some(value.clone()));
     };
-    match value {
-        JsonValue::String(inner) => match decode_mcp_stored_contract(inner.as_bytes()) {
-            Ok(parsed) => Ok(Some(parsed)),
-            Err(McpStoredDecodeError::Json(_)) => Ok(None),
-            Err(error) => Err(RotationCodecError::Blob(error)),
-        },
-        other => Ok(Some(other)),
+    match decode_mcp_stored_contract(inner.as_bytes()) {
+        Ok(parsed) => Ok(Some(parsed)),
+        Err(McpStoredDecodeError::Json(_)) => Ok(None),
+        Err(error) => Err(RotationCodecError::Blob(error)),
     }
 }
 
@@ -104,7 +99,8 @@ where
     let stored = StoredValue::<()>::Text(SecretString::from(text));
     match cipher.decrypt_value(stored, GLOBAL_ENV_VAR_KEY, DROP_UNREADABLE) {
         Some(StoredValue::Text(plaintext)) => {
-            *value = encrypt_stored_value(StoredValue::Text(plaintext), cipher, Some(new_key))?;
+            *value =
+                sealed_text(cipher.encrypt_value(StoredValue::Text(plaintext), Some(new_key))?);
             Ok(true)
         }
         Some(StoredValue::Other(())) | None => {

@@ -22,8 +22,8 @@ const SECRET_FIELDS: [&str; 7] = [
     "aws_secret_access_key",
     "aws_session_token",
 ];
-const USER_CREDENTIAL_KEY: &str = "mcp_user_credential";
-const USER_ENV_VARS_KEY: &str = "mcp_user_env_vars";
+pub const USER_CREDENTIAL_KEY: &str = "mcp_user_credential";
+pub const USER_ENV_VARS_KEY: &str = "mcp_user_env_vars";
 const KEEP_ORIGINAL: DecryptPolicy = DecryptPolicy {
     log: FailureLog::Debug,
     value: FailureValue::Original,
@@ -45,19 +45,24 @@ pub fn is_falsey(value: &JsonValue) -> bool {
     }
 }
 
-pub fn encrypt_stored_value<N, D>(
-    value: StoredValue<JsonValue>,
-    cipher: &StoredCipher<N, D>,
-    key: Option<&SecretString>,
-) -> Result<JsonValue, SecretError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
-    Ok(match cipher.encrypt_value(value, key)? {
+fn stored_value(value: JsonValue) -> StoredValue<JsonValue> {
+    match value {
+        JsonValue::String(text) => StoredValue::Text(SecretString::from(text)),
+        other => StoredValue::Other(other),
+    }
+}
+
+pub fn sealed_text(sealed: StoredValue<JsonValue>) -> JsonValue {
+    match sealed {
         StoredValue::Text(sealed) => JsonValue::String(sealed.expose_secret().to_owned()),
         StoredValue::Other(other) => other,
-    })
+    }
+}
+
+fn legacy_text(stored: &str) -> Option<SecretString> {
+    decode_legacy_base64_text(stored)
+        .ok()
+        .map(SecretString::from)
 }
 
 pub fn encrypt_credentials<N, D>(
@@ -73,11 +78,7 @@ where
         let Some(value) = credentials.get_mut(field) else {
             continue;
         };
-        let stored = match take(value) {
-            JsonValue::String(text) => StoredValue::Text(SecretString::from(text)),
-            other => StoredValue::Other(other),
-        };
-        *value = encrypt_stored_value(stored, cipher, key)?;
+        *value = sealed_text(cipher.encrypt_value(stored_value(take(value)), key)?);
     }
     Ok(())
 }
@@ -91,9 +92,8 @@ where
             continue;
         };
         let stored = StoredValue::<()>::Text(SecretString::from(take(text)));
-        if let Some(StoredValue::Text(plaintext)) =
-            cipher.decrypt_value(stored, field, KEEP_ORIGINAL)
-        {
+        let plaintext = cipher.decrypt_value(stored, field, KEEP_ORIGINAL);
+        if let Some(StoredValue::Text(plaintext)) = plaintext {
             plaintext.expose_secret().clone_into(text);
         }
     }
@@ -121,24 +121,25 @@ where
     Ok(Some(JsonValue::String(text)))
 }
 
-pub fn decode_user_credential<N, D>(
-    stored: &str,
+pub fn decode_user_value<N, D>(
+    text: &str,
+    key: &str,
     cipher: &StoredCipher<N, D>,
+    legacy_base64: bool,
 ) -> Option<SecretString>
 where
     D: SecretDiagnostics,
 {
-    let value = StoredValue::<()>::Text(SecretString::from(stored.to_owned()));
-    match cipher.decrypt_value(value, USER_CREDENTIAL_KEY, DROP_UNREADABLE) {
+    let stored = StoredValue::<()>::Text(SecretString::from(text.to_owned()));
+    match cipher.decrypt_value(stored, key, DROP_UNREADABLE) {
         Some(StoredValue::Text(plaintext)) => Some(plaintext),
-        Some(StoredValue::Other(())) | None => decode_legacy_base64_text(stored)
-            .ok()
-            .map(SecretString::from),
+        Some(StoredValue::Other(())) | None if legacy_base64 => legacy_text(text),
+        Some(StoredValue::Other(())) | None => None,
     }
 }
 
-pub fn reencrypt_user_credential<N, D>(
-    stored: &str,
+pub fn reencrypt_user_value<N, D>(
+    plaintext: Option<SecretString>,
     cipher: &StoredCipher<N, D>,
     new_key: &SecretString,
 ) -> Result<Option<JsonValue>, RotationCodecError>
@@ -146,32 +147,9 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    let Some(plaintext) = decode_user_credential(stored, cipher) else {
-        return Ok(None);
-    };
-    Ok(Some(encrypt_stored_value(
-        StoredValue::Text(plaintext),
-        cipher,
-        Some(new_key),
-    )?))
-}
-
-pub fn reencrypt_user_env_var<N, D>(
-    stored: &str,
-    cipher: &StoredCipher<N, D>,
-    new_key: &SecretString,
-) -> Result<Option<JsonValue>, RotationCodecError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
-    let value = StoredValue::<()>::Text(SecretString::from(stored.to_owned()));
-    match cipher.decrypt_value(value, USER_ENV_VARS_KEY, DROP_UNREADABLE) {
-        Some(StoredValue::Text(plaintext)) => Ok(Some(encrypt_stored_value(
-            StoredValue::Text(plaintext),
-            cipher,
-            Some(new_key),
-        )?)),
-        Some(StoredValue::Other(())) | None => Ok(None),
-    }
+    plaintext
+        .map(|text| cipher.encrypt_value(StoredValue::Text(text), Some(new_key)))
+        .transpose()
+        .map(|sealed| sealed.map(sealed_text))
+        .map_err(RotationCodecError::Secret)
 }

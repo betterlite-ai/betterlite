@@ -186,10 +186,6 @@ def server_rows(servers: list[ServerInput]) -> list[Row]:
     ]
 
 
-def oauth_rows(clients: list[OAuthInput]) -> list[Row]:
-    return [Row(client["server_id"], client.get("credentials")) for client in clients]
-
-
 def credential_rows(rows: list[CredentialInput]) -> list[Row]:
     return [
         Row(row["server_id"], user_id=row["user_id"], credential_b64=row["credential_b64"])
@@ -225,9 +221,12 @@ def run_case(value: Input, recorder: Recorder, rotation: Coroutine[None, None, N
 
 def rotate_servers(value: RotateServers) -> JsonValue:
     recorder = Recorder(value.get("fail_at_write"))
+    oauth_clients = [
+        Row(client["server_id"], client.get("credentials")) for client in value["oauth_clients"]
+    ]
     tables = {
         SERVER_TABLE: RecordingTable("servers", server_rows(value["servers"]), recorder),
-        OAUTH_TABLE: RecordingTable("oauth_clients", oauth_rows(value["oauth_clients"]), recorder),
+        OAUTH_TABLE: RecordingTable("oauth_clients", oauth_clients, recorder),
     }
     rotation: Coroutine[None, None, None] = rotate_mcp_server_credentials_master_key(
         FakeClient(tables), value["touched_by"], value["new_master_key"]
@@ -258,6 +257,4 @@ def run(input_value: Input) -> JsonValue:
         return rotate_servers(input_value)
     if input_value["function"] == "rotate_user_credentials":
         return rotate_user_credentials(input_value)
-    if input_value["function"] == "rotate_user_env_vars":
-        return rotate_user_env_vars(input_value)
-    return None
+    return rotate_user_env_vars(input_value)

@@ -5,16 +5,18 @@ use betterlite_secrets::secret_codec::secret_map::{decode_secret_map, encrypt_se
 use betterlite_secrets::secret_codec::{NonceSource, StoredCipher};
 use secrecy::SecretString;
 
-use super::blob::decode_json_column;
-use super::codec::{reencrypt_credentials_blob, reencrypt_user_credential, reencrypt_user_env_var};
+use super::codec::{
+    USER_CREDENTIAL_KEY, USER_ENV_VARS_KEY, decode_user_value, reencrypt_credentials_blob,
+    reencrypt_user_value,
+};
 use super::env_vars::reencrypt_global_env_values;
 use super::error::{RotationCodecError, RotationError};
 use super::store::{McpRotationStore, ServerUpdate, StoredOAuthClientRow, StoredServerRow};
 
-pub struct Rotation<'a, S, N, D> {
-    pub store: &'a S,
-    pub cipher: &'a StoredCipher<N, D>,
-    pub new_key: &'a SecretString,
+pub struct Rotation<'rotation, S, N, D> {
+    pub store: &'rotation S,
+    pub cipher: &'rotation StoredCipher<N, D>,
+    pub new_key: &'rotation SecretString,
 }
 
 #[derive(Clone, Copy)]
@@ -53,24 +55,23 @@ where
         row: &StoredServerRow,
         touched_by: &str,
     ) -> Result<bool, RotationError<S::Error>> {
-        let mut update = ServerUpdate {
-            credentials: None,
-            env_vars: None,
-            static_headers: None,
-            env: None,
+        let update = ServerUpdate {
+            credentials: reencrypt_credentials_blob(
+                row.credentials.as_ref(),
+                self.cipher,
+                self.new_key,
+            )
+            .map_err(RotationError::Codec)?,
+            env_vars: reencrypt_global_env_values(row.env_vars.as_ref(), self.cipher, self.new_key)
+                .map_err(RotationError::Codec)?,
+            static_headers: self.secret_map_column(
+                &row.server_id,
+                row.static_headers.as_ref(),
+                "static_headers",
+            )?,
+            env: self.secret_map_column(&row.server_id, row.env.as_ref(), "env")?,
             updated_by: touched_by.to_owned(),
         };
-        let credentials = decode_json_column(row.credentials.as_deref())?;
-        update.credentials =
-            reencrypt_credentials_blob(credentials.as_ref(), self.cipher, self.new_key)?;
-        update.env_vars =
-            reencrypt_global_env_values(row.env_vars.as_deref(), self.cipher, self.new_key)?;
-        update.static_headers = self.secret_map_column(
-            &row.server_id,
-            row.static_headers.as_deref(),
-            "static_headers",
-        )?;
-        update.env = self.secret_map_column(&row.server_id, row.env.as_deref(), "env")?;
         if !update.has_changes() {
             return Ok(false);
         }
@@ -82,9 +83,9 @@ where
         &self,
         client: &StoredOAuthClientRow,
     ) -> Result<bool, RotationError<S::Error>> {
-        let credentials = decode_json_column(client.credentials.as_deref())?;
         let Some(rotated) =
-            reencrypt_credentials_blob(credentials.as_ref(), self.cipher, self.new_key)?
+            reencrypt_credentials_blob(client.credentials.as_ref(), self.cipher, self.new_key)
+                .map_err(RotationError::Codec)?
         else {
             return Ok(false);
         };
@@ -153,8 +154,18 @@ where
         stored: &str,
     ) -> Result<bool, RotationError<S::Error>> {
         let reencrypted = match stage {
-            UserStage::Credential => reencrypt_user_credential(stored, self.cipher, self.new_key)?,
-            UserStage::EnvVar => reencrypt_user_env_var(stored, self.cipher, self.new_key)?,
+            UserStage::Credential => reencrypt_user_value(
+                decode_user_value(stored, USER_CREDENTIAL_KEY, self.cipher, true),
+                self.cipher,
+                self.new_key,
+            )
+            .map_err(RotationError::Codec)?,
+            UserStage::EnvVar => reencrypt_user_value(
+                decode_user_value(stored, USER_ENV_VARS_KEY, self.cipher, false),
+                self.cipher,
+                self.new_key,
+            )
+            .map_err(RotationError::Codec)?,
         };
         let Some(JsonValue::String(ciphertext)) = reencrypted else {
             match stage {
@@ -185,18 +196,18 @@ where
     fn secret_map_column(
         &self,
         server_id: &str,
-        stored: Option<&str>,
+        stored: Option<&JsonValue>,
         field: &'static str,
     ) -> Result<Option<JsonValue>, RotationError<S::Error>> {
-        let Some(value) = decode_json_column(stored)? else {
+        let Some(value) = stored else {
             return Ok(None);
         };
-        let text = match value {
-            JsonValue::Null => return Ok(None),
-            JsonValue::String(text) => text,
-            other => serde_json::to_string(&other).map_err(RotationCodecError::Json)?,
-        };
-        let quoted = serde_json::to_string(&text).map_err(RotationCodecError::Json)?;
+        if matches!(value, JsonValue::Null) {
+            return Ok(None);
+        }
+        let quoted = serde_json::to_string(value)
+            .map_err(RotationCodecError::Json)
+            .map_err(RotationError::Codec)?;
         let map = match decode_secret_map(self.cipher, Some(&quoted), field) {
             Ok(map) => map,
             Err(SecretError::MapDecode { .. }) => {
@@ -209,7 +220,8 @@ where
             return Ok(None);
         };
         let ciphertext = encrypt_secret_map(self.cipher, &map, Some(self.new_key))
-            .map_err(RotationCodecError::Secret)?;
+            .map_err(RotationCodecError::Secret)
+            .map_err(RotationError::Codec)?;
         Ok(Some(JsonValue::String(ciphertext)))
     }
 }

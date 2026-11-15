@@ -208,7 +208,7 @@ async fn seed(client: &Client, texts: &Texts) {
     execute(client, INSERT_ENV_VAR_SQL, &[&texts.user_env]).await;
 }
 
-async fn assert_server_credentials(client: &Client) {
+async fn assert_server_rotated(client: &Client) {
     let rotated = column(client, SERVER_CREDENTIALS_SQL).await.unwrap();
     let client_id = credential_field(&rotated, "client_id");
     assert_eq!(
@@ -217,9 +217,6 @@ async fn assert_server_credentials(client: &Client) {
     );
     let updated_by = column(client, SERVER_UPDATED_BY_SQL).await.unwrap();
     assert_eq!(updated_by, "rotator");
-}
-
-async fn assert_server_env_vars(client: &Client) {
     let env_vars = column(client, SERVER_ENV_VARS_SQL).await.unwrap();
     let JsonValue::String(inner) = json(&env_vars) else {
         panic!("the rotated env var column is a JSON string");
@@ -234,9 +231,6 @@ async fn assert_server_env_vars(client: &Client) {
         panic!("the env value is a ciphertext string");
     };
     assert_eq!(open(value, NEW_KEY).as_deref(), Some("global-value"));
-}
-
-async fn assert_server_headers(client: &Client) {
     let headers = column(client, SERVER_HEADERS_SQL).await.unwrap();
     let JsonValue::String(stored_headers) = json(&headers) else {
         panic!("the static headers column is a JSON string");
@@ -426,9 +420,7 @@ async fn postgres_rows_and_failures() {
         ["litellm_mcpservertable"],
         "only the committed server write is published"
     );
-    assert_server_credentials(&client).await;
-    assert_server_env_vars(&client).await;
-    assert_server_headers(&client).await;
+    assert_server_rotated(&client).await;
     assert_boom_untouched(&client).await;
     assert_oauth(&client, "oauth-1", OLD_KEY).await;
     client.batch_execute(DROP_TRIGGER_SQL).await.unwrap();

@@ -11,10 +11,6 @@ use super::support::{
     string,
 };
 
-fn stored(value: &JsonValue) -> Option<String> {
-    Some(serde_json::to_string(value).unwrap())
-}
-
 fn env_entry(name: &str, value: JsonValue) -> JsonValue {
     object(&[("name", string(name)), ("value", value)])
 }
@@ -37,7 +33,7 @@ fn rotated_entries(result: Option<JsonValue>) -> Vec<JsonValue> {
     entries
 }
 
-fn only_server(env_vars: Option<String>) -> FakeStore {
+fn only_server(env_vars: Option<JsonValue>) -> FakeStore {
     let mut store = empty_store();
     store.servers = vec![StoredServerRow {
         server_id: "s1".to_owned(),
@@ -115,7 +111,7 @@ fn assert_scope_rotation(entries: &[JsonValue]) {
 fn env_scope_and_falsey_values() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let result = reencrypt_global_env_values(stored(&scope_entries()).as_deref(), &old, &key);
+    let result = reencrypt_global_env_values(Some(&scope_entries()), &old, &key);
     let entries = rotated_entries(result.unwrap());
     assert_scope_rotation(&entries);
     assert!(entries.contains(&env_entry("null-value", JsonValue::Null)));
@@ -124,10 +120,9 @@ fn env_scope_and_falsey_values() {
     assert!(entries.contains(&env_entry("false-value", JsonValue::Bool(false))));
     assert!(entries.contains(&env_entry("list-value", json("[]"))));
     assert!(entries.contains(&env_entry("map-value", object(&[]))));
-    let inner = stored(&scope_entries()).unwrap();
-    let entries = rotated_entries(
-        reencrypt_global_env_values(stored(&string(&inner)).as_deref(), &old, &key).unwrap(),
-    );
+    let inner = serde_json::to_string(&scope_entries()).unwrap();
+    let entries =
+        rotated_entries(reencrypt_global_env_values(Some(&string(&inner)), &old, &key).unwrap());
     assert_scope_rotation(&entries);
 }
 
@@ -145,15 +140,15 @@ fn env_scope_and_falsey_values_without_a_success_returns_none() {
         env_entry("empty-value", string("")),
     ]);
     assert_eq!(
-        reencrypt_global_env_values(stored(&entries).as_deref(), &old, &key).unwrap(),
+        reencrypt_global_env_values(Some(&entries), &old, &key).unwrap(),
         None
     );
     assert_eq!(
-        reencrypt_global_env_values(Some("[]"), &old, &key).unwrap(),
+        reencrypt_global_env_values(Some(&json("[]")), &old, &key).unwrap(),
         None
     );
     assert_eq!(
-        reencrypt_global_env_values(Some("null"), &old, &key).unwrap(),
+        reencrypt_global_env_values(Some(&JsonValue::Null), &old, &key).unwrap(),
         None
     );
     assert_eq!(reencrypt_global_env_values(None, &old, &key).unwrap(), None);
@@ -163,27 +158,26 @@ fn env_scope_and_falsey_values_without_a_success_returns_none() {
 fn env_invalid_json_no_warning() {
     let old = cipher(OLD_KEY);
     assert_eq!(
-        reencrypt_global_env_values(stored(&string("{not json")).as_deref(), &old, &new_key())
-            .unwrap(),
+        reencrypt_global_env_values(Some(&string("{not json")), &old, &new_key()).unwrap(),
         None
     );
     assert_eq!(
-        reencrypt_global_env_values(stored(&string("plain")).as_deref(), &old, &new_key()).unwrap(),
+        reencrypt_global_env_values(Some(&string("plain")), &old, &new_key()).unwrap(),
         None
     );
     assert_eq!(
-        reencrypt_global_env_values(Some(""), &old, &new_key()).unwrap(),
+        reencrypt_global_env_values(Some(&string("")), &old, &new_key()).unwrap(),
         None
     );
     assert_eq!(
-        reencrypt_global_env_values(Some("false"), &old, &new_key()).unwrap(),
+        reencrypt_global_env_values(Some(&JsonValue::Bool(false)), &old, &new_key()).unwrap(),
         None
     );
 }
 
 #[tokio::test]
 async fn env_invalid_json_no_warning_through_rotation() {
-    let store = only_server(stored(&string("{not json")));
+    let store = only_server(Some(string("{not json")));
     let (logs, guard) = capture_logs();
     let old = cipher(OLD_KEY);
     Rotation {
@@ -209,9 +203,8 @@ fn env_corrupt_preserved_warning() {
         env_entry("corrupt", string("not-a-ciphertext")),
         env_entry("valid", string(&sealed("valid-value", OLD_KEY))),
     ]);
-    let entries = rotated_entries(
-        reencrypt_global_env_values(stored(&entries).as_deref(), &old, &new_key()).unwrap(),
-    );
+    let entries =
+        rotated_entries(reencrypt_global_env_values(Some(&entries), &old, &new_key()).unwrap());
     assert_eq!(
         entries.first(),
         Some(&env_entry("corrupt", string("not-a-ciphertext")))
@@ -225,7 +218,7 @@ fn env_corrupt_preserved_warning() {
 #[tokio::test]
 async fn env_corrupt_preserved_warning_logs_the_name() {
     let entries = array(vec![env_entry("corrupt", string("not-a-ciphertext"))]);
-    let store = only_server(stored(&entries));
+    let store = only_server(Some(entries));
     let (logs, guard) = capture_logs();
     let old = cipher(OLD_KEY);
     Rotation {
@@ -247,7 +240,7 @@ async fn env_corrupt_preserved_warning_logs_the_name() {
 #[tokio::test]
 async fn env_corrupt_entry_without_a_name_warns_as_none() {
     let entries = array(vec![object(&[("value", string("not-a-ciphertext"))])]);
-    let store = only_server(stored(&entries));
+    let store = only_server(Some(entries));
     let (logs, guard) = capture_logs();
     let old = cipher(OLD_KEY);
     Rotation {
@@ -274,8 +267,7 @@ async fn env_corrupt_entry_without_a_name_warns_as_none() {
 fn env_entry_without_a_value_is_skipped() {
     let entries = array(vec![object(&[("name", string("no-value"))])]);
     assert_eq!(
-        reencrypt_global_env_values(stored(&entries).as_deref(), &cipher(OLD_KEY), &new_key())
-            .unwrap(),
+        reencrypt_global_env_values(Some(&entries), &cipher(OLD_KEY), &new_key()).unwrap(),
         None
     );
 }
@@ -283,7 +275,7 @@ fn env_entry_without_a_value_is_skipped() {
 #[test]
 fn env_too_deep_text_is_a_blob_error() {
     let deep = "[".repeat(65);
-    let result = reencrypt_global_env_values(Some(deep.as_str()), &cipher(OLD_KEY), &new_key());
+    let result = reencrypt_global_env_values(Some(&string(&deep)), &cipher(OLD_KEY), &new_key());
     assert!(matches!(result, Err(RotationCodecError::Blob(_))));
 }
 
@@ -297,7 +289,7 @@ async fn env_no_success_no_write() {
         ),
         env_entry("null-value", JsonValue::Null),
     ]);
-    let store = only_server(stored(&entries));
+    let store = only_server(Some(entries));
     let (logs, guard) = capture_logs();
     let old = cipher(OLD_KEY);
     Rotation {
@@ -325,7 +317,7 @@ async fn env_mixed_results() {
         ),
         env_entry("number-value", json("42")),
     ]);
-    let store = only_server(stored(&entries));
+    let store = only_server(Some(entries));
     let (logs, guard) = capture_logs();
     let old = cipher(OLD_KEY);
     Rotation {
@@ -374,8 +366,7 @@ fn assert_mixed_written(written: &[JsonValue]) {
 fn env_numeric_value_counts_as_rotated() {
     let entries = array(vec![env_entry("number-value", json("42"))]);
     let rotated =
-        reencrypt_global_env_values(stored(&entries).as_deref(), &cipher(OLD_KEY), &new_key())
-            .unwrap();
+        reencrypt_global_env_values(Some(&entries), &cipher(OLD_KEY), &new_key()).unwrap();
     assert_eq!(
         rotated_entries(rotated),
         vec![env_entry("number-value", json("42"))]
@@ -385,9 +376,8 @@ fn env_numeric_value_counts_as_rotated() {
 #[test]
 fn env_non_object_entry_errors() {
     let entries = array(vec![json("17")]);
-    let result =
-        reencrypt_global_env_values(stored(&entries).as_deref(), &cipher(OLD_KEY), &new_key());
+    let result = reencrypt_global_env_values(Some(&entries), &cipher(OLD_KEY), &new_key());
     assert!(matches!(result, Err(RotationCodecError::Encoding(_))));
-    let result = reencrypt_global_env_values(Some("17"), &cipher(OLD_KEY), &new_key());
+    let result = reencrypt_global_env_values(Some(&json("17")), &cipher(OLD_KEY), &new_key());
     assert!(matches!(result, Err(RotationCodecError::Encoding(_))));
 }

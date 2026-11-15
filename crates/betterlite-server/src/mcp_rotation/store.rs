@@ -2,6 +2,7 @@ use std::error::Error;
 use std::future::Future;
 
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use serde::Deserialize;
 
 // A column is absent when the source column needed no change.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -24,29 +25,34 @@ impl ServerUpdate {
 }
 
 // The credential columns hold ciphertext, so no Debug is derived for a row.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Deserialize)]
 pub struct StoredServerRow {
     pub server_id: String,
-    pub credentials: Option<String>,
-    pub env_vars: Option<String>,
-    pub static_headers: Option<String>,
-    pub env: Option<String>,
+    #[serde(default)]
+    pub credentials: Option<JsonValue>,
+    #[serde(default)]
+    pub env_vars: Option<JsonValue>,
+    #[serde(default)]
+    pub static_headers: Option<JsonValue>,
+    #[serde(default)]
+    pub env: Option<JsonValue>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Deserialize)]
 pub struct StoredOAuthClientRow {
     pub server_id: String,
-    pub credentials: Option<String>,
+    #[serde(default)]
+    pub credentials: Option<JsonValue>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Deserialize)]
 pub struct StoredUserCredentialRow {
     pub user_id: String,
     pub server_id: String,
     pub credential_b64: String,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Deserialize)]
 pub struct StoredUserEnvVarRow {
     pub user_id: String,
     pub server_id: String,

@@ -9,9 +9,10 @@ use betterlite_server::mcp_rotation::store::{
     StoredUserEnvVarRow,
 };
 use secrecy::SecretString;
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-use super::{CredentialInput, EnvVarInput, OAuthInput, ServerInput, helper_error};
+use super::{Function, Input, helper_error};
 use crate::helpers::HelperError;
 
 pub(super) type HelperCipher = StoredCipher<FixedNonces, TracingDiagnostics>;
@@ -39,80 +40,55 @@ pub(super) fn cipher(salt: &str, nonce: &str) -> Result<HelperCipher, Box<Helper
     })
 }
 
-fn column(value: Option<&Value>) -> Result<Option<String>, Box<HelperError>> {
-    value
-        .map(serde_json::to_string)
-        .transpose()
-        .map_err(|source| helper_error("SerializationError", &source.to_string()))
-}
-
-pub(super) fn server_rows(
-    servers: &[ServerInput],
-) -> Result<Vec<StoredServerRow>, Box<HelperError>> {
-    servers
+fn rows<T: DeserializeOwned>(values: &[Value]) -> Result<Vec<T>, Box<HelperError>> {
+    values
         .iter()
-        .map(|server| {
-            Ok(StoredServerRow {
-                server_id: server.server_id.clone(),
-                credentials: column(server.credentials.as_ref())?,
-                env_vars: column(server.env_vars.as_ref())?,
-                static_headers: column(server.static_headers.as_ref())?,
-                env: column(server.env.as_ref())?,
-            })
+        .map(|value| {
+            serde_json::from_value(value.clone())
+                .map_err(|source| helper_error("InvalidRow", &source.to_string()))
         })
         .collect()
 }
 
-pub(super) fn oauth_rows(
-    clients: &[OAuthInput],
-) -> Result<Vec<StoredOAuthClientRow>, Box<HelperError>> {
-    clients
-        .iter()
-        .map(|client| {
-            Ok(StoredOAuthClientRow {
-                server_id: client.server_id.clone(),
-                credentials: column(client.credentials.as_ref())?,
-            })
-        })
-        .collect()
-}
-
-pub(super) fn user_credential_rows(rows: &[CredentialInput]) -> Vec<StoredUserCredentialRow> {
-    rows.iter()
-        .map(|row| StoredUserCredentialRow {
-            user_id: row.user_id.clone(),
-            server_id: row.server_id.clone(),
-            credential_b64: row.credential_b64.clone(),
-        })
-        .collect()
-}
-
-pub(super) fn user_env_rows(rows: &[EnvVarInput]) -> Vec<StoredUserEnvVarRow> {
-    rows.iter()
-        .map(|row| StoredUserEnvVarRow {
-            user_id: row.user_id.clone(),
-            server_id: row.server_id.clone(),
-            values_b64: row.values_b64.clone(),
-        })
-        .collect()
+pub(super) fn prepare_store(
+    input: &Input,
+    recorder: &Arc<Mutex<Vec<Value>>>,
+) -> Result<FakeStore, Box<HelperError>> {
+    let user_credentials: Vec<StoredUserCredentialRow> = match input.function {
+        Function::RotateUserCredentials => rows(&input.rows)?,
+        Function::RotateServers | Function::RotateUserEnvVars => Vec::new(),
+    };
+    let user_env_vars: Vec<StoredUserEnvVarRow> = match input.function {
+        Function::RotateUserEnvVars => rows(&input.rows)?,
+        Function::RotateServers | Function::RotateUserCredentials => Vec::new(),
+    };
+    Ok(FakeStore {
+        servers: rows(&input.servers)?,
+        oauth_clients: rows(&input.oauth_clients)?,
+        user_credentials,
+        user_env_vars,
+        recorder: Arc::clone(recorder),
+        fail_at: input.fail_at_write,
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(super) enum RenderError {
-    #[error("the rotated value is not JSON text")]
-    NotText,
-    #[error("the rotated value is not valid JSON")]
-    Json(#[source] serde_json::Error),
+pub(super) enum StoreFailure {
+    #[error("the injected store failure at write {index}")]
+    Injected { index: usize },
+    #[error("the rotated write is not JSON text")]
+    Rendered(#[from] serde_json::Error),
 }
 
-fn parse_inner(value: &JsonValue) -> Result<Value, RenderError> {
-    let JsonValue::String(text) = value else {
-        return Err(RenderError::NotText);
-    };
-    serde_json::from_str(text).map_err(RenderError::Json)
+// LiteLLM stores the rotated credentials and env vars as JSON text; the oracle compares structure.
+fn parse_inner(value: &JsonValue) -> Result<Value, serde_json::Error> {
+    match value {
+        JsonValue::String(text) => serde_json::from_str(text),
+        other => serde_json::to_value(other),
+    }
 }
 
-fn server_write(server_id: &str, update: &ServerUpdate) -> Result<Value, RenderError> {
+fn server_write(server_id: &str, update: &ServerUpdate) -> Result<Value, serde_json::Error> {
     let credentials = update.credentials.as_ref().map(parse_inner).transpose()?;
     let env_vars = update.env_vars.as_ref().map(parse_inner).transpose()?;
     let mut data = json!({
@@ -125,22 +101,9 @@ fn server_write(server_id: &str, update: &ServerUpdate) -> Result<Value, RenderE
     if let Value::Object(fields) = &mut data {
         fields.retain(|_, value| !value.is_null());
     }
-    Ok(json!({
-        "table": "servers",
-        "where": {"server_id": server_id},
-        "data": data,
-    }))
+    Ok(json!({"table": "servers", "where": {"server_id": server_id}, "data": data}))
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(super) enum StoreFailure {
-    #[error("the injected store failure at write {index}")]
-    Injected { index: usize },
-    #[error("the helper could not render a write")]
-    Render(#[source] RenderError),
-}
-
-#[derive(Default)]
 pub(super) struct FakeStore {
     pub(super) servers: Vec<StoredServerRow>,
     pub(super) oauth_clients: Vec<StoredOAuthClientRow>,
@@ -151,8 +114,8 @@ pub(super) struct FakeStore {
 }
 
 impl FakeStore {
-    fn record(&self, write: Result<Value, RenderError>) -> Result<(), StoreFailure> {
-        let write = write.map_err(StoreFailure::Render)?;
+    fn record(&self, write: Result<Value, serde_json::Error>) -> Result<(), StoreFailure> {
+        let write = write?;
         let mut writes = self.recorder.lock().unwrap_or_else(PoisonError::into_inner);
         let index = writes.len();
         if self.fail_at == Some(index) {
@@ -161,6 +124,23 @@ impl FakeStore {
         writes.push(write);
         Ok(())
     }
+}
+
+macro_rules! user_write {
+    ($method:ident, $table:literal, $field:literal, $value:ident) => {
+        async fn $method(
+            &self,
+            user_id: &str,
+            server_id: &str,
+            $value: &str,
+        ) -> Result<(), Self::Error> {
+            self.record(Ok(json!({
+                "table": $table,
+                "where": {"user_id_server_id": {"user_id": user_id, "server_id": server_id}},
+                "data": {$field: $value},
+            })))
+        }
+    };
 }
 
 impl McpRotationStore for FakeStore {
@@ -200,33 +180,21 @@ impl McpRotationStore for FakeStore {
         Ok(self.user_credentials.clone())
     }
 
-    async fn update_user_credential(
-        &self,
-        user_id: &str,
-        server_id: &str,
-        credential_b64: &str,
-    ) -> Result<(), Self::Error> {
-        self.record(Ok(json!({
-            "table": "user_credentials",
-            "where": {"user_id_server_id": {"user_id": user_id, "server_id": server_id}},
-            "data": {"credential_b64": credential_b64},
-        })))
-    }
+    user_write!(
+        update_user_credential,
+        "user_credentials",
+        "credential_b64",
+        credential_b64
+    );
 
     async fn user_env_var_rows(&self) -> Result<Vec<StoredUserEnvVarRow>, Self::Error> {
         Ok(self.user_env_vars.clone())
     }
 
-    async fn update_user_env_var(
-        &self,
-        user_id: &str,
-        server_id: &str,
-        values_b64: &str,
-    ) -> Result<(), Self::Error> {
-        self.record(Ok(json!({
-            "table": "user_env_vars",
-            "where": {"user_id_server_id": {"user_id": user_id, "server_id": server_id}},
-            "data": {"values_b64": values_b64},
-        })))
-    }
+    user_write!(
+        update_user_env_var,
+        "user_env_vars",
+        "values_b64",
+        values_b64
+    );
 }

@@ -7,30 +7,27 @@ use betterlite_db::auxiliary_repository::repository::{
     PrismaClient, PrismaTableRepository, TableAccess, TableBinding, TableError,
 };
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use betterlite_db::mcp_stored_contracts::decode::decode_mcp_stored_contract;
 use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_redis::config_sync::publish::PublishChange;
 use betterlite_redis::config_sync::table_actions::TableActions;
+use serde::de::DeserializeOwned;
 use thiserror::Error;
-use tokio_postgres::Error as DriverError;
 use tokio_postgres::types::ToSql;
 
+use super::error::RotationCodecError;
 use super::store::{
     McpRotationStore, ServerUpdate, StoredOAuthClientRow, StoredServerRow, StoredUserCredentialRow,
     StoredUserEnvVarRow,
 };
 
-// Each table is read whole, as find_many with no where does.
-const SERVER_ROWS_SQL: &str = r#"SELECT server_id, credentials::text, env_vars::text, static_headers::text, env::text FROM "LiteLLM_MCPServerTable""#;
-const OAUTH_ROWS_SQL: &str =
-    r#"SELECT server_id, credentials::text FROM "LiteLLM_MCPServerOAuthClient""#;
-const USER_CREDENTIAL_ROWS_SQL: &str =
-    r#"SELECT user_id, server_id, credential_b64 FROM "LiteLLM_MCPUserCredentials""#;
-const USER_ENV_VAR_ROWS_SQL: &str =
-    r#"SELECT user_id, server_id, values_b64 FROM "LiteLLM_MCPUserEnvVars""#;
+// Each table is read whole, as find_many with no where does; the row arrives as one JSON object.
+const SERVER_ROWS_SQL: &str = r#"SELECT to_jsonb(t)::text FROM (SELECT server_id, credentials, env_vars, static_headers, env FROM "LiteLLM_MCPServerTable") t"#;
+const OAUTH_ROWS_SQL: &str = r#"SELECT to_jsonb(t)::text FROM (SELECT server_id, credentials FROM "LiteLLM_MCPServerOAuthClient") t"#;
+const USER_CREDENTIAL_ROWS_SQL: &str = r#"SELECT to_jsonb(t)::text FROM (SELECT user_id, server_id, credential_b64 FROM "LiteLLM_MCPUserCredentials") t"#;
+const USER_ENV_VAR_ROWS_SQL: &str = r#"SELECT to_jsonb(t)::text FROM (SELECT user_id, server_id, values_b64 FROM "LiteLLM_MCPUserEnvVars") t"#;
 
-// A column that needs no change is NULL here and keeps its stored value. Prisma stamps updated_at on
-// every update, so each statement does too. A text value is cast to jsonb from its JSON encoding,
-// which stores the serialized blob as a JSON string the way Prisma does for a Python str.
+// A NULL parameter keeps the stored column; updated_at moves as Prisma moves it on every update.
 const SERVER_UPDATE_SQL: &str = r#"UPDATE "LiteLLM_MCPServerTable" SET credentials = COALESCE($2::text::jsonb, credentials), env_vars = COALESCE($3::text::jsonb, env_vars), static_headers = COALESCE($4::text::jsonb, static_headers), env = COALESCE($5::text::jsonb, env), updated_by = $6, updated_at = now() WHERE server_id = $1"#;
 const OAUTH_UPDATE_SQL: &str = r#"UPDATE "LiteLLM_MCPServerOAuthClient" SET credentials = $2::text::jsonb, updated_at = now() WHERE server_id = $1"#;
 const USER_CREDENTIAL_UPDATE_SQL: &str = r#"UPDATE "LiteLLM_MCPUserCredentials" SET credential_b64 = $3, updated_at = now() WHERE user_id = $1 AND server_id = $2"#;
@@ -50,6 +47,8 @@ pub enum PostgresRotationError {
     Database(#[from] DbError),
     #[error(transparent)]
     Table(#[from] TableError),
+    #[error(transparent)]
+    Codec(#[from] RotationCodecError),
     #[error("the rotated MCP value cannot be stored")]
     Json(#[from] serde_json::Error),
 }
@@ -62,14 +61,11 @@ pub struct McpUpdateActions<'db> {
 
 impl McpUpdateActions<'_> {
     async fn changed(&self, data: &[Option<String>], keys: &[String]) -> Result<usize, TableError> {
-        let capacity = keys.len().saturating_add(data.len());
-        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(capacity);
-        for key in keys {
-            params.push(key);
-        }
-        for value in data {
-            params.push(value);
-        }
+        let params: Vec<&(dyn ToSql + Sync)> = keys
+            .iter()
+            .map(|key| key as &(dyn ToSql + Sync))
+            .chain(data.iter().map(|value| value as &(dyn ToSql + Sync)))
+            .collect();
         let client = self.access.write.session().await?;
         let rows = client
             .execute(self.update_sql, &params)
@@ -127,6 +123,49 @@ impl TableActions for McpUpdateActions<'_> {
     }
 }
 
+async fn read_rows<T, B>(
+    repository: &PrismaTableRepository<'_, B>,
+    sql: &'static str,
+) -> Result<Vec<T>, PostgresRotationError>
+where
+    T: DeserializeOwned + Send,
+    B: TableBinding + Sync,
+{
+    let client = repository.access()?.read.session().await?;
+    let rows = client
+        .query(sql, &[])
+        .await
+        .map_err(backend::<Infallible>)?;
+    let mut found = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let text: &str = row.try_get(0).map_err(backend::<Infallible>)?;
+        decode_mcp_stored_contract(text.as_bytes()).map_err(RotationCodecError::Blob)?;
+        found.push(serde_json::from_str(text).map_err(PostgresRotationError::Json)?);
+    }
+    Ok(found)
+}
+
+macro_rules! user_update {
+    ($method:ident, $repository:ident, $sql:ident, $value:ident) => {
+        async fn $method(
+            &self,
+            user_id: &str,
+            server_id: &str,
+            $value: &str,
+        ) -> Result<(), Self::Error> {
+            let table = self.$repository.table(|access| McpUpdateActions {
+                access,
+                update_sql: $sql,
+            })?;
+            let keys = vec![user_id.to_owned(), server_id.to_owned()];
+            table
+                .update_many(vec![Some($value.to_owned())], keys)
+                .await?;
+            Ok(())
+        }
+    };
+}
+
 pub struct PostgresRotationStore<'db> {
     servers: PrismaTableRepository<'db, MCPServerTable>,
     oauth_clients: PrismaTableRepository<'db, MCPServerOAuthClient>,
@@ -158,25 +197,7 @@ impl McpRotationStore for PostgresRotationStore<'_> {
     type Error = PostgresRotationError;
 
     async fn server_rows(&self) -> Result<Vec<StoredServerRow>, Self::Error> {
-        let client = self.servers.access()?.read.session().await?;
-        let rows = client
-            .query(SERVER_ROWS_SQL, &[])
-            .await
-            .map_err(backend::<Infallible>)?;
-        let found = rows
-            .iter()
-            .map(|row| {
-                Ok(StoredServerRow {
-                    server_id: row.try_get("server_id")?,
-                    credentials: row.try_get("credentials")?,
-                    env_vars: row.try_get("env_vars")?,
-                    static_headers: row.try_get("static_headers")?,
-                    env: row.try_get("env")?,
-                })
-            })
-            .collect::<Result<Vec<_>, DriverError>>()
-            .map_err(backend::<Infallible>)?;
-        Ok(found)
+        read_rows(&self.servers, SERVER_ROWS_SQL).await
     }
 
     async fn update_server(
@@ -198,27 +219,12 @@ impl McpRotationStore for PostgresRotationStore<'_> {
             access,
             update_sql: SERVER_UPDATE_SQL,
         })?;
-        table.update(data, vec![server_id.to_owned()]).await?;
+        table.update_many(data, vec![server_id.to_owned()]).await?;
         Ok(())
     }
 
     async fn oauth_client_rows(&self) -> Result<Vec<StoredOAuthClientRow>, Self::Error> {
-        let client = self.oauth_clients.access()?.read.session().await?;
-        let rows = client
-            .query(OAUTH_ROWS_SQL, &[])
-            .await
-            .map_err(backend::<Infallible>)?;
-        let found = rows
-            .iter()
-            .map(|row| {
-                Ok(StoredOAuthClientRow {
-                    server_id: row.try_get("server_id")?,
-                    credentials: row.try_get("credentials")?,
-                })
-            })
-            .collect::<Result<Vec<_>, DriverError>>()
-            .map_err(backend::<Infallible>)?;
-        Ok(found)
+        read_rows(&self.oauth_clients, OAUTH_ROWS_SQL).await
     }
 
     async fn update_oauth_client(
@@ -231,81 +237,29 @@ impl McpRotationStore for PostgresRotationStore<'_> {
             access,
             update_sql: OAUTH_UPDATE_SQL,
         })?;
-        table.update(data, vec![server_id.to_owned()]).await?;
+        table.update_many(data, vec![server_id.to_owned()]).await?;
         Ok(())
     }
 
     async fn user_credential_rows(&self) -> Result<Vec<StoredUserCredentialRow>, Self::Error> {
-        let client = self.user_credentials.access()?.read.session().await?;
-        let rows = client
-            .query(USER_CREDENTIAL_ROWS_SQL, &[])
-            .await
-            .map_err(backend::<Infallible>)?;
-        let found = rows
-            .iter()
-            .map(|row| {
-                Ok(StoredUserCredentialRow {
-                    user_id: row.try_get("user_id")?,
-                    server_id: row.try_get("server_id")?,
-                    credential_b64: row.try_get("credential_b64")?,
-                })
-            })
-            .collect::<Result<Vec<_>, DriverError>>()
-            .map_err(backend::<Infallible>)?;
-        Ok(found)
+        read_rows(&self.user_credentials, USER_CREDENTIAL_ROWS_SQL).await
     }
 
-    async fn update_user_credential(
-        &self,
-        user_id: &str,
-        server_id: &str,
-        credential_b64: &str,
-    ) -> Result<(), Self::Error> {
-        let table = self.user_credentials.table(|access| McpUpdateActions {
-            access,
-            update_sql: USER_CREDENTIAL_UPDATE_SQL,
-        })?;
-        let keys = vec![user_id.to_owned(), server_id.to_owned()];
-        table
-            .update(vec![Some(credential_b64.to_owned())], keys)
-            .await?;
-        Ok(())
-    }
+    user_update!(
+        update_user_credential,
+        user_credentials,
+        USER_CREDENTIAL_UPDATE_SQL,
+        credential_b64
+    );
 
     async fn user_env_var_rows(&self) -> Result<Vec<StoredUserEnvVarRow>, Self::Error> {
-        let client = self.user_env_vars.access()?.read.session().await?;
-        let rows = client
-            .query(USER_ENV_VAR_ROWS_SQL, &[])
-            .await
-            .map_err(backend::<Infallible>)?;
-        let found = rows
-            .iter()
-            .map(|row| {
-                Ok(StoredUserEnvVarRow {
-                    user_id: row.try_get("user_id")?,
-                    server_id: row.try_get("server_id")?,
-                    values_b64: row.try_get("values_b64")?,
-                })
-            })
-            .collect::<Result<Vec<_>, DriverError>>()
-            .map_err(backend::<Infallible>)?;
-        Ok(found)
+        read_rows(&self.user_env_vars, USER_ENV_VAR_ROWS_SQL).await
     }
 
-    async fn update_user_env_var(
-        &self,
-        user_id: &str,
-        server_id: &str,
-        values_b64: &str,
-    ) -> Result<(), Self::Error> {
-        let table = self.user_env_vars.table(|access| McpUpdateActions {
-            access,
-            update_sql: USER_ENV_VAR_UPDATE_SQL,
-        })?;
-        let keys = vec![user_id.to_owned(), server_id.to_owned()];
-        table
-            .update(vec![Some(values_b64.to_owned())], keys)
-            .await?;
-        Ok(())
-    }
+    user_update!(
+        update_user_env_var,
+        user_env_vars,
+        USER_ENV_VAR_UPDATE_SQL,
+        values_b64
+    );
 }

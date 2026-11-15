@@ -31,12 +31,6 @@ pub fn decode_mcp_rotation_blob(bytes: &[u8]) -> Result<JsonValue, RotationCodec
     }
 }
 
-pub fn decode_json_column(stored: Option<&str>) -> Result<Option<JsonValue>, RotationCodecError> {
-    stored
-        .map(|text| decode_mcp_stored_contract(text.as_bytes()).map_err(RotationCodecError::Blob))
-        .transpose()
-}
-
 pub fn decode_legacy_base64_text(text: &str) -> Result<String, RotationCodecError> {
     if text.len() > MAX_ENCODED_BYTES {
         return Err(RotationCodecError::Secret(SecretError::TooLarge {

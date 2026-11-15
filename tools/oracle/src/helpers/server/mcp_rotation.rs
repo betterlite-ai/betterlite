@@ -3,6 +3,8 @@ mod store;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_server::mcp_rotation::rotation::Rotation;
+use betterlite_server::mcp_rotation::store::{StoredUserCredentialRow, StoredUserEnvVarRow};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -11,11 +13,8 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-use self::store::{
-    FakeStore, cipher, oauth_rows, server_rows, user_credential_rows, user_env_rows,
-};
+use self::store::{cipher, prepare_store};
 use crate::helpers::{Helper, HelperError, HelperResult};
-use betterlite_server::mcp_rotation::rotation::Rotation;
 
 pub(crate) struct Op;
 
@@ -30,74 +29,31 @@ fn helper_error(class: &str, message: &str) -> Box<HelperError> {
     })
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ServerInput {
-    pub(crate) server_id: String,
-    #[serde(default)]
-    pub(crate) credentials: Option<Value>,
-    #[serde(default)]
-    pub(crate) env_vars: Option<Value>,
-    #[serde(default)]
-    pub(crate) static_headers: Option<Value>,
-    #[serde(default)]
-    pub(crate) env: Option<Value>,
+#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Function {
+    RotateServers,
+    RotateUserCredentials,
+    RotateUserEnvVars,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OAuthInput {
-    pub(crate) server_id: String,
+pub(crate) struct Input {
+    pub(crate) function: Function,
+    pub(crate) salt_key: String,
+    pub(crate) new_master_key: String,
+    pub(crate) nonce_hex: String,
     #[serde(default)]
-    pub(crate) credentials: Option<Value>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CredentialInput {
-    pub(crate) user_id: String,
-    pub(crate) server_id: String,
-    pub(crate) credential_b64: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct EnvVarInput {
-    pub(crate) user_id: String,
-    pub(crate) server_id: String,
-    pub(crate) values_b64: String,
-}
-
-// Internally tagged enums hand each field a ContentDeserializer that cannot serve JsonValue's Box<RawValue>.
-#[derive(Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Input {
-    RotateServers {
-        salt_key: String,
-        new_master_key: String,
-        nonce_hex: String,
-        touched_by: String,
-        servers: Vec<ServerInput>,
-        oauth_clients: Vec<OAuthInput>,
-        #[serde(default)]
-        fail_at_write: Option<usize>,
-    },
-    RotateUserCredentials {
-        salt_key: String,
-        new_master_key: String,
-        nonce_hex: String,
-        rows: Vec<CredentialInput>,
-        #[serde(default)]
-        fail_at_write: Option<usize>,
-    },
-    RotateUserEnvVars {
-        salt_key: String,
-        new_master_key: String,
-        nonce_hex: String,
-        rows: Vec<EnvVarInput>,
-        #[serde(default)]
-        fail_at_write: Option<usize>,
-    },
+    pub(crate) touched_by: String,
+    #[serde(default)]
+    pub(crate) servers: Vec<Value>,
+    #[serde(default)]
+    pub(crate) oauth_clients: Vec<Value>,
+    #[serde(default)]
+    pub(crate) rows: Vec<Value>,
+    #[serde(default)]
+    pub(crate) fail_at_write: Option<usize>,
 }
 
 type Levels = Arc<Mutex<Vec<Value>>>;
@@ -134,14 +90,6 @@ fn capture_levels() -> (Levels, DefaultGuard) {
     (levels, set_default(registry().with(layer)))
 }
 
-fn outcome(failed: bool, writes: &[Value], levels: &Levels) -> Value {
-    let logs = levels
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    json!({"failed": failed, "writes": writes, "logs": logs})
-}
-
 fn block_on<F: Future>(future: F) -> Result<F::Output, Box<HelperError>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
@@ -149,75 +97,12 @@ fn block_on<F: Future>(future: F) -> Result<F::Output, Box<HelperError>> {
     Ok(runtime.block_on(future))
 }
 
-const fn keys(input: &Input) -> (&String, &String, &String) {
-    match input {
-        Input::RotateServers {
-            salt_key,
-            new_master_key,
-            nonce_hex,
-            ..
-        }
-        | Input::RotateUserCredentials {
-            salt_key,
-            new_master_key,
-            nonce_hex,
-            ..
-        }
-        | Input::RotateUserEnvVars {
-            salt_key,
-            new_master_key,
-            nonce_hex,
-            ..
-        } => (salt_key, new_master_key, nonce_hex),
-    }
-}
-
-fn prepare_store(
-    input: &Input,
-    recorder: &Arc<Mutex<Vec<Value>>>,
-) -> Result<FakeStore, Box<HelperError>> {
-    let mut store = FakeStore {
-        recorder: Arc::clone(recorder),
-        ..FakeStore::default()
-    };
-    match input {
-        Input::RotateServers {
-            servers,
-            oauth_clients,
-            fail_at_write,
-            ..
-        } => {
-            store.servers = server_rows(servers)?;
-            store.oauth_clients = oauth_rows(oauth_clients)?;
-            store.fail_at = *fail_at_write;
-        }
-        Input::RotateUserCredentials {
-            rows,
-            fail_at_write,
-            ..
-        } => {
-            store.user_credentials = user_credential_rows(rows);
-            store.fail_at = *fail_at_write;
-        }
-        Input::RotateUserEnvVars {
-            rows,
-            fail_at_write,
-            ..
-        } => {
-            store.user_env_vars = user_env_rows(rows);
-            store.fail_at = *fail_at_write;
-        }
-    }
-    Ok(store)
-}
-
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let (salt_key, new_master_key, nonce_hex) = keys(input);
-        let cipher = cipher(salt_key, nonce_hex)?;
-        let key = SecretString::from(new_master_key.to_owned());
+        let cipher = cipher(&input.salt_key, &input.nonce_hex)?;
+        let key = SecretString::from(input.new_master_key.clone());
         let recorder = Arc::new(Mutex::new(Vec::new()));
         let store = prepare_store(input, &recorder)?;
         let (levels, guard) = capture_levels();
@@ -226,16 +111,20 @@ impl Helper for Op {
             cipher: &cipher,
             new_key: &key,
         };
-        let result = match input {
-            Input::RotateServers { touched_by, .. } => block_on(rotation.servers(touched_by))?,
-            Input::RotateUserCredentials { .. } => block_on(rotation.user_credentials())?,
-            Input::RotateUserEnvVars { .. } => block_on(rotation.user_env_vars())?,
+        let result = match input.function {
+            Function::RotateServers => block_on(rotation.servers(&input.touched_by))?,
+            Function::RotateUserCredentials => block_on(rotation.user_credentials())?,
+            Function::RotateUserEnvVars => block_on(rotation.user_env_vars())?,
         };
         drop(guard);
         let writes = recorder
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        Ok(outcome(result.is_err(), &writes, &levels))
+        let logs = levels
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        Ok(json!({"failed": result.is_err(), "writes": writes, "logs": logs}))
     }
 }

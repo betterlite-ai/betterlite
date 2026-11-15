@@ -8,12 +8,13 @@ use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, StoredCipher};
 use rstest::rstest;
 
 use super::super::codec::{
-    decode_user_credential, decrypt_credentials, encrypt_credentials, is_falsey,
-    reencrypt_credentials_blob, reencrypt_user_credential, reencrypt_user_env_var,
+    decrypt_credentials, encrypt_credentials, is_falsey, reencrypt_credentials_blob,
+    reencrypt_user_value,
 };
 use super::super::error::RotationCodecError;
 use super::support::{
-    NEW_KEY, OLD_KEY, blob, cipher, exposed, json, new_key, object, open, sealed, string,
+    NEW_KEY, OLD_KEY, blob, cipher, decode_credential, decode_env_var, exposed, json, new_key,
+    object, open, sealed, string,
 };
 
 const SECRET_FIELDS: [&str; 7] = [
@@ -231,9 +232,10 @@ fn decrypt_credentials_keeps_undecryptable_strings() {
 #[test]
 fn user_legacy_base64() {
     let old = cipher(OLD_KEY);
-    let plaintext = decode_user_credential("aGVsbG8tdG9rZW4=", &old);
+    let plaintext = decode_credential("aGVsbG8tdG9rZW4=", &old);
     assert_eq!(exposed(plaintext).as_deref(), Some("hello-token"));
-    let rotated = reencrypt_user_credential("aGVsbG8tdG9rZW4=", &old, &new_key())
+    let decoded = decode_credential("aGVsbG8tdG9rZW4=", &old);
+    let rotated = reencrypt_user_value(decoded, &old, &new_key())
         .unwrap()
         .unwrap();
     let JsonValue::String(ciphertext) = rotated else {
@@ -245,15 +247,10 @@ fn user_legacy_base64() {
 #[test]
 fn user_empty_plaintext() {
     let old = cipher(OLD_KEY);
-    assert_eq!(
-        exposed(decode_user_credential("", &old)).as_deref(),
-        Some("")
-    );
-    assert_eq!(
-        exposed(decode_user_credential("***", &old)).as_deref(),
-        Some("")
-    );
-    let rotated = reencrypt_user_credential("", &old, &new_key())
+    assert_eq!(exposed(decode_credential("", &old)).as_deref(), Some(""));
+    assert_eq!(exposed(decode_credential("***", &old)).as_deref(), Some(""));
+    let decoded = decode_credential("", &old);
+    let rotated = reencrypt_user_value(decoded, &old, &new_key())
         .unwrap()
         .unwrap();
     let JsonValue::String(ciphertext) = rotated else {
@@ -273,11 +270,12 @@ fn user_empty_plaintext() {
 fn user_decode_error_classes(#[case] unreadable: &str) {
     let old = cipher(OLD_KEY);
     assert!(
-        decode_user_credential(unreadable, &old).is_none(),
+        decode_credential(unreadable, &old).is_none(),
         "{unreadable:?} must not decode"
     );
+    let decoded = decode_credential(unreadable, &old);
     assert_eq!(
-        reencrypt_user_credential(unreadable, &old, &new_key()).unwrap(),
+        reencrypt_user_value(decoded, &old, &new_key()).unwrap(),
         None
     );
 }
@@ -285,12 +283,13 @@ fn user_decode_error_classes(#[case] unreadable: &str) {
 #[test]
 fn user_env_no_base64_fallback() {
     let old = cipher(OLD_KEY);
+    let decoded = decode_env_var("aGVsbG8tdG9rZW4=", &old);
     assert_eq!(
-        reencrypt_user_env_var("aGVsbG8tdG9rZW4=", &old, &new_key()).unwrap(),
+        reencrypt_user_value(decoded, &old, &new_key()).unwrap(),
         None
     );
     assert_eq!(
-        exposed(decode_user_credential("aGVsbG8tdG9rZW4=", &old)).as_deref(),
+        exposed(decode_credential("aGVsbG8tdG9rZW4=", &old)).as_deref(),
         Some("hello-token")
     );
 }
@@ -298,7 +297,8 @@ fn user_env_no_base64_fallback() {
 #[test]
 fn user_env_empty_success() {
     let old = cipher(OLD_KEY);
-    let rotated = reencrypt_user_env_var("", &old, &new_key())
+    let decoded = decode_env_var("", &old);
+    let rotated = reencrypt_user_value(decoded, &old, &new_key())
         .unwrap()
         .unwrap();
     let JsonValue::String(ciphertext) = rotated else {

@@ -16,7 +16,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
-use super::super::codec::encrypt_stored_value;
+use super::super::codec::{USER_CREDENTIAL_KEY, USER_ENV_VARS_KEY, decode_user_value, sealed_text};
 use super::super::store::{
     McpRotationStore, ServerUpdate, StoredOAuthClientRow, StoredServerRow, StoredUserCredentialRow,
     StoredUserEnvVarRow,
@@ -86,7 +86,7 @@ pub fn string(text: &str) -> JsonValue {
 #[must_use]
 pub fn sealed(text: &str, key: &str) -> String {
     let value = StoredValue::Text(SecretString::from(text.to_owned()));
-    match encrypt_stored_value(value, &cipher(key), None).unwrap() {
+    match sealed_text(cipher(key).encrypt_value(value, None).unwrap()) {
         JsonValue::String(ciphertext) => ciphertext,
         _other => panic!("a sealed text value is a string"),
     }
@@ -95,6 +95,16 @@ pub fn sealed(text: &str, key: &str) -> String {
 #[must_use]
 pub fn exposed(secret: Option<SecretString>) -> Option<String> {
     secret.map(|value| value.expose_secret().to_owned())
+}
+
+#[must_use]
+pub fn decode_credential(text: &str, cipher: &TestCipher) -> Option<SecretString> {
+    decode_user_value(text, USER_CREDENTIAL_KEY, cipher, true)
+}
+
+#[must_use]
+pub fn decode_env_var(text: &str, cipher: &TestCipher) -> Option<SecretString> {
+    decode_user_value(text, USER_ENV_VARS_KEY, cipher, false)
 }
 
 #[must_use]
@@ -185,10 +195,10 @@ pub fn empty_store() -> FakeStore {
 #[must_use]
 pub fn server_row(
     server_id: &str,
-    credentials: Option<String>,
-    env_vars: Option<String>,
-    static_headers: Option<String>,
-    env: Option<String>,
+    credentials: Option<JsonValue>,
+    env_vars: Option<JsonValue>,
+    static_headers: Option<JsonValue>,
+    env: Option<JsonValue>,
 ) -> StoredServerRow {
     StoredServerRow {
         server_id: server_id.to_owned(),
@@ -200,7 +210,7 @@ pub fn server_row(
 }
 
 #[must_use]
-pub fn oauth_row(server_id: &str, credentials: Option<String>) -> StoredOAuthClientRow {
+pub fn oauth_row(server_id: &str, credentials: Option<JsonValue>) -> StoredOAuthClientRow {
     StoredOAuthClientRow {
         server_id: server_id.to_owned(),
         credentials,
@@ -228,6 +238,34 @@ impl FakeStore {
     }
 }
 
+macro_rules! record_server_write {
+    ($method:ident, $variant:ident, $parameter:ident: $ty:ty, $field:ident) => {
+        async fn $method(&self, server_id: &str, $parameter: $ty) -> Result<(), Self::Error> {
+            self.record(Write::$variant {
+                server_id: server_id.to_owned(),
+                $field: $parameter.clone(),
+            })
+        }
+    };
+}
+
+macro_rules! record_user_write {
+    ($method:ident, $variant:ident, $value:ident) => {
+        async fn $method(
+            &self,
+            user_id: &str,
+            server_id: &str,
+            $value: &str,
+        ) -> Result<(), Self::Error> {
+            self.record(Write::$variant {
+                user_id: user_id.to_owned(),
+                server_id: server_id.to_owned(),
+                $value: $value.to_owned(),
+            })
+        }
+    };
+}
+
 impl McpRotationStore for FakeStore {
     type Error = FakeStoreError;
 
@@ -235,65 +273,25 @@ impl McpRotationStore for FakeStore {
         Ok(self.servers.clone())
     }
 
-    async fn update_server(
-        &self,
-        server_id: &str,
-        update: &ServerUpdate,
-    ) -> Result<(), Self::Error> {
-        self.record(Write::Server {
-            server_id: server_id.to_owned(),
-            update: update.clone(),
-        })
-    }
+    record_server_write!(update_server, Server, update: &ServerUpdate, update);
 
     async fn oauth_client_rows(&self) -> Result<Vec<StoredOAuthClientRow>, Self::Error> {
         Ok(self.oauth_clients.clone())
     }
 
-    async fn update_oauth_client(
-        &self,
-        server_id: &str,
-        credentials: &JsonValue,
-    ) -> Result<(), Self::Error> {
-        self.record(Write::OAuthClient {
-            server_id: server_id.to_owned(),
-            credentials: credentials.clone(),
-        })
-    }
+    record_server_write!(update_oauth_client, OAuthClient, credentials: &JsonValue, credentials);
 
     async fn user_credential_rows(&self) -> Result<Vec<StoredUserCredentialRow>, Self::Error> {
         Ok(self.user_credentials.clone())
     }
 
-    async fn update_user_credential(
-        &self,
-        user_id: &str,
-        server_id: &str,
-        credential_b64: &str,
-    ) -> Result<(), Self::Error> {
-        self.record(Write::UserCredential {
-            user_id: user_id.to_owned(),
-            server_id: server_id.to_owned(),
-            credential_b64: credential_b64.to_owned(),
-        })
-    }
+    record_user_write!(update_user_credential, UserCredential, credential_b64);
 
     async fn user_env_var_rows(&self) -> Result<Vec<StoredUserEnvVarRow>, Self::Error> {
         Ok(self.user_env_vars.clone())
     }
 
-    async fn update_user_env_var(
-        &self,
-        user_id: &str,
-        server_id: &str,
-        values_b64: &str,
-    ) -> Result<(), Self::Error> {
-        self.record(Write::UserEnvVar {
-            user_id: user_id.to_owned(),
-            server_id: server_id.to_owned(),
-            values_b64: values_b64.to_owned(),
-        })
-    }
+    record_user_write!(update_user_env_var, UserEnvVar, values_b64);
 }
 
 #[derive(Clone, Default)]
