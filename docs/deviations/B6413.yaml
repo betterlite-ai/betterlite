@@ -3,6 +3,6 @@ deviations:
   - what: A missing api_base in the embedding URL is a typed SambaNovaEmbeddingError with LiteLLM's message, not a Python ValueError.
     why: Rust has no ValueError; the message stays "api_base is required for SambaNova embeddings" and B184 decides how the proxy reports it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sambanova/embedding/transformation.py#L33-L34
-  - what: An embedding reply body that parses as JSON but is not an object, or whose data or usage is not the expected shape, is a typed SambaNovaEmbeddingError::Shape error instead of a Python AttributeError or a raw value copied into the response.
-    why: LiteLLM calls .get on whatever json() returned and copies data and usage into EmbeddingResponse without checking them, so a malformed upstream body fails later with an unrelated error; a typed decode keeps the failure at the boundary.
+  - what: An embedding reply that parses as JSON but is not an object, or whose usage or data has the wrong shape, is a typed SambaNovaEmbeddingError::Shape. A usage counter outside 0 through 4294967295 is refused the same way, and a data record keeps only object, embedding and index. LiteLLM raises AttributeError or pydantic ValidationError for the malformed values, keeps the unbounded counters, and copies each record as sent.
+    why: betterlite decodes the body at the boundary into SambaNovaEmbeddingResponse and the shared B006 EmbeddingRecord instead of leaving data and usage untyped, so a malformed upstream body fails with a typed error rather than later at an attribute access.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sambanova/embedding/transformation.py#L114-L130
