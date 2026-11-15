@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod conflicts;
+mod database;
 mod handles;
 mod reads;
 mod reviews;
