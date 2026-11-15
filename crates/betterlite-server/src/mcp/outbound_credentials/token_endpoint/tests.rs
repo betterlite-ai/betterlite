@@ -31,6 +31,7 @@ use crate::mcp::outbound_credentials::{RefreshFuture, WallClock};
 
 mod cache;
 mod http;
+mod keys;
 
 const ENDPOINT: &str = "https://token.example/oauth/token";
 const CLIENT_ID: &str = "client-1";
