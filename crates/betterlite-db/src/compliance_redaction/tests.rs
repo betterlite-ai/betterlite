@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::{RedactionKeys, redact_match_and_regex_keys};
+use super::{RedactionKeys, redact_nested_match_and_regex_keys};
 
 fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
@@ -31,7 +31,7 @@ fn nested(depth: usize, leaf: Json) -> Json {
 }
 
 fn redacted(payload: &Json) -> Json {
-    redact_match_and_regex_keys(payload, &RedactionKeys::default())
+    redact_nested_match_and_regex_keys(payload, &RedactionKeys::default())
 }
 
 #[test]
@@ -144,7 +144,10 @@ fn redacts_only_the_configured_names() {
         (key("snippet"), text("[REDACTED]")),
         (key("match"), text("kept")),
     ]);
-    assert_eq!(redact_match_and_regex_keys(&payload, &keys), expected);
+    assert_eq!(
+        redact_nested_match_and_regex_keys(&payload, &keys),
+        expected
+    );
 }
 
 #[rstest]

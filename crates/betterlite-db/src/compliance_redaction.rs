@@ -5,7 +5,6 @@ mod tests;
 
 const REDACTED_VALUE: &str = "[REDACTED]";
 
-// Mirrors LiteLLM's fn redact_nested_match_and_regex_keys: payload is None or text and no Exception escapes, so a value that is not an object or list comes back as it was
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RedactionKeys {
     pub names: Vec<String>,
@@ -19,8 +18,10 @@ impl Default for RedactionKeys {
     }
 }
 
+// an owned Json clone can neither fail nor be None, so LiteLLM's early return for payload is None and its copy Exception catch have no counterpart here
 #[must_use]
-pub fn redact_match_and_regex_keys(payload: &Json, keys: &RedactionKeys) -> Json {
+// ast-grep-ignore: no-long-names
+pub fn redact_nested_match_and_regex_keys(payload: &Json, keys: &RedactionKeys) -> Json {
     let mut redacted = payload.clone();
     {
         let mut stack = vec![&mut redacted];
