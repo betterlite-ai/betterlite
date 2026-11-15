@@ -31,6 +31,42 @@ call:
           created: 1700000002
           model: openai/gpt-4o
           choices: []
+      - chunk:
+          id: gen-4
+          created: 1700000003
+          model: openai/gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: done
+                tool_calls:
+                  - id: call_1
+                    function:
+                      name: lookup
+                      arguments: "{}"
+              finish_reason: tool_use
+            - index: 1
+              delta:
+                content: plain
+              finish_reason: ""
+          usage:
+            prompt_tokens: 3
+            total_tokens: 5
+            cost: 0.25
+      - chunk:
+          id: gen-5
+          created: 1700000004
+          model: openai/gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: more
+                tool_calls:
+                  - id: call_2
+                    index: 4
+                    function:
+                      name: next
+                      arguments: ""
       - chunk: {}
       - chunk:
           error:
