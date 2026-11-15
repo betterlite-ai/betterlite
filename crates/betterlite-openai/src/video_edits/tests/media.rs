@@ -5,7 +5,7 @@ use crate::video_edits::character::{
     CharacterPart, CreateCharacter, transform_video_create_character_request,
 };
 
-fn part<'a>(created: &'a CreateCharacter<'_>) -> (&'a str, &'static str) {
+fn part(created: &CreateCharacter<'_>) -> (&str, &'static str) {
     match created.files.get(1) {
         Some(CharacterPart::File(file)) => (file.filename.as_str(), file.content_type),
         _ => panic!("the second part is the video file"),
