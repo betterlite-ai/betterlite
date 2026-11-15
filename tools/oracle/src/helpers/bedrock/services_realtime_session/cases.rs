@@ -24,7 +24,7 @@ pub(super) fn update_values(input: &super::Input, ids: &[Uuid], summary: Summary
         let frames = session.apply_update(update, &source);
         results.push(summarize(&session, &frames, summary)?);
     }
-    Ok(update_body(&session, results))
+    Ok(update_body(&session, &results))
 }
 
 fn summarize(session: &RealtimeSession, frames: &[UpdateFrame], summary: Summary) -> HelperResult {
@@ -54,7 +54,7 @@ fn input_audio_summary(session: &RealtimeSession) -> Value {
     })
 }
 
-fn update_body(session: &RealtimeSession, results: Vec<Value>) -> Value {
+fn update_body(session: &RealtimeSession, results: &[Value]) -> Value {
     json!({
         "updates": results,
         "prompt_name": session.names.prompt,
