@@ -77,23 +77,14 @@ impl Section for Raw {
         let mut guardrails = Vec::new();
         for (index, entry) in self.guardrails.into_iter().enumerate() {
             if entry.litellm_params.guardrail == "akto" {
-                guardrails.push(entry.resolve(index, lookup)?);
+                guardrails.push(entry.litellm_params.resolve(
+                    entry.guardrail_name,
+                    &format!("guardrails.{index}.litellm_params"),
+                    lookup,
+                )?);
             }
         }
         Ok(Settings { guardrails })
-    }
-}
-
-impl Entry {
-    fn resolve<L>(self, index: usize, lookup: &L) -> Result<Configured, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        self.litellm_params.resolve(
-            self.guardrail_name,
-            &format!("guardrails.{index}.litellm_params"),
-            lookup,
-        )
     }
 }
 
