@@ -1,0 +1,23 @@
+kind: helper
+name: databricks-header-and-body-redaction
+call:
+  b5980:
+    function: redaction
+    headers:
+      Authorization: Bearer abcdefghijkl
+      authorization: short
+      X-Api-Key: a-long-secret-value
+      x-databricks-token: dapiTESTONLYxyzTESTONLYxyzTESTONLYxyz
+      Content-Type: application/json
+    data:
+      note: plain
+      access_token:
+        nested: Bearer abc123def
+      max_tokens: 5
+      items:
+        - 'Bearer abc123def'
+        - 1
+        - null
+      text: 'api_key="abcd" client_secret=''xyz'' dapiTESTONLYxyzTESTONLYxyzTESTONLYxyz'
+env: {}
+compare: {ignore: []}

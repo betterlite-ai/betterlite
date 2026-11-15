@@ -1,0 +1,14 @@
+kind: helper
+name: groq-supported-params-compound-model
+call:
+  b5833:
+    capabilities:
+      web_search: "no"
+      reasoning: "no"
+      response_schema: "no"
+    supported:
+      - model: groq/compound
+      - model: compound-mini
+      - model: groq/groq/compound
+env: {}
+compare: {ignore: []}
