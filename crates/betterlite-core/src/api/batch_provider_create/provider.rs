@@ -36,8 +36,6 @@ impl Resolved {
     }
 }
 
-// OPENAI_COMPATIBLE_BATCH_AND_FILES_PROVIDERS shares one branch whose base always resolves;
-// xai reads only what the caller passes, with no litellm_settings fallback
 fn resolve(
     provider: BatchProvider,
     input: &BatchProviderCreateInput,
@@ -47,6 +45,7 @@ fn resolve(
     let options = request_options(&input.optional_params);
     let mut resolved = Resolved::empty();
     match provider {
+        // OPENAI_COMPATIBLE_BATCH_AND_FILES_PROVIDERS shares one branch, whose base always resolves
         BatchProvider::Openai | BatchProvider::HostedVllm | BatchProvider::LitellmProxy => {
             resolved.api_base = Some(resources.openai_base(&options));
             resolved.api_key = resources.openai_api_key(&options).cloned();
@@ -68,6 +67,7 @@ fn resolve(
                     .map(|secret| VertexCredentials::Text(secret.clone()))
             });
         }
+        // xai reads only what the caller passes; no litellm_settings key falls back into it
         BatchProvider::Xai => {
             resolved.api_base.clone_from(&options.api_base);
             resolved.api_key.clone_from(&options.api_key);
