@@ -104,20 +104,6 @@ fn expansion_archive(huge_bytes: usize) -> Vec<u8> {
     output.into_inner()
 }
 
-fn two_entry_expansion_archive(entry_bytes: usize) -> Vec<u8> {
-    let mut output = Cursor::new(Vec::new());
-    let mut writer = ZipWriter::new(&mut output);
-    let options = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .compression_level(Some(1));
-    writer.start_file("skill/first.bin", options).unwrap();
-    writer.write_all(&vec![0_u8; entry_bytes]).unwrap();
-    writer.start_file("skill/second.bin", options).unwrap();
-    writer.write_all(&vec![0_u8; entry_bytes]).unwrap();
-    writer.finish().unwrap();
-    output.into_inner()
-}
-
 #[derive(Clone, Default)]
 struct Warnings(Arc<Mutex<Vec<String>>>);
 
@@ -387,7 +373,15 @@ fn files_keep_entries_read_before_the_expansion_limit() {
 fn files_keep_entries_read_before_the_cumulative_expansion_limit() {
     let (warnings, _guard) = capture_warnings();
     let forty_mib = 40 * 1024 * 1024;
-    let skill = archive_row(&two_entry_expansion_archive(forty_mib), Some("fallback"));
+    let entry = vec![0_u8; forty_mib];
+    let entries = write_archive(
+        &[
+            ("skill/first.bin", entry.as_slice()),
+            ("skill/second.bin", entry.as_slice()),
+        ],
+        CompressionMethod::Deflated,
+    );
+    let skill = archive_row(&entries, Some("fallback"));
     let files = extract_all_files(&skill);
     assert_eq!(files.len(), 1);
     assert_eq!(files.get("first.bin").map(Vec::len), Some(forty_mib));
