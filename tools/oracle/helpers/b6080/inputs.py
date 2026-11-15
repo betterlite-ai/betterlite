@@ -1,8 +1,11 @@
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
+import litellm
 from pydantic import JsonValue
 
 from .wire import ReplyCase, RequestInput, ResponseInput
+
+_ = litellm
 
 
 class ChatParamsCase(TypedDict):
