@@ -4,46 +4,59 @@ use indexmap::IndexMap;
 
 use super::error::CompatibleChatError;
 
+// what an optional_params value is read as, and the field type its error names
+pub(crate) trait OptionValue: Sized {
+    const EXPECTED: &'static str;
+
+    fn pick(value: Json) -> Option<Self>;
+}
+
+impl OptionValue for bool {
+    const EXPECTED: &'static str = "a boolean";
+
+    fn pick(value: Json) -> Option<Self> {
+        match value {
+            Json::Bool(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+impl OptionValue for String {
+    const EXPECTED: &'static str = "a string";
+
+    fn pick(value: Json) -> Option<Self> {
+        match value {
+            Json::Text(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+impl OptionValue for IndexMap<String, Json> {
+    const EXPECTED: &'static str = "a JSON object";
+
+    fn pick(value: Json) -> Option<Self> {
+        match value {
+            Json::Object(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
 // optional_params.pop(name, None): absent and null leave the default, and a value of the wrong type names the field
-pub(crate) fn take_bool(
+pub(crate) fn take<T: OptionValue>(
     options: &mut IndexMap<String, Json>,
     field: &'static str,
-) -> Result<Option<bool>, CompatibleChatError> {
+) -> Result<Option<T>, CompatibleChatError> {
     match options.shift_remove(field) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(value)) => Ok(Some(value)),
-        Some(_) => Err(CompatibleChatError::OptionType {
-            field,
-            expected: "a boolean",
-        }),
-    }
-}
-
-pub(crate) fn take_text(
-    options: &mut IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Option<String>, CompatibleChatError> {
-    match options.shift_remove(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(value)) => Ok(Some(value)),
-        Some(_) => Err(CompatibleChatError::OptionType {
-            field,
-            expected: "a string",
-        }),
-    }
-}
-
-pub(crate) fn take_object(
-    options: &mut IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Option<IndexMap<String, Json>>, CompatibleChatError> {
-    match options.shift_remove(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(value)) => Ok(Some(value)),
-        Some(_) => Err(CompatibleChatError::OptionType {
-            field,
-            expected: "a JSON object",
-        }),
+        Some(value) => T::pick(value)
+            .map(Some)
+            .ok_or(CompatibleChatError::OptionType {
+                field,
+                expected: T::EXPECTED,
+            }),
     }
 }
 

@@ -12,10 +12,11 @@ use betterlite_openai::compatible_wire::{EndpointType, validate_environment};
 use betterlite_openai::openai_base_config::Headers;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use uuid::Uuid;
 
 use super::error::CompatibleChatError;
-use super::options::{headers_json, take_bool, take_object, take_text};
-use super::plan::ChatPlan;
+use super::options::{headers_json, take};
+use super::plan::{ChatPlan, ReplySetup};
 use super::send::{CompatibleChatOutcome, finish_chat, send_chat};
 use super::stream::StreamingDecoder;
 
@@ -23,8 +24,7 @@ use super::stream::StreamingDecoder;
 const DEFAULT_TOTAL_TIMEOUT: Duration = Duration::from_secs(600);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
-// B2230's selection decides this: the OpenAI/GPT configs transform messages, every other config leaves them alone,
-// so the provider binding passes Some only for those tags.
+// B2230's selection passes Some only for the OpenAI/GPT configs, the ones that transform messages
 pub trait MessageTransformer {
     fn transform(
         &self,
@@ -61,12 +61,15 @@ pub struct CompatibleChatExecution<'source> {
     pub api_key: Option<&'source SecretString>,
     pub headers: Option<&'source Headers>,
     pub optional_params: &'source IndexMap<String, Json>,
-    pub custom_endpoint: Option<bool>,
+    // the argument's truthiness: a truthy one skips the pop, while a false one still lets the option decide
+    pub custom_endpoint: bool,
     pub timeout: Option<Duration>,
     pub mode: Mode,
     pub fake_stream: bool,
     pub transform_messages: Option<&'source dyn MessageTransformer>,
     pub streaming_decoder: Option<&'source dyn StreamingDecoder>,
+    pub identifier: fn() -> Uuid,
+    pub clock: fn() -> i64,
 }
 
 // the option pops happen in the source's order, with the environment check between base_model and stream
@@ -98,8 +101,8 @@ impl<'source> CompatibleChatExecution<'source> {
         env: &PrePostEnv<'_>,
     ) -> Result<ChatPlan<'source>, CompatibleChatError> {
         let prepared = self.prepare()?;
+        let (send_timeout, construct_timeout) = self.timeouts(prepared.stream);
         let sent = self.sent(prepared, state, env)?;
-        let (send_timeout, construct_timeout) = self.timeouts();
         Ok(ChatPlan {
             mode: self.mode,
             stream: sent.stream,
@@ -108,9 +111,13 @@ impl<'source> CompatibleChatExecution<'source> {
             headers: sent.headers,
             body: sent.body,
             messages: sent.messages,
-            provider: self.custom_llm_provider.to_owned(),
-            base_model: sent.base_model,
-            json_mode: sent.json_mode,
+            reply: ReplySetup {
+                provider: self.custom_llm_provider.to_owned(),
+                base_model: sent.base_model,
+                json_mode: sent.json_mode,
+                identifier: self.identifier,
+                clock: self.clock,
+            },
             send_timeout,
             construct_timeout,
             decoder: self.streaming_decoder,
@@ -120,12 +127,9 @@ impl<'source> CompatibleChatExecution<'source> {
     fn prepare(&self) -> Result<Prepared, CompatibleChatError> {
         let mut options = self.optional_params.clone();
         // a truthy argument short-circuits the pop, so the option stays in the eventual body
-        let custom_endpoint = if self.custom_endpoint == Some(true) {
-            true
-        } else {
-            take_bool(&mut options, "custom_endpoint")?.unwrap_or(false)
-        };
-        let base_model = take_text(&mut options, "base_model")?;
+        let custom_endpoint =
+            self.custom_endpoint || take::<bool>(&mut options, "custom_endpoint")?.unwrap_or(false);
+        let base_model = take::<String>(&mut options, "base_model")?;
         let (url, headers) = validate_environment(
             self.api_key,
             self.api_base,
@@ -133,9 +137,10 @@ impl<'source> CompatibleChatExecution<'source> {
             self.headers.cloned(),
             custom_endpoint,
         )?;
-        let stream = take_bool(&mut options, "stream")?.unwrap_or(false);
-        let extra_body = take_object(&mut options, "extra_body")?.unwrap_or_default();
-        let json_mode = take_bool(&mut options, "json_mode")?.unwrap_or(false);
+        let stream = take::<bool>(&mut options, "stream")?.unwrap_or(false);
+        let extra_body =
+            take::<IndexMap<String, Json>>(&mut options, "extra_body")?.unwrap_or_default();
+        let json_mode = take::<bool>(&mut options, "json_mode")?.unwrap_or(false);
         options.shift_remove("max_retries");
         if !self.fake_stream {
             options.insert("stream".to_owned(), Json::Bool(stream));
@@ -212,10 +217,9 @@ impl<'source> CompatibleChatExecution<'source> {
         serde_json::from_value(value).map_err(CompatibleChatError::Encode)
     }
 
-    // acompletion_function builds the 600/5 default only when it got no timeout; make_call forwards none at all,
-    // and the blocking handler is constructed with the caller's timeout and posts without one
-    fn timeouts(&self) -> (Option<TimeoutFacts>, Option<TimeoutFacts>) {
-        match (self.mode, self.stream) {
+    // make_call forwards no timeout, so only the async nonstream default is built; the blocking handler is constructed with the caller's
+    fn timeouts(&self, stream: bool) -> (Option<TimeoutFacts>, Option<TimeoutFacts>) {
+        match (self.mode, stream) {
             (Mode::Async, true) => (None, None),
             (Mode::Async, false) => (
                 Some(

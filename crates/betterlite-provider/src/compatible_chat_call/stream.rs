@@ -89,12 +89,14 @@ async fn next_line(
 // The blocking iterator reads with sync_stream=True, so its lines decode without the [DONE] end the async one has
 fn sync_chunks(items: LineItems) -> LineChunks {
     items
-        .filter_map(|item| match item {
-            Ok(line) => match decode_legacy_compatible_line(&line, Mode::Sync) {
-                Outcome::Chunk(chunk) => Some(Ok(chunk)),
-                Outcome::End => None,
-            },
-            Err(error) => Some(Err(receive_failure(error, Mode::Sync))),
+        .filter_map(|item| {
+            std::future::ready(match item {
+                Ok(line) => match decode_legacy_compatible_line(&line, Mode::Sync) {
+                    Outcome::Chunk(chunk) => Some(Ok(chunk)),
+                    Outcome::End => None,
+                },
+                Err(error) => Some(Err(receive_failure(error, Mode::Sync))),
+            })
         })
         .boxed()
 }
@@ -128,31 +130,24 @@ struct RechunkState {
 }
 
 async fn next_chunk(mut state: RechunkState) -> Option<(Result<Vec<u8>, HttpError>, RechunkState)> {
-    loop {
-        if state.done {
-            return None;
-        }
-        if state.pending.len() >= DECODER_CHUNK_BYTES {
-            let rest = state.pending.split_off(DECODER_CHUNK_BYTES);
-            let chunk = mem::replace(&mut state.pending, rest);
-            return Some((Ok(chunk), state));
-        }
+    while !state.done && state.pending.len() < DECODER_CHUNK_BYTES {
         match state.body.next().await {
             Some(Ok(bytes)) => state.pending.extend_from_slice(&bytes),
             Some(Err(error)) => {
                 state.done = true;
                 return Some((Err(error), state));
             }
-            None => {
-                state.done = true;
-                if state.pending.is_empty() {
-                    return None;
-                }
-                let tail = mem::take(&mut state.pending);
-                return Some((Ok(tail), state));
-            }
+            None => state.done = true,
         }
     }
+    if state.pending.len() >= DECODER_CHUNK_BYTES {
+        let rest = state.pending.split_off(DECODER_CHUNK_BYTES);
+        return Some((Ok(mem::replace(&mut state.pending, rest)), state));
+    }
+    if state.pending.is_empty() {
+        return None;
+    }
+    Some((Ok(mem::take(&mut state.pending)), state))
 }
 
 // aiter_bytes(chunk_size=1024) hands the decoder fixed 1024-byte reads, whatever the transport chunked
