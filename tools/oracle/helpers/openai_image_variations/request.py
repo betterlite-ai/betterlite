@@ -1,5 +1,8 @@
+from collections.abc import Callable
+from contextlib import ExitStack
 from datetime import UTC, datetime
-from typing import Final
+from typing import Final, Protocol
+from unittest.mock import patch
 
 import httpx
 import litellm
@@ -7,12 +10,11 @@ import openai
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.image_variations.transformation import BaseImageVariationConfig
 from litellm.llms.openai.common_utils import OpenAIError
-from litellm.llms.openai.image_variations import handler as variation_handler
 from litellm.llms.openai.image_variations.handler import OpenAIImageVariationsHandler
 from litellm.types.utils import ImageResponse, LlmProviders
 from litellm.utils import ProviderConfigManager
-from pydantic import BaseModel, JsonValue as Json
-from typing_extensions import override
+from pydantic import BaseModel
+from pydantic import JsonValue as Json
 
 from .config import variation_config
 from .probe import DOCUMENT, NOW, Probe, file_object, text_of
@@ -23,20 +25,26 @@ litellm.suppress_debug_info = True
 # LiteLLM's class carries Any in its constructor, so the catch names it through a typed alias
 PROVIDER_ERROR: Final[type[Exception]] = OpenAIError
 
-HANDLER = OpenAIImageVariationsHandler()
+
+class VariationHandler(Protocol):
+    @property
+    def image_variations(self) -> Callable[..., ImageResponse]: ...
 
 
-class AbsentVariationConfig(ProviderConfigManager):
-    @staticmethod
-    @override
-    def get_provider_image_variation_config(  # ast-grep-ignore: no-long-names
-        model: str, provider: LlmProviders
-    ) -> BaseImageVariationConfig | None:
+HANDLER: Final[VariationHandler] = OpenAIImageVariationsHandler()
+
+
+class AbsentVariationConfig:
+    def __init__(
+        self,
+        installed: Callable[[str, LlmProviders], BaseImageVariationConfig | None],
+    ) -> None:
+        self.installed = installed
+
+    def __call__(self, model: str, provider: LlmProviders) -> BaseImageVariationConfig | None:
         if provider == LlmProviders.OPENAI:
             return None
-        return ProviderConfigManager.get_provider_image_variation_config(
-            model=model, provider=provider
-        )
+        return self.installed(model, provider)
 
 
 class ErrorRecord(BaseModel):
@@ -194,29 +202,37 @@ def request_value(probe: Probe) -> Json:
     previous_session = litellm.client_session
     if supplied is None:
         litellm.client_session = httpx.Client(transport=transport)
-    installed = variation_handler.ProviderConfigManager
+    patches = ExitStack()
     if probe.missing_config:
-        variation_handler.ProviderConfigManager = AbsentVariationConfig
+        installed = ProviderConfigManager.get_provider_image_variation_config
+        patches.enter_context(
+            patch.object(
+                ProviderConfigManager,
+                "get_provider_image_variation_config",
+                AbsentVariationConfig(installed),
+            )
+        )
     optional_params: dict[str, Json] = dict(probe.optional_params)
     litellm_params: dict[str, Json] = {}
     error: Json = None
     result: Json = None
     try:
-        response = HANDLER.image_variations(
-            model_response=ImageResponse(created=NOW),
-            api_key=text_of(probe.api_key),
-            api_base=text_of(probe.api_base),
-            model=probe.model,
-            image=file_object(probe),
-            timeout=timeout_of(probe),
-            custom_llm_provider="openai",
-            logging_obj=logging_object(),
-            optional_params=optional_params,
-            litellm_params=litellm_params,
-            client=supplied,
-            organization=probe.organization,
-            headers=None,
-        )
+        with patches:
+            response = HANDLER.image_variations(
+                model_response=ImageResponse(created=NOW),
+                api_key=text_of(probe.api_key),
+                api_base=text_of(probe.api_base),
+                model=probe.model,
+                image=file_object(probe),
+                timeout=timeout_of(probe),
+                custom_llm_provider="openai",
+                logging_obj=logging_object(),
+                optional_params=optional_params,
+                litellm_params=litellm_params,
+                client=supplied,
+                organization=probe.organization,
+                headers=None,
+            )
     except PROVIDER_ERROR as failure:
         record = ErrorRecord.model_validate(failure, from_attributes=True)
         failure_view: dict[str, Json] = {
@@ -230,7 +246,6 @@ def request_value(probe: Probe) -> Json:
         result = DOCUMENT.validate_json(response.model_dump_json())
     finally:
         litellm.client_session = previous_session
-        variation_handler.ProviderConfigManager = installed
     answer["supplied"] = probe.client is not None
     answer["kind"] = "sync"
     answer["calls"] = calls_view(upstream.seen)

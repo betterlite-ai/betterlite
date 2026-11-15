@@ -22,6 +22,7 @@ class VariationConfig(Protocol):
         non_default_params: dict[str, Json],
         optional_params: dict[str, Json],
         model: str,
+        *,
         drop_params: bool,
     ) -> dict[str, Json]: ...
 
