@@ -202,7 +202,7 @@ fn sample_rate_hertz(format: Option<&TranscriptionAudioFormat>) -> Result<i64, C
     Ok(hertz)
 }
 
-fn sample_rate_error() -> ChirpProtocolError {
+const fn sample_rate_error() -> ChirpProtocolError {
     ChirpProtocolError::SampleRate {
         min: MIN_SAMPLE_RATE_HERTZ,
         max: MAX_SAMPLE_RATE_HERTZ,
