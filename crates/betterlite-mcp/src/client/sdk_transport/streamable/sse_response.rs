@@ -18,12 +18,8 @@ use super::get_stream::get_request;
 use super::post::{push, push_error};
 use super::{MAX_RECONNECTION_ATTEMPTS, Resume, StreamableCore, retry_delay};
 const CONNECTION_CLOSED: ErrorCode = ErrorCode(-32000);
-enum Step {
+enum Flow {
     Continue,
-    Complete,
-    Reconnect,
-}
-enum Attempt {
     Complete,
     Ended,
     Retry,
@@ -64,17 +60,21 @@ pub(super) async fn read_events(
     let mut events = open_stream(body, core.max_event_size, headers);
     let mut resume = Resume::default();
     loop {
-        let Some(step) = core
+        let Some(flow) = core
             .cancel
-            .run_until_cancelled(next_event(core, &mut events, &mut resume, &id))
+            .run_until_cancelled(next_flow(core, &mut events, &mut resume, &id))
             .await
         else {
             return Ok(());
         };
-        match step? {
-            Step::Continue => {}
-            Step::Complete => return Ok(()),
-            Step::Reconnect => {
+        match flow? {
+            Flow::Continue => {}
+            Flow::Complete => return Ok(()),
+            Flow::Ended | Flow::Retry => {
+                if resume.event_id.is_none() {
+                    let message = "SSE stream ended without a response".to_owned();
+                    return push_error(core, CONNECTION_CLOSED, message, id.clone()).await;
+                }
                 let Some(resumed) = core
                     .cancel
                     .run_until_cancelled(reconnect(core, &mut resume, &id))
@@ -87,49 +87,49 @@ pub(super) async fn read_events(
         }
     }
 }
-async fn next_event(
+async fn next_flow(
     core: &StreamableCore,
     events: &mut EventStream,
     resume: &mut Resume,
     id: &RequestId,
-) -> Result<Step, SdkError> {
-    match events.next().await {
-        None => Ok(Step::Reconnect),
-        Some(Err(error)) if framing(&error) => {
+) -> Result<Flow, SdkError> {
+    let Some(event) = events.next().await else {
+        return Ok(Flow::Ended);
+    };
+    let sse = match event {
+        Ok(sse) => sse,
+        Err(error)
+            if matches!(
+                error,
+                SdkError::Sse(_) | SdkError::EventTooLarge { .. } | SdkError::ContentType { .. }
+            ) =>
+        {
             push_error(core, CONNECTION_CLOSED, format!("{error}"), id.clone()).await?;
-            Ok(Step::Complete)
+            return Ok(Flow::Complete);
         }
-        Some(Err(_)) => Ok(Step::Reconnect),
-        Some(Ok(sse)) => {
-            track_event(resume, &sse);
-            handle_event(core, sse, id).await
-        }
+        Err(_) => return Ok(Flow::Retry),
+    };
+    track_event(resume, &sse);
+    if handle_event(core, sse, id).await? {
+        return Ok(Flow::Complete);
     }
+    Ok(Flow::Continue)
 }
-const fn framing(error: &SdkError) -> bool {
-    matches!(
-        error,
-        SdkError::Sse(_) | SdkError::EventTooLarge { .. } | SdkError::ContentType { .. }
-    )
-}
-async fn handle_event(core: &StreamableCore, sse: Sse, id: &RequestId) -> Result<Step, SdkError> {
+async fn handle_event(core: &StreamableCore, sse: Sse, id: &RequestId) -> Result<bool, SdkError> {
     let Some(parsed) = event_message(&sse) else {
-        return Ok(Step::Continue);
+        return Ok(false);
     };
     let mut message = match parsed {
         Ok(message) => message,
         Err(source) => {
             let message = format!("Failed to parse SSE message: {source}");
             push_error(core, ErrorCode::PARSE_ERROR, message, id.clone()).await?;
-            return Ok(Step::Complete);
+            return Ok(true);
         }
     };
     let complete = rewrite_id(&mut message, id);
     push(core, message).await?;
-    if complete {
-        return Ok(Step::Complete);
-    }
-    Ok(Step::Continue)
+    Ok(complete)
 }
 fn rewrite_id(message: &mut RxJsonRpcMessage<RoleClient>, id: &RequestId) -> bool {
     match message {
@@ -149,10 +149,6 @@ async fn reconnect(
     resume: &mut Resume,
     id: &RequestId,
 ) -> Result<(), SdkError> {
-    if resume.event_id.is_none() {
-        let message = "SSE stream ended without a response".to_owned();
-        return push_error(core, CONNECTION_CLOSED, message, id.clone()).await;
-    }
     let mut attempt = 0_usize;
     loop {
         if attempt >= MAX_RECONNECTION_ATTEMPTS {
@@ -160,46 +156,43 @@ async fn reconnect(
             return push_error(core, CONNECTION_CLOSED, message, id.clone()).await;
         }
         sleep(retry_delay(resume.retry_ms)).await;
-        match reconnect_once(core, resume, id).await? {
-            Attempt::Complete => return Ok(()),
-            Attempt::Ended => attempt = 0,
-            Attempt::Retry => attempt = attempt.saturating_add(1),
+        let Some(mut events) = reconnection_stream(core, resume).await else {
+            attempt = attempt.saturating_add(1);
+            continue;
+        };
+        loop {
+            let flow = next_flow(core, &mut events, resume, id).await?;
+            match flow {
+                Flow::Continue => {}
+                Flow::Complete => return Ok(()),
+                Flow::Ended => {
+                    attempt = 0;
+                    break;
+                }
+                Flow::Retry => {
+                    attempt = attempt.saturating_add(1);
+                    break;
+                }
+            }
         }
     }
 }
-async fn reconnect_once(
-    core: &StreamableCore,
-    resume: &mut Resume,
-    id: &RequestId,
-) -> Result<Attempt, SdkError> {
+async fn reconnection_stream(core: &StreamableCore, resume: &Resume) -> Option<EventStream> {
     let mut response = match send_within_origin(&core.http, get_request(core, resume)).await {
         Ok(response) => response,
         Err(error) => {
             debug!("Reconnection failed: {error}");
-            return Ok(Attempt::Retry);
+            return None;
         }
     };
     if !(200..=299).contains(&response.status) {
         drop(response.body.close().await);
-        return Ok(Attempt::Retry);
+        return None;
     }
-    let is_sse = is_sse_response(&response.headers);
+    if !is_sse_response(&response.headers) {
+        drop(response.body.close().await);
+        return None;
+    }
     let HttpResponse { headers, body, .. } = response;
-    let mut events = open_stream(body, core.max_event_size, &headers);
-    loop {
-        let event = match events.next().await {
-            None => return Ok(Attempt::Ended),
-            Some(Err(error)) if framing(&error) && is_sse => {
-                push_error(core, CONNECTION_CLOSED, format!("{error}"), id.clone()).await?;
-                return Ok(Attempt::Complete);
-            }
-            Some(Err(_)) => return Ok(Attempt::Retry),
-            Some(Ok(event)) => event,
-        };
-        track_event(resume, &event);
-        match handle_event(core, event, id).await? {
-            Step::Complete => return Ok(Attempt::Complete),
-            Step::Continue | Step::Reconnect => {}
-        }
-    }
+    Some(open_stream(body, core.max_event_size, &headers))
 }

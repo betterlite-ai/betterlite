@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod raw_server;
 mod streamable;
 
 use std::collections::BTreeMap;
@@ -51,6 +52,7 @@ use crate::client::sessions::stdio_runtime::{StdioRuntime, StdioSessionFactory};
 use crate::client::sessions::stream::{MessageHandler, StreamFailureKind};
 use crate::client::sessions::transport::{StdioServerParameters, TransportContext as _};
 
+use self::raw_server::{MISSING_BYTES, RawResponse, RawTestServer};
 use super::context::{SdkStreams, SdkTransport, StdioContext};
 use super::error::SdkError;
 use super::legacy_sse::{LegacySse, SSE_READ_TIMEOUT};
@@ -189,10 +191,10 @@ impl TestServer {
         self.requests.lock().unwrap().clone()
     }
 
-    fn count(&self, method: Method) -> usize {
+    fn count(&self, method: &Method) -> usize {
         self.requests()
             .iter()
-            .filter(|request| request.method == method)
+            .filter(|request| &request.method == method)
             .count()
     }
 }
@@ -243,15 +245,6 @@ fn streamed(chunks: Vec<Bytes>) -> Response {
     response
         .headers_mut()
         .insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
-    response
-}
-
-fn cut_stream(content_type: &'static str, first: Bytes) -> Response {
-    let items = vec![Ok::<Bytes, io::Error>(first), Err(io::Error::other("cut"))];
-    let mut response = Response::new(Body::from_stream(stream::iter(items)));
-    response
-        .headers_mut()
-        .insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
     response
 }
 
@@ -407,9 +400,9 @@ fn the_userinfo_rule_follows_httpx2(
     headers.insert(LOCATION, HeaderValue::from_static(location));
     let target = next_request_within_origin(&Method::GET, &sent, 307, &headers);
     if followed {
-        assert!(target.is_some(), "{} should follow {location}", sent);
+        assert!(target.is_some(), "{sent} should follow {location}");
     } else {
-        assert!(target.is_none(), "{} must not follow {location}", sent);
+        assert!(target.is_none(), "{sent} must not follow {location}");
     }
 }
 
@@ -555,7 +548,7 @@ async fn a_legacy_post_redirect_is_not_followed() {
         .err()
         .unwrap();
     let text = error.to_string();
-    assert!(text.starts_with("redirected to "), "{text}");
+    assert!(text.starts_with("(redirected to "), "{text}");
     assert!(text.contains("/messages2"), "{text}");
     assert!(text.ends_with("; not followed)"), "{text}");
 }
@@ -579,19 +572,22 @@ async fn a_data_only_event_is_a_message() {
 
 #[tokio::test]
 async fn a_cut_sse_body_reconnects_with_last_event_id() {
-    let server = TestServer::start(|request| {
+    let server = RawTestServer::start(Arc::new(|request: &RecordedRequest| {
         if request.method == Method::POST {
-            return cut_stream(
+            return RawResponse::new(
+                200,
                 "text/event-stream",
-                Bytes::from_static(
-                    b"event: message\nid: cut-1\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"x\"}}\n\n",
-                ),
+                b"event: message\nid: cut-1\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"x\"}}\n\n",
+                MISSING_BYTES,
             );
         }
-        streamed(vec![Bytes::from_static(
+        RawResponse::new(
+            200,
+            "text/event-stream",
             b"event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"server-9\",\"result\":{}}\n\n",
-        )])
-    })
+            0,
+        )
+    }))
     .await;
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
@@ -665,7 +661,7 @@ async fn a_second_close_sends_no_delete() {
     let _response = receive(&mut streams).await;
     streams.close().await.unwrap();
     transport.exit().await.unwrap();
-    assert_eq!(server.count(Method::DELETE), 1);
+    assert_eq!(server.count(&Method::DELETE), 1);
 }
 
 #[tokio::test]
@@ -714,7 +710,7 @@ async fn a_delete_that_returns_500_does_not_fail_the_close() {
     send(&mut streams, request(1, "initialize")).await;
     let _response = receive(&mut streams).await;
     streams.close().await.unwrap();
-    assert_eq!(server.count(Method::DELETE), 1);
+    assert_eq!(server.count(&Method::DELETE), 1);
 }
 
 #[tokio::test]
@@ -847,7 +843,7 @@ async fn no_get_stream_starts_for_a_request() {
     send(&mut streams, request(1, "initialize")).await;
     let _response = receive(&mut streams).await;
     sleep(Duration::from_millis(50)).await;
-    assert_eq!(server.count(Method::GET), 0);
+    assert_eq!(server.count(&Method::GET), 0);
 }
 
 fn assert_mcp_headers(request: &RecordedRequest) {

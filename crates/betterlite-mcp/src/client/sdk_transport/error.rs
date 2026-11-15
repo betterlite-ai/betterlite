@@ -47,6 +47,11 @@ impl From<McpHttpError> for SdkError {
         Self::Http(Arc::new(source))
     }
 }
+impl From<io::Error> for SdkError {
+    fn from(source: io::Error) -> Self {
+        Self::Io(Arc::new(source))
+    }
+}
 // B4744 records the SDK runtime's exception kinds, so the transport trades its variant for that kind
 pub(super) fn report_failure(
     handler: &MessageHandler<SdkError>,

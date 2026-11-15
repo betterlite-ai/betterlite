@@ -1,5 +1,6 @@
 use rmcp::transport::Transport as _;
 
+use super::raw_server::{MISSING_BYTES, RawResponse, RawTestServer};
 use super::*;
 
 fn initializing_server<Reply>(
@@ -61,7 +62,7 @@ async fn a_302_on_a_post_is_not_followed_and_names_the_location() {
     assert_eq!(code, -32_600_i32);
     assert_eq!(
         text,
-        format!("redirected to {}; not followed)", server.url("/elsewhere"))
+        format!("(redirected to {}; not followed)", server.url("/elsewhere"))
     );
     assert_eq!(server.requests().len(), 1);
 }
@@ -162,12 +163,14 @@ async fn a_json_error_body_that_is_not_an_error_falls_back() {
 
 #[tokio::test]
 async fn a_cut_error_body_falls_back_to_the_status() {
-    let server = TestServer::start(|_| {
-        cut_stream(
+    let server = RawTestServer::start(Arc::new(|_: &RecordedRequest| {
+        RawResponse::new(
+            500,
             "application/json",
-            Bytes::from_static(b"{\"jsonrpc\":\"2.0\",\"id\":1,"),
+            b"{\"jsonrpc\":\"2.0\",\"id\":1,",
+            MISSING_BYTES,
         )
-    })
+    }))
     .await;
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
@@ -226,12 +229,14 @@ async fn a_json_body_that_is_not_json_rpc_is_a_parse_error() {
 
 #[tokio::test]
 async fn a_cut_json_body_is_a_parse_error() {
-    let server = TestServer::start(|_| {
-        cut_stream(
+    let server = RawTestServer::start(Arc::new(|_: &RecordedRequest| {
+        RawResponse::new(
+            200,
             "application/json",
-            Bytes::from_static(b"{\"jsonrpc\":\"2.0\",\"id\":1,"),
+            b"{\"jsonrpc\":\"2.0\",\"id\":1,",
+            MISSING_BYTES,
         )
-    })
+    }))
     .await;
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
@@ -307,7 +312,7 @@ async fn an_sse_stream_that_ends_without_an_id_answers_connection_closed() {
     let (code, text) = error_of(&receive(&mut streams).await);
     assert_eq!(code, -32_000_i32);
     assert_eq!(text, "SSE stream ended without a response");
-    assert_eq!(server.count(Method::GET), 0);
+    assert_eq!(server.count(&Method::GET), 0);
 }
 
 #[tokio::test]
@@ -330,7 +335,7 @@ async fn reconnection_gives_up_after_two_attempts() {
         text,
         "SSE stream ended and reconnection attempts were exhausted"
     );
-    assert_eq!(server.count(Method::GET), 2);
+    assert_eq!(server.count(&Method::GET), 2);
 }
 
 #[tokio::test]
@@ -353,7 +358,7 @@ async fn a_reconnection_that_is_not_sse_keeps_retrying() {
         text,
         "SSE stream ended and reconnection attempts were exhausted"
     );
-    assert_eq!(server.count(Method::GET), 2);
+    assert_eq!(server.count(&Method::GET), 2);
 }
 
 #[tokio::test]
@@ -538,7 +543,7 @@ async fn a_get_stream_failure_reaches_the_handler() {
     assert!(receive_end(&mut streams).await);
     let recorded = handler.recorded.lock().unwrap().clone().unwrap();
     assert_eq!(recorded.kind(), StreamFailureKind::Http);
-    assert_eq!(server.count(Method::GET), 2);
+    assert_eq!(server.count(&Method::GET), 2);
 }
 
 #[tokio::test]
@@ -629,7 +634,7 @@ async fn a_get_stream_parse_error_is_a_value_error() {
     assert!(receive_end(&mut streams).await);
     let recorded = handler.recorded.lock().unwrap().clone().unwrap();
     assert_eq!(recorded.kind(), StreamFailureKind::ValueError);
-    assert_eq!(server.count(Method::GET), 1);
+    assert_eq!(server.count(&Method::GET), 1);
 }
 
 #[tokio::test]
@@ -649,7 +654,7 @@ async fn a_get_stream_with_a_non_sse_body_is_retried() {
     assert!(receive_end(&mut streams).await);
     let recorded = handler.recorded.lock().unwrap().clone().unwrap();
     assert_eq!(recorded.kind(), StreamFailureKind::Http);
-    assert_eq!(server.count(Method::GET), 2);
+    assert_eq!(server.count(&Method::GET), 2);
 }
 
 #[tokio::test]
@@ -671,6 +676,6 @@ async fn a_redirected_get_stream_is_not_opened() {
         pending.is_err(),
         "a redirected GET stream must not resolve receive"
     );
-    assert_eq!(server.count(Method::GET), 1);
+    assert_eq!(server.count(&Method::GET), 1);
     assert!(handler.recorded.lock().unwrap().is_none());
 }

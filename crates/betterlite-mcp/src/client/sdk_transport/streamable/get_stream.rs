@@ -124,9 +124,7 @@ async fn read_get_events(
 }
 async fn handle_event(core: &StreamableCore, resume: &mut Resume, sse: Sse) -> Option<Outcome> {
     track_event(resume, &sse);
-    let Some(parsed) = event_message(&sse) else {
-        return None;
-    };
+    let parsed = event_message(&sse)?;
     let message = match parsed {
         Ok(message) => message,
         Err(error) => return Some(Outcome::Invalid(SdkError::Json(error))),

@@ -39,11 +39,7 @@ impl TransportContext for StdioContext {
     type Streams = StdioRw;
     type Error = SdkError;
     async fn enter(&mut self) -> Result<StdioRw, SdkError> {
-        let streams = self
-            .0
-            .enter()
-            .await
-            .map_err(|error| SdkError::Io(Arc::new(error)))?;
+        let streams = self.0.enter().await?;
         Ok(StdioRw::new_client(streams.stdout, streams.stdin))
     }
     async fn exit(self) -> Result<(), ExitFailure<SdkError>> {
@@ -79,7 +75,7 @@ impl Transport<RoleClient> for SdkStreams {
             Self::LegacySse(streams) => streams.send(item).boxed(),
             Self::Stdio(streams) => streams
                 .send(item)
-                .map(|sent| sent.map_err(|error| SdkError::Io(Arc::new(error))))
+                .map(|sent| sent.map_err(SdkError::from))
                 .boxed(),
         }
     }
@@ -94,10 +90,7 @@ impl Transport<RoleClient> for SdkStreams {
         match self {
             Self::Streamable(streams) => streams.close().await,
             Self::LegacySse(streams) => streams.close().await,
-            Self::Stdio(streams) => streams
-                .close()
-                .await
-                .map_err(|error| SdkError::Io(Arc::new(error))),
+            Self::Stdio(streams) => streams.close().await.map_err(SdkError::from),
         }
     }
 }

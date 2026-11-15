@@ -153,7 +153,7 @@ async fn answer_error(
         let reply: RxJsonRpcMessage<RoleClient> = JsonRpcMessage::error(error.error, Some(id));
         return push(core, reply).await;
     }
-    let (code, message) = if status != 404 {
+    let (error_code, text) = if status != 404 {
         (
             ErrorCode::INTERNAL_ERROR,
             "Server returned an error response",
@@ -163,7 +163,7 @@ async fn answer_error(
     } else {
         (ErrorCode::METHOD_NOT_FOUND, "Not Found")
     };
-    push_error(core, code, message.to_owned(), id).await?;
+    push_error(core, error_code, text.to_owned(), id).await?;
     drop(body.close().await);
     Ok(())
 }
@@ -174,15 +174,15 @@ pub(super) async fn push(
     core.incoming
         .send(Incoming::Message(Box::new(message)))
         .await
-        .map_err(|_| SdkError::SessionClosed)
+        .map_err(|_send| SdkError::SessionClosed)
 }
 pub(super) async fn push_error(
     core: &StreamableCore,
-    code: ErrorCode,
+    error_code: ErrorCode,
     message: String,
     id: RequestId,
 ) -> Result<(), SdkError> {
-    let error = ErrorData::new(code, message, None);
+    let error = ErrorData::new(error_code, message, None);
     let reply: RxJsonRpcMessage<RoleClient> = JsonRpcMessage::error(error, Some(id));
     push(core, reply).await
 }
