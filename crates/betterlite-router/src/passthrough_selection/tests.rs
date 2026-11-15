@@ -32,6 +32,23 @@ fn deployment_id() {
     assert!(picker.calls.is_empty());
 }
 
+// The dict arm still resolves the routing context, so an override selector's pre-call check runs for it.
+fn deployment_id_override_pre_call() {
+    let mut world = shuffle(vec![weighted("chosen", 1)]);
+    let mut picker = Picker::default();
+    let selected = world
+        .call(
+            &mut picker,
+            &ask("chosen", &facts()).with_strategy(StrategyOverride::Text("least-busy")),
+        )
+        .unwrap();
+    assert_selected(&selected, MODEL, "chosen");
+    assert_eq!(selected.resolution.strategy, RoutingStrategy::LeastBusy);
+    let selector = selected.resolution.selector.unwrap();
+    assert_eq!(selected.override_pre_call, Some(selector));
+    assert!(picker.calls.is_empty());
+}
+
 fn only_flagged() {
     let mut world = shuffle(vec![weighted("only", 1)]);
     let selected = world
@@ -206,6 +223,7 @@ fn alias_routing_model() {
 
 #[rstest]
 #[case::deployment_id(Behavior::DeploymentId)]
+#[case::deployment_id_override_pre_call(Behavior::DeploymentIdOverridePreCall)]
 #[case::only_flagged(Behavior::OnlyFlagged)]
 #[case::unflagged_leaves(Behavior::UnflaggedLeaves)]
 #[case::weight_decides(Behavior::WeightDecides)]
@@ -221,6 +239,7 @@ fn alias_routing_model() {
 fn passthrough_selection_behaviors(#[case] behavior: Behavior) {
     match behavior {
         Behavior::DeploymentId => deployment_id(),
+        Behavior::DeploymentIdOverridePreCall => deployment_id_override_pre_call(),
         Behavior::OnlyFlagged => only_flagged(),
         Behavior::UnflaggedLeaves => unflagged_leaves(),
         Behavior::WeightDecides => metric_decides(Metric::Weight),
@@ -239,6 +258,7 @@ fn passthrough_selection_behaviors(#[case] behavior: Behavior) {
 #[derive(Clone, Copy, Debug)]
 enum Behavior {
     DeploymentId,
+    DeploymentIdOverridePreCall,
     OnlyFlagged,
     UnflaggedLeaves,
     WeightDecides,
@@ -321,8 +341,12 @@ fn denied_deployment_id() {
     );
 }
 
-fn blocked_deployment_id() {
-    let mut deployment = flagged(gpt("paused"));
+// The paused check runs before the pass-through flag, so a blocked deployment is a 503 either way.
+fn blocked_deployment_id(pass_through: bool) {
+    let mut deployment = gpt("paused");
+    if pass_through {
+        deployment = flagged(deployment);
+    }
     deployment
         .model_info
         .insert("blocked".to_owned(), flag(true));
@@ -339,6 +363,19 @@ fn blocked_deployment_id() {
         error.to_string(),
         format!("Model '{LITELLM_MODEL}' is currently paused and cannot accept requests.")
     );
+}
+
+fn blocked_unflagged_deployment_id() {
+    blocked_deployment_id(false);
+}
+
+// An explicit null weight is not a value: the draw falls back to the uniform pick.
+fn weight_null() {
+    let mut world = shuffle(vec![with_param(weighted("only", 1), "weight", Json::Null)]);
+    let selected = world
+        .call(&mut Picker::default(), &ask(MODEL, &facts()))
+        .unwrap();
+    assert_selected(&selected, MODEL, "only");
 }
 
 fn empty_pool() {
@@ -580,10 +617,12 @@ fn single_without_active_environment() {
 #[case::weight_integral_float(Boundary::WeightIntegralFloat)]
 #[case::weight_too_large(Boundary::WeightTooLarge)]
 #[case::weight_at_the_limit(Boundary::WeightAtTheLimit)]
+#[case::weight_null(Boundary::WeightNull)]
 #[case::no_flagged(Boundary::NoFlagged)]
 #[case::not_configured_names_the_requested_model(Boundary::NotConfiguredNamesTheRequestedModel)]
 #[case::denied_deployment_id(Boundary::DeniedDeploymentId)]
 #[case::blocked_deployment_id(Boundary::BlockedDeploymentId)]
+#[case::blocked_unflagged_deployment_id(Boundary::BlockedUnflaggedDeploymentId)]
 #[case::empty_pool(Boundary::EmptyPool)]
 #[case::environment_empties_the_group(Boundary::EnvironmentEmptiesTheGroup)]
 #[case::environment_and_pre_call_leave_nothing(Boundary::EnvironmentAndPreCallLeaveNothing)]
@@ -613,10 +652,12 @@ fn passthrough_selection_boundaries(#[case] boundary: Boundary) {
         }
         Boundary::WeightTooLarge => invalid_weight(number(u64::from(u32::MAX) + 1)),
         Boundary::WeightAtTheLimit => weight_at_the_limit(),
+        Boundary::WeightNull => weight_null(),
         Boundary::NoFlagged => no_flagged(),
         Boundary::NotConfiguredNamesTheRequestedModel => not_configured_names_the_requested_model(),
         Boundary::DeniedDeploymentId => denied_deployment_id(),
-        Boundary::BlockedDeploymentId => blocked_deployment_id(),
+        Boundary::BlockedDeploymentId => blocked_deployment_id(true),
+        Boundary::BlockedUnflaggedDeploymentId => blocked_unflagged_deployment_id(),
         Boundary::EmptyPool => empty_pool(),
         Boundary::EnvironmentEmptiesTheGroup => environment_empties_the_group(),
         Boundary::EnvironmentAndPreCallLeaveNothing => environment_and_pre_call_leave_nothing(),
@@ -645,10 +686,12 @@ enum Boundary {
     WeightIntegralFloat,
     WeightTooLarge,
     WeightAtTheLimit,
+    WeightNull,
     NoFlagged,
     NotConfiguredNamesTheRequestedModel,
     DeniedDeploymentId,
     BlockedDeploymentId,
+    BlockedUnflaggedDeploymentId,
     EmptyPool,
     EnvironmentEmptiesTheGroup,
     EnvironmentAndPreCallLeaveNothing,
