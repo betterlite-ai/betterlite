@@ -1,0 +1,5 @@
+task: B1330
+deviations:
+  - what: "A count reply whose totalTokens is past i64::MAX is refused with an overflow error by both Google wrappers; LiteLLM stores the Python int, which has no width."
+    why: "TokenCountResponse.total_tokens is an i64 in betterlite, and no working setup receives a count above 2^63; refusing it beats wrapping it into a negative count."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L1308-L1311
