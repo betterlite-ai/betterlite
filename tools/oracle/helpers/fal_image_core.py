@@ -217,12 +217,16 @@ def gpt_destination_precedence(call: GptDestinationPrecedence) -> JsonValue:
 
 
 def pricing_quality_alias(call: PricingQualityAlias) -> JsonValue:
-    supported = supported_gpt_image_qualities(call["model"], call["catalog"])
+    catalog = call["catalog"]
+    qualities: list[str] = sorted(
+        str(quality) for quality in supported_gpt_image_qualities(call["model"], catalog)
+    )
+    supported = [JSON.validate_python(quality) for quality in qualities]
     mapped = [
-        JSON.validate_python(map_gpt_image_quality(quality, call["model"], call["catalog"]))
+        JSON.validate_python(map_gpt_image_quality(quality, call["model"], catalog))
         for quality in call["qualities"]
     ]
-    return {"supported": JSON.validate_python(sorted(supported)), "mapped": mapped}
+    return {"supported": supported, "mapped": mapped}
 
 
 def malformed_size_kept(call: MalformedSizeKept) -> JsonValue:
