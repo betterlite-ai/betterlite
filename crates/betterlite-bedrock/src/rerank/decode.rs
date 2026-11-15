@@ -32,7 +32,7 @@ pub fn decode_rerank_reply(
     };
     let items = match root.get("results") {
         Some(Json::List(items)) if !items.is_empty() => items,
-        Some(Json::List(_)) | None | Some(Json::Null) => return Err(RerankDecodeError::NoResults),
+        Some(Json::List(_) | Json::Null) | None => return Err(RerankDecodeError::NoResults),
         Some(_) => return Err(RerankDecodeError::Field { field: "results" }),
     };
     // an absent or null id takes the generated one; an explicit string is used as sent
@@ -84,42 +84,55 @@ fn required_score(fields: &IndexMap<String, Json>) -> Result<Score, RerankDecode
     Ok(Score::try_from(number.clone())?)
 }
 
+// abs, null and a count are the three states pydantic's optional field keeps apart
+enum Quota {
+    Absent,
+    Null,
+    Count(i64),
+}
+
+impl From<Quota> for Option<Option<i64>> {
+    fn from(quota: Quota) -> Self {
+        match quota {
+            Quota::Absent => None,
+            Quota::Null => Some(None),
+            Quota::Count(count) => Some(Some(count)),
+        }
+    }
+}
+
 // LiteLLM reads the same usage mapping into both records; absent usage gets one default search unit
 fn meta(usage: Option<&IndexMap<String, Json>>) -> Result<RerankResponseMeta, RerankDecodeError> {
     let (search_units, total_tokens, input_tokens, output_tokens) = match usage {
-        None => (Some(Some(1)), None, None, None),
+        None => (Quota::Count(1), Quota::Absent, Quota::Absent, Quota::Absent),
         Some(fields) => (
-            integer(fields, "search_units")?,
-            integer(fields, "total_tokens")?,
-            integer(fields, "input_tokens")?,
-            integer(fields, "output_tokens")?,
+            quota(fields, "search_units")?,
+            quota(fields, "total_tokens")?,
+            quota(fields, "input_tokens")?,
+            quota(fields, "output_tokens")?,
         ),
     };
     Ok(RerankResponseMeta {
         api_version: None,
         billed_units: Some(Some(RerankBilledUnits {
-            search_units,
-            total_tokens,
+            search_units: Option::from(search_units),
+            total_tokens: Option::from(total_tokens),
         })),
         tokens: Some(Some(RerankTokens {
-            input_tokens,
-            output_tokens,
+            input_tokens: Option::from(input_tokens),
+            output_tokens: Option::from(output_tokens),
         })),
     })
 }
 
-fn integer(
-    fields: &IndexMap<String, Json>,
-    name: &'static str,
-) -> Result<Option<Option<i64>>, RerankDecodeError> {
-    let invalid = || RerankDecodeError::Field { field: name };
+fn quota(fields: &IndexMap<String, Json>, name: &'static str) -> Result<Quota, RerankDecodeError> {
     match fields.get(name) {
-        None => Ok(None),
-        Some(Json::Null) => Ok(Some(None)),
+        None => Ok(Quota::Absent),
+        Some(Json::Null) => Ok(Quota::Null),
         Some(Json::Number(number)) => number
             .as_i64()
-            .map(|value| Some(Some(value)))
-            .ok_or_else(invalid),
-        Some(_) => Err(invalid()),
+            .map(Quota::Count)
+            .ok_or(RerankDecodeError::Field { field: name }),
+        Some(_) => Err(RerankDecodeError::Field { field: name }),
     }
 }
