@@ -110,6 +110,10 @@ fn raw_answer_of_size(size: usize) -> String {
     )
 }
 
+fn assert_header(headers: &BTreeMap<String, String>, name: &str, value: &str) {
+    assert_eq!(headers.get(name).map(String::as_str), Some(value));
+}
+
 async fn handle(
     State((captured, status, answer)): State<(Captured, StatusCode, Answer)>,
     headers: HeaderMap,
@@ -178,22 +182,18 @@ async fn cato_guardrail_call_posts_the_analyze_messages_and_headers() {
     server.shutdown().await;
     assert_eq!(recorded.len(), 1);
     let (headers, body) = recorded.first().expect("request");
-    let expected = [
-        ("authorization", "Bearer test-key"),
-        ("x-cato-litellm-hook", "pre_call"),
-        ("x-cato-litellm-version", LITELLM_VERSION),
-        ("x-cato-call-id", "call-1"),
-        ("x-cato-user-email", "user@example.test"),
-        ("x-cato-gateway-key-alias", "alias"),
-        ("content-type", "application/json"),
-        (
-            "user-agent",
-            concat!("betterlite/", env!("CARGO_PKG_VERSION")),
-        ),
-    ];
-    for (name, value) in expected {
-        assert_eq!(headers.get(name).map(String::as_str), Some(value));
-    }
+    assert_header(headers, "authorization", "Bearer test-key");
+    assert_header(headers, "x-cato-litellm-hook", "pre_call");
+    assert_header(headers, "x-cato-litellm-version", LITELLM_VERSION);
+    assert_header(headers, "x-cato-call-id", "call-1");
+    assert_header(headers, "x-cato-user-email", "user@example.test");
+    assert_header(headers, "x-cato-gateway-key-alias", "alias");
+    assert_header(headers, "content-type", "application/json");
+    assert_header(
+        headers,
+        "user-agent",
+        concat!("betterlite/", env!("CARGO_PKG_VERSION")),
+    );
     let posted: PostedBody = serde_json::from_str(body).expect("posted body");
     assert_eq!(
         posted.messages,
