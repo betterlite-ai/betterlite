@@ -21,8 +21,8 @@ fn settings(yaml: &str, environment: &[(&str, &str)]) -> Settings {
     load(yaml, environment).expect("settings load")
 }
 
-fn exposed(value: Option<&SecretString>) -> Option<String> {
-    value.map(|token| token.expose_secret().to_owned())
+fn exposed(value: &SecretString) -> String {
+    value.expose_secret().to_owned()
 }
 
 // the settings contract reads one row per key, like the YAML and environment names it mirrors
@@ -34,21 +34,21 @@ fn snapshot(settings: &Settings) -> BTreeMap<&'static str, Option<String>> {
         ("env.OPENAI_API_BASE", settings.openai_api_base.clone()),
         ("litellm_settings.organization", settings.organization.clone()),
         ("env.OPENAI_ORGANIZATION", settings.openai_organization.clone()),
-        ("litellm_settings.api_key", exposed(settings.api_key.as_ref())),
-        ("litellm_settings.openai_key", exposed(settings.openai_key.as_ref())),
-        ("env.OPENAI_API_KEY", exposed(settings.openai_api_key.as_ref())),
+        ("litellm_settings.api_key", settings.api_key.as_ref().map(exposed)),
+        ("litellm_settings.openai_key", settings.openai_key.as_ref().map(exposed)),
+        ("env.OPENAI_API_KEY", settings.openai_api_key.as_ref().map(exposed)),
         ("env.AZURE_API_BASE", settings.azure_api_base.clone()),
         ("litellm_settings.api_version", settings.api_version.clone()),
         ("env.AZURE_API_VERSION", settings.azure_api_version.clone()),
-        ("litellm_settings.azure_key", exposed(settings.azure_key.as_ref())),
-        ("env.AZURE_OPENAI_API_KEY", exposed(settings.azure_openai_api_key.as_ref())),
-        ("env.AZURE_API_KEY", exposed(settings.azure_api_key.as_ref())),
-        ("env.AZURE_AD_TOKEN", exposed(settings.azure_ad_token.as_ref())),
+        ("litellm_settings.azure_key", settings.azure_key.as_ref().map(exposed)),
+        ("env.AZURE_OPENAI_API_KEY", settings.azure_openai_api_key.as_ref().map(exposed)),
+        ("env.AZURE_API_KEY", settings.azure_api_key.as_ref().map(exposed)),
+        ("env.AZURE_AD_TOKEN", settings.azure_ad_token.as_ref().map(exposed)),
         ("litellm_settings.vertex_project", settings.vertex_project.clone()),
         ("env.VERTEXAI_PROJECT", settings.vertexai_project.clone()),
         ("litellm_settings.vertex_location", settings.vertex_location.clone()),
         ("env.VERTEXAI_LOCATION", settings.vertexai_location.clone()),
-        ("env.VERTEXAI_CREDENTIALS", exposed(settings.vertexai_credentials.as_ref())),
+        ("env.VERTEXAI_CREDENTIALS", settings.vertexai_credentials.as_ref().map(exposed)),
     ])
 }
 
