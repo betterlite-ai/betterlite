@@ -20,13 +20,16 @@ pub fn map_image_size(size: &Json) -> Result<Json, StableDiffusionError> {
     let Json::Text(text) = size else {
         return Err(StableDiffusionError::SizeNotAString);
     };
-    let text = text.as_str();
-    if let Some((_, alias)) = SIZE_ALIASES.iter().find(|(size, _)| *size == text) {
+    let requested = text.as_str();
+    if let Some((_, alias)) = SIZE_ALIASES
+        .iter()
+        .find(|(alias_size, _)| *alias_size == requested)
+    {
         return Ok(Json::Text((*alias).to_owned()));
     }
     // Python splits on every x, so a -x- string never parses; the shared parser would read it
-    if !text.contains("-x-")
-        && let Some(dimensions) = parsed_dimensions(text)
+    if !requested.contains("-x-")
+        && let Some(dimensions) = parsed_dimensions(requested)
     {
         return Ok(dimensions);
     }
