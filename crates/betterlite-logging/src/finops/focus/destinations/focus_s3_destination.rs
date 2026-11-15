@@ -1,13 +1,23 @@
-use std::error::Error;
-use std::future::Future;
+use std::str::from_utf8;
+use std::sync::Arc;
 
+use betterlite_config::loader::EnvironmentLookup;
+use http::Method;
 use secrecy::{ExposeSecret as _, SecretString};
+use sha2::{Digest as _, Sha256};
 
 use crate::focus_records::destinations::{FocusDestination, FocusTimeWindow};
+use crate::legacy_s3::credentials::ConfiguredCredentials;
+use crate::s3_transport::error::S3TransportError;
+use crate::s3_transport::signing::{Clock, CredentialSource as _, RequestToSign, sign_request};
+use crate::s3_transport::transport::{S3HttpClient, S3Request};
+use crate::s3_transport::url_construction::{EndpointInputs, resolve_endpoint};
 
 use super::object_key;
 
 pub const CONTENT_TYPE: &str = "application/octet-stream";
+// boto3 reads the default region from this variable before any config file
+pub const DEFAULT_REGION_VARIABLE: &str = "AWS_DEFAULT_REGION";
 
 #[derive(Clone, Debug, Default)]
 pub struct S3Settings {
@@ -28,23 +38,10 @@ pub struct S3ClientOptions {
     pub aws_session_token: Option<SecretString>,
 }
 
-#[derive(Debug)]
-pub struct S3PutObject {
-    pub bucket_name: String,
-    pub object_key: String,
-    pub body: Vec<u8>,
-    pub content_type: &'static str,
-}
-
-pub trait S3Client: Send + Sync {
-    type Error: Error + Send + Sync + 'static;
-
-    // The boto3 client is built per upload from the options, so each delivery passes them along
-    fn put_object(
-        &self,
-        client_options: &S3ClientOptions,
-        object: S3PutObject,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+pub struct S3Connection {
+    pub http: Arc<dyn S3HttpClient>,
+    pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
+    pub clock: Arc<dyn Clock>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -54,27 +51,23 @@ pub enum S3SettingsError {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum S3DeliveryError<UploadError>
-where
-    UploadError: Error + 'static,
-{
+pub enum S3DeliveryError {
     #[error("the S3 object could not be uploaded")]
-    Upload {
-        #[source]
-        source: UploadError,
-    },
+    Transport(#[from] S3TransportError),
+    #[error("the S3 upload was refused with status {status}: {body}")]
+    Status { status: u16, body: String },
 }
 
-pub struct FocusS3Destination<Client: S3Client> {
-    pub(super) client: Client,
+pub struct FocusS3Destination {
+    pub(super) connection: S3Connection,
     pub(super) bucket_name: String,
     pub(super) prefix: String,
     pub(super) client_options: S3ClientOptions,
 }
 
-impl<Client: S3Client> FocusS3Destination<Client> {
+impl FocusS3Destination {
     pub fn new(
-        client: Client,
+        connection: S3Connection,
         prefix: &str,
         settings: S3Settings,
     ) -> Result<Self, S3SettingsError> {
@@ -95,7 +88,7 @@ impl<Client: S3Client> FocusS3Destination<Client> {
                 .filter(|value| !value.expose_secret().is_empty()),
         };
         Ok(Self {
-            client,
+            connection,
             bucket_name,
             prefix: prefix.trim_end_matches('/').to_owned(),
             client_options,
@@ -103,8 +96,8 @@ impl<Client: S3Client> FocusS3Destination<Client> {
     }
 }
 
-impl<Client: S3Client> FocusDestination for FocusS3Destination<Client> {
-    type Error = S3DeliveryError<Client::Error>;
+impl FocusDestination for FocusS3Destination {
+    type Error = S3DeliveryError;
 
     async fn deliver<'delivery>(
         &'delivery self,
@@ -112,15 +105,70 @@ impl<Client: S3Client> FocusDestination for FocusS3Destination<Client> {
         time_window: &'delivery FocusTimeWindow,
         filename: &'delivery str,
     ) -> Result<(), Self::Error> {
-        let object = S3PutObject {
-            bucket_name: self.bucket_name.clone(),
-            object_key: object_key::build(&self.prefix, time_window, filename),
-            body: content.to_vec(),
-            content_type: CONTENT_TYPE,
-        };
-        self.client
-            .put_object(&self.client_options, object)
-            .await
-            .map_err(|source| S3DeliveryError::Upload { source })
+        let object_key = object_key::build(&self.prefix, time_window, filename);
+        let environment = &self.connection.environment;
+        let options = &self.client_options;
+        // boto3 builds its client for each upload, so the options are resolved here too
+        let region = options.region_name.clone().or_else(|| {
+            environment
+                .lookup(DEFAULT_REGION_VARIABLE)
+                .filter(|value| !value.is_empty())
+        });
+        let endpoint = resolve_endpoint(
+            EndpointInputs {
+                bucket: Some(&self.bucket_name),
+                region: region.as_deref(),
+                endpoint_url: options
+                    .endpoint_url
+                    .as_deref()
+                    .map(|url| url.trim_end_matches('/')),
+                virtual_hosted_style: false,
+            },
+            environment.as_ref(),
+        )?;
+        let credentials = ConfiguredCredentials {
+            environment: Arc::clone(environment),
+            access_key_id: options.aws_access_key_id.clone(),
+            secret_access_key: options.aws_secret_access_key.clone(),
+            session_token: options.aws_session_token.clone(),
+        }
+        .resolve()
+        .await
+        .map_err(S3TransportError::from)?;
+        let url = endpoint.object_url(&object_key);
+        let content_sha256 = hex::encode(Sha256::digest(content));
+        let mut headers = vec![
+            ("Content-Type".to_owned(), CONTENT_TYPE.to_owned()),
+            ("x-amz-content-sha256".to_owned(), content_sha256.clone()),
+        ];
+        let signed = sign_request(
+            &RequestToSign {
+                method: "PUT",
+                url: &url,
+                headers: &headers,
+                content_sha256: &content_sha256,
+                region: &endpoint.region,
+                now: self.connection.clock.now(),
+            },
+            &credentials,
+        )?;
+        headers.extend(signed);
+        let response = self
+            .connection
+            .http
+            .send(S3Request {
+                method: Method::PUT,
+                url,
+                headers,
+                body: content.to_vec(),
+            })
+            .await?;
+        if !(200..300).contains(&response.status) {
+            return Err(S3DeliveryError::Status {
+                status: response.status,
+                body: from_utf8(&response.body).unwrap_or_default().to_owned(),
+            });
+        }
+        Ok(())
     }
 }

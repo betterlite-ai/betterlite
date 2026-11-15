@@ -1,24 +1,37 @@
-use std::future::{Future, ready};
+use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use async_trait::async_trait;
 use chrono::DateTime;
+use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::finops::focus::destinations::focus_gcs_destination::{
-    FocusGcsDestination, GcsBucketClient, GcsMediaRequest, GcsMediaResponse, GcsSettings,
-};
+use crate::finops::focus::destinations::focus_gcs_destination::{FocusGcsDestination, GcsSettings};
 use crate::finops::focus::destinations::focus_s3_destination::{
-    FocusS3Destination, S3Client, S3ClientOptions, S3PutObject, S3Settings,
+    FocusS3Destination, S3Connection, S3Settings,
 };
 use crate::focus_records::destinations::FocusTimeWindow;
-use crate::gcs_client::gcs_storage_auth::{CONTENT_TYPE_HEADER, JSON_CONTENT_TYPE, RequestHeaders};
+use crate::gcs_client::gcs_storage_auth::GcsBucketBase;
+use crate::gcs_client::gcs_storage_auth::initialization_behaviors::initialize;
+use crate::gcs_mock::auth::{
+    AccessToken, EnsureAccessToken, GetTokenAndUrl, TokenAndUrl, VertexAuth,
+};
+use crate::gcs_mock::client::{GcsHttpClient, GcsHttpResponse};
+use crate::gcs_mock::request::{GcsRequest, GcsWriteRequest};
+use crate::s3_transport::error::S3TransportError;
+use crate::s3_transport::signing::Clock;
+use crate::s3_transport::transport::{S3HttpClient, S3Request, S3Response};
 
 pub(super) const BUCKET: &str = "focus-exports";
 pub(super) const PREFIX: &str = "exports";
 pub(super) const FILENAME: &str = "usage_20260102T030405Z_20260102T040405Z.csv";
 pub(super) const CONTENT: &[u8] = b"ChargeCategory,Usage\n";
-pub(super) const AUTHORIZATION: &str = "Bearer test-token";
+pub(super) const TOKEN: &str = "test-token";
 pub(super) const SERVICE_ACCOUNT: &str = "/secrets/focus-service-account.json";
+pub(super) const ENVIRONMENT_SERVICE_ACCOUNT: &str = "/env/service-account.json";
 pub(super) const START_EPOCH: i64 = 1_767_323_045;
 
 pub(super) fn window(start_epoch: i64, frequency: &str) -> FocusTimeWindow {
@@ -69,192 +82,240 @@ pub(super) fn gcs_bucket_only_settings() -> GcsSettings {
 #[error("the network is down")]
 pub(super) struct NetworkDown;
 
-#[derive(Clone, Debug)]
-pub(super) struct SeenPut {
-    pub(super) client_options: S3ClientOptions,
-    pub(super) bucket_name: String,
-    pub(super) object_key: String,
-    pub(super) body: Vec<u8>,
-    pub(super) content_type: &'static str,
-}
-
-#[derive(Clone, Default)]
-pub(super) struct FakeS3Client {
-    puts: Arc<Mutex<Vec<SeenPut>>>,
+#[derive(Debug)]
+pub(super) struct FakeS3Http {
+    sent: Mutex<Vec<S3Request>>,
+    status: u16,
+    body: Vec<u8>,
     failing: bool,
 }
 
-impl FakeS3Client {
-    pub(super) fn failing() -> Self {
-        Self {
-            puts: Arc::default(),
-            failing: true,
-        }
-    }
-
-    pub(super) fn seen(&self) -> Vec<SeenPut> {
-        self.puts.lock().unwrap().clone()
-    }
-}
-
-impl S3Client for FakeS3Client {
-    type Error = NetworkDown;
-
-    fn put_object(
-        &self,
-        client_options: &S3ClientOptions,
-        object: S3PutObject,
-    ) -> impl Future<Output = Result<(), NetworkDown>> + Send {
-        self.puts.lock().unwrap().push(SeenPut {
-            client_options: client_options.clone(),
-            bucket_name: object.bucket_name,
-            object_key: object.object_key,
-            body: object.body,
-            content_type: object.content_type,
-        });
-        ready(if self.failing {
-            Err(NetworkDown)
-        } else {
-            Ok(())
+impl FakeS3Http {
+    pub(super) fn answering(status: u16, body: &[u8]) -> Arc<Self> {
+        Arc::new(Self {
+            sent: Mutex::default(),
+            status,
+            body: body.to_vec(),
+            failing: false,
         })
     }
-}
 
-#[derive(Clone, Debug)]
-pub(super) struct SeenHeaders {
-    pub(super) bucket_name: String,
-    pub(super) service_account_json: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct SeenPost {
-    pub(super) url: String,
-    pub(super) headers: RequestHeaders,
-    pub(super) body: Vec<u8>,
-}
-
-#[derive(Clone, Debug)]
-pub(super) enum GcsAnswer {
-    Reply { status: u16, body: Vec<u8> },
-    HeadersFailure,
-    PostFailure,
-}
-
-#[derive(Clone)]
-pub(super) struct FakeGcsClient {
-    header_calls: Arc<Mutex<Vec<SeenHeaders>>>,
-    posts: Arc<Mutex<Vec<SeenPost>>>,
-    status: u16,
-    response_body: Vec<u8>,
-    header_failure: bool,
-    post_failure: bool,
-}
-
-impl FakeGcsClient {
-    pub(super) fn answering(answer: GcsAnswer) -> Self {
-        let header_failure = matches!(answer, GcsAnswer::HeadersFailure);
-        let post_failure = matches!(answer, GcsAnswer::PostFailure);
-        let (status, response_body) = match answer {
-            GcsAnswer::Reply { status, body } => (status, body),
-            GcsAnswer::HeadersFailure | GcsAnswer::PostFailure => (200, Vec::new()),
-        };
-        Self {
-            header_calls: Arc::default(),
-            posts: Arc::default(),
-            status,
-            response_body,
-            header_failure,
-            post_failure,
-        }
-    }
-
-    pub(super) fn header_calls(&self) -> Vec<SeenHeaders> {
-        self.header_calls.lock().unwrap().clone()
-    }
-
-    pub(super) fn posts(&self) -> Vec<SeenPost> {
-        self.posts.lock().unwrap().clone()
-    }
-}
-
-impl Default for FakeGcsClient {
-    fn default() -> Self {
-        Self::answering(GcsAnswer::Reply {
+    pub(super) fn failing() -> Arc<Self> {
+        Arc::new(Self {
+            sent: Mutex::default(),
             status: 200,
             body: Vec::new(),
+            failing: true,
         })
     }
+
+    pub(super) fn sent(&self) -> Vec<S3Request> {
+        self.sent.lock().unwrap().clone()
+    }
 }
 
-impl GcsBucketClient for FakeGcsClient {
-    type Error = NetworkDown;
-
-    fn construct_request_headers(
+impl S3HttpClient for FakeS3Http {
+    fn send(
         &self,
-        bucket_name: &str,
-        service_account_json: Option<&SecretString>,
-    ) -> impl Future<Output = Result<RequestHeaders, NetworkDown>> + Send {
-        self.header_calls.lock().unwrap().push(SeenHeaders {
-            bucket_name: bucket_name.to_owned(),
-            service_account_json: service_account_json
-                .map(|value| value.expose_secret().to_owned()),
-        });
-        let outcome = if self.header_failure {
-            Err(NetworkDown)
+        request: S3Request,
+    ) -> Pin<Box<dyn Future<Output = Result<S3Response, S3TransportError>> + Send + '_>> {
+        self.sent.lock().unwrap().push(request);
+        let outcome = if self.failing {
+            Err(S3TransportError::MissingBucket)
         } else {
-            Ok(base_headers())
-        };
-        ready(outcome)
-    }
-
-    fn post_media(
-        &self,
-        request: GcsMediaRequest,
-    ) -> impl Future<Output = Result<GcsMediaResponse, NetworkDown>> + Send {
-        self.posts.lock().unwrap().push(SeenPost {
-            url: request.url,
-            headers: request.headers,
-            body: request.body,
-        });
-        let outcome = if self.post_failure {
-            Err(NetworkDown)
-        } else {
-            Ok(GcsMediaResponse {
+            Ok(S3Response {
                 status: self.status,
-                body: self.response_body.clone(),
+                body: self.body.clone(),
             })
         };
-        ready(outcome)
+        Box::pin(async move { outcome })
     }
 }
 
-fn base_headers() -> RequestHeaders {
-    let mut headers = RequestHeaders::new();
-    headers.insert(
-        "Authorization".to_owned(),
-        SecretString::from(AUTHORIZATION),
-    );
-    headers.insert(
-        CONTENT_TYPE_HEADER.to_owned(),
-        SecretString::from(JSON_CONTENT_TYPE),
-    );
-    headers
+#[derive(Debug)]
+struct FixedClock;
+
+impl Clock for FixedClock {
+    fn now(&self) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(u64::try_from(START_EPOCH).unwrap())
+    }
+}
+
+pub(super) fn header<'request>(request: &'request S3Request, name: &str) -> Option<&'request str> {
+    request
+        .headers
+        .iter()
+        .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
+pub(super) fn s3_connection(environment: &[(&str, &str)], http: &Arc<FakeS3Http>) -> S3Connection {
+    let environment: BTreeMap<String, String> = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    S3Connection {
+        http: Arc::clone(http),
+        environment: Arc::new(environment),
+        clock: Arc::new(FixedClock),
+    }
+}
+
+pub(super) fn s3_destination_with(
+    prefix: &str,
+    settings: S3Settings,
+    environment: &[(&str, &str)],
+    http: &Arc<FakeS3Http>,
+) -> FocusS3Destination {
+    FocusS3Destination::new(s3_connection(environment, http), prefix, settings).unwrap()
 }
 
 pub(super) fn s3_destination(
     prefix: &str,
     settings: S3Settings,
-) -> (FocusS3Destination<FakeS3Client>, FakeS3Client) {
-    let client = FakeS3Client::default();
-    let destination = FocusS3Destination::new(client.clone(), prefix, settings).unwrap();
-    (destination, client)
+) -> (FocusS3Destination, Arc<FakeS3Http>) {
+    let http = FakeS3Http::answering(200, b"");
+    let destination = s3_destination_with(prefix, settings, &[], &http);
+    (destination, http)
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct FakeAuth {
+    failing: bool,
+    ensured: Arc<Mutex<Vec<Option<String>>>>,
+}
+
+impl FakeAuth {
+    pub(super) fn failing() -> Self {
+        Self {
+            failing: true,
+            ensured: Arc::default(),
+        }
+    }
+
+    // the service account path each token request carried
+    pub(super) fn ensured(&self) -> Vec<Option<String>> {
+        self.ensured.lock().unwrap().clone()
+    }
+
+    fn token(&self, request: &EnsureAccessToken) -> Result<AccessToken, NetworkDown> {
+        self.ensured.lock().unwrap().push(
+            request
+                .credentials
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
+        );
+        if self.failing {
+            return Err(NetworkDown);
+        }
+        Ok(AccessToken {
+            token: SecretString::from(TOKEN),
+            project_id: "test-project".to_owned(),
+        })
+    }
+}
+
+#[async_trait]
+impl VertexAuth for FakeAuth {
+    type Error = NetworkDown;
+
+    async fn ensure_access_token_async(
+        &self,
+        request: EnsureAccessToken,
+    ) -> Result<AccessToken, NetworkDown> {
+        self.token(&request)
+    }
+
+    fn ensure_access_token(&self, request: EnsureAccessToken) -> Result<AccessToken, NetworkDown> {
+        self.token(&request)
+    }
+
+    fn get_token_and_url(&self, request: GetTokenAndUrl) -> Result<TokenAndUrl, NetworkDown> {
+        Ok(TokenAndUrl {
+            token: request.auth_header.unwrap(),
+            url: String::new(),
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct FakeGcsHttp {
+    sent: Arc<Mutex<Vec<GcsRequest>>>,
+    status: u16,
+    body: Vec<u8>,
+    failing: bool,
+}
+
+impl FakeGcsHttp {
+    pub(super) fn answering(status: u16, body: &[u8]) -> Self {
+        Self {
+            sent: Arc::default(),
+            status,
+            body: body.to_vec(),
+            failing: false,
+        }
+    }
+
+    pub(super) fn failing() -> Self {
+        Self {
+            sent: Arc::default(),
+            status: 200,
+            body: Vec::new(),
+            failing: true,
+        }
+    }
+
+    pub(super) fn posts(&self) -> Vec<GcsWriteRequest> {
+        self.sent
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|request| match request {
+                GcsRequest::Post(post) => post.clone(),
+                other => panic!("the destination sent a request that is not a POST: {other:?}"),
+            })
+            .collect()
+    }
+}
+
+#[async_trait]
+impl GcsHttpClient for FakeGcsHttp {
+    type Error = NetworkDown;
+
+    async fn send(&self, request: GcsRequest) -> Result<GcsHttpResponse, NetworkDown> {
+        let url = request.url().to_owned();
+        self.sent.lock().unwrap().push(request);
+        if self.failing {
+            return Err(NetworkDown);
+        }
+        Ok(GcsHttpResponse {
+            status: self.status,
+            headers: HeaderMap::new(),
+            body: self.body.clone(),
+            url,
+            elapsed: Duration::ZERO,
+        })
+    }
+}
+
+pub(super) fn gcs_base(
+    auth: FakeAuth,
+    http: FakeGcsHttp,
+    environment: &[(&str, &str)],
+) -> GcsBucketBase<FakeAuth, FakeGcsHttp> {
+    let environment: BTreeMap<String, String> = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    initialize(Arc::new(environment), Some(BUCKET.to_owned()), auth, http).unwrap()
 }
 
 pub(super) fn gcs_destination(
     prefix: &str,
     settings: GcsSettings,
-) -> (FocusGcsDestination<FakeGcsClient>, FakeGcsClient) {
-    let client = FakeGcsClient::default();
-    let destination = FocusGcsDestination::new(client.clone(), prefix, settings).unwrap();
-    (destination, client)
+) -> (FocusGcsDestination<FakeAuth, FakeGcsHttp>, FakeGcsHttp) {
+    let http = FakeGcsHttp::answering(200, b"");
+    let base = gcs_base(FakeAuth::default(), http.clone(), &[]);
+    let destination = FocusGcsDestination::new(base, prefix, settings).unwrap();
+    (destination, http)
 }

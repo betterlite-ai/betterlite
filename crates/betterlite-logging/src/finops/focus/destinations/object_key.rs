@@ -11,9 +11,8 @@ pub fn build(prefix: &str, time_window: &FocusTimeWindow, filename: &str) -> Str
         parts.push(start.format("hour=%H").to_string());
     }
     let key_prefix = parts
-        .iter()
+        .into_iter()
         .filter(|part| !part.is_empty())
-        .cloned()
         .collect::<Vec<String>>()
         .join("/");
     format!("{key_prefix}/{filename}")
