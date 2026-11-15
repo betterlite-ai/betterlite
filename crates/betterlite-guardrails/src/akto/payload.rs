@@ -133,9 +133,9 @@ fn build_request_body(
         .as_ref()
         .filter(|value| present(value))
     {
-        messages = structured.clone();
+        messages.clone_from(structured);
     } else if let Some(found) = request_data.get("messages").filter(|value| present(value)) {
-        messages = found.clone();
+        messages.clone_from(found);
         if let Some(GuardrailValue::Text(found_model)) = request_data.get("model") {
             model.clone_from(found_model);
         }
@@ -285,10 +285,13 @@ fn value_text(value: &GuardrailValue) -> String {
 // LiteLLM selects a payload field with Python truthiness, so an empty list stays out of the body
 fn present(value: &GuardrailValue) -> bool {
     match value {
-        GuardrailValue::Null | GuardrailValue::Boolean(false) => false,
-        GuardrailValue::Boolean(true) => true,
-        GuardrailValue::SignedInteger(0) | GuardrailValue::UnsignedInteger(0) => false,
-        GuardrailValue::SignedInteger(_) | GuardrailValue::UnsignedInteger(_) => true,
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(false)
+        | GuardrailValue::SignedInteger(0)
+        | GuardrailValue::UnsignedInteger(0) => false,
+        GuardrailValue::Boolean(true)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_) => true,
         GuardrailValue::Decimal(number) => number.abs() > 0.0_f64,
         GuardrailValue::Text(text) => !text.is_empty(),
         GuardrailValue::Array(items) => !items.is_empty(),
