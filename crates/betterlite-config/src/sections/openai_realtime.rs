@@ -10,8 +10,8 @@ mod tests;
 pub const MAX_MESSAGE_SIZE_VARIABLE: &str = "REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES";
 pub const DEFAULT_MAX_MESSAGE_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
-// this section reads the environment only, so every YAML key is ignored here and reported by the loader
-pub type Raw = BTreeMap<String, IgnoredAny>;
+// env-only section: the loader reports every key, and the box keeps the map value type non-zero-sized for clippy
+pub type Raw = BTreeMap<String, Box<IgnoredAny>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {
