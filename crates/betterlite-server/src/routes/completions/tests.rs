@@ -314,6 +314,20 @@ async fn alias(path: &str) {
     assert_eq!(answered.body.model.as_deref(), Some("wrong"));
 }
 
+// matchit 0.8 refuses a catch-all with a literal suffix, so the alias paths take one model segment
+#[tokio::test]
+async fn a_slash_model_answers_not_found_on_the_alias_paths() {
+    let answered = call(
+        "/engines/openai/text-model/completions",
+        r#"{"model":"text-model","prompt":"hello"}"#,
+        200,
+        ANSWER,
+    )
+    .await;
+    assert_eq!(answered.status, StatusCode::NOT_FOUND);
+    assert!(answered.sent.is_empty(), "no provider request");
+}
+
 async fn parameters_and_controls() {
     let body = r#"{"model":"text-model","prompt":"hi","temperature":0.7,"logprobs":2,"top_logprobs":1,"max_retries":5,"api_base":"http://evil.example","api_key":"sk-evil","api_version":"2099-01-01","metadata":{"user":"x"},"mock_response":"not a mock","mock_timeout":true,"num_retries":3,"timeout":1,"extra_headers":{"x-caller":"yes"}}"#;
     let answered = call("/v1/completions", body, 200, ANSWER).await;
