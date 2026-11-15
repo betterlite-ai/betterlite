@@ -1,0 +1,5 @@
+kind: helper
+name: b5960-params
+call: {b5960: {steps: [{kind: params, non_default: {temperature: 0}}]}}
+env: {}
+compare: {ignore: []}
