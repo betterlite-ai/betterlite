@@ -2,9 +2,9 @@ use super::error::FileUploadValidationError;
 use std::io::{BufRead, Seek, SeekFrom};
 pub trait SeekableBody: BufRead + Seek {}
 impl<T: BufRead + Seek> SeekableBody for T {}
-pub enum FileBody<'a> {
-    Bytes(&'a [u8]),
-    Seekable(&'a mut dyn SeekableBody),
+pub enum FileBody<'bytes> {
+    Bytes(&'bytes [u8]),
+    Seekable(&'bytes mut dyn SeekableBody),
 }
 impl FileBody<'_> {
     pub fn size(&mut self) -> Result<u128, FileUploadValidationError> {

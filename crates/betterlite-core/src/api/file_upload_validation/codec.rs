@@ -1,5 +1,5 @@
 const NON_ASCII: u8 = 0x80;
-const MAX_CODE_POINT: u32 = 0x10FFFF;
+const MAX_CODE_POINT: u32 = 0x0010_FFFF;
 #[derive(Debug, Clone, Copy)]
 enum Encoding {
     Utf8,
@@ -21,20 +21,8 @@ pub(super) fn decode_line(line: &[u8]) -> Option<Vec<u8>> {
     }
 }
 fn detect_encoding(line: &[u8]) -> (Encoding, usize) {
-    if line.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
-        return (Encoding::Utf32Be, 4);
-    }
-    if line.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) {
-        return (Encoding::Utf32Le, 4);
-    }
-    if line.starts_with(&[0xFE, 0xFF]) {
-        return (Encoding::Utf16Be, 2);
-    }
-    if line.starts_with(&[0xFF, 0xFE]) {
-        return (Encoding::Utf16Le, 2);
-    }
-    if line.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        return (Encoding::Utf8, 3);
+    if let Some(bom) = bom_encoding(line) {
+        return bom;
     }
     if line.len() >= 4 {
         let first = line.first().copied().unwrap_or_default();
@@ -69,6 +57,24 @@ fn detect_encoding(line: &[u8]) -> (Encoding, usize) {
     }
     (Encoding::Utf8, 0)
 }
+fn bom_encoding(line: &[u8]) -> Option<(Encoding, usize)> {
+    if line.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
+        return Some((Encoding::Utf32Be, 4));
+    }
+    if line.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) {
+        return Some((Encoding::Utf32Le, 4));
+    }
+    if line.starts_with(&[0xFE, 0xFF]) {
+        return Some((Encoding::Utf16Be, 2));
+    }
+    if line.starts_with(&[0xFF, 0xFE]) {
+        return Some((Encoding::Utf16Le, 2));
+    }
+    if line.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        return Some((Encoding::Utf8, 3));
+    }
+    None
+}
 fn decode_utf8(bytes: &[u8]) -> Option<Vec<u8>> {
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut rest = bytes;
@@ -79,7 +85,7 @@ fn decode_utf8(bytes: &[u8]) -> Option<Vec<u8>> {
                 rest = tail;
                 continue;
             }
-            0xC2..=0xDF => (1usize, 0x80u8, 0xBFu8),
+            0xC2..=0xDF => (1_usize, 0x80_u8, 0xBF_u8),
             0xE0 => (2, 0xA0, 0xBF),
             0xE1..=0xEF => (2, 0x80, 0xBF),
             0xF0 => (3, 0x90, 0xBF),
@@ -110,22 +116,19 @@ fn decode_units(bytes: &[u8], width: usize, little_endian: bool) -> Option<Vec<u
     }
     let mut decoded = Vec::new();
     for chunk in &mut chunks {
-        let code_point = match width {
-            2 => {
-                let [first, second] = <[u8; 2]>::try_from(chunk).ok()?;
-                if little_endian {
-                    u32::from(u16::from_le_bytes([first, second]))
-                } else {
-                    u32::from(u16::from_be_bytes([first, second]))
-                }
+        let code_point = if width == 2 {
+            let [first, second] = <[u8; 2]>::try_from(chunk).ok()?;
+            if little_endian {
+                u32::from(u16::from_le_bytes([first, second]))
+            } else {
+                u32::from(u16::from_be_bytes([first, second]))
             }
-            _ => {
-                let [first, second, third, fourth] = <[u8; 4]>::try_from(chunk).ok()?;
-                if little_endian {
-                    u32::from_le_bytes([first, second, third, fourth])
-                } else {
-                    u32::from_be_bytes([first, second, third, fourth])
-                }
+        } else {
+            let [first, second, third, fourth] = <[u8; 4]>::try_from(chunk).ok()?;
+            if little_endian {
+                u32::from_le_bytes([first, second, third, fourth])
+            } else {
+                u32::from_be_bytes([first, second, third, fourth])
             }
         };
         if code_point > MAX_CODE_POINT {
@@ -137,8 +140,5 @@ fn decode_units(bytes: &[u8], width: usize, little_endian: bool) -> Option<Vec<u
 }
 // the JSON grammar only distinguishes ASCII, so every non-ASCII scalar folds to one placeholder
 fn scalar_to_json_byte(code_point: u32) -> u8 {
-    match u8::try_from(code_point) {
-        Ok(byte) => byte.min(NON_ASCII),
-        Err(_) => NON_ASCII,
-    }
+    u8::try_from(code_point).unwrap_or(NON_ASCII).min(NON_ASCII)
 }

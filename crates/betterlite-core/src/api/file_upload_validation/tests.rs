@@ -116,9 +116,10 @@ fn extension_policy_allow_failures(
     assert_eq!(exception.error_type, "invalid_request_error");
     assert_eq!(exception.param, Some("file".to_owned()));
     assert_eq!(exception.code, "400");
-    let subject = match missing_extension {
-        true => "A file without an extension".to_owned(),
-        false => "File extension '.pdf'".to_owned(),
+    let subject = if missing_extension {
+        "A file without an extension".to_owned()
+    } else {
+        "File extension '.pdf'".to_owned()
     };
     assert_eq!(
         fields.message,
@@ -134,7 +135,7 @@ fn upload_size(source: &[u8], limit: Option<i64>) -> Option<UploadValidationFail
 }
 
 #[rstest]
-#[case::at_the_cap(1_048_576, Some(1))]
+#[case::at_the_cap(0x0010_0000, Some(1))]
 #[case::empty_with_no_cap(0, None)]
 #[case::empty_with_zero_cap(0, Some(0))]
 #[case::small_with_negative_cap(10, Some(-1))]
@@ -146,7 +147,7 @@ fn upload_size_boundaries_accept(#[case] length: usize, #[case] limit: Option<i6
 
 #[test]
 fn upload_size_boundaries_reject() {
-    let data = vec![b'x'; 1_048_577];
+    let data = vec![b'x'; 0x0010_0001];
     let failure = upload_size(&data, Some(1)).unwrap();
     let fields = failure.fields();
     let exception = exception(fields.clone());
@@ -162,19 +163,17 @@ fn upload_size_boundaries_reject() {
 
 #[test]
 fn upload_size_boundaries_restore_a_seekable_position() {
-    let mut cursor = Cursor::new(vec![b'x'; 1_048_577]);
+    let mut cursor = Cursor::new(vec![b'x'; 0x0010_0001]);
     cursor.set_position(7);
     let mut body = FileBody::Seekable(&mut cursor);
     let failure = check_upload_file_size(&mut body, Some(1)).unwrap();
-    drop(body);
     assert!(failure.is_some());
     assert_eq!(cursor.position(), 7);
 
     let mut small = Cursor::new(b"abcdefgh".to_vec());
     small.set_position(7);
-    let mut body = FileBody::Seekable(&mut small);
-    let small_failure = check_upload_file_size(&mut body, Some(1)).unwrap();
-    drop(body);
+    let mut small_body = FileBody::Seekable(&mut small);
+    let small_failure = check_upload_file_size(&mut small_body, Some(1)).unwrap();
     assert!(small_failure.is_none());
     assert_eq!(small.position(), 7);
 }
@@ -216,7 +215,7 @@ fn batch_size_and_extension_absent_name() {
 
 #[test]
 fn batch_size_and_extension_cap() {
-    let at_cap = padded(1_048_576);
+    let at_cap = padded(0x0010_0000);
     let mut body = FileBody::Bytes(&at_cap);
     assert!(
         check_batch_file_upload(
@@ -230,11 +229,11 @@ fn batch_size_and_extension_cap() {
         .is_none()
     );
 
-    let over_cap = padded(1_048_577);
-    let mut body = FileBody::Bytes(&over_cap);
+    let over_cap = padded(0x0010_0001);
+    let mut over_body = FileBody::Bytes(&over_cap);
     let failure = check_batch_file_upload(
         Some("x.jsonl"),
-        &mut body,
+        &mut over_body,
         Some(1),
         LineShape::OpenAi,
         limits(),
@@ -255,7 +254,7 @@ fn batch_size_and_extension_cap() {
 #[case::negative_cap(Some(-1))]
 #[case::huge_cap(Some(i64::MAX))]
 fn batch_size_and_extension_caps_disabled(#[case] limit: Option<i64>) {
-    let mut cursor = Cursor::new(vec![b'\n'; 1_048_577]);
+    let mut cursor = Cursor::new(vec![b'\n'; 0x0010_0001]);
     let mut body = FileBody::Seekable(&mut cursor);
     let failure = check_batch_file_upload(
         Some("x.jsonl"),
@@ -266,7 +265,6 @@ fn batch_size_and_extension_caps_disabled(#[case] limit: Option<i64>) {
     )
     .unwrap()
     .unwrap();
-    drop(body);
     assert_eq!(failure, BatchValidationFailure::Empty);
     assert_eq!(cursor.position(), 0);
 }
@@ -343,23 +341,21 @@ fn batch_line_failures_rewind_a_seekable_scan() {
         limits(),
     )
     .unwrap();
-    drop(body);
     assert!(failure.is_some());
     assert_eq!(cursor.position(), 0);
 
-    let mut cursor = Cursor::new(OPENAI_ROW_NEWLINE.to_vec());
-    let mut body = FileBody::Seekable(&mut cursor);
-    let failure = check_batch_file_upload(
+    let mut clean_cursor = Cursor::new(OPENAI_ROW_NEWLINE.to_vec());
+    let mut clean_body = FileBody::Seekable(&mut clean_cursor);
+    let clean_failure = check_batch_file_upload(
         Some("x.jsonl"),
-        &mut body,
+        &mut clean_body,
         None,
         LineShape::OpenAi,
         limits(),
     )
     .unwrap();
-    drop(body);
-    assert!(failure.is_none());
-    assert_eq!(cursor.position(), 0);
+    assert!(clean_failure.is_none());
+    assert_eq!(clean_cursor.position(), 0);
 }
 
 #[rstest]
@@ -449,8 +445,8 @@ fn row_with_value(value: &[u8]) -> Vec<u8> {
     row
 }
 
-fn invalid_first_line() -> Option<BatchValidationFailure> {
-    Some(BatchValidationFailure::InvalidJsonLine { line_number: 1 })
+fn invalid_first_line() -> BatchValidationFailure {
+    BatchValidationFailure::InvalidJsonLine { line_number: 1 }
 }
 
 #[rstest]
@@ -497,7 +493,7 @@ fn json_byte_compatibility_accepts_values(#[case] value: &[u8]) {
 #[case::control_character(b"\"a\x01\"")]
 fn json_byte_compatibility_rejects_values(#[case] value: &[u8]) {
     let failure = batch_failure(&row_with_value(value), Some("x.jsonl"));
-    assert_eq!(failure, invalid_first_line());
+    assert_eq!(failure, Some(invalid_first_line()));
 }
 
 #[rstest]
@@ -506,7 +502,10 @@ fn json_byte_compatibility_rejects_values(#[case] value: &[u8]) {
 #[case::unclosed_object(b"{")]
 #[case::bare_word(b"abc")]
 fn json_byte_compatibility_rejects_broken_lines(#[case] source: &[u8]) {
-    assert_eq!(batch_failure(source, Some("x.jsonl")), invalid_first_line());
+    assert_eq!(
+        batch_failure(source, Some("x.jsonl")),
+        Some(invalid_first_line())
+    );
 }
 
 fn nested_arrays(levels: usize) -> Vec<u8> {
@@ -524,7 +523,7 @@ fn nested_objects(levels: usize) -> Vec<u8> {
 
 #[rstest]
 #[case::at_the_cap(128, None)]
-#[case::over_the_cap(129, invalid_first_line())]
+#[case::over_the_cap(129, Some(invalid_first_line()))]
 fn json_byte_compatibility_depth_cap_for_arrays(
     #[case] levels: usize,
     #[case] expected: Option<BatchValidationFailure>,
@@ -535,7 +534,7 @@ fn json_byte_compatibility_depth_cap_for_arrays(
 
 #[rstest]
 #[case::at_the_cap(127, None)]
-#[case::over_the_cap(128, invalid_first_line())]
+#[case::over_the_cap(128, Some(invalid_first_line()))]
 fn json_byte_compatibility_depth_cap_for_objects(
     #[case] levels: usize,
     #[case] expected: Option<BatchValidationFailure>,
@@ -546,7 +545,7 @@ fn json_byte_compatibility_depth_cap_for_objects(
 
 #[rstest]
 #[case::at_the_cap(129, Some(BatchValidationFailure::LineNotObject { line_number: 1 }))]
-#[case::over_the_cap(130, invalid_first_line())]
+#[case::over_the_cap(130, Some(invalid_first_line()))]
 fn json_byte_compatibility_depth_cap_at_the_top(
     #[case] levels: usize,
     #[case] expected: Option<BatchValidationFailure>,
@@ -574,7 +573,7 @@ fn json_byte_compatibility_escaped_keys_count(#[case] source: &[u8]) {
 }
 
 #[rstest]
-#[case::raw_non_ascii_first(r#"{"é\u0063ustom_id":1,"method":1,"url":1,"body":1}"#)]
+#[case::raw_non_ascii_first("{\"\u{e9}\\u0063ustom_id\":1,\"method\":1,\"url\":1,\"body\":1}")]
 #[case::escaped_non_ascii_first(r#"{"\u00e9\u0063ustom_id":1,"method":1,"url":1,"body":1}"#)]
 #[case::escaped_non_ascii_last(r#"{"custom_id\u00e9":1,"method":1,"url":1,"body":1}"#)]
 #[case::escape_at_the_ascii_edge(r#"{"custom_id\u0080":1,"method":1,"url":1,"body":1}"#)]
@@ -625,9 +624,10 @@ fn batch_line_failures_number_the_physical_lines(#[case] source: &[u8], #[case] 
 fn json_byte_compatibility_utf16_boms(#[case] bom: &[u8], #[case] big_endian: bool) {
     let mut line = bom.to_vec();
     for unit in OPENAI_ROW {
-        match big_endian {
-            true => line.extend([0, *unit]),
-            false => line.extend([*unit, 0]),
+        if big_endian {
+            line.extend([0, *unit]);
+        } else {
+            line.extend([*unit, 0]);
         }
     }
     assert!(batch_failure(&line, Some("x.jsonl")).is_none());
@@ -666,7 +666,10 @@ fn json_byte_compatibility_two_byte_encodings(#[case] line: &[u8]) {
 #[case::odd_utf32_length(b"\xff\xfe\0\0{\0\0\0}\0\0\0 ")]
 #[case::bom_only(b"\xef\xbb\xbf")]
 fn json_byte_compatibility_rejects_truncated_encodings(#[case] line: &[u8]) {
-    assert_eq!(batch_failure(line, Some("x.jsonl")), invalid_first_line());
+    assert_eq!(
+        batch_failure(line, Some("x.jsonl")),
+        Some(invalid_first_line())
+    );
 }
 
 #[rstest]
@@ -680,7 +683,7 @@ fn json_byte_compatibility_rejects_truncated_encodings(#[case] line: &[u8]) {
 #[case::five_byte_lead(b"\"\xf8\x88\x80\x80\x80\"")]
 fn json_byte_compatibility_rejects_malformed_utf8(#[case] value: &[u8]) {
     let failure = batch_failure(&row_with_value(value), Some("x.jsonl"));
-    assert_eq!(failure, invalid_first_line());
+    assert_eq!(failure, Some(invalid_first_line()));
 }
 
 #[rstest]
@@ -697,8 +700,8 @@ fn json_byte_compatibility_accepts_wellformed_utf8(#[case] value: &[u8]) {
 
 #[rstest]
 #[case::highest_scalar(0x0010_FFFF, None)]
-#[case::above_unicode(0x0011_0000, invalid_first_line())]
-#[case::far_above_unicode(0x0011_0001, invalid_first_line())]
+#[case::above_unicode(0x0011_0000, Some(invalid_first_line()))]
+#[case::far_above_unicode(0x0011_0001, Some(invalid_first_line()))]
 fn json_byte_compatibility_utf32_limits(
     #[case] scalar: u32,
     #[case] expected: Option<BatchValidationFailure>,
@@ -790,10 +793,10 @@ fn extension_policy_suffix_rules(#[case] filename: &str, #[case] extension: &str
 }
 
 #[rstest]
-#[case::exactly_one_mib(1_048_576, 1, false)]
-#[case::one_byte_over(1_048_577, 1, true)]
-#[case::two_mib_boundary(2_097_152, 2, false)]
-#[case::two_mib_over(2_097_153, 2, true)]
+#[case::exactly_one_mib(0x0010_0000, 1, false)]
+#[case::one_byte_over(0x0010_0001, 1, true)]
+#[case::two_mib_boundary(0x0020_0000, 2, false)]
+#[case::two_mib_over(0x0020_0001, 2, true)]
 #[case::zero_cap_is_off(10, 0, false)]
 fn upload_size_boundaries_per_megabyte(
     #[case] length: usize,
@@ -805,7 +808,7 @@ fn upload_size_boundaries_per_megabyte(
 }
 
 #[rstest]
-#[case::exact_tenth(1_048_577, "1.0")]
+#[case::exact_tenth(0x0010_0001, "1.0")]
 #[case::rounds_up(1_153_433, "1.1")]
 #[case::below_half_tenth(1_100_000, "1.0")]
 #[case::above_half_tenth(1_105_000, "1.1")]
@@ -834,7 +837,7 @@ fn replays_corpus() {
                 &bytes,
                 LineShape::OpenAi,
                 limits(),
-            ))
+            ));
         })
         .count();
     assert!(replayed >= 8);

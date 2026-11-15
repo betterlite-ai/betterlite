@@ -7,6 +7,7 @@ pub enum LineShape {
     VertexPassthrough,
 }
 impl LineShape {
+    #[must_use]
     pub const fn hint(self) -> &'static str {
         match self {
             Self::OpenAi => OPENAI_HINT,

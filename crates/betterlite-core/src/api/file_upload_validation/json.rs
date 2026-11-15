@@ -1,6 +1,11 @@
 use super::line_shape::LineShape;
+use std::str::from_utf8;
 // LiteLLM's json.loads recurses about a thousand levels and its handler does not catch RecursionError
 const MAX_DEPTH: usize = 128;
+enum Captured {
+    Text(String),
+    Skipped,
+}
 pub(super) enum Scan {
     Valid,
     NotObject,
@@ -30,22 +35,18 @@ pub(super) fn scan(text: &[u8], shape: LineShape) -> Scan {
     if !object {
         return Scan::NotObject;
     }
-    match shape.first_missing(parser.seen) {
-        Some(key) => Scan::Missing(key),
-        None => Scan::Valid,
-    }
+    shape
+        .first_missing(parser.seen)
+        .map_or(Scan::Valid, Scan::Missing)
 }
-struct Parser<'a> {
-    rest: &'a [u8],
+struct Parser<'text> {
+    rest: &'text [u8],
     shape: LineShape,
     seen: u8,
 }
 impl Parser<'_> {
-    fn peek(&self) -> Option<u8> {
-        match self.rest.first() {
-            Some(unit) => Some(*unit),
-            None => None,
-        }
+    const fn peek(&self) -> Option<u8> {
+        self.rest.first().copied()
     }
     fn next_unit(&mut self) -> Option<u8> {
         let (unit, rest) = self.rest.split_first()?;
@@ -54,7 +55,7 @@ impl Parser<'_> {
     }
     fn skip_whitespace(&mut self) {
         while matches!(self.peek(), Some(b' ' | b'\t' | b'\n' | b'\r')) {
-            drop(self.next_unit());
+            _ = self.next_unit();
         }
     }
     fn value(&mut self, depth: usize) -> Option<()> {
@@ -75,7 +76,7 @@ impl Parser<'_> {
             _ => None,
         }
     }
-    fn member(&mut self, depth: usize, track_keys: bool) -> Option<Option<String>> {
+    fn member(&mut self, depth: usize, track_keys: bool) -> Option<Captured> {
         let key = self.string(track_keys)?;
         self.skip_whitespace();
         if self.next_unit()? != b':' {
@@ -91,13 +92,13 @@ impl Parser<'_> {
         }
         self.skip_whitespace();
         if self.peek() == Some(b'}') {
-            drop(self.next_unit()?);
+            _ = self.next_unit()?;
             return Some(());
         }
         loop {
             self.skip_whitespace();
-            let member_key = self.member(depth.saturating_add(1), track_keys)?;
-            if let Some(key) = member_key {
+            let captured = self.member(depth.saturating_add(1), track_keys)?;
+            if let Captured::Text(key) = captured {
                 self.mark(&key);
             }
             self.skip_whitespace();
@@ -109,10 +110,10 @@ impl Parser<'_> {
         }
     }
     fn array(&mut self, depth: usize) -> Option<()> {
-        drop(self.next_unit()?);
+        _ = self.next_unit()?;
         self.skip_whitespace();
         if self.peek() == Some(b']') {
-            drop(self.next_unit()?);
+            _ = self.next_unit()?;
             return Some(());
         }
         loop {
@@ -136,13 +137,13 @@ impl Parser<'_> {
     fn number(&mut self) -> Option<()> {
         self.integer()?;
         if self.peek() == Some(b'.') {
-            drop(self.next_unit()?);
+            _ = self.next_unit()?;
             self.digits()?;
         }
         if matches!(self.peek(), Some(b'e' | b'E')) {
-            drop(self.next_unit()?);
+            _ = self.next_unit()?;
             if matches!(self.peek(), Some(b'+' | b'-')) {
-                drop(self.next_unit()?);
+                _ = self.next_unit()?;
             }
             self.digits()?;
         }
@@ -150,7 +151,7 @@ impl Parser<'_> {
     }
     fn integer(&mut self) -> Option<()> {
         if self.peek() == Some(b'-') {
-            drop(self.next_unit()?);
+            _ = self.next_unit()?;
         }
         match self.next_unit()? {
             b'0' => Some(()),
@@ -163,7 +164,7 @@ impl Parser<'_> {
     }
     fn digits_optional(&mut self) {
         while matches!(self.peek(), Some(b'0'..=b'9')) {
-            drop(self.next_unit());
+            _ = self.next_unit();
         }
     }
     fn digits(&mut self) -> Option<()> {
@@ -180,7 +181,7 @@ impl Parser<'_> {
             self.seen |= bit;
         }
     }
-    fn string(&mut self, capture: bool) -> Option<Option<String>> {
+    fn string(&mut self, capture: bool) -> Option<Captured> {
         if self.next_unit()? != b'"' {
             return None;
         }
@@ -188,14 +189,11 @@ impl Parser<'_> {
         let mut ascii = capture;
         loop {
             match self.next_unit()? {
-                b'"' => return Some(ascii.then_some(text)),
+                b'"' if ascii => return Some(Captured::Text(text)),
+                b'"' => return Some(Captured::Skipped),
                 b'\\' => ascii = self.escape(&mut text, ascii)?,
                 0x00..=0x1F => return None,
-                unit @ 0x20..=0x7F => {
-                    if ascii {
-                        text.push(char::from(unit));
-                    }
-                }
+                unit @ 0x20..=0x7F if ascii => text.push(char::from(unit)),
                 _ => ascii = false,
             }
         }
@@ -226,7 +224,7 @@ impl Parser<'_> {
         if !hex.iter().all(u8::is_ascii_hexdigit) {
             return None;
         }
-        let value = u32::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?;
+        let value = u32::from_str_radix(from_utf8(hex).ok()?, 16).ok()?;
         self.rest = self.rest.get(4..)?;
         Some(char::from_u32(value).unwrap_or(char::REPLACEMENT_CHARACTER))
     }

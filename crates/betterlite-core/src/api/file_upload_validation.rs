@@ -11,10 +11,9 @@ pub mod upload;
 const MEBIBYTE: u64 = 1024 * 1024;
 fn exceeds(size_bytes: u128, limit_mb: i64) -> bool {
     match u64::try_from(limit_mb) {
-        Ok(limit @ 1..) => match limit.checked_mul(MEBIBYTE) {
-            Some(maximum) => size_bytes > u128::from(maximum),
-            None => false,
-        },
+        Ok(limit @ 1..) => limit
+            .checked_mul(MEBIBYTE)
+            .is_some_and(|maximum| size_bytes > u128::from(maximum)),
         Ok(0) | Err(_) => false,
     }
 }

@@ -11,6 +11,7 @@ pub enum UploadValidationFailure {
     UnsafeFilename { filename: String },
 }
 impl UploadValidationFailure {
+    #[must_use]
     pub fn fields(&self) -> FailureFields {
         let (status, param) = match self {
             Self::TooLarge { .. } => (FILE_TOO_LARGE, FILE_PARAM),
@@ -81,14 +82,13 @@ pub enum ExtensionRule {
     Allowed,
     Blocked,
 }
+#[must_use]
 pub fn check_extension(
     filename: Option<&str>,
     extensions: Option<&[String]>,
     rule: ExtensionRule,
 ) -> Option<UploadValidationFailure> {
-    let Some(configured) = extensions else {
-        return None;
-    };
+    let configured = extensions?;
     let extension = normalized_extension(filename);
     let listed = !extension.is_empty() && listed(configured, &extension);
     match rule {
@@ -101,10 +101,9 @@ pub fn check_extension(
         ExtensionRule::Allowed | ExtensionRule::Blocked => None,
     }
 }
+#[must_use]
 pub fn check_unsafe_filename(filename: Option<&str>) -> Option<UploadValidationFailure> {
-    let Some(name) = filename else {
-        return None;
-    };
+    let name = filename?;
     if name.is_empty() {
         return None;
     }

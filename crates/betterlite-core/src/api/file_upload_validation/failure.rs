@@ -10,6 +10,7 @@ pub struct FailureFields {
     pub status: i64,
     pub param: String,
 }
+#[must_use]
 pub fn exception(fields: FailureFields) -> ProxyException {
     ProxyException::new(ProxyExceptionInit {
         message: fields.message,

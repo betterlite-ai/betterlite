@@ -8,7 +8,7 @@ use super::{exceeds, megabytes};
 use crate::api::api_boundaries::{
     ApiBoundariesInput, ApiLimits, EventBoundary, ItemsBoundary, JsonBoundary,
 };
-use std::io::Read;
+use std::io::Read as _;
 const JSONL_EXTENSION: &str = ".jsonl";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BatchValidationFailure {
@@ -33,6 +33,7 @@ pub enum BatchValidationFailure {
     },
 }
 impl BatchValidationFailure {
+    #[must_use]
     pub fn fields(&self) -> FailureFields {
         let (status, param) = match self {
             Self::TooLarge { .. } => (FILE_TOO_LARGE, FILE_PARAM.to_owned()),
@@ -121,7 +122,7 @@ pub fn decode_file_upload_validation(
     limits.check(ApiBoundariesInput::Json(JsonBoundary {
         known_bytes: bytes.len(),
     }))?;
-    let mut content_lines = 0usize;
+    let mut content_lines = 0_usize;
     for (index, line) in (ByteLines { rest: bytes }).enumerate() {
         let line_number = index.saturating_add(1);
         limits.check(ApiBoundariesInput::Event(EventBoundary {
@@ -152,7 +153,7 @@ fn scan(
     limits: ApiLimits,
 ) -> Result<Option<BatchValidationFailure>, FileUploadValidationError> {
     match body {
-        FileBody::Bytes(bytes) => decode_file_upload_validation(*bytes, line_shape, limits),
+        FileBody::Bytes(bytes) => decode_file_upload_validation(bytes, line_shape, limits),
         FileBody::Seekable(reader) => {
             // a seekable body is read once, bounded by the JSON cap, before the same scan runs
             let ceiling =
@@ -182,12 +183,12 @@ fn scan_line(
         }),
     }
 }
-struct ByteLines<'a> {
-    rest: &'a [u8],
+struct ByteLines<'text> {
+    rest: &'text [u8],
 }
-impl<'a> Iterator for ByteLines<'a> {
-    type Item = &'a [u8];
-    fn next(&mut self) -> Option<&'a [u8]> {
+impl<'text> Iterator for ByteLines<'text> {
+    type Item = &'text [u8];
+    fn next(&mut self) -> Option<&'text [u8]> {
         if self.rest.is_empty() {
             return None;
         }
