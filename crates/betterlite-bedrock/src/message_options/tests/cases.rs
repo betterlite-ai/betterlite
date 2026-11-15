@@ -356,6 +356,26 @@ pub(super) fn clear_thinking_budget() {
         Ok(7)
     ));
     assert!(matches!(resolve_clear_thinking_budget(None, 5), Ok(5)));
+    assert!(matches!(
+        resolve_clear_thinking_budget(Some(&ParamValue::Null), 1024),
+        Ok(1024)
+    ));
+    assert!(matches!(
+        resolve_clear_thinking_budget(Some(&ParamValue::Bool(true)), 1024),
+        Ok(1)
+    ));
+    assert!(matches!(
+        resolve_clear_thinking_budget(Some(&ParamValue::Bool(false)), 1024),
+        Ok(0)
+    ));
+    assert!(matches!(
+        resolve_clear_thinking_budget(Some(&ParamValue::Text(" 2048 ".to_owned())), 1024),
+        Ok(2048)
+    ));
+    assert!(matches!(
+        resolve_clear_thinking_budget(Some(&ParamValue::Text("nope".to_owned())), 1024),
+        Err(MessageOptionsError::BudgetTokens)
+    ));
 }
 
 pub(super) fn adaptive_clear_thinking() {
