@@ -3,6 +3,7 @@ import logging
 from typing import Literal, TypedDict
 
 import httpx
+
 from litellm.proxy.guardrails.guardrail_hooks.compresr.compresr import CompresrGuardrail, _query_for_target, _render_tool_intent, _replace_text_in_content, _safe_int, _safe_response_text  # noqa: E501  # isort: skip  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L109-L246
 from pydantic import JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
@@ -131,11 +132,12 @@ class Logs(logging.Filter):
 
 def project(result: Fields) -> JsonValue:
     compressed = result.get("compressed_context")
+    text: str | None = None
     match compressed:
         case str():
-            text: str | None = compressed
+            text = compressed
         case object():
-            text = None
+            pass
     return {
         "compressed_context": text,
         "original_tokens": _safe_int(result.get("original_tokens")),
