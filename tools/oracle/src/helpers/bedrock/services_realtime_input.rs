@@ -14,7 +14,7 @@ use tracing_subscriber::registry;
 use uuid::Uuid;
 
 use super::services_realtime_session::FixedIds;
-use crate::helpers::{Helper, HelperResult, OrHelperError};
+use crate::helpers::{Helper, HelperResult, OrHelperError as _};
 
 mod tests;
 
