@@ -137,8 +137,9 @@ fn assert_merged_mapping(call: &AnthropicContinuation) {
         "_compression_interception_x survived"
     );
     assert_eq!(
-        text(&call.params, "_headroom_interception_x").as_deref(),
-        Some("true")
+        call.params.get("_headroom_interception_x"),
+        Some(&json("true")),
+        "_headroom_interception_x survived"
     );
     assert_eq!(number(&call.params, "_agentic_loop_depth"), Some(1));
     assert_eq!(number(&call.params, "max_agentic_loops"), Some(3));
