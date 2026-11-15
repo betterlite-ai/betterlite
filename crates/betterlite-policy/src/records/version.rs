@@ -12,6 +12,7 @@ pub struct PolicyVersionCreateRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// ast-grep-ignore: no-long-names
 pub struct PolicyVersionStatusUpdateRequest {
     pub version_status: String,
 }

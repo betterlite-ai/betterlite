@@ -5,6 +5,7 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
+use tokio::runtime::{Builder, Runtime};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -19,51 +20,33 @@ use crate::row_adapter::{
 
 use super::{PolicyLookupError, get_policy_by_id_from_db};
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
 struct FakeFailure(String);
-
-impl std::fmt::Display for FakeFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for FakeFailure {}
 
 #[derive(Clone)]
 struct FakeTable {
-    row: Option<PolicyRow>,
-    failure: Option<String>,
+    answer: Result<Option<PolicyRow>, String>,
     filters: Arc<Mutex<Vec<PolicyClause>>>,
 }
 
 impl FakeTable {
-    fn found(row: PolicyRow) -> Self {
+    fn answering(answer: Result<Option<PolicyRow>, String>) -> Self {
         Self {
-            row: Some(row),
-            failure: None,
-            filters: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn missing() -> Self {
-        Self {
-            row: None,
-            failure: None,
-            filters: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn failing(failure: &str) -> Self {
-        Self {
-            row: None,
-            failure: Some(failure.to_owned()),
+            answer,
             filters: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     fn recorded(&self) -> Vec<PolicyClause> {
         self.filters.lock().unwrap().clone()
+    }
+
+    fn stored(&self) -> Result<PolicyRow, FakeFailure> {
+        self.answer
+            .clone()
+            .map_err(FakeFailure)?
+            .ok_or_else(|| FakeFailure("no row".to_owned()))
     }
 }
 
@@ -74,11 +57,7 @@ impl PolicyTable<PolicyRow> for FakeTable {
         &self,
         _data: PolicyClause,
     ) -> impl Future<Output = Result<PolicyRow, FakeFailure>> + Send {
-        let found = self
-            .row
-            .clone()
-            .ok_or_else(|| FakeFailure("no row".to_owned()));
-        ready(found)
+        ready(self.stored())
     }
 
     fn find_unique(
@@ -86,11 +65,7 @@ impl PolicyTable<PolicyRow> for FakeTable {
         filter: PolicyClause,
     ) -> impl Future<Output = Result<Option<PolicyRow>, FakeFailure>> + Send {
         self.filters.lock().unwrap().push(filter);
-        let answer = match &self.failure {
-            Some(message) => Err(FakeFailure(message.clone())),
-            None => Ok(self.row.clone()),
-        };
-        ready(answer)
+        ready(self.answer.clone().map_err(FakeFailure))
     }
 
     fn find_many(
@@ -98,7 +73,12 @@ impl PolicyTable<PolicyRow> for FakeTable {
         _filter: Option<PolicyClause>,
         _order: Option<PolicyOrder>,
     ) -> impl Future<Output = Result<Vec<PolicyRow>, FakeFailure>> + Send {
-        ready(Ok(self.row.clone().into_iter().collect()))
+        ready(
+            self.answer
+                .clone()
+                .map_err(FakeFailure)
+                .map(|row| row.into_iter().collect()),
+        )
     }
 
     fn update(
@@ -106,11 +86,7 @@ impl PolicyTable<PolicyRow> for FakeTable {
         _filter: PolicyClause,
         _data: PolicyClause,
     ) -> impl Future<Output = Result<PolicyRow, FakeFailure>> + Send {
-        let found = self
-            .row
-            .clone()
-            .ok_or_else(|| FakeFailure("no row".to_owned()));
-        ready(found)
+        ready(self.stored())
     }
 
     fn update_many(
@@ -125,7 +101,7 @@ impl PolicyTable<PolicyRow> for FakeTable {
         &self,
         _filter: PolicyClause,
     ) -> impl Future<Output = Result<Option<PolicyRow>, FakeFailure>> + Send {
-        ready(Ok(self.row.clone()))
+        ready(self.answer.clone().map_err(FakeFailure))
     }
 
     fn delete_many(
@@ -175,10 +151,8 @@ fn row() -> PolicyRow {
     }
 }
 
-fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap()
+fn runtime() -> Runtime {
+    Builder::new_current_thread().build().unwrap()
 }
 
 fn expected_filter() -> PolicyClause {
@@ -224,7 +198,7 @@ where
 #[test]
 fn lookup_returns_the_adapted_row_for_the_policy_id() {
     let source = FakeSource {
-        table: FakeTable::found(row()),
+        table: FakeTable::answering(Ok(Some(row()))),
     };
     let (result, messages) =
         capture_errors(|| runtime().block_on(get_policy_by_id_from_db("policy_1", &source)));
@@ -237,7 +211,7 @@ fn lookup_returns_the_adapted_row_for_the_policy_id() {
 #[test]
 fn lookup_returns_none_when_the_row_is_missing() {
     let source = FakeSource {
-        table: FakeTable::missing(),
+        table: FakeTable::answering(Ok(None)),
     };
     let (result, messages) =
         capture_errors(|| runtime().block_on(get_policy_by_id_from_db("policy_1", &source)));
@@ -249,7 +223,7 @@ fn lookup_returns_none_when_the_row_is_missing() {
 #[test]
 fn lookup_logs_and_returns_the_database_failure() {
     let source = FakeSource {
-        table: FakeTable::failing("connection reset"),
+        table: FakeTable::answering(Err("connection reset".to_owned())),
     };
     let (result, messages) =
         capture_errors(|| runtime().block_on(get_policy_by_id_from_db("policy_1", &source)));

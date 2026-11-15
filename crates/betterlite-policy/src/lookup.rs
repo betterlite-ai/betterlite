@@ -20,7 +20,6 @@ where
     },
 }
 
-#[must_use]
 pub async fn get_policy_by_id_from_db<Client>(
     policy_id: &str,
     client: &Client,

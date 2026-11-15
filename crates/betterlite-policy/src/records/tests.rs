@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use chrono::{DateTime, Utc};
+use rstest::rstest;
+use serde::de::DeserializeOwned;
 
 use crate::context::ResolvedPolicy;
 use crate::pipeline::json_value::JsonValue;
@@ -26,7 +28,10 @@ use super::version::{
     PolicyVersionStatusUpdateRequest,
 };
 
-fn parse<T: serde::de::DeserializeOwned>(text: &str) -> T {
+fn parse<T>(text: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(text).unwrap()
 }
 
@@ -101,7 +106,7 @@ fn create_request_defaults_and_keeps_empty_lists() {
 
 #[test]
 fn create_request_requires_a_policy_name_and_ignores_unknown_fields() {
-    assert!(serde_json::from_str::<PolicyCreateRequest>("{}").is_err());
+    serde_json::from_str::<PolicyCreateRequest>("{}").unwrap_err();
     let request: PolicyCreateRequest = parse(r#"{"policy_name":"p","unknown":true}"#);
     assert_eq!(request.policy_name, "p");
 }
@@ -113,18 +118,42 @@ fn update_request_is_partial() {
     assert_eq!(empty.inherit, None);
     assert_eq!(empty.description, None);
     assert_eq!(empty.guardrails_add, None);
-    let partial: PolicyUpdateRequest = parse(r#"{"description":"new","guardrails_add":["phi"]}"#);
+    assert_eq!(empty.guardrails_remove, None);
+    assert_eq!(empty.condition, None);
+    assert_eq!(empty.pipeline, None);
+    let partial: PolicyUpdateRequest = parse(
+        r#"{
+            "policy_name": "renamed",
+            "inherit": "baseline",
+            "description": "new",
+            "guardrails_add": ["phi"],
+            "guardrails_remove": ["pii"],
+            "condition": {"model": "gpt-4.*"},
+            "pipeline": {"mode": "post_call"}
+        }"#,
+    );
+    assert_eq!(partial.policy_name.as_deref(), Some("renamed"));
+    assert_eq!(partial.inherit.as_deref(), Some("baseline"));
     assert_eq!(partial.description.as_deref(), Some("new"));
     assert_eq!(partial.guardrails_add, Some(vec!["phi".to_owned()]));
-    assert_eq!(partial.policy_name, None);
-    assert_eq!(partial.pipeline, None);
+    assert_eq!(partial.guardrails_remove, Some(vec!["pii".to_owned()]));
+    assert_eq!(partial.condition, Some(condition_request()));
+    assert_eq!(
+        partial.pipeline,
+        Some(json_object(r#"{"mode":"post_call"}"#))
+    );
 }
 
 #[test]
 fn update_request_reads_condition_and_pipeline() {
     let request: PolicyUpdateRequest =
         parse(r#"{"condition":{"model":"m"},"pipeline":{"mode":"post_call"}}"#);
-    assert_eq!(request.condition, Some(condition_request()));
+    assert_eq!(
+        request.condition,
+        Some(PolicyConditionRequest {
+            model: Some("m".to_owned()),
+        })
+    );
     assert_eq!(
         request.pipeline,
         Some(json_object(r#"{"mode":"post_call"}"#))
@@ -134,7 +163,7 @@ fn update_request_reads_condition_and_pipeline() {
 #[test]
 fn db_response_defaults_every_version_column() {
     let response: PolicyDBResponse = parse(r#"{"policy_id":"p1","policy_name":"baseline"}"#);
-    assert_eq!(response.version_number, 1);
+    assert_eq!(response.version_number, 1_i32);
     assert_eq!(response.version_status, "production");
     assert_eq!(response.parent_version_id, None);
     assert!(response.is_latest);
@@ -171,7 +200,7 @@ fn db_response_reads_every_stored_column() {
             "definition_location": "config"
         }"#,
     );
-    assert_eq!(response.version_number, 4);
+    assert_eq!(response.version_number, 4_i32);
     assert_eq!(response.version_status, "draft");
     assert_eq!(response.parent_version_id.as_deref(), Some("p0"));
     assert!(!response.is_latest);
@@ -193,7 +222,7 @@ fn db_response_refuses_a_null_list() {
     let error = serde_json::from_str::<PolicyDBResponse>(
         r#"{"policy_id":"p","policy_name":"n","guardrails_add":null}"#,
     );
-    assert!(error.is_err());
+    error.unwrap_err();
 }
 
 #[test]
@@ -221,7 +250,7 @@ fn version_create_request_defaults_to_the_production_source() {
 
 #[test]
 fn version_status_update_requires_the_new_status() {
-    assert!(serde_json::from_str::<PolicyVersionStatusUpdateRequest>("{}").is_err());
+    serde_json::from_str::<PolicyVersionStatusUpdateRequest>("{}").unwrap_err();
     let update: PolicyVersionStatusUpdateRequest = parse(r#"{"version_status":"published"}"#);
     assert_eq!(update.version_status, "published");
 }
@@ -286,20 +315,25 @@ fn attachment_create_request_reads_the_scope_wildcard_and_lists() {
     assert_eq!(request.keys, Some(vec!["key-a".to_owned()]));
     assert_eq!(request.models, Some(vec!["gpt-4".to_owned()]));
     assert_eq!(request.tags, Some(vec!["health-*".to_owned()]));
-    assert_eq!(request.priority, Some(3));
+    assert_eq!(request.priority, Some(3_i32));
     assert!(request.default);
 }
 
-#[test]
-fn attachment_create_request_refuses_a_priority_over_the_i32_range() {
-    for priority in ["2147483648", "-2147483649"] {
-        let text = format!(r#"{{"policy_name":"p","priority":{priority}}}"#);
-        assert!(serde_json::from_str::<PolicyAttachmentCreateRequest>(&text).is_err());
-    }
-    for priority in ["2147483647", "-2147483648"] {
-        let text = format!(r#"{{"policy_name":"p","priority":{priority}}}"#);
-        assert!(serde_json::from_str::<PolicyAttachmentCreateRequest>(&text).is_ok());
-    }
+#[rstest]
+#[case::above_the_maximum("2147483648")]
+#[case::below_the_minimum("-2147483649")]
+fn attachment_create_request_refuses_a_priority_over_the_i32_range(#[case] priority: &str) {
+    let text = format!(r#"{{"policy_name":"p","priority":{priority}}}"#);
+    serde_json::from_str::<PolicyAttachmentCreateRequest>(&text).unwrap_err();
+}
+
+#[rstest]
+#[case::at_the_maximum("2147483647")]
+#[case::at_the_minimum("-2147483648")]
+fn attachment_create_request_accepts_a_priority_inside_the_i32_range(#[case] priority: &str) {
+    let text = format!(r#"{{"policy_name":"p","priority":{priority}}}"#);
+    let request: PolicyAttachmentCreateRequest = parse(&text);
+    assert_eq!(request.priority, Some(priority.parse::<i32>().unwrap()));
 }
 
 #[test]
@@ -336,7 +370,7 @@ fn attachment_db_response_reads_stored_columns() {
     );
     assert_eq!(response.teams, ["t"]);
     assert!(response.keys.is_empty());
-    assert_eq!(response.priority, Some(-1));
+    assert_eq!(response.priority, Some(-1_i32));
     assert!(response.default);
     assert_eq!(
         response.created_at,
@@ -468,7 +502,7 @@ fn summary_item_requires_scope_and_guardrails() {
     assert_eq!(item.inherit, None);
     assert_eq!(item.scope, PolicyScopeResponse::default());
     let missing_scope = r#"{"guardrails":{},"resolved_guardrails":[],"inheritance_chain":[]}"#;
-    assert!(serde_json::from_str::<PolicySummaryItem>(missing_scope).is_err());
+    serde_json::from_str::<PolicySummaryItem>(missing_scope).unwrap_err();
 }
 
 #[test]
@@ -489,11 +523,11 @@ fn list_response_keeps_policy_names_as_keys() {
     );
     assert_eq!(response.policies.keys().collect::<Vec<_>>(), ["healthcare"]);
     assert_eq!(response.total_count, 1);
-    assert!(serde_json::from_str::<PolicyListResponse>(r#"{"policies":{}}"#).is_err());
+    serde_json::from_str::<PolicyListResponse>(r#"{"policies":{}}"#).unwrap_err();
 }
 
 #[test]
-fn test_response_echoes_the_context_and_defaults_message() {
+fn response_echoes_the_context_and_defaults_message() {
     let response: PolicyTestResponse = parse(
         r#"{
             "context": {"team_alias": "t", "key_alias": null, "model": "gpt-4", "tags": ["a"]},
@@ -510,13 +544,13 @@ fn test_response_echoes_the_context_and_defaults_message() {
     assert_eq!(message.message.as_deref(), Some("none loaded"));
     let extra_context =
         r#"{"context":{"unknown":1},"matching_policies":[],"resolved_guardrails":[]}"#;
-    assert!(serde_json::from_str::<PolicyTestResponse>(extra_context).is_err());
+    serde_json::from_str::<PolicyTestResponse>(extra_context).unwrap_err();
 }
 
 #[test]
 fn pipeline_test_request_requires_pipeline_and_messages() {
-    assert!(serde_json::from_str::<PipelineTestRequest>("{}").is_err());
-    assert!(serde_json::from_str::<PipelineTestRequest>(r#"{"pipeline":{}}"#).is_err());
+    serde_json::from_str::<PipelineTestRequest>("{}").unwrap_err();
+    serde_json::from_str::<PipelineTestRequest>(r#"{"pipeline":{}}"#).unwrap_err();
     let request: PipelineTestRequest = parse(
         r#"{
             "pipeline": {"mode": "pre_call", "steps": [{"guardrail": "hipaa"}]},
