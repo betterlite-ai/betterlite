@@ -357,7 +357,8 @@ async fn the_http_sdk_sends_the_credential_and_never_an_organization() {
     };
     let constructor = HttpCompletionConstructor {
         client,
-        authorization: Some(SecretString::from("sk-deployment")),
+        // deployment.credential() hands the client a complete header value, bearer prefix included
+        authorization: Some(SecretString::from("Bearer sk-deployment")),
         facts: Arc::new(Mutex::new(None)),
     };
     let sdk = constructor
