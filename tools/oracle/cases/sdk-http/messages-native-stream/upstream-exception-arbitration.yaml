@@ -1,0 +1,44 @@
+kind: sdk_http
+name: upstream-exception-arbitration
+env:
+  ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE: "4"
+  ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS: "100"
+call:
+  messages_native_stream:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    queue_maxsize: 4
+    max_detached_stream_drains: 100
+    steps:
+      - {op: start, stream: c}
+      - {op: release, stream: c, count: 1}
+      - {op: read, stream: c}
+      - {op: fail, stream: c}
+      - {op: read, stream: c}
+      - {op: detach, stream: c}
+      - {op: start, stream: o}
+      - {op: release, stream: o, count: 1}
+      - {op: read, stream: o}
+      - {op: fail, stream: o}
+      - {op: detach, stream: o}
+      - {op: wait, stream: o, until: hook}
+      - {op: settle}
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "a"}}'
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "b"}}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
