@@ -5,7 +5,7 @@ use rstest::rstest;
 use serde_json::{Value, json};
 
 use super::{supported_openai_params, transform_messages};
-use crate::chat::ChatMessage;
+use crate::chat::{ChatMessage, MessageContent};
 use crate::hosted_chat_options::map_renaming_token_limit;
 
 fn message(text: &str) -> ChatMessage {
@@ -72,7 +72,7 @@ fn max_completion_tokens_is_renamed_and_an_existing_max_tokens_survives() {
         &requested(r#"{"max_completion_tokens": 20}"#),
         &requested(r#"{"max_tokens": 10}"#),
     );
-    assert_eq!(merged["max_tokens"], json!(20));
+    assert_eq!(merged["max_tokens"], json!(20_i32));
     assert_eq!(merged.len(), 1);
 }
 
@@ -83,7 +83,7 @@ fn a_later_max_completion_tokens_overrides_an_earlier_max_tokens() {
         &requested(r#"{"max_tokens": 9, "max_completion_tokens": 5}"#),
         &IndexMap::new(),
     );
-    assert_eq!(merged["max_tokens"], json!(5));
+    assert_eq!(merged["max_tokens"], json!(5_i32));
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn a_later_max_tokens_overrides_an_earlier_max_completion_tokens() {
         &requested(r#"{"max_completion_tokens": 5, "max_tokens": 9}"#),
         &IndexMap::new(),
     );
-    assert_eq!(merged["max_tokens"], json!(9));
+    assert_eq!(merged["max_tokens"], json!(9_i32));
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn a_text_part_list_becomes_one_concatenated_string() {
     .unwrap();
     assert_eq!(
         converted[0].content,
-        Some(crate::chat::MessageContent::Text("one two".to_owned()))
+        Some(MessageContent::Text("one two".to_owned()))
     );
 }
 
@@ -164,7 +164,7 @@ fn a_list_without_text_parts_stays_a_list() {
     .unwrap();
     assert!(matches!(
         &converted[0].content,
-        Some(crate::chat::MessageContent::Parts(parts)) if parts.len() == 1
+        Some(MessageContent::Parts(parts)) if parts.len() == 1
     ));
 }
 
@@ -174,7 +174,7 @@ fn a_string_content_is_left_alone() {
         transform_messages(&[message(r#"{"role": "user", "content": "plain"}"#)]).unwrap();
     assert_eq!(
         converted[0].content,
-        Some(crate::chat::MessageContent::Text("plain".to_owned()))
+        Some(MessageContent::Text("plain".to_owned()))
     );
 }
 
@@ -186,7 +186,7 @@ fn search_results_text_is_appended_to_the_flattened_content() {
     .unwrap();
     assert_eq!(
         converted[0].content,
-        Some(crate::chat::MessageContent::Text("weathersunny".to_owned()))
+        Some(MessageContent::Text("weathersunny".to_owned()))
     );
     assert_eq!(
         converted[0].passthrough["search_results"][0]["title"],
@@ -219,6 +219,6 @@ fn every_message_in_the_list_is_converted() {
     assert_eq!(converted.len(), 2);
     assert_eq!(
         converted[0].content,
-        Some(crate::chat::MessageContent::Text("a".to_owned()))
+        Some(MessageContent::Text("a".to_owned()))
     );
 }

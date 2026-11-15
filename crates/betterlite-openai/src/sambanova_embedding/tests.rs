@@ -190,7 +190,7 @@ fn a_data_record_keeps_only_the_fields_it_models() {
     let data = reply.data.expect("data");
     assert_eq!(
         serde_json::to_value(&data[0]).unwrap(),
-        json!({"object": "embedding", "embedding": [0.5], "index": 0})
+        json!({"object": "embedding", "embedding": [0.5_f64], "index": 0_i32})
     );
 }
 
@@ -228,24 +228,24 @@ fn a_body_that_is_not_json_carries_the_status_text_and_headers(
 ) {
     let supplied = headers(&[("retry-after", "3")]);
     let error = decode_sambanova_embedding(body, 502, &supplied).unwrap_err();
-    let SambaNovaEmbeddingError::Reply(error) = error else {
+    let SambaNovaEmbeddingError::Reply(reply_error) = error else {
         panic!("a body that is not JSON is a SambaNovaError");
     };
-    assert_eq!(error.status_code, 502);
-    assert_eq!(error.message, expected);
-    assert_eq!(error.headers, supplied);
+    assert_eq!(reply_error.status_code, 502);
+    assert_eq!(reply_error.message, expected);
+    assert_eq!(reply_error.headers, supplied);
 }
 
 #[test]
 fn a_body_that_is_not_utf8_is_a_reply_error_with_the_status_and_headers() {
     let supplied = headers(&[("retry-after", "3")]);
     let error = decode_sambanova_embedding(b"\xff\xfe", 502, &supplied).unwrap_err();
-    let SambaNovaEmbeddingError::Reply(error) = error else {
+    let SambaNovaEmbeddingError::Reply(reply_error) = error else {
         panic!("a body that is not UTF-8 is a SambaNovaError");
     };
-    assert_eq!(error.status_code, 502);
-    assert_eq!(error.headers, supplied);
-    assert!(!error.message.is_empty());
+    assert_eq!(reply_error.status_code, 502);
+    assert_eq!(reply_error.headers, supplied);
+    assert!(!reply_error.message.is_empty());
 }
 
 #[rstest]
