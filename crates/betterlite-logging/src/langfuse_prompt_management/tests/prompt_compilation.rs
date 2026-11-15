@@ -1,6 +1,10 @@
+use std::fs;
+use std::path::PathBuf;
+
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::PromptParams;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use super::support;
 use crate::langfuse_rest::records::Prompt;
@@ -74,6 +78,26 @@ fn a_non_string_variable_is_substituted_as_its_json_text() {
         &variables(r#"{"count":3,"items":[1,2]}"#),
     );
     assert_eq!(compiled, "3 [1,2]");
+}
+
+// the corpus the fuzz target replays, compiled the way that target compiles it
+#[rstest]
+fn every_corpus_prompt_compiles(#[files("fuzz/corpus/langfuse_response/*")] path: PathBuf) {
+    let body = fs::read(&path).expect("the corpus file");
+    let Ok(prompt) = serde_json::from_slice::<Prompt>(&body) else {
+        return;
+    };
+    let variables: PromptParams = serde_json::from_str(
+        r#"{"name":"world","role":"assistant","history":[{"role":"user","content":"hello {{name}}"}]}"#,
+    )
+    .expect("the variables parse");
+    let compiled = super::super::prompt::compile_prompt(&prompt, Some(&variables))
+        .expect("the corpus prompt compiles");
+    assert!(
+        !compiled.is_empty(),
+        "{} compiled no messages",
+        path.display()
+    );
 }
 
 #[test]
