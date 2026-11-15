@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-files-explicit-key-header-noop
+call:
+  vertex_files:
+    operation: headers
+    headers:
+      Authorization: Bearer caller
+      x-test: 'yes'
+    api_key: explicit
+env: {}
+compare: {ignore: []}

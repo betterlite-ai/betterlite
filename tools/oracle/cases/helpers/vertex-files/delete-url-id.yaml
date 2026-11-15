@@ -1,0 +1,8 @@
+kind: helper
+name: vertex-files-delete-url-id
+call:
+  vertex_files:
+    operation: delete_reply
+    url: https://storage.googleapis.com/storage/v1/b/my-bucket/o/litellm-vertex-files%2Fuploads%2Frow-file
+env: {}
+compare: {ignore: []}

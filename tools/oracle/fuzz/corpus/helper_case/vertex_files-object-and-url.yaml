@@ -1,0 +1,23 @@
+kind: helper
+name: vertex_files-object-and-url
+call:
+  vertex_files:
+    operation: object_name
+    file:
+      content: '{"body":{"model":"gemini-2.0-flash"}}'
+      filename: batch.jsonl
+    purpose: batch
+    deployment_model: vertex_ai/gemini-2.5-flash
+    uuid: 1
+calls:
+  - vertex_files:
+      operation: upload_url
+      file:
+        content: ''
+        filename: notes.txt
+      purpose: assistants
+      bucket: my-bucket/exports
+      api_base: https://proxy.example
+      uuid: 1
+env: {}
+compare: {ignore: []}

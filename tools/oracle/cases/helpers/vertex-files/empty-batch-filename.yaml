@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-files-empty-batch-filename
+call:
+  vertex_files:
+    operation: object_name
+    file:
+      content: ''
+      filename: batch.jsonl
+    purpose: batch
+    uuid: 1
+env: {}
+compare: {ignore: []}

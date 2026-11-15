@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-files-tuned-object-path
+call:
+  vertex_files:
+    operation: object_name
+    file:
+      content: '{"custom_id":"a","body":{"model":"gemini-2.5-pro"}}'
+      filename: batch.jsonl
+    purpose: batch
+    deployment_model: vertex_ai/gemini/123456789
+    passthrough: true
+    uuid: 1
+env: {}
+compare: {ignore: []}
