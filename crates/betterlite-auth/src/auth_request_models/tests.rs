@@ -9,7 +9,7 @@ use rstest::rstest;
 
 use super::catalog::{
     CatalogError, Collaborators, DeploymentRecord, EmptyCatalog, ManagedIdDecoders, ManagedIdError,
-    ManagedIdFamily, ModelCatalog,
+    ManagedIdFamily, ModelCatalog, RequestModelResolver,
 };
 use super::managed::{
     managed_resource_models, prediction_candidates, prediction_deployments,
@@ -22,7 +22,7 @@ use super::sources::{
 };
 use super::{
     MODEL_ROUTING_ROUTE_MARKERS, RequestedModels, append_model_candidates, dedupe_model_candidates,
-    format_model_candidates, is_falsey, route_matches_any_marker,
+    format_model_candidates, is_falsey, push_optional_model, route_matches_any_marker,
 };
 
 fn object(text: &str) -> JsonObject {
@@ -74,14 +74,26 @@ impl ModelCatalog for FakeCatalog {
 #[derive(Debug, Default)]
 struct RecordingDecoders {
     legacy_ids: Arc<Mutex<Vec<String>>>,
+    family_calls: Arc<Mutex<Vec<String>>>,
+    hint_models: Vec<String>,
     fails_unified: bool,
 }
 
 impl RecordingDecoders {
+    fn with_hints(hint_models: &[&str]) -> Self {
+        Self {
+            hint_models: hint_models
+                .iter()
+                .map(|model| (*model).to_owned())
+                .collect(),
+            ..Self::default()
+        }
+    }
+
     fn failing_unified() -> Self {
         Self {
-            legacy_ids: Arc::default(),
             fails_unified: true,
+            ..Self::default()
         }
     }
 }
@@ -94,12 +106,17 @@ impl ManagedIdDecoders for RecordingDecoders {
         _catalog: Option<&dyn ModelCatalog>,
         candidates: &mut Vec<String>,
     ) -> Result<(), ManagedIdError> {
+        self.family_calls
+            .lock()
+            .map_err(|_poisoned| ManagedIdError::Decoder)?
+            .push(format!("{family:?}:{resource_id}"));
         if family == ManagedIdFamily::LegacyFileBatch {
             self.legacy_ids
                 .lock()
                 .map_err(|_poisoned| ManagedIdError::Decoder)?
                 .push(resource_id.to_owned());
         }
+        candidates.extend(self.hint_models.iter().cloned());
         if !self.fails_unified {
             return Ok(());
         }
@@ -866,5 +883,95 @@ fn custom_collision_still_checks(#[case] marker: Option<bool>, #[case] expected:
     assert_eq!(
         get_model_from_request(&request, &collaborators),
         Ok(expected)
+    );
+}
+
+#[test]
+fn managed_id_hints_reach_the_candidate_list() {
+    let body = object(r#"{"file_id": "file-123"}"#);
+    let catalog = FakeCatalog::default();
+    let decoders = RecordingDecoders::with_hints(&["from-id"]);
+    let collaborators = Collaborators {
+        catalog: Some(&catalog),
+        decoders: &decoders,
+    };
+    assert_eq!(
+        candidates(
+            "/files",
+            &body,
+            &JsonObject::new(),
+            &JsonObject::new(),
+            &collaborators,
+        ),
+        ["from-id"]
+    );
+}
+
+#[test]
+fn optional_model_hint_appends_only_when_present() {
+    let mut candidates = Vec::new();
+    push_optional_model(&mut candidates, Some("model".to_owned()));
+    push_optional_model(&mut candidates, None);
+    assert_eq!(candidates, ["model"]);
+}
+
+#[test]
+fn video_and_character_ids_try_their_family() {
+    let body = object(r#"{"video_id": "video-1", "character_id": "character-1"}"#);
+    let catalog = FakeCatalog::default();
+    let decoders = RecordingDecoders::default();
+    let collaborators = Collaborators {
+        catalog: Some(&catalog),
+        decoders: &decoders,
+    };
+    assert!(
+        candidates(
+            "/files",
+            &body,
+            &JsonObject::new(),
+            &JsonObject::new(),
+            &collaborators,
+        )
+        .is_empty()
+    );
+    let calls = decoders
+        .family_calls
+        .lock()
+        .expect("the recording mutex is not poisoned");
+    assert_eq!(
+        *calls,
+        [
+            "LegacyFileBatch:video-1",
+            "Unified:video-1",
+            "Video:video-1",
+            "LegacyFileBatch:character-1",
+            "Unified:character-1",
+            "Character:character-1",
+        ]
+    );
+}
+
+#[test]
+fn resolver_reads_the_request_route() {
+    let body = JsonObject::new();
+    let path_params = BTreeSet::new();
+    let request = RequestSnapshot {
+        route: "/openai/deployments/dep-model/chat/completions",
+        body: &body,
+        headers: None,
+        query: None,
+        dispatch: DispatchContext {
+            endpoint_marker: None,
+            path_params: &path_params,
+        },
+        team_id: None,
+    };
+    let resolver = RequestModelResolver {
+        catalog: Arc::new(EmptyCatalog),
+        decoders: Arc::new(RecordingDecoders::default()),
+    };
+    assert_eq!(
+        resolver.resolve(&request),
+        Ok(RequestedModels::One("dep-model".to_owned()))
     );
 }
