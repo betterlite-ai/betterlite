@@ -22,7 +22,6 @@ pub(super) struct Recorded {
     pub(super) body: Vec<u8>,
 }
 
-#[derive(Default)]
 pub(super) struct State {
     pub(super) posts: Mutex<Vec<Recorded>>,
     pub(super) incoming: Mutex<VecDeque<Option<String>>>,
@@ -117,18 +116,15 @@ pub(super) fn build(
 ) -> Result<Built, Box<crate::helpers::HelperError>> {
     let body =
         serde_json::to_vec(answer).map_err(|error| failure("ValueError", error.to_string()))?;
-    let state = Arc::new(State::default());
-    {
-        let mut incoming = state
-            .incoming
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        for frame in frames {
-            let text = serde_json::to_string(frame)
-                .map_err(|error| failure("ValueError", error.to_string()))?;
-            incoming.push_back(Some(text));
-        }
-    }
+    let incoming = frames
+        .iter()
+        .map(|frame| serde_json::to_string(frame).map(Some))
+        .collect::<Result<VecDeque<_>, _>>()
+        .map_err(|error| failure("ValueError", error.to_string()))?;
+    let state = Arc::new(State {
+        posts: Mutex::new(Vec::new()),
+        incoming: Mutex::new(incoming),
+    });
     let fake = Arc::new(Fake {
         state: Arc::clone(&state),
         status: StatusCode::from_u16(status)

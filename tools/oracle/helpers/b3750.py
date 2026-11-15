@@ -12,7 +12,6 @@ from litellm.proxy.guardrails.guardrail_hooks.aim.aim import (
     AimOutputGuardrailResult,
 )
 from litellm.proxy.proxy_server import StreamingCallbackError
-from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 from pydantic import BaseModel, TypeAdapter
 from pydantic import JsonValue as Json
@@ -68,15 +67,6 @@ class RecordedCall(TypedDict):
 
 
 class AimInspector(Protocol):
-    api_key: str | None
-    api_base: str
-    ws_api_base: str
-
-    @property
-    def inspect_embeddings(self) -> bool: ...
-
-    def get_supported_event_hooks(self) -> list[GuardrailEventHooks]: ...
-
     async def call_aim_guardrail(
         self, data: dict[str, Json], hook: str, key_alias: str | None
     ) -> dict[str, Json]: ...
@@ -97,18 +87,15 @@ class AnalysisServer:
         self.requests: list[RecordedCall] = []
 
     async def __call__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        head = await reader.readuntil(b"\r\n\r\n")
-        lines = head.decode("latin-1").split("\r\n")
-        request_line = lines[0].split(" ")
+        head = (await reader.readuntil(b"\r\n\r\n")).decode("latin-1").split("\r\n")
+        request_line = head[0].split(" ")
         headers: dict[str, str] = {}
-        for line in lines[1:]:
+        for line in head[1:]:
             name, separator, value = line.partition(":")
             if separator:
                 headers[name.strip().lower()] = value.strip()
-        length_text = headers.get("content-length")
-        length = 0 if length_text is None else int(length_text)
-        payload = await reader.readexactly(length)
-        body = TypeAdapter(Json).validate_json(payload)
+        length = int(headers.get("content-length", "0"))
+        body = TypeAdapter(Json).validate_json(await reader.readexactly(length))
         self.requests.append(RecordedCall(url=request_line[1], headers=headers, body=body))
         encoded = dumps(self.answer).encode()
         response_head = (
@@ -143,10 +130,9 @@ async def streaming_chunks(
 
 
 def build_guardrail(settings: Settings, api_base: str | None) -> AimInspector:
-    base = DEFAULT_BASE if api_base is None else api_base
     return AimGuardrail(
         api_key=settings.get("api_key"),
-        api_base=base,
+        api_base=DEFAULT_BASE if api_base is None else api_base,
         inspect_embeddings=settings.get("inspect_embeddings"),
         timeout=None,
     )
@@ -165,23 +151,6 @@ def request_output(server: AnalysisServer) -> Json:
         "path_ok": call["url"] == ANALYZE_PATH,
         "headers": headers,
         "body": call["body"],
-    }
-    return view
-
-
-def run_construct(input_value: CaseInput) -> Json:
-    settings = input_value["settings"]
-    try:
-        guardrail = build_guardrail(settings, settings.get("api_base"))
-    except AimGuardrailMissingSecrets:
-        return {"missing_secrets": True}
-    hooks: list[Json] = [hook.value for hook in guardrail.get_supported_event_hooks()]
-    view: dict[str, Json] = {
-        "api_key": guardrail.api_key,
-        "api_base": guardrail.api_base,
-        "ws_api_base": guardrail.ws_api_base,
-        "inspect_embeddings": guardrail.inspect_embeddings,
-        "supported_event_hooks": hooks,
     }
     return view
 
@@ -222,19 +191,22 @@ async def analysis_endpoint(
 
 async def run_request_async(input_value: CaseInput) -> Json:
     data = TypeAdapter(dict[str, Json]).validate_python(input_value["request_data"])
-    async with analysis_endpoint(input_value) as (server, inspector):
-        outcome = await asyncio.gather(
-            inspector.call_aim_guardrail(
-                data, hook=input_value["hook"], key_alias=input_value["key_alias"]
-            ),
-            return_exceptions=True,
-        )
-        view: dict[str, Json] = {
-            "request": request_output(server),
-            "request_data": data,
-            "blocked": rejection(outcome[0]),
-        }
-        return view
+    try:
+        async with analysis_endpoint(input_value) as (server, inspector):
+            outcome = await asyncio.gather(
+                inspector.call_aim_guardrail(
+                    data, hook=input_value["hook"], key_alias=input_value["key_alias"]
+                ),
+                return_exceptions=True,
+            )
+            view: dict[str, Json] = {
+                "request": request_output(server),
+                "request_data": data,
+                "blocked": rejection(outcome[0]),
+            }
+            return view
+    except AimGuardrailMissingSecrets:
+        return {"missing_secrets": True}
 
 
 async def run_output_async(input_value: CaseInput) -> Json:
@@ -286,8 +258,6 @@ async def run_stream_async(input_value: CaseInput) -> Json:
 
 def run(input_value: CaseInput) -> Json:
     function = input_value["function"]
-    if function == "construct":
-        return run_construct(input_value)
     if function == "request":
         return asyncio.run(run_request_async(input_value))
     if function == "output":

@@ -4,37 +4,16 @@ use std::sync::PoisonError;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::aim::error::AimError;
 use betterlite_guardrails::aim::output::AimOutput;
-use betterlite_guardrails::aim::settings::{AimHook, SUPPORTED_EVENT_HOOKS};
+use betterlite_guardrails::aim::settings::AimHook;
 use betterlite_guardrails::aim::stream::AimStreamChunk;
 use futures_util::StreamExt as _;
-use reqwest::header::HeaderMap;
-use secrecy::ExposeSecret as _;
-use serde::Serialize;
 use serde_json::json;
 
 use super::fakes::{Built, build};
-use super::{
-    ConstructArgs, HookArg, Input, Op, OutputArgs, RequestArgs, Settings, StreamArgs, failure,
-};
+use super::{HookArg, Input, Op, OutputArgs, RequestArgs, Settings, StreamArgs, failure};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 const ANALYZE_PATH: &str = "/fw/v1/analyze";
-
-#[derive(Serialize)]
-struct RecordedRequest {
-    path_ok: bool,
-    headers: BTreeMap<String, String>,
-    body: GuardrailValue,
-}
-
-#[derive(Serialize)]
-struct Rejection {
-    status: u16,
-    #[serde(rename = "type")]
-    error_type: &'static str,
-    param: Option<String>,
-    code: &'static str,
-}
 
 fn prepared(
     settings: &Settings,
@@ -51,7 +30,7 @@ fn prepared(
     Ok((built, runtime))
 }
 
-fn recorded(built: &Built) -> Result<RecordedRequest, Box<HelperError>> {
+fn recorded(built: &Built) -> HelperResult {
     let posts = built
         .state
         .posts
@@ -63,74 +42,56 @@ fn recorded(built: &Built) -> Result<RecordedRequest, Box<HelperError>> {
             "the guardrail sent no request".to_owned(),
         ));
     };
-    let mut headers = BTreeMap::new();
-    for (header, value) in &post.headers {
-        let name = header.as_str();
-        if (name.starts_with("x-aim-") || name == "content-type" || name == "authorization")
-            && let Ok(text) = value.to_str()
-        {
-            headers.insert(name.to_owned(), text.to_owned());
-        }
-    }
+    let mut headers: BTreeMap<String, String> = post
+        .headers
+        .iter()
+        .filter(|(header, _)| {
+            header.as_str().starts_with("x-aim-")
+                || matches!(header.as_str(), "authorization" | "content-type")
+        })
+        .filter_map(|(header, value)| {
+            Some((header.as_str().to_owned(), value.to_str().ok()?.to_owned()))
+        })
+        .collect();
     // the real HttpPoster adds this header; the fake poster records the caller's map
     headers.insert("content-type".to_owned(), "application/json".to_owned());
-    let body = serde_json::from_slice(&post.body)
+    let body = serde_json::from_slice::<GuardrailValue>(&post.body)
         .map_err(|error| failure("ValueError", error.to_string()))?;
-    Ok(RecordedRequest {
-        path_ok: post.url.ends_with(ANALYZE_PATH),
-        headers,
-        body,
-    })
+    Ok(json!({
+        "path_ok": post.url.ends_with(ANALYZE_PATH),
+        "headers": headers,
+        "body": body,
+    }))
 }
 
-fn rejection(error: &AimError) -> Option<Rejection> {
+fn rejection(error: &AimError) -> Option<serde_json::Value> {
     match error {
-        AimError::Rejected { code, .. } => Some(Rejection {
-            status: 400,
-            error_type: "invalid_request_error",
-            param: None,
-            code,
-        }),
+        AimError::Rejected { code, .. } => Some(json!({
+            "status": 400,
+            "type": "invalid_request_error",
+            "param": null,
+            "code": code,
+        })),
         _ => None,
     }
 }
 
-fn construct(args: &ConstructArgs) -> HelperResult {
-    let outcome = build(
-        &args.settings,
-        &args.environment,
-        &GuardrailValue::Null,
-        200,
-        &[],
-    );
-    if let Err(error) = &outcome
-        && error.class == "AimMissingSecrets"
-    {
-        return Ok(json!({"missing_secrets": true}));
-    }
-    let guardrail = outcome?.guardrail;
-    let hooks = serde_json::to_value(SUPPORTED_EVENT_HOOKS)
-        .map_err(|error| failure("ValueError", error.to_string()))?;
-    Ok(json!({
-        "api_key": guardrail.api_key.expose_secret(),
-        "api_base": guardrail.api_base,
-        "ws_api_base": guardrail.ws_api_base,
-        "inspect_embeddings": guardrail.inspect_embeddings,
-        "supported_event_hooks": hooks,
-    }))
-}
-
 fn execute(input: &Input) -> HelperResult {
     match input {
-        Input::Construct(args) => construct(args),
         Input::Request(args) => {
-            let (built, runtime) = prepared(
+            let (built, runtime) = match prepared(
                 &args.settings,
                 &args.environment,
                 &args.answer,
-                args.answer_status,
+                args.answer_status.unwrap_or(200),
                 &[],
-            )?;
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) if error.class == "AimMissingSecrets" => {
+                    return Ok(json!({"missing_secrets": true}));
+                }
+                Err(error) => return Err(error),
+            };
             let mut data = args.request_data.clone();
             let hook = match args.hook {
                 HookArg::PreCall => AimHook::PreCall,
@@ -159,7 +120,7 @@ fn execute(input: &Input) -> HelperResult {
                 &args.settings,
                 &args.environment,
                 &args.answer,
-                args.answer_status,
+                args.answer_status.unwrap_or(200),
                 &[],
             )?;
             let verdict = runtime.block_on(built.guardrail.call_aim_guardrail_on_output(

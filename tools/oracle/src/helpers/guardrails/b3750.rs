@@ -13,7 +13,6 @@ pub(crate) struct Op;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    Construct(Box<ConstructArgs>),
     Request(Box<RequestArgs>),
     Output(Box<OutputArgs>),
     Stream(Box<StreamArgs>),
@@ -27,14 +26,6 @@ pub(crate) struct Settings {
     inspect_embeddings: Option<bool>,
     guardrail_name: Option<String>,
     litellm_version: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct ConstructArgs {
-    #[serde(default)]
-    settings: Settings,
-    #[serde(default)]
-    environment: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -54,8 +45,7 @@ pub(crate) struct RequestArgs {
     hook: HookArg,
     key_alias: Option<String>,
     answer: GuardrailValue,
-    #[serde(default = "default_status")]
-    answer_status: u16,
+    answer_status: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,8 +58,7 @@ pub(crate) struct OutputArgs {
     output: String,
     key_alias: Option<String>,
     answer: GuardrailValue,
-    #[serde(default = "default_status")]
-    answer_status: u16,
+    answer_status: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,10 +73,6 @@ pub(crate) struct StreamArgs {
     chunks: Vec<GuardrailValue>,
     #[serde(default)]
     frames: Vec<GuardrailValue>,
-}
-
-fn default_status() -> u16 {
-    200
 }
 
 fn failure(class: &str, message: String) -> Box<HelperError> {
