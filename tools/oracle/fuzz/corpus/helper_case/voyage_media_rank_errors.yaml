@@ -1,0 +1,10 @@
+kind: helper
+name: voyage-media-rank-errors
+call:
+  voyage_media_rank:
+    multimodal:
+      - {model: voyage-multimodal-3, input: [{content: [{type: image_url}]}], options: {}, base: null, api_key: null, env: {}, reply: {status: 503, body: "unavailable"}}
+    rerank:
+      - {model: voyage-rerank-2, query: q, documents: [a], top_n: 1, return_documents: false, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: null, api_key: null, env: {}, headers: {}, reply: {status: 429, body: "slow down"}, uuid: "00000000-0000-4000-8000-000000000002"}
+env: {}
+compare: {ignore: []}

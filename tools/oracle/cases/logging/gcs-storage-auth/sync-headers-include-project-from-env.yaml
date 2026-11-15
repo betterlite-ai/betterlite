@@ -1,0 +1,7 @@
+# sync headers pass GOOGLE_SECRET_MANAGER_PROJECT_ID and the service account path to the token call
+kind: helper
+name: gcs-storage-auth-sync-headers-include-project-from-env
+call:
+  b3997: {"action": "sync_headers", "environment": {"GOOGLE_SECRET_MANAGER_PROJECT_ID": "secret-project", "GCS_PATH_SERVICE_ACCOUNT": "/creds/service-account.json"}}
+env: {}
+compare: {ignore: []}
