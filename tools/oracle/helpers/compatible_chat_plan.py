@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -62,9 +62,32 @@ class CompletionParams(TypedDict):
     fake_stream: bool
 
 
-# completion is unannotated, so this view types its kwargs and its Any-laden return
+# completion is unannotated, so this view names its parameters and its Any-laden return
 class Completion(Protocol):
-    def completion(self, **params: Unpack[CompletionParams]) -> Reply | Deferred: ...
+    def completion(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, JsonValue]],
+        api_base: str,
+        custom_llm_provider: str,
+        custom_prompt_dict: dict[str, JsonValue],
+        model_response: ModelResponse,
+        print_verbose: Callable[[str], None],
+        encoding: None,
+        api_key: str | None,
+        logging_obj: Logging,
+        optional_params: dict[str, JsonValue],
+        acompletion: bool,
+        litellm_params: dict[str, JsonValue],
+        logger_fn: None,
+        headers: dict[str, str] | None,
+        timeout: float | None,
+        client: AsyncHTTPHandler | HTTPHandler,
+        custom_endpoint: bool | None,
+        streaming_decoder: None,
+        fake_stream: bool,
+    ) -> Reply | Deferred: ...
 
 
 class ChatHandler(OpenAILikeChatHandler):
@@ -243,12 +266,10 @@ def outcome_view(result: Reply, call: Call) -> dict[str, JsonValue]:
 def answer(handler: Completion, call: Call) -> JsonValue:
     transport = Transport(call["status"], call["reply"])
     params = completion_params(call, transport)
-    result = settled(handler.completion(**params))
-    return {
-        "request": request_view(transport, call["watch_headers"]),
-        "transport_stream": streamed(transport),
-        **outcome_view(result, call),
-    }
+    view = outcome_view(settled(handler.completion(**params)), call)
+    view["request"] = request_view(transport, call["watch_headers"])
+    view["transport_stream"] = streamed(transport)
+    return view
 
 
 def run(input_value: Input) -> JsonValue:
