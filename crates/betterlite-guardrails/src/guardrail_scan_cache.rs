@@ -44,14 +44,38 @@ pub fn scanned_text_hash(text: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-impl GuardrailBase {
-    // None means "scan everything"; a list, even an empty one, means "scan only these"
-    pub async fn filter_new_texts_for_session<S: ScanCacheStore>(
+// The crate keeps one inherent impl block per type, so these methods hang off a trait
+pub trait SessionScanCache {
+    fn filter_new_texts_for_session<S>(
         &self,
         texts: Option<&[String]>,
         request_data: &BTreeMap<String, GuardrailValue>,
         cache: &S,
-    ) -> Option<Vec<String>> {
+    ) -> impl Future<Output = Option<Vec<String>>> + Send
+    where
+        S: ScanCacheStore;
+
+    fn mark_texts_scanned<S>(
+        &self,
+        texts: Option<&[String]>,
+        request_data: &BTreeMap<String, GuardrailValue>,
+        cache: &S,
+        ttl_seconds: i64,
+    ) where
+        S: ScanCacheStore;
+}
+
+impl SessionScanCache for GuardrailBase {
+    // None means "scan everything"; a list, even an empty one, means "scan only these"
+    async fn filter_new_texts_for_session<S>(
+        &self,
+        texts: Option<&[String]>,
+        request_data: &BTreeMap<String, GuardrailValue>,
+        cache: &S,
+    ) -> Option<Vec<String>>
+    where
+        S: ScanCacheStore,
+    {
         let settings = &self.settings;
         let present = texts.filter(|list| !list.is_empty())?;
         if !settings.only_scan_new_messages {
@@ -84,20 +108,22 @@ impl GuardrailBase {
         Some(
             present
                 .iter()
+                .filter(|&text| !seen.contains(&scanned_text_hash(text)))
                 .cloned()
-                .filter(|text| !seen.contains(&scanned_text_hash(text)))
                 .collect(),
         )
     }
 
     // The cache is best effort: a failed read or write only makes the next call scan again
-    pub async fn mark_texts_scanned<S: ScanCacheStore>(
+    async fn mark_texts_scanned<S>(
         &self,
         texts: Option<&[String]>,
         request_data: &BTreeMap<String, GuardrailValue>,
         cache: &S,
         ttl_seconds: i64,
-    ) {
+    ) where
+        S: ScanCacheStore,
+    {
         let settings = &self.settings;
         let Some(present) = texts.filter(|list| !list.is_empty()) else {
             return;
@@ -111,9 +137,8 @@ impl GuardrailBase {
         let Some(session_id) = session_id_from_request(request_data) else {
             return;
         };
-        let name = settings.guardrail_name.as_deref();
-        let key = scan_cache_key(name, &session_id);
-        let shown = name.unwrap_or("None");
+        let shown = settings.guardrail_name.as_deref().unwrap_or("None");
+        let key = scan_cache_key(settings.guardrail_name.as_deref(), &session_id);
         let stored = match cache.get(&key).await {
             Ok(stored) => stored.unwrap_or_default(),
             Err(error) => {
@@ -123,8 +148,7 @@ impl GuardrailBase {
                 return;
             }
         };
-        let mut merged = Vec::new();
-        let mut seen = BTreeSet::new();
+        let (mut merged, mut seen) = (Vec::new(), BTreeSet::new());
         for hash in stored
             .into_iter()
             .chain(present.iter().map(String::as_str).map(scanned_text_hash))

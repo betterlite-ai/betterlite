@@ -8,7 +8,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
-use betterlite_guardrails::guardrail_deployment::markers::PreCallToken;
+use betterlite_guardrails::guardrail_deployment::markers::{PreCallMarkers as _, PreCallToken};
 use serde::Deserialize;
 use serde_json::{Value, json};
 

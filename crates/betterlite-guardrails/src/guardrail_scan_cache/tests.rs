@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::io;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -11,7 +12,7 @@ use tracing_subscriber::fmt;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use super::{ScanCacheStore, scan_cache_key};
+use super::{ScanCacheStore, SessionScanCache as _, scan_cache_key};
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::settings::GuardrailSettings;
 
@@ -27,7 +28,10 @@ struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        self.0
+            .lock()
+            .map_err(|poisoned| io::Error::other(poisoned.to_string()))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -95,24 +99,32 @@ impl Store {
 impl ScanCacheStore for Store {
     type Error = io::Error;
 
-    async fn get(&self, key: &str) -> Result<Option<Vec<String>>, io::Error> {
+    fn get(
+        &self,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<Vec<String>>, io::Error>> + Send {
         self.reads.lock().unwrap().push(key.to_owned());
         if self.fail_reads {
-            return Err(io::Error::other("boom"));
+            return ready(Err(io::Error::other("boom")));
         }
-        Ok(self.entries.lock().unwrap().get(key).cloned())
+        ready(Ok(self.entries.lock().unwrap().get(key).cloned()))
     }
 
-    async fn set(&self, key: &str, hashes: Vec<String>, ttl_seconds: i64) -> Result<(), io::Error> {
+    fn set(
+        &self,
+        key: &str,
+        hashes: Vec<String>,
+        ttl_seconds: i64,
+    ) -> impl Future<Output = Result<(), io::Error>> + Send {
         if self.fail_writes {
-            return Err(io::Error::other("boom"));
+            return ready(Err(io::Error::other("boom")));
         }
         self.writes
             .lock()
             .unwrap()
             .push((key.to_owned(), hashes.clone(), ttl_seconds));
         self.entries.lock().unwrap().insert(key.to_owned(), hashes);
-        Ok(())
+        ready(Ok(()))
     }
 }
 
@@ -181,7 +193,11 @@ async fn filter_returns_every_text_when_nothing_is_stored() {
 async fn filter_hashes_the_utf8_bytes_as_lowercase_hex() {
     let store = Store::holding(KEY, &[ACCENTED]);
     let result = scanning(Some("g"))
-        .filter_new_texts_for_session(Some(&texts(&["héllo", "hello"])), &session("s1"), &store)
+        .filter_new_texts_for_session(
+            Some(&texts(&["h\u{e9}llo", "hello"])),
+            &session("s1"),
+            &store,
+        )
         .await;
     assert_eq!(result, Some(texts(&["hello"])));
 }
@@ -333,7 +349,7 @@ async fn mark_appends_new_hashes_after_the_stored_ones_without_repeats() {
 async fn mark_hashes_the_utf8_bytes_as_lowercase_hex() {
     let store = Store::default();
     scanning(None)
-        .mark_texts_scanned(Some(&texts(&["héllo"])), &session("s1"), &store, 60)
+        .mark_texts_scanned(Some(&texts(&["h\u{e9}llo"])), &session("s1"), &store, 60)
         .await;
     assert_eq!(
         store.writes(),

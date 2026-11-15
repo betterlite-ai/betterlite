@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
@@ -6,7 +7,8 @@ use betterlite_core::routes::CallType;
 use thiserror::Error;
 
 use super::hook_target::{
-    DeploymentHookTarget, HookTarget, PreCallOutcome, metadata_bucket, stamped_key_fields,
+    DeploymentHookTarget, HookTarget, HookTargetSelector as _, PreCallOutcome, metadata_bucket,
+    stamped_key_fields,
 };
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -37,52 +39,70 @@ pub enum MessagesHookError {
     },
     #[error("{failure}")]
     Failed {
-        failure: GuardrailFailure,
+        failure: Box<GuardrailFailure>,
         guardrail_name: Option<String>,
         event_hook: Option<LitellmParamsMode>,
     },
 }
 
-impl GuardrailBase {
-    fn rejected(&self, message: String) -> MessagesHookError {
-        MessagesHookError::Rejected {
-            message,
-            guardrail_name: self.settings.guardrail_name.clone(),
-            event_hook: self.settings.event_hook.clone(),
-        }
+fn rejected(guardrail: &GuardrailBase, message: String) -> MessagesHookError {
+    MessagesHookError::Rejected {
+        message,
+        guardrail_name: guardrail.settings.guardrail_name.clone(),
+        event_hook: guardrail.settings.event_hook.clone(),
     }
+}
 
-    fn failed(&self, failure: GuardrailFailure) -> MessagesHookError {
-        MessagesHookError::Failed {
-            failure,
-            guardrail_name: self.settings.guardrail_name.clone(),
-            event_hook: self.settings.event_hook.clone(),
-        }
+fn failed(guardrail: &GuardrailBase, failure: Box<GuardrailFailure>) -> MessagesHookError {
+    MessagesHookError::Failed {
+        failure,
+        guardrail_name: guardrail.settings.guardrail_name.clone(),
+        event_hook: guardrail.settings.event_hook.clone(),
     }
+}
 
-    // An error from the hook: a reroute cannot happen after retrieval, so it blocks; any other failure is raised as it is
-    fn hook_error(&self, failure: GuardrailFailure) -> MessagesHookError {
-        if let GuardrailFailure::SensitiveDataRoute(route) = &failure {
-            let name = route
-                .guardrail_name
-                .as_deref()
-                .or(self.settings.guardrail_name.as_deref())
-                .unwrap_or("None");
-            return self.rejected(format!(
+// An error from the hook: a reroute cannot happen after retrieval, so it blocks; any other failure is raised as it is
+fn hook_error(guardrail: &GuardrailBase, failure: GuardrailFailure) -> MessagesHookError {
+    if let GuardrailFailure::SensitiveDataRoute(route) = &failure {
+        let name = route
+            .guardrail_name
+            .as_deref()
+            .or(guardrail.settings.guardrail_name.as_deref())
+            .unwrap_or("None");
+        return rejected(
+            guardrail,
+            format!(
                 "{name} asked to reroute the request to {} over retrieved content; a request cannot be rerouted after retrieval, so it was blocked",
                 route.route_to_model
-            ));
-        }
-        self.failed(failure)
+            ),
+        );
     }
+    failed(guardrail, Box::new(failure))
+}
 
-    // LiteLLM's async_pre_call_hook_on_messages: scans retrieved content with the pre-call hook
-    pub async fn pre_call_hook_on_messages<H: DeploymentHookTarget>(
+// The crate keeps one inherent impl block per type, so this method hangs off a trait
+pub trait MessagesHook {
+    fn pre_call_hook_on_messages<H>(
         &self,
         hooks: &H,
         request_data: &Data,
         messages: &[GuardrailValue],
-    ) -> Result<Vec<GuardrailValue>, MessagesHookError> {
+    ) -> impl Future<Output = Result<Vec<GuardrailValue>, MessagesHookError>> + Send
+    where
+        H: DeploymentHookTarget;
+}
+
+impl MessagesHook for GuardrailBase {
+    // LiteLLM's async_pre_call_hook_on_messages: scans retrieved content with the pre-call hook
+    async fn pre_call_hook_on_messages<H>(
+        &self,
+        hooks: &H,
+        request_data: &Data,
+        messages: &[GuardrailValue],
+    ) -> Result<Vec<GuardrailValue>, MessagesHookError>
+    where
+        H: DeploymentHookTarget,
+    {
         let target = self.hook_target();
         let mut scan_request: Data = request_data
             .iter()
@@ -102,15 +122,15 @@ impl GuardrailBase {
         let outcome = hooks
             .pre_call(target, &key, &mut scan_request, CallType::Acompletion)
             .await
-            .map_err(|failure| self.hook_error(failure))?;
+            .map_err(|failure| hook_error(self, failure))?;
         match outcome {
             PreCallOutcome::Unchanged => Ok(messages.to_vec()),
             PreCallOutcome::Data(mut result) => match result.remove("messages") {
                 Some(GuardrailValue::Array(scanned)) => Ok(scanned),
                 _ => Ok(messages.to_vec()),
             },
-            PreCallOutcome::Text(message) => Err(self.rejected(message)),
-            PreCallOutcome::Failure(failure) => Err(self.failed(*failure)),
+            PreCallOutcome::Text(message) => Err(rejected(self, message)),
+            PreCallOutcome::Failure(failure) => Err(failed(self, failure)),
         }
     }
 }

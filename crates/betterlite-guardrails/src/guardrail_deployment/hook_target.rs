@@ -84,10 +84,15 @@ pub fn stamped_key_fields(data: &Data) -> StampedKeyFields {
     }
 }
 
-impl GuardrailBase {
+// The crate keeps one inherent impl block per type, so this method hangs off a trait
+pub trait HookTargetSelector {
+    fn hook_target(&self) -> HookTarget;
+}
+
+impl HookTargetSelector for GuardrailBase {
     // LiteLLM's _deployment_hook_target; it raises ImportError without the proxy extras, which betterlite always has
     #[must_use]
-    pub const fn hook_target(&self) -> HookTarget {
+    fn hook_target(&self) -> HookTarget {
         let switches = &self.settings.switches;
         if !switches.uses_apply_guardrail_interface || switches.use_native_lifecycle_hooks {
             HookTarget::Own

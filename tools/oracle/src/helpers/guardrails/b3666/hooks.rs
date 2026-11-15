@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::{Future, ready};
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
@@ -6,11 +8,12 @@ use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_deployment::hook_target::{
     DeploymentHookTarget, HookTarget, PreCallOutcome, StampedKeyFields,
 };
-use betterlite_guardrails::guardrail_deployment::hooks::{DeploymentHookError, PreCallContext};
+use betterlite_guardrails::guardrail_deployment::hooks::{
+    DeploymentHookError, DeploymentHooks as _, PreCallContext,
+};
 use betterlite_guardrails::guardrail_deployment::markers::PreCallToken;
 use betterlite_guardrails::guardrail_selection::error::GuardrailSelectionError;
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 use super::{Data, FIXED_TOKEN, Settings, guardrail_of};
 use crate::helpers::{HelperError, OrHelperError as _};
@@ -22,14 +25,17 @@ struct Probe {
 }
 
 impl DeploymentHookTarget for Probe {
-    async fn pre_call(
+    fn pre_call(
         &self,
         _target: HookTarget,
         key: &StampedKeyFields,
         _data: &mut Data,
         _call_type: CallType,
-    ) -> Result<PreCallOutcome, GuardrailFailure> {
-        self.keys.lock().await.push(key.clone());
+    ) -> impl Future<Output = Result<PreCallOutcome, GuardrailFailure>> + Send {
+        self.keys
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(key.clone());
         let message = GuardrailValue::Object(BTreeMap::from([
             ("role".to_owned(), GuardrailValue::Text("user".to_owned())),
             (
@@ -37,20 +43,20 @@ impl DeploymentHookTarget for Probe {
                 GuardrailValue::Text("hooked".to_owned()),
             ),
         ]));
-        Ok(PreCallOutcome::Data(BTreeMap::from([(
+        ready(Ok(PreCallOutcome::Data(BTreeMap::from([(
             "messages".to_owned(),
             GuardrailValue::Array(vec![message]),
-        )])))
+        )]))))
     }
 
-    async fn post_call_success(
+    fn post_call_success(
         &self,
         _target: HookTarget,
         _key: &StampedKeyFields,
         _data: &mut Data,
         _response: GuardrailValue,
-    ) -> Result<Option<GuardrailValue>, GuardrailFailure> {
-        Ok(Some(GuardrailValue::Object(BTreeMap::new())))
+    ) -> impl Future<Output = Result<Option<GuardrailValue>, GuardrailFailure>> + Send {
+        ready(Ok(Some(GuardrailValue::Object(BTreeMap::new()))))
     }
 }
 
@@ -121,7 +127,10 @@ pub(super) async fn probed_keys(
         .pre_call_deployment_hook(&probe, &context, kwargs, Some(CallType::Completion))
         .await
         .or_value_error()?;
-    Ok(probe.keys.into_inner())
+    Ok(probe
+        .keys
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner))
 }
 
 pub(super) async fn stamped(settings: &Settings, data: &Data) -> Result<Value, Box<HelperError>> {

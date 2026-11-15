@@ -9,10 +9,13 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_core::routes::CallType;
 
-use super::hook_target::{HookTarget, PreCallOutcome, StampedKeyFields, stamped_key_fields};
-use super::hooks::{DeploymentHookError, PreCallContext};
-use super::logging_hook::{LoggedCall, LoggedResultKind, LoggingHookError};
-use super::messages_hook::MessagesHookError;
+use super::hook_target::{
+    HookTarget, HookTargetSelector as _, PreCallOutcome, StampedKeyFields, stamped_key_fields,
+};
+use super::hooks::{DeploymentHookError, DeploymentHooks as _, PreCallContext};
+use super::logging_hook::{LoggedCall, LoggedResultKind, LoggingHook as _, LoggingHookError};
+use super::markers::PreCallMarkers as _;
+use super::messages_hook::{MessagesHook as _, MessagesHookError};
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::failure::{GuardrailFailure, SensitiveDataRouteFailure};
 use fixtures::{
@@ -101,7 +104,7 @@ fn marker_mark_does_nothing_for_an_unnamed_guardrail() {
 #[case::other_name(r#"{"metadata":{"_pre_call_executed_guardrails":["tok:h"]}}"#, false)]
 #[case::not_a_list(r#"{"metadata":{"_pre_call_executed_guardrails":"tok:g"}}"#, false)]
 #[case::no_key(r#"{"metadata":{}}"#, false)]
-#[case::no_bucket(r#"{}"#, false)]
+#[case::no_bucket("{}", false)]
 fn marker_already_ran_looks_in_both_buckets(#[case] request: &str, #[case] expected: bool) {
     let ran = guardrail(Some("g")).pre_call_hook_already_ran(&token(), &data(request));
     assert_eq!(ran, expected);
@@ -146,7 +149,7 @@ fn stamped_reads_every_field_from_metadata() {
     None
 )]
 #[case::a_non_text_value(r#"{"metadata":{"user_api_key_user_id":5}}"#, None)]
-#[case::no_metadata(r#"{}"#, None)]
+#[case::no_metadata("{}", None)]
 #[case::metadata_is_no_object(r#"{"metadata":"x"}"#, None)]
 fn stamped_picks_the_bucket_and_only_text_values(
     #[case] request: &str,
@@ -413,7 +416,7 @@ async fn post_hook_returns_none_when_the_hook_changes_nothing() {
 }
 
 #[rstest]
-#[case::missing(r#"{}"#)]
+#[case::missing("{}")]
 #[case::not_a_list(r#"{"guardrails":"g"}"#)]
 #[tokio::test]
 async fn post_hook_skips_a_request_without_a_guardrails_list(#[case] request: &str) {
@@ -530,7 +533,7 @@ async fn messages_hook_fails_with_the_hooks_failure(#[case] hooks: Recorder) {
     assert_eq!(
         result,
         Err(MessagesHookError::Failed {
-            failure: boom(),
+            failure: Box::new(boom()),
             guardrail_name: Some("g".to_owned()),
             event_hook: Some(LitellmParamsMode::One("pre_call".to_owned())),
         })
@@ -596,7 +599,7 @@ async fn messages_hook_does_not_turn_a_returned_reroute_into_a_block() {
     Some(r#"{"b":2}"#)
 )]
 #[case::unified_ignores_a_non_object_bucket(true, r#"{"metadata":"x"}"#, None)]
-#[case::unified_without_a_bucket(true, r#"{}"#, None)]
+#[case::unified_without_a_bucket(true, "{}", None)]
 #[case::own_target_adds_nothing(false, r#"{"metadata":{"a":1}}"#, None)]
 #[tokio::test]
 async fn messages_hook_carries_the_metadata_bucket_to_a_unified_guardrail(
@@ -671,7 +674,7 @@ async fn logging_hook_scans_a_copy_of_the_request_without_the_old_verdict() {
 #[case::input_when_there_are_no_messages(r#"{"input":"embed me"}"#, r#""embed me""#)]
 #[case::input_when_messages_is_null(r#"{"messages":null,"input":"embed me"}"#, r#""embed me""#)]
 #[case::messages_before_input(r#"{"messages":"a","input":"b"}"#, r#""a""#)]
-#[case::nothing(r#"{}"#, "null")]
+#[case::nothing("{}", "null")]
 #[tokio::test]
 async fn logging_hook_scans_the_logged_messages_else_the_logged_input(
     #[case] logged: &str,
@@ -699,8 +702,8 @@ async fn logging_hook_scans_the_logged_messages_else_the_logged_input(
     r#""r""#,
     Some(r#""b""#)
 )]
-#[case::the_result(r#"{}"#, r#""r""#, Some(r#""r""#))]
-#[case::no_response(r#"{}"#, "null", None)]
+#[case::the_result("{}", r#""r""#, Some(r#""r""#))]
+#[case::no_response("{}", "null", None)]
 #[tokio::test]
 async fn logging_hook_scans_the_streamed_response_before_the_result(
     #[case] logged: &str,
@@ -770,12 +773,10 @@ async fn logging_hook_a_model_response_needs_an_acompletion_translation() {
     assert_eq!(outcome, Err(LoggingHookError::NoOutputTranslation));
     assert!(seen.lock().unwrap().is_empty());
     let plain = legacy_call(data(LOGGED), &result, "completion");
-    assert!(
-        applying(Some("g"))
-            .logging_hook(&(), &only_completion, plain)
-            .await
-            .is_ok()
-    );
+    applying(Some("g"))
+        .logging_hook(&(), &only_completion, plain)
+        .await
+        .unwrap();
 }
 
 #[rstest]
@@ -796,7 +797,7 @@ async fn logging_hook_a_model_response_needs_an_acompletion_translation() {
 )]
 #[case::appends_every_entry_of_a_list(
     r#"{"standard_logging_object":{"guardrail_information":[0]}}"#,
-    r#"[1,2]"#,
+    "[1,2]",
     r#"{"standard_logging_object":{"guardrail_information":[0,1,2]}}"#
 )]
 #[tokio::test]

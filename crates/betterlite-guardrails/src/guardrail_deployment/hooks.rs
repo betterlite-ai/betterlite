@@ -1,12 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_core::routes::CallType;
 use thiserror::Error;
 
-use super::hook_target::{DeploymentHookTarget, PreCallOutcome, stamped_key_fields};
-use super::markers::PreCallToken;
+use super::hook_target::{
+    DeploymentHookTarget, HookTargetSelector as _, PreCallOutcome, stamped_key_fields,
+};
+use super::markers::{PreCallMarkers as _, PreCallToken};
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_selection::error::GuardrailSelectionError;
@@ -36,15 +39,41 @@ pub struct PreCallContext<'ctx> {
     pub suppressed: &'ctx BTreeSet<String>,
 }
 
-impl GuardrailBase {
+// The crate keeps one inherent impl block per type, so these methods hang off a trait
+pub trait DeploymentHooks {
+    fn pre_call_deployment_hook<H>(
+        &self,
+        hooks: &H,
+        context: &PreCallContext<'_>,
+        kwargs: Data,
+        call_type: Option<CallType>,
+    ) -> impl Future<Output = Result<Data, DeploymentHookError>> + Send
+    where
+        H: DeploymentHookTarget;
+
+    fn post_call_success_deployment_hook<H>(
+        &self,
+        hooks: &H,
+        suppressed: &BTreeSet<String>,
+        request_data: &mut Data,
+        response: GuardrailValue,
+    ) -> impl Future<Output = Result<Option<GuardrailValue>, DeploymentHookError>> + Send
+    where
+        H: DeploymentHookTarget;
+}
+
+impl DeploymentHooks for GuardrailBase {
     // LiteLLM's async_pre_call_deployment_hook; kwargs comes back untouched unless every step passes
-    pub async fn pre_call_deployment_hook<H: DeploymentHookTarget>(
+    async fn pre_call_deployment_hook<H>(
         &self,
         hooks: &H,
         context: &PreCallContext<'_>,
         mut kwargs: Data,
         call_type: Option<CallType>,
-    ) -> Result<Data, DeploymentHookError> {
+    ) -> Result<Data, DeploymentHookError>
+    where
+        H: DeploymentHookTarget,
+    {
         if !matches!(kwargs.get("guardrails"), Some(GuardrailValue::Array(_)))
             || self.pre_call_hook_already_ran(context.token, &kwargs)
         {
@@ -53,12 +82,14 @@ impl GuardrailBase {
         if !self.should_run_guardrail(&kwargs, GuardrailEventHooks::PreCall, context.suppressed)? {
             return Ok(kwargs);
         }
-        let Some(call_type @ (CallType::Completion | CallType::Acompletion)) = call_type else {
+        let Some(selected) =
+            call_type.filter(|kind| matches!(kind, CallType::Completion | CallType::Acompletion))
+        else {
             return Ok(kwargs);
         };
         let key = stamped_key_fields(&kwargs);
         let outcome = hooks
-            .pre_call(self.hook_target(), &key, &mut kwargs, call_type)
+            .pre_call(self.hook_target(), &key, &mut kwargs, selected)
             .await?;
         if let PreCallOutcome::Data(mut result) = outcome
             && let Some(messages) = result.remove("messages")
@@ -70,13 +101,16 @@ impl GuardrailBase {
     }
 
     // LiteLLM's async_post_call_success_deployment_hook, without success for the name limit; LiteLLM's call_type argument is never read
-    pub async fn post_call_deployment_hook<H: DeploymentHookTarget>(
+    async fn post_call_deployment_hook<H>(
         &self,
         hooks: &H,
         suppressed: &BTreeSet<String>,
         request_data: &mut Data,
         response: GuardrailValue,
-    ) -> Result<Option<GuardrailValue>, DeploymentHookError> {
+    ) -> Result<Option<GuardrailValue>, DeploymentHookError>
+    where
+        H: DeploymentHookTarget,
+    {
         if !matches!(
             request_data.get("guardrails"),
             Some(GuardrailValue::Array(_))

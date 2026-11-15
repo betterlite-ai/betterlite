@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::future::{Future, ready};
+use std::sync::{Mutex, PoisonError};
 
-use betterlite_guardrails::guardrail_scan_cache::ScanCacheStore;
+use betterlite_guardrails::guardrail_scan_cache::{ScanCacheStore, SessionScanCache as _};
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 use super::{Data, Settings, guardrail_of};
 
@@ -19,19 +20,33 @@ struct Store {
 impl ScanCacheStore for Store {
     type Error = Infallible;
 
-    async fn get(&self, key: &str) -> Result<Option<Vec<String>>, Infallible> {
-        Ok(self.entries.lock().await.get(key).cloned())
+    fn get(
+        &self,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<Vec<String>>, Infallible>> + Send {
+        ready(Ok(self
+            .entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned()))
     }
 
-    async fn set(
+    fn set(
         &self,
         key: &str,
         hashes: Vec<String>,
         _ttl_seconds: i64,
-    ) -> Result<(), Infallible> {
-        self.last.lock().await.clone_from(&hashes);
-        self.entries.lock().await.insert(key.to_owned(), hashes);
-        Ok(())
+    ) -> impl Future<Output = Result<(), Infallible>> + Send {
+        self.last
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone_from(&hashes);
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), hashes);
+        ready(Ok(()))
     }
 }
 
@@ -62,7 +77,12 @@ pub(super) async fn scan(
         guardrail
             .mark_texts_scanned(texts, data, &store, SCAN_TTL_SECONDS)
             .await;
-        return json!(*store.last.lock().await);
+        let last = store
+            .last
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        return json!(last);
     }
     json!(
         guardrail

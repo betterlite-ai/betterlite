@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::mem;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -136,10 +137,11 @@ fn scratch_request(kwargs: &Data, tools: GuardrailValue, metadata: Data) -> Data
     ])
 }
 
-async fn run_scan<T: BaseTranslation>(
-    scan: LoggedScan<'_, T>,
-    request: &mut Data,
-) -> Result<(), T::Failure> {
+async fn run_scan<T>(scan: LoggedScan<'_, T>, request: &mut Data) -> Result<(), T::Failure>
+where
+    T: BaseTranslation + Sync,
+    T::Guardrail: Sync,
+{
     scan.input
         .process_input_messages(request, scan.guardrail, None)
         .await?;
@@ -159,11 +161,15 @@ async fn run_scan<T: BaseTranslation>(
 }
 
 // LiteLLM's _scan_logged_call; whatever the scan recorded is left in metadata, also when it fails part way
-async fn scan_logged_call<T: BaseTranslation>(
+async fn scan_logged_call<T>(
     scan: LoggedScan<'_, T>,
     kwargs: &Data,
     metadata: &mut Data,
-) -> Result<(), ScanFailure<T::Failure>> {
+) -> Result<(), ScanFailure<T::Failure>>
+where
+    T: BaseTranslation + Sync,
+    T::Guardrail: Sync,
+{
     let tools = logged_inner(kwargs, "optional_params", "tools")
         .map_err(ScanFailure::Request)?
         .cloned()
@@ -208,14 +214,31 @@ fn with_recorded(
     Ok(kwargs)
 }
 
-impl GuardrailBase {
-    // LiteLLM's async_logging_hook: runs a logging_only guardrail on copies of the logged call and records its verdict
-    pub async fn logging_hook<T: BaseTranslation>(
+// The crate keeps one inherent impl block per type, so this method hangs off a trait
+pub trait LoggingHook {
+    fn logging_hook<T>(
         &self,
         guardrail: &T::Guardrail,
         registry: &TranslationRegistry<T>,
         call: LoggedCall<'_>,
-    ) -> Result<Data, LoggingHookError> {
+    ) -> impl Future<Output = Result<Data, LoggingHookError>> + Send
+    where
+        T: BaseTranslation + Sync,
+        T::Guardrail: Sync;
+}
+
+impl LoggingHook for GuardrailBase {
+    // LiteLLM's async_logging_hook: runs a logging_only guardrail on copies of the logged call and records its verdict
+    async fn logging_hook<T>(
+        &self,
+        guardrail: &T::Guardrail,
+        registry: &TranslationRegistry<T>,
+        call: LoggedCall<'_>,
+    ) -> Result<Data, LoggingHookError>
+    where
+        T: BaseTranslation + Sync,
+        T::Guardrail: Sync,
+    {
         if !self.settings.switches.uses_apply_guardrail_interface
             || !self.event_hook_is_event_type(GuardrailEventHooks::LoggingOnly)
         {

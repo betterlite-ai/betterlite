@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::{Future, ready};
 use std::io;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -18,8 +19,12 @@ use crate::guardrail_base::settings::GuardrailSettings;
 use crate::guardrail_deployment::hook_target::{
     DeploymentHookTarget, HookTarget, PreCallOutcome, StampedKeyFields,
 };
-use crate::guardrail_deployment::hooks::{DeploymentHookError, PreCallContext};
-use crate::guardrail_deployment::logging_hook::{LoggedCall, LoggedResultKind, LoggingHookError};
+use crate::guardrail_deployment::hooks::{
+    DeploymentHookError, DeploymentHooks as _, PreCallContext,
+};
+use crate::guardrail_deployment::logging_hook::{
+    LoggedCall, LoggedResultKind, LoggingHook as _, LoggingHookError,
+};
 use crate::guardrail_deployment::markers::PreCallToken;
 use crate::guardrail_deployment::messages_hook::MessagesHookError;
 use crate::guardrail_selection::error::GuardrailSelectionError;
@@ -54,7 +59,10 @@ pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        self.0
+            .lock()
+            .map_err(|poisoned| io::Error::other(poisoned.to_string()))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -133,29 +141,29 @@ impl Recorder {
 }
 
 impl DeploymentHookTarget for Recorder {
-    async fn pre_call(
+    fn pre_call(
         &self,
         target: HookTarget,
         key: &StampedKeyFields,
         data: &mut Data,
         call_type: CallType,
-    ) -> Result<PreCallOutcome, GuardrailFailure> {
+    ) -> impl Future<Output = Result<PreCallOutcome, GuardrailFailure>> + Send {
         self.pre_calls.lock().unwrap().push(PreCallSeen {
             target,
             key: key.clone(),
             data: data.clone(),
             call_type,
         });
-        self.pre.clone()
+        ready(self.pre.clone())
     }
 
-    async fn post_call_success(
+    fn post_call_success(
         &self,
         target: HookTarget,
         key: &StampedKeyFields,
         data: &mut Data,
         response: GuardrailValue,
-    ) -> Result<Option<GuardrailValue>, GuardrailFailure> {
+    ) -> impl Future<Output = Result<Option<GuardrailValue>, GuardrailFailure>> + Send {
         let answer = self.post.clone();
         let seen = PostCallSeen {
             target,
@@ -164,7 +172,7 @@ impl DeploymentHookTarget for Recorder {
             response,
         };
         self.post_calls.lock().unwrap().push(seen);
-        answer
+        ready(answer)
     }
 }
 
@@ -224,34 +232,34 @@ impl BaseTranslation for Scanner {
     type LogTarget = ();
     type Failure = io::Error;
 
-    async fn process_input_messages(
+    fn process_input_messages(
         &self,
         data: &mut Data,
         _guardrail: &(),
         _logging_obj: Option<&mut ()>,
-    ) -> Result<(), io::Error> {
+    ) -> impl Future<Output = Result<(), io::Error>> + Send {
         self.record("input", data, None);
         self.write_verdict(data);
         if self.fail_input {
-            return Err(io::Error::other("input scan failed"));
+            return ready(Err(io::Error::other("input scan failed")));
         }
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn process_output_response(
+    fn process_output_response(
         &self,
         response: GuardrailValue,
         _guardrail: &(),
         call: TranslationCall<'_, ()>,
-    ) -> Result<GuardrailValue, io::Error> {
+    ) -> impl Future<Output = Result<GuardrailValue, io::Error>> + Send {
         let Some(request) = call.request_data else {
-            return Err(io::Error::other("no request data"));
+            return ready(Err(io::Error::other("no request data")));
         };
         self.record("output", request, Some(response.clone()));
         if self.fail_output {
-            return Err(io::Error::other("output scan failed"));
+            return ready(Err(io::Error::other("output scan failed")));
         }
-        Ok(response)
+        ready(Ok(response))
     }
 }
 
@@ -419,12 +427,12 @@ pub(super) async fn scan_logged(
     call_type: &str,
 ) -> (Data, Vec<Seen>) {
     let seen = shared();
-    let result = value(result);
+    let answer = value(result);
     let returned = base
         .logging_hook(
             &(),
             &scanner_registry(&seen),
-            legacy_call(data(logged), &result, call_type),
+            legacy_call(data(logged), &answer, call_type),
         )
         .await
         .unwrap();

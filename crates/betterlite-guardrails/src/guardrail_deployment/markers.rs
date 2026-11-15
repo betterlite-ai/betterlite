@@ -11,10 +11,27 @@ pub const PRE_CALL_EXECUTED_KEY: &str = "_pre_call_executed_guardrails";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreCallToken(pub String);
 
-impl GuardrailBase {
+// The crate keeps one inherent impl block per type, so these methods hang off a trait
+pub trait PreCallMarkers {
+    fn pre_call_marker(&self, token: &PreCallToken) -> Option<String>;
+
+    fn mark_pre_call_hook_ran(
+        &self,
+        token: &PreCallToken,
+        data: &mut BTreeMap<String, GuardrailValue>,
+    );
+
+    fn pre_call_hook_already_ran(
+        &self,
+        token: &PreCallToken,
+        data: &BTreeMap<String, GuardrailValue>,
+    ) -> bool;
+}
+
+impl PreCallMarkers for GuardrailBase {
     // LiteLLM's _pre_call_marker; an empty name is used as given
     #[must_use]
-    pub fn pre_call_marker(&self, token: &PreCallToken) -> Option<String> {
+    fn pre_call_marker(&self, token: &PreCallToken) -> Option<String> {
         self.settings
             .guardrail_name
             .as_ref()
@@ -22,7 +39,7 @@ impl GuardrailBase {
     }
 
     // Records that this guardrail's pre-call hook ran, in the first of metadata and litellm_metadata that is an object
-    pub fn mark_pre_call_hook_ran(
+    fn mark_pre_call_hook_ran(
         &self,
         token: &PreCallToken,
         data: &mut BTreeMap<String, GuardrailValue>,
@@ -34,15 +51,13 @@ impl GuardrailBase {
         let found = ["metadata", "litellm_metadata"]
             .into_iter()
             .find(|name| matches!(data.get(*name), Some(GuardrailValue::Object(_))));
-        let location = if let Some(name) = found {
-            name
-        } else {
+        let location = found.unwrap_or("metadata");
+        if found.is_none() {
             data.insert(
                 "metadata".to_owned(),
                 GuardrailValue::Object(BTreeMap::new()),
             );
-            "metadata"
-        };
+        }
         let Some(GuardrailValue::Object(bucket)) = data.get_mut(location) else {
             return;
         };
@@ -61,7 +76,7 @@ impl GuardrailBase {
 
     // True when the marker is in the list of either bucket
     #[must_use]
-    pub fn pre_call_hook_already_ran(
+    fn pre_call_hook_already_ran(
         &self,
         token: &PreCallToken,
         data: &BTreeMap<String, GuardrailValue>,
