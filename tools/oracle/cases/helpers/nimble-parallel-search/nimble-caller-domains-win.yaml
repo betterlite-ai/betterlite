@@ -1,0 +1,23 @@
+kind: helper
+name: nimble-caller-domains-win
+call:
+  b8025:
+    provider: nimble
+    calls:
+      - operation: request
+        query: rust search
+        optional_params:
+          search_domain_filter: [derived.test, "-old.test"]
+          include_domains: [mine.test]
+          exclude_domains: [theirs.test]
+      - operation: request
+        query: rusty
+        optional_params:
+          query: ignored
+          include_domains: [kept.test]
+      - operation: request
+        query: [a, b]
+        optional_params:
+          exclude_domains: [spam.test]
+env: {}
+compare: {ignore: []}

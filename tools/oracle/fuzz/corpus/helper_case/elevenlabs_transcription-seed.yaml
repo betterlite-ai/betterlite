@@ -1,0 +1,12 @@
+kind: helper
+name: elevenlabs-transcription-seed
+call:
+  elevenlabs_transcription:
+    calls:
+    - {function: map_params, non_default: {language: en}, optional_params: {}}
+    - {function: request, model: scribe_v1, filename: clip.wav, content: RIFF, optional_params: {language_code: en}}
+    - {function: url, api_base: null, environment: {}}
+    - {function: headers, headers: {}, api_key: null, environment: {ELEVENLABS_API_KEY: k}}
+    - {function: transcript, body: '{"text": "hi", "words": [{"type": "word", "text": "hi", "start": 0, "end": 1}]}'}
+compare: {ignore: []}
+env: {}
