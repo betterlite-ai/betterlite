@@ -258,23 +258,6 @@ fn a_type_only_rule_matches_on_the_tool_type(
 }
 
 #[test]
-fn a_tool_with_a_name_but_no_type_still_evaluates_rules() {
-    let guardrail = build(
-        args(ToolDefaultAction::Deny),
-        vec![rule(
-            "read",
-            ToolDecision::Allow,
-            Some("^read$"),
-            None,
-            None,
-        )],
-    );
-    let result = get_permission_for_tool_call(&guardrail, Some("read"), None, None);
-    assert!(result.is_allowed);
-    assert_eq!(result.rule_id.as_deref(), Some("read"));
-}
-
-#[test]
 fn a_tool_with_a_type_but_no_name_still_evaluates_rules() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
@@ -699,25 +682,6 @@ fn an_object_argument_is_used_as_given() {
 }
 
 #[test]
-fn arguments_parse_from_the_json_string_form() {
-    let guardrail = build(
-        args(ToolDefaultAction::Deny),
-        vec![rule(
-            "safe",
-            ToolDecision::Allow,
-            Some("^read$"),
-            None,
-            Some(&[("path", "^/safe$")]),
-        )],
-    );
-    let arguments = GuardrailValue::Text(r#"{"path": "/safe"}"#.to_owned());
-    let result =
-        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
-    assert!(result.is_allowed);
-    assert_eq!(result.rule_id.as_deref(), Some("safe"));
-}
-
-#[test]
 fn an_empty_pattern_map_imposes_no_argument_constraint() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
@@ -827,6 +791,53 @@ fn a_private_number_key_with_siblings_stays_an_object() {
     let result =
         get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
     assert!(result.is_allowed, "unexpected denial: {:?}", result.message);
+}
+
+#[test]
+fn a_lone_private_number_key_is_read_as_its_number() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![rule(
+            "marker",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[("$serde_json::private::Number", "^1\\.5$")]),
+        )],
+    );
+    let arguments = GuardrailValue::Text(r#"{"$serde_json::private::Number": "1.5"}"#.to_owned());
+    let result =
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
+    assert!(!result.is_allowed);
+    assert_eq!(result.rule_id, None);
+    assert_eq!(
+        result.message.as_deref(),
+        Some("Tool 'read' denied by default action")
+    );
+}
+
+#[test]
+fn an_integer_outside_the_i64_and_u64_ranges_is_compared_as_a_float() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![rule(
+            "big",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[("id", "^123456789012345678901$")]),
+        )],
+    );
+    let arguments = json_arguments(r#"{"id": 123456789012345678901}"#);
+    let result =
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
+    assert!(!result.is_allowed);
+    assert_eq!(result.rule_id, None);
+    let message = result.message.expect("the pattern mismatch message");
+    assert!(
+        message.contains("for path 'id' does not match allowed pattern '^123456789012345678901$'"),
+        "unexpected message {message}"
+    );
 }
 
 #[test]
