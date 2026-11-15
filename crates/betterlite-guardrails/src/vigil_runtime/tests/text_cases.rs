@@ -32,7 +32,7 @@ pub(crate) fn whitespace_only_texts_skip_the_guardrail() -> Scenario {
 pub(crate) fn blank_text_positions_are_kept_around_a_rewrite() -> Scenario {
     let mut case = request(Some(vec![" ", "secret", ""]), vec![sanitized("clean")]);
     case.analyzed = vec!["secret"];
-    case.expected = rewritten(vec![" ", "clean", ""], None);
+    case.expected = rewritten(&[" ", "clean", ""], None);
     case
 }
 
@@ -56,7 +56,7 @@ pub(crate) fn a_text_stage_backend_failure_keeps_the_original_tool_calls() -> Sc
     let mut case = response(Some(vec!["one", "two"]), &[("call_1", "a1")], Vec::new());
     case.responses = vec![sanitized("clean"), unavailable()];
     case.fail_open(vec!["one", "two"]);
-    case.expected = rewritten(vec!["clean", "two"], None);
+    case.expected = rewritten(&["clean", "two"], None);
     case
 }
 
@@ -68,7 +68,7 @@ pub(crate) fn a_missing_decision_fails_open_with_the_partial_texts() -> Scenario
     );
     case.responses = vec![sanitized("clean"), missing_decision()];
     case.fail_open(vec!["secret", "second"]);
-    case.expected = rewritten(vec!["clean", "second"], None);
+    case.expected = rewritten(&["clean", "second"], None);
     case
 }
 
@@ -162,7 +162,7 @@ pub(crate) fn a_sanitized_text_drops_stale_structured_messages() -> Scenario {
     add_media(&mut case);
     case.responses = vec![sanitized("clean")];
     case.analyzed = vec!["secret"];
-    case.expected = rewritten(vec!["clean"], None);
+    case.expected = rewritten(&["clean"], None);
     case
 }
 

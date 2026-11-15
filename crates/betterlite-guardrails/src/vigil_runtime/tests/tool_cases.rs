@@ -11,7 +11,7 @@ pub(crate) fn texts_are_scanned_before_response_tool_arguments() -> Scenario {
     case.inputs.structured_messages = Some(vec![message()]);
     case.responses = vec![sanitized("clean"), sanitized("b1")];
     case.analyzed = vec!["secret", "a1"];
-    case.expected = rewritten(vec!["clean"], Some(vec![tool_call("call_1", "b1")]));
+    case.expected = rewritten(&["clean"], Some(vec![tool_call("call_1", "b1")]));
     case
 }
 
@@ -19,7 +19,7 @@ pub(crate) fn an_allowed_tool_argument_leaves_tool_calls_out() -> Scenario {
     let mut case = response(Some(vec!["secret"]), &[("call_1", "a1")], Vec::new());
     case.responses = vec![sanitized("clean"), allowed()];
     case.analyzed = vec!["secret", "a1"];
-    case.expected = rewritten(vec!["clean"], None);
+    case.expected = rewritten(&["clean"], None);
     case
 }
 
@@ -29,7 +29,7 @@ pub(crate) fn a_tool_stage_backend_failure_keeps_the_earlier_rewrites() -> Scena
     case.responses = vec![allowed(), sanitized("b1"), unavailable()];
     case.fail_open(vec!["first", "a1", "a2"]);
     case.expected = rewritten(
-        vec!["first"],
+        &["first"],
         Some(vec![tool_call("call_1", "b1"), tool_call("call_2", "a2")]),
     );
     case
@@ -70,6 +70,6 @@ pub(crate) fn a_tool_only_rewrite_returns_empty_texts() -> Scenario {
     let mut case = response(None, &[("call_1", "a1")], Vec::new());
     case.responses = vec![sanitized("b1")];
     case.analyzed = vec!["a1"];
-    case.expected = rewritten(Vec::new(), Some(vec![tool_call("call_1", "b1")]));
+    case.expected = rewritten(&[], Some(vec![tool_call("call_1", "b1")]));
     case
 }

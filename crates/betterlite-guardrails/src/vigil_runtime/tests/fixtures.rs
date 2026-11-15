@@ -107,7 +107,7 @@ pub(crate) fn response(
     scenario
 }
 
-pub(crate) fn rewritten(texts: Vec<&str>, tool_calls: Option<Vec<GuardrailValue>>) -> Expected {
+pub(crate) fn rewritten(texts: &[&str], tool_calls: Option<Vec<GuardrailValue>>) -> Expected {
     Expected::Rewritten {
         texts: texts.iter().map(|text| (*text).to_owned()).collect(),
         tool_calls,
