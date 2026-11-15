@@ -53,8 +53,8 @@ where
     })
 }
 
-fn stream_failure(error: StreamError) -> Box<HelperError> {
-    let status = match &error {
+fn stream_failure(error: &StreamError) -> Box<HelperError> {
+    let status = match error {
         StreamError::Provider { status, .. } => Some(*status),
         StreamError::Chunk(_) | StreamError::ToolCallPayload => None,
     };
@@ -98,10 +98,10 @@ fn request_value(
     messages: &Value,
     optional_params: &Object,
 ) -> Result<Value, Box<HelperError>> {
-    let messages: Vec<ChatMessage> = serde_json::from_value(messages.clone()).map_err(failure)?;
+    let parsed: Vec<ChatMessage> = serde_json::from_value(messages.clone()).map_err(failure)?;
     let body = transform_request(&RequestTransform {
         model,
-        messages: &messages,
+        messages: &parsed,
         optional_params,
         downloads: &RefuseDownloads,
     })
@@ -152,8 +152,9 @@ fn pointer(target: Option<&Value>, path: &str) -> Value {
 }
 
 fn chunk_value(chunk: &Value) -> Result<Value, Box<HelperError>> {
-    let mut chunk = chunk.clone();
-    let reply = chunk_parser(&mut chunk, Uuid::nil, i64::default).map_err(stream_failure)?;
+    let mut mutated = chunk.clone();
+    let reply = chunk_parser(&mut mutated, Uuid::nil, i64::default)
+        .map_err(|error| stream_failure(&error))?;
     let choices: Vec<Value> = reply
         .choices
         .iter()
