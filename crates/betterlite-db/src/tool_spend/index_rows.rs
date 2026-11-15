@@ -10,6 +10,7 @@ pub struct ToolIndexRow {
 }
 
 impl ToolIndexRow {
+    #[must_use]
     pub fn new(request_id: String, tool_name: String, instant: DateTime<Utc>) -> Self {
         Self {
             request_id,

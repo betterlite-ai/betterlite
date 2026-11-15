@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use betterlite_models::tool_spend::ToolUsageTransaction;
+use tokio::time::sleep;
 
 use crate::migration_ledger::lock::JitterSource;
 use crate::spend_batches::{StatementLimits, spend_log_write_batches};
@@ -58,7 +59,7 @@ pub struct TokioPause;
 
 impl RetryPause for TokioPause {
     fn pause(&self, delay: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(tokio::time::sleep(delay))
+        Box::pin(sleep(delay))
     }
 }
 
