@@ -25,7 +25,6 @@ def run(input_value: Input) -> dict[str, str]:
                 recipient_email=input_value["recipient_email"],
                 key_budget=input_value["key_budget"],
                 key_token=input_value["key_token"],
-                base_url=input_value["base_url"],
                 email_support_contact=input_value["email_support_contact"],
             )
         }
