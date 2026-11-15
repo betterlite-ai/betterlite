@@ -134,16 +134,12 @@ fn fill_template(template: &str, fields: &[(&str, &str)]) -> String {
     let mut filled = String::with_capacity(template.len());
     let mut characters = template.chars().peekable();
     while let Some(character) = characters.next() {
-        match character {
-            '{' if characters.peek() == Some(&'{') => {
+        match (character, characters.peek().copied()) {
+            ('{', Some('{')) | ('}', Some('}')) => {
                 characters.next();
-                filled.push('{');
+                filled.push(character);
             }
-            '}' if characters.peek() == Some(&'}') => {
-                characters.next();
-                filled.push('}');
-            }
-            '{' => {
+            ('{', _) => {
                 let mut name = String::new();
                 let mut closed = false;
                 for next in characters.by_ref() {
@@ -164,7 +160,7 @@ fn fill_template(template: &str, fields: &[(&str, &str)]) -> String {
                     }
                 }
             }
-            other => filled.push(other),
+            (other, _) => filled.push(other),
         }
     }
     filled
