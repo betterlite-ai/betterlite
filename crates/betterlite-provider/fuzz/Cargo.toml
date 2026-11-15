@@ -150,3 +150,10 @@ path = "fuzz_targets/databricks_oauth_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "dashscope_rerank_reply"
+path = "fuzz_targets/dashscope_rerank_reply.rs"
+test = false
+doc = false
+bench = false

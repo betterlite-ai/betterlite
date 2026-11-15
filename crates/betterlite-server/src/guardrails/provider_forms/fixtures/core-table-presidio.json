@@ -1,0 +1,43 @@
+{
+  "output_parse_pii": {
+    "description": "When True, LiteLLM will replace the masked text with the original text in the response",
+    "required": false,
+    "type": "bool"
+  },
+  "presidio_analyzer_api_base": {
+    "description": "Base URL for the Presidio analyzer API",
+    "required": false,
+    "type": "string"
+  },
+  "presidio_anonymizer_api_base": {
+    "description": "Base URL for the Presidio anonymizer API",
+    "required": false,
+    "type": "string"
+  },
+  "presidio_filter_scope": {
+    "description": "Where to apply Presidio checks: 'input' (user -> model), 'output' (model -> user), or 'both' (default).",
+    "options": [
+      "input",
+      "output",
+      "both"
+    ],
+    "required": false,
+    "type": "select"
+  },
+  "presidio_language": {
+    "default_value": "en",
+    "description": "Language code for Presidio PII analysis (e.g., 'en', 'de', 'es', 'fr')",
+    "required": false,
+    "type": "string"
+  },
+  "presidio_run_on": {
+    "description": "Where to apply Presidio checks: input, output, or both (default).",
+    "options": [
+      "input",
+      "output",
+      "both"
+    ],
+    "required": false,
+    "type": "select"
+  }
+}
