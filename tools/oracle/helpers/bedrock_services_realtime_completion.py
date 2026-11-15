@@ -116,10 +116,9 @@ class Replay:
         self.conversation_id = step["conversation_id"]
         self.delta_type = step["delta_type"]
         texts = step["delta_chunks"]
-        self.chunks = (
-            None
-            if texts is None
-            else [
+        self.chunks = None
+        if texts is not None:
+            self.chunks = [
                 OpenAIRealtimeResponseDelta(
                     type="response.text.delta",
                     content_index=0,
@@ -131,7 +130,6 @@ class Replay:
                 )
                 for text in texts
             ]
-        )
         return None
 
     def usage(self, step: UsageStep) -> JsonValue:
@@ -147,9 +145,7 @@ class Replay:
             self.chunks,
         )
         self.chunks = chunks
-        kept: list[JsonValue] | None = (
-            None if chunks is None else [chunk["delta"] for chunk in chunks]
-        )
+        kept: list[JsonValue] | None = None if chunks is None else [chunk["delta"] for chunk in chunks]
         return {
             "events": EventsAdapter.validate_json(json.dumps(events)),
             "delta_chunks": kept,
@@ -181,9 +177,7 @@ class Replay:
         return {"events": EventsAdapter.validate_json(json.dumps(events))}
 
     def tool_use(self, step: ToolUseStep) -> JsonValue:
-        events, call_id, name = self.config.transform_tool_use_event(
-            step["event"], self.item_id, self.response_id
-        )
+        events, call_id, name = self.config.transform_tool_use_event(step["event"], self.item_id, self.response_id)
         wires = CallAdapter.validate_json(json.dumps(events))
         shown: list[JsonValue] = [
             {
