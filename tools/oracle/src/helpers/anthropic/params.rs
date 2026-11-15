@@ -1,5 +1,4 @@
 use betterlite_anthropic::anthropic_capability_catalog::{CatalogSources, DropParams};
-use betterlite_anthropic::params::error::ParamsError;
 use betterlite_anthropic::params::output_config::{
     OutputConfigRequest, apply as apply_output_config,
 };
@@ -109,41 +108,6 @@ async fn run_steps(
     Ok(Value::Array(answers))
 }
 
-// LiteLLM prefixes the exception's own name onto the message it carries
-fn helper_error(error: &ParamsError) -> Box<HelperError> {
-    let class = match error {
-        ParamsError::Speed(_) | ParamsError::Sampling(_) | ParamsError::ForcedTool(_) => {
-            "UnsupportedParamsError"
-        }
-        ParamsError::Base(_)
-        | ParamsError::Context(_)
-        | ParamsError::Effort(_)
-        | ParamsError::Options(_)
-        | ParamsError::Reasoning(_)
-        | ParamsError::Schema(_)
-        | ParamsError::Thinking(_)
-        | ParamsError::Tools(_)
-        | ParamsError::UserId(_)
-        | ParamsError::NotNumber { .. }
-        | ParamsError::NotList { .. }
-        | ParamsError::NotAnObject
-        | ParamsError::OutOfRange { .. }
-        | ParamsError::NotBool { .. }
-        | ParamsError::InvalidEffort { .. }
-        | ParamsError::EffortUnsupported { .. }
-        | ParamsError::Encode(_)
-        | ParamsError::Decode(_) => "BadRequestError",
-    };
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: error.status_code(),
-        error_type: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message: format!("litellm.{class}: {error}"),
-    })
-}
-
 async fn answer<Source, Transport>(
     step: &Step,
     context: &StepContext<'_>,
@@ -156,8 +120,8 @@ where
     match step {
         Step::MapOpenaiParams {
             model,
-            non_default_params,
-            optional_params,
+            non_default_params: non_default,
+            optional_params: optional,
             drop_params,
             global_drop_params,
         } => {
@@ -172,16 +136,7 @@ where
                 default_max_tokens: context.default_max_tokens,
                 catalogs: context.catalogs,
             };
-            let mut mapped = optional_params.clone();
-            if let Err(error) =
-                map_openai_params(&request, non_default_params, &mut mapped, environment).await
-            {
-                return Err(helper_error(&error));
-            }
-            Ok(json!({
-                "optional_params": serde_json::to_value(&mapped).or_value_error()?,
-                "warning": context.warnings.first(),
-            }))
+            answer_map(&request, non_default, optional, context, environment).await
         }
         Step::ApplyOutputConfig {
             model,
@@ -193,33 +148,65 @@ where
                 provider: PROVIDER,
                 global_drop: *global_drop_params,
             };
-            // transform_request builds its body from {**optional_params} before this runs
-            let mut updated_data = optional_params.clone();
-            let mut updated_optional = optional_params.clone();
-            if let Err(error) = apply_output_config(
-                &request,
-                &mut updated_data,
-                &mut updated_optional,
-                environment,
-                context.catalogs,
-            )
-            .await
-            {
-                return Err(helper_error(&error));
-            }
-            Ok(json!({
-                "data": {
-                    "output_config": serde_json::to_value(updated_data.get("output_config"))
-                        .or_value_error()?,
-                    "output_config_present": updated_data.contains_key("output_config"),
-                },
-                "optional_params": {
-                    "output_config": serde_json::to_value(updated_optional.get("output_config"))
-                        .or_value_error()?,
-                    "output_config_present": updated_optional.contains_key("output_config"),
-                },
-                "warning": context.warnings.first(),
-            }))
+            answer_output(&request, optional_params, context, environment).await
         }
     }
+}
+
+async fn answer_map<Source, Transport>(
+    request: &ParamsRequest<'_>,
+    non_default: &IndexMap<String, Json>,
+    optional: &IndexMap<String, Json>,
+    context: &StepContext<'_>,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<Value, Box<HelperError>>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    let mut mapped = optional.clone();
+    map_openai_params(request, non_default, &mut mapped, environment)
+        .await
+        .or_value_error()?;
+    Ok(json!({
+        "optional_params": serde_json::to_value(&mapped).or_value_error()?,
+        "warning": context.warnings.first(),
+    }))
+}
+
+async fn answer_output<Source, Transport>(
+    request: &OutputConfigRequest<'_>,
+    optional_params: &IndexMap<String, Json>,
+    context: &StepContext<'_>,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<Value, Box<HelperError>>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    // transform_request builds its body from {**optional_params} before this runs
+    let mut updated_data = optional_params.clone();
+    let mut updated_optional = optional_params.clone();
+    apply_output_config(
+        request,
+        &mut updated_data,
+        &mut updated_optional,
+        environment,
+        context.catalogs,
+    )
+    .await
+    .or_value_error()?;
+    Ok(json!({
+        "data": {
+            "output_config": serde_json::to_value(updated_data.get("output_config"))
+                .or_value_error()?,
+            "output_config_present": updated_data.contains_key("output_config"),
+        },
+        "optional_params": {
+            "output_config": serde_json::to_value(updated_optional.get("output_config"))
+                .or_value_error()?,
+            "output_config_present": updated_optional.contains_key("output_config"),
+        },
+        "warning": context.warnings.first(),
+    }))
 }
