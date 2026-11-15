@@ -3,7 +3,7 @@
 set -euo pipefail
 run=$1
 repository=betterlite-ai/betterlite
-jobs=$(gh api "repos/${repository}/actions/runs/${run}/jobs?per_page=100" --jq '.jobs[] | select(.name | startswith("tests-")) | .id')
+jobs=$(gh api "repos/${repository}/actions/runs/${run}/jobs?per_page=100" --jq '.jobs[] | select(.name | test("(^|/ )tests-[0-9]+$")) | .id')
 [[ -n ${jobs} ]] || {
   echo "run ${run} has no tests parts" >&2
   exit 1
