@@ -284,6 +284,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "skill_zip"
+path = "fuzz_targets/skill_zip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "muse_frames"
 path = "fuzz_targets/muse_frames.rs"
 test = false
