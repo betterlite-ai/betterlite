@@ -79,7 +79,7 @@ impl Helper for Op {
             Input::Mapping(params) => mapping(params),
             Input::Credentials(params) => credentials(params),
             Input::AppendResults(params) => append_results(params),
-            Input::PollHost(params) => poll_host(params),
+            Input::PollHost(params) => Ok(poll_host(params)),
         }
     }
 }
@@ -155,11 +155,11 @@ fn append_results(params: &AppendParams) -> HelperResult {
     Ok(json!({"responses": responses}))
 }
 
-fn poll_host(params: &PollParams) -> HelperResult {
+fn poll_host(params: &PollParams) -> Value {
     let mut outcomes = Vec::new();
     for url in &params.urls {
         let accepted = check_bfl_poll_url(url).is_ok();
         outcomes.push(json!({"url": url, "accepted": accepted}));
     }
-    Ok(json!({"urls": outcomes}))
+    json!({"urls": outcomes})
 }
