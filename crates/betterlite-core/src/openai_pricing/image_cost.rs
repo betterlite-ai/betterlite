@@ -83,7 +83,7 @@ fn image_quality(value: Option<&Json>) -> Result<Option<&str>, ImageCostFailure>
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) if text.is_empty() => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
+        Some(Json::Text(text)) => Ok(Some(text.as_str())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(ImageCostFailure::NotText { field: "quality" })
         }
@@ -95,7 +95,7 @@ fn image_size(value: Option<&Json>) -> Result<Option<&str>, ImageCostFailure> {
     match value {
         None => Ok(Some(DEFAULT_SIZE)),
         Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
+        Some(Json::Text(text)) => Ok(Some(text.as_str())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(ImageCostFailure::NotText { field: "size" })
         }
