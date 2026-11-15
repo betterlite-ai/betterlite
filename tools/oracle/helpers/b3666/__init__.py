@@ -10,6 +10,7 @@ from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails import auto_router_compression
 from litellm.types.guardrails import GuardrailEventHooks, Mode
 from litellm.types.utils import CallTypes, LLMResponseTypes, ModelResponse
+from opentelemetry.trace import Span
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 from typing_extensions import override
@@ -137,14 +138,25 @@ class Probe(CustomGuardrail, metaclass=ProbeMeta):
 class StoredCache(DualCache):
     def __init__(self) -> None:
         super().__init__()
+        self.entries: dict[str, list[str]] = {}
         self.last: list[str] = []
+
+    @override
+    async def async_get_cache(
+        self,
+        key: str,
+        parent_otel_span: Span | None = None,
+        local_only: bool = False,
+        **kwargs: Json,
+    ) -> list[str] | None:
+        return self.entries.get(key)
 
     @override
     async def async_set_cache(
         self, key: str, value: list[str], local_only: bool = False, **kwargs: Json
     ) -> None:
+        self.entries[key] = value
         self.last = value
-        await super().async_set_cache(key=key, value=value, local_only=local_only, **kwargs)
 
 
 def build_probe(settings: Settings) -> Hooked:
