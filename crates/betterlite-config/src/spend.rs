@@ -55,8 +55,8 @@ pub fn decode_spend_statement_limits(
 }
 
 fn limit(name: &str, text: Option<&str>, default: i64) -> Result<usize, ConfigError> {
-    let parsed = text.map_or(Ok(default), |text| {
-        let value = betterlite_env::number::<i64>(name, text)
+    let parsed = text.map_or(Ok(default), |raw| {
+        let value = betterlite_env::number::<i64>(name, raw)
             .map_err(|source| ConfigError::Environment { source })?;
         Ok(value.unwrap_or(default))
     })?;
