@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 
+use betterlite_prompts::message_content::Message;
 use betterlite_prompts::system_placement::text_parts::CONVERTED_SYSTEM_NOTE;
 
 use crate::anthropic_capability_catalog::thinking::DROP_DISABLED_THINKING_WARNING;
 use crate::capabilities::speed::DROP_UNSUPPORTED_SPEED_WARNING;
 use crate::option_primitives::OptionDefaults;
 use crate::params::output_config::DROP_OUTPUT_CONFIG_WARNING;
+use crate::request::system::translate_system_message;
 
 use super::fixture::{InliningFetcher, Outcome, Scenario, expect_absent, expect_field, fields};
 
@@ -28,7 +30,8 @@ fn refused(outcome: Outcome) -> (Option<u16>, String) {
 #[test]
 fn case_0_leading_system_run() {
     leading_run_blocks();
-    configured_system_survives_empty_translation();
+    system_option_survives_empty();
+    every_system_message_leaves();
 }
 
 fn leading_run_blocks() {
@@ -50,7 +53,17 @@ fn leading_run_blocks() {
     );
 }
 
-fn configured_system_survives_empty_translation() {
+// The public translation removes every system message it was given, not only the leading run it renders
+fn every_system_message_leaves() {
+    let source = r#"[{"role":"system","content":"lead"},{"role":"user","content":"u"},{"role":"system","content":[{"type":"text","text":"tail"}]}]"#;
+    let mut messages: Vec<Message> = serde_json::from_str(source).expect("messages");
+    let blocks = translate_system_message(&mut messages, false);
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].role, "user");
+}
+
+fn system_option_survives_empty() {
     let kept = one_user("plain-model")
         .optional(r#"{"system":"configured"}"#)
         .run()
@@ -70,8 +83,9 @@ fn configured_system_survives_empty_translation() {
 #[test]
 fn case_1_mid_conversation_system() {
     flagged_keeps_the_system_role();
-    unflagged_converts_it_to_a_user_turn();
-    an_empty_history_needs_modify_params();
+    mid_system_becomes_user_turn("plain-model");
+    mid_system_becomes_user_turn("claude-sonnet-4.6-20260219");
+    empty_history_needs_modify();
 }
 
 const MID_CONVERSATION: &str = r#"[{"role":"user","content":"u"},{"role":"assistant","content":"a"},{"role":"system","content":"reminder"},{"role":"user","content":"u2"}]"#;
@@ -86,8 +100,9 @@ fn flagged_keeps_the_system_role() {
     );
 }
 
-fn unflagged_converts_it_to_a_user_turn() {
-    let outcome = Scenario::new("plain-model", MID_CONVERSATION).run().ok();
+// The candidate walk finds the flagged base entry for the dated alias, but LiteLLM's factory lookup does not
+fn mid_system_becomes_user_turn(model: &str) {
+    let outcome = Scenario::new(model, MID_CONVERSATION).run().ok();
     expect_absent(&outcome, "system");
     let note = serde_json::to_string(CONVERTED_SYSTEM_NOTE).expect("note");
     let expected = r#"[{"role":"user","content":[{"type":"text","text":"u"}]},{"role":"assistant","content":[{"type":"text","text":"a"}]},{"role":"user","content":[{"type":"text","text":"__NOTE__"},{"type":"text","text":"reminder"},{"type":"text","text":"u2"}]}]"#
@@ -95,7 +110,7 @@ fn unflagged_converts_it_to_a_user_turn() {
     expect_field(&outcome, "messages", &expected);
 }
 
-fn an_empty_history_needs_modify_params() {
+fn empty_history_needs_modify() {
     let (status, message) = refused(Scenario::new("plain-model", "[]").run());
     assert_eq!(status, Some(400));
     assert!(message.ends_with("Received Messages=[]"), "{message}");
@@ -110,9 +125,9 @@ fn an_empty_history_needs_modify_params() {
 
 #[test]
 fn case_2_missing_tool_definition() {
-    dummy_tools_fill_missing_declarations();
-    declared_tools_are_renamed_and_mapped();
-    advisor_blocks_follow_the_advisor_tool();
+    dummy_tools_fill_missing();
+    declared_tools_are_renamed();
+    advisor_blocks_follow_tool();
     unreadable_tools_are_named();
 }
 
@@ -126,7 +141,7 @@ fn unreadable_tools_are_named() {
     assert_eq!(message, "tools entry 0 is not an object");
 }
 
-fn dummy_tools_fill_missing_declarations() {
+fn dummy_tools_fill_missing() {
     let injected = Scenario::new("plain-model", TOOL_USER).run().ok();
     expect_field(
         &injected,
@@ -147,7 +162,7 @@ fn dummy_tools_fill_missing_declarations() {
     expect_field(&declared_null, "tools", "null");
 }
 
-fn declared_tools_are_renamed_and_mapped() {
+fn declared_tools_are_renamed() {
     let scenario = Scenario::new(
         "plain-model",
         r#"[{"role":"user","content":"u"},{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"my.tool","arguments":"{}"}}]}]"#,
@@ -197,7 +212,7 @@ fn declared_tools_are_renamed_and_mapped() {
     );
 }
 
-fn advisor_blocks_follow_the_advisor_tool() {
+fn advisor_blocks_follow_tool() {
     let history = r#"[{"role":"user","content":"u"},{"role":"assistant","content":[{"type":"server_tool_use","id":"srvtoolu_1","name":"advisor","input":{}},{"type":"advisor_tool_result","tool_use_id":"srvtoolu_1","content":[]},{"type":"text","text":"answer"}]}]"#;
     let stripped = Scenario::new("plain-model", history).run().ok();
     expect_field(
@@ -225,8 +240,8 @@ fn advisor_blocks_follow_the_advisor_tool() {
 
 #[test]
 fn case_3_thinking_history_warning() {
-    unpaired_thinking_is_dropped_with_modify_params();
-    thinking_survives_the_other_shapes();
+    unpaired_thinking_is_dropped();
+    thinking_survives_the_rest();
 }
 
 const THINKING: &str = r#"{"type":"enabled","budget_tokens":1024}"#;
@@ -236,7 +251,7 @@ fn thinking_options() -> String {
     format!(r#"{{"thinking":{THINKING}}}"#)
 }
 
-fn unpaired_thinking_is_dropped_with_modify_params() {
+fn unpaired_thinking_is_dropped() {
     let dropped = Scenario::new("plain-model", UNPAIRED_THINKING)
         .optional(&thinking_options())
         .modify()
@@ -261,7 +276,7 @@ fn unpaired_thinking_is_dropped_with_modify_params() {
     assert!(null.warnings.is_empty(), "{:?}", null.warnings);
 }
 
-fn thinking_survives_the_other_shapes() {
+fn thinking_survives_the_rest() {
     let paired = r#"[{"role":"user","content":"u"},{"role":"assistant","content":null,"thinking_blocks":[{"type":"thinking","thinking":"t","signature":"sig"}],"tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]}]"#;
     let thought = Scenario::new("plain-model", paired)
         .optional(&thinking_options())
@@ -286,7 +301,7 @@ fn thinking_survives_the_other_shapes() {
 #[test]
 fn case_4_billing_metadata_policy() {
     billing_headers_are_stripped();
-    billing_headers_survive_without_the_flag();
+    billing_headers_survive();
 }
 
 const BILLING_HISTORY: &str = r#"[{"role":"system","content":"x-anthropic-billing-header: abc"},{"role":"system","content":"kept"},{"role":"system","content":[{"type":"text","text":"x-anthropic-billing-header: x"},{"type":"text","text":" x-anthropic-billing-header: y"},{"type":"text","text":"X-anthropic-billing-header: z"},{"type":"text","text":"KEEP"}]},{"role":"user","content":"hi"}]"#;
@@ -303,7 +318,7 @@ fn billing_headers_are_stripped() {
     );
 }
 
-fn billing_headers_survive_without_the_flag() {
+fn billing_headers_survive() {
     let outcome = Scenario::new("plain-model", BILLING_HISTORY).run().ok();
     expect_field(
         &outcome,
@@ -314,12 +329,12 @@ fn billing_headers_survive_without_the_flag() {
 
 #[test]
 fn case_5_user_id_metadata() {
-    control_metadata_supplies_a_valid_user_id();
-    option_metadata_keeps_only_a_user_id();
-    configured_metadata_is_a_default();
+    control_metadata_user_id();
+    option_metadata_user_id();
+    configured_metadata_default();
 }
 
-fn control_metadata_supplies_a_valid_user_id() {
+fn control_metadata_user_id() {
     let accepted = one_user("plain-model")
         .litellm(r#"{"metadata":{"user_id":"user-42"}}"#)
         .run()
@@ -347,7 +362,7 @@ fn control_metadata_supplies_a_valid_user_id() {
     expect_absent(&null, "metadata");
 }
 
-fn option_metadata_keeps_only_a_user_id() {
+fn option_metadata_user_id() {
     let preexisting = one_user("plain-model")
         .optional(r#"{"metadata":{"user_id":"sent@example.com","team":"x"}}"#)
         .run()
@@ -384,7 +399,7 @@ fn option_metadata_keeps_only_a_user_id() {
     expect_field(&overridden, "metadata", r#"{"user_id":"user-42"}"#);
 }
 
-fn configured_metadata_is_a_default() {
+fn configured_metadata_default() {
     let configured = one_user("plain-model")
         .defaults(OptionDefaults {
             metadata: Some(fields(r#"{"user_id":"cfg-user"}"#)),
@@ -407,8 +422,8 @@ fn configured_metadata_is_a_default() {
 
 #[test]
 fn case_6_container_upload_tool() {
-    container_upload_becomes_a_block();
-    the_code_execution_tool_is_appended();
+    upload_becomes_a_block();
+    code_execution_tool_appended();
     declared_tools_stay_alone();
 }
 
@@ -419,13 +434,13 @@ const UPLOAD_MESSAGES: &str =
 const WEATHER_TOOL: &str =
     r#"{"type":"custom","name":"weather","input_schema":{"type":"object","properties":{}}}"#;
 
-fn container_upload_becomes_a_block() {
+fn upload_becomes_a_block() {
     let outcome = Scenario::new("plain-model", UPLOAD_HISTORY).run().ok();
     expect_field(&outcome, "messages", UPLOAD_MESSAGES);
     expect_absent(&outcome, "tools");
 }
 
-fn the_code_execution_tool_is_appended() {
+fn code_execution_tool_appended() {
     let outcome = Scenario::new("plain-model", UPLOAD_HISTORY)
         .optional(&format!(r#"{{"tools":[{WEATHER_TOOL}]}}"#))
         .run()
@@ -465,13 +480,13 @@ fn declared_tools_stay_alone() {
 
 #[test]
 fn case_7_optional_beta_headers() {
-    vertex_requests_skip_every_beta();
+    vertex_requests_skip_betas();
     tool_and_format_betas();
     context_management_betas();
     compaction_betas();
 }
 
-fn vertex_requests_skip_every_beta() {
+fn vertex_requests_skip_betas() {
     let vertex = one_user("fast-model")
         .optional(
             r#"{"is_vertex_request":true,"speed":"fast","output_format":{"type":"json_schema"}}"#,
@@ -604,11 +619,11 @@ fn compaction_betas() {
 
 #[test]
 fn case_8_inline_media_only() {
-    plain_http_images_are_fetched_and_refused();
+    http_images_are_refused();
     other_media_never_downloads();
 }
 
-fn plain_http_images_are_fetched_and_refused() {
+fn http_images_are_refused() {
     let history = r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"http://example.test/a.png"}}]}]"#;
     let outcome = Scenario::new("plain-model", history).run();
     let calls = outcome.fetch_calls;
@@ -665,7 +680,7 @@ fn other_media_never_downloads() {
 
 // The inline stage answers a plain-HTTP image, so the write-back carries its bytes and translation never fetches
 #[test]
-fn inline_bytes_replace_the_url_when_the_fetcher_answers() {
+fn inlined_bytes_replace_url() {
     let history = r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"http://example.test/a.png"}}]}]"#;
     let outcome = Scenario::new("plain-model", history)
         .run_with(&InliningFetcher)
@@ -725,11 +740,11 @@ fn additions_keep_the_call_order() {
 fn case_10_assembly_option_cleanup() {
     max_tokens_defaults();
     internal_options_are_removed();
-    top_k_follows_the_sampling_gate();
+    top_k_sampling_gate();
     speed_follows_the_speed_gate();
-    disabled_thinking_is_dropped_where_always_on();
+    disabled_thinking_dropped();
     output_config_is_applied_last();
-    options_override_the_assembled_keys();
+    options_override_body_keys();
 }
 
 fn max_tokens_defaults() {
@@ -765,7 +780,7 @@ fn internal_options_are_removed() {
     expect_absent(&cleaned, "client_metadata");
 }
 
-fn top_k_follows_the_sampling_gate() {
+fn top_k_sampling_gate() {
     let sampled = one_user("plain-model")
         .optional(r#"{"top_k":5}"#)
         .run()
@@ -831,7 +846,7 @@ fn speed_follows_the_speed_gate() {
     expect_field(&kept, "speed", r#""fast""#);
 }
 
-fn disabled_thinking_is_dropped_where_always_on() {
+fn disabled_thinking_dropped() {
     let disabled = one_user("always-on")
         .optional(r#"{"thinking":{"type":"disabled"}}"#)
         .run()
@@ -902,7 +917,7 @@ fn output_config_is_applied_last() {
     );
 }
 
-fn options_override_the_assembled_keys() {
+fn options_override_body_keys() {
     let overridden = one_user("plain-model")
         .optional(r#"{"model":"override-model","messages":[]}"#)
         .run()

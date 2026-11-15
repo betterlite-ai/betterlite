@@ -79,6 +79,30 @@ calls:
     modify_params: true
     optional_params: {}
     strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        claude-sonnet-4-6:
+          litellm_provider: anthropic
+          supports_mid_conversation_system: true
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    - content: a
+      role: assistant
+    - content: reminder
+      role: system
+    - content: u2
+      role: user
+    model: claude-sonnet-4.6-20260219
+    modify_params: false
+    optional_params: {}
+    strips_billing_metadata: false
 env: {}
 compare:
   ignore: []

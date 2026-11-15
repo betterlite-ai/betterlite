@@ -44,6 +44,7 @@ use crate::request::{AnthropicRequest, PreparedRequest};
 pub(crate) const MODELS: &str = r#"{
     "plain-model": {"litellm_provider": "anthropic"},
     "mid-model": {"litellm_provider": "anthropic", "supports_mid_conversation_system": true},
+    "claude-sonnet-4-6": {"litellm_provider": "anthropic", "supports_mid_conversation_system": true},
     "always-on": {"litellm_provider": "anthropic", "thinking_always_on": true},
     "effort-model": {"litellm_provider": "anthropic", "supports_output_config": true, "supports_max_reasoning_effort": true, "supports_xhigh_reasoning_effort": true},
     "fast-model": {"litellm_provider": "anthropic", "supports_speed": true},
