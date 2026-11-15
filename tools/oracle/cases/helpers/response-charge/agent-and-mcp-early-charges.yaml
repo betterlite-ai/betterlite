@@ -1,0 +1,22 @@
+kind: helper
+name: agent-and-mcp-early-charges
+call:
+  response_charge:
+    function: completion_cost
+    model: oracle-agent
+    custom_llm_provider: null
+    region_name: null
+    catalog:
+      oracle-agent: {litellm_provider: openai, mode: chat, input_cost_per_token: 0, output_cost_per_token: 0}
+    usage: {prompt_tokens: 0, completion_tokens: 0, cached_tokens: null}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {openai: 0.5}
+    margin: {openai: {percentage: 0.5, fixed_amount: 0.25}}
+    call_type: send_message
+    response_kind: none
+    logging_model: oracle-agent
+    agent: {response_cost: null, cost_per_query: 0.5}
+compare: {ignore: []}
+env: {}
