@@ -28,7 +28,7 @@ pub(crate) struct BuildCase {
 }
 
 pub(crate) enum BuildExpectation {
-    Built(BuiltSettings),
+    Built(Box<BuiltSettings>),
     Error(&'static str),
 }
 

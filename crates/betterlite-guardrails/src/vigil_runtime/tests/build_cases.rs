@@ -32,13 +32,13 @@ pub(crate) fn environment_defaults_fill_missing_arguments() -> Case {
         ),
         hooks: None,
         strict_modes: true,
-        expected: BuildExpectation::Built(BuiltSettings {
+        expected: BuildExpectation::Built(Box::new(BuiltSettings {
             api_base: "https://env.vigil",
             api_key: "sk-env",
             timeout: DEFAULT_TIMEOUT,
             fallback: UnreachableFallback::FailClosed,
             hooks: SUPPORTED_EVENT_HOOKS.to_vec(),
-        }),
+        })),
     }))
 }
 
@@ -58,7 +58,7 @@ pub(crate) fn explicit_arguments_override_environment_defaults() -> Case {
         ),
         hooks: None,
         strict_modes: true,
-        expected: BuildExpectation::Built(BuiltSettings {
+        expected: BuildExpectation::Built(Box::new(BuiltSettings {
             api_base: "https://explicit.vigil",
             api_key: "sk-explicit",
             timeout: RequestTimeout {
@@ -67,7 +67,7 @@ pub(crate) fn explicit_arguments_override_environment_defaults() -> Case {
             },
             fallback: UnreachableFallback::FailOpen,
             hooks: SUPPORTED_EVENT_HOOKS.to_vec(),
-        }),
+        })),
     }))
 }
 
@@ -77,13 +77,13 @@ pub(crate) fn explicit_empty_credentials_fall_back_to_defaults() -> Case {
         defaults: env_defaults("https://env.vigil/", "sk-env"),
         hooks: None,
         strict_modes: true,
-        expected: BuildExpectation::Built(BuiltSettings {
+        expected: BuildExpectation::Built(Box::new(BuiltSettings {
             api_base: "https://env.vigil",
             api_key: "sk-env",
             timeout: DEFAULT_TIMEOUT,
             fallback: UnreachableFallback::FailClosed,
             hooks: SUPPORTED_EVENT_HOOKS.to_vec(),
-        }),
+        })),
     }))
 }
 
@@ -98,7 +98,7 @@ pub(crate) fn a_long_timeout_caps_the_connect_bound() -> Case {
         defaults: EnvironmentDefaults::default(),
         hooks: None,
         strict_modes: true,
-        expected: BuildExpectation::Built(BuiltSettings {
+        expected: BuildExpectation::Built(Box::new(BuiltSettings {
             api_base: "https://vigil.example",
             api_key: "sk-vigil",
             timeout: RequestTimeout {
@@ -107,7 +107,7 @@ pub(crate) fn a_long_timeout_caps_the_connect_bound() -> Case {
             },
             fallback: UnreachableFallback::FailClosed,
             hooks: SUPPORTED_EVENT_HOOKS.to_vec(),
-        }),
+        })),
     }))
 }
 
@@ -156,7 +156,7 @@ pub(crate) fn explicit_supported_event_hooks_take_precedence() -> Case {
             GuardrailEventHooks::DuringCall,
         ]),
         strict_modes: true,
-        expected: BuildExpectation::Built(BuiltSettings {
+        expected: BuildExpectation::Built(Box::new(BuiltSettings {
             api_base: "https://vigil.example",
             api_key: "sk-vigil",
             timeout: DEFAULT_TIMEOUT,
@@ -166,7 +166,7 @@ pub(crate) fn explicit_supported_event_hooks_take_precedence() -> Case {
                 GuardrailEventHooks::PostCall,
                 GuardrailEventHooks::DuringCall,
             ],
-        }),
+        })),
     }))
 }
 
@@ -176,13 +176,13 @@ pub(crate) fn logging_only_is_accepted_for_the_apply_interface() -> Case {
         defaults: EnvironmentDefaults::default(),
         hooks: None,
         strict_modes: true,
-        expected: BuildExpectation::Built(BuiltSettings {
+        expected: BuildExpectation::Built(Box::new(BuiltSettings {
             api_base: "https://vigil.example",
             api_key: "sk-vigil",
             timeout: DEFAULT_TIMEOUT,
             fallback: UnreachableFallback::FailClosed,
             hooks: SUPPORTED_EVENT_HOOKS.to_vec(),
-        }),
+        })),
     }))
 }
 
@@ -202,13 +202,13 @@ pub(crate) fn a_relaxed_strict_mode_allows_the_hook() -> Case {
         defaults: EnvironmentDefaults::default(),
         hooks: None,
         strict_modes: false,
-        expected: BuildExpectation::Built(BuiltSettings {
+        expected: BuildExpectation::Built(Box::new(BuiltSettings {
             api_base: "https://vigil.example",
             api_key: "sk-vigil",
             timeout: DEFAULT_TIMEOUT,
             fallback: UnreachableFallback::FailClosed,
             hooks: SUPPORTED_EVENT_HOOKS.to_vec(),
-        }),
+        })),
     }))
 }
 
@@ -223,13 +223,13 @@ pub(crate) fn the_fallback_value_is_matched_case_insensitively() -> Case {
         defaults: EnvironmentDefaults::default(),
         hooks: None,
         strict_modes: true,
-        expected: BuildExpectation::Built(BuiltSettings {
+        expected: BuildExpectation::Built(Box::new(BuiltSettings {
             api_base: "https://vigil.example",
             api_key: "sk-vigil",
             timeout: DEFAULT_TIMEOUT,
             fallback: UnreachableFallback::FailOpen,
             hooks: SUPPORTED_EVENT_HOOKS.to_vec(),
-        }),
+        })),
     }))
 }
 
@@ -244,12 +244,12 @@ pub(crate) fn another_fallback_value_fails_closed() -> Case {
         defaults: EnvironmentDefaults::default(),
         hooks: None,
         strict_modes: true,
-        expected: BuildExpectation::Built(BuiltSettings {
+        expected: BuildExpectation::Built(Box::new(BuiltSettings {
             api_base: "https://vigil.example",
             api_key: "sk-vigil",
             timeout: DEFAULT_TIMEOUT,
             fallback: UnreachableFallback::FailClosed,
             hooks: SUPPORTED_EVENT_HOOKS.to_vec(),
-        }),
+        })),
     }))
 }

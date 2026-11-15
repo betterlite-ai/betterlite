@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::vigil_runtime::Settings as EnvironmentDefaults;
+use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 use secrecy::ExposeSecret as _;
 
@@ -72,7 +73,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 fn json_body(body: &str) -> HttpResponse {
     HttpResponse {
-        status: reqwest::StatusCode::OK,
+        status: StatusCode::OK,
         body: body.as_bytes().to_vec(),
     }
 }
