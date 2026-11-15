@@ -99,10 +99,6 @@ def alice_apply(args: AliceApply) -> JsonValue:
         transport=httpx.MockTransport(handler)
     )
     texts = [] if args["texts"] is None else list(args["texts"])
-    if not texts:
-        return alice_result(
-            texts, handler, raised=False, status=None, blocked_content=None
-        )
     kind = args["input_type"]
     try:
         asyncio.run(
