@@ -1,30 +1,30 @@
 task: B525
 deviations:
-  - what: A create call takes input_reference from the typed MediaBody argument only, so an options map that carries input_reference without the argument gets no file; LiteLLM reads the option back out of the optional params and turns every non-None value into the multipart file.
-    why: The endpoint layer extracts the parameter before it reaches the provider leaf, so the option and the argument cannot disagree.
+  - what: "A create call takes input_reference from the typed MediaBody argument only, so an options map that carries input_reference without the argument gets no file; LiteLLM reads the option back out of the optional params and turns every non-None value into the multipart file."
+    why: "The endpoint layer extracts the parameter before it reaches the provider leaf, so the option and the argument cannot disagree."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L134-L144
-  - what: A reply whose seconds is a number or a boolean is accepted, a numeric zero adds no duration_seconds and a truthy number adds float(value); LiteLLM declares seconds: str | None, so pydantic rejects such a reply before the duration conversion runs.
-    why: The task names the numeric-zero skip, and a string seconds converts exactly as LiteLLM converts it.
+  - what: "A reply whose seconds is a number or a boolean is accepted, a numeric zero adds no duration_seconds and a truthy number adds float(value); LiteLLM declares seconds as an optional string, so pydantic rejects such a reply before the duration conversion runs."
+    why: "The task names the numeric-zero skip, and a string seconds converts exactly as LiteLLM converts it."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/main.py#L21
-  - what: A seconds text that parses to a non-finite float (nan, inf, -infinity) adds no duration_seconds; LiteLLM stores NaN or Infinity, which model_dump_json renders as null.
-    why: JSON cannot carry a non-finite number, and an absent duration is distinguishable from a provider null.
+  - what: "A seconds text that parses to a non-finite float (nan, inf, -infinity) adds no duration_seconds; LiteLLM stores NaN or Infinity, which model_dump_json renders as null."
+    why: "JSON cannot carry a non-finite number, and an absent duration is distinguishable from a provider null."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L191-L198
-  - what: The duration parse is Rust's f64 grammar after surrounding whitespace is trimmed, so 1_0 and a text built from non-ASCII digits add no duration_seconds where Python's float() accepts both and LiteLLM stores the converted value.
-    why: Every decimal form a provider sends parses the same in both; the underscore and Unicode-digit forms are Python conveniences no provider reply uses.
+  - what: "The duration parse is Rust's f64 grammar after surrounding whitespace is trimmed, so 1_0 and a text built from non-ASCII digits add no duration_seconds where Python's float() accepts both and LiteLLM stores the converted value."
+    why: "Every decimal form a provider sends parses the same in both; the underscore and Unicode-digit forms are Python conveniences no provider reply uses."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L195
-  - what: A list reply is decoded into VideoList and VideoObject, so unknown keys are dropped and an item that is not a video object fails the decode; LiteLLM returns the provider dict unchanged apart from the id wrapping.
-    why: The typed record is what a caller reads, and every declared field keeps the value LiteLLM answers.
+  - what: "A list reply is decoded into VideoList and VideoObject, so unknown keys are dropped and an item that is not a video object fails the decode; LiteLLM returns the provider dict unchanged apart from the id wrapping."
+    why: "The typed record is what a caller reads, and every declared field keeps the value LiteLLM answers."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L336-L375
-  - what: A reply counts as a video list only when its data value is an array; LiteLLM tests only the data key, so a number under data raises TypeError and an object raises KeyError in its cursor lookup, reaching the caller as a server error.
-    why: A reply that cannot be read as a list is the caller's 4xx, not a 500, and the ids it would have wrapped are not a reply anyone can use.
+  - what: "A reply counts as a video list only when its data value is an array; LiteLLM tests only the data key, so a number under data raises TypeError and an object raises KeyError in its cursor lookup, reaching the caller as a server error."
+    why: "A reply that cannot be read as a list is the caller's 4xx, not a 500, and the ids it would have wrapped are not a reply anyone can use."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L344-L352
-  - what: A list reply with no data key answers data: [] and leaves first_id and last_id unwrapped, where LiteLLM returns the payload with no data key at all and also leaves the cursors unwrapped.
-    why: VideoList always carries its data list, and the cursor wrapping LiteLLM skips outside the data branch stays skipped.
+  - what: "A list reply with no data key answers an empty data array and leaves first_id and last_id unwrapped, where LiteLLM returns the payload with no data key at all and also leaves the cursors unwrapped."
+    why: "VideoList always carries its data list, and the cursor wrapping LiteLLM skips outside the data branch stays skipped."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L344
 kept_bugs:
-  - what: A configured request with no API key from any source still carries Authorization: Bearer None, because the f-string formats None instead of the call failing on a missing key.
-    why: The task names the header, and a proxy that relied on the header being present keeps the request it sent; the key never appears anywhere else in the error or log path.
+  - what: "A configured request with no API key from any source still carries an Authorization header whose value is Bearer None, because the f-string formats None instead of the call failing on a missing key."
+    why: "The task names the header, and a proxy that relied on the header being present keeps the request it sent; the key never appears anywhere else in the error or log path."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L84-L90
-  - what: List cursor wrapping sits inside the data-key branch, so a reply that carries first_id or last_id but no data array keeps native provider cursors next to provider-wrapped item ids.
-    why: A working caller pages with the cursors it received, and the task's pitfall names this placement; betterlite keeps the cursors exactly as LiteLLM wrote them.
+  - what: "List cursor wrapping sits inside the data-key branch, so a reply that carries first_id or last_id but no data array keeps native provider cursors next to provider-wrapped item ids."
+    why: "A working caller pages with the cursors it received, and the task's pitfall names this placement; betterlite keeps the cursors exactly as LiteLLM wrote them."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L344-L372
