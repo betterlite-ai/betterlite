@@ -342,7 +342,7 @@ fn route_skips_an_empty_explicit_credential() {
 fn route_leaves_credentials_absent_without_a_source() {
     let route = options(None, None, true).route("gpt-4", None, None);
     assert_eq!(route.api_base, None);
-    assert_eq!(route.api_key, None);
+    assert!(route.api_key.is_none());
     assert_eq!(route.model, "gpt-4");
 }
 
@@ -350,7 +350,7 @@ fn route_leaves_credentials_absent_without_a_source() {
 fn an_empty_configured_credential_is_absent() {
     let route = options(Some(""), Some(""), true).route("gpt-4", None, None);
     assert_eq!(route.api_base, None);
-    assert_eq!(route.api_key, None);
+    assert!(route.api_key.is_none());
 }
 
 #[rstest]
@@ -408,8 +408,11 @@ fn transform_request_matches_the_inherited_request_body() {
 }
 
 #[rstest]
-#[case::trims_every_slash("https://proxy.example///", "https://proxy.example/responses")]
-#[case::keeps_a_path("https://proxy.example/v1/", "https://proxy.example/v1/responses")]
+#[case::trims_every_slash(Some("https://proxy.example///"), "https://proxy.example/responses")]
+#[case::keeps_a_path(
+    Some("https://proxy.example/v1/"),
+    "https://proxy.example/v1/responses"
+)]
 #[case::uses_the_configured_base(None, "https://configured.example/responses")]
 fn responses_url_trims_trailing_slashes(#[case] explicit: Option<&str>, #[case] expected: &str) {
     let options = options(Some("https://configured.example/"), None, false);

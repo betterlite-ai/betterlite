@@ -11,6 +11,7 @@ pub enum ImageEndpoint {
 }
 
 impl ImageEndpoint {
+    #[must_use]
     pub const fn path(self) -> &'static str {
         match self {
             Self::Generations => "/images/generations",

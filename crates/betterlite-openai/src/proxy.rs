@@ -36,8 +36,8 @@ impl ProxyOptions {
     // an explicit empty base falls through to the configured one, as LiteLLM's "a or b" chain does
     #[must_use]
     pub fn resolve_api_base(&self, api_base: Option<&str>) -> Option<String> {
-        if let Some(api_base) = api_base.filter(|value| !value.is_empty()) {
-            return Some(api_base.to_owned());
+        if let Some(explicit) = api_base.filter(|value| !value.is_empty()) {
+            return Some(explicit.to_owned());
         }
         self.api_base
             .as_ref()
@@ -47,19 +47,18 @@ impl ProxyOptions {
 
     #[must_use]
     pub fn resolve_api_key(&self, api_key: Option<&SecretString>) -> Option<SecretString> {
-        if let Some(api_key) = api_key.filter(|key| !key.expose_secret().is_empty()) {
-            return Some(api_key.clone());
-        }
-        self.api_key
+        let explicit = api_key.filter(|key| !key.expose_secret().is_empty());
+        let configured = self
+            .api_key
             .as_ref()
-            .filter(|key| !key.expose_secret().is_empty())
-            .cloned()
+            .filter(|key| !key.expose_secret().is_empty());
+        explicit.or(configured).cloned()
     }
 
     // a deployment that sets the flag false does not veto a true environment or global value
     #[must_use]
-    pub const fn should_use_litellm_proxy(&self, litellm_params_use_litellm_proxy: bool) -> bool {
-        if litellm_params_use_litellm_proxy {
+    pub const fn should_use_litellm_proxy(&self, deployment_use_litellm_proxy: bool) -> bool {
+        if deployment_use_litellm_proxy {
             return true;
         }
         self.use_litellm_proxy
