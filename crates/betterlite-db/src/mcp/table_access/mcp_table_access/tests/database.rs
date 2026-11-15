@@ -10,11 +10,12 @@ use tokio_postgres::{Config, NoTls};
 use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::budget_permission_rows::JsonData;
 use crate::database_replica::availability::Availability;
+use crate::mcp::table_access::filter::{FindServers, ServerFilter};
 use crate::mcp::table_access::mcp_server_write_if_identifier_free;
 use crate::mcp::table_access::rows::{RowFields, ServerUpdate};
-use crate::mcp::table_access::store::{McpTableStore, db_transaction_manager};
+use crate::mcp::table_access::store::{LockedTable, McpTableStore, db_transaction_manager};
 use crate::mcp::table_access::types::{
-    IdentifierField, LockedWrite, LockedWriteOutcome, ServerWrite,
+    IdentifierField, LockedWrite, LockedWriteOutcome, McpServerAccess, ServerWrite,
 };
 use crate::postgres_store::session::PostgresStore;
 
@@ -181,4 +182,38 @@ async fn a_locked_update_may_keep_its_own_name_and_changes_the_row() {
         .await
         .expect("an update of no row still commits");
     assert!(matches!(nothing, LockedWriteOutcome::Written(None)));
+}
+
+#[tokio::test]
+async fn the_transaction_table_reads_and_updates_inside_the_open_transaction() {
+    let (_fixture, writer) = seeded().await;
+    let mut transactions = db_transaction_manager(&writer)
+        .await
+        .expect("the manager opens on a live pool");
+    let transaction = transactions.begin().await.expect("the transaction opens");
+    let locked = LockedTable {
+        transaction: &transaction,
+    };
+    let update = ServerUpdate {
+        server_id: "s1".to_owned(),
+        data: RowFields::texts(&[("approval_status", "active")]),
+    };
+    let updated = locked
+        .update_server(&update)
+        .await
+        .expect("the update runs")
+        .expect("s1 is stored");
+    assert_eq!(text_field(&updated, "approval_status"), Some("active"));
+    let active = FindServers {
+        filter: Some(ServerFilter::ApprovalStatus("active".to_owned())),
+        descending: false,
+        take: None,
+    };
+    let seen = locked
+        .find_servers(&active)
+        .await
+        .expect("the read runs inside the transaction");
+    assert_eq!(seen, vec![updated]);
+    transaction.rollback().await.expect("the transaction ends");
+    assert_eq!(stored_count(&writer, "s1").await, 1);
 }
