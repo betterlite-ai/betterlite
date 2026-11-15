@@ -1838,6 +1838,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-secret-managers",
  "chrono",
  "indexmap 2.14.2",
  "jiff",
@@ -1850,6 +1851,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
