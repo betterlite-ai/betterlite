@@ -44,7 +44,10 @@ pub(super) fn expected(text: &str) -> BTreeMap<String, Field> {
     serde_json::from_str(text).expect("the fixture is a projected form dictionary")
 }
 
-pub(super) fn projected<T: Serialize>(fields: T) -> BTreeMap<String, Field> {
+pub(super) fn projected<T>(fields: T) -> BTreeMap<String, Field>
+where
+    T: Serialize,
+{
     let value = serde_json::to_value(fields).expect("the projected form dictionary serializes");
     serde_json::from_value(value).expect("the projection has the shape of a form dictionary")
 }

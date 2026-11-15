@@ -9,7 +9,9 @@ from pydantic_core import PydanticUndefinedType
 
 ANSWERS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
-ENDPOINT: Final[Callable[[], Coroutine[None, None, dict[str, dict[str, JsonValue]]]]] = get_provider_specific_params
+ENDPOINT: Final[Callable[[], Coroutine[None, None, dict[str, dict[str, JsonValue]]]]] = (
+    get_provider_specific_params
+)
 
 
 class UndefinedAsNull:

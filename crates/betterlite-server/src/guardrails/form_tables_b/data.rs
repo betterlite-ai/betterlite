@@ -87,7 +87,7 @@ fn shape(spec: &SpecShape) -> FormShape {
         }
         SpecShape::Nested(fields) => FormShape::Nested(Box::new(model(&SpecModel {
             ui_friendly_name: None,
-            fields: *fields,
+            fields,
         }))),
         SpecShape::RawObject => FormShape::RawObject,
     }
