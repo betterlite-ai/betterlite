@@ -67,9 +67,9 @@ fn jina_reads_the_dictionary_and_not_the_formal_arguments() {
 }
 
 #[test]
-fn an_empty_base_is_a_relative_path() {
+fn a_jina_base_keeps_its_parts_and_replaces_the_path() {
     let result = answer("path-replacement-and-empty-base.yaml");
-    assert_eq!(result["url"], "/v1/rerank");
+    assert_eq!(result["url"], "https://jina.test:8443/v1/rerank?q=1#f");
     assert_eq!(result["request"]["query"], "q");
 }
 
@@ -83,7 +83,7 @@ fn a_base_path_is_replaced() {
 fn a_jina_status_is_a_plain_error_with_the_body() {
     let error = run_case("generic-status-and-json-errors.yaml").unwrap_err();
     assert_eq!(error.status, None);
-    assert_eq!(error.message, "upstream boom");
+    assert_eq!(error.message, r#"{"results":[]}"#);
 }
 
 #[test]
@@ -94,12 +94,11 @@ fn an_infinity_body_that_is_not_json_carries_the_upstream_status() {
 }
 
 #[test]
-fn an_empty_document_is_left_out_and_the_counters_are_read() {
+fn missing_results_are_an_empty_list_and_the_counters_are_read() {
     let result = answer("missing-results-and-empty-document.yaml");
     let response = &result["response"];
     assert_eq!(response["id"], "r1");
-    assert!(response["results"][0].get("document").is_none());
-    assert_eq!(response["results"][1]["document"], json!({"text": "b"}));
+    assert_eq!(response["results"], json!([]));
     assert_eq!(
         response["meta"]["tokens"],
         json!({"input_tokens": 3_i32, "output_tokens": 2_i32})
@@ -122,6 +121,13 @@ fn the_output_counter_is_not_clamped_at_zero() {
         json!({"input_tokens": 10_i32, "output_tokens": -6_i32})
     );
     assert_eq!(result["response"]["id"], FIXED_ID);
+    assert_eq!(result["response"]["results"][0]["index"], 0);
+    assert!(result["response"]["results"][0].get("document").is_none());
+    assert_eq!(result["response"]["results"][1]["index"], 1);
+    assert_eq!(
+        result["response"]["results"][1]["document"],
+        json!({"text": "b"})
+    );
 }
 
 #[test]

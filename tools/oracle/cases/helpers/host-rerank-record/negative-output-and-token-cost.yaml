@@ -8,6 +8,6 @@ call:
     options: {query: q, documents: [a]}
     reply:
       status: 200
-      body: '{"usage":{"prompt_tokens":10,"total_tokens":4},"results":[{"index":0,"relevance_score":0.5,"document":"a"}]}'
+      body: '{"usage":{"prompt_tokens":10,"total_tokens":4},"results":[{"index":0,"relevance_score":0.5,"document":""},{"index":1,"relevance_score":0.75,"document":"b"}]}'
 env: {}
 compare: {ignore: []}
