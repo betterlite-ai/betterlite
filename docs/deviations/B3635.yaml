@@ -15,4 +15,7 @@ deviations:
   - what: The url crate resolves dot segments in the path before the Azure marker check, so a marker that only appears before a ".." segment (…/v1/../speech/recognition) does not classify as Azure OpenAI; urlparse checks the raw path and would classify it.
     why: The normalized path is the one the URL resolves to, and LiteLLM's raw-path check would misread a Speech path as Azure OpenAI; no working setup routes an Azure OpenAI request through a dot-segment spelling.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L96-L97"
+  - what: The five route predicates match the url crate's dot-resolved path, so a route whose endpoint marker only appears before a dot segment (…/v1/chat/completions/.., …/v1/responses/%2e%2e, …/v1/embeddings/../) is not that endpoint's route; urlparse checks the raw path and the predicates would match it.
+    why: The normalized path is the one the relay resolves the request to, and no working setup routes an OpenAI endpoint through a dot-segment spelling of its path; every path that reaches an OpenAI endpoint keeps its marker.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L152-L191"
 kept_bugs: []
