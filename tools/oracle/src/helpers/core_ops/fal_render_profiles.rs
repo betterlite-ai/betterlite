@@ -188,14 +188,14 @@ fn mapped_params(
             model,
             case.drop_params,
         )
-        .map_or_else(|error| Err(error.status()), Ok),
+        .map_err(|error| error.status()),
         Family::Diffusion => map_diffusion_params(
             &case.non_default,
             case.optional.clone(),
             model,
             case.drop_params,
         )
-        .map_or_else(|error| Err(error.status()), Ok),
+        .map_err(|error| error.status()),
     }
 }
 
@@ -236,9 +236,9 @@ fn transformed_reply(
     let reply = http_response(case);
     match family {
         Family::Ideogram => transform_ideogram_reply(response, hidden_params, &reply)
-            .map_or_else(|error| Err(error.status()), Ok),
+            .map_err(|error| error.status()),
         Family::Diffusion => transform_diffusion_reply(response, hidden_params, &reply)
-            .map_or_else(|error| Err(error.status()), Ok),
+            .map_err(|error| error.status()),
     }
 }
 
