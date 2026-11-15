@@ -13,7 +13,7 @@ const FIND_ROW_SQL: &str = "SELECT file_object::text, status FROM \"LiteLLM_Mana
      WHERE unified_object_id = $1 LIMIT 1";
 
 const UPDATE_SQL: &str = "UPDATE \"LiteLLM_ManagedObjectTable\" \
-     SET file_object = $2::text::jsonb, status = $3, updated_by = $4, updated_at = now() \
+     SET file_object = to_jsonb($2::text), status = $3, updated_by = $4, updated_at = now() \
      WHERE unified_object_id = $1 \
      AND ($5::text IS NULL OR status = $5) \
      AND ($6::timestamp IS NULL OR updated_at < $6)";

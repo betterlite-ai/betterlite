@@ -9,7 +9,9 @@ use crate::budget_permission_rows::JsonData;
 use crate::postgres_store::errors::backend;
 
 use super::bindings::UISettings;
-use super::repository::{PrismaClient, PrismaTableRepository, TableAccess, TableError};
+use super::repository::{
+    Params, PrismaClient, PrismaTableRepository, TableAccess, TableError, query_json,
+};
 
 pub const USER_BANNER_ROW_ID: &str = "user_banner";
 
@@ -49,6 +51,37 @@ impl BannerActions<'_> {
             .map_err(|source| TableError::Database(backend(source)))?;
         serde_json::from_str(&text).map_err(TableError::Row)
     }
+
+    async fn row(&self, sql: &str, params: &Params<'_>) -> Result<Option<Row>, TableError> {
+        let client = self.access.write.session().await?;
+        client
+            .query_opt(sql, params)
+            .await
+            .map_err(|source| TableError::Database(backend(source)))
+    }
+
+    async fn one(&self, sql: &str, params: &Params<'_>) -> Result<JsonData, TableError> {
+        let row = self.row(sql, params).await?.ok_or(TableError::MissingRow)?;
+        Self::row_json(&row)
+    }
+
+    async fn optional(
+        &self,
+        sql: &str,
+        params: &Params<'_>,
+    ) -> Result<Option<JsonData>, TableError> {
+        let row = self.row(sql, params).await?;
+        row.as_ref().map(Self::row_json).transpose()
+    }
+
+    async fn changed(&self, sql: &str, params: &Params<'_>) -> Result<usize, TableError> {
+        let client = self.access.write.session().await?;
+        let rows = client
+            .execute(sql, params)
+            .await
+            .map_err(|source| TableError::Database(backend(source)))?;
+        usize::try_from(rows).map_err(|source| TableError::RowCount { source })
+    }
 }
 
 impl TableActions for BannerActions<'_> {
@@ -62,14 +95,7 @@ impl TableActions for BannerActions<'_> {
         &self,
         data: Self::CreateData,
     ) -> impl Future<Output = Result<Self::Row, Self::Failure>> + Send {
-        async move {
-            let client = self.access.write.session().await?;
-            let row = client
-                .query_one(CREATE_SQL, &[&data.id, &data.ui_settings])
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            Self::row_json(&row)
-        }
+        async move { self.one(CREATE_SQL, &[&data.id, &data.ui_settings]).await }
     }
 
     fn create_many(
@@ -77,13 +103,10 @@ impl TableActions for BannerActions<'_> {
         data: Vec<Self::CreateData>,
     ) -> impl Future<Output = Result<usize, Self::Failure>> + Send {
         async move {
-            let client = self.access.write.session().await?;
             let mut created = 0_usize;
             for row in &data {
-                client
-                    .execute(CREATE_SQL, &[&row.id, &row.ui_settings])
-                    .await
-                    .map_err(|source| TableError::Database(backend(source)))?;
+                self.changed(CREATE_SQL, &[&row.id, &row.ui_settings])
+                    .await?;
                 created = created.saturating_add(1);
             }
             Ok(created)
@@ -95,14 +118,7 @@ impl TableActions for BannerActions<'_> {
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> impl Future<Output = Result<Option<Self::Row>, Self::Failure>> + Send {
-        async move {
-            let client = self.access.write.session().await?;
-            let row = client
-                .query_opt(UPDATE_SQL, &[&filter, &data])
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            row.as_ref().map(Self::row_json).transpose()
-        }
+        async move { self.optional(UPDATE_SQL, &[&filter, &data]).await }
     }
 
     fn update_many(
@@ -110,14 +126,7 @@ impl TableActions for BannerActions<'_> {
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> impl Future<Output = Result<usize, Self::Failure>> + Send {
-        async move {
-            let client = self.access.write.session().await?;
-            let updated = client
-                .execute(UPDATE_MANY_SQL, &[&filter, &data])
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            usize::try_from(updated).map_err(|source| TableError::RowCount { source })
-        }
+        async move { self.changed(UPDATE_MANY_SQL, &[&filter, &data]).await }
     }
 
     fn upsert(
@@ -125,42 +134,21 @@ impl TableActions for BannerActions<'_> {
         _filter: Self::Filter,
         data: Self::CreateData,
     ) -> impl Future<Output = Result<Self::Row, Self::Failure>> + Send {
-        async move {
-            let client = self.access.write.session().await?;
-            let row = client
-                .query_one(UPSERT_SQL, &[&data.id, &data.ui_settings])
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            Self::row_json(&row)
-        }
+        async move { self.one(UPSERT_SQL, &[&data.id, &data.ui_settings]).await }
     }
 
     fn delete(
         &self,
         filter: Self::Filter,
     ) -> impl Future<Output = Result<Option<Self::Row>, Self::Failure>> + Send {
-        async move {
-            let client = self.access.write.session().await?;
-            let row = client
-                .query_opt(DELETE_SQL, &[&filter])
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            row.as_ref().map(Self::row_json).transpose()
-        }
+        async move { self.optional(DELETE_SQL, &[&filter]).await }
     }
 
     fn delete_many(
         &self,
         filter: Self::Filter,
     ) -> impl Future<Output = Result<usize, Self::Failure>> + Send {
-        async move {
-            let client = self.access.write.session().await?;
-            let deleted = client
-                .execute(DELETE_MANY_SQL, &[&filter])
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            usize::try_from(deleted).map_err(|source| TableError::RowCount { source })
-        }
+        async move { self.changed(DELETE_MANY_SQL, &[&filter]).await }
     }
 }
 
@@ -178,20 +166,7 @@ impl<'db> UserBannerRepository<'db> {
 
     pub async fn get_raw_settings(&self) -> Result<Option<JsonData>, TableError> {
         let access = self.base.access()?;
-        let client = access.read.session().await?;
-        let row = client
-            .query_opt(SELECT_SQL, &[&USER_BANNER_ROW_ID])
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?;
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        let text: String = row
-            .try_get(0)
-            .map_err(|source| TableError::Database(backend(source)))?;
-        serde_json::from_str(&text)
-            .map(Some)
-            .map_err(TableError::Row)
+        query_json(access.read, SELECT_SQL, &[&USER_BANNER_ROW_ID]).await
     }
 
     pub async fn upsert_settings(&self, payload: &str) -> Result<(), TableError> {

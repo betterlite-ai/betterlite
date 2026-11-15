@@ -52,9 +52,10 @@ impl<'db> ManagedFileContentRepository<'db> {
         let Some(row) = row else {
             return Ok(None);
         };
-        row.try_get(0)
-            .map(Some)
-            .map_err(|source| TableError::Database(backend(source)))
+        let content = row
+            .try_get(0)
+            .map_err(|source| TableError::Database(backend(source)))?;
+        Ok(Some(content))
     }
 
     pub async fn delete(&self, row_id: &str) -> Result<(), TableError> {

@@ -1,11 +1,16 @@
+use std::marker::PhantomData;
+use std::num::TryFromIntError;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use betterlite_redis::config_sync::publish::PublishChange;
 use betterlite_redis::config_sync::table_actions::{ConfigSyncTableActions, TableActions};
+use deadpool_postgres::GenericClient;
+use serde::de::DeserializeOwned;
+use tokio_postgres::types::ToSql;
 
 use crate::database_replica::availability::Availability;
-use crate::postgres_store::errors::DbError;
+use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::PostgresStore;
 
 use super::decoder::ManagedBatchRecordError;
@@ -21,10 +26,12 @@ pub enum TableError {
     Batch(#[from] ManagedBatchRecordError),
     #[error("stored row is not valid JSON")]
     Row(#[source] serde_json::Error),
+    #[error("statement returned no row")]
+    MissingRow,
     #[error("database row count did not fit in usize")]
     RowCount {
         #[source]
-        source: std::num::TryFromIntError,
+        source: TryFromIntError,
     },
     #[error("config sync publication failed: {message}")]
     Publish { message: String },
@@ -52,7 +59,7 @@ pub struct PrismaTableRepository<'db, T> {
     client: Option<PrismaClient<'db>>,
     use_writer: bool,
     publish: PublishChange<TableError>,
-    binding: T,
+    _binding: PhantomData<T>,
 }
 
 impl<'db, T: TableBinding> PrismaTableRepository<'db, T> {
@@ -60,28 +67,20 @@ impl<'db, T: TableBinding> PrismaTableRepository<'db, T> {
     pub fn new(
         client: Option<PrismaClient<'db>>,
         publish: PublishChange<TableError>,
-        binding: T,
+        _binding: T,
     ) -> Self {
         Self {
             client,
             use_writer: false,
             publish,
-            binding,
+            _binding: PhantomData,
         }
     }
 
     #[must_use]
-    pub fn with_writer(
-        client: Option<PrismaClient<'db>>,
-        publish: PublishChange<TableError>,
-        binding: T,
-    ) -> Self {
-        Self {
-            client,
-            use_writer: true,
-            publish,
-            binding,
-        }
+    pub fn with_writer(mut self) -> Self {
+        self.use_writer = true;
+        self
     }
 
     pub fn prisma_client(&self) -> Result<PrismaClient<'db>, DbError> {
@@ -126,4 +125,30 @@ impl<'db, T: TableBinding> PrismaTableRepository<'db, T> {
             Arc::clone(&self.publish),
         ))
     }
+}
+
+pub(super) type Params<'a> = [&'a (dyn ToSql + Sync)];
+
+pub(super) async fn query_json<T>(
+    store: &PostgresStore,
+    sql: &str,
+    params: &Params<'_>,
+) -> Result<Option<T>, TableError>
+where
+    T: DeserializeOwned,
+{
+    let client = store.session().await?;
+    let row = client
+        .query_opt(sql, params)
+        .await
+        .map_err(|source| TableError::Database(backend(source)))?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let text: String = row
+        .try_get(0)
+        .map_err(|source| TableError::Database(backend(source)))?;
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(TableError::Row)
 }

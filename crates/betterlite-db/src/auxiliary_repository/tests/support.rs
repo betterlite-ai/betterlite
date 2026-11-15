@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 use std::io;
 use std::str::from_utf8;
@@ -21,11 +21,18 @@ use clap::Parser;
 use deadpool_postgres::{GenericClient, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
+use tokio_postgres::types::ToSql;
+use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
 use crate::database_replica::availability::Availability;
 use crate::postgres_store::errors::backend;
 use crate::postgres_store::session::PostgresStore;
+use crate::{
+    schema_agent_identity, schema_baseline, schema_budget_windows, schema_daily_usage,
+    schema_identity_history, schema_managed_resources, schema_policy_resources,
+    schema_routing_state,
+};
 
 use super::super::repository::{PrismaClient, TableError};
 
@@ -58,14 +65,14 @@ pub(crate) fn store(fixture: &PostgresFixture) -> PostgresStore {
 async fn migrate(store: &PostgresStore) {
     let client = store.session().await.unwrap();
     for catalog in [
-        crate::schema_baseline::MIGRATION_CATALOG,
-        crate::schema_daily_usage::MIGRATION_CATALOG,
-        crate::schema_managed_resources::MIGRATION_CATALOG,
-        crate::schema_identity_history::MIGRATION_CATALOG,
-        crate::schema_policy_resources::MIGRATION_CATALOG,
-        crate::schema_routing_state::MIGRATION_CATALOG,
-        crate::schema_budget_windows::MIGRATION_CATALOG,
-        crate::schema_agent_identity::MIGRATION_CATALOG,
+        schema_baseline::MIGRATION_CATALOG,
+        schema_daily_usage::MIGRATION_CATALOG,
+        schema_managed_resources::MIGRATION_CATALOG,
+        schema_identity_history::MIGRATION_CATALOG,
+        schema_policy_resources::MIGRATION_CATALOG,
+        schema_routing_state::MIGRATION_CATALOG,
+        schema_budget_windows::MIGRATION_CATALOG,
+        schema_agent_identity::MIGRATION_CATALOG,
     ] {
         for migration in catalog.files {
             client
@@ -85,32 +92,35 @@ pub(crate) struct Case {
 
 impl Case {
     pub(crate) async fn new() -> Self {
-        let fixture = provision().await;
-        let writer = store(&fixture);
-        let reader = store(&fixture);
-        let case = Self {
-            fixtures: vec![fixture],
-            writer,
-            reader,
-            availability: Availability::default(),
-        };
-        migrate(&case.writer).await;
-        case
+        Self::assemble(provision().await, None).await
     }
 
     pub(crate) async fn split() -> Self {
-        let writer_fixture = provision().await;
-        let reader_fixture = provision().await;
+        Self::assemble(provision().await, Some(provision().await)).await
+    }
+
+    async fn assemble(
+        writer_fixture: PostgresFixture,
+        reader_fixture: Option<PostgresFixture>,
+    ) -> Self {
         let writer = store(&writer_fixture);
-        let reader = store(&reader_fixture);
+        let reader = match &reader_fixture {
+            Some(fixture) => store(fixture),
+            None => store(&writer_fixture),
+        };
+        let separate_reader = reader_fixture.is_some();
+        let mut fixtures = vec![writer_fixture];
+        fixtures.extend(reader_fixture);
         let case = Self {
-            fixtures: vec![writer_fixture, reader_fixture],
+            fixtures,
             writer,
             reader,
             availability: Availability::default(),
         };
         migrate(&case.writer).await;
-        migrate(&case.reader).await;
+        if separate_reader {
+            migrate(&case.reader).await;
+        }
         case
     }
 
@@ -196,39 +206,42 @@ pub(crate) fn observing_publisher(
     })
 }
 
+async fn execute(store: &PostgresStore, sql: &str, params: &[&(dyn ToSql + Sync)]) {
+    let client = store.session().await.unwrap();
+    client.execute(sql, params).await.unwrap();
+}
+
 pub(crate) async fn insert_batch(
     store: &PostgresStore,
     unified_object_id: &str,
     status: Option<&str>,
     file_object: &str,
 ) {
-    let client = store.session().await.unwrap();
-    client
-        .execute(
-            "INSERT INTO \"LiteLLM_ManagedObjectTable\" \
-             (id, unified_object_id, model_object_id, file_object, file_purpose, status, updated_at) \
-             VALUES ($1, $2, $3, $4::text::jsonb, 'batch', $5, now())",
-            &[
-                &uuid::Uuid::new_v4().to_string(),
-                &unified_object_id,
-                &uuid::Uuid::new_v4().to_string(),
-                &file_object,
-                &status,
-            ],
-        )
-        .await
-        .unwrap();
+    let id = uuid::Uuid::new_v4().to_string();
+    let model_object_id = uuid::Uuid::new_v4().to_string();
+    execute(
+        store,
+        "INSERT INTO \"LiteLLM_ManagedObjectTable\" \
+         (id, unified_object_id, model_object_id, file_object, file_purpose, status, updated_at) \
+         VALUES ($1, $2, $3, to_jsonb($4::text), 'batch', $5, now())",
+        &[
+            &id,
+            &unified_object_id,
+            &model_object_id,
+            &file_object,
+            &status,
+        ],
+    )
+    .await;
 }
 
 pub(crate) async fn set_batch_status(store: &PostgresStore, unified_object_id: &str, status: &str) {
-    let client = store.session().await.unwrap();
-    client
-        .execute(
-            "UPDATE \"LiteLLM_ManagedObjectTable\" SET status = $2 WHERE unified_object_id = $1",
-            &[&unified_object_id, &status],
-        )
-        .await
-        .unwrap();
+    execute(
+        store,
+        "UPDATE \"LiteLLM_ManagedObjectTable\" SET status = $2 WHERE unified_object_id = $1",
+        &[&unified_object_id, &status],
+    )
+    .await;
 }
 
 pub(crate) async fn drop_batch_unique_index(store: &PostgresStore) {
@@ -247,33 +260,35 @@ pub(crate) async fn insert_session(
     last_model: &str,
     last_turn_at: Option<&str>,
 ) {
-    let client = store.session().await.unwrap();
-    client
-        .execute(
-            "INSERT INTO \"LiteLLM_AutoRouterSession\" \
-             (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) \
-             VALUES ($1, $2, $3, 'classifier', COALESCE($4::timestamp, now()), $4::timestamp, $5)",
-            &[&api_key, &session_id, &router_name, &last_turn_at, &last_model],
-        )
-        .await
-        .unwrap();
+    execute(
+        store,
+        "INSERT INTO \"LiteLLM_AutoRouterSession\" \
+         (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) \
+         VALUES ($1, $2, $3, 'classifier', COALESCE($4::text::timestamp, now()), $4::text::timestamp, $5)",
+        &[
+            &api_key,
+            &session_id,
+            &router_name,
+            &last_turn_at,
+            &last_model,
+        ],
+    )
+    .await;
 }
 
 pub(crate) async fn insert_ui_settings(store: &PostgresStore, id: &str, ui_settings: &str) {
-    let client = store.session().await.unwrap();
-    client
-        .execute(
-            "INSERT INTO \"LiteLLM_UISettings\" (id, ui_settings, updated_at) \
-             VALUES ($1, $2::text::jsonb, now())",
-            &[&id, &ui_settings],
-        )
-        .await
-        .unwrap();
+    execute(
+        store,
+        "INSERT INTO \"LiteLLM_UISettings\" (id, ui_settings, updated_at) \
+         VALUES ($1, $2::text::jsonb, now())",
+        &[&id, &ui_settings],
+    )
+    .await;
 }
 
-pub(crate) fn assert_bindings(present: &std::collections::BTreeSet<String>) {
-    for (name, table) in super::super::bindings::ALL {
-        assert!(present.contains(*table), "{name} is backed by {table}");
+pub(crate) fn assert_bindings(present: &BTreeSet<String>) {
+    for &(name, table) in super::super::bindings::ALL {
+        assert!(present.contains(table), "{name} is backed by {table}");
     }
 }
 
@@ -423,7 +438,7 @@ impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for CapturedLogs {
     }
 }
 
-pub(crate) fn captured_logs() -> (CapturedLogs, tracing::subscriber::DefaultGuard) {
+pub(crate) fn captured_logs() -> (CapturedLogs, DefaultGuard) {
     let logs = CapturedLogs::default();
     let guard = tracing_subscriber::fmt()
         .with_writer(logs.clone())

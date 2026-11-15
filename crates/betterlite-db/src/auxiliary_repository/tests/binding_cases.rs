@@ -84,10 +84,10 @@ fn table_binding<T: TableBinding>(
 ) {
     assert_eq!(T::NAME, name);
     assert_eq!(T::TABLE, table);
-    assert!(super::bindings::ALL.contains(&(T::NAME, T::TABLE)));
+    assert!(super::super::bindings::ALL.contains(&(T::NAME, T::TABLE)));
 }
 
 #[test]
 fn binding_catalog_holds_every_listed_table() {
-    assert_eq!(super::bindings::ALL.len(), 58);
+    assert_eq!(super::super::bindings::ALL.len(), 58);
 }

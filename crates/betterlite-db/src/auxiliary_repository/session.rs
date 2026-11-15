@@ -1,10 +1,10 @@
 use betterlite_redis::config_sync::publish::PublishChange;
-use deadpool_postgres::GenericClient;
 
 use crate::managed_resource_rows::autorouter::AutoRouterSession;
-use crate::postgres_store::errors::backend;
 
-use super::repository::{PrismaClient, PrismaTableRepository, TableBinding, TableError};
+use super::repository::{
+    PrismaClient, PrismaTableRepository, TableBinding, TableError, query_json,
+};
 
 // Postgres orders DESC with NULLs first; no NULLS LAST or tie-breaker is added
 const LATEST_SQL: &str = "SELECT to_jsonb(session_row)::text FROM \"LiteLLM_AutoRouterSession\" AS session_row \
@@ -36,19 +36,6 @@ impl<'db> AutoRouterSessionRepository<'db> {
         session_id: &str,
     ) -> Result<Option<AutoRouterSession>, TableError> {
         let access = self.base.access()?;
-        let client = access.read.session().await?;
-        let row = client
-            .query_opt(LATEST_SQL, &[&api_key, &session_id])
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?;
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        let text: String = row
-            .try_get(0)
-            .map_err(|source| TableError::Database(backend(source)))?;
-        serde_json::from_str(&text)
-            .map(Some)
-            .map_err(TableError::Row)
+        query_json(access.read, LATEST_SQL, &[&api_key, &session_id]).await
     }
 }

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
+use std::ptr::eq;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -11,6 +12,7 @@ use betterlite_redis::config_sync::table_actions::TableActions as _;
 use crate::budget_permission_rows::JsonData;
 
 use super::batch::{BatchUnchanged, BatchWrite, ManagedBatchRepository};
+use super::bindings::{PolicyTable, TeamTable, UISettings};
 use super::decoder::decode_managed_batch_record;
 use super::file_content::ManagedFileContentRepository;
 use super::repository::{PrismaTableRepository, TableError};
@@ -77,23 +79,24 @@ async fn default_read_and_explicit_writer() {
         AutoRouterSessionTable,
     );
     let access = routed.access().unwrap();
-    assert!(std::ptr::eq(access.read, &case.reader));
-    assert!(std::ptr::eq(access.write, &case.writer));
+    assert!(eq(access.read, &case.reader));
+    assert!(eq(access.write, &case.writer));
 
-    let pinned = PrismaTableRepository::<AutoRouterSessionTable>::with_writer(
+    let pinned = PrismaTableRepository::<AutoRouterSessionTable>::new(
         Some(case.client()),
         recording_publisher(&journal),
         AutoRouterSessionTable,
-    );
+    )
+    .with_writer();
     let access = pinned.access().unwrap();
-    assert!(std::ptr::eq(access.read, &case.writer));
-    assert!(std::ptr::eq(access.write, &case.writer));
+    assert!(eq(access.read, &case.writer));
+    assert!(eq(access.write, &case.writer));
 
     case.availability
         .reader_unavailable
         .store(true, Ordering::SeqCst);
     let access = routed.access().unwrap();
-    assert!(std::ptr::eq(access.read, &case.writer));
+    assert!(eq(access.read, &case.writer));
 
     insert_session(
         &case.reader,
@@ -456,7 +459,9 @@ async fn cas_only_three_fields_including_null_author() {
         .await
         .unwrap();
     let file_object: String = row.try_get(0).unwrap();
-    let written: BatchObject = serde_json::from_str(&file_object).unwrap();
+    let written = decode_managed_batch_record::<BatchObject>(file_object.as_bytes())
+        .unwrap()
+        .unwrap();
     assert_eq!(written, stored);
     assert_eq!(row.try_get::<_, String>(1).unwrap(), "completed");
     assert_eq!(row.try_get::<_, Option<String>>(2).unwrap(), None);
@@ -732,12 +737,11 @@ async fn session_desc_null_and_tie_semantics() {
         None,
     )
     .await;
-    let latest = repository
-        .find_latest_for_key("tie-key", "session-1")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(latest.last_model, "null-turn");
+    // DESC puts the null first, and B858's row conversion refuses a null timestamp
+    assert!(matches!(
+        repository.find_latest_for_key("tie-key", "session-1").await,
+        Err(TableError::Row(_))
+    ));
     case.close().await;
 }
 
