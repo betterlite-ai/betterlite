@@ -13,6 +13,9 @@ use super::scan::call_panw_api;
 use super::verdict::{Action, ScanVerdict};
 use crate::prisma_airs_masking::get_masked_text;
 
+// A list past the OpenAI chat API's 128-tool limit is not model output, so no scan goes out (docs/deviations/B9956.yaml).
+const MAX_SCANNED_TOOL_CALLS: usize = 128;
+
 // The function slice of a tool call; custom tool calls carry no function and are not scanned.
 #[derive(Debug, Deserialize)]
 pub struct ToolCall {
@@ -74,6 +77,7 @@ pub async fn scan_tool_calls_for_guardrail(
     scan: &ToolScan<'_>,
     audit: &mut GuardrailAudit,
 ) -> Result<(), GuardrailHttpError> {
+    enforce_tool_call_cap(guardrail, tool_calls, scan.direction)?;
     for tool_call in tool_calls {
         let Some(function) = tool_call.function.as_mut() else {
             continue;
@@ -107,6 +111,40 @@ pub async fn scan_tool_calls_for_guardrail(
         apply_tool_verdict(guardrail, function, &verdict, masked, scan.direction)?;
     }
     Ok(())
+}
+
+// LiteLLM sends one scan per call with no limit, so a long list can hold the request open for hours.
+fn enforce_tool_call_cap(
+    guardrail: &PanwPrismaAirs,
+    tool_calls: &[ToolCall],
+    direction: Direction,
+) -> Result<(), GuardrailHttpError> {
+    let scannable = tool_calls
+        .iter()
+        .filter(|tool_call| {
+            tool_call
+                .function
+                .as_ref()
+                .is_some_and(|function| tool_scan_text(function).is_some())
+        })
+        .count();
+    if scannable <= MAX_SCANNED_TOOL_CALLS {
+        return Ok(());
+    }
+    // A blocked scan's error ends the call with this status, type and code; only the message names the cap.
+    let mut detail = build_error_detail(
+        guardrail,
+        &ScanVerdict::synthetic(Action::Block, "tool_call_limit", None),
+        direction,
+    );
+    detail.error.message = format!(
+        "{}; at most {MAX_SCANNED_TOOL_CALLS} tool calls are scanned in one request or response",
+        detail.error.message
+    );
+    Err(GuardrailHttpError {
+        status: 400,
+        detail: Box::new(detail),
+    })
 }
 
 // Tool name and arguments go out as plain text: AIRS' tool_event schema only accepts ecosystem "mcp".

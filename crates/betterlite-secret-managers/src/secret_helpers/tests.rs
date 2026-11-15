@@ -2,38 +2,12 @@
 
 use super::{
     SecretManagerReadState, manager_read_is_consulted, manager_read_is_enabled,
-    normalize_nonempty_secret_str, read_boolean_text,
+    normalize_nonempty_secret_str,
 };
 
 use crate::secret_types::SecretAccessMode;
-use betterlite_env::EnvError;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
-
-#[rstest]
-#[case::true_text(Some(" TRUE "), Some(true))]
-#[case::false_text(Some("False"), Some(false))]
-#[case::yes_text(Some("yes"), Some(true))]
-#[case::absent(None, None)]
-#[case::empty(Some(""), None)]
-fn boolean_text_uses_the_shared_environment_policy(
-    #[case] value: Option<&str>,
-    #[case] expected: Option<bool>,
-) {
-    assert_eq!(read_boolean_text("SETTING", value).unwrap(), expected);
-}
-
-#[test]
-fn invalid_boolean_text_names_the_variable_without_the_value() {
-    let error = read_boolean_text("SETTING", Some("private-value")).unwrap_err();
-    assert_eq!(
-        error,
-        EnvError::Bool {
-            name: "SETTING".to_owned()
-        }
-    );
-    assert!(!error.to_string().contains("private-value"));
-}
 
 #[rstest]
 #[case::value(Some("  secret \n"), Some("secret"))]
