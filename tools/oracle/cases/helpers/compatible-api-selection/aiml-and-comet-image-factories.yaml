@@ -1,0 +1,25 @@
+kind: helper
+name: aiml-and-comet-image-factories
+call:
+  compatible_api_selection:
+    calls:
+      - family: image_generation
+        provider: aiml
+        model: flux-pro
+        identity: name
+        native: null
+        providers: []
+      - family: image_generation
+        provider: cometapi
+        model: comet-image
+        identity: name
+        native: null
+        providers: []
+      - family: image_generation
+        provider: groq
+        model: groq-image
+        identity: name
+        native: null
+        providers: []
+env: {}
+compare: {ignore: []}
