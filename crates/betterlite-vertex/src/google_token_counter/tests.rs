@@ -472,6 +472,11 @@ async fn selection_vertex_missing_total() {
         .await
         .unwrap();
     assert!(outcome.is_none());
+    let null_total = Script::replying(br#"{"totalTokens":null}"#);
+    let outcome = vertex_count(&null_total, &mint, &refresh, &catalog, &request)
+        .await
+        .unwrap();
+    assert!(outcome.is_none());
     let overflowing = Script::replying(br#"{"totalTokens":18446744073709551615}"#);
     let error = vertex_count(&overflowing, &mint, &refresh, &catalog, &request)
         .await
@@ -498,6 +503,12 @@ async fn selection_studio_missing_total() {
         response.original_response,
         Some(CountReply::Google(_))
     ));
+    let null_total = Script::replying(br#"{"totalTokens":null}"#);
+    let response = counter
+        .count_tokens(&null_total, &request, DEADLINE)
+        .await
+        .unwrap();
+    assert_eq!(response.total_tokens, 0);
 }
 
 #[tokio::test]
@@ -538,6 +549,29 @@ async fn selection_partner_aliases() {
     let sent = script.sent();
     assert_eq!(sent[0].url, ALIAS_PARTNER_URL);
     assert_eq!(sent[0].body_json(), json(PARTNER_BODY));
+}
+
+#[tokio::test]
+async fn selection_partner_empty_messages() {
+    let script = Script::replying(br#"{"input_tokens":0}"#);
+    let catalog = BundledCatalog::default().get();
+    let refresh = refresh();
+    let mint = RecordingMint::default();
+    let options = deployment(
+        "vertex_ai/claude-sonnet-4-6@default",
+        params(Some("proj"), Some("us-east5"), None),
+        None,
+    );
+    let request = call("claude-sonnet-4-6@default", &[], None, options);
+    let response = vertex_count(&script, &mint, &refresh, &catalog, &request)
+        .await
+        .unwrap()
+        .expect("a partner count reply");
+    assert_eq!(response.total_tokens, 0);
+    assert_eq!(
+        script.sent()[0].body_json(),
+        json(r#"{"model":"claude-sonnet-4-6","messages":[]}"#)
+    );
 }
 
 #[tokio::test]
