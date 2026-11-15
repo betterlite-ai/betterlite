@@ -18,4 +18,7 @@ deviations:
   - what: The five route predicates match the url crate's dot-resolved path, so a route whose endpoint marker only appears before a dot segment (…/v1/chat/completions/.., …/v1/responses/%2e%2e, …/v1/embeddings/../) is not that endpoint's route; urlparse checks the raw path and the predicates would match it.
     why: The normalized path is the one the relay resolves the request to, and no working setup routes an OpenAI endpoint through a dot-segment spelling of its path; every path that reaches an OpenAI endpoint keeps its marker.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L152-L191"
+  - what: An image count that the i64 conversion cannot hold, such as the JSON number 1e300 or the string "1_0", falls back to one image; LiteLLM's int() turns it into a Python integer and prices that many images.
+    why: The calculator counts images in i64 and the spend log stores a Decimal, so no real request asks for more images than that; the fallback keeps the spend log written like the source's failed conversion.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L212-L216"
 kept_bugs: []

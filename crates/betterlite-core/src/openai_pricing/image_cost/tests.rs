@@ -158,8 +158,10 @@ fn provider_prefix_reaches_the_calculator() {
 #[test]
 fn explicit_zero_price_is_used() {
     let request_body = body("{}");
-    let cost = image_generation_cost(&request("zero-model", &request_body), &catalog());
+    let call = request("zero-model", &request_body);
+    let (cost, logs) = capture(|| image_generation_cost(&call, &catalog()));
     assert_eq!(cost, Decimal::ZERO);
+    assert!(logs.is_empty());
 }
 
 #[rstest]
@@ -193,6 +195,18 @@ fn unknown_model_warns_and_costs_zero(#[case] editing: bool) {
 #[case::boolean_quality(r#"{"quality":true}"#)]
 fn non_text_fields_warn_and_cost_zero(#[case] body_json: &str) {
     let request_body = body(body_json);
+    let call = request(MODEL, &request_body);
+    let (cost, logs) = capture(|| image_generation_cost(&call, &catalog()));
+    assert_eq!(cost, Decimal::ZERO);
+    assert!(
+        logs.iter()
+            .any(|line| line.contains("Error calculating image generation cost"))
+    );
+}
+
+#[test]
+fn a_malformed_size_warns_and_costs_zero() {
+    let request_body = body(r#"{"size":"large"}"#);
     let call = request(MODEL, &request_body);
     let (cost, logs) = capture(|| image_generation_cost(&call, &catalog()));
     assert_eq!(cost, Decimal::ZERO);

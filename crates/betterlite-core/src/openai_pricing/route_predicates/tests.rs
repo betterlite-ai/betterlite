@@ -28,6 +28,7 @@ fn chat_completions(#[case] route: &str, #[case] expected: bool) {
 
 #[rstest]
 #[case::plain("https://api.openai.com/v1/images/generations", true)]
+#[case::azure_host("https://resource.openai.azure.com/v1/images/generations", true)]
 #[case::suffix_path("https://api.openai.com/v1/images/generations?x=1", true)]
 #[case::singular("https://api.openai.com/v1/images/generation", false)]
 #[case::edits_are_not_generations("https://api.openai.com/v1/images/edits", false)]
@@ -64,6 +65,7 @@ fn responses(#[case] route: &str, #[case] expected: bool) {
 
 #[rstest]
 #[case::plain("https://api.openai.com/v1/embeddings", true)]
+#[case::azure_host("https://resource.cognitiveservices.azure.com/v1/embeddings", true)]
 #[case::subdomain("https://eu.api.openai.com/v1/embeddings", true)]
 #[case::singular("https://api.openai.com/v1/embedding", false)]
 #[case::other_host("https://evil.example/v1/embeddings", false)]
