@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use crate::guardrail_usage_rollups::{GuardrailCounts, MetricsKey, RollupRow, flush};
+use rust_decimal::Decimal;
+
+use crate::guardrail_usage_rollups::{
+    GuardrailCounts, MetricsKey, RollupRow, UsageUnitIncrement, UsageUnitKey, flush,
+};
 
 use super::support::{FakeSink, NOT_RETRY_SAFE, PauseLog, RETRY_SAFE, capture_logs};
 
@@ -15,6 +19,23 @@ fn metric_row(guardrail_id: &str) -> RollupRow {
             passed_count: 1,
             blocked_count: 0,
             flagged_count: 0,
+        },
+    }
+}
+
+fn unit_row(guardrail_id: &str, usage_unit: &str) -> RollupRow {
+    RollupRow::Units {
+        key: UsageUnitKey {
+            guardrail_id: String::from(guardrail_id),
+            date: String::from("2026-01-02"),
+            team_id: String::new(),
+            api_key: String::new(),
+            usage_unit: String::from(usage_unit),
+        },
+        increment: UsageUnitIncrement {
+            units: 1,
+            cost: Decimal::ZERO,
+            untracked_units: 1,
         },
     }
 }
@@ -100,6 +121,18 @@ async fn drops_a_row_that_fails_without_a_retry_safe_error() {
     assert!(waits.is_empty());
     assert_eq!(written(&sink), ["g1"]);
     assert!(capture.logs.has("WARN", "not safe to retry"));
+}
+
+#[tokio::test]
+async fn names_the_row_type_that_failed_in_the_warning() {
+    let capture = capture_logs();
+    let sink = FakeSink::failing_upserts(vec![Some(NOT_RETRY_SAFE), Some(NOT_RETRY_SAFE)]);
+    let rows = vec![metric_row("g1"), unit_row("g1", "a")];
+    let (failed, waits) = flush_with(&sink, rows).await;
+    assert!(failed.is_empty());
+    assert!(waits.is_empty());
+    assert!(capture.logs.has("WARN", "daily metrics upsert failed"));
+    assert!(capture.logs.has("WARN", "usage unit upsert failed"));
 }
 
 #[tokio::test]

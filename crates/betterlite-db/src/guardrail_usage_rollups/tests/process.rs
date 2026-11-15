@@ -171,6 +171,18 @@ async fn drops_a_rollup_row_that_fails_without_a_retry_safe_error() {
 }
 
 #[tokio::test]
+async fn writes_only_the_index_row_of_a_not_run_entry() {
+    let sink = FakeSink::default();
+    let payload = from_json(
+        r#"{"request_id": "req-1", "startTime": "2026-01-02T03:04:05Z", "metadata": {"guardrail_information": [{"guardrail_id": "g1", "guardrail_status": "not_run"}]}}"#,
+    );
+    process(&[payload], &sink).await;
+    assert_eq!(sink.index_calls().len(), 1);
+    assert!(sink.metric_calls().is_empty());
+    assert!(sink.unit_calls().is_empty());
+}
+
+#[tokio::test]
 async fn writes_nothing_when_no_payload_has_guardrail_information() {
     let sink = FakeSink::default();
     let payload = from_json(r#"{"request_id": "req-1", "startTime": "2026-01-02T03:04:05Z"}"#);
