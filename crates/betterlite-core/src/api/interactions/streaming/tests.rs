@@ -15,14 +15,16 @@ use betterlite_core::api::interactions::contract::records::{
     InteractionsLogging, InteractionsUpstream, Params, PreparedRequest, RequestHeaders,
 };
 use betterlite_core::api::interactions::streaming::async_iterator::InteractionsStreamIterator;
-use betterlite_core::api::interactions::streaming::error::InteractionStreamError;
+use betterlite_core::api::interactions::streaming::error::{
+    InteractionSourceError, InteractionStreamError,
+};
 use betterlite_core::api::interactions::streaming::logging::InteractionsStreamLogging;
 use betterlite_core::api::interactions::streaming::records::{
     InteractionsApiBase, InteractionsStreamSetup, InteractionsSuccessCall, SharedApiBase,
 };
 use betterlite_core::api::interactions::streaming::response::{
     InteractionBufferedResponse, InteractionsAsyncResponse, InteractionsLineStream,
-    InteractionsSyncResponse,
+    InteractionsSyncResponse, MAX_LINE_BYTES,
 };
 use betterlite_core::api::interactions::streaming::sync_iterator::SyncInteractionsStreamIterator;
 use betterlite_http::proxy::ProxiedClient;
@@ -43,6 +45,7 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
+use betterlite_openai::aleph_alpha::error::AlephAlphaError;
 use chrono::{DateTime, Duration as Seconds, FixedOffset};
 use http::{HeaderMap, Method};
 use indexmap::IndexMap;
@@ -583,6 +586,70 @@ fn sync_iteration_reads_a_buffered_response() {
     assert_eq!(logging.records().len(), 2);
 }
 
+#[test]
+fn buffered_response_yields_the_decoded_lines_before_the_line_error() {
+    let mut response = InteractionBufferedResponse {
+        headers: IndexMap::new(),
+        body: format!("data: {COMPLETED_EVENT}\n\n").into_bytes(),
+    };
+    response
+        .body
+        .resize(response.body.len().saturating_add(MAX_LINE_BYTES + 1), b'x');
+    let mut lines = response.iter_lines();
+    assert_eq!(
+        lines.next().transpose().expect("the first line decodes"),
+        Some(format!("data: {COMPLETED_EVENT}"))
+    );
+    assert_eq!(
+        lines.next().transpose().expect("the blank line decodes"),
+        Some(String::new())
+    );
+    assert!(matches!(
+        lines.next(),
+        Some(Err(InteractionSourceError::Line(
+            AlephAlphaError::LineTooLong { limit }
+        ))) if limit == MAX_LINE_BYTES
+    ));
+    assert!(lines.next().is_none());
+}
+
+#[test]
+fn sync_iteration_yields_earlier_events_before_the_line_error() {
+    let mut body = format!("data: {COMPLETED_EVENT}\n\n").into_bytes();
+    body.resize(
+        body.len().saturating_add(MAX_LINE_BYTES).saturating_add(1),
+        b'x',
+    );
+    let response = InteractionBufferedResponse {
+        headers: IndexMap::new(),
+        body,
+    };
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(Params::new());
+    let mut iterator =
+        SyncInteractionsStreamIterator::new(response, setup(&mut logging, &config, &NO_API_BASE))
+            .expect("the buffered iterator builds");
+    let event = iterator
+        .next_chunk()
+        .expect("the event before the cut arrives")
+        .expect("the event decodes");
+    assert_eq!(event.id.as_deref(), Some("int_2"));
+    assert!(!iterator.base.finished);
+    let failure = iterator
+        .next_chunk()
+        .expect("the stream reports the line error");
+    let Err(InteractionStreamError::Source {
+        source: InteractionSourceError::Line(AlephAlphaError::LineTooLong { limit }),
+    }) = failure
+    else {
+        panic!("the stream reports the over-limit line");
+    };
+    assert_eq!(limit, MAX_LINE_BYTES);
+    assert!(iterator.base.finished);
+    assert!(iterator.next_chunk().is_none());
+    assert_eq!(logging.records().len(), 2);
+}
+
 #[tokio::test]
 async fn error_handling_async_source_error_sets_finished_and_errors() {
     let config = FixtureConfig;
@@ -683,3 +750,4 @@ fn alias_params(base_url: &str) -> Params {
 }
 
 include!("tests/support.rs");
+include!("tests/corpus.rs");
