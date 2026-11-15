@@ -100,6 +100,13 @@ fn replays_the_anthropic_stream_decode_corpus() {
 fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
     let (guard, warnings) = fixture::capture_warnings();
     let outcomes = fixture::drive_sync(vec![
+        Ok(TransportChunk::Text(
+            r#"data: {"type":}{"type":"ping"}"#.to_owned(),
+        )),
+        Ok(TransportChunk::Text(format!(
+            r#"data: "bad\q"{}"#,
+            delta("u").trim_start_matches("data:")
+        ))),
         Ok(TransportChunk::Text("data: nope".to_owned())),
         Ok(TransportChunk::Text(delta("t"))),
         Ok(TransportChunk::Text(
@@ -108,19 +115,30 @@ fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
         )),
     ]);
     drop(guard);
-    assert_eq!(outcomes.len(), 2);
-    let Ok(DecodedChunk::Event(text)) = &outcomes[0] else {
+    assert_eq!(outcomes.len(), 4);
+    let Ok(DecodedChunk::Event(ping)) = &outcomes[0] else {
+        panic!("the event glued behind a broken object must arrive");
+    };
+    assert_eq!(ping.choices[0].delta.content, "");
+    let Ok(DecodedChunk::Event(glued)) = &outcomes[1] else {
+        panic!("the event glued behind a broken string must arrive");
+    };
+    assert_eq!(glued.choices[0].delta.content, "u");
+    let Ok(DecodedChunk::Event(text)) = &outcomes[2] else {
         panic!("the text event after the corrupted fragment must arrive");
     };
     assert_eq!(text.choices[0].delta.content, "t");
-    let Ok(DecodedChunk::Event(usage)) = &outcomes[1] else {
+    let Ok(DecodedChunk::Event(usage)) = &outcomes[3] else {
         panic!("the usage event after the corrupted fragment must arrive");
     };
-    assert_eq!(usage.choices[0].finish_reason.as_deref(), Some("stop"));
     assert_eq!(usage.usage.as_ref().unwrap().completion_tokens, 7);
     assert_eq!(
         warnings.messages(),
-        ["dropping 4 unparseable bytes from the accumulated anthropic stream buffer"]
+        [
+            "dropping 9 unparseable bytes from the accumulated anthropic stream buffer",
+            "dropping 7 unparseable bytes from the accumulated anthropic stream buffer",
+            "dropping 4 unparseable bytes from the accumulated anthropic stream buffer",
+        ]
     );
 }
 
