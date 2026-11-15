@@ -26,7 +26,8 @@ use crate::vertex_embedding_call::post::{ClientTimeout, HANDLER_DEFAULT_TIMEOUT,
 
 use super::support::{
     ANSWER, BODY, REMOTE_TOOL_MEDIA, Reply, SCHEMA_ERROR, STREAM_CHUNK, Setup, Stage, TOKEN,
-    Variation, complete_reply, error_reply, line, pooled_fixture, stream_reply, supplied_fixture,
+    Variation, auth_failure_fixture, complete_reply, error_reply, line, pooled_fixture,
+    stream_reply, supplied_fixture,
 };
 
 const VERTEX_URL: &str = "https://us-central1-aiplatform.googleapis.com/v1/projects/project-p/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent";
@@ -398,6 +399,53 @@ fn ordered_effects_sync_completion_turns_a_timeout_into_408() {
     assert_eq!(provider.status_code, 408);
     assert_eq!(provider.message, "Timeout error occurred.");
     assert!(provider.headers.is_none());
+}
+
+#[rstest]
+#[case::async_completion(true)]
+#[case::sync_completion(false)]
+fn ordered_effects_missing_credentials_stop_before_the_transform(#[case] acompletion: bool) {
+    let fixture = auth_failure_fixture();
+    let reply = fixture.run(Setup {
+        acompletion,
+        stream: None,
+        timeout: None,
+    });
+    assert!(matches!(
+        reply,
+        Err(GeminiCallError::Http(GeminiHttpError::Credentials { .. }))
+    ));
+    assert_eq!(fixture.order.stages(), vec![Stage::Auth]);
+    assert_eq!(fixture.loads(), 1);
+    assert!(fixture.recorder.posts().is_empty());
+    assert!(fixture.recorder.opens().is_empty());
+}
+
+#[test]
+fn ordered_effects_sync_completion_accepts_a_status_inside_the_two_hundreds() {
+    let fixture = pooled_fixture(vec![complete_reply(299, ANSWER)], Vec::new());
+    let reply = fixture.run(Setup {
+        acompletion: false,
+        stream: None,
+        timeout: None,
+    });
+    assert!(matches!(reply, Ok(GeminiReply::Complete(_))));
+}
+
+#[rstest]
+#[case::first_status_outside(300)]
+#[case::redirect(302)]
+fn ordered_effects_sync_completion_rejects_a_status_outside_the_two_hundreds(#[case] status: u16) {
+    let fixture = pooled_fixture(vec![complete_reply(status, ANSWER)], Vec::new());
+    let reply = fixture.run(Setup {
+        acompletion: false,
+        stream: None,
+        timeout: None,
+    });
+    let Err(GeminiCallError::Http(GeminiHttpError::Provider(provider))) = reply else {
+        panic!("a non-2xx reply is the provider's error");
+    };
+    assert_eq!(provider.status_code, status);
 }
 
 #[test]

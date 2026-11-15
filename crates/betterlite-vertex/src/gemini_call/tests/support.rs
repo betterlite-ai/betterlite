@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
@@ -293,6 +293,7 @@ impl CredentialClock for FixedClock {
 struct RecordingExecutor {
     order: Arc<Order>,
     loads: AtomicUsize,
+    auth_fails: AtomicBool,
 }
 
 impl CredentialExecutor for RecordingExecutor {
@@ -305,6 +306,9 @@ impl CredentialExecutor for RecordingExecutor {
     > {
         self.order.record(Stage::Auth);
         self.loads.fetch_add(1, Ordering::SeqCst);
+        if self.auth_fails.load(Ordering::SeqCst) {
+            return Box::pin(async { Err(CredentialCacheError::MissingToken) });
+        }
         let credential = Arc::new(CredentialSnapshot {
             token: Some(SecretString::from(TOKEN.to_owned())),
             state: Some(TokenState::Fresh),
@@ -567,10 +571,12 @@ impl Fixture {
         order: Arc<Order>,
         recorder: Arc<Recorder>,
         supplied: Option<(ClientKind, Arc<Recorder>)>,
+        auth_fails: bool,
     ) -> Self {
         let executor = Arc::new(RecordingExecutor {
             order: Arc::clone(&order),
             loads: AtomicUsize::new(0),
+            auth_fails: AtomicBool::new(auth_fails),
         });
         let credential_executor: Arc<dyn CredentialExecutor> =
             Arc::<RecordingExecutor>::clone(&executor);
@@ -741,7 +747,18 @@ fn fixed_id() -> Uuid {
 pub(super) fn pooled_fixture(posts: Vec<Reply>, opens: Vec<OpenReply>) -> Fixture {
     let order = Arc::new(Order::default());
     let recorder = Arc::new(Recorder::scripted(Arc::clone(&order), posts, opens));
-    Fixture::new(order, recorder, None)
+    Fixture::new(order, recorder, None, false)
+}
+
+// a credential cache that refuses every load, so a call never reaches the endpoint
+pub(super) fn auth_failure_fixture() -> Fixture {
+    let order = Arc::new(Order::default());
+    let recorder = Arc::new(Recorder::scripted(
+        Arc::clone(&order),
+        Vec::new(),
+        Vec::new(),
+    ));
+    Fixture::new(order, recorder, None, true)
 }
 
 pub(super) fn supplied_fixture(
@@ -752,5 +769,5 @@ pub(super) fn supplied_fixture(
     let order = Arc::new(Order::default());
     let caller_recorder = Arc::new(Recorder::scripted(Arc::clone(&order), caller.0, caller.1));
     let pooled_recorder = Arc::new(Recorder::scripted(Arc::clone(&order), pooled.0, pooled.1));
-    Fixture::new(order, pooled_recorder, Some((kind, caller_recorder)))
+    Fixture::new(order, pooled_recorder, Some((kind, caller_recorder)), false)
 }
