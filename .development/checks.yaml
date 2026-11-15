@@ -124,12 +124,12 @@ base:
       run: cargo fmt --all --check
       turn: now
     - id: clippy
-      why: the lint table is the code standard and warnings are errors, on this machine and on a pull request in the packages the change edits, in the merge queue in every package it can affect, and a push to main lints the whole workspace; for an openai task the edited 4 packages took 162 s against 490 s for the 87 affected ones on 4 cores (Max, 11-15)
+      why: the lint table is the code standard and warnings are errors, on this machine and on a pull request in the packages the change edits, in the merge queue in every package it can affect, and a push to main lints the whole workspace; for an openai task the edited 4 packages took 162 s against 490 s for the 87 affected ones on 4 cores (Max, 11-15); --keep-going lints every target that still builds after one fails, since without it B5980 and B1436 each spent a CI round per failing target (11-15)
       run: |-
         if [[ ${GITHUB_ACTIONS} == true && ${GITHUB_EVENT_NAME:-} != pull_request ]]; then packages=$(cargo gate affected) || exit 1; else packages=$(cargo gate affected --edited) || exit 1; fi
         if [[ -z ${packages} ]]; then echo "the change affects no package"; exit 0; fi
         read -r -a flags <<< "${packages}"
-        cargo clippy --all-targets --locked "${flags[@]}" -- -D warnings
+        cargo clippy --keep-going --all-targets --locked "${flags[@]}" -- -D warnings
     - id: deny
       why: licenses, advisories, bans, crate layering and sources follow deny.toml
       run: cargo deny --locked check
