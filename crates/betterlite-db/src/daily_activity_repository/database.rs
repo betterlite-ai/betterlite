@@ -23,15 +23,6 @@ pub type DatabaseFuture<'database, T> =
 type CountFuture<'database> = DatabaseFuture<'database, i64>;
 type TokenFuture<'database, T> = DatabaseFuture<'database, Vec<T>>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DailyRowFilter {
-    DateRange { start: String, end: String },
-    EntityIn { values: Vec<String> },
-    EntityNotIn { values: Vec<String> },
-    Model { value: String },
-    ApiKeyIn { values: Vec<String> },
-}
-
 pub trait DailyActivityDatabase: Send + Sync {
     fn query_raw<'database>(
         &'database self,
@@ -51,13 +42,13 @@ pub trait DailyActivityDatabase: Send + Sync {
     fn count_daily<'database>(
         &'database self,
         table: DailyActivityTable,
-        filters: &'database [DailyRowFilter],
+        predicate: &'database SqlQuery,
     ) -> DatabaseFuture<'database, i64>;
 
     fn find_daily<'database>(
         &'database self,
         table: DailyActivityTable,
-        filters: &'database [DailyRowFilter],
+        predicate: &'database SqlQuery,
         skip: i64,
         take: i64,
     ) -> DatabaseFuture<'database, Vec<DailyActivityRow>>;
@@ -109,26 +100,26 @@ impl DailyActivityDatabase for PostgresDailyActivityDatabase<'_> {
     fn count_daily<'database>(
         &'database self,
         table: DailyActivityTable,
-        filters: &'database [DailyRowFilter],
+        predicate: &'database SqlQuery,
     ) -> CountFuture<'database> {
         Box::pin(count_daily_query(
             self.reader.unwrap_or(self.writer),
             table,
-            filters,
+            predicate,
         ))
     }
 
     fn find_daily<'database>(
         &'database self,
         table: DailyActivityTable,
-        filters: &'database [DailyRowFilter],
+        predicate: &'database SqlQuery,
         skip: i64,
         take: i64,
     ) -> DatabaseFuture<'database, Vec<DailyActivityRow>> {
         Box::pin(find::find_daily_query(
             self.reader.unwrap_or(self.writer),
             table,
-            filters,
+            predicate,
             skip,
             take,
         ))
@@ -138,12 +129,14 @@ impl DailyActivityDatabase for PostgresDailyActivityDatabase<'_> {
 async fn count_daily_query(
     client: &Client,
     table: DailyActivityTable,
-    filters: &[DailyRowFilter],
+    predicate: &SqlQuery,
 ) -> Result<i64, DbError<RowError>> {
-    let (where_sql, parameters) = render_filters(table, filters);
     let relation = table.metadata().relation;
-    let sql = format!("SELECT COUNT(*)::bigint FROM \"{relation}\" WHERE {where_sql}");
-    let params = bind_params(&parameters);
+    let sql = format!(
+        "SELECT COUNT(*)::bigint FROM \"{relation}\" WHERE {}",
+        predicate.sql
+    );
+    let params = bind_params(&predicate.params);
     let row = client
         .query_one(sql.as_str(), &params)
         .await
@@ -193,59 +186,4 @@ fn bind_params(parameters: &[SqlParameter]) -> Vec<&(dyn ToSql + Sync)> {
         }
     }
     binds
-}
-
-fn membership(
-    clauses: &mut Vec<String>,
-    parameters: &mut Vec<SqlParameter>,
-    field: &str,
-    values: &[String],
-) {
-    if values.is_empty() {
-        clauses.push("FALSE".to_owned());
-        return;
-    }
-    let index = parameters.len().saturating_add(1);
-    clauses.push(format!("{field} = ANY(${index}::text[])"));
-    parameters.push(SqlParameter::Texts(values.to_vec()));
-}
-
-pub(super) fn render_filters(
-    table: DailyActivityTable,
-    filters: &[DailyRowFilter],
-) -> (String, Vec<SqlParameter>) {
-    let entity = format!("\"{}\"", table.metadata().entity_field);
-    let mut clauses: Vec<String> = Vec::with_capacity(filters.len());
-    let mut parameters: Vec<SqlParameter> = Vec::new();
-    for filter in filters {
-        match filter {
-            DailyRowFilter::DateRange { start, end } => {
-                let start_index = parameters.len().saturating_add(1);
-                let end_index = parameters.len().saturating_add(2);
-                clauses.push(format!("date >= ${start_index} AND date <= ${end_index}"));
-                parameters.push(SqlParameter::Text(start.clone()));
-                parameters.push(SqlParameter::Text(end.clone()));
-            }
-            DailyRowFilter::EntityIn { values } => {
-                membership(&mut clauses, &mut parameters, &entity, values);
-            }
-            DailyRowFilter::EntityNotIn { values } if values.is_empty() => {}
-            DailyRowFilter::EntityNotIn { values } => {
-                let index = parameters.len().saturating_add(1);
-                clauses.push(format!(
-                    "({entity} IS NULL OR NOT ({entity} = ANY(${index}::text[])))"
-                ));
-                parameters.push(SqlParameter::Texts(values.clone()));
-            }
-            DailyRowFilter::Model { value } => {
-                let index = parameters.len().saturating_add(1);
-                clauses.push(format!("model = ${index}"));
-                parameters.push(SqlParameter::Text(value.clone()));
-            }
-            DailyRowFilter::ApiKeyIn { values } => {
-                membership(&mut clauses, &mut parameters, "api_key", values);
-            }
-        }
-    }
-    (clauses.join(" AND "), parameters)
 }

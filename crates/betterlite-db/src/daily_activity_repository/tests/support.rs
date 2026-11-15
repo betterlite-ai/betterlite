@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::super::DailyActivityRepository;
-use super::super::database::{DailyActivityDatabase, DailyRowFilter, DatabaseFuture};
+use super::super::database::{DailyActivityDatabase, DatabaseFuture};
 use super::super::rows::records::{DeletedVerificationTokenRow, VerificationTokenRow};
 use super::super::rows::{DatabaseRow, DatabaseValue, RowError};
 use crate::budget_permission_rows::JsonData;
@@ -49,7 +49,7 @@ pub(crate) enum RawReply {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DailyCall {
     pub(crate) table: DailyActivityTable,
-    pub(crate) filters: Vec<DailyRowFilter>,
+    pub(crate) predicate: SqlQuery,
     pub(crate) skip: i64,
     pub(crate) take: i64,
 }
@@ -117,16 +117,10 @@ impl FakeDatabase {
         self.daily_calls.lock().unwrap().len()
     }
 
-    fn record_daily(
-        &self,
-        table: DailyActivityTable,
-        filters: &[DailyRowFilter],
-        skip: i64,
-        take: i64,
-    ) {
+    fn record_daily(&self, table: DailyActivityTable, predicate: &SqlQuery, skip: i64, take: i64) {
         self.daily_calls.lock().unwrap().push(DailyCall {
             table,
-            filters: filters.to_vec(),
+            predicate: predicate.clone(),
             skip,
             take,
         });
@@ -191,9 +185,9 @@ impl DailyActivityDatabase for FakeDatabase {
     fn count_daily<'database>(
         &'database self,
         table: DailyActivityTable,
-        filters: &'database [DailyRowFilter],
+        predicate: &'database SqlQuery,
     ) -> CountReply<'database> {
-        self.record_daily(table, filters, 0, 0);
+        self.record_daily(table, predicate, 0, 0);
         let reply = self.count.lock().unwrap().clone();
         barrier_reply(self.daily_barrier.clone(), reply)
     }
@@ -201,11 +195,11 @@ impl DailyActivityDatabase for FakeDatabase {
     fn find_daily<'database>(
         &'database self,
         table: DailyActivityTable,
-        filters: &'database [DailyRowFilter],
+        predicate: &'database SqlQuery,
         skip: i64,
         take: i64,
     ) -> DatabaseFuture<'database, Vec<crate::daily_activity_contracts::DailyActivityRow>> {
-        self.record_daily(table, filters, skip, take);
+        self.record_daily(table, predicate, skip, take);
         barrier_reply(
             self.daily_barrier.clone(),
             self.rows.lock().unwrap().clone(),

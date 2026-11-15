@@ -7,7 +7,6 @@ use super::support::{
 use crate::daily_activity_contracts::SqlParameter;
 use crate::daily_activity_contracts::identifiers::DailyActivityTable;
 use crate::daily_activity_repository::DailyActivityRepositoryError;
-use crate::daily_activity_repository::database::{DailyRowFilter, render_filters};
 use crate::daily_activity_repository::rows::DatabaseValue;
 use rstest::rstest;
 use std::sync::Arc;
@@ -318,12 +317,19 @@ async fn count_and_rows_share_predicates() {
     let calls = repository.database.daily_calls.lock().unwrap().clone();
     assert_eq!(calls.len(), 2);
     assert_eq!(
-        calls.first().unwrap().filters,
-        calls.last().unwrap().filters
+        calls.first().unwrap().predicate,
+        calls.last().unwrap().predicate
     );
     assert_eq!(calls.last().unwrap().skip, 5);
-    let filter = calls.first().unwrap().filters.first().unwrap();
-    assert!(matches!(filter, DailyRowFilter::DateRange { .. }));
+    let predicate = &calls.first().unwrap().predicate;
+    assert!(predicate.sql.starts_with("date >= $1 AND date <= $2"));
+    assert_eq!(
+        predicate.params,
+        vec![
+            SqlParameter::Text("2026-08-01".to_owned()),
+            SqlParameter::Text("2026-08-05".to_owned()),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -338,28 +344,4 @@ async fn daily_rows_count_barrier() {
     .await;
     assert!(outcome.is_ok());
     assert_eq!(repository.database.daily_call_count(), 2);
-}
-
-#[test]
-fn excluded_entities_render_the_not_clause() {
-    let (where_sql, parameters) = render_filters(
-        DailyActivityTable::User,
-        &[DailyRowFilter::EntityNotIn {
-            values: vec!["u1".to_owned()],
-        }],
-    );
-    assert_eq!(
-        where_sql,
-        "(\"user_id\" IS NULL OR NOT (\"user_id\" = ANY($1::text[])))"
-    );
-    assert_eq!(parameters, vec![SqlParameter::Texts(vec!["u1".to_owned()])]);
-}
-
-#[test]
-fn empty_excluded_entities_render_no_clause() {
-    let rendered = render_filters(
-        DailyActivityTable::User,
-        &[DailyRowFilter::EntityNotIn { values: Vec::new() }],
-    );
-    assert_eq!(rendered, (String::new(), Vec::new()));
 }

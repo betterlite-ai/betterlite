@@ -2,17 +2,16 @@ pub mod leakage;
 pub mod models;
 pub mod search;
 
-use super::database::{DailyActivityDatabase, DailyRowFilter};
+use super::database::DailyActivityDatabase;
 use super::rows::DatabaseRow;
 use super::rows::adapters::entity::entity_rows;
 use super::rows::adapters::grouping::grouping_rows;
 use super::rows::adapters::key_page::key_page;
 use super::{DailyActivityRepository, DailyActivityRepositoryError, Result};
 use crate::daily_activity_contracts::{
-    AggregatedRows, DailyActivityProxyReads, DailyActivityScope, DailyActivityScopeInput,
-    DailyRowsPage, KeyPage, SqlQuery,
+    AggregatedRows, DailyActivityProxyReads, DailyActivityScope, DailyRowsPage, KeyPage, SqlQuery,
 };
-use crate::daily_activity_sql::filters::adjust_dates_for_timezone;
+use crate::daily_activity_sql::filters::build_where_clause;
 use crate::daily_activity_sql::key_page::build_key_page_sql;
 use crate::daily_activity_sql::rollup::{Rollup, build_rollup_sql};
 use chrono::{DateTime, Utc};
@@ -91,24 +90,16 @@ where
         page: i64,
         page_size: i64,
     ) -> Result<DailyRowsPage> {
-        let input = scope.as_ref();
-        let (start, end) = adjust_dates_for_timezone(
-            &input.start_date,
-            &input.end_date,
-            input.timezone_offset_minutes,
-            input.include_current_utc_day,
-            &self.clock,
-        )?;
-        let filters = daily_filters(input, start, end);
+        let predicate = build_where_clause(scope, 1, &self.clock)?;
+        let table = scope.as_ref().table;
         let skip = page
             .checked_sub(1)
             .and_then(|pages| pages.checked_mul(page_size))
             .filter(|skip| *skip >= 0)
             .ok_or(DailyActivityRepositoryError::Pagination)?;
         let (count, found) = join(
-            self.database.count_daily(input.table, &filters),
-            self.database
-                .find_daily(input.table, &filters, skip, page_size),
+            self.database.count_daily(table, &predicate),
+            self.database.find_daily(table, &predicate, skip, page_size),
         )
         .await;
         Ok(DailyRowsPage {
@@ -116,33 +107,4 @@ where
             rows: found?,
         })
     }
-}
-
-fn daily_filters(
-    input: &DailyActivityScopeInput,
-    start: String,
-    end: String,
-) -> Vec<DailyRowFilter> {
-    let mut filters = vec![DailyRowFilter::DateRange { start, end }];
-    if let Some(values) = input.entity_ids.as_ref() {
-        filters.push(DailyRowFilter::EntityIn {
-            values: values.clone(),
-        });
-    }
-    if !input.exclude_entity_ids.is_empty() {
-        filters.push(DailyRowFilter::EntityNotIn {
-            values: input.exclude_entity_ids.clone(),
-        });
-    }
-    if let Some(model) = input.model.as_deref().filter(|model| !model.is_empty()) {
-        filters.push(DailyRowFilter::Model {
-            value: model.to_owned(),
-        });
-    }
-    if let Some(values) = input.api_keys.as_ref() {
-        filters.push(DailyRowFilter::ApiKeyIn {
-            values: values.clone(),
-        });
-    }
-    filters
 }

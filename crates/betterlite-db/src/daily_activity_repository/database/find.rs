@@ -1,6 +1,6 @@
-use super::{DailyRowFilter, bind_params, render_filters};
+use super::bind_params;
 use crate::daily_activity_contracts::identifiers::DailyActivityTable;
-use crate::daily_activity_contracts::{DailyActivityRow, SqlParameter};
+use crate::daily_activity_contracts::{DailyActivityRow, SqlParameter, SqlQuery};
 use crate::daily_activity_repository::rows::RowError;
 use crate::daily_activity_repository::rows::records::daily_activity_row;
 use crate::postgres_store::errors::{DbError, backend};
@@ -9,18 +9,19 @@ use deadpool_postgres::Client;
 pub async fn find_daily_query(
     client: &Client,
     table: DailyActivityTable,
-    filters: &[DailyRowFilter],
+    predicate: &SqlQuery,
     skip: i64,
     take: i64,
 ) -> Result<Vec<DailyActivityRow>, DbError<RowError>> {
-    let (where_sql, mut parameters) = render_filters(table, filters);
+    let mut parameters = predicate.params.clone();
     let limit_index = parameters.len().saturating_add(1);
     let offset_index = parameters.len().saturating_add(2);
     parameters.push(SqlParameter::Integer(take));
     parameters.push(SqlParameter::Integer(skip));
     let relation = table.metadata().relation;
     let sql = format!(
-        "SELECT * FROM \"{relation}\" WHERE {where_sql} ORDER BY date DESC, id ASC LIMIT ${limit_index} OFFSET ${offset_index}"
+        "SELECT * FROM \"{relation}\" WHERE {} ORDER BY date DESC, id ASC LIMIT ${limit_index} OFFSET ${offset_index}",
+        predicate.sql
     );
     let params = bind_params(&parameters);
     let rows = client.query(sql.as_str(), &params).await.map_err(backend)?;
