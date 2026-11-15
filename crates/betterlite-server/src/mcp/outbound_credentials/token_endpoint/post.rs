@@ -35,13 +35,14 @@ impl TokenEndpointPost for HttpTokenPost {
         let Ok(url) = Url::parse(endpoint) else {
             return PostedForm::Unreachable { kind: "InvalidUrl" };
         };
-        let mut encoded = form_urlencoded::Serializer::new(String::new());
-        for (name, value) in form {
-            encoded.append_pair(name, value.expose_secret());
-        }
-        // The serializer borrows a closure that is not Sync, so it is gone before the request awaits.
-        let data = encoded.finish().into_bytes();
-        drop(encoded);
+        // The serializer holds a closure that is not Sync, so it lives and dies inside this statement, before the request awaits.
+        let data = form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(
+                form.iter()
+                    .map(|(name, value)| (name.as_str(), value.expose_secret())),
+            )
+            .finish()
+            .into_bytes();
         let request = OutboundRequest {
             method: Method::POST,
             url,

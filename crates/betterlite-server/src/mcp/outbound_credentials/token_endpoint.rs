@@ -141,7 +141,7 @@ fn parse_response(status: u16, body: &[u8]) -> CredResult<ExchangedToken> {
         Err(error) if matches!(error.classify(), Category::Syntax | Category::Eof) => {
             return Err(CredError::UpstreamUnavailable(NON_JSON_DETAIL.to_owned()));
         }
-        Ok(_response) | Err(_error) => {
+        Ok(_) | Err(_) => {
             return Err(CredError::UpstreamUnavailable(NO_ACCESS_TOKEN.to_owned()));
         }
     };
