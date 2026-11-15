@@ -27,25 +27,16 @@ use crate::api::vertex_location::{
     DEFAULT_SPEECH_LOCATION, speech_to_text_host, validate_vertex_location, validate_vertex_project,
 };
 
+use super::client_events::{
+    APPEND_EVENT_TYPE, CLEAR_EVENT_TYPE, COMMIT_EVENT_TYPES, CONFIGURE_EVENT_TYPES, event_type,
+};
 use super::decode::decode_chirp_backend_event;
 use super::error::ChirpAdapterError;
 use super::factory::ChirpBackendFactory;
-use super::ids::{ChirpIds, SharedIds};
+use super::ids::SharedIds;
+use super::settings::ChirpSettings;
 use super::target::{AccessTokenResolver, SpeechStreamingTarget};
 use super::usage::audio_transcription_usage;
-
-const CONFIGURE_EVENT_TYPES: [&str; 2] = ["session.update", "transcription_session.update"];
-const APPEND_EVENT_TYPE: &str = "input_audio_buffer.append";
-const COMMIT_EVENT_TYPES: [&str; 2] = ["input_audio_buffer.commit", "input_audio_buffer.end"];
-const CLEAR_EVENT_TYPE: &str = "input_audio_buffer.clear";
-
-pub struct ChirpSettings {
-    pub project: String,
-    pub location: Option<String>,
-    pub catalog: Arc<ModelCatalog>,
-    pub limits: ApiLimits,
-    pub ids: Box<dyn ChirpIds>,
-}
 
 pub struct VertexChirpRealtimeConfig<Factory> {
     project: String,
@@ -170,13 +161,6 @@ impl<Factory> VertexChirpRealtimeConfig<Factory> {
     fn turn_command(&self, command: &str) -> Result<Vec<RealtimeMessage>, ChirpAdapterError> {
         self.require_config()?;
         Ok(vec![RealtimeMessage::Text(command.to_owned())])
-    }
-}
-
-fn event_type(request: &JsonObject) -> Option<&str> {
-    match request.get("type") {
-        Some(Json::Text(text)) => Some(text.as_str()),
-        _ => None,
     }
 }
 

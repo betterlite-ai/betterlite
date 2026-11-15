@@ -23,11 +23,12 @@ use crate::api::realtime_contracts::events::{
 use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
 use crate::api::vertex_chirp_protocol::events::ChirpBackendEvent;
 
-use super::config::{ChirpSettings, VertexChirpRealtimeConfig};
+use super::config::VertexChirpRealtimeConfig;
 use super::decode::decode_chirp_backend_event;
 use super::error::ChirpAdapterError;
 use super::factory::ChirpBackendFactory;
 use super::ids::{ChirpIds, UuidChirpIds};
+use super::settings::ChirpSettings;
 use super::target::{AccessTokenFuture, AccessTokenResolver, SpeechStreamingTarget};
 
 const SESSION_UPDATE: &str = r#"{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":16000},"transcription":{"model":"chirp_2","language":"en-US"}}}}}"#;

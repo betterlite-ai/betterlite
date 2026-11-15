@@ -8,10 +8,11 @@ use betterlite_core::api::realtime_contracts::config::BaseRealtimeConfig;
 use betterlite_core::api::realtime_contracts::error::WebSocketError;
 use betterlite_core::api::realtime_contracts::events::RealtimeResponseTransformInput;
 use betterlite_core::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
-use betterlite_core::api::vertex_chirp::config::{ChirpSettings, VertexChirpRealtimeConfig};
+use betterlite_core::api::vertex_chirp::config::VertexChirpRealtimeConfig;
 use betterlite_core::api::vertex_chirp::error::ChirpAdapterError;
 use betterlite_core::api::vertex_chirp::factory::ChirpBackendFactory;
 use betterlite_core::api::vertex_chirp::ids::UuidChirpIds;
+use betterlite_core::api::vertex_chirp::settings::ChirpSettings;
 use betterlite_core::api::vertex_chirp::target::{
     AccessTokenError, AccessTokenFuture, AccessTokenResolver, SpeechStreamingTarget,
 };
