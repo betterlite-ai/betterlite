@@ -1,0 +1,16 @@
+kind: helper
+name: databricks-legacy-price-keys
+call:
+  b5980:
+    function: cost
+    cases:
+      - models:
+          - bge-large-en
+          - databricks/bge-large-en
+          - bge-large-en-v2
+        pricing:
+          databricks-bge-large-en:
+            input_cost_per_token: '0.00000010003'
+            output_cost_per_token: '0'
+env: {}
+compare: {ignore: []}

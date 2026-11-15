@@ -1,0 +1,25 @@
+kind: helper
+name: databricks-custom-endpoint-missing-key-and-base
+call:
+  b5980:
+    function: validate
+    cases:
+      - api_base: https://host
+        custom_endpoint: true
+      - api_base: https://host
+        custom_endpoint: false
+      - api_key: pat
+        custom_endpoint: true
+      - api_key: pat
+        custom_endpoint: false
+      - api_key: pat
+        api_base: https://host
+        headers:
+          X-Extra: '1'
+      - api_key: pat
+        api_base: https://host
+        headers: {}
+      - api_key: pat
+        api_base: https://host/
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,27 @@
+kind: helper
+name: databricks-auth-order-and-key-override
+call:
+  b5980:
+    function: validate
+    env:
+      client_id: client-id
+      client_secret: client-secret
+      api_base: https://adb-1.databricks.net
+    cases:
+      - oauth:
+          status: 200
+          body: '{"access_token":"oauth-token"}'
+      - api_key: pat-key
+        oauth:
+          status: 200
+          body: '{"access_token":"oauth-token"}'
+      - api_key: pat-key
+        api_base: https://custom.databricks.net
+        oauth:
+          status: 200
+          body: '{"access_token":"oauth-token"}'
+env:
+  DATABRICKS_CLIENT_ID: client-id
+  DATABRICKS_CLIENT_SECRET: client-secret
+  DATABRICKS_API_BASE: https://adb-1.databricks.net
+compare: {ignore: []}

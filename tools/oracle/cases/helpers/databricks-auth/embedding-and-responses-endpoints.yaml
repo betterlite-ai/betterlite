@@ -1,0 +1,51 @@
+kind: helper
+name: databricks-embedding-and-responses-endpoints
+call:
+  b5980:
+    function: endpoints
+    embedding:
+      - model: databricks-bge-large-en
+        input: hello
+        api_key: pat
+        api_base: https://host
+        optional_params:
+          user_agent: acme/1.0
+          databricks_user_agent: other/2.0
+        env:
+          user_agent_override: env_partner/3
+      - model: databricks-bge-large-en
+        input: hello
+        api_key: pat
+        api_base: https://host
+        optional_params:
+          user_agent: ''
+          databricks_user_agent: dbrx_partner/2
+        env:
+          user_agent_override: env_partner/3
+      - model: databricks-bge-large-en
+        input: hello
+        api_key: pat
+        api_base: https://host/
+        optional_params:
+          dimensions: 5
+        env:
+          user_agent_override: env_partner/3
+      - model: databricks-bge-large-en
+        input: hello
+        api_key: pat
+        api_base: https://host
+        custom_endpoint: true
+        env:
+          user_agent_override: env_partner/3
+      - model: databricks-bge-large-en
+        input: hello
+        api_base: https://host
+        env:
+          user_agent_override: env_partner/3
+    responses:
+      - api_base: https://host/
+      - api_base: https://host/serving-endpoints/
+      - api_base: null
+env:
+  LITELLM_USER_AGENT: env_partner/3
+compare: {ignore: []}

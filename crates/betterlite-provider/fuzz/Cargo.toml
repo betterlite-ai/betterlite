@@ -129,3 +129,10 @@ path = "fuzz_targets/oci_chat_bytes.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "databricks_oauth_reply"
+path = "fuzz_targets/databricks_oauth_reply.rs"
+test = false
+doc = false
+bench = false

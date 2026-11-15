@@ -1,0 +1,17 @@
+kind: helper
+name: databricks-partner-user-agent
+call:
+  b5980:
+    function: user_agent
+    cases:
+      - custom: null
+      - custom: acme
+      - custom: mycompany/1.0.0
+      - custom: '  partner_product/2.0  '
+      - custom: '___'
+      - custom: '-'
+      - custom: a b
+      - custom: ''
+      - custom: acme/
+env: {}
+compare: {ignore: []}
