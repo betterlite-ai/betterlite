@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use secrecy::SecretString;
 use serde_json::json;
 
 use crate::audit_events::identity::{CallerIdentity, get_audit_log_changed_by};
@@ -7,10 +8,17 @@ use crate::audit_events::identity::{CallerIdentity, get_audit_log_changed_by};
 fn caller() -> CallerIdentity {
     CallerIdentity {
         user_id: Some("user-1".to_owned()),
-        api_key: Some("sk-key".to_owned()),
+        api_key: Some(SecretString::from("sk-key".to_owned())),
         metadata: None,
         team_metadata: None,
     }
+}
+
+#[test]
+fn audit_identity_debug_redacts_the_api_key() {
+    let text = format!("{:?}", caller());
+    assert!(text.contains("[REDACTED]"));
+    assert!(!text.contains("sk-key"));
 }
 
 #[test]

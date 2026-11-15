@@ -91,11 +91,15 @@ impl AuditLogRepository for PostgresAuditRepository {
         let updated = record.updated_values.as_ref().map(payload_text);
         let action = record.action.as_str();
         let table_name = record.table_name.as_str();
+        let api_key = record
+            .changed_by_api_key
+            .as_ref()
+            .map(|api_key| api_key.expose_secret());
         let values: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![
             &record.id,
             &record.updated_at,
             &record.changed_by,
-            &record.changed_by_api_key,
+            &api_key,
             &action,
             &table_name,
             &record.object_id,
@@ -129,7 +133,7 @@ async fn database() -> (PostgresFixture, Pool) {
 async fn log_team_update(sink: &AuditEventSink) {
     let caller = CallerIdentity {
         user_id: Some("admin".to_owned()),
-        api_key: Some("sk-key".to_owned()),
+        api_key: Some(SecretString::from("sk-key".to_owned())),
         metadata: None,
         team_metadata: None,
     };

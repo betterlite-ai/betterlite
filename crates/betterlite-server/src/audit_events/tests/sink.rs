@@ -3,11 +3,12 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::DateTime;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 
 use super::support::{
     CollectingSpawner, RecordingRepository, SAMPLE_TIMESTAMP, TestSettings, audit_sink, capture,
-    instance, plain_record, recorder, recording_repository,
+    instance, plain_record, recorder, recording_repository, sample_record,
 };
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
@@ -30,7 +31,7 @@ async fn log_team_update(sink: &AuditEventSink, caller: &CallerIdentity, changed
 fn caller() -> CallerIdentity {
     CallerIdentity {
         user_id: Some("user-1".to_owned()),
-        api_key: Some("sk-key".to_owned()),
+        api_key: Some(SecretString::from("sk-key".to_owned())),
         metadata: Some(json!({"allow_litellm_changed_by_header": true})),
         team_metadata: None,
     }
@@ -62,7 +63,13 @@ async fn audit_object_projection() {
         DateTime::parse_from_rfc3339(SAMPLE_TIMESTAMP).unwrap()
     );
     assert_eq!(inserted[0].changed_by.as_deref(), Some("ops"));
-    assert_eq!(inserted[0].changed_by_api_key.as_deref(), Some("sk-key"));
+    assert_eq!(
+        inserted[0]
+            .changed_by_api_key
+            .as_ref()
+            .map(|api_key| api_key.expose_secret()),
+        Some("sk-key")
+    );
     assert_eq!(inserted[0].action, AuditAction::Updated);
     assert_eq!(inserted[0].table_name, AuditTable::Team);
     assert_eq!(inserted[0].object_id, "team-1");
@@ -79,6 +86,33 @@ async fn audit_object_projection() {
         Some(r#"{"api_key":"sk-1*****7890"}"#)
     );
     assert_eq!(delivered[0].updated_at, SAMPLE_TIMESTAMP);
+}
+
+#[tokio::test]
+async fn audit_debug_log_redacts_the_api_key() {
+    let (captured, guard) = capture();
+    let callback = recorder("otel", false);
+    let repository = recording_repository();
+    let spawner = Arc::new(CollectingSpawner::default());
+    let settings = TestSettings {
+        enabled: true,
+        callbacks: vec![instance(callback.clone())],
+        s3: None,
+    };
+    let sink = audit_sink(
+        settings,
+        repository.clone(),
+        callback.clone(),
+        spawner.clone(),
+    );
+    sink.create_audit_log_for_update(sample_record(None, None))
+        .await;
+    spawner.run_all().await;
+    drop(guard);
+    let text = captured.text();
+    assert!(text.contains("creating audit log for"));
+    assert!(text.contains("[REDACTED]"));
+    assert!(!text.contains("sk-key"));
 }
 
 #[tokio::test]

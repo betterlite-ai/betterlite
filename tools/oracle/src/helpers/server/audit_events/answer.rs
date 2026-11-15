@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
-use betterlite_config::sections::audit_events::{Settings, environment_flag};
+use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::audit_events::LITELLM_STORE_AUDIT_LOGS_ENV;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_server::audit_events::callbacks::{AuditCallbackConfig, AuditCallbackDispatcher};
 use betterlite_server::audit_events::enums::{AuditAction, AuditTable};
@@ -15,6 +17,7 @@ use betterlite_server::audit_events::sink::{
     AuditClock, AuditEventSink, AuditLogRepository, AuditRepositoryError, ObjectAuditLog,
 };
 use chrono::{DateTime, FixedOffset};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 
 use super::support::{CollectingSpawner, LocalRecorder, LocalRegistry, delivery_view};
@@ -24,7 +27,7 @@ use super::types::{
 
 pub(super) async fn answer(input: &super::types::Input) -> crate::helpers::HelperResult {
     match input {
-        super::types::Input::Policy(call) => Ok(policy_answer(call)),
+        super::types::Input::Policy(call) => policy_answer(call),
         super::types::Input::Identity(call) => Ok(identity_answer(call)),
         super::types::Input::Record(call) => record_answer(call),
         super::types::Input::Dispatch(call) => dispatch_answer(call).await,
@@ -32,14 +35,18 @@ pub(super) async fn answer(input: &super::types::Input) -> crate::helpers::Helpe
     }
 }
 
-fn policy_answer(call: &PolicyCall) -> JsonValue {
-    let config = Settings {
-        store_audit_logs: call.store,
-        store_audit_logs_env: environment_flag(call.env.as_deref()),
-        audit_log_callbacks: Vec::new(),
-        s3_audit_callback_params: None,
+fn policy_answer(call: &PolicyCall) -> crate::helpers::HelperResult {
+    let lookup = match &call.env {
+        Some(env) => BTreeMap::from([(LITELLM_STORE_AUDIT_LOGS_ENV.to_owned(), env.clone())]),
+        None => BTreeMap::new(),
     };
-    json!({"enabled": config.is_audit_logging_enabled(call.explicit)})
+    let mut settings = ConfigLoader { lookup }
+        .load("{}")
+        .map_err(|error| failure("ConfigError", error))?
+        .sections
+        .audit_events;
+    settings.store_audit_logs = call.store;
+    Ok(json!({"enabled": settings.is_audit_logging_enabled(call.explicit)}))
 }
 
 fn identity_answer(call: &IdentityCall) -> JsonValue {
@@ -63,11 +70,15 @@ fn decoded_record(record: &JsonValue) -> Result<AuditLogRecord, Box<crate::helpe
 }
 
 fn record_view(record: &AuditLogRecord) -> JsonValue {
+    let changed_by_api_key = record
+        .changed_by_api_key
+        .as_ref()
+        .map(|api_key| api_key.expose_secret());
     json!({
         "id": record.id,
         "updated_at": json_timestamp(record.updated_at),
         "changed_by": record.changed_by,
-        "changed_by_api_key": record.changed_by_api_key,
+        "changed_by_api_key": changed_by_api_key,
         "action": record.action.as_str(),
         "table_name": record.table_name.as_str(),
         "object_id": record.object_id,
@@ -189,7 +200,7 @@ async fn log_object(
 ) {
     let caller = CallerIdentity {
         user_id: call.caller.user_id.clone(),
-        api_key: call.caller.api_key.clone(),
+        api_key: call.caller.api_key.clone().map(SecretString::from),
         metadata: None,
         team_metadata: None,
     };

@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use serde_json::json;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::audit_events::environment_flag;
 
 fn load(source: &str, lookup: BTreeMap<String, String>) -> crate::sections::audit_events::Settings {
     ConfigLoader { lookup }
@@ -64,12 +63,21 @@ fn audit_env_bool_and_unknown() {
 
 #[test]
 fn audit_environment_flag_matches_get_secret_bool() {
-    assert_eq!(environment_flag(None), None);
-    assert_eq!(environment_flag(Some(" TRUE ")), Some(true));
-    assert_eq!(environment_flag(Some("false")), Some(false));
-    assert_eq!(environment_flag(Some("yes")), None);
-    assert_eq!(environment_flag(Some("1")), None);
-    assert_eq!(environment_flag(Some("")), None);
+    for (value, expected) in [
+        (" TRUE ", Some(true)),
+        ("false", Some(false)),
+        ("yes", None),
+        ("1", None),
+        ("", None),
+    ] {
+        let settings = load(
+            "{}",
+            BTreeMap::from([("LITELLM_STORE_AUDIT_LOGS".to_owned(), value.to_owned())]),
+        );
+        assert_eq!(settings.store_audit_logs_env, expected, "{value:?}");
+    }
+    let unset = load("{}", BTreeMap::new());
+    assert_eq!(unset.store_audit_logs_env, None);
 }
 
 #[test]

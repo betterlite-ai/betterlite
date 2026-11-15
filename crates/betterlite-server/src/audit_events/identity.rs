@@ -1,11 +1,12 @@
 use betterlite_config::sections::settings::JsonValue;
+use secrecy::SecretString;
 
 pub const ALLOW_LITELLM_CHANGED_BY_HEADER_METADATA_KEY: &str = "allow_litellm_changed_by_header";
 
 #[derive(Clone, Debug, Default)]
 pub struct CallerIdentity {
     pub user_id: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     pub metadata: Option<JsonValue>,
     pub team_metadata: Option<JsonValue>,
 }

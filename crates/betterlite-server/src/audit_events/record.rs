@@ -1,13 +1,11 @@
-use std::str::Utf8Error;
-
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_logging::private_json::error::PrivateJsonError;
+use betterlite_logging::private_json::safe_json::safe_json_loads;
 use betterlite_redact::structured::SensitiveDataMasker;
 use chrono::{DateTime, FixedOffset};
+use secrecy::SecretString;
 
 use super::enums::{AuditAction, AuditTable};
-
-pub const MAX_AUDIT_RECORD_BYTES: usize = 0x0010_0000;
-pub const MAX_AUDIT_RECORD_DEPTH: usize = 64;
 
 const REQUIRED_FIELDS: [&str; 5] = ["id", "updated_at", "action", "table_name", "object_id"];
 const OPTIONAL_FIELDS: [&str; 4] = [
@@ -19,14 +17,8 @@ const OPTIONAL_FIELDS: [&str; 4] = [
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuditRecordError {
-    #[error("the audit record is {len} bytes, over the {MAX_AUDIT_RECORD_BYTES} byte limit")]
-    TooLarge { len: usize },
-    #[error("the audit record exceeds JSON depth {MAX_AUDIT_RECORD_DEPTH}")]
-    TooDeep,
-    #[error("the audit record is not valid UTF-8")]
-    InvalidUtf8(#[source] Utf8Error),
-    #[error("the audit record is not valid JSON")]
-    Json(#[source] serde_json::Error),
+    #[error("the audit record is not valid JSON: {0}")]
+    Json(#[from] PrivateJsonError),
     #[error("the audit record is not a JSON object")]
     NotAnObject,
     #[error("the audit record field {field} is required")]
@@ -41,11 +33,11 @@ pub enum AuditRecordError {
         #[source]
         source: chrono::ParseError,
     },
-    #[error("the audit record field {field} is not valid JSON")]
+    #[error("the audit record field {field} is not valid JSON: {source}")]
     JsonField {
         field: &'static str,
         #[source]
-        source: serde_json::Error,
+        source: PrivateJsonError,
     },
     #[error("the audit record has an unknown field {field}")]
     UnknownField { field: String },
@@ -56,7 +48,7 @@ pub struct AuditLogRecord {
     pub id: String,
     pub updated_at: DateTime<FixedOffset>,
     pub changed_by: Option<String>,
-    pub changed_by_api_key: Option<String>,
+    pub changed_by_api_key: Option<SecretString>,
     pub action: AuditAction,
     pub table_name: AuditTable,
     pub object_id: String,
@@ -68,7 +60,7 @@ pub struct AuditRecordFields {
     pub id: String,
     pub updated_at: DateTime<FixedOffset>,
     pub changed_by: Option<String>,
-    pub changed_by_api_key: Option<String>,
+    pub changed_by_api_key: Option<SecretString>,
     pub action: AuditAction,
     pub table_name: AuditTable,
     pub object_id: String,
@@ -93,7 +85,7 @@ impl AuditLogRecord {
 }
 
 pub fn decode_audit_record(bytes: &[u8]) -> Result<AuditLogRecord, AuditRecordError> {
-    let value = bounded_json(bytes)?;
+    let value: JsonValue = safe_json_loads(bytes)?;
     record_from_json(&value)
 }
 
@@ -116,7 +108,7 @@ fn record_from_json(value: &JsonValue) -> Result<AuditLogRecord, AuditRecordErro
         id,
         updated_at,
         changed_by: changed_by_text(value.get("changed_by")),
-        changed_by_api_key: optional_string(value, "changed_by_api_key")?,
+        changed_by_api_key: optional_string(value, "changed_by_api_key")?.map(SecretString::from),
         action,
         table_name,
         object_id,
@@ -187,15 +179,6 @@ fn parse_timestamp(text: &str) -> Result<DateTime<FixedOffset>, AuditRecordError
     })
 }
 
-fn bounded_json(bytes: &[u8]) -> Result<JsonValue, AuditRecordError> {
-    if bytes.len() > MAX_AUDIT_RECORD_BYTES {
-        return Err(AuditRecordError::TooLarge { len: bytes.len() });
-    }
-    let text = std::str::from_utf8(bytes).map_err(AuditRecordError::InvalidUtf8)?;
-    check_depth(text, MAX_AUDIT_RECORD_DEPTH)?;
-    serde_json::from_str(text).map_err(AuditRecordError::Json)
-}
-
 fn masked_audit_value(
     value: Option<JsonValue>,
     field: &'static str,
@@ -213,16 +196,13 @@ fn masked_audit_value(
         JsonValue::String(text) => parse_stored_value(&text, field)?,
         other => other,
     };
-    Ok(Some(audit_masker().mask(&value)))
+    Ok(Some(
+        SensitiveDataMasker::with_patterns(["key"], ["cost"]).mask(&value),
+    ))
 }
 
 fn parse_stored_value(text: &str, field: &'static str) -> Result<JsonValue, AuditRecordError> {
-    check_depth(text, MAX_AUDIT_RECORD_DEPTH)?;
-    serde_json::from_str(text).map_err(|source| AuditRecordError::JsonField { field, source })
-}
-
-fn audit_masker() -> SensitiveDataMasker {
-    SensitiveDataMasker::with_patterns(["key"], ["cost"])
+    safe_json_loads(text.as_bytes()).map_err(|source| AuditRecordError::JsonField { field, source })
 }
 
 #[must_use]
@@ -259,32 +239,4 @@ pub fn isoformat_timestamp(value: DateTime<FixedOffset>) -> String {
     } else {
         format!("{seconds}.{micros:06}{zone}")
     }
-}
-
-fn check_depth(text: &str, max_depth: usize) -> Result<(), AuditRecordError> {
-    let mut state = ScanState::Structural;
-    let mut depth = 0_usize;
-    for byte in text.bytes() {
-        match (state, byte) {
-            (ScanState::Structural, b'{' | b'[') => {
-                depth = depth.saturating_add(1);
-                if depth > max_depth {
-                    return Err(AuditRecordError::TooDeep);
-                }
-            }
-            (ScanState::Structural, b'}' | b']') => depth = depth.saturating_sub(1),
-            (ScanState::Structural, b'"') | (ScanState::Escaped, _) => state = ScanState::Quoted,
-            (ScanState::Quoted, b'\\') => state = ScanState::Escaped,
-            (ScanState::Quoted, b'"') => state = ScanState::Structural,
-            (ScanState::Structural | ScanState::Quoted, _) => {}
-        }
-    }
-    Ok(())
-}
-
-#[derive(Clone, Copy)]
-enum ScanState {
-    Structural,
-    Quoted,
-    Escaped,
 }

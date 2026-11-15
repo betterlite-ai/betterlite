@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_config::sections::settings::JsonValue;
 use chrono::{DateTime, FixedOffset};
+use secrecy::SecretString;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::audit_events::callbacks::{
@@ -248,7 +249,7 @@ pub(super) fn sample_record(
         id: "audit-1".to_owned(),
         updated_at: DateTime::parse_from_rfc3339(SAMPLE_TIMESTAMP).unwrap(),
         changed_by: Some("admin".to_owned()),
-        changed_by_api_key: Some("sk-key".to_owned()),
+        changed_by_api_key: Some(SecretString::from("sk-key".to_owned())),
         action: AuditAction::Updated,
         table_name: AuditTable::Team,
         object_id: "team-1".to_owned(),

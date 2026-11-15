@@ -182,6 +182,7 @@ fn audit_payload_nulls() {
     );
     assert_eq!(masked.updated_values.as_deref(), Some(r#"{"name":"team"}"#));
     assert_eq!(masked.changed_by, "admin");
+    assert_eq!(masked.hashed_changed_by_api_key, "sk-key");
 }
 
 #[tokio::test]
