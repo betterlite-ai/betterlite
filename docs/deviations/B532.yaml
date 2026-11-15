@@ -1,0 +1,9 @@
+task: B532
+deviations: []
+kept_bugs:
+  - what: >-
+      The Azure GPT-5 allowlist appends logprobs and top_logprobs for a gpt-5.2+ model even when the shared
+      GPT-5 list already carries them, so the returned list can name each parameter twice.
+    why: a setup that reads the allowlist positionally sees LiteLLM's duplicate entries, so betterlite keeps
+      them rather than projecting the list through a set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/chat/gpt_5_transformation.py#L62-L66
