@@ -5,6 +5,7 @@ use serde_json::{Number, Value};
 use serde_with::rust::double_option;
 
 use super::messages_stream_logging::outcome::StreamLoggingRun;
+use super::messages_stream_logging::relay::call::StepOutcome;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -15,6 +16,7 @@ pub enum SdkResult {
     BetaConfig { value: BetaConfigRun },
     MessagesHeaderStream { value: HeaderStreamRun },
     MessagesStreamLogging { value: StreamLoggingRun },
+    MessagesNativeStream { value: Vec<StepOutcome> },
     Failure(Failure),
 }
 
