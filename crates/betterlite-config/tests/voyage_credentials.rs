@@ -1,6 +1,8 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 
-use betterlite_config::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
+use betterlite_config::loader::{ConfigError, ConfigLoader, EnvironmentLookup as _};
 use betterlite_openai::voyage_multimodal::{VoyageMultimodalError, credentials as multimodal_key};
 use betterlite_openai::voyage_rerank::{VoyageRerankError, api_key as rerank_key};
 use rstest::rstest;
