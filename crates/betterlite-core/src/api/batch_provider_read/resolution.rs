@@ -7,8 +7,8 @@ use betterlite_prompts::arguments::json::Json;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::call::{
-    AnthropicBatchReadCall, AwsCredentials, AzureBatchReadCall, AzureReadParams,
-    OpenAiBatchReadCall, ProviderConfigReadCall, VertexBatchReadCall, VertexReadCredentials,
+    AnthropicBatchReadCall, AzureBatchReadCall, AzureReadParams, OpenAiBatchReadCall,
+    ProviderConfigReadCall, VertexBatchReadCall, VertexReadCredentials,
 };
 use super::error::ReadCallError;
 use super::{BatchProviderReadInput, BatchReadOptionalParams};
@@ -34,137 +34,161 @@ pub(super) fn provider_config(
     }
 }
 
-// OpenAIBatchesAPI.retrieve_batch
-pub(super) fn openai(
-    input: &BatchProviderReadInput,
-    settings: &Settings,
-    timeout: Timeout,
-) -> OpenAiBatchReadCall {
-    let resources = ResourceSdkSettings::from(&settings.resources);
-    let options = request_options(&input.optional_params);
-    OpenAiBatchReadCall {
-        request: RetrieveBatchRequest {
-            batch_id: Some(input.batch_id.clone()),
-            extra_headers: input.extra_headers.clone(),
-            extra_body: input.extra_body.clone(),
-            timeout: None,
-        },
-        api_base: resources.openai_base(&options),
-        api_key: resources.openai_api_key(&options).cloned(),
-        organization: resources.openai_organization(&options).map(str::to_owned),
-        timeout,
-        max_retries: input.optional_params.max_retries,
-        is_async: input.aretrieve_batch,
-    }
+// the shared chains resolved once for the provider branch that reads them
+pub(super) struct Resolution<'read> {
+    input: &'read BatchProviderReadInput,
+    settings: &'read Settings,
+    resources: ResourceSdkSettings,
+    options: ResourceSdkRequestOptions,
 }
 
-// AzureBatchesAPI.retrieve_batch
-pub(super) fn azure(
-    input: &BatchProviderReadInput,
-    settings: &Settings,
-    timeout: Timeout,
-) -> AzureBatchReadCall {
-    let params = &input.optional_params;
-    let resources = ResourceSdkSettings::from(&settings.resources);
-    let options = request_options(params);
-    AzureBatchReadCall {
-        request: RetrieveBatchRequest {
-            batch_id: Some(input.batch_id.clone()),
-            extra_headers: input.extra_headers.clone(),
-            extra_body: input.extra_body.clone(),
-            timeout: None,
-        },
-        api_base: resources.azure_base(&options).map(str::to_owned),
-        api_key: resources.azure_api_key(&options).cloned(),
-        api_version: resources.azure_version(&options).map(str::to_owned),
-        timeout,
-        max_retries: params.max_retries,
-        litellm_params: AzureReadParams {
-            api_key: params.api_key.clone(),
+impl<'read> Resolution<'read> {
+    pub(super) fn new(input: &'read BatchProviderReadInput, settings: &'read Settings) -> Self {
+        let params = &input.optional_params;
+        // an inline service-account object is resolved separately; a path is the shared chain's input
+        let path = match params.vertex_credentials.as_ref() {
+            Some(Json::Text(path)) => Some(SecretString::from(path.clone())),
+            _ => None,
+        };
+        let options = ResourceSdkRequestOptions {
             api_base: params.api_base.clone(),
             api_version: params.api_version.clone(),
+            api_key: params.api_key.clone(),
+            organization: params.organization.clone(),
+            vertex_project: params.vertex_project.clone(),
+            vertex_location: params.vertex_location.clone(),
+            vertex_credentials: path,
+        };
+        Self {
+            input,
+            settings,
+            resources: ResourceSdkSettings::from(&settings.resources),
+            options,
+        }
+    }
+
+    // OpenAIBatchesAPI.retrieve_batch
+    pub(super) fn openai(&self, timeout: Timeout) -> OpenAiBatchReadCall {
+        let request = retrieve_request(self.input);
+        let api_base = self.resources.openai_base(&self.options);
+        let api_key = self.resources.openai_api_key(&self.options).cloned();
+        let organization = self.resources.openai_organization(&self.options);
+        OpenAiBatchReadCall {
+            request,
+            api_base,
+            api_key,
+            organization: organization.map(str::to_owned),
+            timeout,
+            max_retries: self.input.optional_params.max_retries,
+            is_async: self.input.aretrieve_batch,
+        }
+    }
+
+    // AzureBatchesAPI.retrieve_batch; the client constructor reads the raw kwargs, not the resolved chain
+    pub(super) fn azure(&self, timeout: Timeout) -> AzureBatchReadCall {
+        let params = &self.input.optional_params;
+        AzureBatchReadCall {
+            request: retrieve_request(self.input),
+            api_base: self.resources.azure_base(&self.options).map(str::to_owned),
+            api_key: self.resources.azure_api_key(&self.options).cloned(),
+            api_version: self
+                .resources
+                .azure_version(&self.options)
+                .map(str::to_owned),
+            timeout,
             max_retries: params.max_retries,
-            timeout: params.timeout.clone(),
-            azure_ad_token: params.azure_ad_token.clone(),
-            tenant_id: params.tenant_id.clone(),
-            client_id: params.client_id.clone(),
-            client_secret: params.client_secret.clone(),
-            azure_scope: params.azure_scope.clone(),
-            azure_username: params.azure_username.clone(),
-            azure_password: params.azure_password.clone(),
-        },
-        is_async: input.aretrieve_batch,
-    }
-}
-
-// VertexAIBatchPrediction.retrieve_batch
-pub(super) fn vertex(
-    input: &BatchProviderReadInput,
-    settings: &Settings,
-    timeout: Timeout,
-) -> Result<VertexBatchReadCall, ReadCallError> {
-    let resources = ResourceSdkSettings::from(&settings.resources);
-    let options = request_options(&input.optional_params);
-    Ok(VertexBatchReadCall {
-        batch_id: input.batch_id.clone(),
-        api_base: input.optional_params.api_base.clone().unwrap_or_default(),
-        vertex_project: resources.vertex_project(&options).map(str::to_owned),
-        vertex_location: resources.vertex_location(&options).map(str::to_owned),
-        vertex_credentials: resolve_vertex_credentials(
-            &resources,
-            &options,
-            &input.optional_params,
-        )?,
-        timeout,
-        max_retries: input.optional_params.max_retries,
-        is_async: input.aretrieve_batch,
-    })
-}
-
-// LiteLLM declares vertex_credentials as a path string or the inline service-account fields
-fn resolve_vertex_credentials(
-    resources: &ResourceSdkSettings,
-    options: &ResourceSdkRequestOptions,
-    params: &BatchReadOptionalParams,
-) -> Result<Option<VertexReadCredentials>, ReadCallError> {
-    match params.vertex_credentials.as_ref() {
-        Some(Json::Object(account)) => {
-            Ok(Some(VertexReadCredentials::ServiceAccount(account.clone())))
+            litellm_params: azure_params(params),
+            is_async: self.input.aretrieve_batch,
         }
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
-            Err(ReadCallError::InvalidVertexCredentials)
-        }
-        Some(Json::Text(_) | Json::Null) | None => Ok(resources
-            .vertex_credentials(options)
-            .cloned()
-            .map(VertexReadCredentials::Path)),
     }
-}
 
-// AnthropicBatchesHandler.retrieve_batch
-pub(super) fn anthropic(
-    input: &BatchProviderReadInput,
-    settings: &Settings,
-    timeout: Timeout,
-) -> AnthropicBatchReadCall {
-    let params = &input.optional_params;
-    AnthropicBatchReadCall {
-        batch_id: input.batch_id.clone(),
-        api_base: first_text([
+    // VertexAIBatchPrediction.retrieve_batch
+    pub(super) fn vertex(&self, timeout: Timeout) -> Result<VertexBatchReadCall, ReadCallError> {
+        let params = &self.input.optional_params;
+        let project = self.resources.vertex_project(&self.options);
+        let location = self.resources.vertex_location(&self.options);
+        Ok(VertexBatchReadCall {
+            batch_id: self.input.batch_id.clone(),
+            api_base: params.api_base.clone().unwrap_or_default(),
+            vertex_project: project.map(str::to_owned),
+            vertex_location: location.map(str::to_owned),
+            vertex_credentials: self.vertex_credentials()?,
+            timeout,
+            max_retries: params.max_retries,
+            is_async: self.input.aretrieve_batch,
+        })
+    }
+
+    // LiteLLM declares vertex_credentials as a path string or the inline service-account fields
+    fn vertex_credentials(&self) -> Result<Option<VertexReadCredentials>, ReadCallError> {
+        match self.input.optional_params.vertex_credentials.as_ref() {
+            Some(Json::Object(account)) => {
+                Ok(Some(VertexReadCredentials::ServiceAccount(account.clone())))
+            }
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
+                Err(ReadCallError::InvalidVertexCredentials)
+            }
+            Some(Json::Text(_) | Json::Null) | None => Ok(self
+                .resources
+                .vertex_credentials(&self.options)
+                .cloned()
+                .map(VertexReadCredentials::Path)),
+        }
+    }
+
+    // AnthropicBatchesHandler.retrieve_batch
+    pub(super) fn anthropic(&self, timeout: Timeout) -> AnthropicBatchReadCall {
+        let params = &self.input.optional_params;
+        let shared = &self.settings.resources;
+        let bases = [
             params.api_base.as_deref(),
-            settings.resources.api_base.as_deref(),
-            settings.anthropic_base(),
-        ]),
+            shared.api_base.as_deref(),
+            self.settings.anthropic_base(),
+        ];
         // the branch falls back through litellm.azure_key as well, a copy-paste the source keeps
-        api_key: first_secret([
+        let keys = [
             params.api_key.as_ref(),
-            settings.resources.api_key.as_ref(),
-            settings.resources.azure_key.as_ref(),
-            settings.anthropic_api_key.as_ref(),
-        ]),
-        timeout,
+            shared.api_key.as_ref(),
+            shared.azure_key.as_ref(),
+            self.settings.anthropic_api_key.as_ref(),
+        ];
+        let api_base = first_text(bases);
+        let api_key = first_secret(keys);
+        AnthropicBatchReadCall {
+            batch_id: self.input.batch_id.clone(),
+            api_base,
+            api_key,
+            timeout,
+            max_retries: params.max_retries,
+            is_async: self.input.aretrieve_batch,
+        }
+    }
+}
+
+// the Azure client constructor reads the raw kwargs, not the resolved chain
+fn azure_params(params: &BatchReadOptionalParams) -> AzureReadParams {
+    AzureReadParams {
+        api_key: params.api_key.clone(),
+        api_base: params.api_base.clone(),
+        api_version: params.api_version.clone(),
         max_retries: params.max_retries,
-        is_async: input.aretrieve_batch,
+        timeout: params.timeout.clone(),
+        azure_ad_token: params.azure_ad_token.clone(),
+        tenant_id: params.tenant_id.clone(),
+        client_id: params.client_id.clone(),
+        client_secret: params.client_secret.clone(),
+        azure_scope: params.azure_scope.clone(),
+        azure_username: params.azure_username.clone(),
+        azure_password: params.azure_password.clone(),
+    }
+}
+
+fn retrieve_request(input: &BatchProviderReadInput) -> RetrieveBatchRequest {
+    RetrieveBatchRequest {
+        batch_id: Some(input.batch_id.clone()),
+        extra_headers: input.extra_headers.clone(),
+        extra_body: input.extra_body.clone(),
+        timeout: None,
     }
 }
 
@@ -182,20 +206,4 @@ fn first_secret(candidates: [Option<&SecretString>; 4]) -> Option<SecretString> 
         .flatten()
         .find(|value| !value.expose_secret().is_empty())
         .cloned()
-}
-
-fn request_options(params: &BatchReadOptionalParams) -> ResourceSdkRequestOptions {
-    ResourceSdkRequestOptions {
-        api_base: params.api_base.clone(),
-        api_version: params.api_version.clone(),
-        api_key: params.api_key.clone(),
-        organization: params.organization.clone(),
-        vertex_project: params.vertex_project.clone(),
-        vertex_location: params.vertex_location.clone(),
-        // an inline service-account object is resolved separately; a path is the shared chain's input
-        vertex_credentials: match params.vertex_credentials.as_ref() {
-            Some(Json::Text(path)) => Some(SecretString::from(path.clone())),
-            _ => None,
-        },
-    }
 }

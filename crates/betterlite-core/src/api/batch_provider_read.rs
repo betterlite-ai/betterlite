@@ -189,20 +189,21 @@ where
     ) -> Result<BatchProviderReadResult, BatchProviderReadError<Dispatch::Error>> {
         check_read_limits(&self.limits, input)?;
         let timeout = timeout::resolve_timeout(input)?;
+        let params = &input.optional_params;
         let aws = AwsCredentials {
-            region_name: input.optional_params.aws_region_name.clone(),
-            access_key_id: input.optional_params.aws_access_key_id.clone(),
-            secret_access_key: input.optional_params.aws_secret_access_key.clone(),
-            session_token: input.optional_params.aws_session_token.clone(),
-            session_name: input.optional_params.aws_session_name.clone(),
-            profile_name: input.optional_params.aws_profile_name.clone(),
-            role_name: input.optional_params.aws_role_name.clone(),
-            web_identity_token: input.optional_params.aws_web_identity_token.clone(),
-            sts_endpoint: input.optional_params.aws_sts_endpoint.clone(),
-            external_id: input.optional_params.aws_external_id.clone(),
-            session_tags: input.optional_params.aws_session_tags.clone(),
-            bedrock_runtime_endpoint: input.optional_params.aws_bedrock_runtime_endpoint.clone(),
-            bedrock_project_id: input.optional_params.aws_bedrock_project_id.clone(),
+            region_name: params.aws_region_name.clone(),
+            access_key_id: params.aws_access_key_id.clone(),
+            secret_access_key: params.aws_secret_access_key.clone(),
+            session_token: params.aws_session_token.clone(),
+            session_name: params.aws_session_name.clone(),
+            profile_name: params.aws_profile_name.clone(),
+            role_name: params.aws_role_name.clone(),
+            web_identity_token: params.aws_web_identity_token.clone(),
+            sts_endpoint: params.aws_sts_endpoint.clone(),
+            external_id: params.aws_external_id.clone(),
+            session_tags: params.aws_session_tags.clone(),
+            bedrock_runtime_endpoint: params.aws_bedrock_runtime_endpoint.clone(),
+            bedrock_project_id: params.aws_bedrock_project_id.clone(),
         };
         let call = match provider::bedrock_arn_call(input, aws.clone()) {
             Some(call) => call,

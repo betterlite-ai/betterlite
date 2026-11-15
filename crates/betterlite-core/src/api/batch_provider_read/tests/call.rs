@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::batch_provider_read::Settings;
+use betterlite_config::sections::resource_sdk_settings;
 use betterlite_openai::batches::records::BatchStatus;
 use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
 use betterlite_prompts::arguments::json::Json;
@@ -9,8 +10,8 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::{
-    ProviderStatus, Recorded, RecordedAws, RecordedParams, answer, answered, base_settings,
-    configured, failed, input, recorded_calls, request, scripted,
+    ProviderStatus, Recorded, RecordedAws, RecordedParams, answer, answered, bare_params,
+    bare_resources, base_settings, configured, failed, input, recorded_calls, request, scripted,
 };
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::batch_provider_read::call::{
@@ -21,7 +22,6 @@ use crate::api::batch_provider_read::{
     BatchProviderRead, BatchProviderReadInput, BatchReadOptionalParams, BatchReadProvider,
     BatchReadTimeoutValue,
 };
-use crate::api::resource_sdk_settings;
 
 fn json_value(text: &str) -> Json {
     serde_json::from_str(text).expect("a JSON value")
@@ -49,14 +49,14 @@ fn with_params(
 fn params_with_request_timeout(request_timeout: f64) -> BatchReadOptionalParams {
     BatchReadOptionalParams {
         request_timeout: Some(request_timeout),
-        ..BatchReadOptionalParams::default()
+        ..bare_params()
     }
 }
 
 fn params_with_timeout(timeout: BatchReadTimeoutValue) -> BatchReadOptionalParams {
     BatchReadOptionalParams {
         timeout: Some(timeout),
-        ..BatchReadOptionalParams::default()
+        ..bare_params()
     }
 }
 
@@ -104,7 +104,7 @@ fn missing_arguments_take_their_defaults() {
 // the else arm that reads AZURE_AD_TOKEN is unreachable, so a token alone does not authenticate
 #[tokio::test]
 async fn azure_ad_token_setting_does_not_become_the_api_key() {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.azure_ad_token = Some(SecretString::from("ad-token".to_owned()));
     let (_, calls) = answered(configured(resources), &input("azure")).await;
     let Recorded::Azure { api_key, .. } = &calls[0] else {
@@ -120,7 +120,7 @@ async fn azure_ad_token_setting_does_not_become_the_api_key() {
     BatchReadOptionalParams {
         request_timeout: Some(5.0),
         timeout: Some(BatchReadTimeoutValue::Seconds(7.0)),
-        ..BatchReadOptionalParams::default()
+        ..bare_params()
     },
     Timeout::Seconds(7.0)
 )]
@@ -516,7 +516,7 @@ async fn extra_headers_and_body_reach_the_request() {
 
 #[tokio::test]
 async fn openai_reads_the_configured_settings() {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.api_base = Some("https://configured.example".to_owned());
     resources.openai_key = Some(SecretString::from("sk-openai".to_owned()));
     resources.organization = Some("configured-org".to_owned());
@@ -538,7 +538,7 @@ async fn openai_reads_the_configured_settings() {
 // the environment fallbacks arrive through the shared settings, not an ambient read here
 #[tokio::test]
 async fn openai_reads_the_environment_settings() {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.openai_base_url = Some("https://env-base.example".to_owned());
     resources.openai_api_key = Some(SecretString::from("sk-env".to_owned()));
     resources.openai_organization = Some("env-org".to_owned());
@@ -559,7 +559,7 @@ async fn openai_reads_the_environment_settings() {
 
 #[tokio::test]
 async fn openai_prefers_the_request_parameters() {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.api_base = Some("https://configured.example".to_owned());
     resources.openai_key = Some(SecretString::from("sk-openai".to_owned()));
     resources.organization = Some("configured-org".to_owned());
@@ -567,7 +567,7 @@ async fn openai_prefers_the_request_parameters() {
         api_base: Some("https://request.example".to_owned()),
         api_key: Some(SecretString::from("sk-request".to_owned())),
         organization: Some("request-org".to_owned()),
-        ..BatchReadOptionalParams::default()
+        ..bare_params()
     };
     let call = with_params(input("openai"), params);
     let (_, calls) = answered(configured(resources), &call).await;
@@ -587,7 +587,7 @@ async fn openai_prefers_the_request_parameters() {
 
 #[tokio::test]
 async fn azure_reads_the_configured_and_environment_settings() {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.azure_api_base = Some("https://azure-env.example".to_owned());
     resources.azure_api_version = Some("2024-06-01".to_owned());
     resources.azure_openai_api_key = Some(SecretString::from("azure-env-key".to_owned()));
@@ -624,32 +624,14 @@ fn raw_azure_params() -> BatchReadOptionalParams {
         azure_scope: Some("scope".to_owned()),
         azure_username: Some("user".to_owned()),
         azure_password: Some(SecretString::from("password".to_owned())),
-        ..BatchReadOptionalParams::default()
-    }
-}
-
-// the same values, unresolved, as the azure call record carries them
-fn raw_recorded_params() -> RecordedParams {
-    RecordedParams {
-        api_key: Some("sk-raw".to_owned()),
-        api_base: Some("https://raw.example".to_owned()),
-        api_version: Some("raw-version".to_owned()),
-        max_retries: Some(2),
-        timeout: Some(BatchReadTimeoutValue::Seconds(3.0)),
-        azure_ad_token: Some("ad-token".to_owned()),
-        tenant_id: Some("tenant".to_owned()),
-        client_id: Some("client".to_owned()),
-        client_secret: Some("client-secret".to_owned()),
-        azure_scope: Some("scope".to_owned()),
-        azure_username: Some("user".to_owned()),
-        azure_password: Some("password".to_owned()),
+        ..bare_params()
     }
 }
 
 // the azure client reads the raw kwargs, so the request values stay unresolved inside litellm_params
 #[tokio::test]
 async fn azure_forwards_the_raw_kwargs() {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.azure_api_base = Some("https://azure-env.example".to_owned());
     let call = with_params(input("azure"), raw_azure_params());
     let (_, calls) = answered(configured(resources), &call).await;
@@ -668,7 +650,23 @@ async fn azure_forwards_the_raw_kwargs() {
     assert_eq!(api_key.as_deref(), Some("sk-raw"));
     assert_eq!(*max_retries, Some(2));
     assert_eq!(timeout, &Timeout::Seconds(3.0));
-    assert_eq!(litellm_params, &raw_recorded_params());
+    assert_eq!(
+        litellm_params,
+        &RecordedParams {
+            api_key: Some("sk-raw".to_owned()),
+            api_base: Some("https://raw.example".to_owned()),
+            api_version: Some("raw-version".to_owned()),
+            max_retries: Some(2),
+            timeout: Some(BatchReadTimeoutValue::Seconds(3.0)),
+            azure_ad_token: Some("ad-token".to_owned()),
+            tenant_id: Some("tenant".to_owned()),
+            client_id: Some("client".to_owned()),
+            client_secret: Some("client-secret".to_owned()),
+            azure_scope: Some("scope".to_owned()),
+            azure_username: Some("user".to_owned()),
+            azure_password: Some("password".to_owned()),
+        }
+    );
 }
 
 async fn vertex_credentials_of(
@@ -677,7 +675,7 @@ async fn vertex_credentials_of(
 ) -> Option<VertexReadCredentials> {
     let params = BatchReadOptionalParams {
         vertex_credentials: credentials,
-        ..BatchReadOptionalParams::default()
+        ..bare_params()
     };
     let call = with_params(input("vertex_ai"), params);
     let (_, calls) = answered(configured(resources), &call).await;
@@ -696,11 +694,7 @@ async fn vertex_credentials_accept_an_inline_account() {
         panic!("an object");
     };
     assert_eq!(
-        vertex_credentials_of(
-            Some(Json::Object(fields.clone())),
-            resource_sdk_settings::Settings::default()
-        )
-        .await,
+        vertex_credentials_of(Some(Json::Object(fields.clone())), bare_resources()).await,
         Some(VertexReadCredentials::ServiceAccount(fields))
     );
 }
@@ -714,7 +708,7 @@ async fn vertex_credentials_read_the_shared_chain(
     #[case] credentials: Option<Json>,
     #[case] expected: &str,
 ) {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.vertexai_credentials = Some(SecretString::from("env-ca.json".to_owned()));
     assert_eq!(
         vertex_credentials_of(credentials, resources).await,
@@ -732,7 +726,7 @@ async fn vertex_credentials_read_the_shared_chain(
 async fn vertex_credentials_stay_out_of_debug(#[case] credentials: &str) {
     let params = BatchReadOptionalParams {
         vertex_credentials: Some(json_value(credentials)),
-        ..BatchReadOptionalParams::default()
+        ..bare_params()
     };
     let (_, calls) = answered(base_settings(), &with_params(input("vertex_ai"), params)).await;
     let rendered = format!("{:?}", calls[0]);
@@ -748,7 +742,7 @@ async fn vertex_credentials_stay_out_of_debug(#[case] credentials: &str) {
 async fn vertex_credentials_reject_other_types(#[case] credentials: Json) {
     let params = BatchReadOptionalParams {
         vertex_credentials: Some(credentials),
-        ..BatchReadOptionalParams::default()
+        ..bare_params()
     };
     let (error, calls) = failed(
         base_settings(),
@@ -766,7 +760,7 @@ async fn vertex_credentials_reject_other_types(#[case] credentials: Json) {
 
 #[tokio::test]
 async fn vertex_reads_the_configured_settings() {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.vertex_project = Some("configured-project".to_owned());
     resources.vertexai_location = Some("europe-west4".to_owned());
     let (_, calls) = answered(configured(resources), &input("vertex_ai")).await;
@@ -784,7 +778,7 @@ async fn vertex_reads_the_configured_settings() {
 
 #[tokio::test]
 async fn anthropic_reads_the_shared_settings() {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.api_base = Some("https://shared.example".to_owned());
     resources.api_key = Some(SecretString::from("sk-shared".to_owned()));
     let (_, calls) = answered(configured(resources), &input("anthropic")).await;
@@ -812,7 +806,7 @@ async fn anthropic_reads_its_own_environment(
     #[case] expected: &str,
 ) {
     let settings = Settings {
-        resources: resource_sdk_settings::Settings::default(),
+        resources: bare_resources(),
         anthropic_api_base: api_base.map(str::to_owned),
         anthropic_base_url: base_url.map(str::to_owned),
         anthropic_api_key: Some(SecretString::from("sk-anthropic".to_owned())),
@@ -833,7 +827,7 @@ async fn anthropic_reads_its_own_environment(
 // the branch falls back through litellm.azure_key, which the pinned source keeps
 #[tokio::test]
 async fn anthropic_keeps_the_azure_key_fallback() {
-    let mut resources = resource_sdk_settings::Settings::default();
+    let mut resources = bare_resources();
     resources.azure_key = Some(SecretString::from("azure-configured-key".to_owned()));
     let (_, calls) = answered(configured(resources), &input("anthropic")).await;
     let Recorded::Anthropic { api_key, .. } = &calls[0] else {
@@ -853,8 +847,9 @@ async fn extra_entries_over_the_limit_are_rejected() {
     let service = BatchProviderRead {
         dispatch,
         limits: ApiLimits {
+            max_json_bytes: 1024,
+            max_event_bytes: 1024,
             max_items: 1,
-            ..ApiLimits::default()
         },
         settings: base_settings(),
     };
@@ -881,7 +876,8 @@ async fn an_oversized_request_is_rejected() {
         dispatch,
         limits: ApiLimits {
             max_json_bytes: 8,
-            ..ApiLimits::default()
+            max_event_bytes: 8,
+            max_items: 8,
         },
         settings: base_settings(),
     };

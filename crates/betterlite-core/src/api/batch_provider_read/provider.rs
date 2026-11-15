@@ -2,11 +2,11 @@ use betterlite_config::sections::batch_provider_read::Settings;
 use betterlite_openai::batches::sdk::Timeout;
 
 use super::call::{
-    AwsCredentials, BatchProviderReadCall, BedrockAsyncInvokeReadCall,
-    BedrockModelInvocationJobReadCall, XaiBatchReadCall,
+    AwsCredentials, BatchProviderReadCall, BedrockAsyncInvokeReadCall, BedrockJobReadCall,
+    XaiBatchReadCall,
 };
 use super::error::ReadCallError;
-use super::resolution;
+use super::resolution::{Resolution, provider_config};
 use super::{BatchProviderReadInput, BatchReadProvider};
 
 const DEFAULT_BEDROCK_REGION: &str = "us-east-1";
@@ -28,9 +28,12 @@ pub(super) fn bedrock_arn_call(
                 aws,
             }))
         }
-        BedrockArn::ModelInvocationJob => BatchProviderReadCall::BedrockModelInvocationJob(
-            Box::new(BedrockModelInvocationJobReadCall { batch_id, aws }),
-        ),
+        BedrockArn::ModelInvocationJob => {
+            BatchProviderReadCall::BedrockModelInvocationJob(Box::new(BedrockJobReadCall {
+                batch_id,
+                aws,
+            }))
+        }
     })
 }
 
@@ -63,6 +66,7 @@ pub(super) fn call(
     aws: AwsCredentials,
 ) -> Result<BatchProviderReadCall, ReadCallError> {
     let provider_name = input.provider.name();
+    let resolution = Resolution::new(input, settings);
     Ok(match input.provider {
         BatchReadProvider::Bedrock | BatchReadProvider::Mistral => {
             let Some(model) = input.model.as_deref() else {
@@ -70,7 +74,7 @@ pub(super) fn call(
                     provider: provider_name.to_owned(),
                 });
             };
-            BatchProviderReadCall::ProviderConfig(Box::new(resolution::provider_config(
+            BatchProviderReadCall::ProviderConfig(Box::new(provider_config(
                 input, model, timeout, aws,
             )))
         }
@@ -83,18 +87,18 @@ pub(super) fn call(
         })),
         BatchReadProvider::OpenAi
         | BatchReadProvider::HostedVllm
-        | BatchReadProvider::LitellmProxy => BatchProviderReadCall::OpenAiCompatible(Box::new(
-            resolution::openai(input, settings, timeout),
-        )),
+        | BatchReadProvider::LitellmProxy => {
+            BatchProviderReadCall::OpenAiCompatible(Box::new(resolution.openai(timeout)))
+        }
         BatchReadProvider::Azure => {
-            BatchProviderReadCall::Azure(Box::new(resolution::azure(input, settings, timeout)))
+            BatchProviderReadCall::Azure(Box::new(resolution.azure(timeout)))
         }
         BatchReadProvider::VertexAi => {
-            BatchProviderReadCall::VertexAi(Box::new(resolution::vertex(input, settings, timeout)?))
+            BatchProviderReadCall::VertexAi(Box::new(resolution.vertex(timeout)?))
         }
-        BatchReadProvider::Anthropic => BatchProviderReadCall::Anthropic(Box::new(
-            resolution::anthropic(input, settings, timeout),
-        )),
+        BatchReadProvider::Anthropic => {
+            BatchProviderReadCall::Anthropic(Box::new(resolution.anthropic(timeout)))
+        }
         BatchReadProvider::Other(_) => {
             return Err(ReadCallError::Unsupported {
                 provider: provider_name.to_owned(),

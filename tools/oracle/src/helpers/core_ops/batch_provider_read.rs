@@ -6,8 +6,7 @@ use betterlite_config::sections::batch_provider_read::Raw;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::batch_provider_read::call::{
     AnthropicBatchReadCall, AzureBatchReadCall, AzureReadParams, BatchProviderReadCall,
-    OpenAiBatchReadCall, ProviderConfigReadCall, VertexBatchReadCall, VertexReadCredentials,
-    XaiBatchReadCall,
+    OpenAiBatchReadCall, ProviderConfigReadCall, VertexReadCredentials, XaiBatchReadCall,
 };
 use betterlite_core::api::batch_provider_read::error::BatchProviderReadError;
 use betterlite_core::api::batch_provider_read::{
@@ -152,7 +151,13 @@ fn call_value(result: &BatchProviderReadResult) -> HelperResult {
         BatchProviderReadCall::Xai(call) => xai_value(call),
         BatchProviderReadCall::OpenAiCompatible(call) => openai_value(call),
         BatchProviderReadCall::Azure(call) => azure_value(call),
-        BatchProviderReadCall::VertexAi(call) => vertex_value(call)?,
+        BatchProviderReadCall::VertexAi(call) => json!({
+            "provider": "vertex_ai", "is_async": call.is_async, "batch_id": call.batch_id,
+            "api_base": call.api_base, "vertex_project": call.vertex_project,
+            "vertex_location": call.vertex_location,
+            "vertex_credentials": credentials_value(call.vertex_credentials.as_ref())?,
+            "timeout": timeout_value(&call.timeout), "max_retries": call.max_retries,
+        }),
         BatchProviderReadCall::Anthropic(call) => anthropic_value(call),
     })
 }
@@ -181,16 +186,6 @@ fn azure_value(call: &AzureBatchReadCall) -> Value {
         "api_version": call.api_version, "timeout": timeout_value(&call.timeout),
         "max_retries": call.max_retries, "litellm_params": params_value(&call.litellm_params),
     })
-}
-
-fn vertex_value(call: &VertexBatchReadCall) -> HelperResult {
-    let credentials = credentials_value(call.vertex_credentials.as_ref())?;
-    Ok(json!({
-        "provider": "vertex_ai", "is_async": call.is_async, "batch_id": call.batch_id,
-        "api_base": call.api_base, "vertex_project": call.vertex_project,
-        "vertex_location": call.vertex_location, "vertex_credentials": credentials,
-        "timeout": timeout_value(&call.timeout), "max_retries": call.max_retries,
-    }))
 }
 
 fn anthropic_value(call: &AnthropicBatchReadCall) -> Value {

@@ -103,7 +103,7 @@ pub struct AzureReadParams {
 }
 
 // a path or an inline service-account document; both stay out of Debug until the Vertex client opens them
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum VertexReadCredentials {
     Path(SecretString),
     ServiceAccount(Object),
@@ -148,7 +148,7 @@ pub struct BedrockAsyncInvokeReadCall {
 
 // BedrockBatchesHandler._handle_model_invocation_job_status, whose region stays unset
 #[derive(Debug, Clone)]
-pub struct BedrockModelInvocationJobReadCall {
+pub struct BedrockJobReadCall {
     pub batch_id: String,
     pub aws: AwsCredentials,
 }
@@ -163,5 +163,5 @@ pub enum BatchProviderReadCall {
     VertexAi(Box<VertexBatchReadCall>),
     Anthropic(Box<AnthropicBatchReadCall>),
     BedrockAsyncInvoke(Box<BedrockAsyncInvokeReadCall>),
-    BedrockModelInvocationJob(Box<BedrockModelInvocationJobReadCall>),
+    BedrockModelInvocationJob(Box<BedrockJobReadCall>),
 }

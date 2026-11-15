@@ -7,6 +7,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::batch_provider_read::Settings;
+use betterlite_config::sections::resource_sdk_settings;
 use betterlite_openai::api::batch_records::RetrieveBatchRequest;
 use betterlite_openai::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
 use betterlite_openai::batches::sdk::Timeout;
@@ -15,9 +16,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use super::call::{
-    AnthropicBatchReadCall, AwsCredentials, AwsSessionTag, AzureBatchReadCall, AzureReadParams,
-    BatchProviderReadCall, OpenAiBatchReadCall, ProviderConfigReadCall, VertexBatchReadCall,
-    VertexReadCredentials, XaiBatchReadCall,
+    AwsCredentials, AwsSessionTag, AzureReadParams, BatchProviderReadCall, VertexReadCredentials,
 };
 use super::error::BatchProviderReadError;
 use super::{
@@ -25,7 +24,6 @@ use super::{
     BatchReadOptionalParams, BatchReadProvider, BatchReadTimeoutValue,
 };
 use crate::api::api_boundaries::ApiLimits;
-use crate::api::resource_sdk_settings;
 
 #[derive(Debug, Clone, PartialEq)]
 struct RecordedAws {
@@ -167,97 +165,68 @@ fn secret_text(secret: &SecretString) -> String {
     secret.expose_secret().to_owned()
 }
 
+// copies the plain fields, exposes the secret ones and adds the nested records
+macro_rules! record {
+    ($variant:ident, $call:expr; $($plain:ident),*; $($secret:ident),*; $($nested:ident: $value:expr),*) => {
+        Recorded::$variant {
+            $($plain: $call.$plain.clone(),)*
+            $($secret: $call.$secret.as_ref().map(secret_text),)*
+            $($nested: $value,)*
+        }
+    };
+}
+
 fn recorded(call: &BatchProviderReadCall) -> Recorded {
     match call {
-        BatchProviderReadCall::ProviderConfig(call) => provider_config_record(call),
-        BatchProviderReadCall::Xai(call) => xai_record(call),
-        BatchProviderReadCall::OpenAiCompatible(call) => openai_record(call),
-        BatchProviderReadCall::Azure(call) => azure_record(call),
-        BatchProviderReadCall::VertexAi(call) => vertex_record(call),
-        BatchProviderReadCall::Anthropic(call) => anthropic_record(call),
-        BatchProviderReadCall::BedrockAsyncInvoke(call) => Recorded::BedrockAsyncInvoke {
-            batch_id: call.batch_id.clone(),
-            aws: recorded_aws(&call.aws),
-        },
+        BatchProviderReadCall::ProviderConfig(call) => record!(
+            ProviderConfig, call;
+            provider, model, batch_id, headers, api_base, timeout, is_async;
+            api_key;
+            aws: recorded_aws(&call.aws)
+        ),
+        BatchProviderReadCall::Xai(call) => {
+            record!(Xai, call; batch_id, api_base, timeout, is_async; api_key;)
+        }
+        BatchProviderReadCall::OpenAiCompatible(call) => record!(
+            OpenAi, call;
+            request, api_base, organization, timeout, max_retries, is_async;
+            api_key;
+        ),
+        BatchProviderReadCall::Azure(call) => record!(
+            Azure, call;
+            request, api_base, api_version, timeout, max_retries, is_async;
+            api_key;
+            litellm_params: recorded_params(&call.litellm_params)
+        ),
+        BatchProviderReadCall::VertexAi(call) => record!(
+            VertexAi, call;
+            batch_id, api_base, vertex_project, vertex_location, vertex_credentials, timeout, max_retries, is_async;
+            ;
+        ),
+        BatchProviderReadCall::Anthropic(call) => record!(
+            Anthropic, call;
+            batch_id, api_base, timeout, max_retries, is_async;
+            api_key;
+        ),
+        BatchProviderReadCall::BedrockAsyncInvoke(call) => {
+            record!(BedrockAsyncInvoke, call; batch_id; ; aws: recorded_aws(&call.aws))
+        }
         BatchProviderReadCall::BedrockModelInvocationJob(call) => {
-            Recorded::BedrockModelInvocationJob {
-                batch_id: call.batch_id.clone(),
-                aws: recorded_aws(&call.aws),
-            }
+            record!(BedrockModelInvocationJob, call; batch_id; ; aws: recorded_aws(&call.aws))
         }
     }
 }
 
-fn xai_record(call: &XaiBatchReadCall) -> Recorded {
-    Recorded::Xai {
-        batch_id: call.batch_id.clone(),
-        api_base: call.api_base.clone(),
-        api_key: call.api_key.as_ref().map(secret_text),
-        timeout: call.timeout.clone(),
-        is_async: call.is_async,
-    }
-}
-
-fn openai_record(call: &OpenAiBatchReadCall) -> Recorded {
-    Recorded::OpenAi {
-        request: call.request.clone(),
-        api_base: call.api_base.clone(),
-        api_key: call.api_key.as_ref().map(secret_text),
-        organization: call.organization.clone(),
-        timeout: call.timeout.clone(),
-        max_retries: call.max_retries,
-        is_async: call.is_async,
-    }
-}
-
-fn azure_record(call: &AzureBatchReadCall) -> Recorded {
-    Recorded::Azure {
-        request: call.request.clone(),
-        api_base: call.api_base.clone(),
-        api_key: call.api_key.as_ref().map(secret_text),
-        api_version: call.api_version.clone(),
-        timeout: call.timeout.clone(),
-        max_retries: call.max_retries,
-        litellm_params: recorded_params(&call.litellm_params),
-        is_async: call.is_async,
-    }
-}
-
-fn vertex_record(call: &VertexBatchReadCall) -> Recorded {
-    Recorded::VertexAi {
-        batch_id: call.batch_id.clone(),
-        api_base: call.api_base.clone(),
-        vertex_project: call.vertex_project.clone(),
-        vertex_location: call.vertex_location.clone(),
-        vertex_credentials: call.vertex_credentials.clone(),
-        timeout: call.timeout.clone(),
-        max_retries: call.max_retries,
-        is_async: call.is_async,
-    }
-}
-
-fn anthropic_record(call: &AnthropicBatchReadCall) -> Recorded {
-    Recorded::Anthropic {
-        batch_id: call.batch_id.clone(),
-        api_base: call.api_base.clone(),
-        api_key: call.api_key.as_ref().map(secret_text),
-        timeout: call.timeout.clone(),
-        max_retries: call.max_retries,
-        is_async: call.is_async,
-    }
-}
-
-fn provider_config_record(call: &ProviderConfigReadCall) -> Recorded {
-    Recorded::ProviderConfig {
-        provider: call.provider.clone(),
-        model: call.model.clone(),
-        batch_id: call.batch_id.clone(),
-        headers: call.headers.clone(),
-        api_base: call.api_base.clone(),
-        api_key: call.api_key.as_ref().map(secret_text),
-        aws: recorded_aws(&call.aws),
-        timeout: call.timeout.clone(),
-        is_async: call.is_async,
+// the Vertex credentials hold secrets, so equality is a test concern
+impl PartialEq for VertexReadCredentials {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Path(left), Self::Path(right)) => left.expose_secret() == right.expose_secret(),
+            (Self::ServiceAccount(left), Self::ServiceAccount(right)) => left == right,
+            (Self::Path(_), Self::ServiceAccount(_)) | (Self::ServiceAccount(_), Self::Path(_)) => {
+                false
+            }
+        }
     }
 }
 
@@ -287,6 +256,67 @@ fn configured(resources: resource_sdk_settings::Settings) -> Settings {
     }
 }
 
+// every field named, so a test that sets two of them says which two
+fn bare_resources() -> resource_sdk_settings::Settings {
+    resource_sdk_settings::Settings {
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        openai_key: None,
+        azure_key: None,
+        azure_ad_token: None,
+        organization: None,
+        vertex_project: None,
+        vertex_location: None,
+        openai_base_url: None,
+        openai_api_base: None,
+        openai_api_key: None,
+        openai_organization: None,
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
+        vertexai_project: None,
+        vertexai_location: None,
+        vertexai_credentials: None,
+    }
+}
+
+fn bare_params() -> BatchReadOptionalParams {
+    BatchReadOptionalParams {
+        api_base: None,
+        api_key: None,
+        api_version: None,
+        organization: None,
+        max_retries: None,
+        timeout: None,
+        request_timeout: None,
+        vertex_project: None,
+        vertex_location: None,
+        vertex_credentials: None,
+        azure_ad_token: None,
+        tenant_id: None,
+        client_id: None,
+        client_secret: None,
+        azure_scope: None,
+        azure_username: None,
+        azure_password: None,
+        aws_region_name: None,
+        aws_access_key_id: None,
+        aws_secret_access_key: None,
+        aws_session_token: None,
+        aws_session_name: None,
+        aws_profile_name: None,
+        aws_role_name: None,
+        aws_web_identity_token: None,
+        aws_sts_endpoint: None,
+        aws_external_id: None,
+        aws_session_tags: None,
+        aws_bedrock_runtime_endpoint: None,
+        aws_bedrock_project_id: None,
+    }
+}
+
 fn input(provider: &str) -> BatchProviderReadInput {
     BatchProviderReadInput {
         batch_id: "batch_1".to_owned(),
@@ -295,7 +325,7 @@ fn input(provider: &str) -> BatchProviderReadInput {
         extra_body: None,
         model: None,
         aretrieve_batch: false,
-        optional_params: BatchReadOptionalParams::default(),
+        optional_params: bare_params(),
     }
 }
 
