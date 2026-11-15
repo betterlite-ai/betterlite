@@ -22,7 +22,7 @@ pub struct IdentifiedResource {
 }
 
 impl SonioxReply {
-    pub fn object(&self) -> Result<&Object, ReplyError> {
+    pub const fn object(&self) -> Result<&Object, ReplyError> {
         let Some(payload) = self.payload.as_ref() else {
             return Err(ReplyError::NotObject);
         };

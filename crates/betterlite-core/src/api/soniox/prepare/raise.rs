@@ -51,7 +51,7 @@ fn counts_as_message(value: &JsonValue) -> bool {
     match value {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_some_and(|number| number != 0.0_f64),
+        JsonValue::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
         JsonValue::String(text) => !text.is_empty(),
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Object(fields) => !fields.is_empty(),

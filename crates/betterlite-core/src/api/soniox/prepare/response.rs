@@ -14,7 +14,7 @@ pub const AUDIO_DURATION_FIELD: &str = "audio_duration_ms";
 pub const TEXT_FIELD: &str = "text";
 pub const TOKENS_FIELD: &str = "tokens";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptionMeta {
     pub status: Option<String>,
     pub error_message: Option<String>,
@@ -36,7 +36,10 @@ pub fn transcription_meta(reply: &SonioxReply) -> Result<TranscriptionMeta, Repl
         status: string_field(object, STATUS_FIELD)?,
         error_message: string_field(object, ERROR_MESSAGE_FIELD)?,
         error_type: string_field(object, ERROR_TYPE_FIELD)?,
-        audio_duration_ms: object.get(AUDIO_DURATION_FIELD).cloned(),
+        audio_duration_ms: object
+            .get(AUDIO_DURATION_FIELD)
+            .filter(|value| !value.is_null())
+            .cloned(),
         raw: object.clone(),
     })
 }

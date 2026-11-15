@@ -1,10 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 
-// float() and int() refuse an integer literal past f64's range with OverflowError
-const I64_CEILING: f64 = 9_223_372_036_854_775_808.0;
-const I64_FLOOR: f64 = -9_223_372_036_854_775_808.0;
-
 pub(super) fn seconds(text: &str) -> Option<f64> {
     let trimmed = text.trim();
     if !underscores_join_digits(trimmed) {
@@ -29,21 +25,21 @@ pub(super) fn attempts(text: &str) -> Option<i64> {
     Some(saturated_integer(cleaned.as_str()))
 }
 
-pub(super) fn truncated_attempts(seconds: f64) -> Option<i64> {
-    if seconds >= I64_CEILING {
-        return Some(i64::MAX);
-    }
-    if seconds <= I64_FLOOR {
-        return Some(i64::MIN);
-    }
-    Decimal::from_f64(seconds).and_then(|number| number.to_i64())
+// int() turns a finite float past i64's range into an out-of-range int, which the caller clamps
+pub(super) fn truncated_attempts(seconds: f64) -> i64 {
+    let negative = seconds.is_sign_negative();
+    let Some(number) = Decimal::from_f64(seconds) else {
+        return saturate(negative);
+    };
+    number.to_i64().unwrap_or_else(|| saturate(negative))
 }
 
 pub(super) fn saturated_integer(literal: &str) -> i64 {
-    match literal.parse::<i128>() {
-        Ok(number) => i64::try_from(number).unwrap_or(saturate(number.is_negative())),
-        Err(_) => saturate(literal.starts_with('-')),
-    }
+    let negative = literal.starts_with('-');
+    let Ok(number) = literal.parse::<i128>() else {
+        return saturate(negative);
+    };
+    i64::try_from(number).unwrap_or_else(|_| saturate(negative))
 }
 
 // float() and int() take an underscore only when digits sit on both sides

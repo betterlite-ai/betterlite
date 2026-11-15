@@ -60,7 +60,7 @@ fn poll_interval_at(params: &mut Object) -> Result<Decimal, PrepareError> {
     let seconds = if let Some(text) = value.as_str() {
         text::seconds(text)
     } else {
-        number_seconds(&value)?
+        Some(number_seconds(&value)?)
     };
     let Some(parsed) = seconds else {
         return Err(PrepareError::Interval {
@@ -81,10 +81,14 @@ fn bounded_interval(seconds: f64) -> Result<Decimal, PrepareError> {
     })
 }
 
-fn number_seconds(value: &JsonValue) -> Result<Option<f64>, PrepareError> {
+fn number_seconds(value: &JsonValue) -> Result<f64, PrepareError> {
     let literal = value.to_string();
-    let seconds = value.as_f64();
-    if !literal.contains(['.', 'e', 'E']) && seconds.is_some_and(|number| !number.is_finite()) {
+    let Ok(seconds) = literal.parse::<f64>() else {
+        return Err(PrepareError::Interval {
+            field: POLL_INTERVAL_FIELD,
+        });
+    };
+    if !literal.contains(['.', 'e', 'E']) && !seconds.is_finite() {
         return Err(PrepareError::Interval {
             field: POLL_INTERVAL_FIELD,
         });
@@ -116,7 +120,7 @@ fn number_attempts(value: &JsonValue) -> Option<i64> {
         return Some(text::saturated_integer(&literal));
     }
     let number = value.as_f64().filter(|number| number.is_finite())?;
-    text::truncated_attempts(number)
+    Some(text::truncated_attempts(number))
 }
 
 fn cleanup_at(params: &mut Object) -> Result<Vec<String>, PrepareError> {
