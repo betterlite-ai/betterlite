@@ -4,7 +4,9 @@ use super::LegacyCompletion;
 use super::error::LegacyVertexError;
 use super::plan::{LegacyPlan, LegacyRoute, endpoint_path};
 use crate::legacy_prediction::client::PredictionClient;
-use crate::legacy_prediction::execution::{self, LegacyContext};
+use crate::legacy_prediction::execution::LegacyContext;
+use crate::legacy_prediction::execution::completion_entry::complete;
+use crate::legacy_prediction::execution::streaming_entry::stream;
 use crate::legacy_prediction::invocation::LegacyInvocation;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
@@ -36,10 +38,10 @@ where
     };
     let lookup = ready(Ok::<AccessToken, CredentialCacheError>(access));
     if stream {
-        let chunks = execution::stream(chosen, invocation, context, lookup).await?;
+        let chunks = stream(chosen, invocation, context, lookup).await?;
         return Ok(LegacyCompletion::Chunks(chunks));
     }
-    let result = execution::complete(chosen, invocation, context, lookup).await?;
+    let result = complete(chosen, invocation, context, lookup).await?;
     Ok(LegacyCompletion::Response(Box::new(result)))
 }
 
