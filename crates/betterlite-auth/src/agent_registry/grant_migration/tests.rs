@@ -177,7 +177,7 @@ async fn wait_for_blocked_update(transaction: &Transaction<'_>) {
     for _ in 0_u32..1_000_u32 {
         let row = transaction
             .query_one(
-                "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE \"LiteLLM_ObjectPermissionTable\"%'",
+                "SELECT count(*) FROM pg_locks WHERE NOT granted AND pg_backend_pid() = ANY(pg_blocking_pids(pid))",
                 &[],
             )
             .await
