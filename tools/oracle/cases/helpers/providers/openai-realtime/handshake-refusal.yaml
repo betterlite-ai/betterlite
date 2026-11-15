@@ -1,0 +1,21 @@
+kind: helper
+name: openai-realtime-handshake-refusal
+call:
+  openai_realtime:
+    kind: handshake
+    api_key: sk-realtime-1234567890
+    model: gpt-4o-realtime-preview
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 1048576
+    openai_api_base: null
+    openai_api_key: null
+    queries: []
+    failures:
+      - {status_code: 401, message: "", close_error: null}
+      - {status_code: 403, message: "", close_error: null}
+      - {status_code: 429, message: "", close_error: null}
+      - {status_code: 500, message: "", close_error: null}
+    http_setups: []
+env: {}
+compare: {ignore: []}
