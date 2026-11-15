@@ -1,4 +1,5 @@
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::types::RoutingStrategy;
 use betterlite_openai::api::image_contracts::records::{
     ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse,
 };
@@ -21,8 +22,9 @@ pub fn get_recraft_image_generation_config(
     _model: &str,
     lookup: &dyn EnvironmentLookup,
 ) -> RecraftImageGenerationConfig {
+    let (api_key, api_base) = RoutingStrategy::recraft_image_settings(lookup);
     RecraftImageGenerationConfig {
-        settings: RecraftImageSettings::from_environment(lookup),
+        settings: RecraftImageSettings { api_key, api_base },
     }
 }
 

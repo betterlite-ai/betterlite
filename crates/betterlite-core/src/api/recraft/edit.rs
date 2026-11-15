@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{
-    ImageFile, ImageFiles, ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse,
+    ImageFile, ImageFiles, ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse, ImageUsage,
 };
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
@@ -78,7 +78,6 @@ impl RecraftImageEditConfig {
             .unwrap_or_else(|| Json::Text(model.to_owned()));
         let strength = options
             .shift_remove("strength")
-            .filter(|value| !matches!(value, Json::Null))
             .unwrap_or_else(|| Number::from_f64(DEFAULT_STRENGTH).map_or(Json::Null, Json::Number));
         options.shift_remove(IMAGE_FIELD);
         let supplied_prompt = options
@@ -104,7 +103,7 @@ impl RecraftImageEditConfig {
         Ok(ImageResponse {
             created,
             data: Some(images),
-            usage: None,
+            usage: Some(ImageUsage::default()),
         })
     }
 }

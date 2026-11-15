@@ -35,6 +35,13 @@ call:
           image: stale
       - function: edit_request
         model: recraftv3
+        prompt: null
+        images: []
+        optional_params:
+          strength: null
+          style: any
+      - function: edit_request
+        model: recraftv3
         prompt: change the sky
         images: []
         optional_params: {}

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use betterlite_config::types::RoutingStrategy;
 use betterlite_core::api::recraft::cost::cost_calculator;
 use betterlite_core::api::recraft::edit::RecraftImageEditConfig;
 use betterlite_core::api::recraft::generation::RecraftImageGenerationConfig;
@@ -92,10 +93,16 @@ pub(super) fn url_answer(
 ) -> Value {
     let url = match endpoint {
         Endpoint::Generation => generation_config(model, environment).get_complete_url(api_base),
-        Endpoint::Edit => RecraftImageEditConfig {
-            settings: RecraftImageSettings::from_environment(environment),
+        Endpoint::Edit => {
+            let (api_key, base) = RoutingStrategy::recraft_image_settings(environment);
+            RecraftImageEditConfig {
+                settings: RecraftImageSettings {
+                    api_key,
+                    api_base: base,
+                },
+            }
+            .get_complete_url(api_base)
         }
-        .get_complete_url(api_base),
     };
     json!({"url": url})
 }
@@ -111,10 +118,16 @@ pub(super) fn environment_answer(
     let validated = match endpoint {
         Endpoint::Generation => generation_config(model, environment)
             .validate_environment(headers.clone(), explicit.as_ref()),
-        Endpoint::Edit => RecraftImageEditConfig {
-            settings: RecraftImageSettings::from_environment(environment),
+        Endpoint::Edit => {
+            let (settings_key, base) = RoutingStrategy::recraft_image_settings(environment);
+            RecraftImageEditConfig {
+                settings: RecraftImageSettings {
+                    api_key: settings_key,
+                    api_base: base,
+                },
+            }
+            .validate_environment(headers.clone(), explicit.as_ref())
         }
-        .validate_environment(headers.clone(), explicit.as_ref()),
     };
     match validated {
         Ok(headers) => json!({"headers": headers}),
@@ -217,7 +230,7 @@ pub(super) fn edit_response_answer(
         body: body.as_bytes().to_vec(),
     };
     match RecraftImageEditConfig::transform_image_edit_response(&upstream, 0) {
-        Ok(response) => Ok(json!({"data": response.data})),
+        Ok(response) => Ok(json!({"data": response.data, "usage": response.usage})),
         Err(error) => Err(reply_error(&error)),
     }
 }

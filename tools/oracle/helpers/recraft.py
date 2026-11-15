@@ -28,8 +28,21 @@ class ResponseFields(TypedDict):
     data: list[ImageFields]
 
 
+class InputTokensFields(TypedDict):
+    image_tokens: int
+    text_tokens: int
+
+
+class UsageFields(TypedDict):
+    input_tokens: int
+    input_tokens_details: InputTokensFields
+    output_tokens: int
+    total_tokens: int
+
+
 class ReplyFields(TypedDict):
     data: list[ImageFields]
+    usage: UsageFields
 
 
 RESPONSE: TypeAdapter[ResponseFields] = TypeAdapter(ResponseFields)

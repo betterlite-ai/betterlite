@@ -4,13 +4,14 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
+use betterlite_config::types::RoutingStrategy;
 use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::ImageBilling;
 use betterlite_models::image_cost::error::ImageCostError;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_openai::api::image_contracts::records::{
-    ImageData, ImageFile, ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse,
+    ImageData, ImageFile, ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse, ImageUsage,
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -40,8 +41,9 @@ fn generation(entries: &[(&str, &str)]) -> RecraftImageGenerationConfig {
 }
 
 fn edit(entries: &[(&str, &str)]) -> RecraftImageEditConfig {
+    let (api_key, api_base) = RoutingStrategy::recraft_image_settings(&lookup(entries));
     RecraftImageEditConfig {
-        settings: RecraftImageSettings::from_environment(&lookup(entries)),
+        settings: RecraftImageSettings { api_key, api_base },
     }
 }
 
@@ -390,7 +392,7 @@ fn the_edit_request_pops_strength_and_defaults_it() {
     );
     assert_eq!(
         serialized(&explicit_null),
-        json(r#"{"model":"recraft/recraftv3","strength":0.2}"#)
+        json(r#"{"model":"recraft/recraftv3","strength":null}"#)
     );
 }
 
@@ -417,7 +419,7 @@ fn the_edit_request_keeps_provider_fields_and_drops_image() {
     assert_eq!(
         serialized(&request),
         json(
-            r#"{"model":"recraft/recraftv3","strength":0.2,"style_id":"style-1","style":"realistic_image","substyle":"digital_illustration","response_format":"url","negative_prompt":"blurry","controls":{"colors":[]}}"#
+            r#"{"model":"recraft/recraftv3","strength":null,"style_id":"style-1","style":"realistic_image","substyle":"digital_illustration","response_format":"url","negative_prompt":"blurry","controls":{"colors":[]}}"#
         )
     );
     assert!(files.is_empty());
@@ -603,7 +605,7 @@ fn the_edit_response_starts_fresh_and_keeps_the_caller_created() {
     .expect("the reply decodes");
 
     assert_eq!(response.created, 1_700_000_000);
-    assert_eq!(response.usage, None);
+    assert_eq!(response.usage, Some(ImageUsage::default()));
     assert_eq!(
         response.data,
         Some(vec![
