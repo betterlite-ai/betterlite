@@ -73,7 +73,7 @@ fn write_extra_sources(
                     data.insert("instructions".to_owned(), content.clone());
                 }
             }
-            ExtraField::Prompt => apply_prompt_redaction(data, slice)?,
+            ExtraField::Prompt => apply_prompt_redaction(data, slice),
             ExtraField::SchemaStrings => apply_schema_string_redaction(data, slice),
         }
     }
@@ -104,9 +104,9 @@ fn redacted_input(input: &GuardrailValue, redacted: &[RedactedMessage]) -> Optio
 fn apply_prompt_redaction(
     data: &mut BTreeMap<String, GuardrailValue>,
     redacted: &[RedactedMessage],
-) -> Result<(), CatoError> {
+) {
     if redacted.is_empty() {
-        return Ok(());
+        return;
     }
     let contents = redacted
         .iter()
@@ -124,7 +124,6 @@ fn apply_prompt_redaction(
         }
         _ => {}
     }
-    Ok(())
 }
 
 fn rewrite_prompt_parts(

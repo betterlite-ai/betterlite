@@ -68,12 +68,12 @@ pub(crate) fn schema_string_refs(
     refs
 }
 
-fn object_refs<'a>(
-    object: &'a BTreeMap<String, GuardrailValue>,
+fn object_refs<'value>(
+    object: &'value BTreeMap<String, GuardrailValue>,
     root: &SchemaRoot,
     path: &[SchemaStep],
     refs: &mut Vec<(SchemaSlot, String)>,
-    stack: &mut Vec<(SchemaRoot, Vec<SchemaStep>, &'a GuardrailValue)>,
+    stack: &mut Vec<(SchemaRoot, Vec<SchemaStep>, &'value GuardrailValue)>,
 ) {
     for key in SCALAR_KEYS {
         if let Some(GuardrailValue::Text(text)) = object.get(key)
@@ -90,22 +90,25 @@ fn object_refs<'a>(
         }
     }
     for key in LIST_KEYS {
-        if let Some(GuardrailValue::Array(items)) = object.get(key) {
-            for (index, item) in items.iter().enumerate() {
-                if let GuardrailValue::Text(text) = item
-                    && !text.is_empty()
-                {
-                    refs.push((
-                        SchemaSlot::Item {
-                            root: root.clone(),
-                            path: path.to_vec(),
-                            key: key.to_owned(),
-                            index,
-                        },
-                        text.clone(),
-                    ));
-                }
+        let Some(GuardrailValue::Array(items)) = object.get(key) else {
+            continue;
+        };
+        for (index, item) in items.iter().enumerate() {
+            let GuardrailValue::Text(text) = item else {
+                continue;
+            };
+            if text.is_empty() {
+                continue;
             }
+            refs.push((
+                SchemaSlot::Item {
+                    root: root.clone(),
+                    path: path.to_vec(),
+                    key: key.to_owned(),
+                    index,
+                },
+                text.clone(),
+            ));
         }
     }
     for (key, value) in object.iter().rev() {
@@ -181,10 +184,10 @@ fn roots(data: &BTreeMap<String, GuardrailValue>) -> Vec<(SchemaRoot, &Guardrail
     roots
 }
 
-fn slot_node_mut<'a>(
-    data: &'a mut BTreeMap<String, GuardrailValue>,
+fn slot_node_mut<'value>(
+    data: &'value mut BTreeMap<String, GuardrailValue>,
     slot: &SchemaSlot,
-) -> Option<&'a mut GuardrailValue> {
+) -> Option<&'value mut GuardrailValue> {
     let (root, path) = match slot {
         SchemaSlot::Field { root, path, .. } | SchemaSlot::Item { root, path, .. } => (root, path),
     };

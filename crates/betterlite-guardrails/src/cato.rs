@@ -79,7 +79,7 @@ pub struct CatoGuardrail {
     pub inspect_embeddings: bool,
     pub ws_ssl: Option<WsSsl>,
     pub timeout: Duration,
-    pub(crate) client: reqwest::Client,
+    pub client: reqwest::Client,
 }
 
 impl CatoGuardrail {
@@ -91,11 +91,11 @@ impl CatoGuardrail {
             .api_key
             .or_else(|| tls::environment_value(lookup, "CATO_API_KEY").map(SecretString::from))
             .ok_or(CatoError::MissingApiKey)?;
-        let api_base = params
+        let configured_base = params
             .api_base
             .or_else(|| tls::environment_value(lookup, "CATO_API_BASE"))
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
-        let api_base = api_base.trim_end_matches('/').to_owned();
+        let api_base = configured_base.trim_end_matches('/').to_owned();
         let ws_api_base = api_base
             .replace("http://", "ws://")
             .replace("https://", "wss://");
@@ -133,7 +133,7 @@ impl CatoGuardrail {
         let request = AnalyzeRequest {
             messages: inspection::inspection_messages(data),
         };
-        let response = self.post_analyze(&request, headers).await?;
+        let response = transport::post_analyze(self, &request, headers).await?;
         actions::handle_actions(&response, data)
     }
 }

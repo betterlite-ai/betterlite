@@ -18,7 +18,14 @@ where
         None => environment_value(lookup, SSL_VERIFY_VARIABLE),
         Some(VerifySetting::Path(text)) => Some(text.clone()),
     };
-    verification_from(text.as_deref(), lookup)
+    let Some(value) = text.as_deref() else {
+        return ca_verification(lookup);
+    };
+    match betterlite_env::flag(SSL_VERIFY_VARIABLE, value) {
+        Ok(Some(true)) => ca_verification(lookup),
+        Ok(Some(false)) => Verification::Disabled,
+        Ok(None) | Err(_) => Verification::CaFile(value.to_owned()),
+    }
 }
 
 pub(super) fn resolve_ws_ssl<L>(
@@ -29,39 +36,25 @@ pub(super) fn resolve_ws_ssl<L>(
 where
     L: EnvironmentLookup,
 {
-    let ssl_verify = ssl_verify?;
+    let setting = ssl_verify?;
     if !ws_api_base.starts_with("wss://") {
         return None;
     }
-    Some(match resolve_verification(Some(ssl_verify), lookup) {
+    Some(match resolve_verification(Some(setting), lookup) {
         Verification::Disabled => WsSsl::Disabled,
         Verification::Enabled => WsSsl::SystemRoots,
         Verification::CaFile(path) => WsSsl::CaFile(path),
     })
 }
 
-fn verification_from<L>(text: Option<&str>, lookup: &L) -> Verification
-where
-    L: EnvironmentLookup,
-{
-    let Some(value) = text else {
-        return ca_verification(lookup);
-    };
-    match betterlite_env::flag(SSL_VERIFY_VARIABLE, value) {
-        Ok(Some(true)) => ca_verification(lookup),
-        Ok(Some(false)) => Verification::Disabled,
-        Ok(None) | Err(_) => Verification::CaFile(value.to_owned()),
-    }
-}
-
 fn ca_verification<L>(lookup: &L) -> Verification
 where
     L: EnvironmentLookup,
 {
-    match environment_value(lookup, "SSL_CERT_FILE") {
-        Some(path) => Verification::CaFile(path),
-        None => Verification::Enabled,
-    }
+    let Some(path) = environment_value(lookup, "SSL_CERT_FILE") else {
+        return Verification::Enabled;
+    };
+    Verification::CaFile(path)
 }
 
 pub(super) fn environment_value<L>(lookup: &L, variable: &str) -> Option<String>
