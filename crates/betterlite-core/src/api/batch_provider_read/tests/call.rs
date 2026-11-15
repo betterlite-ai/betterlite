@@ -533,6 +533,7 @@ async fn openai_prefers_the_request_parameters() {
         api_base: Some("https://request.example".to_owned()),
         api_key: Some(SecretString::from("sk-request".to_owned())),
         organization: Some("request-org".to_owned()),
+        max_retries: Some(2),
         ..bare_params()
     };
     let call = with_params(input("openai"), params);
@@ -541,6 +542,7 @@ async fn openai_prefers_the_request_parameters() {
         api_base,
         api_key,
         organization,
+        max_retries,
         ..
     } = &calls[0]
     else {
@@ -549,6 +551,7 @@ async fn openai_prefers_the_request_parameters() {
     assert_eq!(api_base, "https://request.example");
     assert_eq!(api_key.as_deref(), Some("sk-request"));
     assert_eq!(organization.as_deref(), Some("request-org"));
+    assert_eq!(*max_retries, Some(2));
 }
 
 #[tokio::test]
