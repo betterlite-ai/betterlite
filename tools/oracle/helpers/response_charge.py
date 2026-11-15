@@ -9,7 +9,7 @@ from litellm.llms.base_llm.ocr.transformation import OCRResponse, OCRUsageInfo
 from litellm.types.utils import (
     CostPerToken,
     ImageResponse,
-    LiteLLMRealtimeStreamLoggingObject,
+    LiteLLMRealtimeStreamLoggingObject as RealtimeLogging,
     ModelResponse,
     StandardBuiltInToolsParams,
     TranscriptionResponse,
@@ -114,7 +114,7 @@ WrapperResponse = (
     ModelResponse
     | ImageResponse
     | TranscriptionResponse
-    | LiteLLMRealtimeStreamLoggingObject
+    | RealtimeLogging
 )
 
 CompletionResponse = WrapperResponse | OCRResponse | None
@@ -251,11 +251,11 @@ def ocr_response(input_value: Input) -> OCRResponse:
 
 def realtime_response(
     input_value: Input, usage: Usage
-) -> LiteLLMRealtimeStreamLoggingObject:
+) -> RealtimeLogging:
     events = input_value.get("events")
     if events is None:
         raise ValueError("a realtime stream response needs its events")
-    return LiteLLMRealtimeStreamLoggingObject.model_validate(
+    return RealtimeLogging.model_validate(
         {"results": events, "usage": usage}
     )
 
