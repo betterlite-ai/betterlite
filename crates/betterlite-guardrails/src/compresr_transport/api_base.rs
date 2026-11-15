@@ -79,10 +79,6 @@ fn integer_to_ip(magnitude: u128) -> IpAddr {
 fn parse_integer_literal(text: &str) -> Option<u128> {
     let trimmed = text.trim();
     let unsigned = trimmed.strip_prefix('+').unwrap_or(trimmed);
-    // ipaddress.ip_address refuses a negative magnitude, so a signed negative never names an address
-    if unsigned.starts_with('-') || unsigned.starts_with('+') {
-        return None;
-    }
     let (radix, digits) = match unsigned.get(..2).map(str::to_ascii_lowercase).as_deref() {
         Some("0x") => (16, unsigned.get(2..)?),
         Some("0o") => (8, unsigned.get(2..)?),
