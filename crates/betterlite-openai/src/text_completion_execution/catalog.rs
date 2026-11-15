@@ -42,8 +42,8 @@ pub enum CompletionRoute {
 #[must_use]
 pub fn route_for(deployment: &ChatDeployment, catalog: &CompletionCatalog) -> CompletionRoute {
     match &deployment.provider {
-        Provider::OpenAi { model } => {
-            let model = model.clone();
+        Provider::OpenAi { model: named } => {
+            let model = named.clone();
             if catalog.chat_models.contains(&model) {
                 CompletionRoute::Chat { model }
             } else {
