@@ -92,19 +92,20 @@ fn parse_integer_literal(text: &str) -> Option<u128> {
         Some("0b") => (2, unsigned.get(2..)?),
         _ => (10, unsigned),
     };
-    let cleaned = digits_without_underscores(digits)?;
+    // A base prefix is the one place Python's int(text, 0) lets an underscore open the digits
+    let cleaned = digits_without_underscores(digits, radix != 10)?;
     if radix == 10 && cleaned.len() > 1 && cleaned.starts_with('0') {
         return None;
     }
     u128::from_str_radix(&cleaned, radix).ok()
 }
 
-fn digits_without_underscores(digits: &str) -> Option<String> {
+fn digits_without_underscores(digits: &str, allow_leading_underscore: bool) -> Option<String> {
     if digits.is_empty() {
         return None;
     }
     let mut cleaned = String::with_capacity(digits.len());
-    let mut after_underscore = true;
+    let mut after_underscore = !allow_leading_underscore;
     for character in digits.chars() {
         if character == '_' {
             if after_underscore {
