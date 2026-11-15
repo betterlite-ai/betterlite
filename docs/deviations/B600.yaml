@@ -1,7 +1,7 @@
 task: B600
 deviations: []
 kept_bugs:
-- what: get_config keeps the custom_llm_provider entry even though its value is a property descriptor rather than a config value; betterlite carries the member as {kind: property} so the same names come back.
+- what: get_config keeps the custom_llm_provider entry even though its value is a property descriptor rather than a config value; betterlite carries the member as a mapping that records its kind, so the same names come back.
   why: LiteLLM's filter drops functions, classmethods, staticmethods and None but not properties, so a caller of get_config sees custom_llm_provider among the config members; dropping it here would change that member list.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L299-L314
 - what: A reasoning_effort outside low, medium and high on a Nova 2 model raises the rejection tagged with the fixed model amazon.nova-2-lite-v1:0 and provider bedrock_converse, not the model the caller named.
