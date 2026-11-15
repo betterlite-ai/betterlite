@@ -82,7 +82,7 @@ fn defaults_are_unset() {
 #[case::env_vertexai_project("litellm_settings: {}\n", &[("VERTEXAI_PROJECT", "project-env")], "env.VERTEXAI_PROJECT", "project-env")]
 #[case::litellm_settings_vertex_location("litellm_settings:\n  vertex_location: location-configured\n", &[], "litellm_settings.vertex_location", "location-configured")]
 #[case::env_vertexai_location("litellm_settings: {}\n", &[("VERTEXAI_LOCATION", "location-env")], "env.VERTEXAI_LOCATION", "location-env")]
-#[case::env_vertexai_credentials("litellm_settings: {}\n", &[("VERTEXAI_CREDENTIALS", "{\"type\":\"service_account\"}")], "env.VERTEXAI_CREDENTIALS", "{\"type\":\"service_account\"}")]
+#[case::env_vertexai_credentials("litellm_settings: {}\n", &[("VERTEXAI_CREDENTIALS", "{\"type\":\"service_account\",\"project_id\":\"key-project\",\"private_key_id\":\"key-id\",\"private_key\":\"KEYMATERIAL\",\"client_email\":\"sa@example.iam.gserviceaccount.com\",\"universe_domain\":\"example.com\"}")], "env.VERTEXAI_CREDENTIALS", "{\"type\":\"service_account\",\"project_id\":\"key-project\",\"private_key_id\":\"key-id\",\"private_key\":\"KEYMATERIAL\",\"client_email\":\"sa@example.iam.gserviceaccount.com\",\"universe_domain\":\"example.com\"}")]
 fn loads_settings(
     #[case] yaml: &str,
     #[case] environment: &[(&str, &str)],
