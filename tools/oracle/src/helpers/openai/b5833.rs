@@ -19,6 +19,7 @@ mod messages;
 mod options;
 mod replies;
 mod stt;
+mod supported;
 
 use capabilities::Answers;
 

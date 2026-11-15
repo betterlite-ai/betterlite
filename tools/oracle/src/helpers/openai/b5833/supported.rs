@@ -3,8 +3,7 @@ use serde_json::{Value, json};
 use betterlite_openai::groq_chat::error::GroqChatError;
 use betterlite_openai::groq_chat::options::{SupportedParams, get_supported_openai_params};
 
-use super::capabilities::Answers;
-use super::{Call, config, empty_catalog};
+use super::{Call, capabilities::Answers, config, empty_catalog};
 
 pub(super) fn supported_one(answers: &Answers, call: &Call) -> Result<Value, GroqChatError> {
     let params = get_supported_openai_params(&SupportedParams {
