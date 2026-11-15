@@ -59,7 +59,9 @@ def run(input_value: Input) -> JsonValue:
         iterator = ResponsesStream(iter([]), sync_stream=True)
         steps = [
             DUMP.validate_json(
-                iterator.chunk_parser(EVENT.validate_python(event)).model_dump_json(exclude_unset=True)
+                iterator.chunk_parser(EVENT.validate_python(event)).model_dump_json(
+                    exclude_unset=True
+                )
             )
             for event in input_value["events"]
         ]
