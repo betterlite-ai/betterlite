@@ -1,7 +1,7 @@
 id: B1500
 milestone: M3 providers
 title: Resolve proxy credentials and preserve forwarded model options
-status: todo
+status: done
 depends_on: [B002, B171, B668, B504, B506, B511, B512]
 file: tasks/B1500-proxy-provider-options.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/litellm_proxy/image_edit/**"
 parent: B044
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1955
