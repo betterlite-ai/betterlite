@@ -3,16 +3,49 @@ mod hiddenlayer;
 mod scripted;
 
 use serde::Deserialize;
+use serde::de::Error as _;
+use serde_json::Value;
 
 use crate::helpers::{Helper, HelperResult};
 
-// boxed so the variants keep one size; variant_size_differences and large_enum_variant deny the spread
+// an internally tagged enum buffers the payload, where a RawValue response cannot be read
 #[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(try_from = "Value")]
 pub(crate) enum Input {
     ShouldRun(Box<headroom::ShouldRun>),
     Plan(Box<headroom::Plan>),
     Hiddenlayer(Box<hiddenlayer::Input>),
+}
+
+impl TryFrom<Value> for Input {
+    type Error = serde_json::Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        let Value::Object(mut fields) = value else {
+            return Err(serde_json::Error::custom(
+                "a b3775 helper input is a mapping",
+            ));
+        };
+        let Some(kind) = fields.remove("kind") else {
+            return Err(serde_json::Error::custom(
+                "the b3775 helper input names no kind",
+            ));
+        };
+        let Some(kind) = kind.as_str() else {
+            return Err(serde_json::Error::custom(
+                "the b3775 helper kind is not a string",
+            ));
+        };
+        let fields = Value::Object(fields);
+        match kind {
+            "should_run" => Ok(Self::ShouldRun(Box::new(serde_json::from_value(fields)?))),
+            "plan" => Ok(Self::Plan(Box::new(serde_json::from_value(fields)?))),
+            "hiddenlayer" => Ok(Self::Hiddenlayer(Box::new(serde_json::from_value(fields)?))),
+            other => Err(serde_json::Error::custom(format!(
+                "unknown b3775 helper kind: {other}"
+            ))),
+        }
+    }
 }
 
 pub(crate) struct Op;
