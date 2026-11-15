@@ -623,6 +623,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "host_rerank"
+path = "fuzz_targets/host_rerank.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "text_response"
 path = "fuzz_targets/text_response.rs"
 test = false

@@ -1,0 +1,61 @@
+kind: helper
+name: assistant-content-start
+call:
+  bedrock_services_realtime_output:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+      - 00000000-0000-4000-8000-000000000006
+      - 00000000-0000-4000-8000-000000000007
+      - 00000000-0000-4000-8000-000000000008
+      - 00000000-0000-4000-8000-000000000009
+      - 00000000-0000-4000-8000-000000000010
+      - 00000000-0000-4000-8000-000000000011
+      - 00000000-0000-4000-8000-000000000012
+      - 00000000-0000-4000-8000-000000000013
+      - 00000000-0000-4000-8000-000000000014
+      - 00000000-0000-4000-8000-000000000015
+      - 00000000-0000-4000-8000-000000000016
+      - 00000000-0000-4000-8000-000000000017
+      - 00000000-0000-4000-8000-000000000018
+      - 00000000-0000-4000-8000-000000000019
+      - 00000000-0000-4000-8000-000000000020
+    calls:
+      - method: content_start
+        event: {role: SYSTEM, type: TEXT}
+        ids: {response: resp_old, item: item_old, conversation: conv_old}
+      - method: content_start
+        event: {role: assistant, type: TEXT}
+        ids: {response: "", item: null, conversation: null}
+      - method: content_start
+        event:
+          role: USER
+          type: TEXT
+          additionalModelFields: '{"generationStage":"SPECULATIVE"}'
+        ids: {response: "", item: "", conversation: null}
+      - method: user_transcript
+        text: draft
+      - method: user_completed
+      - method: content_start
+        event: {role: USER, type: AUDIO}
+        ids: {response: null, item: null, conversation: null}
+      - method: user_transcript
+        text: more
+      - method: user_completed
+      - method: content_start
+        event: {role: ASSISTANT, type: TEXT}
+        ids: {response: null, item: null, conversation: null}
+      - method: content_start
+        event: {role: ASSISTANT, type: TEXT}
+        ids: {response: "", item: "", conversation: ""}
+      - method: content_start
+        event: {role: ASSISTANT, type: AUDIO}
+        ids: {response: resp_keep, item: item_keep, conversation: conv_keep}
+      - method: content_start
+        event: {role: ASSISTANT, type: TEXT}
+        ids: {response: resp_keep, item: null, conversation: ""}
+env: {}
+compare: {ignore: []}
