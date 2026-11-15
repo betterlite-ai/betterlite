@@ -286,7 +286,7 @@ async fn stop_ends_the_view_setup_loop() {
     *harness.catalog.state.existing_failure.lock().unwrap() = Some(FakeFailure::Dropped);
     let tasks = TaskTracker::new();
     harness.setup.start(&tasks);
-    sleep(harness.setup.poll_interval * 3).await;
+    sleep(harness.setup.poll_interval.saturating_mul(3)).await;
     let actions_before = harness.actions.lock().unwrap().clone();
     let attempts = actions_before
         .iter()
@@ -294,7 +294,7 @@ async fn stop_ends_the_view_setup_loop() {
         .count();
     assert!(attempts >= 3, "{attempts}");
     assert!(harness.setup.task.stop().await);
-    advance(harness.setup.poll_interval * 3).await;
+    advance(harness.setup.poll_interval.saturating_mul(3)).await;
     yield_now().await;
     assert_eq!(*harness.actions.lock().unwrap(), actions_before);
     assert!(harness.setup.task.handle.lock().unwrap().is_none());

@@ -93,7 +93,7 @@ impl FakeState {
             .push_back(reply);
     }
 
-    pub(super) fn script_failing_probes(&self, count: usize, failure: FakeFailure) {
+    pub(super) fn script_failing_probes(&self, count: usize, failure: &FakeFailure) {
         for _ in 0..count {
             self.script_probe(Reply::Value(Err(failure.clone())));
         }
@@ -113,7 +113,7 @@ impl FakeState {
             .push_back(reply);
     }
 
-    pub(super) fn script_failing_row_counts(&self, count: usize, failure: FakeFailure) {
+    pub(super) fn script_failing_row_counts(&self, count: usize, failure: &FakeFailure) {
         for _ in 0..count {
             self.script_row_count(Reply::Value(Err(failure.clone())));
         }
@@ -316,7 +316,10 @@ pub(super) fn fake_clock() -> FakeClock {
 impl FakeClock {
     pub(super) fn advance(&self, elapsed: Duration) {
         let mut now = self.now.lock().unwrap_or_else(PoisonError::into_inner);
-        *now += elapsed;
+        let advanced = now
+            .checked_add(elapsed)
+            .expect("the fake clock never overflows");
+        *now = advanced;
     }
 }
 
@@ -392,15 +395,11 @@ impl HealthCheck for FakeHealth {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push("health_check".to_owned());
-            match self
-                .outcome
+            self.outcome
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone()
-            {
-                Some(failure) => Err(failure),
-                None => Ok(()),
-            }
+                .map_or(Ok(()), Err)
         })
     }
 
@@ -551,16 +550,13 @@ impl ViewCatalog for FakeCatalog {
             .into_iter()
             .filter(|name| expected.iter().any(|view| *view == name.as_str()))
             .collect();
-        let outcome = match self
+        let failure = self
             .state
             .existing_failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        {
-            Some(failure) => Err(failure),
-            None => Ok(names),
-        };
+            .clone();
+        let outcome = failure.map_or(Ok(names), Err);
         Box::pin(async move { outcome })
     }
 }
@@ -708,7 +704,7 @@ pub(super) fn health_harness() -> HealthHarness {
         database: FakeDatabase {
             state: Arc::clone(&state),
         },
-        reporter: Arc::clone(&reporter),
+        reporter: Arc::<FakeReporter>::clone(&reporter),
         tasks: TaskTracker::new(),
     };
     HealthHarness {
@@ -742,7 +738,7 @@ pub(super) fn views_harness_with_deadline(deadline: Duration) -> ViewsHarness {
     let setup = Arc::new(ViewSetup {
         database: catalog.clone(),
         health: health.clone(),
-        sink: Arc::clone(&sink),
+        sink: Arc::<FakeSink>::clone(&sink),
         schema: "public".to_owned(),
         poll_interval: VIEW_SETUP_POLL_INTERVAL,
         deadline,

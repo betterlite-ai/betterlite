@@ -1,5 +1,5 @@
 use std::sync::atomic::Ordering;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio::task::yield_now;
 use tokio::time::advance;
@@ -53,10 +53,10 @@ async fn loop_probes_after_the_interval() {
     let harness = watchdog_harness();
     harness.watchdog.start(&harness.tasks);
     yield_now().await;
-    advance(WATCHDOG_INTERVAL / 2).await;
+    advance(WATCHDOG_INTERVAL.saturating_sub(Duration::from_millis(1))).await;
     yield_now().await;
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 0);
-    advance(WATCHDOG_INTERVAL / 2).await;
+    advance(Duration::from_millis(1)).await;
     yield_now().await;
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 1);
     harness.watchdog.stop().await;
@@ -268,7 +268,7 @@ async fn stop_cancels_the_loop() {
     yield_now().await;
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 1);
     harness.watchdog.stop().await;
-    advance(WATCHDOG_INTERVAL * 3).await;
+    advance(WATCHDOG_INTERVAL.saturating_mul(3)).await;
     yield_now().await;
     drop(guard);
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 1);

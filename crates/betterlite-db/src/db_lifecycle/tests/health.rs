@@ -6,14 +6,21 @@ use tokio::sync::Notify;
 use tokio::time::{Instant, timeout};
 
 use super::support::{FakeFailure, FakeSink, Reply, capture_logs, health_harness};
-use crate::db_lifecycle::health::{HEALTH_CHECK_BUDGET, HealthCheck};
+use crate::db_lifecycle::health::{HEALTH_CHECK_BUDGET, HealthCheck as _};
+
+fn warns_about_backoff(lines: &[String], attempt: &str) -> bool {
+    let needle = format!("Backing off... this was attempt {attempt}");
+    lines.iter().any(|line| line.contains(needle.as_str()))
+}
 
 #[tokio::test(start_paused = true)]
 async fn probe_failure_retries_three_times_and_reports_each_try() {
     let (logs, guard) = capture_logs();
     let harness = health_harness();
     let started = Instant::now();
-    harness.state.script_failing_probes(3, FakeFailure::Dropped);
+    harness
+        .state
+        .script_failing_probes(3, &FakeFailure::Dropped);
     let outcome = harness.checker.run_health_check().await;
     harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
@@ -29,11 +36,7 @@ async fn probe_failure_retries_three_times_and_reports_each_try() {
             .all(|failure| failure.message == "the connection dropped"),
         "{failures:?}"
     );
-    assert!(
-        failures
-            .iter()
-            .all(|failure| failure.duration == Duration::ZERO)
-    );
+    assert!(failures.iter().all(|failure| failure.duration.is_zero()));
     let lines = logs.lines();
     let warnings = lines
         .iter()
@@ -42,16 +45,8 @@ async fn probe_failure_retries_three_times_and_reports_each_try() {
         })
         .count();
     assert_eq!(warnings, 3, "{lines:?}");
-    assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("Backing off... this was attempt #1"))
-    );
-    assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("Backing off... this was attempt #2"))
-    );
+    assert!(warns_about_backoff(&lines, "#1"));
+    assert!(warns_about_backoff(&lines, "#2"));
 }
 
 #[tokio::test(start_paused = true)]
@@ -167,7 +162,9 @@ async fn report_is_spawned_and_not_awaited_by_the_caller() {
     let harness = health_harness();
     let gate = Arc::new(Notify::new());
     *harness.reporter.gate.lock().unwrap() = Some(Arc::clone(&gate));
-    harness.state.script_failing_probes(3, FakeFailure::Dropped);
+    harness
+        .state
+        .script_failing_probes(3, &FakeFailure::Dropped);
     let outcome = timeout(Duration::from_secs(30), harness.checker.run_health_check()).await;
     tokio::task::yield_now().await;
     assert!(
@@ -246,7 +243,7 @@ async fn spend_logs_row_count_returns_zero_after_three_failures() {
     let harness = health_harness();
     harness
         .state
-        .script_failing_row_counts(3, FakeFailure::Dropped);
+        .script_failing_row_counts(3, &FakeFailure::Dropped);
     let row_count = harness.checker.spend_logs_row_count().await;
     drop(guard);
     assert_eq!(row_count, 0);
