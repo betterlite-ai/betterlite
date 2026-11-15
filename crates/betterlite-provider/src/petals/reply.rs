@@ -2,14 +2,13 @@ use std::collections::BTreeMap;
 use std::str;
 
 use async_trait::async_trait;
-use betterlite_prompts::builtin::Message;
 
 use super::decode::decode_petals_reply;
 use super::error::PetalsError;
 
+// LiteLLM counts the rendered prompt and the output text with its default OpenAI encoding, so the caller supplies the counter (handler.py L130-L131)
 #[async_trait]
 pub trait TokenCounter: Send + Sync {
-    async fn count_messages(&self, messages: &[Message]) -> Option<i64>;
     async fn count_text(&self, text: &str) -> Option<i64>;
 }
 
@@ -17,7 +16,7 @@ pub struct ReplyInput<'request> {
     pub body: &'request [u8],
     pub status: u16,
     pub headers: &'request BTreeMap<String, String>,
-    pub messages: &'request [Message],
+    pub prompt: Option<&'request str>,
     pub model: &'request str,
     pub created: i64,
 }
@@ -56,7 +55,17 @@ pub async fn transform_response(
         message: source.to_string(),
         headers: BTreeMap::new(),
     })?;
-    let prompt_tokens = counter.count_messages(reply.messages).await.unwrap_or(0);
+    // LiteLLM posts empty inputs for a model whose prompt factory returns None, then raises when it counts the None prompt (handler.py L130), so a working caller sees a 500
+    let Some(prompt) = reply.prompt else {
+        return Err(PetalsError {
+            status_code: 500,
+            message: String::from(
+                "the petals prompt is missing, so the reply has no prompt to count",
+            ),
+            headers: BTreeMap::new(),
+        });
+    };
+    let prompt_tokens = counter.count_text(prompt).await.unwrap_or(0);
     let completion_tokens = counter.count_text(&decoded.outputs).await.unwrap_or(0);
     Ok(PetalsResponse {
         model: reply.model.to_owned(),

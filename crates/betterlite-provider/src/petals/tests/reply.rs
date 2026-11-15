@@ -3,17 +3,15 @@ use std::fs;
 
 use async_trait::async_trait;
 use betterlite_openai::error::ProviderError;
-use betterlite_prompts::builtin::Message;
 use rstest::rstest;
 
 use super::super::decode::decode_petals_reply;
 use super::super::error::PetalsError;
 use super::super::reply::{PetalsResponse, ReplyInput, TokenCounter, transform_response};
-use super::messages;
 
 struct Fixture {
     headers: BTreeMap<String, String>,
-    messages: Vec<Message>,
+    prompt: Option<String>,
     body: Vec<u8>,
     status: u16,
     model: String,
@@ -23,7 +21,7 @@ struct Fixture {
 fn reply_fixture(body: &str) -> Fixture {
     Fixture {
         headers: BTreeMap::new(),
-        messages: messages(r#"[{"role":"user","content":"hi"}]"#),
+        prompt: Some(String::from("<s>[INST] hi [/INST]\n")),
         body: body.as_bytes().to_vec(),
         status: 200,
         model: String::from("meta-llama/llama-2-7b-chat"),
@@ -37,7 +35,7 @@ impl Fixture {
             body: &self.body,
             status: self.status,
             headers: &self.headers,
-            messages: &self.messages,
+            prompt: self.prompt.as_deref(),
             model: &self.model,
             created: self.created,
         }
@@ -45,26 +43,18 @@ impl Fixture {
 }
 
 struct StandInCounter {
-    fail_messages: bool,
     fail_text: bool,
 }
 
 #[async_trait]
 impl TokenCounter for StandInCounter {
-    async fn count_messages(&self, messages: &[Message]) -> Option<i64> {
-        (!self.fail_messages).then(|| i64::try_from(messages.len()).unwrap_or(i64::MAX))
-    }
-
     async fn count_text(&self, text: &str) -> Option<i64> {
         (!self.fail_text).then(|| i64::try_from(text.chars().count()).unwrap_or(i64::MAX))
     }
 }
 
 fn counter() -> StandInCounter {
-    StandInCounter {
-        fail_messages: false,
-        fail_text: false,
-    }
+    StandInCounter { fail_text: false }
 }
 
 async fn response(fixture: &Fixture) -> Result<PetalsResponse, PetalsError> {
@@ -119,9 +109,9 @@ async fn a_string_output_is_the_reply() {
     assert_eq!(response.choices[0].index, 0);
     assert_eq!(response.choices[0].finish_reason, "stop");
     assert_eq!(response.choices[0].content, "hello");
-    assert_eq!(response.usage.prompt_tokens, 1);
+    assert_eq!(response.usage.prompt_tokens, 21);
     assert_eq!(response.usage.completion_tokens, 5);
-    assert_eq!(response.usage.total_tokens, 6);
+    assert_eq!(response.usage.total_tokens, 26);
 }
 
 #[tokio::test]
@@ -144,16 +134,25 @@ async fn a_created_status_is_read() {
 #[tokio::test]
 async fn failing_counters_count_zero() {
     let fixture = reply_fixture(r#"{"outputs":"hello"}"#);
-    let counter = StandInCounter {
-        fail_messages: true,
-        fail_text: true,
-    };
+    let counter = StandInCounter { fail_text: true };
     let response = transform_response(&fixture.input(), &counter)
         .await
         .unwrap();
     assert_eq!(response.usage.prompt_tokens, 0);
     assert_eq!(response.usage.completion_tokens, 0);
     assert_eq!(response.usage.total_tokens, 0);
+}
+
+#[tokio::test]
+async fn a_missing_prompt_is_a_500() {
+    let mut fixture = reply_fixture(r#"{"outputs":"hello"}"#);
+    fixture.prompt = None;
+    let error = response(&fixture).await.unwrap_err();
+    assert_eq!(error.status_code, 500);
+    assert_eq!(
+        error.message,
+        "the petals prompt is missing, so the reply has no prompt to count"
+    );
 }
 
 #[rstest]
