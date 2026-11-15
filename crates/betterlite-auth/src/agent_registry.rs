@@ -170,7 +170,9 @@ impl AgentRegistryApi for AgentRegistry {
     }
 
     fn run_grant_id_migration(&self, store: &PostgresStore) -> impl Future<Output = ()> + Send {
-        migration_retry::run_grant_id_migration(self, store)
+        migration_retry::retry_migration(move || async move {
+            grant_migration::migrate_legacy_grant_ids(self, store).await
+        })
     }
 }
 

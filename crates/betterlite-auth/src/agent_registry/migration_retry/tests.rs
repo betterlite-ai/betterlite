@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::cell::Cell;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -13,34 +14,10 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use crate::agent_registry::AgentRegistryApi as _;
-use crate::agent_registry::tests::support::{
-    ALPHA_ENTRY, ALPHA_LEGACY, ALPHA_STABLE, SCHEMA, TestDatabase, insert_row, loaded, row_agents,
-};
+use crate::agent_registry::GrantMigrationResult;
+use crate::agent_registry::tests::support::{ALPHA_ENTRY, loaded};
 
-const SKIPPING_TRIGGER: &str = r#"
-CREATE FUNCTION skip_agent_rows() RETURNS trigger AS $$
-BEGIN
-    RETURN NULL;
-END
-$$ LANGUAGE plpgsql;
-CREATE TRIGGER skip_agent_rows BEFORE UPDATE ON "LiteLLM_ObjectPermissionTable"
-FOR EACH ROW EXECUTE FUNCTION skip_agent_rows();
-"#;
-
-const SKIP_FIRST_TRIGGER: &str = r#"
-CREATE TABLE skip_first_state (object_permission_id TEXT PRIMARY KEY);
-CREATE FUNCTION skip_first_update() RETURNS trigger AS $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM skip_first_state WHERE object_permission_id = OLD.object_permission_id) THEN
-        RETURN NEW;
-    END IF;
-    INSERT INTO skip_first_state (object_permission_id) VALUES (OLD.object_permission_id);
-    RETURN NULL;
-END
-$$ LANGUAGE plpgsql;
-CREATE TRIGGER skip_first_update BEFORE UPDATE ON "LiteLLM_ObjectPermissionTable"
-FOR EACH ROW EXECUTE FUNCTION skip_first_update();
-"#;
+use super::retry_migration;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Logged {
@@ -92,13 +69,21 @@ fn messages(logs: &Logs) -> Vec<Logged> {
 
 #[tokio::test(start_paused = true)]
 async fn a_clean_first_pass_stops_without_a_pause() {
-    let db = TestDatabase::start(SCHEMA).await;
-    insert_row(&db.pool, "p1", &[ALPHA_LEGACY.to_owned()]).await;
-    let registry = loaded(&[ALPHA_ENTRY]);
     let (logs, _guard) = capture();
+    let calls = Cell::new(0_usize);
     let started = Instant::now();
-    registry.run_grant_id_migration(&db.store()).await;
+    retry_migration(|| {
+        calls.set(calls.get() + 1);
+        async {
+            Ok(GrantMigrationResult {
+                rewritten: 1,
+                missed: 0,
+            })
+        }
+    })
+    .await;
     assert_eq!(started.elapsed(), Duration::ZERO);
+    assert_eq!(calls.get(), 1);
     assert_eq!(
         messages(&logs),
         vec![Logged {
@@ -106,23 +91,25 @@ async fn a_clean_first_pass_stops_without_a_pause() {
             message: String::from("Rewrote 1 object_permission rows from legacy config agent ids"),
         }]
     );
-    assert_eq!(
-        row_agents(&db.pool, "p1").await,
-        Some(vec![ALPHA_STABLE.to_owned()])
-    );
-    db.close().await;
 }
 
 #[tokio::test(start_paused = true)]
 async fn missed_rows_are_warned_three_times_with_a_pause_each() {
-    let schema = format!("{SCHEMA}{SKIPPING_TRIGGER}");
-    let db = TestDatabase::start(&schema).await;
-    insert_row(&db.pool, "p1", &[ALPHA_LEGACY.to_owned()]).await;
-    let registry = loaded(&[ALPHA_ENTRY]);
     let (logs, _guard) = capture();
+    let calls = Cell::new(0_usize);
     let started = Instant::now();
-    registry.run_grant_id_migration(&db.store()).await;
+    retry_migration(|| {
+        calls.set(calls.get() + 1);
+        async {
+            Ok(GrantMigrationResult {
+                rewritten: 0,
+                missed: 1,
+            })
+        }
+    })
+    .await;
     assert_eq!(started.elapsed(), Duration::from_secs(10));
+    assert_eq!(calls.get(), 3);
     let logged = messages(&logs);
     assert_eq!(logged.len(), 3);
     assert!(logged.iter().zip(1_u32..=3_u32).all(|(entry, attempt)| {
@@ -132,11 +119,6 @@ async fn missed_rows_are_warned_three_times_with_a_pause_each() {
                     "Legacy agent grant id migration attempt {attempt}/3 left 1 rows unmigrated"
                 )
     }));
-    assert_eq!(
-        row_agents(&db.pool, "p1").await,
-        Some(vec![ALPHA_LEGACY.to_owned()])
-    );
-    db.close().await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -159,14 +141,28 @@ async fn database_errors_are_logged_and_swallowed_after_three_attempts() {
 
 #[tokio::test(start_paused = true)]
 async fn a_missed_attempt_is_retried_until_a_clean_pass() {
-    let schema = format!("{SCHEMA}{SKIP_FIRST_TRIGGER}");
-    let db = TestDatabase::start(&schema).await;
-    insert_row(&db.pool, "p1", &[ALPHA_LEGACY.to_owned()]).await;
-    let registry = loaded(&[ALPHA_ENTRY]);
     let (logs, _guard) = capture();
+    let calls = Cell::new(0_usize);
     let started = Instant::now();
-    registry.run_grant_id_migration(&db.store()).await;
+    retry_migration(|| {
+        let attempt = calls.get() + 1;
+        calls.set(attempt);
+        async move {
+            if attempt == 1 {
+                return Ok(GrantMigrationResult {
+                    rewritten: 0,
+                    missed: 1,
+                });
+            }
+            Ok(GrantMigrationResult {
+                rewritten: 1,
+                missed: 0,
+            })
+        }
+    })
+    .await;
     assert_eq!(started.elapsed(), Duration::from_secs(5));
+    assert_eq!(calls.get(), 2);
     assert_eq!(
         messages(&logs),
         vec![
@@ -184,9 +180,4 @@ async fn a_missed_attempt_is_retried_until_a_clean_pass() {
             },
         ]
     );
-    assert_eq!(
-        row_agents(&db.pool, "p1").await,
-        Some(vec![ALPHA_STABLE.to_owned()])
-    );
-    db.close().await;
 }

@@ -1,19 +1,23 @@
+use std::future::Future;
 use std::time::Duration;
 
-use betterlite_db::postgres_store::session::PostgresStore;
 use tokio::time::sleep;
 
-use super::AgentRegistry;
-use super::grant_migration;
+use super::AgentRegistryError;
+use super::GrantMigrationResult;
 
 mod tests;
 
 const GRANT_MIGRATION_ATTEMPTS: usize = 3;
 const GRANT_MIGRATION_PAUSE: Duration = Duration::from_secs(5);
 
-pub(super) async fn run_grant_id_migration(registry: &AgentRegistry, store: &PostgresStore) {
+pub(super) async fn retry_migration<Migrate, Attempt>(mut migrate: Migrate)
+where
+    Migrate: FnMut() -> Attempt,
+    Attempt: Future<Output = Result<GrantMigrationResult, AgentRegistryError>>,
+{
     for attempt in 1..=GRANT_MIGRATION_ATTEMPTS {
-        match grant_migration::migrate_legacy_grant_ids(registry, store).await {
+        match migrate().await {
             Ok(result) => {
                 let rewritten = result.rewritten;
                 if rewritten > 0 {
