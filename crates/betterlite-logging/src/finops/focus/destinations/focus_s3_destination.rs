@@ -66,10 +66,10 @@ where
 }
 
 pub struct FocusS3Destination<Client: S3Client> {
-    pub client: Client,
-    pub bucket_name: String,
-    pub prefix: String,
-    pub client_options: S3ClientOptions,
+    pub(super) client: Client,
+    pub(super) bucket_name: String,
+    pub(super) prefix: String,
+    pub(super) client_options: S3ClientOptions,
 }
 
 impl<Client: S3Client> FocusS3Destination<Client> {

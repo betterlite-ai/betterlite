@@ -72,10 +72,10 @@ where
 }
 
 pub struct FocusGcsDestination<Client: GcsBucketClient> {
-    pub client: Client,
-    pub bucket_name: String,
-    pub prefix: String,
-    pub service_account_json: Option<SecretString>,
+    pub(super) client: Client,
+    pub(super) bucket_name: String,
+    pub(super) prefix: String,
+    pub(super) service_account_json: Option<SecretString>,
 }
 
 impl<Client: GcsBucketClient> FocusGcsDestination<Client> {
