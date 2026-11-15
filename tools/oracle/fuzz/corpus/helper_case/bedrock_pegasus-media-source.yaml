@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-pegasus-media-source
+call:
+  bedrock_pegasus:
+    function: pegasus_media_source
+    messages: []
+    optional_params: {video_base64: "data:video/mp4;base64,QUJD"}
+env: {}
+compare: {ignore: []}
