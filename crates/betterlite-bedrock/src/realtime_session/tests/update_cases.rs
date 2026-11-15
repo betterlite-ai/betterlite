@@ -68,7 +68,7 @@ fn updates_keep_absent_values() {
     let mut state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
     let applied = apply(
         &mut state,
-        r#"{"session":{"max_response_output_tokens":2048,"temperature":1.1,"voice":"amy"}}"#,
+        r#"{"session":{"max_response_output_tokens":2048,"temperature":1.1,"voice":"amy","output_audio_format":"g711_ulaw","input_audio_format":"g711_ulaw"}}"#,
         &[],
     );
     assert_eq!(applied.len(), 2);
@@ -85,6 +85,8 @@ fn updates_keep_absent_values() {
         output_audio(&frames).voice_id,
         Setting(Some("amy".to_owned()))
     );
+    assert_eq!(output_audio(&frames).sample_rate_hertz, Setting(Some(8000)));
+    assert_eq!(state.input_audio.sample_rate_hertz, Setting(Some(8000)));
 }
 
 fn updates_accept_null_and_inf() {
