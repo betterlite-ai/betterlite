@@ -104,7 +104,7 @@ pub(super) fn mapping_steps(runtime: &Runtime, call: &MappingCall) -> Vec<Value>
             let mut existing = step.optional.clone();
             let mapped = {
                 let mut mapping = Gpt5Mapping {
-                    model: &step.model,
+                    model: step.model.as_str(),
                     non_default_params: &mut requested,
                     optional_params: &mut existing,
                     drop_params: DropParams {
@@ -158,7 +158,7 @@ fn transform_step(
     let mut existing = ParamsObject::new();
     let mapped = {
         let mut mapping = Gpt5Mapping {
-            model: &step.model,
+            model: step.model.as_str(),
             non_default_params: &mut requested,
             optional_params: &mut existing,
             drop_params: DropParams {
