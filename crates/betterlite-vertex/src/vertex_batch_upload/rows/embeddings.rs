@@ -45,19 +45,25 @@ where
     for (index, element) in elements.iter().enumerate() {
         let mut row: IndexMap<String, OutputJson> = IndexMap::new();
         if let Some(custom_id) = &line.custom_id {
-            let encoded = utf8_percent_encode(custom_id, KEY_ENCODE).to_string();
-            // only a fan-out carries the position, and the id was escaped first so its own `#0/2` stays inert
-            let key = if total < 2 {
-                encoded
-            } else {
-                format!("{encoded}#{index}/{total}")
-            };
+            let key = batch_key(custom_id, index, total);
             row.insert("key".to_owned(), OutputJson::Text(key));
         }
-        row.insert("request".to_owned(), embed_request(element, &optional)?);
+        row.insert(
+            "request".to_owned(),
+            embed_request::<Mapped>(element, &optional)?,
+        );
         texts.push(decisions_text(&DecisionsJson::Object(row)).map_err(RowError::Dump)?);
     }
     Ok(texts)
+}
+
+// only a fan-out carries the position, and the id is escaped first so its own `#0/2` stays inert
+fn batch_key(custom_id: &str, index: usize, total: usize) -> String {
+    let encoded = utf8_percent_encode(custom_id, KEY_ENCODE).to_string();
+    if total < 2 {
+        return encoded;
+    }
+    format!("{encoded}#{index}/{total}")
 }
 
 fn outer_element(entry: InputEntry) -> EmbeddingInput {
