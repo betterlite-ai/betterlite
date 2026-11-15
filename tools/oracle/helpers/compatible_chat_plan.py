@@ -1,14 +1,14 @@
 import asyncio
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, overload
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.llms.openai_like.chat.handler import OpenAILikeChatHandler
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import CustomStreamingDecoder, ModelResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 Mode: TypeAlias = Literal["sync", "async"]
@@ -55,16 +55,58 @@ class CompletionParams(TypedDict):
     litellm_params: dict[str, JsonValue]
     logger_fn: None
     headers: dict[str, str] | None
-    timeout: float | None
-    client: AsyncHTTPHandler | HTTPHandler
+    timeout: float | httpx.Timeout | None
+    client: AsyncHTTPHandler | HTTPHandler | None
     custom_endpoint: bool | None
-    streaming_decoder: None
+    streaming_decoder: CustomStreamingDecoder | None
     fake_stream: bool
 
 
-# completion is unannotated, so this view types its arguments through CompletionParams
+# twenty keyword parameters in a def trip the argument-count lint, so the view is an overload pair
 class Completion(Protocol):
-    def completion(self, **params: Unpack[CompletionParams]) -> Reply | Deferred: ...
+    @overload
+    def completion(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, JsonValue]],
+        api_base: str,
+        custom_llm_provider: str,
+        custom_prompt_dict: dict[str, JsonValue],
+        model_response: ModelResponse,
+        print_verbose: Callable[[str], None],
+        encoding: None,
+        api_key: str | None,
+        logging_obj: Logging,
+        optional_params: dict[str, JsonValue],
+        acompletion: bool,
+        litellm_params: dict[str, JsonValue],
+        logger_fn: None,
+        headers: dict[str, str] | None,
+        timeout: float | httpx.Timeout | None,
+        client: AsyncHTTPHandler | HTTPHandler | None,
+        custom_endpoint: bool | None,
+        streaming_decoder: CustomStreamingDecoder | None,
+        fake_stream: bool,
+    ) -> Reply | Deferred: ...
+
+    # LiteLLM defaults the other nine, so this shorter call is a distinct overload
+    @overload
+    def completion(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, JsonValue]],
+        api_base: str,
+        custom_llm_provider: str,
+        custom_prompt_dict: dict[str, JsonValue],
+        model_response: ModelResponse,
+        print_verbose: Callable[[str], None],
+        encoding: None,
+        api_key: str | None,
+        logging_obj: Logging,
+        optional_params: dict[str, JsonValue],
+    ) -> Reply | Deferred: ...
 
 
 class ChatHandler(OpenAILikeChatHandler):
