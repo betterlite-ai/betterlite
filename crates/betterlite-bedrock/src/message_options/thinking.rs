@@ -54,23 +54,7 @@ where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    let Some(ParamValue::Mapping(context_management)) = request.get("context_management") else {
-        return Ok(false);
-    };
-    let Some(ParamValue::List(edits)) = context_management.get("edits") else {
-        return Ok(false);
-    };
-    let clears_thinking = edits.iter().any(|edit| {
-        matches!(
-            edit,
-            ParamValue::Mapping(fields)
-                if matches!(
-                    fields.get("type"),
-                    Some(ParamValue::Text(kind)) if kind == CLEAR_THINKING_EDIT
-                )
-        )
-    });
-    if !clears_thinking || !supports_extended_thinking(model, sources).await {
+    if !clears_thinking(request) || !supports_extended_thinking(model, sources).await {
         return Ok(false);
     }
     let adaptive = supports_model_capability(
@@ -94,15 +78,50 @@ where
                 inject_adaptive_thinking(request, budget_tokens, model, sources.budgets);
                 return Ok(true);
             }
-            Some(_) | None => {
-                let rendered = serde_json::to_string(&thinking).unwrap_or_default();
-                tracing::debug!(
-                    "{CLEAR_THINKING_LOG_PREFIX} replacing thinking={rendered} with minimal thinking config"
-                );
-            }
+            Some(_) | None => log_replacing_thinking(fields),
         }
     }
-    let budget = sources.budgets.bedrock_min;
+    Ok(inject_fallback_thinking(
+        request,
+        adaptive,
+        model,
+        sources.budgets,
+    ))
+}
+
+fn clears_thinking(request: &ParamMap) -> bool {
+    let Some(ParamValue::Mapping(context_management)) = request.get("context_management") else {
+        return false;
+    };
+    let Some(ParamValue::List(edits)) = context_management.get("edits") else {
+        return false;
+    };
+    edits.iter().any(|edit| {
+        matches!(
+            edit,
+            ParamValue::Mapping(fields)
+                if matches!(
+                    fields.get("type"),
+                    Some(ParamValue::Text(kind)) if kind == CLEAR_THINKING_EDIT
+                )
+        )
+    })
+}
+
+fn log_replacing_thinking(fields: &IndexMap<String, ParamValue>) {
+    let rendered = serde_json::to_string(fields).unwrap_or_default();
+    tracing::debug!(
+        "{CLEAR_THINKING_LOG_PREFIX} replacing thinking={rendered} with minimal thinking config"
+    );
+}
+
+fn inject_fallback_thinking(
+    request: &mut ParamMap,
+    adaptive: bool,
+    model: &str,
+    budgets: &Settings,
+) -> bool {
+    let budget = budgets.bedrock_min;
     if let Some(tokens) = request.get("max_tokens").and_then(python_int)
         && tokens <= budget
     {
@@ -112,11 +131,11 @@ where
         tracing::warn!(
             "{CLEAR_THINKING_LOG_PREFIX} max_tokens={logged} is not greater than minimum thinking budget ({budget}); cannot inject thinking safely"
         );
-        return Ok(false);
+        return false;
     }
     if adaptive {
-        inject_adaptive_thinking(request, budget, model, sources.budgets);
-        return Ok(true);
+        inject_adaptive_thinking(request, budget, model, budgets);
+        return true;
     }
     let mut minimal = IndexMap::new();
     minimal.insert("type".to_owned(), ParamValue::Text(ENABLED.to_owned()));
@@ -126,7 +145,7 @@ where
     );
     request.insert("thinking".to_owned(), ParamValue::Mapping(minimal));
     tracing::debug!("{CLEAR_THINKING_LOG_PREFIX} injected thinking with budget_tokens={budget}");
-    Ok(true)
+    true
 }
 
 // Python's int() over the caller's budget_tokens: None takes the configured minimum.
@@ -204,7 +223,7 @@ pub fn inject_adaptive_thinking(
     );
 }
 
-fn mapping(value: &ParamValue) -> Option<&IndexMap<String, ParamValue>> {
+const fn mapping(value: &ParamValue) -> Option<&IndexMap<String, ParamValue>> {
     match value {
         ParamValue::Mapping(fields) => Some(fields),
         ParamValue::Null
