@@ -602,6 +602,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_video_identifiers"
+path = "fuzz_targets/openai_video_identifiers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "host_rerank"
 path = "fuzz_targets/host_rerank.rs"
 test = false
