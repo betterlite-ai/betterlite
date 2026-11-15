@@ -135,13 +135,49 @@ fn aim_inspection_config_skips_a_non_aim_entry_before_resolving_its_params() {
 }
 
 #[test]
-fn aim_inspection_config_reads_only_the_boolean_embedding_flag_as_on() {
-    for value in ["false", "\"true\"", "1", "os.environ/AIM_INSPECT"] {
-        let source = format!("{AIM_CONFIG}      inspect_embeddings: {value}\n");
-        let lookup = BTreeMap::from([("AIM_INSPECT".to_owned(), "true".to_owned())]);
+fn aim_inspection_config_reads_the_embedding_flag_from_the_environment() {
+    let source = format!("{AIM_CONFIG}      inspect_embeddings: os.environ/AIM_INSPECT\n");
+    for (text, expected) in [("true", true), ("off", false), ("", false)] {
+        let lookup = BTreeMap::from([("AIM_INSPECT".to_owned(), text.to_owned())]);
         let configured = resolve(&source, &lookup).unwrap().guardrails.remove(0);
+        assert_eq!(
+            configured.inspect_embeddings, expected,
+            "AIM_INSPECT: {text}"
+        );
+    }
+    let unset = resolve(&source, &BTreeMap::new())
+        .unwrap()
+        .guardrails
+        .remove(0);
+    assert!(!unset.inspect_embeddings);
+    let lookup = BTreeMap::from([("AIM_INSPECT".to_owned(), "perhaps".to_owned())]);
+    assert!(matches!(
+        resolve(&source, &lookup),
+        Err(ConfigError::Environment { .. })
+    ));
+}
+
+#[test]
+fn aim_inspection_config_treats_a_null_embedding_flag_as_the_default() {
+    let source = format!("{AIM_CONFIG}      inspect_embeddings: null\n");
+    let configured = resolve(&source, &BTreeMap::new())
+        .unwrap()
+        .guardrails
+        .remove(0);
+    assert!(!configured.inspect_embeddings);
+}
+
+#[test]
+fn aim_inspection_config_rejects_an_embedding_flag_of_another_type() {
+    for value in ["\"true\"", "1", "1.5"] {
+        let source = format!("{AIM_CONFIG}      inspect_embeddings: {value}\n");
+        let error = resolve(&source, &BTreeMap::new()).unwrap_err();
         assert!(
-            !configured.inspect_embeddings,
+            matches!(
+                error,
+                ConfigError::InvalidScalar { path, .. }
+                    if path == "guardrails.0.litellm_params.inspect_embeddings"
+            ),
             "inspect_embeddings: {value}"
         );
     }

@@ -7,6 +7,7 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::{resolve_secret, resolve_string};
 
 pub const DEFAULT_API_BASE: &str = "https://api.aim.security";
+const ENV_PREFIX: &str = "os.environ/";
 const GUARDRAIL_KIND: &str = "aim";
 
 mod tests;
@@ -73,33 +74,43 @@ impl Entry {
         let parameters = self.litellm_params;
         let api_key = resolve_secret(parameters.api_key, &format!("{prefix}.api_key"), lookup)?
             .filter(|key| !key.expose_secret().is_empty())
-            .or_else(|| {
-                lookup
-                    .lookup("AIM_API_KEY")
-                    .filter(|key| !key.is_empty())
-                    .map(SecretString::from)
-            });
+            .or_else(|| lookup.lookup("AIM_API_KEY").filter(|key| !key.is_empty()))
+            .map(SecretString::from);
         let api_base = parameters
             .api_base
             .map(|value| resolve_string(value, &format!("{prefix}.api_base"), lookup))
             .transpose()?
             .filter(|value| !value.is_empty())
-            .or_else(|| {
-                lookup
-                    .lookup("AIM_API_BASE")
-                    .filter(|value| !value.is_empty())
-            })
+            .or_else(|| lookup.lookup("AIM_API_BASE"))
+            .filter(|value| !value.is_empty())
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
-        // LiteLLM's `inspect_embeddings is True`: only the boolean true turns it on, every other value stays off
-        let inspect_embeddings = matches!(
-            parameters.inspect_embeddings,
-            Some(GuardrailValue::Boolean(true))
-        );
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
             api_base,
-            inspect_embeddings,
+            inspect_embeddings: embedding_flag(parameters.inspect_embeddings, &prefix, lookup)?,
         })
     }
+}
+
+// an os.environ reference is the one text form of the flag; any other value that is not a bool names the field
+fn embedding_flag<L: EnvironmentLookup>(
+    value: Option<GuardrailValue>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<bool, ConfigError> {
+    let path = format!("{prefix}.inspect_embeddings");
+    let flag = match value {
+        None | Some(GuardrailValue::Null) => Some(false),
+        Some(GuardrailValue::Boolean(flag)) => Some(flag),
+        Some(GuardrailValue::Text(text)) => match text.strip_prefix(ENV_PREFIX) {
+            Some(variable) => Some(
+                betterlite_env::flag(variable, &lookup.lookup(variable).unwrap_or_default())?
+                    .unwrap_or(false),
+            ),
+            None => None,
+        },
+        Some(_) => None,
+    };
+    flag.ok_or_else(|| ConfigError::InvalidScalar { path, value: false })
 }
