@@ -21,3 +21,10 @@ path = "fuzz_targets/foundry_vector_stores.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "foundry_mai_images"
+path = "fuzz_targets/foundry_mai_images.rs"
+test = false
+doc = false
+bench = false

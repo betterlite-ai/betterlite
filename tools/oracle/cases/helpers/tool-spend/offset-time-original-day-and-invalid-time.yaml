@@ -1,0 +1,33 @@
+kind: helper
+name: offset-time-original-day-and-invalid-time
+call:
+  tool_spend:
+    transaction:
+      request_id: req-offset
+      start_time_iso: "2026-01-02T00:30:00+02:00"
+      mcp_namespaced_tool_name: search
+      spend: 2.5
+      total_tokens: 17
+      completion_response: null
+      realtime_tool_calls: null
+calls:
+  - tool_spend:
+      transaction:
+        request_id: req-invalid
+        start_time_iso: "not-a-time"
+        mcp_namespaced_tool_name: search
+        spend: 1.0
+        total_tokens: 3
+        completion_response: null
+        realtime_tool_calls: null
+  - tool_spend:
+      transaction:
+        request_id: req-naive
+        start_time_iso: "2026-01-02T00:30:00"
+        mcp_namespaced_tool_name: search
+        spend: 0.0
+        total_tokens: 0
+        completion_response: null
+        realtime_tool_calls: null
+env: {}
+compare: {ignore: []}

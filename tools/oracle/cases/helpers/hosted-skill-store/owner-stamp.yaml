@@ -1,0 +1,38 @@
+kind: helper
+name: hosted-skill-store-owner-stamp
+call:
+  hosted_skill_store:
+    now: "2026-02-03T04:05:06"
+    uuid: "00000000-0000-4000-8000-000000000001"
+    steps:
+      - action: create
+        principal: {user_id: alice}
+        data:
+          display_title: Alpha
+          instructions: use it first
+          metadata: {tier: 2, note: shared}
+          file_content: emlw
+          file_name: skill.zip
+          file_type: application/zip
+      - action: create
+        principal: {team_id: team-1}
+        data: {display_title: Team}
+      - action: create
+        principal: {org_id: org-1}
+        data: {display_title: Org}
+      - action: create
+        principal: {api_key: key-1}
+        data: {display_title: Key}
+      - action: create
+        principal: {token: tok-1}
+        data: {display_title: Token}
+      - action: create
+        user_id: bob
+        data: {display_title: Fallback}
+      - action: create
+        data: {display_title: Nobody}
+      - action: create
+        principal: {user_id: ""}
+        data: {display_title: Empty}
+env: {}
+compare: {ignore: []}

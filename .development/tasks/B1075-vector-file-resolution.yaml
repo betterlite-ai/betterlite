@@ -106,9 +106,9 @@ oracle_cases:
 - tools/oracle/cases/helpers/vector-file-resolution/provider-and-index-permissions.yaml
 deviations:
 - what: >-
-    Keep MIT managed-file behavior pending Max's decision: require_managed_files=false permits raw and decoded
+    Keep open-source LiteLLM's managed-file behavior: require_managed_files=false permits raw and decoded
     ids; true rejects raw ids with 400 and managed ids without an ownership hook with 500 as specified above.
-  why: No enterprise managed_files hook is built while the managed-files/batches policy remains open.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1062-L1118
 out_of_scope:
 - B1081 owns create/update/delete handlers and B1076 list/retrieve/content in this file; those tasks supply every actual route/auth HTTP case.
