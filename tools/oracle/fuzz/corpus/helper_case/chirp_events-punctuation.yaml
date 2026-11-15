@@ -1,0 +1,12 @@
+kind: helper
+name: chirp-events-punctuation-seed
+call:
+  chirp_events:
+    function: punctuation
+    pairs:
+      - previous: Hello there
+        current: hello there world
+      - previous: one
+        current: ""
+env: {}
+compare: {ignore: []}

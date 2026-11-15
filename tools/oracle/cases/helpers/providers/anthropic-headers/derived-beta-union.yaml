@@ -1,0 +1,85 @@
+kind: helper
+name: derived-beta-union
+call:
+  anthropic_headers:
+    environment: {}
+    calls:
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: [file_id]
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: [mcp_server]
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: [tool_search, programmatic_tool_calling, input_examples]
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: [effort]
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: [code_execution]
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: [skills]
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: [file_id, mcp_server, tool_search, effort, code_execution, skills]
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+env: {}
+compare: {ignore: []}

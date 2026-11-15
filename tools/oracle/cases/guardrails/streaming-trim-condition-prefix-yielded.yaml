@@ -1,0 +1,34 @@
+kind: helper
+name: streaming-trim-condition-prefix-yielded
+call:
+  b3700:
+    patterns:
+      - {pattern_type: regex, pattern_name: null, pattern: "[0-9]{100,}", name: run, action: MASK}
+    blocked_words: []
+    categories: []
+    guardrail_id: null
+    policy_template: null
+    pattern_redaction_format: null
+    keyword_redaction_tag: null
+    close_after: null
+    items:
+      - id: chatcmpl-stream
+        created: 1700000000
+        model: gpt-test
+        object: chat.completion.chunk
+        choices:
+          - index: 0
+            delta:
+              content: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+            finish_reason: null
+      - id: chatcmpl-stream
+        created: 1700000000
+        model: gpt-test
+        object: chat.completion.chunk
+        choices:
+          - index: 0
+            delta:
+              content: " end"
+            finish_reason: "stop"
+env: {}
+compare: {ignore: []}

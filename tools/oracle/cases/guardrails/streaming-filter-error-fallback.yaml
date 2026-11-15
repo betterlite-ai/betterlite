@@ -1,0 +1,25 @@
+kind: helper
+name: streaming-filter-error-fallback
+call:
+  b3700:
+    patterns:
+      - {pattern_type: regex, pattern_name: null, pattern: "secret", name: peek, action: MASK}
+    blocked_words: []
+    categories: []
+    guardrail_id: null
+    policy_template: null
+    pattern_redaction_format: "[{missing}_REDACTED]"
+    keyword_redaction_tag: null
+    close_after: null
+    items:
+      - id: chatcmpl-stream
+        created: 1700000000
+        model: gpt-test
+        object: chat.completion.chunk
+        choices:
+          - index: 0
+            delta:
+              content: "alpha secret"
+            finish_reason: "stop"
+env: {}
+compare: {ignore: []}
