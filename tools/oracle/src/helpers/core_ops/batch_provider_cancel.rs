@@ -16,7 +16,7 @@ use thiserror::Error;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Input {
+pub(crate) struct CaseInput {
     input: BatchProviderCancelInput,
     // the case scripts no litellm_settings globals when it names none
     settings: Option<SettingsScript>,
@@ -128,10 +128,11 @@ impl BatchCancelDispatch for Scripted {
 fn helper_error(
     error: &BatchProviderCancelError<ScriptFailure>,
 ) -> Box<crate::helpers::HelperError> {
-    let (class, status) = match error.error_fields() {
-        Some(fields) => ("BadRequestError", Some(fields.status)),
-        None => ("ProviderError", None),
-    };
+    let (class, status) = error
+        .error_fields()
+        .map_or(("ProviderError", None), |fields| {
+            ("BadRequestError", Some(fields.status))
+        });
     Box::new(crate::helpers::HelperError {
         class: class.to_owned(),
         status,
@@ -145,7 +146,7 @@ fn helper_error(
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = Input;
+    type Input = CaseInput;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let now = input.now;
@@ -175,9 +176,9 @@ impl crate::helpers::Helper for Op {
             })?;
         let result = runtime.block_on(service.run(&input.input));
         match result {
-            Ok(result) => Ok(json!({
-                "batch": result.batch,
-                "model": result.model,
+            Ok(answer) => Ok(json!({
+                "batch": answer.batch,
+                "model": answer.model,
                 "calls": [],
             })),
             Err(error) => Err(helper_error(&error)),
