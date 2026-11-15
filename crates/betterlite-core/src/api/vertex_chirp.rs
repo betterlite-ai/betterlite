@@ -2,6 +2,7 @@ pub mod config;
 pub mod decode;
 pub mod error;
 pub mod factory;
+pub mod ids;
 mod location;
 pub mod target;
 mod tests;

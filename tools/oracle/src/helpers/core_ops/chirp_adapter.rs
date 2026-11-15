@@ -11,6 +11,7 @@ use betterlite_core::api::realtime_contracts::transport::{RealtimeBackend, Realt
 use betterlite_core::api::vertex_chirp::config::{ChirpSettings, VertexChirpRealtimeConfig};
 use betterlite_core::api::vertex_chirp::error::ChirpAdapterError;
 use betterlite_core::api::vertex_chirp::factory::ChirpBackendFactory;
+use betterlite_core::api::vertex_chirp::ids::UuidChirpIds;
 use betterlite_core::api::vertex_chirp::target::{
     AccessTokenError, AccessTokenFuture, AccessTokenResolver, SpeechStreamingTarget,
 };
@@ -85,6 +86,7 @@ fn adapter(project: &str, location: Option<&str>) -> Result<ChirpConfig, ChirpAd
             location: location.map(str::to_owned),
             catalog: BundledCatalog::default().get(),
             limits: ApiLimits::default(),
+            ids: Box::new(UuidChirpIds::default()),
         },
         Arc::new(UnusedToken),
         UnusedFactory,

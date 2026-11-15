@@ -27,12 +27,35 @@ use super::config::{ChirpSettings, VertexChirpRealtimeConfig};
 use super::decode::decode_chirp_backend_event;
 use super::error::ChirpAdapterError;
 use super::factory::ChirpBackendFactory;
+use super::ids::ChirpIds;
 use super::target::{AccessTokenFuture, AccessTokenResolver, SpeechStreamingTarget};
 
 const SESSION_UPDATE: &str = r#"{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":16000},"transcription":{"model":"chirp_2","language":"en-US"}}}}}"#;
 const CONFIGURE_COMMAND: &str = r#"{"kind":"configure","model":"chirp_2","language_codes":["en-US"],"sample_rate_hertz":16000}"#;
 const INTERIM: &str = r#"{"kind":"response","speech_event":"none","results":[{"transcript":"hello","is_final":false}],"billed_seconds":0.5}"#;
 const CONFIGURED: &str = r#"{"kind":"configured"}"#;
+
+#[derive(Default)]
+struct FixedIds {
+    events: usize,
+    items: usize,
+}
+
+impl ChirpIds for FixedIds {
+    fn event_id(&mut self) -> String {
+        self.events += 1;
+        format!("event_fixed_{}", self.events)
+    }
+
+    fn item_id(&mut self) -> String {
+        self.items += 1;
+        format!("item_fixed_{}", self.items)
+    }
+
+    fn session_id(&mut self) -> String {
+        "sess_fixed".to_owned()
+    }
+}
 
 struct CountingResolver {
     calls: AtomicUsize,
@@ -117,6 +140,7 @@ fn fixture(location: Option<&str>) -> Fixture {
             location: location.map(str::to_owned),
             catalog: BundledCatalog::default().get(),
             limits: ApiLimits::default(),
+            ids: Box::new(FixedIds::default()),
         },
         Arc::clone(&resolver),
         factory,
@@ -257,6 +281,7 @@ fn a_project_that_could_move_the_request_is_rejected(#[case] project: &str, #[ca
             location: None,
             catalog: BundledCatalog::default().get(),
             limits: ApiLimits::default(),
+            ids: Box::new(FixedIds::default()),
         },
         CountingResolver::tracking(),
         RecordingFactory::default(),
@@ -280,6 +305,7 @@ fn a_location_that_could_move_the_host_is_rejected(#[case] location: &str) {
             location: Some(location.to_owned()),
             catalog: BundledCatalog::default().get(),
             limits: ApiLimits::default(),
+            ids: Box::new(FixedIds::default()),
         },
         CountingResolver::tracking(),
         RecordingFactory::default(),
@@ -547,6 +573,7 @@ fn session_created_uses_the_logging_id_and_default_config() {
     let document = serde_json::to_value(&event).expect("a session document");
     assert_eq!(document["type"], "session.created");
     assert_eq!(document["session"]["id"], "sess_log");
+    assert_eq!(document["event_id"], "event_fixed_1");
     assert_eq!(
         document["session"]["object"],
         "realtime.transcription_session"
@@ -590,16 +617,8 @@ fn configuration_without_a_prior_session_creates_a_sess_id() {
         )
         .unwrap();
     let document = serde_json::to_value(&result.response).expect("a response document");
-    let session_id = document[0]["session"]["id"].as_str().expect("a session id");
-    assert_eq!(session_id.len(), 37);
-    let suffix = session_id
-        .strip_prefix("sess_")
-        .expect("the session prefix");
-    assert!(
-        suffix
-            .chars()
-            .all(|character| character.is_ascii_hexdigit())
-    );
+    assert_eq!(document[0]["session"]["id"], "sess_fixed");
+    assert_eq!(document[0]["event_id"], "event_fixed_1");
 }
 
 #[test]
@@ -639,6 +658,32 @@ fn response_transforms_preserve_the_input_state() {
     assert_eq!(result, expected);
     let document = serde_json::to_value(&result.response).expect("a response document");
     assert_eq!(document[0]["type"], "session.created");
+}
+
+#[test]
+fn response_events_take_their_item_ids_from_the_injected_source() {
+    let fixture = fixture(None);
+    fixture
+        .config
+        .transform_realtime_request(SESSION_UPDATE, "chirp_2", None)
+        .unwrap();
+    let result = fixture
+        .config
+        .transform_realtime_response(
+            &RealtimeMessage::Text(INTERIM.to_owned()),
+            "chirp_2",
+            &transform_input(),
+        )
+        .unwrap();
+    let document = serde_json::to_value(&result.response).expect("a response document");
+    assert!(
+        document
+            .as_array()
+            .expect("an event list")
+            .iter()
+            .any(|event| event["item_id"] == "item_fixed_1"),
+        "{document}"
+    );
 }
 
 #[test]

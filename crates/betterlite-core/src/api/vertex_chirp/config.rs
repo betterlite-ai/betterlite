@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
-use uuid::Uuid;
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
@@ -14,13 +13,12 @@ use crate::api::realtime_contracts::events::{
 use crate::api::realtime_contracts::transport::RealtimeMessage;
 use crate::api::transcription_protocol::audio::decode_pcm16_append;
 use crate::api::transcription_protocol::events::{
-    EventIdSource,
-    UuidEventIds,
+    EventIdSource as _,
     // ast-grep-ignore: no-long-names
     transcription_session_created_event as created_event,
 };
 use crate::api::transcription_protocol::{JsonObject, json_object};
-use crate::api::vertex_chirp_protocol::transformer::{ChirpEventTransformer, UuidItemIds};
+use crate::api::vertex_chirp_protocol::transformer::ChirpEventTransformer;
 use crate::api::vertex_chirp_protocol::{
     ChirpSessionConfig, DISCARD_TURN_COMMAND, FINISH_TURN_COMMAND, MAX_AUDIO_MESSAGE_BYTES,
     default_session_config, is_vertex_speech_to_text_model, parse_chirp_session_update,
@@ -29,12 +27,12 @@ use crate::api::vertex_chirp_protocol::{
 use super::decode::decode_chirp_backend_event;
 use super::error::ChirpAdapterError;
 use super::factory::ChirpBackendFactory;
+use super::ids::{ChirpIds, SharedIds};
 use super::location::{validate_location, validate_project};
 use super::target::{AccessTokenResolver, SpeechStreamingTarget};
 use super::url::{api_endpoint, speech_to_text_host};
 use super::usage::audio_transcription_usage;
 
-const SESSION_ID_PREFIX: &str = "sess_";
 const CONFIGURE_EVENT_TYPES: [&str; 2] = ["session.update", "transcription_session.update"];
 const APPEND_EVENT_TYPE: &str = "input_audio_buffer.append";
 const COMMIT_EVENT_TYPES: [&str; 2] = ["input_audio_buffer.commit", "input_audio_buffer.end"];
@@ -45,6 +43,7 @@ pub struct ChirpSettings {
     pub location: Option<String>,
     pub catalog: Arc<ModelCatalog>,
     pub limits: ApiLimits,
+    pub ids: Box<dyn ChirpIds>,
 }
 
 pub struct VertexChirpRealtimeConfig<Factory> {
@@ -54,11 +53,12 @@ pub struct VertexChirpRealtimeConfig<Factory> {
     limits: ApiLimits,
     token: Arc<dyn AccessTokenResolver>,
     factory: Factory,
+    ids: SharedIds,
     state: Mutex<AdapterState>,
 }
 
 struct AdapterState {
-    transformer: ChirpEventTransformer<UuidEventIds, UuidItemIds>,
+    transformer: ChirpEventTransformer<SharedIds, SharedIds>,
     config: Option<ChirpSessionConfig>,
     session_id: Option<String>,
 }
@@ -69,6 +69,7 @@ impl<Factory> VertexChirpRealtimeConfig<Factory> {
         token: Arc<dyn AccessTokenResolver>,
         factory: Factory,
     ) -> Result<Self, ChirpAdapterError> {
+        let ids = SharedIds(Arc::new(Mutex::new(settings.ids)));
         Ok(Self {
             project: validate_project(&settings.project)?,
             location: validate_location(settings.location.as_deref())?,
@@ -76,8 +77,9 @@ impl<Factory> VertexChirpRealtimeConfig<Factory> {
             limits: settings.limits,
             token,
             factory,
+            ids: ids.clone(),
             state: Mutex::new(AdapterState {
-                transformer: ChirpEventTransformer::new(UuidEventIds, UuidItemIds),
+                transformer: ChirpEventTransformer::new(ids.clone(), ids),
                 config: None,
                 session_id: None,
             }),
@@ -115,7 +117,7 @@ impl<Factory> VertexChirpRealtimeConfig<Factory> {
             let session_id = state
                 .session_id
                 .clone()
-                .unwrap_or_else(|| format!("{SESSION_ID_PREFIX}{}", Uuid::new_v4().simple()));
+                .unwrap_or_else(|| self.ids.session_id());
             state
                 .transformer
                 .configure(session_config.clone(), &session_id);
@@ -249,8 +251,7 @@ where
             state.session_id = Some(logging_session_id.to_owned());
         }
         let session = default_session_config(model).openai_session(logging_session_id);
-        let mut event_ids = UuidEventIds;
-        let event = created_event(event_ids.next_event_id(), &session);
+        let event = created_event(self.ids.clone().next_event_id(), &session);
         serde_json::to_value(&event)
             .and_then(serde_json::from_value::<Json>)
             .ok()
