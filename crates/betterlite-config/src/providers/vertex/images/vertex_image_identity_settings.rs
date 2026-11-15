@@ -64,8 +64,16 @@ impl Sections {
                 application_credentials,
             },
             module: ImageIdentityModule {
-                project: present_setting(self.resource_sdk_settings.vertex_project.as_deref()),
-                location: present_setting(self.resource_sdk_settings.vertex_location.as_deref()),
+                project: self
+                    .resource_sdk_settings
+                    .vertex_project
+                    .clone()
+                    .filter(|text| !text.is_empty()),
+                location: self
+                    .resource_sdk_settings
+                    .vertex_location
+                    .clone()
+                    .filter(|text| !text.is_empty()),
             },
             secrets: ImageIdentitySecrets {
                 project: present("VERTEXAI_PROJECT"),
@@ -75,10 +83,6 @@ impl Sections {
             },
         })
     }
-}
-
-fn present_setting(value: Option<&str>) -> Option<String> {
-    value.filter(|text| !text.is_empty()).map(str::to_owned)
 }
 
 mod tests;
