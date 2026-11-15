@@ -96,7 +96,11 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let rows = measured_rows(&input.rows)?;
+        let rows = input
+            .rows
+            .iter()
+            .map(measured_row)
+            .collect::<Result<Vec<_>, _>>()?;
         let output = Output {
             transaction: transaction_output(input.transaction.as_ref())?,
             sizes: rows.iter().map(spend_log_row_bytes).collect(),
@@ -156,10 +160,6 @@ fn transaction_output(
     }))
 }
 
-fn measured_rows(rows: &[RowInput]) -> Result<Vec<MeasuredRow>, Box<crate::helpers::HelperError>> {
-    rows.iter().map(measured_row).collect()
-}
-
 fn measured_row(row: &RowInput) -> Result<MeasuredRow, Box<crate::helpers::HelperError>> {
     if row.refused {
         return Ok(MeasuredRow::Refused(Refused {
@@ -169,11 +169,11 @@ fn measured_row(row: &RowInput) -> Result<MeasuredRow, Box<crate::helpers::Helpe
     let ToolSpendTime { start_time, .. } = decode_tool_spend_time(&row.start_time)
         .ok_or("the row start time is not an ISO datetime")
         .or_value_error()?;
-    Ok(MeasuredRow::Row(ToolIndexRow {
-        request_id: row.request_id.clone(),
-        tool_name: row.tool_name.clone(),
+    Ok(MeasuredRow::Row(ToolIndexRow::new(
+        row.request_id.clone(),
+        row.tool_name.clone(),
         start_time,
-    }))
+    )))
 }
 
 fn batch_indices(rows: &[MeasuredRow], limits: StatementLimits) -> Vec<Vec<usize>> {

@@ -238,22 +238,27 @@ fn daily_totals_add_money_exactly() {
 
 #[test]
 fn a_tool_index_row_speaks_pythons_timestamp() {
-    let whole_second = ToolIndexRow {
-        request_id: String::from("req-1"),
-        tool_name: String::from("search"),
-        start_time: DateTime::from_timestamp(REQUEST_TIME, 0).expect("a test instant"),
-    };
+    let whole_second = ToolIndexRow::new(
+        String::from("req-1"),
+        String::from("search"),
+        DateTime::from_timestamp(REQUEST_TIME, 0).expect("a test instant"),
+    );
     assert_eq!(
         serde_json::to_string(&whole_second).expect("the row serializes"),
         r#"{"request_id":"req-1","tool_name":"search","start_time":"2026-01-02 03:04:05+00:00"}"#
     );
-    let fractional = ToolIndexRow {
-        start_time: DateTime::from_timestamp(REQUEST_TIME, 123_456_000).expect("a test instant"),
-        ..whole_second
-    };
+    let fractional = ToolIndexRow::new(
+        String::from("req-1"),
+        String::from("search"),
+        DateTime::from_timestamp(REQUEST_TIME, 123_456_000).expect("a test instant"),
+    );
     assert_eq!(
         serde_json::to_string(&fractional).expect("the row serializes"),
         r#"{"request_id":"req-1","tool_name":"search","start_time":"2026-01-02 03:04:05.123456+00:00"}"#
+    );
+    assert_eq!(
+        fractional.instant,
+        DateTime::from_timestamp(REQUEST_TIME, 123_456_000).expect("a test instant")
     );
 }
 

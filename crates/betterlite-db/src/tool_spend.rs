@@ -111,11 +111,11 @@ fn build_index_rows(transactions: &[ToolUsageTransaction]) -> Vec<ToolIndexRow> 
     let mut rows = Vec::new();
     for transaction in transactions {
         for tool_name in &transaction.tool_names {
-            rows.push(ToolIndexRow {
-                request_id: transaction.request_id.clone(),
-                tool_name: tool_name.clone(),
-                start_time: transaction.start_time,
-            });
+            rows.push(ToolIndexRow::new(
+                transaction.request_id.clone(),
+                tool_name.clone(),
+                transaction.start_time,
+            ));
         }
     }
     rows

@@ -1,25 +1,29 @@
 use chrono::{DateTime, Utc};
-use serde::Serializer;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ToolIndexRow {
     pub request_id: String,
     pub tool_name: String,
-    #[serde(serialize_with = "python_timestamp")]
-    pub start_time: DateTime<Utc>,
+    pub start_time: String,
+    #[serde(skip)]
+    pub instant: DateTime<Utc>,
+}
+
+impl ToolIndexRow {
+    pub fn new(request_id: String, tool_name: String, instant: DateTime<Utc>) -> Self {
+        Self {
+            request_id,
+            tool_name,
+            start_time: datetime_text(instant),
+            instant,
+        }
+    }
 }
 
 // json.dumps(row, default=str) writes str(datetime): a space separator, six digits of microseconds, the offset
-pub fn python_timestamp<S>(start_time: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let seconds = start_time.naive_utc().format("%Y-%m-%d %H:%M:%S");
-    let micros = start_time.timestamp_subsec_micros();
-    let text = if micros == 0 {
-        format!("{seconds}+00:00")
-    } else {
-        format!("{seconds}.{micros:06}+00:00")
-    };
-    serializer.serialize_str(&text)
+fn datetime_text(instant: DateTime<Utc>) -> String {
+    if instant.timestamp_subsec_micros() == 0 {
+        return instant.format("%Y-%m-%d %H:%M:%S+00:00").to_string();
+    }
+    instant.format("%Y-%m-%d %H:%M:%S%.6f+00:00").to_string()
 }

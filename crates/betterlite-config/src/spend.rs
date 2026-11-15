@@ -50,8 +50,11 @@ where
 pub fn decode_spend_statement_limits(
     bytes: &[u8],
 ) -> Result<StatementLimits, SpendStatementLimitsError> {
-    let input: LimitsInput = serde_json::from_slice(bytes)?;
-    Ok(statement_limits(&input.environment)?)
+    serde_json::from_slice::<LimitsInput>(bytes)
+        .map_err(SpendStatementLimitsError::Json)
+        .and_then(|input| {
+            statement_limits(&input.environment).map_err(SpendStatementLimitsError::Config)
+        })
 }
 
 fn limit(name: &str, text: Option<&str>, default: i64) -> Result<usize, ConfigError> {

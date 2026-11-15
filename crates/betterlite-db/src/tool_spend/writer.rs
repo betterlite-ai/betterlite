@@ -63,7 +63,7 @@ impl ToolSpendWriter for PostgresToolSpendWriter {
                 .await
                 .map_err(ToolSpendWriteError::Connect)?;
             let times: Vec<NaiveDateTime> =
-                rows.iter().map(|row| row.start_time.naive_utc()).collect();
+                rows.iter().map(|row| row.instant.naive_utc()).collect();
             let mut params: Vec<&(dyn ToSql + Sync)> =
                 Vec::with_capacity(rows.len().saturating_mul(3));
             for (row, time) in rows.iter().zip(&times) {
