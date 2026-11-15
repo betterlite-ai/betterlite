@@ -1,20 +1,27 @@
 #![cfg(test)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::{Map, Value, json};
 use tempfile::NamedTempFile;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::time::timeout;
 use tracing::Level;
 use tracing::subscriber::with_default;
 
 use super::catalog::{CompletionCatalog, CompletionRoute, route_for};
 use super::failure::wrapped_failure;
+use super::http::HttpCompletionConstructor;
 use super::log::TracingCompletionLog;
 use super::transport_request;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
@@ -22,6 +29,9 @@ use crate::text_completion_request::CompletionRequest;
 use crate::text_completion_transport::error::{ErrorSource, ErrorStatus, TextCompletionError};
 use crate::text_completion_transport::logging::{
     CompletionLogger, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
+};
+use crate::text_completion_transport::sdk::{
+    ClientConstructor as _, ClientKind, HttpClientSource, SdkArguments, TextCompletionSdk as _,
 };
 
 fn deployment(model: &str) -> ChatDeployment {
@@ -58,6 +68,13 @@ fn catalog() -> CompletionCatalog {
 fn completion(prompt: &str) -> CompletionRequest {
     let body = format!(r#"{{"model":"gpt-3.5-turbo-instruct","prompt":{prompt}}}"#);
     CompletionRequest::parse(body.as_bytes()).expect("completion request")
+}
+
+// a deployment that inherited litellm_settings.organization or OPENAI_ORGANIZATION
+fn deployment_with_organization(model: &str) -> ChatDeployment {
+    let mut deployment = deployment(model);
+    deployment.organization = Some(String::from("org-1"));
+    deployment
 }
 
 // a provider whose identity resolution refused it, the way a text-completion or azure prefix resolves today
@@ -167,6 +184,13 @@ fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
                     model: String::from("gpt-3.5-turbo-instruct")
                 }
             );
+            // an unprefixed name still needs the text catalog, so a completion model newer than the bundle refuses
+            assert_eq!(
+                route_for(&unsupported("some-new-model"), &catalog()),
+                CompletionRoute::Unsupported {
+                    provider: String::from("some-new-model")
+                }
+            );
         }
         Scenario::BundledCatalog => {
             let bundled = CompletionCatalog::bundled();
@@ -225,6 +249,24 @@ fn an_unmapped_prompt_fails_before_any_provider_call() {
 }
 
 #[test]
+fn the_completion_call_takes_the_body_timeout_and_never_the_configured_organization() {
+    let deployment = deployment_with_organization("openai/gpt-3.5-turbo-instruct");
+    let request = completion(r#""hi""#);
+    let built = transport_request(&deployment, &request, "gpt-3.5-turbo-instruct")
+        .expect("transport request");
+    assert!(built.organization.is_none());
+    assert!((built.timeout - deployment.timeout_seconds).abs() < f64::EPSILON);
+
+    let timed = CompletionRequest::parse(
+        br#"{"model":"gpt-3.5-turbo-instruct","prompt":"hi","timeout":2.5}"#,
+    )
+    .expect("completion request");
+    let built = transport_request(&deployment, &timed, "gpt-3.5-turbo-instruct")
+        .expect("transport request");
+    assert!((built.timeout - 2.5).abs() < f64::EPSILON);
+}
+
+#[test]
 fn the_route_logger_records_counts_and_never_the_prompt() {
     let log = NamedTempFile::new().expect("log file");
     let subscriber = tracing_subscriber::fmt()
@@ -263,4 +305,76 @@ fn the_route_logger_records_counts_and_never_the_prompt() {
     assert!(!defaults.merge_reasoning_in_choices);
     assert!(!defaults.is_function_call);
     assert!(defaults.base_hidden_params.is_empty());
+}
+
+// the request head the completion client sent, read byte by byte so no header line is cut short
+async fn read_completion_head(stream: &mut TcpStream) -> String {
+    let mut received = Vec::new();
+    while !received.ends_with(b"\r\n\r\n") {
+        let Ok(byte) = stream.read_u8().await else {
+            break;
+        };
+        received.push(byte);
+    }
+    String::from_utf8(received).unwrap_or_default()
+}
+
+// a provider that takes the whole request before it answers, so a buffered client never sees a reset while writing
+async fn serve_text_completion(listener: TcpListener) -> String {
+    let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(5), listener.accept()).await else {
+        return String::new();
+    };
+    let head = read_completion_head(&mut stream).await;
+    let length = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or_default();
+    let mut body = vec![0_u8; length];
+    let _filled = stream.read_exact(&mut body).await;
+    let answer = "{}";
+    let response = format!(
+        "HTTP/1.1 200 X\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
+        answer.len()
+    );
+    let _written = stream.write_all(response.as_bytes()).await;
+    head
+}
+
+#[tokio::test]
+async fn the_http_sdk_sends_the_credential_and_never_an_organization() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy");
+    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
+    let arguments = SdkArguments {
+        api_key: None,
+        base_url: Some(format!("http://{address}/v1")),
+        timeout: 5.0,
+        max_retries: None,
+        organization: None,
+        http_client: HttpClientSource::AsyncHttpClient,
+    };
+    let constructor = HttpCompletionConstructor {
+        client,
+        authorization: Some(SecretString::from("sk-deployment")),
+        facts: Arc::new(Mutex::new(None)),
+    };
+    let sdk = constructor
+        .construct(&arguments, ClientKind::Async)
+        .expect("sdk")
+        .expect("a credential builds the sdk");
+    assert_eq!(sdk.kind(), ClientKind::Async);
+    let mut data = Map::new();
+    data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
+    data.insert(String::from("prompt"), Value::from("hi"));
+    let (answer, head) = tokio::join!(sdk.create(&data), serve_text_completion(listener));
+    assert!(answer.is_ok(), "{:?}", answer.err());
+    let sent = head.to_ascii_lowercase();
+    assert!(sent.starts_with("post /v1/completions "), "{head}");
+    assert!(
+        sent.contains("authorization: bearer sk-deployment"),
+        "{head}"
+    );
+    assert!(!sent.contains("openai-organization"), "{head}");
 }

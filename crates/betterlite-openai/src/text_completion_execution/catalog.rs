@@ -55,18 +55,17 @@ pub fn route_for(deployment: &ChatDeployment, catalog: &CompletionCatalog) -> Co
                 }
             }
         }
-        Provider::Unsupported { model } => {
-            let bare = model
-                .strip_prefix("text-completion-openai/")
-                .unwrap_or(model)
-                .to_owned();
-            if catalog.text_models.contains(&bare) {
-                CompletionRoute::Text { model: bare }
-            } else {
-                CompletionRoute::Unsupported {
-                    provider: deployment.litellm_model.clone(),
-                }
-            }
-        }
+        Provider::Unsupported { model } => match model.strip_prefix("text-completion-openai/") {
+            // main.py consults the chat catalog only for a bare openai model, so an explicit prefix always means the text endpoint
+            Some(bare) => CompletionRoute::Text {
+                model: bare.to_owned(),
+            },
+            None if catalog.text_models.contains(model) => CompletionRoute::Text {
+                model: model.clone(),
+            },
+            None => CompletionRoute::Unsupported {
+                provider: deployment.litellm_model.clone(),
+            },
+        },
     }
 }

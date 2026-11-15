@@ -110,8 +110,10 @@ fn transport_request(
         messages: Some(messages),
         api_key: deployment.api_key.clone(),
         api_base: Some(deployment.api_base.clone()),
-        timeout: deployment.timeout_seconds,
-        organization: deployment.organization.clone(),
+        // a body timeout is the completion call's deadline; the deployment's applies only when the body names none
+        timeout: request.timeout.unwrap_or(deployment.timeout_seconds),
+        // main.py's text dispatch leaves the handler's organization at None, so no openai-organization header is sent
+        organization: None,
         optional_params: request.optional_params().map_err(request_failure)?,
         headers: None,
         acompletion: true,
