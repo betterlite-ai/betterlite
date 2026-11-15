@@ -1,8 +1,7 @@
 import os
 
-os.environ["LITELLM_RUST"] = "false"
-import litellm
 from .adapter import run
 
-litellm.suppress_debug_info = True
+# LiteLLM reads LITELLM_RUST per call; false pins the Python fallback the oracle compares against.
+os.environ["LITELLM_RUST"] = "false"
 __all__ = ("run",)

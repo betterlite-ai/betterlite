@@ -29,5 +29,6 @@ HANDLERS: Final[dict[str, Callable[[Probe], Json]]] = {
 
 def run(input_value: Input) -> Json:
     return [
-        HANDLERS[input_value["function"]](PROBE.validate_python(probe)) for probe in input_value["probes"]
+        HANDLERS[input_value["function"]](PROBE.validate_python(probe))
+        for probe in input_value["probes"]
     ]

@@ -1,27 +1,50 @@
-import email.policy
-from email.message import EmailMessage
-from email.parser import BytesParser
-from typing import Final
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Final, Protocol, TypeAlias
 
 import httpx
 import litellm
 import openai
+from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.base_llm.image_variations.transformation import BaseImageVariationConfig
 from litellm.llms.openai.common_utils import OpenAIError
 from litellm.llms.openai.image_variations.handler import OpenAIImageVariationsHandler
-from litellm.llms.openai.image_variations.transformation import OpenAIImageVariationConfig
 from litellm.types.utils import ImageResponse, LlmProviders
 from litellm.utils import ProviderConfigManager
-from pydantic import JsonValue as Json
+from pydantic import BaseModel, JsonValue as Json
 
-from .probe import DOCUMENT, NOW, Probe, file_object
-from .transform import empty_answer, supported_value
+from .config import variation_config
+from .probe import DOCUMENT, NOW, Probe, file_object, text_of
+from .transform import empty_answer
 
 litellm.suppress_debug_info = True
+
+# LiteLLM's class carries Any in its constructor, so the catch names it through a typed alias
+PROVIDER_ERROR: Final[type[Exception]] = OpenAIError
+
+ImageVariations: TypeAlias = Callable[..., ImageResponse]
+
+
+class Handler(Protocol):
+    @property
+    def image_variations(self) -> ImageVariations: ...
+
+
+class Manager(Protocol):
+    get_provider_image_variation_config: Callable[
+        [str, LlmProviders], BaseImageVariationConfig | None
+    ]  # ast-grep-ignore
+
+
+HANDLER: Handler = OpenAIImageVariationsHandler()
+MANAGER: Manager = ProviderConfigManager
 REAL_CONFIG: Final = ProviderConfigManager.get_provider_image_variation_config
 
 
-def absent_config(model: str, provider: LlmProviders) -> OpenAIImageVariationConfig | None:
-    return None
+class ErrorRecord(BaseModel):
+    status_code: int
+    message: str
+    headers: dict[str, str] | None = None
 
 
 class Upstream:
@@ -44,12 +67,10 @@ class Upstream:
                 )
 
 
-class Recorder:
-    def pre_call(self, **kwargs: Json) -> None:
-        pass
-
-    def post_call(self, **kwargs: Json) -> None:
-        pass
+def absent_config(model: str, provider: LlmProviders) -> BaseImageVariationConfig | None:
+    if provider is LlmProviders.OPENAI:
+        return None
+    return REAL_CONFIG(model=model, provider=provider)
 
 
 def supplied_client(probe: Probe, transport: httpx.MockTransport) -> openai.OpenAI | None:
@@ -65,94 +86,158 @@ def supplied_client(probe: Probe, transport: httpx.MockTransport) -> openai.Open
     )
 
 
-def part_view(part: EmailMessage) -> Json:
-    match part.get_payload(decode=True):
-        case bytes() as payload:
-            data = payload.decode("utf-8")
-        case None | str():
-            raise TypeError("a multipart part carries bytes")
+def logging_object() -> Logging:
+    return Logging(
+        model="image-variation",
+        messages=None,
+        stream=False,
+        call_type="image_generation",
+        start_time=datetime(2023, 11, 14, tzinfo=UTC),
+        litellm_call_id="call-1",
+        function_id="fn-1",
+    )
+
+
+def timeout_of(probe: Probe) -> float | None:
+    if probe.timeout is None:
+        return None
+    return float(probe.timeout)
+
+
+def header_value(headers: httpx.Headers, name: str) -> str | None:
+    values = headers.get_list(name)
+    if not values:
+        return None
+    return values[0]
+
+
+def multipart_param(header: str, name: str) -> str | None:
+    for piece in header.split(";"):
+        key, _, value = piece.strip().partition("=")
+        if key.lower() == name:
+            return value.strip('"')
+    return None
+
+
+def boundary_of(content_type: str) -> str:
+    boundary = multipart_param(content_type, "boundary")
+    if boundary is None:
+        raise ValueError("a multipart request names its boundary")
+    return boundary
+
+
+def part_of(chunk: bytes) -> dict[str, Json]:
+    head, _, body = chunk.partition(b"\r\n\r\n")
+    fields: dict[str, str] = {}
+    for line in head.split(b"\r\n"):
+        name, _, value = line.decode("utf-8").partition(":")
+        fields[name.strip().lower()] = value.strip()
+    disposition = fields.get("content-disposition")
+    if disposition is None:
+        raise ValueError("a multipart part names its disposition")
     return {
-        "name": part.get_param("name", header="content-disposition"),
-        "filename": part.get_filename(),
-        "content_type": part.get("content-type"),
-        "data": data,
+        "name": multipart_param(disposition, "name"),
+        "filename": multipart_param(disposition, "filename"),
+        "content_type": fields.get("content-type"),
+        "data": body.removesuffix(b"\r\n").decode("utf-8"),
     }
 
 
 def parts_view(request: httpx.Request) -> list[Json]:
-    content_type = request.headers.get("content-type")
+    content_type = header_value(request.headers, "content-type")
     if content_type is None:
         raise ValueError("a multipart request carries a content type")
-    raw = b"Content-Type: " + content_type.encode() + b"\r\nMIME-Version: 1.0\r\n\r\n" + request.read()
-    message = BytesParser(policy=email.policy.default).parsebytes(raw)
-    return [part_view(part) for part in message.iter_parts()]
+    delimiter = b"--" + boundary_of(content_type).encode()
+    parts: list[Json] = []
+    for chunk in request.read().split(delimiter)[1:]:
+        if chunk.startswith(b"--"):
+            break
+        parts.append(part_of(chunk.removeprefix(b"\r\n")))
+    return parts
 
 
-def invoke(probe: Probe, client: openai.OpenAI | None, recorder: Recorder) -> ImageResponse:
-    return OpenAIImageVariationsHandler().image_variations(
-        model_response=ImageResponse(created=NOW),
-        api_key=probe.api_key or "",
-        api_base=probe.api_base or "",
-        model=probe.model,
-        image=file_object(probe),
-        timeout=float(probe.timeout) if probe.timeout is not None else None,
-        custom_llm_provider="openai",
-        logging_obj=recorder,
-        optional_params=dict(probe.optional_params),
-        litellm_params={},
-        client=client,
-        organization=probe.organization,
-        headers=None,
-    )
+def calls_view(seen: list[httpx.Request]) -> list[Json]:
+    calls: list[Json] = []
+    for request in seen:
+        call: dict[str, Json] = {
+            "url": str(request.url),
+            "authorization": header_value(request.headers, "authorization"),
+            "organization": header_value(request.headers, "openai-organization"),
+            "parts": parts_view(request),
+        }
+        calls.append(call)
+    return calls
+
+
+def matched_headers(headers: dict[str, str] | None, replied: dict[str, str]) -> Json:
+    found: dict[str, Json] = {}
+    if headers is None:
+        return found
+    wanted = {name.lower() for name in replied}
+    for name, value in headers.items():
+        if name.lower() in wanted:
+            found[name.lower()] = value
+    return found
+
+
+def diagnostic_of(message: str) -> Json:
+    if "provider not found" in message:
+        return "provider"
+    if "data field is required" in message:
+        return "data"
+    return None
 
 
 def request_value(probe: Probe) -> Json:
+    model = text_of(probe.model)
+    config = variation_config(model)
+    names: list[Json] = list(config.get_supported_openai_params(model))
+    answer = empty_answer(names)
     upstream = Upstream(probe)
     transport = httpx.MockTransport(upstream.handle)
-    recorder = Recorder()
-    client = supplied_client(probe, transport)
-    previous = litellm.client_session
-    if client is None:
+    supplied = supplied_client(probe, transport)
+    previous_session = litellm.client_session
+    if supplied is None:
         litellm.client_session = httpx.Client(transport=transport)
     if probe.missing_config:
-        ProviderConfigManager.get_provider_image_variation_config = absent_config
+        MANAGER.get_provider_image_variation_config = absent_config
+    optional_params: dict[str, Json] = dict(probe.optional_params)
+    litellm_params: dict[str, Json] = {}
     error: Json = None
     result: Json = None
     try:
-        response = invoke(probe, client, recorder)
-    except OpenAIError as failure:
-        supplied = {name.lower() for name in probe.reply.headers}
-        found: dict[str, Json] = {}
-        if failure.headers is not None:
-            for name, value in failure.headers.items():
-                if name.lower() in supplied:
-                    found[name.lower()] = value
-        diagnostic: Json = None
-        match failure.message:
-            case message if "provider not found" in message:
-                diagnostic = "provider"
-            case message if "data field is required" in message:
-                diagnostic = "data"
-            case _:
-                diagnostic = None
-        error = {"mapped": True, "status": failure.status_code, "headers": found, "diagnostic": diagnostic}
+        response = HANDLER.image_variations(
+            model_response=ImageResponse(created=NOW),
+            api_key=text_of(probe.api_key),
+            api_base=text_of(probe.api_base),
+            model=probe.model,
+            image=file_object(probe),
+            timeout=timeout_of(probe),
+            custom_llm_provider="openai",
+            logging_obj=logging_object(),
+            optional_params=optional_params,
+            litellm_params=litellm_params,
+            client=supplied,
+            organization=probe.organization,
+            headers=None,
+        )
+    except PROVIDER_ERROR as failure:
+        record = ErrorRecord.model_validate(failure, from_attributes=True)
+        failure_view: dict[str, Json] = {
+            "mapped": True,
+            "status": record.status_code,
+            "headers": matched_headers(record.headers, probe.reply.headers),
+            "diagnostic": diagnostic_of(record.message),
+        }
+        error = failure_view
     else:
-        result = DOCUMENT.validate_python(response.model_dump())
+        result = DOCUMENT.validate_json(response.model_dump_json())
     finally:
-        litellm.client_session = previous
-        ProviderConfigManager.get_provider_image_variation_config = REAL_CONFIG
-    answer = empty_answer(supported_value(OpenAIImageVariationConfig(), probe.model or ""))
+        litellm.client_session = previous_session
+        MANAGER.get_provider_image_variation_config = REAL_CONFIG
     answer["supplied"] = probe.client is not None
     answer["kind"] = "sync"
-    answer["calls"] = [
-        {
-            "url": str(request.url),
-            "authorization": request.headers.get("authorization"),
-            "organization": request.headers.get("openai-organization"),
-            "parts": parts_view(request),
-        }
-        for request in upstream.seen
-    ]
+    answer["calls"] = calls_view(upstream.seen)
     answer["result"] = result
     answer["error"] = error
     return answer
