@@ -565,3 +565,10 @@ path = "fuzz_targets/modelscope_image_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "perplexity_chat_reply"
+path = "fuzz_targets/perplexity_chat_reply.rs"
+test = false
+doc = false
+bench = false

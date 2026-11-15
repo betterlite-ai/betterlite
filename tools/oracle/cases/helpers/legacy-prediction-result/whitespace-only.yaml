@@ -1,0 +1,8 @@
+kind: helper
+name: legacy-prediction-result-whitespace-only
+call:
+  legacy_prediction_result:
+    text: " \n\t\r\v\f "
+    steps: [sync, async, sync, async]
+env: {}
+compare: {ignore: []}

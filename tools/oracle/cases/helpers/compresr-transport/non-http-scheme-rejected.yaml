@@ -1,0 +1,6 @@
+kind: helper
+name: non-http-scheme-rejected
+call:
+  compresr_transport: {"function": "validate_api_base", "settings": {"api_base": "ftp://compresr.test", "model": "latte_v2", "target_compression_ratio": 0.5, "coarse": false, "dynamic": false, "dynamic_min_ratio": null, "dynamic_max_ratio": null, "compression_params": {}, "timeout": null, "fallback": "fail_closed"}}
+env: {}
+compare: {ignore: []}
