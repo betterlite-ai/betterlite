@@ -6,8 +6,6 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::tls::VerifySetting;
 
-pub const DEFAULT_API_BASE: &str = "https://api.aisec.catonetworks.com";
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
