@@ -227,6 +227,8 @@ fn owners_map_each_key_to_the_user_that_exists() {
         token(r#"{"token":"k2","user_id":"u2"}"#),
         token(r#"{"token":"k3","user_id":null}"#),
         token(r#"{"token":null,"user_id":"u1"}"#),
+        token(r#"{"token":"","user_id":"u1"}"#),
+        token(r#"{"token":"k4","user_id":""}"#),
     ];
     let users = [user(
         r#"{"user_id":"u1","user_email":"u1@example.com","user_alias":"one"}"#,
