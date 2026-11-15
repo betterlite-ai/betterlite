@@ -282,3 +282,10 @@ path = "fuzz_targets/copilot_chat_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "skill_zip"
+path = "fuzz_targets/skill_zip.rs"
+test = false
+doc = false
+bench = false
