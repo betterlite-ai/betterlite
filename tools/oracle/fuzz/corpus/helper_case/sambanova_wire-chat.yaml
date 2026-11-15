@@ -8,7 +8,6 @@ call:
         function_calling: false
         requested: {max_completion_tokens: 8, top_p: 0.9, logprobs: true}
         existing: {max_tokens: 4}
-    chat_messages: []
     embedding_urls: []
     embedding_headers: []
     embedding_requests: []

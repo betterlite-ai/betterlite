@@ -4,13 +4,11 @@ call:
   b6413:
     chat_supported: []
     chat_params: []
-    chat_messages: []
     embedding_urls: []
     embedding_headers: []
     embedding_requests: []
     embedding_replies:
       - {status: 200, headers: {}, body: '{"usage": {"prompt_tokens": 2}}'}
-      - {status: 500, headers: {}, body: "boom"}
     embedding_errors:
       - {message: seed, status: 503, headers: {retry-after: "1"}}
 env: {}

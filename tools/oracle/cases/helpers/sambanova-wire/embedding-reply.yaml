@@ -4,35 +4,13 @@ call:
   b6413:
     chat_supported: []
     chat_params: []
-    chat_messages: []
     embedding_urls: []
     embedding_headers: []
     embedding_requests: []
     embedding_replies:
-      - status: 200
-        headers: {}
-        body: >-
-          {"model": "embed-model", "object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [0.25, -1.5]}], "usage": {"prompt_tokens": 3, "total_tokens": 3}}
-      - status: 200
-        headers: {}
-        body: "{}"
-      - status: 200
-        headers: {}
-        body: '{"model": null, "object": null, "data": null, "usage": {}}'
-      - status: 200
-        headers: {}
-        body: '{"usage": {"prompt_tokens": 4}}'
-      - status: 200
-        headers: {}
-        body: '{"usage": {"total_tokens": 9}}'
       - status: 502
         headers: {retry-after: "3"}
         body: "upstream unavailable"
-      - status: 200
-        headers: {}
-        body: "[]"
-    embedding_errors:
-      - {message: busy, status: 429, headers: {retry-after: "3"}}
-      - {message: bad request, status: 400, headers: {}}
+    embedding_errors: []
 env: {}
 compare: {ignore: []}

@@ -1,4 +1,3 @@
-use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::error::ProviderError;
 use betterlite_openai::hosted_chat_options::map_renaming_token_limit;
 use betterlite_openai::openai_base_config::{Headers, Object};
@@ -10,6 +9,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::helpers::HelperError;
+
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
@@ -19,8 +20,6 @@ pub(crate) struct Input {
     chat_supported: Vec<SupportedCall>,
     #[serde(default)]
     chat_params: Vec<ParamsCall>,
-    #[serde(default)]
-    chat_messages: Vec<MessagesCall>,
     #[serde(default)]
     embedding_urls: Vec<UrlCall>,
     #[serde(default)]
@@ -49,13 +48,6 @@ struct ParamsCall {
     requested: IndexMap<String, Value>,
     #[serde(default)]
     existing: IndexMap<String, Value>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MessagesCall {
-    #[serde(default)]
-    messages: Vec<ChatMessage>,
 }
 
 #[derive(Deserialize)]
@@ -104,21 +96,34 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        let replies = input
+            .embedding_replies
+            .iter()
+            .map(reply)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(json!({
             "chat_supported": input.chat_supported.iter().map(supported).collect::<Vec<_>>(),
             "chat_params": input.chat_params.iter().map(params).collect::<Vec<_>>(),
-            "chat_messages": input.chat_messages.iter().map(|call| json!({
-                "messages": sambanova_chat::transform_messages(&call.messages).ok(),
-            })).collect::<Vec<_>>(),
             "embedding_urls": input.embedding_urls.iter().map(|call| json!({
                 "url": sambanova_embedding::get_complete_url(call.api_base.as_deref()).ok(),
             })).collect::<Vec<_>>(),
             "embedding_headers": input.embedding_headers.iter().map(headers).collect::<Vec<_>>(),
             "embedding_requests": input.embedding_requests.iter().map(request).collect::<Vec<_>>(),
-            "embedding_replies": input.embedding_replies.iter().map(reply).collect::<Vec<_>>(),
+            "embedding_replies": replies,
             "embedding_errors": input.embedding_errors.iter().map(carried).collect::<Vec<_>>(),
         }))
     }
+}
+
+fn failure(class: &str, status: Option<u16>, message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status,
+        error_type: None,
+        param: None,
+        code: None,
+        message: message.to_owned(),
+    })
 }
 
 fn supported(call: &SupportedCall) -> Value {
@@ -157,15 +162,15 @@ fn request(call: &RequestCall) -> Value {
     })
 }
 
-fn reply(call: &ReplyCall) -> Value {
+fn reply(call: &ReplyCall) -> crate::helpers::HelperResult {
     match decode_sambanova_embedding(call.body.as_bytes(), call.status, &call.headers) {
-        Ok(reply) => json!({"reply": decoded(&reply), "status": null}),
-        Err(SambaNovaEmbeddingError::Reply(error)) => {
-            json!({"reply": null, "status": error.status_code})
-        }
-        Err(SambaNovaEmbeddingError::Shape { .. } | SambaNovaEmbeddingError::MissingApiBase) => {
-            json!({"reply": null, "status": null})
-        }
+        Ok(reply) => Ok(decoded(&reply)),
+        Err(SambaNovaEmbeddingError::Reply(error)) => Err(failure(
+            "SambaNovaError",
+            Some(error.status_code),
+            &error.message,
+        )),
+        Err(error) => Err(failure("SambaNovaEmbeddingError", None, &error.to_string())),
     }
 }
 

@@ -4,7 +4,6 @@ call:
   b6413:
     chat_supported: []
     chat_params: []
-    chat_messages: []
     embedding_urls:
       - {api_base: "https://api.sambanova.ai/v1"}
       - {api_base: "https://api.sambanova.ai/v1///"}
@@ -31,7 +30,25 @@ call:
       - model: sambanova/embed
         input: ["hello"]
         optional: {model: other, input: text}
-    embedding_replies: []
-    embedding_errors: []
+    embedding_replies:
+      - status: 200
+        headers: {}
+        body: >-
+          {"model": "embed-model", "object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [0.25, -1.5]}], "usage": {"prompt_tokens": 3, "total_tokens": 3}}
+      - status: 200
+        headers: {}
+        body: "{}"
+      - status: 200
+        headers: {}
+        body: '{"model": null, "object": null, "data": null, "usage": {}}'
+      - status: 200
+        headers: {}
+        body: '{"usage": {"prompt_tokens": 4}}'
+      - status: 200
+        headers: {}
+        body: '{"usage": {"total_tokens": 9}}'
+    embedding_errors:
+      - {message: busy, status: 429, headers: {retry-after: "3"}}
+      - {message: bad request, status: 400, headers: {}}
 env: {}
 compare: {ignore: []}

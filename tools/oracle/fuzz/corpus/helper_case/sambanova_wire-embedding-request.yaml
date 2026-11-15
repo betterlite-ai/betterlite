@@ -4,7 +4,6 @@ call:
   b6413:
     chat_supported: []
     chat_params: []
-    chat_messages: []
     embedding_urls: [{api_base: "https://api.sambanova.ai/v1/"}, {api_base: null}]
     embedding_headers:
       - {api_key: "sk-seed", env_api_key: "sk-seed-env", headers: {Authorization: "Basic seed"}}

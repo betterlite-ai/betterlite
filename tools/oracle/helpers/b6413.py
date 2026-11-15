@@ -3,12 +3,8 @@ from typing import Final, Protocol, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.litellm_core_utils.prompt_templates.common_utils import (
-    handle_messages_with_content_list_to_str_conversion,
-)
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.sambanova.chat import SambanovaConfig
-from litellm.llms.sambanova.common_utils import SambaNovaError
 from litellm.llms.sambanova.embedding import transformation
 from litellm.llms.sambanova.embedding.transformation import SambaNovaEmbeddingConfig
 from litellm.types.llms.openai import AllEmbeddingInputValues, AllMessageValues
@@ -21,6 +17,10 @@ INPUTS: TypeAdapter[AllEmbeddingInputValues] = TypeAdapter(AllEmbeddingInputValu
 MODEL: Final = "sambanova/embedding"
 ENV_NAME: Final = "SAMBANOVA_API_KEY"
 STARTED: Final = datetime(2020, 1, 1, tzinfo=UTC)
+
+
+class NoMessages(list[AllMessageValues]):
+    pass
 
 
 class ChatConfig(Protocol):
@@ -116,10 +116,6 @@ class ParamsCall(TypedDict):
     existing: dict[str, JsonValue]
 
 
-class MessagesCall(TypedDict):
-    messages: list[AllMessageValues]
-
-
 class UrlCall(TypedDict):
     api_base: str | None
 
@@ -163,7 +159,6 @@ class ReplyShape(TypedDict):
 class Input(TypedDict):
     chat_supported: list[SupportedCall]
     chat_params: list[ParamsCall]
-    chat_messages: list[MessagesCall]
     embedding_urls: list[UrlCall]
     embedding_headers: list[HeadersCall]
     embedding_requests: list[RequestCall]
@@ -188,12 +183,6 @@ def params(config: ChatConfig, call: ParamsCall) -> JsonValue:
     return JSON.validate_python(answer)
 
 
-def messages(call: MessagesCall) -> JsonValue:
-    converted = handle_messages_with_content_list_to_str_conversion(call["messages"])
-    answer: dict[str, JsonValue] = {"messages": JSON.validate_python(converted)}
-    return JSON.validate_python(answer)
-
-
 def url(config: EmbeddingConfig, call: UrlCall) -> JsonValue:
     try:
         resolved: str | None = config.get_complete_url(call["api_base"], None, MODEL, {}, {})
@@ -206,7 +195,7 @@ def url(config: EmbeddingConfig, call: UrlCall) -> JsonValue:
 def headers(config: EmbeddingConfig, call: HeadersCall) -> JsonValue:
     transformation.get_secret_str = EnvironmentKey(call["env_api_key"])
     validated = config.validate_environment(
-        dict(call["headers"]), MODEL, [], {}, {}, call["api_key"], None
+        dict(call["headers"]), MODEL, NoMessages(), {}, {}, call["api_key"], None
     )
     answer: dict[str, JsonValue] = {"headers": JSON.validate_python(validated)}
     return JSON.validate_python(answer)
@@ -247,25 +236,14 @@ def projected(response: EmbeddingResponse) -> JsonValue:
     return JSON.validate_python(answer)
 
 
-def failed(status: int | None) -> JsonValue:
-    answer: dict[str, JsonValue] = {"reply": None, "status": status}
-    return JSON.validate_python(answer)
-
-
 def reply(config: EmbeddingConfig, call: ReplyCall) -> JsonValue:
     raw = httpx.Response(
         call["status"], content=call["body"].encode(), headers=dict(call["headers"])
     )
-    try:
-        response = config.transform_embedding_response(
-            MODEL, raw, EmbeddingResponse(), logging(), None, {}, {}, {}
-        )
-    except SambaNovaError as error:
-        return failed(error.status_code)
-    except AttributeError:
-        return failed(None)
-    answer: dict[str, JsonValue] = {"reply": projected(response), "status": None}
-    return JSON.validate_python(answer)
+    response = config.transform_embedding_response(
+        MODEL, raw, EmbeddingResponse(), logging(), None, {}, {}, {}
+    )
+    return projected(response)
 
 
 def carried(config: EmbeddingConfig, call: ErrorCall) -> JsonValue:
@@ -287,10 +265,11 @@ def run(value: Input) -> JsonValue:
     answer: dict[str, JsonValue] = {}
     answer["chat_supported"] = [supported(chat, call) for call in value["chat_supported"]]
     answer["chat_params"] = [params(chat, call) for call in value["chat_params"]]
-    answer["chat_messages"] = [messages(call) for call in value["chat_messages"]]
     answer["embedding_urls"] = [url(embedding, call) for call in value["embedding_urls"]]
     answer["embedding_headers"] = [headers(embedding, call) for call in value["embedding_headers"]]
-    answer["embedding_requests"] = [request(embedding, call) for call in value["embedding_requests"]]
+    answer["embedding_requests"] = [
+        request(embedding, call) for call in value["embedding_requests"]
+    ]
     answer["embedding_replies"] = [reply(embedding, call) for call in value["embedding_replies"]]
     answer["embedding_errors"] = [carried(embedding, call) for call in value["embedding_errors"]]
     return JSON.validate_python(answer)

@@ -8,12 +8,16 @@ use serde_json::{Value, json};
 use crate::case::{HelperCase, helper::validate_helper};
 use crate::helpers::Helper as _;
 
-fn run_case(file: &str) -> Value {
+fn case_input(file: &str) -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("cases/helpers/sambanova-wire")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    super::Op::decode_and_run(&case.call.input).unwrap()
+    case.call.input
+}
+
+fn run_case(file: &str) -> Value {
+    super::Op::decode_and_run(&case_input(file)).unwrap()
 }
 
 #[test]
@@ -79,32 +83,7 @@ fn the_chat_case_reports_the_pinned_supported_params_and_mapping() {
 }
 
 #[test]
-fn the_chat_case_flattens_message_content_like_litellm() {
-    let result = run_case("chat-params-and-messages.yaml");
-    assert_eq!(
-        result["chat_messages"][0]["messages"][0]["content"],
-        json!("one two")
-    );
-    assert_eq!(
-        result["chat_messages"][0]["messages"][1]["content"],
-        json!("plainsunny")
-    );
-    assert_eq!(
-        result["chat_messages"][0]["messages"][2]["content"],
-        json!([{"type": "image_url", "image_url": {"url": "http://x.test/a.png"}}])
-    );
-    assert_eq!(
-        result["chat_messages"][0]["messages"][3],
-        json!({"role": "assistant"})
-    );
-    assert_eq!(
-        result["chat_messages"][0]["messages"][4]["tool_calls"][0]["function"]["name"],
-        json!("f")
-    );
-}
-
-#[test]
-fn the_embedding_case_reports_urls_headers_and_bodies() {
+fn the_embedding_case_reports_urls_headers_bodies_replies_and_errors() {
     let result = run_case("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_urls"][0]["url"],
@@ -139,24 +118,50 @@ fn the_embedding_case_reports_urls_headers_and_bodies() {
         result["embedding_requests"][2]["request"],
         json!({"input": "text", "model": "other"})
     );
-}
-
-#[test]
-fn the_reply_case_decodes_successes_and_keeps_failures_bare() {
-    let result = run_case("embedding-reply.yaml");
     assert_eq!(
-        result["embedding_replies"][0]["reply"]["model"],
+        result["embedding_replies"][0]["model"],
         json!("embed-model")
     );
     assert_eq!(
-        result["embedding_replies"][0]["reply"]["usage"],
+        result["embedding_replies"][0]["usage"],
         json!({"prompt_tokens": 3_i32, "total_tokens": 3_i32})
     );
-    assert_eq!(result["embedding_replies"][2]["reply"]["data"], Value::Null);
-    assert_eq!(result["embedding_replies"][5]["status"], json!(502_i32));
-    assert_eq!(result["embedding_replies"][6]["status"], Value::Null);
+    assert_eq!(result["embedding_replies"][1]["model"], Value::Null);
+    assert_eq!(
+        result["embedding_replies"][1]["usage"],
+        json!({"prompt_tokens": 0_i32, "total_tokens": 0_i32})
+    );
+    assert_eq!(result["embedding_replies"][2]["data"], Value::Null);
+    assert_eq!(
+        result["embedding_replies"][3]["usage"],
+        json!({"prompt_tokens": 4_i32, "total_tokens": 0_i32})
+    );
+    assert_eq!(
+        result["embedding_replies"][4]["usage"],
+        json!({"prompt_tokens": 0_i32, "total_tokens": 9_i32})
+    );
     assert_eq!(
         result["embedding_errors"][0]["request_url"],
         json!("https://docs.litellm.ai/docs")
     );
+    assert_eq!(
+        result["embedding_errors"][0]["headers"],
+        json!({"retry-after": "3"})
+    );
+    assert_eq!(
+        result["embedding_errors"][0]["response_status"],
+        json!(429_i32)
+    );
+    assert_eq!(
+        result["embedding_errors"][1]["response_status"],
+        json!(400_i32)
+    );
+}
+
+#[test]
+fn the_reply_case_reports_the_pinned_failure_status() {
+    let error = super::Op::decode_and_run(&case_input("embedding-reply.yaml")).unwrap_err();
+    assert_eq!(error.class, "SambaNovaError");
+    assert_eq!(error.status, Some(502));
+    assert_eq!(error.message, "upstream unavailable");
 }

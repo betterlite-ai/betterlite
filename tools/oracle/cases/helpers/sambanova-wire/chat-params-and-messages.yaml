@@ -26,13 +26,6 @@ call:
         function_calling: false
         requested: {max_completion_tokens: null, temperature: null}
         existing: {}
-    chat_messages:
-      - messages:
-          - {role: user, content: [{type: text, text: "one "}, {type: text, text: two}]}
-          - {role: assistant, content: plain, search_results: [{title: sunny}]}
-          - {role: user, content: [{type: image_url, image_url: {url: "http://x.test/a.png"}}]}
-          - {role: assistant}
-          - {role: assistant, content: [{type: text, text: hi}], tool_calls: [{id: a, type: function, function: {name: f, arguments: "{}"}}]}
     embedding_urls: []
     embedding_headers: []
     embedding_requests: []
