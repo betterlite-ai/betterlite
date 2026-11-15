@@ -43,6 +43,11 @@ pub(super) fn content_end_text_audio() {
         )
     );
 
+    unknown_type_keeps_only_the_item_done();
+    missing_ids_keep_chunks();
+}
+
+fn unknown_type_keeps_only_the_item_done() {
     let mut unknown = open_state(None, Some(&["kept"]));
     let unknown_events = content_end_events(&mut unknown, &FixedIds::sequence(3));
     assert_eq!(
@@ -52,7 +57,6 @@ pub(super) fn content_end_text_audio() {
         )]
     );
     assert_eq!(unknown.delta_chunks, None);
-    missing_ids_keep_chunks();
 }
 
 fn missing_ids_keep_chunks() {
