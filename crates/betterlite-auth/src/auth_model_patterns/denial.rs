@@ -6,10 +6,10 @@ use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedPro
 // model_access_denied.py's MODEL_ACCESS_DENIED_CLIENT_MESSAGE, formatted with the requested model
 #[must_use]
 pub fn model_denied_client_message(model: &str) -> String {
-    format!(concat!(
-        "The requested model '{model}' is not available for this API key, or the model name is invalid. ",
-        "Check the models available to you and try again."
-    ))
+    format!(
+        "The requested model '{model}' is not available for this API key, or the model name is \
+         invalid. Check the models available to you and try again."
+    )
 }
 
 // the object_type literals ProxyErrorTypes.get_model_access_error_type_for_object dispatches on
