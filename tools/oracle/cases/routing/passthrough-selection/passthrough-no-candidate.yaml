@@ -1,0 +1,136 @@
+kind: probe
+name: passthrough-no-candidate
+probes:
+  - clock:
+      unix_millis: 1700000000300
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: plain
+        lookups:
+          - model: gpt
+  - clock:
+      unix_millis: 1700000000301
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: plain
+        lookups:
+          - model: plain
+  - clock:
+      unix_millis: 1700000000302
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: paused
+            use_in_pass_through: true
+            blocked: true
+        lookups:
+          - model: paused
+  - clock:
+      unix_millis: 1700000000303
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: lar1
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: only
+            use_in_pass_through: true
+            weight: 1
+        lookups:
+          - model: gpt
+  - clock:
+      unix_millis: 1700000000304
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        enable_pre_call_checks: true
+        models:
+          - model_name: gpt
+            model: openai/gpt-4
+            id: legacy
+            use_in_pass_through: true
+            weight: 1
+          - model_name: gpt
+            model: openai/gpt-3.5-turbo-16k
+            id: old
+            use_in_pass_through: true
+            weight: 1
+        lookups:
+          - model: gpt
+            messages: true
+            response_format: true
+  - clock:
+      unix_millis: 1700000000305
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: only
+            use_in_pass_through: true
+            weight: 1
+        lookups:
+          - model: missing
+  - clock:
+      unix_millis: 1700000000306
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: early
+            weight: 1
+            order: 1
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: late
+            use_in_pass_through: true
+            weight: 1
+            order: 2
+        lookups:
+          - model: gpt
+  - clock:
+      unix_millis: 1700000000307
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: development
+            use_in_pass_through: true
+            weight: 1
+            supported_environments:
+              - development
+        lookups:
+          - model: gpt
+compare: {ignore: []}

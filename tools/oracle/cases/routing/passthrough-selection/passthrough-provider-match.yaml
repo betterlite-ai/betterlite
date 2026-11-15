@@ -1,0 +1,147 @@
+kind: probe
+name: passthrough-provider-match
+probes:
+  - clock:
+      unix_millis: 1700000000200
+      monotonic_millis: 0
+    samples:
+      - 0
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: zero
+            use_in_pass_through: true
+            weight: 0
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: weighted
+            use_in_pass_through: true
+            weight: 5
+        lookups:
+          - model: gpt
+  - clock:
+      unix_millis: 1700000000201
+      monotonic_millis: 0
+    samples:
+      - 0
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: weighted
+            use_in_pass_through: true
+            weight: 5
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: zero
+            use_in_pass_through: true
+            weight: 0
+        lookups:
+          - model: gpt
+  - clock:
+      unix_millis: 1700000000202
+      monotonic_millis: 0
+    samples:
+      - 0
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        enable_pre_call_checks: true
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: modern
+            use_in_pass_through: true
+            weight: 1
+          - model_name: gpt
+            model: openai/gpt-4
+            id: legacy
+            use_in_pass_through: true
+            weight: 1
+        lookups:
+          - model: gpt
+            messages: true
+            response_format: true
+  - clock:
+      unix_millis: 1700000000203
+      monotonic_millis: 0
+    samples:
+      - 0
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: skipped
+            weight: 5
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: kept
+            use_in_pass_through: true
+            weight: 1
+        lookups:
+          - model: gpt
+  - clock:
+      unix_millis: 1700000000204
+      monotonic_millis: 0
+    samples: []
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: first
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: second
+            use_in_pass_through: true
+            weight: 1
+        lookups:
+          - model: second
+  - clock:
+      unix_millis: 1700000000205
+      monotonic_millis: 0
+    samples:
+      - 0
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: alpha
+            use_in_pass_through: true
+            weight: 1
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: beta
+            use_in_pass_through: true
+            weight: 1
+        lookups:
+          - model: openai/gpt-4o
+            specific_deployment: true
+  - clock:
+      unix_millis: 1700000000206
+      monotonic_millis: 0
+    samples:
+      - 0
+    operation:
+      passthrough_selection:
+        strategy: simple-shuffle
+        models:
+          - model_name: gpt
+            model: openai/gpt-4o
+            id: pickme
+            use_in_pass_through: true
+            weight: 1
+        lookups:
+          - model: gpt
+            routing_strategy: lar1
+compare: {ignore: []}
