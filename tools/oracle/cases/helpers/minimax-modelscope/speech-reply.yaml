@@ -23,5 +23,8 @@ call:
       - kind: speech_reply
         status: 200
         body: '{"status": 0, "data": {"audio": "4869"}}'
+      - kind: speech_reply
+        status: 200
+        body: '{"base_resp": {"status_code": 1004}, "data": {"audio": "48656c6c6f"}}'
 env: {}
 compare: {ignore: []}

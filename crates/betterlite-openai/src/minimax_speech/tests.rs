@@ -460,6 +460,20 @@ async fn a_null_ced_names_the_status() {
 }
 
 #[tokio::test]
+async fn ignores_the_base_resp_status_code() {
+    let headers = HeaderMap::new();
+    let decoded = decode(
+        r#"{"base_resp": {"status_code": 1004, "status_msg": "bad"}, "data": {"audio": "48656c6c6f"}}"#,
+        200,
+        &headers,
+    )
+    .await
+    .expect("base_resp.status_code is never read");
+    assert_eq!(decoded.status, 200);
+    assert_eq!(decoded.body, b"Hello".to_vec());
+}
+
+#[tokio::test]
 async fn a_ced_of_the_wrong_type_is_an_error() {
     let headers = HeaderMap::new();
     let error = decode(r#"{"status": 3, "ced": 7}"#, 400, &headers)
