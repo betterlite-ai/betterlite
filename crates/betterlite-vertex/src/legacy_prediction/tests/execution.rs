@@ -184,6 +184,36 @@ async fn execution_streaming_failure_is_vertex_500() {
 }
 
 #[tokio::test]
+async fn execution_streaming_quota_failure_is_rate_limit_429() {
+    let encoding = FakeEncoding {
+        counts: IndexMap::new(),
+    };
+    let services = projection_services(&encoding);
+    let context = legacy_context(&services);
+    let client = FixtureClient::with_stream_failure(PredictionError::Http {
+        status: 429,
+        message: String::from("Quota exceeded for quota metric"),
+    });
+    let Err(error) = execute_stream(
+        &client,
+        chat_invocation(Extra::new()),
+        &context,
+        access_lookup(),
+    )
+    .await
+    else {
+        panic!("a failed stream");
+    };
+    assert_eq!(error.status_code(), 429);
+    assert!(matches!(
+        error,
+        LegacyPredictionError::Streaming {
+            source: PredictionError::Http { status: 429, .. }
+        }
+    ));
+}
+
+#[tokio::test]
 async fn execution_unhandled_mode_cannot_generate() {
     let encoding = FakeEncoding {
         counts: IndexMap::new(),

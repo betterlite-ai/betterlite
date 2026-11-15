@@ -1,3 +1,5 @@
+use betterlite_error::facts::ProviderErrorFacts;
+use betterlite_error::vertex_errors::map_vertex_exception;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_tokenizer::engine::error::EngineError;
@@ -88,7 +90,7 @@ pub enum PredictionError {
     MissingInstances,
 }
 
-// LiteLLM's async_completion and async_streaming surface every failure as 500
+// async_completion raises a Vertex 500 for every failure; async_streaming's raw google exception takes exception_type's message mapping first
 #[derive(Debug, Error)]
 pub enum LegacyPredictionError {
     #[error("the Vertex prediction failed: {source}")]
@@ -107,8 +109,12 @@ pub enum LegacyPredictionError {
 
 impl LegacyPredictionError {
     #[must_use]
-    pub const fn status_code(&self) -> u16 {
+    pub fn status_code(&self) -> u16 {
         match self {
+            Self::Streaming {
+                source: PredictionError::Http { message, .. },
+            } => map_vertex_exception(&ProviderErrorFacts::default(), message, "vertex_ai", None)
+                .map_or(500, |class| class.metadata().status_code),
             Self::Completion { .. } | Self::Streaming { .. } | Self::UnableToGenerate => 500,
         }
     }
