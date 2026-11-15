@@ -7,7 +7,9 @@ use betterlite_openai::api::audio_file_input::{
     process_audio_file,
 };
 use betterlite_openai::openai_base_config::Object as WireObject;
-use betterlite_openai::ovhcloud_embedding::request::transform_embedding_request;
+use betterlite_openai::ovhcloud_embedding::request::{
+    map_openai_params, transform_embedding_request,
+};
 use betterlite_prompts::arguments::json::{Json, Object as JsonObject};
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -97,9 +99,8 @@ pub(crate) struct HeaderCall {
 pub(crate) struct EmbeddingCall {
     model: String,
     input: Json,
-    // the embedding config advertises no supported param, so this is only here to prove nothing is copied
-    #[serde(rename = "non_default_params")]
-    _non_default_params: JsonObject,
+    // the embedding config advertises no supported param, so the mapping drops every one of these
+    non_default_params: JsonObject,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,52 +144,69 @@ impl Helper for Op {
                 headers,
                 requests,
                 replies,
-            } => json!({
-                "headers": headers
-                    .iter()
-                    .map(|call| header_value(HeaderProvider::OvhcloudEmbedding, call))
-                    .collect::<Vec<Value>>(),
-                "requests": requests
-                    .iter()
-                    .map(|call| json!({
-                        "value": pairs(&transform_embedding_request(
-                            &call.model,
-                            &call.input,
-                            &JsonObject::new(),
-                        )),
-                    }))
-                    .collect::<Vec<Value>>(),
-                "replies": replies
-                    .iter()
-                    .map(embedding_reply_value)
-                    .collect::<Vec<Value>>(),
-            }),
+            } => embedding_values(headers, requests, replies),
             Input::Transcription {
                 provider,
                 requests,
                 replies,
-            } => json!({
-                "requests": requests
-                    .iter()
-                    .map(|call| transcription_request_value(*provider, call))
-                    .collect::<Vec<Value>>(),
-                "replies": replies
-                    .iter()
-                    .map(|reply| transcription_reply_value(*provider, reply))
-                    .collect::<Vec<Value>>(),
-            }),
-            Input::ScalewayKey { calls, replies } => json!({
-                "headers": calls
-                    .iter()
-                    .map(|call| header_value(HeaderProvider::ScalewayAudio, call))
-                    .collect::<Vec<Value>>(),
-                "replies": replies
-                    .iter()
-                    .map(|reply| transcription_reply_value(AudioProvider::Scaleway, reply))
-                    .collect::<Vec<Value>>(),
-            }),
+            } => transcription_values(*provider, requests, replies),
+            Input::ScalewayKey { calls, replies } => scaleway_key_values(calls, replies),
         })
     }
+}
+
+fn embedding_values(
+    headers: &[HeaderCall],
+    requests: &[EmbeddingCall],
+    replies: &[ReplyCall],
+) -> Value {
+    json!({
+        "headers": headers
+            .iter()
+            .map(|call| header_value(HeaderProvider::OvhcloudEmbedding, call))
+            .collect::<Vec<Value>>(),
+        "requests": requests
+            .iter()
+            .map(|call| {
+                let mapped = map_openai_params(&call.non_default_params, JsonObject::new());
+                json!({"value": pairs(&transform_embedding_request(&call.model, &call.input, &mapped))})
+            })
+            .collect::<Vec<Value>>(),
+        "replies": replies
+            .iter()
+            .map(embedding_reply_value)
+            .collect::<Vec<Value>>(),
+    })
+}
+
+fn transcription_values(
+    provider: AudioProvider,
+    requests: &[TranscriptionCall],
+    replies: &[ReplyCall],
+) -> Value {
+    json!({
+        "requests": requests
+            .iter()
+            .map(|call| transcription_request_value(provider, call))
+            .collect::<Vec<Value>>(),
+        "replies": replies
+            .iter()
+            .map(|reply| transcription_reply_value(provider, reply))
+            .collect::<Vec<Value>>(),
+    })
+}
+
+fn scaleway_key_values(calls: &[HeaderCall], replies: &[ReplyCall]) -> Value {
+    json!({
+        "headers": calls
+            .iter()
+            .map(|call| header_value(HeaderProvider::ScalewayAudio, call))
+            .collect::<Vec<Value>>(),
+        "replies": replies
+            .iter()
+            .map(|reply| transcription_reply_value(AudioProvider::Scaleway, reply))
+            .collect::<Vec<Value>>(),
+    })
 }
 
 fn pairs(body: &JsonObject) -> Value {
@@ -222,10 +240,6 @@ pub(super) fn processed(call: &TranscriptionCall) -> Result<ProcessedAudioFile, 
             "message": error.to_string(),
         })
     })
-}
-
-pub(super) fn file_value(file: &ProcessedAudioFile) -> Value {
-    json!([file.filename, file.content_type, file.file_content])
 }
 
 pub(super) fn fields_pairs(fields: &[(String, Value)]) -> Value {

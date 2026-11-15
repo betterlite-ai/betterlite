@@ -13,7 +13,9 @@ use betterlite_openai::ovhcloud_chat::request::{
 };
 use betterlite_openai::ovhcloud_embedding::reply::decode_embedding_reply;
 use betterlite_openai::ovhcloud_embedding::request::validate_environment as embedding_headers;
-use betterlite_openai::scaleway_audio::reply::decode_transcription_reply as scaleway_reply;
+use betterlite_openai::scaleway_audio::reply::{
+    Transcription as ScalewayTranscription, decode_transcription_reply as scaleway_reply,
+};
 use betterlite_openai::scaleway_audio::request::{
     complete_url as scaleway_url, transcription_request as scaleway_form,
     validate_environment as scaleway_headers,
@@ -24,7 +26,7 @@ use serde_json::{Value, json};
 
 use super::{
     AudioProvider, ChatRequestCall, EmbeddingCall, HeaderCall, HeaderProvider, ReplyCall,
-    TranscriptionCall, env_key, fields_pairs, file_value, processed,
+    TranscriptionCall, env_key, fields_pairs, processed,
 };
 
 pub(super) fn chat_request_value(call: &ChatRequestCall) -> Value {
@@ -105,7 +107,11 @@ pub(super) fn transcription_request_value(
         "headers": header_value(keyed, &key_call),
         "request": {
             "form": fields_pairs(&request.fields),
-            "file": file_value(&request.file),
+            "file": json!([
+                request.file.filename,
+                request.file.content_type,
+                request.file.file_content,
+            ]),
         },
     })
 }
@@ -124,7 +130,7 @@ pub(super) fn transcription_reply_value(provider: AudioProvider, call: &ReplyCal
     }
 }
 
-fn scaleway_text(transcription: betterlite_openai::scaleway_audio::reply::Transcription) -> Value {
+fn scaleway_text(transcription: ScalewayTranscription) -> Value {
     let mut value = json!({"text": transcription.response.text});
     for name in ["segments", "language"] {
         if let Some(field) = transcription.response.extra.get(name) {
