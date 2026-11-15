@@ -18,5 +18,8 @@ call:
       - function: responses_batch
         body: {model: m, input: ""}
         custom_llm_provider: null
+      - function: responses_batch
+        body: {input: hi}
+        custom_llm_provider: null
 env: {}
 compare: {ignore: []}

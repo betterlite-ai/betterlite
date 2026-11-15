@@ -16,7 +16,7 @@ pub enum BatchBodyError {
     BodyNotObject,
     #[error("Batch record for /v1/responses is missing required `input` field: model={model}")]
     MissingInput { model: String },
-    #[error("the Responses batch body cannot be encoded")]
+    #[error("the Responses batch body cannot be encoded: {source}")]
     Encode {
         #[from]
         source: serde_json::Error,

@@ -250,11 +250,15 @@ async fn database_empty_and_absent_content() {
     backend.contents.put("empty", b"");
     let empty = backend.download_file("litellm_db://empty").await.unwrap();
     assert!(empty.is_empty());
+    backend.contents.put("", b"root");
+    let root = backend.download_file("litellm_db://").await.unwrap();
+    assert_eq!(root, b"root");
     assert_eq!(
         backend.contents.calls(),
         vec![
             RepoCall::Load("r".to_owned()),
-            RepoCall::Load("empty".to_owned())
+            RepoCall::Load("empty".to_owned()),
+            RepoCall::Load(String::new())
         ]
     );
 }
@@ -407,6 +411,10 @@ fn responses_batch_non_string_and_empty_input() {
     let numeric = batch(&parse(r#"{"model":123,"input":"hi"}"#), None).unwrap();
     let numeric = serde_json::to_value(&numeric).unwrap();
     assert_eq!(numeric.pointer("/model"), Some(&json!("")));
+
+    let unnamed = batch(&parse(r#"{"input":"hi"}"#), None).unwrap();
+    let unnamed = serde_json::to_value(&unnamed).unwrap();
+    assert_eq!(unnamed.pointer("/model"), Some(&json!("")));
 
     let empty = batch(&parse(r#"{"model":"m","input":""}"#), None).unwrap();
     let expected =
