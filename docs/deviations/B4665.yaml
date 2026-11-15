@@ -1,0 +1,53 @@
+task: B4665
+deviations:
+  - what: >-
+      exchange returns Result<OAuthToken, CredError> instead of raising SubjectTokenRejected or
+      TokenExchangeClientError; a rejected subject is CredError::Unauthorized carrying the IdP's claims blob and a
+      gateway-fault code is CredError::Misconfigured, so the caller handles an error value rather than an exception
+      that can slip past a type checker.
+    why: Rust has no exceptions, and the typed Result keeps the claims threadable to the 401 step-up challenge while
+      making every failure path visible at the call site.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L83-L108
+  - what: >-
+      token_endpoint_auth_method=client_secret_basic with an empty client_secret returns a misconfigured error (500)
+      instead of raising TokenEndpointAuthConfigError out of exchange, where nothing catches it.
+    why: LiteLLM's exchange builds the client authentication outside any handler, so this input ends the request with
+      an uncaught ValueError rather than a typed credential error; a bounded 500 for the operator's broken config is
+      the same status without the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/token_endpoint_auth.py#L63-L68
+  - what: >-
+      expires_in is read into a bounded i64: a float whose integer part exceeds 2^53 keeps the digits its decimal
+      form prints, a value outside the i64 range and a non-finite number read as no expiry (the default TTL), and a
+      numeric string must use ASCII digits, so Python's digit separators and non-ASCII digits read as no expiry.
+    why: LiteLLM's int() is unbounded and int() of an infinite float raises OverflowError past its ValueError catch,
+      which crashes the exchange; the TTL only ever gates a cache entry, and any of these values is far past the
+      expiry of an access token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L149-L159
+  - what: >-
+      A parsed expires_in whose instant leaves chrono's range saturates by sign: a negative value becomes
+      DateTime::<Utc>::MIN_UTC, a past instant that is never served from the cache, and a positive value becomes
+      DateTime::<Utc>::MAX_UTC, cached until eviction, instead of the exact epoch value.
+    why: LiteLLM keeps expires_at as a float epoch, so a huge expires_in is just a large number; betterlite keeps a
+      DateTime, whose range ends in year 262143. Saturating keeps the observable cache behavior the same (a negative
+      expiry is re-exchanged, a far-future one is cached) while an absurd IdP value still yields a token instead of
+      an arithmetic failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L367
+  - what: >-
+      build_token_exchanger takes the cache size and the three TTL values as TokenExchangeTunables resolved at config
+      load instead of reading MCP_TOKEN_EXCHANGE_CACHE_MAX_SIZE, MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL,
+      MCP_OAUTH2_TOKEN_CACHE_MIN_TTL and MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS itself; TokenExchangeTunables::default
+      keeps LiteLLM's 500 entries, 3600s, 10s and 60s. B4657 names the same four constants for its token-endpoint
+      cache and B4663's mcp_sso_assertion_cache is the config-section shape, so the section that reads them belongs to
+      B4657 (or a follow-up config task); until it lands, a deployment that overrides one of the four environment
+      variables gets the default, which is this entry's difference from LiteLLM.
+    why: Environment variables are read only by betterlite-config (inject-dependencies and the std::env disallowed
+      methods), and this task's scope holds no config crate path; the composition root now accepts the resolved values
+      so the owner task only has to add the section and pass them in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L179-L221
+  - what: >-
+      The exchange POST runs through the pooled betterlite-http client: it follows redirects with each hop checked,
+      caps the response body and headers, and ends at a 30-second deadline; a body over the cap, a timeout or a
+      refused connection is a miss (upstream_unavailable) rather than being read without bound.
+    why: Every outbound call in betterlite carries a size cap and a deadline (bounded-inputs), and LiteLLM's handler
+      has no body cap and a much longer default timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchange_provider.py#L62-L106
