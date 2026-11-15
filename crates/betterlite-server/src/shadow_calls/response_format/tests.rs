@@ -8,6 +8,7 @@ const LITELLM_FORMAT: &str = r#"{
     "type": "json_schema",
     "json_schema": {
         "schema": {
+            "description": "The judge's blind A/B verdict: the response_format schema sent with the judge call\nand the validation contract on its reply. Both fields are required and preference is\nclosed over the prompt's labels, so a malformed or truncated reply is an\nunparseable-verdict error row, never a defaulted or fabricated verdict.",
             "properties": {
                 "preference": {"enum": ["A", "B", "tie"], "title": "Preference", "type": "string"},
                 "confidence": {"title": "Confidence", "type": "number"}

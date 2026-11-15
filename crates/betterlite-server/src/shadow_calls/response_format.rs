@@ -2,6 +2,11 @@ use betterlite_models::decisions::Json;
 
 mod tests;
 
+const VERDICT_DESCRIPTION: &str = r#"The judge's blind A/B verdict: the response_format schema sent with the judge call
+and the validation contract on its reply. Both fields are required and preference is
+closed over the prompt's labels, so a malformed or truncated reply is an
+unparseable-verdict error row, never a defaulted or fabricated verdict."#;
+
 // The workspace's Json object is an IndexMap, so the constant LiteLLM holds is built by a function here
 #[must_use]
 pub fn pairwise_judge_response_format() -> Json {
@@ -20,6 +25,7 @@ pub fn pairwise_judge_response_format() -> Json {
 
 fn verdict_schema() -> Json {
     object([
+        ("description", Json::Text(VERDICT_DESCRIPTION.to_owned())),
         (
             "properties",
             object([
