@@ -187,7 +187,7 @@ def chunk_value(api: StreamApi, step: ChunkStep) -> JsonValue:
     choices: list[JsonValue] = []
     for choice in view["choices"]:
         delta = choice["delta"]
-        entry: dict[str, JsonValue] = {
+        entry: ChunkChoice = {
             "index": choice["index"],
             "finish_reason": choice.get("finish_reason"),
             "delta": {
