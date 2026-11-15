@@ -1,0 +1,37 @@
+kind: helper
+name: bedrock-invoke-schema-custom-types
+call:
+  bedrock_invoke_schema:
+    model_cost: {}
+    steps:
+      - function: normalize_schema
+        schema:
+          type: custom
+          items: {type: custom}
+          additionalProperties: {type: custom}
+          properties: {a: {type: custom}, b: skip}
+          allOf: [{type: custom}, skip, false]
+          anyOf: [{type: custom}]
+          oneOf: [{type: custom, items: {type: custom}}]
+      - function: normalize_schema
+        schema:
+          type: [custom, "null"]
+          $defs: {d: {type: custom}}
+          definitions: {d: {type: custom}}
+          patternProperties: {d: {type: custom}}
+          not: {type: custom}
+          items: [{type: custom}]
+          unknown: {type: custom}
+          properties: not-a-map
+          allOf: not-a-list
+      - function: normalize_tool_schemas
+        body:
+          tools:
+            - {name: t, input_schema: {type: custom}}
+            - {name: u}
+            - {name: v, input_schema: skip}
+            - junk
+      - {function: normalize_tool_schemas, body: {tools: null}}
+      - {function: normalize_tool_schemas, body: {tools: []}}
+env: {}
+compare: {ignore: []}
