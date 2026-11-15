@@ -429,7 +429,7 @@ async fn invalid_output_effort() {
     keep_supported_efforts().await;
 }
 
-fn invalid_value(error: &ParamsError) -> Option<&str> {
+const fn invalid_value(error: &ParamsError) -> Option<&str> {
     match error {
         ParamsError::InvalidEffort { value } => Some(value.as_str()),
         _ => None,
