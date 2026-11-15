@@ -1,12 +1,14 @@
 import asyncio
+import io
+from contextlib import redirect_stdout
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
-from fastapi import HTTPException
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.pillar.pillar import PillarGuardrail
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 API_BASE = "https://pillar.test"
 API_KEY = "test-key"
@@ -130,33 +132,43 @@ def protect(settings: Settings, key: Key, request_data: JsonValue, answer: Reply
     data = OBJECT.validate_python(request_data)
     status = 200
     try:
-        asyncio.run(runner.run_pillar_guardrail(data, key_context(key)))
+        # a failed model lookup prints LiteLLM's provider list to stdout, which would corrupt the helper's JSON
+        with redirect_stdout(io.StringIO()):
+            asyncio.run(runner.run_pillar_guardrail(data, key_context(key)))
     except HTTPException as error:
         status = error.status_code
     request: JsonValue = OBJECT.validate_python(scripted.calls[0]) if scripted.calls else None
-    return JSON.validate_python({"request": request, "data": data, "status": status})
+    result: dict[str, JsonValue] = {"request": request, "data": data, "status": status}
+    return JSON.validate_python(result)
 
 
 def resolve_bool(setting: Setting, *, provided: bool | None) -> JsonValue:
+    flags: dict[str, bool | None] = {
+        "async_mode": provided if setting == "async_mode" else None,
+        "persist_session": provided if setting == "persist_session" else None,
+        "include_scanners": provided if setting == "include_scanners" else None,
+        "include_evidence": provided if setting == "include_evidence" else None,
+    }
+    guard = PillarGuardrail(
+        api_key=API_KEY,
+        api_base=API_BASE,
+        async_mode=flags["async_mode"],
+        persist_session=flags["persist_session"],
+        include_scanners=flags["include_scanners"],
+        include_evidence=flags["include_evidence"],
+    )
     value: bool | None = None
     match setting:
         case "async_mode":
-            value = PillarGuardrail(
-                api_key=API_KEY, api_base=API_BASE, async_mode=provided
-            ).async_mode
+            value = guard.async_mode
         case "persist_session":
-            value = PillarGuardrail(
-                api_key=API_KEY, api_base=API_BASE, persist_session=provided
-            ).persist_session
+            value = guard.persist_session
         case "include_scanners":
-            value = PillarGuardrail(
-                api_key=API_KEY, api_base=API_BASE, include_scanners=provided
-            ).include_scanners
+            value = guard.include_scanners
         case "include_evidence":
-            value = PillarGuardrail(
-                api_key=API_KEY, api_base=API_BASE, include_evidence=provided
-            ).include_evidence
-    return JSON.validate_python({"value": value})
+            value = guard.include_evidence
+    result: dict[str, JsonValue] = {"value": value}
+    return JSON.validate_python(result)
 
 
 def run(input_value: Input) -> JsonValue:
