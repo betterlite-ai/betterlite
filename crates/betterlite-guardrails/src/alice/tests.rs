@@ -828,7 +828,7 @@ async fn alice_guardrail_any_one_selectable_field_starts_the_call(
 
 #[test]
 fn alice_guardrail_response_cap_is_one_mebibyte() {
-    assert_eq!(MAX_RESPONSE_BYTES, 1024 * 1024);
+    assert_eq!(MAX_RESPONSE_BYTES, 0x0010_0000);
 }
 
 #[tokio::test]
