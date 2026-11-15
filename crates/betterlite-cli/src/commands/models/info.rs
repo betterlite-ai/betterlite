@@ -8,7 +8,7 @@ use crate::commands::tables::{OutputFormat, write_json_response, write_table};
 
 use super::format::{format_cost_per_1k_tokens, format_iso_datetime_str};
 use super::response::fetch_data;
-use super::value::{cell_text, cost_value, object_value, text_value};
+use super::value::{cell_text, cost_value, object_value};
 use super::{GetModelsInfo, ModelsError};
 
 const INFO_PATH: &str = "/v1/model/info";
@@ -166,7 +166,11 @@ fn info_cell(column: InfoColumn, model: &InfoRow) -> Result<String, ModelsError>
         }
         InfoColumn::CreatedAt | InfoColumn::UpdatedAt => {
             let info = object_value(model.model_info.as_ref(), "model_info")?;
-            let text = text_value(info.and_then(|info| info.get(field)), field)?;
+            let text = match info.and_then(|info| info.get(field)) {
+                None | Some(JsonValue::Null) => None,
+                Some(JsonValue::Text(text)) => Some(text.as_str()),
+                Some(_) => return Err(ModelsError::FieldType { field }),
+            };
             format_iso_datetime_str(text, field)
         }
         InfoColumn::InputCost | InfoColumn::OutputCost => {

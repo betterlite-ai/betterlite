@@ -6,7 +6,6 @@ use super::ModelsError;
 
 pub(super) type ModelObject = IndexMap<String, JsonValue>;
 type ObjectResult<'value> = Result<Option<&'value ModelObject>, ModelsError>;
-type TextResult<'value> = Result<Option<&'value str>, ModelsError>;
 type ValueResult<T> = Result<Option<T>, ModelsError>;
 
 pub(super) fn cell_text(value: &JsonValue) -> String {
@@ -28,17 +27,6 @@ pub(super) const fn object_value<'value>(
     match value {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Object(fields)) => Ok(Some(fields)),
-        Some(_) => Err(ModelsError::FieldType { field }),
-    }
-}
-
-pub(super) const fn text_value<'value>(
-    value: Option<&'value JsonValue>,
-    field: &'static str,
-) -> TextResult<'value> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Text(text)) => Ok(Some(text)),
         Some(_) => Err(ModelsError::FieldType { field }),
     }
 }
