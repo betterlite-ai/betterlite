@@ -1,0 +1,34 @@
+kind: helper
+name: file-storage-contracts-responses-batch-projection
+call:
+  file_storage_contracts:
+    calls:
+      - function: responses_batch
+        body:
+          model: m
+          input: hello
+          instructions: system
+          max_output_tokens: 7
+          temperature: 0.2
+          metadata: {tag: a}
+          stream: true
+          unknown: drop
+        custom_llm_provider: openai
+      - function: responses_batch
+        body:
+          model: m
+          input:
+            - role: user
+              content:
+                - type: input_text
+                  text: hi
+                - type: input_image
+                  image_url: "https://example.invalid/i.png"
+          tools:
+            - type: function
+              name: lookup
+              parameters:
+                type: object
+        custom_llm_provider: null
+env: {}
+compare: {ignore: []}
