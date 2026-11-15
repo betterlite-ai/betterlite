@@ -372,6 +372,28 @@ fn the_last_pattern_failure_message_is_kept_when_denying_by_default() {
 }
 
 #[test]
+fn a_missing_path_message_is_kept_when_denying_by_default() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![pattern_rule(
+            "needs-path",
+            ToolDecision::Allow,
+            "^read$",
+            &[("user.role", "^admin$")],
+        )],
+    );
+    let arguments = json_arguments(r#"{"user": {"name": "sam"}}"#);
+    let result =
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
+    assert!(!result.is_allowed);
+    assert_eq!(result.rule_id, None);
+    assert_eq!(
+        result.message.as_deref(),
+        Some("Missing value for path 'user.role' required by rule 'needs-path'")
+    );
+}
+
+#[test]
 fn a_default_allow_drops_the_pattern_failure_message() {
     let guardrail = build(
         args(ToolDefaultAction::Allow),
