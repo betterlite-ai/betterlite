@@ -31,12 +31,13 @@ pub fn initialize_xecguard(
     let values = &params.base.extra.0;
     let grounding_strictness: Option<String> =
         decode("grounding_strictness", values.get("grounding_strictness"))?;
-    if let Some(strictness) = &grounding_strictness {
-        if !GROUNDING_STRICTNESS.contains(&strictness.as_str()) {
-            return Err(ThirdPartyInitBError::InvalidParam {
-                name: "grounding_strictness".to_owned(),
-            });
-        }
+    let unknown_strictness = grounding_strictness
+        .as_deref()
+        .is_some_and(|strictness| !GROUNDING_STRICTNESS.contains(&strictness));
+    if unknown_strictness {
+        return Err(ThirdPartyInitBError::InvalidParam {
+            name: "grounding_strictness".to_owned(),
+        });
     }
     Ok(XecGuardArgs {
         name: guardrail_name.unwrap_or_default().to_owned(),

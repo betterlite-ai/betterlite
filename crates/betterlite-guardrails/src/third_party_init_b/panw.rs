@@ -53,7 +53,14 @@ fn sent_params(base: &BaseLitellmParams) -> InitResult<BTreeMap<String, SetParam
             GuardrailValue::Text(text) if SECRET_PARAMS.contains(&name.as_str()) => {
                 Ok((name, SetParam::Secret(SecretString::from(text))))
             }
-            other => Ok((name, SetParam::Value(other))),
+            other @ (GuardrailValue::Null
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Text(_)
+            | GuardrailValue::Array(_)
+            | GuardrailValue::Object(_)) => Ok((name, SetParam::Value(other))),
         })
         .collect()
 }

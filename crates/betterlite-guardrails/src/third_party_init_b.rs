@@ -22,11 +22,11 @@ pub(crate) fn decode<T>(name: &str, value: Option<&GuardrailValue>) -> InitResul
 where
     T: DeserializeOwned,
 {
-    let Some(value) = value.filter(|value| **value != GuardrailValue::Null) else {
+    let Some(present) = value.filter(|entry| **entry != GuardrailValue::Null) else {
         return Ok(None);
     };
     let encoded =
-        serde_json::to_vec(value).map_err(|_not_json| ThirdPartyInitBError::InvalidParam {
+        serde_json::to_vec(present).map_err(|_not_json| ThirdPartyInitBError::InvalidParam {
             name: name.to_owned(),
         })?;
     serde_json::from_slice(&encoded)
@@ -37,13 +37,13 @@ where
 }
 
 // what _get_config_value sees: every optional_params entry that is not null laid over the top-level params
-pub(crate) struct ParamsView<'a> {
+pub(crate) struct ParamsView<'params> {
     pub(crate) merged: BTreeMap<String, GuardrailValue>,
-    pub(crate) optional: Option<&'a BTreeMap<String, GuardrailValue>>,
+    pub(crate) optional: Option<&'params BTreeMap<String, GuardrailValue>>,
 }
 
-impl<'a> ParamsView<'a> {
-    pub(crate) fn parse(extra: &'a OpaqueParams) -> InitResult<Self> {
+impl<'params> ParamsView<'params> {
+    pub(crate) fn parse(extra: &'params OpaqueParams) -> InitResult<Self> {
         let optional = match extra.0.get("optional_params") {
             None | Some(GuardrailValue::Null) => None,
             Some(GuardrailValue::Object(entries)) => Some(entries),
@@ -54,12 +54,12 @@ impl<'a> ParamsView<'a> {
             }
         };
         let mut merged = extra.0.clone();
-        if let Some(entries) = optional {
-            for (name, value) in entries {
-                if *value != GuardrailValue::Null {
-                    merged.insert(name.clone(), value.clone());
-                }
-            }
+        for (name, value) in optional
+            .into_iter()
+            .flatten()
+            .filter(|(_, value)| **value != GuardrailValue::Null)
+        {
+            merged.insert(name.clone(), value.clone());
         }
         Ok(Self { merged, optional })
     }

@@ -125,9 +125,9 @@ fn extra_text(extra: &OpaqueParams, name: &str) -> Option<String> {
 
 fn known_api_version(version: Option<String>) -> Option<String> {
     match version {
-        Some(version) if API_VERSIONS.contains(&version.as_str()) => Some(version),
-        Some(version) => {
-            let shown = format!("{version:?}");
+        Some(accepted) if API_VERSIONS.contains(&accepted.as_str()) => Some(accepted),
+        Some(unsupported) => {
+            let shown = format!("{unsupported:?}");
             tracing::warn!(
                 "Straiker guardrail: ignoring api_version {shown}, expected 'v1', 'v3' or unset; the route follows the api_key prefix"
             );
@@ -139,8 +139,10 @@ fn known_api_version(version: Option<String>) -> Option<String> {
 
 fn checked_format_hint(hint: Option<String>) -> InitResult<Option<String>> {
     match hint {
-        Some(hint) if !FORMAT_HINTS.contains(&hint.as_str()) => {
-            Err(ThirdPartyInitBError::InvalidFormatHint { format_hint: hint })
+        Some(unknown) if !FORMAT_HINTS.contains(&unknown.as_str()) => {
+            Err(ThirdPartyInitBError::InvalidFormatHint {
+                format_hint: unknown,
+            })
         }
         other => Ok(other),
     }

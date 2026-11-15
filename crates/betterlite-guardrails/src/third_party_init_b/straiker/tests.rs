@@ -66,14 +66,6 @@ fn straiker_copies_the_config_values() {
             "max_backoff": 4.0,
             "unreachable_fallback": "fail_open",
             "fail_on_error": false,
-            "max_payload_bytes": 1024,
-            "custom_headers": {"x-header": "value"},
-            "metadata": {"team": "safety"},
-            "verbose": true,
-            "api_version": "v3",
-            "agent_ref": "agent-1",
-            "client": "cli-1",
-            "format_hint": "openai.chat",
             "default_on": true
             "#,
         ),
@@ -90,6 +82,32 @@ fn straiker_copies_the_config_values() {
     assert_eq!(built.max_backoff, Some(4.0_f64));
     assert_eq!(built.unreachable_fallback, "fail_open");
     assert!(!built.fail_on_error);
+    assert!(built.default_on);
+    assert_eq!(
+        built.event_hook,
+        LitellmParamsMode::One("pre_call".to_owned())
+    );
+}
+
+#[test]
+fn straiker_copies_the_payload_and_routing_fields() {
+    let built = initialize_straiker(
+        &params(
+            r#",
+            "api_key": "sk_agent_key",
+            "max_payload_bytes": 1024,
+            "custom_headers": {"x-header": "value"},
+            "metadata": {"team": "safety"},
+            "verbose": true,
+            "api_version": "v3",
+            "agent_ref": "agent-1",
+            "client": "cli-1",
+            "format_hint": "openai.chat"
+            "#,
+        ),
+        None,
+    )
+    .unwrap();
     assert_eq!(built.max_payload_bytes, Some(1024));
     assert_eq!(
         built.custom_headers,
@@ -107,11 +125,6 @@ fn straiker_copies_the_config_values() {
     assert_eq!(built.agent_ref.as_deref(), Some("agent-1"));
     assert_eq!(built.client.as_deref(), Some("cli-1"));
     assert_eq!(built.format_hint.as_deref(), Some("openai.chat"));
-    assert!(built.default_on);
-    assert_eq!(
-        built.event_hook,
-        LitellmParamsMode::One("pre_call".to_owned())
-    );
 }
 
 #[test]
@@ -126,6 +139,12 @@ fn straiker_applies_the_defaults() {
     assert_eq!(built.max_backoff, None);
     assert_eq!(built.unreachable_fallback, "fail_closed");
     assert!(built.fail_on_error);
+    assert!(!built.default_on);
+}
+
+#[test]
+fn straiker_has_no_payload_or_routing_values() {
+    let built = initialize_straiker(&params(r#", "api_key": "sk_agent_key""#), None).unwrap();
     assert_eq!(built.max_payload_bytes, None);
     assert_eq!(built.custom_headers, None);
     assert_eq!(built.metadata, None);
@@ -134,13 +153,12 @@ fn straiker_applies_the_defaults() {
     assert_eq!(built.agent_ref, None);
     assert_eq!(built.client, None);
     assert_eq!(built.format_hint, None);
-    assert!(!built.default_on);
 }
 
 #[rstest]
 #[case::default_app_wins(r#", "default_app": "Default App", "source": "Source""#, "Default App")]
 #[case::empty_default_app_falls_through(r#", "default_app": "", "source": "Source""#, "Source")]
-#[case::no_source_uses_the_default(r#""#, "LiteLLM Gateway")]
+#[case::no_source_uses_the_default("", "LiteLLM Gateway")]
 #[case::non_string_default_app_falls_through(r#", "default_app": 5, "source": "Source""#, "Source")]
 fn straiker_source_reads_default_app_then_source(#[case] extras: &str, #[case] expected: &str) {
     let key = r#", "api_key": "sk_agent_key""#;

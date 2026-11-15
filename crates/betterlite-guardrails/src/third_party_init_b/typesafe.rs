@@ -11,7 +11,7 @@ use super::{InitResult, ParamsView, decode, unreachable_fallback_text};
 
 mod tests;
 
-const RELEVANCE_BOUNDS: RangeInclusive<f64> = 0.0..=1.0;
+const RELEVANCE_BOUNDS: RangeInclusive<f64> = 0.0_f64..=1.0_f64;
 
 #[derive(Debug, Clone)]
 pub struct TypeSafeArgs {
@@ -40,11 +40,9 @@ pub fn initialize_typesafe(
         .base
         .sent_fields()
         .map_err(|source| ThirdPartyInitBError::Params { source })?;
-    let unreachable_fallback = if sent.contains_key("unreachable_fallback") {
-        Some(unreachable_fallback_text(params.base.fields.unreachable_fallback).to_owned())
-    } else {
-        None
-    };
+    let unreachable_fallback = sent
+        .contains_key("unreachable_fallback")
+        .then(|| unreachable_fallback_text(params.base.fields.unreachable_fallback).to_owned());
     Ok(TypeSafeArgs {
         name: name.to_owned(),
         api_base: params.base.fields.api_base.clone(),
