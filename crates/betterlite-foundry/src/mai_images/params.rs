@@ -52,13 +52,10 @@ fn map_param(
         }
         ("size", Json::Null | Json::Text(_)) => {}
         ("size", _) => return Err(MaiImageError::FieldType { field: "size" }),
-        ("n", Json::Null) => {
+        ("n", Json::Null) | ("width" | "height", _) => {
             optional_params.insert(name.to_owned(), value.clone());
         }
         ("n", _) => map_count(value, optional_params, model, drop_params)?,
-        ("width" | "height", _) => {
-            optional_params.insert(name.to_owned(), value.clone());
-        }
         _ if drop_params => {}
         _ => {
             return Err(MaiImageError::UnsupportedParam {

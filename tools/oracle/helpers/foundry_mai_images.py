@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, TypedDict, TypeVar
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, TypeVar, runtime_checkable
 
 import httpx
 from litellm.exceptions import UnsupportedParamsError
@@ -13,6 +13,8 @@ from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 Call = TypeVar("Call")
+UNSUPPORTED: Final[type[Exception]] = UnsupportedParamsError
+OPENAI_ERROR: Final[type[Exception]] = OpenAIError
 
 
 class UrlCall(TypedDict):
@@ -44,6 +46,51 @@ class Input(TypedDict):
     replies: NotRequired[list[ReplyCall]]
 
 
+@runtime_checkable
+class Config(Protocol):
+    def get_mai_image_generation_url(self, api_base: str | None, api_version: str | None) -> str: ...
+
+    def get_mai_image_edit_url(self, api_base: str | None, api_version: str | None) -> str: ...
+
+    def is_mai_model(self, model: str) -> bool: ...
+
+    def normalize_mai_image_usage(
+        self, usage: dict[str, JsonValue] | None
+    ) -> dict[str, JsonValue]: ...
+
+    def map_openai_params(
+        self,
+        non_default_params: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        model: str,
+        *,
+        drop_params: bool,
+    ) -> dict[str, JsonValue]: ...
+
+    def transform_image_generation_response(
+        self,
+        model: str,
+        raw_response: httpx.Response,
+        model_response: ImageResponse,
+        logging_obj: Logging,
+        request_data: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        encoding: None,
+        api_key: str | None = None,
+    ) -> ImageResponse: ...
+
+
+class ConfigBoundary(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    config: Config
+
+
+class FailureRecord(BaseModel):
+    status_code: int | None = None
+    llm_provider: str | None = None
+
+
 class LoggedDetails(BaseModel):
     input: str | None = None
     api_key: str | None = None
@@ -56,21 +103,9 @@ class RecordedLogging(BaseModel):
     model_call_details: LoggedDetails
 
 
+CONFIG_VALUES: Final = {"config": MaiConfig()}
+CONFIG: Config = ConfigBoundary.model_validate(CONFIG_VALUES).config
 OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-
-
-def error_view(error: ValueError | UnsupportedParamsError | OpenAIError) -> JsonValue:
-    match error:
-        case UnsupportedParamsError():
-            return {
-                "kind": "UnsupportedParamsError",
-                "status": error.status_code,
-                "provider": error.llm_provider,
-            }
-        case OpenAIError():
-            return {"kind": "OpenAIError", "status": error.status_code, "provider": None}
-        case ValueError():
-            return {"kind": "ValueError", "status": None, "provider": None}
 
 
 def outcomes(calls: list[Call], compute: Callable[[Call], JsonValue]) -> JsonValue:
@@ -78,30 +113,40 @@ def outcomes(calls: list[Call], compute: Callable[[Call], JsonValue]) -> JsonVal
     for call in calls:
         try:
             results.append({"value": compute(call)})
-        except (ValueError, UnsupportedParamsError, OpenAIError) as error:
-            results.append({"error": error_view(error)})
+        except ValueError:
+            results.append({"error": {"kind": "ValueError", "status": None, "provider": None}})
+        except UNSUPPORTED as error:
+            record = FailureRecord.model_validate(error, from_attributes=True)
+            results.append(
+                {
+                    "error": {
+                        "kind": "UnsupportedParamsError",
+                        "status": record.status_code,
+                        "provider": record.llm_provider,
+                    }
+                }
+            )
+        except OPENAI_ERROR as error:
+            record = FailureRecord.model_validate(error, from_attributes=True)
+            results.append(
+                {"error": {"kind": "OpenAIError", "status": record.status_code, "provider": None}}
+            )
     return results
 
 
 def url_value(call: UrlCall) -> JsonValue:
     if call["operation"] == "generation":
-        return MaiConfig.get_mai_image_generation_url(call["api_base"], call["api_version"])
-    return MaiConfig.get_mai_image_edit_url(call["api_base"], call["api_version"])
+        return CONFIG.get_mai_image_generation_url(call["api_base"], call["api_version"])
+    return CONFIG.get_mai_image_edit_url(call["api_base"], call["api_version"])
 
 
 def params_value(call: ParamsCall) -> JsonValue:
-    mapped = MaiConfig().map_openai_params(
+    return CONFIG.map_openai_params(
         call["non_default_params"],
         dict(call["optional_params"]),
         call["model"],
-        call["drop_params"],
+        drop_params=call["drop_params"],
     )
-    return OBJECT.validate_python(mapped)
-
-
-def usage_value(usage: dict[str, JsonValue] | None) -> JsonValue:
-    normalized = MaiConfig.normalize_mai_image_usage(usage)
-    return OBJECT.validate_python(normalized)
 
 
 def reply_value(call: ReplyCall) -> JsonValue:
@@ -114,7 +159,7 @@ def reply_value(call: ReplyCall) -> JsonValue:
         litellm_call_id="call-1",
         function_id="fn-1",
     )
-    response = MaiConfig().transform_image_generation_response(
+    response = CONFIG.transform_image_generation_response(
         model="MAI-Image-2.5",
         raw_response=httpx.Response(call["status_code"], content=call["body"].encode()),
         model_response=ImageResponse(),
@@ -142,11 +187,11 @@ def run(values: Input) -> JsonValue:
     if "urls" in values:
         answer["urls"] = outcomes(values["urls"], url_value)
     if "models" in values:
-        answer["models"] = [MaiConfig.is_mai_model(model) for model in values["models"]]
+        answer["models"] = [CONFIG.is_mai_model(model) for model in values["models"]]
     if "params" in values:
         answer["params"] = outcomes(values["params"], params_value)
     if "usages" in values:
-        answer["usages"] = outcomes(values["usages"], usage_value)
+        answer["usages"] = outcomes(values["usages"], CONFIG.normalize_mai_image_usage)
     if "replies" in values:
         answer["replies"] = outcomes(values["replies"], reply_value)
     return answer

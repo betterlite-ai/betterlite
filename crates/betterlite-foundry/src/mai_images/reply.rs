@@ -27,7 +27,7 @@ pub struct MaiImageReply<'reply> {
 }
 
 // B004 projects body as an image_generation response and the size is set on it afterwards
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MaiImageResponse {
     pub body: Object,
     pub size: String,

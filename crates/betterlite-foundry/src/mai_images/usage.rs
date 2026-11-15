@@ -62,25 +62,21 @@ fn alias_counts(usage: &Object) -> Result<AliasCounts, MaiImageError> {
 }
 
 // An explicit input or total, zero included, wins over the sum of what was counted
-fn totals(usage: &Object, counts: &AliasCounts) -> Result<(i64, i64), MaiImageError> {
-    let input_tokens = match token_field((usage, "input_tokens", "input_tokens"))? {
-        Some(explicit) => explicit,
-        None => counts
-            .text
-            .checked_add(counts.image)
-            .ok_or(MaiImageError::TokenOverflow {
-                field: "input_tokens",
-            })?,
-    };
-    let total_tokens = match token_field((usage, "total_tokens", "total_tokens"))? {
-        Some(explicit) => explicit,
-        None => input_tokens
-            .checked_add(counts.output)
-            .ok_or(MaiImageError::TokenOverflow {
-                field: "total_tokens",
-            })?,
-    };
-    Ok((input_tokens, total_tokens))
+fn explicit_or_sum(
+    usage: &Object,
+    key: &'static str,
+    parts: (i64, i64),
+) -> Result<i64, MaiImageError> {
+    let explicit = token_field((usage, key, key))?;
+    explicit.map_or_else(
+        || {
+            parts
+                .0
+                .checked_add(parts.1)
+                .ok_or(MaiImageError::TokenOverflow { field: key })
+        },
+        Ok,
+    )
 }
 
 pub fn normalize_mai_image_usage(reported: Option<&Object>) -> Result<Object, MaiImageError> {
@@ -88,7 +84,8 @@ pub fn normalize_mai_image_usage(reported: Option<&Object>) -> Result<Object, Ma
     let empty = Object::new();
     let usage = reported.unwrap_or(&empty);
     let counts = alias_counts(usage)?;
-    let (input_tokens, total_tokens) = totals(usage, &counts)?;
+    let input_tokens = explicit_or_sum(usage, "input_tokens", (counts.text, counts.image))?;
+    let total_tokens = explicit_or_sum(usage, "total_tokens", (input_tokens, counts.output))?;
     let details = Object::from_iter([
         (
             "image_tokens".to_owned(),
