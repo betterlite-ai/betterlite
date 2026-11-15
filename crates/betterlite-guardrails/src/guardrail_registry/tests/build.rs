@@ -25,7 +25,7 @@ fn build_bedrock_sets_its_hooks_and_settings() {
     assert!(settings.mask_request_content);
     assert!(!settings.mask_response_content);
     assert!(settings.only_scan_new_messages);
-    assert_eq!(settings.timeout, Some(2.5));
+    assert_eq!(settings.timeout, Some(2.5_f64));
     assert!(matches!(&callback.spec, CallbackSpec::Bedrock(_)));
 }
 
@@ -49,7 +49,7 @@ fn build_lakera_sets_its_two_hooks() {
         Some(LitellmParamsMode::One("pre_call".to_owned()))
     );
     assert!(settings.default_on);
-    assert_eq!(settings.timeout, Some(1.5));
+    assert_eq!(settings.timeout, Some(1.5_f64));
     assert!(matches!(&callback.spec, CallbackSpec::Lakera(_)));
 }
 
@@ -74,7 +74,7 @@ fn build_lakera_v2_sets_its_three_hooks() {
         Some(LitellmParamsMode::One("during_call".to_owned()))
     );
     assert!(settings.default_on);
-    assert_eq!(settings.timeout, Some(2.5));
+    assert_eq!(settings.timeout, Some(2.5_f64));
     assert!(matches!(&callback.spec, CallbackSpec::LakeraV2(_)));
 }
 
@@ -135,6 +135,13 @@ fn build_presidio_orders_scan_restore_and_mask() {
         &callbacks[2].spec,
         CallbackSpec::Presidio(args) if args.role == PresidioRole::Scan && args.apply_to_output
     ));
+}
+
+#[test]
+fn build_presidio_sets_the_mask_flag_and_modes_per_callback() {
+    let callbacks = factories()
+        .build("presidio", &params(PRESIDIO_PARAMS), "pii-guard", true)
+        .unwrap();
     assert!(!callbacks[0].base.settings.mask_response_content);
     assert!(callbacks[2].base.settings.mask_response_content);
     assert_eq!(
@@ -161,7 +168,7 @@ fn build_presidio_copies_the_common_settings_to_every_callback() {
         )
         .unwrap();
     assert!(callbacks.iter().all(|callback| {
-        callback.base.settings.default_on && callback.base.settings.timeout == Some(3.5)
+        callback.base.settings.default_on && callback.base.settings.timeout == Some(3.5_f64)
     }));
     assert_eq!(
         callbacks[0].base.settings.event_hook,

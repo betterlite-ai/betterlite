@@ -16,6 +16,7 @@ pub enum CompressionKind {
     Typesafe,
 }
 
+#[must_use]
 pub fn compression_kind(provider: &str) -> Option<CompressionKind> {
     match provider {
         "headroom" => Some(CompressionKind::Headroom),

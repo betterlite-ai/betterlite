@@ -24,12 +24,12 @@ impl GuardrailRows for FakeRows {
         row: NewGuardrailRow,
     ) -> impl Future<Output = Result<GuardrailRow, RowsError>> + Send {
         self.seen.lock().unwrap().create = Some(row);
-        std::future::ready(self.create.lock().unwrap().take().expect("scripted"))
+        ready(self.create.lock().unwrap().take().expect("scripted"))
     }
 
     fn delete(&self, guardrail_id: &str) -> impl Future<Output = Result<(), RowsError>> + Send {
         self.seen.lock().unwrap().delete = Some(guardrail_id.to_owned());
-        std::future::ready(self.delete.lock().unwrap().take().expect("scripted"))
+        ready(self.delete.lock().unwrap().take().expect("scripted"))
     }
 
     fn update(
@@ -38,11 +38,11 @@ impl GuardrailRows for FakeRows {
         row: GuardrailUpdate,
     ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
         self.seen.lock().unwrap().update = Some((guardrail_id.to_owned(), row));
-        std::future::ready(self.update.lock().unwrap().take().expect("scripted"))
+        ready(self.update.lock().unwrap().take().expect("scripted"))
     }
 
     fn find_active(&self) -> impl Future<Output = Result<Vec<GuardrailRow>, RowsError>> + Send {
-        std::future::ready(self.active.lock().unwrap().take().expect("scripted"))
+        ready(self.active.lock().unwrap().take().expect("scripted"))
     }
 
     fn find_by_id(
@@ -50,7 +50,7 @@ impl GuardrailRows for FakeRows {
         guardrail_id: &str,
     ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
         self.seen.lock().unwrap().by_id = Some(guardrail_id.to_owned());
-        std::future::ready(self.by_id.lock().unwrap().take().expect("scripted"))
+        ready(self.by_id.lock().unwrap().take().expect("scripted"))
     }
 
     fn find_by_name(
@@ -58,7 +58,7 @@ impl GuardrailRows for FakeRows {
         guardrail_name: &str,
     ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
         self.seen.lock().unwrap().by_name = Some(guardrail_name.to_owned());
-        std::future::ready(self.by_name.lock().unwrap().take().expect("scripted"))
+        ready(self.by_name.lock().unwrap().take().expect("scripted"))
     }
 }
 

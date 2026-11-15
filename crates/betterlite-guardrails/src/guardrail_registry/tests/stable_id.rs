@@ -24,6 +24,6 @@ fn stable_id_returns_the_name_id_when_only_a_suffix_is_taken() {
 
 #[test]
 fn stable_id_hashes_non_ascii_names_as_utf8() {
-    let id = stable_guardrail_id("garde-écran", &|_candidate| false);
+    let id = stable_guardrail_id("garde-\u{e9}cran", &|_candidate| false);
     assert_eq!(id, "9423e2e1-f7a1-5db9-9199-54fabb164514");
 }

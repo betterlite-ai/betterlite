@@ -70,7 +70,7 @@ fn rows_decode_errors_do_not_show_parameter_values() {
     );
     let error = row_to_guardrail(&stored).unwrap_err();
     let message = error.to_string();
-    assert!(message.contains("timeout"));
+    assert!(message.starts_with("invalid field"));
     assert!(!message.contains("sk-secret-value"));
 }
 

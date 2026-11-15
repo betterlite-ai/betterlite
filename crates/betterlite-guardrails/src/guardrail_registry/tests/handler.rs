@@ -81,7 +81,13 @@ fn handler_init_replaces_environment_references() {
     let mut env = BTreeMap::new();
     env.insert("GUARD_KEY".to_owned(), "sk-live".to_owned());
     env.insert("GUARD_BASE".to_owned(), "https://guard.example".to_owned());
-    let mut handler = handler_with(env, true, false);
+    let mut handler = handler_with(
+        env,
+        HandlerSettings {
+            strict_modes: true,
+            global_skip_tool_message: false,
+        },
+    );
     let initialized = handler
         .initialize_guardrail(
             guardrail(
@@ -94,7 +100,7 @@ fn handler_init_replaces_environment_references() {
         .unwrap();
     let fields = &initialized.litellm_params.base.fields;
     assert_eq!(
-        fields.api_key.as_ref().map(|key| key.expose_secret()),
+        fields.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-live")
     );
     assert_eq!(fields.api_base.as_deref(), Some("https://guard.example"));
@@ -120,7 +126,7 @@ fn handler_init_uses_none_text_for_a_missing_environment_variable() {
             .fields
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("None")
     );
 }
@@ -200,7 +206,13 @@ fn handler_init_passes_strict_modes_to_the_builders() {
 
 #[test]
 fn handler_init_applies_the_global_skip_tool_setting() {
-    let mut handler = handler_with(BTreeMap::new(), true, true);
+    let mut handler = handler_with(
+        BTreeMap::new(),
+        HandlerSettings {
+            strict_modes: true,
+            global_skip_tool_message: true,
+        },
+    );
     let error = handler
         .initialize_guardrail(
             guardrail(
@@ -255,7 +267,7 @@ fn handler_update_keeps_callbacks_when_params_are_unchanged() {
             GuardrailDefinitionLocation::Config,
         )
         .unwrap();
-    let id = initialized.guardrail_id.clone().unwrap();
+    let id = initialized.guardrail_id.unwrap();
     let mut changed_info = guardrail(Some(id.as_str()), "pii-guard", BEDROCK_PARAMS);
     changed_info.guardrail_info = Some(OpaqueParams(BTreeMap::from([(
         "team".to_owned(),
@@ -298,7 +310,7 @@ fn handler_update_rebuilds_when_the_params_change() {
             GuardrailDefinitionLocation::Config,
         )
         .unwrap();
-    let id = initialized.guardrail_id.clone().unwrap();
+    let id = initialized.guardrail_id.unwrap();
     handler
         .update_in_memory_guardrail(
             &id,
@@ -337,7 +349,7 @@ fn handler_update_rebuilds_when_the_name_changes() {
             GuardrailDefinitionLocation::Config,
         )
         .unwrap();
-    let id = initialized.guardrail_id.clone().unwrap();
+    let id = initialized.guardrail_id.unwrap();
     handler
         .update_in_memory_guardrail(
             &id,
@@ -370,7 +382,7 @@ fn handler_update_restores_the_previous_guardrail_when_the_new_one_fails() {
             GuardrailDefinitionLocation::Config,
         )
         .unwrap();
-    let id = initialized.guardrail_id.clone().unwrap();
+    let id = initialized.guardrail_id.unwrap();
     let error = handler
         .update_in_memory_guardrail(
             &id,
@@ -434,7 +446,7 @@ fn handler_update_reinitialize_returns_the_new_guardrail() {
             GuardrailDefinitionLocation::Config,
         )
         .unwrap();
-    let id = initialized.guardrail_id.clone().unwrap();
+    let id = initialized.guardrail_id.unwrap();
     let result = handler
         .reinitialize_guardrail(
             &guardrail(
@@ -462,7 +474,7 @@ fn handler_update_delete_drops_guardrail_source_and_siblings() {
             GuardrailDefinitionLocation::Config,
         )
         .unwrap();
-    let id = initialized.guardrail_id.clone().unwrap();
+    let id = initialized.guardrail_id.unwrap();
     assert_eq!(handler.all_callbacks().count(), 3);
     handler.delete_in_memory_guardrail(&id);
     assert!(handler.get_guardrail_by_id(&id).is_none());
@@ -486,8 +498,8 @@ fn handler_update_config_readers_hide_db_entries() {
             GuardrailDefinitionLocation::Db,
         )
         .unwrap();
-    let config_id = configured.guardrail_id.clone().unwrap();
-    let db_id = stored.guardrail_id.clone().unwrap();
+    let config_id = configured.guardrail_id.unwrap();
+    let db_id = stored.guardrail_id.unwrap();
     let listed: Vec<String> = handler
         .list_config_guardrails()
         .iter()

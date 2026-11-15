@@ -127,7 +127,7 @@ impl InMemoryGuardrailHandler {
 
     pub fn delete_in_memory_guardrail(&mut self, guardrail_id: &str) {
         drop(self.guardrails.shift_remove(guardrail_id));
-        drop(self.sources.shift_remove(guardrail_id));
+        self.sources.shift_remove(guardrail_id);
         drop(self.callbacks.shift_remove(guardrail_id));
     }
 
@@ -168,7 +168,6 @@ impl InMemoryGuardrailHandler {
         self.guardrails.get(guardrail_id)
     }
 
-    #[must_use]
     pub fn all_callbacks(&self) -> impl Iterator<Item = &GuardrailCallback> {
         let primaries = self
             .callbacks

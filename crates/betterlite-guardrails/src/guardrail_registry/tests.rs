@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -16,7 +16,7 @@ use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::Timestamp;
 use betterlite_redis::config_sync::publish::{PublishChange, redis_config_change_publisher};
 use chrono::{DateTime, NaiveDateTime, Utc};
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::build::GuardrailFactories;
 use super::callback::{CallbackScoping, CallbackSpec, GuardrailCallback};
@@ -122,22 +122,20 @@ fn build_one(kind: &str, params_json: &str, name: &str) -> GuardrailCallback {
 }
 
 fn handler() -> InMemoryGuardrailHandler {
-    handler_with(BTreeMap::new(), true, false)
+    handler_with(
+        BTreeMap::new(),
+        HandlerSettings {
+            strict_modes: true,
+            global_skip_tool_message: false,
+        },
+    )
 }
 
 fn handler_with(
     env: BTreeMap<String, String>,
-    strict_modes: bool,
-    global_skip_tool_message: bool,
+    settings: HandlerSettings,
 ) -> InMemoryGuardrailHandler {
-    InMemoryGuardrailHandler::new(
-        factories(),
-        Box::new(env),
-        HandlerSettings {
-            strict_modes,
-            global_skip_tool_message,
-        },
-    )
+    InMemoryGuardrailHandler::new(factories(), Box::new(env), settings)
 }
 
 include!("tests/stable_id.rs");
