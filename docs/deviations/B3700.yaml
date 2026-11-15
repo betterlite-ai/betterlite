@@ -8,8 +8,9 @@ deviations:
       prefix's first matching conditional, phrase pattern and category keyword travel
       too, but only while the cut is one LiteLLM's own check would defer. On a cut
       LiteLLM commits the carry is cleared, so a match the trimmed buffer no longer
-      holds never wins over one it does, and the yielded chunks and recorded detections
-      stay what the untrimmed buffer gives.
+      holds never wins over one it does, and the yielded chunks stay what LiteLLM's own
+      stream gives while the recorded detections stay what an untrimmed whole-buffer
+      scan records.
     why: >-
       LiteLLM defers the trim while a phrase sits outside the tail or a conditional
       word sits in the sentence the cut splits. Once either is more than one context
