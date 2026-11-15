@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use indexmap::IndexMap;
+use serde_json::Deserializer;
 use thiserror::Error;
 
 use crate::api::responses_chat_options::error::ChatOptionsError;
@@ -70,8 +71,8 @@ fn typed_request(
     let mut selected = entries.clone();
     selected.insert("model".to_owned(), Json::Text(model));
     let encoded = serde_json::to_vec(&selected)?;
-    serde_path_to_error::deserialize(serde_json::Deserializer::from_slice(&encoded))
-        .map_err(fields_error)
+    let mut decoder = Deserializer::from_slice(&encoded);
+    serde_path_to_error::deserialize(&mut decoder).map_err(fields_error)
 }
 
 fn fields_error(error: serde_path_to_error::Error<serde_json::Error>) -> BatchBodyError {
