@@ -4,6 +4,7 @@ use super::support::{mapped, object};
 use crate::chat_params::error::ChatParamsError;
 
 const NONE_EFFORT: &str = r#"{"reasoning_effort":"none"}"#;
+const DICT_NONE_EFFORT: &str = r#"{"reasoning_effort":{"effort":"none","summary":"auto"}}"#;
 
 pub(super) fn azure_effort_none_drop() {
     let rejected = mapped(
@@ -44,6 +45,28 @@ pub(super) fn azure_effort_none_drop() {
             DropParams {
                 global: true,
                 request: false
+            }
+        )
+        .unwrap(),
+        object("{}")
+    );
+    let from_dict = mapped(
+        "gpt5_series/gpt-5.3",
+        DICT_NONE_EFFORT,
+        "{}",
+        DropParams::default(),
+    )
+    .unwrap_err();
+    assert!(matches!(from_dict, ChatParamsError::UnsupportedNone));
+    assert_eq!(from_dict.status_code(), Some(400));
+    assert_eq!(
+        mapped(
+            "gpt5_series/gpt-5.3",
+            DICT_NONE_EFFORT,
+            "{}",
+            DropParams {
+                global: false,
+                request: true
             }
         )
         .unwrap(),

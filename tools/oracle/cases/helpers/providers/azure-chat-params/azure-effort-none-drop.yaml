@@ -95,6 +95,22 @@ call:
       optional: {}
       drop_params: false
       global_drop_params: true
+    - model: gpt5_series/gpt-5.3
+      non_default:
+        reasoning_effort:
+          effort: none
+          summary: auto
+      optional: {}
+      drop_params: false
+      global_drop_params: false
+    - model: gpt5_series/gpt-5.3
+      non_default:
+        reasoning_effort:
+          effort: none
+          summary: auto
+      optional: {}
+      drop_params: true
+      global_drop_params: false
     - model: gpt5_series/gpt-5.1
       non_default:
         reasoning_effort: none
