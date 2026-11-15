@@ -136,6 +136,32 @@ fn line_cost_prefers_the_response_model() {
     assert_eq!(result.prompt_cost, Decimal::new(5, 0));
     assert_eq!(result.completion_cost, Decimal::ZERO);
     assert_eq!(result.cost, Decimal::new(5, 0));
+    assert_eq!(result.models, vec!["gpt-4o-deployment".to_owned()]);
+}
+
+#[test]
+fn bedrock_prices_with_the_deployment_model() {
+    let lookup = ByModelLookup {
+        response: serde_json::from_str(r#"{"input_cost_per_token_batches":0.5}"#)
+            .expect("the response rates decode"),
+        deployment: serde_json::from_str(r#"{"input_cost_per_token_batches":0.25}"#)
+            .expect("the deployment rates decode"),
+    };
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "bedrock",
+        "model_name": "gpt-4o-deployment",
+        "content": {"kind": "lines", "lines": [{
+            "custom_id": "d",
+            "modelOutput": {
+                "model": "gpt-4o-response",
+                "usage": {"input_tokens": 10, "output_tokens": 0},
+            },
+        }]},
+    }));
+    let result = run_with_lookup(&decoded, &lookup, &NoProviders).expect("the batch is costed");
+    assert_eq!(result.prompt_cost, Decimal::new(25, 1));
+    assert_eq!(result.cost, Decimal::new(25, 1));
 }
 
 #[test]
