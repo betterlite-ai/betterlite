@@ -124,7 +124,7 @@ fn assemble(
             kwargs.standard_logging_object,
             input.store_bodies,
         ),
-        standard_callback_dynamic_params: kwargs.standard_callback_dynamic_params,
+        dynamic_params: kwargs.dynamic_params,
         response: compact_response(input.response),
         combined_usage: kwargs.combined_usage_object,
         realtime_tools: kwargs.realtime_tools,

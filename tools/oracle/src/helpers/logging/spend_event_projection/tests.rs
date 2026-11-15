@@ -63,8 +63,7 @@ fn a_rejected_line_is_a_decode_error_value() {
 #[case::model("model", true)]
 #[case::mapping("mapping", true)]
 #[case::batch("batch", false)]
-#[case::interactions("interactions", false)]
-fn only_batch_and_interactions_stay_in_process(#[case] kind: &str, #[case] expected: bool) {
+fn only_batch_stays_in_process(#[case] kind: &str, #[case] expected: bool) {
     let output = Op::decode_and_run(&json!({"function": "offloadable", "kind": kind})).unwrap();
     assert_eq!(output["offloadable"], expected);
 }

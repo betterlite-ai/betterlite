@@ -33,12 +33,11 @@ pub fn choose_reservation(params: &LitellmParams, typed: &TypedAuths) -> Option<
         .litellm_metadata
         .as_ref()
         .and_then(|bucket| bucket_reservation(bucket, typed.litellm_metadata.as_ref()));
-    from_litellm_metadata.or_else(|| {
-        params
-            .metadata
-            .as_ref()
-            .and_then(|bucket| bucket_reservation(bucket, typed.metadata.as_ref()))
-    })
+    if from_litellm_metadata.is_some() {
+        return from_litellm_metadata;
+    }
+    let bucket = params.metadata.as_ref()?;
+    bucket_reservation(bucket, typed.metadata.as_ref())
 }
 
 // An absent bucket stays absent, and the chosen reservation is copied only into a bucket that exists

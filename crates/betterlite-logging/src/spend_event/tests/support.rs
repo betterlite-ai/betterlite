@@ -1,10 +1,10 @@
 use serde_json::Value;
 
-use crate::spend_bodies::session::SpendTimestamp;
 use crate::spend_event::build::build_spend_event;
 use crate::spend_event::error::SpendEventBuildError;
 use crate::spend_event::event::Mapping;
 use crate::spend_event::input::{BuildInput, CachePresence, ResponseObject, TypedAuths};
+use crate::spend_event::time::EventTime;
 
 pub struct Options {
     pub response: ResponseObject,
@@ -29,7 +29,7 @@ pub fn mapping(text: &str) -> Mapping {
     serde_json::from_str(text).unwrap()
 }
 
-pub fn stamp(text: &str) -> SpendTimestamp {
+pub fn stamp(text: &str) -> EventTime {
     serde_json::from_value(Value::String(text.to_owned())).unwrap()
 }
 

@@ -2,9 +2,9 @@ use rust_decimal::Decimal;
 use rust_decimal::serde::arbitrary_precision_option;
 use serde::Deserialize;
 
-use crate::spend_bodies::session::SpendTimestamp;
 use crate::spend_event::event::{DynamicParams, LitellmParams, Mapping};
 use crate::spend_event::presence::Presence;
+use crate::spend_event::time::EventTime;
 use betterlite_models::decisions::Json;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -86,13 +86,14 @@ pub struct SuccessKwargs {
     pub cache_hit: Option<bool>,
     #[serde(default, with = "arbitrary_precision_option")]
     pub response_cost: Option<Decimal>,
-    pub completion_start_time: Option<SpendTimestamp>,
+    pub completion_start_time: Option<EventTime>,
     pub agent_id: Option<String>,
     pub litellm_trace_id: Option<String>,
     #[serde(default)]
     pub litellm_params: LitellmParams,
     pub standard_logging_object: Option<Mapping>,
-    pub standard_callback_dynamic_params: Option<DynamicParams>,
+    #[serde(rename = "standard_callback_dynamic_params")]
+    pub dynamic_params: Option<DynamicParams>,
     pub combined_usage_object: Option<Mapping>,
     pub realtime_tools: Option<Vec<Json>>,
     pub realtime_tool_calls: Option<Vec<Json>>,
@@ -104,8 +105,8 @@ pub struct BuildInput<'data> {
     pub kwargs: &'data Mapping,
     pub typed_auth: &'data TypedAuths,
     pub response: &'data ResponseObject,
-    pub start_time: SpendTimestamp,
-    pub end_time: SpendTimestamp,
+    pub start_time: EventTime,
+    pub end_time: EventTime,
     pub store_bodies: bool,
     pub cache: CachePresence,
 }

@@ -1,12 +1,13 @@
 use betterlite_models::decisions::Json;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 // A key present with a null value differs from an absent key, and Option cannot tell them apart
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum Presence {
+    Present(Json),
     #[default]
     Missing,
-    Present(Json),
 }
 
 impl Presence {
@@ -16,20 +17,5 @@ impl Presence {
             Self::Missing => true,
             Self::Present(_) => false,
         }
-    }
-}
-
-impl Serialize for Presence {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Missing => serializer.serialize_none(),
-            Self::Present(value) => value.serialize(serializer),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Presence {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Json::deserialize(deserializer).map(Self::Present)
     }
 }

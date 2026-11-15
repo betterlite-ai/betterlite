@@ -14,13 +14,12 @@ from litellm.proxy.spend_tracking.spend_event import (
     is_offloadable_success,
     spend_event_callback_args,
 )
-from litellm.types.interactions import InteractionsAPIResponse
 from litellm.types.utils import LiteLLMBatch
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationError
 
 Bucket: TypeAlias = dict[str, JsonValue | UserAPIKeyAuth]
 Params: TypeAlias = dict[str, JsonValue | Bucket]
-Kind: TypeAlias = Literal["absent", "model", "mapping", "batch", "interactions"]
+Kind: TypeAlias = Literal["absent", "model", "mapping", "batch"]
 JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 CALLBACK_ARGS: TypeAdapter[SpendEventCallbackArgs] = TypeAdapter(SpendEventCallbackArgs)
 DATETIME: TypeAdapter[datetime] = TypeAdapter(datetime)
@@ -129,9 +128,16 @@ def offloadable(kind: Kind) -> JsonValue:
         return {"offloadable": is_offloadable_success(FixtureModel())}
     if kind == "mapping":
         return {"offloadable": is_offloadable_success({})}
-    if kind == "batch":
-        return {"offloadable": is_offloadable_success(LiteLLMBatch.model_construct())}
-    return {"offloadable": is_offloadable_success(InteractionsAPIResponse.model_construct())}
+    batch = LiteLLMBatch(
+        id="batch_1",
+        completion_window="24h",
+        created_at=1,
+        endpoint="/v1/chat/completions",
+        input_file_id="file_1",
+        object="batch",
+        status="completed",
+    )
+    return {"offloadable": is_offloadable_success(batch)}
 
 
 def decode_line(function: Literal["decode", "restore"], line: str) -> JsonValue:

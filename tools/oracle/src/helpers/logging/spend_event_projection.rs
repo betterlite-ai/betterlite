@@ -1,6 +1,5 @@
 mod tests;
 
-use betterlite_logging::spend_bodies::session::SpendTimestamp;
 use betterlite_logging::spend_event::build::build_spend_event;
 use betterlite_logging::spend_event::decode::decode_spend_event;
 use betterlite_logging::spend_event::event::Mapping;
@@ -8,10 +7,11 @@ use betterlite_logging::spend_event::input::{
     BuildInput, CachePresence, ResponseBody, ResponseObject, TypedAuth, TypedAuths,
 };
 use betterlite_logging::spend_event::restore::callback_args;
+use betterlite_logging::spend_event::time::EventTime;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::response_tool_calls::projections::ToolCallResponse;
 use betterlite_prompts::tool_spend::response_tool_call_names;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 #[derive(Deserialize)]
@@ -30,7 +30,6 @@ pub(crate) enum Kind {
     Model,
     Mapping,
     Batch,
-    Interactions,
 }
 
 #[derive(Deserialize)]
@@ -63,8 +62,8 @@ pub(crate) struct BuildSpec {
     litellm_metadata: Option<Mapping>,
     typed_auth: TypedAuthSpec,
     response: ResponseSpec,
-    start_time: SpendTimestamp,
-    end_time: SpendTimestamp,
+    start_time: EventTime,
+    end_time: EventTime,
     store_bodies: bool,
     cache: CachePresence,
 }
@@ -78,8 +77,8 @@ impl crate::helpers::Helper for Op {
         match input {
             Input::Build(spec) => build(spec),
             Input::Offloadable { kind } => Ok(json!({ "offloadable": offloadable(*kind) })),
-            Input::Decode { line } => decode(line),
-            Input::Restore { line } => restore(line),
+            Input::Decode { line } => replay(line, false),
+            Input::Restore { line } => replay(line, true),
         }
     }
 }
@@ -102,7 +101,6 @@ fn offloadable(kind: Kind) -> bool {
         Kind::Model => ResponseObject::Model(body),
         Kind::Mapping => ResponseObject::Mapping(body),
         Kind::Batch => ResponseObject::Batch(body),
-        Kind::Interactions => ResponseObject::Interactions(body),
     };
     response.is_offloadable()
 }
@@ -134,11 +132,8 @@ fn typed_auth(spec: Option<&AuthSpec>) -> Option<TypedAuth> {
     })
 }
 
-fn parse(line: &[u8]) -> Result<Value, Box<crate::helpers::HelperError>> {
-    serde_json::from_slice(line).map_err(|error| invalid(&error.to_string()))
-}
-
-fn build(spec: &BuildSpec) -> crate::helpers::HelperResult {
+// The kwargs the Python side sees: params with both buckets set (null when absent)
+fn raw_kwargs(spec: &BuildSpec) -> Mapping {
     let mut params = spec.litellm_params.clone();
     params.insert(
         "metadata".to_owned(),
@@ -152,6 +147,11 @@ fn build(spec: &BuildSpec) -> crate::helpers::HelperResult {
     );
     let mut kwargs = spec.kwargs.clone();
     kwargs.insert("litellm_params".to_owned(), Json::Object(params));
+    kwargs
+}
+
+fn build(spec: &BuildSpec) -> crate::helpers::HelperResult {
+    let kwargs = raw_kwargs(spec);
     let response = response_object(&spec.response)?;
     let typed = TypedAuths {
         metadata: typed_auth(spec.typed_auth.metadata.as_ref()),
@@ -168,33 +168,39 @@ fn build(spec: &BuildSpec) -> crate::helpers::HelperResult {
     });
     match built {
         Err(_) => Ok(json!({ "build_error": true })),
-        Ok(line) => Ok(json!({
+        Ok(line) => {
+            let event: Value =
+                serde_json::from_slice(&line).map_err(|error| invalid(&error.to_string()))?;
+            Ok(json!({
             "offloadable": response.is_offloadable(),
             "newline_terminated": line.ends_with(b"\n"),
-            "event": parse(&line)?,
-        })),
-    }
-}
-
-fn decode(line: &str) -> crate::helpers::HelperResult {
-    match decode_spend_event(line.as_bytes()) {
-        Err(_) => Ok(json!({ "decode_error": true })),
-        Ok(event) => {
-            let text = serde_json::to_vec(&event).map_err(|error| invalid(&error.to_string()))?;
-            Ok(json!({ "event": parse(&text)? }))
+            "event": event,
+            }))
         }
     }
 }
 
-fn restore(line: &str) -> crate::helpers::HelperResult {
+fn tagged<T>(key: &str, value: &T) -> crate::helpers::HelperResult
+where
+    T: Serialize,
+{
+    let text = serde_json::to_vec(value).map_err(|error| invalid(&error.to_string()))?;
+    let parsed: Value =
+        serde_json::from_slice(&text).map_err(|error| invalid(&error.to_string()))?;
+    let mut object = serde_json::Map::new();
+    object.insert(key.to_owned(), parsed);
+    Ok(Value::Object(object))
+}
+
+fn replay(line: &str, restore: bool) -> crate::helpers::HelperResult {
     let Ok(event) = decode_spend_event(line.as_bytes()) else {
         return Ok(json!({ "decode_error": true }));
     };
+    if !restore {
+        return tagged("event", &event);
+    }
     match callback_args(event) {
         Err(_) => Ok(json!({ "restore_error": true })),
-        Ok(args) => {
-            let text = serde_json::to_vec(&args).map_err(|error| invalid(&error.to_string()))?;
-            Ok(json!({ "args": parse(&text)? }))
-        }
+        Ok(args) => tagged("args", &args),
     }
 }

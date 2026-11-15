@@ -61,9 +61,6 @@ calls:
       kind: batch
   - spend_event_projection:
       function: offloadable
-      kind: interactions
-  - spend_event_projection:
-      function: offloadable
       kind: model
 env: {}
 compare: {ignore: []}
