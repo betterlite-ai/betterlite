@@ -33,6 +33,7 @@ description: >-
   230 tests and 110 oracle/wiring lines within a 650-line budget.
 scope:
   paths:
+    - "crates/betterlite-core/src/cost/image_dispatch/route.rs"
     - crates/betterlite-core/src/api/fal/pricing.rs
     - crates/betterlite-core/src/api/fal/pricing/**
     - crates/betterlite-config/src/providers/fal.rs
