@@ -25,8 +25,8 @@ pub fn move_cache_control_to_content(messages: &[ChatMessage]) -> Vec<ChatMessag
     moved
 }
 
-fn moved_message(message: &ChatMessage) -> ChatMessage {
-    let mut message = message.clone();
+fn moved_message(original: &ChatMessage) -> ChatMessage {
+    let mut message = original.clone();
     let Some(cache_control) = message.passthrough.shift_remove(CACHE_CONTROL) else {
         return message;
     };
@@ -35,8 +35,8 @@ fn moved_message(message: &ChatMessage) -> ChatMessage {
     }
     match message.content.as_ref() {
         // an empty block list has no last block, so it stays empty
-        Some(MessageContent::Parts(blocks)) => {
-            let mut blocks = blocks.clone();
+        Some(MessageContent::Parts(parts)) => {
+            let mut blocks = parts.clone();
             if let Some(last) = blocks.last_mut() {
                 last.fields.insert(CACHE_CONTROL.to_owned(), cache_control);
             }

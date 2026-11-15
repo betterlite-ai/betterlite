@@ -5,7 +5,7 @@ use betterlite_models::decisions::{Extra, Json, TokenCount};
 use rust_decimal::Decimal;
 
 use super::OpenRouterDecisionsConfig;
-use crate::decisions::transformation::provider_config::DecisionsProviderConfig;
+use crate::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 
 fn response(extra: Extra) -> DecisionResponse {
     DecisionResponse {
@@ -73,10 +73,10 @@ fn provider_reported_cost_reads_a_decimal_number() {
 
 #[test]
 fn provider_reported_cost_reads_an_integer() {
-    let cost = Json::Number(serde_json::Number::from(2));
+    let cost = Json::Number(serde_json::Number::from(2_i32));
     assert_eq!(
         OpenRouterDecisionsConfig.provider_reported_cost(&with_cost(cost)),
-        Some(Decimal::from(2))
+        Some(Decimal::from(2_i32))
     );
 }
 

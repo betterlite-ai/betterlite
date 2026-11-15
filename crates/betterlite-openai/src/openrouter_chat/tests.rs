@@ -2,6 +2,8 @@
 
 use std::sync::{LazyLock, Mutex};
 
+use betterlite_models::call_helpers::headers::AdditionalHeaders;
+use betterlite_models::decisions::Json as HiddenJson;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::{Value, json};
 
@@ -10,9 +12,13 @@ use super::error::get_error_class;
 use super::policy::{BaseRequest, ChatPolicy};
 use super::stream::chunk_parser;
 use super::{ChatReply, ChatRequest, OpenrouterConfig};
-use crate::chat::ChatMessage;
+use crate::chat::{ChatMessage, MessageContent};
 use crate::openai_base_config::Headers;
 use crate::openrouter_chat::error::OpenRouterError;
+
+fn parsed(text: &str) -> Value {
+    serde_json::from_str(text).expect("the fixture is JSON")
+}
 
 #[derive(Default)]
 struct FakePolicy {
@@ -37,7 +43,7 @@ fn as_prompt_json(value: Value) -> Json {
         Value::Object(fields) => Json::Object(
             fields
                 .into_iter()
-                .map(|(name, value)| (name, as_prompt_json(value)))
+                .map(|(name, item)| (name, as_prompt_json(item)))
                 .collect(),
         ),
     }
@@ -73,10 +79,13 @@ impl ChatPolicy for FakePolicy {
         self.record("request_body");
         let mut body = Object::new();
         body.insert(String::from("model"), Json::Text(request.model.to_owned()));
-        body.insert(
-            String::from("messages"),
-            as_prompt_json(serde_json::to_value(request.messages).unwrap()),
-        );
+        let messages =
+            serde_json::to_value(request.messages).map_err(|source| OpenRouterError {
+                message: source.to_string(),
+                status_code: 400,
+                headers: Headers::new(),
+            })?;
+        body.insert(String::from("messages"), as_prompt_json(messages));
         for (name, value) in request.optional_params {
             body.insert(name.clone(), value.clone());
         }
@@ -113,7 +122,9 @@ fn message(value: Value) -> ChatMessage {
 fn object(value: Value) -> Object {
     match as_prompt_json(value) {
         Json::Object(fields) => fields,
-        _ => panic!("test fixture is not an object"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("test fixture is not an object")
+        }
     }
 }
 
@@ -146,8 +157,10 @@ fn supported_params_appends_each_openrouter_param_once() {
 
 #[test]
 fn supported_params_keeps_a_base_entry_only_once() {
-    let mut policy = FakePolicy::default();
-    policy.base_already_has_thinking = true;
+    let policy = FakePolicy {
+        base_already_has_thinking: true,
+        ..FakePolicy::default()
+    };
     let config = OpenrouterConfig { policy };
     assert_eq!(
         config.supported_params("m"),
@@ -158,23 +171,16 @@ fn supported_params_keeps_a_base_entry_only_once() {
 #[test]
 fn map_openai_params_renames_max_and_moves_the_openrouter_keys() {
     let config = config();
-    let requested = object(json!({
-        "reasoning_effort": "max",
-        "transforms": ["middle-out"],
-        "models": ["a/b"],
-        "route": "fallback",
-        "provider": {"order": ["x"]},
-        "temperature": 0.2
-    }));
+    let requested = object(parsed(
+        r#"{"reasoning_effort": "max", "transforms": ["middle-out"], "models": ["a/b"], "route": "fallback", "provider": {"order": ["x"]}, "temperature": 0.2}"#,
+    ));
     let mut optional = Object::new();
     config.map_openai_params("openrouter/x", &requested, &mut optional);
     assert_eq!(
         optional.get("extra_body"),
-        Some(&Json::Object(object(json!({
-            "transforms": ["middle-out"],
-            "models": ["a/b"],
-            "route": "fallback"
-        }))))
+        Some(&Json::Object(object(parsed(
+            r#"{"transforms": ["middle-out"], "models": ["a/b"], "route": "fallback"}"#
+        ))))
     );
     assert_eq!(
         optional.get("reasoning_effort"),
@@ -204,24 +210,23 @@ fn map_openai_params_drops_a_null_openrouter_key() {
     let mut optional = Object::new();
     config.map_openai_params(
         "openrouter/x",
-        &object(json!({"transforms": null, "models": ["m"], "route": null})),
+        &object(parsed(
+            r#"{"transforms": null, "models": ["m"], "route": null}"#,
+        )),
         &mut optional,
     );
     assert_eq!(
         optional.get("extra_body"),
-        Some(&Json::Object(object(json!({"models": ["m"]}))))
+        Some(&Json::Object(object(parsed(r#"{"models": ["m"]}"#))))
     );
 }
 
 #[test]
 fn map_openai_params_copies_the_openrouter_only_params() {
     let config = config();
-    let requested = object(json!({
-        "reasoning_effort": "low",
-        "thinking": {"type": "enabled"},
-        "stream": true,
-        "provider": {"order": ["x"]}
-    }));
+    let requested = object(parsed(
+        r#"{"reasoning_effort": "low", "thinking": {"type": "enabled"}, "stream": true, "provider": {"order": ["x"]}}"#,
+    ));
     let mut optional = Object::new();
     config.map_openai_params("openrouter/x", &requested, &mut optional);
     assert_eq!(
@@ -230,7 +235,7 @@ fn map_openai_params_copies_the_openrouter_only_params() {
     );
     assert_eq!(
         optional.get("thinking"),
-        Some(&Json::Object(object(json!({"type": "enabled"}))))
+        Some(&Json::Object(object(parsed(r#"{"type": "enabled"}"#))))
     );
     assert_eq!(optional.get("stream"), Some(&Json::Bool(true)));
     assert!(!optional.contains_key("provider"));
@@ -258,14 +263,9 @@ fn other_models_do_not_support_cache_control(#[case] model: &str) {
 
 #[test]
 fn move_cache_control_puts_the_flag_on_the_last_block() {
-    let messages = vec![message(json!({
-        "role": "user",
-        "cache_control": {"type": "ephemeral"},
-        "content": [
-            {"type": "text", "text": "first"},
-            {"type": "text", "text": "second"}
-        ]
-    }))];
+    let messages = vec![message(parsed(
+        r#"{"role": "user", "cache_control": {"type": "ephemeral"}, "content": [{"type": "text", "text": "first"}, {"type": "text", "text": "second"}]}"#,
+    ))];
     let moved = move_cache_control_to_content(&messages);
     let Json::List(blocks) = block_list(moved[0].content.as_ref().unwrap()) else {
         panic!("content is not a block list");
@@ -280,74 +280,61 @@ fn move_cache_control_puts_the_flag_on_the_last_block() {
     };
     assert_eq!(
         last.get("cache_control"),
-        Some(&Json::Object(object(json!({"type": "ephemeral"}))))
+        Some(&Json::Object(object(parsed(r#"{"type": "ephemeral"}"#))))
     );
     assert!(!moved[0].passthrough.contains_key("cache_control"));
 }
 
-fn block_list(content: &crate::chat::MessageContent) -> Json {
+fn block_list(content: &MessageContent) -> Json {
     as_prompt_json(serde_json::to_value(content).unwrap())
 }
 
 #[test]
 fn move_cache_control_wraps_text_content_in_one_block() {
-    let messages = vec![message(json!({
-        "role": "user",
-        "content": "hello",
-        "cache_control": {"type": "ephemeral"}
-    }))];
+    let messages = vec![message(parsed(
+        r#"{"role": "user", "content": "hello", "cache_control": {"type": "ephemeral"}}"#,
+    ))];
     let moved = move_cache_control_to_content(&messages);
     assert_eq!(
         block_list(moved[0].content.as_ref().unwrap()),
-        Json::List(vec![Json::Object(object(json!({
-            "type": "text",
-            "text": "hello",
-            "cache_control": {"type": "ephemeral"}
-        })))])
+        Json::List(vec![Json::Object(object(parsed(
+            r#"{"type": "text", "text": "hello", "cache_control": {"type": "ephemeral"}}"#
+        )))])
     );
 }
 
 #[test]
 fn move_cache_control_wraps_null_assistant_content() {
-    let messages = vec![message(json!({
-        "role": "assistant",
-        "content": null,
-        "tool_calls": [{"id": "t", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
-        "cache_control": {"type": "ephemeral"}
-    }))];
+    let messages = vec![message(parsed(
+        r#"{"role": "assistant", "content": null, "tool_calls": [{"id": "t", "type": "function", "function": {"name": "f", "arguments": "{}"}}], "cache_control": {"type": "ephemeral"}}"#,
+    ))];
     let moved = move_cache_control_to_content(&messages);
     assert_eq!(
         block_list(moved[0].content.as_ref().unwrap()),
-        Json::List(vec![Json::Object(object(json!({
-            "type": "text",
-            "text": null,
-            "cache_control": {"type": "ephemeral"}
-        })))])
+        Json::List(vec![Json::Object(object(parsed(
+            r#"{"type": "text", "text": null, "cache_control": {"type": "ephemeral"}}"#
+        )))])
     );
 }
 
 #[test]
 fn move_cache_control_keeps_content_behind_a_null_flag() {
-    let messages = vec![message(json!({
-        "role": "user",
-        "content": "hello",
-        "cache_control": null
-    }))];
+    let messages = vec![message(parsed(
+        r#"{"role": "user", "content": "hello", "cache_control": null}"#,
+    ))];
     let moved = move_cache_control_to_content(&messages);
     assert!(!moved[0].passthrough.contains_key("cache_control"));
     assert_eq!(
         moved[0].content,
-        Some(crate::chat::MessageContent::Text(String::from("hello")))
+        Some(MessageContent::Text(String::from("hello")))
     );
 }
 
 #[test]
 fn move_cache_control_leaves_an_empty_block_list_empty() {
-    let messages = vec![message(json!({
-        "role": "user",
-        "content": [],
-        "cache_control": {"type": "ephemeral"}
-    }))];
+    let messages = vec![message(parsed(
+        r#"{"role": "user", "content": [], "cache_control": {"type": "ephemeral"}}"#,
+    ))];
     let moved = move_cache_control_to_content(&messages);
     assert_eq!(
         block_list(moved[0].content.as_ref().unwrap()),
@@ -359,9 +346,9 @@ fn move_cache_control_leaves_an_empty_block_list_empty() {
 #[test]
 fn transform_request_asks_the_base_to_strip_only_unsupported_models() {
     let config = config();
-    let messages = vec![message(
-        json!({"role": "user", "content": "hi", "cache_control": {"type": "ephemeral"}}),
-    )];
+    let messages = vec![message(parsed(
+        r#"{"role": "user", "content": "hi", "cache_control": {"type": "ephemeral"}}"#,
+    ))];
     let optional = Object::new();
     config
         .transform_request(&request(
@@ -394,10 +381,9 @@ fn transform_request_asks_the_base_to_strip_only_unsupported_models() {
 #[test]
 fn transform_request_merges_extra_body_over_the_base_body() {
     let config = config();
-    let optional = object(json!({
-        "extra_body": {"model": "overridden/model", "usage": {"include": false}},
-        "temperature": 0.1
-    }));
+    let optional = object(parsed(
+        r#"{"extra_body": {"model": "overridden/model", "usage": {"include": false}}, "temperature": 0.1}"#,
+    ));
     let body = config
         .transform_request(&request("openai/gpt-4o", &[], &optional))
         .unwrap();
@@ -407,7 +393,7 @@ fn transform_request_merges_extra_body_over_the_base_body() {
     );
     assert_eq!(
         body.get("usage"),
-        Some(&Json::Object(object(json!({"include": false}))))
+        Some(&Json::Object(object(parsed(r#"{"include": false}"#))))
     );
     assert!(!body.contains_key("extra_body"));
 }
@@ -420,14 +406,14 @@ fn transform_request_adds_the_usage_include_default() {
         .unwrap();
     assert_eq!(
         body.get("usage"),
-        Some(&Json::Object(object(json!({"include": true}))))
+        Some(&Json::Object(object(parsed(r#"{"include": true}"#))))
     );
 }
 
 #[test]
 fn transform_request_rejects_a_non_object_extra_body() {
     let config = config();
-    let optional = object(json!({"extra_body": "nope"}));
+    let optional = object(parsed(r#"{"extra_body": "nope"}"#));
     let error = config
         .transform_request(&request("openai/gpt-4o", &[], &optional))
         .unwrap_err();
@@ -438,10 +424,10 @@ fn transform_request_rejects_a_non_object_extra_body() {
 #[test]
 fn transform_response_adds_the_cost_header_and_keeps_other_headers() {
     let config = config();
-    let mut headers = betterlite_models::call_helpers::headers::AdditionalHeaders::new();
+    let mut headers = AdditionalHeaders::new();
     headers.insert(
         String::from("llm_provider-x-request-id"),
-        betterlite_models::decisions::Json::Text(String::from("req")),
+        HiddenJson::Text(String::from("req")),
     );
     let reply: ChatReply = config
         .transform_response(br#"{"usage":{"cost":0.5}}"#, headers)
@@ -452,7 +438,7 @@ fn transform_response_adds_the_cost_header_and_keeps_other_headers() {
         .unwrap();
     assert_eq!(
         *cost,
-        betterlite_models::decisions::Json::Number(serde_json::Number::from_f64(0.5).unwrap())
+        HiddenJson::Number(serde_json::Number::from_f64(0.5).unwrap())
     );
     assert!(
         reply
@@ -471,10 +457,7 @@ fn transform_response_adds_the_cost_header_and_keeps_other_headers() {
 fn transform_response_leaves_no_cost_header(#[case] raw: &str) {
     let config = config();
     let reply = config
-        .transform_response(
-            raw.as_bytes(),
-            betterlite_models::call_helpers::headers::AdditionalHeaders::new(),
-        )
+        .transform_response(raw.as_bytes(), AdditionalHeaders::new())
         .unwrap();
     assert!(
         !reply
@@ -490,30 +473,22 @@ fn reported_cost_ignores_a_body_it_cannot_read() {
 
 #[test]
 fn transform_response_propagates_a_base_failure() {
-    let mut policy = FakePolicy::default();
-    policy.unsupported_cost = true;
+    let policy = FakePolicy {
+        unsupported_cost: true,
+        ..FakePolicy::default()
+    };
     let config = OpenrouterConfig { policy };
     let error = config
-        .transform_response(
-            b"{}",
-            betterlite_models::call_helpers::headers::AdditionalHeaders::new(),
-        )
+        .transform_response(b"{}", AdditionalHeaders::new())
         .unwrap_err();
     assert_eq!(error.message, "the base response build failed");
 }
 
 #[test]
 fn stream_chunk_copies_reasoning_into_reasoning_content() {
-    let chunk = json!({
-        "id": "chunk-1",
-        "created": 7,
-        "model": "anthropic/claude-3.5-sonnet",
-        "choices": [
-            {"index": 0, "delta": {"reasoning": "think", "content": "hi"}, "finish_reason": null},
-            {"index": 1, "delta": {"content": "plain"}}
-        ],
-        "usage": {"prompt_tokens": 3}
-    });
+    let chunk = parsed(
+        r#"{"id": "chunk-1", "created": 7, "model": "anthropic/claude-3.5-sonnet", "choices": [{"index": 0, "delta": {"reasoning": "think", "content": "hi"}, "finish_reason": null}, {"index": 1, "delta": {"content": "plain"}}], "usage": {"prompt_tokens": 3}}"#,
+    );
     let reply = chunk_parser(&chunk).unwrap();
     assert_eq!(reply.id, "chunk-1");
     assert_eq!(reply.object, "chat.completion.chunk");
@@ -536,24 +511,17 @@ fn stream_chunk_copies_reasoning_into_reasoning_content() {
     assert!(!reply.choices[1].delta.passthrough.contains_key("reasoning"));
     assert_eq!(
         reply.usage,
-        Some(json!({
-            "prompt_tokens": 3,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "completion_tokens_details": null,
-            "prompt_tokens_details": null
-        }))
+        Some(parsed(
+            r#"{"prompt_tokens": 3, "completion_tokens": 0, "total_tokens": 0, "completion_tokens_details": null, "prompt_tokens_details": null}"#,
+        ))
     );
 }
 
 #[test]
 fn stream_chunk_keeps_an_empty_reasoning_beside_its_copy() {
-    let chunk = json!({
-        "id": "c",
-        "created": 1,
-        "model": "m",
-        "choices": [{"index": 0, "delta": {"reasoning": ""}}]
-    });
+    let chunk = parsed(
+        r#"{"id": "c", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"reasoning": ""}}]}"#,
+    );
     let reply = chunk_parser(&chunk).unwrap();
     assert_eq!(
         reply.choices[0].delta.reasoning_content.as_deref(),
@@ -571,22 +539,9 @@ fn stream_chunk_keeps_an_empty_reasoning_beside_its_copy() {
 
 #[test]
 fn stream_chunk_maps_finish_reason_and_numbers_tool_calls() {
-    let chunk = json!({
-        "id": "c",
-        "created": 1,
-        "model": "m",
-        "choices": [
-            {
-                "index": 0,
-                "delta": {"tool_calls": [
-                    {"id": "call_1", "function": {"name": "f", "arguments": ""}},
-                    {"id": "call_2", "index": 5, "function": {"name": "g", "arguments": "{}"}}
-                ]},
-                "finish_reason": "tool_use"
-            },
-            {"index": 1, "delta": {"content": "x"}, "finish_reason": ""}
-        ]
-    });
+    let chunk = parsed(
+        r#"{"id": "c", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"tool_calls": [{"id": "call_1", "function": {"name": "f", "arguments": ""}}, {"id": "call_2", "index": 5, "function": {"name": "g", "arguments": "{}"}}]}, "finish_reason": "tool_use"}, {"index": 1, "delta": {"content": "x"}, "finish_reason": ""}]}"#,
+    );
     let reply = chunk_parser(&chunk).unwrap();
     assert_eq!(
         reply.choices[0].finish_reason.as_deref(),
@@ -602,48 +557,31 @@ fn stream_chunk_maps_finish_reason_and_numbers_tool_calls() {
 
 #[test]
 fn stream_chunk_drops_the_service_tier() {
-    let chunk = json!({
-        "id": "c",
-        "created": 1,
-        "model": "m",
-        "choices": [],
-        "service_tier": "auto"
-    });
+    let chunk =
+        parsed(r#"{"id": "c", "created": 1, "model": "m", "choices": [], "service_tier": "auto"}"#);
     assert_eq!(chunk_parser(&chunk).unwrap().service_tier, None);
 }
 
 #[test]
 fn stream_chunk_drops_a_null_usage() {
-    let chunk = json!({
-        "id": "c",
-        "created": 1,
-        "model": "m",
-        "choices": [],
-        "usage": null
-    });
+    let chunk = parsed(r#"{"id": "c", "created": 1, "model": "m", "choices": [], "usage": null}"#);
     assert_eq!(chunk_parser(&chunk).unwrap().usage, None);
 }
 
 #[test]
 fn stream_chunk_clears_a_reasoning_content_without_a_reasoning_key() {
-    let chunk = json!({
-        "id": "c",
-        "created": 1,
-        "model": "m",
-        "choices": [{"index": 0, "delta": {"content": "x", "reasoning_content": "old"}}]
-    });
+    let chunk = parsed(
+        r#"{"id": "c", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"content": "x", "reasoning_content": "old"}}]}"#,
+    );
     let reply = chunk_parser(&chunk).unwrap();
     assert_eq!(reply.choices[0].delta.reasoning_content, None);
 }
 
 #[test]
 fn stream_chunk_overwrites_an_existing_reasoning_content_with_null() {
-    let chunk = json!({
-        "id": "c",
-        "created": 1,
-        "model": "m",
-        "choices": [{"index": 0, "delta": {"reasoning": null, "reasoning_content": "old"}}]
-    });
+    let chunk = parsed(
+        r#"{"id": "c", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"reasoning": null, "reasoning_content": "old"}}]}"#,
+    );
     let reply = chunk_parser(&chunk).unwrap();
     assert_eq!(reply.choices[0].delta.reasoning_content, None);
     assert!(!reply.choices[0].delta.passthrough.contains_key("reasoning"));
@@ -653,7 +591,9 @@ fn stream_chunk_overwrites_an_existing_reasoning_content_with_null() {
 #[case::above_a_status(70000)]
 #[case::negative(-5)]
 fn stream_chunk_carries_an_error_code_outside_http_statuses(#[case] code: i64) {
-    let chunk = json!({"error": {"message": "boom", "code": code}});
+    let chunk = parsed(&format!(
+        r#"{{"error": {{"message": "boom", "code": {code}}}}}"#
+    ));
     let error = chunk_parser(&chunk).unwrap_err();
     assert_eq!(error.status_code, code);
 }
@@ -663,7 +603,9 @@ fn stream_chunk_carries_an_error_code_outside_http_statuses(#[case] code: i64) {
 #[case::float_code(json!(429.5))]
 #[case::null_code(Value::Null)]
 fn stream_chunk_names_a_non_integer_error_code(#[case] code: Value) {
-    let chunk = json!({"error": {"message": "boom", "code": code}});
+    let chunk = parsed(&format!(
+        r#"{{"error": {{"message": "boom", "code": {code}}}}}"#
+    ));
     let error = chunk_parser(&chunk).unwrap_err();
     assert_eq!(error.status_code, 400);
     assert!(error.message.starts_with("KeyError: 'code'"));
@@ -671,14 +613,9 @@ fn stream_chunk_names_a_non_integer_error_code(#[case] code: Value) {
 
 #[test]
 fn stream_chunk_reports_the_openrouter_error() {
-    let chunk = json!({
-        "error": {
-            "message": "rate limited",
-            "code": 429,
-            "metadata": {"headers": {"Retry-After": "5"}, "provider_name": "Anthropic"},
-            "user_id": "u1"
-        }
-    });
+    let chunk = parsed(
+        r#"{"error": {"message": "rate limited", "code": 429, "metadata": {"headers": {"Retry-After": "5"}, "provider_name": "Anthropic"}, "user_id": "u1"}}"#,
+    );
     let error = chunk_parser(&chunk).unwrap_err();
     assert_eq!(error.status_code, 429);
     assert_eq!(error.headers.get("Retry-After"), Some(&String::from("5")));
@@ -692,7 +629,7 @@ fn stream_chunk_reports_the_openrouter_error() {
 
 #[test]
 fn stream_chunk_error_defaults_metadata_and_user() {
-    let chunk = json!({"error": {"message": "boom", "code": 500}});
+    let chunk = parsed(r#"{"error": {"message": "boom", "code": 500}}"#);
     let error = chunk_parser(&chunk).unwrap_err();
     assert_eq!(error.status_code, 500);
     assert!(error.headers.is_empty());
@@ -701,22 +638,22 @@ fn stream_chunk_error_defaults_metadata_and_user() {
 }
 
 #[rstest::rstest]
-#[case::no_id(json!({"created": 1, "model": "m", "choices": []}), "id")]
-#[case::no_created(json!({"id": "c", "model": "m", "choices": []}), "created")]
-#[case::no_model(json!({"id": "c", "created": 1, "choices": []}), "model")]
-#[case::no_choices(json!({"id": "c", "created": 1, "model": "m"}), "choices")]
+#[case::no_id(parsed(r#"{"created": 1, "model": "m", "choices": []}"#), "id")]
+#[case::no_created(parsed(r#"{"id": "c", "model": "m", "choices": []}"#), "created")]
+#[case::no_model(parsed(r#"{"id": "c", "created": 1, "choices": []}"#), "model")]
+#[case::no_choices(parsed(r#"{"id": "c", "created": 1, "model": "m"}"#), "choices")]
 #[case::no_delta(
-    json!({"id": "c", "created": 1, "model": "m", "choices": [{"index": 0}]}),
+    parsed(r#"{"id": "c", "created": 1, "model": "m", "choices": [{"index": 0}]}"#),
     "delta"
 )]
 #[case::delta_not_object(
-    json!({"id": "c", "created": 1, "model": "m", "choices": [{"index": 0, "delta": "x"}]}),
+    parsed(r#"{"id": "c", "created": 1, "model": "m", "choices": [{"index": 0, "delta": "x"}]}"#),
     "delta"
 )]
-#[case::choices_before_id(json!({}), "choices")]
-#[case::delta_before_id(json!({"choices": [{"index": 0}]}), "delta")]
-#[case::no_error_message(json!({"error": {"code": 429}}), "message")]
-#[case::no_error_code(json!({"error": {"message": "boom"}}), "code")]
+#[case::choices_before_id(parsed("{}"), "choices")]
+#[case::delta_before_id(parsed(r#"{"choices": [{"index": 0}]}"#), "delta")]
+#[case::no_error_message(parsed(r#"{"error": {"code": 429}}"#), "message")]
+#[case::no_error_code(parsed(r#"{"error": {"message": "boom"}}"#), "code")]
 fn stream_chunk_missing_keys_give_the_key_error(#[case] chunk: Value, #[case] key: &str) {
     let error = chunk_parser(&chunk).unwrap_err();
     assert_eq!(error.status_code, 400);
@@ -729,12 +666,9 @@ fn stream_chunk_missing_keys_give_the_key_error(#[case] chunk: Value, #[case] ke
 
 #[test]
 fn stream_chunk_rejects_a_wrong_shaped_reasoning() {
-    let chunk = json!({
-        "id": "c",
-        "created": 1,
-        "model": "m",
-        "choices": [{"index": 0, "delta": {"reasoning": 3}}]
-    });
+    let chunk = parsed(
+        r#"{"id": "c", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"reasoning": 3}}]}"#,
+    );
     let error = chunk_parser(&chunk).unwrap_err();
     assert_eq!(error.status_code, 500);
     assert!(

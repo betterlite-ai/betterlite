@@ -2,7 +2,7 @@ mod tests;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::identity::provider_id::ProviderId;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::openai_base_config::Headers;
@@ -23,7 +23,7 @@ pub enum ResponsesConfigError {
 }
 
 pub fn validate_environment(
-    headers: Headers,
+    mut headers: Headers,
     api_key: Option<&SecretString>,
     global_api_key: Option<&SecretString>,
     environment: &dyn EnvironmentLookup,
@@ -40,7 +40,6 @@ pub fn validate_environment(
         )
         .find(|value| !value.expose_secret().is_empty())
         .ok_or(ResponsesConfigError::MissingApiKey)?;
-    let mut headers = headers;
     headers.insert(
         String::from("Authorization"),
         format!("Bearer {}", key.expose_secret()),

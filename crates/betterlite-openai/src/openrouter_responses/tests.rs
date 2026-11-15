@@ -24,7 +24,7 @@ fn environment(pairs: &[(&str, &str)]) -> Environment {
 fn the_config_reports_openrouter_and_no_native_websocket() {
     assert_eq!(PROVIDER, ProviderId::Openrouter);
     assert_eq!(PROVIDER.to_string(), "openrouter");
-    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+    const { assert!(!SUPPORTS_NATIVE_WEBSOCKET) };
 }
 
 #[test]
@@ -74,12 +74,12 @@ fn validate_environment_follows_the_key_order(
     #[case] env: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    let api_key = api_key.map(SecretString::from);
-    let global_api_key = global_api_key.map(SecretString::from);
+    let explicit_key = api_key.map(SecretString::from);
+    let global_key = global_api_key.map(SecretString::from);
     let headers = validate_environment(
         Headers::new(),
-        api_key.as_ref(),
-        global_api_key.as_ref(),
+        explicit_key.as_ref(),
+        global_key.as_ref(),
         &environment(env),
     )
     .unwrap();

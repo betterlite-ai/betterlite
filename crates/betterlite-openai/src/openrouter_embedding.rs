@@ -1,5 +1,7 @@
 mod tests;
 
+use std::str::from_utf8;
+
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Number, error::Category};
@@ -120,8 +122,14 @@ pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Obje
     }
 }
 
-pub fn decode_embedding_response(raw: &[u8]) -> Result<EmbeddingResponse, EmbeddingDecodeError> {
-    // LiteLLM checks a successful reply for an error object before it builds the response; hosted_vllm::embedding holds the crate's one port of that check
+// LiteLLM logs the raw answer, then checks a successful reply for an error object before it builds the response; hosted_vllm::embedding holds the crate's one port of that check
+pub fn transform_embedding_response(
+    raw: &[u8],
+    post_call: &mut dyn FnMut(&str),
+) -> Result<EmbeddingResponse, EmbeddingDecodeError> {
+    if let Ok(text) = from_utf8(raw) {
+        post_call(text);
+    }
     if let Err(HostedVllmEmbeddingError::Provider {
         message,
         status_code,
@@ -140,15 +148,4 @@ pub fn decode_embedding_response(raw: &[u8]) -> Result<EmbeddingResponse, Embedd
             EmbeddingDecodeError::Json { source }
         }
     })
-}
-
-// the post-call log sees the raw text before the body is decoded, as the pinned method does
-pub fn transform_embedding_response(
-    raw: &[u8],
-    post_call: &mut dyn FnMut(&str),
-) -> Result<EmbeddingResponse, EmbeddingDecodeError> {
-    if let Ok(text) = std::str::from_utf8(raw) {
-        post_call(text);
-    }
-    decode_embedding_response(raw)
 }

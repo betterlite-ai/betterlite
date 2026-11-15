@@ -2,20 +2,24 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::str::from_utf8;
 
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::SecretString;
 
 use super::{
-    EmbeddingDecodeError, SUPPORTED_OPENAI_PARAMS, decode_embedding_response, get_complete_url,
-    map_openai_params, transform_embedding_request, transform_embedding_response,
-    validate_environment,
+    EmbeddingDecodeError, SUPPORTED_OPENAI_PARAMS, get_complete_url, map_openai_params,
+    transform_embedding_request, transform_embedding_response, validate_environment,
 };
-use crate::embedding::EmbeddingInput;
+use crate::embedding::{EmbeddingInput, EmbeddingResponse};
 use crate::openai_base_config::Headers;
 
 fn key(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
+}
+
+fn decode(raw: &[u8]) -> Result<EmbeddingResponse, EmbeddingDecodeError> {
+    transform_embedding_response(raw, &mut |_text| {})
 }
 
 #[test]
@@ -139,8 +143,8 @@ fn transform_embedding_request_passes_token_inputs_as_numbers() {
     assert_eq!(
         lists[0],
         Json::List(vec![
-            Json::Number(serde_json::Number::from(1)),
-            Json::Number(serde_json::Number::from(2))
+            Json::Number(serde_json::Number::from(1_i32)),
+            Json::Number(serde_json::Number::from(2_i32))
         ])
     );
 }
@@ -173,12 +177,12 @@ fn map_openai_params_keeps_the_four_and_drops_the_rest() {
     let requested = Object::from([
         (
             String::from("dimensions"),
-            Json::Number(serde_json::Number::from(8)),
+            Json::Number(serde_json::Number::from(8_i32)),
         ),
         (String::from("user"), Json::Text(String::from("u"))),
         (
             String::from("temperature"),
-            Json::Number(serde_json::Number::from(1)),
+            Json::Number(serde_json::Number::from(1_i32)),
         ),
     ]);
     let mut optional = Object::new();
@@ -190,9 +194,9 @@ fn map_openai_params_keeps_the_four_and_drops_the_rest() {
 }
 
 #[test]
-fn decode_embedding_response_reads_the_standard_reply() {
+fn transform_embedding_response_reads_the_standard_reply() {
     let raw = br#"{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"m","usage":{"prompt_tokens":2,"total_tokens":2}}"#;
-    let response = decode_embedding_response(raw).unwrap();
+    let response = decode(raw).unwrap();
     assert_eq!(response.object, "list");
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.usage.total_tokens, 2);
@@ -207,8 +211,8 @@ fn decode_embedding_response_reads_the_standard_reply() {
     r#"{"object":"list","data":[{"object":"embedding","embedding":1,"index":0}],"model":"m","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
     false
 )]
-fn decode_embedding_response_reports_the_failure_kind(#[case] raw: &str, #[case] json: bool) {
-    let error = decode_embedding_response(raw.as_bytes()).unwrap_err();
+fn transform_embedding_response_reports_the_failure_kind(#[case] raw: &str, #[case] json: bool) {
+    let error = decode(raw.as_bytes()).unwrap_err();
     if json {
         assert!(matches!(error, EmbeddingDecodeError::Json { .. }));
     } else {
@@ -235,12 +239,12 @@ fn decode_embedding_response_reports_the_failure_kind(#[case] raw: &str, #[case]
 )]
 #[case::empty_message(r#"{"error": {"message": "", "code": 500}}"#, 500, "")]
 #[case::string_error(r#"{"error": "boom"}"#, 422, "Error in response object")]
-fn decode_embedding_response_raises_a_provider_error(
+fn transform_embedding_response_raises_a_provider_error(
     #[case] raw: &str,
     #[case] status_code: u16,
     #[case] message: &str,
 ) {
-    let error = decode_embedding_response(raw.as_bytes()).unwrap_err();
+    let error = decode(raw.as_bytes()).unwrap_err();
     let EmbeddingDecodeError::Provider {
         message: text,
         status_code: status,
@@ -262,8 +266,8 @@ fn decode_embedding_response_raises_a_provider_error(
 #[case::empty_string(
     r#"{"object":"list","data":[],"model":"m","usage":{"prompt_tokens":0,"total_tokens":0},"error":""}"#
 )]
-fn decode_embedding_response_ignores_an_empty_error(#[case] raw: &str) {
-    let response = decode_embedding_response(raw.as_bytes()).unwrap();
+fn transform_embedding_response_ignores_an_empty_error(#[case] raw: &str) {
+    let response = decode(raw.as_bytes()).unwrap();
     assert_eq!(response.model, "m");
 }
 
@@ -274,7 +278,7 @@ fn transform_embedding_response_hands_the_text_to_the_post_call_hook() {
         br#"{"object":"list","data":[],"model":"m","usage":{"prompt_tokens":0,"total_tokens":0}}"#;
     let response =
         transform_embedding_response(raw, &mut |text| seen.push(text.to_owned())).unwrap();
-    assert_eq!(seen, vec![std::str::from_utf8(raw).unwrap().to_owned()]);
+    assert_eq!(seen, vec![from_utf8(raw).unwrap().to_owned()]);
     assert_eq!(response.model, "m");
 }
 
@@ -291,5 +295,5 @@ fn replays_the_openrouter_embedding_reply_corpus(
     #[files("fuzz/corpus/openrouter_embedding_reply/*")] path: PathBuf,
 ) {
     let bytes = fs::read(path).expect("corpus file");
-    let _reply = decode_embedding_response(&bytes);
+    let _reply = decode(&bytes);
 }

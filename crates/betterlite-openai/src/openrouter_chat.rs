@@ -52,8 +52,8 @@ impl<P: ChatPolicy> OpenrouterConfig<P> {
         params
     }
 
-    pub fn map_openai_params(&self, model: &str, requested: &Object, optional_params: &mut Object) {
-        let mut requested = requested.clone();
+    pub fn map_openai_params(&self, model: &str, supplied: &Object, optional_params: &mut Object) {
+        let mut requested = supplied.clone();
         if requested.get("reasoning_effort").and_then(Json::as_str) == Some("max") {
             requested.insert(
                 String::from("reasoning_effort"),
@@ -128,10 +128,9 @@ impl<P: ChatPolicy> OpenrouterConfig<P> {
     pub fn transform_response(
         &self,
         raw: &[u8],
-        additional_headers: AdditionalHeaders,
+        mut additional_headers: AdditionalHeaders,
     ) -> Result<ChatReply, OpenRouterError> {
         let body = self.policy.response_body(raw)?;
-        let mut additional_headers = additional_headers;
         if let Some(cost) = reported_cost(raw) {
             additional_headers.insert(COST_HEADER.to_owned(), HiddenJson::Number(cost));
         }
