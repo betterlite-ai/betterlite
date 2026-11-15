@@ -18,7 +18,4 @@ deviations:
   - what: TEXT or IMAGE promptTokensDetails counts whose sum leaves the signed 64-bit range fail with a typed TokenOverflow error, where LiteLLM adds unbounded Python integers.
     why: betterlite's token counts are i64, and a reply summing past that is not one any working setup returns.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_gemini_transformation.py#L261-L275
-  - what: A config document that sets litellm_settings.vertex_credentials is rejected by ConfigLoader as an unknown key, and the image identity settings' module credential tier stays empty; LiteLLM puts the value on the litellm module and _resolve_vertex_credentials reads it between VERTEXAI_CREDENTIALS and GOOGLE_APPLICATION_CREDENTIALS.
-    why: The sections that parse litellm_settings (crates/betterlite-config/src/sections/resource_sdk_settings.rs and sections/vertex_credential_sources.rs) are outside this task's scope and declare no vertex_credentials field, the same arrangement B1310 and B1325 recorded for their unregistered litellm_settings keys.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_gemini_transformation.py#L131-L138
 kept_bugs: []
