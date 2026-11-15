@@ -8,5 +8,5 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py#L401-L407
   - what: The location token is matched against the whole string, so a trailing newline is rejected, where LiteLLM's end anchor accepts one newline at the end.
     why: A location is interpolated into the Speech-to-Text host, and the whole-string match is the stricter reading of the same lowercase token rule.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L435-L443
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L440
 kept_bugs: []
