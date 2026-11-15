@@ -38,7 +38,7 @@ async fn all_views_exist_logs_and_returns() {
     *harness.catalog.state.known_views.lock().unwrap() = known(&EXPECTED_VIEWS);
     let outcome = check_view_exists(&harness.catalog, &harness.health, "public").await;
     drop(guard);
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(
         *harness.catalog.state.schemas.lock().unwrap(),
         vec!["public".to_owned()]
@@ -59,7 +59,7 @@ async fn token_view_missing_with_other_views_checks_health_and_creates_it() {
     let harness = views_harness();
     *harness.catalog.state.known_views.lock().unwrap() = known(&others());
     let outcome = check_view_exists(&harness.catalog, &harness.health, "public").await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(
         *harness.actions.lock().unwrap(),
         vec!["views".to_owned(), "health_check".to_owned()]
@@ -83,7 +83,7 @@ async fn the_repaired_token_view_projects_every_team_alias(#[case] expected: &st
     let harness = views_harness();
     *harness.catalog.state.known_views.lock().unwrap() = known(&others());
     let outcome = check_view_exists(&harness.catalog, &harness.health, "public").await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let created = harness.catalog.state.created();
     let ddl = created.first().expect("the repair DDL was not executed");
     assert!(ddl.contains(expected), "{ddl}");
@@ -94,7 +94,7 @@ async fn the_repaired_token_view_ignores_the_project_table() {
     let harness = views_harness();
     *harness.catalog.state.known_views.lock().unwrap() = known(&others());
     let outcome = check_view_exists(&harness.catalog, &harness.health, "public").await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let created = harness.catalog.state.created();
     let ddl = created.first().expect("the repair DDL was not executed");
     assert!(!ddl.contains("LiteLLM_ProjectTable"), "{ddl}");
@@ -128,7 +128,7 @@ async fn empty_log_with_no_views_creates_the_missing_views() {
         .state
         .script_successful_creates(RUNTIME_VIEWS.len());
     let outcome = check_view_exists(&harness.catalog, &harness.health, "public").await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let created = harness.catalog.state.created();
     assert_eq!(created.len(), RUNTIME_VIEWS.len());
     assert!(
@@ -148,7 +148,7 @@ async fn existing_log_warns_about_the_missing_views() {
     harness.catalog.state.script_estimate(5);
     let outcome = check_view_exists(&harness.catalog, &harness.health, "public").await;
     drop(guard);
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(harness.catalog.state.created().is_empty());
     assert_eq!(*harness.actions.lock().unwrap(), vec!["views".to_owned()]);
     let warning = logs
@@ -231,7 +231,7 @@ async fn the_default_deadline_gives_up_after_fifteen_minutes() {
     let started = Instant::now();
     let outcome = harness.setup.run().await;
     assert_eq!(outcome, ViewSetupOutcome::TimedOut);
-    assert_eq!(started.elapsed(), Duration::from_secs(900));
+    assert_eq!(started.elapsed(), Duration::from_mins(15));
 }
 
 #[tokio::test(start_paused = true)]

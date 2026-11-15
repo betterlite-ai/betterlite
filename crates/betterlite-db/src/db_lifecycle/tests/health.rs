@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use tokio::sync::Notify;
+use tokio::task::yield_now;
 use tokio::time::{Instant, timeout};
 
 use super::support::{FakeFailure, FakeSink, Reply, capture_logs, health_harness};
@@ -58,7 +59,7 @@ async fn probe_success_stops_the_retries() {
     let outcome = harness.checker.run_health_check().await;
     harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 2);
     assert_eq!(harness.reporter.failures().len(), 1);
 }
@@ -166,7 +167,7 @@ async fn report_is_spawned_and_not_awaited_by_the_caller() {
         .state
         .script_failing_probes(3, &FakeFailure::Dropped);
     let outcome = timeout(Duration::from_secs(30), harness.checker.run_health_check()).await;
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert!(
         matches!(outcome, Ok(Err(FakeFailure::Dropped))),
         "{outcome:?}"
@@ -206,7 +207,7 @@ async fn health_check_retries_just_under_the_budget() {
     let outcome = harness.checker.run_health_check().await;
     harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 2);
 }
 
@@ -214,7 +215,7 @@ async fn health_check_retries_just_under_the_budget() {
 async fn the_health_check_trait_method_runs_the_probe() {
     let harness = health_harness();
     let outcome = harness.checker.health_check().await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 1);
 }
 

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::future::pending;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -7,9 +8,9 @@ use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 
-use crate::auth_reconnect::clock::ReconnectClock;
+use crate::auth_reconnect::clock::{ReconnectClock, SystemClock};
 use crate::database_views::contracts::{
     ExecuteFuture, QueryFuture, RawRow, SupportsExecuteRaw, SupportsRawQueries,
 };
@@ -60,6 +61,8 @@ pub(super) enum Reply<Output> {
     Pends,
 }
 
+pub(super) type RowCountReply = Reply<Result<Option<i64>, FakeFailure>>;
+
 async fn resolve<Output>(reply: Reply<Output>) -> Output {
     match reply {
         Reply::Value(output) => output,
@@ -67,7 +70,7 @@ async fn resolve<Output>(reply: Reply<Output>) -> Output {
             sleep(delay).await;
             output
         }
-        Reply::Pends => std::future::pending().await,
+        Reply::Pends => pending().await,
     }
 }
 
@@ -81,7 +84,7 @@ pub(super) struct FakeState {
     pub(super) writer_read_only_replies: Mutex<VecDeque<Reply<Result<bool, FakeFailure>>>>,
     pub(super) writer_read_only_calls: AtomicU32,
     pub(super) writer_unavailable: AtomicBool,
-    pub(super) row_count_replies: Mutex<VecDeque<Reply<Result<Option<i64>, FakeFailure>>>>,
+    pub(super) row_count_replies: Mutex<VecDeque<RowCountReply>>,
     pub(super) row_count_calls: AtomicU32,
 }
 
@@ -106,7 +109,7 @@ impl FakeState {
             .push_back(reply);
     }
 
-    pub(super) fn script_row_count(&self, reply: Reply<Result<Option<i64>, FakeFailure>>) {
+    pub(super) fn script_row_count(&self, reply: RowCountReply) {
         self.row_count_replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -548,7 +551,7 @@ impl ViewCatalog for FakeCatalog {
             .clone();
         let names: Vec<String> = known
             .into_iter()
-            .filter(|name| expected.iter().any(|view| *view == name.as_str()))
+            .filter(|name| expected.contains(&name.as_str()))
             .collect();
         let failure = self
             .state
@@ -610,9 +613,9 @@ impl CapturedLogs {
 }
 
 impl Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.record(buffer);
-        Ok(buffer.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.record(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -632,7 +635,7 @@ pub(super) fn capture_logs() -> (CapturedLogs, DefaultGuard) {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     (logs, guard)
 }
 
@@ -668,7 +671,7 @@ pub(super) fn watchdog_harness_with(settings: WatchdogSettings) -> WatchdogHarne
     let read_only = Arc::new(ReadOnlyWriter {
         reconnect: Arc::clone(&reconnect),
         cooldown: COOLDOWN,
-        clock: crate::auth_reconnect::clock::SystemClock,
+        clock: SystemClock,
         state: Mutex::new(RecreateState::default()),
     });
     let watchdog = Arc::new(Watchdog {
