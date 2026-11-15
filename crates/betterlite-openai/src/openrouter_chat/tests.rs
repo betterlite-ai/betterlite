@@ -158,8 +158,9 @@ fn supported_params_appends_each_openrouter_param_once() {
 #[test]
 fn supported_params_keeps_a_base_entry_only_once() {
     let policy = FakePolicy {
+        calls: Mutex::new(Vec::new()),
+        unsupported_cost: false,
         base_already_has_thinking: true,
-        ..FakePolicy::default()
     };
     let config = OpenrouterConfig { policy };
     assert_eq!(
@@ -474,8 +475,9 @@ fn reported_cost_ignores_a_body_it_cannot_read() {
 #[test]
 fn transform_response_propagates_a_base_failure() {
     let policy = FakePolicy {
+        calls: Mutex::new(Vec::new()),
         unsupported_cost: true,
-        ..FakePolicy::default()
+        base_already_has_thinking: false,
     };
     let config = OpenrouterConfig { policy };
     let error = config
@@ -600,7 +602,7 @@ fn stream_chunk_carries_an_error_code_outside_http_statuses(#[case] code: i64) {
 
 #[rstest::rstest]
 #[case::string_code(json!("429"))]
-#[case::float_code(json!(429.5))]
+#[case::float_code(json!(429.5_f64))]
 #[case::null_code(Value::Null)]
 fn stream_chunk_names_a_non_integer_error_code(#[case] code: Value) {
     let chunk = parsed(&format!(
