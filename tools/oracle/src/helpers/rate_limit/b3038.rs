@@ -62,58 +62,43 @@ pub(crate) enum Input {
     KeyOwnsTpm(RequestMetadataInput),
 }
 
-fn organization_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
-    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
-    let descriptors = ModelDescriptorBuilder {
-        window_size: input.window_size,
-        resolver: Box::new(GroupMap(input.groups.clone())),
-    }
-    .organization_descriptors(&auth, input.requested.as_deref());
-    Ok(json!({"descriptors": descriptors}))
+#[derive(Clone, Copy)]
+enum DescriptorFunction {
+    Organization,
+    KeyModel,
+    TeamModel,
+    ProjectModel,
+    ProjectIo,
 }
 
-fn key_model_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
+fn descriptors_answer(
+    function: DescriptorFunction,
+    input: &DescriptorInput,
+) -> crate::helpers::HelperResult {
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
-    let mut descriptors = Vec::new();
-    ModelDescriptorBuilder {
+    let builder = ModelDescriptorBuilder {
         window_size: input.window_size,
         resolver: Box::new(GroupMap(input.groups.clone())),
-    }
-    .key_model_descriptor(&auth, input.requested.as_deref(), &mut descriptors)
-    .or_value_error()?;
-    Ok(json!({"descriptors": descriptors}))
-}
-
-fn team_model_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
-    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
+    };
+    let requested = input.requested.as_deref();
     let mut descriptors = Vec::new();
-    ModelDescriptorBuilder {
-        window_size: input.window_size,
-        resolver: Box::new(GroupMap(input.groups.clone())),
+    match function {
+        DescriptorFunction::Organization => {
+            descriptors = builder.organization_descriptors(&auth, requested);
+        }
+        DescriptorFunction::KeyModel => builder
+            .key_model_descriptor(&auth, requested, &mut descriptors)
+            .or_value_error()?,
+        DescriptorFunction::TeamModel => {
+            builder.team_model_descriptor(&auth, requested, &mut descriptors);
+        }
+        DescriptorFunction::ProjectModel => {
+            builder.project_model_descriptor(&auth, requested, &mut descriptors);
+        }
+        DescriptorFunction::ProjectIo => {
+            builder.project_io_descriptors(&auth, requested, &mut descriptors);
+        }
     }
-    .team_model_descriptor(&auth, input.requested.as_deref(), &mut descriptors);
-    Ok(json!({"descriptors": descriptors}))
-}
-
-fn project_model_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
-    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
-    let mut descriptors = Vec::new();
-    ModelDescriptorBuilder {
-        window_size: input.window_size,
-        resolver: Box::new(GroupMap(input.groups.clone())),
-    }
-    .project_model_descriptor(&auth, input.requested.as_deref(), &mut descriptors);
-    Ok(json!({"descriptors": descriptors}))
-}
-
-fn project_io_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
-    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
-    let mut descriptors = Vec::new();
-    ModelDescriptorBuilder {
-        window_size: input.window_size,
-        resolver: Box::new(GroupMap(input.groups.clone())),
-    }
-    .project_io_descriptors(&auth, input.requested.as_deref(), &mut descriptors);
     Ok(json!({"descriptors": descriptors}))
 }
 
@@ -149,11 +134,11 @@ impl crate::helpers::Helper for Op {
                     "group": entry.group,
                 }))}))
             }
-            Input::Organization(case) => organization_answer(case),
-            Input::KeyModel(case) => key_model_answer(case),
-            Input::TeamModel(case) => team_model_answer(case),
-            Input::ProjectModel(case) => project_model_answer(case),
-            Input::ProjectIo(case) => project_io_answer(case),
+            Input::Organization(case) => descriptors_answer(DescriptorFunction::Organization, case),
+            Input::KeyModel(case) => descriptors_answer(DescriptorFunction::KeyModel, case),
+            Input::TeamModel(case) => descriptors_answer(DescriptorFunction::TeamModel, case),
+            Input::ProjectModel(case) => descriptors_answer(DescriptorFunction::ProjectModel, case),
+            Input::ProjectIo(case) => descriptors_answer(DescriptorFunction::ProjectIo, case),
             Input::KeyOwnsTpm(case) => key_owns_tpm_answer(case),
         }
     }

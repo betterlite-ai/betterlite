@@ -1,5 +1,5 @@
 from collections.abc import Callable, Mapping
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.hooks import PROXY_HOOKS
@@ -7,7 +7,7 @@ from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptor,
     RateLimitedModel,
 )
-from pydantic import JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 
 class AuthFields(TypedDict, total=False):
@@ -70,6 +70,10 @@ class KeyOwnsTpmInput(TypedDict):
     model: ModelJson | None
 
 
+ModelFunction: TypeAlias = Literal[
+    "key_model", "team_model", "project_model", "project_io"
+]
+
 Input: TypeAlias = (
     RatedModelInput
     | OrganizationInput
@@ -98,13 +102,7 @@ class GroupMap:
         return self.groups.get(model)
 
 
-class Operations:
-    def __init__(
-        self,
-        internal_usage_cache: LimiterCache,
-        model_group_resolver: Callable[[str], str | None],
-    ) -> None: ...
-
+class Operations(Protocol):
     def _rate_limited_model(
         self, requested_model: str | None
     ) -> RateLimitedModel | None: ...
@@ -159,38 +157,29 @@ class Operations:
         )
         return {"descriptors": [descriptor_json(entry) for entry in descriptors]}
 
-    def key_model_descriptor(
-        self, auth: UserAPIKeyAuth, requested_model: str | None
+    def model_descriptors(
+        self,
+        function: ModelFunction,
+        auth: UserAPIKeyAuth,
+        requested_model: str | None,
     ) -> JsonValue:
         descriptors: list[RateLimitDescriptor] = []
-        self._add_model_per_key_rate_limit_descriptor(auth, requested_model, descriptors)
-        return {"descriptors": [descriptor_json(entry) for entry in descriptors]}
-
-    def team_model_descriptor(
-        self, auth: UserAPIKeyAuth, requested_model: str | None
-    ) -> JsonValue:
-        descriptors: list[RateLimitDescriptor] = []
-        self._add_team_model_rate_limit_descriptor_from_metadata(
-            auth, requested_model, descriptors
-        )
-        return {"descriptors": [descriptor_json(entry) for entry in descriptors]}
-
-    def project_model_descriptor(
-        self, auth: UserAPIKeyAuth, requested_model: str | None
-    ) -> JsonValue:
-        descriptors: list[RateLimitDescriptor] = []
-        self._add_project_model_rate_limit_descriptor_from_metadata(
-            auth, requested_model, descriptors
-        )
-        return {"descriptors": [descriptor_json(entry) for entry in descriptors]}
-
-    def project_io_descriptors(
-        self, auth: UserAPIKeyAuth, requested_model: str | None
-    ) -> JsonValue:
-        descriptors: list[RateLimitDescriptor] = []
-        self.add_project_io_token_rate_limit_descriptors_from_metadata(
-            auth, requested_model, descriptors
-        )
+        if function == "key_model":
+            self._add_model_per_key_rate_limit_descriptor(
+                auth, requested_model, descriptors
+            )
+        elif function == "team_model":
+            self._add_team_model_rate_limit_descriptor_from_metadata(
+                auth, requested_model, descriptors
+            )
+        elif function == "project_model":
+            self._add_project_model_rate_limit_descriptor_from_metadata(
+                auth, requested_model, descriptors
+            )
+        else:
+            self.add_project_io_token_rate_limit_descriptors_from_metadata(
+                auth, requested_model, descriptors
+            )
         return {"descriptors": [descriptor_json(entry) for entry in descriptors]}
 
     def key_owns_tpm(
@@ -204,11 +193,14 @@ class Operations:
         return {"owned": owned}
 
 
-LIMITER_CLASS: Callable[..., Operations] = TypeAdapter(
-    Callable[..., Operations]
-).validate_python(
-    type("LimiterOperations", (PROXY_HOOKS["parallel_request_limiter"], Operations), {})
-)
+@runtime_checkable
+class LimiterConstructor(Protocol):
+    def __call__(
+        self,
+        internal_usage_cache: LimiterCache,
+        *,
+        model_group_resolver: Callable[[str], str | None],
+    ) -> Operations: ...
 
 
 def descriptor_json(descriptor: RateLimitDescriptor) -> JsonValue:
@@ -237,35 +229,26 @@ def model_json(model: ModelJson | None) -> RateLimitedModel | None:
     return RateLimitedModel(requested=model["requested"], group=model["group"])
 
 
-DescriptorSelection: TypeAlias = (
-    OrganizationInput | KeyModelInput | TeamModelInput | ProjectModelInput | ProjectIoInput
-)
-
-
-def descriptor_answer(limiter: Operations, input_value: DescriptorSelection) -> JsonValue:
-    auth = TypeAdapter(UserAPIKeyAuth).validate_python(input_value["auth"])
-    requested = input_value["requested"]
-    if input_value["function"] == "organization":
-        payload = limiter.organization_descriptors(auth, requested)
-    elif input_value["function"] == "key_model":
-        payload = limiter.key_model_descriptor(auth, requested)
-    elif input_value["function"] == "team_model":
-        payload = limiter.team_model_descriptor(auth, requested)
-    elif input_value["function"] == "project_model":
-        payload = limiter.project_model_descriptor(auth, requested)
-    else:
-        payload = limiter.project_io_descriptors(auth, requested)
-    return payload
+def make_limiter(groups: dict[str, str]) -> Operations:
+    constructor = TypeAdapter[LimiterConstructor](
+        LimiterConstructor, config=ConfigDict(arbitrary_types_allowed=True)
+    ).validate_python(PROXY_HOOKS["parallel_request_limiter"])
+    return constructor(LimiterCache(), model_group_resolver=GroupMap(groups))
 
 
 def run(input_value: Input) -> JsonValue:
-    limiter = LIMITER_CLASS(
-        LimiterCache(), model_group_resolver=GroupMap(input_value["groups"])
-    )
+    limiter = make_limiter(input_value["groups"])
     if input_value["function"] == "rated_model":
-        return limiter.rated_model(input_value["requested"])
+        return Operations.rated_model(limiter, input_value["requested"])
     if input_value["function"] == "key_owns_tpm":
-        return limiter.key_owns_tpm(
-            input_value["request_metadata"], model_json(input_value["model"])
+        return Operations.key_owns_tpm(
+            limiter, input_value["request_metadata"], model_json(input_value["model"])
         )
-    return descriptor_answer(limiter, input_value)
+    auth = TypeAdapter(UserAPIKeyAuth).validate_python(input_value["auth"])
+    if input_value["function"] == "organization":
+        return Operations.organization_descriptors(
+            limiter, auth, input_value["requested"]
+        )
+    return Operations.model_descriptors(
+        limiter, input_value["function"], auth, input_value["requested"]
+    )

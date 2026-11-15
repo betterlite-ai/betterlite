@@ -20,10 +20,10 @@ calls:
         metadata:
           model_rpm_limit:
             other: 7
-    requested: gpt4
-    groups:
-      gpt4: gpt-4
-    window_size: 60
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 60
   - b3038:
       function: key_model
       auth:
@@ -32,9 +32,9 @@ calls:
           gpt-4:
             tpm_limit: 3
             rpm_limit: 1
-    requested: gpt4
-    groups:
-      gpt4: gpt-4
-    window_size: 60
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 60
 env: {}
 compare: {ignore: []}
