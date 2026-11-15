@@ -1,0 +1,21 @@
+kind: helper
+name: fal-image-core-mixed-image-objects
+call:
+  fal_image_core:
+    operation: mixed_image_objects
+    replies:
+      - status: 200
+        headers: {x-request-id: req-1}
+        body: '{"images": ["https://a.test/1.png", {"url": "https://b.test/2.png", "b64_json": "aGk="}, 7, null, true, [], {"url": 5, "b64_json": null}]}'
+      - status: 200
+        headers: {}
+        body: '{"images": [{"url": "https://c.test/3.png", "width": 640, "height": 480, "content_type": "image/webp"}]}'
+      - status: 200
+        headers: {}
+        body: '{"images": {"url": "not a list"}}'
+      - status: 200
+        headers: {}
+        body: '{}'
+env: {}
+compare:
+  ignore: []
