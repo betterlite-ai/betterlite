@@ -130,21 +130,20 @@ impl AuditCallbackDispatcher {
         {
             return Some(cached);
         }
-        let resolved = match (name, s3_params) {
-            ("s3_v2", Some(params)) => match self.registry.build_dedicated_s3_logger(params) {
+        let resolved = if let ("s3_v2", Some(params)) = (name, s3_params) {
+            match self.registry.build_dedicated_s3_logger(params) {
                 Ok(callback) => callback,
                 Err(error) => {
                     tracing::error!("Failed dispatching audit log to callback: {error}");
                     return None;
                 }
-            },
-            _ => {
-                let Some(callback) = self.registry.resolve(name) else {
-                    tracing::warn!("Could not resolve audit log callback: {name}");
-                    return None;
-                };
-                callback
             }
+        } else {
+            let Some(callback) = self.registry.resolve(name) else {
+                tracing::warn!("Could not resolve audit log callback: {name}");
+                return None;
+            };
+            callback
         };
         self.cache
             .lock()

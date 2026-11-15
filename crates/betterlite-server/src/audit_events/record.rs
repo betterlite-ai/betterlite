@@ -200,14 +200,10 @@ fn parse_json_field(text: &str, field: &'static str) -> Result<JsonValue, AuditR
 
 #[must_use]
 pub fn payload_text(value: &JsonValue) -> String {
-    match value {
-        JsonValue::String(text) => text.clone(),
-        stored @ (JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_)) => stored.to_string(),
+    if let Some(text) = value.as_str() {
+        return text.to_owned();
     }
+    value.to_string()
 }
 
 // A UTC instant reads Z in stored JSON and +00:00 in Python's isoformat, so the caller names its form
