@@ -90,12 +90,11 @@ fn reply_fields(response: &ResponsesApiResponse, logging: &ResponsesLogging) -> 
         })
     });
     json!({
-        "id": response.id,
-        "created_at": response.created_at,
-        "reasoning": response.reasoning,
-        "text": response.text,
+        "id": response.id, "created_at": response.created_at,
+        "reasoning": response.reasoning, "text": response.text,
         "output": response.output,
         "usage": usage,
+        "status": response.status,
         "headers": recorded(logging, "headers"),
         "additional_headers": recorded(logging, "additional_headers"),
         "post_call": {

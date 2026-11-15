@@ -223,6 +223,25 @@ fn a_failed_validation_resets_a_mistyped_usage_reasoning_and_text() {
 }
 
 #[test]
+fn a_failed_validation_keeps_a_well_typed_status_and_error() {
+    let upstream = response(
+        200,
+        r#"{"id":"resp_1","created_at":5,"status":"failed","error":{"code":"x"},"output":[],"metadata":"bad"}"#,
+    );
+    let reply = crate::manus_responses::reply::transform(
+        &plain_config(),
+        &upstream,
+        &mut ResponsesLogging::default(),
+    )
+    .expect("a mistyped metadata is still returned");
+    assert_eq!(reply.status.as_deref(), Some("failed"));
+    assert_eq!(
+        reply.error.as_ref().and_then(|error| error.get("code")),
+        Some(&Json::Text(String::from("x")))
+    );
+}
+
+#[test]
 fn post_call_records_the_raw_text_first() {
     let upstream = response(200, r#"{"id":"resp_1","created_at":5,"output":[]}"#);
     let (_, logging) = created(&upstream);

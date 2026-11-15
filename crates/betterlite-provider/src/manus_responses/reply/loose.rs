@@ -94,6 +94,16 @@ pub(super) fn construct_loose(
         .cloned()
         .unwrap_or_else(zero_usage);
     record.insert(String::from(USAGE_FIELD), usage);
+    for (name, value) in fields {
+        if record.contains_key(name) {
+            continue;
+        }
+        let mut probe = record.clone();
+        probe.insert(name.clone(), value.clone());
+        if parseable::<ResponsesApiResponse>(&Json::Object(probe)) {
+            record.insert(name.clone(), value.clone());
+        }
+    }
     let value = serde_json::to_value(Json::Object(record))?;
     Ok(serde_json::from_value(value)?)
 }

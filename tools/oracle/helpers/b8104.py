@@ -13,7 +13,6 @@ from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 MANAGED_ENV = ("MANUS_API_BASE", "MANUS_API_KEY")
-RESPONSES_URL = "https://api.manus.im/v1/responses"
 
 
 class Sdk(TypedDict):
@@ -68,7 +67,6 @@ class RepliesInput(TypedDict):
     op: Literal["replies"]
     environment: dict[str, str]
     sdk: Sdk
-    now: int
     probes: list[ReplyProbe]
 
 
@@ -90,6 +88,7 @@ class ReplyFields(TypedDict):
     text: dict[str, JsonValue] | None
     output: list[JsonValue]
     usage: UsageFields | None
+    status: str | None
 
 
 class HiddenParams(TypedDict):
@@ -204,7 +203,7 @@ def logging_object() -> Logging:
 
 
 def raw_response(probe: ReplyProbe) -> httpx.Response:
-    request = httpx.Request("POST", RESPONSES_URL)
+    request = httpx.Request("POST", "https://api.manus.im/v1/responses")
     stream = httpx.ByteStream(probe["body"].encode())
     response = httpx.Response(
         probe["status"], stream=stream, headers=probe["headers"], request=request
@@ -232,6 +231,7 @@ def fields_view(reply: BaseModel, logging_obj: Logging) -> JsonValue:
         "text": record["text"],
         "output": record["output"],
         "usage": usage_value,
+        "status": record["status"],
         "headers": hidden.params["headers"],
         "additional_headers": hidden.params["additional_headers"],
         "post_call": {

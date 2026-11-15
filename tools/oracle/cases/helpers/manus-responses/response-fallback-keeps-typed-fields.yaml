@@ -1,0 +1,15 @@
+---
+kind: helper
+name: manus-responses-response-fallback-keeps-typed-fields
+env: {}
+compare: {ignore: []}
+call:
+  b8104:
+    op: replies
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    now: 1700000000
+    probes:
+      - body: '{"id":"resp_1","created_at":5,"status":"failed","error":{"code":"x"},"output":[],"metadata":"bad"}'
+        status: 200
+        headers: {}
