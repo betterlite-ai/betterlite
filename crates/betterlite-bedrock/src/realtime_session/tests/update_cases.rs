@@ -132,7 +132,9 @@ fn instructions_add_content_frames() {
     state.transcript.item_id = Some("item-1".to_owned());
     state.transcript.buffer = "partial".to_owned();
     state.cumulative_usage.total_input_tokens = 5;
+    state.cumulative_usage.details.total.input.speech_tokens = 3;
     state.reported_usage.total_input_tokens = 7;
+    state.reported_usage.details.total.output.text_tokens = 4;
     let prompt_name = state.names.prompt.clone();
     let frames = apply(
         &mut state,
@@ -171,7 +173,9 @@ fn assert_activity_kept(state: &RealtimeSession) {
     assert_eq!(state.transcript.item_id.as_deref(), Some("item-1"));
     assert_eq!(state.transcript.buffer, "partial");
     assert_eq!(state.cumulative_usage.total_input_tokens, 5);
+    assert_eq!(state.cumulative_usage.details.total.input.speech_tokens, 3);
     assert_eq!(state.reported_usage.total_input_tokens, 7);
+    assert_eq!(state.reported_usage.details.total.output.text_tokens, 4);
 }
 
 fn inference(frames: &[UpdateFrame]) -> &InferenceConfiguration {
