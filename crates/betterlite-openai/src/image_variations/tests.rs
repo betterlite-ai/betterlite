@@ -308,6 +308,22 @@ async fn an_unsupported_option_is_the_sdk_keyword_error() {
 }
 
 #[tokio::test]
+async fn a_non_text_extra_header_names_its_key() {
+    let transport = FakeTransport::ok();
+    let mut recorder = Recorder::default();
+    let mut call = request(image(None, "PNGDATA"));
+    call.optional_params = options(r#"{"extra_headers":{"x-count":2}}"#);
+    let failure = failure_of(call, &transport, &mut recorder).await;
+    assert_eq!(failure.status_code, 500);
+    assert!(failure.message.contains("x-count"));
+    assert!(matches!(
+        *failure.source,
+        ImageVariationSource::Option { ref field } if field == "x-count"
+    ));
+    assert!(transport.calls().is_empty());
+}
+
+#[tokio::test]
 async fn sdk_multipart_and_query_encoding() {
     let mut call = request(image(Some("cat.ico"), "ICODATA"));
     call.optional_params = options(
@@ -735,28 +751,28 @@ async fn proxied_client_posts_multipart_to_the_variations_endpoint() {
     let prepared = prepare_image_variation(local).unwrap();
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let client = ProxiedClient::outbound(&policy).unwrap();
-    let (response_head, sent) = tokio::join!(
+    let (request_head, sent) = tokio::join!(
         serve_variation_reply(listener),
         send_image_variation(&prepared, &client)
     );
     let outcome = sent.unwrap();
-    let response_head = response_head.to_lowercase();
+    let lowered_head = request_head.to_lowercase();
     assert!(
-        response_head.starts_with("post /v1/images/variations http/1.1"),
-        "{response_head}"
+        lowered_head.starts_with("post /v1/images/variations http/1.1"),
+        "{lowered_head}"
     );
     assert!(
-        response_head.contains("authorization: bearer sk-test"),
-        "{response_head}"
+        lowered_head.contains("authorization: bearer sk-test"),
+        "{lowered_head}"
     );
     assert!(
-        response_head.contains("content-type: multipart/form-data; boundary=wire-boundary"),
-        "{response_head}"
+        lowered_head.contains("content-type: multipart/form-data; boundary=wire-boundary"),
+        "{lowered_head}"
     );
     assert!(
-        response_head.contains("name=\"image\"; filename=\"cat.png\""),
-        "{response_head}"
+        lowered_head.contains("name=\"image\"; filename=\"cat.png\""),
+        "{lowered_head}"
     );
-    assert!(response_head.contains("pngdata"), "{response_head}");
+    assert!(lowered_head.contains("pngdata"), "{lowered_head}");
     assert_eq!(outcome.reply.created, 7);
 }
