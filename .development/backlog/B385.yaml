@@ -1,14 +1,14 @@
 id: B385
 milestone: M2 routing
 title: Compaction history partition and fit inputs
-status: todo
+status: done
 depends_on: [B010, B013, B301]
 file: tasks/B385-compaction-history.yaml
 covers:
   - "litellm/router_strategy/complexity_router/context_compaction.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1884
