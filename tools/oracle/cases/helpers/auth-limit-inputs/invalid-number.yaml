@@ -1,0 +1,15 @@
+kind: helper
+name: auth-limit-inputs-invalid-number
+call:
+  auth_limit_inputs:
+    function: estimated_output_tokens
+    auth:
+      api_key: sk-oracle
+      metadata:
+        default_estimated_output_tokens_per_model:
+          gpt-4: huge
+        default_estimated_output_tokens: not-a-number
+    model_name: gpt-4
+env: {}
+compare:
+  ignore: []
