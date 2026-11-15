@@ -15,8 +15,7 @@ pub struct Llama3Config {
 }
 
 impl Llama3Config {
-    // The class narrows the inherited GPT base list: max_retries alone for publisher models, the
-    // ten deployment params for a self-deployed endpoint.
+    // The class narrows the inherited GPT base list to max_retries, or to the ten deployment params.
     #[must_use]
     pub fn supported_params(model: &str, catalog: &CatalogCapabilities) -> Vec<&'static str> {
         let excluded: &[&str] = if is_self_deployed_endpoint(model) {

@@ -12,8 +12,7 @@ pub(super) fn base_config(family: ConfigFamily) -> OpenAiConfig {
     }
 }
 
-// _map_openai_params copies a requested param only when the class's own supported list names it;
-// the list is passed in because a partner narrows the inherited one before mapping.
+// A requested param is copied only when the class's narrowed supported list names it.
 pub(super) fn map_supported(supported: &[&str], requested: &Object, existing: &mut Object) {
     for (name, value) in requested {
         if supported.contains(&name.as_str()) {
@@ -22,8 +21,7 @@ pub(super) fn map_supported(supported: &[&str], requested: &Object, existing: &m
     }
 }
 
-// map_openai_params renames max_completion_tokens to max_tokens in place, overwriting a max_tokens
-// the caller already sent, and the inherited mapping never sees the old key.
+// The alias overwrites a caller's max_tokens, and the inherited mapping never sees the old key.
 pub(super) fn with_token_alias(requested: &Object) -> Object {
     let mut aliased = requested.clone();
     if let Some(limit) = aliased.remove("max_completion_tokens") {

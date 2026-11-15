@@ -28,14 +28,12 @@ pub struct LlamaReply {
     pub created: i64,
     pub model: String,
     pub choices: Vec<TransformedChoice>,
-    // The provider's usage object travels unchanged: its conversion belongs to the shared reply
-    // builder, which reads an absent usage as zero counts.
+    // The provider's usage object travels unchanged; the shared reply builder owns its conversion.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Object>,
 }
 
-// transform_response sets model, id and created from the provider reply with its defaults, then
-// hands the choices to the inherited _transform_choices.
+// LiteLLM defaults model, id and created, then hands the choices to _transform_choices.
 pub fn decode_reply(
     reply: &Object,
     requested_model: &str,

@@ -15,8 +15,7 @@ impl Ai21Config {
         base_config(ConfigFamily::Other).supported_params(model, catalog)
     }
 
-    // The alias applies first and the mapping then runs through a fresh litellm.OpenAIConfig,
-    // whose unknown-model list adds reasoning_effort.
+    // The alias applies first, then litellm.OpenAIConfig adds reasoning_effort for an unknown model.
     pub fn map_params(
         model: &str,
         requested: &Object,
