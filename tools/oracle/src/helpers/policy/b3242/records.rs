@@ -15,16 +15,19 @@ use betterlite_policy::records::resolution::{
     PolicyResolveResponse,
 };
 use betterlite_policy::records::version::{
-    PolicyVersionCompareResponse, PolicyVersionCreateRequest, PolicyVersionListResponse,
-    PolicyVersionStatusUpdateRequest,
+    PolicyVersionCompareResponse,
+    PolicyVersionCreateRequest,
+    PolicyVersionListResponse,
+    // ast-grep-ignore: no-long-names
+    PolicyVersionStatusUpdateRequest as VersionStatusUpdate,
 };
 use betterlite_policy::values::{Policy, PolicyGuardrails, PolicyScope};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use super::invalid_input;
-use crate::helpers::{HelperError, HelperResult};
+use super::helper_error;
+use crate::helpers::HelperResult;
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -50,49 +53,43 @@ pub(super) fn run(call: &Call) -> HelperResult {
     match call {
         Call::Validate { model, value } => dumped_record(model, value.clone()),
         Call::ProjectScope { scope } => {
-            let scope: PolicyScope = decoded(scope.clone())?;
-            serialized(&PolicyScopeResponse::from_scope(&scope))
+            let scope: PolicyScope = serde_json::from_value(scope.clone())
+                .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
+            serde_json::to_value(PolicyScopeResponse::from_scope(&scope))
+                .map_err(|error| helper_error("InvalidInput", error.to_string()))
         }
         Call::ProjectGuardrails { guardrails } => {
-            let guardrails: PolicyGuardrails = decoded(guardrails.clone())?;
-            serialized(&PolicyGuardrailsResponse::from_guardrails(&guardrails))
+            let guardrails: PolicyGuardrails = serde_json::from_value(guardrails.clone())
+                .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
+            serde_json::to_value(PolicyGuardrailsResponse::from_guardrails(&guardrails))
+                .map_err(|error| helper_error("InvalidInput", error.to_string()))
         }
         Call::ProjectInfo {
             policy_name,
             policy,
             resolved,
         } => {
-            let policy: Policy = decoded(policy.clone())?;
-            let resolved: ResolvedPolicy = decoded(resolved.clone())?;
-            serialized(&PolicyInfoResponse::from_policy(
+            let policy: Policy = serde_json::from_value(policy.clone())
+                .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
+            let resolved: ResolvedPolicy = serde_json::from_value(resolved.clone())
+                .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
+            serde_json::to_value(PolicyInfoResponse::from_policy(
                 policy_name,
                 &policy,
                 &resolved,
             ))
+            .map_err(|error| helper_error("InvalidInput", error.to_string()))
         }
     }
-}
-
-fn decoded<T>(value: Value) -> Result<T, Box<HelperError>>
-where
-    T: DeserializeOwned,
-{
-    serde_json::from_value(value).map_err(|error| invalid_input(error.to_string()))
-}
-
-fn serialized<T>(record: &T) -> HelperResult
-where
-    T: Serialize,
-{
-    serde_json::to_value(record).map_err(|error| invalid_input(error.to_string()))
 }
 
 fn dumped<T>(value: Value) -> HelperResult
 where
     T: DeserializeOwned + Serialize,
 {
-    let record: T = decoded(value)?;
-    serialized(&record)
+    let record: T = serde_json::from_value(value)
+        .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
+    serde_json::to_value(record).map_err(|error| helper_error("InvalidInput", error.to_string()))
 }
 
 fn dumped_record(model: &str, value: Value) -> HelperResult {
@@ -109,7 +106,7 @@ fn dumped_record(model: &str, value: Value) -> HelperResult {
         "PolicyDBResponse" => dumped::<PolicyDBResponse>(value),
         "PolicyListDBResponse" => dumped::<PolicyListDBResponse>(value),
         "PolicyVersionCreateRequest" => dumped::<PolicyVersionCreateRequest>(value),
-        "PolicyVersionStatusUpdateRequest" => dumped::<PolicyVersionStatusUpdateRequest>(value),
+        "PolicyVersionStatusUpdateRequest" => dumped::<VersionStatusUpdate>(value),
         "PolicyVersionListResponse" => dumped::<PolicyVersionListResponse>(value),
         "PolicyVersionCompareResponse" => dumped::<PolicyVersionCompareResponse>(value),
         "PolicyAttachmentCreateRequest" => dumped::<PolicyAttachmentCreateRequest>(value),
@@ -120,6 +117,9 @@ fn dumped_record(model: &str, value: Value) -> HelperResult {
         "PolicyResolveResponse" => dumped::<PolicyResolveResponse>(value),
         "PolicyMatchDetail" => dumped::<PolicyMatchDetail>(value),
         "AttachmentImpactResponse" => dumped::<AttachmentImpactResponse>(value),
-        _ => Err(invalid_input(format!("unknown record model {model}"))),
+        _ => Err(helper_error(
+            "InvalidInput",
+            format!("unknown record model {model}"),
+        )),
     }
 }

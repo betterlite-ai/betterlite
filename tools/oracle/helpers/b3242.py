@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Literal, TypeAlias, TypedDict
 
 from litellm.proxy.db.prisma_client import PrismaWrapper
-from litellm.proxy.policy_engine.policy_registry import PolicyRegistry
+from litellm.proxy.policy_engine.policy_registry import get_policy_registry
 from litellm.proxy.utils import PrismaClient
 from litellm.types.proxy.policy_engine import resolver_types
 from litellm.types.proxy.policy_engine.policy_types import (
@@ -40,30 +40,32 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 
 DUMP = TypeAdapter(dict[str, JsonValue])
 
-RECORDS: dict[str, type[BaseModel]] = {
-    "PolicyScopeResponse": PolicyScopeResponse,
-    "PolicyGuardrailsResponse": PolicyGuardrailsResponse,
-    "PolicyInfoResponse": PolicyInfoResponse,
-    "PolicySummaryItem": PolicySummaryItem,
-    "PolicyListResponse": PolicyListResponse,
-    "PolicyTestResponse": PolicyTestResponse,
-    "PolicyConditionRequest": PolicyConditionRequest,
-    "PolicyCreateRequest": PolicyCreateRequest,
-    "PolicyUpdateRequest": PolicyUpdateRequest,
-    "PolicyDBResponse": PolicyDBResponse,
-    "PolicyListDBResponse": PolicyListDBResponse,
-    "PolicyVersionCreateRequest": PolicyVersionCreateRequest,
-    "PolicyVersionStatusUpdateRequest": resolver_types.PolicyVersionStatusUpdateRequest,
-    "PolicyVersionListResponse": PolicyVersionListResponse,
-    "PolicyVersionCompareResponse": PolicyVersionCompareResponse,
-    "PolicyAttachmentCreateRequest": PolicyAttachmentCreateRequest,
-    "PolicyAttachmentDBResponse": PolicyAttachmentDBResponse,
-    "PolicyAttachmentListResponse": PolicyAttachmentListResponse,
-    "PipelineTestRequest": PipelineTestRequest,
-    "PolicyResolveRequest": PolicyResolveRequest,
-    "PolicyResolveResponse": PolicyResolveResponse,
-    "PolicyMatchDetail": PolicyMatchDetail,
-    "AttachmentImpactResponse": AttachmentImpactResponse,
+RECORDS: dict[str, TypeAdapter[BaseModel]] = {
+    "PolicyScopeResponse": TypeAdapter(PolicyScopeResponse),
+    "PolicyGuardrailsResponse": TypeAdapter(PolicyGuardrailsResponse),
+    "PolicyInfoResponse": TypeAdapter(PolicyInfoResponse),
+    "PolicySummaryItem": TypeAdapter(PolicySummaryItem),
+    "PolicyListResponse": TypeAdapter(PolicyListResponse),
+    "PolicyTestResponse": TypeAdapter(PolicyTestResponse),
+    "PolicyConditionRequest": TypeAdapter(PolicyConditionRequest),
+    "PolicyCreateRequest": TypeAdapter(PolicyCreateRequest),
+    "PolicyUpdateRequest": TypeAdapter(PolicyUpdateRequest),
+    "PolicyDBResponse": TypeAdapter(PolicyDBResponse),
+    "PolicyListDBResponse": TypeAdapter(PolicyListDBResponse),
+    "PolicyVersionCreateRequest": TypeAdapter(PolicyVersionCreateRequest),
+    "PolicyVersionStatusUpdateRequest": TypeAdapter(
+        resolver_types.PolicyVersionStatusUpdateRequest
+    ),
+    "PolicyVersionListResponse": TypeAdapter(PolicyVersionListResponse),
+    "PolicyVersionCompareResponse": TypeAdapter(PolicyVersionCompareResponse),
+    "PolicyAttachmentCreateRequest": TypeAdapter(PolicyAttachmentCreateRequest),
+    "PolicyAttachmentDBResponse": TypeAdapter(PolicyAttachmentDBResponse),
+    "PolicyAttachmentListResponse": TypeAdapter(PolicyAttachmentListResponse),
+    "PipelineTestRequest": TypeAdapter(PipelineTestRequest),
+    "PolicyResolveRequest": TypeAdapter(PolicyResolveRequest),
+    "PolicyResolveResponse": TypeAdapter(PolicyResolveResponse),
+    "PolicyMatchDetail": TypeAdapter(PolicyMatchDetail),
+    "AttachmentImpactResponse": TypeAdapter(AttachmentImpactResponse),
 }
 
 
@@ -152,8 +154,8 @@ class FakePrismaClient(PrismaClient):
 
 
 def validate(input_value: ValidateCall) -> JsonValue:
-    model = RECORDS[input_value["model"]]
-    return DUMP.validate_json(model.model_validate(input_value["value"]).model_dump_json())
+    record = RECORDS[input_value["model"]].validate_python(input_value["value"])
+    return DUMP.validate_json(record.model_dump_json())
 
 
 def project_scope(input_value: ProjectScopeCall) -> JsonValue:
@@ -198,7 +200,7 @@ def lookup(input_value: LookupCall) -> JsonValue:
     row = None if row_value is None else FakePolicyRow.model_validate(row_value)
     client = FakePrismaClient(FakePolicyTable(row, input_value["failure"]))
     response = asyncio.run(
-        PolicyRegistry().get_policy_by_id_from_db(input_value["policy_id"], client)
+        get_policy_registry().get_policy_by_id_from_db(input_value["policy_id"], client)
     )
     if response is None:
         return None

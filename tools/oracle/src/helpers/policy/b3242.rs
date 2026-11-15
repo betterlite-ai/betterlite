@@ -25,20 +25,9 @@ impl Helper for Op {
     }
 }
 
-fn invalid_input(message: String) -> Box<HelperError> {
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
-fn failure(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "PolicyLookupError".to_owned(),
+        class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,

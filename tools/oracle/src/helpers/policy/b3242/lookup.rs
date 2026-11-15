@@ -6,8 +6,9 @@ use betterlite_policy::row_adapter::{
 };
 use serde::Deserialize;
 use serde_json::Value;
+use tokio::runtime::Builder;
 
-use super::failure;
+use super::helper_error;
 use crate::helpers::HelperResult;
 
 #[derive(Debug, Deserialize)]
@@ -19,16 +20,9 @@ pub(crate) struct Call {
     failure: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
 struct DatabaseFailure(String);
-
-impl std::fmt::Display for DatabaseFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for DatabaseFailure {}
 
 #[derive(Clone)]
 struct FakeTable {
@@ -58,10 +52,10 @@ impl PolicyTable<PolicyRow> for FakeTable {
         &self,
         _filter: PolicyClause,
     ) -> impl Future<Output = Result<Option<PolicyRow>, DatabaseFailure>> + Send {
-        let answer = match &self.failure {
-            Some(message) => Err(DatabaseFailure(message.clone())),
-            None => Ok(self.row.clone()),
-        };
+        let answer = self.failure.as_ref().map_or_else(
+            || Ok(self.row.clone()),
+            |message| Err(DatabaseFailure(message.clone())),
+        );
         ready(answer)
     }
 
@@ -123,14 +117,13 @@ pub(super) fn run(call: &Call) -> HelperResult {
             failure: call.failure.clone(),
         },
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
-        .map_err(|error| failure(error.to_string()))?;
+        .map_err(|error| helper_error("OSError", error.to_string()))?;
     match runtime.block_on(get_policy_by_id_from_db(&call.policy_id, &source)) {
         Ok(None) => Ok(Value::Null),
-        Ok(Some(response)) => {
-            serde_json::to_value(response).map_err(|error| failure(error.to_string()))
-        }
-        Err(error) => Err(failure(error.to_string())),
+        Ok(Some(response)) => serde_json::to_value(response)
+            .map_err(|error| helper_error("ValueError", error.to_string())),
+        Err(error) => Err(helper_error("PolicyLookupError", error.to_string())),
     }
 }
