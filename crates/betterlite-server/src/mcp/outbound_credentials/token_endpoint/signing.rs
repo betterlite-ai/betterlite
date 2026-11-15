@@ -47,10 +47,18 @@ pub(super) fn client_assertion(
 
 fn encoding_key(auth: &PrivateKeyJwtAuth, algorithm: Algorithm) -> Option<EncodingKey> {
     let material = auth.private_key.expose_secret().as_bytes();
-    match algorithm.family() {
-        AlgorithmFamily::Hmac => Some(EncodingKey::from_secret(material)),
-        AlgorithmFamily::Rsa => EncodingKey::from_rsa_pem(material).ok(),
-        AlgorithmFamily::Ec => EncodingKey::from_ec_pem(material).ok(),
-        AlgorithmFamily::Ed => EncodingKey::from_ed_pem(material).ok(),
+    let block = pem::parse(material).ok();
+    match (block, algorithm.family()) {
+        (_, AlgorithmFamily::Hmac) => Some(EncodingKey::from_secret(material)),
+        (Some(block), AlgorithmFamily::Rsa) if block.tag() == "RSA PRIVATE KEY" => {
+            Some(EncodingKey::from_rsa_der(block.contents()))
+        }
+        (Some(block), AlgorithmFamily::Rsa) => {
+            let info = pkcs8::PrivateKeyInfoRef::try_from(block.contents()).ok()?;
+            Some(EncodingKey::from_rsa_der(info.private_key.as_bytes()))
+        }
+        (Some(block), AlgorithmFamily::Ec) => Some(EncodingKey::from_ec_der(block.contents())),
+        (Some(block), AlgorithmFamily::Ed) => Some(EncodingKey::from_ed_der(block.contents())),
+        _ => None,
     }
 }
