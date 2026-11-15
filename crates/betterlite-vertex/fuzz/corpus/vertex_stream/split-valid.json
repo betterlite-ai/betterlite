@@ -1,0 +1,3 @@
+{"responseId":"r1","candidates":[{"content":{"parts":[{"text":"Hel"}]}}]}
+{"responseId":"r1","candidates":[{"content":{"parts":[{"text":"lo
+"}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}

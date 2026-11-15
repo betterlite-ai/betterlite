@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-stream-concatenated
+call:
+  gemini_stream:
+    fragments:
+      - '{"responseId":"c0","candidates":['
+      - '{"content":{"parts":[{"text":"one"}]}}]}{"responseId":"c1","candidates":[{"content":{"parts":[{"text":"two"}]}}]}'
+      - '{"responseId":"c2","candidates":[{"finishReason":"STOP"}]}'
+    legacy_function: false
+    headers: {}
+env: {}
+compare: {ignore: []}
