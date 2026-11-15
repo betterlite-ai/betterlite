@@ -97,15 +97,26 @@ fn dispatch_event(
         Some(
             "response.function_call_arguments.delta" | "response.custom_tool_call_input.delta",
         ) => {
-            let arguments = argument_text(parsed_chunk, fields)?;
-            Ok(Some(argument_chunk(
-                fields,
-                tool_call_index_map,
-                factory,
-                arguments,
-            )?))
+            let arguments = field::<&str>(fields, "delta")?
+                .filter(|text| !text.is_empty())
+                .ok_or_else(|| ResponsesChatStreamError::InvalidArgumentDelta {
+                    event: repr_value(parsed_chunk),
+                })?;
+            let output_index = field::<i64>(fields, "output_index")?.unwrap_or(0);
+            let index = sequential_index(tool_call_index_map, output_index)?;
+            let mut delta = delta(None);
+            delta.tool_calls = Some(vec![tool_call::delta_call(index, arguments)?]);
+            Ok(Some(response_chunk(factory, None, Some(0), delta, None)))
         }
-        Some("response.reasoning_summary_text.delta") => reasoning_delta_chunk(fields, factory),
+        Some("response.reasoning_summary_text.delta") => {
+            let Some(text) = field::<&str>(fields, "delta")?.filter(|text| !text.is_empty()) else {
+                return Ok(None);
+            };
+            let index = field::<i64>(fields, "summary_index")?;
+            let mut delta = delta(None);
+            delta.reasoning_content = Some(text.to_owned());
+            Ok(Some(response_chunk(factory, None, index, delta, None)))
+        }
         Some("response.completed" | "response.incomplete") => {
             Ok(Some(terminal_chunk(fields, event_type, factory)?))
         }
@@ -237,41 +248,4 @@ fn item_chunk(
     let mut delta = delta(None);
     delta.tool_calls = Some(vec![tool_call::convert(item, shape)?]);
     Ok(Some(response_chunk(factory, None, Some(0), delta, None)))
-}
-
-fn reasoning_delta_chunk(
-    fields: &Fields,
-    factory: ChunkFactory,
-) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
-    let Some(reasoning) = field::<&str>(fields, "delta")?.filter(|text| !text.is_empty()) else {
-        return Ok(None);
-    };
-    let index = field::<i64>(fields, "summary_index")?;
-    let mut delta = delta(None);
-    delta.reasoning_content = Some(reasoning.to_owned());
-    Ok(Some(response_chunk(factory, None, index, delta, None)))
-}
-
-fn argument_text<'a>(
-    parsed_chunk: &Value,
-    fields: &'a Fields,
-) -> Result<&'a str, ResponsesChatStreamError> {
-    field::<&str>(fields, "delta")?
-        .filter(|text| !text.is_empty())
-        .ok_or_else(|| ResponsesChatStreamError::InvalidArgumentDelta {
-            event: repr_value(parsed_chunk),
-        })
-}
-
-fn argument_chunk(
-    fields: &Fields,
-    tool_call_index_map: Option<&mut ToolCallIndices>,
-    factory: ChunkFactory,
-    arguments: &str,
-) -> Result<ChatChunk, ResponsesChatStreamError> {
-    let output_index = field::<i64>(fields, "output_index")?.unwrap_or(0);
-    let index = sequential_index(tool_call_index_map, output_index)?;
-    let mut delta = delta(None);
-    delta.tool_calls = Some(vec![tool_call::delta_call(index, arguments)?]);
-    Ok(response_chunk(factory, None, Some(0), delta, None))
 }

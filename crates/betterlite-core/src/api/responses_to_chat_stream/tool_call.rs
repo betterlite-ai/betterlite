@@ -1,5 +1,3 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
@@ -32,15 +30,11 @@ pub(super) fn convert(
     let index = match shape {
         CallShape::Added { index, .. } | CallShape::Done { index } => index,
     };
-    let function = function_value(
-        name,
-        &arguments,
-        converted.provider_specific_fields.as_ref(),
-    )?;
+    let function = function_value(name, &arguments);
     Ok(ChatToolCall {
-        id: Some(converted.id),
+        id: Some(Some(converted.id)),
         index: Some(index),
-        kind: Some(converted.kind),
+        kind: Some(Some(converted.kind)),
         function: Some(function),
         custom: None,
         provider_specific_fields: converted.provider_specific_fields,
@@ -53,35 +47,25 @@ pub(super) fn delta_call(
     arguments: &str,
 ) -> Result<ChatToolCall, ResponsesChatStreamError> {
     Ok(ChatToolCall {
-        id: None,
+        id: Some(None),
         index: Some(index),
-        kind: Some("function".to_owned()),
-        function: Some(function_value(None, arguments, None)?),
+        kind: Some(Some("function".to_owned())),
+        function: Some(function_value(None, arguments)),
         custom: None,
         provider_specific_fields: None,
         extra: Map::new(),
     })
 }
 
-pub(super) fn function_value(
-    name: Option<&str>,
-    arguments: &str,
-    provider: Option<&IndexMap<String, Json>>,
-) -> Result<Value, ResponsesChatStreamError> {
+// Function.__init__ sets both name and arguments, so an unset name still dumps as null
+pub(super) fn function_value(name: Option<&str>, arguments: &str) -> Value {
     let mut fields = Map::new();
     fields.insert(
         "name".to_owned(),
         name.map_or(Value::Null, |text| Value::String(text.to_owned())),
     );
     fields.insert("arguments".to_owned(), Value::String(arguments.to_owned()));
-    if let Some(present) = provider {
-        let serialized =
-            serde_json::to_value(present).map_err(|source| ResponsesChatStreamError::Json {
-                message: source.to_string(),
-            })?;
-        fields.insert("provider_specific_fields".to_owned(), serialized);
-    }
-    Ok(Value::Object(fields))
+    Value::Object(fields)
 }
 
 fn event_arguments(event: &Fields) -> Result<String, ResponsesChatStreamError> {

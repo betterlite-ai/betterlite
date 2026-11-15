@@ -8,7 +8,7 @@ use crate::api::response_chat_history::metadata::{
     IncompleteFinish, finish_reason_for_incomplete, incomplete_reason, provider_metadata,
 };
 use crate::api::response_chat_history::reasoning::{
-    ReasoningOutputItem, ReasoningRecord, chat_reasoning_items, reasoning_records,
+    ReasoningOutputItem, chat_reasoning_items, reasoning_records,
 };
 use crate::api::responses_input_content::is_truthy;
 
@@ -63,9 +63,22 @@ pub(super) fn terminal_chunk(
         Some(Value::String(tier)) => Some(tier.clone()),
         None | Some(_) => None,
     };
-    let records = output_reasoning_records(output)?;
+    // the terminal payload's output items carry reasoning records a chat client replays
+    let mut candidates = Vec::with_capacity(output.len());
+    for item in output {
+        candidates.push(match item {
+            Value::Object(fields) => ReasoningOutputItem::Dict {
+                value: fields.clone(),
+            },
+            Value::Array(_)
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Null => ReasoningOutputItem::TypedOther,
+        });
+    }
     let mut delta = delta(Some(""));
-    delta.reasoning_items = chat_reasoning_items(&records);
+    delta.reasoning_items = chat_reasoning_items(&reasoning_records(&candidates)?);
     let mut chunk = response_chunk(
         factory,
         None,
@@ -81,24 +94,4 @@ pub(super) fn terminal_chunk(
     };
     chunk.service_tier = service_tier.map(Some);
     Ok(chunk)
-}
-
-// the terminal payload's output items carry reasoning records a chat client replays
-fn output_reasoning_records(
-    output: &[Value],
-) -> Result<Vec<ReasoningRecord>, ResponsesChatStreamError> {
-    let mut candidates = Vec::with_capacity(output.len());
-    for item in output {
-        candidates.push(match item {
-            Value::Object(fields) => ReasoningOutputItem::Dict {
-                value: fields.clone(),
-            },
-            Value::Array(_)
-            | Value::Bool(_)
-            | Value::Number(_)
-            | Value::String(_)
-            | Value::Null => ReasoningOutputItem::TypedOther,
-        });
-    }
-    Ok(reasoning_records(&candidates)?)
 }

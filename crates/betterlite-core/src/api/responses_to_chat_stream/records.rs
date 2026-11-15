@@ -64,13 +64,16 @@ pub struct ChatDelta {
     pub extra: Map<String, Value>,
 }
 
-// ChatCompletionToolCallChunk and ChatCompletionDeltaToolCall dump the same four declared fields
+// ChatCompletionToolCallChunk and ChatCompletionDeltaToolCall dump a declared field only once it is set
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ChatToolCall {
-    pub id: Option<String>,
+    #[serde(with = "double_option", skip_serializing_if = "Option::is_none")]
+    pub id: Option<Option<String>>,
     pub index: Option<i64>,
     #[serde(rename = "type")]
-    pub kind: Option<String>,
+    #[serde(with = "double_option", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub function: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom: Option<Value>,

@@ -147,11 +147,22 @@ fn delta(fields: &Fields) -> Result<ChatDelta, ResponsesChatStreamError> {
     })
 }
 
+// FunctionCall requires a string arguments value and keeps unknown keys as extra attributes
 fn function_call(call: &Fields) -> Result<Value, ResponsesChatStreamError> {
-    let name = optional_text(call.get("name"), "name")?.flatten();
     let arguments = optional_text(call.get("arguments"), "arguments")?
+        .flatten()
         .ok_or(ResponsesChatStreamError::Field { field: "arguments" })?;
-    Ok(function_object(name, arguments, call))
+    let mut function = Map::new();
+    function.insert("arguments".to_owned(), Value::String(arguments));
+    if let Some(name) = optional_text(call.get("name"), "name")? {
+        function.insert("name".to_owned(), name.map_or(Value::Null, Value::String));
+    }
+    for (key, value) in call {
+        if !FUNCTION_KEYS.contains(&key.as_str()) {
+            function.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(Value::Object(function))
 }
 
 fn tool_calls(items: &[Value]) -> Result<Vec<ChatToolCall>, ResponsesChatStreamError> {
@@ -176,30 +187,42 @@ fn tool_calls(items: &[Value]) -> Result<Vec<ChatToolCall>, ResponsesChatStreamE
             ),
             Some(_) => return Err(ResponsesChatStreamError::Field { field: "index" }),
         };
-        let custom = fields
-            .get("custom")
-            .filter(|value| !value.is_null())
-            .cloned();
+        // ChatCompletionDeltaCustomToolCall: a nonnull custom payload picks the custom shape
+        if let Some(custom) = fields.get("custom").filter(|value| !value.is_null()) {
+            let kind = match fields.get("type") {
+                Some(Value::String(text)) => Some(Some(text.clone())),
+                None => None,
+                Some(Value::Null) => Some(None),
+                Some(_) => return Err(ResponsesChatStreamError::Field { field: "type" }),
+            };
+            let mut extra = Map::new();
+            for (key, value) in fields {
+                if !matches!(
+                    key.as_str(),
+                    "id" | "index" | "type" | "custom" | "function"
+                ) {
+                    extra.insert(key.clone(), value.clone());
+                }
+            }
+            calls.push(ChatToolCall {
+                id: optional_text(fields.get("id"), "id")?,
+                index,
+                kind,
+                function: None,
+                custom: Some(custom.clone()),
+                provider_specific_fields: None,
+                extra,
+            });
+            continue;
+        }
         let kind = match fields.get("type") {
-            Some(Value::String(text)) => Some(text.clone()),
-            None | Some(Value::Null) => Some(String::from(if custom.is_some() {
-                "custom"
-            } else {
-                "function"
-            })),
+            Some(Value::String(text)) => Some(Some(text.clone())),
+            None | Some(Value::Null) => Some(Some("function".to_owned())),
             Some(_) => return Err(ResponsesChatStreamError::Field { field: "type" }),
         };
-        let id = optional_text(fields.get("id"), "id")?.flatten();
         let function = match fields.get("function") {
-            None | Some(Value::Null) => None,
-            Some(Value::Object(call)) => Some(function_object(
-                optional_text(call.get("name"), "name")?.flatten(),
-                optional_text(call.get("arguments"), "arguments")?
-                    .flatten()
-                    .unwrap_or_default(),
-                call,
-            )),
-            Some(_) => return Err(ResponsesChatStreamError::Field { field: "function" }),
+            Some(Value::Object(call)) => tool_function(call)?,
+            _ => return Err(ResponsesChatStreamError::Field { field: "function" }),
         };
         let mut extra = Map::new();
         for (key, value) in fields {
@@ -208,11 +231,11 @@ fn tool_calls(items: &[Value]) -> Result<Vec<ChatToolCall>, ResponsesChatStreamE
             }
         }
         calls.push(ChatToolCall {
-            id,
+            id: optional_text(fields.get("id"), "id")?,
             index,
             kind,
-            function,
-            custom,
+            function: Some(function),
+            custom: fields.get("custom").cloned(),
             provider_specific_fields: None,
             extra,
         });
@@ -220,14 +243,30 @@ fn tool_calls(items: &[Value]) -> Result<Vec<ChatToolCall>, ResponsesChatStreamE
     Ok(calls)
 }
 
-fn function_object(name: Option<String>, arguments: String, fields: &Fields) -> Value {
+// Function.__init__ sets name and arguments only, with dict arguments carried as a JSON string
+fn tool_function(call: &Fields) -> Result<Value, ResponsesChatStreamError> {
+    let arguments = match call.get("arguments") {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Object(fields)) => json_text(fields)?,
+        None | Some(Value::Null) => match call.get("parameters") {
+            Some(Value::Object(fields)) => json_text(fields)?,
+            None | Some(_) => String::new(),
+        },
+        Some(_) => return Err(ResponsesChatStreamError::Field { field: "arguments" }),
+    };
     let mut function = Map::new();
-    function.insert("name".to_owned(), name.map_or(Value::Null, Value::String));
+    function.insert(
+        "name".to_owned(),
+        optional_text(call.get("name"), "name")?
+            .flatten()
+            .map_or(Value::Null, Value::String),
+    );
     function.insert("arguments".to_owned(), Value::String(arguments));
-    for (key, value) in fields {
-        if !FUNCTION_KEYS.contains(&key.as_str()) {
-            function.insert(key.clone(), value.clone());
-        }
-    }
-    Value::Object(function)
+    Ok(Value::Object(function))
+}
+
+fn json_text(fields: &Map<String, Value>) -> Result<String, ResponsesChatStreamError> {
+    serde_json::to_string(fields).map_err(|source| ResponsesChatStreamError::Json {
+        message: source.to_string(),
+    })
 }

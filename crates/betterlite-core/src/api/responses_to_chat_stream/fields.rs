@@ -41,13 +41,7 @@ pub(super) fn field<'a, T: FieldValue<'a>>(
 
 #[must_use]
 pub(super) fn listed_choices(fields: &Fields) -> bool {
-    match fields.get("choices") {
-        Some(Value::Array(items)) => !items.is_empty(),
-        None
-        | Some(
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) | Value::String(_),
-        ) => false,
-    }
+    matches!(fields.get("choices"), Some(Value::Array(items)) if !items.is_empty())
 }
 
 #[must_use]
