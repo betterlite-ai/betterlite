@@ -1,9 +1,15 @@
+mod fakes;
+mod input;
+mod scenario;
+
+use input::Input;
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("b4665")
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        scenario::run(input)
     }
 }

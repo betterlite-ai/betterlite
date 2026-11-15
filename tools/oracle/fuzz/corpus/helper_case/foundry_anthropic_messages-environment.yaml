@@ -1,0 +1,16 @@
+kind: helper
+name: foundry-anthropic-messages-environment
+call:
+  foundry_anthropic_messages:
+    function: environment
+    calls:
+      - headers: {api-key: header-key}
+        litellm_params: {api_key: null}
+        api_key: arg-key
+        api_base: https://base.services.ai.azure.com/anthropic
+        optional_params: {speed: fast}
+        messages: []
+        globals: {api_key: null, azure_key: azure-global-key}
+        environment: {AZURE_API_KEY: env-key}
+env: {}
+compare: {ignore: []}

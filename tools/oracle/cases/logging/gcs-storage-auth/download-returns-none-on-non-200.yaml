@@ -1,0 +1,7 @@
+# a non-200 download returns None
+kind: helper
+name: gcs-storage-auth-download-returns-none-on-non-200
+call:
+  b3997: {"action": "initialize", "environment": {"GCS_BUCKET_NAME": "env-bucket"}, "object_name": "log.json", "status": 404, "body": "not found"}
+env: {}
+compare: {ignore: []}
