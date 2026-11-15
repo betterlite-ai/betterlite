@@ -3,30 +3,22 @@ use uuid::Uuid;
 
 use betterlite_openai::groq_chat::stream::chunk_parser;
 
-use super::{Call, helper_error};
-use crate::helpers::HelperError;
+use super::Call;
 
-pub(super) fn chunk_values(calls: &[Call]) -> Result<Vec<Value>, Box<HelperError>> {
-    let mut values = Vec::with_capacity(calls.len());
-    for call in calls {
-        values.push(chunk_one(call)?);
-    }
-    Ok(values)
+pub(super) fn chunk_values(calls: &[Call]) -> Vec<Value> {
+    calls.iter().map(chunk_one).collect()
 }
 
-fn chunk_one(call: &Call) -> Result<Value, Box<HelperError>> {
+// an error chunk becomes an item, so one case compares the parsed chunks beside the error
+fn chunk_one(call: &Call) -> Value {
     let chunk = call.chunk.clone().unwrap_or(Value::Null);
-    // the Python adapter lets the same error out, so the case compares the helper error envelope
-    let parsed = chunk_parser(&chunk, Uuid::nil, i64::default).map_err(|error| {
-        helper_error(
-            "ProviderError",
-            Some(error.status_code()),
-            error.to_string(),
-        )
-    })?;
+    let parsed = match chunk_parser(&chunk, Uuid::nil, i64::default) {
+        Ok(parsed) => parsed,
+        Err(error) => return json!({"error": {"status": error.status_code()}}),
+    };
     let delta = parsed.choices.first().map(|choice| &choice.delta);
-    Ok(json!({
+    json!({
         "content": delta.and_then(|choice_delta| choice_delta.content.as_deref()),
         "reasoning_content": delta.and_then(|choice_delta| choice_delta.reasoning_content.as_deref()),
-    }))
+    })
 }

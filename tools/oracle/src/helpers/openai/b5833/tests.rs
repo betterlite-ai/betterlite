@@ -181,12 +181,11 @@ fn a_malformed_executed_tools_list_bills_nothing_for_that_reply() {
 }
 
 #[test]
-fn an_error_chunk_fails_with_its_own_code() {
-    use crate::helpers::Helper as _;
-
-    let case = load_case("stream-chunk-error-and-reasoning.yaml");
-    let error = super::Op::decode_and_run(&case.call.input).expect_err("the chunk error");
-    assert_eq!(error.status, Some(429));
+fn an_error_chunk_becomes_an_item_beside_the_parsed_chunks() {
+    let chunks = &run_case("stream-chunk-error-and-reasoning.yaml")["chunks"];
+    assert_eq!(chunks[0]["reasoning_content"], "thinking");
+    assert_eq!(chunks[1]["content"], "done");
+    assert_eq!(chunks[2]["error"]["status"], 429);
 }
 
 #[test]

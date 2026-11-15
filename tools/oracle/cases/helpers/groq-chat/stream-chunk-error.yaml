@@ -1,9 +1,0 @@
-kind: helper
-name: groq-stream-chunk-error
-call:
-  b5833:
-    chunks:
-      - chunk:
-          error: {message: rate limited, code: 429}
-env: {}
-compare: {ignore: []}

@@ -18,5 +18,7 @@ call:
             - index: 0
               delta: {content: done}
               finish_reason: stop
+      - chunk:
+          error: {message: rate limited, code: 429}
 env: {}
 compare: {ignore: []}

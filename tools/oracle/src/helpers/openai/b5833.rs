@@ -72,7 +72,7 @@ impl crate::helpers::Helper for Op {
             "messages": projected(&input.messages, messages::message_one),
             "options": projected(&input.options, |call| options::options_one(answers, call)),
             "replies": projected(&input.replies, replies::reply_one),
-            "chunks": chunks::chunk_values(&input.chunks)?,
+            "chunks": chunks::chunk_values(&input.chunks),
             "stt": projected(&input.stt, stt::stt_one),
             "costs": costs::cost_values(&input.costs)?,
         }))
