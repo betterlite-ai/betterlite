@@ -9,17 +9,19 @@ fn object(text: &str) -> Map<String, Value> {
     serde_json::from_str(text).expect("a JSON object")
 }
 
-fn mapped(
-    non_default: &str,
-    optional: &str,
-    drop_params: bool,
-    global_drop: bool,
-) -> Map<String, Value> {
+#[derive(Clone, Copy, Debug)]
+enum DropMode {
+    None,
+    Call,
+    Global,
+}
+
+fn mapped(non_default: &str, optional: &str, drop: DropMode) -> Map<String, Value> {
     map_openai_params_stt(&MapParams {
         non_default: &object(non_default),
         optional_params: &object(optional),
-        drop_params,
-        global_drop_params: global_drop,
+        drop_params: matches!(drop, DropMode::Call),
+        global_drop_params: matches!(drop, DropMode::Global),
     })
     .expect("the mapped params")
 }
@@ -43,8 +45,7 @@ fn every_non_default_param_is_copied_over_the_existing_ones() {
         mapped(
             r#"{"temperature":0,"language":"en"}"#,
             r#"{"prompt":"keep"}"#,
-            false,
-            false
+            DropMode::None
         ),
         object(r#"{"prompt":"keep","temperature":0,"language":"en"}"#)
     );
@@ -63,27 +64,18 @@ fn a_supported_response_format_is_copied(#[case] format: &str) {
         mapped(
             &format!(r#"{{"response_format":"{format}"}}"#),
             "{}",
-            false,
-            false
+            DropMode::None
         ),
         expected
     );
 }
 
 #[rstest]
-#[case::call_flag(false, true)]
-#[case::global_flag(true, false)]
-fn either_drop_flag_drops_an_unsupported_response_format(
-    #[case] global_drop: bool,
-    #[case] drop_params: bool,
-) {
+#[case::call_flag(DropMode::Call)]
+#[case::global_flag(DropMode::Global)]
+fn either_drop_flag_drops_an_unsupported_response_format(#[case] drop: DropMode) {
     assert_eq!(
-        mapped(
-            r#"{"response_format":"srt","temperature":2}"#,
-            "{}",
-            drop_params,
-            global_drop
-        ),
+        mapped(r#"{"response_format":"srt","temperature":2}"#, "{}", drop),
         object(r#"{"temperature":2}"#)
     );
 }
@@ -119,7 +111,7 @@ fn a_non_string_response_format_is_unsupported_too() {
 #[test]
 fn an_existing_optional_value_is_overwritten_by_the_non_default_one() {
     assert_eq!(
-        mapped(r#"{"prompt":"new"}"#, r#"{"prompt":"old"}"#, false, false),
+        mapped(r#"{"prompt":"new"}"#, r#"{"prompt":"old"}"#, DropMode::None),
         object(r#"{"prompt":"new"}"#)
     );
 }

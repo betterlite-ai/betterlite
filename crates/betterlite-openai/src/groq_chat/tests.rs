@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::{Value, json};
 use tracing::subscriber::with_default;
 use uuid::Uuid;
@@ -86,7 +86,7 @@ fn config() -> OpenAiConfig {
     }
 }
 
-fn catalog() -> CatalogCapabilities {
+const fn catalog() -> CatalogCapabilities {
     CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),
@@ -164,7 +164,7 @@ fn transformed(messages: &str) -> Value {
         .expect("the message JSON")
 }
 
-fn billed(search: u64, opens: u64) -> Option<BrowserActions> {
+const fn billed(search: u64, opens: u64) -> Option<BrowserActions> {
     Some(BrowserActions {
         web_search_requests: search,
         browser_open_requests: opens,
@@ -191,7 +191,7 @@ fn credentials_prefer_explicit_then_environment_then_the_default_base() {
     );
     assert_eq!(base, "https://explicit.test");
     assert_eq!(
-        key.as_ref().map(|key| key.expose_secret().as_str()),
+        key.as_ref().map(ExposeSecret::expose_secret),
         Some("explicit")
     );
     let (base, key) = compatible_provider_info(
@@ -202,7 +202,7 @@ fn credentials_prefer_explicit_then_environment_then_the_default_base() {
     );
     assert_eq!(base, "https://environment.test");
     assert_eq!(
-        key.as_ref().map(|key| key.expose_secret().as_str()),
+        key.as_ref().map(ExposeSecret::expose_secret),
         Some("environment")
     );
     let (base, key) = compatible_provider_info(None, None, None, None);
@@ -222,7 +222,7 @@ fn an_empty_string_counts_as_unset_at_every_step() {
     );
     assert_eq!(base, "https://environment.test");
     assert_eq!(
-        key.as_ref().map(|key| key.expose_secret().as_str()),
+        key.as_ref().map(ExposeSecret::expose_secret),
         Some("environment")
     );
     let (base, key) = compatible_provider_info(Some(""), Some(&empty), Some(""), Some(&empty));
@@ -610,7 +610,7 @@ fn a_name_wins_over_the_type_of_an_executed_tool() {
 }
 
 #[rstest]
-#[case::empty_list(r#"[]"#)]
+#[case::empty_list("[]")]
 #[case::unknown_actions(r#"[{"name": null, "type": "other"}]"#)]
 #[case::no_action_when_both_are_empty(r#"[{"name": "", "type": ""}]"#)]
 fn a_list_without_browser_actions_is_not_billed(#[case] executed: &str) {
@@ -621,7 +621,7 @@ fn a_list_without_browser_actions_is_not_billed(#[case] executed: &str) {
 }
 
 #[rstest]
-#[case::entry_not_an_object(r#"[3]"#)]
+#[case::entry_not_an_object("[3]")]
 #[case::name_not_a_string(r#"[{"name": 3, "type": "browser_search"}]"#)]
 #[case::type_not_a_string(r#"[{"name": null, "type": false}]"#)]
 #[case::executed_tools_not_a_list(r#"{"name": "browser.search"}"#)]
@@ -662,13 +662,13 @@ fn an_error_chunk_fails_with_its_own_code_and_body() {
     let error = chunk_parser(&chunk, Uuid::nil, i64::default).expect_err("the provider error");
     assert_eq!(error.status_code(), 429);
     match error {
-        GroqChatError::Provider(OpenAiError::Provider(error)) => {
-            assert_eq!(error.message, "rate limited");
+        GroqChatError::Provider(OpenAiError::Provider(provider)) => {
+            assert_eq!(provider.message, "rate limited");
             assert_eq!(
-                error.body.as_ref().and_then(|body| body.get("code")),
+                provider.body.as_ref().and_then(|body| body.get("code")),
                 Some(&json!(429))
             );
-            assert!(!error.status_code_is_synthesized);
+            assert!(!provider.status_code_is_synthesized);
         }
         other => panic!("unexpected error: {other}"),
     }
@@ -676,15 +676,16 @@ fn an_error_chunk_fails_with_its_own_code_and_body() {
 
 #[rstest]
 #[case::missing_code(json!({"error": {"message": "boom"}}))]
-#[case::string_code(json!({"error": {"message": "boom", "code": "400"}}))]
 #[case::null_code(json!({"error": {"message": "boom", "code": null}}))]
+#[case::string_code(json!({"error": {"message": "boom", "code": "400"}}))]
+#[case::huge_code(json!({"error": {"message": "boom", "code": 70000}}))]
 fn an_error_chunk_without_an_integer_code_uses_500(#[case] chunk: Value) {
     let error = chunk_parser(&chunk, Uuid::nil, i64::default).expect_err("the provider error");
     assert_eq!(error.status_code(), 500);
     match error {
-        GroqChatError::Provider(OpenAiError::Provider(error)) => {
-            assert!(error.status_code_is_synthesized);
-            assert_eq!(error.message, "boom");
+        GroqChatError::Provider(OpenAiError::Provider(provider)) => {
+            assert!(provider.status_code_is_synthesized);
+            assert_eq!(provider.message, "boom");
         }
         other => panic!("unexpected error: {other}"),
     }

@@ -50,10 +50,9 @@ pub fn transform_response(
 
 fn mapped_service_tier(tier: Option<&str>) -> &'static str {
     match tier {
-        Some("auto") => "auto",
         Some("default") => "default",
         Some("flex") => "flex",
-        Some(_) | None => "auto",
+        _ => "auto",
     }
 }
 
@@ -82,12 +81,17 @@ fn browser_actions(raw: &Value) -> Option<BrowserActions> {
             }
         }
     }
+    counted_actions(&actions)
+}
+
+fn counted_actions(actions: &[Option<String>]) -> Option<BrowserActions> {
     let mut searches = 0_u64;
     let mut opens = 0_u64;
     for action in actions.iter().filter_map(Option::as_deref) {
         if SEARCH_ACTIONS.contains(&action) {
             searches = searches.saturating_add(1);
-        } else if action == OPEN_ACTION {
+        }
+        if action == OPEN_ACTION {
             opens = opens.saturating_add(1);
         }
     }
@@ -101,12 +105,12 @@ fn browser_actions(raw: &Value) -> Option<BrowserActions> {
 }
 
 fn executed_actions(executed: Option<&Value>) -> Result<Vec<Option<String>>, ActionShapeError> {
-    let Some(executed) = executed.filter(|value| !value.is_null()) else {
+    let Some(present) = executed.filter(|value| !value.is_null()) else {
         return Ok(Vec::new());
     };
-    let Some(entries) = executed.as_array() else {
+    let Some(entries) = present.as_array() else {
         return Err(ActionShapeError::NotList {
-            value: executed.clone(),
+            value: present.clone(),
         });
     };
     let mut actions = Vec::with_capacity(entries.len());
@@ -118,7 +122,7 @@ fn executed_actions(executed: Option<&Value>) -> Result<Vec<Option<String>>, Act
         };
         let name = identity_field(fields, "name")?;
         let kind = identity_field(fields, "type")?;
-        actions.push(name.filter(|name| !name.is_empty()).or(kind));
+        actions.push(name.filter(|text| !text.is_empty()).or(kind));
     }
     Ok(actions)
 }

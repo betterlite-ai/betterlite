@@ -40,11 +40,11 @@ pub fn transform_messages(
 fn stripped_assistant_members(messages: &[ChatMessage]) -> Vec<ChatMessage> {
     let mut stripped = Vec::with_capacity(messages.len());
     for message in messages {
-        let mut message = message.clone();
-        if message.role == Role::Assistant {
-            message.passthrough.retain(|_, value| !value.is_null());
+        let mut copy = message.clone();
+        if copy.role == Role::Assistant {
+            copy.passthrough.retain(|_, value| !value.is_null());
         }
-        stripped.push(message);
+        stripped.push(copy);
     }
     stripped
 }

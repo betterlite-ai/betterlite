@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 
 use super::{ServerToolUse, web_search_cost};
 
-fn pricing(medium: Option<Decimal>) -> SearchContextPricing {
+const fn pricing(medium: Option<Decimal>) -> SearchContextPricing {
     SearchContextPricing {
         search_context_size_low: None,
         search_context_size_medium: medium,
@@ -14,7 +14,7 @@ fn pricing(medium: Option<Decimal>) -> SearchContextPricing {
     }
 }
 
-fn usage(searches: Option<u64>, opens: Option<u64>) -> ServerToolUse {
+const fn usage(searches: Option<u64>, opens: Option<u64>) -> ServerToolUse {
     ServerToolUse {
         web_search_requests: searches,
         browser_open_requests: opens,

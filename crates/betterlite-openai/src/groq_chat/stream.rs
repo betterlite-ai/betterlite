@@ -1,7 +1,8 @@
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::chat_choices::stream::{StreamReply, chunk_parser as base_chunk_parser};
+use crate::chat_choices::stream::chunk_parser as base_chunk_parser;
+use crate::chat_choices::wire::StreamReply;
 use crate::error::{OpenAiError, ProviderError, ProviderErrorParts};
 
 use super::error::GroqChatError;

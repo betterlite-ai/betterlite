@@ -35,18 +35,19 @@ pub struct MapParams<'request> {
 pub fn map_openai_params_stt(request: &MapParams<'_>) -> Result<Map<String, Value>, GroqSttError> {
     let mut optional_params = request.optional_params.clone();
     for (name, value) in request.non_default {
-        if name == RESPONSE_FORMAT {
-            let supported = value
-                .as_str()
-                .is_some_and(|format| SUPPORTED_RESPONSE_FORMATS.contains(&format));
-            if supported {
-                optional_params.insert(name.clone(), value.clone());
-            } else if !(request.global_drop_params || request.drop_params) {
-                return Err(GroqSttError::UnsupportedResponseFormat {
-                    value: rendered(value),
-                });
-            }
-        } else {
+        if name != RESPONSE_FORMAT {
+            optional_params.insert(name.clone(), value.clone());
+            continue;
+        }
+        let supported = value
+            .as_str()
+            .is_some_and(|format| SUPPORTED_RESPONSE_FORMATS.contains(&format));
+        if !supported && !(request.global_drop_params || request.drop_params) {
+            return Err(GroqSttError::UnsupportedResponseFormat {
+                value: rendered(value),
+            });
+        }
+        if supported {
             optional_params.insert(name.clone(), value.clone());
         }
     }

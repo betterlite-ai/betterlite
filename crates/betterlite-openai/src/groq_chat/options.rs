@@ -90,6 +90,7 @@ pub struct MapParams<'request> {
     pub drop_params: bool,
 }
 
+#[derive(Debug)]
 pub struct MappedParams {
     pub optional_params: Object,
     pub non_default: Object,
@@ -108,8 +109,8 @@ pub fn map_openai_params(request: &MapParams<'_>) -> Result<MappedParams, GroqCh
         .remove(WEB_SEARCH_OPTIONS)
         .filter(|value| !value.is_null());
     base_map(request, &non_default, &mut optional_params)?;
-    if let Some(web_search) = web_search {
-        add_web_search(request.model, &mut optional_params, &web_search)?;
+    if let Some(enabled) = web_search {
+        add_web_search(request.model, &mut optional_params, &enabled)?;
     }
     Ok(MappedParams {
         optional_params,
@@ -219,9 +220,8 @@ fn add_web_search(
 
 fn has_browser_search(optional_params: &Object) -> bool {
     let tools = optional_params.get(TOOLS).and_then(Value::as_array);
-    tools.is_some_and(|tools| {
-        tools
-            .iter()
+    tools.is_some_and(|list| {
+        list.iter()
             .any(|tool| tool.get("type").and_then(Value::as_str) == Some(BROWSER_SEARCH))
     })
 }
