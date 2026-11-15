@@ -798,6 +798,36 @@ async fn execution_streaming_delivers_queued_lines_before_a_failure() {
     assert!(stream.next_chunk().await.is_none());
 }
 
+// a value spliced onto the same data line stays in the decoder until the stream's final flush
+#[tokio::test]
+async fn execution_streaming_finishes_a_split_payload() {
+    let body = object(BODY);
+    let optional = object("{}");
+    let call = vertex_call(&body, &optional);
+    let fixture = auth();
+    let second = r#"{"responseId":"r2","candidates":[{"content":{"parts":[{"text":"llo"}]}}]}"#;
+    let spliced = format!("{STREAM_CHUNK}{second}\n\n");
+    let recorder = Arc::new(Recorder::scripted(
+        Vec::new(),
+        vec![stream_reply(200, vec![Piece::Bytes(spliced.into_bytes())])],
+    ));
+    let clients = pooled(&recorder);
+    let mut stream = async_streaming(
+        &call,
+        &catalog(),
+        &llm(&fixture),
+        &clients,
+        Box::new(fixed_id),
+    )
+    .await
+    .unwrap();
+    let first = stream.next_chunk().await.unwrap().unwrap();
+    assert_eq!(first.id, "r1");
+    let chunk = stream.next_chunk().await.unwrap().unwrap();
+    assert_eq!(chunk.id, "r2");
+    assert!(stream.next_chunk().await.is_none());
+}
+
 #[tokio::test]
 async fn execution_streaming_refuses_an_overlong_line() {
     let body = object(BODY);
