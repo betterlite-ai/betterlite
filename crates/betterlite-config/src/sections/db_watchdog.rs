@@ -124,11 +124,11 @@ fn schema_setting<L>(lookup: &L) -> String
 where
     L: EnvironmentLookup,
 {
-    let Some(schema) = lookup.lookup(SCHEMA_VARIABLE) else {
+    let Some(schema) = lookup
+        .lookup(SCHEMA_VARIABLE)
+        .filter(|value| !value.is_empty())
+    else {
         return DEFAULT_SCHEMA.to_owned();
     };
-    if schema.trim().is_empty() {
-        return DEFAULT_SCHEMA.to_owned();
-    }
     schema
 }

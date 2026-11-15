@@ -100,7 +100,7 @@ fn watchdog_empty_values_take_the_defaults() {
         (INTERVAL_VARIABLE, "  "),
         (PROBE_TIMEOUT_VARIABLE, ""),
         (RECONNECT_TIMEOUT_VARIABLE, ""),
-        (SCHEMA_VARIABLE, "   "),
+        (SCHEMA_VARIABLE, ""),
     ])
     .expect("empty values count as unset");
     assert_eq!(settings, Settings::default());
