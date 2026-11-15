@@ -20,10 +20,8 @@ mod body;
 pub mod error;
 mod provider;
 mod tests;
-mod timeout;
+pub mod timeout;
 pub mod transports;
-
-pub use timeout::{DEFAULT_TIMEOUT_SECONDS, HttpTimeout, RequestTimeout};
 
 pub const DEFAULT_OPENAI_BASE: &str = "https://api.openai.com/v1";
 

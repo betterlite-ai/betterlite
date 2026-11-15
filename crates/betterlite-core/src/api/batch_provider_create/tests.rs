@@ -18,11 +18,11 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::BatchProviderCreateError;
+use super::timeout::{DEFAULT_TIMEOUT_SECONDS, HttpTimeout, RequestTimeout};
 use super::transports::BatchCreateTransport;
 use super::{
     BatchOptionalParams, BatchProvider, BatchProviderCreate, BatchProviderCreateCall,
-    BatchProviderCreateInput, DEFAULT_OPENAI_BASE, DEFAULT_TIMEOUT_SECONDS, HttpTimeout,
-    RequestTimeout, VertexCredentials,
+    BatchProviderCreateInput, DEFAULT_OPENAI_BASE, VertexCredentials,
 };
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 
