@@ -76,6 +76,36 @@ fn max_completion_tokens_is_renamed_and_an_existing_max_tokens_survives() {
     assert_eq!(merged.len(), 1);
 }
 
+#[test]
+fn a_later_max_completion_tokens_overrides_an_earlier_max_tokens() {
+    let merged = mapped(
+        false,
+        &requested(r#"{"max_tokens": 9, "max_completion_tokens": 5}"#),
+        &IndexMap::new(),
+    );
+    assert_eq!(merged["max_tokens"], json!(5));
+}
+
+#[test]
+fn a_later_max_tokens_overrides_an_earlier_max_completion_tokens() {
+    let merged = mapped(
+        false,
+        &requested(r#"{"max_completion_tokens": 5, "max_tokens": 9}"#),
+        &IndexMap::new(),
+    );
+    assert_eq!(merged["max_tokens"], json!(9));
+}
+
+#[test]
+fn a_null_max_completion_tokens_is_renamed_to_a_null_max_tokens() {
+    let merged = mapped(
+        false,
+        &requested(r#"{"max_completion_tokens": null}"#),
+        &IndexMap::new(),
+    );
+    assert_eq!(merged, requested(r#"{"max_tokens": null}"#));
+}
+
 #[rstest]
 #[case::temperature(r#"{"temperature": 0.2}"#)]
 #[case::top_k(r#"{"top_k": 40}"#)]
