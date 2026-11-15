@@ -7,7 +7,7 @@ use crate::finops::focus::destinations::focus_gcs_destination::{
 use crate::finops::focus::destinations::object_key;
 use crate::finops::focus::destinations::tests::support::{
     BUCKET, CONTENT, ENVIRONMENT_SERVICE_ACCOUNT, FILENAME, FakeAuth, FakeGcsHttp, NetworkDown,
-    PREFIX, SERVICE_ACCOUNT, START_EPOCH, TOKEN, gcs_base, gcs_bucket_only_settings,
+    PREFIX, SERVICE_ACCOUNT, START_EPOCH, TOKEN, capture_logs, gcs_base, gcs_bucket_only_settings,
     gcs_destination, gcs_settings, window,
 };
 use crate::focus_records::destinations::FocusDestination as _;
@@ -212,6 +212,20 @@ async fn deliver_sends_the_export_bytes() {
     assert_eq!(posts[0].content.as_deref(), Some(CONTENT));
     assert!(posts[0].data.is_none());
     assert!(posts[0].json.is_none());
+}
+
+#[tokio::test]
+async fn deliver_logs_the_upload() {
+    let (captured, _guard) = capture_logs();
+    let (destination, _http) = gcs_destination(PREFIX, gcs_bucket_only_settings());
+    destination
+        .deliver(CONTENT, &window(START_EPOCH, "daily"), FILENAME)
+        .await
+        .unwrap();
+    assert!(captured.text().contains(&format!(
+        "Focus GCS: uploaded {} bytes to gs://{BUCKET}/{PREFIX}/date=2026-01-02/{FILENAME}",
+        CONTENT.len()
+    )));
 }
 
 #[tokio::test]

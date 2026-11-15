@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -8,6 +9,8 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 
 use crate::finops::focus::destinations::focus_gcs_destination::{FocusGcsDestination, GcsSettings};
 use crate::finops::focus::destinations::focus_s3_destination::{
@@ -83,6 +86,47 @@ fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect()
+}
+
+#[derive(Clone, Default)]
+pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    pub(super) fn text(&self) -> String {
+        let bytes = self.0.lock().unwrap().clone();
+        String::from_utf8(bytes).expect("captured logs are UTF-8")
+    }
+}
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for Captured {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+pub(super) fn capture_logs() -> (Captured, DefaultGuard) {
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(move || writer.clone())
+        .finish();
+    (captured, set_default(subscriber))
 }
 
 #[derive(Debug, thiserror::Error)]
