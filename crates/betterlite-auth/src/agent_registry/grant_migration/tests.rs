@@ -42,7 +42,6 @@ async fn rows_with_legacy_ids_are_rewritten_in_first_seen_order() {
         ALPHA_LEGACY.to_owned(),
     ];
     insert_row(&db.pool, "p2", &second).await;
-    insert_row(&db.pool, "p3", &[String::from("unrelated")]).await;
     let registry = loaded(&[ALPHA_ENTRY, BETA_ENTRY]);
     let result = registry
         .migrate_legacy_grant_ids(&db.store())
@@ -67,10 +66,41 @@ async fn rows_with_legacy_ids_are_rewritten_in_first_seen_order() {
             String::from("unknown-id"),
         ])
     );
+    db.close().await;
+}
+
+#[tokio::test]
+async fn a_row_without_a_legacy_id_is_left_alone() {
+    let db = TestDatabase::start(SCHEMA).await;
+    insert_row(&db.pool, "p3", &[String::from("unrelated")]).await;
+    let registry = loaded(&[ALPHA_ENTRY, BETA_ENTRY]);
+    let result = registry
+        .migrate_legacy_grant_ids(&db.store())
+        .await
+        .unwrap();
+    assert_eq!(
+        result,
+        GrantMigrationResult {
+            rewritten: 0,
+            missed: 0
+        }
+    );
     assert_eq!(
         row_agents(&db.pool, "p3").await,
         Some(vec![String::from("unrelated")])
     );
+    db.close().await;
+}
+
+#[tokio::test]
+async fn a_second_run_after_a_clean_first_run_rewrites_nothing() {
+    let db = TestDatabase::start(SCHEMA).await;
+    insert_row(&db.pool, "p1", &[ALPHA_LEGACY.to_owned()]).await;
+    let registry = loaded(&[ALPHA_ENTRY]);
+    registry
+        .migrate_legacy_grant_ids(&db.store())
+        .await
+        .unwrap();
     let second_run = registry
         .migrate_legacy_grant_ids(&db.store())
         .await
@@ -112,18 +142,7 @@ async fn a_row_changed_between_the_read_and_the_write_is_missed() {
         )
         .await
         .unwrap();
-    let editor = async move {
-        wait_for_blocked_update(&transaction).await;
-        let concurrent = vec![ALPHA_LEGACY.to_owned(), String::from("concurrent")];
-        transaction
-            .execute(
-                r#"UPDATE "LiteLLM_ObjectPermissionTable" SET agents = $2 WHERE object_permission_id = $1"#,
-                &[&"p1", &concurrent],
-            )
-            .await
-            .unwrap();
-        transaction.commit().await.unwrap();
-    };
+    let editor = edit_concurrently(transaction);
     let migration = registry.migrate_legacy_grant_ids(&store);
     let (result, ()) = tokio::join!(migration, editor);
     let result = result.unwrap();
@@ -139,6 +158,19 @@ async fn a_row_changed_between_the_read_and_the_write_is_missed() {
         Some(vec![ALPHA_LEGACY.to_owned(), String::from("concurrent")])
     );
     db.close().await;
+}
+
+async fn edit_concurrently(transaction: Transaction<'_>) {
+    wait_for_blocked_update(&transaction).await;
+    let concurrent = vec![ALPHA_LEGACY.to_owned(), String::from("concurrent")];
+    transaction
+        .execute(
+            r#"UPDATE "LiteLLM_ObjectPermissionTable" SET agents = $2 WHERE object_permission_id = $1"#,
+            &[&"p1", &concurrent],
+        )
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
 }
 
 async fn wait_for_blocked_update(transaction: &Transaction<'_>) {

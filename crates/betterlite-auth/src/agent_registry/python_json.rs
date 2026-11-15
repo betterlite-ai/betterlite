@@ -119,7 +119,7 @@ pub(crate) fn float_text(value: f64) -> String {
 fn push_fixed(out: &mut String, digits: &str, decpt: i32) {
     if decpt <= 0 {
         out.push_str("0.");
-        push_zeros(out, decpt.saturating_neg());
+        push_zeros(out, usize::try_from(decpt.saturating_neg()).unwrap_or(0));
         out.push_str(digits);
         return;
     }
@@ -160,7 +160,7 @@ fn push_exponential(out: &mut String, digits: &str, exponent: i32) {
     write!(out, "{magnitude:02}").unwrap_or(());
 }
 
-fn push_zeros(out: &mut String, count: i32) {
+fn push_zeros(out: &mut String, count: usize) {
     for _ in 0..count {
         out.push('0');
     }
