@@ -64,7 +64,7 @@ impl Counted {
 }
 
 // an absent counter stays out of the answer and an explicit null is sent as null
-const fn counted_tokens(input: Counted, output: Counted) -> RerankTokens {
+fn counted_tokens(input: Counted, output: Counted) -> RerankTokens {
     RerankTokens {
         input_tokens: input.is_present().then_some(input.count()),
         output_tokens: output.is_present().then_some(output.count()),
