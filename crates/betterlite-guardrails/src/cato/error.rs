@@ -7,6 +7,9 @@ use thiserror::Error;
 use tokio::task::JoinError;
 use tokio_tungstenite::tungstenite;
 
+// whatever error the model stream produced, since its type belongs to the provider
+pub type ModelStreamError = Box<dyn std::error::Error + Send + Sync>;
+
 #[derive(Debug, Error)]
 pub enum CatoError {
     #[error(
@@ -98,6 +101,11 @@ pub enum CatoError {
         #[source]
         source: Box<CatoError>,
     },
+    #[error("the model stream failed")]
+    ModelStream {
+        #[source]
+        source: ModelStreamError,
+    },
     #[error("the Cato Networks stream sender task failed")]
     StreamTask {
         #[source]
@@ -139,6 +147,7 @@ impl CatoError {
             | Self::StreamClosed
             | Self::StreamBlocked { .. }
             | Self::StreamSenderFailed { .. }
+            | Self::ModelStream { .. }
             | Self::StreamTask { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

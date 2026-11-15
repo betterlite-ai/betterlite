@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tokio::task::{JoinError, JoinSet};
 
 use crate::cato::CatoGuardrail;
-use crate::cato::error::CatoError;
+use crate::cato::error::{CatoError, ModelStreamError};
 use crate::cato::wire::StreamMessage;
 
 // websockets' client caps a message at one mebibyte unless the caller says otherwise
@@ -50,7 +50,7 @@ pub async fn relay_output_stream(
     connector: &dyn CatoSocketConnector,
     guardrail: &CatoGuardrail,
     headers: HeaderMap,
-    chunks: mpsc::Receiver<GuardrailValue>,
+    chunks: mpsc::Receiver<Result<GuardrailValue, ModelStreamError>>,
     output: &mpsc::Sender<GuardrailValue>,
 ) -> Result<(), CatoError> {
     let url = format!("{}/fw/v1/analyze/stream", guardrail.ws_api_base);
@@ -76,9 +76,11 @@ pub async fn relay_output_stream(
 
 async fn forward_chunks(
     mut writer: Box<dyn CatoFrameWriter>,
-    mut chunks: mpsc::Receiver<GuardrailValue>,
+    mut chunks: mpsc::Receiver<Result<GuardrailValue, ModelStreamError>>,
 ) -> Result<(), CatoError> {
     while let Some(chunk) = chunks.recv().await {
+        // a failed model stream kills the sender before the done frame, as an exception ends LiteLLM's task
+        let chunk = chunk.map_err(|source| CatoError::ModelStream { source })?;
         // LiteLLM sends a string chunk as it is and every other chunk as JSON
         let text = match &chunk {
             GuardrailValue::Text(text) => text.clone(),

@@ -11,7 +11,7 @@ use tokio_tungstenite::tungstenite::Error as WebSocketError;
 
 use super::ws_guardrail;
 use crate::cato::CatoGuardrail;
-use crate::cato::error::CatoError;
+use crate::cato::error::{CatoError, ModelStreamError};
 use crate::cato::tests::{list, object, text};
 use crate::cato::transport::stream::{
     CONNECT_TIMEOUT, CatoFrameReader, CatoFrameWriter, CatoSocket, CatoSocketConnector, DONE_FRAME,
@@ -19,6 +19,7 @@ use crate::cato::transport::stream::{
 };
 
 type Sent = Arc<Mutex<Vec<String>>>;
+type Chunks = mpsc::Receiver<Result<GuardrailValue, ModelStreamError>>;
 
 enum FakeFrame {
     Message(Result<Option<Vec<u8>>, CatoError>),
@@ -149,16 +150,16 @@ fn encoded(value: &GuardrailValue) -> Result<Option<Vec<u8>>, CatoError> {
     Ok(Some(serde_json::to_vec(value).expect("frame JSON")))
 }
 
-fn empty_chunks() -> mpsc::Receiver<GuardrailValue> {
+fn empty_chunks() -> Chunks {
     let (sender, receiver) = mpsc::channel(1);
     drop(sender);
     receiver
 }
 
-async fn chunks_with(chunks: &[GuardrailValue]) -> mpsc::Receiver<GuardrailValue> {
+async fn chunks_with(chunks: &[GuardrailValue]) -> Chunks {
     let (sender, receiver) = mpsc::channel(8);
     for chunk in chunks {
-        sender.send(chunk.clone()).await.expect("chunk");
+        sender.send(Ok(chunk.clone())).await.expect("chunk");
     }
     receiver
 }
@@ -166,7 +167,7 @@ async fn chunks_with(chunks: &[GuardrailValue]) -> mpsc::Receiver<GuardrailValue
 async fn relay(
     connector: &FakeConnector,
     guardrail: &CatoGuardrail,
-    chunks: mpsc::Receiver<GuardrailValue>,
+    chunks: Chunks,
 ) -> (Result<(), CatoError>, mpsc::Receiver<GuardrailValue>) {
     let (output, delivered) = mpsc::channel(16);
     let result = relay_output_stream(connector, guardrail, HeaderMap::new(), chunks, &output).await;
@@ -185,7 +186,7 @@ async fn drain(mut delivered: mpsc::Receiver<GuardrailValue>) -> Vec<GuardrailVa
 async fn relay_frames(
     frames: Vec<FakeFrame>,
     fail_writes: bool,
-    chunks: mpsc::Receiver<GuardrailValue>,
+    chunks: Chunks,
 ) -> (Result<(), CatoError>, Vec<GuardrailValue>) {
     let (connector, _control) = fake_connector(frames, fail_writes);
     let guardrail = ws_guardrail("wss://cato.test", None, Duration::from_secs(5));
@@ -314,6 +315,29 @@ async fn streaming_relay_reports_a_failed_sender_before_the_next_message() {
 }
 
 #[tokio::test]
+async fn streaming_relay_reports_a_model_stream_that_fails_midway() {
+    let chunk = object(&[("choices", list(&[text("one")]))]);
+    let (connector, control) = fake_connector(Vec::new(), false);
+    let guardrail = ws_guardrail("wss://cato.test", None, Duration::from_secs(5));
+    let (sender, chunks) = mpsc::channel(8);
+    sender.send(Ok(chunk.clone())).await.expect("chunk");
+    let failure: ModelStreamError = "upstream model dropped".into();
+    sender.send(Err(failure)).await.expect("failure");
+    let (result, delivered) = relay(&connector, &guardrail, chunks).await;
+    let error = result.expect_err("the model stream failed");
+    assert_eq!(error.status_code().as_u16(), 500);
+    assert!(matches!(
+        &error,
+        CatoError::StreamSenderFailed { source } if matches!(**source, CatoError::ModelStream { .. })
+    ));
+    assert_eq!(
+        control.sent.lock().expect("sent").clone(),
+        vec![serde_json::to_string(&chunk).expect("chunk")]
+    );
+    assert!(drain(delivered).await.is_empty());
+}
+
+#[tokio::test]
 async fn streaming_relay_cancels_the_sender_when_the_client_stops_reading() {
     let verified = object(&[(
         "verified_chunk",
@@ -323,14 +347,10 @@ async fn streaming_relay_cancels_the_sender_when_the_client_stops_reading() {
     let guardrail = ws_guardrail("wss://cato.test", None, Duration::from_secs(5));
     let (output, delivered) = mpsc::channel(1);
     drop(delivered);
-    let result = relay_output_stream(
-        &connector,
-        &guardrail,
-        HeaderMap::new(),
-        empty_chunks(),
-        &output,
-    )
-    .await;
+    // the model stream stays open, so only a cancelled sender task drops the writer
+    let (_model, chunks) = mpsc::channel(1);
+    let result =
+        relay_output_stream(&connector, &guardrail, HeaderMap::new(), chunks, &output).await;
     result.expect("the stream ends");
     time::timeout(Duration::from_secs(1), control.closed)
         .await

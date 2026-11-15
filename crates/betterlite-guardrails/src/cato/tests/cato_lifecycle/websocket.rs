@@ -243,7 +243,7 @@ async fn streaming_iterator_hook_relays_the_stream_with_cato_headers() {
     let guardrail = ws_guardrail(&url, None, Duration::from_secs(5));
     let (output, mut delivered) = mpsc::channel(8);
     let (sender, chunks) = mpsc::channel(8);
-    sender.send(chunk.clone()).await.expect("chunk");
+    sender.send(Ok(chunk.clone())).await.expect("chunk");
     drop(sender);
     streaming_iterator_hook(&guardrail, &chat_data(), CALLER, chunks, output)
         .await

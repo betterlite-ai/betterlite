@@ -5,8 +5,7 @@ use serde_json::value::RawValue;
 
 pub type Extensions = BTreeMap<String, Box<RawValue>>;
 
-// LiteLLM reads only results[0] and echoes the whole response back in the error detail. Every record keeps
-// its own field, an explicit null included, typed and every other field raw, so it serializes back as it read.
+// LiteLLM echoes the whole response in the error detail, so every field and explicit null must serialize back as read
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LakeraModerationResponse {
     #[serde(
