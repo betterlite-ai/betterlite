@@ -75,7 +75,7 @@ fn embedding_body(reply: &EmbeddingResponse, logged: &[String]) -> Value {
     })
 }
 
-fn embedding_reply(case: &ReplyCase) -> HelperResult<Value> {
+fn embedding_reply(case: &ReplyCase) -> HelperResult {
     let mut logged = Vec::new();
     let decoded = transform_embedding_response(case.body.as_bytes(), &mut |text: &str| {
         logged.push(text.to_owned());
