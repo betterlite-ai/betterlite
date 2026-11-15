@@ -18,9 +18,7 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
-use betterlite_openai::compatible_embedding::{
-    Mode, finish_embedding, plan_embedding, send_embedding,
-};
+use betterlite_openai::compatible_embedding::Mode;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -32,7 +30,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
 
-use super::{CometapiEmbedding, SharedEmbedding};
+use super::{CometapiEmbedding, SharedEmbedding, shared_embedding};
 use crate::prepared::PreparedRequest;
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"embedding","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -381,7 +379,7 @@ async fn the_shared_handler_plans_sends_and_finishes_the_original_call() {
     let globals = Globals::default();
     let settings = settings(&[]);
     let key = SecretString::from(String::from("sk-explicit"));
-    let call = SharedEmbedding {
+    let embedding = SharedEmbedding {
         model: "m",
         input: &input,
         api_base: Some(&base),
@@ -393,8 +391,7 @@ async fn the_shared_handler_plans_sends_and_finishes_the_original_call() {
         mode: Mode::Async,
         globals: &globals,
         settings: &settings,
-    }
-    .handler_call();
+    };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let mut state = LoggingState::new(
         serde_json::from_str::<LoggingInit>(INIT).unwrap(),
@@ -421,14 +418,16 @@ async fn the_shared_handler_plans_sends_and_finishes_the_original_call() {
         logger_fn: None,
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
     };
-    let plan = plan_embedding(call, &mut state, &env).unwrap();
     let client = client();
-    let (request, sent) = timeout(EXCHANGE_TIMEOUT, async {
-        tokio::join!(serve(&listener), send_embedding(&client, &plan))
+    let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(
+            serve(&listener),
+            shared_embedding(&embedding, &client, &mut state, &env)
+        )
     })
     .await
     .unwrap();
-    let response = finish_embedding(&plan, sent, &mut state, &env).unwrap();
+    let response = answer.unwrap();
     assert_eq!(response.model, "upstream");
     assert_eq!(response.data.len(), 1);
     assert!(request.starts_with("POST /v1/embeddings HTTP/1.1"));
