@@ -1,0 +1,1 @@
+{"id":"run-1","object":"eval.run","created_at":1,"status":"completed","data_source":{"type":"inline"},"eval_id":"eval-1","per_testing_criteria_results":[{"testing_criteria_index":0,"result_counts":{"total":1,"passed":1,"failed":0,"error":0},"average_score":0.5}],"result_counts":{"total":1,"passed":1,"failed":0,"errored":0},"shared_with_openai":false}
