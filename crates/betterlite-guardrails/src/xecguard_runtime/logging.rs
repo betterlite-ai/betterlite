@@ -22,7 +22,8 @@ use super::error::XecGuardRuntimeError;
 
 const LITELLM_PARAMS_KEY: &str = "litellm_params";
 const METADATA_KEY: &str = "metadata";
-const GUARDRAIL_INFORMATION_KEY: &str = "standard_logging_guardrail_information";
+const METADATA_GUARDRAIL_INFORMATION_KEY: &str = "standard_logging_guardrail_information";
+const GUARDRAIL_INFORMATION_KEY: &str = "guardrail_information";
 const STANDARD_LOGGING_OBJECT_KEY: &str = "standard_logging_object";
 const RESPONSE_KEY: &str = "response";
 
@@ -115,7 +116,7 @@ fn carries_guardrail_information(kwargs: &RequestData) -> bool {
         return false;
     };
     metadata
-        .get(GUARDRAIL_INFORMATION_KEY)
+        .get(METADATA_GUARDRAIL_INFORMATION_KEY)
         .is_some_and(|raw| carries_information(raw.get()))
 }
 
