@@ -637,6 +637,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_video_edits"
+path = "fuzz_targets/openai_video_edits.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "text_response"
 path = "fuzz_targets/text_response.rs"
 test = false

@@ -1,0 +1,24 @@
+kind: helper
+name: request-allowed-tool
+call:
+  b3812:
+    rules:
+      - {id: deny-bash, tool_name: Bash, decision: deny}
+      - {id: allow-read, tool_name: Read, decision: allow}
+      - {id: deny-write, tool_name: "Write.*", decision: deny}
+    default_action: deny
+    on_disallowed_action: block
+    event_hook: pre_call
+    default_on: true
+    data:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      tools:
+        - {type: function, function: {name: Read}}
+        - {type: web_search}
+      functions: [{name: Read}]
+      tool_choice: {type: function, function: {name: Read}}
+      function_call: Read
+      metadata: {user: u}
+env: {}
+compare: {ignore: []}

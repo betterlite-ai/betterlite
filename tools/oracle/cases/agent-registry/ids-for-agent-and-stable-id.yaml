@@ -1,0 +1,30 @@
+kind: helper
+name: ids-for-agent-and-stable-id
+call:
+  b4776:
+    config:
+      - agent_name: alpha
+        agent_card_params:
+          model: gpt-4o
+      - agent_name: beta
+        agent_card_params:
+          name: beta
+    reload: false
+    reload_config: null
+    db_agents: []
+    public_groups: null
+    ids_for:
+      - 8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8
+      - 00afdb1e315efd7d8d96382f3925c7d46dee40711cffe80449b0dcb21f731322
+      - f44e64e75f3948e9f73f8dfa94721c4ce8cbb4f265c4790c702b2d41cfbf2753
+    stable_ids:
+      - 00afdb1e315efd7d8d96382f3925c7d46dee40711cffe80449b0dcb21f731322
+      - 4fb4045f0abf0ca2d4659df3e9686c86d358c77c2ed700195e5b3f52e4d406b1
+      - f44e64e75f3948e9f73f8dfa94721c4ce8cbb4f265c4790c702b2d41cfbf2753
+      - missing
+    by_id: []
+    by_name: []
+    deregister: []
+env: {}
+compare:
+  ignore: []
