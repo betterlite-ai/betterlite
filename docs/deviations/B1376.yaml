@@ -3,4 +3,13 @@ deviations:
   - what: A GCS metadata reply larger than 1 MiB is refused with a typed VertexFilesError before it is decoded, where LiteLLM reads the whole response body into memory and parses it.
     why: An unbounded reply is held whole in memory for a record whose fields are a few hundred bytes, and every input betterlite reads has a limit.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1109
+  - what: A batch row that is not valid JSON is refused with a typed VertexFilesError naming the row, where LiteLLM's json.loads raises JSONDecodeError and the upload answers 500.
+    why: The decoder error names the interpreter and a character offset rather than the row the uploader has to fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L775
+  - what: A batch row whose body is null or not an object, or whose body.model is null or not a string, names the object under the empty publisher model path for null and is refused with a typed VertexFilesError otherwise, where LiteLLM's .get chain raises AttributeError or TypeError and the upload answers 500.
+    why: Null reads as absent, and a wrong-typed value is refused with an error that names the field instead of the Python internals.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L918
+  - what: A batch file whose bytes are not UTF-8 is refused with a typed ContentUtf8 error, where LiteLLM decodes each line as UTF-8 and raises UnicodeDecodeError.
+    why: The refusal names the file encoding instead of a byte offset inside the interpreter's decoder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L735
 kept_bugs: []
