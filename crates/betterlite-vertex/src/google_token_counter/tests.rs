@@ -1,48 +1,34 @@
 #![cfg(test)]
 
-use std::future::{Future, ready};
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+mod support;
+
+use std::sync::Arc;
 
 use betterlite_config::sections::studio_identity::Settings;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::{
     ConfiguredCredentials, decode_vertex_credentials,
 };
-use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
+use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Object;
-use betterlite_prompts::media::inline::RemoteMediaFetcher;
-use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::{Content, Message};
-use http::header::HeaderMap;
 use secrecy::SecretString;
-use tokio_util::task::TaskTracker;
 
 use crate::credential_sources::getters::VertexParams;
-use crate::credential_sources::sdk::CredentialClock;
 use crate::google_token_counter::counter::{
-    CountRuntime, CountTokensCall, StudioTokenCounter, TokenCounter as _, VertexTokenCounter,
+    CountTokensCall, StudioTokenCounter, TokenCounter as _, VertexTokenCounter,
 };
 use crate::google_token_counter::deployment::DeploymentParams;
 use crate::google_token_counter::error::{CountTokensError, ModelInfoError};
 use crate::google_token_counter::model_info::{GeminiModelInfo, VertexModelInfo};
-use crate::google_token_counter::reply::{CountReply, TokenCountResponse};
-use crate::partner_count::execute::PartnerCountTransport;
-use crate::token_cache::CredentialCache;
-use crate::token_cache::error::CredentialCacheError;
-use crate::token_cache::executor::{CredentialExecutor, LoadedCredential};
-use crate::token_cache::probe::AccessToken;
-use crate::token_cache::record::CredentialSnapshot;
-use crate::token_cache::state::TokenState;
-use crate::token_refresh::CredentialRefresh;
-use crate::vertex_interactions::mint::{MintAccessToken, MintFuture};
+use crate::google_token_counter::reply::CountReply;
+use crate::studio_identity::AuthValue;
 
-const DEADLINE: Duration = Duration::from_secs(5);
+use support::{
+    DEADLINE, RecordingMint, Script, StaticExecutor, refresh, refresh_from, runtime, vertex_count,
+};
 
 const VERTEX_URL: &str = "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.0-flash:countTokens";
 const STUDIO_URL: &str =
@@ -120,203 +106,6 @@ fn vertex_counter() -> VertexTokenCounter {
     VertexTokenCounter {
         settings: VertexSettings::default(),
     }
-}
-
-struct Sent {
-    url: String,
-    body: Vec<u8>,
-}
-
-impl Sent {
-    fn body_json(&self) -> Json {
-        serde_json::from_slice(&self.body).unwrap()
-    }
-}
-
-struct Script {
-    reply: Vec<u8>,
-    sent: Mutex<Vec<Sent>>,
-}
-
-impl Script {
-    fn replying(body: &[u8]) -> Self {
-        Self {
-            reply: body.to_vec(),
-            sent: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn record(&self, request: OutboundRequest) -> UpstreamResponse {
-        let body = match request.body {
-            RequestBody::Json(bytes) => bytes,
-            RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
-                Vec::new()
-            }
-        };
-        self.sent.lock().unwrap().push(Sent {
-            url: request.url.to_string(),
-            body,
-        });
-        UpstreamResponse {
-            status: 200,
-            headers: HeaderMap::new(),
-            body: self.reply.clone(),
-        }
-    }
-
-    fn sent(&self) -> Vec<Sent> {
-        let mut sent = self.sent.lock().unwrap();
-        std::mem::take(&mut *sent)
-    }
-}
-
-impl CountTransport for Script {
-    fn send(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        ready(Ok(self.record(request)))
-    }
-}
-
-impl PartnerCountTransport for Script {
-    fn send(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        ready(Ok(self.record(request)))
-    }
-}
-
-struct NoMedia;
-
-impl RemoteMediaFetcher for NoMedia {
-    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
-        ready(Err(ImageFetchError::Rejected {
-            url: url.to_owned(),
-        }))
-    }
-
-    fn convert_urls(
-        &self,
-        urls: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        ready(Err(ImageFetchError::Rejected {
-            url: urls.join(","),
-        }))
-    }
-}
-
-static NO_MEDIA: NoMedia = NoMedia;
-
-#[derive(Default)]
-struct RecordingMint {
-    seen: Mutex<Vec<(Option<String>, Option<String>)>>,
-}
-
-impl RecordingMint {
-    fn seen(&self) -> Vec<(Option<String>, Option<String>)> {
-        self.seen.lock().unwrap().clone()
-    }
-}
-
-impl MintAccessToken for RecordingMint {
-    fn mint<'mint>(
-        &'mint self,
-        credentials: Option<&'mint ConfiguredCredentials>,
-        project: Option<&'mint str>,
-    ) -> MintFuture<'mint> {
-        self.seen.lock().unwrap().push((
-            credentials
-                .and_then(ConfiguredCredentials::as_text)
-                .map(str::to_owned),
-            project.map(str::to_owned),
-        ));
-        Box::pin(ready(Ok(AccessToken {
-            token: SecretString::from("minted"),
-            project: project.unwrap_or("minted-project").to_owned(),
-        })))
-    }
-}
-
-struct FixedClock;
-
-impl CredentialClock for FixedClock {
-    fn now(&self) -> SystemTime {
-        SystemTime::UNIX_EPOCH
-    }
-}
-
-struct StaticExecutor;
-
-impl CredentialExecutor for StaticExecutor {
-    fn load<'borrow>(
-        &'borrow self,
-        _credentials: Option<&'borrow ConfiguredCredentials>,
-        _project: Option<&'borrow str>,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<LoadedCredential, CredentialCacheError>> + Send + 'borrow>,
-    > {
-        let snapshot = CredentialSnapshot {
-            token: Some(SecretString::from("vertex-token")),
-            state: Some(TokenState::Fresh),
-            expires_at: None,
-            expired: None,
-            valid: None,
-            quota_project_id: None,
-            project_id: Some("proj".to_owned()),
-        };
-        Box::pin(ready(Ok(LoadedCredential {
-            credential: Some(Arc::new(snapshot)),
-            project: Some("proj".to_owned()),
-        })))
-    }
-
-    fn refresh<'borrow>(
-        &'borrow self,
-        _credential: &'borrow CredentialSnapshot,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<CredentialSnapshot, CredentialCacheError>> + Send + 'borrow>,
-    > {
-        Box::pin(ready(Err(CredentialCacheError::MissingToken)))
-    }
-}
-
-fn refresh() -> CredentialRefresh {
-    CredentialRefresh::new(
-        Arc::new(CredentialCache::new(
-            Arc::new(FixedClock),
-            Arc::new(StaticExecutor),
-        )),
-        TaskTracker::new(),
-    )
-}
-
-fn runtime<'run>(
-    script: &'run Script,
-    mint: &'run RecordingMint,
-    refresh: &'run CredentialRefresh,
-    catalog: &'run ModelCatalog,
-) -> CountRuntime<'run, Script, RecordingMint, NoMedia> {
-    CountRuntime {
-        transport: script,
-        refresh,
-        catalog,
-        mint,
-        fetcher: &NO_MEDIA,
-    }
-}
-
-async fn vertex_count(
-    script: &Script,
-    mint: &RecordingMint,
-    refresh: &CredentialRefresh,
-    catalog: &ModelCatalog,
-    request: &CountTokensCall<'_>,
-) -> Result<Option<TokenCountResponse>, CountTokensError> {
-    let counter = vertex_counter();
-    let live = runtime(script, mint, refresh, catalog);
-    counter.count_tokens(&live, request, DEADLINE).await
 }
 
 #[tokio::test]
@@ -485,6 +274,78 @@ async fn selection_vertex_missing_total() {
 }
 
 #[tokio::test]
+async fn selection_vertex_deployment_target() {
+    let script = Script::replying(br#"{"totalTokens":5}"#);
+    let catalog = BundledCatalog::default().get();
+    let executor = Arc::new(StaticExecutor::default());
+    let refresh = refresh_from(Arc::clone(&executor));
+    let mint = RecordingMint::default();
+    let credentials = ConfiguredCredentials::Text(SecretString::from("vertex-credentials"));
+    let options = deployment(
+        "vertex_ai/gemini-2.0-flash",
+        params(Some("proj-eu"), Some("europe-west1"), Some(&credentials)),
+        None,
+    );
+    let request = call("gemini-2.0-flash", &[], None, options);
+    vertex_count(&script, &mint, &refresh, &catalog, &request)
+        .await
+        .unwrap()
+        .expect("a reply with totalTokens");
+    let sent = script.sent();
+    assert!(
+        sent[0]
+            .url
+            .starts_with("https://europe-west1-aiplatform.googleapis.com/")
+    );
+    assert!(sent[0].url.contains("/projects/proj-eu/"));
+    assert!(sent[0].url.contains("/locations/europe-west1/"));
+    assert_eq!(
+        executor.seen()[0],
+        (
+            Some("vertex-credentials".to_owned()),
+            Some("proj-eu".to_owned())
+        )
+    );
+}
+
+#[tokio::test]
+async fn selection_vertex_settings_fallback() {
+    let script = Script::replying(br#"{"totalTokens":6}"#);
+    let catalog = BundledCatalog::default().get();
+    let executor = Arc::new(StaticExecutor::default());
+    let refresh = refresh_from(Arc::clone(&executor));
+    let mint = RecordingMint::default();
+    let counter = VertexTokenCounter {
+        settings: VertexSettings {
+            project: Some("settings-project".to_owned()),
+            location: Some("europe-west1".to_owned()),
+            credentials: None,
+            adc: AdcEnvironment::default(),
+        },
+    };
+    let options = deployment("vertex_ai/gemini-2.0-flash", params(None, None, None), None);
+    let request = call("gemini-2.0-flash", &[], None, options);
+    let live = runtime(&script, &mint, &refresh, &catalog);
+    counter
+        .count_tokens(&live, &request, DEADLINE)
+        .await
+        .unwrap()
+        .expect("a reply with totalTokens");
+    let sent = script.sent();
+    assert!(
+        sent[0]
+            .url
+            .starts_with("https://europe-west1-aiplatform.googleapis.com/")
+    );
+    assert!(sent[0].url.contains("/projects/settings-project/"));
+    assert!(sent[0].url.contains("/locations/europe-west1/"));
+    assert_eq!(
+        executor.seen()[0],
+        (None, Some("settings-project".to_owned()))
+    );
+}
+
+#[tokio::test]
 async fn selection_studio_missing_total() {
     let script = Script::replying(br#"{}"#);
     let options = deployment("gemini/gemini-2.0-flash", params(None, None, None), None);
@@ -509,6 +370,70 @@ async fn selection_studio_missing_total() {
         .await
         .unwrap();
     assert_eq!(response.total_tokens, 0);
+}
+
+#[tokio::test]
+async fn selection_studio_deployment_auth_and_base() {
+    let script = Script::replying(br#"{"totalTokens":4}"#);
+    let api_key = SecretString::from("deployment-key");
+    let gemini_api_key = AuthValue::Key(SecretString::from("gemini-key"));
+    let options = DeploymentParams {
+        model: Some("gemini/gemini-2.0-flash"),
+        api_key: Some(&api_key),
+        gemini_api_key: Some(&gemini_api_key),
+        api_base: Some("https://studio.example.com"),
+        timeout: None,
+        vertex: params(None, None, None),
+        vertex_count_tokens_location: None,
+    };
+    let request = call("gemini-2.0-flash", &[], None, options);
+    let counter = StudioTokenCounter {
+        settings: Settings::default(),
+    };
+    let response = counter
+        .count_tokens(&script, &request, DEADLINE)
+        .await
+        .unwrap();
+    assert_eq!(response.total_tokens, 4);
+    let sent = script.sent();
+    assert_eq!(
+        sent[0].url,
+        "https://studio.example.com/v1beta/models/gemini-2.0-flash:countTokens"
+    );
+    assert_eq!(
+        sent[0].header("x-goog-api-key").as_deref(),
+        Some("deployment-key")
+    );
+}
+
+#[tokio::test]
+async fn selection_studio_gemini_key_fallback() {
+    let script = Script::replying(br#"{"totalTokens":2}"#);
+    let gemini_api_key = AuthValue::Key(SecretString::from("gemini-key"));
+    let options = DeploymentParams {
+        model: Some("gemini/gemini-2.0-flash"),
+        api_key: None,
+        gemini_api_key: Some(&gemini_api_key),
+        api_base: None,
+        timeout: None,
+        vertex: params(None, None, None),
+        vertex_count_tokens_location: None,
+    };
+    let request = call("gemini-2.0-flash", &[], None, options);
+    let counter = StudioTokenCounter {
+        settings: Settings::default(),
+    };
+    let response = counter
+        .count_tokens(&script, &request, DEADLINE)
+        .await
+        .unwrap();
+    assert_eq!(response.total_tokens, 2);
+    let sent = script.sent();
+    assert_eq!(sent[0].url, STUDIO_URL);
+    assert_eq!(
+        sent[0].header("x-goog-api-key").as_deref(),
+        Some("gemini-key")
+    );
 }
 
 #[tokio::test]
@@ -632,6 +557,62 @@ async fn selection_partner_count_tokens_location_wins() {
     let sent = script.sent();
     assert_eq!(sent[0].url, ASIA_PARTNER_URL);
     assert_eq!(sent[1].url, EAST5_PARTNER_URL);
+}
+
+#[tokio::test]
+async fn selection_partner_api_base() {
+    let script = Script::replying(br#"{"input_tokens":3}"#);
+    let catalog = BundledCatalog::default().get();
+    let refresh = refresh();
+    let mint = RecordingMint::default();
+    let mut options = deployment(
+        "vertex_ai/claude-sonnet-4-6@default",
+        params(Some("proj"), Some("us-east5"), None),
+        None,
+    );
+    options.api_base = Some("https://partner.example.com");
+    let request = call("claude-sonnet-4-6@default", &[], None, options);
+    vertex_count(&script, &mint, &refresh, &catalog, &request)
+        .await
+        .unwrap()
+        .expect("a partner count reply");
+    assert_eq!(
+        script.sent()[0].url,
+        "https://partner.example.com/v1/projects/proj/locations/us-east5/publishers/anthropic/models/count-tokens:rawPredict"
+    );
+}
+
+#[tokio::test]
+async fn selection_partner_settings_fallback() {
+    let script = Script::replying(br#"{"input_tokens":3}"#);
+    let catalog = BundledCatalog::default().get();
+    let refresh = refresh();
+    let mint = RecordingMint::default();
+    let counter = VertexTokenCounter {
+        settings: VertexSettings {
+            project: Some("settings-project".to_owned()),
+            location: Some("europe-west1".to_owned()),
+            credentials: None,
+            adc: AdcEnvironment::default(),
+        },
+    };
+    let options = deployment(
+        "vertex_ai/claude-sonnet-4-6@default",
+        params(None, None, None),
+        None,
+    );
+    let request = call("claude-sonnet-4-6@default", &[], None, options);
+    let live = runtime(&script, &mint, &refresh, &catalog);
+    counter
+        .count_tokens(&live, &request, DEADLINE)
+        .await
+        .unwrap()
+        .expect("a partner count reply");
+    assert_eq!(mint.seen()[0], (None, Some("settings-project".to_owned())));
+    assert_eq!(
+        script.sent()[0].url,
+        "https://europe-west1-aiplatform.googleapis.com/v1/projects/settings-project/locations/europe-west1/publishers/anthropic/models/count-tokens:rawPredict"
+    );
 }
 
 #[tokio::test]
