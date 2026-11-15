@@ -122,7 +122,11 @@ class ScriptedReplies:
         return httpx.Response(reply["status"], json=reply["body"])
 
 
-class Probe(Agent365Guardrail):
+class _ProbeMeta(type): ...
+
+
+class Probe(Agent365Guardrail, metaclass=_ProbeMeta):
+    # the metaclass keeps mypy's __init_subclass__ check away from LiteLLM's untyped kwargs
     async def fetch_token(self, assertion: str) -> str:
         return await self._get_obo_token(assertion)
 
@@ -143,13 +147,14 @@ class Probe(Agent365Guardrail):
 
 
 def capture_request(request: httpx.Request) -> dict[str, JsonValue]:
-    pairs = urllib.parse.parse_qsl(request.content.decode(), keep_blank_values=True)
+    body = request.content.decode()
+    pairs: list[tuple[str, str]] = urllib.parse.parse_qsl(body, keep_blank_values=True)
     form = JSON.validate_python(dict(pairs))
     return {"url": str(request.url), "content_type": request.headers["content-type"], "form": form}
 
 
 def make_guardrail() -> Probe:
-    return Probe(  # positional: guardrail_name, tenant_id, client_id and client_secret
+    return Probe(
         "agent-365-guard", "tenant-abc", "client-xyz", "secret-123",
         event_hook=GuardrailEventHooks.pre_mcp_call, default_on=True,
     )
@@ -159,16 +164,15 @@ def exchange_outcome(error: Agent365TokenExchangeError) -> dict[str, JsonValue]:
     return {
         "kind": "token", "error": "exchange", "status_code": error.status_code,
         "error_code": error.error_code, "description": error.description,
-        "aadsts_codes": JSON.validate_python(list(error.aadsts_codes)),
+        "aadsts_codes": JSON.validate_python([int(code) for code in error.aadsts_codes]),
         "gateway_owned": error.gateway_owned,
     }
 
 
 def malformed_variant(handler: ScriptedReplies) -> str:
     reply = handler.replies[min(handler.used, len(handler.replies)) - 1]
-    raw = reply["raw"]
     try:
-        body = reply["body"] if raw is None else JSON.validate_json(raw)
+        body = reply["body"] if reply["raw"] is None else JSON.validate_json(reply["raw"])
     except ValidationError:
         return "non_json_body"
     try:
@@ -184,17 +188,15 @@ async def token_outcome(
     guardrail: Probe, assertion: str, handler: ScriptedReplies
 ) -> dict[str, JsonValue]:
     try:
-        token = await guardrail.fetch_token(assertion)
+        return {"kind": "token", "access_token": await guardrail.fetch_token(assertion)}
     except Agent365TokenExchangeError as error:
         return exchange_outcome(error)
     except Agent365ThrottledError as error:
         return {"kind": "token", "error": "throttled", "status_code": error.status_code}
     except Agent365MalformedResponseError:
-        variant = malformed_variant(handler)
-        return {"kind": "token", "error": "malformed", "variant": variant}
+        return {"kind": "token", "error": "malformed", "variant": malformed_variant(handler)}
     except httpx.HTTPStatusError as error:
         return {"kind": "token", "error": "http_status", "status_code": error.response.status_code}
-    return {"kind": "token", "access_token": token}
 
 
 async def range_outcome(guardrail: Probe, prefix: str, count: int) -> dict[str, JsonValue]:
@@ -250,11 +252,10 @@ def payload_request(args: PayloadAssembly) -> RequestPayload:
         model="mcp", messages=None, stream=False, call_type="call_mcp_tool",
         start_time=FIXED_START, litellm_call_id=args["litellm_call_id"], function_id="fn-1",
     )
-    if args["mcp_session_id"] is not None:
+    session = args["mcp_session_id"]
+    if session is not None:
         details: LoggingDetails = logging_obj
-        details.model_call_details["mcp_tool_call_metadata"] = {
-            "mcp_session_id": args["mcp_session_id"]
-        }
+        details.model_call_details["mcp_tool_call_metadata"] = {"mcp_session_id": session}
     data: RequestPayload = {"litellm_call_id": args["litellm_call_id"]}
     data["litellm_logging_obj"] = logging_obj
     if args["metadata"] is not None:
@@ -272,8 +273,7 @@ def payload_request(args: PayloadAssembly) -> RequestPayload:
 
 def cache_entries(guardrail: Probe) -> list[list[JsonValue]]:
     now = time.time()
-    entries = guardrail.cache_items()
-    return [[key, token, round(expires_at - now)] for key, token, expires_at in entries]
+    return [[key, token, round(expiry - now)] for key, token, expiry in guardrail.cache_items()]
 
 
 def payload_result(args: PayloadAssembly) -> JsonValue:
