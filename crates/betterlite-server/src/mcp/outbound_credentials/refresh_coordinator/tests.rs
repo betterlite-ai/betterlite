@@ -305,3 +305,13 @@ async fn the_key_prefix_and_lock_ttl_come_from_the_tunables() {
     assert!(events[0].starts_with("acquire custom:user-1:server-1 "));
     assert!(events[0].ends_with(" 1.5s"));
 }
+
+#[test]
+fn the_default_tunables_match_litellm() {
+    let tunables = RedisTunables::default();
+    assert_eq!(tunables.key_prefix, "mcp:refresh_lock:");
+    assert_eq!(tunables.lock_ttl, Duration::from_secs(10));
+    assert_eq!(tunables.refresh_budget, Duration::from_secs(20));
+    assert_eq!(tunables.wait_timeout, Duration::from_secs(35));
+    assert_eq!(tunables.poll_interval, Duration::from_millis(50));
+}
