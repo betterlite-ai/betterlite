@@ -1,0 +1,23 @@
+kind: helper
+name: foundry-mai-images-n-one-only
+call:
+  foundry_mai_images:
+    params:
+      - {model: MAI-Image-2.5, non_default_params: {n: 1}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {n: "1"}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {n: true}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {n: null}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {n: " 1 "}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {n: 2}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {n: 2}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {n: 0}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {n: false}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {n: "3"}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {n: "3"}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {n: two}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {n: two}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {n: ""}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {n: 1.5}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {n: 4}, optional_params: {n: 1}, drop_params: false}
+env: {}
+compare: {ignore: []}
