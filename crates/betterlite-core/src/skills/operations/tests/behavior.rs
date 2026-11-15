@@ -291,6 +291,27 @@ fn create_rejects_a_caller_without_identity_after_logging() {
 }
 
 #[test]
+fn create_forwards_user_id_when_the_caller_has_no_principal() {
+    support::runtime().block_on(async {
+        let repository = ScriptedRepository::default();
+        let ops = support::ops(repository.clone());
+        let mut logging = support::logging_state();
+        ops.create_skill(
+            &mut logging,
+            HostedSkillCreation {
+                user_id: Some("bob"),
+                ..HostedSkillCreation::default()
+            },
+        )
+        .await
+        .unwrap();
+        let write = created_write(&repository);
+        assert_eq!(write.created_by, "bob");
+        assert_eq!(write.updated_by, "bob");
+    });
+}
+
+#[test]
 fn list_forwards_the_page_and_the_caller_scopes() {
     support::runtime().block_on(async {
         let repository = ScriptedRepository::default();
@@ -404,6 +425,31 @@ fn delete_updates_the_call_context_before_the_store() {
         assert_eq!(
             logged(&logging, "optional_params"),
             object(&[("skill_id", support::text(support::SKILL_ID))])
+        );
+    });
+}
+
+#[test]
+fn delete_rejects_a_caller_who_does_not_own_the_row() {
+    support::runtime().block_on(async {
+        let repository = ScriptedRepository::with_row(support::stored_row("alice"));
+        let ops = support::ops(repository.clone());
+        let mut logging = support::logging_state();
+        let outcome = ops
+            .delete_skill(
+                &mut logging,
+                support::SKILL_ID,
+                Some(&principal("bob")),
+                None,
+            )
+            .await;
+        assert!(matches!(
+            outcome,
+            Err(HostedSkillOpsError::Store(StoreError::NotFound { .. }))
+        ));
+        assert_eq!(
+            repository.effects(),
+            vec![Effect::FindUnique(support::SKILL_ID.to_owned())]
         );
     });
 }

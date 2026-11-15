@@ -10,11 +10,19 @@ call:
         created_at: "2026-01-01T00:00:00"
         updated_at: "2026-01-01T00:00:00"
         created_by: alice
+      - skill_id: litellm_skill_guarded
+        display_title: Guarded
+        created_at: "2026-01-01T00:00:00"
+        updated_at: "2026-01-01T00:00:00"
+        created_by: alice
     steps:
       - action: delete
         principal: {user_id: alice}
         skill_id: litellm_skill_doomed
         litellm_call_id: call-7
+      - action: delete
+        principal: {user_id: bob}
+        skill_id: litellm_skill_guarded
       - action: delete
         principal: {user_id: alice}
         skill_id: litellm_skill_doomed

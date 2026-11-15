@@ -27,5 +27,10 @@ call:
         display_title: Anonymous
         files:
           - [anon.zip, "YW5vbg=="]
+      - action: create
+        display_title: UserOnly
+        user_id: bob
+        files:
+          - [user.zip, "dXNlcg=="]
 env: {}
 compare: {ignore: []}
