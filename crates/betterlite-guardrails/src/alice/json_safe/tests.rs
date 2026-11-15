@@ -61,27 +61,7 @@ fn alice_guardrail_json_safe_caps_each_container_at_five_thousand_items() {
 
 #[test]
 fn alice_guardrail_json_safe_strips_credential_keys_at_any_depth() {
-    let value = GuardrailValue::Object(BTreeMap::from([
-        (
-            "outer".to_owned(),
-            GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
-                (
-                    "headers".to_owned(),
-                    GuardrailValue::Text("dropped".to_owned()),
-                ),
-                (
-                    "provider_specific_header".to_owned(),
-                    GuardrailValue::Text("dropped".to_owned()),
-                ),
-                ("keep".to_owned(), GuardrailValue::Text("kept".to_owned())),
-            ]))]),
-        ),
-        (
-            "headers".to_owned(),
-            GuardrailValue::Text("dropped".to_owned()),
-        ),
-    ]));
-    let stripped = safe(&value, &CREDENTIAL_KEYS_TO_STRIP);
+    let stripped = safe(&credential_value(), &CREDENTIAL_KEYS_TO_STRIP);
     match stripped {
         GuardrailValue::Object(fields) => {
             assert!(fields.get("headers").is_none());
@@ -102,6 +82,29 @@ fn alice_guardrail_json_safe_strips_credential_keys_at_any_depth() {
         }
         other => panic!("expected an object, got {other:?}"),
     }
+}
+
+fn credential_value() -> GuardrailValue {
+    GuardrailValue::Object(BTreeMap::from([
+        (
+            "outer".to_owned(),
+            GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
+                (
+                    "headers".to_owned(),
+                    GuardrailValue::Text("dropped".to_owned()),
+                ),
+                (
+                    "provider_specific_header".to_owned(),
+                    GuardrailValue::Text("dropped".to_owned()),
+                ),
+                ("keep".to_owned(), GuardrailValue::Text("kept".to_owned())),
+            ]))]),
+        ),
+        (
+            "headers".to_owned(),
+            GuardrailValue::Text("dropped".to_owned()),
+        ),
+    ]))
 }
 
 fn safe(value: &GuardrailValue, strip_keys: &[&str]) -> GuardrailValue {

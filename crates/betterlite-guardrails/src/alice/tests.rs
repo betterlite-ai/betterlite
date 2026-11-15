@@ -10,7 +10,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::http::HeaderMap as AxumHeaderMap;
 use axum::http::{StatusCode as AxumStatusCode, Uri, header};
-use axum::response::IntoResponse as _;
+use axum::response::{IntoResponse as _, Response as AxumResponse};
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
@@ -86,23 +86,7 @@ async fn serve(answer: Answer) -> Harness {
                 body: bytes.to_vec(),
             };
             recorder.lock().expect("the recorder").push(entry);
-            match scripted {
-                Answer::Json { status, body } => (
-                    AxumStatusCode::from_u16(status).expect("a status code"),
-                    [(header::CONTENT_TYPE, "application/json")],
-                    body,
-                )
-                    .into_response(),
-                Answer::Raw { status, body } => (
-                    AxumStatusCode::from_u16(status).expect("a status code"),
-                    body,
-                )
-                    .into_response(),
-                Answer::Timeout => {
-                    sleep(Duration::from_millis(200)).await;
-                    (AxumStatusCode::OK, "late").into_response()
-                }
-            }
+            scripted_response(scripted).await
         }
     };
     let router = Router::new().route(EVALUATE_PATH, post(handler));
@@ -112,6 +96,26 @@ async fn serve(answer: Answer) -> Harness {
         base,
         recorded,
         _tasks: tasks,
+    }
+}
+
+async fn scripted_response(answer: Answer) -> AxumResponse {
+    match answer {
+        Answer::Json { status, body } => (
+            AxumStatusCode::from_u16(status).expect("a status code"),
+            [(header::CONTENT_TYPE, "application/json")],
+            body,
+        )
+            .into_response(),
+        Answer::Raw { status, body } => (
+            AxumStatusCode::from_u16(status).expect("a status code"),
+            body,
+        )
+            .into_response(),
+        Answer::Timeout => {
+            sleep(Duration::from_millis(200)).await;
+            (AxumStatusCode::OK, "late").into_response()
+        }
     }
 }
 
@@ -281,7 +285,19 @@ async fn alice_guardrail_posts_the_stripped_bounded_payload() {
         UnreachableFallback::FailClosed,
         Duration::from_secs(2),
     );
-    let request_data = BTreeMap::from([
+    let outcome = apply(&instance, text_inputs(&["hello"]), &secret_request_data()).await;
+    assert_eq!(returned_inputs(outcome), text_inputs(&["hello"]));
+    let recorded = harness.recorded.lock().expect("the recorder");
+    assert_eq!(recorded.len(), 1);
+    let request = &recorded[0];
+    assert_eq!(request.path, EVALUATE_PATH);
+    assert_eq!(request.af_api_key.as_deref(), Some("alice-key"));
+    assert_eq!(request.content_type.as_deref(), Some("application/json"));
+    assert_stripped_payload(&request.body);
+}
+
+fn secret_request_data() -> BTreeMap<String, GuardrailValue> {
+    BTreeMap::from([
         (
             "api_key".to_owned(),
             GuardrailValue::Text("sk-secret".to_owned()),
@@ -313,17 +329,11 @@ async fn alice_guardrail_posts_the_stripped_bounded_payload() {
                 ("ok".to_owned(), GuardrailValue::Boolean(true)),
             ]))]),
         ),
-    ]);
-    let outcome = apply(&instance, text_inputs(&["hello"]), &request_data).await;
-    assert_eq!(returned_inputs(outcome), text_inputs(&["hello"]));
-    let recorded = harness.recorded.lock().expect("the recorder");
-    assert_eq!(recorded.len(), 1);
-    let request = &recorded[0];
-    assert_eq!(request.path, EVALUATE_PATH);
-    assert_eq!(request.af_api_key.as_deref(), Some("alice-key"));
-    assert_eq!(request.content_type.as_deref(), Some("application/json"));
-    let sent: SentPayload =
-        serde_json::from_slice(&request.body).expect("the evaluation body is JSON");
+    ])
+}
+
+fn assert_stripped_payload(body: &[u8]) {
+    let sent: SentPayload = serde_json::from_slice(body).expect("the evaluation body is JSON");
     assert_eq!(sent.input_type, GuardrailInputType::Request);
     assert_eq!(sent.inputs.texts, Some(vec!["hello".to_owned()]));
     assert!(!sent.request_data.contains_key("api_key"));
