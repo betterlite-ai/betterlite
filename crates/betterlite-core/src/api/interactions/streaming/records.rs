@@ -99,59 +99,69 @@ fn resolved_api_base(
 }
 
 fn api_base_params(logging: &InteractionsLogging) -> Result<ApiBaseParams, FieldTypeError> {
-    let text = |value: &JsonValue| match value {
+    let fields = litellm_param_fields(logging)?;
+    Ok(ApiBaseParams {
+        api_base: optional_field(&fields, "api_base", "litellm_params.api_base", text_value)?,
+        base_url: optional_field(&fields, "base_url", "litellm_params.base_url", text_value)?,
+        custom_llm_provider: optional_field(
+            &fields,
+            "custom_llm_provider",
+            "litellm_params.custom_llm_provider",
+            text_value,
+        )?,
+        api_key: optional_field(&fields, "api_key", "litellm_params.api_key", text_value)?
+            .map(SecretString::from),
+        vertex_location: optional_field(
+            &fields,
+            "vertex_location",
+            "litellm_params.vertex_location",
+            text_value,
+        )?,
+        vertex_project: optional_field(
+            &fields,
+            "vertex_project",
+            "litellm_params.vertex_project",
+            text_value,
+        )?,
+        stream: optional_field(&fields, "stream", "litellm_params.stream", flag_value)?
+            .unwrap_or_default(),
+    })
+}
+
+fn litellm_param_fields(
+    logging: &InteractionsLogging,
+) -> Result<IndexMap<String, JsonValue>, FieldTypeError> {
+    match logging.model_call_details.get("litellm_params") {
+        None | Some(JsonValue::Null) => Ok(IndexMap::new()),
+        Some(JsonValue::Object(fields)) => Ok(fields.clone()),
+        Some(
+            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
+        ) => Err(FieldTypeError {
+            field: "litellm_params",
+        }),
+    }
+}
+
+fn text_value(value: &JsonValue) -> Option<String> {
+    match value {
         JsonValue::Text(content) => Some(content.clone()),
         JsonValue::Null
         | JsonValue::Bool(_)
         | JsonValue::Number(_)
         | JsonValue::Array(_)
         | JsonValue::Object(_) => None,
-    };
-    let flag = |value: &JsonValue| match value {
+    }
+}
+
+const fn flag_value(value: &JsonValue) -> Option<bool> {
+    match value {
         JsonValue::Bool(set) => Some(*set),
         JsonValue::Null
         | JsonValue::Number(_)
         | JsonValue::Text(_)
         | JsonValue::Array(_)
         | JsonValue::Object(_) => None,
-    };
-    let fields = match logging.model_call_details.get("litellm_params") {
-        None | Some(JsonValue::Null) => IndexMap::new(),
-        Some(JsonValue::Object(fields)) => fields.clone(),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
-        ) => {
-            return Err(FieldTypeError {
-                field: "litellm_params",
-            });
-        }
-    };
-    Ok(ApiBaseParams {
-        api_base: optional_field(&fields, "api_base", "litellm_params.api_base", text)?,
-        base_url: optional_field(&fields, "base_url", "litellm_params.base_url", text)?,
-        custom_llm_provider: optional_field(
-            &fields,
-            "custom_llm_provider",
-            "litellm_params.custom_llm_provider",
-            text,
-        )?,
-        api_key: optional_field(&fields, "api_key", "litellm_params.api_key", text)?
-            .map(SecretString::from),
-        vertex_location: optional_field(
-            &fields,
-            "vertex_location",
-            "litellm_params.vertex_location",
-            text,
-        )?,
-        vertex_project: optional_field(
-            &fields,
-            "vertex_project",
-            "litellm_params.vertex_project",
-            text,
-        )?,
-        stream: optional_field(&fields, "stream", "litellm_params.stream", flag)?
-            .unwrap_or_default(),
-    })
+    }
 }
 
 fn optional_field<T>(
@@ -167,10 +177,10 @@ fn optional_field<T>(
 }
 
 fn model_id(metadata: Option<&Params>) -> Result<Option<String>, FieldTypeError> {
-    let Some(metadata) = metadata else {
+    let Some(model_metadata) = metadata else {
         return Ok(None);
     };
-    let Some(model_info) = metadata.get("model_info") else {
+    let Some(model_info) = model_metadata.get("model_info") else {
         return Ok(None);
     };
     match model_info {

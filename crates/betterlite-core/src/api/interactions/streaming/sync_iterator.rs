@@ -94,7 +94,7 @@ where
         }
     }
 
-    fn dispatch_completed(&mut self) {
+    fn dispatch_completed(&self) {
         let Some(response) = self.base.completed_response.clone() else {
             return;
         };

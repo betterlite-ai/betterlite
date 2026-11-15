@@ -6,7 +6,7 @@ use super::logging::InteractionsStreamLogging;
 use super::records::{
     HiddenParamsInput, InteractionsStreamSetup, InteractionsSuccessCall, hidden_params,
 };
-use super::response::{InteractionsAsyncResponse, InteractionsLineStream};
+use super::response::{InteractionsAsyncResponse, InteractionsLineStream as _};
 use crate::api::interactions::contract::config::BaseInteractionsAPIConfig;
 
 pub struct InteractionsStreamIterator<'base, Response, Config, Logging>
@@ -93,7 +93,7 @@ where
         }
     }
 
-    fn dispatch_completed(&mut self) {
+    fn dispatch_completed(&self) {
         let Some(response) = self.base.completed_response.clone() else {
             return;
         };
