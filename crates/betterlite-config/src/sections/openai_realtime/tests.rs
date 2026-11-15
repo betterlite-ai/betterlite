@@ -33,7 +33,7 @@ fn assert_max_message_size() {
         DEFAULT_MAX_MESSAGE_SIZE_BYTES
     );
     let explicit = load("", &[(MAX_MESSAGE_SIZE_VARIABLE, "8388608")]).unwrap();
-    assert_eq!(explicit.max_message_size_bytes, 8_388_608);
+    assert_eq!(explicit.max_message_size_bytes, 0x0080_0000);
     let padded = load("", &[(MAX_MESSAGE_SIZE_VARIABLE, " 4096 ")]).unwrap();
     assert_eq!(padded.max_message_size_bytes, 4_096);
     let empty = load("", &[(MAX_MESSAGE_SIZE_VARIABLE, "")]).unwrap();

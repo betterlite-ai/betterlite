@@ -98,9 +98,12 @@ pub(super) fn replace_path_with_v1_realtime() {
 
     assert_eq!(
         url_for(Some("https://example.test:443/x"), None),
-        DEFAULT_URL
+        "wss://example.test/v1/realtime?model=realtime-a"
     );
-    assert_eq!(url_for(Some("wss://example.test/x"), None), DEFAULT_URL);
+    assert_eq!(
+        url_for(Some("wss://example.test/x"), None),
+        "wss://example.test/v1/realtime?model=realtime-a"
+    );
 }
 
 pub(super) fn query_model_or_explicit() {
