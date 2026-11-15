@@ -48,3 +48,4 @@ deviations:
       docs/compatibility.md does not port repr; the message text around the value, the level and
       the value's content match, and an empty thinking object renders as {} in both.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L292-L295
+kept_bugs: []
