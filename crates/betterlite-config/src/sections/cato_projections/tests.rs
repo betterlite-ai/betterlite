@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use betterlite_env::EnvError;
 use secrecy::ExposeSecret as _;
 
 use crate::loader::{ConfigError, parse_view};
@@ -123,9 +124,12 @@ fn cato_projections_config_rejects_an_invalid_inspect_flag_value() {
     );
     let lookup = BTreeMap::from([("FLAG".to_owned(), "perhaps".to_owned())]);
     let error = resolve(&source, &lookup).unwrap_err();
-    let message = error.to_string();
-    assert!(matches!(error, ConfigError::Environment(_)));
-    assert!(message.contains("FLAG"), "{message}");
+    assert!(matches!(
+        error,
+        ConfigError::Environment {
+            source: EnvError::Bool { name }
+        } if name == "FLAG"
+    ));
 }
 
 #[test]
