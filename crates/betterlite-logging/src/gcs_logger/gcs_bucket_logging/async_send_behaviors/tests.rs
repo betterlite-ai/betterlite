@@ -1,10 +1,16 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use tokio::task::yield_now;
+use tokio::time::{advance, timeout};
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use super::super::event_enqueue_behaviors::enqueue;
-use super::super::tests::support::{Answer, dynamic, event, open, upload_name};
+use super::super::tests::support::{Answer, dynamic, event, open, open_scheduled, upload_name};
 use super::async_send_batch;
 
 #[tokio::test]
@@ -107,4 +113,36 @@ async fn an_invalid_dynamic_config_drops_the_batch() {
     async_send_batch(&harness.logger).await;
     assert!(harness.requests().is_empty());
     assert_eq!(harness.queue_len(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_invalid_dynamic_config_does_not_stop_the_periodic_flush() {
+    let tracker = TaskTracker::new();
+    let shutdown = CancellationToken::new();
+    let harness = open_scheduled(
+        &[("GCS_FLUSH_INTERVAL", "1")],
+        Some("bucket"),
+        Answer::ok("{}"),
+        &tracker,
+        &shutdown,
+    );
+    enqueue(
+        &harness.logger,
+        &event("chatcmpl-1", None, Json::Bool(true), IndexMap::new()),
+    )
+    .await;
+    yield_now().await;
+    advance(Duration::from_secs(1)).await;
+    yield_now().await;
+    assert!(harness.requests().is_empty());
+    assert_eq!(harness.queue_len(), 0);
+    harness.enqueue_all(&["chatcmpl-2"]).await;
+    advance(Duration::from_secs(1)).await;
+    yield_now().await;
+    assert_eq!(harness.requests().len(), 1);
+    shutdown.cancel();
+    tracker.close();
+    timeout(Duration::from_secs(1), tracker.wait())
+        .await
+        .expect("the flush loop stops on shutdown");
 }

@@ -31,6 +31,14 @@ deviations:
       the drop is the rare path and the flush-before-put no-loss property of LiteLLM holds in the usual one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L71-L74
   - what: >-
+      A drained batch whose standard_callback_dynamic_params is not an object is dropped with an error log.
+      LiteLLM's _group_items_by_config calls .get on that value and raises AttributeError, which escapes
+      async_send_batch and ends the periodic_flush task, so no later periodic flush runs.
+    why: >-
+      One malformed event must not stop the logger from uploading the events that follow it. The drained
+      batch is lost in LiteLLM as well, so the only difference is that betterlite's flush loop keeps running.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L272-L276
+  - what: >-
       A GCS_BATCH_SIZE or GCS_FLUSH_INTERVAL of 0 becomes 512 and 5 seconds, the values of
       litellm.DEFAULT_BATCH_SIZE and DEFAULT_FLUSH_INTERVAL_SECONDS. Betterlite does not read the DEFAULT_BATCH_SIZE
       and DEFAULT_FLUSH_INTERVAL_SECONDS environment variables that LiteLLM lets override those two constants.
