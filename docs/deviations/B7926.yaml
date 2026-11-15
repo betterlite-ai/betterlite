@@ -1,0 +1,37 @@
+task: B7926
+deviations:
+  - what: >-
+      Open JSON positions are declared as dict[str, JsonValue], list[JsonValue] or list[dict[str,
+      JsonValue]] where LiteLLM writes a bare dict, a bare list or Any, in the tool schemas, the
+      message sources and tool results, the request body, the stream events and the usage blocks.
+    why: >-
+      The repository's ast-grep rules reject Any and bare containers in type positions. JsonValue
+      names the same open JSON, and pydantic validates the same values into the same objects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L22-L33
+  - what: >-
+      ANTHROPIC_HOSTED_TOOLS and ANTHROPIC_BETA_HEADER_VALUES are declared as the
+      AnthropicHostedToolNames and AnthropicBetaHeaderValues StrEnum classes, and the module binds
+      each LiteLLM name to its class, where LiteLLM declares class X(str, Enum).
+    why: >-
+      Ruff N801 rejects a class name with underscores and the repository's rules require StrEnum
+      over a str mixin. Member names, member values and compare-by-value behavior are identical;
+      str() and repr() return the value rather than Class.MEMBER, and Python runtime formatting is
+      outside the compatibility policy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L739
+  - what: >-
+      The ported modules import Required and NotRequired from typing, where LiteLLM imports them
+      (with ReadOnly and TypedDict) from typing_extensions.
+    why: >-
+      Ruff UP035 at the repository's py311 target requires Required and NotRequired from typing,
+      and typing.Required is the same object as typing_extensions.Required from Python 3.11 on.
+      ReadOnly has no typing home before 3.13, and TypedDict stays on typing_extensions because
+      pydantic rejects typing.TypedDict below Python 3.12.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L6
+  - what: >-
+      TOOL_SEARCH_BETA_HEADER_BY_PROVIDER is built from the provider name strings, where LiteLLM
+      builds its keys from LlmProviders members.
+    why: >-
+      betterlite does not declare the LlmProviders enum (litellm.types.utils, task B048). The keys
+      and the header each provider gets are the same strings LiteLLM produces, so
+      get_tool_search_beta_header returns the same header for every input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_tool_search.py#L11
