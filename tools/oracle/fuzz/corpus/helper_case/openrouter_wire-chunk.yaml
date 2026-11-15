@@ -1,0 +1,82 @@
+kind: helper
+name: openrouter-wire-stream-chunks-and-errors
+call:
+  b6080:
+    op: chunk
+    cases:
+      - chunk:
+          id: gen-1
+          created: 1700000000
+          model: openai/gpt-4o
+          usage: null
+          choices:
+            - index: 0
+              delta:
+                content: hi
+                reasoning: thinking
+      - chunk:
+          id: gen-2
+          created: 1700000001
+          model: openai/gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: hello
+            - index: 1
+              delta:
+                content: world
+                reasoning: ""
+      - chunk:
+          id: gen-3
+          created: 1700000002
+          model: openai/gpt-4o
+          choices: []
+      - chunk:
+          id: gen-4
+          created: 1700000003
+          model: openai/gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: done
+                tool_calls:
+                  - id: call_1
+                    function:
+                      name: lookup
+                      arguments: "{}"
+              finish_reason: tool_use
+            - index: 1
+              delta:
+                content: plain
+              finish_reason: ""
+          usage:
+            prompt_tokens: 3
+            total_tokens: 5
+            cost: 0.25
+      - chunk:
+          id: gen-5
+          created: 1700000004
+          model: openai/gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: more
+                tool_calls:
+                  - id: call_2
+                    index: 4
+                    function:
+                      name: next
+                      arguments: ""
+      - chunk: {}
+      - chunk:
+          error:
+            message: rate limited
+            code: 429
+      - chunk:
+          error:
+            message: upstream failed
+            code: 502
+            user_id: u1
+env: {}
+compare:
+  ignore: []
