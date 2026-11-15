@@ -226,7 +226,9 @@ fn a_reply_that_cannot_be_transformed_is_not_costed(#[case] text: &str) {
     let redactor = redactor();
     let (mut state, env) = fixture(&redactor);
     let cost = RecordingCost::ok(decimal("0.5"));
-    let error = run(text, &cost, &mut state, &env).unwrap_err();
+    let Err(error) = run(text, &cost, &mut state, &env) else {
+        panic!("the reply must fail to transform");
+    };
     assert!(matches!(error, ResponsesApiError::Transform(_)));
     assert!(cost.observed().is_empty());
 }
@@ -236,7 +238,9 @@ fn a_failed_cost_is_returned_and_drops_the_reply() {
     let redactor = redactor();
     let (mut state, env) = fixture(&redactor);
     let cost = RecordingCost::failing();
-    let error = run(REPLY, &cost, &mut state, &env).unwrap_err();
+    let Err(error) = run(REPLY, &cost, &mut state, &env) else {
+        panic!("the cost must fail");
+    };
     assert!(matches!(error, ResponsesApiError::Cost { .. }));
     assert_eq!(cost.observed().len(), 1);
 }

@@ -29,32 +29,24 @@ enum ImageCostFailure {
 #[must_use]
 pub fn image_generation_cost(request: &ImageCostRequest<'_>, lookup: &dyn PriceLookup) -> Decimal {
     let quality = request.request_body.get("quality");
-    cost_or_zero(request, quality, lookup, "image generation")
+    match calculated_cost(request, quality, lookup) {
+        Ok(cost) => cost,
+        Err(failure) => warn_and_zero(request.model, &failure, "image generation"),
+    }
 }
 
 #[must_use]
 pub fn image_editing_cost(request: &ImageCostRequest<'_>, lookup: &dyn PriceLookup) -> Decimal {
-    // Image editing has no quality parameter, so the handler clears one the body carries
-    cost_or_zero(request, None, lookup, "image editing")
+    // The editing request carries no quality parameter, so the source passes none to the calculator
+    match calculated_cost(request, None, lookup) {
+        Ok(cost) => cost,
+        Err(failure) => warn_and_zero(request.model, &failure, "image editing"),
+    }
 }
 
-fn cost_or_zero(
-    request: &ImageCostRequest<'_>,
-    quality: Option<&Json>,
-    lookup: &dyn PriceLookup,
-    endpoint: &str,
-) -> Decimal {
-    match calculated_cost(request, quality, lookup) {
-        Ok(cost) => cost,
-        Err(failure) => {
-            tracing::warn!(
-                model = request.model,
-                error = %failure,
-                "Error calculating {endpoint} cost"
-            );
-            Decimal::ZERO
-        }
-    }
+fn warn_and_zero(model: &str, failure: &ImageCostFailure, endpoint: &str) -> Decimal {
+    tracing::warn!(model, error = %failure, "Error calculating {endpoint} cost");
+    Decimal::ZERO
 }
 
 fn calculated_cost(

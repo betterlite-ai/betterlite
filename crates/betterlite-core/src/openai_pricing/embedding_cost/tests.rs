@@ -158,7 +158,6 @@ impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
         let mut message = Message::default();
         event.record(&mut message);
         self.0
-            .0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(message.0);

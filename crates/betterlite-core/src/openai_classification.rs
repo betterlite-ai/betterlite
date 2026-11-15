@@ -36,8 +36,11 @@ fn netloc_after_scheme(cleaned: &str, url: &Url) -> bool {
 
 // A scheme-relative route is read as http so the url crate accepts it
 fn scheme_relative(cleaned: &str) -> Option<Url> {
-    let parsed = Url::parse(&format!("http:{cleaned}")).ok()?;
-    has_netloc(cleaned).then_some(parsed)
+    if has_netloc(cleaned) {
+        Url::parse(&format!("http:{cleaned}")).ok()
+    } else {
+        None
+    }
 }
 
 pub(crate) fn parse_route(route: &str) -> ParsedRoute {
@@ -51,14 +54,10 @@ pub(crate) fn parse_route(route: &str) -> ParsedRoute {
             hostname: url.host_str().map(str::to_owned),
             path: url.path().to_owned(),
         },
-        None => hostless(),
-    }
-}
-
-fn hostless() -> ParsedRoute {
-    ParsedRoute {
-        hostname: None,
-        path: String::new(),
+        None => ParsedRoute {
+            hostname: None,
+            path: String::new(),
+        },
     }
 }
 
