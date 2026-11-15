@@ -1,6 +1,8 @@
 mod enhance;
 mod tests;
 
+use std::error::Error;
+
 use betterlite_config::loader::EnvironmentLookup;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
@@ -25,7 +27,7 @@ const SUPPORTED_PARAMS: [&str; 10] = [
 
 // The two capability answers come from the caller, so this module never reaches the catalog.
 pub trait CapabilityLookup {
-    type Error: std::error::Error;
+    type Error: Error;
 
     fn supports_reasoning(&self, model: &str) -> Result<bool, Self::Error>;
     fn supports_web_search(&self, model: &str) -> Result<bool, Self::Error>;
