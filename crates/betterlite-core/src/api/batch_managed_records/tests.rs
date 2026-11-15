@@ -496,6 +496,7 @@ async fn postgres_managed_file_row_resolution() {
         resolved(&records, "file-missing").await,
         BatchManagedRecordsResult::Resolved(ids(Some("file-missing"), None, None))
     );
+    store.pool.as_ref().unwrap().close();
     fixture.close_async().await.unwrap();
 }
 
