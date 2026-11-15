@@ -1,0 +1,18 @@
+task: B3062
+deviations:
+  - what: The S3 upload is an async SigV4-signed PUT sent through the crate's S3HttpClient, not a boto3 put_object in a worker thread; it sends the same bucket, key, body and Content-Type.
+    why: betterlite has no blocking SDK call to move to a thread, and s3_transport already signs and sends S3 requests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/s3_destination.py#L43-L51
+  - what: S3 client options are filtered once at construction, so absent and empty-string region, endpoint and credential values never reach the signer.
+    why: LiteLLM's _client_kwargs omits falsy entries the same way, so an unset entry falls back to the environment credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/s3_destination.py#L62-L75
+  - what: Without configured keys the S3 destination reads AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN only, and an unset region comes from AWS_DEFAULT_REGION, then us-east-1 as boto3 signs with when no region is configured; botocore's profile files, SSO, instance metadata and request retries are not reproduced, and a trailing slash on endpoint_url is trimmed.
+    why: s3_transport and legacy_s3 hold betterlite's S3 signing, credential and region rules and boto3's credential chain has no port in the crate; the destination resolves the region itself so a bucket that boto3 signs for in us-east-1 keeps that region instead of the transport's us-west-2 default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/s3_destination.py#L77-L84
+  - what: A non-2xx S3 response is reported as a typed status error carrying the code and, when the body is valid UTF-8, its text.
+    why: boto3 raises ClientError for those statuses; the typed error replaces the exception and the rules refuse lossy decoding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/s3_destination.py#L77-L84
+  - what: A GCS response whose status is not 200 is reported as a typed status error carrying the code and, when the body is valid UTF-8, its text; any other body reports empty text.
+    why: LiteLLM raises RuntimeError with the status and the httpx text, which decodes bad bytes lossily; the rules refuse lossy decoding and typed errors replace the exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/gcs_destination.py#L52-L53
+kept_bugs: []

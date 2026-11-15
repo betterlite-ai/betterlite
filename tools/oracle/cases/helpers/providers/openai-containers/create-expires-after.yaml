@@ -1,0 +1,42 @@
+kind: helper
+name: create-expires-after
+call:
+  openai_containers:
+    supported: true
+    maps:
+      - params:
+          expires_after: {anchor: last_active_at, minutes: 20}
+          file_ids: [file-1, file-2]
+          extra_headers: {x-extra: "yes"}
+          extra_body: {vendor: x}
+        drop_params: true
+      - params:
+          file_ids: [file-3]
+        drop_params: false
+      - params: {}
+        drop_params: true
+    joins: []
+    urls: []
+    creates:
+      - name: cntr-given
+        params:
+          expires_after: {anchor: last_active_at, minutes: 20}
+          file_ids: [file-1]
+          extra_headers: {x-extra: "yes"}
+          extra_body: {vendor: x}
+      - name: cntr-given
+        params:
+          name: cntr-override
+          file_ids: [file-3]
+      - name: cntr-given
+        params: {}
+      - name: cntr-given
+        params:
+          extra_headers: {only: dropped}
+    requests: []
+    headers: []
+    replies: []
+    content_replies: []
+    errors: []
+env: {}
+compare: {ignore: []}

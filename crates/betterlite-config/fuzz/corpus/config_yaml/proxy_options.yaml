@@ -1,0 +1,12 @@
+litellm_settings:
+  use_litellm_proxy: true
+model_list:
+  - model_name: proxied
+    litellm_params:
+      model: openai/gpt-4o
+      use_litellm_proxy: true
+  - model_name: local
+    litellm_params:
+      model: openai/gpt-4o
+      use_litellm_proxy: false
+  - model_name: plain

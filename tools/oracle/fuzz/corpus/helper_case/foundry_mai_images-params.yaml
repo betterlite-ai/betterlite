@@ -1,0 +1,9 @@
+kind: helper
+name: foundry-mai-images-params-seed
+call:
+  foundry_mai_images:
+    params:
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x1024, n: 1}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {quality: hd, n: 2}, optional_params: {}, drop_params: true}
+env: {}
+compare: {ignore: []}

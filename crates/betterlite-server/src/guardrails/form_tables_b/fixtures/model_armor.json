@@ -1,0 +1,39 @@
+{
+  "api_endpoint": {
+    "description": "Optional custom API endpoint for Model Armor",
+    "required": false,
+    "type": "string"
+  },
+  "credentials": {
+    "description": "Path to Google Cloud credentials JSON file or JSON string",
+    "required": false,
+    "type": "string"
+  },
+  "fail_on_error": {
+    "default_value": true,
+    "description": "Whether to fail the request if Model Armor encounters an error",
+    "required": false,
+    "type": "boolean"
+  },
+  "location": {
+    "description": "Google Cloud location/region (e.g., us-central1)",
+    "required": false,
+    "type": "string"
+  },
+  "project_id": {
+    "description": "Google Cloud project ID",
+    "required": false,
+    "type": "string"
+  },
+  "sanitize_error_detail": {
+    "default_value": true,
+    "description": "Omit the raw Model Armor response from caller-facing errors and logs by default. Set False to restore verbose output.",
+    "required": false,
+    "type": "boolean"
+  },
+  "template_id": {
+    "description": "The ID of your Model Armor template",
+    "required": false,
+    "type": "string"
+  }
+}
