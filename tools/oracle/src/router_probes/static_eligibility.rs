@@ -8,6 +8,7 @@ use betterlite_router::static_eligibility::filter::{
 use betterlite_router::static_eligibility::request::RequestFacts;
 use betterlite_router::static_eligibility::tokens::{TokenPayload, count_for_pre_call_checks};
 use serde::{Deserialize, Serialize};
+use tokio::runtime::Builder;
 
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
@@ -200,7 +201,7 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| OperationError::InvalidRequest {

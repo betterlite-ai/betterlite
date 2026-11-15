@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::router_predicates::params::{ParamSupport, ResolvedProvider};
@@ -43,7 +43,7 @@ pub(crate) struct ProbeCounter {
     service: CountingService,
     counted: Counted,
     settings: Settings,
-    catalog: Arc<betterlite_models::catalog::ModelCatalog>,
+    catalog: Arc<ModelCatalog>,
 }
 
 impl ProbeCounter {
@@ -99,8 +99,8 @@ impl TokenCounter for ProbeCounter {
             includes_system,
         )
         .await?;
-        let total = total.checked_add(extra).ok_or(CountError::Overflow)?;
-        Ok(total)
+        let combined = total.checked_add(extra).ok_or(CountError::Overflow)?;
+        Ok(combined)
     }
 }
 
@@ -110,9 +110,7 @@ pub(crate) struct ProbeLimits;
 impl TokenLimits for ProbeLimits {
     fn max_input_tokens(&self, spec: &DeploymentSpec, _model: &str) -> Option<usize> {
         match spec.model_info.get("max_input_tokens") {
-            Some(Json::Number(number)) => number
-                .as_u64()
-                .and_then(|value| usize::try_from(value).ok()),
+            Some(Json::Number(number)) => usize::try_from(number.as_u64()?).ok(),
             Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
             | None => None,
         }
