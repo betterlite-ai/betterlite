@@ -33,12 +33,15 @@ fn corpus_seeds() -> Vec<(String, Vec<u8>)> {
     let mut seeds: Vec<(String, Vec<u8>)> = Vec::new();
     for dir_entry in fs::read_dir(corpus).expect("the corpus folder") {
         let entry = dir_entry.expect("a corpus entry");
-        let bytes = fs::read(entry.path()).expect("a seed file");
         let name = entry
             .file_name()
             .to_str()
             .expect("the seed name is UTF-8")
             .to_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let bytes = fs::read(entry.path()).expect("a seed file");
         seeds.push((name, bytes));
     }
     seeds.sort();
