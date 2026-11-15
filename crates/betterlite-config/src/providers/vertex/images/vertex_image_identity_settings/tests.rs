@@ -33,7 +33,7 @@ const CONFIGURED_MODULE: &str =
 
 #[test]
 fn the_module_setting_loads_beside_the_environment_it_beats() {
-    let (environment, module, _secrets) = identity(
+    let (environment, module, secrets) = identity(
         CONFIGURED_MODULE,
         &[
             ("VERTEXAI_PROJECT", "env-project"),
@@ -49,6 +49,7 @@ fn the_module_setting_loads_beside_the_environment_it_beats() {
     );
     assert_eq!(environment.0.as_deref(), Some("env-project"));
     assert_eq!(environment.1.as_deref(), Some("us-central1"));
+    assert_eq!(secrets.0.as_deref(), Some("env-project"));
 }
 
 #[test]
