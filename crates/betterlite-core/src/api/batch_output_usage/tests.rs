@@ -107,9 +107,71 @@ fn chat_output_usage_counts_cached_tokens() {
         }]},
     }));
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
-    assert_eq!(result.usage.cache_read_tokens, 4);
-    assert_eq!(result.usage.cache_creation_tokens, 6);
+    let details = result
+        .usage
+        .prompt_tokens_details
+        .as_ref()
+        .expect("the cached counters arrive as prompt details");
+    assert_eq!(details.cached_tokens, Some(4));
+    assert_eq!(details.cache_write_tokens, Some(6));
+    assert_eq!(details.cache_creation_tokens, Some(6));
     assert_eq!(result.models, vec!["gpt-4o-batch".to_owned()]);
+}
+
+#[test]
+fn a_cached_tokens_line_leaves_the_cache_write_detail_absent() {
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "openai",
+        "model_name": "gpt-4o-batch",
+        "model_info": batch_model_info(),
+        "content": {"kind": "lines", "lines": [{
+            "custom_id": "read",
+            "response": {"status_code": 200, "body": {"usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "prompt_tokens_details": {"cached_tokens": 4},
+            }}},
+        }]},
+    }));
+    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    let details = result
+        .usage
+        .prompt_tokens_details
+        .as_ref()
+        .expect("a positive cache-read counter creates the prompt details");
+    assert_eq!(details.cached_tokens, Some(4));
+    assert_eq!(details.cache_write_tokens, None);
+    assert_eq!(details.cache_creation_tokens, None);
+}
+
+#[test]
+fn a_cache_write_line_leaves_the_cached_tokens_detail_absent() {
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "openai",
+        "model_name": "gpt-4o-batch",
+        "model_info": batch_model_info(),
+        "content": {"kind": "lines", "lines": [{
+            "custom_id": "write",
+            "response": {"status_code": 200, "body": {"usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "prompt_tokens_details": {"cache_write_tokens": 6},
+            }}},
+        }]},
+    }));
+    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    let details = result
+        .usage
+        .prompt_tokens_details
+        .as_ref()
+        .expect("a positive cache-write counter creates the prompt details");
+    assert_eq!(details.cached_tokens, None);
+    assert_eq!(details.cache_write_tokens, Some(6));
+    assert_eq!(details.cache_creation_tokens, Some(6));
 }
 
 #[test]
@@ -130,7 +192,13 @@ fn counts_reasoning_tokens_in_the_aggregate() {
         }]},
     }));
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
-    assert_eq!(result.usage.reasoning_tokens, 7);
+    let details = result
+        .usage
+        .completion_tokens_details
+        .as_ref()
+        .expect("the reasoning counter arrives as completion details");
+    assert_eq!(details.reasoning_tokens, Some(7));
+    assert_eq!(details.text_tokens, Some(0));
     assert_eq!(result.usage.completion_tokens, 5);
     assert_eq!(result.usage.total_tokens, 15);
     assert_eq!(result.cost, Decimal::new(625, 2));
@@ -341,6 +409,32 @@ fn ocr_line_cost() {
     assert_eq!(result.successful_requests, 2);
     assert_eq!(result.failed_requests, 0);
     assert!(result.diagnostics.is_empty());
+}
+
+#[test]
+fn a_null_page_count_is_a_zero_page_ocr_line() {
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "mistral",
+        "model_name": "mistral-ocr-batch",
+        "model_info": ocr_model_info(),
+        "content": {"kind": "lines", "lines": [
+            {"custom_id": "empty", "response": {"status_code": 200, "body": {
+                "usage_info": {"pages_processed": null},
+            }}},
+        ]},
+    }));
+    let (outcome, logs) = run_captured(&decoded, &NoProviders);
+    let result = outcome.expect("the batch is costed");
+    // LiteLLM's ocr_batch_cost reads a null page count as zero pages, so the line costs nothing without an error.
+    assert_eq!(result.cost, Decimal::ZERO);
+    assert_eq!(result.successful_requests, 1);
+    assert_eq!(result.failed_requests, 0);
+    assert!(!logged(
+        &logs,
+        Level::WARN,
+        "batch output line could not be costed"
+    ));
 }
 
 #[rstest::rstest]
@@ -644,6 +738,20 @@ async fn counts_prompt_chunks_that_are_tokens_or_text() {
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].model, "fallback");
     assert_eq!(calls[1].text, Some("b".to_owned()));
+}
+
+#[tokio::test]
+async fn a_deeper_prompt_list_adds_nothing() {
+    let counter = ScriptedCounter::with_answer(3);
+    let entry = json_entry(json!({"body": {"prompt": [["a", ["b"]], 1]}}));
+    let tokens = count_batch_entry_tokens(&entry, Some("fallback"), &counter)
+        .await
+        .expect("the entry counts");
+    // LiteLLM counts the strings and integers of one pre-tokenized chunk and ignores a list nested inside it.
+    assert_eq!(tokens, 3 + 1);
+    let calls = counter.taken();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].text, Some("a".to_owned()));
 }
 
 #[tokio::test]

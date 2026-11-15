@@ -28,7 +28,7 @@ use crate::api::batch_output_usage::tokens::BatchTokenCounter;
 use crate::api::batch_output_usage::usage::response_model;
 use crate::api::batch_output_usage::{
     BatchOutputProviders, BatchOutputUsage, BatchOutputUsageError, BatchOutputUsageInput,
-    BatchOutputUsageResult, BatchUsageTotals, ConverseUsageOutcome, VertexRowStats,
+    BatchOutputUsageResult, ConverseUsageOutcome, VertexRowStats,
 };
 
 // Every case supplies its own prices, so the published table never answers here.
@@ -68,16 +68,6 @@ impl BatchOutputProviders for NoProviders {
 
     fn bedrock_converse_usage(&self, _usage: &Json) -> ConverseUsageOutcome {
         ConverseUsageOutcome::NotConverse
-    }
-
-    fn vertex_row_stats(
-        &self,
-        _row: &Json,
-        _model_name: Option<&str>,
-        _model_info: Option<&ModelInfo>,
-        _pricer: &dyn BatchRowPricer,
-    ) -> Option<VertexRowStats> {
-        None
     }
 }
 
@@ -164,18 +154,14 @@ pub(super) fn ocr_model_info() -> ModelInfo {
     serde_json::from_str(r#"{"ocr_cost_per_page_batches":0.5}"#).expect("the OCR rates decode")
 }
 
-pub(super) const fn totals(
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    total_tokens: i64,
-) -> BatchUsageTotals {
-    BatchUsageTotals {
+pub(super) fn totals(prompt_tokens: i64, completion_tokens: i64, total_tokens: i64) -> SummedUsage {
+    SummedUsage {
         prompt_tokens,
         completion_tokens,
         total_tokens,
-        reasoning_tokens: 0,
-        cache_read_tokens: 0,
-        cache_creation_tokens: 0,
+        prompt_tokens_details: None,
+        completion_tokens_details: None,
+        numeric_extras: BTreeMap::new(),
     }
 }
 
@@ -325,16 +311,6 @@ impl BatchOutputProviders for EmbeddingProviders {
 
     fn bedrock_converse_usage(&self, _usage: &Json) -> ConverseUsageOutcome {
         self.converse.clone()
-    }
-
-    fn vertex_row_stats(
-        &self,
-        _row: &Json,
-        _model_name: Option<&str>,
-        _model_info: Option<&ModelInfo>,
-        _pricer: &dyn BatchRowPricer,
-    ) -> Option<VertexRowStats> {
-        None
     }
 }
 
