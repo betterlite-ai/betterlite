@@ -1,0 +1,24 @@
+task: B1549
+deviations:
+  - what: A create or upload reply without a string id fails the decode with a typed error that names the id field, where LiteLLM reads response.json()["id"] and an absent or non-string id surfaces as an uncaught KeyError or TypeError.
+    why: The declared resource carries a required string id; a reply outside that shape is a provider bug that no working setup relies on, and a named decode error is what the pipeline can turn into a bounded failure instead of an internal error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L70-L73
+  - what: A poll reply whose status is not a string fails the decode with a typed error naming the status field, where LiteLLM compares whatever value it gets against "completed" and "error" and keeps polling until the attempt limit runs out.
+    why: The declared status is a string; a numeric status can never become completed or error, so failing at the poll that saw it reports the provider fault instead of sleeping through 1800 attempts and returning a misleading 504.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L61-L68
+  - what: A reply body past the shared API limits (16 MiB, 65536 items) is refused with a typed error before it is parsed, where LiteLLM calls response.json() with no bound.
+    why: Every provider reply betterlite reads goes through the bounded decoder so a hostile or broken provider cannot make the proxy hold an unbounded body or list; a 16 MiB transcription reply is far past anything a working setup receives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L331-L334
+  - what: A reply body that is not valid UTF-8 keeps a replacement-decoded text and no JSON object, so it fails with the not-an-object decode error, where LiteLLM's response.json() raises UnicodeDecodeError from the status projection and the whole call becomes an internal error.
+    why: httpx already decodes response.text with replacement characters, so the raw text LiteLLM falls back to is well defined; refusing it as a non-object reply is the same failure with a typed error, and no working Soniox setup sends invalid UTF-8.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L331-L334
+  - what: A soniox_polling_interval integer too large for a float fails the preparation with a typed error naming the field, where LiteLLM's float() raises OverflowError outside any try and the call fails as an internal error.
+    why: An integer past the f64 range is a number the declared seconds value cannot hold; naming the option beats an OverflowError trace, and a caller cannot mean such an interval.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L207
+  - what: A soniox_max_polling_attempts string whose digits are non-ASCII Unicode decimal digits falls back to 1800, where Python's int() accepts them and reads the number.
+    why: The attempt parser reads ASCII digits, which is what a declared integer string carries in every working setup; accepting the full Unicode digit set would add a CJK or Arabic-Indic numeral path with no caller behind it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L209
+  - what: The pre-call and post-call logging events carry no api_key, where LiteLLM passes api_key= into both pre_call and post_call.
+    why: B249's shared PreCall and PostCall records have no api_key field, and routing every provider's callbacks through them keeps the key out of observability sinks; the Soniox callbacks are best-effort and no consumer of the event needs the key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L297-L304
+kept_bugs: []

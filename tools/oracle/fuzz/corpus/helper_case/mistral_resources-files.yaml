@@ -1,0 +1,11 @@
+kind: helper
+name: mistral-resources-files-seed
+call:
+  mistral_resources:
+    env: {MISTRAL_API_KEY: environment}
+    files: {api_base: null, api_key: explicit, now: 1704153600, uploads: [], list_purposes: [], bodies: [], list_bodies: []}
+    creates: []
+    jobs: []
+    retrieve: []
+env: {}
+compare: {ignore: []}
