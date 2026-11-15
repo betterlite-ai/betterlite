@@ -1,0 +1,23 @@
+kind: helper
+name: audio-output-delta
+call:
+  bedrock_services_realtime_output:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+    calls:
+      - {method: audio_output, event: {content: AAEC//8=}, ids: {response: resp_a, item: item_a}}
+      - {method: audio_output, event: {content: "!!not base64!!"}, ids: {response: resp_a, item: item_a}}
+      - {method: audio_output, event: {}, ids: {response: resp_a, item: item_a}}
+      - {method: text_output, event: {content: kept}, ids: {response: resp_a, item: item_a}}
+      - {method: audio_output, event: {content: AAEC}, ids: {response: resp_a, item: item_a}}
+      - {method: text_output, event: {content: lost}, ids: {response: null, item: item_a}}
+      - {method: audio_output, event: {content: lost}, ids: {response: null, item: item_a}}
+      - {method: audio_output, event: {content: lost}, ids: {response: resp_a, item: null}}
+      - {method: audio_output, event: {content: lost}, ids: {response: "", item: item_a}}
+      - {method: audio_output, event: {content: lost}, ids: {response: resp_a, item: ""}}
+env: {}
+compare: {ignore: []}
