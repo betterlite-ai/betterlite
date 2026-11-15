@@ -50,6 +50,7 @@ use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
 use crate::cache_lookup::target::CacheProvider;
+use crate::cache_lookup::transport::CacheTransport;
 use crate::credential_sources::sdk::CredentialClock;
 use crate::gemini_call::body::body_request;
 use crate::gemini_call::error::GeminiCallError;
