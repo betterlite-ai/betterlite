@@ -27,16 +27,27 @@ fn has_netloc(rest: &str) -> bool {
         .is_some_and(|first| !matches!(first, '/' | '?' | '#'))
 }
 
-// A URL only has a host for urlparse when its scheme is followed by "//"; a scheme-relative route is read as http so the url crate accepts it
+// A URL only has a host for urlparse when its scheme is followed by "//"; the url crate also accepts http:host and http:/host
+fn netloc_after_scheme(cleaned: &str, url: &Url) -> bool {
+    cleaned
+        .get(url.scheme().len().saturating_add(1)..)
+        .is_some_and(has_netloc)
+}
+
+// A scheme-relative route is read as http so the url crate accepts it
+fn scheme_relative(cleaned: &str) -> Option<Url> {
+    if has_netloc(cleaned) {
+        Url::parse(&format!("http:{cleaned}")).ok()
+    } else {
+        None
+    }
+}
+
 pub(crate) fn parse_route(route: &str) -> ParsedRoute {
     let cleaned = clean_route(route);
     let parsed = match Url::parse(&cleaned) {
-        Ok(url) => cleaned
-            .get(url.scheme().len().saturating_add(1)..)
-            .is_some_and(has_netloc)
-            .then_some(url),
-        Err(_failure) if has_netloc(&cleaned) => Url::parse(&format!("http:{cleaned}")).ok(),
-        Err(_failure) => None,
+        Ok(url) => netloc_after_scheme(&cleaned, &url).then_some(url),
+        Err(_failure) => scheme_relative(&cleaned),
     };
     match parsed {
         Some(url) => ParsedRoute {
