@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use serde_json::Map;
 
 use crate::api::container_contracts::config::BaseContainerConfig as _;
+use crate::containers::OpenAiContainerConfig;
 
 use super::support::{config_with, globals_with, settings_with};
 
@@ -21,8 +22,18 @@ fn openai_containers_credential_identity_isolation() {
         Some("sk-second-env"),
     );
     let caller = BTreeMap::new();
-    let first_headers = first.validate_environment(&caller, None);
-    let second_headers = second.validate_environment(&caller, None);
+    identities_keep_their_keys(&first, &second, &caller);
+    headers_stay_with_identity(&first, &second, &caller);
+    bases_stay_with_their_identity(&first, &second);
+}
+
+fn identities_keep_their_keys(
+    first: &OpenAiContainerConfig,
+    second: &OpenAiContainerConfig,
+    caller: &BTreeMap<String, String>,
+) {
+    let first_headers = first.validate_environment(caller, None);
+    let second_headers = second.validate_environment(caller, None);
     assert_eq!(
         first_headers.get("Authorization").map(String::as_str),
         Some("Bearer sk-first")
@@ -32,15 +43,22 @@ fn openai_containers_credential_identity_isolation() {
         Some("Bearer sk-second")
     );
     assert_ne!(first_headers, second_headers);
-    assert_eq!(first.validate_environment(&caller, None), first_headers);
-    assert_eq!(second.validate_environment(&caller, None), second_headers);
-    let explicit = first.validate_environment(&caller, Some("sk-explicit"));
+    assert_eq!(first.validate_environment(caller, None), first_headers);
+    assert_eq!(second.validate_environment(caller, None), second_headers);
+    let explicit = first.validate_environment(caller, Some("sk-explicit"));
     assert_eq!(
         explicit.get("Authorization").map(String::as_str),
         Some("Bearer sk-explicit")
     );
-    assert_eq!(second.validate_environment(&caller, None), second_headers);
+    assert_eq!(second.validate_environment(caller, None), second_headers);
     assert!(caller.is_empty());
+}
+
+fn headers_stay_with_identity(
+    first: &OpenAiContainerConfig,
+    second: &OpenAiContainerConfig,
+    caller: &BTreeMap<String, String>,
+) {
     let mut scoped = BTreeMap::new();
     scoped.insert("x-scope".to_owned(), "first".to_owned());
     let scoped_headers = first.validate_environment(&scoped, None);
@@ -50,9 +68,12 @@ fn openai_containers_credential_identity_isolation() {
     );
     assert!(
         !second
-            .validate_environment(&caller, None)
+            .validate_environment(caller, None)
             .contains_key("x-scope")
     );
+}
+
+fn bases_stay_with_their_identity(first: &OpenAiContainerConfig, second: &OpenAiContainerConfig) {
     let params = Map::new();
     assert_eq!(
         first.get_complete_url(None, &params).unwrap(),

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use crate::api::container_contracts::config::{BaseContainerConfig as _, ContainerListQuery};
 use crate::api::container_contracts::error::ContainerError;
@@ -14,7 +14,7 @@ use crate::api::container_contracts::records::{
     ExpiresAfterAnchor,
 };
 use crate::containers::urls::ContainerResource;
-use crate::containers::{costs, urls};
+use crate::containers::{OpenAiContainerConfig, costs, urls};
 
 use super::support::{
     AZURE, BASE, CONTAINER_BODY, CONTAINER_NULL_BODY, CONTAINER_WRONG_OBJECT, Context, DELETE_BODY,
@@ -57,6 +57,24 @@ fn containers_cases(#[case] scenario: Scenario) {
         Scenario::ContainerCostHeader => container_cost_header(),
         Scenario::ContainerResponseError => container_response_error(),
     }
+}
+
+fn params(text: &str) -> Map<String, Value> {
+    serde_json::from_str(text).expect("a JSON object of parameters")
+}
+
+fn authorization(headers: &BTreeMap<String, String>) -> &str {
+    headers
+        .get("Authorization")
+        .map(String::as_str)
+        .unwrap_or_default()
+}
+
+fn cost_header(hidden: &Map<String, Value>) -> &Value {
+    hidden
+        .get("additional_headers")
+        .and_then(|headers| headers.get("llm_provider-x-litellm-response-cost"))
+        .unwrap()
 }
 
 // The Azure base keeps its api-version query, and no /v1 segment is ever added by the join
@@ -107,6 +125,10 @@ fn base_with_containers() {
         configured.get_complete_url(None, &params).unwrap(),
         "https://env.test/v1/containers"
     );
+    assert_eq!(
+        configured.get_complete_url(Some(""), &params).unwrap(),
+        "https://env.test/v1/containers"
+    );
     let global = config_with(
         settings_with("https://env.test/v1"),
         globals_with_base("https://global.test/v1"),
@@ -126,6 +148,11 @@ fn base_with_containers() {
         global.get_complete_url(Some(""), &params).unwrap(),
         "https://global.test/v1/containers"
     );
+    default_base_and_slashes();
+}
+
+fn default_base_and_slashes() {
+    let params = Map::new();
     assert_eq!(
         fresh_config().get_complete_url(None, &params).unwrap(),
         "https://api.openai.com/v1/containers"
@@ -151,41 +178,33 @@ fn create_expires_after() {
         config.get_supported_openai_params(),
         ["name", "expires_after", "file_ids", "extra_headers"]
     );
-    let params = json!({
-        "expires_after": {"anchor": "last_active_at", "minutes": 20},
-        "file_ids": ["file-1", "file-2"],
-        "extra_headers": {"x-extra": "yes"},
-        "extra_body": {"vendor": "x"},
-    });
-    let supplied = params.as_object().unwrap();
-    assert_eq!(
-        Value::Object(config.map_openai_params(supplied, true)),
-        params
+    let supplied = params(
+        r#"{"expires_after": {"anchor": "last_active_at", "minutes": 20}, "file_ids": ["file-1", "file-2"], "extra_headers": {"x-extra": "yes"}, "extra_body": {"vendor": "x"}}"#,
     );
-    assert_eq!(
-        Value::Object(config.map_openai_params(supplied, false)),
-        params
-    );
+    assert_eq!(config.map_openai_params(&supplied, true), supplied);
+    assert_eq!(config.map_openai_params(&supplied, false), supplied);
     let request =
-        config.transform_container_create_request("cntr-given", supplied, context.request());
+        config.transform_container_create_request("cntr-given", &supplied, context.request());
     assert_eq!(request.get("extra_headers"), None);
     assert_eq!(
         request.get("name").and_then(Value::as_str),
         Some("cntr-given")
     );
-    assert_eq!(request.get("expires_after"), params.get("expires_after"));
-    assert_eq!(request.get("file_ids"), params.get("file_ids"));
-    assert_eq!(request.get("extra_body"), params.get("extra_body"));
-    let overriding = json!({"name": "cntr-override", "file_ids": ["file-3"]});
-    let request = config.transform_container_create_request(
-        "cntr-given",
-        overriding.as_object().unwrap(),
-        context.request(),
-    );
+    assert_eq!(request.get("expires_after"), supplied.get("expires_after"));
+    assert_eq!(request.get("file_ids"), supplied.get("file_ids"));
+    assert_eq!(request.get("extra_body"), supplied.get("extra_body"));
+    options_override_the_name(&config, &context);
+}
+
+fn options_override_the_name(config: &OpenAiContainerConfig, context: &Context) {
+    let overriding = params(r#"{"name": "cntr-override", "file_ids": ["file-3"]}"#);
+    let request =
+        config.transform_container_create_request("cntr-given", &overriding, context.request());
     assert_eq!(
         request.get("name").and_then(Value::as_str),
         Some("cntr-override")
     );
+    assert_eq!(request.get("file_ids"), overriding.get("file_ids"));
 }
 
 fn list_limit_order() {
@@ -197,69 +216,73 @@ fn list_limit_order() {
         order: Some(""),
         extra_query: None,
     };
-    let (url, params) = config.transform_container_list_request(BASE, context.request(), &query);
+    let (url, sent) = config.transform_container_list_request(BASE, context.request(), &query);
     assert_eq!(url, BASE);
-    assert_eq!(params.get("after").and_then(Value::as_str), Some("cntr_a"));
-    assert_eq!(params.get("limit").and_then(Value::as_str), Some("0"));
-    assert_eq!(params.get("order").and_then(Value::as_str), Some(""));
-    let empty = ContainerListQuery {
-        after: None,
-        limit: None,
-        order: None,
-        extra_query: None,
-    };
-    let (_url, params) = config.transform_container_list_request(BASE, context.request(), &empty);
-    assert!(params.is_empty());
-    let extra = json!({"limit": 5, "after": "other", "api-version": "v1"});
-    let extra_map = extra.as_object().unwrap();
+    assert_eq!(sent.get("after").and_then(Value::as_str), Some("cntr_a"));
+    assert_eq!(sent.get("limit").and_then(Value::as_str), Some("0"));
+    assert_eq!(sent.get("order").and_then(Value::as_str), Some(""));
+    let omitted = ContainerListQuery::default();
+    let (_, omitted_params) =
+        config.transform_container_list_request(BASE, context.request(), &omitted);
+    assert!(omitted_params.is_empty());
+    extra_query_overrides_limit(&config, &context);
+    file_list_appends_the_id(&config, &context);
+}
+
+fn extra_query_overrides_limit(config: &OpenAiContainerConfig, context: &Context) {
+    let extra = params(r#"{"limit": 5, "after": "other", "api-version": "v1"}"#);
     let overriding = ContainerListQuery {
         after: Some("cntr_a"),
         limit: Some(2),
         order: None,
-        extra_query: Some(extra_map),
+        extra_query: Some(&extra),
     };
-    let (_url, params) =
-        config.transform_container_list_request(BASE, context.request(), &overriding);
-    assert_eq!(params.get("limit"), Some(&json!(5)));
-    assert_eq!(params.get("after").and_then(Value::as_str), Some("other"));
-    assert_eq!(
-        params.get("api-version").and_then(Value::as_str),
-        Some("v1")
-    );
-    let file_query = ContainerListQuery {
+    let (_, sent) = config.transform_container_list_request(BASE, context.request(), &overriding);
+    assert_eq!(sent.get("limit"), Some(&Value::from(5_i32)));
+    assert_eq!(sent.get("after").and_then(Value::as_str), Some("other"));
+    assert_eq!(sent.get("api-version").and_then(Value::as_str), Some("v1"));
+}
+
+fn file_list_appends_the_id(config: &OpenAiContainerConfig, context: &Context) {
+    let query = ContainerListQuery {
         after: Some("cfile_0"),
         limit: Some(1),
         order: Some("asc"),
         extra_query: None,
     };
-    let (url, params) = config
-        .transform_container_file_list_request("cntr/abc", BASE, context.request(), &file_query)
+    let (url, sent) = config
+        .transform_container_file_list_request("cntr/abc", BASE, context.request(), &query)
         .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/containers/cntr%2Fabc/files");
-    assert_eq!(params.get("limit").and_then(Value::as_str), Some("1"));
-    assert_eq!(params.get("order").and_then(Value::as_str), Some("asc"));
+    assert_eq!(sent.get("limit").and_then(Value::as_str), Some("1"));
+    assert_eq!(sent.get("order").and_then(Value::as_str), Some("asc"));
 }
 
 fn retrieve_delete_id() {
     let config = fresh_config();
     let context = Context::empty();
-    let (url, data) = config
+    let (retrieved, retrieved_data) = config
         .transform_container_retrieve_request("cntr_abc", BASE, context.request())
         .unwrap();
-    assert_eq!(url, "https://api.openai.com/v1/containers/cntr_abc");
-    assert!(data.is_empty());
-    let (url, _data) = config
+    assert_eq!(retrieved, "https://api.openai.com/v1/containers/cntr_abc");
+    assert!(retrieved_data.is_empty());
+    let (azure, azure_data) = config
         .transform_container_retrieve_request("cntr/abc d", AZURE, context.request())
         .unwrap();
     assert_eq!(
-        url,
+        azure,
         "https://example.openai.azure.com/openai/v1/containers/cntr%2Fabc%20d?api-version=v1"
     );
-    let (url, data) = config
+    assert!(azure_data.is_empty());
+    let (deleted, deleted_data) = config
         .transform_container_delete_request("cntr_abc", BASE, context.request())
         .unwrap();
-    assert_eq!(url, "https://api.openai.com/v1/containers/cntr_abc");
-    assert!(data.is_empty());
+    assert_eq!(deleted, "https://api.openai.com/v1/containers/cntr_abc");
+    assert!(deleted_data.is_empty());
+    refused_path_segments(&config, &context);
+}
+
+fn refused_path_segments(config: &OpenAiContainerConfig, context: &Context) {
     for refused in [".", "..", ""] {
         let retrieve = config
             .transform_container_retrieve_request(refused, BASE, context.request())
@@ -271,35 +294,39 @@ fn retrieve_delete_id() {
             .unwrap_err();
         assert!(matches!(delete, ContainerError::PathSegment { .. }));
         assert!(delete.to_string().contains("container_id"));
-        let error = urls::resource_url(BASE, ContainerResource::Files(refused)).unwrap_err();
-        assert!(error.to_string().contains("container_id"));
+        let listed = urls::resource_url(BASE, ContainerResource::Files(refused)).unwrap_err();
+        assert!(listed.to_string().contains("container_id"));
     }
 }
 
 fn file_list_and_content() {
     let config = fresh_config();
     let context = Context::empty();
-    let empty = ContainerListQuery {
-        after: None,
-        limit: None,
-        order: None,
-        extra_query: None,
-    };
-    let (url, params) = config
+    let empty = ContainerListQuery::default();
+    let (url, sent) = config
         .transform_container_file_list_request("cntr_abc", BASE, context.request(), &empty)
         .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/containers/cntr_abc/files");
-    assert!(params.is_empty());
-    let (url, params) = config
+    assert!(sent.is_empty());
+    let (content_url, content_sent) = config
         .transform_container_file_content_request("cntr_abc", "cfile_1", AZURE, context.request())
         .unwrap();
     assert_eq!(
-        url,
+        content_url,
         "https://example.openai.azure.com/openai/v1/containers/cntr_abc/files/cfile_1/content?api-version=v1"
     );
-    assert!(params.is_empty());
+    assert!(content_sent.is_empty());
+    refused_file_ids_are_named(&config, &context, &empty);
+    file_content_and_list_decode(&config);
+}
+
+fn refused_file_ids_are_named(
+    config: &OpenAiContainerConfig,
+    context: &Context,
+    empty: &ContainerListQuery<'_>,
+) {
     let refused_container = config
-        .transform_container_file_list_request("..", BASE, context.request(), &empty)
+        .transform_container_file_list_request("..", BASE, context.request(), empty)
         .unwrap_err();
     assert!(matches!(
         refused_container,
@@ -316,6 +343,9 @@ fn file_list_and_content() {
         .unwrap_err();
     assert!(matches!(refused_dot, ContainerError::PathSegment { .. }));
     assert!(refused_dot.to_string().contains("container_id"));
+}
+
+fn file_content_and_list_decode(config: &OpenAiContainerConfig) {
     let bytes = b"\x00raw\xffbytes".to_vec();
     assert_eq!(
         config
@@ -330,13 +360,6 @@ fn file_list_and_content() {
     assert_eq!(files.data[0].object, ContainerFileObjectLiteral::Dotted);
     assert_eq!(files.data[0].bytes, Some(12));
     assert!(!files.has_more);
-}
-
-fn authorization(headers: &BTreeMap<String, String>) -> &str {
-    headers
-        .get("Authorization")
-        .map(String::as_str)
-        .unwrap_or_default()
 }
 
 fn container_auth_chain() {
@@ -372,8 +395,13 @@ fn container_auth_chain() {
         authorization(&env_only.validate_environment(&headers, None)),
         "Bearer sk-env"
     );
+    empty_keys_count_as_unset(&env_only, &headers);
+    merges_supplied_headers(&env_only);
+}
+
+fn empty_keys_count_as_unset(config: &OpenAiContainerConfig, headers: &BTreeMap<String, String>) {
     assert_eq!(
-        authorization(&fresh_config().validate_environment(&headers, None)),
+        authorization(&fresh_config().validate_environment(headers, None)),
         "Bearer None"
     );
     // an empty env var counts as unset, so no key resolves and the header keeps its unresolved form
@@ -383,18 +411,21 @@ fn container_auth_chain() {
         Some(""),
     );
     assert_eq!(
-        authorization(&empty_env.validate_environment(&headers, None)),
+        authorization(&empty_env.validate_environment(headers, None)),
         "Bearer None"
     );
     assert_eq!(
-        authorization(&env_only.validate_environment(&headers, Some(""))),
+        authorization(&config.validate_environment(headers, Some(""))),
         "Bearer sk-env"
     );
+}
+
+fn merges_supplied_headers(config: &OpenAiContainerConfig) {
     let mut supplied = BTreeMap::new();
     supplied.insert("Authorization".to_owned(), "Bearer stale".to_owned());
     supplied.insert("authorization".to_owned(), "kept".to_owned());
     supplied.insert("x-extra".to_owned(), "yes".to_owned());
-    let resolved = env_only.validate_environment(&supplied, Some("sk-explicit"));
+    let resolved = config.validate_environment(&supplied, Some("sk-explicit"));
     assert_eq!(
         resolved.get("Authorization").map(String::as_str),
         Some("Bearer sk-explicit")
@@ -404,17 +435,11 @@ fn container_auth_chain() {
         Some("kept")
     );
     assert_eq!(resolved.get("x-extra").map(String::as_str), Some("yes"));
+    assert_eq!(resolved.len(), 3);
     assert_eq!(
         supplied.get("Authorization").map(String::as_str),
         Some("Bearer stale")
     );
-}
-
-fn cost_header(hidden: &Map<String, Value>) -> &Value {
-    hidden
-        .get("additional_headers")
-        .and_then(|headers| headers.get("llm_provider-x-litellm-response-cost"))
-        .unwrap()
 }
 
 fn container_cost_header() {
@@ -448,6 +473,12 @@ fn container_cost_header() {
 
 fn container_response_error() {
     let config = fresh_config();
+    metadata_records_decode(&config);
+    wrong_shapes_are_refused(&config);
+    content_and_error_replies(&config);
+}
+
+fn metadata_records_decode(config: &OpenAiContainerConfig) {
     let container = config
         .transform_container_retrieve_response(CONTAINER_BODY.as_bytes())
         .unwrap();
@@ -475,6 +506,9 @@ fn container_response_error() {
     assert_eq!(list.first_id.as_deref(), Some("cntr_a"));
     assert_eq!(list.last_id.as_deref(), Some("cntr_b"));
     assert!(list.has_more);
+}
+
+fn wrong_shapes_are_refused(config: &OpenAiContainerConfig) {
     let deleted = config
         .transform_container_delete_response(DELETE_BODY.as_bytes())
         .unwrap();
@@ -499,6 +533,10 @@ fn container_response_error() {
         .transform_container_create_response(b"{}")
         .unwrap_err();
     assert!(matches!(missing, ContainerError::Decode(_)), "{missing:?}");
+    array_and_repeated_keys(config);
+}
+
+fn array_and_repeated_keys(config: &OpenAiContainerConfig) {
     // a derived record takes an array in field order, but LiteLLM's model_validate takes only an object
     let array = config
         .transform_container_retrieve_response(
@@ -512,6 +550,9 @@ fn container_response_error() {
         )
         .unwrap();
     assert_eq!(repeated.id, "cntr_last");
+}
+
+fn content_and_error_replies(config: &OpenAiContainerConfig) {
     assert_eq!(
         config
             .transform_container_file_content_response(b"bytes")
