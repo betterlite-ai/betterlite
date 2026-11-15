@@ -1,0 +1,35 @@
+kind: helper
+name: retrieve-delete-id
+call:
+  openai_containers:
+    supported: false
+    maps: []
+    joins: []
+    urls: []
+    creates: []
+    lists: []
+    file_lists: []
+    resources:
+      - kind: retrieve
+        container_id: cntr_abc
+        api_base: "https://api.openai.com/v1/containers"
+      - kind: retrieve
+        container_id: cntr/abc d
+        api_base: "https://example.openai.azure.com/openai/v1/containers?api-version=v1"
+      - kind: delete
+        container_id: cntr_abc
+        api_base: "https://api.openai.com/v1/containers"
+      - kind: delete
+        container_id: "cntr_ü"
+        api_base: "https://api.openai.com/v1/containers"
+      - kind: retrieve
+        container_id: cfile_7
+        api_base: "https://api.openai.com/v1/containers/"
+    contents: []
+    headers: []
+    create_replies: []
+    metadata_replies: []
+    content_replies: []
+    errors: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,48 @@
+kind: helper
+name: container-response-error
+call:
+  openai_containers:
+    supported: false
+    maps: []
+    joins: []
+    urls: []
+    creates: []
+    lists: []
+    file_lists: []
+    resources: []
+    contents: []
+    headers: []
+    create_replies: []
+    metadata_replies:
+      - kind: retrieve
+        body: '{"id":"cntr_abc","object":"container","created_at":1700000000,"status":"running","expires_after":{"anchor":"last_active_at","minutes":20},"last_active_at":null,"name":"box"}'
+      - kind: retrieve
+        body: '{"id":"cntr_none","object":"container","created_at":1700000001,"status":"running","expires_after":null,"last_active_at":null,"name":null,"unknown_extra":{"a":1}}'
+      - kind: retrieve
+        body: '{"id":"cntr_min","object":"container","created_at":5,"status":"queued"}'
+      - kind: list
+        body: '{"object":"list","data":[{"id":"cntr_a","object":"container","created_at":1,"status":"running","expires_after":null,"last_active_at":1730000000,"name":null},{"id":"cntr_b","object":"container","created_at":2,"status":"queued","expires_after":{"anchor":"last_active_at","minutes":5},"last_active_at":null,"name":"b"}],"first_id":"cntr_a","last_id":"cntr_b","has_more":true}'
+      - kind: list
+        body: '{"object":"list","data":[],"has_more":false}'
+      - kind: delete
+        body: '{"id":"cntr_abc","object":"container.deleted","deleted":true}'
+      - kind: file_list
+        body: '{"object":"list","data":[{"id":"cfile_1","object":"container.file","container_id":"cntr_abc","bytes":12,"created_at":3,"path":"/mnt/data/a.txt","source":"user"},{"id":"cfile_2","object":"container_file","container_id":"cntr_abc","bytes":null,"created_at":4,"path":"/mnt/data/b.txt","source":"assistant"}],"first_id":"cfile_1","last_id":null,"has_more":false}'
+      - kind: retrieve
+        body: '{"id":"cntr_bad","object":"container.deleted","created_at":1700000002,"status":"running"}'
+      - kind: delete
+        body: '{}'
+      - kind: file_list
+        body: '{"object":"list","data":[{"id":"cfile_1","object":"container.file.deleted","container_id":"cntr_abc","bytes":12,"created_at":3,"path":"/mnt/data/a.txt","source":"user"}],"has_more":false}'
+    content_replies:
+      - body: "raw file bytes"
+      - body: ""
+    errors:
+      - message: rate limited
+        status: 429
+        headers: {retry-after: "3", x-request-id: req_1}
+      - message: container not found
+        status: 404
+        headers: {}
+env: {}
+compare: {ignore: []}

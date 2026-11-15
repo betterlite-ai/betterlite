@@ -1,0 +1,30 @@
+kind: helper
+name: openai-containers-base-with-v1-seed
+call:
+  openai_containers:
+    supported: false
+    maps: []
+    joins:
+      - api_base: "https://api.openai.com/v1/containers?api-version=v1"
+        path_suffix: "/cntr_seed/files"
+    urls:
+      - api_base: null
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {OPENAI_BASE_URL: "https://seed-env.test/v1"}
+    creates: []
+    lists:
+      - api_base: "https://api.openai.com/v1/containers"
+        after: null
+        limit: 3
+        order: asc
+        extra_query: null
+    file_lists: []
+    resources: []
+    contents: []
+    headers: []
+    create_replies: []
+    metadata_replies: []
+    content_replies: []
+    errors: []
+env: {}
+compare: {ignore: []}

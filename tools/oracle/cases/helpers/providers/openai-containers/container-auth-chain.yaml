@@ -1,0 +1,48 @@
+kind: helper
+name: container-auth-chain
+call:
+  openai_containers:
+    supported: false
+    maps: []
+    joins: []
+    urls: []
+    creates: []
+    lists: []
+    file_lists: []
+    resources: []
+    contents: []
+    headers:
+      - api_key: sk-explicit
+        headers: {}
+        globals: {api_base: null, api_key: sk-global, openai_key: sk-openai}
+        environment: {OPENAI_API_KEY: sk-env}
+      - api_key: null
+        headers: {}
+        globals: {api_base: null, api_key: sk-global, openai_key: sk-openai}
+        environment: {OPENAI_API_KEY: sk-env}
+      - api_key: null
+        headers: {}
+        globals: {api_base: null, api_key: null, openai_key: sk-openai}
+        environment: {OPENAI_API_KEY: sk-env}
+      - api_key: null
+        headers: {}
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {OPENAI_API_KEY: sk-env}
+      - api_key: null
+        headers: {}
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {}
+      - api_key: ""
+        headers: {}
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {OPENAI_API_KEY: sk-env}
+      - api_key: sk-explicit
+        headers: {Authorization: "Bearer stale", authorization: kept, x-extra: "yes"}
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {}
+    create_replies: []
+    metadata_replies: []
+    content_replies: []
+    errors: []
+env: {}
+compare: {ignore: []}
