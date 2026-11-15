@@ -61,6 +61,45 @@ fn video_id_roundtrip() {
     );
     assert_eq!(azure_roundtrip.model_id.as_deref(), Some(""));
     assert_eq!(azure_roundtrip.video_id, "vid-456");
+    semicolon_video_id_roundtrip();
+    labelled_field_roundtrip();
+}
+
+fn semicolon_video_id_roundtrip() {
+    let lossy = format!(
+        "video_{}",
+        STANDARD.encode("litellm:custom_llm_provider:openai;model_id:m;video_id:a;b")
+    );
+    let semicolon = encode_video_id_with_provider("a;b", "openai", Some("m"));
+    assert_ne!(semicolon, lossy);
+    let decoded = decode_video_id_with_provider(&semicolon);
+    assert_eq!(decoded.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(decoded.model_id.as_deref(), Some("m"));
+    assert_eq!(decoded.video_id, "a;b");
+    let legacy_decoded = decode_video_id_with_provider(&lossy);
+    assert_eq!(
+        legacy_decoded.custom_llm_provider.as_deref(),
+        Some("openai")
+    );
+    assert_eq!(legacy_decoded.model_id.as_deref(), Some("m"));
+    assert_eq!(legacy_decoded.video_id, "a");
+}
+
+fn labelled_field_roundtrip() {
+    let model_labelled = encode_video_id_with_provider("v", "openai", Some("model_id:m"));
+    let model_decoded = decode_video_id_with_provider(&model_labelled);
+    assert_eq!(model_decoded.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(model_decoded.model_id.as_deref(), Some("model_id:m"));
+    assert_eq!(model_decoded.video_id, "v");
+    let provider_labelled =
+        encode_video_id_with_provider("v", "litellm:custom_llm_provider:p", None);
+    let provider_decoded = decode_video_id_with_provider(&provider_labelled);
+    assert_eq!(
+        provider_decoded.custom_llm_provider.as_deref(),
+        Some("litellm:custom_llm_provider:p")
+    );
+    assert_eq!(provider_decoded.model_id.as_deref(), Some(""));
+    assert_eq!(provider_decoded.video_id, "v");
 }
 
 fn character_id_roundtrip() {
@@ -81,6 +120,21 @@ fn character_id_roundtrip() {
         decode_character_id(&empty_model).model_id.as_deref(),
         Some("")
     );
+    semicolon_character_id_roundtrip();
+}
+
+fn semicolon_character_id_roundtrip() {
+    let lossy = format!(
+        "character_{}",
+        STANDARD.encode("litellm:custom_llm_provider:openai;model_id:m;character_id:a;b")
+    );
+    let semicolon = encode_character_id("a;b", "openai", Some("m"));
+    assert_ne!(semicolon, lossy);
+    let decoded = decode_character_id(&semicolon);
+    assert_eq!(decoded.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(decoded.model_id.as_deref(), Some("m"));
+    assert_eq!(decoded.character_id, "a;b");
+    assert_eq!(decode_character_id(&lossy).character_id, "a");
 }
 
 const UNPREFIXED_VIDEO: &str =

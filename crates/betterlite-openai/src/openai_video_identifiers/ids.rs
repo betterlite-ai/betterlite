@@ -1,7 +1,7 @@
 use base64::Engine as _;
 use base64::alphabet;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 const VIDEO_ID_PREFIX: &str = "video_";
 const CHARACTER_ID_PREFIX: &str = "character_";
@@ -9,6 +9,7 @@ const PROVIDER_FIELD: &str = "litellm:custom_llm_provider:";
 const MODEL_FIELD: &str = "model_id:";
 const VIDEO_FIELD: &str = "video_id:";
 const CHARACTER_FIELD: &str = "character_id:";
+const QUOTED_FIELDS: &str = "litellm:quoted:";
 
 // Python's b64decode(validate=False) keeps nonzero trailing bits and takes the padding it is given or none
 const ID_BASE64: GeneralPurpose = GeneralPurpose::new(
@@ -42,6 +43,13 @@ pub enum DecodedProviderId {
 struct DecodedFields {
     custom_llm_provider: Option<String>,
     model_id: Option<String>,
+    value: String,
+}
+
+#[derive(serde::Deserialize)]
+struct QuotedFields {
+    custom_llm_provider: String,
+    model_id: String,
     value: String,
 }
 
@@ -80,16 +88,49 @@ fn decode_base64_text(encoded: &str) -> Option<String> {
 fn decode_fields(encoded: &str, prefix: &str, value_field: &str) -> Option<DecodedFields> {
     let cleaned = encoded.replace(prefix, "");
     let decoded = decode_base64_text(&cleaned)?;
+    if let Some(fields) = decode_quoted_fields(&decoded) {
+        return Some(fields);
+    }
+    Some(split_fields(&decoded, encoded, value_field))
+}
+
+fn split_fields(decoded: &str, encoded: &str, value_field: &str) -> DecodedFields {
     let parts: Vec<&str> = decoded.split(';').collect();
     let (provider, model, value) = match parts.as_slice() {
         [provider, model, value, ..] => (Some(*provider), Some(*model), Some(*value)),
         _ => (None, None, None),
     };
-    Some(DecodedFields {
+    DecodedFields {
         custom_llm_provider: provider.map(|part| part.replace(PROVIDER_FIELD, "")),
         model_id: model.map(|part| part.replace(MODEL_FIELD, "")),
         value: value.map_or_else(|| encoded.to_owned(), |part| part.replace(value_field, "")),
+    }
+}
+
+fn decode_quoted_fields(decoded: &str) -> Option<DecodedFields> {
+    let rest = decoded.strip_prefix(QUOTED_FIELDS)?;
+    let quoted: QuotedFields = serde_json::from_str(rest).ok()?;
+    Some(DecodedFields {
+        custom_llm_provider: Some(quoted.custom_llm_provider),
+        model_id: Some(quoted.model_id),
+        value: quoted.value,
     })
+}
+
+fn encode_payload(provider: &str, model_id: &str, value: &str, value_field: &str) -> String {
+    let assembled =
+        format!("{PROVIDER_FIELD}{provider};{MODEL_FIELD}{model_id};{value_field}{value}");
+    let fields = split_fields(&assembled, &assembled, value_field);
+    if fields.custom_llm_provider.as_deref() == Some(provider)
+        && fields.model_id.as_deref() == Some(model_id)
+        && fields.value == value
+    {
+        return assembled;
+    }
+    format!(
+        "{QUOTED_FIELDS}{}",
+        json!({"custom_llm_provider": provider, "model_id": model_id, "value": value})
+    )
 }
 
 fn fallback_video_id(encoded_video_id: &str) -> DecodedVideoId {
@@ -123,12 +164,13 @@ pub fn encode_video_id_with_provider(
     {
         return video_id.to_owned();
     }
-    let assembled = format!(
-        "litellm:custom_llm_provider:{provider};model_id:{};video_id:{video_id}",
-        model_id.unwrap_or_default()
+    let payload = encode_payload(
+        provider,
+        model_id.unwrap_or_default(),
+        video_id,
+        VIDEO_FIELD,
     );
-    let encoded = ID_BASE64.encode(assembled.as_bytes());
-    format!("{VIDEO_ID_PREFIX}{encoded}")
+    format!("{VIDEO_ID_PREFIX}{}", ID_BASE64.encode(payload.as_bytes()))
 }
 
 #[must_use]
@@ -160,12 +202,16 @@ pub fn encode_character_id(character_id: &str, provider: &str, model_id: Option<
     {
         return character_id.to_owned();
     }
-    let assembled = format!(
-        "litellm:custom_llm_provider:{provider};model_id:{};character_id:{character_id}",
-        model_id.unwrap_or_default()
+    let payload = encode_payload(
+        provider,
+        model_id.unwrap_or_default(),
+        character_id,
+        CHARACTER_FIELD,
     );
-    let encoded = ID_BASE64.encode(assembled.as_bytes());
-    format!("{CHARACTER_ID_PREFIX}{encoded}")
+    format!(
+        "{CHARACTER_ID_PREFIX}{}",
+        ID_BASE64.encode(payload.as_bytes())
+    )
 }
 
 #[must_use]
