@@ -1,12 +1,16 @@
-use crate::state::shared::Shared;
 use betterlite_config::types::Config;
 
-pub struct Slot;
+use crate::state::shared::Shared;
+
+pub struct Slot {
+    pub max_recurse_depth: i64,
+}
 
 impl Slot {
     #[must_use]
-    pub const fn new(_config: &Config, _shared: &Shared) -> Self {
-        // the state owner fills this slot
-        Self
+    pub const fn new(config: &Config, _shared: &Shared) -> Self {
+        Self {
+            max_recurse_depth: config.sections.database_reencryption.max_recurse_depth,
+        }
     }
 }

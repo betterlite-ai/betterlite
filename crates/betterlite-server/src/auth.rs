@@ -58,9 +58,12 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
+    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
-use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput};
+use crate::auth::auth_model_patterns::{
+    ModelPatternStageInput, max_recurse_depth_for_request, rejection_response, rule_for_request,
+};
+use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::error_body::{AuthenticationFailure, authentication_error};
 use axum::body::Body;
 use axum::extract::State;
@@ -83,32 +86,60 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    let presented_key = extract_key(request.headers());
     let resolver = request
         .extensions()
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone);
     let mut authenticated: Option<AuthContext> = None;
     for backend in INSTALLED_STAGES {
-        let input = match backend {
-            AuthBackend::MasterKey => StageInput::MasterKey(presented_key.clone()),
-            AuthBackend::AuthRequestModels => {
-                let Some(context) = authenticated.as_ref() else {
-                    return authentication_error(&AuthenticationFailure::Missing);
-                };
-                let stage = model_stage_input(&request, context.clone(), &resolver);
-                StageInput::AuthRequestModels(Box::new(stage))
-            }
+        let Ok(input) = stage_input(*backend, &request, authenticated.as_ref(), &resolver) else {
+            return authentication_error(&AuthenticationFailure::Missing);
         };
         match dispatch(*backend, &input, master_key) {
             Ok(context) => authenticated = Some(context),
-            Err(failure) => return authentication_error(&failure),
+            Err(StageFailure::Authentication(failure)) => {
+                return authentication_error(&failure);
+            }
+            Err(StageFailure::ModelAccess(rejection)) => {
+                return rejection_response(&rejection);
+            }
         }
     }
     if let Some(context) = authenticated {
         request.extensions_mut().insert(context);
     }
     next.run(request).await
+}
+
+fn stage_input(
+    backend: AuthBackend,
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    resolver: &Arc<RequestModelResolver>,
+) -> Result<StageInput, AuthenticationFailure> {
+    match backend {
+        AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        AuthBackend::AuthRequestModels => {
+            let context = authenticated.ok_or(AuthenticationFailure::Missing)?;
+            let stage = model_stage_input(request, context.clone(), resolver);
+            Ok(StageInput::AuthRequestModels(Box::new(stage)))
+        }
+        AuthBackend::AuthModelPatterns => {
+            let context = authenticated.ok_or(AuthenticationFailure::Missing)?;
+            let stage = model_stage_input(request, context.clone(), resolver);
+            let Ok(requested) = resolve(&stage) else {
+                return Err(AuthenticationFailure::Missing);
+            };
+            Ok(StageInput::AuthModelPatterns(Box::new(
+                ModelPatternStageInput {
+                    context: context.clone(),
+                    requested,
+                    rule: rule_for_request(request),
+                    max_recurse_depth: max_recurse_depth_for_request(request),
+                },
+            )))
+        }
+    }
 }
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {

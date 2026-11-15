@@ -6,6 +6,7 @@ use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::error_body::AuthenticationFailure;
 
@@ -13,16 +14,21 @@ use crate::error_body::AuthenticationFailure;
 pub enum AuthBackend {
     MasterKey,
     AuthRequestModels,
+    AuthModelPatterns,
 }
 
-// B052 owns the final stage order; the master-key stage authenticates before the model stage runs.
-pub(crate) const INSTALLED_STAGES: &[AuthBackend] =
-    &[AuthBackend::MasterKey, AuthBackend::AuthRequestModels];
+// B052 owns the final stage order; the master-key stage authenticates before the model stages run.
+pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
+    AuthBackend::MasterKey,
+    AuthBackend::AuthRequestModels,
+    AuthBackend::AuthModelPatterns,
+];
 
 #[derive(Clone, Debug)]
 pub enum StageInput {
     MasterKey(Option<SecretString>),
     AuthRequestModels(Box<RequestModelStageInput>),
+    AuthModelPatterns(Box<ModelPatternStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -46,15 +52,32 @@ pub trait BudgetAdmission {
     ) -> Result<AdmissionLease, AuthError>;
 }
 
+pub(crate) enum StageFailure {
+    Authentication(AuthenticationFailure),
+    ModelAccess(Box<ModelAccessRejection>),
+}
+
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
-) -> Result<AuthContext, AuthenticationFailure> {
+) -> Result<AuthContext, StageFailure> {
     match backend {
-        AuthBackend::MasterKey => master_key_stage(input, master_key),
-        AuthBackend::AuthRequestModels => auth_request_models_stage(input),
+        AuthBackend::MasterKey => {
+            master_key_stage(input, master_key).map_err(StageFailure::Authentication)
+        }
+        AuthBackend::AuthRequestModels => {
+            auth_request_models_stage(input).map_err(StageFailure::Authentication)
+        }
+        AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
     }
+}
+
+fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthModelPatterns(stage) = input else {
+        return Err(StageFailure::Authentication(AuthenticationFailure::Missing));
+    };
+    run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
 }
 fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, AuthenticationFailure> {
     let StageInput::AuthRequestModels(stage) = input else {
