@@ -1,5 +1,8 @@
 task: B663
-deviations: []
+deviations:
+  - what: additionalModelFields that serde_json refuses (nesting past 128 levels, NaN, Infinity, -Infinity, numbers outside the f64 range and lone surrogate escapes) read as no generation stage, where LiteLLM's json.loads parses them and returns a stage found beside them.
+    why: The decoder is a typed serde_json parse with a fixed recursion limit, and Nova never sends these forms; the effect is that a SPECULATIVE user transcript next to one of them is kept in the completed transcript.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L823-L831
 kept_bugs:
   - what: An assistant contentStart whose response id is an empty string gets a new response id without a response.created event, because LiteLLM sends response.created only when the id is None but fills any falsey id.
     why: A caller that passes an empty id relies on the output items still carrying a fresh response id, and the pitfall in the task names this order as the behavior to keep.

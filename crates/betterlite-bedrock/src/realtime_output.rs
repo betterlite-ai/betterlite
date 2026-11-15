@@ -84,7 +84,19 @@ impl NovaRealtimeOutput<'_> {
         delta_type: DeltaType,
     ) -> Vec<OutputEvent> {
         let mut events = Vec::with_capacity(3);
-        let created = ResponseCreated {
+        let created = self.response_created(ids);
+        if is_new_response {
+            events.push(OutputEvent::ResponseCreated(created));
+        }
+        events.push(OutputEvent::OutputItemAdded(output_item_added(ids)));
+        events.push(OutputEvent::ContentPartAdded(
+            self.content_part_added(ids, delta_type),
+        ));
+        events
+    }
+
+    fn response_created(&self, ids: &ResolvedIds) -> ResponseCreated {
+        ResponseCreated {
             event_id: format!("event_{}", self.ids.next_id()),
             response: ResponseObject {
                 object: "realtime.response",
@@ -93,22 +105,10 @@ impl NovaRealtimeOutput<'_> {
                 output: Vec::new(),
                 conversation_id: ids.conversation.clone(),
             },
-        };
-        if is_new_response {
-            events.push(OutputEvent::ResponseCreated(created));
         }
-        events.push(OutputEvent::OutputItemAdded(OutputItemAdded {
-            response_id: ids.response.clone(),
-            output_index: 0,
-            item: OutputItem {
-                id: ids.item.clone(),
-                object: "realtime.item",
-                item_type: "message",
-                status: "in_progress",
-                role: "assistant",
-                content: Vec::new(),
-            },
-        }));
+    }
+
+    fn content_part_added(&self, ids: &ResolvedIds, delta_type: DeltaType) -> ContentPartAdded {
         let part = match delta_type {
             DeltaType::Text => ContentPart::Text {
                 text: String::new(),
@@ -117,15 +117,14 @@ impl NovaRealtimeOutput<'_> {
                 transcript: String::new(),
             },
         };
-        events.push(OutputEvent::ContentPartAdded(ContentPartAdded {
+        ContentPartAdded {
             content_index: 0,
             output_index: 0,
             event_id: format!("event_{}", self.ids.next_id()),
             item_id: ids.item.clone(),
             part,
             response_id: ids.response.clone(),
-        }));
-        events
+        }
     }
 
     fn id_or_new(&self, current: Option<&str>, prefix: &str) -> String {
@@ -163,6 +162,7 @@ impl NovaRealtimeOutput<'_> {
         self.session.cumulative_usage = usage;
     }
 
+    // ast-grep-ignore: no-long-names
     pub fn transform_user_transcript_event(&mut self, transcript: &str) -> OutputEvent {
         tracing::debug!("Handling USER textOutput (ASR transcript)");
         let delta = TranscriptionDelta {
@@ -177,6 +177,7 @@ impl NovaRealtimeOutput<'_> {
         OutputEvent::TranscriptionDelta(delta)
     }
 
+    // ast-grep-ignore: no-long-names
     pub fn user_transcript_completed_events(&mut self) -> Option<OutputEvent> {
         if self.session.transcript.buffer.is_empty() {
             return None;
@@ -228,5 +229,20 @@ impl NovaRealtimeOutput<'_> {
             response_id: response_id.to_owned(),
             delta: content.to_owned(),
         })
+    }
+}
+
+fn output_item_added(ids: &ResolvedIds) -> OutputItemAdded {
+    OutputItemAdded {
+        response_id: ids.response.clone(),
+        output_index: 0,
+        item: OutputItem {
+            id: ids.item.clone(),
+            object: "realtime.item",
+            item_type: "message",
+            status: "in_progress",
+            role: "assistant",
+            content: Vec::new(),
+        },
     }
 }

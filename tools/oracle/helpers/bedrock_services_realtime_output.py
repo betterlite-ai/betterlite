@@ -135,9 +135,9 @@ class RealtimeConfig(Protocol):
 
     def transform_user_speech_event(self, *, is_speech_start: bool) -> EventList: ...
 
-    def transform_user_transcript_event(self, transcript: str) -> EventList: ...
+    def transform_user_transcript_event(self, transcript: str) -> EventList: ...  # ast-grep-ignore: no-long-names
 
-    def user_transcript_completed_events(self) -> EventList: ...
+    def user_transcript_completed_events(self) -> EventList: ...  # ast-grep-ignore: no-long-names
 
     def transform_text_output_event(
         self,
