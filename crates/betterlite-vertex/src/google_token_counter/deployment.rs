@@ -40,15 +40,11 @@ impl<'call> DeploymentParams<'call> {
     pub fn explicit_credentials(&self) -> Option<&'call ConfiguredCredentials> {
         self.vertex
             .credentials
-            .filter(|credentials| is_named(credentials))
+            .filter(|credentials| credentials.as_text().is_none_or(|text| !text.is_empty()))
             .or_else(|| {
                 self.vertex
                     .ai_credentials
-                    .filter(|credentials| is_named(credentials))
+                    .filter(|credentials| credentials.as_text().is_none_or(|text| !text.is_empty()))
             })
     }
-}
-
-fn is_named(credentials: &ConfiguredCredentials) -> bool {
-    credentials.as_text().is_none_or(|text| !text.is_empty())
 }
