@@ -120,6 +120,9 @@ use support::{run_build, run_scan};
 #[case::a_tool_only_rewrite_returns_empty_texts(Case::scan(
     tool_cases::a_tool_only_rewrite_returns_empty_texts()
 ))]
+#[case::a_blocked_tool_argument_stops_later_tool_calls(Case::scan(
+    tool_cases::a_blocked_tool_argument_stops_later_tool_calls()
+))]
 #[tokio::test]
 async fn vigil_runtime_cases(#[case] case: Case) {
     match case {

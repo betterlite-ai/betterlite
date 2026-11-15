@@ -2,8 +2,8 @@
 
 use super::cases::Scenario;
 use super::fixtures::{
-    BACKEND_CLOSED, UNRECOGNIZED, allowed, message, raised, response, rewritten, sanitized,
-    tool_call, unavailable, unknown_decision,
+    BACKEND_CLOSED, HARMFUL, UNRECOGNIZED, allowed, blocked, message, raised, response, rewritten,
+    sanitized, tool_call, unavailable, unknown_decision,
 };
 
 pub(crate) fn texts_are_scanned_before_response_tool_arguments() -> Scenario {
@@ -71,5 +71,13 @@ pub(crate) fn a_tool_only_rewrite_returns_empty_texts() -> Scenario {
     case.responses = vec![sanitized("b1")];
     case.analyzed = vec!["a1"];
     case.expected = rewritten(&[], Some(vec![tool_call("call_1", "b1")]));
+    case
+}
+
+pub(crate) fn a_blocked_tool_argument_stops_later_tool_calls() -> Scenario {
+    let mut case = response(None, &[("call_1", "bad"), ("call_2", "later")], Vec::new());
+    case.responses = vec![blocked(HARMFUL)];
+    case.analyzed = vec!["bad"];
+    case.expected = raised(HARMFUL, 400, true);
     case
 }
