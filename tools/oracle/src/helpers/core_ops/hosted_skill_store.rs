@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use betterlite_core::skills::store::{
-    HostedSkillStore, SKILL_ID_PREFIX, SkillIdSource, StoreError,
-};
+use betterlite_core::skills::store::{HostedSkillStore, SkillIdSource, StoreError};
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::Deserialize;
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -119,7 +117,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let scripted = Scripted::new(input)?;
         let uuid = input.uuid.clone();
-        let ids: SkillIdSource = Arc::new(move || format!("{SKILL_ID_PREFIX}{uuid}"));
+        let ids: SkillIdSource = Arc::new(move || uuid.clone());
         let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| CACHE_CLOCK);
         let store = HostedSkillStore::new(scripted.clone(), ids, clock).map_err(store_error)?;
         let runtime = tokio::runtime::Builder::new_current_thread()
