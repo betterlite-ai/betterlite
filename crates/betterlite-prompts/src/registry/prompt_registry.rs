@@ -27,10 +27,8 @@ impl InMemoryPromptRegistry {
             .values()
             .filter(|spec| get_base_prompt_id(&spec.prompt_id) == base_prompt_id)
             .collect();
-        let resolved_environment = environment.map_or_else(
-            || default_serve_environment(&base_matches),
-            |requested| requested.to_owned(),
-        );
+        let resolved_environment =
+            environment.map_or_else(|| default_serve_environment(&base_matches), str::to_owned);
         let mut candidates = base_matches.into_iter().filter(|spec| {
             prompt_environment_or_default(Some(spec.environment.as_str())) == resolved_environment
         });
