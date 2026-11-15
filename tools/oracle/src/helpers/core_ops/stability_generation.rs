@@ -84,89 +84,125 @@ impl Helper for Op {
 
 fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
-        Call::Supported { .. } => Ok(json!(
-            StabilityImageGenerationConfig::SUPPORTED_OPENAI_PARAMS
-        )),
+        Call::Supported { model } => Ok(supported_answer(model)),
         Call::Map {
             model,
-            non_default_params,
-            optional_params,
+            non_default_params: params,
+            optional_params: existing,
             drop_params,
-        } => {
-            let mapped = StabilityImageGenerationConfig::map_openai_params(
-                non_default_params,
-                optional_params.clone(),
-                model,
-                *drop_params,
-            );
-            match mapped {
-                Ok(mapped) => Ok(json!({"mapped": mapped})),
-                Err(_failure) => Ok(json!({"unsupported": true})),
-            }
-        }
+        } => Ok(map_answer(model, params, existing, *drop_params)),
         Call::Url {
             model,
             api_base,
             environment,
-        } => {
-            let config = generation_config(model, environment);
-            Ok(json!({"url": config.get_complete_url(api_base.as_deref(), model)}))
-        }
+        } => Ok(url_answer(model, api_base.as_deref(), environment)),
         Call::Environment {
             model,
             api_key,
             headers,
             environment,
-        } => {
-            let config = generation_config(model, environment);
-            let explicit = api_key.as_ref().map(|key| SecretString::from(key.clone()));
-            match config.validate_environment(headers.clone(), explicit.as_ref()) {
-                Ok(headers) => Ok(json!({"headers": headers})),
-                Err(_failure) => Ok(json!({"missing_key": true})),
-            }
-        }
+        } => Ok(environment_answer(
+            model,
+            api_key.as_deref(),
+            headers,
+            environment,
+        )),
         Call::Request {
             prompt,
             optional_params,
-        } => {
-            // ast-grep-ignore: no-long-names
-            let request = StabilityImageGenerationConfig::transform_image_generation_request(
-                prompt,
-                optional_params,
-            );
-            match request {
-                Ok(request) => Ok(json!({"request": request})),
-                Err(_failure) => Ok(json!({"invalid": true})),
-            }
-        }
+        } => Ok(request_answer(prompt, optional_params)),
         Call::Response {
             status,
             headers,
             body,
             created,
             data,
-        } => {
-            let upstream = ImageHttpResponse {
-                status_code: *status,
-                headers: headers.clone(),
-                body: body.clone().into_bytes(),
-            };
-            let mut response = ImageResponse {
-                created: *created,
-                data: (!data.is_empty()).then(|| data.clone()),
-                usage: None,
-            };
-            match decode_stability_image(&upstream, &mut response) {
-                Ok(()) => Ok(json!({"response": response})),
-                Err(error) => Err(Box::new(HelperError {
-                    class: "BaseLLMException".to_owned(),
-                    status: Some(error.status()),
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })),
-            }
-        }
+        } => response_answer(*status, headers, body, *created, data),
+    }
+}
+
+// LiteLLM's get_supported_openai_params answers the same three names for every model
+fn supported_answer(_model: &str) -> Value {
+    json!(StabilityImageGenerationConfig::SUPPORTED_OPENAI_PARAMS)
+}
+
+fn map_answer(
+    model: &str,
+    non_default_params: &ImageParams,
+    optional_params: &ImageParams,
+    drop_params: bool,
+) -> Value {
+    let attempt = StabilityImageGenerationConfig::map_openai_params(
+        non_default_params,
+        optional_params.clone(),
+        model,
+        drop_params,
+    );
+    if let Ok(mapped) = attempt {
+        return json!({"mapped": mapped});
+    }
+    json!({"unsupported": true})
+}
+
+fn url_answer(
+    model: &str,
+    api_base: Option<&str>,
+    environment: &BTreeMap<String, String>,
+) -> Value {
+    let config = generation_config(model, environment);
+    json!({"url": config.get_complete_url(api_base, model)})
+}
+
+fn environment_answer(
+    model: &str,
+    api_key: Option<&str>,
+    headers: &ImageHeaders,
+    environment: &BTreeMap<String, String>,
+) -> Value {
+    let config = generation_config(model, environment);
+    let explicit = api_key.map(SecretString::from);
+    if let Ok(validated) = config.validate_environment(headers.clone(), explicit.as_ref()) {
+        return json!({"headers": validated});
+    }
+    json!({"missing_key": true})
+}
+
+fn request_answer(prompt: &str, optional_params: &ImageParams) -> Value {
+    // ast-grep-ignore: no-long-names
+    let attempt =
+        StabilityImageGenerationConfig::transform_image_generation_request(prompt, optional_params);
+    if let Ok(request) = attempt {
+        return json!({"request": request});
+    }
+    json!({"invalid": true})
+}
+
+fn response_answer(
+    status: u16,
+    headers: &ImageHeaders,
+    body: &str,
+    created: i64,
+    data: &[ImageData],
+) -> Result<Value, Box<HelperError>> {
+    let upstream = ImageHttpResponse {
+        status_code: status,
+        headers: headers.clone(),
+        body: body.as_bytes().to_vec(),
+    };
+    let mut response = ImageResponse {
+        created,
+        data: (!data.is_empty()).then(|| data.to_vec()),
+        usage: None,
+    };
+    match decode_stability_image(&upstream, &mut response) {
+        Ok(()) => Ok(json!({"response": response})),
+        Err(error) => Err(Box::new(HelperError {
+            class: "BaseLLMException".to_owned(),
+            status: Some(error.status()),
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })),
     }
 }
