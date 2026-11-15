@@ -17,7 +17,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L528-L532
   - what: InMemoryGuardrailHandler::new takes a HandlerSettings struct holding strict_modes and global_skip_tool_message, where the task text passes the two booleans as separate arguments.
     why: The lint table allows one boolean parameter per function. The values and their effect are the same.
-    link: ""
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L439-L461
 kept_bugs:
   - what: A missing os.environ/ variable behind api_key or api_base stores the text "None", so the guardrail starts and then fails at its first provider call.
     why: LiteLLM wraps get_secret in str(), and a working setup relies on startup accepting a guardrail whose provider credential is only needed per request. The text is copied rather than turning the missing variable into a startup error.
