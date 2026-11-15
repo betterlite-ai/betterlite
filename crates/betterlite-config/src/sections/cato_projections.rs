@@ -40,6 +40,8 @@ pub struct Configured {
     pub ssl_verify: Option<VerifySetting>,
 }
 
+pub type Settings = Vec<Configured>;
+
 impl Section for Raw {
     type Settings = Vec<Configured>;
 
