@@ -2,16 +2,17 @@ import asyncio
 from typing import Literal, TypedDict
 
 import litellm
-from litellm import Router
 from litellm.models.organization import LiteLLM_OrganizationTable
 from litellm.models.team import LiteLLM_TeamTable
-from litellm.proxy._types import ModelAccessDeniedProxyException as ModelDenied, UserAPIKeyAuth
+from litellm.proxy._types import ModelAccessDeniedProxyException as ModelDenied
+from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.auth.auth_checks import (
     can_key_call_model,
     can_org_access_model,
     can_team_access_model,
     key_model_aliases_for_auth_check,
 )
+from litellm.router import Router
 from litellm.types.router import RouterModelGroupAliasItem
 from pydantic import JsonValue
 
@@ -132,7 +133,7 @@ def build_token(step: Step) -> UserAPIKeyAuth:
         models=step["models"],
         team_id=step["team_id"],
         team_models=step["team_models"],
-        team_model_aliases=dict(step["team_model_aliases"]),
+        team_model_aliases=step["team_model_aliases"],
         aliases=aliases,
         access_group_ids=step["access_group_ids"],
     )
