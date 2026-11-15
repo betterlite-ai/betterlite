@@ -5,16 +5,19 @@ use std::path::Path;
 
 use betterlite_config::sections::settings::settings_rules::JsonValue as Value;
 use rstest::rstest;
-use serde_json::json;
 
 use super::parse_bucket_object;
+
+fn value(json: &str) -> Value {
+    serde_json::from_str(json).unwrap()
+}
 
 #[test]
 fn parses_a_mapping_document() {
     let parsed = parse_bucket_object("config.yaml", b"model_list:\n  - model_name: gpt-4\n");
     assert_eq!(
         parsed,
-        Some(json!({"model_list": [{"model_name": "gpt-4"}]}))
+        Some(value(r#"{"model_list": [{"model_name": "gpt-4"}]}"#))
     );
 }
 
@@ -26,7 +29,9 @@ fn parses_a_nested_mapping_with_includes() {
     );
     assert_eq!(
         parsed,
-        Some(json!({"include": ["shared.yaml"], "litellm_settings": {"drop_params": true}}))
+        Some(value(
+            r#"{"include": ["shared.yaml"], "litellm_settings": {"drop_params": true}}"#
+        ))
     );
 }
 
@@ -68,7 +73,7 @@ fn bytes_that_are_not_utf8_read_as_missing() {
 fn a_sequence_document_is_kept_for_the_caller_to_reject() {
     assert_eq!(
         parse_bucket_object("config.yaml", b"- one\n- two\n"),
-        Some(json!(["one", "two"]))
+        Some(value(r#"["one", "two"]"#))
     );
 }
 
@@ -76,7 +81,7 @@ fn a_sequence_document_is_kept_for_the_caller_to_reject() {
 fn a_scalar_document_is_kept_for_the_caller_to_reject() {
     assert_eq!(
         parse_bucket_object("config.yaml", b"just a string\n"),
-        Some(json!("just a string"))
+        Some(value(r#""just a string""#))
     );
 }
 

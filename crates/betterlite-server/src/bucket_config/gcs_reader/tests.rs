@@ -15,8 +15,8 @@ use http::HeaderMap;
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::{GcsBucketOpener, GcsReader, GcsReaderFactory};
-use crate::bucket_config::object::BucketObjectReader;
+use super::{GcsBucketOpener as _, GcsReader, GcsReaderFactory};
+use crate::bucket_config::object::BucketObjectReader as _;
 
 const TOKEN: &str = "token";
 const PROJECT: &str = "project";
@@ -42,6 +42,16 @@ impl FakeAuth {
     fn failing() -> Self {
         Self { fail: true }
     }
+
+    fn access_token(&self) -> Result<AccessToken, AuthFailure> {
+        if self.fail {
+            return Err(AuthFailure);
+        }
+        Ok(AccessToken {
+            token: SecretString::from(TOKEN.to_owned()),
+            project_id: PROJECT.to_owned(),
+        })
+    }
 }
 
 #[async_trait]
@@ -66,18 +76,6 @@ impl VertexAuth for FakeAuth {
         Ok(TokenAndUrl {
             token: SecretString::from(TOKEN.to_owned()),
             url: "https://storage.googleapis.com".to_owned(),
-        })
-    }
-}
-
-impl FakeAuth {
-    fn access_token(&self) -> Result<AccessToken, AuthFailure> {
-        if self.fail {
-            return Err(AuthFailure);
-        }
-        Ok(AccessToken {
-            token: SecretString::from(TOKEN.to_owned()),
-            project_id: PROJECT.to_owned(),
         })
     }
 }

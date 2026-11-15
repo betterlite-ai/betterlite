@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use betterlite_config::sections::includes::ConfigMap;
+use betterlite_config::sections::settings::settings_rules::JsonValue;
 use rstest::rstest;
-use serde_json::json;
 
 use super::{load_config_from_bucket, resolve_bucket_includes};
 use crate::bucket_config::error::BucketConfigError;
@@ -20,6 +20,10 @@ fn reader(pairs: &[(&str, &str)]) -> MemoryReader {
 
 fn config(yaml: &str) -> ConfigMap {
     serde_saphyr::from_str(yaml).unwrap()
+}
+
+fn value(json: &str) -> JsonValue {
+    serde_json::from_str(json).unwrap()
 }
 
 fn source(object_key: &str) -> BucketConfigSource {
@@ -46,15 +50,17 @@ async fn extends_lists_and_replaces_other_values() {
 
     assert_eq!(
         merged.get("model_list"),
-        Some(&json!([{"model_name": "root"}, {"model_name": "child"}]))
+        Some(&value(
+            r#"[{"model_name": "root"}, {"model_name": "child"}]"#
+        ))
     );
     assert_eq!(
         merged.get("litellm_settings"),
-        Some(&json!({"num_retries": 2}))
+        Some(&value(r#"{"num_retries": 2}"#))
     );
     assert_eq!(
         merged.get("router_settings"),
-        Some(&json!({"routing_strategy": "simple-shuffle"}))
+        Some(&value(r#"{"routing_strategy": "simple-shuffle"}"#))
     );
     assert!(!merged.contains_key("include"));
 }
@@ -73,8 +79,8 @@ async fn queues_nested_includes_after_the_existing_queue() {
 
     let merged = resolve_bucket_includes(root, ROOT, &reader).await.unwrap();
 
-    assert_eq!(merged.get("settings"), Some(&json!("c")));
-    assert_eq!(merged.get("from_a"), Some(&json!(true)));
+    assert_eq!(merged.get("settings"), Some(&value(r#""c""#)));
+    assert_eq!(merged.get("from_a"), Some(&value("true")));
 }
 
 #[tokio::test]
@@ -86,7 +92,7 @@ async fn a_key_already_loaded_is_merged_once() {
 
     assert_eq!(
         merged.get("model_list"),
-        Some(&json!([{"model_name": "child"}]))
+        Some(&value(r#"[{"model_name": "child"}]"#))
     );
 }
 
@@ -97,7 +103,7 @@ async fn the_root_key_counts_as_already_loaded() {
 
     let merged = resolve_bucket_includes(root, ROOT, &reader).await.unwrap();
 
-    assert_eq!(merged.get("model_list"), Some(&json!([])));
+    assert_eq!(merged.get("model_list"), Some(&value("[]")));
 }
 
 #[tokio::test]
@@ -110,9 +116,9 @@ async fn a_cycle_is_skipped() {
 
     let merged = resolve_bucket_includes(root, ROOT, &reader).await.unwrap();
 
-    assert_eq!(merged.get("root"), Some(&json!(true)));
-    assert_eq!(merged.get("a"), Some(&json!(true)));
-    assert_eq!(merged.get("b"), Some(&json!(true)));
+    assert_eq!(merged.get("root"), Some(&value("true")));
+    assert_eq!(merged.get("a"), Some(&value("true")));
+    assert_eq!(merged.get("b"), Some(&value("true")));
     assert!(!merged.contains_key("include"));
 }
 
@@ -175,7 +181,7 @@ async fn an_empty_included_document_merges_nothing() {
 
     assert_eq!(
         merged.get("model_list"),
-        Some(&json!([{"model_name": "root"}]))
+        Some(&value(r#"[{"model_name": "root"}]"#))
     );
 }
 
@@ -271,11 +277,11 @@ async fn load_config_from_bucket_merges_a_root_with_includes() {
 
     assert_eq!(
         loaded.get("model_list"),
-        Some(&json!([{"model_name": "included"}]))
+        Some(&value(r#"[{"model_name": "included"}]"#))
     );
     assert_eq!(
         loaded.get("litellm_settings"),
-        Some(&json!({"drop_params": true}))
+        Some(&value(r#"{"drop_params": true}"#))
     );
     assert!(!loaded.contains_key("include"));
 }

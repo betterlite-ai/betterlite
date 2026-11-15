@@ -1,12 +1,13 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::fs::{create_dir, read, write};
+use std::fs::{create_dir_all, read, write};
 use std::io;
 use std::path::Path;
 use std::str;
 use std::sync::{Arc, Mutex};
 
+use tokio::runtime::Builder;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -27,9 +28,7 @@ fn downloader(objects: BTreeMap<String, Vec<u8>>) -> BucketModuleDownloader {
 }
 
 fn module_objects() -> BTreeMap<String, Vec<u8>> {
-    [("module.py".to_owned(), MODULE.as_bytes().to_vec())]
-        .into_iter()
-        .collect()
+    BTreeMap::from([("module.py".to_owned(), MODULE.as_bytes().to_vec())])
 }
 
 fn s3_downloader(
@@ -62,10 +61,8 @@ async fn a_gcs_module_is_written_into_an_existing_directory() {
 async fn a_module_with_non_ascii_text_is_written_as_utf8() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("handler.py");
-    let text = "def handler():\n    return \"héllo\"\n";
-    let objects = [("module.py".to_owned(), text.as_bytes().to_vec())]
-        .into_iter()
-        .collect();
+    let text = "def handler():\n    return \"h\u{e9}llo\"\n";
+    let objects = BTreeMap::from([("module.py".to_owned(), text.as_bytes().to_vec())]);
 
     downloader(objects)
         .download_module(BucketType::Gcs, "bucket", "module.py", &path)
@@ -81,7 +78,7 @@ async fn a_gcs_module_creates_the_parent_folders_of_the_local_path() {
     let path = directory.path().join("callbacks/remote/handler.py");
 
     downloader(module_objects())
-        .download_module(BucketType::Gcs, "bucket", "callbacks/remote.py", &path)
+        .download_module(BucketType::Gcs, "bucket", "module.py", &path)
         .await
         .unwrap();
 
@@ -212,9 +209,7 @@ async fn an_s3_download_without_resolvable_credentials_is_the_read_error() {
 async fn a_gcs_object_that_is_not_utf8_leaves_no_file() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("handler.py");
-    let objects = [("module.py".to_owned(), vec![0xff, 0xfe, 0x00])]
-        .into_iter()
-        .collect();
+    let objects = BTreeMap::from([("module.py".to_owned(), vec![0xff, 0xfe, 0x00])]);
 
     let error = downloader(objects)
         .download_module(BucketType::Gcs, "bucket", "module.py", &path)
@@ -262,7 +257,7 @@ async fn a_parent_path_that_is_a_file_is_the_directory_error() {
 async fn a_target_that_is_a_directory_is_the_write_error() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("handler.py");
-    create_dir(&path).unwrap();
+    create_dir_all(&path).unwrap();
 
     let error = downloader(module_objects())
         .download_module(BucketType::Gcs, "bucket", "module.py", &path)
@@ -285,7 +280,7 @@ fn the_module_text_is_not_logged() {
     let downloader = downloader(module_objects());
 
     with_default(subscriber, || {
-        tokio::runtime::Builder::new_current_thread()
+        Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
@@ -293,7 +288,7 @@ fn the_module_text_is_not_logged() {
             .unwrap();
     });
 
-    let captured = records.lock().unwrap();
+    let captured = records.lock().unwrap().clone();
     assert!(
         captured.contains("handler.py"),
         "the path is logged: {captured}"

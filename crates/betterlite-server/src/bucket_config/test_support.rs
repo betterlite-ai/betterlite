@@ -110,10 +110,9 @@ impl FakeS3 {
     }
 
     pub(crate) fn headers(&self) -> Vec<(String, String)> {
-        match self.requests().first() {
-            Some(request) => request.headers.clone(),
-            None => Vec::new(),
-        }
+        self.requests()
+            .first()
+            .map_or_else(Vec::new, |request| request.headers.clone())
     }
 }
 

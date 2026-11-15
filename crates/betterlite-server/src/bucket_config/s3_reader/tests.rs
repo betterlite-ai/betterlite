@@ -19,10 +19,10 @@ use tokio::task::JoinSet;
 
 use super::addressing::object_url;
 use super::{
-    DEFAULT_REGION, ProxiedS3Get, REGION_VARIABLE, S3Get, S3GetRequest, S3Reader,
+    DEFAULT_REGION, ProxiedS3Get, REGION_VARIABLE, S3Get as _, S3GetRequest, S3Reader,
     S3TransportFailure, credential_settings, region_from_environment,
 };
-use crate::bucket_config::object::BucketObjectReader;
+use crate::bucket_config::object::BucketObjectReader as _;
 use crate::bucket_config::test_support::{
     ACCESS_KEY, FakeS3, SECRET_KEY, credential_environment, environment_without_keys,
 };
@@ -38,7 +38,9 @@ struct FixedClock;
 
 impl Clock for FixedClock {
     fn now(&self) -> SystemTime {
-        UNIX_EPOCH + Duration::from_secs(FIXED_TIME)
+        UNIX_EPOCH
+            .checked_add(Duration::from_secs(FIXED_TIME))
+            .unwrap()
     }
 }
 
@@ -120,7 +122,7 @@ fn a_china_region_path_style_url_uses_the_partition_dns_suffix() {
 #[case::plain("models/config.yaml", "models/config.yaml")]
 #[case::space("team dir/config.yaml", "team%20dir/config.yaml")]
 #[case::plus("a+b.yaml", "a%2Bb.yaml")]
-#[case::non_ascii("ключ.yaml", "%D0%BA%D0%BB%D1%8E%D1%87.yaml")]
+#[case::non_ascii("\u{43a}\u{43b}\u{44e}\u{447}.yaml", "%D0%BA%D0%BB%D1%8E%D1%87.yaml")]
 #[case::unreserved("a~b_c-d.e", "a~b_c-d.e")]
 #[case::percent("%.yaml", "%25.yaml")]
 #[case::double_slash("a//b.yaml", "a//b.yaml")]
