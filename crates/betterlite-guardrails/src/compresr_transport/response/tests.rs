@@ -118,6 +118,7 @@ fn a_batch_without_one_object_per_input_fails(#[case] source: &str, #[case] expe
 #[case::scalar("5")]
 #[case::no_data(r#"{"results":[]}"#)]
 #[case::data_not_an_object(r#"{"data":[]}"#)]
+#[case::number_marker_key(r#"{"data":{"$serde_json::private::Number":{"x":1}}}"#)]
 fn an_unexpected_body_shape_fails(#[case] source: &str) {
     let failure = parse_results(Some(source), 1).expect_err("failure");
     assert_eq!(failure.message, UNEXPECTED_SHAPE);
