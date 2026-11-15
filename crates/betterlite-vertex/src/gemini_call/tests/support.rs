@@ -542,12 +542,12 @@ fn clients(
     recorder: &Arc<Recorder>,
     supplied: Option<(ClientKind, Arc<Recorder>)>,
 ) -> (Clients, Option<Arc<Recorder>>) {
-    let pooled: Arc<dyn GeminiPost> = Arc::clone(recorder);
+    let pooled: Arc<dyn GeminiPost> = Arc::<Recorder>::clone(recorder);
     let (supplied_client, caller) = match supplied {
         Some((kind, transport)) => (
             Some(SuppliedClient {
                 kind,
-                transport: Arc::clone(&transport),
+                transport: Arc::<Recorder>::clone(&transport),
             }),
             Some(transport),
         ),
@@ -572,7 +572,8 @@ impl Fixture {
             order: Arc::clone(&order),
             loads: AtomicUsize::new(0),
         });
-        let credential_executor: Arc<dyn CredentialExecutor> = Arc::clone(&executor);
+        let credential_executor: Arc<dyn CredentialExecutor> =
+            Arc::<RecordingExecutor>::clone(&executor);
         let cache = Arc::new(CredentialCache::new(
             Arc::new(FixedClock(SystemTime::UNIX_EPOCH)),
             credential_executor,
