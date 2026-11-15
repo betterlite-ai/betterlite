@@ -154,6 +154,7 @@ fn json_mode_suppression() {
 
 pub(super) fn json_mode_tool_chunk() {
     json_mode_values();
+    json_mode_null_values();
     json_mode_whole_object();
     json_mode_malformed_arguments();
     json_mode_missing_arguments();
@@ -171,6 +172,16 @@ fn json_mode_values() {
         Some(true),
     );
     assert_eq!(chunk.text, r#"{"a": 1}"#);
+    assert!(chunk.tool_use.is_none());
+}
+
+// _convert_tool_response_to_message dumps the whole argument object when values is present but null.
+fn json_mode_null_values() {
+    let chunk = first_chunk(
+        r#"{"choices":[{"message":{"content":"raw","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call","arguments":"{\"values\": null}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
+        Some(true),
+    );
+    assert_eq!(chunk.text, r#"{"values": null}"#);
     assert!(chunk.tool_use.is_none());
 }
 
