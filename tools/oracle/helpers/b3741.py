@@ -1,9 +1,9 @@
 import asyncio
 import datetime as dt
+import time
 import urllib.parse
 import uuid
 from typing import Literal, TypeAlias, TypedDict
-from unittest.mock import patch
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -16,12 +16,13 @@ from litellm.proxy.guardrails.guardrail_hooks.agent_365.agent_365 import (
     entra_assertion,
 )
 from litellm.types.guardrails import GuardrailEventHooks
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+FIELDS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 UUID_MARKER = "<uuid4>"
 UUID_VERSION = 4
-FIXED_NOW = 1_000_000.0
+FIXED_START = dt.datetime(1970, 1, 12, 13, 46, 40, tzinfo=dt.UTC)
 
 
 class ScriptedReply(TypedDict):
@@ -166,15 +167,39 @@ def exchange_outcome(error: Agent365TokenExchangeError) -> dict[str, JsonValue]:
     }
 
 
-async def token_outcome(guardrail: Probe, assertion: str) -> dict[str, JsonValue]:
+def malformed_variant(handler: ScriptedReplies) -> str:
+    reply = handler.replies[min(handler.used, len(handler.replies)) - 1]
+    raw = reply["raw"]
+    if raw is None:
+        body = reply["body"]
+    else:
+        try:
+            body = JSON.validate_json(raw)
+        except ValidationError:
+            return "non_json_body"
+    try:
+        fields = FIELDS.validate_python(body)
+    except ValidationError:
+        return "non_object_body"
+    if "access_token" not in fields:
+        return "missing_access_token"
+    return "bad_access_token"
+
+
+async def token_outcome(
+    guardrail: Probe,
+    assertion: str,
+    handler: ScriptedReplies,
+) -> dict[str, JsonValue]:
     try:
         token = await guardrail.fetch_token(assertion)
     except Agent365TokenExchangeError as error:
         return exchange_outcome(error)
     except Agent365ThrottledError as error:
         return {"kind": "token", "error": "throttled", "status_code": error.status_code}
-    except Agent365MalformedResponseError as error:
-        return {"kind": "token", "error": "malformed", "message": str(error)}
+    except Agent365MalformedResponseError:
+        variant = malformed_variant(handler)
+        return {"kind": "token", "error": "malformed", "variant": variant}
     except httpx.HTTPStatusError as error:
         return {"kind": "token", "error": "http_status", "status_code": error.response.status_code}
     return {"kind": "token", "access_token": token}
@@ -193,16 +218,24 @@ async def post_outcome(guardrail: Probe, step: PostRequest) -> dict[str, JsonVal
     return {"kind": "post", "status": response.status_code, "body": body}
 
 
-async def run_step(guardrail: Probe, step: TokenStep) -> dict[str, JsonValue]:
+async def run_step(
+    guardrail: Probe,
+    step: TokenStep,
+    handler: ScriptedReplies,
+) -> dict[str, JsonValue]:
     if step["kind"] == "token":
-        return await token_outcome(guardrail, step["assertion"])
+        return await token_outcome(guardrail, step["assertion"], handler)
     if step["kind"] == "token_range":
         return await range_outcome(guardrail, step["prefix"], step["count"])
     return await post_outcome(guardrail, step)
 
 
-async def run_exchange(guardrail: Probe, steps: list[TokenStep]) -> list[dict[str, JsonValue]]:
-    outcomes = [await run_step(guardrail, step) for step in steps]
+async def run_exchange(
+    guardrail: Probe,
+    steps: list[TokenStep],
+    handler: ScriptedReplies,
+) -> list[dict[str, JsonValue]]:
+    outcomes = [await run_step(guardrail, step, handler) for step in steps]
     await guardrail.async_handler.client.aclose()
     return outcomes
 
@@ -211,13 +244,11 @@ def exchange_result(args: TokenExchange) -> JsonValue:
     handler = ScriptedReplies(args["replies"], repeat_last_reply=args["repeat_last_reply"])
     guardrail = make_guardrail()
     guardrail.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    with patch("time.time", return_value=FIXED_NOW):
-        outcomes = asyncio.run(run_exchange(guardrail, args["steps"]))
-        cache = cache_entries(guardrail, FIXED_NOW)
+    outcomes = asyncio.run(run_exchange(guardrail, args["steps"], handler))
     return {
         "requests": JSON.validate_python(handler.requests),
         "steps": JSON.validate_python(outcomes),
-        "cache": JSON.validate_python(cache),
+        "cache": JSON.validate_python(cache_entries(guardrail)),
     }
 
 
@@ -229,15 +260,14 @@ def assertion_result(args: AssertionCheck) -> JsonValue:
 def payload_request(args: PayloadAssembly) -> RequestPayload:
     logging_obj = Logging(
         model="mcp", messages=None, stream=False, call_type="call_mcp_tool",
-        start_time=dt.datetime.fromtimestamp(FIXED_NOW, tz=dt.UTC),
+        start_time=FIXED_START,
         litellm_call_id=args["litellm_call_id"], function_id="fn-1",
     )
     if args["mcp_session_id"] is not None:
         logging_obj.model_call_details["mcp_tool_call_metadata"] = {
             "mcp_session_id": args["mcp_session_id"]
         }
-    data: RequestPayload = {"litellm_call_id": args["litellm_call_id"]}
-    data["litellm_logging_obj"] = logging_obj
+    data: RequestPayload = {"litellm_call_id": args["litellm_call_id"], "litellm_logging_obj": logging_obj}
     if args["metadata"] is not None:
         data["metadata"] = args["metadata"]
     if args["litellm_metadata"] is not None:
@@ -251,9 +281,10 @@ def payload_request(args: PayloadAssembly) -> RequestPayload:
     return data
 
 
-def cache_entries(guardrail: Probe, now: float) -> list[list[JsonValue]]:
+def cache_entries(guardrail: Probe) -> list[list[JsonValue]]:
+    now = time.time()
     entries = guardrail.cache_items()
-    return [[key, token, int(expires_at - now)] for key, token, expires_at in entries]
+    return [[key, token, round(expires_at - now)] for key, token, expires_at in entries]
 
 
 def conversation_marker(conversation: str) -> str:

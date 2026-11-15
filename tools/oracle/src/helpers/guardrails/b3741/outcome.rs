@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::agent_365_tokens::Agent365Guardrail;
@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use url::form_urlencoded;
 
 use super::poster::{ScriptedReplies, guardrail, runtime};
-use super::{FIXED_NOW, Step, TokenExchangeArgs};
+use super::{FIXED_NOW_SECONDS, Step, TokenExchangeArgs};
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 fn token_outcome(result: Result<SecretString, Agent365TokenError>) -> Value {
@@ -30,8 +30,20 @@ fn token_outcome(result: Result<SecretString, Agent365TokenError>) -> Value {
         Err(Agent365TokenError::Throttled { status }) => {
             json!({"kind": "token", "error": "throttled", "status_code": status})
         }
-        Err(Agent365TokenError::Malformed { message }) => {
-            json!({"kind": "token", "error": "malformed", "message": message})
+        Err(Agent365TokenError::NonJsonBody { .. }) => {
+            json!({"kind": "token", "error": "malformed", "variant": "non_json_body"})
+        }
+        Err(Agent365TokenError::NonObjectBody) => {
+            json!({"kind": "token", "error": "malformed", "variant": "non_object_body"})
+        }
+        Err(Agent365TokenError::MissingAccessToken) => {
+            json!({"kind": "token", "error": "malformed", "variant": "missing_access_token"})
+        }
+        Err(Agent365TokenError::BadAccessToken) => {
+            json!({"kind": "token", "error": "malformed", "variant": "bad_access_token"})
+        }
+        Err(Agent365TokenError::TokenExpiry) => {
+            json!({"kind": "token", "error": "expiry"})
         }
         Err(Agent365TokenError::HttpStatus { status }) => {
             json!({"kind": "token", "error": "http_status", "status_code": status})
@@ -110,10 +122,12 @@ async fn run_exchange(
     Ok(outcomes)
 }
 
-fn ttl_seconds(expires_at: f64) -> u64 {
-    // float_arithmetic is denied; a fused multiply-add subtracts the fixed clock time
-    let remaining = FIXED_NOW.mul_add(-1.0_f64, expires_at);
-    Duration::try_from_secs_f64(remaining).map_or(0, |duration| duration.as_secs())
+fn ttl_seconds(expires_at: SystemTime) -> u64 {
+    expires_at.duration_since(UNIX_EPOCH).map_or(0, |elapsed| {
+        elapsed
+            .saturating_sub(Duration::from_secs(FIXED_NOW_SECONDS))
+            .as_secs()
+    })
 }
 
 fn cache_entries(guardrail: &Agent365Guardrail) -> Vec<Value> {
@@ -122,17 +136,20 @@ fn cache_entries(guardrail: &Agent365Guardrail) -> Vec<Value> {
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     cache
-        .snapshot()
-        .into_iter()
-        .map(|(key, token)| {
-            let expires_at = cache.expiry(&key).unwrap_or(FIXED_NOW);
-            json!([key, token.expose_secret(), ttl_seconds(expires_at)])
+        .iter()
+        .rev()
+        .map(|(key, entry)| {
+            json!([
+                key,
+                entry.access_token.expose_secret(),
+                ttl_seconds(entry.expires_at)
+            ])
         })
         .collect()
 }
 
 pub(super) fn exchange_result(args: &TokenExchangeArgs) -> HelperResult {
-    let poster = Arc::new(ScriptedReplies::new(&args.replies, args.repeat_last_reply));
+    let poster = Arc::new(ScriptedReplies::new(&args.replies, args.repeat_last_reply)?);
     let guardrail = guardrail(Arc::clone(&poster))?;
     let outcomes = runtime()?.block_on(run_exchange(&guardrail, &args.steps))?;
     Ok(json!({

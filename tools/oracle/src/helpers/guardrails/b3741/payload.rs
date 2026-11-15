@@ -35,14 +35,11 @@ fn request_data(args: &PayloadAssemblyArgs) -> Data {
             GuardrailValue::Object(metadata),
         );
     }
-    let (metadata, litellm_metadata) = (args.metadata.as_ref(), args.litellm_metadata.as_ref());
-    insert_metadata(&mut data, "metadata", metadata);
+    insert_metadata(&mut data, "metadata", args.metadata.as_ref());
+    let litellm_metadata = args.litellm_metadata.as_ref();
     insert_metadata(&mut data, "litellm_metadata", litellm_metadata);
-    let (tool_name, server_name) = (
-        args.mcp_tool_name.as_deref(),
-        args.mcp_server_name.as_deref(),
-    );
-    insert_text(&mut data, "mcp_tool_name", tool_name);
+    insert_text(&mut data, "mcp_tool_name", args.mcp_tool_name.as_deref());
+    let server_name = args.mcp_server_name.as_deref();
     insert_text(&mut data, "mcp_server_name", server_name);
     insert_metadata(&mut data, "mcp_arguments", args.mcp_arguments.as_ref());
     data

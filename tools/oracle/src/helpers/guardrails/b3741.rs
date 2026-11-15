@@ -10,7 +10,7 @@ mod outcome;
 mod payload;
 mod poster;
 
-const FIXED_NOW: f64 = 1_000_000.0;
+const FIXED_NOW_SECONDS: u64 = 1_000_000;
 const UUID_MARKER: &str = "<uuid4>";
 
 type Data = BTreeMap<String, GuardrailValue>;
