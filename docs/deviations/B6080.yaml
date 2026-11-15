@@ -1,0 +1,11 @@
+task: B6080
+deviations:
+  - what: A usage.cost given as a numeric string, such as "0.5", or as a boolean sets no cost header in betterlite. Only a JSON number does.
+    why: LiteLLM's float() turns the string into 0.5 and true into 1.0 by accident of Python. The OpenRouter docs define cost as a number, so any other type is a bad reply and is treated like any other unreadable cost.
+    link: ""
+  - what: The KeyError text names the missing key and prints the chunk as compact JSON, not as a Python dict.
+    why: Python's dict repr is not reproducible (docs/compatibility.md), so the helper cases only send chunks whose text is the same in both, such as {}.
+    link: ""
+  - what: An error object inside a successful embedding reply gets status 422 when its code is null, not an unsigned integer, or larger than 65535. LiteLLM copies the value into the raised exception's status_code unchanged.
+    why: betterlite's status is a u16 and a null, string or oversized status cannot become an HTTP status. docs/compatibility.md makes null take the default, and no working client can rely on an unusable status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L603-L617
