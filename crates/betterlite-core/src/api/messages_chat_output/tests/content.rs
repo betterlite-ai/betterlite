@@ -2,6 +2,7 @@
 
 use rstest::rstest;
 use std::error::Error as _;
+use std::iter::once;
 
 use crate::api::messages_chat_output::content::{anthropic_finish_reason, content_blocks};
 use crate::api::messages_chat_output::error::ChatOutputError;
@@ -122,7 +123,7 @@ fn tool_name_mapping_restores_long_name() {
     let choices = choices(
         r#"[{"message": {"tool_calls": [{"id": "t1", "function": {"name": "trunc", "arguments": "{}"}}]}}]"#,
     );
-    let mapping = std::iter::once(("trunc".to_owned(), "original_tool".to_owned())).collect();
+    let mapping = once(("trunc".to_owned(), "original_tool".to_owned())).collect();
     let entries = content_blocks(&choices, Some(&mapping)).expect("translates");
     assert_rendered(
         &entries,
