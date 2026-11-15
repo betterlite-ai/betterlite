@@ -1,0 +1,13 @@
+kind: helper
+name: url-and-env
+call:
+  b5848:
+    steps:
+      - {kind: url, model: "org/model", api_base: "https://given.example", env: {}}
+      - {kind: url, model: "org/model", api_base: null, env: {HF_API_BASE: "https://hf.example/"}}
+      - {kind: url, model: "org/model", api_base: null, env: {HUGGINGFACE_API_BASE: "https://other.example"}}
+      - {kind: url, model: "org/model", api_base: null, env: {}}
+      - {kind: url, model: "org/model", api_base: "https://host.example/rerank/", env: {}}
+      - {kind: url, model: "org/model", api_base: null, env: {HF_API_BASE: ""}}
+env: {}
+compare: {ignore: []}
