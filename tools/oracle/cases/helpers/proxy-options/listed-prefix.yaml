@@ -1,0 +1,43 @@
+kind: helper
+name: listed-prefix
+call:
+  proxy_options:
+    operation: models
+    params:
+      - api_base: null
+        api_key: null
+        environment_base: https://env.example/v1
+        environment_key: sk-env
+        openai_api_key: null
+        reply_status: 200
+        reply_body: '{"data": [{"id": "gpt-4o"}, {"id": "claude-3", "owned_by": "x"}]}'
+      - api_base: https://proxy.example:8443/v2
+        api_key: sk-explicit
+        environment_base: https://env.example/v1
+        environment_key: sk-env
+        openai_api_key: sk-openai
+        reply_status: 200
+        reply_body: '{"data": [{"id": "gemini-2.0-flash"}]}'
+      - api_base: null
+        api_key: null
+        environment_base: https://env.example
+        environment_key: null
+        openai_api_key: sk-openai
+        reply_status: 200
+        reply_body: '{"data": []}'
+      - api_base: null
+        api_key: null
+        environment_base: null
+        environment_key: null
+        openai_api_key: sk-openai
+        reply_status: 200
+        reply_body: '{"data": [{"id": "never"}]}'
+      - api_base: null
+        api_key: null
+        environment_base: https://env.example
+        environment_key: sk-env
+        openai_api_key: null
+        reply_status: 200
+        reply_body: not-json
+env: {}
+compare: {ignore: []}

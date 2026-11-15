@@ -1,0 +1,35 @@
+kind: helper
+name: effort-clamp
+call:
+  bedrock_message_options:
+    function: clamp_effort
+    model_cost:
+      fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, bedrock_output_config_effort_ceiling: high}
+      bedrock/fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, bedrock_output_config_effort_ceiling: high}
+      fixture-no-ceiling: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      bedrock/fixture-no-ceiling: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      fixture-low-ceiling: {litellm_provider: bedrock, supports_adaptive_thinking: true, bedrock_output_config_effort_ceiling: low}
+      bedrock/fixture-low-ceiling: {litellm_provider: bedrock, supports_adaptive_thinking: true, bedrock_output_config_effort_ceiling: low}
+      fixture-max-ceiling: {litellm_provider: bedrock, supports_adaptive_thinking: true, bedrock_output_config_effort_ceiling: max}
+      bedrock/fixture-max-ceiling: {litellm_provider: bedrock, supports_adaptive_thinking: true, bedrock_output_config_effort_ceiling: max}
+      fixture-explicit-off: {litellm_provider: bedrock, supports_adaptive_thinking: false, bedrock_output_config_effort_ceiling: high}
+      bedrock/fixture-explicit-off: {litellm_provider: bedrock, supports_adaptive_thinking: false, bedrock_output_config_effort_ceiling: high}
+      fixture-legacy: {litellm_provider: bedrock}
+      bedrock/fixture-legacy: {litellm_provider: bedrock}
+    cases:
+      - {model: fixture-adaptive, params: {reasoning_effort: xhigh}}
+      - {model: fixture-adaptive, params: {reasoning_effort: low}}
+      - {model: fixture-adaptive, params: {reasoning_effort: high}}
+      - {model: fixture-adaptive, params: {reasoning_effort: medium, max_tokens: 10}}
+      - {model: fixture-no-ceiling, params: {reasoning_effort: xhigh}}
+      - {model: fixture-low-ceiling, params: {reasoning_effort: xhigh}}
+      - {model: fixture-max-ceiling, params: {reasoning_effort: xhigh}}
+      - {model: fixture-explicit-off, params: {reasoning_effort: xhigh}}
+      - {model: fixture-legacy, params: {reasoning_effort: xhigh}}
+      - {model: fixture-adaptive, params: {reasoning_effort: 5}}
+      - {model: fixture-adaptive, params: {reasoning_effort: null}}
+      - {model: fixture-adaptive, params: {reasoning_effort: [xhigh]}}
+      - {model: fixture-adaptive, params: {max_tokens: 10}}
+      - {model: mystery-model, params: {reasoning_effort: xhigh}}
+env: {}
+compare: {ignore: []}

@@ -97,6 +97,10 @@ scope:
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/containers.rs
   - crates/betterlite-openai/src/containers/**
+  - crates/betterlite-openai/src/api/container_contracts/config.rs
+  - crates/betterlite-openai/src/api/container_contracts/error.rs
+  - crates/betterlite-openai/src/api/container_contracts/tests.rs
+  - tools/oracle/src/helpers/openai/b3360.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/openai/containers.rs
   - tools/oracle/src/helpers/openai/containers/**
