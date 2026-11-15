@@ -8,7 +8,8 @@ use super::{
 };
 use crate::classifier_message_text::asks::{
     conversation_is_continuing, current_ask_and_system_prompt, human_asks_newest_first,
-    is_reminder_only_turn, json_human_asks_newest_first, newest_turn_ask, newest_turn_is_human_ask,
+    is_reminder_only_turn, json_human_asks_newest_first, last_human_ask_index, newest_turn_ask,
+    newest_turn_is_human_ask,
 };
 use crate::classifier_message_text::encrypted::encrypted_classifier_task;
 use crate::classifier_message_text::error::ClassifierTextError;
@@ -35,6 +36,8 @@ enum Behavior {
     ReminderOnlyTextParts,
     NewestTurnWithTrailingSystem,
     CurrentAskAndSystemPrompt,
+    CurrentAskWithCodexMarkers,
+    AskFunctionsUseCodexMarkers,
     SystemPromptNotStripped,
     ConversationContinuingWithAssistant,
     ConversationContinuingWithoutMessages,
@@ -47,7 +50,11 @@ enum Behavior {
     PlanToolShapeFunction,
     PlanToolShapeAnthropic,
     PlanSystemScope,
+    PlanAnthropicSystemArray,
+    PlanSystemArraySkipsNonText,
     PlanLeadingSystemMessage,
+    PlanSecondLeadingSystemMessage,
+    PlanLaterSystemMessageIgnored,
     PlanTailSentinel,
     PlanExtraPattern,
     PlanBodyMessagesWin,
@@ -80,6 +87,8 @@ enum Behavior {
 #[case::reminder_only_text_parts(Behavior::ReminderOnlyTextParts)]
 #[case::newest_turn_with_trailing_system(Behavior::NewestTurnWithTrailingSystem)]
 #[case::current_ask_and_system_prompt(Behavior::CurrentAskAndSystemPrompt)]
+#[case::current_ask_with_codex_markers(Behavior::CurrentAskWithCodexMarkers)]
+#[case::ask_functions_use_codex_markers(Behavior::AskFunctionsUseCodexMarkers)]
 #[case::system_prompt_not_stripped(Behavior::SystemPromptNotStripped)]
 #[case::conversation_continuing_with_assistant(Behavior::ConversationContinuingWithAssistant)]
 #[case::conversation_continuing_without_messages(Behavior::ConversationContinuingWithoutMessages)]
@@ -92,7 +101,11 @@ enum Behavior {
 #[case::plan_tool_shape_function(Behavior::PlanToolShapeFunction)]
 #[case::plan_tool_shape_anthropic(Behavior::PlanToolShapeAnthropic)]
 #[case::plan_system_scope(Behavior::PlanSystemScope)]
+#[case::plan_anthropic_system_array(Behavior::PlanAnthropicSystemArray)]
+#[case::plan_system_array_skips_non_text(Behavior::PlanSystemArraySkipsNonText)]
 #[case::plan_leading_system_message(Behavior::PlanLeadingSystemMessage)]
+#[case::plan_second_leading_system_message(Behavior::PlanSecondLeadingSystemMessage)]
+#[case::plan_later_system_message_ignored(Behavior::PlanLaterSystemMessageIgnored)]
 #[case::plan_tail_sentinel(Behavior::PlanTailSentinel)]
 #[case::plan_extra_pattern(Behavior::PlanExtraPattern)]
 #[case::plan_body_messages_win(Behavior::PlanBodyMessagesWin)]
@@ -126,6 +139,8 @@ fn classifier_message_text_behaviors(#[case] behavior: Behavior) {
         Behavior::ReminderOnlyTextParts => assert_reminder_only_text_parts(),
         Behavior::NewestTurnWithTrailingSystem => assert_newest_turn_with_trailing_system(),
         Behavior::CurrentAskAndSystemPrompt => assert_current_ask_and_system_prompt(),
+        Behavior::CurrentAskWithCodexMarkers => assert_current_ask_with_codex_markers(),
+        Behavior::AskFunctionsUseCodexMarkers => assert_ask_functions_use_codex_markers(),
         Behavior::SystemPromptNotStripped => assert_system_prompt_not_stripped(),
         Behavior::ConversationContinuingWithAssistant => {
             assert_conversation_continuing_with_assistant()
@@ -142,7 +157,11 @@ fn classifier_message_text_behaviors(#[case] behavior: Behavior) {
         Behavior::PlanToolShapeFunction => assert_plan_tool_shape_function(),
         Behavior::PlanToolShapeAnthropic => assert_plan_tool_shape_anthropic(),
         Behavior::PlanSystemScope => assert_plan_system_scope(),
+        Behavior::PlanAnthropicSystemArray => assert_plan_anthropic_system_array(),
+        Behavior::PlanSystemArraySkipsNonText => assert_plan_system_array_skips_non_text(),
         Behavior::PlanLeadingSystemMessage => assert_plan_leading_system_message(),
+        Behavior::PlanSecondLeadingSystemMessage => assert_plan_second_leading_system_message(),
+        Behavior::PlanLaterSystemMessageIgnored => assert_plan_later_system_message_ignored(),
         Behavior::PlanTailSentinel => assert_plan_tail_sentinel(),
         Behavior::PlanExtraPattern => assert_plan_extra_pattern(),
         Behavior::PlanBodyMessagesWin => assert_plan_body_messages_win(),
@@ -333,6 +352,68 @@ fn assert_current_ask_and_system_prompt() {
     assert_eq!(system.unwrap().text, "newer system");
 }
 
+fn assert_current_ask_with_codex_markers() {
+    let messages = [text(
+        Role::User,
+        "the question <environment_context>ctx</environment_context>",
+    )];
+    let (ask, _) = current_ask_and_system_prompt(&messages, codex_markers()).unwrap();
+    assert_eq!(ask.unwrap().text, "the question");
+    let (unstripped, _) = current_ask_and_system_prompt(&messages, default_markers()).unwrap();
+    assert_eq!(
+        unstripped.unwrap().text,
+        "the question <environment_context>ctx</environment_context>"
+    );
+}
+
+fn assert_ask_functions_use_codex_markers() {
+    let envelope = text(Role::User, "<environment_context>ctx</environment_context>");
+    assert!(is_reminder_only_turn(&envelope, codex_markers()).unwrap());
+    assert!(!is_reminder_only_turn(&envelope, default_markers()).unwrap());
+
+    let newest_messages = [
+        text(Role::Assistant, "reply"),
+        text(Role::User, "<environment_context>ctx</environment_context>"),
+    ];
+    assert_eq!(
+        newest_turn_ask(&newest_messages, codex_markers()).unwrap(),
+        None
+    );
+    assert_eq!(
+        newest_turn_ask(&newest_messages, default_markers())
+            .unwrap()
+            .unwrap()
+            .text,
+        "<environment_context>ctx</environment_context>"
+    );
+
+    let messages = [
+        text(Role::User, "the question"),
+        text(Role::Assistant, "reply"),
+        text(Role::User, "<environment_context>ctx</environment_context>"),
+    ];
+    assert_eq!(
+        last_human_ask_index(&messages, codex_markers()).unwrap(),
+        Some(0)
+    );
+    assert_eq!(
+        last_human_ask_index(&messages, default_markers()).unwrap(),
+        Some(2)
+    );
+    let codex_asks = human_asks_newest_first(&messages, codex_markers()).unwrap();
+    assert_eq!(ask_texts(&codex_asks), ["the question"]);
+    let default_asks = human_asks_newest_first(&messages, default_markers()).unwrap();
+    assert_eq!(
+        ask_texts(&default_asks),
+        [
+            "<environment_context>ctx</environment_context>",
+            "the question"
+        ]
+    );
+    assert!(!newest_turn_is_human_ask(Some(&messages), codex_markers()).unwrap());
+    assert!(newest_turn_is_human_ask(Some(&messages), default_markers()).unwrap());
+}
+
 fn assert_system_prompt_not_stripped() {
     let messages = [
         text(
@@ -437,10 +518,47 @@ fn assert_plan_system_scope() {
     assert_eq!(result.as_deref(), Some(SYSTEM_SENTINEL));
 }
 
+fn assert_plan_anthropic_system_array() {
+    let body = body(serde_json::json!({
+        "system": [{"type": "text", "text": SYSTEM_SENTINEL}]
+    }));
+    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
+    assert_eq!(result.as_deref(), Some(SYSTEM_SENTINEL));
+}
+
+fn assert_plan_system_array_skips_non_text() {
+    let body = body(serde_json::json!({
+        "system": [{"type": "image_url", "text": SYSTEM_SENTINEL, "image_url": {"url": "data:x"}}]
+    }));
+    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
+    assert_eq!(result, None);
+}
+
 fn assert_plan_leading_system_message() {
     let messages = [text(Role::System, SYSTEM_SENTINEL), text(Role::User, "ask")];
     let result = matched_plan_mode_sentinel(None, Some(&messages), &[], default_markers()).unwrap();
     assert_eq!(result.as_deref(), Some(SYSTEM_SENTINEL));
+}
+
+fn assert_plan_second_leading_system_message() {
+    let messages = [
+        text(Role::System, "opening"),
+        text(Role::System, SYSTEM_SENTINEL),
+        text(Role::User, "ask"),
+    ];
+    let result = matched_plan_mode_sentinel(None, Some(&messages), &[], default_markers()).unwrap();
+    assert_eq!(result.as_deref(), Some(SYSTEM_SENTINEL));
+}
+
+fn assert_plan_later_system_message_ignored() {
+    let messages = [
+        text(Role::System, "opening"),
+        text(Role::User, "ask"),
+        text(Role::System, TAIL_SENTINEL),
+        text(Role::User, "follow-up"),
+    ];
+    let result = matched_plan_mode_sentinel(None, Some(&messages), &[], default_markers()).unwrap();
+    assert_eq!(result, None);
 }
 
 fn assert_plan_tail_sentinel() {
