@@ -1496,6 +1496,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secret-managers",
  "betterlite-secrets",
@@ -1629,6 +1630,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -2527,6 +2529,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
+ "betterlite-db",
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
@@ -3588,6 +3591,7 @@ dependencies = [
  "jiff",
  "libfuzzer-sys",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
