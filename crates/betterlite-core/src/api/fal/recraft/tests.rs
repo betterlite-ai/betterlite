@@ -100,7 +100,7 @@ fn recraft_custom_dimensions_become_integer_objects(
 #[case::words("axb")]
 #[case::past_i64("999999999999999999999999x1")]
 #[case::min_i64("-9223372036854775808x20")]
-#[case::non_ascii_digits("١٠٢٤x٧٦٨")]
+#[case::non_ascii_digits("\u{661}\u{660}\u{662}\u{664}x\u{667}\u{666}\u{668}")]
 fn recraft_unreadable_sizes_become_square_hd(#[case] size: &str) {
     assert_eq!(map_image_size(size), text(SQUARE_HD));
 }
@@ -316,7 +316,6 @@ fn recraft_reply_size_is_bounded() {
     }
     let mut at_bound = vec![b' '; MAX_FAL_REPLY_BYTES];
     at_bound[..13].copy_from_slice(br#"{"images":[]}"#);
-    let mut response = ImageResponse::default();
     append_url_images(&mut response, 200, &headers(), &at_bound).expect("a reply at the limit");
     assert_eq!(response.data, Some(Vec::new()));
 }
