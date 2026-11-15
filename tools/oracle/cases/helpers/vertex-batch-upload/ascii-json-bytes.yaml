@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-batch-upload-ascii-json-bytes
+call:
+  vertex_batch_upload:
+    calls:
+      - content: |-
+          {"custom_id":"é😀","url":"/v1/embeddings","body":{"input":"é😀 \u0001 \"q\" \\ /"}}
+
+          {"custom_id":"b","url":"/v1/chat/completions","body":{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"日本語 ünï"}]}}
+        passthrough: false
+env: {}
+compare: {ignore: []}

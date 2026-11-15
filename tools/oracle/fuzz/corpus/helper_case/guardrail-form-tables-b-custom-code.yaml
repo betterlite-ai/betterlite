@@ -1,0 +1,7 @@
+kind: helper
+name: guardrail-form-tables-b-custom-code
+call:
+  b6562:
+    provider: custom_code
+env: {}
+compare: {ignore: []}
