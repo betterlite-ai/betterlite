@@ -393,6 +393,26 @@ fn pegasus_reply_errors() {
     content_errors();
     content_catch_error();
     count_errors();
+    boundary_errors();
+}
+
+fn boundary_errors() {
+    let given = messages("[]");
+    let huge_headers = header_counts("9223372036854775807", "1");
+    let overflow = decode_body(
+        br#"{"message":"visible"}"#,
+        &mut single_choice(),
+        &huge_headers,
+        &given,
+    );
+    assert!(matches!(overflow, Err(PegasusError::TotalOverflow)));
+    let created = block_on(decode_pegasus_reply(
+        br#"{"message":"visible"}"#,
+        &context(200, &[], &given, 1e300),
+        &mut single_choice(),
+        &FixtureCounter::counting(0, 0),
+    ));
+    assert!(matches!(created, Err(PegasusError::CreatedOutOfRange)));
 }
 
 fn decode_body(
