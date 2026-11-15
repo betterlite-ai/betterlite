@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
+pub(crate) struct Input {
     #[serde(default)]
     pub(super) bucket: Option<String>,
     #[serde(default)]

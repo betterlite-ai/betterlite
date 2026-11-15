@@ -56,10 +56,10 @@ fn text_field(
     fields: Option<&IndexMap<String, Json>>,
     name: &'static str,
 ) -> Result<Option<String>, ConfigKeyError> {
-    let Some(fields) = fields else {
+    let Some(present) = fields else {
         return Ok(None);
     };
-    match fields.get(name) {
+    match present.get(name) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {

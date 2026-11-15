@@ -38,10 +38,29 @@ pub(super) async fn run_step(
         Action::Drain => Ok(drain_step(session)),
         Action::Config => config_step(input, session),
         Action::Group => group_step(session),
-        Action::Ndjson => ndjson_step(session),
+        Action::Ndjson => {
+            let text =
+                combine_payloads_to_ndjson(&drain_queue_batch(&session.logger)).or_value_error()?;
+            let lines = text
+                .split('\n')
+                .map(serde_json::from_str::<Value>)
+                .collect::<Result<Vec<_>, _>>()
+                .or_value_error()?;
+            Ok(json!({"lines": lines, "trailing_newline": text.ends_with('\n')}))
+        }
         Action::Grouped => Ok(grouped_step(session).await),
         Action::Send => Ok(send_step(session).await),
-        Action::Retrieve => retrieve_step(input, session).await,
+        Action::Retrieve => {
+            let request_id = input
+                .request_id
+                .as_ref()
+                .ok_or_else(|| failure("ValueError", "a retrieve step needs request_id"))?;
+            let start = input.start_time.map(timestamp).transpose()?;
+            let payload = get_request_response_payload(&session.logger, request_id, start)
+                .await
+                .or_value_error()?;
+            Ok(json!({"payload": payload}))
+        }
         Action::Date => date_step(input),
         Action::Flush => Ok(flush_step(session).await),
         Action::Wait => Ok(wait_step(session).await),
@@ -128,15 +147,6 @@ fn group_step(session: &Session) -> Result<Value, Box<HelperError>> {
     Ok(json!({"groups": groups}))
 }
 
-fn ndjson_step(session: &Session) -> Result<Value, Box<HelperError>> {
-    let text = combine_payloads_to_ndjson(&drain_queue_batch(&session.logger)).or_value_error()?;
-    let mut lines = Vec::new();
-    for line in text.split('\n') {
-        lines.push(serde_json::from_str::<Value>(line).or_value_error()?);
-    }
-    Ok(json!({"lines": lines, "trailing_newline": text.ends_with('\n')}))
-}
-
 async fn grouped_step(session: &Session) -> Value {
     let items = drain_queue_batch(&session.logger);
     let (sent, errors) = send_grouped_batch(&session.logger, &items).await;
@@ -146,18 +156,6 @@ async fn grouped_step(session: &Session) -> Value {
 async fn send_step(session: &Session) -> Value {
     async_send_batch(&session.logger).await;
     json!({"uploads": uploads(&session.client)})
-}
-
-async fn retrieve_step(input: &Input, session: &Session) -> Result<Value, Box<HelperError>> {
-    let request_id = input
-        .request_id
-        .as_ref()
-        .ok_or_else(|| failure("ValueError", "a retrieve step needs request_id"))?;
-    let start = input.start_time.map(timestamp).transpose()?;
-    let payload = get_request_response_payload(&session.logger, request_id, start)
-        .await
-        .or_value_error()?;
-    Ok(json!({"payload": payload}))
 }
 
 fn date_step(input: &Input) -> Result<Value, Box<HelperError>> {

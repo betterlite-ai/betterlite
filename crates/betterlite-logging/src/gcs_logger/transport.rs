@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::decisions::Json;
 use http::Method;
 use http::header::{CONTENT_TYPE, HeaderValue};
@@ -105,7 +105,9 @@ fn write_body(request: &GcsWriteRequest) -> Result<(RequestBody, Duration), GcsT
     if let Some(data) = request.data.as_ref() {
         let bytes = match data {
             Json::Text(text) => text.clone().into_bytes(),
-            other => serde_json::to_vec(other).map_err(GcsTransportError::Payload)?,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                serde_json::to_vec(data).map_err(GcsTransportError::Payload)?
+            }
         };
         return Ok((
             RequestBody::Bytes {
@@ -118,11 +120,7 @@ fn write_body(request: &GcsWriteRequest) -> Result<(RequestBody, Duration), GcsT
     Ok((RequestBody::Empty, deadline))
 }
 
-fn response_of(
-    response: betterlite_http::proxy::UpstreamResponse,
-    url: String,
-    started: Instant,
-) -> GcsHttpResponse {
+fn response_of(response: UpstreamResponse, url: String, started: Instant) -> GcsHttpResponse {
     GcsHttpResponse {
         status: response.status,
         headers: response.headers,

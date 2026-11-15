@@ -12,7 +12,6 @@ use crate::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
 use crate::gcs_mock::auth::VertexAuth;
 use crate::gcs_mock::client::GcsHttpClient;
 
-use super::flush_behaviors::periodic_flush;
 use super::{GcsBucketLogger, GcsDeps};
 
 pub const BATCH_SIZE_ENV: &str = "GCS_BATCH_SIZE";
@@ -112,7 +111,7 @@ where
     });
     if let Some(tasks) = deps.tasks {
         let periodic = Arc::clone(&logger);
-        tasks.spawn(async move { periodic_flush(periodic).await });
+        tasks.spawn(async move { periodic.periodic_flush().await });
     }
     Ok(logger)
 }

@@ -21,7 +21,8 @@ where
         match group_items_by_config(logger, &items) {
             Ok(grouped) => {
                 for group in grouped.values() {
-                    send_grouped_batch(logger, group).await;
+                    let (sent, errors) = send_grouped_batch(logger, group).await;
+                    tracing::debug!(sent, errors, "GCS Bucket sent a grouped batch");
                 }
             }
             Err(error) => tracing::error!(

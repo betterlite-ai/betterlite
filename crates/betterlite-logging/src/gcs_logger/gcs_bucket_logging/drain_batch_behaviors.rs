@@ -12,16 +12,9 @@ where
     Auth: VertexAuth + Clone + Debug,
     Http: GcsHttpClient + Debug,
 {
-    let limit = logger.settings.batch_size;
-    let mut drained = Vec::new();
     let mut queue = logger.queue.lock().unwrap_or_else(PoisonError::into_inner);
-    while drained.len() < limit {
-        let Some(item) = queue.pop_front() else {
-            break;
-        };
-        drained.push(item);
-    }
-    drained
+    let taken = logger.settings.batch_size.min(queue.len());
+    queue.drain(..taken).collect()
 }
 
 mod tests;

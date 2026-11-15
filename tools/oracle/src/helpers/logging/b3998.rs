@@ -34,9 +34,9 @@ impl Helper for Op {
     }
 }
 
-pub(super) struct Session {
-    pub(super) logger: Arc<GcsBucketLogger<FixedAuth, RecordingClient>>,
-    pub(super) client: RecordingClient,
+struct Session {
+    logger: Arc<GcsBucketLogger<FixedAuth, RecordingClient>>,
+    client: RecordingClient,
     shutdown: CancellationToken,
     tracker: TaskTracker,
 }
@@ -95,7 +95,7 @@ fn open(
         .map_err(|error| failure("ValueError", error))
 }
 
-pub(super) fn failure<Message>(class: &str, message: Message) -> Box<HelperError>
+fn failure<Message>(class: &str, message: Message) -> Box<HelperError>
 where
     Message: std::fmt::Display,
 {
