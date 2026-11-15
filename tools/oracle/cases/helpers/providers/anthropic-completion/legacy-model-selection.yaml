@@ -1,0 +1,5 @@
+kind: helper
+name: legacy-model-selection
+call: {anthropic_completion: {function: select, models: [claude-2, claude-instant-1, Claude-2, claude-2.1, claude-instant-1.2, " claude-2", claude-3-5-sonnet-20241022]}}
+env: {}
+compare: {ignore: []}

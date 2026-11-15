@@ -19,6 +19,13 @@ libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
 
 [[bin]]
+name = "aim_wire"
+path = "fuzz_targets/aim_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_messages"
 path = "fuzz_targets/bedrock_messages.rs"
 test = false
@@ -168,6 +175,20 @@ bench = false
 [[bin]]
 name = "singulr_response"
 path = "fuzz_targets/singulr_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cato_response"
+path = "fuzz_targets/cato_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pillar_response"
+path = "fuzz_targets/pillar_response.rs"
 test = false
 doc = false
 bench = false

@@ -1,7 +1,7 @@
 id: B8130
 milestone: M11 distribution
 title: Standalone Helm chart core
-status: blocked
+status: todo
 depends_on: []
 file: tasks/B8130-helm-chart-core.yaml
 covers:
@@ -14,5 +14,5 @@ parent: B151
 split_from: B152
 resolution: null
 superseded_by: null
-blocked_reason: "waits for Max: the gate has no pinned helm or helm-unittest, and the bundled postgresql and redis subcharts need network or vendored chart archives"
+blocked_reason: null
 pr: null

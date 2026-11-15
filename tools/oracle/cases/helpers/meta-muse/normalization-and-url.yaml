@@ -1,0 +1,53 @@
+kind: helper
+name: normalization-and-url
+call:
+  b6414:
+    function: normalize
+    languages:
+      - English
+      - english
+      - '  en  '
+      - en-US
+      - fr_CA
+      - zh-Hans
+      - iw
+      - tl
+      - fil
+      - Mandarin Chinese
+      - ''
+      - '   '
+      - Klingon
+      - engl
+    tokens:
+      - secret
+      - '  secret  '
+      - bearer abc
+      - BEARER   abc
+      - Bearer
+      - 'bearer   '
+      - ''
+      - '   '
+      - Basic xyz
+      - Bearer abc def
+    urls:
+      - null
+      - ''
+      - wss://api.meta.ai
+      - https://example.com/meta/audio?x=1
+      - wss://example.com:8443/x
+      - '  https://Example.COM/audio  '
+      - wss://user:pw@example.com/x
+      - wss://user@example.com/x
+      - http://example.com/x
+      - /relative
+      - wss://example.com/x#frag
+      - not a url
+    models:
+      - muse-voice-transcribe-1.0
+      - meta/muse-voice-transcribe-1.0
+      - 'meta/muse-voice-transcribe-1.0  '
+      - '  meta/muse-voice-transcribe-1.0'
+      - gpt-4o
+      - meta/gpt-4o
+env: {}
+compare: {ignore: []}
