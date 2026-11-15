@@ -12,9 +12,7 @@ pub const MISSING_API_KEY_MESSAGE: &str =
 pub enum ManusResponsesError {
     #[error(transparent)]
     Contract(#[from] ResponsesContractError),
-    #[error(
-        "Manus API key is required. Set MANUS_API_KEY environment variable or pass api_key parameter."
-    )]
+    #[error("{}", MISSING_API_KEY_MESSAGE)]
     MissingApiKey,
     #[error("the {name} setting could not be read: {source}")]
     Environment {
