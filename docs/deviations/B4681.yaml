@@ -1,7 +1,7 @@
 task: B4681
 deviations:
   - what: The tools column is stored as JSON text and read back as a typed list of MCPToolsetTool; the row type carries the tools as Option<String>.
-    why: Rust has no dynamic row value, so the database layer serializes the tools array to JSON when storing and parses it back when retrieving. LiteLLM stores the same json.dumps text in the column and decodes it in _toolset_from_row; the SQL read uses #>> '{}' so a column holding the encoded string and one holding a bare JSON array both decode to the same list.
+    why: Rust has no dynamic row value, so the database layer serializes the tools array to JSON when storing and parses it back when retrieving. LiteLLM stores the same json.dumps text in the column and decodes it in _toolset_from_row; the SQL read extracts the jsonb text, so a column holding the encoded string and one holding a bare JSON array both decode to the same list.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L73-L80
   - what: An update sends only the fields the caller set, never toolset_id, and a null toolset_name or tools is a no-op while an explicit null description clears it.
     why: The typed UpdateMCPToolsetRequest records absent, null and set for each optional field, which is what model_dump(exclude_unset=True) plus LiteLLM's own filtering expresses; a required name and tool list cannot be cleared, and description stays nullable.
