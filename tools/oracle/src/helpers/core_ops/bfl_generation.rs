@@ -8,8 +8,8 @@ use betterlite_core::api::bfl::generation::{
 };
 use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::reply::ImageDatum;
-use http::HeaderMap;
 use indexmap::IndexMap;
+use reqwest::header::HeaderMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
