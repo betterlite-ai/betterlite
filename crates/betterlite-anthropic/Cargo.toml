@@ -14,6 +14,8 @@ betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-streaming = { path = "../betterlite-streaming" }
+betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex = "0.4.3"
@@ -34,6 +36,7 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+async-trait = "0.1.92"
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util", "time"] }
 tracing-subscriber.workspace = true
