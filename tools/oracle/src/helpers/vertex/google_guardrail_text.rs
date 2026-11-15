@@ -110,7 +110,7 @@ fn resolve_request(given: &RequestCall) -> Value {
     outcome(
         called.then_some(texts.as_slice()),
         request_data.as_ref(),
-        Json::Object(data),
+        &data,
     )
 }
 
@@ -130,7 +130,7 @@ fn resolve_response(given: &ResponseCall) -> Value {
     outcome(
         called.then_some(texts.as_slice()),
         merged.as_ref(),
-        Json::Object(response),
+        &response,
     )
 }
 
@@ -151,7 +151,7 @@ fn resolve_stream(given: &StreamCall) -> Value {
     })
 }
 
-fn outcome(texts: Option<&[String]>, request_data: Option<&Object>, data: Json) -> Value {
+fn outcome(texts: Option<&[String]>, request_data: Option<&Object>, data: &Object) -> Value {
     json!({
         "texts": texts,
         "request_data": request_data,
