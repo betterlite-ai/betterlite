@@ -61,7 +61,14 @@ pub fn build_akto_payload(
 ) -> Result<AktoPayload, AktoError> {
     let request_body = build_request_body(inputs, request_data);
     let request_headers = build_request_headers(request_data);
-    let tag = build_tag_metadata(request_data);
+    let mut tag = BTreeMap::from([("gen-ai".to_owned(), "Gen AI".to_owned())]);
+    for name in ["user_id", "team_id"] {
+        let value =
+            metadata_value(request_data, &format!("user_api_key_{name}")).unwrap_or_default();
+        if !value.is_empty() {
+            tag.insert(name.to_owned(), value);
+        }
+    }
     let (response_payload, response_headers) =
         response_encoding(inputs, request_data, include_response)?;
     let tag_text = serde_json::to_string(&tag).map_err(|source| AktoError::Encode { source })?;
@@ -215,26 +222,16 @@ fn proxy_headers(
 fn build_request_headers(
     request_data: &BTreeMap<String, GuardrailValue>,
 ) -> BTreeMap<String, String> {
-    let mut headers = BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]);
-    if let Some(proxied) = proxy_headers(request_data) {
-        headers.extend(proxied.iter().filter_map(|(name, value)| {
+    let copied = proxy_headers(request_data)
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, value)| {
             let text = value_text(value);
             (!name.is_empty() && !text.is_empty()).then(|| (name.to_lowercase(), text))
-        }));
-    }
+        });
+    let mut headers = BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]);
+    headers.extend(copied);
     headers
-}
-
-fn build_tag_metadata(request_data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, String> {
-    let mut tag = BTreeMap::from([("gen-ai".to_owned(), "Gen AI".to_owned())]);
-    for name in ["user_id", "team_id"] {
-        let value =
-            metadata_value(request_data, &format!("user_api_key_{name}")).unwrap_or_default();
-        if !value.is_empty() {
-            tag.insert(name.to_owned(), value);
-        }
-    }
-    tag
 }
 
 fn metadata_value(request_data: &BTreeMap<String, GuardrailValue>, key: &str) -> Option<String> {
