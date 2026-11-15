@@ -45,11 +45,14 @@ impl SonioxLogger for PrePostLogger<'_, '_> {
                 model: None,
                 additional_args: AdditionalArgs {
                     api_base: Some(record.url),
+                    headers: None,
+                    complete_input_dict: Some(RawBody::Object(record.body)),
+                    request_str: None,
+                    openai_sdk: None,
                     passthrough: IndexMap::from([(
                         String::from(ATRANSCRIPTION_FIELD),
                         Json::Bool(true),
                     )]),
-                    ..logged_args(record.body)
                 },
             },
             self.env,
@@ -63,22 +66,18 @@ impl SonioxLogger for PrePostLogger<'_, '_> {
             &PostCall {
                 original_response: record.original_response,
                 input: record.input,
-                additional_args: logged_args(record.body),
+                additional_args: AdditionalArgs {
+                    api_base: None,
+                    headers: None,
+                    complete_input_dict: Some(RawBody::Object(record.body)),
+                    request_str: None,
+                    openai_sdk: None,
+                    passthrough: IndexMap::new(),
+                },
             },
             self.env,
         );
         Ok(())
-    }
-}
-
-fn logged_args(body: IndexMap<String, Json>) -> AdditionalArgs {
-    AdditionalArgs {
-        api_base: None,
-        headers: None,
-        complete_input_dict: Some(RawBody::Object(body)),
-        request_str: None,
-        openai_sdk: None,
-        passthrough: IndexMap::new(),
     }
 }
 

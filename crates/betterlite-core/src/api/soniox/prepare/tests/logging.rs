@@ -16,7 +16,6 @@ use betterlite_openai::api::audio_file_input::AudioFile;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
-use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::super::logging::{
@@ -358,32 +357,20 @@ fn records_the_post_call_through_b249() {
         );
     }
 
-    assert_post_call_details(&state.model_call_details);
-}
+    let expected_json: Json = serde_json::from_str(
+        r#"{
+            "litellm_trace_id": "trace-1", "litellm_call_id": "call-1",
+            "input": "clip.wav", "litellm_params": {}, "applied_guardrails": null,
+            "model": "stt-async-v4", "log_event_type": "post_api_call",
+            "original_response": "{\"transcription\": {\"status\": \"completed\"}}",
+            "additional_args": {"complete_input_dict":
+                {"model": "stt-async-v4", "webhook_auth_header_value": "[REDACTED]"}}
+        }"#,
+    )
+    .expect("the expected details are JSON");
+    let Json::Object(expected) = expected_json else {
+        panic!("the expected details are an object");
+    };
 
-fn assert_post_call_details(details: &IndexMap<String, Json>) {
-    assert_eq!(
-        details.get("log_event_type"),
-        Some(&Json::Text(String::from("post_api_call")))
-    );
-    assert_eq!(
-        details.get("input"),
-        Some(&Json::Text(String::from("clip.wav")))
-    );
-    assert!(matches!(
-        details.get("original_response"),
-        Some(Json::Text(text)) if text.contains("\"status\": \"completed\"")
-    ));
-    let Some(Json::Object(additional)) = details.get("additional_args") else {
-        panic!("additional_args is an object");
-    };
-    assert!(!additional.contains_key("api_base"));
-    let Some(Json::Object(recorded)) = additional.get("complete_input_dict") else {
-        panic!("the complete input dict is an object");
-    };
-    assert_eq!(
-        recorded.get(SECRET_FIELD),
-        Some(&Json::Text(String::from(REDACTED_VALUE)))
-    );
-    assert!(!details.contains_key("api_key"));
+    assert_eq!(state.model_call_details, expected);
 }
