@@ -1,0 +1,13 @@
+task: B549
+deviations:
+  - what: >-
+      is_foundry_model_inference_base and is_azure_openai_v1_host read the host and path with the url crate, a
+      WHATWG parser, where LiteLLM calls urllib.parse.urlparse. On a malformed base whose authority carries a
+      backslash or embedded whitespace the two parsers disagree on the host or the path, so the inference-base
+      predicate and the api-key versus Authorization choice can differ.
+    why: >-
+      Every base betterlite parses goes through the url crate, and no working setup hands a malformed base to a
+      host boundary check. The declared behavior on the bases a setup can configure is the one LiteLLM proves:
+      hostname suffix matching with no HTTPS requirement and the /openai/deployments path exclusion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/common_utils.py#L18-L28
+kept_bugs: []
