@@ -1,0 +1,12 @@
+task: B558
+deviations:
+  - what: "A @search.score that is a finite JSON number outside rust_decimal's exact range, such as 1e30, or a value denoting a non-finite number, fails the search with the score error where LiteLLM returns the float score unchanged"
+    why: "Score is betterlite's exact Decimal record field and this task's error set carries the decimal failure, so a score no exact client can read is refused instead of being rounded or returned as a float"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L222-L223"
+  - what: "The vector_store_id is percent-encoded as one URL path segment, so a reserved byte such as /, ?, & or = becomes %XX and the id cannot add a path segment or query parameter, where LiteLLM interpolates the id literally"
+    why: "The id comes from caller configuration and this request carries the service api-key, so a literal id like ../../indexes/other/docs/search?api-version=2024-07-01&x= would retarget the request at another path or query; every valid Azure index name (letters, digits, hyphens and underscores) stays byte-identical"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L175"
+kept_bugs:
+  - what: The reply transform always drops the literal contentVector field, so a document vector stored under a custom azure_search_vector_field stays in the result attributes.
+    why: A setup that names its own vector field gets that field back in attributes today, so dropping it would remove document data from search results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L231-L235
