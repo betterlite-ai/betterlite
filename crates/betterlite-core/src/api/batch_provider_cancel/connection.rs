@@ -81,6 +81,7 @@ impl From<&CancelParams> for ResourceSdkRequestOptions {
 }
 
 // cancel_batch's only fallback the shared settings lack: the AD token get_azure_ad_token reads
+#[must_use]
 pub fn azure_ad_token<'settings>(
     params: &'settings CancelParams,
     settings: &'settings ResourceSdkSettings,

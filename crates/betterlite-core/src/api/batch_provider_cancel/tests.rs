@@ -11,7 +11,7 @@ use betterlite_config::sections::batch_provider_cancel::Settings;
 use betterlite_openai::api::batch_records::BatchIdRequest;
 use betterlite_openai::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
 use rstest::rstest;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use super::async_invoke::{self, AsyncInvokeOutput, AsyncInvokeS3Output, AsyncInvokeStatus};
@@ -88,33 +88,33 @@ fn recorded(target: CancelTarget<'_>) -> Recorded {
         CancelTarget::OpenAi(call) => Recorded::OpenAi {
             values: RecordedValues::from(call.values),
             api_base: call.api_base,
-            api_key: secret_text(call.api_key),
+            api_key: call.api_key.map(secret_text),
             organization: call.organization.map(str::to_owned),
         },
         CancelTarget::Azure(call) => Recorded::Azure {
             values: RecordedValues::from(call.values),
             api_base: call.api_base.map(str::to_owned),
-            api_key: secret_text(call.api_key),
+            api_key: call.api_key.map(secret_text),
             api_version: call.api_version.map(str::to_owned),
-            azure_ad_token: secret_text(call.azure_ad_token),
+            azure_ad_token: call.azure_ad_token.map(secret_text),
         },
         CancelTarget::Vertex(call) => Recorded::Vertex {
             values: RecordedValues::from(call.values),
             api_base: call.api_base.map(str::to_owned),
             vertex_project: call.vertex_project.map(str::to_owned),
             vertex_location: call.vertex_location.map(str::to_owned),
-            vertex_credentials: secret_text(call.vertex_credentials),
+            vertex_credentials: call.vertex_credentials.map(secret_text),
         },
         CancelTarget::Xai(call) => Recorded::Xai {
             values: RecordedValues::from(call.values),
             api_base: call.api_base.map(str::to_owned),
-            api_key: secret_text(call.api_key),
+            api_key: call.api_key.map(secret_text),
         },
         CancelTarget::Bedrock(call) => Recorded::Bedrock {
             values: RecordedValues::from(call.values),
             aws_region_name: call.params.aws_region_name.clone(),
             aws_access_key_id: call.params.aws_access_key_id.clone(),
-            aws_session_token: secret_text(call.params.aws_session_token.as_ref()),
+            aws_session_token: call.params.aws_session_token.as_ref().map(secret_text),
         },
     }
 }
@@ -139,8 +139,8 @@ fn values(entry: &Recorded) -> &RecordedValues {
     }
 }
 
-fn secret_text(secret: Option<&SecretString>) -> Option<String> {
-    secret.map(|value| value.expose_secret().to_owned())
+fn secret_text(secret: &SecretString) -> String {
+    secret.expose_secret().to_owned()
 }
 
 fn base_settings() -> Settings {

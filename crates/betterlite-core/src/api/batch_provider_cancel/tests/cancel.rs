@@ -21,10 +21,10 @@ use super::{
 
 // the structured timeout the source keeps as httpx.Timeout on the providers that declare it
 const STRUCTURED: StructuredTimeout = StructuredTimeout {
-    connect: Some(1.0),
-    read: Some(30.0),
-    write: Some(2.0),
-    pool: Some(3.0),
+    connect: Some(1.0_f64),
+    read: Some(30.0_f64),
+    write: Some(2.0_f64),
+    pool: Some(3.0_f64),
 };
 
 fn structured(connect: f64, read: f64, write: f64, pool: f64) -> CancelTimeout {
@@ -235,10 +235,10 @@ async fn batch_cancel_leaves_unset_settings_empty() {
     else {
         panic!("azure takes its branch");
     };
-    assert_eq!(
-        (azure_base, azure_key, api_version, azure_ad_token),
-        (None, None, None, None)
-    );
+    assert_eq!(azure_base, None);
+    assert_eq!(azure_key, None);
+    assert_eq!(api_version, None);
+    assert_eq!(azure_ad_token, None);
     let Recorded::Vertex {
         api_base: vertex_base,
         vertex_project,
@@ -249,15 +249,10 @@ async fn batch_cancel_leaves_unset_settings_empty() {
     else {
         panic!("vertex takes its branch");
     };
-    assert_eq!(
-        (
-            vertex_base,
-            vertex_project,
-            vertex_location,
-            vertex_credentials
-        ),
-        (None, None, None, None)
-    );
+    assert_eq!(vertex_base, None);
+    assert_eq!(vertex_project, None);
+    assert_eq!(vertex_location, None);
+    assert_eq!(vertex_credentials, None);
     let Recorded::Xai {
         api_base: xai_base,
         api_key: xai_key,
