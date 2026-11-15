@@ -4,6 +4,8 @@ use betterlite_models::decisions::Json;
 use crate::auth_cache::backend::AuthCacheTier;
 use crate::auth_cache::{AuthCache, WriteOptions, WriteTtl};
 
+mod tests;
+
 // the part of LiteLLM's UserApiKeyCache the identity store reads and writes
 #[async_trait]
 pub trait ManagementObjectCache: Send + Sync {

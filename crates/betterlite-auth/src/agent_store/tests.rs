@@ -6,7 +6,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
 
-use self::support::{FakeCache, application_claims};
+use self::support::{FakeCache, application_claims, authentication_context, microsoft_subject};
 use crate::agent_store::AgentIdentityStore;
 use crate::identity::FailureCode;
 
@@ -65,4 +65,20 @@ async fn init_without_a_database_reports_each_repository_unavailable() {
         .await
         .expect_err("no database");
     assert_eq!(subject.message, "Subject classification is unavailable");
+    let authentication = store
+        .record_authentication(&authentication_context("agent-1", Some("rev-1")))
+        .await
+        .expect_err("no database");
+    assert_eq!(
+        authentication.message,
+        "Agent authentication could not be recorded"
+    );
+    let enrollment = store
+        .enroll_interactive_human(&microsoft_subject(), "user-1")
+        .await
+        .expect_err("no database");
+    assert_eq!(
+        enrollment.message,
+        "Microsoft subject enrollment is unavailable"
+    );
 }
