@@ -16,7 +16,7 @@ use betterlite_openai::openai_base_config::{Headers, Object};
 use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Value, json};
 
-use super::input::{Call, PrepareArgs};
+use super::input::{Operation, PrepareArgs};
 use crate::helpers::{HelperError, HelperResult};
 
 type Failure = Box<HelperError>;
@@ -63,31 +63,31 @@ impl SonioxLogger for Recorder {
     }
 }
 
-pub(super) fn answer(call: &Call) -> HelperResult {
+pub(super) fn answer(call: &Operation) -> HelperResult {
     match call {
-        Call::Prepare(args) => prepare_answer(args),
-        Call::CreateBody {
+        Operation::Prepare(args) => prepare_answer(args),
+        Operation::CreateBody {
             prepare,
             model,
             file_id,
         } => Ok(create_body_answer(prepare, model, file_id.as_deref())),
-        Call::Redact { body } => {
+        Operation::Redact { body } => {
             let redacted = redacted_body(body);
             Ok(json!({ "redacted": redacted, "body": Value::Object(body.clone()) }))
         }
-        Call::Raise {
+        Operation::Raise {
             status,
             action,
             body,
             headers,
             probes,
         } => raise_answer(*status, action, body, headers, probes),
-        Call::PreCall {
+        Operation::PreCall {
             api_base,
             body,
             failing,
         } => Ok(pre_call_answer(api_base, body, *failing)),
-        Call::PostCall {
+        Operation::PostCall {
             audio,
             original_response,
             body,

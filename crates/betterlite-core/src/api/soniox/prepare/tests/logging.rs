@@ -308,7 +308,7 @@ fn records_the_pre_call_through_b249() {
             state: &mut state,
             env: &env,
         };
-        log_pre_call(&mut logger, "https://api.soniox.test", &body)
+        log_pre_call(&mut logger, "https://api.soniox.test", &body);
     };
 
     let details = &state.model_call_details;
@@ -351,7 +351,7 @@ fn records_the_post_call_through_b249() {
             Some(&AudioFile::Text("clip.wav")),
             &response,
             &body,
-        )
+        );
     };
 
     let expected_json: Json = serde_json::from_str(

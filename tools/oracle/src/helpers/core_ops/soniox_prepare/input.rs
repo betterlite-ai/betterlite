@@ -6,7 +6,7 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    pub(super) calls: Vec<Call>,
+    pub(super) calls: Vec<Operation>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -21,7 +21,7 @@ pub(super) struct PrepareArgs {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum Call {
+pub(super) enum Operation {
     Prepare(PrepareArgs),
     CreateBody {
         prepare: PrepareArgs,
