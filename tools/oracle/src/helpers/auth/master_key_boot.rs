@@ -25,12 +25,14 @@ use serde_json::{Value, json};
 use crate::helpers::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DatabaseInput {
     salt_key_is_set: bool,
     is_configured: bool,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     master_key: Option<String>,
     environment_master_key: Option<String>,
