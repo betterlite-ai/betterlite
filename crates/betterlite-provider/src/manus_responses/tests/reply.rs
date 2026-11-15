@@ -82,12 +82,16 @@ fn a_reply_default_is_filled_before_the_typed_record_is_built() {
 fn null_fields_get_the_manus_defaults() {
     let upstream = response(
         200,
-        r#"{"id":null,"created_at":5,"reasoning":null,"text":null,"output":null,"usage":null}"#,
+        r#"{"id":null,"created_at":5,"reasoning":null,"text":null,"output":null,"usage":null,"status":"completed"}"#,
     );
     let (reply, _logging) = created(&upstream);
     assert_eq!(
         reply.get("id"),
         Some(&Json::Text(format!("unknown-{SUFFIX}")))
+    );
+    assert_eq!(
+        reply.get("status"),
+        Some(&Json::Text(String::from("completed")))
     );
     assert_eq!(reply.get("reasoning"), Some(&Json::Object(IndexMap::new())));
     assert_eq!(reply.get("text"), Some(&Json::Object(IndexMap::new())));
@@ -157,13 +161,21 @@ fn a_body_that_is_not_utf8_raises_the_openai_error_with_the_status() {
         headers: Headers::new(),
         body: vec![0xff, 0xfe, 0x7b],
     };
+    let mut logging = ResponsesLogging::default();
     let error = plain_config()
-        .transform_get_response(&upstream, &mut ResponsesLogging::default())
+        .transform_get_response(&upstream, &mut logging)
         .expect_err("invalid UTF-8 is refused");
     let ManusResponsesError::Contract(ResponsesContractError::BaseLlm(inner)) = error else {
         panic!("the failure should be the base exception");
     };
     assert_eq!(inner.status_code, 502);
+    assert!(inner.message.starts_with("the response body is not UTF-8"));
+    assert!(
+        logging
+            .model_call_details
+            .get("original_response")
+            .is_none()
+    );
 }
 
 #[test]
@@ -310,10 +322,14 @@ fn the_default_id_source_yields_eight_hex_characters() {
 
 #[test]
 fn the_unknown_id_keeps_the_configured_suffix() {
-    let upstream = response(200, r#"{"created_at":5,"output":[]}"#);
+    let upstream = response(200, r#"{"created_at":5,"output":[],"status":"completed"}"#);
     let (reply, _logging) = created(&upstream);
     assert_eq!(
         reply.get("id"),
         Some(&Json::Text(format!("unknown-{SUFFIX}")))
+    );
+    assert_eq!(
+        reply.get("status"),
+        Some(&Json::Text(String::from("completed")))
     );
 }
