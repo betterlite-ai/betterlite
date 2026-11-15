@@ -7,33 +7,13 @@ from pydantic import JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 PARAMS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-# _map_web_search_options ignores its first argument, so an empty mapping carries the call.
-EMPTY_PARAMS: dict[str, JsonValue] = {}
 
 
-class Models(TypedDict):
+class Flags(TypedDict):
+    function: Literal["flags"]
+    kind: Literal["nova2", "gpt", "minmax", "web_search", "sampling"]
+    model_cost: dict[str, JsonValue]
     models: list[str]
-
-
-class Nova2Models(Models):
-    function: Literal["nova2_models"]
-
-
-class GptModels(Models):
-    function: Literal["gpt_models"]
-
-
-class MinMaxTokens(Models):
-    function: Literal["min_max_tokens"]
-
-
-class WebSearch(Models):
-    function: Literal["web_search"]
-
-
-class ModelPair(TypedDict):
-    model: str
-    base_model: str
 
 
 class Handle(TypedDict):
@@ -45,37 +25,16 @@ class Handle(TypedDict):
     optional_params: dict[str, JsonValue]
 
 
-class DeepseekFlags(TypedDict):
-    function: Literal["deepseek_flags"]
-    cases: list[ModelPair]
-
-
-class ThinkingAccepts(TypedDict):
-    function: Literal["thinking_accepts"]
-    model_cost: dict[str, JsonValue]
-    cases: list[ModelPair]
-
-
-class Sampling(TypedDict):
-    function: Literal["sampling"]
+class Params(TypedDict):
+    function: Literal["params"]
     model_cost: dict[str, JsonValue]
     models: list[str]
-
-
-class SupportedParams(TypedDict):
-    function: Literal["supported_params"]
-    model_cost: dict[str, JsonValue]
-    models: list[str]
-
-
-class ClampValues(TypedDict):
-    optional_params: dict[str, JsonValue]
 
 
 class Clamp(TypedDict):
     function: Literal["clamp"]
     environment: dict[str, str]
-    cases: list[ClampValues]
+    cases: list[dict[str, JsonValue]]
 
 
 class Arguments(TypedDict, total=False):
@@ -86,33 +45,12 @@ class Arguments(TypedDict, total=False):
     topK: int | None
 
 
-class ClassDefaults(TypedDict):
-    function: Literal["class_defaults"]
+class Defaults(TypedDict):
+    function: Literal["defaults"]
     arguments: Arguments
 
 
-class AutoToolChoice(TypedDict):
-    function: Literal["auto_tool_choice"]
-
-
-Input = (
-    Nova2Models
-    | GptModels
-    | MinMaxTokens
-    | Handle
-    | DeepseekFlags
-    | ThinkingAccepts
-    | Sampling
-    | SupportedParams
-    | Clamp
-    | WebSearch
-    | ClassDefaults
-    | AutoToolChoice
-)
-
-
-class BlockClass(Protocol):
-    __name__: str
+Input = Flags | Handle | Params | Clamp | Defaults
 
 
 # Both class methods have untyped bodies upstream, so the protocol carries their signatures.
@@ -120,7 +58,7 @@ class Declared(Protocol):
     @classmethod
     def get_config(cls) -> dict[str, JsonValue | property]: ...
     @classmethod
-    def get_config_blocks(cls) -> dict[str, type[BlockClass]]: ...
+    def get_config_blocks(cls) -> dict[str, type[object]]: ...
 
 
 # These three helpers take or return a bare dict upstream; the protocol restates them.
@@ -135,6 +73,9 @@ class ConverseSurface(Protocol):
         self, web_search_options: dict[str, JsonValue], model: str
     ) -> BedrockToolBlock | None: ...
 
+    @classmethod
+    def _supports_sampling_params(cls, model: str) -> bool: ...
+
     def apply_effort(
         self, model: str, effort: str, optional_params: dict[str, JsonValue]
     ) -> None:
@@ -144,7 +85,7 @@ class ConverseSurface(Protocol):
         self._clamp_thinking_budget_tokens(optional_params)
 
     def grounding(self, model: str) -> BedrockToolBlock | None:
-        return self._map_web_search_options(EMPTY_PARAMS, model)
+        return self._map_web_search_options({}, model)
 
 
 DECLARED: Declared = AmazonConverseConfig
@@ -161,15 +102,6 @@ class ConverseConfig(AmazonConverseConfig, ConverseSurface):
     def needs_min_max_tokens(self, model: str) -> bool:
         return self._requires_min_max_tokens(model)
 
-    def is_deepseek(self, model: str, base_model: str) -> bool:
-        return self._is_deepseek_model(model, base_model)
-
-    def rejects_reasoning_effort(self, model: str, base_model: str) -> bool:
-        return self._model_rejects_reasoning_effort_param(model, base_model)
-
-    def accepts_thinking(self, model: str, base_model: str) -> bool:
-        return self._model_accepts_anthropic_thinking_param(model, base_model)
-
     def supports_sampling(self, model: str) -> bool:
         return self._supports_sampling_params(model)
 
@@ -180,26 +112,23 @@ class ConverseConfig(AmazonConverseConfig, ConverseSurface):
         return JSON.validate_python(self._auto_tool_choice())
 
 
-def flag_results(flags: list[bool]) -> JsonValue:
+def flags(call: Flags) -> JsonValue:
+    litellm.model_cost = call["model_cost"]
+    adapter = ConverseConfig()
+    kind = call["kind"]
     results: list[JsonValue] = []
-    for flag in flags:
-        results.append(flag)
+    for model in call["models"]:
+        if kind == "nova2":
+            results.append(adapter.is_nova_2(model))
+        elif kind == "gpt":
+            results.append(adapter.is_gpt_reasoning(model))
+        elif kind == "minmax":
+            results.append(adapter.needs_min_max_tokens(model))
+        elif kind == "sampling":
+            results.append(adapter.supports_sampling(model))
+        else:
+            results.append(JSON.validate_python(adapter.grounding(model)))
     return {"results": results}
-
-
-def nova2_models(call: Nova2Models) -> JsonValue:
-    adapter = ConverseConfig()
-    return flag_results([adapter.is_nova_2(model) for model in call["models"]])
-
-
-def gpt_models(call: GptModels) -> JsonValue:
-    adapter = ConverseConfig()
-    return flag_results([adapter.is_gpt_reasoning(model) for model in call["models"]])
-
-
-def min_max_tokens(call: MinMaxTokens) -> JsonValue:
-    adapter = ConverseConfig()
-    return flag_results([adapter.needs_min_max_tokens(model) for model in call["models"]])
 
 
 def handle(call: Handle) -> JsonValue:
@@ -210,66 +139,27 @@ def handle(call: Handle) -> JsonValue:
     return {"params": optional_params}
 
 
-def deepseek_flags(call: DeepseekFlags) -> JsonValue:
-    adapter = ConverseConfig()
-    results: list[JsonValue] = []
-    for case in call["cases"]:
-        results.append(
-            {
-                "deepseek": adapter.is_deepseek(case["model"], case["base_model"]),
-                "rejects": adapter.rejects_reasoning_effort(
-                    case["model"], case["base_model"]
-                ),
-            }
-        )
-    return {"results": results}
-
-
-def thinking_accepts(call: ThinkingAccepts) -> JsonValue:
-    litellm.model_cost = call["model_cost"]
-    adapter = ConverseConfig()
-    return flag_results(
-        [
-            adapter.accepts_thinking(case["model"], case["base_model"])
-            for case in call["cases"]
-        ]
-    )
-
-
-def sampling(call: Sampling) -> JsonValue:
-    litellm.model_cost = call["model_cost"]
-    adapter = ConverseConfig()
-    return flag_results([adapter.supports_sampling(model) for model in call["models"]])
-
-
-def supported_params(call: SupportedParams) -> JsonValue:
+def params(call: Params) -> JsonValue:
     litellm.model_cost = call["model_cost"]
     adapter = ConverseConfig()
     results: list[JsonValue] = []
     for model in call["models"]:
         results.append(JSON.validate_python(adapter.supported(model)))
-    return {"results": results}
+    answer: dict[str, JsonValue] = {"results": results, "auto": adapter.auto_tool_choice()}
+    return answer
 
 
 def clamp(call: Clamp) -> JsonValue:
     adapter = ConverseConfig()
     results: list[JsonValue] = []
     for values in call["cases"]:
-        optional_params = PARAMS.validate_python(values["optional_params"])
+        optional_params = PARAMS.validate_python(values)
         adapter.clamp_budget(optional_params)
         results.append(optional_params)
     return {"results": results}
 
 
-def web_search(call: WebSearch) -> JsonValue:
-    adapter = ConverseConfig()
-    results: list[JsonValue] = []
-    for model in call["models"]:
-        results.append(JSON.validate_python(adapter.grounding(model)))
-    return {"results": results}
-
-
-def class_defaults(call: ClassDefaults) -> JsonValue:
+def defaults(call: Defaults) -> JsonValue:
     instance = AmazonConverseConfig(**call["arguments"])
     encoded: dict[str, JsonValue] = {}
     for name, value in DECLARED.get_config().items():
@@ -289,26 +179,12 @@ def class_defaults(call: ClassDefaults) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    if input_value["function"] == "nova2_models":
-        return nova2_models(input_value)
-    if input_value["function"] == "gpt_models":
-        return gpt_models(input_value)
-    if input_value["function"] == "min_max_tokens":
-        return min_max_tokens(input_value)
+    if input_value["function"] == "flags":
+        return flags(input_value)
     if input_value["function"] == "handle":
         return handle(input_value)
-    if input_value["function"] == "deepseek_flags":
-        return deepseek_flags(input_value)
-    if input_value["function"] == "thinking_accepts":
-        return thinking_accepts(input_value)
-    if input_value["function"] == "sampling":
-        return sampling(input_value)
-    if input_value["function"] == "supported_params":
-        return supported_params(input_value)
+    if input_value["function"] == "params":
+        return params(input_value)
     if input_value["function"] == "clamp":
         return clamp(input_value)
-    if input_value["function"] == "web_search":
-        return web_search(input_value)
-    if input_value["function"] == "class_defaults":
-        return class_defaults(input_value)
-    return ConverseConfig().auto_tool_choice()
+    return defaults(input_value)

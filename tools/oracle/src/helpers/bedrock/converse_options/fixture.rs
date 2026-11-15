@@ -1,10 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::convert::Infallible;
 use std::future::{Future, ready};
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
-use betterlite_bedrock::bedrock_model_capabilities::ModelInfoLookup;
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
@@ -14,30 +12,19 @@ use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_ro
 use betterlite_models::catalog::{BundledCatalog, CatalogError, ModelCatalog, UnknownFields};
 use betterlite_models::fetch_policy::response::FetchResponse;
 use betterlite_models::fireworks_catalog_metadata::Catalog;
-use betterlite_models::full_model_metadata::cache::{MetadataCaches, ModelInfoCache};
-use betterlite_models::full_model_metadata::error::FullMetadataError;
-use betterlite_models::full_model_metadata::parameters::ProviderParameterSource;
-use betterlite_models::full_model_metadata::record::ModelInfo;
-use betterlite_models::full_model_metadata::{FullMetadataSources, HelperSources, get_model_info};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::lemonade_model_metadata::{ModelInfoClient, ModelInfoRequest};
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::MetadataEnvironment;
-use betterlite_models::model_metadata_resolution::MetadataRequest;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
 use betterlite_models::model_metadata_resolution::hf_config::{HF_CONFIG_BASE_URL, HfConfigClient};
 use betterlite_models::model_metadata_resolution::names::{
     ModelCostMap, ModelCostMapError, NameNormalizers,
 };
-use betterlite_models::params::CallType;
-use betterlite_models::params::capabilities::{OpenAiCapability, OpenAiConfigTag};
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::provider_metadata_factory::selection::MetadataQuery;
 use betterlite_models::resolution::ResolutionContext;
-
-const METADATA_CACHE_SIZE: i64 = 128;
 
 const NORMALIZERS: NameNormalizers = NameNormalizers {
     bedrock_base_model: get_bedrock_base_model,
@@ -133,19 +120,6 @@ impl Fixture {
         }
     }
 
-    pub(super) fn metadata_environment<'fixture>(
-        &'fixture self,
-        resolution: &'fixture ResolutionContext<'fixture>,
-    ) -> MetadataEnvironment<'fixture> {
-        MetadataEnvironment {
-            model_cost: &self.entries.entries,
-            vertex: &self.entries.vertex,
-            generalizations: &self.packaged.generalizations,
-            resolution,
-            normalizers: NORMALIZERS,
-        }
-    }
-
     pub(super) fn capability_environment<'fixture>(
         &'fixture self,
         resolution: &'fixture ResolutionContext<'fixture>,
@@ -153,63 +127,18 @@ impl Fixture {
         dynamic: &'fixture NoDynamicMetadata,
     ) -> CapabilityEnvironment<'fixture, NoDynamicMetadata, NoHfTransport> {
         CapabilityEnvironment {
-            metadata: self.metadata_environment(resolution),
+            metadata: MetadataEnvironment {
+                model_cost: &self.entries.entries,
+                vertex: &self.entries.vertex,
+                generalizations: &self.packaged.generalizations,
+                resolution,
+                normalizers: NORMALIZERS,
+            },
             keys,
             dynamic,
             hf: &self.hf,
             provider_catalog: &self.provider_catalog,
             provider_generation: 0,
         }
-    }
-}
-
-pub(super) struct CachedModelInfo<'fixture> {
-    pub(super) fixture: &'fixture Fixture,
-    pub(super) resolution: &'fixture ResolutionContext<'fixture>,
-    pub(super) capabilities: BTreeSet<OpenAiCapability>,
-}
-
-impl ModelInfoLookup for CachedModelInfo<'_> {
-    type Error = FullMetadataError<Infallible>;
-
-    async fn bedrock_model_info(&self, model: &str) -> Result<ModelInfo, Self::Error> {
-        let request = MetadataRequest {
-            model,
-            custom_llm_provider: Some("bedrock"),
-            api_base: None,
-            api_key: None,
-        };
-        let parameters = ProviderParameterSource {
-            resolution: self.resolution,
-            call_type: CallType::ChatCompletion,
-            config: OpenAiConfigTag::UnknownModel,
-            capabilities: &self.capabilities,
-            base_model: None,
-        };
-        let environment = self.fixture.metadata_environment(self.resolution);
-        let dynamic = NoDynamicMetadata;
-        let sources = FullMetadataSources {
-            helper: HelperSources {
-                environment: &environment,
-                dynamic: &dynamic,
-                hf: &self.fixture.hf,
-            },
-            provider_query: MetadataQuery {
-                catalog: &self.fixture.provider_catalog,
-                generation: 0,
-            },
-            parameters: &parameters,
-        };
-        let mut keys = ModelCostKeys::default();
-        let caches = MetadataCaches {
-            full: ModelInfoCache::new(METADATA_CACHE_SIZE),
-            helper: ModelInfoCache::new(METADATA_CACHE_SIZE),
-        };
-        let handle = get_model_info(&request, &sources, &mut keys, &caches).await?;
-        let info = handle
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        Ok(info)
     }
 }

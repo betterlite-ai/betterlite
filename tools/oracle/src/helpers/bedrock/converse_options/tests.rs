@@ -51,7 +51,11 @@ fn an_unknown_function_is_not_a_bedrock_converse_options_input() {
 
 #[test]
 fn a_function_name_selects_its_variant() {
-    let input =
-        serde_json::json!({"function": "nova2_models", "models": ["amazon.nova-2-lite-v1:0"]});
+    let input = serde_json::json!({
+        "function": "flags",
+        "kind": "nova2",
+        "model_cost": {},
+        "models": ["amazon.nova-2-lite-v1:0"],
+    });
     Op::check(&input).expect("a well-typed input should check");
 }
