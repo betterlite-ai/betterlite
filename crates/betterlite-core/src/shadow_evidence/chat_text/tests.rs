@@ -102,6 +102,8 @@ fn final_text_reads_prose_and_calls(#[case] response: &str, #[case] expected: &s
 #[case::true_is_stringified(r#"{"choices":[{"finish_reason":true}]}"#, "True")]
 #[case::zero_is_unknown(r#"{"choices":[{"finish_reason":0}]}"#, "unknown")]
 #[case::list_keeps_json_text(r#"{"choices":[{"finish_reason":["stop"]}]}"#, r#"["stop"]"#)]
+#[case::empty_list_is_unknown(r#"{"choices":[{"finish_reason":[]}]}"#, "unknown")]
+#[case::empty_object_is_unknown(r#"{"choices":[{"finish_reason":{}}]}"#, "unknown")]
 #[case::no_choices(r#"{"choices":[]}"#, "unknown")]
 fn finish_reason_reads_the_choice(#[case] response: &str, #[case] expected: &str) {
     assert_eq!(finish_reason(&json(response)), expected);
