@@ -30,13 +30,13 @@ enum B5848Error {
 pub(crate) fn run(input: &Input) -> HelperResult {
     let mut outcomes = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
-        outcomes.push(run_step(step).map_err(helper_error)?);
+        outcomes.push(run_step(step).map_err(|error| helper_error(&error))?);
     }
     Ok(Value::Array(outcomes))
 }
 
-fn helper_error(error: B5848Error) -> Box<HelperError> {
-    let status = match &error {
+fn helper_error(error: &B5848Error) -> Box<HelperError> {
+    let status = match error {
         B5848Error::Rerank(HuggingfaceRerankError::Huggingface(source)) => Some(source.status_code),
         B5848Error::Rerank(_) | B5848Error::Json(_) => None,
     };
@@ -53,7 +53,7 @@ fn helper_error(error: B5848Error) -> Box<HelperError> {
 fn run_step(step: &Step) -> Result<Value, B5848Error> {
     match step {
         Step::Url(url) => Ok(url_value(url)),
-        Step::SupportedParams(_) => Ok(json!(SUPPORTED_RERANK_PARAMS)),
+        Step::SupportedParams => Ok(json!(SUPPORTED_RERANK_PARAMS)),
         Step::Params(params) => Ok(serde_json::to_value(map_cohere_rerank_params(
             params.non_default_params.as_ref(),
         ))?),

@@ -14,7 +14,7 @@ pub(crate) struct Input {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Step {
     Url(UrlStep),
-    SupportedParams(SupportedParamsStep),
+    SupportedParams,
     Params(ParamsStep),
     ValidateEnvironment(ValidateEnvironmentStep),
     Request(RequestStep),
@@ -29,9 +29,6 @@ pub(crate) struct UrlStep {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SupportedParamsStep {}
-
-#[derive(Debug, Deserialize)]
 pub(crate) struct ParamsStep {
     #[serde(default)]
     pub(crate) non_default_params: Option<BTreeMap<String, Json>>,
@@ -42,7 +39,9 @@ pub(crate) struct ValidateEnvironmentStep {
     #[serde(default)]
     pub(crate) headers: Headers,
     pub(crate) api_key: Option<String>,
-    pub(crate) api_base: Option<String>,
+    // the config resolves the base here and uses only the key, so the case keeps it
+    #[serde(rename = "api_base")]
+    pub(crate) _api_base: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -140,11 +140,11 @@ fn parse_body(body: &[u8], status_code: Option<u16>) -> Result<Value, Huggingfac
             limit: MAX_RESPONSE_BYTES,
         });
     }
+    let status = status_code.unwrap_or(DEFAULT_ERROR_STATUS);
     serde_json::from_slice(body).map_err(|_source| {
-        HuggingfaceRerankError::Huggingface(get_error_class(
-            &String::from_utf8_lossy(body),
-            status_code.unwrap_or(DEFAULT_ERROR_STATUS),
-        ))
+        // invalid UTF-8 never parses as JSON, so the substitute is the message
+        let text = str::from_utf8(body).unwrap_or("the response body is not UTF-8");
+        HuggingfaceRerankError::Huggingface(get_error_class(text, status))
     })
 }
 

@@ -56,12 +56,12 @@ impl TextTokenCounter for RecordedCounter {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((model.to_owned(), text.to_owned()));
-        match self
+        let counted = self
             .remaining
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-        {
+            .pop_front();
+        match counted {
             Some(Some(value)) => Ok(value),
             Some(None) | None => Err(CountError::MissingInput),
         }
@@ -108,13 +108,13 @@ fn run_response(
     counts: &[Option<u64>],
     id: &str,
 ) -> Result<RerankResponse, HuggingfaceRerankError> {
-    let request_data = params(request_data);
+    let parsed = params(request_data);
     let counter = RecordedCounter::new(counts);
     let request = ResponseRequest {
         model: MODEL,
         status_code: status,
         body: body.as_bytes(),
-        request_data: &request_data,
+        request_data: &parsed,
     };
     transform_rerank_response(&request, &counter, &FixedId(id))
 }
@@ -295,7 +295,7 @@ fn request_body_requires_texts() {
 
 #[test]
 fn request_body_keeps_a_null_query_as_present() {
-    assert!(transform_rerank_request(&params(r#"{"query": null, "texts": []}"#)).is_ok());
+    transform_rerank_request(&params(r#"{"query": null, "texts": []}"#)).unwrap();
 }
 
 #[test]
@@ -379,14 +379,13 @@ fn response_keeps_only_items_with_an_index_and_a_score() {
 
 #[test]
 fn response_id_comes_from_the_id_source() {
-    let response =
-        run_response(r#"[]"#, Some(200), r#"{}"#, &[Some(1), Some(2)], "the-id").unwrap();
+    let response = run_response("[]", Some(200), "{}", &[Some(1), Some(2)], "the-id").unwrap();
     assert_eq!(response.id.as_deref(), Some("the-id"));
 }
 
 #[test]
 fn response_meta_carries_the_version_billed_units_and_tokens() {
-    let response = success(r#"[]"#, r#"{"query": "q"}"#, &[Some(7), Some(11)]);
+    let response = success("[]", r#"{"query": "q"}"#, &[Some(7), Some(11)]);
     let response_meta = meta(&response);
     assert_eq!(
         response_meta.api_version,
@@ -550,13 +549,13 @@ fn response_output_fallback_is_ten_per_item() {
 
 #[test]
 fn response_output_fallback_is_ten_for_an_empty_list() {
-    let response = success(r#"[]"#, r#"{"query": ""}"#, &[None, Some(9)]);
+    let response = success("[]", r#"{"query": ""}"#, &[None, Some(9)]);
     assert_eq!(tokens(&response), (0, 10));
 }
 
 #[test]
 fn response_input_fallback_uses_the_query_alone() {
-    let response = success(r#"[]"#, r#"{"query": "query"}"#, &[None, Some(9)]);
+    let response = success("[]", r#"{"query": "query"}"#, &[None, Some(9)]);
     assert_eq!(tokens(&response), (20, 10));
 }
 
@@ -572,7 +571,7 @@ fn response_input_fallback_uses_the_full_query_and_documents() {
 
 #[test]
 fn response_malformed_body_is_a_huggingface_error() {
-    let error = run_response("not json", Some(503), r#"{}"#, &[], "id").unwrap_err();
+    let error = run_response("not json", Some(503), "{}", &[], "id").unwrap_err();
     match error {
         HuggingfaceRerankError::Huggingface(source) => {
             assert_eq!(source.status_code, 503);
@@ -592,7 +591,7 @@ fn response_malformed_body_is_a_huggingface_error() {
 
 #[test]
 fn response_malformed_body_without_a_status_reports_500() {
-    let error = run_response("not json", None, r#"{}"#, &[], "id").unwrap_err();
+    let error = run_response("not json", None, "{}", &[], "id").unwrap_err();
     assert!(matches!(
         error,
         HuggingfaceRerankError::Huggingface(source) if source.status_code == 500
@@ -600,9 +599,18 @@ fn response_malformed_body_without_a_status_reports_500() {
 }
 
 #[test]
+fn response_non_utf8_body_is_a_huggingface_error() {
+    assert!(matches!(
+        decode_rerank_response(b"[\xff]", Some(503)),
+        Err(HuggingfaceRerankError::Huggingface(source))
+            if source.status_code == 503 && source.message == "the response body is not UTF-8"
+    ));
+}
+
+#[test]
 fn response_non_list_body_is_a_shape_error() {
     assert!(matches!(
-        run_response(r#"{"index": 0}"#, Some(200), r#"{}"#, &[], "id"),
+        run_response(r#"{"index": 0}"#, Some(200), "{}", &[], "id"),
         Err(HuggingfaceRerankError::ResponseShape)
     ));
 }
@@ -610,14 +618,14 @@ fn response_non_list_body_is_a_shape_error() {
 #[test]
 fn response_non_object_item_is_an_item_error() {
     assert!(matches!(
-        run_response(r#"[1]"#, Some(200), r#"{}"#, &[], "id"),
+        run_response("[1]", Some(200), "{}", &[], "id"),
         Err(HuggingfaceRerankError::ResponseItem { position: 0, .. })
     ));
 }
 
 #[test]
 fn response_oversized_body_is_rejected() {
-    let body = vec![b' '; 1_048_577];
+    let body = vec![b' '; 0x0010_0001];
     assert!(matches!(
         decode_rerank_response(&body, Some(200)),
         Err(HuggingfaceRerankError::ResponseTooLarge { .. })
@@ -626,10 +634,10 @@ fn response_oversized_body_is_rejected() {
 
 #[test]
 fn response_body_at_the_limit_is_decoded() {
-    let mut body = vec![b' '; 1_048_576];
+    let mut body = vec![b' '; 0x0010_0000];
     body[0] = b'[';
-    body[1_048_575] = b']';
-    assert!(decode_rerank_response(&body, Some(200)).is_ok());
+    body[0x000F_FFFF] = b']';
+    decode_rerank_response(&body, Some(200)).unwrap();
 }
 
 #[test]
@@ -649,7 +657,7 @@ fn response_document_text_must_be_a_string() {
 #[test]
 fn response_request_query_must_be_a_string() {
     assert!(matches!(
-        run_response(r#"[]"#, Some(200), r#"{"query": 5}"#, &[], "id"),
+        run_response("[]", Some(200), r#"{"query": 5}"#, &[], "id"),
         Err(HuggingfaceRerankError::RequestField { field: "query" })
     ));
 }
@@ -657,7 +665,7 @@ fn response_request_query_must_be_a_string() {
 #[test]
 fn response_request_texts_must_be_a_list() {
     assert!(matches!(
-        run_response(r#"[]"#, Some(200), r#"{"texts": "x"}"#, &[], "id"),
+        run_response("[]", Some(200), r#"{"texts": "x"}"#, &[], "id"),
         Err(HuggingfaceRerankError::RequestField { field: "texts" })
     ));
 }
@@ -670,7 +678,7 @@ fn response_request_return_flags_must_be_bools(
     #[case] expected: &'static str,
 ) {
     assert!(matches!(
-        run_response(r#"[]"#, Some(200), request_data, &[], "id"),
+        run_response("[]", Some(200), request_data, &[], "id"),
         Err(HuggingfaceRerankError::RequestField { field }) if field == expected
     ));
 }
