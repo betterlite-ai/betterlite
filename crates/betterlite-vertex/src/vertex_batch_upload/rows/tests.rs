@@ -173,6 +173,29 @@ async fn chat_options(#[case] option: &str, #[case] expected: &str) {
     assert!(rows.first().unwrap().contains(expected));
 }
 
+#[rstest]
+#[case::no_body(r#"{"url":"/v1/chat/completions"}"#)]
+#[case::null_body(r#"{"url":"/v1/chat/completions","body":null}"#)]
+#[case::empty_body(r#"{"url":"/v1/chat/completions","body":{}}"#)]
+#[tokio::test]
+async fn chat_defaults_to_an_empty_body(#[case] line: &str) {
+    let rows = rows_of(line).await;
+    assert_eq!(
+        rows,
+        [r#"{"request": {"contents": [{"role": "user", "parts": [{"text": " "}]}]}}"#]
+    );
+}
+
+#[tokio::test]
+async fn chat_without_a_model_still_converts_its_messages() {
+    let line =
+        r#"{"url":"/v1/chat/completions","body":{"messages":[{"role":"user","content":"hi"}]}}"#;
+    assert_eq!(
+        rows_of(line).await,
+        [r#"{"request": {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}}"#]
+    );
+}
+
 #[tokio::test]
 async fn chat_key_order() {
     let body = r#""model":"gemini-2.0-flash","messages":[{"role":"user","content":"hi"}],"temperature":0.5,"max_tokens":16"#;

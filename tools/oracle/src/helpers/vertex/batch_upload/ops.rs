@@ -38,7 +38,7 @@ use thiserror::Error;
 
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
-const MAX_LINE_BYTES: usize = 1_048_576;
+const MAX_LINE_BYTES: usize = 0x0010_0000;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
