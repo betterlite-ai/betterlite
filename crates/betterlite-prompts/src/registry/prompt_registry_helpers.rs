@@ -38,7 +38,10 @@ fn version_suffix(prompt_id: &str, marker: &str) -> Option<i64> {
 
 #[must_use]
 pub fn prompt_environment_or_default(environment: Option<&str>) -> String {
-    environment.map_or_else(|| DEFAULT_PROMPT_ENVIRONMENT.to_owned(), str::to_owned)
+    if let Some(chosen) = environment {
+        return chosen.to_owned();
+    }
+    DEFAULT_PROMPT_ENVIRONMENT.to_owned()
 }
 
 #[must_use]
