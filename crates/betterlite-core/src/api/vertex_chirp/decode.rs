@@ -14,5 +14,5 @@ pub fn decode_chirp_backend_event(
             known_bytes: bytes.len(),
         }))
         .map_err(ProtocolError::from)?;
-    serde_json::from_slice(bytes).map_err(ChirpAdapterError::Event)
+    serde_json::from_slice(bytes).map_err(ChirpAdapterError::from)
 }

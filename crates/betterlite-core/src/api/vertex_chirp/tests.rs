@@ -133,6 +133,7 @@ struct Fixture {
 
 fn fixture(location: Option<&str>) -> Fixture {
     let resolver = CountingResolver::tracking();
+    let token: Arc<dyn AccessTokenResolver> = Arc::clone(&resolver);
     let factory = RecordingFactory::default();
     let targets = Arc::clone(&factory.targets);
     let config = VertexChirpRealtimeConfig::new(
@@ -143,7 +144,7 @@ fn fixture(location: Option<&str>) -> Fixture {
             limits: ApiLimits::default(),
             ids: Box::new(FixedIds::default()),
         },
-        Arc::clone(&resolver),
+        token,
         factory,
     )
     .expect("a valid config");
@@ -240,12 +241,12 @@ async fn no_token_until_audio() {
 
 #[test]
 fn close_usage_once() {
-    let fixture = fixture(None);
-    fixture
+    let session = fixture(None);
+    session
         .config
         .transform_realtime_request(SESSION_UPDATE, "chirp_2", None)
         .expect("a configure command");
-    fixture
+    session
         .config
         .transform_realtime_response(
             &RealtimeMessage::Text(INTERIM.to_owned()),
@@ -253,14 +254,14 @@ fn close_usage_once() {
             &transform_input(),
         )
         .expect("a transformed frame");
-    let usage = fixture
+    let usage = session
         .config
         .session_close_usage("chirp_2")
         .expect("unreported billing");
     let document = serde_json::to_value(&usage).expect("a usage document");
     assert_eq!(document["type"], "duration");
     assert_eq!(document["seconds"], 0.5_f64);
-    assert!(fixture.config.session_close_usage("chirp_2").is_none());
+    assert!(session.config.session_close_usage("chirp_2").is_none());
     assert!(
         fixture(None)
             .config
@@ -270,16 +271,29 @@ fn close_usage_once() {
 }
 
 #[rstest]
-#[case::blank("", "the vertex_project '' cannot be used in a URL")]
-#[case::parent("..", "the vertex_project '..' cannot be used in a URL")]
-#[case::slash("a/b", "the vertex_project 'a/b' cannot be used in a URL")]
-#[case::space("a b", "the vertex_project 'a b' cannot be used in a URL")]
-#[case::scheme("a:b", "the vertex_project 'a:b' cannot be used in a URL")]
-fn a_project_that_could_move_the_request_is_rejected(#[case] project: &str, #[case] message: &str) {
+#[case::project_blank("", None, "the vertex_project '' cannot be used in a URL")]
+#[case::project_parent("..", None, "the vertex_project '..' cannot be used in a URL")]
+#[case::project_slash("a/b", None, "the vertex_project 'a/b' cannot be used in a URL")]
+#[case::project_space("a b", None, "the vertex_project 'a b' cannot be used in a URL")]
+#[case::project_scheme("a:b", None, "the vertex_project 'a:b' cannot be used in a URL")]
+#[case::location_uppercase("my-project", Some("US"), "invalid vertex_location format")]
+#[case::location_empty("my-project", Some(""), "invalid vertex_location format")]
+#[case::location_injection("my-project", Some("evil.com#"), "invalid vertex_location format")]
+#[case::location_trailing_space(
+    "my-project",
+    Some("us-central1 "),
+    "invalid vertex_location format"
+)]
+#[case::location_dot("my-project", Some("us.central1"), "invalid vertex_location format")]
+fn a_project_or_location_that_could_move_the_request_is_rejected(
+    #[case] project: &str,
+    #[case] location: Option<&str>,
+    #[case] message: &str,
+) {
     let error = VertexChirpRealtimeConfig::new(
         ChirpSettings {
             project: project.to_owned(),
-            location: None,
+            location: location.map(str::to_owned),
             catalog: BundledCatalog::default().get(),
             limits: ApiLimits::default(),
             ids: Box::new(FixedIds::default()),
@@ -288,32 +302,8 @@ fn a_project_that_could_move_the_request_is_rejected(#[case] project: &str, #[ca
         RecordingFactory::default(),
     )
     .err()
-    .expect("an unsafe project");
+    .expect("an unsafe project or location");
     assert_eq!(error.to_string(), message);
-    assert_eq!(error.status_code(), Some(400));
-}
-
-#[rstest]
-#[case::uppercase("US")]
-#[case::empty("")]
-#[case::injection("evil.com#")]
-#[case::trailing_space("us-central1 ")]
-#[case::dot("us.central1")]
-fn a_location_that_could_move_the_host_is_rejected(#[case] location: &str) {
-    let error = VertexChirpRealtimeConfig::new(
-        ChirpSettings {
-            project: "my-project".to_owned(),
-            location: Some(location.to_owned()),
-            catalog: BundledCatalog::default().get(),
-            limits: ApiLimits::default(),
-            ids: Box::new(FixedIds::default()),
-        },
-        CountingResolver::tracking(),
-        RecordingFactory::default(),
-    )
-    .err()
-    .expect("an unsafe location");
-    assert_eq!(error.to_string(), "invalid vertex_location format");
     assert_eq!(error.status_code(), Some(400));
 }
 
@@ -379,7 +369,7 @@ fn headers_pass_through_unchanged() {
 
 #[rstest]
 #[case::configure(r#"{"kind":"configure"}"#, true)]
-#[case::blank(r#"{}"#, false)]
+#[case::blank("{}", false)]
 #[case::other_kind(r#"{"kind":"finish_turn"}"#, false)]
 #[case::number_kind(r#"{"kind":5}"#, false)]
 #[case::not_an_object(r#"["configure"]"#, false)]
@@ -468,7 +458,7 @@ fn audio_appends_require_configuration_and_valid_pcm16() {
 #[case::empty(0, vec![])]
 #[case::just_under(24_998, vec![24_998])]
 #[case::at_the_limit(25_000, vec![25_000])]
-#[case::just_over(25_001, vec![25_000, 1])]
+#[case::just_over(25_002, vec![25_000, 2])]
 #[case::two_chunks(50_000, vec![25_000, 25_000])]
 fn audio_appends_split_into_25000_byte_chunks(#[case] total: usize, #[case] expected: Vec<usize>) {
     let fixture = fixture(None);
