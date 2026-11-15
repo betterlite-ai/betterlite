@@ -24,6 +24,7 @@ class NoProviderReachedError(Exception):
 
 
 class APIError(Exception):
+    # the provider SDK raises an APIError that carries its status; the scripted provider imitates it
     def __init__(self, status: int) -> None:
         super().__init__(f"the scripted provider answered {status}")
         self.status_code = status
@@ -186,57 +187,38 @@ def provider_timeout(value: float | str | Phases | None) -> float | str | httpx.
             return value
 
 
+CAPTURED_FIELDS: Final[dict[str, tuple[str, ...]]] = {
+    "openai": ("api_base", "api_key", "organization", "timeout", "max_retries"),
+    "azure": ("api_base", "api_key", "api_version", "timeout", "max_retries"),
+    "vertex_ai": (
+        "api_base",
+        "vertex_project",
+        "vertex_location",
+        "vertex_credentials",
+        "timeout",
+        "max_retries",
+    ),
+    "anthropic": ("api_base", "api_key", "timeout", "max_retries"),
+    "xai": ("api_base", "api_key", "timeout"),
+}
+
+
 def capture() -> JsonValue:
     provider, kwargs = CAPTURED[0]
+    if provider not in CAPTURED_FIELDS:
+        raise UnknownRecordedProviderError(provider)
     common: dict[str, JsonValue] = {
         "provider": provider,
         "is_async": json_value(kwargs["_is_async"]),
     }
-    if provider == "openai":
-        return common | {
-            "request": request_value(kwargs["retrieve_batch_data"]),
-            "api_base": json_value(kwargs["api_base"]),
-            "api_key": json_value(kwargs["api_key"]),
-            "organization": json_value(kwargs["organization"]),
-            "timeout": json_value(kwargs["timeout"]),
-            "max_retries": json_value(kwargs["max_retries"]),
-        }
-    if provider == "azure":
-        return common | {
-            "request": request_value(kwargs["retrieve_batch_data"]),
-            "api_base": json_value(kwargs["api_base"]),
-            "api_key": json_value(kwargs["api_key"]),
-            "api_version": json_value(kwargs["api_version"]),
-            "timeout": json_value(kwargs["timeout"]),
-            "max_retries": json_value(kwargs["max_retries"]),
-            "litellm_params": azure_params(kwargs["litellm_params"]),
-        }
-    if provider == "vertex_ai":
-        return common | {
-            "batch_id": json_value(kwargs["batch_id"]),
-            "api_base": json_value(kwargs["api_base"]),
-            "vertex_project": json_value(kwargs["vertex_project"]),
-            "vertex_location": json_value(kwargs["vertex_location"]),
-            "vertex_credentials": json_value(kwargs["vertex_credentials"]),
-            "timeout": json_value(kwargs["timeout"]),
-            "max_retries": json_value(kwargs["max_retries"]),
-        }
-    if provider == "anthropic":
-        return common | {
-            "batch_id": json_value(kwargs["batch_id"]),
-            "api_base": json_value(kwargs["api_base"]),
-            "api_key": json_value(kwargs["api_key"]),
-            "timeout": json_value(kwargs["timeout"]),
-            "max_retries": json_value(kwargs["max_retries"]),
-        }
-    if provider == "xai":
-        return common | {
-            "batch_id": json_value(kwargs["batch_id"]),
-            "api_base": json_value(kwargs["api_base"]),
-            "api_key": json_value(kwargs["api_key"]),
-            "timeout": json_value(kwargs["timeout"]),
-        }
-    raise UnknownRecordedProviderError(provider)
+    captured = common | {name: json_value(kwargs[name]) for name in CAPTURED_FIELDS[provider]}
+    if "retrieve_batch_data" in kwargs:
+        captured["request"] = request_value(kwargs["retrieve_batch_data"])
+    else:
+        captured["batch_id"] = json_value(kwargs["batch_id"])
+    if "litellm_params" in kwargs:
+        captured["litellm_params"] = azure_params(kwargs["litellm_params"])
+    return captured
 
 
 def run(input_value: Input) -> JsonValue:
@@ -254,8 +236,11 @@ def run(input_value: Input) -> JsonValue:
     litellm.api_version = settings.api_version
     litellm.vertex_location = settings.vertex_location
     litellm.vertex_project = settings.vertex_project
-    for provider in ("openai", "azure", "vertex_ai", "anthropic", "xai"):
-        object.__setattr__(batches, f"{provider}_batches_instance", Recorder(provider, script.status))
+    object.__setattr__(batches, "openai_batches_instance", Recorder("openai", script.status))
+    object.__setattr__(batches, "azure_batches_instance", Recorder("azure", script.status))
+    object.__setattr__(batches, "vertex_ai_batches_instance", Recorder("vertex_ai", script.status))
+    object.__setattr__(batches, "anthropic_batches_instance", Recorder("anthropic", script.status))
+    object.__setattr__(batches, "xai_batches_instance", Recorder("xai", script.status))
     try:
         batches.retrieve_batch(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L560
             batch_id=request.batch_id,
