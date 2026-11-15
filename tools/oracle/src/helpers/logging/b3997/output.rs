@@ -54,6 +54,11 @@ pub(super) fn project_payload(value: Value) -> Value {
             }
             Value::Object(kept)
         }
-        other => other,
+        other @ (Value::Null
+        | Value::Bool(_)
+        | Value::Number(_)
+        | Value::String(_)
+        | Value::Array(_)
+        | Value::Object(_)) => other,
     }
 }

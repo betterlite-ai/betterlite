@@ -31,7 +31,7 @@ pub(super) enum HeaderMode {
 pub(super) async fn initialize_case(input: &super::Input) -> HelperResult {
     let session = open(input)?;
     let download = download_value(&session, input.object_name.as_deref()).await;
-    Ok(initialize_json(&session, download))
+    Ok(initialize_json(&session, &download))
 }
 
 async fn download_value(session: &Session, object_name: Option<&str>) -> Value {
@@ -49,7 +49,7 @@ fn download_json(session: &Session, body: Option<&[u8]>) -> Value {
     })
 }
 
-fn initialize_json(session: &Session, download: Value) -> Value {
+fn initialize_json(session: &Session, download: &Value) -> Value {
     json!({
         "is_mock_mode": session.base.is_mock_mode,
         "path_service_account": json!(session.base.path_service_account.as_ref().map(ExposeSecret::expose_secret)),
@@ -99,7 +99,7 @@ async fn send_upload(session: &Session, input: &super::Input) -> Result<Json, Bo
     let payload = logging_payload(input.payload.as_ref())?;
     let headers = RequestHeaders::new();
     let sent = log_json_data_on_gcs(&session.base, &headers, bucket, object_name, &payload);
-    sent.await.map_err(upload_failure)
+    sent.await.map_err(|error| upload_failure(&error))
 }
 
 fn upload_json(session: &Session, response: &Json) -> Value {
@@ -180,20 +180,22 @@ fn instances_json(
 }
 
 fn cache_keys(session: &Session) -> Value {
-    let guard = session.base.vertex_instances.lock();
-    let instances = guard.unwrap_or_else(PoisonError::into_inner);
+    let mutex = &session.base.vertex_instances;
+    let guard = mutex.lock().unwrap_or_else(PoisonError::into_inner);
     let mut keys = Vec::new();
-    for key in instances.keys() {
+    for key in guard.keys() {
         keys.push(key.0.expose_secret().to_owned());
     }
+    drop(guard);
     keys.sort();
     json!(keys)
 }
 
 fn header_json(session: &Session, headers: &RequestHeaders) -> Value {
-    let guard = session.auth.token_calls.lock();
-    let calls = guard.unwrap_or_else(PoisonError::into_inner);
-    let token = calls.last().map(token_json);
+    let mutex = &session.auth.token_calls;
+    let guard = mutex.lock().unwrap_or_else(PoisonError::into_inner);
+    let token = guard.last().map(token_json);
+    drop(guard);
     json!({
         "headers": headers_json(headers),
         "token": token,
@@ -201,9 +203,10 @@ fn header_json(session: &Session, headers: &RequestHeaders) -> Value {
 }
 
 fn last_request(session: &Session) -> Option<GcsRequest> {
-    let guard = session.sent.lock();
-    let sent = guard.unwrap_or_else(PoisonError::into_inner);
-    sent.last().cloned()
+    match session.sent.lock() {
+        Ok(sent) => sent.last().cloned(),
+        Err(poisoned) => poisoned.into_inner().last().cloned(),
+    }
 }
 
 fn request_json(request: &GcsRequest) -> Value {
@@ -240,10 +243,10 @@ fn logging_payload(value: Option<&Value>) -> Result<GcsLoggingPayload, Box<Helpe
     }
 }
 
-fn upload_failure(error: GcsClientError<FakeAuth, RecordingClient>) -> Box<HelperError> {
-    let mut helper = failure("MaskedHTTPStatusError", &error);
+fn upload_failure(error: &GcsClientError<FakeAuth, RecordingClient>) -> Box<HelperError> {
+    let mut helper = failure("MaskedHTTPStatusError", error);
     if let GcsClientError::Status { status } = error {
-        helper.status = Some(status);
+        helper.status = Some(*status);
     }
     helper
 }

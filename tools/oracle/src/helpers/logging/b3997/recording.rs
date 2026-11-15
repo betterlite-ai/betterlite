@@ -25,11 +25,11 @@ pub(crate) struct FakeAuth {
 
 impl FakeAuth {
     // echo the requested project so the token call shows which project the header path asked for
-    fn record(&self, request: EnsureAccessToken) -> Result<AccessToken, AuthFailure> {
-        Ok(AccessToken {
+    fn record(request: EnsureAccessToken) -> AccessToken {
+        AccessToken {
             token: SecretString::from(MOCK_TOKEN),
             project_id: request.project_id.unwrap_or_default(),
-        })
+        }
     }
 }
 
@@ -41,11 +41,11 @@ impl VertexAuth for FakeAuth {
         &self,
         request: EnsureAccessToken,
     ) -> Result<AccessToken, AuthFailure> {
-        self.record(request)
+        Ok(Self::record(request))
     }
 
     fn ensure_access_token(&self, request: EnsureAccessToken) -> Result<AccessToken, AuthFailure> {
-        self.record(request)
+        Ok(Self::record(request))
     }
 
     fn get_token_and_url(&self, request: GetTokenAndUrl) -> Result<TokenAndUrl, AuthFailure> {

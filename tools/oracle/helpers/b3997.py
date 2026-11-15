@@ -16,10 +16,7 @@ PAYLOAD_KEYS = ("id", "trace_id", "call_type", "status", "total_tokens", "model"
 
 
 class Input(TypedDict):
-    action: Literal[
-        "initialize", "async_headers", "sync_headers", "upload",
-        "logging_config", "vertex_instance",
-    ]
+    action: Literal["initialize", "async_headers", "sync_headers", "upload", "logging_config", "vertex_instance"]
     environment: NotRequired[dict[str, str]]
     bucket: NotRequired[str]
     object_name: NotRequired[str]
@@ -53,7 +50,7 @@ class Probe(GCSBucketBase):
     async def upload(
         self, bucket: str, object_name: str, payload: str | dict[str, JsonValue]
     ) -> JsonValue:
-        response = await self._log_json_data_on_gcs({}, bucket, object_name, payload)  # type: ignore[arg-type, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L294
+        response: JsonValue = await self._log_json_data_on_gcs({}, bucket, object_name, payload)  # type: ignore[arg-type, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L294
         return JSON_VALUE.validate_python(response)
 
 
@@ -118,9 +115,11 @@ def parse_or_text(text: str) -> JsonValue:
 
 def project_payload(body: JsonValue) -> JsonValue:
     match body:
-        case {"id": _, "trace_id": _}:
-            return {key: body[key] for key in PAYLOAD_KEYS}
-        case _:
+        case dict() as fields:
+            if "id" in fields and "trace_id" in fields:
+                return {key: fields[key] for key in PAYLOAD_KEYS}
+            return body
+        case None | bool() | int() | float() | str() | list():
             return body
 
 
@@ -226,12 +225,15 @@ def sync_headers_case(input_value: Input) -> JsonValue:
 
 
 def upload_case(input_value: Input) -> JsonValue:
-    bucket = input_value["bucket"]
+    bucket = input_value.get("bucket")
+    object_name = input_value.get("object_name")
+    payload = input_value.get("payload")
+    if bucket is None or object_name is None or payload is None:
+        raise ValueError("bucket, object_name and payload are required")
     probe = Probe(bucket_name=bucket)
     recorder = scripted(probe, input_value)
-    response = asyncio.run(probe.upload(bucket, input_value["object_name"], input_value["payload"]))
-    result: dict[str, JsonValue] = {"response": response, "request": recorder.last()}
-    return result
+    response = asyncio.run(probe.upload(bucket, object_name, payload))
+    return {"response": response, "request": recorder.last()}
 
 
 async def read_config(base: GCSBucketBase, dynamic: dict[str, JsonValue] | None) -> JsonValue:
