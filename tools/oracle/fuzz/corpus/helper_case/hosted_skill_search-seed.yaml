@@ -1,0 +1,8 @@
+kind: helper
+name: hosted-skill-search-seed
+call:
+  hosted_skill_search:
+    function: text
+    skill: {skill_id: litellm_skill_a, display_title: Alpha}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,27 @@
+kind: helper
+name: hosted-skill-search-reject-remote-registry
+call:
+  hosted_skill_search:
+    function: hosted
+    custom_llm_provider: anthropic
+    query: q
+    top_k: 5
+    rows:
+      - {skill_id: litellm_skill_a, display_title: Alpha, created_by: alice}
+    vectors:
+      q: [1.0, 0.0]
+      Alpha: [1.0, 1.0]
+    router: true
+calls:
+  - hosted_skill_search:
+      function: hosted
+      query: q
+      top_k: 5
+      rows:
+        - {skill_id: litellm_skill_a, display_title: Alpha, created_by: alice}
+      vectors:
+        q: [1.0, 0.0]
+        Alpha: [1.0, 1.0]
+      router: true
+env: {}
+compare: {ignore: []}

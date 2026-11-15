@@ -1,0 +1,38 @@
+kind: helper
+name: hosted-skill-search-model-before-router
+call:
+  hosted_skill_search:
+    function: search
+    query: q
+    top_k: 5
+    skills:
+      - {skill_id: litellm_skill_a, display_title: Alpha}
+    vectors:
+      q: [1.0, 0.0]
+      Alpha: [1.0, 1.0]
+    router: false
+calls:
+  - hosted_skill_search:
+      function: search
+      query: q
+      top_k: 5
+      embedding_model: test-embedding
+      skills:
+        - {skill_id: litellm_skill_a, display_title: Alpha}
+      vectors:
+        q: [1.0, 0.0]
+        Alpha: [1.0, 1.0]
+      router: false
+  - hosted_skill_search:
+      function: search
+      query: q
+      top_k: 5
+      embedding_model: test-embedding
+      skills:
+        - {skill_id: litellm_skill_a, display_title: Alpha}
+      vectors:
+        q: [1.0, 0.0]
+        Alpha: [1.0, 1.0]
+      router: true
+env: {}
+compare: {ignore: []}

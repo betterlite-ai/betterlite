@@ -1,0 +1,21 @@
+kind: helper
+name: hosted-skill-search-stable-ties
+call:
+  hosted_skill_search:
+    function: rank
+    query: q
+    top_k: 3
+    embedding_model: test-embedding
+    skills:
+      - {skill_id: litellm_skill_a, display_title: Alpha}
+      - {skill_id: litellm_skill_b, display_title: Beta}
+      - {skill_id: litellm_skill_c, display_title: Gamma}
+      - {skill_id: litellm_skill_d, display_title: Delta}
+    vectors:
+      q: [1.0, 0.0]
+      Alpha: [1.0, 1.0]
+      Beta: [1.0, 1.0]
+      Gamma: [1.0, 3.0]
+      Delta: [3.0, 1.0]
+env: {}
+compare: {ignore: []}
