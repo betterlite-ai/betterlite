@@ -1,0 +1,35 @@
+kind: helper
+name: mcp-rotation-global-env-scope-and-skips
+call:
+  mcp_rotation:
+    function: rotate_servers
+    salt_key: b2332-salt-key
+    new_master_key: b2332-new-key
+    nonce_hex: "00112233445566778899aabb"
+    touched_by: rotator-2
+    servers:
+      - server_id: scope-mix
+        env_vars:
+          - {name: API_KEY, value: "v2:gcm:ABEiM0RVZneImaq7_zPzjcHx7AGrcPHlNQCE5oUaEaV7SZVKvIlVZSE=", scope: global}
+          - {name: USER_TOKEN, value: placeholder, scope: user}
+          - {name: NO_SCOPE, value: "v2:gcm:ABEiM0RVZneImaq7_zPzjcHx7AGrcPHlNQCE5oUaEaV7SZVKvIlVZSE="}
+          - {name: EMPTY, value: "", scope: global}
+          - {name: NULLED, value: null, scope: global}
+          - {name: BROKEN, value: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", scope: global}
+          - {name: USER_EMPTY, value: "", scope: user}
+      - server_id: stored-text
+        env_vars: '[{"name": "API_KEY", "value": "v2:gcm:ABEiM0RVZneImaq7_zPzjcHx7AGrcPHlNQCE5oUaEaV7SZVKvIlVZSE=", "scope": "global"}]'
+      - server_id: invalid-text
+        env_vars: "{not json"
+      - server_id: falsey-null
+        env_vars: "null"
+      - server_id: falsey-object
+        env_vars: "{}"
+      - server_id: falsey-array
+        env_vars: []
+      - server_id: user-only
+        env_vars:
+          - {name: TOKEN, value: placeholder, scope: user}
+    oauth_clients: []
+env: {}
+compare: {ignore: []}

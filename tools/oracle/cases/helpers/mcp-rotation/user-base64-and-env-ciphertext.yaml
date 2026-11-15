@@ -1,0 +1,75 @@
+kind: helper
+name: mcp-rotation-user-base64-and-env-ciphertext
+call:
+  mcp_rotation:
+    function: rotate_user_credentials
+    salt_key: b2332-salt-key
+    new_master_key: b2332-new-key
+    nonce_hex: "00112233445566778899aabb"
+    rows:
+      - user_id: u-rotated
+        server_id: s1
+        credential_b64: "v2:gcm:ABEiM0RVZneImaq77Sz5nY3-sxeqdu30KPZCp8_kDcoPDXswgUT9x1oJNaxULYckhg=="
+      - user_id: u-legacy
+        server_id: s1
+        credential_b64: "bGVnYWN5LWNyZWRlbnRpYWwtcGxhaW4="
+      - user_id: u-blank
+        server_id: s1
+        credential_b64: ""
+      - user_id: u-stars
+        server_id: s1
+        credential_b64: "***"
+      - user_id: u-one-char
+        server_id: s1
+        credential_b64: "a"
+      - user_id: u-bad-utf8
+        server_id: s1
+        credential_b64: "__8="
+      - user_id: u-unicode
+        server_id: s2
+        credential_b64: "é"
+      - user_id: u-corrupt
+        server_id: s2
+        credential_b64: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      - user_id: u-padded-short
+        server_id: s2
+        credential_b64: "AA=="
+      - user_id: u-unpadded
+        server_id: s2
+        credential_b64: "AA"
+calls:
+  - mcp_rotation:
+      function: rotate_user_env_vars
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      rows:
+        - user_id: e-rotated
+          server_id: s1
+          values_b64: "v2:gcm:ABEiM0RVZneImaq7433dv-nCijeXMbmiNORL-JL7CcATfRLw4Sh9wS6xFdPj0DGgO5PEeyM="
+        - user_id: e-legacy
+          server_id: s1
+          values_b64: "bGVnYWN5LWNyZWRlbnRpYWwtcGxhaW4="
+        - user_id: e-blank
+          server_id: s1
+          values_b64: ""
+        - user_id: e-stars
+          server_id: s1
+          values_b64: "***"
+        - user_id: e-one-char
+          server_id: s1
+          values_b64: "a"
+        - user_id: e-bad-utf8
+          server_id: s1
+          values_b64: "__8="
+        - user_id: e-corrupt
+          server_id: s2
+          values_b64: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        - user_id: e-padded-short
+          server_id: s2
+          values_b64: "AA=="
+        - user_id: e-unpadded
+          server_id: s2
+          values_b64: "AA"
+env: {}
+compare: {ignore: []}

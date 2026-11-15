@@ -1,0 +1,33 @@
+kind: helper
+name: mcp-rotation-server-and-oauth-write-order
+call:
+  mcp_rotation:
+    function: rotate_servers
+    salt_key: b2332-salt-key
+    new_master_key: b2332-new-key
+    nonce_hex: "00112233445566778899aabb"
+    touched_by: rotator-3
+    servers:
+      - server_id: s1
+        static_headers: "\"v2:gcm:ABEiM0RVZneImaq7433EwuHtqF-Fdvqie7VG797sCdFMawOx7kFhon4aXTsYDfGxfd5hrs4tLKBY\""
+        env: {X-Api-Key: plain-value}
+      - server_id: s2
+        static_headers: "v2:gcm:ABEiM0RVZneImaq7433EwuHtqF-Fdvqie7VG797sCdFMawOx7kFhon4aXTsYDfGxfd5hrs4tLKBY"
+      - server_id: s3
+        static_headers: "\"not-a-ciphertext\""
+      - server_id: s4
+        env: {}
+      - server_id: s5
+        static_headers: null
+        env: null
+    oauth_clients:
+      - server_id: o1
+        credentials:
+          client_id: "v2:gcm:ABEiM0RVZneImaq7-zP1is7p7BuqPvPsIP5AW1XJiI-27PCM6TzKrsBxKw=="
+          client_secret: "v2:gcm:ABEiM0RVZneImaq7-zP1is7p7AGrcPHlNbpe5t7hAlRRfGaw_pD5HX49YlseBco="
+      - server_id: o2
+        credentials: {}
+      - server_id: o3
+        credentials: null
+env: {}
+compare: {ignore: []}

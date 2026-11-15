@@ -30,6 +30,7 @@ betterlite-ocr = { path = "../../../../../crates/betterlite-ocr" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
+betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
 betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }
 betterlite-tracing = { path = "../../../../../crates/betterlite-tracing" }

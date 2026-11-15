@@ -1,0 +1,38 @@
+kind: helper
+name: mcp-rotation-seed
+call:
+  mcp_rotation:
+    function: rotate_servers
+    salt_key: b2332-salt-key
+    new_master_key: b2332-new-key
+    nonce_hex: "00112233445566778899aabb"
+    touched_by: seed
+    servers:
+      - server_id: seed
+        credentials:
+          client_id: "v2:gcm:ABEiM0RVZneImaq7-zP1is7p7BuqPvPsIP5AW1XJiI-27PCM6TzKrsBxKw=="
+        env_vars:
+          - name: API_KEY
+            value: "v2:gcm:ABEiM0RVZneImaq7_zPzjcHx7AGrcPHlNQCE5oUaEaV7SZVKvIlVZSE="
+            scope: global
+        static_headers: "\"v2:gcm:ABEiM0RVZneImaq7433EwuHtqF-Fdvqie7VG797sCdFMawOx7kFhon4aXTsYDfGxfd5hrs4tLKBY\""
+        env: {X-Api-Key: seed-value}
+    oauth_clients:
+      - server_id: seed-oauth
+        credentials:
+          client_secret: "v2:gcm:ABEiM0RVZneImaq7-zP1is7p7AGrcPHlNbpe5t7hAlRRfGaw_pD5HX49YlseBco="
+calls:
+  - mcp_rotation:
+      function: rotate_user_credentials
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      rows:
+        - user_id: seed-user
+          server_id: seed
+          credential_b64: "bGVnYWN5LWNyZWRlbnRpYWwtcGxhaW4="
+        - user_id: seed-skip
+          server_id: seed
+          credential_b64: "a"
+env: {}
+compare: {ignore: []}
