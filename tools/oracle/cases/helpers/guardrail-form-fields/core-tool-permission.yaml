@@ -1,0 +1,8 @@
+kind: helper
+name: core-tool-permission
+call:
+  b6560:
+    model: tool_permission
+env: {}
+compare:
+  ignore: []

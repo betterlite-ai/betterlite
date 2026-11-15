@@ -1,0 +1,14 @@
+kind: helper
+name: openai-image-variations-variation-missing-config-data
+call:
+  openai_image_variations:
+    function: variation_missing_config_data
+    probes:
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        missing_config: true
+env: {}
+compare: {ignore: []}
