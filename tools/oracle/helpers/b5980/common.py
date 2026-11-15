@@ -128,7 +128,7 @@ EmbedCall = Callable[
 
 class AuthApi(Protocol):
     @property
-    def databricks_validate_environment(self) -> AuthCall: ...
+    def databricks_validate_environment(self) -> AuthCall: ...  # ast-grep-ignore: no-long-names
 
 
 class ChatApi(Protocol):
