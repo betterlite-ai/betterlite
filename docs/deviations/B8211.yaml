@@ -12,3 +12,6 @@ deviations:
   - what: A timeout that is not representable as a Duration (negative, NaN, infinite or too large) fails construction with a typed error. LiteLLM stores the float as given and lets httpx decide inside the call, so block_on_error governs what the caller sees.
     why: The pooled client applies a Duration, which cannot hold these values; naming the config error once at load beats a call that can never succeed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/promptguard/promptguard.py#L170
+  - what: The configured timeout is one reqwest request timeout covering connect, send and body read; LiteLLM passes the float to httpx, which applies it to connect, read, write and pool separately. A guard answer that trickles in for longer than the timeout in total succeeds in LiteLLM and fails here.
+    why: B173 provides the pooled client and betterlite bounds a request with a single deadline; an unreachable PromptGuard is still cut off, and a working answer returns well inside the timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/promptguard/promptguard.py#L171
