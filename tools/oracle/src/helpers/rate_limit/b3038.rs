@@ -119,9 +119,9 @@ fn project_io_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
 }
 
 fn key_owns_tpm_answer(input: &RequestMetadataInput) -> crate::helpers::HelperResult {
-    let model = input.model.as_ref().map(|model| RateLimitedModel {
-        requested: model.requested.clone(),
-        group: model.group.clone(),
+    let model = input.model.as_ref().map(|entry| RateLimitedModel {
+        requested: entry.requested.clone(),
+        group: entry.group.clone(),
     });
     // ast-grep-ignore: no-long-names
     let owned = ModelDescriptorBuilder::key_owns_tpm_from_request_metadata(
@@ -139,20 +139,20 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::RatedModel(input) => {
-                let model = builder(input.window_size, input.groups.clone())
-                    .rated_model(input.requested.as_deref());
-                Ok(json!({"model": model.map(|model| json!({
-                    "requested": model.requested,
-                    "group": model.group,
+            Input::RatedModel(case) => {
+                let model = builder(case.window_size, case.groups.clone())
+                    .rated_model(case.requested.as_deref());
+                Ok(json!({"model": model.map(|entry| json!({
+                    "requested": entry.requested,
+                    "group": entry.group,
                 }))}))
             }
-            Input::Organization(input) => organization_answer(input),
-            Input::KeyModel(input) => key_model_answer(input),
-            Input::TeamModel(input) => team_model_answer(input),
-            Input::ProjectModel(input) => project_model_answer(input),
-            Input::ProjectIo(input) => project_io_answer(input),
-            Input::KeyOwnsTpm(input) => key_owns_tpm_answer(input),
+            Input::Organization(case) => organization_answer(case),
+            Input::KeyModel(case) => key_model_answer(case),
+            Input::TeamModel(case) => team_model_answer(case),
+            Input::ProjectModel(case) => project_model_answer(case),
+            Input::ProjectIo(case) => project_io_answer(case),
+            Input::KeyOwnsTpm(case) => key_owns_tpm_answer(case),
         }
     }
 }
