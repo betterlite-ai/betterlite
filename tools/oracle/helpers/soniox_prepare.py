@@ -10,7 +10,7 @@ from litellm.llms.soniox.audio_transcription.transformation import (
     SonioxAudioTranscriptionConfig as Config,
 )
 from litellm.llms.soniox.common_utils import SonioxException
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, JsonValue, TypeAdapter
 
 from xai_files import guarded
 
@@ -24,6 +24,13 @@ litellm.suppress_debug_info = True
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 CONFIG: Final = Config.__new__(Config)
 HANDLER: Final = Handler()
+# LiteLLM's class carries Any in its constructor, so the catch names it through a typed alias
+PROVIDER_ERROR: Final[type[Exception]] = SonioxException
+
+
+class ErrorRecord(BaseModel):
+    status_code: int
+    message: str
 
 
 class HandlerOptions(TypedDict):
@@ -105,11 +112,7 @@ class PostLogFn(Protocol):
     ) -> None: ...
 
 
-class RaiseFn(Protocol):
-    def __call__(self, response: httpx.Response, provider_config: Config, action: str) -> None: ...
-
-
-PREPARE, BUILD_BODY, REDACT, PRE_CALL, POST_CALL, RAISE = cast(PrepareFn, HANDLER._prepare), cast(BuildBodyFn, HANDLER._build_create_body), cast(RedactFn, HANDLER._redact_body_for_logging), cast(PreLogFn, HANDLER._safe_log_pre_call), cast(PostLogFn, HANDLER._safe_log_post_call), cast(RaiseFn, HANDLER._raise_for_response)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L173-L352
+PREPARE, BUILD_BODY, REDACT, PRE_CALL, POST_CALL, RAISE = cast(PrepareFn, HANDLER._prepare), cast(BuildBodyFn, HANDLER._build_create_body), cast(RedactFn, HANDLER._redact_body_for_logging), cast(PreLogFn, HANDLER._safe_log_pre_call), cast(PostLogFn, HANDLER._safe_log_post_call), HANDLER._raise_for_response  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L173-L352
 
 
 class PrepareArgs(TypedDict):
@@ -194,22 +197,21 @@ def prepare_view(call: PrepareCall) -> JsonValue:
     supplied = call.get("optional_params")
     optional_params = EMPTY if supplied is None else supplied
     auth_headers, api_base, params, handler_opts = applied(call)
+    options = {
+        "poll_interval": handler_opts["poll_interval"],
+        "max_attempts": handler_opts["max_attempts"],
+        "cleanup": handler_opts["cleanup"],
+        "filename_override": handler_opts["filename_override"],
+        "audio_url": handler_opts["audio_url"],
+        "file_id": handler_opts["file_id"],
+        "response_format": handler_opts["response_format"],
+    }
     return {
         "ok": True,
         "auth_headers": JSON.validate_python(auth_headers),
         "api_base": api_base,
         "params": params,
-        "options": JSON.validate_python(
-            {
-                "poll_interval": handler_opts["poll_interval"],
-                "max_attempts": handler_opts["max_attempts"],
-                "cleanup": handler_opts["cleanup"],
-                "filename_override": handler_opts["filename_override"],
-                "audio_url": handler_opts["audio_url"],
-                "file_id": handler_opts["file_id"],
-                "response_format": handler_opts["response_format"],
-            }
-        ),
+        "options": JSON.validate_python(options),
         "input": optional_params,
     }
 
@@ -240,15 +242,15 @@ def raise_view(call: RaiseCall) -> JsonValue:
     response = httpx.Response(call["status"], content=call["body"].encode(), headers=headers)
     try:
         RAISE(response, CONFIG, call["action"])
-    except SonioxException as error:
+    except PROVIDER_ERROR as error:
+        record = ErrorRecord.model_validate(error, from_attributes=True)
+        received = {name.lower(): value for name, value in response.headers.items()}
+        echoed = {name.lower(): received.get(name.lower()) for name in headers}
+        matched = {probe: probe in record.message for probe in probes}
         return {
-            "raised": error.status_code,
-            "headers": JSON.validate_python(
-                {name.lower(): response.headers.get(name) for name in headers}
-            ),
-            "probes": JSON.validate_python(
-                {probe: probe in error.message for probe in probes}
-            ),
+            "raised": record.status_code,
+            "headers": JSON.validate_python(echoed),
+            "probes": JSON.validate_python(matched),
         }
     return {"ok": True}
 
