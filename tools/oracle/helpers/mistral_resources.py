@@ -9,7 +9,7 @@ import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.mistral.batches.transformation import MistralBatchesConfig
 from litellm.llms.mistral.files.transformation import MistralFilesConfig
-from litellm.types.llms.openai import CreateBatchRequest
+from litellm.types.llms.openai import CreateBatchRequest, CreateFileRequest
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -37,11 +37,6 @@ class Upload(TypedDict):
     filename: str | None
     content_type: str | None
     content: list[int]
-    purpose: Literal["assistants", "batch", "fine-tune", "messages"]
-
-
-class UploadRequest(TypedDict):
-    file: tuple[str | None, bytes, str | None]
     purpose: Literal["assistants", "batch", "fine-tune", "messages"]
 
 
@@ -79,11 +74,10 @@ class Input(TypedDict):
 def upload_outcome(upload: Upload, call: Files) -> JsonValue:
     params: dict[str, JsonValue] = {"api_base": call["api_base"]}
     url = FILES.get_complete_url(call["api_base"], call["api_key"], "", {}, params)
-    request = UploadRequest(
-        file=(upload["filename"], bytes(upload["content"]), upload["content_type"]),
-        purpose=upload["purpose"],
+    file = (upload["filename"], bytes(upload["content"]), upload["content_type"])
+    body = FILES.transform_create_file_request(
+        "", CreateFileRequest(file=file, purpose=upload["purpose"]), {}, params
     )
-    body = FILES.transform_create_file_request("", request, {}, params)
     parts = UPLOAD_PARTS.validate_python(body)
     filename, content, content_type = parts["file"]
     return {
@@ -160,7 +154,13 @@ def retrieve_outcome(call: Retrieve) -> JsonValue:
         request = BATCHES.transform_retrieve_batch_request(call["batch_id"], {}, params)
     except ValueError:
         return {"ok": False, "status": None}
-    return JSON.validate_python({"ok": True, **request})
+    plan = {
+        "ok": True,
+        "method": request["method"],
+        "url": request["url"],
+        "headers": request["headers"],
+    }
+    return JSON.validate_python(plan)
 
 
 def run(input_value: Input) -> JsonValue:
