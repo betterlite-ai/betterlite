@@ -1,15 +1,13 @@
 import asyncio
 import json
-from typing import Literal, TypedDict
+from typing import Literal
 
 import litellm
 import openai
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.anthropic_messages.transformation import BaseAnthropicMessagesConfig
-from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator
 from litellm.types.integrations.custom_logger import AgenticLoopPlan
-from litellm.types.llms.openai import ResponsesAPIResponse
 from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
@@ -20,17 +18,10 @@ PLAN: TypeAdapter[AgenticLoopPlan] = TypeAdapter(AgenticLoopPlan)
 JSON: TypeAdapter[Json] = TypeAdapter(Json)
 
 
-class Identity(TypedDict):
+class Identity(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     created_at: int
     status: str
-
-
-IDENTITY: TypeAdapter[Identity] = TypeAdapter(Identity)
-
-
-class StreamingAnswerError(TypeError):
-    def __init__(self) -> None:
-        super().__init__("the responses surface answered with a streaming iterator")
 
 
 class ScriptedCallbackError(ValueError):
@@ -144,12 +135,9 @@ async def execute(call: ContinuationCall, api_base: str) -> Json:
         failure: Json = {"class": type(error).__name__, "message": str(error.__context__)}
         outcome["error"] = failure
         return outcome
-    match result:
-        case ResponsesAPIResponse():
-            identity = IDENTITY.validate_json(result.model_dump_json())
-            outcome["returned"] = JSON.validate_python(identity)
-        case BaseResponsesAPIStreamingIterator():
-            raise StreamingAnswerError
+    # every non-streaming answer, a dict override included, is read for its identity
+    identity = Identity.model_validate(result, from_attributes=True)
+    outcome["returned"] = JSON.validate_json(identity.model_dump_json())
     return outcome
 
 

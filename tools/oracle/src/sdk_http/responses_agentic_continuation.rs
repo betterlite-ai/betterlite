@@ -18,7 +18,8 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
-use http::{HeaderMap, Method};
+use http::header::AUTHORIZATION;
+use http::{HeaderMap, HeaderValue, Method};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::value::{RawValue, to_raw_value};
@@ -27,6 +28,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use url::Url;
 pub(crate) const PROVIDER: &str = "openai";
+// LiteLLM sends the configured api_key on the first and the follow-up request alike
+const AUTHORIZATION_VALUE: &str = "Bearer sk-test";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AgenticContinuationCall {
@@ -74,7 +77,7 @@ pub(crate) async fn send(
         client,
         api_base: api_base.to_owned(),
         provider: ProviderId::Openai,
-        headers: HeaderMap::new(),
+        headers: provider_headers(),
         model_info: None,
         deadline: DEFAULT_DEADLINE,
     };
@@ -140,7 +143,7 @@ async fn initial_response(
         method: Method::POST,
         url: Url::parse(&url).map_err(|source| SdkHttpError::Url(Box::new(source)))?,
         query: Vec::new(),
-        headers: HeaderMap::new(),
+        headers: provider_headers(),
         body: RequestBody::Json(initial_body(call)?),
         deadline: DEFAULT_DEADLINE,
     };
@@ -156,6 +159,11 @@ async fn initial_response(
     }
     let text = String::from_utf8(response.body).map_err(SdkHttpError::ErrorBodyUtf8)?;
     RawValue::from_string(text).map_err(SdkHttpError::ResultParse)
+}
+fn provider_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static(AUTHORIZATION_VALUE));
+    headers
 }
 fn initial_body(call: &AgenticContinuationCall) -> Result<Vec<u8>, SdkHttpError> {
     let mut body = Map::new();

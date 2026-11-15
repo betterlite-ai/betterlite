@@ -41,5 +41,5 @@ upstream:
 compare:
   headers: []
   headers_present: []
-  upstream_headers: []
+  upstream_headers: [authorization]
   ignore: []
