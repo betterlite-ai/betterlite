@@ -1,0 +1,19 @@
+kind: helper
+name: auth-model-patterns-provider-wildcard
+call:
+  auth_model_patterns:
+    steps:
+      - {object_kind: key, model: "openai/gpt-4o", models: ["openai/*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "gpt-4o", models: ["openai/*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "anthropic/claude-3-5-sonnet-20240620", models: ["openai/*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "bedrockz/anthropic.claude-3", models: ["openai/*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "claude-newfamily-5", models: ["anthropic/*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "claude-3-5-sonnet-20240620", models: ["anthropic/*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "anthropic.claude-3-5-sonnet-20240620-v1:0", models: ["anthropic/*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "anthropic.claude-3-5-sonnet-20240620-v1:0", models: ["bedrock/*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "vertex_ai/gemini-pro", models: ["vertex_ai/*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "bedrock/us.amazon.nova-micro-v1:0", models: ["bedrock/us.*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "gpt-4o", models: ["openai/*"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "gpt-4o-mini", models: ["openai/gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+env: {}
+compare: {ignore: []}

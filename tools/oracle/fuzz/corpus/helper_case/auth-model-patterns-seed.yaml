@@ -1,0 +1,10 @@
+kind: helper
+name: auth-model-patterns-seed
+call:
+  auth_model_patterns:
+    steps:
+      - {object_kind: key, model: "gpt-4o", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: {"fast": "gpt-4o"}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "team-alias", models: ["all-team-models"], team_id: "team-1", team_models: [], team_model_aliases: {"team-alias": "gpt-4o"}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "grouped-model", access_groups: ["group"], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {"alias": "grouped-model"}, global_aliases: {}}
+      - {object_kind: org, model: "private-model", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: auth-model-patterns-http-unknown-group
+call:
+  auth_model_patterns:
+    steps:
+      - {object_kind: team, model: "grouped-model", models: ["known-group"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "grouped-model", access_groups: ["known-group"], team_id: null, team_public_model_name: null}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "other-model", models: ["known-group"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "grouped-model", access_groups: ["known-group"], team_id: null, team_public_model_name: null}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "grouped-model", models: ["known-group"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "grouped-model", access_groups: ["known-group"], team_id: null, team_public_model_name: null}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: org, model: "grouped-model", models: ["known-group"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "grouped-model", access_groups: ["known-group"], team_id: null, team_public_model_name: null}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "grouped-model", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: ["known-group"], deployments: [{model_name: "grouped-model", access_groups: ["known-group"], team_id: null, team_public_model_name: null}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "grouped-model", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: ["unknown-group"], deployments: [{model_name: "grouped-model", access_groups: ["known-group"], team_id: null, team_public_model_name: null}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "grouped-model", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: ["known-group"], deployments: [{model_name: "grouped-model", access_groups: ["known-group"], team_id: null, team_public_model_name: null}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "grouped-model", models: ["known-group"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+env: {}
+compare: {ignore: []}
