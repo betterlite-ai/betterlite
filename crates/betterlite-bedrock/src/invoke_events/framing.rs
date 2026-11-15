@@ -39,21 +39,25 @@ impl FramedState<'_> {
     pub(crate) fn absorb(&mut self, chunk: &[u8], pending: &mut Pending) {
         self.buffer.extend_from_slice(chunk);
         self.tally.add_chunk(chunk);
-        while self.absorb_next(pending) {}
+        while let Some(event) = self.next_event(pending) {
+            if !self.project(&event, pending) {
+                return;
+            }
+        }
     }
 
-    // returns whether draining continues after this frame
-    fn absorb_next(&mut self, pending: &mut Pending) -> bool {
+    // Takes the next whole frame off the buffer; None means no frame is ready or the stream failed.
+    fn next_event(&mut self, pending: &mut Pending) -> Option<AwsEvent> {
         match decode_aws_event_frame(&mut self.buffer) {
             Ok(Some(event)) => {
                 self.tally.add_event(&event);
-                self.project(&event, pending)
+                Some(event)
             }
-            Ok(None) => false,
+            Ok(None) => None,
             Err(source) => {
                 pending.push_back(Err(InvokeStreamError::Frame(source)));
                 self.done = true;
-                false
+                None
             }
         }
     }
@@ -87,7 +91,6 @@ impl FramedState<'_> {
     }
 
     pub(crate) fn finish(&mut self, pending: &mut Pending, redactor: &Redactor) {
-        self.done = true;
         let headers = self.response_headers.as_ref();
         let error = self.tally.undecoded_stream_error(headers, redactor);
         pending.extend(error.map(|source| Err(InvokeStreamError::Frame(source))));
@@ -117,7 +120,10 @@ where
             }
             match self.chunks.next() {
                 Some(chunk) => self.state.absorb(&chunk, &mut self.pending),
-                None => self.state.finish(&mut self.pending, self.redactor),
+                None => {
+                    self.state.done = true;
+                    self.state.finish(&mut self.pending, self.redactor);
+                }
             }
         }
     }
@@ -141,7 +147,10 @@ where
             match Pin::new(&mut this.chunks).poll_next(cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(chunk)) => this.state.absorb(&chunk, &mut this.pending),
-                Poll::Ready(None) => this.state.finish(&mut this.pending, this.redactor),
+                Poll::Ready(None) => {
+                    this.state.done = true;
+                    this.state.finish(&mut this.pending, this.redactor);
+                }
             }
         }
     }
