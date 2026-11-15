@@ -96,7 +96,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input.kind {
-            Kind::Http => http_answer(input),
+            Kind::Http => Ok(http_answer(input)),
             Kind::Connect => connect_answer(input),
             Kind::Handshake | Kind::Error => failure_answer(input),
         }
@@ -256,7 +256,7 @@ fn failure_answer(input: &Input) -> HelperResult {
     Ok(json!({"failures": failures}))
 }
 
-fn http_answer(input: &Input) -> HelperResult {
+fn http_answer(input: &Input) -> Value {
     let mut http = Vec::with_capacity(input.http_setups.len());
     for setup in &input.http_setups {
         let settings = RealtimeHttpSettings {
@@ -278,5 +278,5 @@ fn http_answer(input: &Input) -> HelperResult {
             "headers": headers,
         }));
     }
-    Ok(json!({"http": http}))
+    json!({"http": http})
 }
