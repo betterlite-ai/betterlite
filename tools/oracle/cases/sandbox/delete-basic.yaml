@@ -1,0 +1,15 @@
+kind: helper
+name: sandbox-delete-basic
+call:
+  b3519:
+    operation: delete
+    provider: e2b
+    container: sbx_123
+    api_key: e2b-test-key
+    api_base: https://e2b.test
+    replies:
+      - status: 200
+        body: ""
+env: {}
+compare:
+  ignore: []

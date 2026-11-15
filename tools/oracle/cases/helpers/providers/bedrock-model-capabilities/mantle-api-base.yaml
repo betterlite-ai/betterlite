@@ -1,0 +1,21 @@
+kind: helper
+name: mantle-api-base
+call:
+  bedrock_model_capabilities:
+    function: mantle_api_base
+    region: eu-west-1
+    cases:
+      - {api_base: 'https://api.example/openai/v1', aws_bedrock_runtime_endpoint: 'https://runtime.example', environment: {BEDROCK_MANTLE_API_BASE: 'https://env.example'}}
+      - {api_base: '', aws_bedrock_runtime_endpoint: 'https://runtime.example/v1', environment: {BEDROCK_MANTLE_API_BASE: 'https://env.example'}}
+      - {api_base: '', aws_bedrock_runtime_endpoint: '', environment: {BEDROCK_MANTLE_API_BASE: 'https://env.example/openai/v1/'}}
+      - {environment: {BEDROCK_MANTLE_API_BASE: 'https://env.example/v1'}}
+      - {environment: {BEDROCK_MANTLE_API_BASE: 'https://env.example/'}}
+      - {environment: {BEDROCK_MANTLE_API_BASE: 'https://env.example/anthropic/v1/messages'}}
+      - {environment: {BEDROCK_MANTLE_API_BASE: /v1}}
+      - {environment: {BEDROCK_MANTLE_API_BASE: /}}
+      - {environment: {}}
+      - {api_base: 'https://api.example/v1', environment: {}}
+      - {api_base: 'https://api.example/anthropic/v1/messages/', environment: {}}
+      - {api_base: /, environment: {}}
+env: {}
+compare: {ignore: []}

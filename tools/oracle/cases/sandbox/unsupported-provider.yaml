@@ -1,0 +1,10 @@
+kind: helper
+name: sandbox-unsupported-provider
+call:
+  b3519:
+    operation: create
+    provider: bedrock
+    api_key: e2b-test-key
+env: {}
+compare:
+  ignore: []
