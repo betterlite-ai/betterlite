@@ -75,11 +75,11 @@ fn reply_with_total(
     let Some(total) = reply.total_tokens else {
         return Ok(None);
     };
-    let counted = counted(total)?;
+    let tokens = counted(total)?;
     let tokenizer_type = reply.tokenizer_used.clone().unwrap_or_default();
     Ok(Some(TokenCountResponse::new(
         call,
-        counted,
+        tokens,
         tokenizer_type,
         CountReply::Google(Box::new(reply)),
     )))

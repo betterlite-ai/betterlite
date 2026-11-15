@@ -37,11 +37,11 @@ pub(crate) fn response(
     reply: GoogleCountResponse,
 ) -> Result<TokenCountResponse, CountTokensError> {
     let total = reply.total_tokens.unwrap_or(0);
-    let counted = counted(total)?;
+    let tokens = counted(total)?;
     let tokenizer_type = reply.tokenizer_used.clone().unwrap_or_default();
     Ok(TokenCountResponse::new(
         call,
-        counted,
+        tokens,
         tokenizer_type,
         CountReply::Google(Box::new(reply)),
     ))
