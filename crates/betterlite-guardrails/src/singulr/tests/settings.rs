@@ -125,6 +125,12 @@ fn a_plain_http_base_with_a_malformed_host_is_refused_at_start() {
 }
 
 #[test]
+fn an_https_base_with_a_malformed_host_is_not_refused_at_start() {
+    let settings = resolve(&[("SINGULR_API_BASE", "https://[guard.example]")]).unwrap();
+    assert_eq!(settings.api_base, "https://[guard.example]");
+}
+
+#[test]
 fn https_to_a_non_local_host_is_allowed() {
     let settings = resolve(&[("SINGULR_API_BASE", "https://guard.example/")]).unwrap();
     assert_eq!(settings.api_base, "https://guard.example");
