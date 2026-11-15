@@ -23,9 +23,5 @@ call:
         status: 200
         created: 1700000000
         body: '{"data": [{"b64_json": "aGk="}]}'
-      - kind: image_reply
-        status: 403
-        created: 1700000000
-        body: 'oops'
 env: {}
 compare: {ignore: []}

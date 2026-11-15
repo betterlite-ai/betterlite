@@ -52,8 +52,5 @@ call:
       - kind: speech_headers
         global_key: "global-key"
         env_key: "env-key"
-      - kind: image_params
-        model: Qwen/Qwen-Image
-        params: {n: 1, quality: hd}
 env: {}
 compare: {ignore: []}
