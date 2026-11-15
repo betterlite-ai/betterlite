@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
@@ -10,6 +11,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
@@ -112,6 +114,43 @@ pub(crate) async fn refused_base() -> String {
     let address = listener.local_addr().unwrap();
     drop(listener);
     format!("http://{address}")
+}
+
+pub(crate) struct StallServer {
+    pub(crate) base: String,
+    _server: JoinSet<io::Result<()>>,
+}
+
+// answers the headers at once and stalls the body, so only a deadline covering the read runs out
+pub(crate) async fn stalled_base(stall: Duration) -> StallServer {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let mut server = JoinSet::new();
+    server.spawn(async move {
+        let Ok((mut stream, _peer)) = listener.accept().await else {
+            return Ok(());
+        };
+        let mut request = [0_u8; 1024];
+        if stream.read(&mut request).await.is_err() {
+            return Ok(());
+        }
+        let body = br#"{"should_block": false}"#;
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n",
+            body.len()
+        );
+        if stream.write_all(headers.as_bytes()).await.is_err() {
+            return Ok(());
+        }
+        tokio::time::sleep(stall).await;
+        let _ = stream.write_all(body).await;
+        let _ = stream.flush().await;
+        Ok(())
+    });
+    StallServer {
+        base,
+        _server: server,
+    }
 }
 
 impl MockServer {

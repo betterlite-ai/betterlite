@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 use axum::http::StatusCode;
 use secrecy::SecretString;
@@ -236,6 +237,39 @@ async fn a_transport_failure_passes_when_block_on_error_is_false() {
     let guardrail = support::open_guardrail(&base);
     let inputs = support::inputs(r#"{"texts": ["hello"]}"#);
     let returned = guardrail
+        .apply_guardrail(
+            inputs.clone(),
+            &support::data("{}"),
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(returned, inputs);
+}
+
+#[tokio::test]
+async fn a_stalled_answer_reaches_the_request_deadline() {
+    let stalled = support::stalled_base(Duration::from_secs(2)).await;
+    let mut args = support::args_for(&stalled.base);
+    args.timeout = Some(0.2);
+    let error = support::build(&args)
+        .apply_guardrail(
+            support::inputs(r#"{"texts": ["hello"]}"#),
+            &support::data("{}"),
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, SingulrError::Transport { .. }));
+
+    let stalled = support::stalled_base(Duration::from_secs(2)).await;
+    let mut args = support::args_for(&stalled.base);
+    args.timeout = Some(0.2);
+    args.block_on_error = Some(false);
+    let inputs = support::inputs(r#"{"texts": ["hello"]}"#);
+    let returned = support::build(&args)
         .apply_guardrail(
             inputs.clone(),
             &support::data("{}"),
