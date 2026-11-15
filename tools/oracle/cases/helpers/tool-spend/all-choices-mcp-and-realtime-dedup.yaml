@@ -1,0 +1,36 @@
+kind: helper
+name: all-choices-mcp-and-realtime-dedup
+call:
+  tool_spend:
+    transaction:
+      request_id: req-42
+      start_time_iso: "2026-01-02T00:30:00Z"
+      mcp_namespaced_tool_name: " mcp__search "
+      spend: 1.25
+      total_tokens: 42
+      completion_response:
+        choices:
+          - message:
+              tool_calls:
+                - function: {name: search, arguments: "{}"}
+          - message:
+              tool_calls:
+                - function: {name: fetch, arguments: "{}"}
+          - message:
+              tool_calls:
+                - function: {name: search, arguments: "{}"}
+      realtime_tool_calls:
+        - function: {name: fetch, arguments: "{}"}
+        - function: {name: calc, arguments: "{}"}
+calls:
+  - tool_spend:
+      transaction:
+        request_id: req-43
+        start_time_iso: "2026-01-02T00:30:00Z"
+        mcp_namespaced_tool_name: "   "
+        spend: 0.75
+        total_tokens: 8
+        completion_response: {choices: [{message: {tool_calls: []}}]}
+        realtime_tool_calls: []
+env: {}
+compare: {ignore: []}

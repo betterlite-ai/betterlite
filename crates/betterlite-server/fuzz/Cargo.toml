@@ -179,6 +179,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bucket_config_yaml"
+path = "fuzz_targets/bucket_config_yaml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "mcp_rotation_blob"
 path = "fuzz_targets/mcp_rotation_blob.rs"
 test = false

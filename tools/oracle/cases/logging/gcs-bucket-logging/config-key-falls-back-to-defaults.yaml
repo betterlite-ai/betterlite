@@ -1,0 +1,7 @@
+# no dynamic params, bucket or service account gives the default key
+kind: helper
+name: gcs-bucket-logging-config-key-falls-back-to-defaults
+call:
+  b3998: {"steps": [{"do": "config"}]}
+env: {}
+compare: {ignore: []}

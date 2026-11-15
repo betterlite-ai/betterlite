@@ -1,0 +1,16 @@
+kind: helper
+name: master-key-boot-strong-key
+call:
+  master_key_boot:
+    master_key: sk-qa-9f2c1e7a44b0d3
+    environment_master_key: null
+    general_settings: {}
+    config_file_path: null
+    override_env_is_on: false
+    database:
+      salt_key_is_set: false
+      is_configured: true
+    stored_secret_count: 7
+env: {}
+compare:
+  ignore: []

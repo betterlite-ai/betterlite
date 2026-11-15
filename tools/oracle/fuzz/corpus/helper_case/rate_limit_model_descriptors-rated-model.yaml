@@ -1,0 +1,10 @@
+kind: helper
+name: rate-limit_model_descriptors-rated-model-seed
+call:
+  b3038:
+    function: rated_model
+    requested: gpt4
+    groups: {gpt4: gpt-4}
+    window_size: 60
+env: {}
+compare: {ignore: []}

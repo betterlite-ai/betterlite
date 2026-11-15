@@ -1,0 +1,11 @@
+kind: helper
+name: get-policy-by-id-from-db-error-logged
+call:
+  b3242:
+    group: policy_records_lookup
+    operation: lookup
+    policy_id: policy_1
+    row: null
+    failure: connection reset
+env: {}
+compare: {ignore: []}
