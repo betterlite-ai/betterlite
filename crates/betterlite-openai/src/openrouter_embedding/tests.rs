@@ -204,7 +204,7 @@ fn decode_embedding_response_reads_the_standard_reply() {
 #[case::array("[]", false)]
 #[case::missing_usage(r#"{"object":"list","data":[],"model":"m"}"#, false)]
 #[case::wrong_vector(
-    r#"{"object":"list","data":[{"object":"embedding","embedding":"x","index":0}],"model":"m","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
+    r#"{"object":"list","data":[{"object":"embedding","embedding":1,"index":0}],"model":"m","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
     false
 )]
 fn decode_embedding_response_reports_the_failure_kind(#[case] raw: &str, #[case] json: bool) {
