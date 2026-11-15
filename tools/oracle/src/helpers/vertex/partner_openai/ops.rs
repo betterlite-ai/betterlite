@@ -69,8 +69,7 @@ fn exclusions(case: &ExclusionsCase) -> Value {
     })
 }
 
-// LiteLLM reads the capability from its cost map: the maas publisher id has no entry there and
-// answers false, while the funded groq route is mapped with tool support.
+// LiteLLM reads the capability from its cost map: the maas id answers false, the funded groq route true.
 fn gpt_oss(case: &GptOssCase) -> Value {
     let mut mapped = case.optional_params.clone();
     GptOssConfig::map_params(
@@ -96,8 +95,7 @@ fn gpt_oss(case: &GptOssCase) -> Value {
     })
 }
 
-// The provider's usage object travels unchanged; its conversion belongs to the shared reply
-// builder, so this comparison covers the identity fields and the transformed choices.
+// The usage object travels unchanged: its conversion belongs to the shared reply builder.
 fn reply(case: &ReplyCase) -> Result<Value, Box<HelperError>> {
     Ok(json!({
         "defaulted": reply_view(&decode(&case.reply, &case.requested_model)?),

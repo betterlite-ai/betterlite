@@ -1,4 +1,3 @@
-import json
 from datetime import UTC, datetime
 from typing import Final, NotRequired, Protocol, TypedDict, Unpack, cast
 
@@ -28,32 +27,22 @@ class TokenAliasCase(TypedDict):
     llama_model: str
     llama_requested: dict[str, JsonValue]
     llama_optional_params: dict[str, JsonValue]
-
-
 class ExclusionsCase(TypedDict):
     publisher_model: str
     deployed_model: str
     requested: dict[str, JsonValue]
     optional_params: dict[str, JsonValue]
-
-
 class GptOssCase(TypedDict):
     model: str
     funded_model: str
     requested: dict[str, JsonValue]
     optional_params: dict[str, JsonValue]
-
-
 class ReplyCase(TypedDict):
     requested_model: str
     reply: dict[str, JsonValue]
     named_reply: dict[str, JsonValue]
-
-
 class StreamCase(TypedDict):
     chunks: list[dict[str, JsonValue]]
-
-
 class Input(TypedDict):
     token_alias_overwrite: TokenAliasCase
     self_deployed_exclusions: ExclusionsCase
@@ -63,61 +52,31 @@ class Input(TypedDict):
     initial_terminal_split: StreamCase
     empty_initial_delta: StreamCase
 
-
-class Message(TypedDict, total=False):
-    role: str
-    content: JsonValue
-
-
-class ReplyMessage(TypedDict):
-    role: str
-    content: NotRequired[str | None]
-    tool_calls: NotRequired[list[JsonValue] | None]
-
-
 class ReplyChoice(TypedDict):
-    index: int
-    finish_reason: NotRequired[str | None]
-    message: ReplyMessage
-
-
+    index: JsonValue
+    finish_reason: NotRequired[JsonValue]
+    message: dict[str, JsonValue]
 class Reply(TypedDict):
-    id: NotRequired[str | None]
-    created: NotRequired[int | None]
-    model: NotRequired[str | None]
+    id: NotRequired[JsonValue]
+    created: NotRequired[JsonValue]
+    model: NotRequired[JsonValue]
     choices: list[ReplyChoice]
-
-
-class ChunkDelta(TypedDict):
-    role: NotRequired[str | None]
-    content: NotRequired[str | None]
-    function_call: NotRequired[JsonValue]
-    tool_calls: NotRequired[JsonValue]
-    audio: NotRequired[JsonValue]
-    reasoning_content: NotRequired[str | None]
-    provider_specific_fields: NotRequired[dict[str, JsonValue] | None]
-
-
 class ChunkChoice(TypedDict):
-    index: int
-    finish_reason: NotRequired[str | None]
-    delta: ChunkDelta
+    index: JsonValue
+    finish_reason: NotRequired[JsonValue]
+    delta: dict[str, JsonValue]
     logprobs: NotRequired[JsonValue]
-
-
 class Chunk(TypedDict):
-    id: NotRequired[str | None]
-    object: str
-    created: NotRequired[int | None]
-    model: NotRequired[str | None]
+    id: NotRequired[JsonValue]
+    object: JsonValue
+    created: NotRequired[JsonValue]
+    model: NotRequired[JsonValue]
     choices: list[ChunkChoice]
     usage: NotRequired[JsonValue]
-    service_tier: NotRequired[str | None]
-
+    service_tier: NotRequired[JsonValue]
 
 class ParamsApi(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
-
     def map_openai_params(
         self,
         non_default_params: dict[str, JsonValue],
@@ -125,27 +84,20 @@ class ParamsApi(Protocol):
         model: str,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
-
-
 class ResponseArgs(TypedDict):
     model: str
     raw_response: httpx.Response
     model_response: ModelResponse
     logging_obj: Logging
     request_data: dict[str, JsonValue]
-    messages: list[Message]
+    messages: list[dict[str, JsonValue]]
     optional_params: dict[str, JsonValue]
     litellm_params: dict[str, JsonValue]
     encoding: None
-
-
 class ReplyApi(Protocol):
     def transform_response(self, **kwargs: Unpack[ResponseArgs]) -> ModelResponse: ...
-
-
 class StreamApi(Protocol):
     def chunk_parser(self, chunk: dict[str, JsonValue]) -> ModelResponseStream: ...
-
     def __next__(self) -> ModelResponseStream: ...
 
 
@@ -155,103 +107,78 @@ JSON: Final = TypeAdapter(JsonValue)
 
 def apis() -> tuple[ParamsApi, ParamsApi, ParamsApi, ReplyApi, StreamApi]:
     llama = VertexAILlama3Config()
+    handler = llama.get_model_response_iterator(
+        streaming_response=iter(()), sync_stream=True, json_mode=False
+    )
     return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/llama3/transformation.py#L73-L107
         "tuple[ParamsApi, ParamsApi, ParamsApi, ReplyApi, StreamApi]",
-        (
-            VertexAIAi21Config(),
-            llama,
-            VertexAIGPTOSSTransformation(),
-            llama,
-            llama.get_model_response_iterator(
-                streaming_response=iter(()), sync_stream=True, json_mode=False
-            ),
-        ),
+        (VertexAIAi21Config(), llama, VertexAIGPTOSSTransformation(), llama, handler),
     )
 
 
 def mapped_params(
-    api: ParamsApi,
-    model: str,
-    requested: dict[str, JsonValue],
-    optional_params: dict[str, JsonValue],
+    api: ParamsApi, model: str, params: dict[str, JsonValue], existing: dict[str, JsonValue]
 ) -> dict[str, JsonValue]:
     # the partner method mutates both dicts it is given, so each case hands over copies
     return api.map_openai_params(
-        non_default_params=dict(requested),
-        optional_params=dict(optional_params),
-        model=model,
-        drop_params=False,
+        non_default_params=dict(params), optional_params=dict(existing),
+        model=model, drop_params=False,
     )
 
 
 def token_alias(case: TokenAliasCase, ai21: ParamsApi, llama: ParamsApi) -> JsonValue:
+    ai21_mapped = mapped_params(
+        ai21, case["ai21_model"], case["ai21_requested"], case["ai21_optional_params"]
+    )
+    llama_mapped = mapped_params(
+        llama, case["llama_model"], case["llama_requested"], case["llama_optional_params"]
+    )
     return JSON.validate_python(
-        {
-            "ai21_optional_params": mapped_params(
-                ai21,
-                case["ai21_model"],
-                case["ai21_requested"],
-                case["ai21_optional_params"],
-            ),
-            "llama_optional_params": mapped_params(
-                llama,
-                case["llama_model"],
-                case["llama_requested"],
-                case["llama_optional_params"],
-            ),
-        }
+        {"ai21_optional_params": ai21_mapped, "llama_optional_params": llama_mapped}
     )
 
 
 def exclusions(case: ExclusionsCase, llama: ParamsApi) -> JsonValue:
+    mapped = mapped_params(
+        llama, case["deployed_model"], case["requested"], case["optional_params"]
+    )
     return JSON.validate_python(
         {
-            "publisher_params": llama.get_supported_openai_params(
-                model=case["publisher_model"]
-            ),
-            "deployed_params": llama.get_supported_openai_params(
-                model=case["deployed_model"]
-            ),
-            "deployed_mapped": mapped_params(
-                llama, case["deployed_model"], case["requested"], case["optional_params"]
-            ),
+            "publisher_params": llama.get_supported_openai_params(case["publisher_model"]),
+            "deployed_params": llama.get_supported_openai_params(case["deployed_model"]),
+            "deployed_mapped": mapped,
         }
     )
 
 
 def gpt_oss(case: GptOssCase, api: ParamsApi) -> JsonValue:
+    model_mapped = mapped_params(api, case["model"], case["requested"], case["optional_params"])
+    funded_mapped = mapped_params(
+        api, case["funded_model"], case["requested"], case["optional_params"]
+    )
     return JSON.validate_python(
         {
-            "model_params": api.get_supported_openai_params(model=case["model"]),
-            "model_mapped": mapped_params(
-                api, case["model"], case["requested"], case["optional_params"]
-            ),
-            "funded_params": api.get_supported_openai_params(model=case["funded_model"]),
-            "funded_mapped": mapped_params(
-                api, case["funded_model"], case["requested"], case["optional_params"]
-            ),
+            "model_params": api.get_supported_openai_params(case["model"]),
+            "model_mapped": model_mapped,
+            "funded_params": api.get_supported_openai_params(case["funded_model"]),
+            "funded_mapped": funded_mapped,
         }
     )
 
 
 def logging_object() -> Logging:
     return Logging(
-        model="meta/llama-3.1-405b-instruct-maas",
-        messages=None,
-        stream=False,
-        call_type="completion",
+        model="meta/llama-3.1-405b-instruct-maas", messages=None,
+        stream=False, call_type="completion",
         start_time=datetime(2026, 1, 1, tzinfo=UTC),
-        litellm_call_id="b1335",
-        function_id="b1335",
+        litellm_call_id="b1335", function_id="b1335",
     )
 
 
-def reply_value(
-    api: ReplyApi, requested_model: str, source: dict[str, JsonValue]
-) -> JsonValue:
+def reply_value(api: ReplyApi, requested_model: str, source: dict[str, JsonValue]) -> JsonValue:
     args: ResponseArgs = {
         "model": requested_model,
-        "raw_response": httpx.Response(200, text=json.dumps(source)),
+        "raw_response": httpx.Response(200, json=source),
         "model_response": ModelResponse(),
         "logging_obj": logging_object(),
         "request_data": {},
@@ -273,55 +200,32 @@ def reply_value(
 
 
 def reply_choice(choice: ReplyChoice) -> JsonValue:
-    message = choice["message"]
+    body = choice["message"]
     return JSON.validate_python(
         {
             "index": choice["index"],
             "finish_reason": choice.get("finish_reason"),
-            "message": {
-                "role": message["role"],
-                "content": message.get("content"),
-                "tool_calls": message.get("tool_calls"),
-            },
-        }
-    )
-
-
-# LiteLLM converts the provider's usage into its own Usage model, which the shared reply builder
-# owns; this comparison covers the identity fields and the transformed choices.
-def reply(case: ReplyCase, api: ReplyApi) -> JsonValue:
-    return JSON.validate_python(
-        {
-            "defaulted": reply_value(api, case["requested_model"], case["reply"]),
-            "named": reply_value(api, case["requested_model"], case["named_reply"]),
+            "message": {"role": body["role"], "content": body.get("content"),
+                        "tool_calls": body.get("tool_calls")},
         }
     )
 
 
 def next_chunk(api: StreamApi) -> ModelResponseStream | None:
-    queued: ModelResponseStream | None
     try:
-        queued = next(api)
+        return next(api)
     except StopIteration:
-        queued = None
-    return queued
+        return None
 
 
 def choice_value(choice: ChunkChoice) -> JsonValue:
     delta = choice["delta"]
-    delta_value: dict[str, JsonValue] = {
-        "role": delta.get("role"),
-        "content": delta.get("content"),
-        "function_call": delta.get("function_call"),
-        "tool_calls": delta.get("tool_calls"),
-        "audio": delta.get("audio"),
-    }
-    reasoning = delta.get("reasoning_content")
-    if reasoning is not None:
-        delta_value["reasoning_content"] = reasoning
-    provider_fields = delta.get("provider_specific_fields")
-    if provider_fields is not None:
-        delta_value["provider_specific_fields"] = provider_fields
+    fields = ("role", "content", "function_call", "tool_calls", "audio")
+    delta_value: dict[str, JsonValue] = {name: delta.get(name) for name in fields}
+    for name in ("reasoning_content", "provider_specific_fields"):
+        value = delta.get(name)
+        if value is not None:
+            delta_value[name] = value
     return JSON.validate_python(
         {
             "index": choice["index"],
@@ -364,20 +268,20 @@ def streamed(case: StreamCase) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     ai21, llama, gpt_oss_api, reply_api, _ = apis()
+    reply_case = input_value["missing_reply_defaults"]
     return JSON.validate_python(
         {
-            "token_alias_overwrite": token_alias(
-                input_value["token_alias_overwrite"], ai21, llama
-            ),
-            "self_deployed_exclusions": exclusions(
-                input_value["self_deployed_exclusions"], llama
-            ),
-            "gpt_oss_singular_tool": gpt_oss(
-                input_value["gpt_oss_singular_tool"], gpt_oss_api
-            ),
-            "missing_reply_defaults": reply(
-                input_value["missing_reply_defaults"], reply_api
-            ),
+            "token_alias_overwrite": token_alias(input_value["token_alias_overwrite"], ai21, llama),
+            "self_deployed_exclusions": exclusions(input_value["self_deployed_exclusions"], llama),
+            "gpt_oss_singular_tool": gpt_oss(input_value["gpt_oss_singular_tool"], gpt_oss_api),
+            "missing_reply_defaults": {
+                "defaulted": reply_value(
+                    reply_api, reply_case["requested_model"], reply_case["reply"]
+                ),
+                "named": reply_value(
+                    reply_api, reply_case["requested_model"], reply_case["named_reply"]
+                ),
+            },
             "initial_missing_role": streamed(input_value["initial_missing_role"]),
             "initial_terminal_split": streamed(input_value["initial_terminal_split"]),
             "empty_initial_delta": streamed(input_value["empty_initial_delta"]),
