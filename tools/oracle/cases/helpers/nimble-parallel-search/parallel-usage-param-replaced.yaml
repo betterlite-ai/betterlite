@@ -1,0 +1,33 @@
+kind: helper
+name: parallel-usage-param-replaced
+call:
+  b8025:
+    provider: parallel_ai
+    calls:
+      - operation: request
+        query: rust
+        optional_params:
+          _parallel_ai_usage:
+            - name: caller
+          max_tokens_per_page: 3
+      - operation: reply
+        optional_params:
+          _parallel_ai_usage:
+            - name: caller
+        body:
+          results: []
+          usage: null
+      - operation: reply
+        optional_params:
+          _parallel_ai_usage: null
+        body:
+          results: []
+          usage:
+            - name: sku_search
+              count: 3
+      - operation: reply
+        body:
+          results: []
+          usage: []
+env: {}
+compare: {ignore: []}

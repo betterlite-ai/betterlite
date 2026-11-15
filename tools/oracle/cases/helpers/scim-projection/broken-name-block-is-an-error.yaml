@@ -1,0 +1,14 @@
+kind: helper
+name: broken-name-block-is-an-error
+call:
+  scim_projection:
+    kind: user
+    value:
+      user_id: u-3
+      user_alias: Ann
+      metadata:
+        scim_metadata:
+          givenName: 5
+env: {}
+compare:
+  ignore: []

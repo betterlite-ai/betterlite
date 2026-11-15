@@ -1,0 +1,16 @@
+kind: helper
+name: ssml-substring
+call:
+  vertex_speech:
+    function: ssml_substring
+    cases:
+      - {input: hello, use_ssml: false}
+      - {input: '<speak>hi</speak>', use_ssml: false}
+      - {input: 'a <speak> b', use_ssml: false}
+      - {input: '<SPEAK>hi</SPEAK>', use_ssml: false}
+      - {input: '<speak', use_ssml: false}
+      - {input: '', use_ssml: false}
+      - {input: hi, use_ssml: true}
+      - {input: '', use_ssml: true}
+env: {}
+compare: {ignore: []}

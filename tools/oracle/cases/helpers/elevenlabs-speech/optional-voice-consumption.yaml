@@ -1,0 +1,14 @@
+kind: helper
+name: elevenlabs-speech-optional-voice-consumption
+call:
+  elevenlabs_speech:
+    calls:
+    - {function: map_params, voice: null, optional_params: {voice_id: " Lily ", seed: 1}, kwargs: {}}
+    - {function: map_params, voice: {voice_id: " "}, optional_params: {voice_id: ash, seed: 2}, kwargs: {}}
+    - {function: map_params, voice: {other: 1}, optional_params: {voice_id: onyx}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {voice_id: other}, kwargs: {}}
+    - {function: map_params, voice: null, optional_params: {voice_id: "  "}, kwargs: {}}
+    - {function: map_params, voice: null, optional_params: {voice_id: 7}, kwargs: {}}
+    - {function: map_params, voice: null, optional_params: {}, kwargs: {}}
+compare: {ignore: []}
+env: {}
