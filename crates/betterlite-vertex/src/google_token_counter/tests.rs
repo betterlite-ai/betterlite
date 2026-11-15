@@ -340,9 +340,12 @@ async fn selection_empty_contents_wins() {
     assert_eq!(response.total_tokens, 5);
     assert_eq!(response.tokenizer_type, "google");
     assert_eq!(response.request_model, "gemini-2.0-flash");
+    assert!(!response.error);
+    assert!(response.error_message.is_none());
+    assert!(response.status_code.is_none());
     assert!(matches!(
-        response.original_response,
-        Some(CountReply::Google(_))
+        &response.original_response,
+        Some(CountReply::Google(reply)) if reply.total_tokens == Some(5)
     ));
     let sent = script.sent();
     assert_eq!(sent.len(), 1);
