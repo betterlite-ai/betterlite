@@ -62,6 +62,18 @@ fn metric_decides(metric: Metric) {
     assert_selected(&selected, MODEL, "second");
 }
 
+// The metric on the first deployment is what the draw reads: without it the draw is uniform and lands on the second.
+fn weight_decides_first() {
+    let mut world = shuffle(vec![
+        metric_setting(Metric::Weight, "first", 5),
+        metric_setting(Metric::Weight, "second", 0),
+    ]);
+    let selected = world
+        .call(&mut Picker::default(), &ask(MODEL, &facts()))
+        .unwrap();
+    assert_selected(&selected, MODEL, "first");
+}
+
 fn provider_filter() {
     let mut world = shuffle(vec![
         with_param(
@@ -197,6 +209,7 @@ fn alias_routing_model() {
 #[case::only_flagged(Behavior::OnlyFlagged)]
 #[case::unflagged_leaves(Behavior::UnflaggedLeaves)]
 #[case::weight_decides(Behavior::WeightDecides)]
+#[case::weight_decides_first(Behavior::WeightDecidesFirst)]
 #[case::rpm_decides(Behavior::RpmDecides)]
 #[case::tpm_decides(Behavior::TpmDecides)]
 #[case::provider_filter(Behavior::ProviderFilter)]
@@ -211,6 +224,7 @@ fn passthrough_selection_behaviors(#[case] behavior: Behavior) {
         Behavior::OnlyFlagged => only_flagged(),
         Behavior::UnflaggedLeaves => unflagged_leaves(),
         Behavior::WeightDecides => metric_decides(Metric::Weight),
+        Behavior::WeightDecidesFirst => weight_decides_first(),
         Behavior::RpmDecides => metric_decides(Metric::Rpm),
         Behavior::TpmDecides => metric_decides(Metric::Tpm),
         Behavior::ProviderFilter => provider_filter(),
@@ -228,6 +242,7 @@ enum Behavior {
     OnlyFlagged,
     UnflaggedLeaves,
     WeightDecides,
+    WeightDecidesFirst,
     RpmDecides,
     TpmDecides,
     ProviderFilter,
