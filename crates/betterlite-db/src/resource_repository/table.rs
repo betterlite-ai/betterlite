@@ -13,10 +13,10 @@ use crate::auxiliary_repository::repository::{TableAccess, TableBinding, TableEr
 use crate::budget_permission_rows::JsonData;
 use crate::postgres_store::errors::backend;
 
-use self::query::{execute_count, query_all, query_one};
+use self::query::{execute_count, query_all};
 use self::sql::{
-    create_statement, delete_returning_statement, delete_statement, generate_id,
-    select_one_statement, update_statement, upsert_statement,
+    DELETE, RETURNING, SELECT, assignments, generate_id, insert_statement, keyed_statement,
+    update_statement,
 };
 
 pub trait DocumentData: Serialize {
@@ -49,6 +49,14 @@ impl DocumentData for RowWrite {
     }
 }
 
+// The live reads take every row, the row with one key, or every row but the one with that key.
+#[derive(Debug, Clone, Copy)]
+pub enum KeyFilter<'key> {
+    All,
+    Equal(&'key str),
+    NotEqual(&'key str),
+}
+
 pub struct ResourceActions<'db, B: ResourceBinding> {
     access: TableAccess<'db>,
     binding: PhantomData<B>,
@@ -63,37 +71,32 @@ impl<'db, B: ResourceBinding + Sync> ResourceActions<'db, B> {
         }
     }
 
-    pub async fn find_unique<R>(&self, key: &str) -> Result<Option<R>, TableError>
+    pub async fn find<R>(&self, filter: KeyFilter<'_>) -> Result<Vec<R>, TableError>
     where
         R: DeserializeOwned,
     {
-        let sql = select_one_statement::<B>();
-        let params: [&(dyn ToSql + Sync); 1] = [&key];
-        query_one(self.access.read, &sql, &params).await
+        let (comparison, key) = match filter {
+            KeyFilter::All => {
+                let every_row = format!("{SELECT} \"{}\" AS t", B::TABLE);
+                return query_all(self.access.read, &every_row, &[]).await;
+            }
+            KeyFilter::Equal(matched) => ("=", matched),
+            KeyFilter::NotEqual(skipped) => ("<>", skipped),
+        };
+        let sql = keyed_statement::<B>(SELECT, comparison, "");
+        query_all(self.access.read, &sql, &[&key]).await
     }
 
-    pub async fn find_many<R>(&self) -> Result<Vec<R>, TableError>
-    where
-        R: DeserializeOwned,
-    {
-        query_all(
-            self.access.read,
-            &format!("SELECT row_to_json(t)::text FROM \"{}\" AS t", B::TABLE),
-            &[],
-        )
-        .await
-    }
-
-    pub async fn find_excluding<R>(&self, excluded: &str) -> Result<Vec<R>, TableError>
-    where
-        R: DeserializeOwned,
-    {
-        let mut sql = String::from("SELECT row_to_json(t)::text FROM \"");
-        sql.push_str(B::TABLE);
-        sql.push_str("\" AS t WHERE t.\"");
-        sql.push_str(B::KEY);
-        sql.push_str("\" <> $1");
-        query_all(self.access.read, &sql, &[&excluded]).await
+    // update keeps the one matched row and update_many counts them, so both run this statement.
+    async fn updated_rows(
+        &self,
+        data: B::Update,
+        filter: &str,
+    ) -> Result<Vec<JsonData>, TableError> {
+        let record = data.into_document()?;
+        let sql = update_statement::<B>(&record);
+        let json = serde_json::to_string(&record).map_err(TableError::Row)?;
+        query_all(self.access.write, &sql, &[&json, &filter]).await
     }
 }
 
@@ -107,11 +110,12 @@ impl<B: ResourceBinding + Send + Sync> TableActions for ResourceActions<'_, B> {
     async fn create(&self, data: Self::CreateData) -> Result<Self::Row, Self::Failure> {
         let mut record = data.into_document()?;
         generate_id::<B>(&mut record);
-        let sql = create_statement::<B>(&record);
+        let sql = insert_statement::<B>(&record, "");
         let json = serde_json::to_string(&record).map_err(TableError::Row)?;
         let params: &[&(dyn ToSql + Sync)] = if record.is_empty() { &[] } else { &[&json] };
-        query_one(self.access.write, &sql, params)
+        query_all(self.access.write, &sql, params)
             .await?
+            .pop()
             .ok_or(TableError::MissingRow)
     }
 
@@ -125,7 +129,7 @@ impl<B: ResourceBinding + Send + Sync> TableActions for ResourceActions<'_, B> {
         for item in data {
             let mut record = item.into_document()?;
             generate_id::<B>(&mut record);
-            let sql = create_statement::<B>(&record);
+            let sql = insert_statement::<B>(&record, "");
             let json = serde_json::to_string(&record).map_err(TableError::Row)?;
             let params: &[&(dyn ToSql + Sync)] = if record.is_empty() { &[] } else { &[&json] };
             transaction
@@ -145,10 +149,7 @@ impl<B: ResourceBinding + Send + Sync> TableActions for ResourceActions<'_, B> {
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> Result<Option<Self::Row>, Self::Failure> {
-        let record = data.into_document()?;
-        let sql = update_statement::<B>(&record);
-        let json = serde_json::to_string(&record).map_err(TableError::Row)?;
-        query_one(self.access.write, &sql, &[&json, &filter]).await
+        Ok(self.updated_rows(data, &filter).await?.pop())
     }
 
     async fn update_many(
@@ -156,10 +157,7 @@ impl<B: ResourceBinding + Send + Sync> TableActions for ResourceActions<'_, B> {
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> Result<usize, Self::Failure> {
-        let record = data.into_document()?;
-        let sql = update_statement::<B>(&record);
-        let json = serde_json::to_string(&record).map_err(TableError::Row)?;
-        execute_count(self.access.write, &sql, &[&json, &filter]).await
+        Ok(self.updated_rows(data, &filter).await?.len())
     }
 
     async fn upsert(
@@ -170,20 +168,27 @@ impl<B: ResourceBinding + Send + Sync> TableActions for ResourceActions<'_, B> {
         let mut record = data.into_document()?;
         record.insert(B::KEY.to_owned(), JsonData::String(filter));
         generate_id::<B>(&mut record);
-        let sql = upsert_statement::<B>(&record);
+        let kept: Vec<&str> = [Some(B::KEY), B::ID].into_iter().flatten().collect();
+        let conflict = format!(
+            " ON CONFLICT (\"{}\") DO UPDATE SET {}",
+            B::KEY,
+            assignments::<B>(&record, "EXCLUDED", &kept)
+        );
+        let sql = insert_statement::<B>(&record, &conflict);
         let json = serde_json::to_string(&record).map_err(TableError::Row)?;
-        query_one(self.access.write, &sql, &[&json])
+        query_all(self.access.write, &sql, &[&json])
             .await?
+            .pop()
             .ok_or(TableError::MissingRow)
     }
 
     async fn delete(&self, filter: Self::Filter) -> Result<Option<Self::Row>, Self::Failure> {
-        let sql = delete_returning_statement::<B>();
-        query_one(self.access.write, &sql, &[&filter]).await
+        let sql = keyed_statement::<B>(DELETE, "=", RETURNING);
+        Ok(query_all(self.access.write, &sql, &[&filter]).await?.pop())
     }
 
     async fn delete_many(&self, filter: Self::Filter) -> Result<usize, Self::Failure> {
-        let sql = delete_statement::<B>();
+        let sql = keyed_statement::<B>(DELETE, "=", "");
         execute_count(self.access.write, &sql, &[&filter]).await
     }
 }

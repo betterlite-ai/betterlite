@@ -12,7 +12,7 @@ use crate::resource_rows::ResourceRowsError;
 use crate::resource_rows::credential::CredentialItem;
 use crate::resource_rows::json_value_is_set;
 
-use super::table::{ResourceActions, ResourceBinding, RowWrite};
+use super::table::{KeyFilter, ResourceActions, ResourceBinding, RowWrite};
 
 pub struct CredentialBinding;
 
@@ -67,7 +67,7 @@ impl<'db> CredentialsRepository<'db> {
 
     // ast-grep-ignore: no-one-line-functions - LiteLLM's one-query public read
     pub async fn find_all(&self) -> Result<Vec<JsonData>, CredentialError> {
-        Ok(self.table()?.as_ref().find_many::<JsonData>().await?)
+        Ok(self.table()?.as_ref().find(KeyFilter::All).await?)
     }
 
     // ast-grep-ignore: no-one-line-functions - LiteLLM's one-query public write
@@ -79,15 +79,12 @@ impl<'db> CredentialsRepository<'db> {
         &self,
         credential_name: &str,
     ) -> Result<Option<CredentialItem>, CredentialError> {
-        let Some(row) = self
-            .table()?
+        let table = self.table()?;
+        let rows = table
             .as_ref()
-            .find_unique::<JsonData>(credential_name)
-            .await?
-        else {
-            return Ok(None);
-        };
-        credential_from_row(row).map(Some)
+            .find(KeyFilter::Equal(credential_name))
+            .await?;
+        rows.into_iter().next().map(credential_from_row).transpose()
     }
 
     pub async fn update_by_name(
@@ -95,9 +92,10 @@ impl<'db> CredentialsRepository<'db> {
         credential_name: &str,
         data: RowWrite,
     ) -> Result<Option<JsonData>, CredentialError> {
-        let table = self.table()?;
-        let filter = credential_name.to_owned();
-        Ok(table.update(data, filter).await?)
+        Ok(self
+            .table()?
+            .update(data, credential_name.to_owned())
+            .await?)
     }
 
     // ast-grep-ignore: no-one-line-functions - LiteLLM's one-query public write

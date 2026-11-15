@@ -12,7 +12,7 @@ use crate::auxiliary_repository::repository::{
 use crate::budget_permission_rows::JsonData;
 use crate::postgres_store::errors::DbError;
 
-use super::table::{DocumentData, ResourceActions, ResourceBinding};
+use super::table::{DocumentData, KeyFilter, ResourceActions, ResourceBinding};
 
 pub const MAX_CONFIG_VALUE_BYTES: usize = 0x0010_0000;
 pub const MAX_CONFIG_VALUE_DEPTH: usize = 64;
@@ -180,18 +180,16 @@ impl<'db> ConfigRepository<'db> {
         let Some(row) = self
             .table()?
             .as_ref()
-            .find_unique::<ConfigStoredRow>(param_name)
+            .find::<ConfigStoredRow>(KeyFilter::Equal(param_name))
             .await?
+            .pop()
         else {
             return Ok(None);
         };
-        let param_value = match row.param_value {
-            JsonData::String(raw) => decode_config_json(raw.as_bytes())?,
-            other @ (JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_)) => other,
+        let param_value = if let JsonData::String(raw) = &row.param_value {
+            decode_config_json(raw.as_bytes())?
+        } else {
+            row.param_value
         };
         Ok(Some(ConfigParam {
             param_name: param_name.to_owned(),
@@ -204,13 +202,10 @@ impl<'db> ConfigRepository<'db> {
         param_name: &str,
         param_value: JsonData,
     ) -> Result<ConfigParam, ConfigError> {
-        let value_json = match &param_value {
-            JsonData::String(text) => text.clone(),
-            other @ (JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_)) => serde_json::to_string(other).map_err(TableError::Row)?,
+        let value_json = if let JsonData::String(text) = &param_value {
+            text.clone()
+        } else {
+            serde_json::to_string(&param_value).map_err(TableError::Row)?
         };
         let write = ConfigWrite {
             param_name: param_name.to_owned(),

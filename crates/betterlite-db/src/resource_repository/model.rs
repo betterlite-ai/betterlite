@@ -12,7 +12,7 @@ use crate::resource_rows::ResourceRowsError;
 use crate::resource_rows::model::ProxyModelTable;
 use crate::stored_cipher::DbCipher;
 
-use super::table::{ResourceActions, ResourceBinding, RowWrite};
+use super::table::{KeyFilter, ResourceActions, ResourceBinding, RowWrite};
 
 pub struct ProxyModelBinding;
 
@@ -78,7 +78,7 @@ impl<'db> ModelRepository<'db> {
         let rows = self
             .table()?
             .as_ref()
-            .find_excluding::<JsonData>(model_id)
+            .find::<JsonData>(KeyFilter::NotEqual(model_id))
             .await?;
         rows.into_iter().map(|row| self.to_model(row)).collect()
     }

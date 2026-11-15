@@ -4,6 +4,10 @@ use crate::budget_permission_rows::JsonData;
 
 use super::ResourceBinding;
 
+pub(super) const SELECT: &str = "SELECT row_to_json(t)::text FROM";
+pub(super) const DELETE: &str = "DELETE FROM";
+pub(super) const RETURNING: &str = " RETURNING row_to_json(t)::text";
+
 fn quoted_columns(document: &BTreeMap<String, JsonData>) -> Vec<String> {
     document
         .keys()
@@ -11,46 +15,17 @@ fn quoted_columns(document: &BTreeMap<String, JsonData>) -> Vec<String> {
         .collect()
 }
 
-fn value_list(document: &BTreeMap<String, JsonData>) -> String {
-    quoted_columns(document)
-        .iter()
-        .map(|column| format!("r.{column}"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
+// One statement shape serves every action that matches the binding's key column against $1.
 #[must_use]
-pub(super) fn select_one_statement<B>() -> String
+pub(super) fn keyed_statement<B>(head: &str, comparison: &str, tail: &str) -> String
 where
     B: ResourceBinding,
 {
     format!(
-        "SELECT row_to_json(t)::text FROM \"{}\" AS t WHERE t.\"{}\" = $1",
+        "{head} \"{}\" AS t WHERE t.\"{}\" {comparison} $1{tail}",
         B::TABLE,
         B::KEY
     )
-}
-
-#[must_use]
-pub(super) fn delete_statement<B>() -> String
-where
-    B: ResourceBinding,
-{
-    format!(
-        "DELETE FROM \"{}\" AS t WHERE t.\"{}\" = $1",
-        B::TABLE,
-        B::KEY
-    )
-}
-
-#[must_use]
-pub(super) fn delete_returning_statement<B>() -> String
-where
-    B: ResourceBinding,
-{
-    let mut sql = delete_statement::<B>();
-    sql.push_str(" RETURNING row_to_json(t)::text");
-    sql
 }
 
 pub(super) fn generate_id<B>(document: &mut BTreeMap<String, JsonData>)
@@ -68,39 +43,48 @@ where
     }
 }
 
+// Columns named in `kept` stay as stored; an empty list still needs one assignment to be valid SQL.
 #[must_use]
-pub(super) fn create_statement<B>(document: &BTreeMap<String, JsonData>) -> String
+pub(super) fn assignments<B>(
+    document: &BTreeMap<String, JsonData>,
+    source: &str,
+    kept: &[&str],
+) -> String
+where
+    B: ResourceBinding,
+{
+    let mut set: Vec<String> = document
+        .keys()
+        .zip(quoted_columns(document))
+        .filter(|(name, _)| !kept.contains(&name.as_str()))
+        .map(|(_, column)| format!("{column} = {source}.{column}"))
+        .collect();
+    if let Some(updated_at) = B::UPDATED_AT.filter(|name| !document.contains_key(*name)) {
+        set.push(format!("\"{updated_at}\" = now()"));
+    }
+    if set.is_empty() {
+        set.push(format!("\"{}\" = t.\"{}\"", B::KEY, B::KEY));
+    }
+    set.join(", ")
+}
+
+#[must_use]
+pub(super) fn insert_statement<B>(document: &BTreeMap<String, JsonData>, conflict: &str) -> String
 where
     B: ResourceBinding,
 {
     let table = format!("\"{}\"", B::TABLE);
     if document.is_empty() {
-        return format!("INSERT INTO {table} AS t DEFAULT VALUES RETURNING row_to_json(t)::text");
+        return format!("INSERT INTO {table} AS t DEFAULT VALUES{RETURNING}");
     }
-    let columns = quoted_columns(document).join(", ");
-    let values = value_list(document);
+    let columns = quoted_columns(document);
+    let values: Vec<String> = columns.iter().map(|column| format!("r.{column}")).collect();
     format!(
-        "INSERT INTO {table} AS t ({columns}) SELECT {values} FROM \
-         jsonb_populate_record(NULL::{table}, $1::text::jsonb) AS r RETURNING row_to_json(t)::text"
+        "INSERT INTO {table} AS t ({}) SELECT {} FROM \
+         jsonb_populate_record(NULL::{table}, $1::text::jsonb) AS r{conflict}{RETURNING}",
+        columns.join(", "),
+        values.join(", ")
     )
-}
-
-#[must_use]
-fn update_assignments<B>(document: &BTreeMap<String, JsonData>) -> Vec<String>
-where
-    B: ResourceBinding,
-{
-    let mut assignments: Vec<String> = quoted_columns(document)
-        .into_iter()
-        .map(|column| format!("{column} = r.{column}"))
-        .collect();
-    if let Some(updated_at) = B::UPDATED_AT.filter(|name| !document.contains_key(*name)) {
-        assignments.push(format!("\"{updated_at}\" = now()"));
-    }
-    if assignments.is_empty() {
-        assignments.push(format!("\"{}\" = t.\"{}\"", B::KEY, B::KEY));
-    }
-    assignments
 }
 
 #[must_use]
@@ -109,40 +93,10 @@ where
     B: ResourceBinding,
 {
     let table = format!("\"{}\"", B::TABLE);
-    let key = format!("\"{}\"", B::KEY);
-    let assignments = update_assignments::<B>(document).join(", ");
     format!(
-        "UPDATE {table} AS t SET {assignments} FROM \
-         jsonb_populate_record(NULL::{table}, $1::text::jsonb) AS r WHERE t.{key} = $2 \
-         RETURNING row_to_json(t)::text"
-    )
-}
-
-#[must_use]
-pub(super) fn upsert_statement<B>(document: &BTreeMap<String, JsonData>) -> String
-where
-    B: ResourceBinding,
-{
-    let table = format!("\"{}\"", B::TABLE);
-    let key = format!("\"{}\"", B::KEY);
-    let columns = quoted_columns(document).join(", ");
-    let values = value_list(document);
-    let mut assignments: Vec<String> = document
-        .keys()
-        .zip(quoted_columns(document))
-        .filter(|(name, _)| name.as_str() != B::KEY && B::ID != Some(name.as_str()))
-        .map(|(_, column)| format!("{column} = EXCLUDED.{column}"))
-        .collect();
-    if let Some(updated_at) = B::UPDATED_AT.filter(|name| !document.contains_key(*name)) {
-        assignments.push(format!("\"{updated_at}\" = now()"));
-    }
-    if assignments.is_empty() {
-        assignments.push(format!("{key} = EXCLUDED.{key}"));
-    }
-    let assignment_clause = assignments.join(", ");
-    format!(
-        "INSERT INTO {table} AS t ({columns}) SELECT {values} FROM \
-         jsonb_populate_record(NULL::{table}, $1::text::jsonb) AS r \
-         ON CONFLICT ({key}) DO UPDATE SET {assignment_clause} RETURNING row_to_json(t)::text"
+        "UPDATE {table} AS t SET {} FROM jsonb_populate_record(NULL::{table}, $1::text::jsonb) \
+         AS r WHERE t.\"{}\" = $2{RETURNING}",
+        assignments::<B>(document, "r", &[]),
+        B::KEY
     )
 }
