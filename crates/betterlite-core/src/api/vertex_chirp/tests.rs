@@ -27,7 +27,7 @@ use super::config::{ChirpSettings, VertexChirpRealtimeConfig};
 use super::decode::decode_chirp_backend_event;
 use super::error::ChirpAdapterError;
 use super::factory::ChirpBackendFactory;
-use super::ids::ChirpIds;
+use super::ids::{ChirpIds, UuidChirpIds};
 use super::target::{AccessTokenFuture, AccessTokenResolver, SpeechStreamingTarget};
 
 const SESSION_UPDATE: &str = r#"{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":16000},"transcription":{"model":"chirp_2","language":"en-US"}}}}}"#;
@@ -684,6 +684,23 @@ fn response_events_take_their_item_ids_from_the_injected_source() {
             .any(|event| event["item_id"] == "item_fixed_1"),
         "{document}"
     );
+}
+
+#[test]
+fn uuid_ids_carry_their_prefixes_and_differ_per_call() {
+    let mut ids = UuidChirpIds::default();
+    let event = ids.event_id();
+    let item = ids.item_id();
+    let session = ids.session_id();
+    assert_eq!(event.len(), "event_".len() + 32);
+    assert!(event.starts_with("event_"));
+    assert_eq!(item.len(), "item_".len() + 32);
+    assert!(item.starts_with("item_"));
+    assert_eq!(session.len(), "sess_".len() + 32);
+    assert!(session.starts_with("sess_"));
+    assert_ne!(ids.event_id(), event);
+    assert_ne!(ids.item_id(), item);
+    assert_ne!(ids.session_id(), session);
 }
 
 #[test]
