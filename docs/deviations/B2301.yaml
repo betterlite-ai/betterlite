@@ -1,0 +1,6 @@
+task: B2301
+deviations:
+  - what: A stored model row whose model_info column is a JSON scalar such as false, 0 or [] fails to decode instead of being read as an empty model_info.
+    why: B725 types LiteLLM_ProxyModelTable.model_info as an object payload, so the row cannot be built and the conversion error propagates; LiteLLM's value or {} turns those falsey scalars into an empty model_info.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L49-L52
+kept_bugs: []
