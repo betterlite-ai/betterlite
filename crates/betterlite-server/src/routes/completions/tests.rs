@@ -279,7 +279,7 @@ async fn alias(path: &str) {
 }
 
 async fn parameters_and_controls() {
-    let body = r#"{"model":"text-model","prompt":"hi","temperature":0.7,"logprobs":2,"top_logprobs":1,"max_retries":5,"api_base":"http://evil.example","api_key":"sk-evil","metadata":{"user":"x"},"num_retries":3,"timeout":1,"extra_headers":{"x-caller":"yes"}}"#;
+    let body = r#"{"model":"text-model","prompt":"hi","temperature":0.7,"logprobs":2,"top_logprobs":1,"max_retries":5,"api_base":"http://evil.example","api_key":"sk-evil","api_version":"2099-01-01","metadata":{"user":"x"},"mock_response":"not a mock","mock_timeout":true,"num_retries":3,"timeout":1,"extra_headers":{"x-caller":"yes"}}"#;
     let answered = call("/v1/completions", body, 200, ANSWER).await;
     assert_eq!(answered.status, StatusCode::OK);
     assert!(
@@ -301,10 +301,15 @@ async fn parameters_and_controls() {
         "max_retries",
         "api_base",
         "api_key",
+        "api_version",
         "metadata",
+        "mock_response",
+        "mock_timeout",
         "num_retries",
         "sk-evil",
         "evil.example",
+        "2099-01-01",
+        "not a mock",
     ] {
         assert!(
             !answered.sent.contains(control),
