@@ -1,3 +1,5 @@
+use std::future::{Future, ready};
+
 use betterlite_models::decisions::Extra;
 use betterlite_prompts::message_content::Message;
 use betterlite_tokenizer::count::error::CountError;
@@ -64,12 +66,20 @@ impl FixtureCounter {
     }
 }
 impl TokenCounter for FixtureCounter {
-    async fn count_messages(&self, _model: &str, _messages: &[Message]) -> Result<u64, CountError> {
-        self.counted(self.prompt_tokens)
+    fn count_messages<'count>(
+        &'count self,
+        _model: &'count str,
+        _messages: &'count [Message],
+    ) -> impl Future<Output = Result<u64, CountError>> + Send + 'count {
+        ready(self.counted(self.prompt_tokens))
     }
 
-    async fn count_response_tokens(&self, _model: &str, _text: &str) -> Result<u64, CountError> {
-        self.counted(self.completion_tokens)
+    fn count_response_tokens<'count>(
+        &'count self,
+        _model: &'count str,
+        _text: &'count str,
+    ) -> impl Future<Output = Result<u64, CountError>> + Send + 'count {
+        ready(self.counted(self.completion_tokens))
     }
 }
 pub(super) fn run(input: &Input) -> HelperResult {

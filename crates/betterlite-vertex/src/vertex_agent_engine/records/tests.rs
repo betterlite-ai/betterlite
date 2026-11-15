@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
+use std::future::{Future, ready};
 use std::path::PathBuf;
 
 use betterlite_models::decisions::Extra;
@@ -64,30 +65,48 @@ fn body_of(lines: &[&str]) -> Vec<u8> {
 struct FixedCounter;
 
 impl TokenCounter for FixedCounter {
-    async fn count_messages(&self, model: &str, _messages: &[Message]) -> Result<u64, CountError> {
-        if model == TOKEN_MODEL {
-            return Ok(3);
-        }
-        Err(CountError::Overflow)
+    fn count_messages<'count>(
+        &'count self,
+        model: &'count str,
+        _messages: &'count [Message],
+    ) -> impl Future<Output = Result<u64, CountError>> + Send + 'count {
+        ready(if model == TOKEN_MODEL {
+            Ok(3)
+        } else {
+            Err(CountError::Overflow)
+        })
     }
 
-    async fn count_response_tokens(&self, model: &str, text: &str) -> Result<u64, CountError> {
-        if model != TOKEN_MODEL || text != "hi" {
-            return Err(CountError::Overflow);
-        }
-        Ok(5)
+    fn count_response_tokens<'count>(
+        &'count self,
+        model: &'count str,
+        text: &'count str,
+    ) -> impl Future<Output = Result<u64, CountError>> + Send + 'count {
+        ready(if model == TOKEN_MODEL && text == "hi" {
+            Ok(5)
+        } else {
+            Err(CountError::Overflow)
+        })
     }
 }
 
 struct FailingCounter;
 
 impl TokenCounter for FailingCounter {
-    async fn count_messages(&self, _model: &str, _messages: &[Message]) -> Result<u64, CountError> {
-        Err(CountError::Overflow)
+    fn count_messages<'count>(
+        &'count self,
+        _model: &'count str,
+        _messages: &'count [Message],
+    ) -> impl Future<Output = Result<u64, CountError>> + Send + 'count {
+        ready(Err(CountError::Overflow))
     }
 
-    async fn count_response_tokens(&self, _model: &str, _text: &str) -> Result<u64, CountError> {
-        Err(CountError::Overflow)
+    fn count_response_tokens<'count>(
+        &'count self,
+        _model: &'count str,
+        _text: &'count str,
+    ) -> impl Future<Output = Result<u64, CountError>> + Send + 'count {
+        ready(Err(CountError::Overflow))
     }
 }
 
@@ -346,9 +365,9 @@ async fn a_counter_failure_leaves_the_usage_unset() {
 
 #[test]
 fn the_capability_flags_match_agent_engine() {
-    assert!(HAS_CUSTOM_STREAM_WRAPPER);
-    assert!(!STREAM_PARAM_IN_BODY);
-    assert!(!SHOULD_FAKE_STREAM);
+    const { assert!(HAS_CUSTOM_STREAM_WRAPPER) };
+    const { assert!(!STREAM_PARAM_IN_BODY) };
+    const { assert!(!SHOULD_FAKE_STREAM) };
 }
 
 #[test]
