@@ -1,0 +1,47 @@
+kind: helper
+name: xai-realtime-content-part-backfill
+call:
+  xai_realtime:
+    kind: sequence
+    events:
+      - {type: response.content_part.added, response_id: r-text, item_id: i-text, part: {type: text, text: he}}
+      - {type: response.output_text.done, response_id: r-text, item_id: i-text, text: hello}
+      - {type: response.content_part.done, response_id: r-text, item_id: i-text, content_index: 0}
+      - {type: response.content_part.added, response_id: r-audio, item_id: i-audio, part: {type: audio, transcript: ""}}
+      - {type: response.output_audio_transcript.done, response_id: r-audio, item_id: i-audio, transcript: spoken}
+      - {type: response.content_part.done, response_id: r-audio, item_id: i-audio}
+      - {type: response.content_part.done, response_id: r-missing, item_id: i-missing}
+      - {type: response.content_part.added, response_id: r-null, item_id: i-null, content_index: null, part: {type: text, text: n}}
+      - {type: response.content_part.done, response_id: r-null, item_id: i-null, content_index: null}
+      - {type: response.content_part.done, response_id: r-null, item_id: i-null}
+      - {type: response.output_audio_transcript.done, response_id: r-fresh, item_id: i-fresh, transcript: made}
+      - {type: response.content_part.done, response_id: r-fresh, item_id: i-fresh}
+      - {type: response.content_part.added, response_id: r-nulltype, item_id: i-nulltype, part: {type: null}}
+      - {type: response.output_text.done, response_id: r-nulltype, item_id: i-nulltype, text: x}
+      - {type: response.content_part.done, response_id: r-nulltype, item_id: i-nulltype}
+      - {type: response.output_text.done, response_id: r-audio, item_id: i-audio, text: null}
+      - {type: response.content_part.done, response_id: r-audio, item_id: i-audio}
+      - {type: response.content_part.added, response_id: r-extra, item_id: i-extra, part: {type: audio, transcript: he, extra: 1}}
+      - {type: response.output_audio_transcript.done, response_id: r-extra, item_id: i-extra, transcript: hello}
+      - {type: response.content_part.done, response_id: r-extra, item_id: i-extra}
+      - {type: response.content_part.added, response_id: r-notype, item_id: i-notype, part: {text: he}}
+      - {type: response.output_text.done, response_id: r-notype, item_id: i-notype, text: hello}
+      - {type: response.content_part.done, response_id: r-notype, item_id: i-notype}
+      - {type: response.content_part.added, response_id: r-notype-audio, item_id: i-notype-audio, part: {transcript: he}}
+      - {type: response.output_audio_transcript.done, response_id: r-notype-audio, item_id: i-notype-audio, transcript: hello}
+      - {type: response.content_part.done, response_id: r-notype-audio, item_id: i-notype-audio}
+      - {type: response.content_part.added, response_id: null, item_id: null, part: {type: text, text: null-ids}}
+      - {type: response.content_part.done}
+      - {type: response.content_part.done, response_id: r-done-cache, item_id: i-done-cache, part: {type: text, text: declared-by-done}}
+      - {type: response.content_part.added, response_id: r-done-cache, item_id: i-done-cache}
+      - {type: response.content_part.added, response_id: r-shared-first, item_id: i-shared, content_index: 0, part: {type: text, text: first-response}}
+      - {type: response.content_part.added, response_id: r-shared-second, item_id: i-shared, content_index: 0, part: {type: audio, transcript: second-response}}
+      - {type: response.content_part.done, response_id: r-shared-first, item_id: i-shared, content_index: 0}
+      - {type: response.content_part.done, response_id: r-shared-second, item_id: i-shared, content_index: 0}
+    sessions: []
+    model: grok-4-1-fast-non-reasoning
+    api_key: null
+    scope_headers: []
+    max_message_size_bytes: 1048576
+env: {}
+compare: {ignore: []}

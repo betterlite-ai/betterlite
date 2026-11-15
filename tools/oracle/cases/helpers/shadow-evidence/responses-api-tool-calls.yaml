@@ -1,0 +1,47 @@
+kind: helper
+name: shadow-responses-api-tool-calls
+call:
+  b4081:
+    operation: responses_text
+    response:
+      id: resp_2
+      created_at: 1
+      output:
+        - type: message
+          id: msg_1
+          status: completed
+          role: assistant
+          content:
+            - type: output_text
+              text: Checking.
+              annotations: []
+        - type: function_call
+          id: fc_1
+          call_id: c1
+          name: search
+          arguments: '{"q":"x"}'
+          status: completed
+        - type: custom_tool_call
+          id: cc_1
+          call_id: c2
+          name: apply
+          input: raw
+    metadata: {}
+    routed_model: ""
+calls:
+  - b4081:
+      operation: responses_text
+      response:
+        id: resp_3
+        created_at: 1
+        output:
+          - type: function_call
+            id: fc_1
+            call_id: c1
+            name: search
+            arguments: "{}"
+            status: completed
+      metadata: {}
+      routed_model: ""
+env: {}
+compare: {ignore: []}

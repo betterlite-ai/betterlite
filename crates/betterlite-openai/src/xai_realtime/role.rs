@@ -1,0 +1,17 @@
+use betterlite_models::decisions::Json;
+
+const CONVERSATION_ITEM_ADDED: &str = "conversation.item.added";
+
+#[must_use]
+pub fn repair_tool_role(mut event: Json, event_type: Option<&str>) -> Json {
+    if event_type != Some(CONVERSATION_ITEM_ADDED) {
+        return event;
+    }
+    if let Json::Object(fields) = &mut event
+        && let Some(Json::Object(item)) = fields.get_mut("item")
+        && matches!(item.get("role"), Some(Json::Text(role)) if role == "tool")
+    {
+        item.insert(String::from("role"), Json::Text(String::from("assistant")));
+    }
+    event
+}
