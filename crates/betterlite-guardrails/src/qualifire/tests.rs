@@ -4,6 +4,8 @@ mod edges;
 mod network;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::Path;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
@@ -16,15 +18,16 @@ use super::QualifireGuardrail;
 use super::convert::{self, ApiMessage, ApiTool, ApiToolCall};
 use super::init::QualifireArgs;
 use super::request::{self, CheckRequest};
-use super::settings::{self, Check, OnFlagged, QualifireSettings, SecretLookup};
+use super::settings::{self, Check, OnFlagged, QualifireSettings};
 use super::wire::{BlockDetail, Payload, QualifireResponse, Verdict};
 use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailMessage};
 use crate::guardrail_base::inputs::GuardrailApiInputs;
+use crate::hook_initializers::secret_lookup::SecretLookup;
 
 struct NoSecrets;
 
 impl SecretLookup for NoSecrets {
-    fn secret(&self, _name: &str) -> Option<SecretString> {
+    fn get_secret_str(&self, _name: &str) -> Option<SecretString> {
         None
     }
 }
@@ -32,7 +35,7 @@ impl SecretLookup for NoSecrets {
 struct FixedSecrets(BTreeMap<String, SecretString>);
 
 impl SecretLookup for FixedSecrets {
-    fn secret(&self, name: &str) -> Option<SecretString> {
+    fn get_secret_str(&self, name: &str) -> Option<SecretString> {
         self.0.get(name).cloned()
     }
 }
@@ -626,6 +629,40 @@ fn evaluate_payload_skips_tool_selection_without_tools() {
 }
 
 #[test]
+fn a_null_tools_value_skips_the_tool_selection_check() {
+    let mut args = args();
+    args.tool_selection_quality_check = Some(true);
+    let guardrail = build(&args);
+    let tools = GuardrailValue::Null;
+    let check = CheckRequest {
+        rows: &[row("hi")],
+        output: None,
+        evaluation_id: None,
+        assertions: &[],
+        available_tools: Some(&tools),
+    };
+    let plan = guardrail.plan(&check).unwrap();
+    assert_eq!(
+        payload_value(&plan.payload()),
+        json(r#"{"messages": [{"role": "user", "content": "hi"}]}"#)
+    );
+    let invoke = CheckRequest {
+        rows: &[row("hi")],
+        output: None,
+        evaluation_id: Some("e1"),
+        assertions: &[],
+        available_tools: Some(&tools),
+    };
+    let plan = guardrail.plan(&invoke).unwrap();
+    assert_eq!(
+        payload_value(&plan.payload()),
+        json(
+            r#"{"evaluation_id": "e1", "input": "hi", "output": "", "messages": [{"role": "user", "content": "hi"}]}"#
+        )
+    );
+}
+
+#[test]
 fn evaluate_payload_sends_available_tools_with_the_tool_check() {
     let mut args = args();
     args.tool_selection_quality_check = Some(true);
@@ -746,6 +783,17 @@ fn block_detail_carries_betterlites_error_and_the_qualifire_response() {
             r#"{"error": "Violated guardrail policy", "qualifire_response": {"score": 5, "status": "failed"}}"#
         )
     );
+}
+
+#[test]
+fn replays_the_qualifire_wire_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/qualifire_wire");
+    let paths: Vec<_> = fs::read_dir(corpus).unwrap().collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
+        serde_json::from_slice::<Verdict>(&bytes).is_ok()
+    }));
 }
 
 #[test]

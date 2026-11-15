@@ -185,13 +185,14 @@ fn non_empty_text(
 }
 
 fn assertions(value: Option<&GuardrailValue>) -> Result<Option<Vec<String>>, QualifireError> {
-    let Some(present) = value else {
-        return Ok(None);
-    };
-    let GuardrailValue::Array(items) = present else {
-        return Err(QualifireError::InvalidDynamicParam {
-            field: "assertions",
-        });
+    let items = match value {
+        None | Some(GuardrailValue::Null) => return Ok(None),
+        Some(GuardrailValue::Array(items)) => items,
+        Some(_wrong) => {
+            return Err(QualifireError::InvalidDynamicParam {
+                field: "assertions",
+            });
+        }
     };
     let mut taken = Vec::with_capacity(items.len());
     for item in items {

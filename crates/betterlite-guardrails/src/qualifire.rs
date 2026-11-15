@@ -20,10 +20,11 @@ use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::guardrail_selection::gate::GuardrailSelection;
+use crate::hook_initializers::secret_lookup::SecretLookup;
 use error::QualifireError;
 use init::QualifireArgs;
 use request::CheckRequest;
-use settings::{Check, OnFlagged, QualifireSettings, SecretLookup, insert_flag};
+use settings::{Check, OnFlagged, QualifireSettings, insert_flag};
 
 pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
     GuardrailEventHooks::PreCall,
@@ -101,7 +102,6 @@ impl QualifireGuardrail {
             }
         };
         self.settings.on_flagged = on_flagged;
-        self.settings.api_key = params.base.fields.api_key.clone();
         if let Some(api_base) = &params.base.fields.api_base {
             self.settings.api_base.clone_from(api_base);
         }

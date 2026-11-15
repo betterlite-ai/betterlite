@@ -133,8 +133,10 @@ fn update_rejects_an_on_flagged_that_is_not_text() {
 }
 
 #[test]
-fn update_takes_the_new_api_base_and_key() {
-    let mut guardrail = build(&args());
+fn update_takes_the_new_api_base_but_not_the_key() {
+    let mut args = args();
+    args.api_key = Some(SecretString::from("old-key".to_owned()));
+    let mut guardrail = build(&args);
     guardrail
         .update_params(&params(
             r#", "api_base": "https://new.test", "api_key": "new-key""#,
@@ -143,7 +145,7 @@ fn update_takes_the_new_api_base_and_key() {
     assert_eq!(guardrail.settings.api_base, "https://new.test");
     assert_eq!(
         guardrail.settings.api_key.unwrap().expose_secret(),
-        "new-key"
+        "old-key"
     );
 }
 
@@ -223,7 +225,7 @@ fn an_empty_name_leaves_the_guardrail_unnamed() {
 }
 
 #[test]
-fn blocked_is_a_bad_request_and_other_failures_are_server_errors() {
+fn blocked_is_a_bad_request_and_a_non_2xx_answer_keeps_its_status() {
     let detail = BlockDetail {
         error: "Violated guardrail policy".to_owned(),
         qualifire_response: crate::qualifire::wire::QualifireResponse {
@@ -235,10 +237,17 @@ fn blocked_is_a_bad_request_and_other_failures_are_server_errors() {
         QualifireError::Blocked { detail }.status_code(),
         StatusCode::BAD_REQUEST
     );
-    let failure = QualifireError::HttpStatus {
+    let upstream = QualifireError::HttpStatus {
         status: StatusCode::BAD_GATEWAY,
     };
-    assert_eq!(failure.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(upstream.status_code(), StatusCode::BAD_GATEWAY);
+    let outside_the_passed_range = QualifireError::HttpStatus {
+        status: StatusCode::FOUND,
+    };
+    assert_eq!(
+        outside_the_passed_range.status_code(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
 }
 
 #[test]
@@ -369,10 +378,12 @@ fn dynamic_params_of_the_wrong_type_are_errors(#[case] field: &str, #[case] valu
 fn dynamic_params_that_are_null_are_ignored() {
     let dynamic = BTreeMap::from([
         ("evaluation_id".to_owned(), GuardrailValue::Null),
+        ("assertions".to_owned(), GuardrailValue::Null),
         ("on_flagged".to_owned(), GuardrailValue::Null),
     ]);
     let overrides = request::overrides(&dynamic).unwrap();
     assert_eq!(overrides.evaluation_id, None);
+    assert_eq!(overrides.assertions, None);
     assert_eq!(overrides.on_flagged, None);
 }
 

@@ -60,10 +60,18 @@ impl QualifireError {
     pub const fn status_code(&self) -> StatusCode {
         match self {
             Self::Blocked { .. } => StatusCode::BAD_REQUEST,
-            Self::Timeout { .. }
-            | Self::Request { .. }
+            // AsyncHTTPHandler.post turns httpx.TimeoutException into litellm.Timeout, which carries 408.
+            Self::Timeout { .. } => StatusCode::REQUEST_TIMEOUT,
+            // LiteLLM raises on a non-2xx answer, and the proxy answers with the upstream status.
+            Self::HttpStatus { status } => {
+                if status.as_u16() >= 400 && status.as_u16() <= 599 {
+                    *status
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            }
+            Self::Request { .. }
             | Self::InvalidHeader { .. }
-            | Self::HttpStatus { .. }
             | Self::ResponseTooLarge { .. }
             | Self::ResponseJson { .. }
             | Self::Encode { .. }

@@ -4,11 +4,11 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::generic_guardrail_contracts::{GuardrailInputType, GuardrailMessage};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
+use betterlite_guardrails::hook_initializers::secret_lookup::SecretLookup;
 use betterlite_guardrails::qualifire::QualifireGuardrail;
 use betterlite_guardrails::qualifire::convert::message_rows;
 use betterlite_guardrails::qualifire::error::QualifireError;
 use betterlite_guardrails::qualifire::init::QualifireArgs;
-use betterlite_guardrails::qualifire::settings::SecretLookup;
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -64,7 +64,7 @@ struct ChoiceMessage {
 struct NoSecrets;
 
 impl SecretLookup for NoSecrets {
-    fn secret(&self, _name: &str) -> Option<SecretString> {
+    fn get_secret_str(&self, _name: &str) -> Option<SecretString> {
         None
     }
 }
@@ -102,8 +102,7 @@ impl crate::helpers::Helper for Op {
                 serde_json::to_value(detail)
                     .map_err(|error| failure("TypeError", error.to_string()))?,
             ),
-            Err(QualifireError::HttpStatus { status }) => (Some(status.as_u16()), Value::Null),
-            Err(error) => return Err(failure("QualifireError", error.to_string())),
+            Err(error) => (Some(error.status_code().as_u16()), Value::Null),
         };
         Ok(json!({ "request": request, "status": status, "detail": detail }))
     }

@@ -165,11 +165,10 @@ fn arguments(value: Option<&GuardrailValue>) -> BTreeMap<String, GuardrailValue>
 }
 
 pub fn api_tools(value: Option<&GuardrailValue>) -> Result<Option<Vec<ApiTool>>, QualifireError> {
-    let Some(present) = value else {
-        return Ok(None);
-    };
-    let GuardrailValue::Array(tools) = present else {
-        return Err(QualifireError::InvalidField { field: "tools" });
+    let tools = match value {
+        None | Some(GuardrailValue::Null) => return Ok(None),
+        Some(GuardrailValue::Array(tools)) => tools,
+        Some(_wrong) => return Err(QualifireError::InvalidField { field: "tools" }),
     };
     let mut converted = Vec::new();
     for tool in tools {

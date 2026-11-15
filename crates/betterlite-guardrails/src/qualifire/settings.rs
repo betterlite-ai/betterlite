@@ -6,13 +6,10 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::QualifireError;
 use super::init::QualifireArgs;
+use crate::hook_initializers::secret_lookup::SecretLookup;
 
 pub const DEFAULT_API_BASE: &str = "https://proxy.qualifire.ai";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-
-pub trait SecretLookup {
-    fn secret(&self, name: &str) -> Option<SecretString>;
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Check {
@@ -127,7 +124,7 @@ fn fallback_value(
     environment: &dyn EnvironmentLookup,
 ) -> Option<String> {
     secrets
-        .secret(name)
+        .get_secret_str(name)
         .map(|secret| secret.expose_secret().to_owned())
         .filter(|text| !text.is_empty())
         .or_else(|| environment.lookup(name).filter(|text| !text.is_empty()))

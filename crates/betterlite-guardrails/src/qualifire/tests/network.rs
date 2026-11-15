@@ -369,12 +369,30 @@ async fn a_failing_status_is_returned_not_failed_open() {
 }
 
 #[tokio::test]
+async fn a_qualifire_error_status_reaches_the_client() {
+    let server = mock(
+        StatusCode::TOO_MANY_REQUESTS,
+        "slow down".to_owned(),
+        Duration::ZERO,
+    )
+    .await;
+    let result = run_request(&guardrail(&server, args()), user_text("hello")).await;
+    let Err(error) = result else {
+        panic!("a 429 answer fails the request");
+    };
+    assert_eq!(error.status_code(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
 async fn a_slow_answer_times_out() {
     let server = mock(StatusCode::OK, CLEAN.to_owned(), Duration::from_secs(30)).await;
     let mut args = args();
     args.timeout = Some(0.2);
     let result = run_request(&guardrail(&server, args), user_text("hello")).await;
-    assert!(matches!(result, Err(QualifireError::Timeout { .. })));
+    let Err(error) = result else {
+        panic!("a slow answer times out");
+    };
+    assert_eq!(error.status_code(), StatusCode::REQUEST_TIMEOUT);
 }
 
 #[tokio::test]
