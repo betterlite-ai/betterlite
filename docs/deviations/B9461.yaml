@@ -36,6 +36,13 @@ deviations:
       the constructor in LiteLLM can carry one of these values past the model.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/typesafe.py#L11-L34
   - what: >-
+      The HTTP client is a constructor argument rather than one built inside the constructor. LiteLLM builds an
+      AsyncHTTPHandler with get_async_httpx_client unless the optional async_handler is passed.
+    why: >-
+      Clients are built once by the caller and shared by every guardrail call; the request still carries the
+      guardrail's own timeout, so a working TypeSafe setup reaches the same endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L185-L187
+  - what: >-
       A timeout that is negative, NaN or outside Duration's range fails TypeSafeGuard::new with the typed error
       that names the value. LiteLLM's constructor stores the float it is handed as self.timeout and passes it to
       the POST on every request (typesafe.py L276), where the call fails and unreachable_fallback decides the
