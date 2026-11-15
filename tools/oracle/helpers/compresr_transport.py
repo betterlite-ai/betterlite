@@ -1,27 +1,16 @@
 import asyncio
 import logging
-from collections.abc import Callable
-from typing import Literal, NotRequired, TypedDict, override
+from typing import Literal, TypedDict
 
 import httpx
-from fastapi import HTTPException
-from litellm.proxy.guardrails.guardrail_hooks.compresr.compresr import CompresrGuardrail, _query_for_target, _render_tool_intent, _replace_text_in_content, _safe_int, _safe_response_text  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L109-L246
+from litellm.proxy.guardrails.guardrail_hooks.compresr.compresr import CompresrGuardrail, _query_for_target, _render_tool_intent, _replace_text_in_content, _safe_int, _safe_response_text  # noqa: E501  # isort: skip  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L109-L246
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
+from typing_extensions import override
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 Messages = list[dict[str, object]]
 Fields = dict[str, object]
-
-Function = Literal[
-    "validate_api_base",
-    "query_for_target",
-    "render_tool_intent",
-    "fallback_query",
-    "replace_text_in_content",
-    "safe_int",
-    "safe_response_text",
-    "compress",
-]
 
 
 class Goal(TypedDict):
@@ -47,21 +36,63 @@ class Settings(TypedDict):
     fallback: Literal["fail_open", "fail_closed"]
 
 
-class Input(TypedDict):
-    function: Function
-    messages: NotRequired[Messages]
-    target_idx: NotRequired[int]
-    fallback: NotRequired[str]
-    function_call: NotRequired[Fields]
-    content: NotRequired[JsonValue]
-    new_text: NotRequired[str]
-    value: NotRequired[JsonValue]
-    text: NotRequired[str]
-    limit: NotRequired[int]
-    corrupt: NotRequired[bool]
-    settings: NotRequired[Settings]
-    goals: NotRequired[list[Goal]]
-    reply: NotRequired[Reply]
+class ValidateCall(TypedDict):
+    function: Literal["validate_api_base"]
+    settings: Settings
+
+
+class QueryCall(TypedDict):
+    function: Literal["query_for_target"]
+    messages: Messages
+    target_idx: int
+    fallback: str
+
+
+class IntentCall(TypedDict):
+    function: Literal["render_tool_intent"]
+    function_call: Fields
+
+
+class FallbackCall(TypedDict):
+    function: Literal["fallback_query"]
+    messages: Messages
+
+
+class RewriteCall(TypedDict):
+    function: Literal["replace_text_in_content"]
+    content: JsonValue
+    new_text: str
+
+
+class StatCall(TypedDict):
+    function: Literal["safe_int"]
+    value: JsonValue
+
+
+class TextCall(TypedDict):
+    function: Literal["safe_response_text"]
+    text: str
+    limit: int
+    corrupt: bool
+
+
+class CompressCall(TypedDict):
+    function: Literal["compress"]
+    settings: Settings
+    goals: list[Goal]
+    reply: Reply
+
+
+Call = (
+    ValidateCall
+    | QueryCall
+    | IntentCall
+    | FallbackCall
+    | RewriteCall
+    | StatCall
+    | TextCall
+    | CompressCall
+)
 
 
 class Recorder:
@@ -74,8 +105,9 @@ class Recorder:
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.paths.append(request.url.path)
         self.bodies.append(JSON.validate_json(request.content))
-        content_type = request.headers.get("content-type")
-        api_key = request.headers.get("x-api-key")
+        sent = dict(request.headers.items())
+        content_type = sent.get("content-type")
+        api_key = sent.get("x-api-key")
         self.headers.append(
             {
                 "content_type": "" if content_type is None else content_type,
@@ -102,7 +134,7 @@ def project(result: Fields) -> JsonValue:
     match compressed:
         case str():
             text: str | None = compressed
-        case _:
+        case object():
             text = None
     return {
         "compressed_context": text,
@@ -111,7 +143,11 @@ def project(result: Fields) -> JsonValue:
     }
 
 
-class Probe(CompresrGuardrail):
+class ProbeMeta(type):
+    pass
+
+
+class Probe(CompresrGuardrail, metaclass=ProbeMeta):
     def compress(self, goals: list[Goal], reply: Reply) -> JsonValue:
         recorder = Recorder(reply)
         self.async_handler.client = httpx.AsyncClient(
@@ -165,7 +201,7 @@ def build(settings: Settings) -> Probe:
     )
 
 
-def validate(input_value: Input) -> JsonValue:
+def validate(input_value: ValidateCall) -> JsonValue:
     try:
         guardrail = build(input_value["settings"])
     except ValueError:
@@ -173,12 +209,12 @@ def validate(input_value: Input) -> JsonValue:
     return {"accepted": True, "api_base": guardrail.compresr_api_base}
 
 
-def intent(input_value: Input) -> JsonValue:
+def intent(input_value: IntentCall) -> JsonValue:
     rendered = _render_tool_intent(input_value["function_call"])
     return {"intent": rendered}
 
 
-def query(input_value: Input) -> JsonValue:
+def query(input_value: QueryCall) -> JsonValue:
     return {
         "query": _query_for_target(
             input_value["messages"], input_value["target_idx"], input_value["fallback"]
@@ -186,12 +222,12 @@ def query(input_value: Input) -> JsonValue:
     }
 
 
-def rewrite(input_value: Input) -> JsonValue:
+def rewrite(input_value: RewriteCall) -> JsonValue:
     replaced = _replace_text_in_content(input_value["content"], input_value["new_text"])
     return {"content": JSON.validate_python(replaced)}
 
 
-def token_stat(input_value: Input) -> JsonValue:
+def token_stat(input_value: StatCall) -> JsonValue:
     stat = _safe_int(input_value["value"])
     return {"value": stat}
 
@@ -203,7 +239,7 @@ class Undecodable(httpx.Response):
         raise httpx.DecodingError("corrupt content-encoding")
 
 
-def safe_text(input_value: Input) -> JsonValue:
+def safe_text(input_value: TextCall) -> JsonValue:
     text = input_value["text"]
     if input_value["corrupt"]:
         response: httpx.Response = Undecodable(200)
@@ -212,27 +248,28 @@ def safe_text(input_value: Input) -> JsonValue:
     return {"text": _safe_response_text(response, input_value["limit"])}
 
 
-def compress(input_value: Input) -> JsonValue:
+def compress(input_value: CompressCall) -> JsonValue:
     guardrail = build(input_value["settings"])
     return guardrail.compress(input_value["goals"], input_value["reply"])
 
 
-def fallback(input_value: Input) -> JsonValue:
-    return Probe.fallback_of(input_value["messages"])
-
-
-HANDLERS: dict[Function, Callable[[Input], JsonValue]] = {
-    "validate_api_base": validate,
-    "query_for_target": query,
-    "render_tool_intent": intent,
-    "fallback_query": fallback,
-    "replace_text_in_content": rewrite,
-    "safe_int": token_stat,
-    "safe_response_text": safe_text,
-    "compress": compress,
-}
-
-
-def run(input_value: Input) -> JsonValue:
-    handler = HANDLERS[input_value["function"]]
-    return handler(input_value)
+def run(input_value: Call) -> JsonValue:
+    answer: JsonValue = None
+    match input_value["function"]:
+        case "validate_api_base":
+            answer = validate(input_value)
+        case "query_for_target":
+            answer = query(input_value)
+        case "render_tool_intent":
+            answer = intent(input_value)
+        case "fallback_query":
+            answer = Probe.fallback_of(input_value["messages"])
+        case "replace_text_in_content":
+            answer = rewrite(input_value)
+        case "safe_int":
+            answer = token_stat(input_value)
+        case "safe_response_text":
+            answer = safe_text(input_value)
+        case "compress":
+            answer = compress(input_value)
+    return answer
