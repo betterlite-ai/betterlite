@@ -113,13 +113,6 @@ where
         });
     }
 
-    pub async fn stop(&self) {
-        let stopped = self.task.stop().await;
-        if stopped {
-            debug!("Stopped the spend view setup task");
-        }
-    }
-
     async fn attempt(&self) -> Result<(), ViewSetupFailure> {
         let present = self
             .database
@@ -139,11 +132,11 @@ where
     fn log_timeout(&self, failure: &ViewSetupFailure) {
         match failure {
             ViewSetupFailure::Failed(error) => error!(
-                "Gave up creating the spend views after {}s; the last attempt failed with: {error}. Fix that error and restart the proxy.",
+                "Gave up creating the spend views after {:?}s; the last attempt failed with: {error}. Fix that error and restart the proxy.",
                 self.deadline.as_secs_f64()
             ),
             ViewSetupFailure::TableMissing => error!(
-                "Gave up creating the spend views: table {VIEW_SETUP_GATE_TABLE} did not appear within {}s. Run the database migrations against this database and restart the proxy.",
+                "Gave up creating the spend views: table {VIEW_SETUP_GATE_TABLE} did not appear within {:?}s. Run the database migrations against this database and restart the proxy.",
                 self.deadline.as_secs_f64()
             ),
         }

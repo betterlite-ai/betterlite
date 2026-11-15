@@ -185,7 +185,7 @@ async fn view_setup_gives_up_when_the_table_never_appears() {
     assert!(actions.iter().all(|action| action == "gate"), "{actions:?}");
     assert!(
         logs.lines().iter().any(|line| line.contains(
-            "Gave up creating the spend views: table \"LiteLLM_SpendLogs\" did not appear within 12s. \
+            "Gave up creating the spend views: table \"LiteLLM_SpendLogs\" did not appear within 12.0s. \
              Run the database migrations against this database and restart the proxy."
         )),
         "{:?}",
@@ -213,7 +213,7 @@ async fn view_setup_gives_up_when_the_attempts_keep_failing() {
     assert_eq!(outcome, ViewSetupOutcome::TimedOut);
     assert!(
         logs.lines().iter().any(|line| line.contains(
-            "Gave up creating the spend views after 12s; the last attempt failed with: the spend view \
+            "Gave up creating the spend views after 12.0s; the last attempt failed with: the spend view \
              catalog could not be read: the connection dropped. Fix that error and restart the proxy."
         )),
         "{:?}",
@@ -254,33 +254,9 @@ async fn stop_ends_the_view_setup_loop() {
         .filter(|action| action.as_str() == "gate")
         .count();
     assert!(attempts >= 3, "{attempts}");
-    let (logs, guard) = capture_logs();
-    harness.setup.stop().await;
-    drop(guard);
+    assert!(harness.setup.task.stop().await);
     advance(harness.setup.poll_interval * 3).await;
     yield_now().await;
     assert_eq!(*harness.actions.lock().unwrap(), actions_before);
     assert!(harness.setup.task.handle.lock().unwrap().is_none());
-    assert!(
-        logs.lines()
-            .iter()
-            .any(|line| line.contains("Stopped the spend view setup task")),
-        "{:?}",
-        logs.lines()
-    );
-}
-
-#[tokio::test]
-async fn stop_without_start_is_silent() {
-    let (logs, guard) = capture_logs();
-    let harness = views_harness();
-    harness.setup.stop().await;
-    drop(guard);
-    assert!(
-        logs.lines()
-            .iter()
-            .all(|line| !line.contains("Stopped the spend view setup task")),
-        "{:?}",
-        logs.lines()
-    );
 }

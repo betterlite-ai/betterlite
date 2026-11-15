@@ -41,7 +41,7 @@ async fn start_logs_the_watchdog_settings() {
     assert!(
         logs.lines().iter().any(|line| line.contains(
             "Started Prisma DB health watchdog (interval=30s, reconnect_cooldown=15s, \
-             probe_timeout=5s, reconnect_timeout=30s)"
+             probe_timeout=5.0s, reconnect_timeout=30.0s)"
         )),
         "{:?}",
         logs.lines()

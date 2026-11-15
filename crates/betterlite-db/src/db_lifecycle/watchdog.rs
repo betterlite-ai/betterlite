@@ -60,7 +60,7 @@ where
             return;
         }
         info!(
-            "Started Prisma DB health watchdog (interval={}s, reconnect_cooldown={}s, probe_timeout={}s, reconnect_timeout={}s)",
+            "Started Prisma DB health watchdog (interval={}s, reconnect_cooldown={}s, probe_timeout={:?}s, reconnect_timeout={:?}s)",
             self.settings.interval.as_secs_f64(),
             self.read_only.cooldown.as_secs_f64(),
             self.settings.probe_timeout.as_secs_f64(),
