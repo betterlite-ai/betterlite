@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-pegasus-segments
+call:
+  bedrock_pegasus:
+    function: segments_and_response
+    body: '{"message":"fuzz answer","finishReason":"stop","segments":[{"text":"fuzz"}],"usage":{"prompt_tokens":1}}'
+    status: 200
+    headers: [["x-amzn-bedrock-input-token-count", "2"], ["x-amzn-bedrock-output-token-count", "4"]]
+    model: twelvelabs.pegasus-1-2-v1:0
+    messages: []
+    now: 1600000000.25
+    response: {id: chatcmpl-fuzz, choices: [{index: 0, finish_reason: stop, message: {role: assistant, content: null}}]}
+env: {}
+compare: {ignore: []}

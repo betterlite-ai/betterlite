@@ -1,0 +1,56 @@
+kind: helper
+name: stability-generation-unknown-model-sd3
+call:
+  stability_generation:
+    calls:
+      - function: supported
+        model: stability/sd3
+      - function: url
+        model: stability/not-a-real-model
+        api_base: null
+        environment:
+          STABILITY_API_KEY: server-key
+          STABILITY_API_BASE: https://env.test/v1
+      - function: url
+        model: STABILITY/Stable-Image-Ultra
+        api_base: null
+        environment:
+          STABILITY_API_KEY: server-key
+          STABILITY_API_BASE: https://env.test/v1
+      - function: url
+        model: stability/stable-image-core
+        api_base: https://proxy.test/base/
+        environment:
+          STABILITY_API_KEY: server-key
+          STABILITY_API_BASE: https://env.test/v1
+      - function: url
+        model: my-sd3-medium-clone
+        api_base: null
+        environment:
+          STABILITY_API_KEY: server-key
+          STABILITY_API_BASE: https://env.test/v1
+      - function: url
+        model: stable-image-ultrahd
+        api_base: null
+        environment:
+          STABILITY_API_KEY: server-key
+          STABILITY_API_BASE: https://env.test/v1
+      - function: environment
+        model: stability/sd3
+        api_key: null
+        headers:
+          x-extra: kept
+        environment:
+          STABILITY_API_KEY: server-key
+          STABILITY_API_BASE: https://env.test/v1
+      - function: environment
+        model: stability/sd3
+        api_key: caller-key
+        headers: {}
+        environment:
+          STABILITY_API_KEY: server-key
+          STABILITY_API_BASE: https://env.test/v1
+env:
+  STABILITY_API_KEY: server-key
+  STABILITY_API_BASE: https://env.test/v1
+compare: {ignore: []}

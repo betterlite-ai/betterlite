@@ -1,0 +1,27 @@
+task: B6070
+deviations:
+  - what: A missing query or documents in a rerank request, and a result without index or relevance_score, are typed errors that name the field, not bare ValueErrors.
+    why: The compatibility rules reject a value the declared type cannot hold at the point it enters; the status follows B2454's mapping of request errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/rerank/transformation.py#L136-L139
+  - what: Cost reads the four tier limits from a FireworksPricingTiers value the caller built from env, and takes the billing instant as an argument.
+    why: A provider leaf reads no env var or clock; the defaults and env names are LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L605-L608
+  - what: A rerank response body over 1 MiB is rejected with a typed error before it is parsed.
+    why: Rule bounded-inputs caps every inbound body that arrives from outside.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/rerank/transformation.py#L179-L186
+  - what: A map document whose text is not a non-empty string adds no document; LiteLLM turns the value into text with str().
+    why: docs/compatibility.md does not port str text; the document's declared text type is str.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/rerank/transformation.py#L228-L239
+  - what: A resolved cost record with no text litellm_provider is a typed error instead of the KeyError or unhandled type error LiteLLM raises.
+    why: Rule owned-behavior-is-built fixes a 500 from an unhandled exception on input LiteLLM already fails; a record without a provider names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/cost_calculator.py#L87-L94
+  - what: A response index that is not a JSON integer, a response id that is not a string, or a relevance_score that is not a JSON number is a typed error. LiteLLM reaches those values with int(), float() and pydantic, so it truncates, coerces or raises.
+    why: docs/compatibility.md rejects a value the declared type cannot hold instead of converting it; int(), float() and pydantic's lax coercion are Python runtime decisions. RerankResponseResult types index as int and relevance_score as float, and RerankResponse types id as str | None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/rerank/transformation.py#L241-L263
+  - what: A body that is valid JSON but not an object becomes a FireworksError carrying the HTTP status and the body's parse message; LiteLLM raises an uncaught AttributeError from the first .get on the decoded value.
+    why: Rule owned-behavior-is-built turns an unhandled 500 into the status the provider sent, so the caller sees the HTTP response that failed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/rerank/transformation.py#L180-L219
+kept_bugs:
+  - what: A model that starts with fireworks_ai/ loses every fireworks_ai/ in it, not only the leading prefix. str.replace removes all occurrences.
+    why: A working setup passes the prefix once, so the extra removal never shows; betterlite copies the call so request bodies match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/rerank/transformation.py#L142-L144

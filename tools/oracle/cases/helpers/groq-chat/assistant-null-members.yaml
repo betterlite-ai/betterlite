@@ -1,0 +1,20 @@
+kind: helper
+name: groq-assistant-null-members
+call:
+  b5833:
+    messages:
+      - model: llama-3.3-70b-versatile
+        messages:
+          - role: assistant
+            content: null
+            custom_null: null
+            function_call: null
+            tool_calls:
+              - id: call_1
+                type: function
+                function: {name: lookup, arguments: "{}"}
+          - role: user
+            content: hello
+            custom_null: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+model_list:
+  - model_name: foundry-vector
+    litellm_params:
+      model: azure_ai/text-embedding-3-small
+      azure_search_vector_field: customVector
+litellm_settings:
+  azure_search_service_name: foundry-global-search
+  azure_search_vector_field: globalVector

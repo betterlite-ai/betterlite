@@ -1,0 +1,7 @@
+kind: helper
+name: guardrail-form-fields-bedrock-seed
+call:
+  b6560:
+    model: bedrock
+env: {}
+compare: {ignore: []}
