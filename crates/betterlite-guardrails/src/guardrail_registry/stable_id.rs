@@ -8,7 +8,7 @@ pub const CONFIG_GUARDRAIL_ID_NAMESPACE: Uuid =
 // The seeds are the name, then name:1, name:2 and so on; the first id the handler does not hold wins.
 #[must_use]
 pub fn stable_guardrail_id(guardrail_name: &str, taken: &dyn Fn(&str) -> bool) -> String {
-    (0_u64..)
+    (0_u64..=u64::MAX)
         .map(|occurrence| match occurrence {
             0 => guardrail_name.to_owned(),
             _ => format!("{guardrail_name}:{occurrence}"),
