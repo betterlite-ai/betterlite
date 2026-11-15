@@ -46,9 +46,9 @@ where
     Box::new(HelperError {
         class: String::from("MistralChatError"),
         status: None,
-        error_type: None,
-        param: None,
-        code: None,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
         message: error.to_string(),
     })
 }
@@ -61,9 +61,9 @@ fn stream_failure(error: StreamError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("StreamError"),
         status,
-        error_type: None,
-        param: None,
-        code: None,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
         message: error.to_string(),
     })
 }
