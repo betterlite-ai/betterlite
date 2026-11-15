@@ -1,17 +1,22 @@
 import json
 from collections.abc import Sequence
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from typing import Annotated, Literal, Protocol, TypeAlias, TypedDict
 
 import fastuuid
 from litellm.llms.bedrock.realtime.transformation import BedrockRealtimeConfig, BedrockUsageEvent
-from litellm.types.llms.openai import OpenAIRealtimeEvents, OpenAIRealtimeResponseDelta
-from pydantic import JsonValue, TypeAdapter
+from litellm.types.llms.openai import OpenAIRealtimeResponseDelta
+from pydantic import BeforeValidator, JsonValue, TypeAdapter
+from typing_extensions import ReadOnly
 
 from bedrock_services_realtime_session import FixedFast
 
 JsonObject = dict[str, JsonValue]
 JsonAdapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 EventsAdapter: TypeAdapter[list[JsonValue]] = TypeAdapter(list[JsonValue])
+
+
+class EventView(TypedDict):
+    type: ReadOnly[str]
 
 
 class DoneResponse(TypedDict):
@@ -30,7 +35,7 @@ class CallWire(TypedDict):
     output_index: int
     call_id: str
     name: str
-    arguments: str
+    arguments: Annotated[JsonValue, BeforeValidator(JsonAdapter.validate_json)]
 
 
 DoneAdapter: TypeAdapter[list[DoneWire]] = TypeAdapter(list[DoneWire])
@@ -71,7 +76,7 @@ class Input(TypedDict):
 class RealtimeConfig(Protocol):
     def transform_usage_event(self, usage_event: BedrockUsageEvent) -> None: ...
 
-    def leftover_usage_done_events(self) -> Sequence[OpenAIRealtimeEvents]: ...
+    def leftover_usage_done_events(self) -> Sequence[EventView]: ...
 
     def transform_content_end_event(
         self,
@@ -80,21 +85,21 @@ class RealtimeConfig(Protocol):
         current_response_id: str | None,
         current_delta_type: str | None,
         current_delta_chunks: list[OpenAIRealtimeResponseDelta] | None,
-    ) -> tuple[Sequence[OpenAIRealtimeEvents], list[OpenAIRealtimeResponseDelta] | None]: ...
+    ) -> tuple[Sequence[EventView], list[OpenAIRealtimeResponseDelta] | None]: ...
 
     def transform_prompt_end_event(
         self,
         event: dict[str, JsonValue],
         current_response_id: str | None,
         current_conversation_id: str | None,
-    ) -> tuple[Sequence[OpenAIRealtimeEvents], str | None, str | None, str | None]: ...
+    ) -> tuple[Sequence[EventView], str | None, str | None, str | None]: ...
 
     def transform_tool_use_event(
         self,
         event: dict[str, JsonValue],
         current_output_item_id: str | None,
         current_response_id: str | None,
-    ) -> tuple[Sequence[OpenAIRealtimeEvents], str, str]: ...
+    ) -> tuple[Sequence[EventView], str, str]: ...
 
 
 CONFIG_TYPE: type[RealtimeConfig] = BedrockRealtimeConfig
@@ -110,7 +115,7 @@ class Replay:
         self.delta_type: str | None = None
         self.chunks: list[OpenAIRealtimeResponseDelta] | None = None
 
-    def set_state(self, step: StateStep) -> JsonValue:
+    def set_state(self, step: StateStep) -> None:
         self.item_id = step["output_item_id"]
         self.response_id = step["response_id"]
         self.conversation_id = step["conversation_id"]
@@ -130,13 +135,8 @@ class Replay:
                 )
                 for text in texts
             ]
-        return None
 
-    def usage(self, step: UsageStep) -> JsonValue:
-        self.config.transform_usage_event(BedrockUsageEvent.model_validate(step["usage"]))
-        return None
-
-    def content_end(self) -> JsonValue:
+    def content_end(self) -> JsonObject:
         events, chunks = self.config.transform_content_end_event(
             {"contentEnd": {}},
             self.item_id,
@@ -145,13 +145,12 @@ class Replay:
             self.chunks,
         )
         self.chunks = chunks
-        kept: list[JsonValue] | None = None if chunks is None else [chunk["delta"] for chunk in chunks]
-        return {
-            "events": EventsAdapter.validate_json(json.dumps(events)),
-            "delta_chunks": kept,
-        }
+        kept: list[JsonValue] | None = None
+        if chunks is not None:
+            kept = [chunk["delta"] for chunk in chunks]
+        return {"events": EventsAdapter.validate_json(json.dumps(events)), "delta_chunks": kept}
 
-    def prompt_end(self) -> JsonValue:
+    def prompt_end(self) -> JsonObject:
         events, item_id, response_id, delta_type = self.config.transform_prompt_end_event(
             {"promptEnd": {}}, self.response_id, self.conversation_id
         )
@@ -166,53 +165,41 @@ class Replay:
         }
 
     def take_usage(self) -> JsonValue:
-        events, _item_id, _response_id, _delta_type = self.config.transform_prompt_end_event(
+        events, *_ = self.config.transform_prompt_end_event(
             {"promptEnd": {}}, "resp-take", "conv-take"
         )
-        done = DoneAdapter.validate_json(json.dumps(events))
-        return done[0]["response"]["usage"]
+        return DoneAdapter.validate_json(json.dumps(events))[0]["response"]["usage"]
 
-    def leftover(self) -> JsonValue:
-        events = self.config.leftover_usage_done_events()
-        return {"events": EventsAdapter.validate_json(json.dumps(events))}
-
-    def tool_use(self, step: ToolUseStep) -> JsonValue:
-        events, call_id, name = self.config.transform_tool_use_event(step["event"], self.item_id, self.response_id)
-        wires = CallAdapter.validate_json(json.dumps(events))
-        shown: list[JsonValue] = [
-            {
-                "type": wire["type"],
-                "event_id": wire["event_id"],
-                "response_id": wire["response_id"],
-                "item_id": wire["item_id"],
-                "output_index": wire["output_index"],
-                "call_id": wire["call_id"],
-                "name": wire["name"],
-                "arguments": JsonAdapter.validate_json(wire["arguments"]),
-            }
-            for wire in wires
-        ]
-        return {"events": shown, "tool_call_id": call_id, "tool_name": name}
-
-
-def run_plain(replay: Replay, step: PlainStep) -> JsonValue:
-    if step["op"] == "content_end":
-        return replay.content_end()
-    if step["op"] == "prompt_end":
-        return replay.prompt_end()
-    if step["op"] == "take_usage":
-        return replay.take_usage()
-    return replay.leftover()
+    def tool_use(self, step: ToolUseStep) -> JsonObject:
+        events, call_id, name = self.config.transform_tool_use_event(
+            step["event"], self.item_id, self.response_id
+        )
+        wires = CallAdapter.dump_json(CallAdapter.validate_json(json.dumps(events)))
+        return {
+            "events": JsonAdapter.validate_json(wires),
+            "tool_call_id": call_id,
+            "tool_name": name,
+        }
 
 
 def run_step(replay: Replay, step: Step) -> JsonValue:
+    result: JsonValue = None
     if step["op"] == "set_state":
-        return replay.set_state(step)
-    if step["op"] == "usage":
-        return replay.usage(step)
-    if step["op"] == "tool_use":
-        return replay.tool_use(step)
-    return run_plain(replay, step)
+        replay.set_state(step)
+    elif step["op"] == "usage":
+        replay.config.transform_usage_event(BedrockUsageEvent.model_validate(step["usage"]))
+    elif step["op"] == "tool_use":
+        result = replay.tool_use(step)
+    elif step["op"] == "content_end":
+        result = replay.content_end()
+    elif step["op"] == "prompt_end":
+        result = replay.prompt_end()
+    elif step["op"] == "take_usage":
+        result = replay.take_usage()
+    else:
+        leftover = replay.config.leftover_usage_done_events()
+        result = {"events": EventsAdapter.validate_json(json.dumps(leftover))}
+    return result
 
 
 def run(input_value: Input) -> JsonValue:

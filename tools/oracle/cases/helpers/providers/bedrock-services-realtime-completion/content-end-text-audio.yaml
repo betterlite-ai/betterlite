@@ -16,7 +16,7 @@ call:
       - 00000000-0000-4000-8000-00000000000b
       - 00000000-0000-4000-8000-00000000000c
     steps:
-      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: [Hel, lo]}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: ["Good ", day]}
       - {op: content_end}
       - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: audio, delta_chunks: [ignored]}
       - {op: content_end}

@@ -4,6 +4,9 @@ use super::support::{EVENT_1, FixedIds, open_state, wire};
 use crate::agentcore_stream::IdSource;
 use crate::realtime_completion::error::CompletionError;
 use crate::realtime_completion::records::DeltaType;
+use crate::realtime_completion::usage::{
+    leftover_usage_done_events, response_done_events, take_usage_delta,
+};
 use crate::realtime_session::RealtimeSession;
 use crate::realtime_session::records::UsageEvent;
 
@@ -18,14 +21,14 @@ fn parse_usage(text: &str) -> UsageEvent {
 pub(super) fn incremental_usage_delta() {
     let mut session = RealtimeSession::new(&FixedIds::sequence(3));
     session.cumulative_usage = parse_usage(FIRST_USAGE);
-    let first = session.take_usage_delta().expect("the first delta");
+    let first = take_usage_delta(&mut session).expect("the first delta");
     assert_eq!(
         serde_json::to_string(&first).expect("usage serializes"),
         FIRST_DELTA
     );
     assert_eq!(session.reported_usage, session.cumulative_usage);
 
-    let repeated = session.take_usage_delta().expect("the repeated delta");
+    let repeated = take_usage_delta(&mut session).expect("the repeated delta");
     assert_eq!(
         serde_json::to_string(&repeated).expect("usage serializes"),
         ZERO_DELTA
@@ -34,7 +37,7 @@ pub(super) fn incremental_usage_delta() {
     session.cumulative_usage = parse_usage(
         r#"{"totalInputTokens":90,"totalOutputTokens":70,"totalTokens":999,"details":{"total":{"input":{"speechTokens":55,"textTokens":45},"output":{"speechTokens":35,"textTokens":15}}}}"#,
     );
-    let shrunk = session.take_usage_delta().expect("the shrunk delta");
+    let shrunk = take_usage_delta(&mut session).expect("the shrunk delta");
     assert_eq!(
         serde_json::to_string(&shrunk).expect("usage serializes"),
         r#"{"input_tokens":-10,"output_tokens":20,"total_tokens":849,"input_token_details":{"audio_tokens":-5,"text_tokens":5,"cached_tokens":0},"output_token_details":{"audio_tokens":5,"text_tokens":-5}}"#
@@ -73,7 +76,7 @@ fn usage_delta_overflow_is_an_error(#[case] latest: &str, #[case] prior: &str) {
     session.cumulative_usage = parse_usage(latest);
     session.reported_usage = parse_usage(prior);
     assert!(matches!(
-        session.take_usage_delta(),
+        take_usage_delta(&mut session),
         Err(CompletionError::UsageOverflow)
     ));
 }
@@ -82,8 +85,7 @@ pub(super) fn prompt_end_response_done() {
     let mut session = RealtimeSession::new(&FixedIds::sequence(3));
     session.cumulative_usage = parse_usage(FIRST_USAGE);
     let mut state = open_state(Some(DeltaType::Text), Some(&["kept"]));
-    let events = session
-        .response_done_events(&mut state, &FixedIds::sequence(1))
+    let events = response_done_events(&mut session, &mut state, &FixedIds::sequence(1))
         .expect("the response ends");
     assert_eq!(
         wire(&events),
@@ -95,44 +97,30 @@ pub(super) fn prompt_end_response_done() {
     assert_eq!(state.response_id, None);
     assert_eq!(state.delta_type, None);
     assert_eq!(state.conversation_id.as_deref(), Some("conv_1"));
-    assert_eq!(state.delta_chunks.map(Vec::len), Some(1));
+    assert_eq!(state.delta_chunks.as_ref().map(Vec::len), Some(1));
     assert_eq!(session.reported_usage, session.cumulative_usage);
-
-    missing_conversation_keeps_usage();
-    missing_response_keeps_conversation();
 }
 
-fn missing_conversation_keeps_usage() {
+#[rstest]
+#[case::without_conversation(None, Some("resp_1"))]
+#[case::without_response(Some("conv_1"), None)]
+fn prompt_end_without_both_ids_keeps_usage(
+    #[case] conversation: Option<&str>,
+    #[case] response: Option<&str>,
+) {
     let mut session = RealtimeSession::new(&FixedIds::sequence(3));
     session.cumulative_usage = parse_usage(FIRST_USAGE);
-    let mut state = open_state(Some(DeltaType::Text), Some(&["kept"]));
-    state.conversation_id = None;
+    let mut state = open_state(Some(DeltaType::Audio), Some(&["kept"]));
+    state.conversation_id = conversation.map(str::to_owned);
+    state.response_id = response.map(str::to_owned);
     let ids = FixedIds::sequence(1);
-    let events = session
-        .response_done_events(&mut state, &ids)
-        .expect("the guard returns");
+    let events = response_done_events(&mut session, &mut state, &ids).expect("the guard returns");
     assert!(events.is_empty());
     assert_eq!(state.response_id, None);
     assert_eq!(state.output_item_id, None);
     assert_eq!(state.delta_type, None);
-    assert_eq!(state.delta_chunks.map(Vec::len), Some(1));
-    assert_eq!(session.reported_usage, UsageEvent::default());
-    assert_eq!(ids.next_id(), uuid::Uuid::from_u128(1));
-}
-
-fn missing_response_keeps_conversation() {
-    let mut session = RealtimeSession::new(&FixedIds::sequence(3));
-    session.cumulative_usage = parse_usage(FIRST_USAGE);
-    let mut state = open_state(Some(DeltaType::Audio), None);
-    state.response_id = None;
-    let ids = FixedIds::sequence(1);
-    let events = session
-        .response_done_events(&mut state, &ids)
-        .expect("the guard returns");
-    assert!(events.is_empty());
-    assert_eq!(state.conversation_id.as_deref(), Some("conv_1"));
-    assert_eq!(state.output_item_id, None);
-    assert_eq!(state.delta_type, None);
+    assert_eq!(state.conversation_id.as_deref(), conversation);
+    assert_eq!(state.delta_chunks.as_ref().map(Vec::len), Some(1));
     assert_eq!(session.reported_usage, UsageEvent::default());
     assert_eq!(ids.next_id(), uuid::Uuid::from_u128(1));
 }
@@ -140,17 +128,13 @@ fn missing_response_keeps_conversation() {
 pub(super) fn leftover_usage_done() {
     let mut session = RealtimeSession::new(&FixedIds::sequence(3));
     let ids = FixedIds::sequence(3);
-    let none = session
-        .leftover_usage_done_events(&ids)
-        .expect("no leftover");
+    let none = leftover_usage_done_events(&mut session, &ids).expect("no leftover");
     assert!(none.is_empty());
     assert_eq!(ids.next_id(), uuid::Uuid::from_u128(1));
 
     session.cumulative_usage = parse_usage(FIRST_USAGE);
     let ids = FixedIds::sequence(3);
-    let events = session
-        .leftover_usage_done_events(&ids)
-        .expect("a leftover event");
+    let events = leftover_usage_done_events(&mut session, &ids).expect("a leftover event");
     assert_eq!(
         wire(&events),
         [format!(
@@ -158,8 +142,7 @@ pub(super) fn leftover_usage_done() {
         )]
     );
     assert_eq!(session.reported_usage, session.cumulative_usage);
-    let again = session
-        .leftover_usage_done_events(&FixedIds::sequence(3))
+    let again = leftover_usage_done_events(&mut session, &FixedIds::sequence(3))
         .expect("the leftover is consumed");
     assert!(again.is_empty());
 }
@@ -175,9 +158,8 @@ pub(super) fn leftover_usage_done() {
 fn leftover_usage_reports_every_difference(#[case] cumulative: &str) {
     let mut session = RealtimeSession::new(&FixedIds::sequence(3));
     session.cumulative_usage = parse_usage(cumulative);
-    let events = session
-        .leftover_usage_done_events(&FixedIds::sequence(3))
-        .expect("a leftover event");
+    let events =
+        leftover_usage_done_events(&mut session, &FixedIds::sequence(3)).expect("a leftover event");
     assert_eq!(events.len(), 1);
     assert_eq!(session.reported_usage, session.cumulative_usage);
 }

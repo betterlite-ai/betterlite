@@ -4,6 +4,7 @@ use super::support::{EVENT_1, FixedIds, open_state, wire};
 use crate::realtime_completion::error::CompletionError;
 use crate::realtime_completion::records::{DeltaType, ResponseState};
 use crate::realtime_completion::tool_input::{ToolUseEvent, decode_realtime_tool_input};
+use crate::realtime_completion::tool_use::tool_use_events;
 
 pub(super) fn tool_use_event() {
     let state = open_state(Some(DeltaType::Text), None);
@@ -11,9 +12,8 @@ pub(super) fn tool_use_event() {
         r#"{"toolUse":{"toolUseId":"call_1","toolName":"get_weather","input":"{\"city\":\"Paris\"}"}}"#,
     )
     .expect("a toolUse fixture");
-    let output = state
-        .tool_use_events(&event, &FixedIds::sequence(1))
-        .expect("the tool call completes");
+    let output =
+        tool_use_events(&state, &event, &FixedIds::sequence(1)).expect("the tool call completes");
     assert_eq!(output.tool_call_id, "call_1");
     assert_eq!(output.tool_name, "get_weather");
     assert_eq!(
@@ -40,9 +40,8 @@ fn tool_use_without_ids_emits_nothing(#[case] item: Option<&str>, #[case] respon
     let event: ToolUseEvent =
         serde_json::from_str(r#"{"toolUse":{"toolUseId":"call_1","toolName":"get_weather"}}"#)
             .expect("a toolUse fixture");
-    let output = state
-        .tool_use_events(&event, &FixedIds::sequence(1))
-        .expect("the guard returns");
+    let output =
+        tool_use_events(&state, &event, &FixedIds::sequence(1)).expect("the guard returns");
     assert!(output.events.is_empty());
     assert_eq!(output.tool_call_id, "");
     assert_eq!(output.tool_name, "");
@@ -66,9 +65,8 @@ fn tool_use_without_ids_emits_nothing(#[case] item: Option<&str>, #[case] respon
 fn tool_use_arguments(#[case] text: &str, #[case] arguments: &str) {
     let state = open_state(None, None);
     let event: ToolUseEvent = serde_json::from_str(text).expect("a toolUse fixture");
-    let output = state
-        .tool_use_events(&event, &FixedIds::sequence(1))
-        .expect("the tool call completes");
+    let output =
+        tool_use_events(&state, &event, &FixedIds::sequence(1)).expect("the tool call completes");
     let wired = wire(&output.events);
     let escaped = serde_json::to_string(arguments).expect("text serializes");
     assert!(
@@ -84,9 +82,8 @@ fn tool_use_arguments(#[case] text: &str, #[case] arguments: &str) {
 fn tool_use_ids_default_to_empty_text(#[case] text: &str) {
     let state = open_state(None, None);
     let event: ToolUseEvent = serde_json::from_str(text).expect("a toolUse fixture");
-    let output = state
-        .tool_use_events(&event, &FixedIds::sequence(1))
-        .expect("the tool call completes");
+    let output =
+        tool_use_events(&state, &event, &FixedIds::sequence(1)).expect("the tool call completes");
     assert_eq!(output.tool_call_id, "");
     assert_eq!(output.tool_name, "");
     assert!(wire(&output.events)[0].contains(r#""call_id":"","name":"","#));

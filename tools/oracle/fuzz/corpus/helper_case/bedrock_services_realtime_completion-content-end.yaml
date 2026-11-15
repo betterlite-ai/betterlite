@@ -7,7 +7,7 @@ call:
       - 00000000-0000-4000-8000-000000000002
       - 00000000-0000-4000-8000-000000000003
     steps:
-      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: [Hel, lo]}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: ["Good ", day]}
       - {op: content_end}
 env: {}
 compare: {ignore: []}

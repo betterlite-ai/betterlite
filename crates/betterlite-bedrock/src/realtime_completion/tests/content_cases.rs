@@ -1,24 +1,38 @@
 use uuid::Uuid;
 
-use super::support::{
-    EVENT_1, EVENT_2, EVENT_3, EVENT_4, EVENT_5, EVENT_6, FixedIds, ITEM_DONE_BODY, open_state,
-    wire,
-};
+use super::support::{EVENT_1, FixedIds, ITEM_DONE_BODY, done_wire, open_state, wire};
 use crate::agentcore_stream::IdSource;
+use crate::realtime_completion::content_end::content_end_events;
 use crate::realtime_completion::records::{DeltaChunk, DeltaType, ResponseState};
+use crate::realtime_completion::usage::response_done_events;
 use crate::realtime_session::RealtimeSession;
 
 pub(super) fn content_end_text_audio() {
-    text_parts();
-    audio_parts();
+    let mut text = open_state(Some(DeltaType::Text), Some(&["Good ", "day"]));
+    let events = content_end_events(&mut text, &FixedIds::sequence(3));
+    let part = r#"{"type":"text","text":"Good day"}"#;
+    assert_eq!(
+        wire(&events),
+        done_wire("response.text.done", r#","text":"Good day""#, part)
+    );
+    assert_eq!(text.delta_chunks, None);
+
+    let mut audio = open_state(Some(DeltaType::Audio), Some(&["ignored"]));
+    let events = content_end_events(&mut audio, &FixedIds::sequence(3));
+    let part = r#"{"type":"audio","transcript":""}"#;
+    assert_eq!(wire(&events), done_wire("response.audio.done", "", part));
+    assert_eq!(audio.delta_chunks, None);
+
     let mut no_chunks = open_state(Some(DeltaType::Text), None);
-    let events = no_chunks.content_end_events(&FixedIds::sequence(3));
-    let wired = wire(&events);
-    assert!(wired[0].ends_with(r#""response_id":"resp_1","text":""}"#));
-    assert!(wired[1].contains(r#""part":{"type":"text","text":""}"#));
+    let events = content_end_events(&mut no_chunks, &FixedIds::sequence(3));
+    let part = r#"{"type":"text","text":""}"#;
+    assert_eq!(
+        wire(&events),
+        done_wire("response.text.done", r#","text":"""#, part)
+    );
 
     let mut unknown = open_state(None, Some(&["kept"]));
-    let events = unknown.content_end_events(&FixedIds::sequence(3));
+    let events = content_end_events(&mut unknown, &FixedIds::sequence(3));
     assert_eq!(
         wire(&events),
         [format!(
@@ -29,72 +43,25 @@ pub(super) fn content_end_text_audio() {
     missing_ids_keep_chunks();
 }
 
-fn text_parts() {
-    let mut text = open_state(Some(DeltaType::Text), Some(&["Hel", "lo"]));
-    let events = text.content_end_events(&FixedIds::sequence(3));
-    assert_eq!(
-        wire(&events),
-        [
-            format!(
-                r#"{{"type":"response.text.done","content_index":0,"event_id":"{EVENT_1}","item_id":"item_1","output_index":0,"response_id":"resp_1","text":"Hello"}}"#
-            ),
-            format!(
-                r#"{{"type":"response.content_part.done","content_index":0,"event_id":"{EVENT_2}","item_id":"item_1","output_index":0,"part":{{"type":"text","text":"Hello"}},"response_id":"resp_1"}}"#
-            ),
-            format!(
-                r#"{{"type":"response.output_item.done","event_id":"{EVENT_3}",{ITEM_DONE_BODY}"#
-            ),
-        ]
-    );
-    assert_eq!(text.delta_chunks, None);
-}
-
-fn audio_parts() {
-    let mut audio = open_state(Some(DeltaType::Audio), Some(&["ignored"]));
-    let events = audio.content_end_events(&FixedIds::sequence(3));
-    assert_eq!(
-        wire(&events),
-        [
-            format!(
-                r#"{{"type":"response.audio.done","content_index":0,"event_id":"{EVENT_1}","item_id":"item_1","output_index":0,"response_id":"resp_1"}}"#
-            ),
-            format!(
-                r#"{{"type":"response.content_part.done","content_index":0,"event_id":"{EVENT_2}","item_id":"item_1","output_index":0,"part":{{"type":"audio","transcript":""}},"response_id":"resp_1"}}"#
-            ),
-            format!(
-                r#"{{"type":"response.output_item.done","event_id":"{EVENT_3}",{ITEM_DONE_BODY}"#
-            ),
-        ]
-    );
-    assert_eq!(audio.delta_chunks, None);
-}
-
 fn missing_ids_keep_chunks() {
+    let kept = Some(vec![DeltaChunk {
+        delta: "kept".to_owned(),
+    }]);
     let mut without_item = open_state(Some(DeltaType::Text), Some(&["kept"]));
     without_item.output_item_id = None;
     let ids = FixedIds::sequence(3);
-    assert!(without_item.content_end_events(&ids).is_empty());
-    assert_eq!(
-        without_item.delta_chunks,
-        Some(vec![DeltaChunk {
-            delta: "kept".to_owned()
-        }])
-    );
+    assert!(content_end_events(&mut without_item, &ids).is_empty());
+    assert_eq!(without_item.delta_chunks, kept);
     let mut without_response = open_state(Some(DeltaType::Text), Some(&["kept"]));
     without_response.response_id = None;
-    assert!(without_response.content_end_events(&ids).is_empty());
-    assert_eq!(
-        without_response.delta_chunks,
-        Some(vec![DeltaChunk {
-            delta: "kept".to_owned()
-        }])
-    );
+    assert!(content_end_events(&mut without_response, &ids).is_empty());
+    assert_eq!(without_response.delta_chunks, kept);
     assert_eq!(ids.next_id(), Uuid::from_u128(1));
 }
 
 pub(super) fn output_item_completion() {
     let mut state = open_state(None, None);
-    let events = state.content_end_events(&FixedIds::sequence(1));
+    let events = content_end_events(&mut state, &FixedIds::sequence(1));
     assert_eq!(
         wire(&events),
         [format!(
@@ -111,39 +78,28 @@ pub(super) fn output_item_completion() {
 pub(super) fn multiple_content_blocks() {
     let ids = FixedIds::sequence(11);
     let mut state = open_state(Some(DeltaType::Text), Some(&["one", "two"]));
-    let first = wire(&state.content_end_events(&ids));
+    let first = wire(&content_end_events(&mut state, &ids));
     assert!(first[0].ends_with(r#""response_id":"resp_1","text":"onetwo"}"#));
     assert_eq!(state.delta_chunks, None);
     assert_eq!(state.response_id.as_deref(), Some("resp_1"));
     assert_eq!(state.output_item_id.as_deref(), Some("item_1"));
 
     state.delta_type = Some(DeltaType::Audio);
-    assert_eq!(
-        wire(&state.content_end_events(&ids)),
-        [
-            format!(
-                r#"{{"type":"response.audio.done","content_index":0,"event_id":"{EVENT_4}","item_id":"item_1","output_index":0,"response_id":"resp_1"}}"#
-            ),
-            format!(
-                r#"{{"type":"response.content_part.done","content_index":0,"event_id":"{EVENT_5}","item_id":"item_1","output_index":0,"part":{{"type":"audio","transcript":""}},"response_id":"resp_1"}}"#
-            ),
-            format!(
-                r#"{{"type":"response.output_item.done","event_id":"{EVENT_6}",{ITEM_DONE_BODY}"#
-            ),
-        ]
-    );
+    let audio = wire(&content_end_events(&mut state, &ids));
+    assert_eq!(audio.len(), 3);
+    assert!(audio[0].contains(r#""type":"response.audio.done""#));
+    assert!(audio[0].contains("event_00000000-0000-0000-0000-000000000004"));
+    assert!(audio[2].contains("event_00000000-0000-0000-0000-000000000006"));
 
     state.delta_type = Some(DeltaType::Text);
-    let again = wire(&state.content_end_events(&ids));
+    let again = wire(&content_end_events(&mut state, &ids));
     assert!(again[0].ends_with(r#""response_id":"resp_1","text":""}"#));
     finish_response(&mut state, &ids);
 }
 
 fn finish_response(state: &mut ResponseState, ids: &FixedIds) {
     let mut session = RealtimeSession::new(&FixedIds::sequence(3));
-    let done = session
-        .response_done_events(state, ids)
-        .expect("the usage counts subtract");
+    let done = response_done_events(&mut session, state, ids).expect("the usage counts subtract");
     assert_eq!(done.len(), 1);
     assert_eq!(
         *state,
@@ -155,10 +111,9 @@ fn finish_response(state: &mut ResponseState, ids: &FixedIds) {
             delta_chunks: None,
         }
     );
-    let repeated = session
-        .response_done_events(state, ids)
-        .expect("the usage counts subtract");
+    let repeated =
+        response_done_events(&mut session, state, ids).expect("the usage counts subtract");
     assert!(repeated.is_empty());
-    assert!(state.content_end_events(ids).is_empty());
+    assert!(content_end_events(state, ids).is_empty());
     assert_eq!(ids.next_id(), Uuid::from_u128(11));
 }

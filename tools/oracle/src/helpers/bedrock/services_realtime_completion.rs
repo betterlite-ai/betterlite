@@ -1,7 +1,12 @@
+use betterlite_bedrock::realtime_completion::content_end::content_end_events;
 use betterlite_bedrock::realtime_completion::records::{
     CompletionEvent, DeltaChunk, DeltaType, ResponseState,
 };
 use betterlite_bedrock::realtime_completion::tool_input::ToolUseEvent;
+use betterlite_bedrock::realtime_completion::tool_use::tool_use_events;
+use betterlite_bedrock::realtime_completion::usage::{
+    leftover_usage_done_events, response_done_events,
+};
 use betterlite_bedrock::realtime_session::RealtimeSession;
 use betterlite_bedrock::realtime_session::records::UsageEvent;
 use serde::Deserialize;
@@ -109,7 +114,7 @@ fn replay(
         Step::PromptEnd => prompt_end(session, state, ids),
         Step::TakeUsage => take_usage(session, ids),
         Step::Leftover => {
-            let events = session.leftover_usage_done_events(ids).or_value_error()?;
+            let events = leftover_usage_done_events(session, ids).or_value_error()?;
             Ok(json!({ "events": serde_json::to_value(&events)? }))
         }
         Step::ToolUse { event } => tool_use(state, event, ids),
@@ -117,7 +122,7 @@ fn replay(
 }
 
 fn content_end(state: &mut ResponseState, ids: &FixedIds) -> HelperResult {
-    let events = state.content_end_events(ids);
+    let events = content_end_events(state, ids);
     let chunks = state.delta_chunks.as_ref().map(|kept| {
         kept.iter()
             .map(|chunk| chunk.delta.as_str())
@@ -131,7 +136,7 @@ fn prompt_end(
     state: &mut ResponseState,
     ids: &FixedIds,
 ) -> HelperResult {
-    let events = session.response_done_events(state, ids).or_value_error()?;
+    let events = response_done_events(session, state, ids).or_value_error()?;
     Ok(json!({
         "events": serde_json::to_value(&events)?,
         "output_item_id": state.output_item_id,
@@ -142,7 +147,7 @@ fn prompt_end(
 
 fn tool_use(state: &ResponseState, event: &Value, ids: &FixedIds) -> HelperResult {
     let parsed: ToolUseEvent = serde_json::from_str(&event.to_string())?;
-    let output = state.tool_use_events(&parsed, ids).or_value_error()?;
+    let output = tool_use_events(state, &parsed, ids).or_value_error()?;
     let mut events = serde_json::to_value(&output.events)?;
     // json.dumps spacing is not part of the contract, so both sides compare the decoded arguments
     if let Some(CompletionEvent::FunctionCallArgumentsDone(done)) = output.events.first()
@@ -166,9 +171,7 @@ fn take_usage(session: &mut RealtimeSession, ids: &FixedIds) -> HelperResult {
         delta_type: None,
         delta_chunks: None,
     };
-    let events = session
-        .response_done_events(&mut scratch, ids)
-        .or_value_error()?;
+    let events = response_done_events(session, &mut scratch, ids).or_value_error()?;
     match events.first() {
         Some(CompletionEvent::ResponseDone(done)) => {
             Ok(serde_json::to_value(&done.response.usage)?)

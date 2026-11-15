@@ -24,9 +24,9 @@ pub struct ResponseState {
 #[serde(tag = "type")]
 pub enum CompletionEvent {
     #[serde(rename = "response.text.done")]
-    TextDone(TextDone),
+    TextDone(PartDone),
     #[serde(rename = "response.audio.done")]
-    AudioDone(AudioDone),
+    AudioDone(PartDone),
     #[serde(rename = "response.content_part.done")]
     ContentPartDone(ContentPartDone),
     #[serde(rename = "response.output_item.done")]
@@ -37,23 +37,16 @@ pub enum CompletionEvent {
     FunctionCallArgumentsDone(FunctionCallArgumentsDone),
 }
 
+// response.text.done carries the joined text and response.audio.done carries none
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct TextDone {
+pub struct PartDone {
     pub content_index: u32,
     pub event_id: String,
     pub item_id: String,
     pub output_index: u32,
     pub response_id: String,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct AudioDone {
-    pub content_index: u32,
-    pub event_id: String,
-    pub item_id: String,
-    pub output_index: u32,
-    pub response_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -89,7 +82,7 @@ pub struct OutputItem {
     pub item_type: &'static str,
     pub status: &'static str,
     pub role: &'static str,
-    pub content: [(); 0],
+    pub content: Vec<()>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -105,7 +98,7 @@ pub struct ResponseObject {
     pub id: String,
     pub status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub output: Option<[(); 0]>,
+    pub output: Option<Vec<()>>,
     pub conversation_id: String,
     pub usage: ResponseUsage,
 }
