@@ -64,6 +64,7 @@ description: >-
   the external B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:
+  - "tools/oracle/helpers/b6413.py"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/batch_provider_create.rs
   - crates/betterlite-core/src/api/batch_provider_create/**
