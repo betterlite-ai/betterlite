@@ -1,0 +1,11 @@
+kind: helper
+name: partner-count-plan-explicit-global
+call:
+  partner_count_plan:
+    cases:
+    - model: claude-3-5-sonnet-v2@20241022
+      project: my-project
+      location: global
+compare:
+  ignore: []
+env: {}
