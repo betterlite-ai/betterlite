@@ -101,14 +101,14 @@ fn joined_texts(inputs: &GuardrailApiInputs) -> String {
     content
 }
 
-fn source(input_type: GuardrailInputType) -> Source {
+const fn source(input_type: GuardrailInputType) -> Source {
     match input_type {
         GuardrailInputType::Request => Source::UserPrompt,
         GuardrailInputType::Response => Source::ModelResponse,
     }
 }
 
-fn block_message(input_type: GuardrailInputType) -> &'static str {
+const fn block_message(input_type: GuardrailInputType) -> &'static str {
     match input_type {
         GuardrailInputType::Request => "Content blocked by Model Armor",
         GuardrailInputType::Response => "Response blocked by Model Armor",

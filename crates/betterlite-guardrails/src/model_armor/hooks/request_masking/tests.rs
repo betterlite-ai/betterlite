@@ -112,13 +112,20 @@ fn request_masking_skips_an_identical_text() {
     assert_eq!(request, before);
 }
 
-#[rstest]
-#[case::absent(None)]
-#[case::empty(Some(String::new()))]
-fn request_masking_skips_an_absent_or_empty_sanitized_text(#[case] sanitized: Option<String>) {
+#[test]
+fn request_masking_skips_an_absent_sanitized_text() {
     let mut request = prompt_data();
     let before = request.clone();
     let messages = read_messages(&request).expect("messages").expect("some");
-    apply(&mut request, &messages, "hello", sanitized).expect("apply");
+    apply(&mut request, &messages, "hello", None).expect("apply");
+    assert_eq!(request, before);
+}
+
+#[test]
+fn request_masking_skips_an_empty_sanitized_text() {
+    let mut request = prompt_data();
+    let before = request.clone();
+    let messages = read_messages(&request).expect("messages").expect("some");
+    apply(&mut request, &messages, "hello", Some(String::new())).expect("apply");
     assert_eq!(request, before);
 }

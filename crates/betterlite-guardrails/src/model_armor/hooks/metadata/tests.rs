@@ -165,6 +165,12 @@ fn metadata_reads_the_request_start_time(
 }
 
 #[test]
+fn metadata_rejects_a_number_marker_with_other_keys() {
+    let request = data(r#"{"start_time":{"$serde_json::private::Number":"1.5","extra":true}}"#);
+    assert!(request_start_time(&request).is_err());
+}
+
+#[test]
 fn metadata_reads_a_start_time_that_came_from_a_stored_record() {
     let mut request = Data::new();
     request.insert("start_time".to_owned(), GuardrailValue::Decimal(2.5));
