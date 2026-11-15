@@ -544,8 +544,9 @@ async fn malformed_token_stats_on_a_successful_response_do_not_raise() {
 
 #[tokio::test]
 async fn an_api_key_that_is_not_a_header_value_goes_through_the_fail_policy() {
+    let (base, recorded, _server) = serve(200, r#"{"data":{"compressed_context":"short"}}"#).await;
     let transport = CompresrTransport::new(
-        settings("http://127.0.0.1:1"),
+        settings(&base),
         SecretString::from("bad\nkey"),
         reqwest::Client::default(),
     )
@@ -555,6 +556,32 @@ async fn an_api_key_that_is_not_a_header_value_goes_through_the_fail_policy() {
         .await
         .expect_err("failure");
     assert_eq!(error.status_code(), Some(502));
+    assert_eq!(
+        error,
+        CompresrTransportError::CompressionFailed {
+            message: "Compresr compression service request failed"
+        }
+    );
+    assert!(calls(&recorded).is_empty());
+}
+
+#[tokio::test]
+async fn an_api_key_that_is_not_a_header_value_is_forwarded_when_fail_open() {
+    let (base, recorded, _server) = serve(200, r#"{"data":{"compressed_context":"short"}}"#).await;
+    let mut built = settings(&base);
+    built.fallback = UnreachableFallback::FailOpen;
+    let transport = CompresrTransport::new(
+        built,
+        SecretString::from("bad\nkey"),
+        reqwest::Client::default(),
+    )
+    .expect("transport");
+    let outcome = transport
+        .compress(&[target("context", "query")])
+        .await
+        .expect("outcome");
+    assert_eq!(outcome, CompressOutcome::Uncompressed);
+    assert!(calls(&recorded).is_empty());
 }
 
 #[test]
