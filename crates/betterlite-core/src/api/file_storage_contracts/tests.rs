@@ -396,6 +396,15 @@ fn responses_batch_tools_and_images_forwarded() {
 }
 
 #[test]
+fn responses_batch_drops_body_stream_and_service_tier() {
+    let body = parse(r#"{"model":"m","input":"hi","stream":true,"service_tier":"auto"}"#);
+    let request = batch(&body, None).unwrap();
+    let value = serde_json::to_value(&request).unwrap();
+    assert_eq!(value.pointer("/stream"), None);
+    assert_eq!(value.pointer("/service_tier"), None);
+}
+
+#[test]
 fn responses_batch_missing_input() {
     let missing = batch(&parse(r#"{"model":"m"}"#), None).unwrap_err();
     assert_eq!(missing.to_string(), format!("{MISSING_INPUT}m"));

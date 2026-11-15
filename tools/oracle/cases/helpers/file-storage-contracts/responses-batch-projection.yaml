@@ -30,5 +30,12 @@ call:
               parameters:
                 type: object
         custom_llm_provider: null
+      - function: responses_batch
+        body:
+          model: m
+          input: hi
+          stream: true
+          service_tier: auto
+        custom_llm_provider: null
 env: {}
 compare: {ignore: []}
