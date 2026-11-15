@@ -118,18 +118,32 @@ fn bria_ratio_intervals_keep_the_pinned_order(#[case] size: &str, #[case] ratio:
 #[case::auto("auto", "1:1")]
 #[case::past_i64("999999999999999999999999x1", "1:1")]
 #[case::min_i64("-9223372036854775808x20", "1:1")]
-#[case::non_ascii_digits("١٠٢٤x٧٦٨", "1:1")]
+#[case::non_ascii_digits("\u{661}\u{660}\u{662}\u{664}x\u{667}\u{666}\u{668}", "1:1")]
 fn bria_unreadable_sizes_become_square(#[case] size: &str, #[case] ratio: &str) {
     assert_eq!(map_aspect_ratio(size), ratio);
 }
 
-// a deviation: Python divides the exact integers, betterlite rounds each dimension to f64 first
+// a deviation: Python rounds the quotient to f64, so a huge ratio just under 1.7 climbs onto the bound
 #[test]
-fn bria_wide_dimensions_round_before_dividing() {
+fn bria_huge_sizes_compare_by_their_exact_ratio() {
     assert_eq!(
-        map_aspect_ratio("15312238733059686x9007199254740993"),
+        map_aspect_ratio("1699999999999999900x1000000000000000000"),
+        "1:1"
+    );
+    assert_eq!(
+        map_aspect_ratio("1700000000000000000x1000000000000000000"),
         "16:9"
     );
+    assert_eq!(
+        map_aspect_ratio("15312238733059686x9007199254740993"),
+        "1:1"
+    );
+}
+
+#[test]
+fn bria_interval_ceilings_stay_inside_the_interval() {
+    assert_eq!(map_aspect_ratio("1400x1000"), "4:3");
+    assert_eq!(map_aspect_ratio("1550x1000"), "3:2");
 }
 
 #[test]

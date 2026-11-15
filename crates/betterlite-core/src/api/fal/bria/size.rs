@@ -1,19 +1,22 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::default_calculator::parse_image_dimensions;
-use num_traits::cast::cast;
 
 use crate::api::fal::images::error::FalImageError;
 
-const SIZE_ALIASES: [(&str, &str); 8] = [
-    ("1024x1024", "1:1"),
-    ("512x512", "1:1"),
-    ("1792x1024", "16:9"),
-    ("1024x1792", "9:16"),
-    ("1024x768", "4:3"),
-    ("768x1024", "3:4"),
-    ("1280x960", "4:3"),
-    ("960x1280", "3:4"),
+// LiteLLM's ordered ratio bounds in percent (130 means 1.3); the first interval that holds the ratio wins
+const RATIO_BOUNDS: [(Option<i64>, Option<i64>, &str); 9] = [
+    (Some(95), Some(105), "1:1"),
+    (Some(170), None, "16:9"),
+    (None, Some(60), "9:16"),
+    (Some(130), Some(140), "4:3"),
+    (Some(70), Some(80), "3:4"),
+    (Some(145), Some(155), "3:2"),
+    (Some(65), Some(70), "2:3"),
+    (Some(120), Some(130), "5:4"),
+    (Some(75), Some(85), "4:5"),
 ];
+
+const PERCENT: i128 = 100;
 
 pub fn translate_size(size: &Json) -> Result<(&'static str, Json), FalImageError> {
     let Json::Text(text) = size else {
@@ -25,12 +28,17 @@ pub fn translate_size(size: &Json) -> Result<(&'static str, Json), FalImageError
     ))
 }
 
+// LiteLLM's eight exact aliases come first; every other size falls to the ratio cascade
 #[must_use]
 pub fn map_aspect_ratio(size: &str) -> &'static str {
-    if let Some((_, ratio)) = SIZE_ALIASES.iter().find(|(alias, _)| *alias == size) {
-        return ratio;
+    match size {
+        "1024x1024" | "512x512" => "1:1",
+        "1792x1024" => "16:9",
+        "1024x1792" => "9:16",
+        "1024x768" | "1280x960" => "4:3",
+        "768x1024" | "960x1280" => "3:4",
+        other => parse_ratio(other).unwrap_or("1:1"),
     }
-    parse_ratio(size).unwrap_or("1:1")
 }
 
 // Python splits on a bare x, so Fal's -x- separator reads as one malformed part there and falls to the default
@@ -38,43 +46,26 @@ fn parse_ratio(size: &str) -> Option<&'static str> {
     if size.contains("-x-") {
         return None;
     }
-    let (width, height) = parse_image_dimensions(size).ok()?;
-    if height == 0 {
-        return None;
-    }
-    let width = cast::<i64, f64>(width)?;
-    let height = cast::<i64, f64>(height)?;
-    Some(ratio_for(width / height))
+    let (width, height) = parse_image_dimensions(size)
+        .ok()
+        .filter(|(_, dimension)| *dimension != 0)?;
+    Some(ratio_for(width, height))
 }
 
-// the pinned order decides every overlap and both edges belong to the interval; a gap falls through to 1:1
-fn ratio_for(ratio: f64) -> &'static str {
-    if (0.95..=1.05).contains(&ratio) {
-        return "1:1";
-    }
-    if ratio >= 1.7 {
-        return "16:9";
-    }
-    if ratio <= 0.6 {
-        return "9:16";
-    }
-    if (1.3..=1.4).contains(&ratio) {
-        return "4:3";
-    }
-    if (0.7..=0.8).contains(&ratio) {
-        return "3:4";
-    }
-    if (1.45..=1.55).contains(&ratio) {
-        return "3:2";
-    }
-    if (0.65..=0.7).contains(&ratio) {
-        return "2:3";
-    }
-    if (1.2..=1.3).contains(&ratio) {
-        return "5:4";
-    }
-    if (0.75..=0.85).contains(&ratio) {
-        return "4:5";
+// a negative height would flip every cross product, so the ratio keeps both dimensions positive
+fn ratio_for(width: i64, height: i64) -> &'static str {
+    let sign = i128::from(height).signum();
+    let ratio_width = i128::from(width).saturating_mul(sign);
+    let ratio_height = i128::from(height).saturating_mul(sign);
+    let scaled_width = ratio_width.saturating_mul(PERCENT);
+    for (lower, upper, ratio) in RATIO_BOUNDS {
+        let above = lower
+            .is_none_or(|bound| scaled_width >= ratio_height.saturating_mul(i128::from(bound)));
+        let below = upper
+            .is_none_or(|bound| scaled_width <= ratio_height.saturating_mul(i128::from(bound)));
+        if above && below {
+            return ratio;
+        }
     }
     "1:1"
 }
