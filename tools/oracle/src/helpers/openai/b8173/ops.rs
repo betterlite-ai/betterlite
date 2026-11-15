@@ -37,8 +37,8 @@ fn info_value(base: String, key: Option<SecretString>) -> Value {
     value.insert(String::from("base"), Value::String(base));
     value.insert(
         String::from("key"),
-        key.map_or(Value::Null, |key| {
-            Value::String(key.expose_secret().to_owned())
+        key.map_or(Value::Null, |secret| {
+            Value::String(secret.expose_secret().to_owned())
         }),
     );
     Value::Object(value)
