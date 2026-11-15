@@ -351,6 +351,15 @@ fn pegasus_reply_errors() {
         )),
         Err(PegasusError::MessageNotString)
     ));
+    assert!(matches!(
+        block_on(decode_pegasus_reply(
+            br#"{"message":0,"finishReason":"stop"}"#,
+            &context(&headers, &given, 10.0),
+            &mut single_choice(),
+            &counter,
+        )),
+        Err(PegasusError::Bedrock { status: 200, .. })
+    ));
     let mut without_choices = response(Vec::new());
     assert!(matches!(
         block_on(decode_pegasus_reply(
