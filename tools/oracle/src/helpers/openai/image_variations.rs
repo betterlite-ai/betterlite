@@ -42,7 +42,7 @@ impl crate::helpers::Helper for Op {
             .iter()
             .map(|probe| match input.function {
                 Function::VariationImagePart => support::transform_value(probe),
-                Function::NSizeFormatUser => support::mapped_value(probe),
+                Function::NSizeFormatUser => Ok(support::mapped_value(probe)),
                 Function::OmittedDefaultFields
                 | Function::ProviderError
                 | Function::BinaryFileDescriptor
@@ -105,11 +105,11 @@ impl<'probe> FakeTransport<'probe> {
     pub(super) fn new(probe: &'probe Probe) -> Result<Self, Box<crate::helpers::HelperError>> {
         let mut headers = HeaderMap::new();
         for (name, value) in &probe.reply.headers {
-            let name = http::header::HeaderName::from_bytes(name.as_bytes())
+            let header_name = http::header::HeaderName::from_bytes(name.as_bytes())
                 .map_err(|error| support::invalid(error.to_string()))?;
-            let value = http::header::HeaderValue::from_str(value)
+            let header_value = http::header::HeaderValue::from_str(value)
                 .map_err(|error| support::invalid(error.to_string()))?;
-            headers.insert(name, value);
+            headers.insert(header_name, header_value);
         }
         Ok(Self {
             probe,
@@ -158,7 +158,7 @@ fn recorded_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
             value
                 .to_str()
                 .ok()
-                .map(|value| (name.as_str().to_owned(), value.to_owned()))
+                .map(|text| (name.as_str().to_owned(), text.to_owned()))
         })
         .collect()
 }
@@ -191,7 +191,6 @@ impl ImageVariationTransport for FakeTransport<'_> {
     }
 }
 
-#[derive(Default)]
 pub(super) struct Recorder;
 
 impl ImageVariationLogger for Recorder {

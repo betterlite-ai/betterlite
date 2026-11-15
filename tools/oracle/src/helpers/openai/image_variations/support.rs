@@ -50,9 +50,9 @@ pub(crate) fn transform_value(probe: &Probe) -> HelperResult {
     let image = call_for(probe).image;
     let data = OpenAiImageVariationConfig::request_data(image, probe.optional_params.clone());
     let mut answer = empty_answer();
-    if let Some(data) = data {
+    if let Some(fields) = data {
         let view =
-            serde_json::to_value(data_view(&data)).map_err(|error| invalid(error.to_string()))?;
+            serde_json::to_value(data_view(&fields)).map_err(|error| invalid(error.to_string()))?;
         answer.insert(
             String::from("data"),
             view.get("data").cloned().unwrap_or(Value::Null),
@@ -61,12 +61,12 @@ pub(crate) fn transform_value(probe: &Probe) -> HelperResult {
     Ok(Value::Object(answer))
 }
 
-pub(crate) fn mapped_value(probe: &Probe) -> HelperResult {
+pub(crate) fn mapped_value(probe: &Probe) -> Value {
     let mut optional_params = probe.existing_params.clone();
     OpenAiImageVariationConfig::map_params(&probe.non_default_params, &mut optional_params);
     let mut answer = empty_answer();
     answer.insert(String::from("mapped"), json!(optional_params));
-    Ok(Value::Object(answer))
+    Value::Object(answer)
 }
 
 pub(crate) fn request_value(probe: &Probe) -> HelperResult {
@@ -75,7 +75,7 @@ pub(crate) fn request_value(probe: &Probe) -> HelperResult {
         .enable_all()
         .build()
         .map_err(|error| invalid(error.to_string()))?;
-    let mut recorder = Recorder::default();
+    let mut recorder = Recorder;
     let outcome = match begin_image_variation(call_for(probe), &mut recorder) {
         Ok(prepared) => {
             let sent = runtime.block_on(send_image_variation(&prepared, &transport));
