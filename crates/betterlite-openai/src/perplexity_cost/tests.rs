@@ -473,3 +473,17 @@ fn a_reported_zero_wins_over_every_other_charge() {
     assert_eq!(result.prompt_cost, Decimal::ZERO);
     assert_eq!(result.completion_cost, Decimal::ZERO);
 }
+
+#[test]
+fn missing_or_unparsable_token_rates_charge_nothing() {
+    let missing = run(json!({}), &usage(100, 50)).expect("the missing rates");
+    assert_eq!(missing.prompt_cost, Decimal::ZERO);
+    assert_eq!(missing.completion_cost, Decimal::ZERO);
+    let unparsable = run(
+        json!({"input_cost_per_token": "not a price", "output_cost_per_token": null}),
+        &usage(100, 50),
+    )
+    .expect("the unparsable rates");
+    assert_eq!(unparsable.prompt_cost, Decimal::ZERO);
+    assert_eq!(unparsable.completion_cost, Decimal::ZERO);
+}
