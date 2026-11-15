@@ -162,8 +162,8 @@ fn report(
         .and_then(|call| captured_request(&call.request))?;
     match answer {
         None => Ok(json!({"request": request, "succeeded": true})),
-        Some(Ok(answer)) => {
-            let verdict = handle_guardrail_response(&answer)
+        Some(Ok(received)) => {
+            let verdict = handle_guardrail_response(&received)
                 .map_err(|error| failure("AktoError", None, error.to_string()))?;
             Ok(json!({"request": request, "allowed": verdict.allowed, "reason": verdict.reason}))
         }
@@ -188,8 +188,8 @@ fn captured_request(request: &ProviderRequest) -> Result<Value, Box<HelperError>
         None => (request.path.as_str(), None),
     };
     let mut params = serde_json::Map::new();
-    if let Some(query) = query {
-        for (name, value) in url::form_urlencoded::parse(query.as_bytes()) {
+    if let Some(found) = query {
+        for (name, value) in url::form_urlencoded::parse(found.as_bytes()) {
             params.insert(name.into_owned(), Value::String(value.into_owned()));
         }
     }

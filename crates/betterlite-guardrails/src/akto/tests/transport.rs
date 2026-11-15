@@ -310,18 +310,17 @@ async fn akto_guardrail_fire_and_forget_swallows_an_error_status() {
     let payload =
         build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
     let path = log_path("fire-and-forget-error");
-    {
-        let _guard = log_to(&path);
-        fire_and_forget_request(
-            &guardrail,
-            AktoCallFlags {
-                guardrails: true,
-                ingest_data: true,
-            },
-            &payload,
-        )
-        .await
-    };
+    let guard = log_to(&path);
+    fire_and_forget_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: true,
+        },
+        &payload,
+    )
+    .await;
+    drop(guard);
     let written = fs::read_to_string(&path).expect("log contents");
     fs::remove_file(&path).expect("remove log");
     assert!(written.contains("non-200"));
@@ -336,18 +335,17 @@ async fn akto_guardrail_fire_and_forget_sends_the_request() {
     let payload =
         build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
     let path = log_path("fire-and-forget-success");
-    {
-        let _guard = log_to(&path);
-        fire_and_forget_request(
-            &guardrail,
-            AktoCallFlags {
-                guardrails: true,
-                ingest_data: true,
-            },
-            &payload,
-        )
-        .await
-    };
+    let guard = log_to(&path);
+    fire_and_forget_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: true,
+        },
+        &payload,
+    )
+    .await;
+    drop(guard);
     let recorded = captures.lock().expect("captures").pop().expect("request");
     assert_eq!(
         recorded.query.as_deref(),

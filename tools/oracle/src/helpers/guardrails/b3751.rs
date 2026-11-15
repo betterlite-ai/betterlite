@@ -140,7 +140,7 @@ fn settings(input: &Input) -> Result<AktoMirroring, Box<HelperError>> {
 
 fn source(settings: &SettingsInput) -> String {
     let mut parameters = vec!["guardrail: akto".to_owned()];
-    for (name, value) in [
+    for (name, configured) in [
         ("akto_base_url", settings.akto_base_url.as_deref()),
         ("akto_api_key", settings.akto_api_key.as_deref()),
         ("akto_account_id", settings.akto_account_id.as_deref()),
@@ -150,7 +150,7 @@ fn source(settings: &SettingsInput) -> String {
             settings.unreachable_fallback.as_deref(),
         ),
     ] {
-        if let Some(value) = value {
+        if let Some(value) = configured {
             parameters.push(format!("{name}: {value:?}"));
         }
     }
@@ -184,9 +184,11 @@ fn answer_body(input: &Input) -> Result<String, Box<HelperError>> {
     if let Some(raw) = &input.answer.raw_body {
         return Ok(raw.clone());
     }
-    match &input.answer.body {
-        Some(body) => serde_json::to_string(body)
-            .map_err(|error| failure("JsonError", None, error.to_string())),
-        None => Ok(String::new()),
-    }
+    input.answer.body.as_ref().map_or_else(
+        || Ok::<String, Box<HelperError>>(String::new()),
+        |body| {
+            serde_json::to_string(body)
+                .map_err(|error| failure("JsonError", None, error.to_string()))
+        },
+    )
 }
