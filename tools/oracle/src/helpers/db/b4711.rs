@@ -70,7 +70,8 @@ pub(crate) struct Review {
     action: ReviewAction,
     server_id: String,
     touched_by: String,
-    review_notes: Option<String>,
+    #[serde(rename = "review_notes")]
+    notes: Option<String>,
     rows: Vec<JsonData>,
 }
 
@@ -80,7 +81,8 @@ pub(crate) struct Review {
 pub(crate) struct PinnedTools {
     salt_key: String,
     server_id: String,
-    pinned_tools: Option<Value>,
+    #[serde(rename = "pinned_tools")]
+    tools: Option<Value>,
     touched_by: String,
     rows: Vec<JsonData>,
 }

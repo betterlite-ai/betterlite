@@ -121,7 +121,7 @@ pub(super) async fn review(call: &Review) -> HelperResult {
             approve_mcp_server(&store, &db_cipher, server_id, touched_by).await
         }
         ReviewAction::Reject => {
-            let notes = call.review_notes.as_deref();
+            let notes = call.notes.as_deref();
             reject_mcp_server(&store, &db_cipher, server_id, touched_by, notes).await
         }
     };
@@ -137,7 +137,7 @@ pub(super) async fn review(call: &Review) -> HelperResult {
 
 pub(super) async fn pinned_tools(call: &PinnedTools) -> HelperResult {
     let tools: Option<BTreeMap<String, PinnedMCPTool>> = call
-        .pinned_tools
+        .tools
         .clone()
         .map(serde_json::from_value)
         .transpose()

@@ -16,24 +16,21 @@ impl RowStore {
             rows: Mutex::new(rows.to_vec()),
         }
     }
-}
 
-impl McpServerAccess for RowStore {
-    async fn find_servers(&self, request: &FindServers) -> Result<Vec<JsonData>, McpTableError> {
-        let mut selected = {
-            let stored_rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-            let mut matched = Vec::new();
-            for stored in &*stored_rows {
-                if request
+    fn select(&self, request: &FindServers) -> Vec<JsonData> {
+        let mut selected: Vec<JsonData> = self
+            .rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter(|stored| {
+                request
                     .filter
                     .as_ref()
                     .is_none_or(|filter| matches(stored, filter))
-                {
-                    matched.push(stored.clone());
-                }
-            }
-            matched
-        };
+            })
+            .cloned()
+            .collect();
         if request.descending {
             selected.sort_by(|left, right| {
                 text(right, "submitted_at").cmp(&text(left, "submitted_at"))
@@ -42,21 +39,32 @@ impl McpServerAccess for RowStore {
         if let Some(take) = request.take {
             selected.truncate(usize::try_from(take).unwrap_or(usize::MAX));
         }
-        Ok(selected)
+        selected
     }
 
-    async fn update_server(
+    fn update(&self, request: &ServerUpdate) -> Result<Option<JsonData>, McpTableError> {
+        let mut stored_rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        stored_rows
+            .iter_mut()
+            .find(|stored| text(stored, "server_id") == Some(request.server_id.as_str()))
+            .map(|stored| apply(stored, &request.data).map(|()| stored.clone()))
+            .transpose()
+    }
+}
+
+impl McpServerAccess for RowStore {
+    fn find_servers(
+        &self,
+        request: &FindServers,
+    ) -> impl Future<Output = Result<Vec<JsonData>, McpTableError>> + Send {
+        std::future::ready(Ok(self.select(request)))
+    }
+
+    fn update_server(
         &self,
         request: &ServerUpdate,
-    ) -> Result<Option<JsonData>, McpTableError> {
-        let mut stored_rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        for stored in &mut *stored_rows {
-            if text(stored, "server_id") == Some(request.server_id.as_str()) {
-                apply(stored, &request.data)?;
-                return Ok(Some(stored.clone()));
-            }
-        }
-        Ok(None)
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        std::future::ready(self.update(request))
     }
 }
 
