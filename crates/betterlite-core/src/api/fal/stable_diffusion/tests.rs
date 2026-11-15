@@ -178,6 +178,7 @@ fn stable_diffusion_size_parses_two_integer_parts(#[case] requested: &str, #[cas
 #[case::past_i64("99999999999999999999x1")]
 #[case::min_i64("-9223372036854775808x1")]
 #[case::arabic_digits("\u{0661}\u{0662}\u{0663}x456")]
+#[case::information_separators("\u{1c}512x512\u{1c}")]
 fn stable_diffusion_size_falls_back_for_malformed_text(#[case] requested: &str) {
     assert_eq!(
         map_image_size(&text(requested)).expect("a fallback"),
