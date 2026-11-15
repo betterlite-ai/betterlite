@@ -466,6 +466,11 @@ async fn cato_guardrail_uses_the_default_timeout_when_none_is_configured() {
     assert_eq!(guardrail.timeout, DEFAULT_TIMEOUT);
 }
 
+#[test]
+fn cato_guardrail_caps_an_answer_at_one_mebibyte() {
+    assert_eq!(MAX_RESPONSE_BYTES, 1_048_576);
+}
+
 #[tokio::test]
 async fn cato_guardrail_accepts_an_answer_of_exactly_the_size_limit() {
     let (base, mut server) = serve_raw(raw_answer_of_size(MAX_RESPONSE_BYTES)).await;

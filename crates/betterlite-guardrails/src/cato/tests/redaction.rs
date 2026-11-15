@@ -79,6 +79,46 @@ fn cato_guardrail_anonymize_leaves_messages_past_the_redacted_batch() {
 }
 
 #[test]
+fn cato_guardrail_anonymize_rewrites_messages_and_extra_sources_together() {
+    let mut data = body(&[
+        (
+            "messages",
+            list(&[
+                object(&[("content", text("one"))]),
+                object(&[("content", text("two"))]),
+            ]),
+        ),
+        ("instructions", text("original instructions")),
+    ]);
+    let response = redacted(vec![
+        with_content("ONE"),
+        with_content("TWO"),
+        with_content("REDACTED INSTRUCTIONS"),
+    ]);
+    anonymize_request(&response, &mut data).expect("rewritten");
+    assert_eq!(
+        field_text(&array_of(&data, "messages"), "content"),
+        ["ONE", "TWO"]
+    );
+    assert_eq!(
+        data.get("instructions"),
+        Some(&text("REDACTED INSTRUCTIONS"))
+    );
+}
+
+#[test]
+fn cato_guardrail_anonymize_keeps_a_responses_input_when_no_redaction_covers_it() {
+    let input = list(&[object(&[
+        ("type", text("input_text")),
+        ("text", text("original")),
+    ])]);
+    let mut data = body(&[("input", input.clone())]);
+    let response = redacted(vec![]);
+    anonymize_request(&response, &mut data).expect("pass through");
+    assert_eq!(data.get("input"), Some(&input));
+}
+
+#[test]
 fn cato_guardrail_anonymize_rewrites_instructions() {
     let mut data = body(&[("instructions", text("original instructions"))]);
     let response = redacted(vec![with_content("REDACTED INSTRUCTIONS")]);
