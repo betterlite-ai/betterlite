@@ -1,0 +1,13 @@
+kind: helper
+name: aim-output-block-action
+call:
+  b3750:
+    function: output
+    settings: {api_key: aim-oracle-key, api_base: "http://aim.test", litellm_version: "1.105.1"}
+    request_data: {messages: [{role: user, content: "hello"}]}
+    output: "a policy violating answer"
+    key_alias: null
+    answer: {required_action: {action_type: block_action, detection_message: "blocked output"}, analysis_result: {policy_drill_down: {pii: {}}}}
+    answer_status: 200
+env: {}
+compare: {ignore: []}
