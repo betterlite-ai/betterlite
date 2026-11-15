@@ -83,7 +83,7 @@ fn system_message(system: Option<&Json>) -> Result<Option<Message>, TokenCountEr
     Ok(Some(serde_json::from_value(value)?))
 }
 
-// _count_pre_call_check_tokens: chat messages plus the Anthropic system block, counted with the request's tools.
+// _count_pre_call_check_tokens: chat messages plus the Anthropic system block, or the Responses input through the shared transform.
 pub async fn count_request_tokens<C>(
     payload: &TokenPayload<'_>,
     counter: &C,
@@ -91,44 +91,32 @@ pub async fn count_request_tokens<C>(
 where
     C: TokenCounter + Sync + ?Sized,
 {
-    let Some(messages) = payload.messages else {
-        return count_input_tokens(payload, counter).await;
-    };
     let mut wire_messages = Vec::new();
-    if let Some(message) = system_message(payload.system)? {
-        wire_messages.push(message);
-    }
-    for message in messages {
-        wire_messages.push(serde_json::from_value(serde_json::to_value(message)?)?);
-    }
-    counter.count_messages(&wire_messages, payload.tools).await
-}
-
-// The Responses half of _count_pre_call_check_tokens: the input becomes chat messages through the shared transform.
-async fn count_input_tokens<C>(
-    payload: &TokenPayload<'_>,
-    counter: &C,
-) -> Result<usize, TokenCountError>
-where
-    C: TokenCounter + Sync + ?Sized,
-{
-    let request = InputRequest {
-        input: Some(payload.input.cloned().ok_or(TokenCountError::NoInput)?),
-        instructions: payload.instructions.map(str::to_owned),
-    };
-    let cache = DualLocalCache::new(
-        None,
-        None,
-        &Settings::default(),
-        Arc::new(|| 0.0_f64),
-        Diagnostics {
-            redactor: Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?),
-            emit: Arc::new(|_event| {}),
-        },
-    );
-    let mut wire_messages = Vec::new();
-    for message in input_messages(&request, false, ApiLimits::default(), &cache)? {
-        wire_messages.push(serde_json::from_value(message)?);
+    if let Some(messages) = payload.messages {
+        if let Some(message) = system_message(payload.system)? {
+            wire_messages.push(message);
+        }
+        for message in messages {
+            wire_messages.push(serde_json::from_value(serde_json::to_value(message)?)?);
+        }
+    } else {
+        let request = InputRequest {
+            input: Some(payload.input.cloned().ok_or(TokenCountError::NoInput)?),
+            instructions: payload.instructions.map(str::to_owned),
+        };
+        let cache = DualLocalCache::new(
+            None,
+            None,
+            &Settings::default(),
+            Arc::new(|| 0.0_f64),
+            Diagnostics {
+                redactor: Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?),
+                emit: Arc::new(|_event| {}),
+            },
+        );
+        for message in input_messages(&request, false, ApiLimits::default(), &cache)? {
+            wire_messages.push(serde_json::from_value(message)?);
+        }
     }
     counter.count_messages(&wire_messages, payload.tools).await
 }
