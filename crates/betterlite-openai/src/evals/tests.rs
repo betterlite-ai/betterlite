@@ -13,6 +13,7 @@ use super::types::{
 };
 use crate::openai_base_config::{Headers, Object};
 
+type Call<T> = Result<T, EvalsError>;
 type UrlAndHeaders = (String, Headers);
 type UrlHeadersBody = (String, Headers, Object);
 
@@ -61,7 +62,10 @@ fn value(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
 }
 
-fn parse<T: DeserializeOwned>(text: &str) -> T {
+fn parse<T>(text: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(text).unwrap()
 }
 
@@ -89,91 +93,72 @@ fn assert_segment_error<T>(result: &Result<T, EvalsError>) {
     assert!(matches!(result, Err(EvalsError::PathSegment { .. })));
 }
 
-fn create_eval(request: &CreateEvalRequest, params: &Object, headers: &Headers) -> Object {
+fn create_eval(request: &CreateEvalRequest, params: &Object, headers: &Headers) -> Call<Object> {
     let context = request_context(params, headers);
-    OpenAiEvalsConfig::default()
-        .transform_create_eval_request(request, &context)
-        .unwrap()
+    OpenAiEvalsConfig::default().transform_create_eval_request(request, &context)
 }
 
-fn update_eval(eval_id: &str, request: &UpdateEvalRequest, headers: &Headers) -> UrlHeadersBody {
+fn update_eval(id: &str, request: &UpdateEvalRequest, headers: &Headers) -> Call<UrlHeadersBody> {
     let params = Object::new();
     let context = request_context(&params, headers);
-    OpenAiEvalsConfig::default()
-        .transform_update_eval_request(eval_id, request, FIXTURE_URL, &context)
-        .unwrap()
+    let config = OpenAiEvalsConfig::default();
+    config.transform_update_eval_request(id, request, FIXTURE_URL, &context)
 }
 
-fn create_run(eval_id: &str, request: &CreateRunRequest, params: &Object) -> (String, Object) {
+fn create_run(id: &str, request: &CreateRunRequest, params: &Object) -> Call<(String, Object)> {
     let headers = Headers::new();
     let context = request_context(params, &headers);
-    OpenAiEvalsConfig::default()
-        .transform_create_run_request(eval_id, request, &context)
-        .unwrap()
+    OpenAiEvalsConfig::default().transform_create_run_request(id, request, &context)
 }
 
-fn list_evals(params: &Object, list: &ListEvalsParams) -> (String, Object) {
+fn list_evals(params: &Object, list: &ListEvalsParams) -> Call<(String, Object)> {
     let headers = Headers::new();
     let context = request_context(params, &headers);
-    OpenAiEvalsConfig::default()
-        .transform_list_evals_request(list, &context)
-        .unwrap()
+    OpenAiEvalsConfig::default().transform_list_evals_request(list, &context)
 }
 
-fn list_runs(eval_id: &str, params: &Object, list: &ListRunsParams) -> (String, Object) {
+fn list_runs(eval_id: &str, params: &Object, list: &ListRunsParams) -> Call<(String, Object)> {
     let headers = Headers::new();
     let context = request_context(params, &headers);
-    OpenAiEvalsConfig::default()
-        .transform_list_runs_request(eval_id, list, &context)
-        .unwrap()
+    OpenAiEvalsConfig::default().transform_list_runs_request(eval_id, list, &context)
 }
 
-fn get_eval(eval_id: &str, headers: &Headers) -> UrlAndHeaders {
+fn get_eval(eval_id: &str, headers: &Headers) -> Call<UrlAndHeaders> {
     let params = Object::new();
     let context = request_context(&params, headers);
-    OpenAiEvalsConfig::default()
-        .transform_get_eval_request(eval_id, FIXTURE_URL, &context)
-        .unwrap()
+    OpenAiEvalsConfig::default().transform_get_eval_request(eval_id, FIXTURE_URL, &context)
 }
 
-fn delete_eval(eval_id: &str, headers: &Headers) -> UrlAndHeaders {
+fn delete_eval(eval_id: &str, headers: &Headers) -> Call<UrlAndHeaders> {
     let params = Object::new();
     let context = request_context(&params, headers);
-    OpenAiEvalsConfig::default()
-        .transform_delete_eval_request(eval_id, FIXTURE_URL, &context)
-        .unwrap()
+    OpenAiEvalsConfig::default().transform_delete_eval_request(eval_id, FIXTURE_URL, &context)
 }
 
-fn cancel_eval(eval_id: &str, headers: &Headers) -> UrlHeadersBody {
+fn cancel_eval(eval_id: &str, headers: &Headers) -> Call<UrlHeadersBody> {
     let params = Object::new();
     let context = request_context(&params, headers);
-    OpenAiEvalsConfig::default()
-        .transform_cancel_eval_request(eval_id, FIXTURE_URL, &context)
-        .unwrap()
+    OpenAiEvalsConfig::default().transform_cancel_eval_request(eval_id, FIXTURE_URL, &context)
 }
 
-fn get_run(eval_id: &str, run_id: &str, headers: &Headers) -> UrlAndHeaders {
+fn get_run(eval_id: &str, run_id: &str, headers: &Headers) -> Call<UrlAndHeaders> {
     let params = Object::new();
     let context = request_context(&params, headers);
-    OpenAiEvalsConfig::default()
-        .transform_get_run_request(eval_id, run_id, FIXTURE_URL, &context)
-        .unwrap()
+    OpenAiEvalsConfig::default().transform_get_run_request(eval_id, run_id, FIXTURE_URL, &context)
 }
 
-fn delete_run(eval_id: &str, run_id: &str, headers: &Headers) -> UrlHeadersBody {
+fn delete_run(eval_id: &str, run_id: &str, headers: &Headers) -> Call<UrlHeadersBody> {
     let params = Object::new();
     let context = request_context(&params, headers);
-    OpenAiEvalsConfig::default()
-        .transform_delete_run_request(eval_id, run_id, FIXTURE_URL, &context)
-        .unwrap()
+    let config = OpenAiEvalsConfig::default();
+    config.transform_delete_run_request(eval_id, run_id, FIXTURE_URL, &context)
 }
 
-fn cancel_run(eval_id: &str, run_id: &str, headers: &Headers) -> UrlHeadersBody {
+fn cancel_run(eval_id: &str, run_id: &str, headers: &Headers) -> Call<UrlHeadersBody> {
     let params = Object::new();
     let context = request_context(&params, headers);
-    OpenAiEvalsConfig::default()
-        .transform_cancel_run_request(eval_id, run_id, FIXTURE_URL, &context)
-        .unwrap()
+    let config = OpenAiEvalsConfig::default();
+    config.transform_cancel_run_request(eval_id, run_id, FIXTURE_URL, &context)
 }
 
 fn create_eval_drops_only_top_level_nulls() {
@@ -181,18 +166,19 @@ fn create_eval_drops_only_top_level_nulls() {
         &parse(CREATE_NULLS_REQUEST),
         &Object::new(),
         &Headers::new(),
-    );
+    )
+    .unwrap();
     assert_eq!(Value::Object(body), value(CREATE_NULLS_BODY));
 }
 
 fn create_eval_keeps_empty_values() {
-    let body = create_eval(&parse(CREATE_EMPTY), &Object::new(), &Headers::new());
+    let body = create_eval(&parse(CREATE_EMPTY), &Object::new(), &Headers::new()).unwrap();
     assert_eq!(Value::Object(body), value(CREATE_EMPTY));
 }
 
 fn update_eval_drops_only_top_level_nulls() {
     let headers = Headers::new();
-    let (url, sent, body) = update_eval("eval/1", &parse(UPDATE_NULLS_REQUEST), &headers);
+    let (url, sent, body) = update_eval("eval/1", &parse(UPDATE_NULLS_REQUEST), &headers).unwrap();
     assert_eq!(
         (url.as_str(), sent),
         ("https://fixture.test/v1/evals/eval%2F1", headers)
@@ -202,7 +188,7 @@ fn update_eval_drops_only_top_level_nulls() {
 
 fn update_eval_keeps_name() {
     let headers = Headers::new();
-    let (url, sent, body) = update_eval("eval-2", &parse(UPDATE_NAME), &headers);
+    let (url, sent, body) = update_eval("eval-2", &parse(UPDATE_NAME), &headers).unwrap();
     assert_eq!(
         (url.as_str(), sent),
         ("https://fixture.test/v1/evals/eval-2", headers)
@@ -212,40 +198,40 @@ fn update_eval_keeps_name() {
 
 fn create_run_body_keeps_api_base_suffix() {
     let params: Object = object(r#"{"api_base":"https://runs.test/v1"}"#);
-    let (url, body) = create_run("eval-3", &parse(RUN_SUFFIX_REQUEST), &params);
+    let (url, body) = create_run("eval-3", &parse(RUN_SUFFIX_REQUEST), &params).unwrap();
     assert_eq!(url, "https://runs.test/v1/v1/evals/eval-3/runs");
     assert_eq!(Value::Object(body), value(RUN_SUFFIX_BODY));
 }
 
 fn create_run_body_defaults_base_for_empty_params() {
-    let (url, body) = create_run("eval/4", &parse(RUN_EMPTY), &Object::new());
+    let (url, body) = create_run("eval/4", &parse(RUN_EMPTY), &Object::new()).unwrap();
     assert_eq!(url, "https://api.openai.com/v1/evals/eval%2F4/runs");
     assert_eq!(Value::Object(body), value(RUN_EMPTY));
 }
 
 fn list_evals_forwards_truthy_params() {
     let params: Object = object(EVALS_BASE);
-    let (url, query) = list_evals(&params, &parse(LIST_TRUTHY_REQUEST));
+    let (url, query) = list_evals(&params, &parse(LIST_TRUTHY_REQUEST)).unwrap();
     assert_eq!(url, "https://evals.test/base/v1/evals");
     assert_eq!(Value::Object(query), value(LIST_TRUTHY_QUERY));
 }
 
 fn list_evals_drops_falsy_params() {
     let params: Object = object(r#"{"api_base":""}"#);
-    let (url, query) = list_evals(&params, &parse(LIST_FALSY_REQUEST));
+    let (url, query) = list_evals(&params, &parse(LIST_FALSY_REQUEST)).unwrap();
     assert_eq!(url, "https://api.openai.com/v1/evals");
     assert_eq!(Value::Object(query), value("{}"));
 }
 
 fn list_evals_ignores_unknown_keys_and_null_base() {
     let params: Object = object(r#"{"api_base":null}"#);
-    let (url, query) = list_evals(&params, &parse(r#"{"limit":2,"model":"o3"}"#));
+    let (url, query) = list_evals(&params, &parse(r#"{"limit":2,"model":"o3"}"#)).unwrap();
     assert_eq!(url, "https://api.openai.com/v1/evals");
     assert_eq!(Value::Object(query), value(r#"{"limit":2}"#));
 }
 
 fn list_evals_with_no_params_carries_no_query() {
-    let (_, query) = list_evals(&Object::new(), &parse("{}"));
+    let (_, query) = list_evals(&Object::new(), &parse("{}")).unwrap();
     assert_eq!(Value::Object(query), value("{}"));
 }
 
@@ -267,7 +253,7 @@ fn case_eval_list_pagination() {
 
 fn get_eval_encodes_id_and_keeps_headers() {
     let headers = Headers::from([("X-Kept".to_owned(), "yes".to_owned())]);
-    let (url, sent) = get_eval("eval/1", &headers);
+    let (url, sent) = get_eval("eval/1", &headers).unwrap();
     assert_eq!(
         (url.as_str(), sent),
         ("https://fixture.test/v1/evals/eval%2F1", headers)
@@ -276,7 +262,7 @@ fn get_eval_encodes_id_and_keeps_headers() {
 
 fn delete_eval_uses_caller_headers() {
     let headers = Headers::new();
-    let (url, sent) = delete_eval("ev.al-1", &headers);
+    let (url, sent) = delete_eval("ev.al-1", &headers).unwrap();
     assert_eq!(
         (url.as_str(), sent),
         ("https://fixture.test/v1/evals/ev.al-1", headers)
@@ -285,17 +271,20 @@ fn delete_eval_uses_caller_headers() {
 
 fn cancel_eval_appends_cancel_with_empty_body() {
     let headers = Headers::from([("X-Kept".to_owned(), "cancel".to_owned())]);
-    let (url, sent, body) = cancel_eval("ev al", &headers);
+    let (url, sent, body) = cancel_eval("ev al", &headers).unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/ev%20al/cancel");
     assert_eq!((sent, Value::Object(body)), (headers, value("{}")));
 }
 
 fn eval_id_segments_are_checked() {
     let headers = Headers::new();
-    assert_eq!(get_eval("", &headers).0, "https://fixture.test/v1/evals");
+    assert_eq!(
+        get_eval("", &headers).unwrap().0,
+        "https://fixture.test/v1/evals"
+    );
     assert_segment_error(&get_eval(".", &headers));
     assert_segment_error(&delete_eval("..", &headers));
-    let (url, ..) = cancel_eval("a b/c?d#e", &headers);
+    let (url, ..) = cancel_eval("a b/c?d#e", &headers).unwrap();
     assert_eq!(
         url,
         "https://fixture.test/v1/evals/a%20b%2Fc%3Fd%23e/cancel"
@@ -310,21 +299,21 @@ fn case_eval_get_delete_cancel() {
 }
 
 fn create_run_dataset_body_uses_default_base() {
-    let (url, body) = create_run("eval-1", &parse(RUN_DATASET), &Object::new());
+    let (url, body) = create_run("eval-1", &parse(RUN_DATASET), &Object::new()).unwrap();
     assert_eq!(url, "https://api.openai.com/v1/evals/eval-1/runs");
     assert_eq!(Value::Object(body), value(RUN_DATASET));
 }
 
 fn create_run_inline_body_uses_api_base() {
     let params: Object = object(RUNS_BASE);
-    let (url, body) = create_run("eval-2", &parse(RUN_INLINE), &params);
+    let (url, body) = create_run("eval-2", &parse(RUN_INLINE), &params).unwrap();
     assert_eq!(url, "https://runs.test/v1/evals/eval-2/runs");
     assert_eq!(Value::Object(body), value(RUN_INLINE));
 }
 
 fn create_run_empty_base_and_id_checks() {
     let request: CreateRunRequest = parse(RUN_EMPTY);
-    let (url, _) = create_run("eval/1", &request, &object(r#"{"api_base":""}"#));
+    let (url, _) = create_run("eval/1", &request, &object(r#"{"api_base":""}"#)).unwrap();
     assert_eq!(url, "https://api.openai.com/v1/evals/eval%2F1/runs");
     assert_segment_error(&create_run("", &request, &Object::new()));
 }
@@ -337,20 +326,20 @@ fn case_run_create_data_source() {
 
 fn list_runs_forwards_truthy_params_without_order_by() {
     let params: Object = object(RUNS_BASE);
-    let (url, query) = list_runs("eval-1", &params, &parse(RUNS_TRUTHY_REQUEST));
+    let (url, query) = list_runs("eval-1", &params, &parse(RUNS_TRUTHY_REQUEST)).unwrap();
     assert_eq!(url, "https://runs.test/v1/evals/eval-1/runs");
     assert_eq!(Value::Object(query), value(RUNS_TRUTHY_QUERY));
 }
 
 fn list_runs_drops_falsy_params() {
     let params: Object = object(RUNS_BASE);
-    let (_, query) = list_runs("eval-2", &params, &parse(RUNS_FALSY_REQUEST));
+    let (_, query) = list_runs("eval-2", &params, &parse(RUNS_FALSY_REQUEST)).unwrap();
     assert_eq!(Value::Object(query), value("{}"));
 }
 
 fn list_runs_keeps_v1_base_and_checks_id() {
     let params: Object = object(r#"{"api_base":"https://runs.test/v1"}"#);
-    let (url, _) = list_runs("eval/2", &params, &parse("{}"));
+    let (url, _) = list_runs("eval/2", &params, &parse("{}")).unwrap();
     assert_eq!(url, "https://runs.test/v1/v1/evals/eval%2F2/runs");
     assert_segment_error(&list_runs("", &params, &parse("{}")));
 }
@@ -363,7 +352,7 @@ fn case_run_list_pagination() {
 
 fn get_run_encodes_both_ids() {
     let headers = Headers::from([("X-Kept".to_owned(), "a".to_owned())]);
-    let (url, sent) = get_run("eval/1", "run 1", &headers);
+    let (url, sent) = get_run("eval/1", "run 1", &headers).unwrap();
     assert_eq!(
         (url.as_str(), sent),
         (
@@ -375,14 +364,14 @@ fn get_run_encodes_both_ids() {
 
 fn delete_run_sends_empty_body() {
     let headers = Headers::new();
-    let (url, sent, body) = delete_run("eval-1", "run-1", &headers);
+    let (url, sent, body) = delete_run("eval-1", "run-1", &headers).unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/eval-1/runs/run-1");
     assert_eq!((sent, Value::Object(body)), (headers, value("{}")));
 }
 
 fn cancel_run_appends_cancel_with_empty_body() {
     let headers = Headers::new();
-    let (url, sent, body) = cancel_run("eval-1", "run/1", &headers);
+    let (url, sent, body) = cancel_run("eval-1", "run/1", &headers).unwrap();
     assert_eq!(
         url,
         "https://fixture.test/v1/evals/eval-1/runs/run%2F1/cancel"
