@@ -283,6 +283,9 @@ fn python_splitlines_boundaries_end_a_data_line(#[case] separator: &[u8]) {
 #[case::nan_number(
     b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"x\"}]}}],\"usageMetadata\":{\"totalTokenCount\":NaN}}\n"
 )]
+#[case::infinity_number(
+    b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"x\"}]}}],\"usageMetadata\":{\"totalTokenCount\":Infinity}}\n"
+)]
 #[case::lone_surrogate(
     b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"\\ud800\"}]}}]}\n"
 )]
