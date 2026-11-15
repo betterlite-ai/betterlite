@@ -267,11 +267,11 @@ async fn empty_and_unified_ids_are_not_looked_up() {
     let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::Ensure {
-        files: ids(Some(""), Some(&unified), None),
+        files: ids(Some(""), Some(unified.as_str()), None),
     };
     assert_eq!(
         records.run(&input).await,
-        BatchManagedRecordsResult::Ensured(ids(Some(""), Some(&unified), None))
+        BatchManagedRecordsResult::Ensured(ids(Some(""), Some(unified.as_str()), None))
     );
     assert!(observed.lookups().is_empty());
 }

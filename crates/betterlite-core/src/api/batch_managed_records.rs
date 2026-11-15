@@ -182,7 +182,7 @@ where
         }
         match files.find_by_flat_model_file_id(raw_id).await {
             Ok(Some(managed_file)) => Some(managed_file.unified_file_id),
-            Ok(None) | Err(_error) => Some(raw_id.to_owned()),
+            Ok(None) | Err(_) => Some(raw_id.to_owned()),
         }
     }
 
