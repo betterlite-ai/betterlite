@@ -1,0 +1,30 @@
+kind: helper
+name: bedrock-invoke-missing-tool-name
+call:
+  bedrock_invoke_schema:
+    model_cost: {}
+    steps:
+      - function: normalize_tool_schemas
+        body:
+          tools:
+            - {name: t, input_schema: {type: custom}}
+            - {name: u}
+            - {name: v, input_schema: skip}
+            - junk
+      - function: ensure_tool_names
+        body:
+          tools:
+            - {}
+            - {name: null}
+            - {name: ""}
+            - {name: "   "}
+            - {name: "\x1c\u2003"}
+            - {name: " name "}
+            - {name: 0}
+            - {name: false}
+            - junk
+            - {input_schema: {type: custom}}
+      - {function: ensure_tool_names, body: {tools: null}}
+      - {function: ensure_tool_names, body: {model: m}}
+env: {}
+compare: {ignore: []}
