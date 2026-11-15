@@ -3,9 +3,8 @@
 use std::str::from_utf8;
 
 use betterlite_openai::deepinfra::rerank::RerankLimits;
-use betterlite_openai::deepinfra::rerank::response::{
-    decode_deepinfra_error, decode_deepinfra_rerank,
-};
+use betterlite_openai::deepinfra::rerank::response::decode_deepinfra_rerank;
+use betterlite_openai::deepinfra::rerank::response::error::decode_deepinfra_error;
 use libfuzzer_sys::fuzz_target;
 
 // the first byte tags the entry point: an even byte feeds the rerank body decoder, an odd one the error decoder
