@@ -38,3 +38,20 @@ deviations:
       500. The task requires the repeated argument to keep its source failure instead of silently
       winning, and the typed error names the argument.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/image_generation/transformation.py#L106-L113
+  - what: >-
+      A Recraft request without an API key fails with the typed RecraftError::MissingApiKey from
+      either configuration's validate_environment before any request is sent.
+    why: >-
+      LiteLLM raises ValueError("RECRAFT_API_KEY is not set") there, and the image call's exception
+      mapping has no status for it, so it answers APIConnectionError with status 500. A working
+      setup always supplies the key, and the typed error names the missing variable; the image
+      dispatch in B046 owns the answer it becomes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/image_generation/transformation.py#L76-L91
+  - what: >-
+      A Recraft cost call whose response is not an image response fails with the typed
+      ImageCostError::NotImageResponse once the model info resolves.
+    why: >-
+      LiteLLM resolves the model info first and then raises ValueError for the wrong response type.
+      The response comes from betterlite's own dispatch rather than from a caller's request, so the
+      typed error is the port, and B068's total-cost routing owns the answer it becomes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/cost_calculator.py#L16-L28
