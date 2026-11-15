@@ -7,29 +7,29 @@ use crate::primitives::json_value::JsonValue;
 
 // The three surfaces LiteLLM probes, each kept whole so a list is told from a missing key
 #[derive(Deserialize)]
-struct ResponseView {
+pub(super) struct ResponseView {
     #[serde(default)]
-    choices: JsonValue,
+    pub(super) choices: JsonValue,
     #[serde(default)]
-    content: JsonValue,
+    pub(super) content: JsonValue,
     #[serde(default)]
-    output: JsonValue,
+    pub(super) output: JsonValue,
 }
 
-pub struct ModelResponse {
-    pub calls: ToolCallResponse,
-    view: ResponseView,
+pub(super) struct ModelResponse {
+    pub(super) calls: ToolCallResponse,
+    pub(super) view: ResponseView,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResponseFormat {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ResponseFormat {
     Responses,
     Anthropic,
     Chat,
 }
 
 impl ModelResponse {
-    pub fn parse(response: &RawValue) -> Result<Self, RecoveryError> {
+    pub(super) fn parse(response: &RawValue) -> Result<Self, RecoveryError> {
         let encoded = response.get();
         let calls =
             serde_json::from_str(encoded).map_err(|source| RecoveryError::Response { source })?;
@@ -39,8 +39,7 @@ impl ModelResponse {
     }
 
     // A list under `output` means Responses, a list under `content` means Anthropic, anything else is chat
-    #[must_use]
-    pub const fn format(&self) -> ResponseFormat {
+    pub(super) const fn format(&self) -> ResponseFormat {
         if matches!(self.view.output, JsonValue::Array(_)) {
             ResponseFormat::Responses
         } else if matches!(self.view.content, JsonValue::Array(_)) {
@@ -51,76 +50,90 @@ impl ModelResponse {
     }
 
     // LiteLLM's assistant_text_from_response: chat first, then Anthropic blocks, then Responses message items
-    #[must_use]
-    pub fn assistant_text(&self) -> Option<String> {
+    pub(super) fn assistant_text(&self) -> Option<String> {
         chat_text(&self.view.choices)
-            .or_else(|| joined_blocks(&self.view.content, "text"))
+            .or_else(|| text_blocks(&self.view.content, "text"))
             .or_else(|| responses_text(&self.view.output))
     }
 }
 
-fn field<'value>(value: &'value JsonValue, key: &str) -> Option<&'value JsonValue> {
-    let JsonValue::Object(fields) = value else {
-        return None;
-    };
-    fields.get(key)
+fn items(value: &JsonValue) -> &[JsonValue] {
+    match value {
+        JsonValue::Array(found) => found,
+        _ => &[],
+    }
 }
 
-fn items(value: &JsonValue) -> &[JsonValue] {
-    if let JsonValue::Array(found) = value {
-        found
-    } else {
-        &[]
-    }
+fn has_type(value: &JsonValue, kind: &str) -> bool {
+    matches!(value, JsonValue::Object(fields) if matches!(fields.get("type"), Some(JsonValue::String(found)) if found == kind))
 }
 
 // The text of a block of the given type, empty strings included
 fn typed_text<'block>(block: &'block JsonValue, kind: &str) -> Option<&'block str> {
-    let JsonValue::String(found) = field(block, "type")? else {
+    let JsonValue::Object(fields) = block else {
         return None;
     };
-    if found != kind {
+    if !matches!(fields.get("type"), Some(JsonValue::String(found)) if found == kind) {
         return None;
     }
-    let JsonValue::String(text) = field(block, "text")? else {
-        return None;
-    };
-    Some(text)
+    match fields.get("text") {
+        Some(JsonValue::String(text)) => Some(text.as_str()),
+        _ => None,
+    }
 }
 
-fn joined_blocks(blocks: &JsonValue, kind: &str) -> Option<String> {
-    let texts: Vec<&str> = items(blocks)
-        .iter()
-        .filter_map(|block| typed_text(block, kind))
-        .filter(|text| !text.is_empty())
-        .collect();
-    (!texts.is_empty()).then(|| texts.concat())
+// None when nothing joins, so an empty text never wins over the next response shape
+fn joined_text<'text>(texts: impl Iterator<Item = &'text str>) -> Option<String> {
+    let kept: Vec<&str> = texts.filter(|text| !text.is_empty()).collect();
+    (!kept.is_empty()).then(|| kept.concat())
+}
+
+fn text_blocks(value: &JsonValue, kind: &str) -> Option<String> {
+    joined_text(
+        items(value)
+            .iter()
+            .filter_map(|block| typed_text(block, kind)),
+    )
 }
 
 fn chat_text(choices: &JsonValue) -> Option<String> {
-    let message = field(items(choices).first()?, "message")?;
-    let text = match field(message, "content") {
-        Some(JsonValue::String(whole)) => whole.clone(),
-        Some(JsonValue::Array(parts)) => parts
-            .iter()
-            .filter_map(|part| typed_text(part, "text"))
-            .collect::<Vec<_>>()
-            .join("\n\n"),
-        Some(
-            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_),
-        )
-        | None => String::new(),
+    let Some(JsonValue::Object(choice)) = items(choices).first() else {
+        return None;
     };
-    (!text.is_empty()).then_some(text)
+    let Some(JsonValue::Object(message)) = choice.get("message") else {
+        return None;
+    };
+    match message.get("content") {
+        Some(JsonValue::String(whole)) => Some(whole.clone()).filter(|text| !text.is_empty()),
+        Some(JsonValue::Array(parts)) => {
+            let joined = parts
+                .iter()
+                .filter_map(|part| typed_text(part, "text"))
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            Some(joined).filter(|text| !text.is_empty())
+        }
+        _ => None,
+    }
 }
 
 fn responses_text(output: &JsonValue) -> Option<String> {
-    let texts: Vec<&str> = items(output)
+    let mut text = String::new();
+    for item in items(output)
         .iter()
-        .filter(|item| matches!(field(item, "type"), Some(JsonValue::String(kind)) if kind == "message"))
-        .flat_map(|item| field(item, "content").map_or(&[][..], items))
-        .filter_map(|chunk| typed_text(chunk, "output_text"))
-        .filter(|text| !text.is_empty())
-        .collect();
-    (!texts.is_empty()).then(|| texts.concat())
+        .filter(|item| has_type(item, "message"))
+    {
+        let JsonValue::Object(fields) = item else {
+            continue;
+        };
+        let Some(content) = fields.get("content") else {
+            continue;
+        };
+        for chunk in items(content) {
+            if let Some(found) = typed_text(chunk, "output_text") {
+                text.push_str(found);
+            }
+        }
+    }
+    (!text.is_empty()).then_some(text)
 }

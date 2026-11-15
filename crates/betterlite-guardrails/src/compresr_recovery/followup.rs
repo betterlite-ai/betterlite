@@ -6,7 +6,7 @@ use serde_json::value::to_raw_value;
 use super::error::RecoveryError;
 use super::response::{ModelResponse, ResponseFormat};
 use super::retrieval::Retrieved;
-use super::tools::CallKind;
+use super::tools::{CallKind, RetrieveCall};
 
 const ASSISTANT: &str = "assistant";
 const USER: &str = "user";
@@ -51,16 +51,26 @@ enum AnthropicBlock {
         name: Option<String>,
         input: Object,
     },
-    ToolResult {
-        tool_use_id: Option<String>,
-        content: String,
-    },
 }
 
 #[derive(Serialize)]
 struct AnthropicTurn {
     role: &'static str,
     content: Vec<AnthropicBlock>,
+}
+
+#[derive(Serialize)]
+struct AnthropicResult {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    tool_use_id: Option<String>,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct AnthropicAnswers {
+    role: &'static str,
+    content: Vec<AnthropicResult>,
 }
 
 #[derive(Serialize)]
@@ -83,8 +93,8 @@ enum ResponsesItem {
     },
 }
 
-// The original messages, then the retrieve calls the model made with their recovered content
-pub fn append(
+// The original messages, then the assistant turn and one answer per retrieved call
+pub(super) fn append(
     response: &ModelResponse,
     messages: &[FollowupMessage],
     retrieved: &[Retrieved],
@@ -100,36 +110,55 @@ pub fn append(
     Ok(follow_up)
 }
 
-// Other calls of the turn are left out since they have no result, so the model plans them again
+fn followup<T>(value: &T) -> Result<FollowupMessage, RecoveryError>
+where
+    T: Serialize + ?Sized,
+{
+    match to_raw_value(value) {
+        Ok(raw) => Ok(FollowupMessage(raw)),
+        Err(source) => Err(RecoveryError::from(source)),
+    }
+}
+
+fn arguments_json(call: &RetrieveCall) -> Result<String, RecoveryError> {
+    match serde_json::to_string(&call.arguments) {
+        Ok(encoded) => Ok(encoded),
+        Err(source) => Err(RecoveryError::from(source)),
+    }
+}
+
+// Other calls of the turn are left out since they have no answer, so the model plans them again
 fn chat_messages(
     text: Option<String>,
     retrieved: &[Retrieved],
 ) -> Result<Vec<FollowupMessage>, RecoveryError> {
-    let mut tool_calls = Vec::with_capacity(retrieved.len());
+    let mut calls = Vec::with_capacity(retrieved.len());
     let mut results = Vec::with_capacity(retrieved.len());
     for entry in retrieved {
-        tool_calls.push(ChatCall {
+        calls.push(ChatCall {
             id: entry.call.id.clone(),
             kind: CallKind::Function,
             function: ChatFunction {
                 name: entry.call.name.clone(),
-                arguments: serde_json::to_string(&entry.call.arguments)?,
+                arguments: arguments_json(&entry.call)?,
             },
         });
-        let result = ChatResult {
+        results.push(ChatResult {
             role: TOOL,
             tool_call_id: entry.call.id.clone(),
             content: entry.content.clone(),
-        };
-        results.push(FollowupMessage(to_raw_value(&result)?));
+        });
     }
     let assistant = ChatAssistant {
         role: ASSISTANT,
         content: text,
-        tool_calls,
+        tool_calls: calls,
     };
-    let mut messages = vec![FollowupMessage(to_raw_value(&assistant)?)];
-    messages.extend(results);
+    let mut messages = Vec::with_capacity(results.len());
+    messages.push(followup(&assistant)?);
+    for result in &results {
+        messages.push(followup(result)?);
+    }
     Ok(messages)
 }
 
@@ -137,34 +166,47 @@ fn anthropic_messages(
     text: Option<String>,
     retrieved: &[Retrieved],
 ) -> Result<Vec<FollowupMessage>, RecoveryError> {
-    let mut calls: Vec<AnthropicBlock> = text
-        .into_iter()
-        .map(|content| AnthropicBlock::Text { text: content })
-        .collect();
-    let mut results = Vec::with_capacity(retrieved.len());
-    for entry in retrieved {
-        calls.push(AnthropicBlock::ToolUse {
-            id: entry.call.id.clone(),
-            name: entry.call.name.clone(),
-            input: entry.call.arguments.clone(),
-        });
-        results.push(AnthropicBlock::ToolResult {
-            tool_use_id: entry.call.id.clone(),
-            content: entry.content.clone(),
+    Ok(vec![
+        anthropic_turn(text, retrieved)?,
+        anthropic_answers(retrieved)?,
+    ])
+}
+
+fn anthropic_turn(
+    text: Option<String>,
+    retrieved: &[Retrieved],
+) -> Result<FollowupMessage, RecoveryError> {
+    let mut blocks: Vec<AnthropicBlock> = Vec::with_capacity(retrieved.len());
+    if let Some(said) = text {
+        blocks.push(AnthropicBlock::Text { text: said });
+    }
+    for echo in retrieved {
+        blocks.push(AnthropicBlock::ToolUse {
+            id: echo.call.id.clone(),
+            name: echo.call.name.clone(),
+            input: echo.call.arguments.clone(),
         });
     }
-    let assistant = AnthropicTurn {
+    let turn = AnthropicTurn {
         role: ASSISTANT,
-        content: calls,
+        content: blocks,
     };
-    let user = AnthropicTurn {
+    followup(&turn)
+}
+
+fn anthropic_answers(retrieved: &[Retrieved]) -> Result<FollowupMessage, RecoveryError> {
+    let answers = AnthropicAnswers {
         role: USER,
-        content: results,
+        content: retrieved
+            .iter()
+            .map(|echo| AnthropicResult {
+                kind: "tool_result",
+                tool_use_id: echo.call.id.clone(),
+                content: echo.content.clone(),
+            })
+            .collect(),
     };
-    Ok(vec![
-        FollowupMessage(to_raw_value(&assistant)?),
-        FollowupMessage(to_raw_value(&user)?),
-    ])
+    followup(&answers)
 }
 
 fn responses_items(
@@ -173,24 +215,23 @@ fn responses_items(
 ) -> Result<Vec<FollowupMessage>, RecoveryError> {
     let mut items = Vec::new();
     if let Some(content) = text {
-        let assistant = ResponsesText {
+        items.push(followup(&ResponsesText {
             role: ASSISTANT,
             content,
-        };
-        items.push(FollowupMessage(to_raw_value(&assistant)?));
+        })?);
     }
-    for entry in retrieved {
+    for record in retrieved {
         let call = ResponsesItem::FunctionCall {
-            call_id: entry.call.id.clone(),
-            name: entry.call.name.clone(),
-            arguments: serde_json::to_string(&entry.call.arguments)?,
+            call_id: record.call.id.clone(),
+            name: record.call.name.clone(),
+            arguments: arguments_json(&record.call)?,
         };
         let output = ResponsesItem::FunctionCallOutput {
-            call_id: entry.call.id.clone(),
-            output: entry.content.clone(),
+            call_id: record.call.id.clone(),
+            output: record.content.clone(),
         };
-        items.push(FollowupMessage(to_raw_value(&call)?));
-        items.push(FollowupMessage(to_raw_value(&output)?));
+        items.push(followup(&call)?);
+        items.push(followup(&output)?);
     }
     Ok(items)
 }

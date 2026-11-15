@@ -120,11 +120,13 @@ fn assistant_text_leads_the_function_calls_responses_followup(
     #[case] output: &str,
     #[case] assistant: &str,
 ) {
+    let call = r#"{"type":"function_call","call_id":"c1","name":"compresr_retrieve","arguments":"{\"hash\":\"HASH\"}"}"#;
+    let answer = r#"{"type":"function_call_output","call_id":"c1","output":"original one"}"#;
     let response = format!(r#"{{"output":{output}}}"#).replace("HASH", HASH_ONE);
-    let rest = format!(
-        r#"{assistant}{{"type":"function_call","call_id":"c1","name":"compresr_retrieve","arguments":"{{\"hash\":\"HASH\"}}"}},{{"type":"function_call_output","call_id":"c1","output":"original one"}}"#
+    assert_eq!(
+        follow_up(&response),
+        expected(&format!("{assistant}{call},{answer}"))
     );
-    assert_eq!(follow_up(&response), expected(&rest));
 }
 
 #[test]
