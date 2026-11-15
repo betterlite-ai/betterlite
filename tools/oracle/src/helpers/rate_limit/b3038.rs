@@ -18,7 +18,7 @@ impl ModelGroupResolver for GroupMap {
 }
 
 #[derive(Debug, Deserialize)]
-struct RatedModelInput {
+pub(crate) struct RatedModelInput {
     #[serde(default)]
     requested: Option<String>,
     #[serde(default)]
@@ -27,7 +27,7 @@ struct RatedModelInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct DescriptorInput {
+pub(crate) struct DescriptorInput {
     auth: BTreeMap<String, JsonData>,
     #[serde(default)]
     requested: Option<String>,
@@ -43,7 +43,7 @@ struct ModelInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct RequestMetadataInput {
+pub(crate) struct RequestMetadataInput {
     #[serde(default)]
     request_metadata: BTreeMap<String, JsonData>,
     #[serde(default)]
