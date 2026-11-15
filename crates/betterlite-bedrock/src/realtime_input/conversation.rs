@@ -44,48 +44,8 @@ fn content_frames(
 ) -> [InputFrame; 3] {
     let prompt_name = session.names.prompt.clone();
     let content_name = ids.next_id().to_string();
-    let (start, body) = match kind {
-        ItemKind::Text => (
-            ContentStart {
-                prompt_name: prompt_name.clone(),
-                content_name: content_name.clone(),
-                content_type: ContentType::Text,
-                interactive: true,
-                role: ContentRole::User,
-                configuration: InputConfiguration::TextInputConfiguration(TextInputConfiguration {
-                    media_type: session.text_media_type.clone(),
-                }),
-            },
-            Event::TextInput(UserTextInput {
-                prompt_name: prompt_name.clone(),
-                content_name: content_name.clone(),
-                content,
-            }),
-        ),
-        ItemKind::ToolResult(call_id) => (
-            ContentStart {
-                prompt_name: prompt_name.clone(),
-                content_name: content_name.clone(),
-                content_type: ContentType::Tool,
-                interactive: false,
-                role: ContentRole::Tool,
-                configuration: InputConfiguration::ToolResultInputConfiguration(
-                    ToolResultInputConfiguration {
-                        tool_use_id: call_id,
-                        content_type: ContentType::Text,
-                        text_input_configuration: TextInputConfiguration {
-                            media_type: TEXT_MEDIA_TYPE.to_owned(),
-                        },
-                    },
-                ),
-            },
-            Event::ToolResult(ToolResult {
-                prompt_name: prompt_name.clone(),
-                content_name: content_name.clone(),
-                content,
-            }),
-        ),
-    };
+    let start = content_start(session, &kind, &prompt_name, &content_name);
+    let body = content_event(kind, &prompt_name, &content_name, content);
     let end = ContentEnd {
         prompt_name,
         content_name,
@@ -95,4 +55,65 @@ fn content_frames(
         InputFrame::from(body),
         InputFrame::from(Event::ContentEnd(end)),
     ]
+}
+
+fn content_start(
+    session: &RealtimeSession,
+    kind: &ItemKind,
+    prompt_name: &str,
+    content_name: &str,
+) -> ContentStart {
+    let (content_type, interactive, role, configuration) = match kind {
+        ItemKind::Text => (
+            ContentType::Text,
+            true,
+            ContentRole::User,
+            text_configuration(session),
+        ),
+        ItemKind::ToolResult(call_id) => (
+            ContentType::Tool,
+            false,
+            ContentRole::Tool,
+            tool_configuration(call_id),
+        ),
+    };
+    ContentStart {
+        prompt_name: prompt_name.to_owned(),
+        content_name: content_name.to_owned(),
+        content_type,
+        interactive,
+        role,
+        configuration,
+    }
+}
+
+fn text_configuration(session: &RealtimeSession) -> InputConfiguration {
+    InputConfiguration::TextInputConfiguration(TextInputConfiguration {
+        media_type: session.text_media_type.clone(),
+    })
+}
+
+fn tool_configuration(call_id: &str) -> InputConfiguration {
+    InputConfiguration::ToolResultInputConfiguration(ToolResultInputConfiguration {
+        tool_use_id: call_id.to_owned(),
+        content_type: ContentType::Text,
+        text_input_configuration: TextInputConfiguration {
+            media_type: TEXT_MEDIA_TYPE.to_owned(),
+        },
+    })
+}
+
+fn content_event(kind: ItemKind, prompt_name: &str, content_name: &str, content: String) -> Event {
+    match kind {
+        ItemKind::Text => Event::TextInput(UserTextInput {
+            prompt_name: prompt_name.to_owned(),
+            content_name: content_name.to_owned(),
+            content,
+        }),
+        ItemKind::ToolResult(_) => Event::ToolResult(ToolResult {
+            prompt_name: prompt_name.to_owned(),
+            content_name: content_name.to_owned(),
+            content,
+        }),
+    }
 }
