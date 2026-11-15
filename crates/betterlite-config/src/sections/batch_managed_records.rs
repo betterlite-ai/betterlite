@@ -9,7 +9,7 @@ mod tests;
 
 const POLLING_VARIABLE: &str = "PROXY_BATCH_POLLING_ENABLED";
 
-// env-only section: every YAML key stays unknown to the loader, and the box keeps the map value type non-zero-sized for clippy
+// env-only section: no YAML key is read here, and the box keeps the map value type non-zero-sized for clippy
 pub type Raw = BTreeMap<String, Box<IgnoredAny>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
