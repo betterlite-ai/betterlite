@@ -101,12 +101,9 @@ impl SingulrSettings {
 }
 
 fn resolve_timeout(configured: Option<f64>) -> Result<Duration, SettingsError> {
-    match configured {
-        Some(seconds) => {
-            Duration::try_from_secs_f64(seconds).map_err(|source| SettingsError::Timeout { source })
-        }
-        None => Ok(DEFAULT_TIMEOUT),
-    }
+    configured.map_or(Ok(DEFAULT_TIMEOUT), |seconds| {
+        Duration::try_from_secs_f64(seconds).map_err(|source| SettingsError::Timeout { source })
+    })
 }
 
 // an explicit value is used as given; only an absent one reads the environment, where an empty value counts as unset
