@@ -16,6 +16,14 @@ deviations:
       Python's float() spelling is a runtime habit betterlite does not port; every timeout text a config or
       caller writes in plain decimal parses the same on both sides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L603
+  - what: >-
+      An unknown custom_llm_provider sent together with a model answers the Unsupported 400 that names the
+      provider. LiteLLM builds LlmProviders(custom_llm_provider), whose bare ValueError escapes the call and
+      reaches the route as a 500.
+    why: >-
+      An unknown provider name is a bad request, and the same call already answers a 400 without a model; no
+      working setup sends a provider name LiteLLM does not declare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L651
 kept_bugs:
   - what: >-
       The anthropic branch reads litellm.azure_key as a fallback for its API key, so a deployment that
