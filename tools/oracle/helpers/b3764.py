@@ -72,12 +72,10 @@ class Input(TypedDict):
     call: Call
 
 
-class Gate(Protocol):
+class Probe(Protocol):
     @property
     def async_should_run_agentic_loop(self) -> GateCall: ...
 
-
-class PlanBuilder(Protocol):
     @property
     def async_build_agentic_loop_plan(self) -> PlanCall: ...
 
@@ -137,10 +135,10 @@ def hydrate_kwargs(call: Call, marker: str) -> dict[str, JsonValue]:
     return kwargs
 
 
-async def gate(
-    agent: Gate, call: Call, kwargs: dict[str, JsonValue]
-) -> tuple[bool, dict[str, JsonValue]]:
-    return await agent.async_should_run_agentic_loop(
+async def probe(
+    agent: Probe, call: Call, kwargs: dict[str, JsonValue]
+) -> tuple[bool, dict[str, JsonValue], AgenticLoopPlan]:
+    run, tools = await agent.async_should_run_agentic_loop(
         call["response"],
         call["model"],
         call["messages"],
@@ -149,15 +147,7 @@ async def gate(
         "openai",
         kwargs,
     )
-
-
-async def plan(
-    agent: PlanBuilder,
-    call: Call,
-    tools: dict[str, JsonValue],
-    kwargs: dict[str, JsonValue],
-) -> AgenticLoopPlan:
-    return await agent.async_build_agentic_loop_plan(
+    built = await agent.async_build_agentic_loop_plan(
         tools,
         call["model"],
         call["messages"],
@@ -168,14 +158,14 @@ async def plan(
         NO_STREAM,
         kwargs,
     )
+    return run, tools, built
 
 
 async def execute(guardrail: SeededGuardrail, marker: str, request_input: Input) -> JsonValue:
     seed_originals(guardrail, request_input["seed"])
     call = request_input["call"]
     kwargs = hydrate_kwargs(call, marker)
-    run, tools = await gate(guardrail, call, kwargs)
-    built = await plan(guardrail, call, tools, kwargs)
+    run, tools, built = await probe(guardrail, call, kwargs)
     plan_json = JSON.validate_json(built.model_dump_json())
     answer: JsonValue = {"gate": {"run": run, "tools": tools}, "plan": plan_json}
     return answer
