@@ -271,8 +271,6 @@ pub(super) struct Session<'fixture> {
     fixture: &'fixture Fixture,
     resolution: ResolutionContext<'fixture>,
     keys: ModelCostKeys,
-    dynamic: NoDynamicMetadata,
-    matrix: BetaMatrix,
     runtime: Runtime,
 }
 
@@ -282,8 +280,6 @@ impl<'fixture> Session<'fixture> {
             fixture,
             resolution: fixture.resolution(),
             keys: ModelCostKeys::default(),
-            dynamic: NoDynamicMetadata,
-            matrix: matrix(),
             runtime: runtime(),
         }
     }
@@ -293,22 +289,26 @@ impl<'fixture> Session<'fixture> {
         request: BetaHeadersRequest<'_>,
     ) -> Result<Vec<String>, BetaHeadersError> {
         let catalogs = self.fixture.catalogs();
-        let mut environment =
-            self.fixture
-                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
+        let mut environment = self.fixture.capability_environment(
+            &self.resolution,
+            &mut self.keys,
+            &NoDynamicMetadata,
+        );
         self.runtime.block_on(beta_headers(
             request,
             &mut environment,
             &catalogs,
-            &self.matrix,
+            &matrix(),
         ))
     }
 
     pub(super) fn adjust(&mut self, model: &str, tools: &[Json], betas: &mut BTreeSet<String>) {
         let catalogs = self.fixture.catalogs();
-        let mut environment =
-            self.fixture
-                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
+        let mut environment = self.fixture.capability_environment(
+            &self.resolution,
+            &mut self.keys,
+            &NoDynamicMetadata,
+        );
         self.runtime.block_on(adjust_tool_search_beta(
             model,
             super::super::tool_search::beta_mode(tools),
