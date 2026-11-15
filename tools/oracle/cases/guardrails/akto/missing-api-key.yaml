@@ -1,0 +1,9 @@
+kind: helper
+name: missing-api-key
+call:
+  b3751:
+    op: init
+    settings:
+      akto_base_url: http://akto.invalid
+env: {}
+compare: {ignore: []}

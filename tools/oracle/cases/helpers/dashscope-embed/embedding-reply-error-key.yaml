@@ -1,0 +1,10 @@
+kind: helper
+name: dashscope-embedding-reply-error-key
+call:
+  b8171:
+    function: embedding_reply
+    body: '{"error":{"message":"bad key","code":"invalid_api_key"}}'
+    status: 401
+    request_model: text-embedding-v4
+env: {}
+compare: {ignore: []}

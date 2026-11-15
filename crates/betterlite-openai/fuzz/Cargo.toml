@@ -107,6 +107,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "deepinfra_payload"
+path = "fuzz_targets/deepinfra_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "device_reply"
 path = "fuzz_targets/device_reply.rs"
 test = false
@@ -562,6 +569,34 @@ bench = false
 [[bin]]
 name = "modelscope_image_reply"
 path = "fuzz_targets/modelscope_image_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "perplexity_chat_reply"
+path = "fuzz_targets/perplexity_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fireworks_ai_rerank_response"
+path = "fuzz_targets/fireworks_ai_rerank_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dashscope_embedding_reply"
+path = "fuzz_targets/dashscope_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mistral_resource"
+path = "fuzz_targets/mistral_resource.rs"
 test = false
 doc = false
 bench = false

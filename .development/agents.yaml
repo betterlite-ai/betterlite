@@ -3,14 +3,14 @@ vendors:
   - id: openai
     limit_markers: ["hit your usage limit"]
     max_parallel: 12
-  - id: anthropic
+  - id: anthropic-2
     limit_markers: ["You've hit your", "Not logged in", "Can't reach the API server"]
-    max_parallel: 24
-    max_writers: 20
+    max_parallel: 8
+    max_writers: 4
   - id: deepseek
     limit_markers: ["Insufficient Balance", "Authentication Fails", "Rate Limit Reached", "Server Overloaded", "Can't reach the API server"]
-    max_parallel: 16
-    max_writers: 16
+    max_parallel: 24
+    max_writers: 24
 runners:
   - id: codex-worker
     vendor: openai
@@ -24,11 +24,12 @@ runners:
     args: [exec, -c, 'service_tier="default"', --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, read-only, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --ephemeral, --output-schema, "{schema}", -o, "{output}", --cd, "{worktree}", "-"]
     output: file
   - id: claude-worker
-    vendor: anthropic
+    vendor: anthropic-2
     program: claude
     args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
     resume: [-p, --resume, "{session}", --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
     output: claude-json
+    env_file: "{home}/.config/betterlite/claude-2.env"
   - id: deepseek-worker
     vendor: deepseek
     program: claude
@@ -37,10 +38,11 @@ runners:
     output: claude-json
     env_file: "{home}/.config/betterlite/deepseek.env"
   - id: claude-reviewer
-    vendor: anthropic
+    vendor: anthropic-2
     program: claude
     args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --allowedTools, "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", Read, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Edit, Write, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence, --strict-mcp-config]
     output: claude-json
+    env_file: "{home}/.config/betterlite/claude-2.env"
   - id: deepseek-reviewer
     vendor: deepseek
     program: claude

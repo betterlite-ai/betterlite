@@ -1,0 +1,21 @@
+kind: helper
+name: groq-response-format-native-schema
+call:
+  b5833:
+    capabilities:
+      web_search: "no"
+      reasoning: "no"
+      response_schema: "yes"
+    options:
+      - model: openai/gpt-oss-120b
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema:
+              schema:
+                type: object
+                properties:
+                  answer: {type: string}
+        optional_params: {}
+env: {}
+compare: {ignore: []}

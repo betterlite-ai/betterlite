@@ -1,0 +1,13 @@
+kind: helper
+name: aim-pre-call-analysis-success
+call:
+  b3750:
+    function: request
+    settings: {api_key: aim-oracle-key, api_base: "http://aim.test", litellm_version: "1.105.1"}
+    request_data: {litellm_call_id: call-1, metadata: {headers: {x-aim-user-email: "user@example.com"}}, messages: [{role: system, content: "be precise"}, {role: user, content: "hello"}]}
+    hook: pre_call
+    key_alias: alias-1
+    answer: {required_action: {action_type: monitor_action, detection_message: null}, analysis_result: {policy_drill_down: {}}}
+    answer_status: 200
+env: {}
+compare: {ignore: []}

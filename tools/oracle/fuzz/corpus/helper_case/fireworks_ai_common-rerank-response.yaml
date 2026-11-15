@@ -1,0 +1,21 @@
+kind: helper
+name: fireworks_ai_common-rerank-response-seed
+call:
+  b6070:
+    model_cost: {}
+    api_keys: []
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params: []
+    pricing: []
+    costs: []
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses:
+      - status: 200
+        headers: {}
+        body: '{"id":"seed","data":[{"index":0,"relevance_score":0.5,"document":"seed"}]}'
+env: {}
+compare: {ignore: []}

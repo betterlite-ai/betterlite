@@ -1,0 +1,18 @@
+kind: helper
+name: get-list-traces-success
+call:
+  b3867:
+    request:
+      method: GET
+      path: /v1/traces
+      query:
+        start_ms: "100"
+        end_ms: "200"
+    auth: {user_role: proxy_admin, team_id: team-1, token: hash-1, org_id: org-1}
+    tracing: true
+    master_key: "sk-master"
+    script:
+      list_traces:
+        value: {data: [], next_cursor: next-cursor}
+env: {}
+compare: {ignore: []}
