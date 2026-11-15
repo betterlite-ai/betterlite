@@ -475,13 +475,16 @@ fn constructor_refuses_a_conversion_the_format_engine_lacks() {
     );
 }
 
-#[test]
-fn constructor_refuses_a_negative_timeout() {
+#[rstest]
+#[case::negative(-1.0)]
+#[case::nan(f64::NAN)]
+#[case::beyond_durations_range(1e300)]
+fn constructor_refuses_a_timeout_without_a_duration(#[case] timeout: f64) {
     let mut args = args();
-    args.timeout = Some(-1.0);
+    args.timeout = Some(timeout);
     let env = BTreeMap::new();
     let error = LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env)
-        .expect_err("a negative timeout has no duration");
+        .expect_err("the timeout has no duration");
     assert!(matches!(error, LakeraV2Error::Timeout { .. }), "{error}");
 }
 
@@ -700,7 +703,20 @@ async fn call_v2_guard_posts_the_documented_body_and_header() {
         r#"{"flagged":false,"payload":[],"breakdown":[]}"#.to_owned(),
     )
     .await;
-    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut args = args();
+    args.api_base = Some(server.base_url.clone());
+    args.api_key = Some(SecretString::from("k"));
+    args.project_id = Some("proj".to_owned());
+    args.metadata = Some(BTreeMap::from([(
+        "team".to_owned(),
+        GuardrailValue::Text("a".to_owned()),
+    )]));
+    args.payload = Some(false);
+    args.breakdown = Some(false);
+    args.dev_info = Some(false);
+    let env = BTreeMap::new();
+    let guardrail =
+        LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built");
     let mut data = chat_data();
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
@@ -724,11 +740,20 @@ async fn call_v2_guard_posts_the_documented_body_and_header() {
         body.get("messages"),
         Some(GuardrailValue::Array(entries)) if entries.len() == 1
     ));
-    assert_eq!(body.get("project_id"), Some(&GuardrailValue::Null));
-    assert_eq!(body.get("payload"), Some(&GuardrailValue::Boolean(true)));
-    assert_eq!(body.get("breakdown"), Some(&GuardrailValue::Boolean(true)));
-    assert_eq!(body.get("dev_info"), Some(&GuardrailValue::Boolean(true)));
-    assert_eq!(body.get("metadata"), Some(&GuardrailValue::Null));
+    assert_eq!(
+        body.get("project_id"),
+        Some(&GuardrailValue::Text("proj".to_owned()))
+    );
+    assert_eq!(body.get("payload"), Some(&GuardrailValue::Boolean(false)));
+    assert_eq!(body.get("breakdown"), Some(&GuardrailValue::Boolean(false)));
+    assert_eq!(body.get("dev_info"), Some(&GuardrailValue::Boolean(false)));
+    assert_eq!(
+        body.get("metadata"),
+        Some(&GuardrailValue::Object(BTreeMap::from([(
+            "team".to_owned(),
+            GuardrailValue::Text("a".to_owned()),
+        )])))
+    );
     let captured = server.captured.lock().unwrap();
     assert_eq!(captured.path, "/v2/guard");
 }
