@@ -5,7 +5,9 @@ use std::marker::PhantomData;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
-use betterlite_models::model_capability_predicates::{CapabilityEnvironment, NamedCapability};
+use betterlite_models::model_capability_predicates::{
+    CapabilityEnvironment, CapabilityPredicates as _, CapabilityRequest, NamedCapability,
+};
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_openai::base_helpers::{
     DUMMY_TOOLS, HistoryMessage, assistant_has_thinking, has_tool_calls, last_tool_call_unthought,
@@ -14,13 +16,13 @@ use betterlite_prompts::anthropic::assembly::{PromptDeps, anthropic_messages_pt}
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use betterlite_prompts::media::inline::{RemoteMediaFetcher, async_inline_remote_media};
+use betterlite_prompts::media::parts::{INLINE_REMOTE_IMAGE_URLS, RemoteMedia};
 use betterlite_prompts::message_content::Message;
 use betterlite_prompts::system_placement::{
     place_mid_conversation_system, split_leading_system_run,
 };
 use indexmap::IndexMap;
 
-use crate::anthropic_capability_catalog::capability::supports_model_capability;
 use crate::anthropic_capability_catalog::{CatalogSources, DropParams};
 use crate::headers::AnthropicHeaders;
 use crate::option_primitives::{OptionDefaults, resolved_provider};
@@ -31,7 +33,6 @@ use super::AnthropicRequest;
 use super::PreparedRequest;
 use super::convert;
 use super::error::RequestError;
-use super::media::inlines_remote_media;
 use super::metadata::apply_user_id;
 use super::system::translate_system_message;
 
@@ -107,7 +108,10 @@ where
         Fetcher: RemoteMediaFetcher + Sync,
     {
         let typed: Vec<Message> = convert::convert_each(&self.messages)?;
-        let inlined = async_inline_remote_media(&typed, &inlines_remote_media, fetcher).await?;
+        let inlines = |media: &RemoteMedia| {
+            INLINE_REMOTE_IMAGE_URLS(media) && media.url.starts_with("http://")
+        };
+        let inlined = async_inline_remote_media(&typed, &inlines, fetcher).await?;
         if inlined != typed {
             self.messages = convert::convert_each(&inlined)?;
         }
@@ -132,7 +136,7 @@ where
         self.drop_unsupported_speed(catalogs)?;
         self.drop_disabled_thinking(environment, catalogs).await;
         self.rewrite_tool_names()?;
-        self.place_system(environment, catalogs).await?;
+        self.place_system(environment).await?;
         self.translate_messages(prompts).await?;
         self.apply_tool_steps()?;
         self.load_config_defaults()?;
@@ -171,24 +175,24 @@ where
     async fn place_system<Source, Transport>(
         &mut self,
         environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-        catalogs: &CatalogSources<'_>,
     ) -> Result<(), RequestError<FileFailure>>
     where
         Source: DynamicMetadataSource,
         Transport: ModelInfoClient,
     {
         let typed: Vec<Message> = convert::convert_each(&self.messages)?;
-        let (leading, later) = split_leading_system_run(&typed);
-        let mut leading = leading;
+        let (mut leading, later) = split_leading_system_run(&typed);
         let blocks = translate_system_message(&mut leading, self.strips_billing_metadata);
         if !blocks.is_empty() {
             self.optional_params
                 .insert("system".to_owned(), convert::encode(&blocks)?);
         }
+        let request = CapabilityRequest {
+            model: self.model,
+            custom_llm_provider: Some(self.provider.as_str()),
+        };
         let key = NamedCapability::MidConversationSystem.key();
-        let provider = self.provider.as_str();
-        let supported =
-            supports_model_capability(self.model, key, provider, environment, catalogs).await;
+        let supported = environment.supports_factory(&request, key).await;
         let placed = place_mid_conversation_system(&later, supported);
         self.conversation = convert::convert_each(&placed)?;
         Ok(())
@@ -230,11 +234,7 @@ where
     {
         let mut body = IndexMap::new();
         body.insert("model".to_owned(), Json::Text(self.model.to_owned()));
-        let messages: Vec<Json> = self
-            .anthropic_messages
-            .iter()
-            .map(convert::params_json)
-            .collect();
+        let messages: Vec<Json> = self.anthropic_messages.iter().map(Json::from).collect();
         body.insert("messages".to_owned(), Json::List(messages));
         for (key, value) in &self.optional_params {
             body.insert(key.clone(), value.clone());

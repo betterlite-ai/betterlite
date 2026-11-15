@@ -54,8 +54,9 @@ where
             .filter(|value| !matches!(value, Json::Null))
             .cloned();
         let mut params = OptionalParams {
+            reasoning_effort: None,
             thinking,
-            ..OptionalParams::default()
+            output_config: None,
         };
         let provider = self.provider.as_str();
         if maybe_drop_disabled_thinking(self.model, &mut params, provider, environment, catalogs)

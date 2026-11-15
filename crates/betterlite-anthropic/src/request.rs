@@ -2,7 +2,6 @@ pub mod beta_headers;
 pub mod code_execution;
 mod convert;
 pub mod error;
-pub mod media;
 pub mod metadata;
 mod preparation;
 pub mod system;

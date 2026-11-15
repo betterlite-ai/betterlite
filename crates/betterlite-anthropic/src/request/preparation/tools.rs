@@ -8,7 +8,7 @@ use crate::tool_names::wire;
 use crate::tool_names::{rewrite_tool_names_in_messages, sanitize_tool_names_in_request};
 use crate::tools::wire::ADVISOR_TYPE;
 
-use super::super::beta_headers::{tool_kind, update_headers_with_optional_anthropic_beta};
+use super::super::beta_headers::{add_optional_betas, tool_kind};
 use super::super::code_execution::add_code_execution_tool;
 use super::super::convert;
 use super::super::error::RequestError;
@@ -23,10 +23,10 @@ where
     pub(super) fn rewrite_tool_names(&mut self) -> Result<(), RequestError<FileFailure>> {
         let mut record = wire::RequestParams::default();
         if let Some(tools) = self.optional_params.get("tools") {
-            record.head.tools = Some(convert::to_wire(tools)?);
+            record.head.tools = Some(convert::encode(tools)?);
         }
         if let Some(choice) = self.optional_params.get("tool_choice") {
-            record.head.tool_choice = Some(convert::to_wire(choice)?);
+            record.head.tool_choice = Some(convert::encode(choice)?);
         }
         let maps = sanitize_tool_names_in_request(&mut record);
         if maps.forward.is_empty() {
@@ -60,7 +60,7 @@ where
         let records: Vec<wire::Message> = self
             .messages
             .iter()
-            .map(convert::to_wire::<wire::Message>)
+            .map(convert::encode::<_, wire::Message>)
             .collect::<Result<_, _>>()?;
         let rewritten = rewrite_tool_names_in_messages(&records, forward);
         self.messages = rewritten
@@ -73,7 +73,7 @@ where
     // The header betas, advisor cleanup and code-execution insertion read the same translated message list
     pub(super) fn apply_tool_steps(&mut self) -> Result<(), RequestError<FileFailure>> {
         let mut tools = tool_entries(&self.optional_params)?;
-        update_headers_with_optional_anthropic_beta(
+        add_optional_betas(
             &mut self.headers,
             &self.optional_params,
             &tools,
@@ -88,7 +88,7 @@ where
         }
         add_code_execution_tool(&self.anthropic_messages, &mut tools)?;
         if tools.len() > 1 {
-            let encoded: Vec<Json> = tools.iter().map(convert::params_json).collect();
+            let encoded: Vec<Json> = tools.iter().map(Json::from).collect();
             self.optional_params
                 .insert("tools".to_owned(), Json::List(encoded));
         }

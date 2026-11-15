@@ -7,20 +7,6 @@ pub enum ConvertError {
     Json(#[source] serde_json::Error),
 }
 
-fn read<T>(encoded: &str) -> Result<T, ConvertError>
-where
-    T: serde::de::DeserializeOwned,
-{
-    serde_json::from_str(encoded).map_err(ConvertError::Json)
-}
-
-fn write<T>(value: &T) -> Result<String, ConvertError>
-where
-    T: serde::Serialize + ?Sized,
-{
-    serde_json::to_string(value).map_err(ConvertError::Json)
-}
-
 // the message records and wire records differ only in their field shapes, so one JSON pass converts either way
 pub(super) fn convert_each<Source, Target>(items: &[Source]) -> Result<Vec<Target>, ConvertError>
 where
@@ -29,8 +15,8 @@ where
 {
     let mut converted = Vec::with_capacity(items.len());
     for item in items {
-        let encoded = write(item)?;
-        converted.push(read(&encoded)?);
+        let encoded = serde_json::to_string(item).map_err(ConvertError::Json)?;
+        converted.push(serde_json::from_str(&encoded).map_err(ConvertError::Json)?);
     }
     Ok(converted)
 }
@@ -41,19 +27,8 @@ where
     T: serde::Serialize + ?Sized,
     Target: serde::de::DeserializeOwned,
 {
-    let encoded = write(value)?;
-    let decoded: Target = read(&encoded)?;
-    Ok(decoded)
-}
-
-// a parameters map entry as the tolerant tool-name wire record it is read into
-pub(super) fn to_wire<T>(value: &Json) -> Result<T, ConvertError>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let encoded = write(value)?;
-    let decoded: T = read(&encoded)?;
-    Ok(decoded)
+    let encoded = serde_json::to_string(value).map_err(ConvertError::Json)?;
+    serde_json::from_str(&encoded).map_err(ConvertError::Json)
 }
 
 // The parameters map's JSON tree as the prompt tree the prompt primitives read
@@ -68,23 +43,6 @@ pub(super) fn prompt_json(value: &Json) -> PromptJson {
             fields
                 .iter()
                 .map(|(name, entry)| (name.clone(), prompt_json(entry)))
-                .collect(),
-        ),
-    }
-}
-
-// The prompt tree as the parameters map's JSON tree the request body carries
-pub(super) fn params_json(value: &PromptJson) -> Json {
-    match value {
-        PromptJson::Null => Json::Null,
-        PromptJson::Bool(flag) => Json::Bool(*flag),
-        PromptJson::Number(number) => Json::Number(number.clone()),
-        PromptJson::Text(text) => Json::Text(text.clone()),
-        PromptJson::List(items) => Json::List(items.iter().map(params_json).collect()),
-        PromptJson::Object(fields) => Json::Object(
-            fields
-                .iter()
-                .map(|(name, entry)| (name.clone(), params_json(entry)))
                 .collect(),
         ),
     }

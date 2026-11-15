@@ -77,7 +77,7 @@ pub fn ensure_beta_header(headers: &mut AnthropicHeaders, beta_value: &str) {
         .insert(ANTHROPIC_BETA_HEADER.to_owned(), merged.join(", "));
 }
 
-pub fn ensure_context_management_beta_header(
+pub fn add_context_management_beta(
     headers: &mut AnthropicHeaders,
     context_management: &Json,
 ) -> Result<(), BetaHeaderError> {
@@ -100,7 +100,7 @@ pub fn ensure_context_management_beta_header(
     Ok(())
 }
 
-pub fn update_headers_with_optional_anthropic_beta(
+pub fn add_optional_betas(
     headers: &mut AnthropicHeaders,
     params: &IndexMap<String, Json>,
     tools: &[PromptJson],
@@ -112,7 +112,10 @@ pub fn update_headers_with_optional_anthropic_beta(
     }
     add_compaction_beta(headers, params, messages, provider);
     add_tool_betas(headers, tools);
-    add_context_management_beta(headers, params)?;
+    match params.get(CONTEXT_MANAGEMENT) {
+        None | Some(Json::Null) => {}
+        Some(value) => add_context_management_beta(headers, value)?,
+    }
     add_structured_output_beta(headers, params);
     add_speed_beta(headers, params);
     add_advisor_beta(headers, tools);
@@ -153,7 +156,9 @@ fn add_compaction_beta(
     };
     let feature_params = FeatureParams {
         compaction,
-        ..FeatureParams::default()
+        container: None,
+        output_config: None,
+        reasoning_effort: None,
     };
     if requires_compaction_beta(provider, &feature_params, messages) {
         ensure_beta_header(headers, NATIVE_COMPACT_BETA);
@@ -171,16 +176,6 @@ fn add_tool_betas(headers: &mut AnthropicHeaders, tools: &[PromptJson]) {
             }
             Some(_) | None => {}
         }
-    }
-}
-
-fn add_context_management_beta(
-    headers: &mut AnthropicHeaders,
-    params: &IndexMap<String, Json>,
-) -> Result<(), BetaHeaderError> {
-    match params.get(CONTEXT_MANAGEMENT) {
-        None | Some(Json::Null) => Ok(()),
-        Some(value) => ensure_context_management_beta_header(headers, value),
     }
 }
 
