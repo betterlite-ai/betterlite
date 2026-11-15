@@ -10,24 +10,7 @@ pub(super) fn seconds(text: &str) -> Option<f64> {
     if !underscores_join_digits(trimmed) {
         return None;
     }
-    let cleaned = trimmed.replace('_', "");
-    numeric_text(&cleaned)?.parse::<f64>().ok()
-}
-
-// float() reads ".5" and "5." while Rust's number parser wants a digit on both sides
-fn numeric_text(text: &str) -> Option<String> {
-    let (sign, rest) = match text.as_bytes().first() {
-        Some(b'+' | b'-') => text.split_at(1),
-        _ => ("", text),
-    };
-    let (mantissa, exponent) = rest.split_at(rest.find(['e', 'E']).unwrap_or(rest.len()));
-    let (whole, fraction) = mantissa.split_at(mantissa.find('.').unwrap_or(mantissa.len()));
-    if whole.is_empty() && fraction.len() <= 1 {
-        return None;
-    }
-    let whole = if whole.is_empty() { "0" } else { whole };
-    let fraction = if fraction == "." { ".0" } else { fraction };
-    Some(format!("{sign}{whole}{fraction}{exponent}"))
+    trimmed.replace('_', "").parse::<f64>().ok()
 }
 
 pub(super) fn attempts(text: &str) -> Option<i64> {
