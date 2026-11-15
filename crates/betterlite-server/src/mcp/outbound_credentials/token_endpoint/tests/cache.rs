@@ -1,3 +1,6 @@
+use tokio::sync::oneshot;
+use tokio::task::yield_now;
+
 use super::*;
 
 #[test]
@@ -5,7 +8,7 @@ fn the_ttl_subtracts_the_buffer_and_floors_at_the_minimum() {
     let tunables = TokenExchangeTunables::default();
     assert_eq!(
         cache_ttl_seconds(Some(3600), &tunables),
-        Duration::from_secs(3540)
+        Duration::from_mins(59)
     );
     assert_eq!(
         cache_ttl_seconds(Some(71), &tunables),
@@ -35,10 +38,7 @@ fn the_ttl_subtracts_the_buffer_and_floors_at_the_minimum() {
         cache_ttl_seconds(Some(-5), &tunables),
         Duration::from_secs(10)
     );
-    assert_eq!(
-        cache_ttl_seconds(None, &tunables),
-        Duration::from_secs(3540)
-    );
+    assert_eq!(cache_ttl_seconds(None, &tunables), Duration::from_mins(59));
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn minted(
 ) -> RefreshFuture<'static, ExchangedToken, CredError> {
     Box::pin(async move {
         computes.fetch_add(1, Ordering::SeqCst);
-        tokio::task::yield_now().await;
+        yield_now().await;
         Ok(ExchangedToken {
             access_token: token.to_owned(),
             expires_in,
@@ -68,7 +68,7 @@ fn minted(
 fn cache() -> (ExchangedTokenCache, Arc<ManualClock>) {
     let clock = ManualClock::new();
     (
-        ExchangedTokenCache::new(clock.clone(), TokenExchangeTunables::default()),
+        ExchangedTokenCache::new(Arc::clone(&clock), TokenExchangeTunables::default()),
         clock,
     )
 }
@@ -78,11 +78,19 @@ async fn a_hit_skips_the_compute() {
     let (cache, _clock) = cache();
     let computes = Arc::new(AtomicUsize::new(0));
     let first = cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-a", Some(600)))
+        .get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-a", Some(600)),
+        )
         .await
         .unwrap();
     let second = cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-b", Some(600)))
+        .get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-b", Some(600)),
+        )
         .await
         .unwrap();
     assert_eq!(first, "token-a");
@@ -98,7 +106,7 @@ async fn a_fingerprint_mismatch_recomputes() {
         .get_or_compute(
             "key",
             "user-a",
-            minted(computes.clone(), "token-a", Some(600)),
+            minted(Arc::clone(&computes), "token-a", Some(600)),
         )
         .await
         .unwrap();
@@ -106,7 +114,7 @@ async fn a_fingerprint_mismatch_recomputes() {
         .get_or_compute(
             "key",
             "user-b",
-            minted(computes.clone(), "token-b", Some(600)),
+            minted(Arc::clone(&computes), "token-b", Some(600)),
         )
         .await
         .unwrap();
@@ -114,7 +122,7 @@ async fn a_fingerprint_mismatch_recomputes() {
         .get_or_compute(
             "key",
             "user-b",
-            minted(computes.clone(), "token-c", Some(600)),
+            minted(Arc::clone(&computes), "token-c", Some(600)),
         )
         .await
         .unwrap();
@@ -131,7 +139,7 @@ async fn a_remint_stores_the_new_tokens_own_ttl() {
         .get_or_compute(
             "key",
             "user-a",
-            minted(computes.clone(), "token-a", Some(600)),
+            minted(Arc::clone(&computes), "token-a", Some(600)),
         )
         .await
         .unwrap();
@@ -141,7 +149,7 @@ async fn a_remint_stores_the_new_tokens_own_ttl() {
             .get_or_compute(
                 "key",
                 "user-b",
-                minted(computes.clone(), "token-b", Some(65))
+                minted(Arc::clone(&computes), "token-b", Some(65))
             )
             .await
             .unwrap(),
@@ -150,7 +158,11 @@ async fn a_remint_stores_the_new_tokens_own_ttl() {
     clock.advance(9);
     assert_eq!(
         cache
-            .get_or_compute("key", "user-b", minted(computes.clone(), "unused", None))
+            .get_or_compute(
+                "key",
+                "user-b",
+                minted(Arc::clone(&computes), "unused", None)
+            )
             .await
             .unwrap(),
         "token-b"
@@ -158,7 +170,11 @@ async fn a_remint_stores_the_new_tokens_own_ttl() {
     clock.advance(1);
     assert_eq!(
         cache
-            .get_or_compute("key", "user-b", minted(computes.clone(), "token-c", None))
+            .get_or_compute(
+                "key",
+                "user-b",
+                minted(Arc::clone(&computes), "token-c", None)
+            )
             .await
             .unwrap(),
         "token-c"
@@ -171,8 +187,16 @@ async fn concurrent_misses_on_one_key_share_a_compute() {
     let (cache, _clock) = cache();
     let computes = Arc::new(AtomicUsize::new(0));
     let (first, second) = tokio::join!(
-        cache.get_or_compute("key", "", minted(computes.clone(), "token-a", Some(600))),
-        cache.get_or_compute("key", "", minted(computes.clone(), "token-b", Some(600))),
+        cache.get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-a", Some(600))
+        ),
+        cache.get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-b", Some(600))
+        ),
     );
     assert_eq!(first.unwrap(), "token-a");
     assert_eq!(second.unwrap(), "token-a");
@@ -184,12 +208,20 @@ async fn invalidate_forces_the_next_compute() {
     let (cache, _clock) = cache();
     let computes = Arc::new(AtomicUsize::new(0));
     cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-a", Some(600)))
+        .get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-a", Some(600)),
+        )
         .await
         .unwrap();
     cache.invalidate("key");
     let second = cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-b", Some(600)))
+        .get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-b", Some(600)),
+        )
         .await
         .unwrap();
     assert_eq!(second, "token-b");
@@ -199,14 +231,14 @@ async fn invalidate_forces_the_next_compute() {
 #[tokio::test]
 async fn invalidate_during_a_compute_wins_over_its_write() {
     let (cache, _clock) = cache();
-    let (started_sender, started) = tokio::sync::oneshot::channel::<()>();
-    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let (started_sender, started) = oneshot::channel::<()>();
+    let (release, released) = oneshot::channel::<()>();
     let flight = cache.get_or_compute(
         "key",
         "",
         Box::pin(async move {
-            drop(started_sender);
-            drop(released.await);
+            started_sender.send(()).unwrap();
+            released.await.unwrap();
             Ok(ExchangedToken {
                 access_token: "stale".to_owned(),
                 expires_in: Some(600),
@@ -216,13 +248,13 @@ async fn invalidate_during_a_compute_wins_over_its_write() {
     let evict = async {
         started.await.unwrap();
         cache.invalidate("key");
-        drop(release.send(()));
+        release.send(()).unwrap();
     };
     let (outcome, ()) = tokio::join!(flight, evict);
     assert_eq!(outcome.unwrap(), "stale");
     let computes = Arc::new(AtomicUsize::new(0));
     let fresh = cache
-        .get_or_compute("key", "", minted(computes.clone(), "fresh", Some(600)))
+        .get_or_compute("key", "", minted(Arc::clone(&computes), "fresh", Some(600)))
         .await
         .unwrap();
     assert_eq!(fresh, "fresh");
@@ -245,11 +277,19 @@ async fn a_failed_compute_is_not_stored() {
     );
     let computes = Arc::new(AtomicUsize::new(0));
     let second = cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-a", Some(600)))
+        .get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-a", Some(600)),
+        )
         .await
         .unwrap();
     let third = cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-b", Some(600)))
+        .get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-b", Some(600)),
+        )
         .await
         .unwrap();
     assert_eq!(second, "token-a");
@@ -262,13 +302,17 @@ async fn an_entry_expires_at_the_ttl_after_the_buffer() {
     let (cache, clock) = cache();
     let computes = Arc::new(AtomicUsize::new(0));
     cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-a", Some(65)))
+        .get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-a", Some(65)),
+        )
         .await
         .unwrap();
     clock.advance(9);
     assert_eq!(
         cache
-            .get_or_compute("key", "", minted(computes.clone(), "unused", None))
+            .get_or_compute("key", "", minted(Arc::clone(&computes), "unused", None))
             .await
             .unwrap(),
         "token-a"
@@ -276,7 +320,7 @@ async fn an_entry_expires_at_the_ttl_after_the_buffer() {
     clock.advance(1);
     assert_eq!(
         cache
-            .get_or_compute("key", "", minted(computes.clone(), "token-b", None))
+            .get_or_compute("key", "", minted(Arc::clone(&computes), "token-b", None))
             .await
             .unwrap(),
         "token-b"
@@ -289,13 +333,13 @@ async fn a_missing_expiry_uses_the_default_ttl() {
     let (cache, clock) = cache();
     let computes = Arc::new(AtomicUsize::new(0));
     cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-a", None))
+        .get_or_compute("key", "", minted(Arc::clone(&computes), "token-a", None))
         .await
         .unwrap();
     clock.advance(3539);
     assert_eq!(
         cache
-            .get_or_compute("key", "", minted(computes.clone(), "token-b", None))
+            .get_or_compute("key", "", minted(Arc::clone(&computes), "token-b", None))
             .await
             .unwrap(),
         "token-a"
@@ -303,7 +347,7 @@ async fn a_missing_expiry_uses_the_default_ttl() {
     clock.advance(1);
     assert_eq!(
         cache
-            .get_or_compute("key", "", minted(computes.clone(), "token-c", None))
+            .get_or_compute("key", "", minted(Arc::clone(&computes), "token-c", None))
             .await
             .unwrap(),
         "token-c"
@@ -323,15 +367,27 @@ async fn the_cache_evicts_at_capacity() {
     let cache = ExchangedTokenCache::new(clock, tunables);
     let computes = Arc::new(AtomicUsize::new(0));
     cache
-        .get_or_compute("first", "", minted(computes.clone(), "token-a", Some(600)))
+        .get_or_compute(
+            "first",
+            "",
+            minted(Arc::clone(&computes), "token-a", Some(600)),
+        )
         .await
         .unwrap();
     cache
-        .get_or_compute("second", "", minted(computes.clone(), "token-b", Some(600)))
+        .get_or_compute(
+            "second",
+            "",
+            minted(Arc::clone(&computes), "token-b", Some(600)),
+        )
         .await
         .unwrap();
     let first = cache
-        .get_or_compute("first", "", minted(computes.clone(), "token-c", Some(600)))
+        .get_or_compute(
+            "first",
+            "",
+            minted(Arc::clone(&computes), "token-c", Some(600)),
+        )
         .await
         .unwrap();
     assert_eq!(first, "token-c");
@@ -350,23 +406,39 @@ async fn the_cache_evicts_the_entry_that_expires_soonest() {
     let cache = ExchangedTokenCache::new(clock, tunables);
     let computes = Arc::new(AtomicUsize::new(0));
     cache
-        .get_or_compute("long", "", minted(computes.clone(), "token-a", Some(3600)))
+        .get_or_compute(
+            "long",
+            "",
+            minted(Arc::clone(&computes), "token-a", Some(3600)),
+        )
         .await
         .unwrap();
     cache
-        .get_or_compute("short", "", minted(computes.clone(), "token-b", Some(65)))
+        .get_or_compute(
+            "short",
+            "",
+            minted(Arc::clone(&computes), "token-b", Some(65)),
+        )
         .await
         .unwrap();
     cache
-        .get_or_compute("third", "", minted(computes.clone(), "token-c", Some(3600)))
+        .get_or_compute(
+            "third",
+            "",
+            minted(Arc::clone(&computes), "token-c", Some(3600)),
+        )
         .await
         .unwrap();
     let long = cache
-        .get_or_compute("long", "", minted(computes.clone(), "unused", None))
+        .get_or_compute("long", "", minted(Arc::clone(&computes), "unused", None))
         .await
         .unwrap();
     let short = cache
-        .get_or_compute("short", "", minted(computes.clone(), "token-d", Some(3600)))
+        .get_or_compute(
+            "short",
+            "",
+            minted(Arc::clone(&computes), "token-d", Some(3600)),
+        )
         .await
         .unwrap();
     assert_eq!(long, "token-a");
@@ -386,11 +458,19 @@ async fn a_zero_max_size_caches_nothing() {
     let cache = ExchangedTokenCache::new(clock, tunables);
     let computes = Arc::new(AtomicUsize::new(0));
     let first = cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-a", Some(600)))
+        .get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-a", Some(600)),
+        )
         .await
         .unwrap();
     let second = cache
-        .get_or_compute("key", "", minted(computes.clone(), "token-b", Some(600)))
+        .get_or_compute(
+            "key",
+            "",
+            minted(Arc::clone(&computes), "token-b", Some(600)),
+        )
         .await
         .unwrap();
     assert_eq!(first, "token-a");

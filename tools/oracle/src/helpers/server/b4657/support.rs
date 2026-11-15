@@ -18,17 +18,6 @@ pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
         })
 }
 
-pub(super) fn value_error(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
 pub(super) fn cred_tag(error: &CredError) -> &'static str {
     match error {
         CredError::Unauthorized(_) => "unauthorized",

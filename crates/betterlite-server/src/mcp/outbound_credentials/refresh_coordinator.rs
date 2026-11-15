@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tokio::time::{Instant, sleep};
+use tokio::time::{Instant, sleep, timeout};
 
 use super::distributed_lock::{DistributedLock, LockAcquisition};
 use super::{RefreshCoordinator, RefreshStep, TokenKey};
@@ -98,22 +98,24 @@ impl<Lock: DistributedLock, Output, Error> RedisRefreshCoordinator<Lock, Output,
         token: &str,
         refresh: RefreshStep<'_, Output, Error>,
     ) -> Result<Output, Error> {
-        let deadline = Instant::now() + self.tunables.refresh_budget;
-        let half_ttl = self.tunables.lock_ttl / 2;
+        let started = Instant::now();
+        let half_ttl = self.tunables.lock_ttl.checked_div(2).unwrap_or_default();
         let mut flight = refresh();
         let outcome = loop {
-            if Instant::now() >= deadline {
+            if started.elapsed() >= self.tunables.refresh_budget {
                 break flight.await;
             }
-            let extended = tokio::select! {
-                biased;
-                result = &mut flight => break result,
-                () = sleep(half_ttl) => {
-                    self.lock.extend(lock_key, token, self.tunables.lock_ttl).await
+            match timeout(half_ttl, &mut flight).await {
+                Ok(result) => break result,
+                Err(_elapsed) => {
+                    if !self
+                        .lock
+                        .extend(lock_key, token, self.tunables.lock_ttl)
+                        .await
+                    {
+                        break flight.await;
+                    }
                 }
-            };
-            if !extended {
-                break flight.await;
             }
         };
         self.lock.release(lock_key, token).await;
@@ -122,8 +124,8 @@ impl<Lock: DistributedLock, Output, Error> RedisRefreshCoordinator<Lock, Output,
 
     // A loser waits out the holder's bounded lease, then reads the token the holder persisted.
     async fn wait_for_holder(&self, lock_key: &str) {
-        let deadline = Instant::now() + self.tunables.wait_timeout;
-        while Instant::now() < deadline {
+        let started = Instant::now();
+        while started.elapsed() < self.tunables.wait_timeout {
             if !self.lock.is_held(lock_key).await {
                 break;
             }

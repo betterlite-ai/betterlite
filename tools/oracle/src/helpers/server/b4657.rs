@@ -2,21 +2,28 @@ mod fetch;
 mod run;
 mod support;
 
-use serde_json::Value;
+use serde::Deserialize;
 
 use crate::helpers::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case")]
+pub(crate) enum Input {
+    Fetch(fetch::FetchInput),
+    Cache(run::CacheInput),
+    Coordinator,
+}
+
 impl Helper for Op {
-    type Input = Value;
+    type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input.get("function").and_then(Value::as_str) {
-            Some("fetch") => fetch::fetch(input),
-            Some("cache") => run::cache(input),
-            Some("coordinator") => run::coordinator(input),
-            _ => Err(support::value_error("unknown function".to_owned())),
+        match input {
+            Input::Fetch(request) => fetch::fetch(request),
+            Input::Cache(request) => run::cache(request),
+            Input::Coordinator => run::coordinator(),
         }
     }
 }

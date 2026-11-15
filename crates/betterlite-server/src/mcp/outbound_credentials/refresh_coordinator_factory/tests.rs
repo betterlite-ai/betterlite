@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -46,7 +47,7 @@ impl RedisCommands for Arc<FakeRedis> {
 
 // The packed command is a RESP array of bulk strings; every value here is plain text.
 fn read_command(packed: &[u8]) -> Vec<String> {
-    let text = std::str::from_utf8(packed).unwrap();
+    let text = from_utf8(packed).unwrap();
     text.split("\r\n")
         .filter(|part| !part.is_empty() && !part.starts_with('*') && !part.starts_with('$'))
         .map(str::to_owned)
@@ -84,7 +85,12 @@ fn no_client_means_no_coordinator() {
 #[tokio::test]
 async fn a_client_gives_a_coordinator_that_locks_under_the_namespace() {
     let redis = FakeRedis::new(vec![Ok(Value::Okay), Ok(Value::Int(1))]);
-    let coordinator = build(Some(redis.clone()), Some("ns"), &RedisTunables::default()).unwrap();
+    let coordinator = build(
+        Some(Arc::clone(&redis)),
+        Some("ns"),
+        &RedisTunables::default(),
+    )
+    .unwrap();
     let result = coordinator.run(key(), refresh(), reread()).await;
     assert_eq!(result, Ok("fresh".to_owned()));
     let sent = redis.commands();
@@ -99,11 +105,13 @@ async fn a_client_gives_a_coordinator_that_locks_under_the_namespace() {
 
 #[tokio::test]
 async fn the_tunables_travel_with_the_coordinator() {
-    let mut tunables = RedisTunables::default();
-    tunables.key_prefix = "shared:".to_owned();
-    tunables.lock_ttl = Duration::from_millis(250);
+    let tunables = RedisTunables {
+        key_prefix: "shared:".to_owned(),
+        lock_ttl: Duration::from_millis(250),
+        ..RedisTunables::default()
+    };
     let redis = FakeRedis::new(vec![Ok(Value::Okay), Ok(Value::Int(1))]);
-    let coordinator = build(Some(redis.clone()), None, &tunables).unwrap();
+    let coordinator = build(Some(Arc::clone(&redis)), None, &tunables).unwrap();
     let result = coordinator.run(key(), refresh(), reread()).await;
     assert_eq!(result, Ok("fresh".to_owned()));
     let sent = redis.commands();
@@ -114,7 +122,7 @@ async fn the_tunables_travel_with_the_coordinator() {
 #[tokio::test]
 async fn a_held_lock_rereads_after_the_holder_lets_go() {
     let redis = FakeRedis::new(vec![Ok(Value::Nil), Ok(Value::Int(0))]);
-    let coordinator = build(Some(redis.clone()), None, &RedisTunables::default()).unwrap();
+    let coordinator = build(Some(Arc::clone(&redis)), None, &RedisTunables::default()).unwrap();
     let result = coordinator.run(key(), refresh(), reread()).await;
     assert_eq!(result, Ok("reread".to_owned()));
     let sent = redis.commands();
@@ -127,7 +135,7 @@ async fn an_acquire_error_still_refreshes() {
     let redis = FakeRedis::new(vec![Err(CommandError::Live(
         LiveClientError::InvalidSetting { field: "url" },
     ))]);
-    let coordinator = build(Some(redis.clone()), None, &RedisTunables::default()).unwrap();
+    let coordinator = build(Some(Arc::clone(&redis)), None, &RedisTunables::default()).unwrap();
     let result = coordinator.run(key(), refresh(), reread()).await;
     assert_eq!(result, Ok("fresh".to_owned()));
     assert_eq!(redis.commands().len(), 1);

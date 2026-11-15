@@ -32,7 +32,7 @@ pub(super) fn client_assertion(
     let key = encoding_key(auth, algorithm)
         .ok_or_else(|| CredError::Misconfigured(SIGNING_DETAIL.to_owned()))?;
     let mut header = Header::new(algorithm);
-    header.kid = auth.key_id.clone();
+    header.kid.clone_from(&auth.key_id);
     let claims = AssertionClaims {
         iss: client_id,
         sub: client_id,
@@ -46,8 +46,8 @@ pub(super) fn client_assertion(
 }
 fn encoding_key(auth: &PrivateKeyJwtAuth, algorithm: Algorithm) -> Option<EncodingKey> {
     let material = auth.private_key.expose_secret().as_bytes();
-    let block = pem::parse(material).ok();
-    match (block, algorithm.family()) {
+    let parsed = pem::parse(material).ok();
+    match (parsed, algorithm.family()) {
         (_, AlgorithmFamily::Hmac) => Some(EncodingKey::from_secret(material)),
         (Some(block), AlgorithmFamily::Rsa) if block.tag() == "RSA PRIVATE KEY" => {
             Some(EncodingKey::from_rsa_der(block.contents()))

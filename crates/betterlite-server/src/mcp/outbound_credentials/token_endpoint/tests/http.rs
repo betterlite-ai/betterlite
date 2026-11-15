@@ -1,3 +1,7 @@
+use std::str::from_utf8;
+
+use tokio::time::timeout;
+
 use super::*;
 
 fn secret(value: &str) -> SecretString {
@@ -41,7 +45,7 @@ async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
 }
 
 fn complete(request: &[u8]) -> bool {
-    let Ok(text) = std::str::from_utf8(request) else {
+    let Ok(text) = from_utf8(request) else {
         return false;
     };
     let Some(split) = text.find("\r\n\r\n") else {
@@ -97,10 +101,7 @@ async fn posts_the_form_urlencoded_body_to_the_endpoint() {
         panic!("the endpoint answered");
     };
     assert_eq!(status, 200);
-    assert_eq!(
-        std::str::from_utf8(&body).unwrap(),
-        r#"{"access_token":"minted"}"#
-    );
+    assert_eq!(from_utf8(&body).unwrap(), r#"{"access_token":"minted"}"#);
 }
 
 #[tokio::test]
@@ -162,7 +163,7 @@ async fn a_dropped_connection_is_attempted_once() {
         let (mut stream, _peer) = listener.accept().await.expect("the client connects");
         drop(read_request(&mut stream).await);
         drop(stream);
-        let retried = tokio::time::timeout(Duration::from_millis(200), listener.accept()).await;
+        let retried = timeout(Duration::from_millis(200), listener.accept()).await;
         assert!(retried.is_err(), "the failure is not retried");
     });
     let outcome = poster(TransportLimits::DEFAULT)

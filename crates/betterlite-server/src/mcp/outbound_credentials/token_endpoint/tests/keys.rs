@@ -55,7 +55,7 @@ async fn signs_with_a_pkcs1_rsa_key() {
         )
         .await
         .unwrap();
-    let (header, claims) = read_assertion(post.form().get("client_assertion").unwrap());
+    let (header, claims) = read_assertion(&post.form()["client_assertion"]);
     assert_eq!(header.alg, "RS256");
     assert_eq!(claims.aud, ENDPOINT);
 }
@@ -72,7 +72,7 @@ async fn signs_with_an_ec_key() {
         )
         .await
         .unwrap();
-    let (header, claims) = read_assertion(post.form().get("client_assertion").unwrap());
+    let (header, claims) = read_assertion(&post.form()["client_assertion"]);
     assert_eq!(header.alg, "ES256");
     assert_eq!(header.kid.as_deref(), Some("kid-ec"));
     assert_eq!(claims.iss, CLIENT_ID);
@@ -90,7 +90,7 @@ async fn signs_with_an_ed_key() {
         )
         .await
         .unwrap();
-    let (header, claims) = read_assertion(post.form().get("client_assertion").unwrap());
+    let (header, claims) = read_assertion(&post.form()["client_assertion"]);
     assert_eq!(header.alg, "EdDSA");
     assert_eq!(claims.exp - claims.iat, 60);
 }

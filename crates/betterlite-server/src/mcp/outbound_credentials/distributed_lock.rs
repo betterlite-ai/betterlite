@@ -69,7 +69,7 @@ impl<Client: RedisCommands> RedisDistributedLock<Client> {
         command
             .arg("EVAL")
             .arg(script)
-            .arg(1)
+            .arg(1_i32)
             .arg(self.namespaced(key))
             .arg(token);
         command

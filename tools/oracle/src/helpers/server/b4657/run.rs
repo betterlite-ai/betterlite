@@ -20,7 +20,7 @@ use betterlite_server::mcp::outbound_credentials::{
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::support::{cred_tag, is_hex_32, runtime, value_error};
+use super::support::{cred_tag, is_hex_32, runtime};
 use crate::helpers::HelperResult;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(5);
@@ -28,13 +28,13 @@ const REFRESH_DELAY: Duration = Duration::from_millis(50);
 
 type Coordinator = RedisRefreshCoordinator<FakeLock, String, String>;
 
-#[derive(Deserialize)]
-struct CacheInput {
+#[derive(Debug, Deserialize)]
+pub(crate) struct CacheInput {
     #[serde(default)]
     operations: Vec<Operation>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum Operation {
     GetOrCompute {
@@ -48,7 +48,7 @@ enum Operation {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Compute {
     Token {
@@ -68,28 +68,26 @@ impl Compute {
         Box::pin(async move {
             calls.fetch_add(1, Ordering::SeqCst);
             match self {
-                Compute::Token {
+                Self::Token {
                     access_token,
                     expires_in,
                 } => Ok(ExchangedToken {
                     access_token: access_token.clone(),
                     expires_in: *expires_in,
                 }),
-                Compute::Error { detail } => Err(CredError::UpstreamUnavailable(detail.clone())),
+                Self::Error { detail } => Err(CredError::UpstreamUnavailable(detail.clone())),
             }
         })
     }
 }
 
-pub(super) fn cache(input: &Value) -> HelperResult {
-    let parsed: CacheInput =
-        serde_json::from_value(input.clone()).map_err(|error| value_error(error.to_string()))?;
+pub(super) fn cache(input: &CacheInput) -> HelperResult {
     let cache =
         ExchangedTokenCache::new(Arc::new(SystemWallClock), TokenExchangeTunables::default());
     let calls = AtomicUsize::new(0);
     let results = runtime()?.block_on(async {
         let mut results: Vec<Value> = Vec::new();
-        for operation in &parsed.operations {
+        for operation in &input.operations {
             match operation {
                 Operation::Invalidate { key } => cache.invalidate(key),
                 Operation::GetOrCompute {
@@ -132,17 +130,16 @@ impl DistributedLock for FakeLock {
     async fn acquire(&self, key: &str, token: &str, _ttl: Duration) -> LockAcquisition {
         *self.key.lock().unwrap_or_else(PoisonError::into_inner) = key.to_owned();
         *self.token.lock().unwrap_or_else(PoisonError::into_inner) = token.to_owned();
-        let mut acquisitions = self
-            .acquisitions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if self.held.swap(true, Ordering::SeqCst) {
-            acquisitions.push("held");
-            LockAcquisition::Held
+        let (label, outcome) = if self.held.swap(true, Ordering::SeqCst) {
+            ("held", LockAcquisition::Held)
         } else {
-            acquisitions.push("acquired");
-            LockAcquisition::Acquired
-        }
+            ("acquired", LockAcquisition::Acquired)
+        };
+        self.acquisitions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(label);
+        outcome
     }
 
     async fn extend(&self, _key: &str, _token: &str, _ttl: Duration) -> bool {
@@ -160,7 +157,7 @@ impl DistributedLock for FakeLock {
     }
 }
 
-fn refresh_step<'call>(refreshes: &'call AtomicUsize) -> RefreshStep<'call, String, String> {
+fn refresh_step(refreshes: &AtomicUsize) -> RefreshStep<'_, String, String> {
     Box::new(move || {
         refreshes.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {
@@ -170,7 +167,7 @@ fn refresh_step<'call>(refreshes: &'call AtomicUsize) -> RefreshStep<'call, Stri
     })
 }
 
-fn reread_step<'call>(rereads: &'call AtomicUsize) -> RefreshStep<'call, String, String> {
+fn reread_step(rereads: &AtomicUsize) -> RefreshStep<'_, String, String> {
     Box::new(move || {
         rereads.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok("reread".to_owned()) })
@@ -182,14 +179,18 @@ async fn run_pair(
     refreshes: &AtomicUsize,
     rereads: &AtomicUsize,
 ) -> Value {
-    let key = TokenKey {
+    let token_key = TokenKey {
         user_id: "user".to_owned(),
         server_id: "server".to_owned(),
     };
-    let winner = coordinator.run(key.clone(), refresh_step(refreshes), reread_step(rereads));
-    let loser = coordinator.run(key, refresh_step(refreshes), reread_step(rereads));
-    let (winner, loser) = tokio::join!(winner, loser);
-    let (Ok(winner), Ok(loser)) = (winner, loser) else {
+    let first = coordinator.run(
+        token_key.clone(),
+        refresh_step(refreshes),
+        reread_step(rereads),
+    );
+    let second = coordinator.run(token_key, refresh_step(refreshes), reread_step(rereads));
+    let (first_result, second_result) = tokio::join!(first, second);
+    let (Ok(winner), Ok(loser)) = (first_result, second_result) else {
         return serde_json::json!({"error": "coordinator returned an error"});
     };
     let acquisitions = coordinator
@@ -198,13 +199,13 @@ async fn run_pair(
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
-    let key = coordinator
+    let lock_key = coordinator
         .lock
         .key
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
-    let token = coordinator
+    let lock_token = coordinator
         .lock
         .token
         .lock()
@@ -216,14 +217,14 @@ async fn run_pair(
         "reread_calls": rereads.load(Ordering::SeqCst),
         "release_calls": coordinator.lock.releases.load(Ordering::SeqCst),
         "extend_calls": coordinator.lock.extends.load(Ordering::SeqCst),
-        "key": key,
-        "token_is_hex_32": is_hex_32(&token),
+        "key": lock_key,
+        "token_is_hex_32": is_hex_32(&lock_token),
         "winner": winner,
         "loser": loser,
     })
 }
 
-pub(super) fn coordinator(_input: &Value) -> HelperResult {
+pub(super) fn coordinator() -> HelperResult {
     let refreshes = AtomicUsize::new(0);
     let rereads = AtomicUsize::new(0);
     let mut coordinator = Coordinator::new(FakeLock::default());
@@ -234,6 +235,5 @@ pub(super) fn coordinator(_input: &Value) -> HelperResult {
         wait_timeout: DEFAULT_WAIT_TIMEOUT,
         poll_interval: POLL_INTERVAL,
     };
-    let view = runtime()?.block_on(run_pair(&coordinator, &refreshes, &rereads));
-    Ok(view)
+    Ok(runtime()?.block_on(run_pair(&coordinator, &refreshes, &rereads)))
 }

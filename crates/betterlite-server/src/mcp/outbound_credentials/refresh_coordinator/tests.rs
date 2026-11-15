@@ -6,10 +6,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use tokio::time::{sleep, timeout};
 
 use super::{RedisRefreshCoordinator, RedisTunables};
 use crate::mcp::outbound_credentials::distributed_lock::{DistributedLock, LockAcquisition};
-use crate::mcp::outbound_credentials::{RefreshCoordinator, RefreshStep, TokenKey};
+use crate::mcp::outbound_credentials::{RefreshCoordinator as _, RefreshStep, TokenKey};
 
 const KEY: &str = "mcp:refresh_lock:user-1:server-1";
 
@@ -101,7 +102,7 @@ fn counted(value: &'static str, calls: Arc<AtomicUsize>) -> RefreshStep<'static,
 fn delayed(delay: Duration) -> RefreshStep<'static, String, String> {
     Box::new(move || {
         Box::pin(async move {
-            tokio::time::sleep(delay).await;
+            sleep(delay).await;
             Ok("fresh".to_owned())
         })
     })
@@ -115,8 +116,8 @@ fn reread() -> RefreshStep<'static, String, String> {
 async fn an_acquired_lock_runs_the_refresh_and_releases() {
     let lock = FakeLock::new(vec![LockAcquisition::Acquired]);
     let calls = Arc::new(AtomicUsize::new(0));
-    let result = coordinator(lock.clone(), tunables())
-        .run(key(), counted("fresh", calls.clone()), reread())
+    let result = coordinator(Arc::clone(&lock), tunables())
+        .run(key(), counted("fresh", Arc::clone(&calls)), reread())
         .await;
     assert_eq!(result, Ok("fresh".to_owned()));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -141,8 +142,8 @@ async fn an_acquired_lock_runs_the_refresh_and_releases() {
 async fn an_error_on_acquire_refreshes_without_the_lock() {
     let lock = FakeLock::new(vec![LockAcquisition::Error]);
     let calls = Arc::new(AtomicUsize::new(0));
-    let result = coordinator(lock.clone(), tunables())
-        .run(key(), counted("fresh", calls.clone()), reread())
+    let result = coordinator(Arc::clone(&lock), tunables())
+        .run(key(), counted("fresh", Arc::clone(&calls)), reread())
         .await;
     assert_eq!(result, Ok("fresh".to_owned()));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -154,8 +155,8 @@ async fn a_held_lock_waits_until_the_holder_lets_go_then_rereads() {
     let lock = FakeLock::new(vec![LockAcquisition::Held]);
     lock.held.lock().unwrap().extend([true, false]);
     let calls = Arc::new(AtomicUsize::new(0));
-    let result = coordinator(lock.clone(), tunables())
-        .run(key(), counted("fresh", calls.clone()), reread())
+    let result = coordinator(Arc::clone(&lock), tunables())
+        .run(key(), counted("fresh", Arc::clone(&calls)), reread())
         .await;
     assert_eq!(result, Ok("reread".to_owned()));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -173,7 +174,7 @@ async fn a_held_lock_stops_waiting_at_the_timeout() {
         .lock()
         .unwrap()
         .extend([true, true, true, true, true]);
-    let result = coordinator(lock.clone(), tunables())
+    let result = coordinator(Arc::clone(&lock), tunables())
         .run(
             key(),
             counted("fresh", Arc::new(AtomicUsize::new(0))),
@@ -193,7 +194,7 @@ async fn a_held_lock_stops_waiting_at_the_timeout() {
 async fn a_slow_refresh_renews_the_lease_each_half_ttl() {
     let lock = FakeLock::new(vec![LockAcquisition::Acquired]);
     lock.extends.lock().unwrap().extend([true, true, true]);
-    let result = coordinator(lock.clone(), tunables())
+    let result = coordinator(Arc::clone(&lock), tunables())
         .run(key(), delayed(Duration::from_millis(120)), reread())
         .await;
     assert_eq!(result, Ok("fresh".to_owned()));
@@ -210,7 +211,7 @@ async fn a_slow_refresh_renews_the_lease_each_half_ttl() {
 async fn a_lost_renewal_stops_renewing_and_finishes_the_refresh() {
     let lock = FakeLock::new(vec![LockAcquisition::Acquired]);
     lock.extends.lock().unwrap().extend([false, true]);
-    let result = coordinator(lock.clone(), tunables())
+    let result = coordinator(Arc::clone(&lock), tunables())
         .run(key(), delayed(Duration::from_millis(400)), reread())
         .await;
     assert_eq!(result, Ok("fresh".to_owned()));
@@ -232,7 +233,7 @@ async fn the_renewal_stops_at_the_refresh_budget() {
         .lock()
         .unwrap()
         .extend([true, true, true, true]);
-    let result = coordinator(lock.clone(), tunables)
+    let result = coordinator(Arc::clone(&lock), tunables)
         .run(key(), delayed(Duration::from_secs(1)), reread())
         .await;
     assert_eq!(result, Ok("fresh".to_owned()));
@@ -251,7 +252,7 @@ async fn a_zero_budget_never_renews_the_lease() {
     tunables.refresh_budget = Duration::ZERO;
     let lock = FakeLock::new(vec![LockAcquisition::Acquired]);
     lock.extends.lock().unwrap().extend([true, true]);
-    let result = coordinator(lock.clone(), tunables)
+    let result = coordinator(Arc::clone(&lock), tunables)
         .run(key(), delayed(Duration::from_millis(120)), reread())
         .await;
     assert_eq!(result, Ok("fresh".to_owned()));
@@ -265,7 +266,7 @@ async fn a_failed_refresh_is_returned_and_still_releases() {
     let lock = FakeLock::new(vec![LockAcquisition::Acquired]);
     let flight: RefreshStep<'static, String, String> =
         Box::new(|| Box::pin(async { Err("endpoint down".to_owned()) }));
-    let result = coordinator(lock.clone(), tunables())
+    let result = coordinator(Arc::clone(&lock), tunables())
         .run(key(), flight, reread())
         .await;
     assert_eq!(result, Err("endpoint down".to_owned()));
@@ -275,10 +276,10 @@ async fn a_failed_refresh_is_returned_and_still_releases() {
 #[tokio::test(start_paused = true)]
 async fn a_cancelled_run_leaves_the_lease_to_expire() {
     let lock = FakeLock::new(vec![LockAcquisition::Acquired]);
-    let coordinator = coordinator(lock.clone(), tunables());
+    let coordinator = coordinator(Arc::clone(&lock), tunables());
     let run = coordinator.run(key(), delayed(Duration::from_secs(30)), reread());
-    let expired = tokio::time::timeout(Duration::from_millis(20), run).await;
-    assert!(expired.is_err());
+    let expired = timeout(Duration::from_millis(20), run).await;
+    let _elapsed = expired.unwrap_err();
     let events = lock.events();
     assert_eq!(events.len(), 1);
     assert!(events[0].starts_with("acquire "));
@@ -290,7 +291,7 @@ async fn the_key_prefix_and_lock_ttl_come_from_the_tunables() {
     custom.key_prefix = "custom:".to_owned();
     custom.lock_ttl = Duration::from_millis(1500);
     let lock = FakeLock::new(vec![LockAcquisition::Acquired]);
-    coordinator(lock.clone(), custom)
+    coordinator(Arc::clone(&lock), custom)
         .run(
             key(),
             counted("fresh", Arc::new(AtomicUsize::new(0))),

@@ -13,11 +13,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::support::{cred_tag, runtime, value_error};
+use super::support::{cred_tag, runtime};
 use crate::helpers::HelperResult;
 
-#[derive(Deserialize)]
-struct FetchInput {
+#[derive(Debug, Deserialize)]
+pub(crate) struct FetchInput {
     endpoint: String,
     client_id: String,
     #[serde(default)]
@@ -26,7 +26,7 @@ struct FetchInput {
     response: ResponseInput,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "source", rename_all = "snake_case")]
 enum AuthInput {
     ClientSecret {
@@ -40,27 +40,25 @@ enum AuthInput {
 }
 
 impl AuthInput {
-    fn client_auth(self) -> ClientAuth {
+    fn client_auth(&self) -> ClientAuth {
         match self {
-            AuthInput::ClientSecret { client_secret } => {
-                ClientAuth::ClientSecret(ClientSecretAuth {
-                    client_secret: SecretString::from(client_secret),
-                })
-            }
-            AuthInput::PrivateKeyJwt {
+            Self::ClientSecret { client_secret } => ClientAuth::ClientSecret(ClientSecretAuth {
+                client_secret: SecretString::from(client_secret.clone()),
+            }),
+            Self::PrivateKeyJwt {
                 private_key,
                 key_id,
                 signing_alg,
             } => ClientAuth::PrivateKeyJwt(PrivateKeyJwtAuth {
-                private_key: SecretString::from(private_key),
-                key_id,
-                signing_alg,
+                private_key: SecretString::from(private_key.clone()),
+                key_id: key_id.clone(),
+                signing_alg: signing_alg.clone(),
             }),
         }
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ResponseInput {
     Answered { status: u16, body: String },
@@ -92,23 +90,14 @@ impl TokenEndpointPost for ScriptedPost {
     }
 }
 
-pub(super) fn fetch(input: &Value) -> HelperResult {
-    let parsed: FetchInput =
-        serde_json::from_value(input.clone()).map_err(|error| value_error(error.to_string()))?;
-    let FetchInput {
-        endpoint,
-        client_id,
-        grant,
-        client_auth,
-        response,
-    } = parsed;
-    let auth = client_auth.client_auth();
+pub(super) fn fetch(input: &FetchInput) -> HelperResult {
+    let auth = input.client_auth.client_auth();
     let client = TokenEndpointClient::new(ScriptedPost {
-        response,
+        response: input.response.clone(),
         form: Mutex::new(None),
     });
     let outcome =
-        runtime()?.block_on(async { client.fetch(&endpoint, &client_id, &grant, &auth).await });
+        runtime()?.block_on(client.fetch(&input.endpoint, &input.client_id, &input.grant, &auth));
     let result = match &outcome {
         Ok(token) => serde_json::json!({
             "ok": true,

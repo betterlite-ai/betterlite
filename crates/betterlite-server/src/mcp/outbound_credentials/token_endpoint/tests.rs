@@ -119,7 +119,8 @@ impl ManualClock {
 
     fn advance(&self, seconds: i64) {
         let elapsed = TimeDelta::try_seconds(seconds).unwrap();
-        *self.now.lock().unwrap() += elapsed;
+        let mut now = self.now.lock().unwrap();
+        *now = now.checked_add_signed(elapsed).unwrap();
     }
 }
 
@@ -131,7 +132,7 @@ impl WallClock for ManualClock {
 
 fn client(replies: Vec<PostedForm>) -> (TokenEndpointClient<Arc<FakePost>>, Arc<FakePost>) {
     let post = FakePost::with_replies(replies);
-    let mut client = TokenEndpointClient::new(post.clone());
+    let mut client = TokenEndpointClient::new(Arc::clone(&post));
     client.clock = ManualClock::new();
     client.new_jti = || "jti-fixed".to_owned();
     (client, post)
@@ -246,7 +247,7 @@ async fn posts_a_signed_private_key_assertion() {
         form.get("client_assertion_type").map(String::as_str),
         Some(CLIENT_ASSERTION_TYPE)
     );
-    let (header, claims) = read_assertion(form.get("client_assertion").unwrap());
+    let (header, claims) = read_assertion(&form["client_assertion"]);
     assert_eq!(header.alg, "HS256");
     assert_eq!(header.typ.as_deref(), Some("JWT"));
     assert_eq!(header.kid.as_deref(), Some("kid-1"));
@@ -270,7 +271,7 @@ async fn signs_with_the_configured_rsa_key_and_no_kid() {
         )
         .await
         .unwrap();
-    let (header, claims) = read_assertion(post.form().get("client_assertion").unwrap());
+    let (header, claims) = read_assertion(&post.form()["client_assertion"]);
     assert_eq!(header.alg, "RS256");
     assert_eq!(header.kid, None);
     assert_eq!(claims.exp - claims.iat, 60);

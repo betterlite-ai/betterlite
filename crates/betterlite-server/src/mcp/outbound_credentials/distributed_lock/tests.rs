@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -8,7 +9,9 @@ use async_trait::async_trait;
 use betterlite_redis::redis_live_client::LiveClientError;
 use redis::{Cmd, Value};
 
-use super::{CommandError, DistributedLock, LockAcquisition, RedisCommands, RedisDistributedLock};
+use super::{
+    CommandError, DistributedLock as _, LockAcquisition, RedisCommands, RedisDistributedLock,
+};
 
 const EXTEND_SCRIPT: &str = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end";
 const RELEASE_SCRIPT: &str = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
@@ -35,7 +38,7 @@ impl RedisCommands for Arc<FakeRedis> {
 
 // The packed command is a RESP array of bulk strings; every value here is plain text.
 fn read_command(packed: &[u8]) -> Vec<String> {
-    let text = std::str::from_utf8(packed).unwrap();
+    let text = from_utf8(packed).unwrap();
     text.split("\r\n")
         .filter(|part| !part.is_empty() && !part.starts_with('*') && !part.starts_with('$'))
         .map(str::to_owned)
@@ -55,7 +58,7 @@ fn lock(
     });
     (
         RedisDistributedLock {
-            client: redis.clone(),
+            client: Arc::clone(&redis),
             namespace: None,
         },
         redis,
@@ -187,8 +190,8 @@ async fn is_held_is_false_on_a_backend_failure() {
 
 #[tokio::test]
 async fn every_key_carries_the_namespace() {
-    let (lock, redis) = lock(vec![Ok(Value::Okay), Ok(Value::Int(1))]);
-    let lock = with_namespace(lock, "ns");
+    let (plain, redis) = lock(vec![Ok(Value::Okay), Ok(Value::Int(1))]);
+    let lock = with_namespace(plain, "ns");
     assert_eq!(
         lock.acquire(KEY, TOKEN, ttl()).await,
         LockAcquisition::Acquired
@@ -201,16 +204,16 @@ async fn every_key_carries_the_namespace() {
 
 #[tokio::test]
 async fn an_already_prefixed_key_keeps_one_namespace() {
-    let (lock, redis) = lock(vec![Ok(Value::Int(0))]);
-    let lock = with_namespace(lock, "ns");
+    let (plain, redis) = lock(vec![Ok(Value::Int(0))]);
+    let lock = with_namespace(plain, "ns");
     assert!(!lock.is_held("ns:already-prefixed").await);
     assert_eq!(commands(&redis)[0], vec!["EXISTS", "ns:already-prefixed"]);
 }
 
 #[tokio::test]
 async fn an_empty_namespace_leaves_keys_bare() {
-    let (lock, redis) = lock(vec![Ok(Value::Int(0))]);
-    let lock = with_namespace(lock, "");
+    let (plain, redis) = lock(vec![Ok(Value::Int(0))]);
+    let lock = with_namespace(plain, "");
     assert!(!lock.is_held(KEY).await);
     assert_eq!(commands(&redis)[0], vec!["EXISTS", KEY]);
 }
