@@ -161,13 +161,6 @@ class ResponseArgs(TypedDict):
     encoding: None
 
 
-class TemplateArgs(TypedDict):
-    model: str
-    roles: dict[str, dict[str, str]]
-    initial_prompt_value: str
-    final_prompt_value: str
-
-
 class ErrorEnvelope(Protocol):
     status_code: int
     message: str
@@ -181,7 +174,13 @@ class ChunkParser(Protocol):
 
 
 class Registry(Protocol):
-    def register_prompt_template(self, **kwargs: Unpack[TemplateArgs]) -> JsonValue: ...
+    def register_prompt_template(
+        self,
+        model: str,
+        roles: dict[str, dict[str, str]],
+        initial_prompt_value: str,
+        final_prompt_value: str,
+    ) -> JsonValue: ...
 
 
 # LiteLLM leaves its parameters untyped, so this typed view is the public entry to the text config
@@ -197,7 +196,6 @@ class TextConfig(Protocol):
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
-        *,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 

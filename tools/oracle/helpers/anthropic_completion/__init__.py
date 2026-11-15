@@ -66,10 +66,10 @@ def prompt_case(config: TextConfig, case: PromptCase) -> str:
     entry = case["custom_prompt"]
     if entry is not None:
         REGISTRY.register_prompt_template(
-            model=case["model"],
-            roles=entry["roles"],
-            initial_prompt_value=entry["initial_prompt_value"],
-            final_prompt_value=entry["final_prompt_value"],
+            case["model"],
+            entry["roles"],
+            entry["initial_prompt_value"],
+            entry["final_prompt_value"],
         )
     body = request_body(config, case["model"], case["messages"], {})
     return BODY.validate_python(body)["prompt"]
@@ -103,10 +103,7 @@ def options(input_value: OptionsInput) -> JsonValue:
     cases: list[dict[str, dict[str, JsonValue]]] = []
     for case in input_value["cases"]:
         mapped = config.map_openai_params(
-            non_default_params=case["non_default"],
-            optional_params=dict(case["existing"]),
-            model=case["model"],
-            drop_params=False,
+            case["non_default"], dict(case["existing"]), case["model"], False
         )
         # transform_request fills the configured defaults into the dict it gets, so it gets a copy
         body = request_body(config, case["model"], case["messages"], dict(mapped))
@@ -117,11 +114,8 @@ def options(input_value: OptionsInput) -> JsonValue:
 
 
 def reply_case(config: TextConfig, case: ReplyCase) -> JsonValue:
-    raw = httpx.Response(
-        case["status"],
-        content=case["body"].encode(),
-        request=httpx.Request("POST", "https://api.anthropic.com/v1/complete"),
-    )
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/complete")
+    raw = httpx.Response(case["status"], content=case["body"].encode(), request=request)
     initial = ModelResponse(id="chatcmpl-kept", model="unset")
     initial.choices[0].message.content = case["initial_content"]
     logging_obj = Logging(
@@ -166,11 +160,7 @@ def reply_case(config: TextConfig, case: ReplyCase) -> JsonValue:
 
 
 def error_case(config: TextConfig, case: ErrorCase) -> JsonValue:
-    error = config.get_error_class(
-        error_message=case["message"],
-        status_code=case["status_code"],
-        headers=case["headers"],
-    )
+    error = config.get_error_class(case["message"], case["status_code"], case["headers"])
     return JSON.validate_python(
         {
             "status_code": error.status_code,
