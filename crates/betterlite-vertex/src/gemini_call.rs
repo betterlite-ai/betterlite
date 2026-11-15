@@ -14,11 +14,10 @@ use secrecy::SecretString;
 use uuid::Uuid;
 
 use crate::cache_lookup::transport::CacheTransport;
-use crate::gemini_http::call::{Clients, GeminiHttpStream, VertexLlm};
-use crate::gemini_http::error::GeminiStreamError;
+use crate::gemini_http::call::{Clients, VertexLlm};
+use crate::gemini_http::stream::GeminiHttpStream;
 use crate::gemini_response::complete::CompleteResponse;
 use crate::gemini_response_parts::projection::CallMode;
-use crate::gemini_stream::chunk::StreamChunk;
 use crate::model_policy::capabilities::{ModelCapabilityLookup, VertexCapabilityProvider};
 
 use self::error::GeminiCallError;
@@ -27,7 +26,6 @@ mod async_call;
 mod body;
 pub mod error;
 pub mod selection;
-pub mod stream;
 mod sync_call;
 mod target;
 
@@ -69,22 +67,7 @@ pub struct CallDeps<'deps, Cache, Fetch, Log, Console> {
 // Boxed to stay within 3x of each other, the limit variant_size_differences enforces
 pub enum GeminiReply {
     Complete(Box<CompleteResponse>),
-    Stream(Box<GeminiStream>),
-}
-
-// LiteLLM's reply: B1316's stream for the async pair, a lazily opened stream for the sync pair
-pub enum GeminiStream {
-    Async(GeminiHttpStream),
-    Sync(stream::SyncGeminiStream),
-}
-
-impl GeminiStream {
-    pub async fn next_chunk(&mut self) -> Option<Result<StreamChunk, GeminiStreamError>> {
-        match self {
-            Self::Async(stream) => stream.next_chunk().await,
-            Self::Sync(stream) => stream.next_chunk().await,
-        }
-    }
+    Stream(Box<GeminiHttpStream>),
 }
 
 // LiteLLM pops stream, then routes on acompletion and the literal true check

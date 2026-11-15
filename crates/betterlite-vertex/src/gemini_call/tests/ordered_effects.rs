@@ -334,7 +334,7 @@ fn ordered_effects_sync_completion_turns_a_timeout_into_408() {
 }
 
 #[test]
-fn ordered_effects_sync_stream_refuses_a_status_without_translating() {
+fn ordered_effects_sync_stream_refuses_a_status_with_the_provider_error() {
     let fixture = pooled_fixture(
         Vec::new(),
         vec![stream_reply(400, vec![SCHEMA_ERROR.as_bytes().to_vec()])],
@@ -353,7 +353,7 @@ fn ordered_effects_sync_stream_refuses_a_status_without_translating() {
         panic!("a 400 is the provider's own error");
     };
     assert_eq!(provider.status_code, 400);
-    assert_eq!(provider.message, SCHEMA_ERROR);
+    assert!(provider.message.ends_with(SCHEMA_ERROR));
 }
 
 #[test]

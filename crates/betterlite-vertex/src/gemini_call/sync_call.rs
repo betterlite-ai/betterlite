@@ -15,6 +15,7 @@ use crate::gemini_http::call::{ClientKind, Clients};
 use crate::gemini_http::error::{GeminiHttpError, get_error_class};
 use crate::gemini_http::headers::request_headers;
 use crate::gemini_http::post::{GeminiPost, PostRequest};
+use crate::gemini_http::stream::GeminiHttpStream;
 use crate::gemini_http::stream::StreamSetup;
 use crate::gemini_request::orchestration::transform_request_body;
 use crate::gemini_response::complete::{CompleteRequest, RawResponse, transform_response};
@@ -26,9 +27,8 @@ use crate::vertex_embedding_call::post::{ClientTimeout, PostError};
 use super::body::body_request;
 use super::error::GeminiCallError;
 use super::selection::sync_client_timeout;
-use super::stream::SyncGeminiStream;
 use super::target::resolve_target;
-use super::{CallDeps, GeminiCall, GeminiReply, GeminiStream};
+use super::{CallDeps, GeminiCall, GeminiReply};
 
 const TIMEOUT_MESSAGE: &str = "Timeout error occurred.";
 
@@ -67,8 +67,8 @@ where
             now: call.now.as_second(),
             call_mode: call.call_mode,
         };
-        return Ok(GeminiReply::Stream(Box::new(GeminiStream::Sync(
-            SyncGeminiStream::new(setup, options),
+        return Ok(GeminiReply::Stream(Box::new(GeminiHttpStream::new(
+            setup, options,
         ))));
     }
     let (post, timeout) = post_client(deps.clients, call.timeout);

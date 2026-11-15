@@ -12,7 +12,7 @@ use crate::token_refresh::ensure_access_token;
 use super::body::body_request;
 use super::error::GeminiCallError;
 use super::target::resolve_target;
-use super::{CallDeps, GeminiCall, GeminiReply, GeminiStream};
+use super::{CallDeps, GeminiCall, GeminiReply};
 
 // LiteLLM's acompletion branch: B1316 builds the URL, the headers and the request and then runs it
 pub(super) async fn completion<Cache, Fetch, Log, Console>(
@@ -57,7 +57,7 @@ where
     if stream {
         let opened =
             async_streaming(&http, deps.catalog, deps.llm, deps.clients, identifiers).await?;
-        return Ok(GeminiReply::Stream(Box::new(GeminiStream::Async(opened))));
+        return Ok(GeminiReply::Stream(Box::new(opened)));
     }
     let response =
         async_completion(&http, deps.catalog, deps.llm, deps.clients, identifiers).await?;
