@@ -1,0 +1,84 @@
+kind: helper
+name: recraft-edit-strength-pop
+call:
+  recraft:
+    calls:
+      - function: supported
+        endpoint: edit
+        model: recraftv3
+      - function: edit_map
+        model: recraftv3
+        params:
+          n: 2
+          response_format: b64_json
+          style: any
+          size: 1024x1024
+          prompt: kept
+        drop_params: false
+      - function: edit_map
+        model: recraftv3
+        params:
+          n: 2
+          response_format: b64_json
+          style: any
+          size: 1024x1024
+          prompt: kept
+        drop_params: true
+      - function: edit_request
+        model: recraftv3
+        prompt: null
+        images: []
+        optional_params:
+          strength: 0.5
+          style: any
+          substyle: digital_illustration
+          image: stale
+      - function: edit_request
+        model: recraftv3
+        prompt: change the sky
+        images: []
+        optional_params: {}
+      - function: edit_request
+        model: recraftv3
+        prompt: explicit prompt
+        images: []
+        optional_params:
+          model: custom/model
+          prompt: map prompt
+          n: 3
+      - function: url
+        endpoint: edit
+        model: recraftv3
+        api_base: null
+        environment:
+          RECRAFT_API_KEY: env-recraft-key
+          RECRAFT_API_BASE: "https://env.test/base/"
+      - function: url
+        endpoint: generation
+        model: recraftv3
+        api_base: "https://caller.test//"
+        environment:
+          RECRAFT_API_KEY: env-recraft-key
+          RECRAFT_API_BASE: "https://env.test/base/"
+      - function: environment
+        endpoint: generation
+        model: recraftv3
+        api_key: null
+        headers:
+          X-Trace: kept
+        environment:
+          RECRAFT_API_KEY: env-recraft-key
+          RECRAFT_API_BASE: "https://env.test/base/"
+      - function: environment
+        endpoint: edit
+        model: recraftv3
+        api_key: caller-key
+        headers:
+          Authorization: stale
+        environment:
+          RECRAFT_API_KEY: env-recraft-key
+          RECRAFT_API_BASE: "https://env.test/base/"
+env:
+  RECRAFT_API_KEY: env-recraft-key
+  RECRAFT_API_BASE: "https://env.test/base/"
+compare: {ignore: []}

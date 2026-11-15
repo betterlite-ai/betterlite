@@ -1,0 +1,93 @@
+kind: helper
+name: recraft-generation-keep-existing
+call:
+  recraft:
+    calls:
+      - function: supported
+        endpoint: generation
+        model: recraftv3
+      - function: map
+        model: recraftv3
+        non_default_params:
+          n: 2
+          response_format: b64_json
+          size: 1024x1024
+          style: any
+        optional_params: {}
+        drop_params: false
+      - function: map
+        model: recraftv3
+        non_default_params:
+          size: 512x512
+          response_format: url
+        optional_params:
+          size: 1024x1024
+        drop_params: false
+      - function: map
+        model: recraftv3
+        non_default_params:
+          aspect_ratio: "1:1"
+        optional_params: {}
+        drop_params: false
+      - function: map
+        model: recraftv3
+        non_default_params:
+          aspect_ratio: "1:1"
+          n: 1
+        optional_params: {}
+        drop_params: true
+      - function: url
+        endpoint: generation
+        model: recraftv3
+        api_base: null
+        environment: {}
+      - function: environment
+        endpoint: generation
+        model: recraftv3
+        api_key: null
+        headers:
+          X-Trace: keep-me
+        environment: {}
+      - function: environment
+        endpoint: generation
+        model: recraftv3
+        api_key: ""
+        headers: {}
+        environment: {}
+      - function: environment
+        endpoint: generation
+        model: recraftv3
+        api_key: caller-key
+        headers: {}
+        environment: {}
+      - function: request
+        model: recraftv3
+        prompt: a red fox on a rock
+        optional_params:
+          style: any
+          substyle: digital_illustration
+          negative_prompt: blur
+          text_layout: []
+          controls:
+            colors:
+              - rgb: [1, 2, 3]
+      - function: response
+        status: 200
+        headers:
+          X-Request-Id: request-1
+        body: '{"data": [{"url": "https://added.test/1.png", "revised_prompt": "provider text", "size": "1024x1024"}, {"b64_json": "YWJj"}]}'
+        created: 7
+        data:
+          - b64_json: null
+            url: https://existing.test/0.png
+            revised_prompt: first draft
+calls:
+  - recraft:
+      calls:
+        - function: request
+          model: recraftv3
+          prompt: a red fox
+          optional_params:
+            prompt: shadowing
+env: {}
+compare: {ignore: []}

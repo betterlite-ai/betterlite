@@ -1,0 +1,42 @@
+kind: helper
+name: recraft-first-file-name
+call:
+  recraft:
+    calls:
+      - function: edit_request
+        model: recraftv3
+        prompt: retouch the left edge
+        images:
+          - filename: cat.jpg
+            data_base64: /9j/4HRoZSByZXN0IG9mIHRoZSBqcGVn
+          - filename: second.png
+            data_base64: iVBORw0KGgpmaWxsZXI=
+        optional_params: {}
+      - function: edit_request
+        model: recraftv3
+        prompt: null
+        images:
+          - filename: null
+            data_base64: iVBORw0KGgpmaWxsZXI=
+        optional_params: {}
+      - function: edit_request
+        model: recraftv3
+        prompt: null
+        images:
+          - filename: photo.jpg
+            data_base64: iVBORw0KGgpmaWxsZXI=
+        optional_params: {}
+      - function: edit_request
+        model: recraftv3
+        prompt: null
+        images:
+          - filename: blob.bin
+            data_base64: aGVsbG8=
+        optional_params: {}
+      - function: edit_request
+        model: recraftv3
+        prompt: no image
+        images: []
+        optional_params: {}
+env: {}
+compare: {ignore: []}

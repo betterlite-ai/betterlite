@@ -1,0 +1,30 @@
+kind: helper
+name: recraft-seed-calls
+call:
+  recraft:
+    calls:
+      - function: supported
+        endpoint: generation
+        model: recraftv3
+      - function: map
+        model: recraftv3
+        non_default_params:
+          size: 1024x1024
+        optional_params: {}
+        drop_params: false
+      - function: edit_request
+        model: recraftv3
+        prompt: a cat
+        images:
+          - filename: cat.png
+            data_base64: iVBORw0KGgpmaWxsZXI=
+        optional_params:
+          strength: 0.5
+      - function: response
+        status: 200
+        headers: {}
+        body: '{"data":[{"url":"https://seed.test/1.png"}]}'
+        created: 1
+        data: []
+env: {}
+compare: {ignore: []}
