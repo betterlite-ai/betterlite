@@ -1,0 +1,22 @@
+kind: helper
+name: attachment-impact-response-samples
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: AttachmentImpactResponse
+    value:
+      affected_keys_count: 12
+      affected_teams_count: -1
+      unnamed_keys_count: 3
+      unnamed_teams_count: 0
+      sample_keys: [dev-key-1, dev-key-2]
+      sample_teams: []
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: AttachmentImpactResponse
+      value: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: prompt-security
+call:
+  b6562:
+    provider: prompt_security
+env: {}
+compare:
+  ignore: []

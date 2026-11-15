@@ -47,7 +47,7 @@ fn a_marker_at_the_end_of_the_log_is_a_limit() {
 #[test]
 fn a_claude_run_logged_out_or_offline_marks_its_vendor() {
     let agents = agents();
-    let claude = find_vendor(&agents, "anthropic").unwrap();
+    let claude = find_vendor(&agents, "anthropic-2").unwrap();
     let folder = tempfile::tempdir().unwrap();
     let stdout = folder.path().join("attempt-1-worker.stdout");
     for result in [
@@ -100,7 +100,7 @@ fn a_fresh_mark_skips_the_vendor_and_an_old_one_does_not() {
     assert!(!limited(git.path(), &agents, "openai").unwrap());
     mark(git.path(), "openai", "ERROR: You've hit your usage limit.").unwrap();
     assert!(limited(git.path(), &agents, "openai").unwrap());
-    assert!(!limited(git.path(), &agents, "anthropic").unwrap());
+    assert!(!limited(git.path(), &agents, "anthropic-2").unwrap());
     let minutes = u64::from(agents.policy.limit_retry_minutes);
     let old = SystemTime::now() - Duration::from_secs(minutes * 60 + 60);
     let path = git.path().join("betterlite/limits/openai");
@@ -120,24 +120,24 @@ fn an_unreachable_or_logged_out_vendor_is_not_reported_as_a_usage_limit() {
     mark(git.path(), "openai", "ERROR: You've hit your usage limit.").unwrap();
     mark(
         git.path(),
-        "anthropic",
+        "anthropic-2",
         r#"{"is_error":true,"result":"API Error: Can't reach the API server (EAI_AGAIN)","type":"result"}"#,
     )
     .unwrap();
     assert_eq!(
         causes(git.path(), &agents).unwrap(),
-        "openai is at its usage limit: ERROR: You've hit your usage limit.; anthropic can't reach its API: API Error: Can't reach the API server (EAI_AGAIN)"
+        "openai is at its usage limit: ERROR: You've hit your usage limit.; anthropic-2 can't reach its API: API Error: Can't reach the API server (EAI_AGAIN)"
     );
     mark(
         git.path(),
-        "anthropic",
+        "anthropic-2",
         "Not logged in \u{b7} Please run /login",
     )
     .unwrap();
     assert!(
         causes(git.path(), &agents)
             .unwrap()
-            .ends_with("; anthropic is logged out: Not logged in \u{b7} Please run /login")
+            .ends_with("; anthropic-2 is logged out: Not logged in \u{b7} Please run /login")
     );
 }
 

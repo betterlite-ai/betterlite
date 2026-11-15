@@ -1,0 +1,29 @@
+kind: helper
+name: xai-realtime-vad-missing-false-and-null
+call:
+  xai_realtime:
+    kind: sequence
+    events: []
+    sessions:
+      - {turn_detection: {type: server_vad}}
+      - {turn_detection: {type: server_vad, create_response: false}}
+      - {turn_detection: {type: server_vad, create_response: null}}
+      - {turn_detection: {type: server_vad, create_response: true, silence_duration_ms: 500}}
+      - {turn_detection: {type: semantic_vad}}
+      - {turn_detection: {type: null}}
+      - {turn_detection: null}
+      - {turn_detection: "off"}
+      - {audio: {input: {turn_detection: {type: server_vad}}}}
+      - {audio: {input: {turn_detection: {type: server_vad, create_response: false}}}}
+      - {audio: {input: {turn_detection: {type: server_vad, create_response: null}}}}
+      - {audio: {input: null}}
+      - {audio: "off"}
+      - {audio: {input: {turn_detection: "off"}}}
+      - {turn_detection: {type: server_vad}, audio: {input: {turn_detection: {type: server_vad}}}}
+      - {model: grok-4-1-fast-non-reasoning}
+    model: grok-4-1-fast-non-reasoning
+    api_key: null
+    scope_headers: []
+    max_message_size_bytes: 1048576
+env: {}
+compare: {ignore: []}

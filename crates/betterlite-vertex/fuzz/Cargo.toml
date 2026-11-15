@@ -95,6 +95,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "google_image"
+path = "fuzz_targets/google_image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "google_native_content"
 path = "fuzz_targets/google_native_content.rs"
 test = false
@@ -202,6 +209,13 @@ bench = false
 [[bin]]
 name = "vertex_batch_rows"
 path = "fuzz_targets/vertex_batch_rows.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_batch_upload"
+path = "fuzz_targets/vertex_batch_upload.rs"
 test = false
 doc = false
 bench = false

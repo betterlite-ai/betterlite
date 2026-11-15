@@ -1,0 +1,7 @@
+# the sanitized config key is config- followed by the first eight hash characters
+kind: helper
+name: gcs-bucket-logging-config-key-sanitization-hashes
+call:
+  b3998: {"dynamic": {"gcs_bucket_name": "bucket-a"}, "steps": [{"do": "config"}]}
+env: {}
+compare: {ignore: []}
