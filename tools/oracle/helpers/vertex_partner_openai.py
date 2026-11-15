@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Final, NotRequired, Protocol, TypedDict, Unpack
+from typing import Final, NotRequired, Protocol, TypedDict, Unpack, cast
 
 import httpx
 import litellm
@@ -49,7 +49,6 @@ class Input(TypedDict):
     initial_missing_role: StreamCase
     initial_terminal_split: StreamCase
     empty_initial_delta: StreamCase
-
 class ReplyChoice(TypedDict):
     index: JsonValue
     finish_reason: NotRequired[JsonValue]
@@ -72,7 +71,6 @@ class Chunk(TypedDict):
     choices: list[ChunkChoice]
     usage: NotRequired[JsonValue]
     service_tier: NotRequired[JsonValue]
-
 class ParamsApi(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
     def map_openai_params(
@@ -119,7 +117,11 @@ def apis() -> tuple[ParamsApi, ParamsApi, ParamsApi, ReplyApi, StreamApi]:
     handler = llama.get_model_response_iterator(
         streaming_response=iter(()), sync_stream=True, json_mode=False
     )
-    return VertexAIAi21Config(), llama, partner_config(GPT_OSS_MODEL), llama, handler
+    # transform_response takes AllMessageValues, which dict[str, JsonValue] messages cannot satisfy
+    return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/llama3/transformation.py#L109-L151
+        "tuple[ParamsApi, ParamsApi, ParamsApi, ReplyApi, StreamApi]",
+        (VertexAIAi21Config(), llama, partner_config(GPT_OSS_MODEL), llama, handler),
+    )
 
 
 def mapped_params(
