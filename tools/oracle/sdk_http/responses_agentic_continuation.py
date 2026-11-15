@@ -135,7 +135,7 @@ async def execute(call: ContinuationCall, api_base: str) -> Json:
         failure: Json = {"class": type(error).__name__, "message": str(error.__context__)}
         outcome["error"] = failure
         return outcome
-    # every answered object, a dict override included, is read for its identity; a non-object stays null
+    # any answered object, dict override included, has the identity; a non-object stays null
     try:
         identity = Identity.model_validate(result, from_attributes=True)
     except ValidationError:
