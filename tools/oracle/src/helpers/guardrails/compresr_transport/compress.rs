@@ -18,7 +18,7 @@ use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::Settings;
 use super::logs::Logs;
-use crate::helpers::{HelperResult, OrHelperError as _};
+use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const API_KEY: &str = "test-key";
@@ -85,7 +85,7 @@ fn serve_mock(
     runtime: &Runtime,
     reply: &Reply,
     seen: &Arc<Mutex<Seen>>,
-) -> HelperResult<(String, JoinSet<()>)> {
+) -> Result<(String, JoinSet<()>), Box<HelperError>> {
     let mock = Mock {
         status: StatusCode::from_u16(reply.status).or_value_error()?,
         body: reply.body.clone(),
@@ -105,7 +105,10 @@ fn serve_mock(
     Ok((format!("http://{address}"), server))
 }
 
-fn transport_for(settings: &Settings, api_base: &str) -> HelperResult<CompresrTransport> {
+fn transport_for(
+    settings: &Settings,
+    api_base: &str,
+) -> Result<CompresrTransport, Box<HelperError>> {
     let mut transport_settings = settings.transport()?;
     transport_settings.api_base = api_base.to_owned();
     CompresrTransport::new(
