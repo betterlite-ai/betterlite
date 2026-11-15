@@ -659,7 +659,7 @@ async fn the_line_prefix_is_optional() {
 async fn a_line_split_across_two_reads_is_parsed_as_one() {
     let chunks = collect(
         stream_from(vec![
-            Ok(b"data: {\"content\": {\"parts\": [{\"text\": \"split\"}]}".to_vec()),
+            Ok(b"data: {\"content\": {\"parts\": [{\"text\": \"split\"}]}}".to_vec()),
             Ok(b"\n".to_vec()),
         ])
         .await,
@@ -980,8 +980,8 @@ async fn the_proxied_client_posts_and_streams_the_reply_body() {
         body: RequestBody::Json(b"{}".to_vec()),
         deadline: Duration::from_secs(5),
     };
-    let (head_text, head) = tokio::join!(serve_once(&listener, &reply), client.post(request));
-    let head = head.unwrap();
+    let (head_text, response) = tokio::join!(serve_once(&listener, &reply), client.post(request));
+    let head = response.unwrap();
     assert_eq!(head.status, 200);
     let received: Vec<u8> = head.chunks.map(|frame| frame.unwrap()).concat().await;
     assert_eq!(received, reply_body.into_bytes());

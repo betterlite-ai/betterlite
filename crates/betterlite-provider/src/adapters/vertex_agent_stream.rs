@@ -128,56 +128,43 @@ pub struct VertexAgentStream {
 impl VertexAgentStream {
     pub async fn next_chunk(&mut self) -> Result<Option<Chunk>, VertexAgentStreamError> {
         loop {
-            if let Some(chunk) = self.next_pending()? {
-                return Ok(Some(chunk));
+            while let Some(line) = self.pending.pop_front() {
+                match parse_line(&line, &self.model, self.ids.as_ref()) {
+                    Ok(Some(chunk)) => {
+                        self.finished |= chunk
+                            .choices
+                            .first()
+                            .is_some_and(|choice| choice.finish_reason.is_some());
+                        return Ok(Some(chunk));
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.end();
+                        return Err(error);
+                    }
+                }
             }
             if self.done {
                 return Ok(None);
             }
-            self.read_frame().await?;
-        }
-    }
-
-    fn next_pending(&mut self) -> Result<Option<Chunk>, VertexAgentStreamError> {
-        while let Some(line) = self.pending.pop_front() {
-            match parse_line(&line, &self.model, self.ids.as_ref()) {
-                Ok(Some(chunk)) => {
-                    self.finished |= chunk
-                        .choices
-                        .first()
-                        .is_some_and(|choice| choice.finish_reason.is_some());
-                    return Ok(Some(chunk));
-                }
-                Ok(None) => {}
+            let frame = match next_frame(&mut self.chunks).await {
+                Ok(frame) => frame,
                 Err(error) => {
                     self.end();
+                    if self.finished && !timed_out(&error) {
+                        continue;
+                    }
                     return Err(error);
                 }
-            }
-        }
-        Ok(None)
-    }
-
-    async fn read_frame(&mut self) -> Result<(), VertexAgentStreamError> {
-        match next_frame(&mut self.chunks).await {
-            Ok(Some(bytes)) => {
-                if let Err(source) = self.decoder.push(&bytes, &mut self.pending) {
-                    self.end();
-                    return Err(VertexAgentStreamError::Line(source));
-                }
-                Ok(())
-            }
-            Ok(None) => {
+            };
+            let Some(bytes) = frame else {
                 self.decoder.flush(&mut self.pending);
                 self.done = true;
-                Ok(())
-            }
-            Err(error) => {
+                continue;
+            };
+            if let Err(source) = self.decoder.push(&bytes, &mut self.pending) {
                 self.end();
-                if self.finished && !timed_out(&error) {
-                    return Ok(());
-                }
-                Err(error)
+                return Err(VertexAgentStreamError::Line(source));
             }
         }
     }
@@ -275,12 +262,11 @@ async fn accepted(head: StreamHead) -> Result<Chunks, VertexAgentStreamError> {
 
 // LiteLLM's iterator waits on the transport with no deadline of its own; betterlite ends a silent read
 async fn next_frame(chunks: &mut Chunks) -> Result<Option<Vec<u8>>, VertexAgentStreamError> {
-    match timeout(STREAMING_TIMEOUT, chunks.next()).await {
-        Ok(Some(Ok(bytes))) => Ok(Some(bytes)),
-        Ok(Some(Err(source))) => Err(VertexAgentStreamError::Body { source }),
-        Ok(None) => Ok(None),
-        Err(_elapsed) => Err(VertexAgentStreamError::Timeout),
-    }
+    let read = timeout(STREAMING_TIMEOUT, chunks.next())
+        .await
+        .map_err(|_elapsed| VertexAgentStreamError::Timeout)?;
+    read.transpose()
+        .map_err(|source| VertexAgentStreamError::Body { source })
 }
 
 // LiteLLM keeps the whole failing body as the error message text
