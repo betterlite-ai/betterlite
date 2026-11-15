@@ -33,7 +33,7 @@ fn populated_state() -> StreamedChoiceState {
     let streamed = StreamedDetection {
         check: DetectionCheck::BlockedWord,
         position: (0, 0),
-        detection: detection.clone(),
+        detection,
     };
     StreamedChoiceState {
         buffered_text: "hello secret".to_owned(),

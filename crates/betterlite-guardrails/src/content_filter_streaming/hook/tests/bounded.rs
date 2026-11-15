@@ -335,7 +335,7 @@ async fn hook_drops_a_trimmed_keyword_when_litellm_would_commit_the_cut() {
     let mut categories = CategoryLoadResult::default();
     insert_keywords(&mut categories);
     let padding = vec!["x".repeat(100); 2];
-    let mut case = stream_case(padding_items(&opening, &padding, "beta done"));
+    let mut case = stream_case(padding_items(&opening, &padding, " beta done"));
     case.categories = categories;
     let run = run_stream(&case).await;
     let Err(StreamFilterError::Blocked { detail }) = &run.outcome else {
@@ -373,8 +373,24 @@ async fn hook_stops_masking_a_carried_keyword_once_the_phrase_is_dropped() {
     ]);
     case.categories = categories;
     let run = run_stream(&case).await;
-    let (expected_contents, _) = untrimmed(&case);
-    assert_eq!(chunk_contents(&run.chunks), expected_contents);
+    // LiteLLM commits the cut that drops the masked alpha, so its held-back text moves with the mask
+    let contents = chunk_contents(&run.chunks);
+    assert_eq!(
+        contents
+            .iter()
+            .map(|content| content.chars().count())
+            .collect::<Vec<_>>(),
+        vec![869, 200, 716, 63]
+    );
+    assert_eq!(
+        contents[2],
+        format!(
+            "{}{}{}",
+            "b".repeat(50),
+            " allowed phrase ",
+            "c".repeat(650)
+        )
+    );
     // Python's buffer keeps the phrase, so its keyword check stays skipped and masks no later alpha
     assert!(content_at(&run.chunks[3], 0).contains(" alpha again "));
     let detections = response_detections(record(&run));

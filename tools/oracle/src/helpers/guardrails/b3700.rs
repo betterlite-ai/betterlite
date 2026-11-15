@@ -74,7 +74,7 @@ impl Helper for Op {
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|source| failure("RuntimeError", source.to_string()))?;
+            .map_err(|error| failure("RuntimeError", error.to_string()))?;
         runtime.block_on(stream_output(input, &settings, &source))
     }
 }
@@ -166,11 +166,11 @@ async fn stream_output(
             )
         })?
     };
-    let chunks = projection::chunks(&chunks);
+    let projected = projection::chunks(&chunks);
     let record = projection::record(&request_data);
     let error = projection::error(&outcome)?;
     Ok(serde_json::json!({
-        "chunks": chunks,
+        "chunks": projected,
         "record": record,
         "error": error,
     }))

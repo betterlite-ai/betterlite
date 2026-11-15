@@ -159,23 +159,22 @@ fn choice_with_index(
     finish_reason: Option<&str>,
 ) -> GuardrailValue {
     let mut fields = BTreeMap::new();
-    if let Some(index) = index {
-        fields.insert("index".to_owned(), index);
+    if let Some(choice_index) = index {
+        fields.insert("index".to_owned(), choice_index);
     }
     let mut delta = BTreeMap::new();
-    if let Some(content) = content {
+    if let Some(delta_content) = content {
         delta.insert(
             "content".to_owned(),
-            GuardrailValue::Text(content.to_owned()),
+            GuardrailValue::Text(delta_content.to_owned()),
         );
     }
     fields.insert("delta".to_owned(), GuardrailValue::Object(delta));
     fields.insert(
         "finish_reason".to_owned(),
-        match finish_reason {
-            Some(reason) => GuardrailValue::Text(reason.to_owned()),
-            None => GuardrailValue::Null,
-        },
+        finish_reason.map_or(GuardrailValue::Null, |reason| {
+            GuardrailValue::Text(reason.to_owned())
+        }),
     );
     GuardrailValue::Object(fields)
 }
@@ -302,7 +301,7 @@ async fn hook_holds_back_the_last_fifty_characters_of_a_non_final_chunk() {
         format!("{}{}", "a".repeat(50), "b".repeat(10))
     );
     assert_eq!(content_at(&run.chunks[2], 0), "b".repeat(50));
-    assert!(run.outcome.is_ok());
+    run.outcome.unwrap();
 }
 
 #[tokio::test]
@@ -440,10 +439,10 @@ async fn hook_times_a_masked_blocked_word_after_the_epoch() {
     let record = record(&run);
     let start_time = float_field(record, &["start_time"]).expect("the record has a start time");
     let end_time = float_field(record, &["end_time"]).expect("the record has an end time");
-    assert!(start_time > 1_700_000_000.0);
+    assert!(start_time > 1_700_000_000.0_f64);
     assert!(end_time >= start_time);
     let seconds = float_field(record, &["duration"]).expect("the record has a duration");
-    assert!(seconds > 0.0);
+    assert!(seconds > 0.0_f64);
 }
 
 #[test]
@@ -481,7 +480,7 @@ fn hook_logs_the_accumulated_scan_time_as_the_duration() {
         request_data,
         outcome: Ok(()),
     };
-    assert_eq!(float_field(record(&run), &["duration"]), Some(0.25));
+    assert_eq!(float_field(record(&run), &["duration"]), Some(0.25_f64));
 }
 
 #[tokio::test]
@@ -656,11 +655,11 @@ async fn hook_logs_a_record_when_the_consumer_stops_reading() {
     let run = run_stream(&case).await;
     assert_eq!(run.chunks.len(), 1);
     assert_eq!(content_at(&run.chunks[0], 0), "a".repeat(10));
-    assert!(run.outcome.is_ok());
     assert_eq!(
         text_field(record(&run), &["guardrail_status"]),
         Some("success")
     );
+    run.outcome.unwrap();
 }
 
 #[tokio::test]
@@ -735,14 +734,14 @@ async fn hook_keeps_the_yielded_count_when_a_mask_collapses_the_buffer() {
 
 #[tokio::test]
 async fn hook_slices_multibyte_text_by_characters() {
-    let content = "é".repeat(1100);
+    let content = "\u{e9}".repeat(1100);
     let case = stream_case(vec![
         chunk(vec![choice(Some(0), Some(content.as_str()), None)]),
         chunk(vec![choice(Some(0), None, Some("stop"))]),
     ]);
     let run = run_stream(&case).await;
-    assert_eq!(content_at(&run.chunks[0], 0), "é".repeat(1050));
-    assert_eq!(content_at(&run.chunks[1], 0), "é".repeat(50));
+    assert_eq!(content_at(&run.chunks[0], 0), "\u{e9}".repeat(1050));
+    assert_eq!(content_at(&run.chunks[1], 0), "\u{e9}".repeat(50));
 }
 
 #[tokio::test]
@@ -758,7 +757,7 @@ async fn hook_passes_through_items_without_choices() {
         field(&run.chunks[1], &["choices"]),
         Some(GuardrailValue::Array(choices)) if choices.is_empty()
     ));
-    assert!(run.outcome.is_ok());
+    run.outcome.unwrap();
 }
 
 #[tokio::test]
@@ -797,7 +796,7 @@ async fn hook_skips_a_choice_without_a_delta() {
     assert_eq!(run.chunks.len(), 1);
     assert!(field(choice_of(&run.chunks[0], 0), &["delta", "content"]).is_none());
     assert!(field(choice_of(&run.chunks[0], 1), &["delta", "content"]).is_none());
-    assert!(run.outcome.is_ok());
+    run.outcome.unwrap();
 }
 
 #[tokio::test]
@@ -813,7 +812,7 @@ async fn hook_accepts_the_caller_key_without_reading_it() {
     )])));
     let run = run_stream(&case).await;
     assert_eq!(content_at(&run.chunks[0], 0), "hello");
-    assert!(run.outcome.is_ok());
+    run.outcome.unwrap();
 }
 
 #[test]

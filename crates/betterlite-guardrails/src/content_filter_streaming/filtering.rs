@@ -29,7 +29,14 @@ pub(super) fn filter_streamed_text(
 ) -> Result<(String, CarriedMatches), ContentFilterActionError> {
     let mut filtered = input.text.to_owned();
     let winners = if input.checks {
-        category_checks(source, input, &mut filtered, detections)?
+        CheckScan {
+            categories: source.categories,
+            keyword_redaction_tag: source.keyword_redaction_tag,
+            text: input.text,
+            filtered: &mut filtered,
+            detections: &mut *detections,
+        }
+        .run(input)?
     } else {
         CarriedMatches::default()
     };
@@ -46,6 +53,30 @@ struct CheckScan<'scan> {
 }
 
 impl CheckScan<'_> {
+    // Each check's first match, with a dropped phrase suppressing the first two
+    fn run(&mut self, input: &ScanInput<'_>) -> Result<CarriedMatches, ContentFilterActionError> {
+        let conditional = self.winner(
+            DetectionCheck::Conditional,
+            input.carried.conditional.as_ref(),
+            check_conditional_categories(input.conditional_text, &[], self.categories)?,
+        )?;
+        let phrase = self.winner(
+            DetectionCheck::Phrase,
+            input.carried.phrase.as_ref(),
+            check_phrase_patterns(input.conditional_text, &[], self.categories)?,
+        )?;
+        let keyword = self.winner(
+            DetectionCheck::CategoryKeyword,
+            input.carried.keyword.as_ref(),
+            check_category_keywords(input.text, &[], self.categories)?,
+        )?;
+        Ok(CarriedMatches {
+            conditional,
+            phrase,
+            keyword,
+        })
+    }
+
     // The check whose first match the scan keeps, with a dropped phrase suppressing the first two
     fn winner(
         &mut self,
@@ -72,41 +103,6 @@ impl CheckScan<'_> {
         *self.filtered = masked?;
         Ok(Some(winner))
     }
-}
-
-fn category_checks(
-    source: &ContentFilterSource<'_>,
-    input: &ScanInput<'_>,
-    filtered: &mut String,
-    detections: &mut Vec<StreamedDetection>,
-) -> Result<CarriedMatches, ContentFilterActionError> {
-    let mut scan = CheckScan {
-        categories: source.categories,
-        keyword_redaction_tag: source.keyword_redaction_tag,
-        text: input.text,
-        filtered,
-        detections,
-    };
-    let conditional = scan.winner(
-        DetectionCheck::Conditional,
-        input.carried.conditional.as_ref(),
-        check_conditional_categories(input.conditional_text, &[], source.categories)?,
-    )?;
-    let phrase = scan.winner(
-        DetectionCheck::Phrase,
-        input.carried.phrase.as_ref(),
-        check_phrase_patterns(input.conditional_text, &[], source.categories)?,
-    )?;
-    let keyword = scan.winner(
-        DetectionCheck::CategoryKeyword,
-        input.carried.keyword.as_ref(),
-        check_category_keywords(input.text, &[], source.categories)?,
-    )?;
-    Ok(CarriedMatches {
-        conditional,
-        phrase,
-        keyword,
-    })
 }
 
 // Patterns and blocked words run over the chunk alone, so their spans keep the buffer's own offsets

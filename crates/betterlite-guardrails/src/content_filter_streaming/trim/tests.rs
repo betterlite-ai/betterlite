@@ -61,6 +61,18 @@ fn category(exceptions: &[&str]) -> CategoryConfig {
     }
 }
 
+fn conditional(identifiers: &[&str]) -> ConditionalCategoryConfig {
+    ConditionalCategoryConfig {
+        identifier_words: identifiers
+            .iter()
+            .map(|identifier| (*identifier).to_owned())
+            .collect(),
+        block_words: vec!["harm".to_owned()],
+        action: ContentFilterAction::Mask,
+        severity: "medium".to_owned(),
+    }
+}
+
 fn phrase_category() -> CategoryLoadResult {
     let mut categories = CategoryLoadResult::default();
     categories
@@ -198,7 +210,7 @@ fn trim_sets_next_trim_len_to_the_buffer_plus_the_context() {
     let buffered = format!("{}secret{}", "x".repeat(585), "x".repeat(509));
     let masked = format!("{}[KEYWORD_REDACTED]{}", "x".repeat(585), "x".repeat(509));
     let state = StreamedChoiceState {
-        buffered_text: buffered.clone(),
+        buffered_text: buffered,
         yielded_masked_text_len: 1050,
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
@@ -378,15 +390,9 @@ fn trim_trims_when_the_exception_phrase_stays_in_the_tail() {
 #[test]
 fn trim_drops_the_prefix_and_remembers_the_open_sentence_text() {
     let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "stream".to_owned(),
-        ConditionalCategoryConfig {
-            identifier_words: vec!["child".to_owned()],
-            block_words: vec!["harm".to_owned()],
-            action: ContentFilterAction::Mask,
-            severity: "medium".to_owned(),
-        },
-    );
+    categories
+        .conditional_categories
+        .insert("stream".to_owned(), conditional(&["child"]));
     let source = source(&categories, &[], &[]);
     let buffered = format!("{}child{}", "x".repeat(580), "y".repeat(515));
     let state = StreamedChoiceState {
@@ -494,7 +500,7 @@ fn trim_keeps_the_tail_and_commits_the_head_detections() {
     let buffered = format!("{}secret{}", "x".repeat(10), "x".repeat(1084));
     let masked = format!("{}[KEYWORD_REDACTED]{}", "x".repeat(10), "x".repeat(1084));
     let state = StreamedChoiceState {
-        buffered_text: buffered.clone(),
+        buffered_text: buffered,
         yielded_masked_text_len: 1062,
         committed_detections: Vec::new(),
         latest_detections: vec![streamed(detection("secret"))],
@@ -688,15 +694,9 @@ fn trim_clears_the_carry_when_litellm_commits_the_cut() {
 #[test]
 fn trim_keeps_the_carried_conditional_ahead_of_the_same_category_in_the_head() {
     let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "stream".to_owned(),
-        ConditionalCategoryConfig {
-            identifier_words: vec!["child".to_owned(), "kid".to_owned()],
-            block_words: vec!["harm".to_owned()],
-            action: ContentFilterAction::Mask,
-            severity: "medium".to_owned(),
-        },
-    );
+    categories
+        .conditional_categories
+        .insert("stream".to_owned(), conditional(&["child", "kid"]));
     let source = source(&categories, &[], &[]);
     let buffered = format!("kid harm {}", "x".repeat(1076));
     let carried = CarriedMatches {
@@ -721,24 +721,12 @@ fn trim_keeps_the_carried_conditional_ahead_of_the_same_category_in_the_head() {
 #[test]
 fn trim_takes_the_heads_conditional_when_its_category_comes_first() {
     let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "alpha_policy".to_owned(),
-        ConditionalCategoryConfig {
-            identifier_words: vec!["kid".to_owned()],
-            block_words: vec!["harm".to_owned()],
-            action: ContentFilterAction::Mask,
-            severity: "medium".to_owned(),
-        },
-    );
-    categories.conditional_categories.insert(
-        "zeta_policy".to_owned(),
-        ConditionalCategoryConfig {
-            identifier_words: vec!["child".to_owned()],
-            block_words: vec!["harm".to_owned()],
-            action: ContentFilterAction::Mask,
-            severity: "medium".to_owned(),
-        },
-    );
+    categories
+        .conditional_categories
+        .insert("alpha_policy".to_owned(), conditional(&["kid"]));
+    categories
+        .conditional_categories
+        .insert("zeta_policy".to_owned(), conditional(&["child"]));
     let source = source(&categories, &[], &[]);
     let buffered = format!("kid harm {}", "x".repeat(1076));
     let carried = CarriedMatches {
@@ -797,15 +785,9 @@ fn trim_takes_the_heads_phrase_pattern_when_it_comes_first() {
 #[test]
 fn trim_bounds_the_carried_open_sentence_to_two_contexts() {
     let mut categories = CategoryLoadResult::default();
-    categories.conditional_categories.insert(
-        "stream".to_owned(),
-        ConditionalCategoryConfig {
-            identifier_words: vec!["child".to_owned()],
-            block_words: vec!["harm".to_owned()],
-            action: ContentFilterAction::Mask,
-            severity: "medium".to_owned(),
-        },
-    );
+    categories
+        .conditional_categories
+        .insert("stream".to_owned(), conditional(&["child"]));
     let source = source(&categories, &[], &[]);
     let buffered = format!("{}{}", "x".repeat(1400), "y".repeat(512));
     let mut open_state = state(&buffered, 1862, CarriedMatches::default());

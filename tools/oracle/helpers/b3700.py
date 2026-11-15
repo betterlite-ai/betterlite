@@ -58,7 +58,7 @@ class ChunkDump(TypedDict):
 
 
 class StreamHook(Protocol):
-    def async_post_call_streaming_iterator_hook(
+    def async_post_call_streaming_iterator_hook(  # ast-grep-ignore: no-long-names
         self,
         user_api_key_dict: UserAPIKeyAuth,
         response: AsyncIterator[ModelResponseStream],

@@ -187,6 +187,6 @@ fn open_sentence_prefix_keeps_the_end_of_a_sentence_over_two_contexts() {
 
 #[test]
 fn open_sentence_prefix_moves_a_bound_that_splits_a_word() {
-    // the bound would land on the "harm" inside "aharm", where the sentence has no word start
-    assert_eq!(open_sentence_prefix("", "zzzzzzzaharm ch!", 4), " ch!");
+    // the bound would land inside "zzzzzzzaharm", so the prefix starts at the next space instead
+    assert_eq!(open_sentence_prefix("", "zzzzzzzaharm ch", 4), " ch");
 }

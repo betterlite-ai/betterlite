@@ -20,10 +20,11 @@ pub(super) fn chunks(items: &[GuardrailValue]) -> Value {
 }
 
 fn chunk(item: &GuardrailValue) -> Value {
-    let mut choices = Vec::new();
-    if let Some(GuardrailValue::Array(entries)) = entry(item, "choices") {
-        choices = entries.iter().map(choice).collect();
-    }
+    let choices = if let Some(GuardrailValue::Array(entries)) = entry(item, "choices") {
+        entries.iter().map(choice).collect()
+    } else {
+        Vec::new()
+    };
     json!({ "id": optional(item, "id"), "choices": choices })
 }
 
@@ -36,10 +37,7 @@ fn choice(item: &GuardrailValue) -> Value {
 }
 
 fn optional(item: &GuardrailValue, key: &str) -> Value {
-    match entry(item, key) {
-        Some(value) => to_json(value),
-        None => Value::Null,
-    }
+    entry(item, key).map_or(Value::Null, to_json)
 }
 
 fn delta_content(item: &GuardrailValue) -> Value {
@@ -114,10 +112,10 @@ pub(super) fn error(outcome: &Result<(), StreamFilterError>) -> Result<Value, Bo
     };
     match error {
         StreamFilterError::Blocked { detail } => {
-            let detail = serde_json::to_value(detail)
+            let block_detail = serde_json::to_value(detail)
                 .map_err(|source| super::failure("SerializeError", source.to_string()))?;
             let status = Value::from(error.status_code().unwrap_or_default());
-            Ok(json!({ "status": status, "detail": without_nulls(&detail) }))
+            Ok(json!({ "status": status, "detail": without_nulls(&block_detail) }))
         }
         StreamFilterError::Record(source) => Err(super::failure("RecordError", source.to_string())),
         StreamFilterError::Base(source) => Err(super::failure("BaseError", source.to_string())),
