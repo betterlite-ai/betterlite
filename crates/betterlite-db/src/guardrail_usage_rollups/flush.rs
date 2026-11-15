@@ -30,6 +30,12 @@ where
             }
         }
         if retryable.is_empty() || retries_left == 0 {
+            for row in &retryable {
+                tracing::warn!(
+                    "guardrail usage: {} upsert failed after {UPSERT_RETRY_TIMES} retries; requeued for the next flush",
+                    row.label()
+                );
+            }
             return retryable;
         }
         let exponent = UPSERT_RETRY_TIMES.saturating_sub(retries_left);

@@ -98,9 +98,11 @@ async fn doubles_the_wait_for_each_retry() {
 
 #[tokio::test]
 async fn requeues_a_row_that_still_fails_after_three_retries() {
+    let capture = capture_logs();
     let sink = FakeSink::failing_upserts(vec![Some(RETRY_SAFE); 5]);
     let (failed, waits) = flush_with(&sink, vec![metric_row("g1")]).await;
     assert_eq!(failed, [metric_row("g1")]);
+    assert!(capture.logs.has("WARN", "requeued for the next flush"));
     assert_eq!(
         waits,
         [
