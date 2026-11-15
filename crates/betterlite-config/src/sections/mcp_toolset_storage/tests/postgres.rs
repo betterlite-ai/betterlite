@@ -12,6 +12,7 @@ use betterlite_db::{
 use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
 use betterlite_postgres_fixture::seed::FixtureSeed;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
+use chrono::NaiveDateTime;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
@@ -165,6 +166,12 @@ async fn postgres_lists_only_the_requested_ids() {
         .await
         .unwrap();
     assert_eq!(listed, vec![toolsets[1].clone()]);
+    let fetched = get_mcp_toolset(&repository, &toolsets[1].toolset_id)
+        .await
+        .unwrap();
+    assert_eq!(fetched, Some(toolsets[1].clone()));
+    let by_name = get_mcp_toolset_by_name(&repository, "beta").await.unwrap();
+    assert_eq!(by_name, Some(toolsets[1].clone()));
     assert_eq!(
         list_mcp_toolsets(&repository, Some(&ids), true)
             .await
@@ -192,6 +199,16 @@ async fn postgres_update_keeps_unset_fields_and_clears_the_description() {
     let created = create_mcp_toolset(&repository, &request, "creator")
         .await
         .unwrap();
+    let other: NewMCPToolsetRequest =
+        serde_json::from_str(r#"{"toolset_name": "beta", "description": "kept"}"#).unwrap();
+    let other = create_mcp_toolset(&repository, &other, "creator")
+        .await
+        .unwrap();
+    case.execute(
+        "UPDATE \"LiteLLM_MCPToolsetTable\" SET updated_at = '2020-01-01 00:00:00' WHERE toolset_id = $1",
+        &[&created.toolset_id.as_str()],
+    )
+    .await;
     let update = format!(
         r#"{{"toolset_id": "{}", "description": null}}"#,
         created.toolset_id
@@ -205,6 +222,8 @@ async fn postgres_update_keeps_unset_fields_and_clears_the_description() {
     assert_eq!(updated.tools, vec![tool("s1", "t1")]);
     assert_eq!(updated.description, None);
     assert_eq!(updated.updated_by.as_deref(), Some("editor"));
+    let pinned = NaiveDateTime::parse_from_str("2020-01-01T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap();
+    assert!(updated.updated_at.unwrap() > pinned);
     let update = format!(r#"{{"toolset_id": "{}", "tools": []}}"#, created.toolset_id);
     let request: UpdateMCPToolsetRequest = serde_json::from_str(&update).unwrap();
     let emptied = update_mcp_toolset(&repository, &request, "editor")
@@ -212,6 +231,12 @@ async fn postgres_update_keeps_unset_fields_and_clears_the_description() {
         .unwrap()
         .unwrap();
     assert!(emptied.tools.is_empty());
+    let untouched = get_mcp_toolset(&repository, &other.toolset_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(untouched.toolset_name, "beta");
+    assert_eq!(untouched.description.as_deref(), Some("kept"));
     case.close().await;
 }
 
@@ -224,10 +249,20 @@ async fn postgres_delete_removes_the_row_once() {
     let created = create_mcp_toolset(&repository, &request, "creator")
         .await
         .unwrap();
+    let other: NewMCPToolsetRequest = serde_json::from_str(r#"{"toolset_name": "beta"}"#).unwrap();
+    let other = create_mcp_toolset(&repository, &other, "creator")
+        .await
+        .unwrap();
     let removed = delete_mcp_toolset(&repository, &created.toolset_id)
         .await
         .unwrap();
     assert_eq!(removed, Some(created.clone()));
+    assert!(
+        get_mcp_toolset(&repository, &other.toolset_id)
+            .await
+            .unwrap()
+            .is_some()
+    );
     assert!(
         delete_mcp_toolset(&repository, &created.toolset_id)
             .await
