@@ -1,5 +1,0 @@
-serde_json::json!({
-    "api_base": { "description": "Vigil Guard API base URL. Falls back to the VIGIL_GUARD_URL environment variable.", "required": false, "type": "string" },
-    "api_key": { "description": "Vigil Guard API key. Falls back to the VIGIL_GUARD_API_KEY environment variable.", "required": false, "type": "string" },
-    "ui_friendly_name": "Vigil Guard",
-})

@@ -1,6 +1,0 @@
-serde_json::json!({
-    "api_base": { "description": "The API base for the Aim guardrail. Default is https://api.aim.security. Also checks if the `AIM_API_BASE` environment variable is set.", "required": false, "type": "string" },
-    "api_key": { "description": "The API key for the Aim guardrail. If not provided, the `AIM_API_KEY` environment variable is checked.", "required": false, "type": "string" },
-    "inspect_embeddings": { "default_value": false, "description": "Send /embeddings `input` to Aim as user messages. Off by default because embedding input is documents being indexed, not a conversation.", "required": false, "type": "bool" },
-    "ui_friendly_name": "AIM Guardrail",
-})

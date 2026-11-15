@@ -1,7 +1,7 @@
-use serde_json::json;
-
 use crate::guardrails::form_tables_b::tables_b;
 use crate::guardrails::provider_forms::project::project_model;
+
+use super::expected::{expected, projected};
 
 const MAX_DEPTH: usize = 100;
 
@@ -11,14 +11,12 @@ fn agent_365_projects_like_litellm() {
         .into_iter()
         .find(|(key, _)| *key == "agent_365")
         .expect("agent_365 has a table");
-    let mut fields = project_model(&model, MAX_DEPTH).expect("agent_365 nests below the limit");
-    fields.insert(
-        "ui_friendly_name".to_owned(),
-        model
-            .ui_friendly_name
-            .map_or(json!(null), |name| json!(name)),
+    assert_eq!(model.ui_friendly_name, Some("Microsoft Agent 365"));
+    let fields = project_model(&model, MAX_DEPTH).expect("agent_365 nests below the limit");
+    assert_eq!(
+        projected(fields),
+        expected(include_str!("../fixtures/agent_365.json"))
     );
-    assert_eq!(json!(fields), include!("../fixtures/agent_365.rs"));
 }
 
 #[test]
@@ -27,14 +25,12 @@ fn aim_projects_like_litellm() {
         .into_iter()
         .find(|(key, _)| *key == "aim")
         .expect("aim has a table");
-    let mut fields = project_model(&model, MAX_DEPTH).expect("aim nests below the limit");
-    fields.insert(
-        "ui_friendly_name".to_owned(),
-        model
-            .ui_friendly_name
-            .map_or(json!(null), |name| json!(name)),
+    assert_eq!(model.ui_friendly_name, Some("AIM Guardrail"));
+    let fields = project_model(&model, MAX_DEPTH).expect("aim nests below the limit");
+    assert_eq!(
+        projected(fields),
+        expected(include_str!("../fixtures/aim.json"))
     );
-    assert_eq!(json!(fields), include!("../fixtures/aim.rs"));
 }
 
 #[test]
@@ -43,14 +39,12 @@ fn akto_projects_like_litellm() {
         .into_iter()
         .find(|(key, _)| *key == "akto")
         .expect("akto has a table");
-    let mut fields = project_model(&model, MAX_DEPTH).expect("akto nests below the limit");
-    fields.insert(
-        "ui_friendly_name".to_owned(),
-        model
-            .ui_friendly_name
-            .map_or(json!(null), |name| json!(name)),
+    assert_eq!(model.ui_friendly_name, Some("Akto"));
+    let fields = project_model(&model, MAX_DEPTH).expect("akto nests below the limit");
+    assert_eq!(
+        projected(fields),
+        expected(include_str!("../fixtures/akto.json"))
     );
-    assert_eq!(json!(fields), include!("../fixtures/akto.rs"));
 }
 
 #[test]
@@ -59,14 +53,12 @@ fn cato_networks_projects_like_litellm() {
         .into_iter()
         .find(|(key, _)| *key == "cato_networks")
         .expect("cato_networks has a table");
-    let mut fields = project_model(&model, MAX_DEPTH).expect("cato_networks nests below the limit");
-    fields.insert(
-        "ui_friendly_name".to_owned(),
-        model
-            .ui_friendly_name
-            .map_or(json!(null), |name| json!(name)),
+    assert_eq!(model.ui_friendly_name, Some("Cato Networks Guardrail"));
+    let fields = project_model(&model, MAX_DEPTH).expect("cato_networks nests below the limit");
+    assert_eq!(
+        projected(fields),
+        expected(include_str!("../fixtures/cato_networks.json"))
     );
-    assert_eq!(json!(fields), include!("../fixtures/cato_networks.rs"));
 }
 
 #[test]
@@ -75,15 +67,12 @@ fn cisco_ai_defense_projects_like_litellm() {
         .into_iter()
         .find(|(key, _)| *key == "cisco_ai_defense")
         .expect("cisco_ai_defense has a table");
-    let mut fields =
-        project_model(&model, MAX_DEPTH).expect("cisco_ai_defense nests below the limit");
-    fields.insert(
-        "ui_friendly_name".to_owned(),
-        model
-            .ui_friendly_name
-            .map_or(json!(null), |name| json!(name)),
+    assert_eq!(model.ui_friendly_name, Some("Cisco AI Defense"));
+    let fields = project_model(&model, MAX_DEPTH).expect("cisco_ai_defense nests below the limit");
+    assert_eq!(
+        projected(fields),
+        expected(include_str!("../fixtures/cisco_ai_defense.json"))
     );
-    assert_eq!(json!(fields), include!("../fixtures/cisco_ai_defense.rs"));
 }
 
 #[test]
@@ -92,15 +81,12 @@ fn ibm_guardrails_projects_like_litellm() {
         .into_iter()
         .find(|(key, _)| *key == "ibm_guardrails")
         .expect("ibm_guardrails has a table");
-    let mut fields =
-        project_model(&model, MAX_DEPTH).expect("ibm_guardrails nests below the limit");
-    fields.insert(
-        "ui_friendly_name".to_owned(),
-        model
-            .ui_friendly_name
-            .map_or(json!(null), |name| json!(name)),
+    assert_eq!(model.ui_friendly_name, Some("IBM Guardrails Detector"));
+    let fields = project_model(&model, MAX_DEPTH).expect("ibm_guardrails nests below the limit");
+    assert_eq!(
+        projected(fields),
+        expected(include_str!("../fixtures/ibm_guardrails.json"))
     );
-    assert_eq!(json!(fields), include!("../fixtures/ibm_guardrails.rs"));
 }
 
 #[test]
@@ -109,14 +95,12 @@ fn model_armor_projects_like_litellm() {
         .into_iter()
         .find(|(key, _)| *key == "model_armor")
         .expect("model_armor has a table");
-    let mut fields = project_model(&model, MAX_DEPTH).expect("model_armor nests below the limit");
-    fields.insert(
-        "ui_friendly_name".to_owned(),
-        model
-            .ui_friendly_name
-            .map_or(json!(null), |name| json!(name)),
+    assert_eq!(model.ui_friendly_name, Some("Google Cloud Model Armor"));
+    let fields = project_model(&model, MAX_DEPTH).expect("model_armor nests below the limit");
+    assert_eq!(
+        projected(fields),
+        expected(include_str!("../fixtures/model_armor.json"))
     );
-    assert_eq!(json!(fields), include!("../fixtures/model_armor.rs"));
 }
 
 #[test]
@@ -125,14 +109,12 @@ fn pangea_projects_like_litellm() {
         .into_iter()
         .find(|(key, _)| *key == "pangea")
         .expect("pangea has a table");
-    let mut fields = project_model(&model, MAX_DEPTH).expect("pangea nests below the limit");
-    fields.insert(
-        "ui_friendly_name".to_owned(),
-        model
-            .ui_friendly_name
-            .map_or(json!(null), |name| json!(name)),
+    assert_eq!(model.ui_friendly_name, Some("Pangea Guardrail"));
+    let fields = project_model(&model, MAX_DEPTH).expect("pangea nests below the limit");
+    assert_eq!(
+        projected(fields),
+        expected(include_str!("../fixtures/pangea.json"))
     );
-    assert_eq!(json!(fields), include!("../fixtures/pangea.rs"));
 }
 
 #[test]
@@ -141,12 +123,10 @@ fn singulr_projects_like_litellm() {
         .into_iter()
         .find(|(key, _)| *key == "singulr")
         .expect("singulr has a table");
-    let mut fields = project_model(&model, MAX_DEPTH).expect("singulr nests below the limit");
-    fields.insert(
-        "ui_friendly_name".to_owned(),
-        model
-            .ui_friendly_name
-            .map_or(json!(null), |name| json!(name)),
+    assert_eq!(model.ui_friendly_name, Some("Singulr"));
+    let fields = project_model(&model, MAX_DEPTH).expect("singulr nests below the limit");
+    assert_eq!(
+        projected(fields),
+        expected(include_str!("../fixtures/singulr.json"))
     );
-    assert_eq!(json!(fields), include!("../fixtures/singulr.rs"));
 }

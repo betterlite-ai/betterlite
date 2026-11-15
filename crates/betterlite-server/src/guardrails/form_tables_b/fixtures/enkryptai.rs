@@ -1,9 +1,0 @@
-serde_json::json!({
-    "api_base": { "description": "The EnkryptAI API base URL. Defaults to https://api.enkryptai.com. Also checks if the ENKRYPTAI_API_KEY env var is set.", "required": false, "type": "string" },
-    "api_key": { "description": "The EnkryptAI API key. Reads from ENKRYPTAI_API_KEY env var if None.", "required": false, "type": "string" },
-    "block_on_violation": { "default_value": true, "description": "Whether to block requests when violations are detected. Defaults to True.", "required": false, "type": "boolean" },
-    "deployment_name": { "description": "The EnkryptAI deployment name to use. Sent via X-Enkrypt-Deployment header.", "required": false, "type": "string" },
-    "detectors": { "description": "Dictionary of detector configurations (e.g., {'nsfw': {'enabled': True}, 'toxicity': {'enabled': True}}).", "required": false, "type": "object" },
-    "policy_name": { "description": "The EnkryptAI policy name to use. Sent via x-enkrypt-policy header.", "required": false, "type": "string" },
-    "ui_friendly_name": "EnkryptAI",
-})

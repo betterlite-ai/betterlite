@@ -1,8 +1,0 @@
-serde_json::json!({
-    "block_on_error": { "description": "Whether to block requests when the Singulr Guardrails API is unavailable or returns an error. If enabled, requests fail closed. If disabled, requests continue without guardrail enforcement (fail open).", "required": false, "type": "boolean" },
-    "singulr_api_base": { "description": "The Singulr API base URL. Get base URL from Singulr Platform.", "required": false, "type": "string" },
-    "singulr_api_key": { "description": "The Singulr API key. Generate API key from Singulr Platform.", "required": false, "type": "string" },
-    "singulr_application_id": { "description": "The Singulr application ID. Get application ID from Singulr Platform.", "required": false, "type": "string" },
-    "singulr_guardrail_id": { "description": "The Singulr Guardrail ID. Get guardrail ID from Singulr Platform.", "required": false, "type": "string" },
-    "ui_friendly_name": "Singulr",
-})
