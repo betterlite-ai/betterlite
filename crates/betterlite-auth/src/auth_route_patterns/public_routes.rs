@@ -1,4 +1,4 @@
-use crate::route_match::templates::route_matches_wildcard_pattern;
+use betterlite_routes::wildcard::route_matches_wildcard_pattern;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RoutePatternError {

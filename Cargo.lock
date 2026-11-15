@@ -1144,6 +1144,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-paths",
  "betterlite-redis",
+ "betterlite-routes",
  "betterlite-secrets",
  "chrono",
  "hex",
@@ -1702,6 +1703,7 @@ dependencies = [
  "betterlite-lens",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-policy",
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-redis",
@@ -2733,7 +2735,7 @@ dependencies = [
 name = "betterlite-policy"
 version = "0.1.0"
 dependencies = [
- "betterlite-auth",
+ "betterlite-routes",
  "chrono",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
