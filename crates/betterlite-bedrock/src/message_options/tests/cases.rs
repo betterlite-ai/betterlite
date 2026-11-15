@@ -303,6 +303,21 @@ pub(super) fn clear_thinking_budget() {
         assert!(messages.is_empty());
     }
 
+    {
+        let out_of_range = clearing(
+            r#""thinking": {"type": "enabled", "budget_tokens": 10000000000000000000000}"#,
+        );
+        let (result, request, messages) = ensure(
+            &mut session,
+            &budgets,
+            "fixture-adaptive",
+            out_of_range.clone(),
+        );
+        assert!(matches!(result, Err(MessageOptionsError::BudgetTokens)));
+        assert_eq!(request, out_of_range);
+        assert!(messages.is_empty());
+    }
+
     assert!(matches!(
         resolve_clear_thinking_budget(
             Some(&ParamValue::Number(serde_json::Number::from(7_i64))),
@@ -664,6 +679,20 @@ pub(super) fn clear_thinking_injection_limit() {
             r#""max_tokens": {max_tokens}, "thinking": {{"type": "enabled", "budget_tokens": 1024}}"#
         ));
         assert_eq!(request, expected, "max_tokens {max_tokens}");
+    }
+
+    {
+        // No Python int below i64::MIN: the guard is skipped where LiteLLM refuses.
+        let pending = clearing(r#""max_tokens": -10000000000000000000000"#);
+        let (result, request, _messages) =
+            ensure(&mut session, &budgets, "fixture-opus-4-5", pending);
+        assert_eq!(result.ok(), Some(true));
+        assert_eq!(
+            request,
+            clearing(
+                r#""max_tokens": -10000000000000000000000, "thinking": {"type": "enabled", "budget_tokens": 1024}"#
+            )
+        );
     }
 
     {
