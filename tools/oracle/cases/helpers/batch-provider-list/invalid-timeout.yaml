@@ -1,0 +1,11 @@
+kind: helper
+name: invalid-timeout
+call:
+  batch_provider_list:
+    request:
+      provider: openai
+      timeout: not-a-number
+    litellm_settings: {}
+    environment: {}
+env: {}
+compare: {ignore: []}

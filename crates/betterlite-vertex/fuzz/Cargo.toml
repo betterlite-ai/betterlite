@@ -46,6 +46,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "chirp_command"
+path = "fuzz_targets/chirp_command.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "embedding_data_url"
 path = "fuzz_targets/embedding_data_url.rs"
 test = false
@@ -76,6 +83,13 @@ bench = false
 [[bin]]
 name = "google_count"
 path = "fuzz_targets/google_count.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "google_guardrail_sse"
+path = "fuzz_targets/google_guardrail_sse.rs"
 test = false
 doc = false
 bench = false
@@ -172,6 +186,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_agent_buffer"
+path = "fuzz_targets/vertex_agent_buffer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_batch_records"
 path = "fuzz_targets/vertex_batch_records.rs"
 test = false
@@ -244,6 +265,13 @@ bench = false
 [[bin]]
 name = "vertex_tuning_job"
 path = "fuzz_targets/vertex_tuning_job.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_stream"
+path = "fuzz_targets/vertex_stream.rs"
 test = false
 doc = false
 bench = false

@@ -6,19 +6,23 @@ use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
     MasterKey,
+    AuthRequestModels,
 }
 
-// B052 owns the final stage order; only the master-key stage exists so far.
-pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[AuthBackend::MasterKey];
+// B052 owns the final stage order; the master-key stage authenticates before the model stage runs.
+pub(crate) const INSTALLED_STAGES: &[AuthBackend] =
+    &[AuthBackend::MasterKey, AuthBackend::AuthRequestModels];
 
 #[derive(Clone, Debug)]
 pub enum StageInput {
     MasterKey(Option<SecretString>),
+    AuthRequestModels(Box<RequestModelStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +53,19 @@ pub(crate) fn dispatch(
 ) -> Result<AuthContext, AuthenticationFailure> {
     match backend {
         AuthBackend::MasterKey => master_key_stage(input, master_key),
+        AuthBackend::AuthRequestModels => auth_request_models_stage(input),
+    }
+}
+fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, AuthenticationFailure> {
+    let StageInput::AuthRequestModels(stage) = input else {
+        return Err(AuthenticationFailure::Missing);
+    };
+    match resolve(stage) {
+        Ok(_) => Ok(stage.context.clone()),
+        Err(error) => {
+            tracing::debug!(error = %error, "the request model stage failed");
+            Err(AuthenticationFailure::Missing)
+        }
     }
 }
 
@@ -56,7 +73,9 @@ fn master_key_stage(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::MasterKey(presented) = input;
+    let StageInput::MasterKey(presented) = input else {
+        return Err(AuthenticationFailure::Missing);
+    };
     let matched = presented.as_ref().is_some_and(|key| {
         !key.expose_secret().is_empty()
             && bool::from(
