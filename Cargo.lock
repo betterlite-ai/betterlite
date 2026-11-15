@@ -1090,6 +1090,7 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
  "betterlite-context",
  "betterlite-error",
@@ -1098,6 +1099,8 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "hex",
@@ -1826,20 +1829,33 @@ dependencies = [
 name = "betterlite-foundry"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-azure",
  "betterlite-config",
  "betterlite-context",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prompts",
  "chrono",
+ "indexmap 2.14.2",
  "jiff",
+ "percent-encoding",
  "rstest",
  "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
+]
+
+[[package]]
+name = "betterlite-foundry-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-foundry",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -2201,6 +2217,7 @@ name = "betterlite-logging-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-logging",
+ "betterlite-models",
  "chrono",
  "libfuzzer-sys",
  "serde_json",

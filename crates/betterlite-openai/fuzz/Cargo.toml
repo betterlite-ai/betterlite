@@ -581,6 +581,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fireworks_ai_rerank_response"
+path = "fuzz_targets/fireworks_ai_rerank_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "mistral_resource"
 path = "fuzz_targets/mistral_resource.rs"
 test = false
