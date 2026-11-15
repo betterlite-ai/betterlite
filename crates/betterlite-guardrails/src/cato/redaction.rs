@@ -116,7 +116,12 @@ fn apply_prompt_redaction(
         GuardrailValue::Array(parts) => Some(GuardrailValue::Array(rewrite_prompt_parts(
             parts, &contents,
         ))),
-        _ => None,
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Object(_) => None,
     };
     if let Some(value) = rewritten {
         data.insert("prompt".to_owned(), value);
