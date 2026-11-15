@@ -58,8 +58,12 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let enabled = match lookup.lookup(ENABLED_VARIABLE) {
+            Some(text) => betterlite_env::flag(ENABLED_VARIABLE, &text)?.unwrap_or(true),
+            None => true,
+        };
         Ok(Settings {
-            enabled: enabled_setting(lookup)?,
+            enabled,
             interval: interval_setting(lookup)?,
             probe_timeout: timeout_setting(
                 lookup,
@@ -76,17 +80,6 @@ impl Section for Raw {
             database_schema: schema_setting(lookup),
         })
     }
-}
-
-fn enabled_setting<L>(lookup: &L) -> Result<bool, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(text) = lookup.lookup(ENABLED_VARIABLE) else {
-        return Ok(true);
-    };
-    let flag = betterlite_env::flag(ENABLED_VARIABLE, &text)?;
-    Ok(flag.unwrap_or(true))
 }
 
 fn interval_setting<L>(lookup: &L) -> Result<Duration, ConfigError>
