@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::ptr;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
@@ -39,7 +40,7 @@ fn alice_guardrail_json_safe_keeps_a_container_just_inside_the_limit() {
 #[test]
 fn alice_guardrail_json_safe_drops_a_revisited_value() {
     let value = GuardrailValue::Array(vec![GuardrailValue::Text("leaf".to_owned())]);
-    let mut seen = vec![std::ptr::from_ref(&value)];
+    let mut seen = vec![ptr::from_ref(&value)];
     assert_eq!(json_safe(&value, 0, &[], &mut seen), GuardrailValue::Null);
 }
 

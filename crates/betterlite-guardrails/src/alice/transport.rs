@@ -1,3 +1,5 @@
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+
 use crate::alice::error::AliceError;
 use crate::alice::wire::AliceVerdict;
 
@@ -21,10 +23,10 @@ pub(super) async fn read_answer(mut response: reqwest::Response) -> Result<Vec<u
 }
 
 pub(super) fn verdict_from_body(body: &[u8]) -> Result<AliceVerdict, AliceError> {
-    let value: serde_json::Value =
+    let parsed: GuardrailValue =
         serde_json::from_slice(body).map_err(|source| AliceError::ResponseJson { source })?;
-    if !value.is_object() {
+    if !matches!(parsed, GuardrailValue::Object(_)) {
         return Err(AliceError::NonObjectBody);
     }
-    serde_json::from_value(value).map_err(|source| AliceError::MalformedVerdict { source })
+    serde_json::from_slice(body).map_err(|source| AliceError::MalformedVerdict { source })
 }

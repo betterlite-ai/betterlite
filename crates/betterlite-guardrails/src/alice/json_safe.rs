@@ -1,3 +1,5 @@
+use std::ptr;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 pub(crate) const MAX_DEPTH: usize = 12;
@@ -26,10 +28,10 @@ pub(crate) fn json_safe(
         | GuardrailValue::Decimal(_)
         | GuardrailValue::Text(_) => value.clone(),
         GuardrailValue::Array(items) => {
-            if depth >= MAX_DEPTH || seen.iter().any(|entry| std::ptr::eq(*entry, value)) {
+            if depth >= MAX_DEPTH || seen.iter().any(|entry| ptr::eq(*entry, value)) {
                 return GuardrailValue::Null;
             }
-            seen.push(std::ptr::from_ref(value));
+            seen.push(ptr::from_ref(value));
             let kept = items
                 .iter()
                 .take(MAX_ITEMS)
@@ -39,10 +41,10 @@ pub(crate) fn json_safe(
             GuardrailValue::Array(kept)
         }
         GuardrailValue::Object(map) => {
-            if depth >= MAX_DEPTH || seen.iter().any(|entry| std::ptr::eq(*entry, value)) {
+            if depth >= MAX_DEPTH || seen.iter().any(|entry| ptr::eq(*entry, value)) {
                 return GuardrailValue::Null;
             }
-            seen.push(std::ptr::from_ref(value));
+            seen.push(ptr::from_ref(value));
             let kept = map
                 .iter()
                 .take(MAX_ITEMS)

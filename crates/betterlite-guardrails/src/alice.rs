@@ -105,12 +105,11 @@ impl AliceGuardrail {
     }
 
     fn payload(
-        &self,
         inputs: &GuardrailApiInputs,
         request_data: &BTreeMap<String, GuardrailValue>,
         input_type: GuardrailInputType,
     ) -> Result<EvaluateRequest, AliceError> {
-        let inputs = serde_json::to_value(inputs)
+        let bounded = serde_json::to_value(inputs)
             .map_err(|source| AliceError::Payload { source })
             .and_then(|value| {
                 serde_json::from_value::<GuardrailValue>(value)
@@ -119,7 +118,7 @@ impl AliceGuardrail {
         let mut seen = Vec::new();
         Ok(EvaluateRequest {
             input_type,
-            inputs: json_safe::json_safe(&inputs, 0, &[], &mut seen),
+            inputs: json_safe::json_safe(&bounded, 0, &[], &mut seen),
             request_data: json_safe::json_safe(
                 &GuardrailValue::Object(request_data.clone()),
                 0,
@@ -145,7 +144,7 @@ impl AliceGuardrail {
         request_data: &BTreeMap<String, GuardrailValue>,
         input_type: GuardrailInputType,
     ) -> Result<AliceVerdict, AliceError> {
-        let request = self.payload(inputs, request_data, input_type)?;
+        let request = Self::payload(inputs, request_data, input_type)?;
         let response = self
             .client
             .post(&self.evaluate_url)

@@ -37,13 +37,11 @@ pub(super) fn apply_replacements(
     }
     let mut texts = inputs.texts.take().unwrap_or_default();
     for replacement in replacements {
-        let index = replacement
-            .index
-            .and_then(|index| usize::try_from(index).ok());
-        let (Some(index), Some(text)) = (index, replacement.text.as_deref()) else {
+        let candidate = replacement.index.and_then(|raw| usize::try_from(raw).ok());
+        let (Some(position), Some(text)) = (candidate, replacement.text.as_deref()) else {
             return Err(blocked(verdict));
         };
-        let Some(slot) = texts.get_mut(index) else {
+        let Some(slot) = texts.get_mut(position) else {
             return Err(blocked(verdict));
         };
         *slot = text.to_owned();
