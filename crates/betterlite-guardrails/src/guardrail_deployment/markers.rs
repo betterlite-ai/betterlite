@@ -21,6 +21,7 @@ pub trait PreCallMarkers {
         data: &mut BTreeMap<String, GuardrailValue>,
     );
 
+    #[must_use]
     fn pre_call_hook_already_ran(
         &self,
         token: &PreCallToken,
@@ -30,7 +31,6 @@ pub trait PreCallMarkers {
 
 impl PreCallMarkers for GuardrailBase {
     // LiteLLM's _pre_call_marker; an empty name is used as given
-    #[must_use]
     fn pre_call_marker(&self, token: &PreCallToken) -> Option<String> {
         self.settings
             .guardrail_name
@@ -75,7 +75,6 @@ impl PreCallMarkers for GuardrailBase {
     }
 
     // True when the marker is in the list of either bucket
-    #[must_use]
     fn pre_call_hook_already_ran(
         &self,
         token: &PreCallToken,

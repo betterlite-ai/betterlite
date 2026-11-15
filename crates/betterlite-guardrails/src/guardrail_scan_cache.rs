@@ -61,7 +61,8 @@ pub trait SessionScanCache {
         request_data: &BTreeMap<String, GuardrailValue>,
         cache: &S,
         ttl_seconds: i64,
-    ) where
+    ) -> impl Future<Output = ()> + Send
+    where
         S: ScanCacheStore;
 }
 
