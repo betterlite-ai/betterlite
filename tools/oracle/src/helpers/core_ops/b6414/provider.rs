@@ -7,7 +7,6 @@ use serde_json::Value;
 use serde_json::json;
 
 use super::normalize_ids;
-use crate::helpers::HelperResult;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct EventsInput {
@@ -15,7 +14,7 @@ pub(crate) struct EventsInput {
     frames: Vec<JsonObject>,
 }
 
-pub(crate) fn events(fields: &EventsInput) -> HelperResult {
+pub(crate) fn events(fields: &EventsInput) -> Value {
     let mut transformer = MuseEventTransformer::default();
     let mut ids = UuidEventIds;
     let events: Vec<Value> = fields
@@ -28,5 +27,5 @@ pub(crate) fn events(fields: &EventsInput) -> HelperResult {
         })
         .collect();
     let usage = json!(transformer.take_unbilled_usage());
-    Ok(normalize_ids(&json!({"events": events, "usage": usage})))
+    normalize_ids(&json!({"events": events, "usage": usage}))
 }

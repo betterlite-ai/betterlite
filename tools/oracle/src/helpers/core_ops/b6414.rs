@@ -38,11 +38,11 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Function::Normalize(fields) => normalize::run(fields),
-            Function::Session(fields) => session::run(fields),
-            Function::Request(fields) => client::request(fields),
+            Function::Normalize(fields) => Ok(normalize::run(fields)),
+            Function::Session(fields) => Ok(session::run(fields)),
+            Function::Request(fields) => Ok(client::request(fields)),
             Function::Pacing(fields) => client::pacing(fields),
-            Function::Events(fields) => provider::events(fields),
+            Function::Events(fields) => Ok(provider::events(fields)),
         }
     }
 }

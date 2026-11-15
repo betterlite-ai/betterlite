@@ -302,7 +302,7 @@ fn audio_progress_accumulates_seconds_and_resets() {
         harness.transformer.take_unbilled_usage(),
         Some(TranscriptionUsage::Duration(DurationUsage { seconds: 1.0 }))
     );
-    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":1_750}"#));
+    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":1750}"#));
     assert_eq!(
         harness.transformer.take_unbilled_usage(),
         Some(TranscriptionUsage::Duration(DurationUsage {

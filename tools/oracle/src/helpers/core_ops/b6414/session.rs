@@ -6,8 +6,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
 
-use crate::helpers::HelperResult;
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct SessionInput {
     payloads: Vec<String>,
@@ -16,7 +14,7 @@ pub(crate) struct SessionInput {
     session_id: String,
 }
 
-pub(crate) fn run(fields: &SessionInput) -> HelperResult {
+pub(crate) fn run(fields: &SessionInput) -> Value {
     let configs: Vec<Value> = fields
         .payloads
         .iter()
@@ -25,7 +23,7 @@ pub(crate) fn run(fields: &SessionInput) -> HelperResult {
                 .map_or(Value::Null, |config| document(&config, fields))
         })
         .collect();
-    Ok(json!({"configs": configs}))
+    json!({"configs": configs})
 }
 
 fn document(config: &MuseSessionConfig, fields: &SessionInput) -> Value {

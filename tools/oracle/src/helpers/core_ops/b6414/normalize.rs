@@ -5,9 +5,8 @@ use betterlite_core::meta_muse_realtime::session::normalize_language;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use serde::Deserialize;
+use serde_json::Value;
 use serde_json::json;
-
-use crate::helpers::HelperResult;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct NormalizeInput {
@@ -17,7 +16,7 @@ pub(crate) struct NormalizeInput {
     models: Vec<String>,
 }
 
-pub(crate) fn run(fields: &NormalizeInput) -> HelperResult {
+pub(crate) fn run(fields: &NormalizeInput) -> Value {
     let languages: Vec<Option<String>> = fields
         .languages
         .iter()
@@ -38,16 +37,16 @@ pub(crate) fn run(fields: &NormalizeInput) -> HelperResult {
         .iter()
         .map(|model| get_complete_url(None, model).ok())
         .collect();
-    Ok(json!({
+    json!({
         "languages": languages,
         "tokens": tokens,
         "urls": urls,
         "models": models,
-    }))
+    })
 }
 
 fn token_document(token: &str) -> Option<String> {
-    let secret = SecretString::from(token.clone());
+    let secret = SecretString::from(token.to_owned());
     normalize_access_token(&secret)
         .ok()
         .map(|normalized| normalized.expose_secret().to_owned())

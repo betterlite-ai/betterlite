@@ -43,7 +43,7 @@ pub(crate) struct PacingInput {
     ticks: Vec<f64>,
 }
 
-pub(crate) fn request(fields: &RequestInput) -> HelperResult {
+pub(crate) fn request(fields: &RequestInput) -> Value {
     let mut config = idle_config();
     let headers = header_map(&fields.headers);
     let validated = config.validate_environment(
@@ -52,7 +52,7 @@ pub(crate) fn request(fields: &RequestInput) -> HelperResult {
         fields.api_key.as_deref(),
         fields.env_api_key.as_deref(),
     );
-    let header_document = validated.map_or(Value::Null, |headers| json!(headers));
+    let header_document = validated.map_or(Value::Null, |returned| json!(returned));
     let frames: Vec<Value> = fields
         .messages
         .iter()
@@ -67,12 +67,12 @@ pub(crate) fn request(fields: &RequestInput) -> HelperResult {
     let setup: Vec<bool> = fields.setup_messages.iter().map(is_setup_message).collect();
     // ast-grep-ignore: no-long-names
     let usage = json!(config.unbilled_usage_on_session_close(&fields.model));
-    Ok(json!({
+    json!({
         "headers": header_document,
         "frames": frames,
         "setup": setup,
         "usage": usage,
-    }))
+    })
 }
 
 fn header_map(headers: &BTreeMap<String, String>) -> HeaderMap {
