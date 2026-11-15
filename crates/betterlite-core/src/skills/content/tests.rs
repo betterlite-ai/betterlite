@@ -1,6 +1,8 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::fs;
 use std::io::{Cursor, Write as _};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -102,6 +104,20 @@ fn expansion_archive(huge_bytes: usize) -> Vec<u8> {
     output.into_inner()
 }
 
+fn two_entry_expansion_archive(entry_bytes: usize) -> Vec<u8> {
+    let mut output = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut output);
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .compression_level(Some(1));
+    writer.start_file("skill/first.bin", options).unwrap();
+    writer.write_all(&vec![0_u8; entry_bytes]).unwrap();
+    writer.start_file("skill/second.bin", options).unwrap();
+    writer.write_all(&vec![0_u8; entry_bytes]).unwrap();
+    writer.finish().unwrap();
+    output.into_inner()
+}
+
 #[derive(Clone, Default)]
 struct Warnings(Arc<Mutex<Vec<String>>>);
 
@@ -178,6 +194,32 @@ fn markdown_uses_readme_when_the_skill_file_is_empty() {
         extract_skill_content(&skill),
         Some("## Skill: Title\n\n# Readme\n\nOnly real content.\n".to_owned())
     );
+}
+
+#[test]
+fn markdown_falls_back_to_any_markdown_entry_in_archive_order() {
+    let entries = write_archive(
+        &[
+            ("skill/notes.md", b"first notes"),
+            ("skill/more.md", b"second notes"),
+        ],
+        CompressionMethod::Stored,
+    );
+    let skill = archive_row(&entries, Some("fallback"));
+    assert_eq!(
+        extract_skill_content(&skill),
+        Some("## Skill: Title\n\nfirst notes".to_owned())
+    );
+}
+
+#[test]
+fn markdown_absent_from_the_archive_returns_the_instructions() {
+    let entries = write_archive(
+        &[("skill/notes.txt", b"plain text")],
+        CompressionMethod::Stored,
+    );
+    let skill = archive_row(&entries, Some("fallback"));
+    assert_eq!(extract_skill_content(&skill), Some("fallback".to_owned()));
 }
 
 #[rstest]
@@ -299,12 +341,43 @@ fn files_without_stored_content_are_empty(#[case] content: Option<&str>) {
 }
 
 #[test]
+fn files_warn_and_return_empty_when_the_archive_cannot_be_opened() {
+    let (warnings, _guard) = capture_warnings();
+    let content = STANDARD.encode(b"not a zip archive");
+    let skill = row(Some(content.as_str()), Some("fallback"));
+    let files = extract_all_files(&skill);
+    assert!(files.is_empty());
+    assert_eq!(
+        warnings.messages(),
+        [
+            "SkillPromptInjectionHandler: Error extracting files from skill litellm_skill_demo: the stored bytes are not a readable ZIP archive"
+        ]
+    );
+}
+
+#[test]
 fn files_keep_entries_read_before_the_expansion_limit() {
     let (warnings, _guard) = capture_warnings();
     let skill = archive_row(&expansion_archive(65 * 1024 * 1024), Some("fallback"));
     let files = extract_all_files(&skill);
     assert_eq!(files.len(), 1);
     assert_eq!(files.get("small.txt"), Some(&b"keep".to_vec()));
+    assert_eq!(
+        warnings.messages(),
+        [
+            "SkillPromptInjectionHandler: Error extracting files from skill litellm_skill_demo: the archive expands past the 67108864 byte budget"
+        ]
+    );
+}
+
+#[test]
+fn files_keep_entries_read_before_the_cumulative_expansion_limit() {
+    let (warnings, _guard) = capture_warnings();
+    let forty_mib = 40 * 1024 * 1024;
+    let skill = archive_row(&two_entry_expansion_archive(forty_mib), Some("fallback"));
+    let files = extract_all_files(&skill);
+    assert_eq!(files.len(), 1);
+    assert_eq!(files.get("first.bin").map(Vec::len), Some(forty_mib));
     assert_eq!(
         warnings.messages(),
         [
@@ -409,7 +482,7 @@ fn decode_accepts_an_archive_at_the_entry_limit() {
 
 #[test]
 fn names_that_are_utf8_without_the_flag_are_read_as_utf8() {
-    let name = "skill/café.txt";
+    let name = "skill/caf\u{e9}.txt";
     let placeholder = "x".repeat(name.len());
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
@@ -434,7 +507,7 @@ fn names_that_are_utf8_without_the_flag_are_read_as_utf8() {
             .any(|window| window == placeholder.as_bytes())
     );
     let files = extract_all_files(&archive_row(&bytes, Some("fallback")));
-    assert_eq!(files.get("café.txt"), Some(&b"data".to_vec()));
+    assert_eq!(files.get("caf\u{e9}.txt"), Some(&b"data".to_vec()));
 }
 
 #[test]
@@ -453,6 +526,23 @@ fn inject_appends_to_the_first_system_message() {
             message("system", text(&format!("first{SECTION}"))),
             message("system", text("second")),
         ]),
+    )]);
+    assert_eq!(data, expected);
+}
+
+#[test]
+fn inject_appends_the_untrimmed_section_to_a_system_message_without_content() {
+    let mut data = request(vec![Json::Object(Object::from([(
+        "role".to_owned(),
+        text("system"),
+    )]))]);
+    inject_skill_content_to_messages(&mut data, &["alpha".to_owned()], false).unwrap();
+    let expected = Object::from([(
+        "messages".to_owned(),
+        Json::List(vec![message(
+            "system",
+            text("\n\n---\n\n# Available Skills\n\nalpha"),
+        )]),
     )]);
     assert_eq!(data, expected);
 }
@@ -498,8 +588,8 @@ fn inject_appends_to_the_anthropic_system(#[case] data: Object, #[case] expected
     let mut actual = data;
     inject_skill_content_to_messages(&mut actual, &["alpha".to_owned(), "beta".to_owned()], true)
         .unwrap();
-    let expected = Object::from([("system".to_owned(), text(expected))]);
-    assert_eq!(actual, expected);
+    let expected_data = Object::from([("system".to_owned(), text(expected))]);
+    assert_eq!(actual, expected_data);
 }
 
 #[test]
@@ -573,10 +663,10 @@ fn tool_description_falls_back_to_the_skill_id() {
 }
 
 #[rstest]
-#[case::at_the_limit("é".repeat(1024), "é".repeat(1024))]
+#[case::at_the_limit("\u{e9}".repeat(1024), "\u{e9}".repeat(1024))]
 #[case::past_the_limit(
-    "é".repeat(1025),
-    format!("{}...", "é".repeat(1021))
+    "\u{e9}".repeat(1025),
+    format!("{}...", "\u{e9}".repeat(1021))
 )]
 fn tool_description_keeps_1024_characters(#[case] instructions: String, #[case] expected: String) {
     let skill = row(None, Some(instructions.as_str()));
@@ -594,14 +684,14 @@ fn tool_parameters_default_to_the_empty_object_schema() {
 
 #[rstest]
 #[case::replaces(
-    JsonData::Object(std::collections::BTreeMap::from([(
+    JsonData::Object(BTreeMap::from([(
         "type".to_owned(),
         JsonData::String("object".to_owned())
     ), (
         "properties".to_owned(),
-        JsonData::Object(std::collections::BTreeMap::from([(
+        JsonData::Object(BTreeMap::from([(
             "q".to_owned(),
-            JsonData::Object(std::collections::BTreeMap::from([(
+            JsonData::Object(BTreeMap::from([(
                 "type".to_owned(),
                 JsonData::String("string".to_owned())
             )]))
@@ -610,7 +700,7 @@ fn tool_parameters_default_to_the_empty_object_schema() {
     r#"{"properties":{"q":{"type":"string"}},"type":"object"}"#
 )]
 #[case::empty_object_ignored(
-    JsonData::Object(std::collections::BTreeMap::new()),
+    JsonData::Object(BTreeMap::new()),
     r#"{"type":"object","properties":{},"required":[]}"#
 )]
 #[case::text_ignored(
@@ -622,10 +712,7 @@ fn tool_parameters_use_a_nonempty_metadata_object(
     #[case] expected: &str,
 ) {
     let mut skill = row(None, Some("instructions"));
-    skill.metadata = Some(std::collections::BTreeMap::from([(
-        "parameters".to_owned(),
-        parameters,
-    )]));
+    skill.metadata = Some(BTreeMap::from([("parameters".to_owned(), parameters)]));
     assert_eq!(
         serde_json::to_string(&convert_skill_to_tool(&skill).function.parameters).unwrap(),
         expected
@@ -669,7 +756,7 @@ fn execution_tools_keep_the_litellm_name_and_code_schema() {
 
 #[rstest]
 fn replays_skill_zip_corpus(#[files("fuzz/corpus/skill_zip/*")] path: PathBuf) {
-    let bytes = std::fs::read(path).unwrap();
+    let bytes = fs::read(path).unwrap();
     let Ok(mut archive) = decode_skill_zip(bytes) else {
         return;
     };
