@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 
 use betterlite_models::model_capability_predicates::CapabilityRequest;
-use betterlite_openai::openai_base_config::CatalogCapabilities;
+use betterlite_openai::openai_base_config::{CatalogCapabilities, Object as ParamsObject};
 use betterlite_openai::reasoning_models::gpt_5::Mapping as Gpt5Mapping;
 use betterlite_openai::reasoning_models::{
     DropParams, ReasoningCapabilities, catalogue_declares_default, effort_resolves_to_none,
@@ -255,8 +255,8 @@ pub(super) fn mapped(
 ) -> Result<Object, ChatParamsError> {
     let mut capabilities = fixture();
     let catalog = capabilities.catalog.clone();
-    let mut requested = object(non_default);
-    let mut existing = object(optional);
+    let mut requested: ParamsObject = serde_json::from_str(non_default).unwrap();
+    let mut existing: ParamsObject = serde_json::from_str(optional).unwrap();
     let mut mapping = Gpt5Mapping {
         model,
         non_default_params: &mut requested,
@@ -265,7 +265,7 @@ pub(super) fn mapped(
         catalog: &catalog,
     };
     runtime().block_on(gpt5::map_params(&mut capabilities, &mut mapping))?;
-    Ok(existing)
+    Ok(serde_json::from_value(Value::Object(existing)).unwrap())
 }
 
 pub(super) fn composed(
