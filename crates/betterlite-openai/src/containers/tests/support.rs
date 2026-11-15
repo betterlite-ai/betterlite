@@ -16,7 +16,6 @@ use crate::credentials::LiteLlmGlobals;
 pub(super) const BASE: &str = "https://api.openai.com/v1/containers";
 pub(super) const AZURE: &str =
     "https://example.openai.azure.com/openai/v1/containers?api-version=v1";
-pub(super) const KEY: &str = "sk-fixture";
 
 pub(super) const CONTAINER_BODY: &str = r#"{"id":"cntr_abc","object":"container","created_at":1700000000,"status":"running","expires_after":{"anchor":"last_active_at","minutes":20},"last_active_at":null,"name":"box"}"#;
 pub(super) const CONTAINER_NULL_BODY: &str = r#"{"id":"cntr_none","object":"container","created_at":1700000001,"status":"running","expires_after":null,"last_active_at":null,"name":null,"unknown_extra":{"a":1}}"#;
