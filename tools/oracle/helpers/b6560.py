@@ -4,8 +4,14 @@ from typing import Literal, TypedDict, TypeVar
 from litellm.proxy.guardrails.guardrail_endpoints import _get_fields_from_model  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1902
 from litellm.types.guardrails import (
     BedrockGuardrailConfigModel as BedrockModel,
+)
+from litellm.types.guardrails import (
     BedrockGuardrailStreamingParams as BedrockStreaming,
+)
+from litellm.types.guardrails import (
     LakeraV2GuardrailConfigModel as LakeraModel,
+)
+from litellm.types.guardrails import (
     PresidioPresidioConfigModelUserInterface as PresidioUI,
 )
 from litellm.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
@@ -103,7 +109,7 @@ def named_answer(model_class: ModelClass) -> dict[str, JsonValue]:
 
 
 def provider_fields() -> dict[str, dict[str, JsonValue]]:
-    models: tuple[ModelClass, ModelClass, ModelClass] = (ToolPermissionModel, HideSecretsModel, LakeraModel)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L12
+    models: tuple[ModelClass, ...] = (ToolPermissionModel, HideSecretsModel, LakeraModel)  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L12
     tool_permission, hide_secrets, lakera = models
     bedrock: dict[str, JsonValue] = {
         **as_answer(BedrockModel),
