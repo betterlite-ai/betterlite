@@ -101,6 +101,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "partner_count"
+path = "fuzz_targets/partner_count.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "studio_agent_payload"
 path = "fuzz_targets/studio_agent_payload.rs"
 test = false
@@ -215,13 +222,6 @@ bench = false
 [[bin]]
 name = "vertex_tuning_job"
 path = "fuzz_targets/vertex_tuning_job.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "legacy_prediction"
-path = "fuzz_targets/legacy_prediction.rs"
 test = false
 doc = false
 bench = false
