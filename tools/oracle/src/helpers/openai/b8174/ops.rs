@@ -76,6 +76,14 @@ fn header_map(headers: &Headers) -> Result<HeaderMap, Box<HelperError>> {
     Ok(map)
 }
 
+fn speech_params(voice: Option<&Voice>, params: &Object) -> Result<Value, Box<HelperError>> {
+    let mapped = mapped_options(voice, params)?;
+    Ok(json!({
+        "voice": mapped.voice,
+        "params": mapped.params,
+    }))
+}
+
 fn speech_body(
     voice: Option<&Voice>,
     model: &str,
@@ -193,10 +201,7 @@ impl Voice {
 
 pub(crate) fn execute(step: &Step) -> Result<Value, Box<HelperError>> {
     match step {
-        Step::SpeechParams { voice, params } => {
-            let mapped = mapped_options(voice.as_ref(), params)?;
-            Ok(json!({"voice": mapped.voice, "params": mapped.params}))
-        }
+        Step::SpeechParams { voice, params } => speech_params(voice.as_ref(), params),
         Step::SpeechBody {
             model,
             input,
