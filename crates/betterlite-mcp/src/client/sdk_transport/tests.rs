@@ -194,7 +194,7 @@ impl TestServer {
     fn count(&self, method: &Method) -> usize {
         self.requests()
             .iter()
-            .filter(|request| &request.method == method)
+            .filter(|request| request.method == *method)
             .count()
     }
 }
