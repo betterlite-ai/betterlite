@@ -74,6 +74,9 @@ pub fn decode_legacy_prediction(bytes: &[u8]) -> Result<PredictionsReply, Predic
             limit: PREDICTION_BODY_LIMIT,
         });
     }
+    if bytes.trim_ascii_start().first() != Some(&b'{') {
+        return Err(PredictionError::BodyShape);
+    }
     let body: PredictionBody =
         serde_json::from_slice(bytes).map_err(|source| PredictionError::Decode { source })?;
     Ok(PredictionsReply {

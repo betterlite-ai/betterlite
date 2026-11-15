@@ -28,6 +28,8 @@ pub enum PredictionError {
     },
     #[error("the Vertex prediction body is larger than {limit} bytes")]
     TooLarge { limit: usize },
+    #[error("the Vertex prediction body is not a JSON object")]
+    BodyShape,
     #[error("the Vertex prediction stream is not a JSON array")]
     StreamShape,
     #[error("the Vertex prediction stream ended inside an object")]
@@ -95,6 +97,7 @@ impl PredictionError {
             | Self::Read { .. }
             | Self::Decode { .. }
             | Self::TooLarge { .. }
+            | Self::BodyShape
             | Self::StreamShape
             | Self::StreamUnfinished
             | Self::MissingPrediction
