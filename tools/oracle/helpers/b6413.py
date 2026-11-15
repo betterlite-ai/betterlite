@@ -19,7 +19,7 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 INPUTS: TypeAdapter[AllEmbeddingInputValues] = TypeAdapter(AllEmbeddingInputValues)
 
 MODEL: Final = "sambanova/embedding"
-SECRET_NAME: Final = "SAMBANOVA_API_KEY"
+ENV_NAME: Final = "SAMBANOVA_API_KEY"
 STARTED: Final = datetime(2020, 1, 1, tzinfo=UTC)
 
 
@@ -95,7 +95,7 @@ class EnvironmentKey:
     def __call__(
         self, secret_name: str, default_value: str | bool | None = None
     ) -> str | None:
-        if secret_name == SECRET_NAME and self._api_key is not None:
+        if secret_name == ENV_NAME and self._api_key is not None:
             return self._api_key
         return default_value
 
