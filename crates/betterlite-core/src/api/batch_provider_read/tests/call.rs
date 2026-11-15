@@ -303,20 +303,12 @@ async fn aws_credentials_reach_every_bedrock_call(#[case] batch_id: &str) {
         ..bare_aws()
     };
     let (_, calls) = answered(base_settings(), &call).await;
-    assert_eq!(aws_of(&calls[0]), &expected);
-}
-
-fn aws_of(entry: &Recorded) -> &RecordedAws {
-    match entry {
-        Recorded::ProviderConfig { aws, .. }
-        | Recorded::BedrockAsyncInvoke { aws, .. }
-        | Recorded::BedrockModelInvocationJob { aws, .. } => aws,
-        Recorded::Xai { .. }
-        | Recorded::OpenAi { .. }
-        | Recorded::Azure { .. }
-        | Recorded::VertexAi { .. }
-        | Recorded::Anthropic { .. } => panic!("the branch carries no AWS credentials"),
-    }
+    let (Recorded::ProviderConfig { aws, .. } | Recorded::BedrockAsyncInvoke { aws, .. }) =
+        &calls[0]
+    else {
+        panic!("expected a provider config or async invoke call");
+    };
+    assert_eq!(aws, &expected);
 }
 
 // a model alone does not give a provider a config

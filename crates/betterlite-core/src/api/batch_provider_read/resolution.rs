@@ -4,12 +4,12 @@ use betterlite_openai::batches::sdk::Timeout;
 use betterlite_prompts::arguments::json::Json;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use super::BatchProviderReadInput;
 use super::call::{
     AnthropicBatchReadCall, AwsCredentials, AzureBatchReadCall, AzureReadParams,
     OpenAiBatchReadCall, ProviderConfigReadCall, VertexBatchReadCall, VertexReadCredentials,
 };
 use super::error::ReadCallError;
-use super::{BatchProviderReadInput, BatchReadOptionalParams};
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
 // base_llm_http_handler.retrieve_batch, which the configured Bedrock and Mistral providers reach
@@ -43,6 +43,7 @@ pub(super) struct Resolution<'read> {
     settings: &'read Settings,
     resources: ResourceSdkSettings,
     options: ResourceSdkRequestOptions,
+    request: RetrieveBatchRequest,
 }
 
 impl<'read> Resolution<'read> {
@@ -67,17 +68,22 @@ impl<'read> Resolution<'read> {
             settings,
             resources: ResourceSdkSettings::from(&settings.resources),
             options,
+            request: RetrieveBatchRequest {
+                batch_id: Some(input.batch_id.clone()),
+                extra_headers: input.extra_headers.clone(),
+                extra_body: input.extra_body.clone(),
+                timeout: None,
+            },
         }
     }
 
     // OpenAIBatchesAPI.retrieve_batch
     pub(super) fn openai(&self, timeout: Timeout) -> OpenAiBatchReadCall {
-        let request = retrieve_request(self.input);
         let api_base = self.resources.openai_base(&self.options);
         let api_key = self.resources.openai_api_key(&self.options).cloned();
         let organization = self.resources.openai_organization(&self.options);
         OpenAiBatchReadCall {
-            request,
+            request: self.request.clone(),
             api_base,
             api_key,
             organization: organization.map(str::to_owned),
@@ -87,11 +93,11 @@ impl<'read> Resolution<'read> {
         }
     }
 
-    // AzureBatchesAPI.retrieve_batch; the client constructor reads the raw kwargs, not the resolved chain
+    // AzureBatchesAPI.retrieve_batch
     pub(super) fn azure(&self, timeout: Timeout) -> AzureBatchReadCall {
         let params = &self.input.optional_params;
         AzureBatchReadCall {
-            request: retrieve_request(self.input),
+            request: self.request.clone(),
             api_base: self.resources.azure_base(&self.options).map(str::to_owned),
             api_key: self.resources.azure_api_key(&self.options).cloned(),
             api_version: self
@@ -100,7 +106,21 @@ impl<'read> Resolution<'read> {
                 .map(str::to_owned),
             timeout,
             max_retries: params.max_retries,
-            litellm_params: azure_params(params),
+            // the client constructor reads the raw kwargs, not the resolved chain
+            litellm_params: AzureReadParams {
+                api_key: params.api_key.clone(),
+                api_base: params.api_base.clone(),
+                api_version: params.api_version.clone(),
+                max_retries: params.max_retries,
+                timeout: params.timeout.clone(),
+                azure_ad_token: params.azure_ad_token.clone(),
+                tenant_id: params.tenant_id.clone(),
+                client_id: params.client_id.clone(),
+                client_secret: params.client_secret.clone(),
+                azure_scope: params.azure_scope.clone(),
+                azure_username: params.azure_username.clone(),
+                azure_password: params.azure_password.clone(),
+            },
             is_async: self.input.aretrieve_batch,
         }
     }
@@ -108,6 +128,8 @@ impl<'read> Resolution<'read> {
     // VertexAIBatchPrediction.retrieve_batch
     pub(super) fn vertex(&self, timeout: Timeout) -> Result<VertexBatchReadCall, ReadCallError> {
         let params = &self.input.optional_params;
+        let max_retries = params.max_retries;
+        let is_async = self.input.aretrieve_batch;
         let project = self.resources.vertex_project(&self.options);
         let location = self.resources.vertex_location(&self.options);
         Ok(VertexBatchReadCall {
@@ -117,8 +139,8 @@ impl<'read> Resolution<'read> {
             vertex_location: location.map(str::to_owned),
             vertex_credentials: self.vertex_credentials()?,
             timeout,
-            max_retries: params.max_retries,
-            is_async: self.input.aretrieve_batch,
+            max_retries,
+            is_async,
         })
     }
 
@@ -165,33 +187,6 @@ impl<'read> Resolution<'read> {
             max_retries: params.max_retries,
             is_async: self.input.aretrieve_batch,
         }
-    }
-}
-
-// the Azure client constructor reads the raw kwargs, not the resolved chain
-fn azure_params(params: &BatchReadOptionalParams) -> AzureReadParams {
-    AzureReadParams {
-        api_key: params.api_key.clone(),
-        api_base: params.api_base.clone(),
-        api_version: params.api_version.clone(),
-        max_retries: params.max_retries,
-        timeout: params.timeout.clone(),
-        azure_ad_token: params.azure_ad_token.clone(),
-        tenant_id: params.tenant_id.clone(),
-        client_id: params.client_id.clone(),
-        client_secret: params.client_secret.clone(),
-        azure_scope: params.azure_scope.clone(),
-        azure_username: params.azure_username.clone(),
-        azure_password: params.azure_password.clone(),
-    }
-}
-
-fn retrieve_request(input: &BatchProviderReadInput) -> RetrieveBatchRequest {
-    RetrieveBatchRequest {
-        batch_id: Some(input.batch_id.clone()),
-        extra_headers: input.extra_headers.clone(),
-        extra_body: input.extra_body.clone(),
-        timeout: None,
     }
 }
 

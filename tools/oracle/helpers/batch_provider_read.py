@@ -15,8 +15,15 @@ class RecordedError(Exception):
     pass
 
 
+class UnknownRecordedProviderError(Exception):
+    pass
+
+
+class NoProviderReachedError(Exception):
+    pass
+
+
 class APIError(Exception):
-    # the provider SDK raises an APIError that carries its status; the scripted provider imitates it
     def __init__(self, status: int) -> None:
         super().__init__(f"the scripted provider answered {status}")
         self.status_code = status
@@ -229,9 +236,7 @@ def capture() -> JsonValue:
             "api_key": json_value(kwargs["api_key"]),
             "timeout": json_value(kwargs["timeout"]),
         }
-    raise LookupError(
-        f"the pinned LiteLLM retrieve reached the unknown provider {provider}"
-    )
+    raise UnknownRecordedProviderError(provider)
 
 
 def run(input_value: Input) -> JsonValue:
@@ -249,11 +254,8 @@ def run(input_value: Input) -> JsonValue:
     litellm.api_version = settings.api_version
     litellm.vertex_location = settings.vertex_location
     litellm.vertex_project = settings.vertex_project
-    object.__setattr__(batches, "openai_batches_instance", Recorder("openai", script.status))
-    object.__setattr__(batches, "azure_batches_instance", Recorder("azure", script.status))
-    object.__setattr__(batches, "vertex_ai_batches_instance", Recorder("vertex_ai", script.status))
-    object.__setattr__(batches, "anthropic_batches_instance", Recorder("anthropic", script.status))
-    object.__setattr__(batches, "xai_batches_instance", Recorder("xai", script.status))
+    for provider in ("openai", "azure", "vertex_ai", "anthropic", "xai"):
+        object.__setattr__(batches, f"{provider}_batches_instance", Recorder(provider, script.status))
     try:
         batches.retrieve_batch(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L560
             batch_id=request.batch_id,
@@ -295,4 +297,4 @@ def run(input_value: Input) -> JsonValue:
         )
     except RecordedError:
         return capture()
-    raise LookupError("the pinned LiteLLM retrieve call reached no provider")
+    raise NoProviderReachedError("the pinned LiteLLM retrieve call reached no provider")
