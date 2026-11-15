@@ -8,33 +8,26 @@ call:
     embedding_headers: []
     embedding_requests: []
     embedding_replies:
-      - model: sambanova/embed
-        status: 200
+      - status: 200
         headers: {}
         body: >-
           {"model": "embed-model", "object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [0.25, -1.5]}], "usage": {"prompt_tokens": 3, "total_tokens": 3}}
-      - model: sambanova/embed
-        status: 200
+      - status: 200
         headers: {}
         body: "{}"
-      - model: sambanova/embed
-        status: 200
+      - status: 200
         headers: {}
         body: '{"model": null, "object": null, "data": null, "usage": {}}'
-      - model: sambanova/embed
-        status: 200
+      - status: 200
         headers: {}
         body: '{"usage": {"prompt_tokens": 4}}'
-      - model: sambanova/embed
-        status: 200
+      - status: 200
         headers: {}
         body: '{"usage": {"total_tokens": 9}}'
-      - model: sambanova/embed
-        status: 502
+      - status: 502
         headers: {retry-after: "3"}
         body: "upstream unavailable"
-      - model: sambanova/embed
-        status: 200
+      - status: 200
         headers: {}
         body: "[]"
     embedding_errors:

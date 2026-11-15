@@ -12,11 +12,14 @@ call:
       - {api_base: ""}
       - {api_base: null}
     embedding_headers:
-      - {api_key: "sk-explicit", headers: {}}
-      - {api_key: null, headers: {}}
-      - {api_key: "sk-explicit", headers: {Authorization: "Basic abc", x-trace: "1"}}
-      - {api_key: null, headers: {authorization: "Basic abc", accept: "text/plain"}}
-      - {api_key: "", headers: {}}
+      - {api_key: "sk-explicit", env_api_key: null, headers: {}}
+      - {api_key: null, env_api_key: null, headers: {}}
+      - {api_key: "sk-explicit", env_api_key: null, headers: {Authorization: "Basic abc", x-trace: "1"}}
+      - {api_key: null, env_api_key: null, headers: {authorization: "Basic abc", accept: "text/plain"}}
+      - {api_key: "", env_api_key: null, headers: {}}
+      - {api_key: "sk-explicit", env_api_key: "sk-env", headers: {}}
+      - {api_key: null, env_api_key: "sk-env", headers: {}}
+      - {api_key: "", env_api_key: "sk-env", headers: {}}
     embedding_requests:
       - model: sambanova/embed
         input: ["hello", "world"]

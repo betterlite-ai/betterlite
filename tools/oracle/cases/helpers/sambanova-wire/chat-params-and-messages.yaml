@@ -22,6 +22,10 @@ call:
         function_calling: false
         requested: {tools: [{type: function, function: {name: f}}], tool_choice: auto}
         existing: {response_format: {type: json_object}}
+      - model: sambanova/DeepSeek-R1
+        function_calling: false
+        requested: {max_completion_tokens: null, temperature: null}
+        existing: {}
     embedding_urls: []
     embedding_headers: []
     embedding_requests: []

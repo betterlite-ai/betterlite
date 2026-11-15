@@ -2,10 +2,9 @@ use betterlite_openai::error::ProviderError;
 use betterlite_openai::hosted_chat_options::map_renaming_token_limit;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::sambanova_chat;
-use betterlite_openai::sambanova_embedding::error::get_error_class;
-use betterlite_openai::sambanova_embedding::{
-    self, SambaNovaEmbeddingError, decode_sambanova_embedding,
-};
+use betterlite_openai::sambanova_embedding::error::{SambaNovaEmbeddingError, get_error_class};
+use betterlite_openai::sambanova_embedding::{self, decode_sambanova_embedding};
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -44,9 +43,9 @@ struct ParamsCall {
     model: String,
     function_calling: bool,
     #[serde(default)]
-    requested: Object,
+    requested: IndexMap<String, Value>,
     #[serde(default)]
-    existing: Object,
+    existing: IndexMap<String, Value>,
 }
 
 #[derive(Deserialize)]
@@ -59,6 +58,7 @@ struct UrlCall {
 #[serde(deny_unknown_fields)]
 struct HeadersCall {
     api_key: Option<String>,
+    env_api_key: Option<String>,
     #[serde(default)]
     headers: Headers,
 }
@@ -75,8 +75,6 @@ struct RequestCall {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReplyCall {
-    #[serde(rename = "model")]
-    _model: String,
     body: String,
     status: u16,
     #[serde(default)]
@@ -102,13 +100,7 @@ impl crate::helpers::Helper for Op {
             "embedding_urls": input.embedding_urls.iter().map(|call| json!({
                 "url": sambanova_embedding::get_complete_url(call.api_base.as_deref()).ok(),
             })).collect::<Vec<_>>(),
-            "embedding_headers": input.embedding_headers.iter().map(|call| json!({
-                "headers": sambanova_embedding::validate_environment(
-                    &call.headers,
-                    call.api_key.as_deref().map(SecretString::from).as_ref(),
-                    None,
-                ),
-            })).collect::<Vec<_>>(),
+            "embedding_headers": input.embedding_headers.iter().map(headers).collect::<Vec<_>>(),
             "embedding_requests": input.embedding_requests.iter().map(request).collect::<Vec<_>>(),
             "embedding_replies": input.embedding_replies.iter().map(reply).collect::<Vec<_>>(),
             "embedding_errors": input.embedding_errors.iter().map(carried).collect::<Vec<_>>(),
@@ -131,6 +123,18 @@ fn params(call: &ParamsCall) -> Value {
         &sambanova_chat::supported_openai_params(call.function_calling),
     );
     json!({"model": &call.model, "mapped": mapped})
+}
+
+fn headers(call: &HeadersCall) -> Value {
+    let explicit = call.api_key.as_deref().map(SecretString::from);
+    let environment = call.env_api_key.as_deref().map(SecretString::from);
+    json!({
+        "headers": sambanova_embedding::validate_environment(
+            &call.headers,
+            explicit.as_ref(),
+            environment.as_ref(),
+        ),
+    })
 }
 
 fn request(call: &RequestCall) -> Value {

@@ -72,6 +72,10 @@ fn the_chat_case_reports_the_pinned_supported_params_and_mapping() {
         result["chat_params"][3]["mapped"],
         json!({"response_format": {"type": "json_object"}})
     );
+    assert_eq!(
+        result["chat_params"][4]["mapped"],
+        json!({"max_tokens": null, "temperature": null})
+    );
 }
 
 #[test]
@@ -85,6 +89,26 @@ fn the_embedding_case_reports_urls_headers_and_bodies() {
     assert_eq!(
         result["embedding_headers"][1]["headers"]["Authorization"],
         json!("Bearer None")
+    );
+    assert_eq!(
+        result["embedding_headers"][2]["headers"]["Authorization"],
+        json!("Basic abc")
+    );
+    assert_eq!(
+        result["embedding_headers"][3]["headers"]["authorization"],
+        json!("Basic abc")
+    );
+    assert_eq!(
+        result["embedding_headers"][5]["headers"]["Authorization"],
+        json!("Bearer sk-explicit")
+    );
+    assert_eq!(
+        result["embedding_headers"][6]["headers"]["Authorization"],
+        json!("Bearer sk-env")
+    );
+    assert_eq!(
+        result["embedding_headers"][7]["headers"]["Authorization"],
+        json!("Bearer ")
     );
     assert_eq!(
         result["embedding_requests"][2]["request"],

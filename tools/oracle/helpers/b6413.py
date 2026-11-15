@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Final, Protocol, TypedDict
 
@@ -7,46 +6,17 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.sambanova.chat import SambanovaConfig
 from litellm.llms.sambanova.common_utils import SambaNovaError
+from litellm.llms.sambanova.embedding import transformation
 from litellm.llms.sambanova.embedding.transformation import SambaNovaEmbeddingConfig
 from litellm.types.llms.openai import AllEmbeddingInputValues, AllMessageValues
-from litellm.types.utils import EmbeddingResponse
+from litellm.types.utils import CallTypes, EmbeddingResponse
 from pydantic import JsonValue, TypeAdapter
 
-JSON: Final = TypeAdapter(JsonValue)
-INPUTS: Final = TypeAdapter(AllEmbeddingInputValues)
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+INPUTS: TypeAdapter[AllEmbeddingInputValues] = TypeAdapter(AllEmbeddingInputValues)
 
 MODEL: Final = "sambanova/embedding"
 STARTED: Final = datetime(2020, 1, 1, tzinfo=UTC)
-
-ValidateEnvironment = Callable[
-    [
-        dict[str, str],
-        str,
-        list[AllMessageValues],
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-        str | None,
-        str | None,
-    ],
-    dict[str, str],
-]
-TransformRequest = Callable[
-    [str, AllEmbeddingInputValues, dict[str, JsonValue], dict[str, str]],
-    dict[str, JsonValue],
-]
-TransformResponse = Callable[
-    [
-        str,
-        httpx.Response,
-        EmbeddingResponse,
-        Logging,
-        str | None,
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-    ],
-    EmbeddingResponse,
-]
 
 
 class ChatConfig(Protocol):
@@ -63,22 +33,63 @@ class ChatConfig(Protocol):
 
 
 class EmbeddingConfig(Protocol):
-    validate_environment: ValidateEnvironment
-    transform_embedding_request: TransformRequest
-    transform_embedding_response: TransformResponse
+    def validate_environment(
+        self,
+        _headers: dict[str, str],
+        _model: str,
+        _messages: list[AllMessageValues],
+        _optional_params: dict[str, JsonValue],
+        _litellm_params: dict[str, JsonValue],
+        _api_key: str | None = None,
+        _api_base: str | None = None,
+        /,
+    ) -> dict[str, str]: ...
 
     def get_complete_url(
         self,
-        api_base: str | None,
-        api_key: str | None,
-        model: str,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
+        _api_base: str | None,
+        _api_key: str | None,
+        _model: str,
+        _optional_params: dict[str, JsonValue],
+        _litellm_params: dict[str, JsonValue],
+        /,
+        *,
+        stream: bool | None = None,
     ) -> str: ...
+
+    def transform_embedding_request(
+        self,
+        model: str,
+        _input: AllEmbeddingInputValues,
+        optional_params: dict[str, JsonValue],
+        headers: dict[str, str],
+        /,
+    ) -> dict[str, JsonValue]: ...
+
+    def transform_embedding_response(
+        self,
+        _model: str,
+        _raw_response: httpx.Response,
+        _model_response: EmbeddingResponse,
+        _logging_obj: Logging,
+        _api_key: str | None,
+        _request_data: dict[str, JsonValue],
+        _optional_params: dict[str, JsonValue],
+        _litellm_params: dict[str, JsonValue],
+        /,
+    ) -> EmbeddingResponse: ...
 
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, str]
     ) -> BaseLLMException: ...
+
+
+class EnvironmentKey:
+    def __init__(self, api_key: str | None) -> None:
+        self._api_key = api_key
+
+    def lookup(self, _name: str, _default: str | bool | None = None) -> str | None:
+        return self._api_key
 
 
 class SupportedCall(TypedDict):
@@ -99,6 +110,7 @@ class UrlCall(TypedDict):
 
 class HeadersCall(TypedDict):
     api_key: str | None
+    env_api_key: str | None
     headers: dict[str, str]
 
 
@@ -109,7 +121,6 @@ class RequestCall(TypedDict):
 
 
 class ReplyCall(TypedDict):
-    model: str
     body: str
     status: int
     headers: dict[str, str]
@@ -143,7 +154,7 @@ class Input(TypedDict):
     embedding_errors: list[ErrorCall]
 
 
-REPLY: Final = TypeAdapter(ReplyShape)
+REPLY: TypeAdapter[ReplyShape] = TypeAdapter(ReplyShape)
 
 
 def supported(config: ChatConfig, call: SupportedCall) -> JsonValue:
@@ -170,6 +181,7 @@ def url(config: EmbeddingConfig, call: UrlCall) -> JsonValue:
 
 
 def headers(config: EmbeddingConfig, call: HeadersCall) -> JsonValue:
+    transformation.get_secret_str = EnvironmentKey(call["env_api_key"]).lookup
     validated = config.validate_environment(
         dict(call["headers"]), MODEL, [], {}, {}, call["api_key"], None
     )
@@ -190,7 +202,7 @@ def logging() -> Logging:
         model=MODEL,
         messages=[],
         stream=False,
-        call_type="embedding",
+        call_type=CallTypes.embedding,
         start_time=STARTED,
         litellm_call_id="b6413",
         function_id="b6413",
@@ -223,7 +235,7 @@ def reply(config: EmbeddingConfig, call: ReplyCall) -> JsonValue:
     )
     try:
         response = config.transform_embedding_response(
-            call["model"], raw, EmbeddingResponse(), logging(), None, {}, {}, {}
+            MODEL, raw, EmbeddingResponse(), logging(), None, {}, {}, {}
         )
     except SambaNovaError as error:
         return failed(error.status_code)
