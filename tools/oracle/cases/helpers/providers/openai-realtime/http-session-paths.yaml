@@ -1,0 +1,22 @@
+kind: helper
+name: openai-realtime-http-session-paths
+call:
+  openai_realtime:
+    kind: http
+    api_key: null
+    model: gpt-realtime
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 1048576
+    openai_api_base: "https://env.test/base"
+    openai_api_key: null
+    queries: []
+    failures: []
+    http_setups:
+      - {api_base: null, api_key: null, litellm_api_base: null, litellm_api_key: null, litellm_openai_key: null, api_version: null, headers: {}}
+      - {api_base: "https://explicit.test/v1/", api_key: null, litellm_api_base: null, litellm_api_key: null, litellm_openai_key: null, api_version: "2025-04-01", headers: {X-Test: "1"}}
+      - {api_base: null, api_key: null, litellm_api_base: "https://global.test/v1", litellm_api_key: null, litellm_openai_key: null, api_version: null, headers: {}}
+env:
+  OPENAI_API_BASE: "https://env.test/base"
+  OPENAI_BASE_URL: "https://ignored.test"
+compare: {ignore: []}
