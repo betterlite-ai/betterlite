@@ -157,3 +157,10 @@ path = "fuzz_targets/akto_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "compresr_response"
+path = "fuzz_targets/compresr_response.rs"
+test = false
+doc = false
+bench = false

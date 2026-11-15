@@ -100,6 +100,7 @@ description: >-
   the Python side patches litellm.supports_web_search, supports_reasoning and supports_response_schema to the same answers.
 scope:
   paths:
+    - "crates/betterlite-openai/src"
     - crates/betterlite-openai/src/groq_chat.rs
     - crates/betterlite-openai/src/groq_chat/**
     - crates/betterlite-openai/src/groq_stt.rs
