@@ -9,8 +9,7 @@ use crate::endpoint_target::error::EndpointTargetError;
 use crate::gemini_stream::error::StreamError;
 use crate::model_policy::error::VertexAiError;
 use crate::token_cache::error::CredentialCacheError;
-
-use super::post::PostError;
+use crate::vertex_embedding_call::post::PostError;
 
 // LiteLLM raises this message with status 408 when a complete call times out
 const TIMEOUT_MESSAGE: &str = "Timeout error occurred.";

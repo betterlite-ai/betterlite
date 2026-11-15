@@ -182,7 +182,7 @@ async fn answer_stream(listener: TcpListener) -> Vec<u8> {
 // the head arrives at once, the ten bytes it announces never do
 async fn stall_body(listener: TcpListener) {
     let (mut stream, _) = listener.accept().await.unwrap();
-    let _ = read_request(&mut stream).await;
+    read_request(&mut stream).await;
     stream
         .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 10\r\nconnection: close\r\n\r\n")
         .await

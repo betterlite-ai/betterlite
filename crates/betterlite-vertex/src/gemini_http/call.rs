@@ -19,12 +19,12 @@ use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::model_urls::{ApiVersion, UrlMode};
 use crate::token_cache::CredentialCache;
 use crate::token_refresh::{CredentialRefresh, ensure_access_token};
-use crate::vertex_embedding_call::post::Timeout;
+use crate::vertex_embedding_call::post::{ClientTimeout, Timeout};
 
 use super::error::{GeminiHttpError, get_error_class};
 use super::headers::{psc_endpoint_format, request_headers};
 use super::logging;
-use super::post::{ClientTimeout, GeminiPost, PostRequest};
+use super::post::{GeminiPost, PostRequest};
 use super::stream::{GeminiHttpStream, StreamSetup};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

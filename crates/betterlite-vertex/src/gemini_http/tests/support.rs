@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::SystemTime;
 
@@ -31,7 +31,7 @@ use crate::token_cache::executor::{CredentialExecutor, LoadedCredential};
 use crate::token_cache::record::CredentialSnapshot;
 use crate::token_cache::state::TokenState;
 use crate::token_refresh::CredentialRefresh;
-use crate::vertex_embedding_call::post::ClientTimeout;
+use crate::vertex_embedding_call::post::{ClientTimeout, PostError};
 
 pub(super) const TOKEN: &str = "ya29.vertex-test-token";
 pub(super) const GEMINI_KEY: &str = "gemini-test-key";
@@ -257,7 +257,7 @@ impl CredentialExecutor for FixedExecutor {
     ) -> Pin<
         Box<dyn Future<Output = Result<LoadedCredential, CredentialCacheError>> + Send + 'borrow>,
     > {
-        self.loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.loads.fetch_add(1, Ordering::SeqCst);
         let credential = Arc::new(CredentialSnapshot {
             token: Some(self.token.clone()),
             state: Some(TokenState::Fresh),
