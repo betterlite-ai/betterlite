@@ -64,7 +64,7 @@ pub fn success_event_pipeline_ops(
     );
     extend_reserved_agent_scopes(&mut targets, &snapshot.reserved_scopes);
     let charged = charged_targets(targets, event.request_metadata, model.as_ref())?;
-    if snapshot.reserved_tokens > 0 && total_tokens < snapshot.reserved_tokens {
+    if total_tokens < snapshot.reserved_tokens {
         tracing::debug!(
             reserved = snapshot.reserved_tokens,
             actual = total_tokens,
