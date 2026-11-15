@@ -10,20 +10,20 @@ use crate::api::responses_tool_namespaces::values::has_value;
 mod tests;
 
 #[must_use]
-pub fn decision(metadata: &Json) -> Option<&IndexMap<String, Json>> {
+pub fn decision(metadata: &Json) -> IndexMap<String, Json> {
     match chat_text::field(metadata, "routing_decision") {
-        Some(Json::Object(fields)) => Some(fields),
+        Some(Json::Object(fields)) => fields.clone(),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => None,
+        | None => IndexMap::new(),
     }
 }
 
 #[must_use]
 pub fn routed_tier(metadata: &Json) -> Option<String> {
-    let decision = decision(metadata)?;
-    let raw = match decision.get("tier_label").filter(|value| has_value(value)) {
+    let fields = decision(metadata);
+    let raw = match fields.get("tier_label").filter(|value| has_value(value)) {
         Some(label) => label,
-        None => decision.get("tier")?,
+        None => fields.get("tier")?,
     };
     match raw {
         Json::Null => None,
@@ -35,10 +35,8 @@ pub fn routed_tier(metadata: &Json) -> Option<String> {
 
 #[must_use]
 pub fn classifier_cost(metadata: &Json) -> Decimal {
-    let Some(decision) = decision(metadata) else {
-        return Decimal::ZERO;
-    };
-    match decision.get("classifier_cost") {
+    let fields = decision(metadata);
+    match fields.get("classifier_cost") {
         Some(Json::Number(number)) => {
             parse_decimal_lexeme(&number.to_string()).unwrap_or(Decimal::ZERO)
         }

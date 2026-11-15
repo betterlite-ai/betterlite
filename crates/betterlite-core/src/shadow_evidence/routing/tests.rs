@@ -13,9 +13,9 @@ fn json(text: &str) -> Json {
 #[test]
 fn decision_reads_the_mapping_metadata_carries() {
     let metadata = json(r#"{"routing_decision":{"tier":"low","routed_model":"m"}}"#);
-    let decision = decision(&metadata).unwrap();
-    assert_eq!(decision.get("tier"), Some(&json(r#""low""#)));
-    assert_eq!(decision.get("routed_model"), Some(&json(r#""m""#)));
+    let fields = decision(&metadata);
+    assert_eq!(fields.get("tier"), Some(&json(r#""low""#)));
+    assert_eq!(fields.get("routed_model"), Some(&json(r#""m""#)));
 }
 
 #[rstest]
@@ -26,8 +26,8 @@ fn decision_reads_the_mapping_metadata_carries() {
 #[case::number(r#"{"routing_decision":5}"#)]
 #[case::bool(r#"{"routing_decision":true}"#)]
 #[case::metadata_not_an_object("5")]
-fn decision_is_absent_without_a_mapping(#[case] metadata: &str) {
-    assert!(decision(&json(metadata)).is_none());
+fn decision_is_empty_without_a_mapping(#[case] metadata: &str) {
+    assert!(decision(&json(metadata)).is_empty());
 }
 
 #[rstest]

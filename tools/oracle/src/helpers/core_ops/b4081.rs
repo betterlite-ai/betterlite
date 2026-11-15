@@ -85,7 +85,7 @@ impl crate::helpers::Helper for Op {
             }
             Operation::JudgeShape => Ok(json!({"shape": judge_reply::shape(response)})),
             Operation::Routing => Ok(json!({
-                "decision": Json::Object(routing::decision(metadata).cloned().unwrap_or_default()),
+                "decision": Json::Object(routing::decision(metadata)),
                 "tier": routing::routed_tier(metadata),
                 "classifier_cost": routing::classifier_cost(metadata).normalize().to_string(),
             })),
