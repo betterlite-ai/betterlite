@@ -5,18 +5,18 @@ use super::translate::ToolCallIndices;
 
 pub(super) type Fields = Map<String, Value>;
 
-pub(super) trait FieldValue<'a>: Sized {
-    fn read(value: &'a Value) -> Option<Self>;
+pub(super) trait FieldValue<'value>: Sized {
+    fn read(value: &'value Value) -> Option<Self>;
 }
 
-impl<'a> FieldValue<'a> for &'a str {
-    fn read(value: &'a Value) -> Option<Self> {
+impl<'value> FieldValue<'value> for &'value str {
+    fn read(value: &'value Value) -> Option<Self> {
         value.as_str()
     }
 }
 
-impl<'a> FieldValue<'a> for &'a Fields {
-    fn read(value: &'a Value) -> Option<Self> {
+impl<'value> FieldValue<'value> for &'value Fields {
+    fn read(value: &'value Value) -> Option<Self> {
         value.as_object()
     }
 }
@@ -27,8 +27,8 @@ impl FieldValue<'_> for i64 {
     }
 }
 
-pub(super) fn field<'a, T: FieldValue<'a>>(
-    fields: &'a Fields,
+pub(super) fn field<'value, T: FieldValue<'value>>(
+    fields: &'value Fields,
     name: &'static str,
 ) -> Result<Option<T>, ResponsesChatStreamError> {
     match fields.get(name) {

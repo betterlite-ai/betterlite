@@ -7,8 +7,8 @@ use crate::api::response_chat_history::tool_fields::output_tool_fields;
 
 const CONVERTED_INDEX: usize = 0;
 
-pub(super) enum CallShape<'a> {
-    Added { event: &'a Fields, index: i64 },
+pub(super) enum CallShape<'fields> {
+    Added { event: &'fields Fields, index: i64 },
     Done { index: i64 },
 }
 
