@@ -1,0 +1,44 @@
+kind: probe
+name: unsupported-parameter-filter
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: modern}
+          - {model_name: gpt, model: "openai/gpt-4", id: legacy}
+          - {model_name: gpt, model: "openai/gpt-3.5-turbo-16k", id: old16k}
+        lookups:
+          - model: gpt
+            messages: [{role: user, content: "hi"}]
+            response_format: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: modern}
+          - {model_name: gpt, model: "openai/gpt-4", id: legacy}
+        lookups:
+          - model: gpt
+            messages: [{role: user, content: "hi"}]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        drop_params: true
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: modern}
+          - {model_name: gpt, model: "openai/gpt-4", id: legacy}
+        lookups:
+          - model: gpt
+            messages: [{role: user, content: "hi"}]
+            response_format: true
+compare: {ignore: []}

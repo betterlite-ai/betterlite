@@ -1,0 +1,72 @@
+kind: helper
+name: api-key-and-bearer
+call:
+  anthropic_headers:
+    environment: {ANTHROPIC_API_KEY: sk-ant-api03-env, ANTHROPIC_AUTH_TOKEN: auth-token-value}
+    calls:
+      - function: headers
+        api_key: sk-ant-api03-fixture
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: auth-token-value
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: sk-ant-api03-fixture
+        auth_token: auth-token-value
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: sk-custom-key
+        auth_token: null
+        anthropic_version: null
+        api_base: https://anthropic-proxy.example
+        use_bearer_for_custom_base: true
+        user_betas: null
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: sk-custom-key
+        auth_token: null
+        anthropic_version: null
+        api_base: https://anthropic-proxy.example
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: environment
+        model: claude-sonnet-4
+        headers: []
+        api_key: null
+        api_base: null
+        litellm_params: {}
+        messages: []
+        optional_params: {}
+        effort_used: false
+env: {ANTHROPIC_API_KEY: sk-ant-api03-env, ANTHROPIC_AUTH_TOKEN: auth-token-value}
+compare: {ignore: []}
