@@ -1,8 +1,11 @@
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
-
-use betterlite_context::agentic_callback::AgenticCallback;
-use betterlite_context::agentic_loop_plan::{FollowupMessage, JsonMap};
+use super::error::SdkHttpError;
+use super::result::{AgenticContinuationRun, AgenticFailure, AgenticIdentity, SdkResult};
+use async_trait::async_trait;
+use betterlite_context::agentic_callback::error::AgenticHookError;
+use betterlite_context::agentic_callback::{
+    AgenticCall, AgenticCallback, AgenticGate, AgenticLoopCall, AgenticOverrides,
+};
+use betterlite_context::agentic_loop_plan::{AgenticLoopPlan, FollowupMessage, JsonMap};
 use betterlite_core::api::responses_agentic_execution::AgenticResult;
 use betterlite_core::api::responses_agentic_execution::dispatch::call_agentic_completion_hooks;
 use betterlite_core::api::responses_agentic_execution::error::AgenticExecutionError;
@@ -20,20 +23,10 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::value::{RawValue, to_raw_value};
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use url::Url;
-
-use super::error::SdkHttpError;
-use super::result::{AgenticContinuationRun, AgenticFailure, AgenticTrace, SdkResult};
-use callbacks::ScriptedCallback;
-
-mod callbacks;
-
 pub(crate) const PROVIDER: &str = "openai";
-pub(crate) const PROVIDER_KEY: &str = "custom_llm_provider";
-
-const TRACED_KEYS: [&str; 2] = [PROVIDER_KEY, "max_agentic_loops"];
-const TRACED_PREFIX: &str = "_agentic_loop";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AgenticContinuationCall {
@@ -48,7 +41,6 @@ pub(crate) struct AgenticContinuationCall {
     #[serde(default)]
     pub(crate) dynamic: Vec<CallbackScript>,
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CallbackScript {
@@ -63,10 +55,7 @@ pub(crate) struct CallbackScript {
     pub(crate) plan: Option<IndexMap<String, Json>>,
     #[serde(default)]
     pub(crate) plan_error: Option<String>,
-    #[serde(default)]
-    pub(crate) legacy: bool,
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct GateScript {
@@ -74,18 +63,6 @@ pub(crate) struct GateScript {
     #[serde(default)]
     pub(crate) tools: IndexMap<String, Json>,
 }
-
-// the dispatcher's surface kwargs carry the provider the case claims to call
-pub(crate) fn validate(call: &AgenticContinuationCall) -> Result<(), SdkHttpError> {
-    let provider = call.kwargs.get(PROVIDER_KEY);
-    if !matches!(provider, Some(Json::Text(name)) if name == PROVIDER) {
-        return Err(SdkHttpError::Invalid(
-            "the agentic continuation needs custom_llm_provider=openai".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
 pub(crate) async fn send(
     call: &AgenticContinuationCall,
     api_base: &str,
@@ -101,8 +78,6 @@ pub(crate) async fn send(
         model_info: None,
         deadline: DEFAULT_DEADLINE,
     };
-    let trace = Arc::new(Mutex::new(Vec::new()));
-    let callbacks = scripts(call, &trace);
     let messages: Vec<FollowupMessage> = Vec::new();
     let optional_params = raw_params(&call.params)?;
     let completion = CompletionCall {
@@ -116,42 +91,40 @@ pub(crate) async fn send(
         kwargs: &call.kwargs,
         api_surface: ApiSurface::Responses,
     };
-    let value = match call_agentic_completion_hooks(&completion, &callbacks, &executor).await {
-        Ok(Some(AgenticResult::Response(owned))) => AgenticContinuationRun {
-            trace: collected(&trace),
-            returned: Some(serde_json::from_str(owned.get()).map_err(SdkHttpError::ResultParse)?),
-            error: None,
-        },
-        Ok(Some(AgenticResult::Stream(_))) => {
-            return Err(SdkHttpError::Invalid(
-                "the responses surface wrapped its answer in a fake stream".to_owned(),
-            ));
-        }
-        Ok(None) => AgenticContinuationRun {
-            trace: collected(&trace),
-            returned: Some(
-                serde_json::from_str(response.get()).map_err(SdkHttpError::ResultParse)?,
-            ),
-            error: None,
-        },
-        Err(AgenticExecutionError::Safety(error)) => AgenticContinuationRun {
-            trace: collected(&trace),
+    let outcome = call_agentic_completion_hooks(&completion, &scripts(call), &executor).await;
+    let value = continuation_run(outcome, &response)?;
+    Ok(SdkResult::ResponsesAgenticContinuation { value })
+}
+fn continuation_run(
+    outcome: Result<Option<AgenticResult>, AgenticExecutionError>,
+    initial: &RawValue,
+) -> Result<AgenticContinuationRun, SdkHttpError> {
+    match outcome {
+        Ok(None) => answered(initial),
+        Ok(Some(AgenticResult::Response(response))) => answered(&response),
+        Ok(Some(AgenticResult::Stream(_))) => Err(SdkHttpError::Invalid(
+            "the responses surface wrapped its answer in a fake stream".to_owned(),
+        )),
+        Err(AgenticExecutionError::Safety(error)) => Ok(AgenticContinuationRun {
             returned: None,
             error: Some(AgenticFailure {
                 class: "APIConnectionError".to_owned(),
                 message: error.to_string(),
             }),
-        },
-        Err(error) => {
-            return Err(SdkHttpError::Invalid(format!(
-                "the native agentic dispatcher failed: {error}"
-            )));
-        }
-    };
-    Ok(SdkResult::ResponsesAgenticContinuation { value })
+        }),
+        Err(error) => Err(SdkHttpError::Invalid(format!(
+            "the native agentic dispatcher failed: {error}"
+        ))),
+    }
 }
-
-// the mock stands in for the provider, so the harness's base replaces the caller's
+fn answered(identity: &RawValue) -> Result<AgenticContinuationRun, SdkHttpError> {
+    let returned: AgenticIdentity =
+        serde_json::from_str(identity.get()).map_err(SdkHttpError::ResultParse)?;
+    Ok(AgenticContinuationRun {
+        returned: Some(returned),
+        error: None,
+    })
+}
 async fn initial_response(
     client: &ProxiedClient,
     api_base: &str,
@@ -179,55 +152,109 @@ async fn initial_response(
     let text = String::from_utf8(response.body).map_err(SdkHttpError::ErrorBodyUtf8)?;
     RawValue::from_string(text).map_err(SdkHttpError::ResultParse)
 }
-
 fn initial_body(call: &AgenticContinuationCall) -> Result<Vec<u8>, SdkHttpError> {
     let mut body = Map::new();
     for (key, value) in &call.params {
-        body.insert(
-            key.clone(),
-            serde_json::to_value(value).map_err(SdkHttpError::Serialize)?,
-        );
+        let encoded = serde_json::to_value(value).map_err(SdkHttpError::Serialize)?;
+        body.insert(key.clone(), encoded);
     }
     body.insert("model".to_owned(), Value::String(call.model.clone()));
-    body.insert(
-        "input".to_owned(),
-        serde_json::to_value(&call.input).map_err(SdkHttpError::Serialize)?,
-    );
+    let input = serde_json::to_value(&call.input).map_err(SdkHttpError::Serialize)?;
+    body.insert("input".to_owned(), input);
     serde_json::to_vec(&Value::Object(body)).map_err(SdkHttpError::Serialize)
 }
-
 fn raw_params(params: &IndexMap<String, Json>) -> Result<JsonMap, SdkHttpError> {
     let mut map = JsonMap::with_capacity(params.len());
     for (key, value) in params {
-        map.insert(
-            key.clone(),
-            to_raw_value(value).map_err(SdkHttpError::Serialize)?,
-        );
+        let raw = to_raw_value(value).map_err(SdkHttpError::Serialize)?;
+        map.insert(key.clone(), raw);
     }
     Ok(map)
 }
-
-// a string callback is skipped by the dispatcher, so only the Python list carries it
-fn scripts(
-    call: &AgenticContinuationCall,
-    trace: &Arc<Mutex<Vec<AgenticTrace>>>,
-) -> Vec<Arc<dyn AgenticCallback>> {
+fn scripts(call: &AgenticContinuationCall) -> Vec<Arc<dyn AgenticCallback>> {
     let mut callbacks: Vec<Arc<dyn AgenticCallback>> = Vec::new();
     for script in call.callbacks.iter().chain(&call.dynamic) {
-        if script.skip {
-            continue;
+        if !script.skip {
+            callbacks.push(Arc::new(ScriptedCallback {
+                script: script.clone(),
+            }));
         }
-        callbacks.push(Arc::new(ScriptedCallback {
-            script: script.clone(),
-            trace: Arc::clone(trace),
-        }));
     }
     callbacks
 }
-
-fn collected(trace: &Arc<Mutex<Vec<AgenticTrace>>>) -> Vec<AgenticTrace> {
-    match trace.lock() {
-        Ok(trace) => trace.clone(),
-        Err(poisoned) => poisoned.into_inner().clone(),
+struct ScriptedCallback {
+    script: CallbackScript,
+}
+impl ScriptedCallback {
+    fn gate_tools(&self, tools: &IndexMap<String, Json>) -> Result<JsonMap, AgenticHookError> {
+        let mut map = JsonMap::with_capacity(tools.len());
+        for (key, value) in tools {
+            let raw = to_raw_value(value).map_err(|source| AgenticHookError::Failed {
+                callback: self.script.name.clone(),
+                message: format!("the case gate tools do not encode: {source}"),
+            })?;
+            map.insert(key.clone(), raw);
+        }
+        Ok(map)
+    }
+    fn case_plan(
+        &self,
+        plan: &IndexMap<String, Json>,
+    ) -> Result<AgenticLoopPlan, AgenticHookError> {
+        let text = serde_json::to_string(plan).map_err(|source| AgenticHookError::Failed {
+            callback: self.script.name.clone(),
+            message: format!("the case plan does not encode: {source}"),
+        })?;
+        serde_json::from_str::<AgenticLoopPlan>(&text).map_err(|source| AgenticHookError::Failed {
+            callback: self.script.name.clone(),
+            message: format!("the case plan does not decode: {source}"),
+        })
+    }
+}
+#[async_trait]
+impl AgenticCallback for ScriptedCallback {
+    fn callback_name(&self) -> &str {
+        &self.script.name
+    }
+    fn overrides(&self) -> AgenticOverrides {
+        let plans = self.script.plan.is_some() || self.script.plan_error.is_some();
+        AgenticOverrides {
+            should_run: true,
+            run_loop: false,
+            build_plan: plans,
+            post_response: plans,
+            cleanup: plans,
+        }
+    }
+    async fn should_run_agentic_loop(
+        &self,
+        _call: &AgenticCall<'_>,
+    ) -> Result<AgenticGate, AgenticHookError> {
+        if let Some(message) = &self.script.gate_error {
+            return Err(AgenticHookError::Failed {
+                callback: self.script.name.clone(),
+                message: message.clone(),
+            });
+        }
+        let Some(gate) = &self.script.gate else {
+            return Ok(AgenticGate::default());
+        };
+        Ok(AgenticGate {
+            run: gate.run,
+            tools: self.gate_tools(&gate.tools)?,
+        })
+    }
+    async fn build_agentic_loop_plan(
+        &self,
+        _call: &AgenticLoopCall<'_>,
+    ) -> Result<AgenticLoopPlan, AgenticHookError> {
+        match (&self.script.plan_error, &self.script.plan) {
+            (Some(message), _) => Err(AgenticHookError::Failed {
+                callback: self.script.name.clone(),
+                message: message.clone(),
+            }),
+            (None, Some(plan)) => self.case_plan(plan),
+            (None, None) => Ok(AgenticLoopPlan::default()),
+        }
     }
 }

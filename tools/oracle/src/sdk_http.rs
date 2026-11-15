@@ -249,10 +249,8 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
                 ));
             }
         }
-        SdkHttpCall::ResponsesAgenticContinuation(continuation) => {
-            responses_agentic_continuation::validate(continuation)?;
-        }
-        SdkHttpCall::VectorQueryEmbedding(_)
+        SdkHttpCall::ResponsesAgenticContinuation(_)
+        | SdkHttpCall::VectorQueryEmbedding(_)
         | SdkHttpCall::AnthropicBetaConfig(_)
         | SdkHttpCall::MessagesStreamLogging(_) => {}
     }

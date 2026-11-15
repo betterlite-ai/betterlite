@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Final, Literal, TypedDict
+from typing import Literal, TypedDict
 
 import litellm
 from litellm.exceptions import APIConnectionError
@@ -17,11 +17,6 @@ from typing_extensions import override
 INPUT: TypeAdapter[str | ResponseInputParam] = TypeAdapter(str | ResponseInputParam)
 PLAN: TypeAdapter[AgenticLoopPlan] = TypeAdapter(AgenticLoopPlan)
 JSON: TypeAdapter[Json] = TypeAdapter(Json)
-SkippedName = Literal["langfuse"]
-SKIPPED: Final[SkippedName] = "langfuse"
-TRACED_KEYS: Final[tuple[str, ...]] = ("custom_llm_provider", "max_agentic_loops")
-TRACED_PREFIX: Final = "_agentic_loop"
-HookName = Literal["gate", "plan", "legacy", "post", "cleanup"]
 
 
 class Identity(TypedDict):
@@ -59,7 +54,6 @@ class CallbackScript(BaseModel):
     gate_error: str | None = None
     plan: dict[str, Json] | None = None
     plan_error: str | None = None
-    legacy: bool = False
 
 
 class ContinuationCall(BaseModel):
@@ -73,16 +67,8 @@ class ContinuationCall(BaseModel):
 
 
 class GateCallback(CustomLogger):
-    def __init__(self, script: CallbackScript, trace: list[Json]) -> None:
+    def __init__(self, script: CallbackScript) -> None:
         self.script = script
-        self.trace = trace
-
-    def record(self, hook: HookName, kwargs: dict[str, Json]) -> None:
-        traced: list[Json] = [
-            key for key in sorted(kwargs) if key.startswith(TRACED_PREFIX) or key in TRACED_KEYS
-        ]
-        entry: Json = {"callback": self.script.name, "hook": hook, "kwargs": traced}
-        self.trace.append(entry)
 
     @override
     async def async_should_run_agentic_loop(
@@ -96,7 +82,6 @@ class GateCallback(CustomLogger):
         custom_llm_provider: str,
         kwargs: dict[str, Json],
     ) -> tuple[bool, dict[str, Json]]:
-        self.record("gate", kwargs)
         if self.script.gate_error is not None:
             raise ValueError(self.script.gate_error)
         gate = self.script.gate
@@ -122,80 +107,32 @@ class PlanCallback(GateCallback):
         stream: bool,
         kwargs: dict[str, Json],
     ) -> AgenticLoopPlan:
-        self.record("plan", kwargs)
         if self.script.plan_error is not None:
             raise ValueError(self.script.plan_error)
         plan = self.script.plan
-        if plan is None:
-            return AgenticLoopPlan()
-        return PLAN.validate_python(plan)
-
-    @override
-    async def async_post_agentic_loop_response_hook(  # ast-grep-ignore: no-long-names
-        self,
-        # ast-grep-ignore: no-loose-types
-        response: object,
-        plan: AgenticLoopPlan,
-        kwargs: dict[str, Json],
-        # ast-grep-ignore: no-loose-types
-    ) -> object:
-        self.record("post", kwargs)
-        return response
-
-    @override
-    async def async_agentic_loop_cleanup_hook(  # ast-grep-ignore: no-long-names
-        self,
-        plan: AgenticLoopPlan,
-        kwargs: dict[str, Json],
-    ) -> None:
-        self.record("cleanup", kwargs)
+        return AgenticLoopPlan() if plan is None else PLAN.validate_python(plan)
 
 
-class LegacyCallback(GateCallback):
-    @override
-    async def async_run_agentic_loop(
-        self,
-        tools: dict[str, Json],
-        model: str,
-        messages: list[dict[str, Json]],
-        # ast-grep-ignore: no-loose-types
-        response: object,
-        # ast-grep-ignore: no-long-names
-        anthropic_messages_provider_config: BaseAnthropicMessagesConfig | None,
-        # ast-grep-ignore: no-long-names
-        anthropic_messages_optional_request_params: dict[str, Json],
-        logging_obj: Logging,
-        stream: bool,
-        kwargs: dict[str, Json],
-    ) -> None:
-        self.record("legacy", kwargs)
-
-
-def callback(script: CallbackScript, trace: list[Json]) -> CustomLogger:
+def callback(script: CallbackScript) -> CustomLogger:
     if script.plan is not None or script.plan_error is not None:
-        return PlanCallback(script, trace)
-    if script.legacy:
-        return LegacyCallback(script, trace)
-    return GateCallback(script, trace)
+        return PlanCallback(script)
+    return GateCallback(script)
 
 
-def global_callbacks(
-    scripts: list[CallbackScript], trace: list[Json]
-) -> list[CustomLogger | SkippedName]:
-    entries: list[CustomLogger | SkippedName] = []
+def global_callbacks(scripts: list[CallbackScript]) -> list[CustomLogger | Literal["langfuse"]]:
+    entries: list[CustomLogger | Literal["langfuse"]] = []
     for script in scripts:
         if script.skip:
-            entries.append(SKIPPED)
+            entries.append("langfuse")
             continue
-        entries.append(callback(script, trace))
+        entries.append(callback(script))
     return entries
 
 
 async def execute(call: ContinuationCall, api_base: str) -> Json:
-    trace: list[Json] = []
-    litellm.callbacks = [*global_callbacks(call.callbacks, trace)]
-    dynamic = [callback(script, trace) for script in call.dynamic]
-    outcome: dict[str, Json] = {"trace": trace, "returned": None, "error": None}
+    litellm.callbacks = [*global_callbacks(call.callbacks)]
+    dynamic = [callback(script) for script in call.dynamic]
+    outcome: dict[str, Json] = {"returned": None, "error": None}
     try:
         result = await litellm.aresponses(
             model=call.model,
@@ -210,8 +147,7 @@ async def execute(call: ContinuationCall, api_base: str) -> Json:
         failure: Json = {"class": type(error).__name__, "message": str(error.__context__)}
         outcome["error"] = failure
         return outcome
-    returned = IDENTITY.validate_python(JSON.validate_python(to_jsonable_python(result)))
-    outcome["returned"] = JSON.validate_python(returned)
+    outcome["returned"] = JSON.validate_python(IDENTITY.validate_python(to_jsonable_python(result)))
     return outcome
 
 

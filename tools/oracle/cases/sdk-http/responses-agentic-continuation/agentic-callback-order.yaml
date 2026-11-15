@@ -35,7 +35,6 @@ call:
       - name: legacy-callback
         gate:
           run: true
-        legacy: true
 upstream:
   - status: 200
     headers: {content-type: application/json}
