@@ -94,14 +94,8 @@ fn record_from_json(value: &JsonValue) -> Result<AuditLogRecord, AuditRecordErro
         action,
         table_name,
         object_id,
-        before_value: value
-            .get("before_value")
-            .filter(|given| !given.is_null())
-            .cloned(),
-        updated_values: value
-            .get("updated_values")
-            .filter(|given| !given.is_null())
-            .cloned(),
+        before_value: value.get("before_value").cloned(),
+        updated_values: value.get("updated_values").cloned(),
     })
 }
 

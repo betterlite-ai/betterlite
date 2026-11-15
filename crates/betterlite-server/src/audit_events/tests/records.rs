@@ -46,6 +46,12 @@ fn record_text(action: &str, table_name: &str) -> String {
 fn audit_record_defaults_and_enums(#[case] action: &str, #[case] table_name: &str) {
     let text = record_text(action, table_name);
     let record = decode_audit_record(text.as_bytes()).unwrap();
+    assert_eq!(record.id, "audit-1");
+    assert_eq!(record.object_id, "team-1");
+    assert_eq!(
+        record.updated_at,
+        DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z").unwrap()
+    );
     assert_eq!(record.action.as_str(), action);
     assert_eq!(record.table_name.as_str(), table_name);
     assert!(record.changed_by.is_none());
