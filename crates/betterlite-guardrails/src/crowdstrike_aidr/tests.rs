@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::future::IntoFuture as _;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -20,7 +22,9 @@ use tokio::task::JoinSet;
 use super::api::call_guard;
 use super::error::CrowdStrikeError;
 use super::handler::{ConstructorArgs, CrowdStrikeAidr, Dependencies};
-use super::models::{EventType, GuardInput, GuardPayload, Message, MessageContent};
+use super::models::{
+    EventType, GuardInput, GuardPayload, GuardResponse, GuardSignals, Message, MessageContent,
+};
 use crate::crowdstrike_streaming::StreamingParams;
 use crate::generic_guardrail_contracts::GuardrailToolParam;
 use crate::guardrail_base::contract::GuardrailContract as _;
@@ -211,12 +215,15 @@ fn constructor_initializes_streaming_defaults() {
 #[test]
 fn update_in_memory_litellm_params() {
     let mut guardrail = handler_for("https://cs.test", None);
+    assert!(guardrail.settings.fail_on_error);
     let params: LitellmParams = serde_json::from_str(
         r#"{
             "guardrail": "crowdstrike_aidr",
             "mode": "pre_call",
             "api_key": "new-key",
             "api_base": "https://new.test",
+            "fail_on_error": false,
+            "timeout": 2.5,
             "streaming_buffer_release_on_scan": true,
             "streaming_sampling_rate": 4
         }"#,
@@ -227,8 +234,33 @@ fn update_in_memory_litellm_params() {
         .expect("the streaming settings load");
     assert_eq!(guardrail.settings.api_key.expose_secret(), "new-key");
     assert_eq!(guardrail.settings.api_base, "https://new.test");
+    assert!(!guardrail.settings.fail_on_error);
+    assert_eq!(guardrail.settings.timeout, Some(2.5));
     assert!(guardrail.settings.streaming.buffer_release_on_scan);
     assert_eq!(guardrail.settings.streaming.sampling_rate, 4);
+    let defaults: LitellmParams =
+        serde_json::from_str(r#"{"guardrail": "crowdstrike_aidr", "mode": "pre_call"}"#)
+            .expect("a well-formed litellm_params");
+    guardrail
+        .update_in_memory_params(&defaults)
+        .expect("the streaming settings load");
+    assert!(guardrail.settings.fail_on_error);
+    assert_eq!(guardrail.settings.timeout, None);
+}
+
+#[test]
+fn replays_the_crowdstrike_aidr_response_corpus() {
+    let corpus =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/crowdstrike_aidr_response");
+    let paths: Vec<_> = fs::read_dir(corpus)
+        .expect("the corpus directory exists")
+        .collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.expect("a corpus entry").path()).expect("the corpus file reads");
+        serde_json::from_slice::<GuardSignals>(&bytes).is_ok()
+            || serde_json::from_slice::<GuardResponse>(&bytes).is_ok()
+    }));
 }
 
 #[test]

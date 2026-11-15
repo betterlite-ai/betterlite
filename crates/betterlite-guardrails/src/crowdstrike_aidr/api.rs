@@ -74,7 +74,10 @@ fn parse_guard_result(
         Err(source) => {
             if raw_transformed == Some(true) {
                 tracing::error!("{MALFORMED_TRANSFORMED_MESSAGE}");
-                return Err(CrowdStrikeError::MalformedTransformed { source });
+                return Err(CrowdStrikeError::MalformedTransformed {
+                    source,
+                    guardrail_name: guardrail_name.map(str::to_owned),
+                });
             }
             Err(CrowdStrikeError::ResponseJson { source })
         }

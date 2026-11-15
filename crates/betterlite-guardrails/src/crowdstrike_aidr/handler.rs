@@ -2,7 +2,6 @@ use std::time::SystemTime;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use secrecy::SecretString;
@@ -144,9 +143,8 @@ impl CrowdStrikeAidr {
         if let Some(base) = &params.base.fields.api_base {
             self.settings.api_base.clone_from(base);
         }
-        if let Some(GuardrailValue::Boolean(flag)) = params.base.extra.0.get("fail_on_error") {
-            self.settings.fail_on_error = *flag;
-        }
+        self.settings.fail_on_error = params.base.fields.fail_on_error;
+        self.settings.timeout = params.base.fields.timeout;
         self.settings.streaming = StreamingSettings::from_params(read_streaming_params(params)?);
         Ok(())
     }

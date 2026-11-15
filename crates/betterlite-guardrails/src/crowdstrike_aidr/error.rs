@@ -30,7 +30,10 @@ pub enum CrowdStrikeError {
     #[error("the content could not be written as JSON")]
     JsonEncode { source: serde_json::Error },
     #[error("{MALFORMED_TRANSFORMED_MESSAGE}")]
-    MalformedTransformed { source: serde_json::Error },
+    MalformedTransformed {
+        source: serde_json::Error,
+        guardrail_name: Option<String>,
+    },
     #[error("{BLOCKED_MESSAGE}")]
     Blocked { guardrail_name: Option<String> },
     #[error("the {name} parameter has an invalid value")]
@@ -62,11 +65,14 @@ impl CrowdStrikeError {
         }
     }
 
-    // LiteLLM's HTTPException detail for a block, as the two keys it writes
+    // LiteLLM's HTTPException detail for a block or a malformed transformed reply, as the two keys it writes
     #[must_use]
     pub fn detail(&self) -> IndexMap<String, GuardrailValue> {
         let (message, name) = match self {
             Self::Blocked { guardrail_name } => (BLOCKED_MESSAGE, guardrail_name.clone()),
+            Self::MalformedTransformed { guardrail_name, .. } => {
+                (MALFORMED_TRANSFORMED_MESSAGE, guardrail_name.clone())
+            }
             _ => (MALFORMED_TRANSFORMED_MESSAGE, None),
         };
         let mut detail = IndexMap::new();

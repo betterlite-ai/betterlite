@@ -576,7 +576,10 @@ async fn apply_guardrail_maps_failures_to_http_errors() {
         panic!("a malformed transformed reply is an http object");
     };
     assert_eq!(status, 500);
-    assert_eq!(detail.get("guardrail_name"), Some(&GuardrailValue::Null));
+    assert_eq!(
+        detail.get("guardrail_name"),
+        Some(&GuardrailValue::Text("cs-aidr".to_owned()))
+    );
     let (broken, _captured, _third) = serve(StatusCode::INTERNAL_SERVER_ERROR, "oops").await;
     let failure = handler(&broken, None)
         .apply_guardrail(
