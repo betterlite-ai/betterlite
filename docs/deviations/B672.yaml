@@ -30,7 +30,9 @@ deviations:
       removes from its field (litellm:custom_llm_provider:, model_id:, and video_id: or
       character_id: for the id) is encoded as video_ or character_ plus base64 of litellm:quoted:
       and a JSON object holding custom_llm_provider, model_id and value, so encode then decode
-      returns the same three strings. LiteLLM joins the fields with ';', splits the decoded text
+      returns the same three strings; decoding reads a payload that starts with the marker as
+      that JSON object and every other payload through LiteLLM's split. LiteLLM joins the fields
+      with ';', splits the decoded text
       on every ';' and keeps the first three parts while removing every literal label from them,
       so litellm:custom_llm_provider:openai;model_id:m;video_id:a;b decodes to video_id a and
       loses the b.
