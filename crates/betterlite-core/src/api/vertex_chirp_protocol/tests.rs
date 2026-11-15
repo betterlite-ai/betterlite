@@ -539,6 +539,29 @@ fn configured_event_describes_the_session() {
 }
 
 #[test]
+fn backend_frames_decode_from_their_streaming_kinds() {
+    let response: ChirpBackendEvent = serde_json::from_str(
+        r#"{"kind":"response","speech_event":"begin","results":[{"transcript":"hello","is_final":false}],"billed_seconds":0.5}"#,
+    )
+    .unwrap();
+    let mut transformer = chirp_transformer(true);
+    let events = transformer.transform(response).unwrap();
+    assert_eq!(event_types(&wire_events(&events)), [STARTED, DELTA]);
+    let configured: ChirpBackendEvent = serde_json::from_str(r#"{"kind":"configured"}"#).unwrap();
+    let events = transformer.transform(configured).unwrap();
+    assert_eq!(event_types(&wire_events(&events)), ["session.created"]);
+    let discarded: ChirpBackendEvent =
+        serde_json::from_str(r#"{"kind":"turn_discarded","billed_seconds":1.5}"#).unwrap();
+    assert!(transformer.transform(discarded).unwrap().is_empty());
+    assert_eq!(
+        transformer.take_unbilled_usage().unwrap(),
+        Some(duration_usage(1.5))
+    );
+    let finished: ChirpBackendEvent = serde_json::from_str(r#"{"kind":"turn_finished"}"#).unwrap();
+    assert!(transformer.transform(finished).unwrap().is_empty());
+}
+
+#[test]
 fn an_unconfigured_transformer_rejects_backend_events() {
     let mut transformer =
         ChirpEventTransformer::new(FixedEventIds::default(), FixedItemIds::default());
