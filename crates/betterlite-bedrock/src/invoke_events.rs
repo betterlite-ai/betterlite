@@ -51,13 +51,14 @@ pub enum InvokeChunk {
 pub struct InvokeStreamDecoder {
     base: ConverseStreamState,
     projection: Projection,
+    has_finished_thinking: bool,
     clock: DecoderClock,
 }
 
 enum Projection {
     Base,
     Anthropic(Box<StreamEventConverter<anthropic::ZeroCounter>>),
-    DeepSeek { has_finished_thinking: bool },
+    DeepSeek,
     OpenAiCompatible,
 }
 
@@ -83,6 +84,7 @@ fn new_decoder(
             }),
         },
         projection,
+        has_finished_thinking: false,
         clock: options.clock,
     }
 }
@@ -96,19 +98,17 @@ impl InvokeStreamDecoder {
                 .map(|projection| InvokeChunk::Base(Box::new(projection)))
                 .map_err(InvokeStreamError::Converse),
             Projection::Anthropic(converter) => anthropic::chunk_parser(converter, chunk)
-                .map(|chunk| InvokeChunk::Anthropic(Box::new(chunk))),
-            Projection::DeepSeek {
-                has_finished_thinking,
-            } => deepseek::chunk_parser(
-                has_finished_thinking,
+                .map(|parsed| InvokeChunk::Anthropic(Box::new(parsed))),
+            Projection::DeepSeek => deepseek::chunk_parser(
+                &mut self.has_finished_thinking,
                 chunk,
                 self.clock.next_id,
                 self.clock.now,
             )
-            .map(|chunk| InvokeChunk::DeepSeek(Box::new(chunk))),
+            .map(|reply| InvokeChunk::DeepSeek(Box::new(reply))),
             Projection::OpenAiCompatible => {
                 openai_compatible::chunk_parser(chunk, self.clock.next_id, self.clock.now)
-                    .map(|chunk| InvokeChunk::OpenAiCompatible(Box::new(chunk)))
+                    .map(|reply| InvokeChunk::OpenAiCompatible(Box::new(reply)))
             }
         }
     }
@@ -148,13 +148,7 @@ pub fn stream_decoder(provider: Option<&str>, options: &DecoderOptions<'_>) -> I
             );
             new_decoder(Projection::Anthropic(Box::new(converter)), false, options)
         }
-        Some("deepseek_r1") => new_decoder(
-            Projection::DeepSeek {
-                has_finished_thinking: false,
-            },
-            false,
-            options,
-        ),
+        Some("deepseek_r1") => new_decoder(Projection::DeepSeek, false, options),
         Some("moonshot") => new_decoder(Projection::OpenAiCompatible, false, options),
         Some(_) | None => new_decoder(
             Projection::Base,

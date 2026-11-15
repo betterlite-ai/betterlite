@@ -7,7 +7,7 @@ use futures_util::stream;
 use crate::converse_events::ChunkProjection;
 use crate::converse_events::response::ConverseChunk;
 use crate::invoke_events::error::InvokeStreamError;
-use crate::invoke_events::fake::{FakeResponse, FakeStream};
+use crate::invoke_events::fake::{FakeResponse, FakeStream, FakeUsage};
 use crate::invoke_events::framing::decode_bedrock_event_json;
 use crate::invoke_events::{
     InvokeChunk, InvokeStreamDecoder, bedrock_event_stream_decoder, stream_decoder,
@@ -24,7 +24,9 @@ fn parse(decoder: &mut InvokeStreamDecoder, source: &str) -> InvokeChunk {
 fn base(chunk: InvokeChunk) -> ChunkProjection {
     match chunk {
         InvokeChunk::Base(projection) => *projection,
-        _ => panic!("expected the base decoder projection"),
+        InvokeChunk::Anthropic(_) | InvokeChunk::DeepSeek(_) | InvokeChunk::OpenAiCompatible(_) => {
+            panic!("expected the base decoder projection")
+        }
     }
 }
 
@@ -44,15 +46,17 @@ fn converse(chunk: InvokeChunk) -> ConverseChunk {
 
 fn anthropic(chunk: InvokeChunk) -> StreamEventChunk {
     match chunk {
-        InvokeChunk::Anthropic(chunk) => *chunk,
-        _ => panic!("expected the Anthropic projection"),
+        InvokeChunk::Anthropic(parsed) => *parsed,
+        InvokeChunk::Base(_) | InvokeChunk::DeepSeek(_) | InvokeChunk::OpenAiCompatible(_) => {
+            panic!("expected the Anthropic projection")
+        }
     }
 }
 
 fn reply(chunk: InvokeChunk) -> StreamReply {
     match chunk {
-        InvokeChunk::DeepSeek(reply) | InvokeChunk::OpenAiCompatible(reply) => *reply,
-        _ => panic!("expected a stream reply"),
+        InvokeChunk::DeepSeek(parsed) | InvokeChunk::OpenAiCompatible(parsed) => *parsed,
+        InvokeChunk::Base(_) | InvokeChunk::Anthropic(_) => panic!("expected a stream reply"),
     }
 }
 
@@ -73,7 +77,7 @@ fn fake(source: &str, json_mode: Option<bool>) -> FakeStream {
 }
 
 fn first_chunk(source: &str, json_mode: Option<bool>) -> GenericChunk {
-    fake(source, json_mode).into_iter().next().unwrap().unwrap()
+    fake(source, json_mode).next().unwrap().unwrap()
 }
 
 fn json_value(source: &str) -> JsonValue {
@@ -344,22 +348,16 @@ fn finish_reason_defaults() {
     assert_eq!(chunk.finish_reason, "stop");
     assert!(block_on(futures_util::StreamExt::next(&mut async_stream)).is_none());
 
-    let unknown = fake(
+    let mut unknown = fake(
         r#"{"choices":[{"message":{"content":"hi"},"finish_reason":"weird"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
         None,
     );
-    assert_eq!(
-        unknown.into_iter().next().unwrap().unwrap().finish_reason,
-        "stop"
-    );
-    let absent = fake(
+    assert_eq!(unknown.next().unwrap().unwrap().finish_reason, "stop");
+    let mut absent = fake(
         r#"{"choices":[{"message":{"content":"hi"},"finish_reason":null}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
         None,
     );
-    assert_eq!(
-        absent.into_iter().next().unwrap().unwrap().finish_reason,
-        "stop"
-    );
+    assert_eq!(absent.next().unwrap().unwrap().finish_reason, "stop");
 }
 
 pub(super) fn empty_tool_input() {
@@ -378,27 +376,40 @@ pub(super) fn empty_tool_input() {
         r#"{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}]}"#,
         None,
     );
-    let error = missing_usage.next().unwrap().unwrap_err();
-    assert_eq!(error.status(), None);
-    assert!(error.to_string().starts_with("Failed to decode chunk:"));
+    let missing_usage_failure = missing_usage.next().unwrap().unwrap_err();
+    assert_eq!(missing_usage_failure.status(), None);
+    assert!(
+        missing_usage_failure
+            .to_string()
+            .starts_with("Failed to decode chunk:")
+    );
     assert!(missing_usage.next().is_none());
 
     let mut async_missing_usage = fake(
         r#"{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}]}"#,
         None,
     );
-    let error = block_on(futures_util::StreamExt::next(&mut async_missing_usage))
-        .unwrap()
-        .unwrap_err();
-    assert!(error.to_string().starts_with("Failed to decode chunk:"));
+    let async_missing_usage_failure =
+        block_on(futures_util::StreamExt::next(&mut async_missing_usage))
+            .unwrap()
+            .unwrap_err();
+    assert!(
+        async_missing_usage_failure
+            .to_string()
+            .starts_with("Failed to decode chunk:")
+    );
     assert!(block_on(futures_util::StreamExt::next(&mut async_missing_usage)).is_none());
 
-    let missing_choices = fake(
+    let mut missing_choices = fake(
         r#"{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
         None,
     );
-    let error = missing_choices.into_iter().next().unwrap().unwrap_err();
-    assert!(error.to_string().starts_with("Failed to decode chunk:"));
+    let missing_choices_failure = missing_choices.next().unwrap().unwrap_err();
+    assert!(
+        missing_choices_failure
+            .to_string()
+            .starts_with("Failed to decode chunk:")
+    );
 }
 
 pub(super) fn deepseek_stream_chunks() {
@@ -425,7 +436,14 @@ fn thinking_chunk(decoder: &mut InvokeStreamDecoder) {
     assert_eq!(thinking.choices[0].finish_reason.as_deref(), Some("stop"));
     assert_eq!(
         thinking.usage,
-        Some(serde_json::json!({"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}))
+        Some(
+            serde_json::to_value(FakeUsage {
+                prompt_tokens: 1,
+                completion_tokens: 2,
+                total_tokens: 3,
+            })
+            .unwrap()
+        )
     );
     assert_eq!(thinking.id, format!("chatcmpl-{}", fixed_id()));
     assert_eq!(thinking.created, NOW);
@@ -508,7 +526,14 @@ fn token_totals() {
     ));
     assert_eq!(
         counted.usage,
-        Some(serde_json::json!({"prompt_tokens":-1,"completion_tokens":2,"total_tokens":1}))
+        Some(
+            serde_json::to_value(FakeUsage {
+                prompt_tokens: -1,
+                completion_tokens: 2,
+                total_tokens: 1,
+            })
+            .unwrap()
+        )
     );
     let null_counts = reply(parse(
         &mut decoder,
@@ -516,7 +541,14 @@ fn token_totals() {
     ));
     assert_eq!(
         null_counts.usage,
-        Some(serde_json::json!({"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}))
+        Some(
+            serde_json::to_value(FakeUsage {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+            })
+            .unwrap()
+        )
     );
 }
 
@@ -536,11 +568,12 @@ fn missing_fields() {
             ))
             .is_err()
     );
-    assert!(
+    let accepted = reply(
         decoder
             .chunk_parser(&json(r#"{"generation":"x","stop_reason":"stop"}"#))
-            .is_ok()
+            .unwrap(),
     );
+    assert_eq!(accepted.choices[0].finish_reason.as_deref(), Some("stop"));
 }
 
 pub(super) fn stream_selector_variants() {
@@ -664,9 +697,9 @@ pub(super) fn openai_compatible_invoke_stream() {
         Some("tool_calls")
     );
     let usage = chunk.usage.as_ref().unwrap();
-    assert_eq!(usage["prompt_tokens"], 1);
-    assert_eq!(usage["completion_tokens"], 2);
-    assert_eq!(usage["total_tokens"], 3);
+    assert_eq!(usage["prompt_tokens"], 1_i64);
+    assert_eq!(usage["completion_tokens"], 2_i64);
+    assert_eq!(usage["total_tokens"], 3_i64);
 
     let generated = reply(parse(
         &mut decoder,
@@ -738,7 +771,7 @@ fn frames_and_split() {
 }
 
 fn frame_errors() {
-    let outcomes = frame_outcomes(
+    let first_outcomes = frame_outcomes(
         None,
         &[
             chunk_frame(r#"{"outputText":"first"}"#),
@@ -746,28 +779,37 @@ fn frame_errors() {
             chunk_frame(r#"{"outputText":"never"}"#),
         ],
     );
-    assert_eq!(outcomes.len(), 2);
-    let mut remaining = outcomes.into_iter();
-    assert_eq!(generic(remaining.next().unwrap().unwrap()).text, "first");
-    let failure = error(remaining.next().unwrap());
+    assert_eq!(first_outcomes.len(), 2);
+    let mut first_remaining = first_outcomes.into_iter();
+    assert_eq!(
+        generic(first_remaining.next().unwrap().unwrap()).text,
+        "first"
+    );
+    let failure = error(first_remaining.next().unwrap());
     assert_eq!(failure.status(), None);
     assert!(failure.to_string().contains("not valid JSON"));
 
-    let outcomes = frame_outcomes(None, &[]);
-    assert_eq!(outcomes.len(), 1);
+    let empty_outcomes = frame_outcomes(None, &[]);
+    assert_eq!(empty_outcomes.len(), 1);
     assert_eq!(
-        error(outcomes.into_iter().next().unwrap()).status(),
+        error(empty_outcomes.into_iter().next().unwrap()).status(),
         Some(502)
     );
 
     let frame = chunk_frame(r#"{"outputText":"a"}"#);
     let mut truncated = frame.clone();
     truncated.truncate(truncated.len().saturating_sub(2));
-    let outcomes = frame_outcomes(None, &[frame, truncated]);
-    assert_eq!(outcomes.len(), 2);
-    let mut remaining = outcomes.into_iter();
-    assert!(remaining.next().unwrap().is_ok());
-    assert_eq!(error(remaining.next().unwrap()).status(), Some(502));
+    let truncated_outcomes = frame_outcomes(None, &[frame, truncated]);
+    assert_eq!(truncated_outcomes.len(), 2);
+    let mut truncated_remaining = truncated_outcomes.into_iter();
+    assert_eq!(
+        generic(truncated_remaining.next().unwrap().unwrap()).text,
+        "a"
+    );
+    assert_eq!(
+        error(truncated_remaining.next().unwrap()).status(),
+        Some(502)
+    );
 }
 
 fn anthropic_frames() {
@@ -776,16 +818,19 @@ fn anthropic_frames() {
     let bad_payload = vec![chunk_frame(
         r#"{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"#,
     )];
-    let outcomes = frame_outcomes(Some("anthropic"), &bad_payload);
-    assert_eq!(outcomes.len(), 1);
-    assert_eq!(error(outcomes.into_iter().next().unwrap()).status(), None);
+    let bad_outcomes = frame_outcomes(Some("anthropic"), &bad_payload);
+    assert_eq!(bad_outcomes.len(), 1);
+    assert_eq!(
+        error(bad_outcomes.into_iter().next().unwrap()).status(),
+        None
+    );
 
     let projected = vec![chunk_frame(
         r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
     )];
-    let outcomes = frame_outcomes(Some("anthropic"), &projected);
+    let projected_outcomes = frame_outcomes(Some("anthropic"), &projected);
     assert_eq!(
-        anthropic(outcomes.into_iter().next().unwrap().unwrap()).choices[0]
+        anthropic(projected_outcomes.into_iter().next().unwrap().unwrap()).choices[0]
             .delta
             .content,
         "hi"
@@ -819,5 +864,6 @@ fn async_and_json() {
         decode_bedrock_event_json(br#"{"a":1}"#).unwrap(),
         json(r#"{"a":1}"#)
     );
-    assert!(decode_bedrock_event_json(b"{bad").is_err());
+    let failure = decode_bedrock_event_json(b"{bad").unwrap_err();
+    assert!(failure.to_string().contains("not valid JSON"));
 }

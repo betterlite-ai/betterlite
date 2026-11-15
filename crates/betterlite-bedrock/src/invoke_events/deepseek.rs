@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat_choices::wire::{
     ProviderField, StreamChoice, StreamDelta, StreamReply,
 };
-use serde_json::map;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::invoke_events::error::InvokeStreamError;
@@ -13,6 +13,14 @@ struct Fields {
     finish_reason: Option<String>,
     prompt_tokens: i64,
     generation_tokens: i64,
+}
+
+// LiteLLM builds the DeepSeek usage as a plain dict of these three counts.
+#[derive(Serialize)]
+struct UsageCounts {
+    prompt_tokens: i64,
+    completion_tokens: i64,
+    total_tokens: i64,
 }
 
 pub(crate) fn chunk_parser(
@@ -27,6 +35,12 @@ pub(crate) fn chunk_parser(
         .prompt_tokens
         .checked_add(fields.generation_tokens)
         .ok_or_else(invalid_chunk)?;
+    let usage = serde_json::to_value(UsageCounts {
+        prompt_tokens: fields.prompt_tokens,
+        completion_tokens: fields.generation_tokens,
+        total_tokens,
+    })
+    .map_err(|source| InvokeStreamError::Encode { source })?;
     Ok(StreamReply {
         id: format!("chatcmpl-{}", (next_id)()),
         object: "chat.completion.chunk",
@@ -43,15 +57,12 @@ pub(crate) fn chunk_parser(
                 audio: None,
                 reasoning_content,
                 reasoning: ProviderField::Absent,
-                passthrough: map::Map::new(),
+                // serde_json::Map is a disallowed type, so the empty passthrough comes from the default.
+                passthrough: StreamDelta::default().passthrough,
             },
             logprobs: None,
         }],
-        usage: Some(serde_json::json!({
-            "prompt_tokens": fields.prompt_tokens,
-            "completion_tokens": fields.generation_tokens,
-            "total_tokens": total_tokens,
-        })),
+        usage: Some(usage),
         service_tier: None,
     })
 }

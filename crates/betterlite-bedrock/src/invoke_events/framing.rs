@@ -39,20 +39,21 @@ impl FramedState<'_> {
     pub(crate) fn absorb(&mut self, chunk: &[u8], pending: &mut Pending) {
         self.buffer.extend_from_slice(chunk);
         self.tally.add_chunk(chunk);
-        loop {
-            match decode_aws_event_frame(&mut self.buffer) {
-                Ok(Some(event)) => {
-                    self.tally.add_event(&event);
-                    if !self.project(&event, pending) {
-                        return;
-                    }
-                }
-                Ok(None) => return,
-                Err(source) => {
-                    pending.push_back(Err(InvokeStreamError::Frame(source)));
-                    self.done = true;
-                    return;
-                }
+        while self.absorb_next(pending) {}
+    }
+
+    // returns whether draining continues after this frame
+    fn absorb_next(&mut self, pending: &mut Pending) -> bool {
+        match decode_aws_event_frame(&mut self.buffer) {
+            Ok(Some(event)) => {
+                self.tally.add_event(&event);
+                self.project(&event, pending)
+            }
+            Ok(None) => false,
+            Err(source) => {
+                pending.push_back(Err(InvokeStreamError::Frame(source)));
+                self.done = true;
+                false
             }
         }
     }
@@ -89,7 +90,7 @@ impl FramedState<'_> {
         self.done = true;
         let headers = self.response_headers.as_ref();
         let error = self.tally.undecoded_stream_error(headers, redactor);
-        pending.extend(error.map(|error| Err(InvokeStreamError::Frame(error))));
+        pending.extend(error.map(|source| Err(InvokeStreamError::Frame(source))));
     }
 }
 

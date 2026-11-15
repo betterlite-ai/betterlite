@@ -173,10 +173,10 @@ fn json_mode_message(arguments: &str) -> String {
             let values = fields
                 .get("values")
                 .filter(|value| !matches!(value, Json::Null));
-            match values {
-                Some(value) => dumps(value),
-                None => dumps(&Json::Object(fields)),
+            if let Some(value) = values {
+                return dumps(value);
             }
+            dumps(&Json::Object(fields))
         }
         Ok(other) => dumps(&other),
     }

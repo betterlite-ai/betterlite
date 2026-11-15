@@ -8,6 +8,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use tokio::runtime::Builder;
 use uuid::Uuid;
 
 use crate::invoke_events::{DecoderClock, DecoderOptions};
@@ -81,7 +82,7 @@ pub(super) fn block_on<F>(future: F) -> F::Output
 where
     F: Future,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
