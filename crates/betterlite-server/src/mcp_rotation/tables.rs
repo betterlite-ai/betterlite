@@ -62,9 +62,14 @@ pub struct McpUpdateActions<'db> {
 
 impl McpUpdateActions<'_> {
     async fn changed(&self, data: &[Option<String>], keys: &[String]) -> Result<usize, TableError> {
-        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(keys.len() + data.len());
-        params.extend(keys.iter().map(|key| key as &(dyn ToSql + Sync)));
-        params.extend(data.iter().map(|value| value as &(dyn ToSql + Sync)));
+        let capacity = keys.len().saturating_add(data.len());
+        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(capacity);
+        for key in keys {
+            params.push(key);
+        }
+        for value in data {
+            params.push(value);
+        }
         let client = self.access.write.session().await?;
         let rows = client
             .execute(self.update_sql, &params)

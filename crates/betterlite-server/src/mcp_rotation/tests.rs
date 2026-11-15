@@ -273,8 +273,10 @@ async fn assert_oauth(client: &Client, server_id: &str, key: &str) {
 fn recording_publisher(journal: &Arc<Mutex<Vec<String>>>) -> PublishChange<TableError> {
     let entries = Arc::clone(journal);
     Arc::new(move |object_type: &str| {
-        let mut recorded = entries.lock().unwrap_or_else(PoisonError::into_inner);
-        recorded.push(object_type.to_owned());
+        entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(object_type.to_owned());
         let future: PublishFuture<TableError> = Box::pin(async { Ok(()) });
         future
     })
@@ -290,7 +292,7 @@ fn published(journal: &Arc<Mutex<Vec<String>>>) -> Vec<String> {
 // Prisma stamps updated_at on every update, so each rotated row moves past its seeded date.
 async fn assert_touched(client: &Client) {
     let row = client.query_one(TOUCHED_SQL, &[]).await.unwrap();
-    let touched: Vec<bool> = (0..5).map(|index| row.get(index)).collect();
+    let touched: Vec<bool> = (0_usize..5).map(|index| row.get(index)).collect();
     assert_eq!(touched, [true, true, true, false, true]);
 }
 
