@@ -62,7 +62,7 @@ fn the_two_added_names_go_after_the_whole_base_list() {
 
 #[test]
 fn minimax_keeps_cache_control_on_messages_and_tools() {
-    assert!(KEEPS_CACHE_CONTROL);
+    const { assert!(KEEPS_CACHE_CONTROL) };
 }
 
 #[rstest]

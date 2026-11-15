@@ -42,13 +42,20 @@ fn catalog() -> CatalogCapabilities {
     }
 }
 
-fn map(params: &str, options: &str, supports_reasoning: bool, supports_adaptive: bool) -> Object {
+#[derive(Clone, Copy)]
+enum Capability {
+    Plain,
+    Reasoning,
+    Adaptive,
+}
+
+fn map(params: &str, options: &str, capability: Capability) -> Object {
     let mut mapped = object(options);
     TencentParams {
         config: &config(),
         catalog: &catalog(),
-        supports_reasoning,
-        supports_adaptive_thinking: supports_adaptive,
+        supports_reasoning: !matches!(capability, Capability::Plain),
+        supports_adaptive_thinking: matches!(capability, Capability::Adaptive),
     }
     .map("hunyuan-turbos", &object(params), &mut mapped);
     mapped
@@ -281,8 +288,7 @@ fn neither_reasoning_name_survives_at_the_top_level() {
     let mapped = map(
         r#"{"thinking": {"type": "enabled"}, "reasoning_effort": "high", "temperature": 0.2}"#,
         "{}",
-        true,
-        false,
+        Capability::Reasoning,
     );
     assert_eq!(
         mapped,
@@ -292,7 +298,11 @@ fn neither_reasoning_name_survives_at_the_top_level() {
 
 #[test]
 fn the_effort_string_becomes_the_thinking_type_when_no_object_is_given() {
-    let mapped = map(r#"{"reasoning_effort": "none"}"#, "{}", true, false);
+    let mapped = map(
+        r#"{"reasoning_effort": "none"}"#,
+        "{}",
+        Capability::Reasoning,
+    );
     assert_eq!(
         mapped,
         object(r#"{"extra_body": {"thinking": {"type": "disabled"}}}"#)
@@ -301,7 +311,11 @@ fn the_effort_string_becomes_the_thinking_type_when_no_object_is_given() {
 
 #[test]
 fn an_unsupported_reasoning_name_is_not_copied_from_the_request() {
-    let mapped = map(r#"{"thinking": {"type": "enabled"}}"#, "{}", false, false);
+    let mapped = map(
+        r#"{"thinking": {"type": "enabled"}}"#,
+        "{}",
+        Capability::Plain,
+    );
     assert_eq!(mapped, object("{}"));
 }
 
@@ -310,8 +324,7 @@ fn a_reasoning_name_already_in_the_options_is_still_moved_into_extra_body() {
     let mapped = map(
         "{}",
         r#"{"thinking": {"type": "disabled"}, "temperature": 0}"#,
-        true,
-        false,
+        Capability::Reasoning,
     );
     assert_eq!(
         mapped,
@@ -324,8 +337,7 @@ fn extra_body_is_replaced_by_the_thinking_payload() {
     let mapped = map(
         r#"{"thinking": {"type": "enabled"}}"#,
         r#"{"extra_body": {"keep": 1, "thinking": {"type": "disabled"}}}"#,
-        true,
-        false,
+        Capability::Reasoning,
     );
     assert_eq!(
         mapped,
@@ -338,8 +350,7 @@ fn an_enabled_request_on_an_adaptive_model_is_coerced_through_the_mapper() {
     let mapped = map(
         r#"{"thinking": {"type": "enabled", "budget_tokens": 11}}"#,
         "{}",
-        true,
-        true,
+        Capability::Adaptive,
     );
     assert_eq!(
         mapped,
@@ -352,8 +363,7 @@ fn other_supported_options_are_copied_as_given() {
     let mapped = map(
         r#"{"temperature": 0, "stream": false, "seed": 4, "stop": "", "tools": [], "tool_choice": "auto", "response_format": {"type": "json_object"}, "frequency_penalty": 0.1}"#,
         "{}",
-        false,
-        false,
+        Capability::Plain,
     );
     assert_eq!(
         mapped,

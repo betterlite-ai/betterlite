@@ -14,6 +14,10 @@ fn messages(text: &str) -> Vec<ChatMessage> {
     serde_json::from_str(text).unwrap()
 }
 
+fn value(text: &str) -> serde_json::Value {
+    serde_json::from_str(text).unwrap()
+}
+
 fn flattened(text: &str) -> serde_json::Value {
     let mut parsed = messages(text);
     flatten_messages(&mut parsed).unwrap();
@@ -115,7 +119,7 @@ fn an_empty_key_counts_as_unset_at_every_step() {
 #[test]
 fn a_text_only_list_becomes_the_parts_joined_with_nothing() {
     let input = r#"[{"role": "user", "content": [{"type": "text", "text": "Hello "}, {"type": "text", "text": "world"}]}]"#;
-    let expected = serde_json::json!([{"role": "user", "content": "Hello world"}]);
+    let expected = value(r#"[{"role": "user", "content": "Hello world"}]"#);
     assert_eq!(flattened(input), expected);
 }
 
@@ -124,10 +128,12 @@ fn a_list_with_one_non_text_part_keeps_its_list_whole() {
     let input = r#"[{"role": "user", "content": [{"type": "text", "text": "look"}, {"type": "image_url", "image_url": {"url": "https://host.test/a.png"}}]}]"#;
     assert_eq!(
         flattened(input),
-        serde_json::json!([{"role": "user", "content": [
-            {"type": "text", "text": "look"},
-            {"type": "image_url", "image_url": {"url": "https://host.test/a.png"}}
-        ]}])
+        value(
+            r#"[{"role": "user", "content": [
+                {"type": "text", "text": "look"},
+                {"type": "image_url", "image_url": {"url": "https://host.test/a.png"}}
+            ]}]"#
+        )
     );
 }
 
@@ -136,41 +142,40 @@ fn a_non_text_part_first_still_keeps_the_list() {
     let input = r#"[{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": "AA", "format": "wav"}}, {"type": "text", "text": "hear"}]}]"#;
     assert_eq!(
         flattened(input),
-        serde_json::json!([{"role": "user", "content": [
-            {"type": "input_audio", "input_audio": {"data": "AA", "format": "wav"}},
-            {"type": "text", "text": "hear"}
-        ]}])
+        value(
+            r#"[{"role": "user", "content": [
+                {"type": "input_audio", "input_audio": {"data": "AA", "format": "wav"}},
+                {"type": "text", "text": "hear"}
+            ]}]"#
+        )
     );
 }
 
 #[rstest]
-#[case::plain_text(r#"[{"role": "user", "content": "as sent"}]"#, serde_json::json!([{"role": "user", "content": "as sent"}]))]
-#[case::absent_content(r#"[{"role": "assistant", "tool_calls": [{"id": "call", "type": "function", "function": {"name": "f", "arguments": "{}"}}]}]"#, serde_json::json!([{"role": "assistant", "tool_calls": [{"id": "call", "type": "function", "function": {"name": "f", "arguments": "{}"}}]}]))]
-fn a_message_without_a_part_list_is_untouched(
-    #[case] input: &str,
-    #[case] expected: serde_json::Value,
-) {
-    assert_eq!(flattened(input), expected);
+#[case::plain_text(r#"[{"role": "user", "content": "as sent"}]"#)]
+#[case::absent_content(r#"[{"role": "assistant", "tool_calls": [{"id": "call", "type": "function", "function": {"name": "f", "arguments": "{}"}}]}]"#)]
+fn a_message_without_a_part_list_is_untouched(#[case] input: &str) {
+    assert_eq!(flattened(input), value(input));
 }
 
 #[rstest]
 #[case::empty_list(
     r#"[{"role": "user", "content": []}]"#,
-    serde_json::json!([{"role": "user", "content": ""}])
+    r#"[{"role": "user", "content": ""}]"#
 )]
 #[case::missing_text(
     r#"[{"role": "user", "content": [{"type": "text"}, {"type": "text", "text": "b"}]}]"#,
-    serde_json::json!([{"role": "user", "content": "b"}])
+    r#"[{"role": "user", "content": "b"}]"#
 )]
 #[case::assistant_role(
     r#"[{"role": "assistant", "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]}]"#,
-    serde_json::json!([{"role": "assistant", "content": "ab"}])
+    r#"[{"role": "assistant", "content": "ab"}]"#
 )]
 fn the_join_keeps_every_text_and_skips_a_part_without_one(
     #[case] input: &str,
-    #[case] expected: serde_json::Value,
+    #[case] expected: &str,
 ) {
-    assert_eq!(flattened(input), expected);
+    assert_eq!(flattened(input), value(expected));
 }
 
 #[test]
@@ -182,14 +187,16 @@ fn each_message_is_judged_on_its_own() {
     ]"#;
     assert_eq!(
         flattened(input),
-        serde_json::json!([
-            {"role": "system", "content": "sys"},
-            {"role": "user", "content": [
-                {"type": "text", "text": "a"},
-                {"type": "image_url", "image_url": {"url": "https://host.test/a.png"}}
-            ]},
-            {"role": "user", "content": "plain"}
-        ])
+        value(
+            r#"[
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": [
+                    {"type": "text", "text": "a"},
+                    {"type": "image_url", "image_url": {"url": "https://host.test/a.png"}}
+                ]},
+                {"role": "user", "content": "plain"}
+            ]"#
+        )
     );
 }
 
@@ -212,6 +219,6 @@ fn a_null_text_contributes_nothing_like_an_absent_one() {
     let input = r#"[{"role": "user", "content": [{"type": "text", "text": null}, {"type": "text", "text": "b"}]}]"#;
     assert_eq!(
         flattened(input),
-        serde_json::json!([{"role": "user", "content": "b"}])
+        value(r#"[{"role": "user", "content": "b"}]"#)
     );
 }
