@@ -1,0 +1,22 @@
+kind: helper
+name: invalid-seconds-kept-without-usage
+call:
+  openai_videos:
+    calls:
+      - op: create_response
+        model: sora-2
+        provider: openai
+        body_base64: eyJpZCI6InZpZC03Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiYWJjIn0=
+      - op: create_response
+        model: sora-2
+        provider: null
+        body_base64: eyJpZCI6InZpZC03Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiIn0=
+      - op: create_response
+        model: sora-2
+        provider: null
+        body_base64: eyJpZCI6InZpZC03Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQifQ==
+      - op: remix_response
+        provider: null
+        body_base64: eyJpZCI6InZpZC03Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiMSw1In0=
+env: {}
+compare: {ignore: []}

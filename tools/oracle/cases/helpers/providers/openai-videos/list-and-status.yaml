@@ -1,0 +1,44 @@
+kind: helper
+name: list-and-status
+call:
+  openai_videos:
+    calls:
+      - op: list_request
+        api_base: https://mock.example/v1/videos/
+        after: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLWN1cnNvcg==
+        limit: 7
+        order: asc
+      - op: list_request
+        api_base: https://mock.example/v1/videos
+        after: null
+        limit: 0
+        order: null
+      - op: list_response
+        provider: openai
+        body_base64: eyJvYmplY3QiOiJsaXN0IiwiZGF0YSI6W3siaWQiOiJ2aWQtMSIsIm9iamVjdCI6InZpZGVvIiwic3RhdHVzIjoiY29tcGxldGVkIiwiY3JlYXRlZF9hdCI6MTc2NzIyNTYwMCwiY29tcGxldGVkX2F0IjpudWxsLCJleHBpcmVzX2F0IjpudWxsLCJlcnJvciI6bnVsbCwicHJvZ3Jlc3MiOm51bGwsInJlbWl4ZWRfZnJvbV92aWRlb19pZCI6bnVsbCwic2Vjb25kcyI6bnVsbCwic2l6ZSI6IjcyMHgxMjgwIiwibW9kZWwiOiJzb3JhLTIiLCJ1c2FnZSI6bnVsbH0seyJpZCI6InZpZC0yIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJxdWV1ZWQiLCJjcmVhdGVkX2F0IjoxNzY3MjI1NjAwLCJjb21wbGV0ZWRfYXQiOm51bGwsImV4cGlyZXNfYXQiOm51bGwsImVycm9yIjpudWxsLCJwcm9ncmVzcyI6bnVsbCwicmVtaXhlZF9mcm9tX3ZpZGVvX2lkIjpudWxsLCJzZWNvbmRzIjpudWxsLCJzaXplIjpudWxsLCJtb2RlbCI6bnVsbCwidXNhZ2UiOm51bGx9XSwiZmlyc3RfaWQiOiJ2aWQtMSIsImxhc3RfaWQiOiJ2aWQtMiIsImhhc19tb3JlIjp0cnVlfQ==
+      - op: list_response
+        provider: null
+        body_base64: eyJvYmplY3QiOiJsaXN0IiwiZGF0YSI6W3siaWQiOiJ2aWQtMSIsIm9iamVjdCI6InZpZGVvIiwic3RhdHVzIjoiY29tcGxldGVkIiwiY3JlYXRlZF9hdCI6MTc2NzIyNTYwMCwiY29tcGxldGVkX2F0IjpudWxsLCJleHBpcmVzX2F0IjpudWxsLCJlcnJvciI6bnVsbCwicHJvZ3Jlc3MiOm51bGwsInJlbWl4ZWRfZnJvbV92aWRlb19pZCI6bnVsbCwic2Vjb25kcyI6bnVsbCwic2l6ZSI6IjcyMHgxMjgwIiwibW9kZWwiOiJzb3JhLTIiLCJ1c2FnZSI6bnVsbH0seyJpZCI6InZpZC0yIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJxdWV1ZWQiLCJjcmVhdGVkX2F0IjoxNzY3MjI1NjAwLCJjb21wbGV0ZWRfYXQiOm51bGwsImV4cGlyZXNfYXQiOm51bGwsImVycm9yIjpudWxsLCJwcm9ncmVzcyI6bnVsbCwicmVtaXhlZF9mcm9tX3ZpZGVvX2lkIjpudWxsLCJzZWNvbmRzIjpudWxsLCJzaXplIjpudWxsLCJtb2RlbCI6bnVsbCwidXNhZ2UiOm51bGx9XSwiZmlyc3RfaWQiOiJ2aWQtMSIsImxhc3RfaWQiOiJ2aWQtMiIsImhhc19tb3JlIjp0cnVlfQ==
+      - op: list_response
+        provider: ''
+        body_base64: eyJvYmplY3QiOiJsaXN0IiwiZGF0YSI6W3siaWQiOiJ2aWQtMSIsIm9iamVjdCI6InZpZGVvIiwic3RhdHVzIjoiY29tcGxldGVkIiwiY3JlYXRlZF9hdCI6MTc2NzIyNTYwMCwiY29tcGxldGVkX2F0IjpudWxsLCJleHBpcmVzX2F0IjpudWxsLCJlcnJvciI6bnVsbCwicHJvZ3Jlc3MiOm51bGwsInJlbWl4ZWRfZnJvbV92aWRlb19pZCI6bnVsbCwic2Vjb25kcyI6bnVsbCwic2l6ZSI6IjcyMHgxMjgwIiwibW9kZWwiOiJzb3JhLTIiLCJ1c2FnZSI6bnVsbH0seyJpZCI6InZpZC0yIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJxdWV1ZWQiLCJjcmVhdGVkX2F0IjoxNzY3MjI1NjAwLCJjb21wbGV0ZWRfYXQiOm51bGwsImV4cGlyZXNfYXQiOm51bGwsImVycm9yIjpudWxsLCJwcm9ncmVzcyI6bnVsbCwicmVtaXhlZF9mcm9tX3ZpZGVvX2lkIjpudWxsLCJzZWNvbmRzIjpudWxsLCJzaXplIjpudWxsLCJtb2RlbCI6bnVsbCwidXNhZ2UiOm51bGx9XSwiZmlyc3RfaWQiOiJ2aWQtMSIsImxhc3RfaWQiOiJ2aWQtMiIsImhhc19tb3JlIjp0cnVlfQ==
+      - op: list_response
+        provider: openai
+        body_base64: eyJkYXRhIjpbXSwiZmlyc3RfaWQiOiJ2aWQtMSIsImxhc3RfaWQiOiJ2aWQtMiIsIm9iamVjdCI6Imxpc3QiLCJoYXNfbW9yZSI6ZmFsc2V9
+      - op: status_request
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTM=
+        api_base: https://mock.example/v1/videos/
+      - op: status_response
+        provider: openai
+        body_base64: eyJpZCI6InZpZC0zIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiNCIsInVzYWdlIjp7ImR1cmF0aW9uX3NlY29uZHMiOjk5LCJvdGhlciI6dHJ1ZX19
+      - op: status_response
+        provider: null
+        body_base64: eyJpZCI6InZpZC0zIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQifQ==
+      - op: status_response
+        provider: ''
+        body_base64: eyJpZCI6InZpZC0zIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQifQ==
+      - op: status_response
+        provider: openai
+        body_base64: eyJpZCI6IiIsIm9iamVjdCI6InZpZGVvIiwic3RhdHVzIjoiY29tcGxldGVkIn0=
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,29 @@
+kind: helper
+name: delete-response
+call:
+  openai_videos:
+    calls:
+      - op: delete_request
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTU=
+        api_base: https://mock.example/v1/videos/
+      - op: status_request
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTU=
+        api_base: https://mock.example/v1/videos/
+      - op: delete_response
+        body_base64: eyJpZCI6InZpZC01Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJkZWxldGVkIiwic2Vjb25kcyI6IjQiLCJ1c2FnZSI6eyJkdXJhdGlvbl9zZWNvbmRzIjo5OX19
+calls:
+  - openai_videos:
+      calls:
+        - op: error_class
+          message: rate limited
+          status: 429
+          headers:
+            retry-after: '1'
+  - openai_videos:
+      calls:
+        - op: error_class
+          message: missing
+          status: 400
+          headers: {}
+env: {}
+compare: {ignore: []}

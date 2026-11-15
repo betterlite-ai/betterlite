@@ -1,0 +1,33 @@
+kind: helper
+name: duration-seconds-decimal
+call:
+  openai_videos:
+    calls:
+      - op: create_response
+        model: sora-2
+        provider: openai
+        body_base64: eyJpZCI6InZpZC04Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiNCIsInVzYWdlIjp7ImR1cmF0aW9uX3NlY29uZHMiOjk5LCJvdGhlciI6dHJ1ZX19
+      - op: create_response
+        model: sora-2
+        provider: ''
+        body_base64: eyJpZCI6InZpZC04Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiMyJ9
+      - op: create_response
+        model: sora-2
+        provider: null
+        body_base64: eyJpZCI6InZpZC04Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiMCJ9
+      - op: create_response
+        model: sora-2
+        provider: null
+        body_base64: eyJpZCI6InZpZC04Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiMi41In0=
+      - op: create_response
+        model: sora-2
+        provider: null
+        body_base64: eyJpZCI6InZpZC04Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiIDQgIn0=
+      - op: remix_response
+        provider: openai
+        body_base64: eyJpZCI6InZpZC04Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJxdWV1ZWQiLCJzZWNvbmRzIjoiNCJ9
+      - op: status_response
+        provider: openai
+        body_base64: eyJpZCI6InZpZC04Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiNCJ9
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,35 @@
+kind: helper
+name: video-create-multipart
+call:
+  openai_videos:
+    calls:
+      - op: create
+        model: sora-2
+        prompt: make a video
+        api_base: https://mock.example/v1/videos
+        options:
+          model: option-model
+          prompt: option-prompt
+          extra_headers:
+            x-option: '1'
+          input_reference: option-reference
+          seconds: '4'
+          size: 720x1280
+          user: user-1
+          characters:
+            - id: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7Y2hhcmFjdGVyX2lkOmNoYXItMQ==
+              role: hero
+            - id: char-plain
+          vendor_flag: true
+        reference:
+          kind: text
+          text: https://example.invalid/a.png
+      - op: create
+        model: sora-2
+        prompt: make a video
+        api_base: https://mock.example/v1/videos
+        options:
+          seconds: '4'
+        reference: null
+env: {}
+compare: {ignore: []}

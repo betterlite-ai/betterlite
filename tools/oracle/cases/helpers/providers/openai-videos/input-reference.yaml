@@ -1,0 +1,32 @@
+kind: helper
+name: input-reference
+call:
+  openai_videos:
+    calls:
+      - op: create
+        model: sora-2
+        prompt: make a video
+        api_base: https://mock.example/v1/videos
+        options: {}
+        reference:
+          kind: bytes
+          data_base64: iVBORw0KGgoAAAANSUhEUg==
+      - op: create
+        model: sora-2
+        prompt: make a video
+        api_base: https://mock.example/v1/videos
+        options: {}
+        reference:
+          kind: text
+          text: ''
+      - op: create
+        model: sora-2
+        prompt: make a video
+        api_base: https://mock.example/v1/videos
+        options:
+          size: 1280x720
+        reference:
+          kind: bytes
+          data_base64: /9j/4AAQSkZJRgA=
+env: {}
+compare: {ignore: []}
