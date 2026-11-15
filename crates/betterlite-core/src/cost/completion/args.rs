@@ -8,7 +8,7 @@ use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
 use betterlite_models::protocol_cost::ProtocolCall;
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_models::resolution::ResolutionContext;
-use betterlite_models::tool_fees::billing::{BuiltInToolBilling, BuiltInToolParams};
+use betterlite_models::tool_fees::billing::BuiltInToolParams;
 use betterlite_models::tool_fees::ports::{ToolPricePolicy, ToolPriceSource};
 use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_models::tool_signals::response::ToolBillingResponse;
@@ -22,13 +22,14 @@ use crate::cost::call_price::policy::ProviderPricePolicy;
 use crate::cost::context::CostResponse;
 use crate::cost::context::response_time::ResponseTiming;
 use crate::cost::image_dispatch::options::SizePattern;
+use crate::cost::image_dispatch::policy::{ImagePricePolicy, ImageRoute};
 use crate::cost::prepare::{
     BillingTokenCounter, CompletionBillingInput, PreparedBilling, RerankUnits,
 };
 use crate::cost::special::policy::SpecialPricePolicy;
 use crate::cost::special::replicate::ReplicateStamps;
 use crate::cost::special::request::{
-    ImageParts, LoggingView, RealtimeSession, SpecialRequest, SpecialResponse, SpecialServices,
+    ImageParts, LoggingView, RealtimeSession, SpecialRequest, SpecialResponse,
     TranscriptionDuration, VideoUsage,
 };
 
@@ -46,24 +47,6 @@ pub struct SpecialBorrows<'services, Resolver, ImagePolicy> {
     pub margin: &'services BTreeMap<String, AdjustmentEntry>,
 }
 
-impl<Resolver, ImagePolicy> SpecialBorrows<'_, Resolver, ImagePolicy> {
-    // The early-return stage takes the same borrows back as the plain trait objects it declares.
-    pub(super) const fn services(&self) -> SpecialServices<'_, Resolver, ImagePolicy> {
-        SpecialServices {
-            lookup: self.lookup,
-            resolver: self.resolver,
-            image_policy: self.image_policy,
-            special_policy: self.special_policy,
-            size_pattern: self.size_pattern,
-            database: self.database,
-            replicate_models: self.replicate_models,
-            replicate_price: self.replicate_price,
-            discount: self.discount,
-            margin: self.margin,
-        }
-    }
-}
-
 // The built-in tool prices as the calculator borrows them, Sync-bounded like SpecialBorrows.
 pub struct ToolBorrows<'services> {
     pub source: &'services (dyn ToolPriceSource + Sync),
@@ -71,14 +54,20 @@ pub struct ToolBorrows<'services> {
     pub prices: &'services ToolPrices,
 }
 
-impl ToolBorrows<'_> {
-    // The fee calculation takes the same borrows back as the billing it declares.
-    pub(super) const fn billing(&self) -> BuiltInToolBilling<'_> {
-        BuiltInToolBilling {
-            source: self.source,
-            policy: self.policy,
-            prices: self.prices,
-        }
+// The image policy as the calculator holds it: only borrows that are Sync, so the charge future stays Send; build makes the provider's policy from them per image.
+pub struct SyncImage<'bound, Policy> {
+    pub build:
+        fn(&'bound (dyn PriceLookup + Sync), &'bound TimeZoneDatabase, DateTime<Utc>) -> Policy,
+    pub lookup: &'bound (dyn PriceLookup + Sync),
+    pub database: &'bound TimeZoneDatabase,
+    pub moment: DateTime<Utc>,
+}
+
+impl<Policy: ImagePricePolicy> ImagePricePolicy for SyncImage<'_, Policy> {
+    type Error = Policy::Error;
+
+    fn image_cost(&self, route: &ImageRoute<'_>) -> Result<Decimal, Self::Error> {
+        (self.build)(self.lookup, self.database, self.moment).image_cost(route)
     }
 }
 

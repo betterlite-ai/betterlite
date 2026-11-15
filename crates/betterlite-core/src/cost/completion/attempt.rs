@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_models::billed_tokens::TokenTypeCostBreakdown;
-use betterlite_models::tool_fees::billing::BuiltInToolRequest;
+use betterlite_models::tool_fees::billing::{BuiltInToolBilling, BuiltInToolRequest};
 use betterlite_models::tool_fees::error::ToolFeeError;
 use rust_decimal::Decimal;
 
@@ -17,7 +17,7 @@ use crate::cost::context::storage::store_cost_breakdown;
 use crate::cost::image_dispatch::policy::ImagePricePolicy;
 use crate::cost::prepare::{AttemptOutcome, PreparedBillingAttempt};
 use crate::cost::special::policy::ModelResolver;
-use crate::cost::special::request::{RealtimeSession, SpecialOutcome, TokenStage};
+use crate::cost::special::request::{RealtimeSession, SpecialOutcome, SpecialServices, TokenStage};
 use crate::cost::special::special_charge;
 use adjust::{Adjusted, adjust};
 use extras::{additional_fees, checked_total};
@@ -40,15 +40,18 @@ struct Charge {
 // The built-in tool fees one attempt owes for the response it returned.
 fn tool_fee(attempt: &Attempt<'_>, tools: &ToolBorrows<'_>) -> Result<Decimal, ToolFeeError> {
     let params = &attempt.args.charge.tools;
-    tools
-        .billing()
-        .cost_for_built_in_tools(&BuiltInToolRequest {
-            model: attempt.model,
-            custom_llm_provider: attempt.provider,
-            response: &params.response,
-            google_maps_requests: params.google_maps_requests,
-            params: &params.params,
-        })
+    BuiltInToolBilling {
+        source: tools.source,
+        policy: tools.policy,
+        prices: tools.prices,
+    }
+    .cost_for_built_in_tools(&BuiltInToolRequest {
+        model: attempt.model,
+        custom_llm_provider: attempt.provider,
+        response: &params.response,
+        google_maps_requests: params.google_maps_requests,
+        params: &params.params,
+    })
 }
 
 // Prices the tokens, adds the built-in tool fees and the provider's extra fees, then applies the discount and the margin.
@@ -225,7 +228,18 @@ where
             .args
             .charge
             .special_request(round.billing, round.prepared, round.moment, realtime);
-    let special = services.special.services();
+    let special = SpecialServices {
+        lookup: services.special.lookup,
+        resolver: services.special.resolver,
+        image_policy: services.special.image_policy,
+        special_policy: services.special.special_policy,
+        size_pattern: services.special.size_pattern,
+        database: services.special.database,
+        replicate_models: services.special.replicate_models,
+        replicate_price: services.special.replicate_price,
+        discount: services.special.discount,
+        margin: services.special.margin,
+    };
     match special_charge(&special, &request, attempt, clock, target.as_deref_mut())? {
         SpecialOutcome::Charged(charge) => Ok(charge),
         // special_charge hands an attempt back unchanged only when its preparation failed.
