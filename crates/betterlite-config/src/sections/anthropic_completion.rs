@@ -95,6 +95,7 @@ where
     })
 }
 
+// Copy of anthropic_option_primitives' private resolver and integer parser: that file and crate::resolve are outside B586's scope
 fn resolved_fields<L>(
     fields: IndexMap<String, Json>,
     path: &str,
@@ -114,8 +115,6 @@ where
 }
 
 // LiteLLM recurses into objects and the dict items of a list, and leaves every other list item as it is
-// Deliberate copy of crate::sections::anthropic_option_primitives' private resolver and integer
-// parser, because that file and crate::resolve are outside B586's scope.paths.
 fn resolved_json<L>(value: Json, path: &str, lookup: &L) -> Result<Json, ConfigError>
 where
     L: EnvironmentLookup,
