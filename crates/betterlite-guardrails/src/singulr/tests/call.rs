@@ -109,7 +109,7 @@ async fn an_invalid_header_value_is_reported_with_its_header() {
 
 #[tokio::test]
 async fn an_allowed_answer_returns_the_inputs_unchanged() {
-    let server = support::mock(StatusCode::OK, r#"{}"#).await;
+    let server = support::mock(StatusCode::OK, "{}").await;
     let guardrail = support::guardrail(&server.base);
     let inputs = support::inputs(r#"{"texts": ["hello"], "model": "gpt-4o"}"#);
     let returned = guardrail
@@ -304,7 +304,7 @@ async fn an_answer_that_does_not_parse_is_an_invalid_response() {
 
 #[tokio::test]
 async fn an_answer_that_does_not_parse_passes_when_block_on_error_is_false() {
-    let server = support::mock(StatusCode::OK, r#"not json"#).await;
+    let server = support::mock(StatusCode::OK, "not json").await;
     let guardrail = support::open_guardrail(&server.base);
     let inputs = support::inputs(r#"{"texts": ["hello"]}"#);
     let returned = guardrail

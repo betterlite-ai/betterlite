@@ -3,7 +3,7 @@ use std::time::{Duration, TryFromFloatSecsError};
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_http::user_url::error::UrlParseError;
 use betterlite_http::user_url::split::urlparse;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use thiserror::Error;
 
 use super::DEFAULT_API_BASE;
@@ -75,7 +75,7 @@ impl SingulrSettings {
         let api_key = resolve_text(
             args.singulr_api_key
                 .as_ref()
-                .map(|key| key.expose_secret().as_str()),
+                .map(ExposeSecret::expose_secret),
             environment,
             API_KEY_ENV,
         )

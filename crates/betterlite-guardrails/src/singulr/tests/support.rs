@@ -183,6 +183,9 @@ pub(crate) fn json_value(text: &str) -> GuardrailValue {
     serde_json::from_str(text).unwrap()
 }
 
-pub(crate) fn encoded<T: serde::Serialize>(value: &T) -> GuardrailValue {
+pub(crate) fn encoded<T>(value: &T) -> GuardrailValue
+where
+    T: serde::Serialize,
+{
     json_value(&serde_json::to_string(value).unwrap())
 }

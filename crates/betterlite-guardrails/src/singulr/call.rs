@@ -1,6 +1,6 @@
 use betterlite_http::proxy::limits::{ReadError, read_bounded};
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::error::SingulrError;
 use super::payload::SingulrPayload;
@@ -53,10 +53,7 @@ fn read_error(source: ReadError) -> SingulrError {
 fn headers(settings: &SingulrSettings) -> Result<HeaderMap, SingulrError> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    let token = settings
-        .api_key
-        .as_ref()
-        .map(|key| key.expose_secret().as_str());
+    let token = settings.api_key.as_ref().map(ExposeSecret::expose_secret);
     let optional = [
         (TOKEN_HEADER, token, true),
         (

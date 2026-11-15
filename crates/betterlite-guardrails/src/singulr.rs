@@ -40,8 +40,8 @@ pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 5] = [
 
 // LiteLLM reads logging_obj.call_type before request_data["call_type"]
 #[derive(Debug, Clone, Copy, Default)]
-pub struct SingulrLoggingObject<'a> {
-    pub call_type: Option<&'a str>,
+pub struct SingulrLoggingObject<'data> {
+    pub call_type: Option<&'data str>,
 }
 
 #[derive(Debug, Clone)]

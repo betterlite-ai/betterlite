@@ -15,7 +15,7 @@ fn sent(
     request_data: &str,
     input_type: GuardrailInputType,
     mcp: bool,
-) -> crate::singulr::payload::SingulrPayload {
+) -> payload::SingulrPayload {
     payload::build(
         &support::inputs(inputs),
         &support::data(request_data),
