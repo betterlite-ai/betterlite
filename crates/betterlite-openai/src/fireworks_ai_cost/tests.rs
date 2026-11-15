@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use betterlite_models::cost_usage::CostUsage;
+use betterlite_models::cost_usage::{CostUsage, PromptDetails};
 use betterlite_models::price_lookup::PriceLookup;
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_rates::ModelInfo;
@@ -275,6 +275,13 @@ fn cost_per_token_applies_the_fireworks_cache_read_default_once() {
         record("0.000002", "0.000002", FIREWORKS_AI_PROVIDER),
     );
     let mut cached = usage(8, 0);
+    cached.prompt_details = Some(PromptDetails {
+        text_tokens: Some(4),
+        audio_tokens: None,
+        image_tokens: None,
+        video_tokens: None,
+        web_search_requests: None,
+    });
     cached.cache_read_tokens = Some(4);
     let (prompt, _completion) = cost_per_token(
         "accounts/fireworks/models/x",
