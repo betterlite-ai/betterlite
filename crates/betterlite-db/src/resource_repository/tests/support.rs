@@ -404,15 +404,16 @@ pub(crate) const INSERT_MODEL_SQL: &str = "INSERT INTO \"LiteLLM_ProxyModelTable
      '2026-01-03 04:05:06.789', 'seed', 'seed')";
 
 // Model and credential rows both seed an id, a name, one JSON document and an optional info map.
-pub(crate) async fn insert_named(
-    store: &PostgresStore,
-    sql: &str,
-    id: &str,
-    name: &str,
-    document: &str,
-    info: Option<&str>,
-) {
-    execute(store, sql, &[&id, &name, &document, &info]).await;
+#[derive(Clone, Copy)]
+pub(crate) struct NamedRow<'row> {
+    pub(crate) id: &'row str,
+    pub(crate) name: &'row str,
+    pub(crate) document: &'row str,
+    pub(crate) info: Option<&'row str>,
+}
+
+pub(crate) async fn insert_named(store: &PostgresStore, sql: &str, row: NamedRow<'_>) {
+    execute(store, sql, &[&row.id, &row.name, &row.document, &row.info]).await;
 }
 
 const INSERT_BUDGET_SQL: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (budget_id, max_budget, \

@@ -17,8 +17,8 @@ use crate::resource_rows::credential::CredentialItem;
 use crate::resource_rows::model::ProxyModelTable;
 
 use super::support::{
-    Case, INSERT_CREDENTIAL_SQL, INSERT_MODEL_SQL, batch, cipher, defaults_actions, field,
-    insert_budget, insert_config, insert_named, insert_permission, keyed, seal, seal_with,
+    Case, INSERT_CREDENTIAL_SQL, INSERT_MODEL_SQL, NamedRow, batch, cipher, defaults_actions,
+    field, insert_budget, insert_config, insert_named, insert_permission, keyed, seal, seal_with,
     text_row, text_rows, value, write, written,
 };
 
@@ -93,10 +93,12 @@ pub(crate) async fn raw_model_table(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "raw-inserted",
-        "raw",
-        r#"{"api_key":"sk-raw","n":1}"#,
-        Some(r#"{"id":"raw"}"#),
+        NamedRow {
+            id: "raw-inserted",
+            name: "raw",
+            document: r#"{"api_key":"sk-raw","n":1}"#,
+            info: Some(r#"{"id":"raw"}"#),
+        },
     )
     .await;
     let rows = keyed(
@@ -121,19 +123,23 @@ pub(crate) async fn excluded_model_id(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "excluded-keep",
-        "keep",
-        r#"{"api_key":"a"}"#,
-        None,
+        NamedRow {
+            id: "excluded-keep",
+            name: "keep",
+            document: r#"{"api_key":"a"}"#,
+            info: None,
+        },
     )
     .await;
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "excluded-skip",
-        "skip",
-        r#"{"api_key":"b"}"#,
-        None,
+        NamedRow {
+            id: "excluded-skip",
+            name: "skip",
+            document: r#"{"api_key":"b"}"#,
+            info: None,
+        },
     )
     .await;
     let repository = model_repository(case, None);
@@ -160,10 +166,12 @@ pub(crate) async fn model_json_columns(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "json-columns",
-        "json",
-        &params,
-        Some(&info),
+        NamedRow {
+            id: "json-columns",
+            name: "json",
+            document: &params,
+            info: Some(&info),
+        },
     )
     .await;
     let repository = model_repository(case, None);
@@ -187,10 +195,12 @@ pub(crate) async fn model_nonstring_params(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "nonstring",
-        "mixed",
-        params,
-        None,
+        NamedRow {
+            id: "nonstring",
+            name: "mixed",
+            document: params,
+            info: None,
+        },
     )
     .await;
     let models = matching(
@@ -216,10 +226,12 @@ pub(crate) async fn model_decrypt_valid_plaintext_and_corrupt(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "sealed",
-        "cipher",
-        &params,
-        None,
+        NamedRow {
+            id: "sealed",
+            name: "cipher",
+            document: &params,
+            info: None,
+        },
     )
     .await;
     let repository = model_repository(case, None);
@@ -246,10 +258,12 @@ pub(crate) async fn constructor_key_not_read_key(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "constructor-key",
-        "keys",
-        &params,
-        None,
+        NamedRow {
+            id: "constructor-key",
+            name: "keys",
+            document: &params,
+            info: None,
+        },
     )
     .await;
     let repository = model_repository(case, Some(SecretString::from("caller-key")));
@@ -652,10 +666,12 @@ pub(crate) async fn credential_named_lookup(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_CREDENTIAL_SQL,
-        "cred-lookup-id",
-        "cred-lookup-name",
-        r#"{"api_key":"sk-raw"}"#,
-        None,
+        NamedRow {
+            id: "cred-lookup-id",
+            name: "cred-lookup-name",
+            document: r#"{"api_key":"sk-raw"}"#,
+            info: None,
+        },
     )
     .await;
     let repository = credential_repository(case);
@@ -717,20 +733,24 @@ pub(crate) async fn falsey_credential_maps(case: &Case) {
         insert_named(
             &case.writer,
             INSERT_CREDENTIAL_SQL,
-            id,
-            name,
-            r#"{"api_key":"k"}"#,
-            info,
+            NamedRow {
+                id,
+                name,
+                document: r#"{"api_key":"k"}"#,
+                info,
+            },
         )
         .await;
     }
     insert_named(
         &case.writer,
         INSERT_CREDENTIAL_SQL,
-        "cred-empty-values-id",
-        "cred-empty-values",
-        "{}",
-        Some(r#"{"flag":true}"#),
+        NamedRow {
+            id: "cred-empty-values-id",
+            name: "cred-empty-values",
+            document: "{}",
+            info: Some(r#"{"flag":true}"#),
+        },
     )
     .await;
     let repository = credential_repository(case);
@@ -807,10 +827,12 @@ pub(crate) async fn partial_update_preserves_columns(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "partial-update",
-        "before",
-        r#"{"api_key":"a","n":1}"#,
-        Some(r#"{"id":"keep"}"#),
+        NamedRow {
+            id: "partial-update",
+            name: "before",
+            document: r#"{"api_key":"a","n":1}"#,
+            info: Some(r#"{"id":"keep"}"#),
+        },
     )
     .await;
     let repository = model_repository(case, None);

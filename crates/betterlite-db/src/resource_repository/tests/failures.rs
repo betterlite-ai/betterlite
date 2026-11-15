@@ -17,8 +17,8 @@ use crate::resource_repository::model::{ModelError, ModelRepository};
 use crate::resource_rows::ResourceRowsError;
 
 use super::support::{
-    Case, INSERT_CREDENTIAL_SQL, INSERT_MODEL_SQL, Journal, NO_DB, batch, captured_logs, cipher,
-    dead_redis, failing_publisher, field, insert_config, insert_named, observing_publisher,
+    Case, INSERT_CREDENTIAL_SQL, INSERT_MODEL_SQL, Journal, NO_DB, NamedRow, batch, captured_logs,
+    cipher, dead_redis, failing_publisher, field, insert_config, insert_named, observing_publisher,
     recording_publisher, text_row, value, write, written,
 };
 
@@ -56,10 +56,12 @@ pub(crate) async fn invalid_model_json(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "invalid-model",
-        "invalid",
-        "\"not-an-object\"",
-        None,
+        NamedRow {
+            id: "invalid-model",
+            name: "invalid",
+            document: "\"not-an-object\"",
+            info: None,
+        },
     )
     .await;
     let repository = ModelRepository::new(
@@ -282,19 +284,23 @@ pub(crate) async fn read_has_no_publication(case: &Case) {
     insert_named(
         &case.writer,
         INSERT_CREDENTIAL_SQL,
-        "cred-read-id",
-        "cred-read",
-        r#"{"api_key":"k"}"#,
-        None,
+        NamedRow {
+            id: "cred-read-id",
+            name: "cred-read",
+            document: r#"{"api_key":"k"}"#,
+            info: None,
+        },
     )
     .await;
     insert_named(
         &case.writer,
         INSERT_MODEL_SQL,
-        "read-model",
-        "read",
-        r#"{"api_key":"k"}"#,
-        None,
+        NamedRow {
+            id: "read-model",
+            name: "read",
+            document: r#"{"api_key":"k"}"#,
+            info: None,
+        },
     )
     .await;
     let journal = Journal::default();
