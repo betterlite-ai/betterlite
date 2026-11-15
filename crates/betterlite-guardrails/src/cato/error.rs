@@ -7,8 +7,12 @@ use thiserror::Error;
 use tokio::task::JoinError;
 use tokio_tungstenite::tungstenite;
 
-// whatever error the model stream produced, since its type belongs to the provider
-pub type ModelStreamError = Box<dyn std::error::Error + Send + Sync>;
+// the failure the model stream ended with, as the proxy words it
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("{message}")]
+pub struct ModelStreamError {
+    pub message: String,
+}
 
 #[derive(Debug, Error)]
 pub enum CatoError {
