@@ -7,6 +7,8 @@ use std::path::Path;
 use betterlite_oracle::case::helper::{HelperCase, validate_helper};
 use serde_json::Value;
 
+use super::input::Input;
+
 #[derive(serde::Deserialize)]
 struct SeedCall {
     call: BTreeMap<String, Value>,
@@ -47,10 +49,10 @@ fn seed_input(name: &str, source: &str) -> bool {
     let Some(value) = seed.call.get("fal_edit") else {
         return false;
     };
-    let input: super::Input =
+    let input: Input =
         serde_json::from_value(value.clone()).expect("the seed input has the typed shape");
     assert!(
-        matches!(input, super::Input::ToDataUrl { .. }),
+        matches!(input, Input::ToDataUrl { .. }),
         "{name} converts image sources"
     );
     true
