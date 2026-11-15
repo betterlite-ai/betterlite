@@ -1,0 +1,34 @@
+task: B3001
+deviations:
+  - what: >-
+      A tiered_pricing table whose entry is not an object of the shape B1666 declares, or whose
+      range is not a two-element array of numbers, fails the estimate with a typed error. LiteLLM
+      ignores the keys it does not read, drops a tier whose range is not a two-element list and
+      prices from the remaining tiers or the flat rates, and raises TypeError while sorting when a
+      range's first element is null or not comparable with a number.
+    why: >-
+      B1666 owns the tiered-pricing table shape and its select_tier_for_input, which reports a
+      malformed range as TieredPricingError, and its Tier type rejects an unrecognized key. This
+      task's table decode and selection call those types, so the failure surfaces as
+      ReservationCostError instead of LiteLLM's silent filter or TypeError. A table with one of the
+      documented shapes prices identically on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tiered_pricing.py#L47-L55
+  - what: >-
+      A cost that does not fit in rust_decimal's range fails with ReservationCostError::Overflow.
+      LiteLLM's float arithmetic returns infinity for the same input and reserves that.
+    why: >-
+      The reservation compares and charges exact decimal amounts, and an infinity cannot be stored
+      as a budget amount. Refusing the estimate is visible to the caller, where an infinity would
+      silently exhaust or bypass every limit downstream. Only a rate or token count far outside any
+      published price reaches the branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1457-L1459
+kept_bugs:
+  - what: >-
+      A negative max_tokens, max_completion_tokens or max_output_tokens reserves a negative output
+      amount, lowering the request's cost, where a request that is rejected later should reserve
+      nothing.
+    why: >-
+      A working setup never sends a negative output cap, and copying LiteLLM's arithmetic keeps the
+      reservation identical for every request that reaches the estimate. The request validation
+      before dispatch rejects the negative cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1659-L1660

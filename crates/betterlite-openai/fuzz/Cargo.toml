@@ -600,3 +600,17 @@ path = "fuzz_targets/dashscope_embedding_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mistral_resource"
+path = "fuzz_targets/mistral_resource.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_video_identifiers"
+path = "fuzz_targets/openai_video_identifiers.rs"
+test = false
+doc = false
+bench = false
