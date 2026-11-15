@@ -59,7 +59,7 @@ fn text_parts(content: &Json) -> Vec<(usize, &str)> {
 // root then config, camelCase then snake_case, and the first non-null value wins even when it holds no text
 fn system_instruction(data: &Object) -> Option<(Location, &Json)> {
     let config = data.get("config");
-    [
+    let (location, value) = [
         (
             vec![Segment::Key("systemInstruction")],
             data.get("systemInstruction"),
@@ -78,8 +78,8 @@ fn system_instruction(data: &Object) -> Option<(Location, &Json)> {
         ),
     ]
     .into_iter()
-    .find(|(_, value)| value.is_some_and(|present| !matches!(*present, Json::Null)))
-    .and_then(|(location, value)| value.map(|present| (location, present)))
+    .find(|(_, value)| value.is_some_and(|present| !matches!(*present, Json::Null)))?;
+    value.map(|present| (location, present))
 }
 
 fn append_parts(parts: &mut Vec<(Location, String)>, mut path: Location, content: &Json) {
@@ -162,7 +162,9 @@ fn resolve_mut<'data>(data: &'data mut Object, location: &[Segment]) -> Option<&
             Segment::Key(key) => field_mut(current, key)?,
             Segment::Index(index) => match current {
                 Json::List(items) => items.get_mut(*index)?,
-                _ => return None,
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+                    return None;
+                }
             },
         };
     }

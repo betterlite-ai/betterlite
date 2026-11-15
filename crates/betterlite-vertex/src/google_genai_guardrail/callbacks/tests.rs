@@ -4,6 +4,7 @@ use betterlite_core::routes::CallType;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
+use crate::google_genai_guardrail::CALL_TYPES;
 use crate::google_genai_guardrail::callbacks::{
     ApplyFuture, GenaiGuardrail, GuardedOutput, GuardrailCall, GuardrailInputs, InputType,
     process_output, process_request,
@@ -307,7 +308,7 @@ async fn stream_replacement_ignored() {
 #[test]
 fn the_four_generate_content_call_types_are_advertised() {
     assert_eq!(
-        crate::google_genai_guardrail::CALL_TYPES,
+        CALL_TYPES,
         [
             CallType::GenerateContent,
             CallType::AgenerateContent,
