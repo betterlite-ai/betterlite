@@ -4,13 +4,37 @@ use crate::guardrails::provider_forms::spec::{FormExtra, FormField, FormModel, F
 
 // LiteLLM builds the five route-owned entries before the registry loop adds every other provider
 #[must_use]
+#[rustfmt::skip]
 pub fn core_tables() -> Vec<(&'static str, FormModel)> {
     vec![
         ("bedrock", bedrock_model()),
-        ("presidio", presidio_model()),
-        ("lakera_v2", lakera_v2_model()),
-        ("tool_permission", tool_permission_model()),
-        ("hide-secrets", hide_secrets_model()),
+        ("presidio", FormModel { ui_friendly_name: None, fields: vec![
+            FormField { name: "output_parse_pii", description: Some("When True, LiteLLM will replace the masked text with the original text in the response"), required: false, shape: FormShape::Boolean, default: None, extra: FormExtra { ui_type: Some("bool".to_owned()), type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "presidio_analyzer_api_base", description: Some("Base URL for the Presidio analyzer API"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "presidio_anonymizer_api_base", description: Some("Base URL for the Presidio anonymizer API"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "presidio_filter_scope", description: Some("Where to apply Presidio checks: 'input' (user -> model), 'output' (model -> user), or 'both' (default)."), required: false, shape: FormShape::Choice(vec![json!("input"), json!("output"), json!("both")]), default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "presidio_language", description: Some("Language code for Presidio PII analysis (e.g., 'en', 'de', 'es', 'fr')"), required: false, shape: FormShape::Text, default: Some(json!("en")), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "presidio_run_on", description: Some("Where to apply Presidio checks: input, output, or both (default)."), required: false, shape: FormShape::Choice(vec![json!("input"), json!("output"), json!("both")]), default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+        ] }),
+        ("lakera_v2", FormModel { ui_friendly_name: None, fields: vec![
+            FormField { name: "advisory_system_message", description: Some("Custom advisory message template used when on_flagged='inject_system_message'. Must contain a {reason} placeholder. Defaults to a generic advisory message if unset."), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "api_base", description: Some("Base URL for the Lakera AI API"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "api_key", description: Some("API key for the Lakera AI service"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "breakdown", description: Some("Whether to include breakdown in the response"), required: false, shape: FormShape::Boolean, default: Some(json!(true)), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "dev_info", description: Some("Whether to include developer information in the response"), required: false, shape: FormShape::Boolean, default: Some(json!(true)), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "metadata", description: Some("Additional metadata to include in the request"), required: false, shape: FormShape::RawObject, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "on_flagged", description: Some("Action to take when content is flagged: 'block' (raise exception), 'monitor' (log only), or 'inject_system_message' (append an advisory system message and let the LLM decide)"), required: false, shape: FormShape::Choice(vec![json!("block"), json!("monitor"), json!("inject_system_message")]), default: Some(json!("block")), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "payload", description: Some("Whether to include payload in the response"), required: false, shape: FormShape::Boolean, default: Some(json!(true)), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "project_id", description: Some("Project ID for the Lakera AI project"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+        ] }),
+        ("tool_permission", FormModel { ui_friendly_name: Some("LiteLLM Tool Permission Guardrail"), fields: vec![
+            FormField { name: "default_action", description: Some("Fallback decision when no rule matches"), required: false, shape: FormShape::Choice(vec![json!("allow"), json!("deny")]), default: Some(json!("deny")), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "on_disallowed_action", description: Some("Choose whether disallowed tools block the request or get rewritten out of the payload"), required: false, shape: FormShape::Choice(vec![json!("block"), json!("rewrite")]), default: Some(json!("block")), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+            FormField { name: "rules", description: Some("Ordered allow/deny rules. Patterns use regex for tool names/types and optional regex constraints on tool arguments."), required: false, shape: FormShape::List { options: Vec::new() }, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+        ] }),
+        ("hide-secrets", FormModel { ui_friendly_name: Some("Hide Secrets"), fields: vec![
+            FormField { name: "detect_secrets_config", description: Some("Optional detect-secrets configuration (plugins_used, filters_used) overriding the bundled plugin set"), required: false, shape: FormShape::RawObject, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
+        ] }),
     ]
 }
 
@@ -71,48 +95,5 @@ fn prompt_attack_model() -> FormModel {
 fn sensitive_information_model() -> FormModel {
     FormModel { ui_friendly_name: None, fields: vec![
             FormField { name: "entities", description: None, required: true, shape: FormShape::List { options: Vec::new() }, default: Some(Value::Null), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-    ] }
-}
-
-#[rustfmt::skip]
-fn presidio_model() -> FormModel {
-    FormModel { ui_friendly_name: None, fields: vec![
-            FormField { name: "output_parse_pii", description: Some("When True, LiteLLM will replace the masked text with the original text in the response"), required: false, shape: FormShape::Boolean, default: None, extra: FormExtra { ui_type: Some("bool".to_owned()), type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "presidio_analyzer_api_base", description: Some("Base URL for the Presidio analyzer API"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "presidio_anonymizer_api_base", description: Some("Base URL for the Presidio anonymizer API"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "presidio_filter_scope", description: Some("Where to apply Presidio checks: 'input' (user -> model), 'output' (model -> user), or 'both' (default)."), required: false, shape: FormShape::Choice(vec![json!("input"), json!("output"), json!("both")]), default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "presidio_language", description: Some("Language code for Presidio PII analysis (e.g., 'en', 'de', 'es', 'fr')"), required: false, shape: FormShape::Text, default: Some(json!("en")), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "presidio_run_on", description: Some("Where to apply Presidio checks: input, output, or both (default)."), required: false, shape: FormShape::Choice(vec![json!("input"), json!("output"), json!("both")]), default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-    ] }
-}
-
-#[rustfmt::skip]
-fn lakera_v2_model() -> FormModel {
-    FormModel { ui_friendly_name: None, fields: vec![
-            FormField { name: "advisory_system_message", description: Some("Custom advisory message template used when on_flagged='inject_system_message'. Must contain a {reason} placeholder. Defaults to a generic advisory message if unset."), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "api_base", description: Some("Base URL for the Lakera AI API"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "api_key", description: Some("API key for the Lakera AI service"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "breakdown", description: Some("Whether to include breakdown in the response"), required: false, shape: FormShape::Boolean, default: Some(json!(true)), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "dev_info", description: Some("Whether to include developer information in the response"), required: false, shape: FormShape::Boolean, default: Some(json!(true)), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "metadata", description: Some("Additional metadata to include in the request"), required: false, shape: FormShape::RawObject, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "on_flagged", description: Some("Action to take when content is flagged: 'block' (raise exception), 'monitor' (log only), or 'inject_system_message' (append an advisory system message and let the LLM decide)"), required: false, shape: FormShape::Choice(vec![json!("block"), json!("monitor"), json!("inject_system_message")]), default: Some(json!("block")), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "payload", description: Some("Whether to include payload in the response"), required: false, shape: FormShape::Boolean, default: Some(json!(true)), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "project_id", description: Some("Project ID for the Lakera AI project"), required: false, shape: FormShape::Text, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-    ] }
-}
-
-#[rustfmt::skip]
-fn tool_permission_model() -> FormModel {
-    FormModel { ui_friendly_name: Some("LiteLLM Tool Permission Guardrail"), fields: vec![
-            FormField { name: "default_action", description: Some("Fallback decision when no rule matches"), required: false, shape: FormShape::Choice(vec![json!("allow"), json!("deny")]), default: Some(json!("deny")), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "on_disallowed_action", description: Some("Choose whether disallowed tools block the request or get rewritten out of the payload"), required: false, shape: FormShape::Choice(vec![json!("block"), json!("rewrite")]), default: Some(json!("block")), extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-            FormField { name: "rules", description: Some("Ordered allow/deny rules. Patterns use regex for tool names/types and optional regex constraints on tool arguments."), required: false, shape: FormShape::List { options: Vec::new() }, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
-    ] }
-}
-
-#[rustfmt::skip]
-fn hide_secrets_model() -> FormModel {
-    FormModel { ui_friendly_name: Some("Hide Secrets"), fields: vec![
-            FormField { name: "detect_secrets_config", description: Some("Optional detect-secrets configuration (plugins_used, filters_used) overriding the bundled plugin set"), required: false, shape: FormShape::RawObject, default: None, extra: FormExtra { ui_type: None, type_override: None, options: None, min: None, max: None, step: None, default_value: None } },
     ] }
 }

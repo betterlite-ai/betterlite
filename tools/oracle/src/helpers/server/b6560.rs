@@ -60,28 +60,12 @@ fn generic_answer() -> HelperResult {
     Ok(json!({"unfilled": unfilled, "filled": filled}))
 }
 
+#[rustfmt::skip]
 fn synthetic_entity() -> FormModel {
-    FormModel {
-        ui_friendly_name: None,
-        fields: vec![
-            FormField {
-                name: "label",
-                description: Some("Entity label shown in the UI"),
-                required: true,
-                shape: FormShape::Text,
-                default: Some(Value::Null),
-                extra: FormExtra::NONE,
-            },
-            FormField {
-                name: "score",
-                description: Some("Entity score"),
-                required: false,
-                shape: FormShape::Number,
-                default: None,
-                extra: FormExtra::NONE,
-            },
-        ],
-    }
+    FormModel { ui_friendly_name: None, fields: vec![
+        FormField { name: "label", description: Some("Entity label shown in the UI"), required: true, shape: FormShape::Text, default: Some(Value::Null), extra: FormExtra::NONE },
+        FormField { name: "score", description: Some("Entity score"), required: false, shape: FormShape::Number, default: None, extra: FormExtra::NONE },
+    ] }
 }
 
 #[rustfmt::skip]
@@ -98,74 +82,26 @@ fn synthetic_literal_list() -> FormModel {
     ] }
 }
 
+#[rustfmt::skip]
 fn synthetic_nested() -> FormModel {
-    FormModel {
-        ui_friendly_name: Some("Synthetic Nested"),
-        fields: vec![
-            FormField {
-                name: "entity",
-                description: Some("Primary entity"),
-                required: false,
-                shape: FormShape::Nested(Box::new(synthetic_entity())),
-                default: None,
-                extra: FormExtra::NONE,
-            },
-            FormField {
-                name: "entities",
-                description: Some("Entities scanned"),
-                required: false,
-                shape: FormShape::List {
-                    options: Vec::new(),
-                },
-                default: None,
-                extra: FormExtra::NONE,
-            },
-            FormField {
-                name: "optional_params",
-                description: Some("Optional parameters for the guardrail"),
-                required: false,
-                shape: FormShape::Other,
-                default: None,
-                extra: FormExtra::NONE,
-            },
-        ],
-    }
+    FormModel { ui_friendly_name: Some("Synthetic Nested"), fields: vec![
+        FormField { name: "entity", description: Some("Primary entity"), required: false, shape: FormShape::Nested(Box::new(synthetic_entity())), default: None, extra: FormExtra::NONE },
+        FormField { name: "entities", description: Some("Entities scanned"), required: false, shape: FormShape::List { options: Vec::new() }, default: None, extra: FormExtra::NONE },
+        FormField { name: "optional_params", description: Some("Optional parameters for the guardrail"), required: false, shape: FormShape::Other, default: None, extra: FormExtra::NONE },
+    ] }
 }
 
+#[rustfmt::skip]
 fn synthetic_generic_unfilled() -> FormModel {
-    FormModel {
-        ui_friendly_name: Some("Synthetic Generic"),
-        fields: vec![FormField {
-            name: "enabled",
-            description: Some("Whether the check runs"),
-            required: false,
-            shape: FormShape::Boolean,
-            default: None,
-            extra: FormExtra::NONE,
-        }],
-    }
+    FormModel { ui_friendly_name: Some("Synthetic Generic"), fields: vec![
+        FormField { name: "enabled", description: Some("Whether the check runs"), required: false, shape: FormShape::Boolean, default: None, extra: FormExtra::NONE },
+    ] }
 }
 
+#[rustfmt::skip]
 fn synthetic_generic_filled() -> FormModel {
-    FormModel {
-        ui_friendly_name: Some("Synthetic Generic"),
-        fields: vec![
-            FormField {
-                name: "enabled",
-                description: Some("Whether the check runs"),
-                required: false,
-                shape: FormShape::Boolean,
-                default: None,
-                extra: FormExtra::NONE,
-            },
-            FormField {
-                name: "optional_params",
-                description: Some("Optional parameters for the guardrail"),
-                required: false,
-                shape: FormShape::Other,
-                default: None,
-                extra: FormExtra::NONE,
-            },
-        ],
-    }
+    FormModel { ui_friendly_name: Some("Synthetic Generic"), fields: vec![
+        FormField { name: "enabled", description: Some("Whether the check runs"), required: false, shape: FormShape::Boolean, default: None, extra: FormExtra::NONE },
+        FormField { name: "optional_params", description: Some("Optional parameters for the guardrail"), required: false, shape: FormShape::Other, default: None, extra: FormExtra::NONE },
+    ] }
 }
