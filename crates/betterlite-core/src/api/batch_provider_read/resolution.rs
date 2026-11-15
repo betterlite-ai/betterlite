@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_config::sections::batch_provider_read::Settings;
 use betterlite_openai::api::batch_records::RetrieveBatchRequest;
 use betterlite_openai::batches::sdk::Timeout;
@@ -7,8 +5,8 @@ use betterlite_prompts::arguments::json::Json;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::call::{
-    AnthropicBatchReadCall, AzureBatchReadCall, AzureReadParams, OpenAiBatchReadCall,
-    ProviderConfigReadCall, VertexBatchReadCall, VertexReadCredentials,
+    AnthropicBatchReadCall, AwsCredentials, AzureBatchReadCall, AzureReadParams,
+    OpenAiBatchReadCall, ProviderConfigReadCall, VertexBatchReadCall, VertexReadCredentials,
 };
 use super::error::ReadCallError;
 use super::{BatchProviderReadInput, BatchReadOptionalParams};
@@ -25,7 +23,12 @@ pub(super) fn provider_config(
         provider: input.provider.clone(),
         model: model.to_owned(),
         batch_id: input.batch_id.clone(),
-        headers: BTreeMap::from_iter(input.extra_headers.clone().unwrap_or_default()),
+        headers: input
+            .extra_headers
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
         api_base: input.optional_params.api_base.clone(),
         api_key: input.optional_params.api_key.clone(),
         aws,
@@ -122,9 +125,9 @@ impl<'read> Resolution<'read> {
     // LiteLLM declares vertex_credentials as a path string or the inline service-account fields
     fn vertex_credentials(&self) -> Result<Option<VertexReadCredentials>, ReadCallError> {
         match self.input.optional_params.vertex_credentials.as_ref() {
-            Some(Json::Object(account)) => {
-                Ok(Some(VertexReadCredentials::ServiceAccount(account.clone())))
-            }
+            Some(Json::Object(account)) => Ok(Some(VertexReadCredentials::ServiceAccount(
+                Box::new(account.clone()),
+            ))),
             Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
                 Err(ReadCallError::InvalidVertexCredentials)
             }

@@ -181,7 +181,6 @@ pub struct BatchProviderRead<Dispatch> {
 impl<Dispatch> BatchProviderRead<Dispatch>
 where
     Dispatch: BatchReadDispatch,
-    Dispatch::Error: Error + Send + Sync + 'static,
 {
     pub async fn run(
         &self,

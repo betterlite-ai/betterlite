@@ -106,7 +106,7 @@ pub struct AzureReadParams {
 #[derive(Clone)]
 pub enum VertexReadCredentials {
     Path(SecretString),
-    ServiceAccount(Object),
+    ServiceAccount(Box<Object>),
 }
 
 impl Debug for VertexReadCredentials {

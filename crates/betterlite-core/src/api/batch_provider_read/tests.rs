@@ -282,6 +282,24 @@ fn bare_resources() -> resource_sdk_settings::Settings {
     }
 }
 
+fn bare_aws() -> RecordedAws {
+    RecordedAws {
+        region_name: None,
+        access_key_id: None,
+        secret_access_key: None,
+        session_token: None,
+        session_name: None,
+        profile_name: None,
+        role_name: None,
+        web_identity_token: None,
+        sts_endpoint: None,
+        external_id: None,
+        session_tags: None,
+        bedrock_runtime_endpoint: None,
+        bedrock_project_id: None,
+    }
+}
+
 fn bare_params() -> BatchReadOptionalParams {
     BatchReadOptionalParams {
         api_base: None,

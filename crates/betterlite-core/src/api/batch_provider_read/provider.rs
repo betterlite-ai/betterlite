@@ -65,18 +65,15 @@ pub(super) fn call(
     settings: &Settings,
     aws: AwsCredentials,
 ) -> Result<BatchProviderReadCall, ReadCallError> {
-    let provider_name = input.provider.name();
     let resolution = Resolution::new(input, settings);
-    Ok(match input.provider {
+    let unsupported = ReadCallError::Unsupported {
+        provider: input.provider.name().to_owned(),
+    };
+    let call = match input.provider {
         BatchReadProvider::Bedrock | BatchReadProvider::Mistral => {
-            let Some(model) = input.model.as_deref() else {
-                return Err(ReadCallError::Unsupported {
-                    provider: provider_name.to_owned(),
-                });
-            };
-            BatchProviderReadCall::ProviderConfig(Box::new(provider_config(
-                input, model, timeout, aws,
-            )))
+            let model = input.model.as_deref().ok_or(unsupported)?;
+            let config = provider_config(input, model, timeout, aws);
+            BatchProviderReadCall::ProviderConfig(Box::new(config))
         }
         BatchReadProvider::Xai => BatchProviderReadCall::Xai(Box::new(XaiBatchReadCall {
             batch_id: input.batch_id.clone(),
@@ -99,10 +96,7 @@ pub(super) fn call(
         BatchReadProvider::Anthropic => {
             BatchProviderReadCall::Anthropic(Box::new(resolution.anthropic(timeout)))
         }
-        BatchReadProvider::Other(_) => {
-            return Err(ReadCallError::Unsupported {
-                provider: provider_name.to_owned(),
-            });
-        }
-    })
+        BatchReadProvider::Other(_) => return Err(unsupported),
+    };
+    Ok(call)
 }

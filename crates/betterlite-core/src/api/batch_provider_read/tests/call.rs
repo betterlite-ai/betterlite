@@ -237,15 +237,7 @@ async fn configured_provider_retrieve(#[case] provider: &str) {
                 access_key_id: Some("AKID".to_owned()),
                 secret_access_key: Some("secret".to_owned()),
                 session_token: Some("token".to_owned()),
-                session_name: None,
-                profile_name: None,
-                role_name: None,
-                web_identity_token: None,
-                sts_endpoint: None,
-                external_id: None,
-                session_tags: None,
-                bedrock_runtime_endpoint: None,
-                bedrock_project_id: None,
+                ..bare_aws()
             },
             timeout: Timeout::Seconds(600.0),
             is_async: true,
@@ -267,21 +259,7 @@ async fn provider_config_without_extras() {
             headers: BTreeMap::new(),
             api_base: None,
             api_key: None,
-            aws: RecordedAws {
-                region_name: None,
-                access_key_id: None,
-                secret_access_key: None,
-                session_token: None,
-                session_name: None,
-                profile_name: None,
-                role_name: None,
-                web_identity_token: None,
-                sts_endpoint: None,
-                external_id: None,
-                session_tags: None,
-                bedrock_runtime_endpoint: None,
-                bedrock_project_id: None,
-            },
+            aws: bare_aws(),
             timeout: Timeout::Seconds(600.0),
             is_async: false,
         }]
@@ -289,10 +267,14 @@ async fn provider_config_without_extras() {
 }
 
 // every AWS credential kwarg reaches both the provider config and the ARN handlers
+#[rstest]
+#[case::provider_config("batch_1")]
+#[case::async_invoke("arn:aws:bedrock:us-east-1:111122223333:async-invoke/abc")]
 #[tokio::test]
-async fn aws_credentials_reach_every_bedrock_call() {
+async fn aws_credentials_reach_every_bedrock_call(#[case] batch_id: &str) {
     let mut call = input("bedrock");
     call.model = Some("anthropic.claude".to_owned());
+    call.batch_id = batch_id.to_owned();
     call.optional_params.aws_role_name = Some("role".to_owned());
     call.optional_params.aws_session_name = Some("session".to_owned());
     call.optional_params.aws_profile_name = Some("profile".to_owned());
@@ -306,10 +288,6 @@ async fn aws_credentials_reach_every_bedrock_call() {
     call.optional_params.aws_bedrock_runtime_endpoint = Some("https://runtime.example".to_owned());
     call.optional_params.aws_bedrock_project_id = Some("project".to_owned());
     let expected = RecordedAws {
-        region_name: None,
-        access_key_id: None,
-        secret_access_key: None,
-        session_token: None,
         session_name: Some("session".to_owned()),
         profile_name: Some("profile".to_owned()),
         role_name: Some("role".to_owned()),
@@ -322,19 +300,23 @@ async fn aws_credentials_reach_every_bedrock_call() {
         }]),
         bedrock_runtime_endpoint: Some("https://runtime.example".to_owned()),
         bedrock_project_id: Some("project".to_owned()),
+        ..bare_aws()
     };
-    let (_, config_calls) = answered(base_settings(), &call).await;
-    let Recorded::ProviderConfig { aws, .. } = &config_calls[0] else {
-        panic!("expected a provider config call");
-    };
-    assert_eq!(*aws, expected);
+    let (_, calls) = answered(base_settings(), &call).await;
+    assert_eq!(aws_of(&calls[0]), &expected);
+}
 
-    call.batch_id = async_invoke_arn().to_owned();
-    let (_, arn_calls) = answered(base_settings(), &call).await;
-    let Recorded::BedrockAsyncInvoke { aws, .. } = &arn_calls[0] else {
-        panic!("expected an async invoke call");
-    };
-    assert_eq!(*aws, expected);
+fn aws_of(entry: &Recorded) -> &RecordedAws {
+    match entry {
+        Recorded::ProviderConfig { aws, .. }
+        | Recorded::BedrockAsyncInvoke { aws, .. }
+        | Recorded::BedrockModelInvocationJob { aws, .. } => aws,
+        Recorded::Xai { .. }
+        | Recorded::OpenAi { .. }
+        | Recorded::Azure { .. }
+        | Recorded::VertexAi { .. }
+        | Recorded::Anthropic { .. } => panic!("the branch carries no AWS credentials"),
+    }
 }
 
 // a model alone does not give a provider a config
@@ -405,18 +387,7 @@ async fn bedrock_async_invoke_region(
             batch_id: batch_id.to_owned(),
             aws: RecordedAws {
                 region_name: expected.map(str::to_owned),
-                access_key_id: None,
-                secret_access_key: None,
-                session_token: None,
-                session_name: None,
-                profile_name: None,
-                role_name: None,
-                web_identity_token: None,
-                sts_endpoint: None,
-                external_id: None,
-                session_tags: None,
-                bedrock_runtime_endpoint: None,
-                bedrock_project_id: None,
+                ..bare_aws()
             },
         }]
     );
@@ -445,18 +416,8 @@ async fn bedrock_model_invocation_job_region(
             batch_id: batch_id.to_owned(),
             aws: RecordedAws {
                 region_name: expected.map(str::to_owned),
-                access_key_id: None,
-                secret_access_key: None,
                 session_token: Some("token".to_owned()),
-                session_name: None,
-                profile_name: None,
-                role_name: None,
-                web_identity_token: None,
-                sts_endpoint: None,
-                external_id: None,
-                session_tags: None,
-                bedrock_runtime_endpoint: None,
-                bedrock_project_id: None,
+                ..bare_aws()
             },
         }]
     );
@@ -695,7 +656,7 @@ async fn vertex_credentials_accept_an_inline_account() {
     };
     assert_eq!(
         vertex_credentials_of(Some(Json::Object(fields.clone())), bare_resources()).await,
-        Some(VertexReadCredentials::ServiceAccount(fields))
+        Some(VertexReadCredentials::ServiceAccount(Box::new(fields)))
     );
 }
 
