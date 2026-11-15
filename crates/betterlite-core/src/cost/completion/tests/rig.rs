@@ -165,11 +165,11 @@ impl ImagePricePolicy for Stamped {
 
 #[test]
 fn the_sync_image_builds_the_policy_from_its_moment_and_forwards_the_route() {
-    let rig = rig(&[]);
+    let fixture = rig(&[]);
     let image = SyncImage {
         build: |_lookup, _database, moment| Stamped(moment),
-        lookup: &rig.catalog,
-        database: &rig.database,
+        lookup: &fixture.catalog,
+        database: &fixture.database,
         moment: DateTime::from_timestamp(7, 0).expect("the moment is in range"),
     };
     let route = ImageRoute::VertexAi(PricedImage {
