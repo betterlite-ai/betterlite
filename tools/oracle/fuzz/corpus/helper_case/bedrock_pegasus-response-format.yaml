@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-pegasus-response-format
+call:
+  bedrock_pegasus:
+    function: response_format_json
+    non_default: {response_format: {json_schema: {name: shape, schema: {type: object}}}}
+    optional_params: {}
+    messages: []
+env: {}
+compare: {ignore: []}

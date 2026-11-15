@@ -1,0 +1,21 @@
+kind: helper
+name: ocr-credits-and-batch-cache-rates-seed
+call:
+  response_charge:
+    function: completion_cost
+    model: oracle-ocr
+    custom_llm_provider: mistral
+    region_name: null
+    catalog:
+      oracle-ocr: {litellm_provider: mistral, mode: ocr, input_cost_per_token: 0, output_cost_per_token: 0, ocr_cost_per_credit: 0.5, ocr_cost_per_page: 4.0}
+    usage: {prompt_tokens: 0, completion_tokens: 0, cached_tokens: null}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {}
+    margin: {}
+    call_type: ocr
+    response_kind: ocr
+    ocr: {credits: 2.0, pages_processed: 10, pages_processed_annotation: 0}
+compare: {ignore: []}
+env: {}

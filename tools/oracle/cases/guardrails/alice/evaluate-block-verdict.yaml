@@ -1,0 +1,14 @@
+kind: helper
+name: evaluate-block-verdict
+call:
+  b3752:
+    function: alice_apply
+    api_key: "oracle-key"
+    unreachable_fallback: fail_closed
+    texts: ["bad words"]
+    request_data: {}
+    input_type: request
+    answer: {status: 200, body: {verdict: BLOCK, message: "blocked by policy"}, raw: null}
+    failure: null
+env: {}
+compare: {ignore: []}

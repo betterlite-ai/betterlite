@@ -1,0 +1,18 @@
+task: B068
+deviations:
+  - what: Final charges are Decimal sums and checked finite amounts. An overflow or a non-finite provider cost returns a typed pricing error instead of NaN or Infinity.
+    why: The shared cost result is the monetary input to budgets and spend persistence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1862-L1902
+  - what: completion_cost never passes a provider_specific_entry or an inference_geo to the per-token price, so those two stay absent.
+    why: The typed completion input carries neither field, and LiteLLM only fills them from untyped optional params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1332
+  - what: A numeric string in a built-in tool price cell reads as absent.
+    why: Prices are decimals at the type boundary, and a string is a wrong-typed value that LiteLLM only accepts through Python coercion.
+    link: ""
+  - what: The Replicate per-second price is fixed at 0.0014 and the DEFAULT_REPLICATE_GPU_PRICE_PER_SECOND environment override is not read.
+    why: The price is a typed constant and the service takes its time zone database as injected data, so it reads no environment of its own.
+    link: ""
+kept_bugs:
+  - what: The built-in tool fees read the resolved model info, which is LiteLLM's fixed-field projection. That projection keeps search_context_cost_per_query but omits file_search_cost_per_gb_per_day, file_search_cost_per_1k_calls, vector_store_cost_per_gb_per_day and computer_use_input/output_cost_per_1k_tokens, so those fees always price at zero.
+    why: LiteLLM's tool fee code reads those keys from litellm.get_model_info, whose projection never returns them, and betterlite binds the same resolver so a setup's totals match. The projection is B205's and the fee code is B1687's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L586-L590
