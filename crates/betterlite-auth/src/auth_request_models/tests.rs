@@ -82,18 +82,22 @@ struct RecordingDecoders {
 impl RecordingDecoders {
     fn with_hints(hint_models: &[&str]) -> Self {
         Self {
+            legacy_ids: Arc::default(),
+            family_calls: Arc::default(),
             hint_models: hint_models
                 .iter()
                 .map(|model| (*model).to_owned())
                 .collect(),
-            ..Self::default()
+            fails_unified: false,
         }
     }
 
     fn failing_unified() -> Self {
         Self {
+            legacy_ids: Arc::default(),
+            family_calls: Arc::default(),
+            hint_models: Vec::new(),
             fails_unified: true,
-            ..Self::default()
         }
     }
 }

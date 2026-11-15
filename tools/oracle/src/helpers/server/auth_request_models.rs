@@ -8,7 +8,7 @@ use betterlite_auth::auth_request_models::sources::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use crate::helpers::{Helper, HelperError, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -45,10 +45,10 @@ struct ModelInfo {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let steps: Result<Vec<Value>, Box<HelperError>> =
             input.steps.iter().map(run_step).collect();
         Ok(Value::Array(steps?))
