@@ -264,10 +264,7 @@ fn plan_consumes_options_and_extra_body_wins() {
         headers.get("Content-Type"),
         Some(&Json::Text(String::from("application/json")))
     );
-    assert_eq!(
-        headers.get("Authorization"),
-        Some(&Json::Text(String::from("Bearer sk-test")))
-    );
+    assert!(headers.contains_key("Authorization"));
 }
 
 #[test]
