@@ -283,6 +283,8 @@ fn non_text_finish_reasons() {
     for body in [
         br#"{"message":"visible","finishReason":1.5}"#.as_slice(),
         br#"{"message":"visible","finishReason":1e3}"#.as_slice(),
+        br#"{"message":"visible","finishReason":-0}"#.as_slice(),
+        br#"{"message":"visible","finishReason":18446744073709551616}"#.as_slice(),
     ] {
         let fractional = block_on(decode_pegasus_reply(
             body,
