@@ -89,6 +89,29 @@ async fn timeout_error(params: BatchReadOptionalParams) -> BatchProviderReadErro
     error
 }
 
+// the provider argument defaults to openai and every other argument to absent
+#[test]
+fn missing_arguments_take_their_defaults() {
+    let parsed: BatchProviderReadInput =
+        serde_json::from_str(r#"{"batch_id": "b"}"#).expect("the batch id alone is enough");
+    assert_eq!(parsed.provider, BatchReadProvider::OpenAi);
+    assert!(!parsed.aretrieve_batch);
+    assert!(parsed.optional_params.api_base.is_none());
+    assert!(parsed.optional_params.timeout.is_none());
+}
+
+// the else arm that reads AZURE_AD_TOKEN is unreachable, so a token alone does not authenticate
+#[tokio::test]
+async fn azure_ad_token_setting_does_not_become_the_api_key() {
+    let mut resources = resource_sdk_settings::Settings::default();
+    resources.azure_ad_token = Some(SecretString::from("ad-token".to_owned()));
+    let (_, calls) = answered(configured(resources), &input("azure")).await;
+    let Recorded::Azure { api_key, .. } = &calls[0] else {
+        panic!("expected an Azure call");
+    };
+    assert_eq!(api_key.as_deref(), None);
+}
+
 #[rstest]
 #[case::defaults(BatchReadOptionalParams::default(), Timeout::Seconds(600.0))]
 #[case::request_timeout(params_with_request_timeout(5.0), Timeout::Seconds(5.0))]
@@ -369,6 +392,7 @@ async fn arn_routing_precedes_the_provider_config() {
 #[rstest]
 #[case::other_bedrock_arn("arn:aws:bedrock:us-east-1:111122223333:some-other/abc")]
 #[case::non_bedrock_arn("arn:aws:iam::111122223333:role/job")]
+#[case::marker_without_the_arn_prefix("x:bedrock:async-invoke/abc")]
 #[case::not_an_arn("batch_1")]
 #[tokio::test]
 async fn non_routed_arns_reach_the_provider(#[case] batch_id: &str) {
@@ -745,26 +769,28 @@ async fn extra_entries_over_the_limit_are_rejected() {
     assert!(recorded_calls(&calls).is_empty());
 }
 
+// the batch id and every extra header and body entry count toward the request size
 #[tokio::test]
 async fn an_oversized_request_is_rejected() {
+    let mut call = input("openai");
+    let mut headers = IndexMap::new();
+    headers.insert("a".to_owned(), "1".to_owned());
+    call.extra_headers = Some(headers);
     let (dispatch, calls) = scripted(Ok(answer(BatchStatus::Completed)));
     let service = BatchProviderRead {
         dispatch,
         limits: ApiLimits {
-            max_json_bytes: 4,
+            max_json_bytes: 8,
             ..ApiLimits::default()
         },
         settings: base_settings(),
     };
-    let error = service
-        .run(&input("openai"))
-        .await
-        .expect_err("the limit rejects");
+    let error = service.run(&call).await.expect_err("the limit rejects");
     assert!(matches!(
         error,
         BatchProviderReadError::Limits(ApiLimitError::JsonTooLarge {
-            observed: 7,
-            limit: 4
+            observed: 9,
+            limit: 8
         })
     ));
     assert!(recorded_calls(&calls).is_empty());
