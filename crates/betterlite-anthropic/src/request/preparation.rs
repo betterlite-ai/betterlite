@@ -21,12 +21,7 @@ use betterlite_prompts::system_placement::{
 use indexmap::IndexMap;
 
 use crate::anthropic_capability_catalog::capability::supports_model_capability;
-use crate::anthropic_capability_catalog::sampling::{
-    SamplingParam, SamplingRequest, apply_sampling_param,
-};
-use crate::anthropic_capability_catalog::thinking::maybe_drop_disabled_thinking;
-use crate::anthropic_capability_catalog::{CatalogSources, DropParams, OptionalParams};
-use crate::capabilities::speed::{SpeedDecision, SpeedParam, SpeedRequest, maybe_drop_speed_param};
+use crate::anthropic_capability_catalog::{CatalogSources, DropParams};
 use crate::headers::AnthropicHeaders;
 use crate::option_primitives::{OptionDefaults, resolved_provider};
 use crate::params::output_config::{self, OutputConfigRequest};
@@ -40,6 +35,7 @@ use super::media::inlines_remote_media;
 use super::metadata::apply_user_id;
 use super::system::translate_system_message;
 
+mod option_gates;
 mod tools;
 
 const DROP_THINKING_WARNING: &str = "Dropping 'thinking' param because the last assistant message with tool_calls has no thinking_blocks. The model won't use extended thinking for this turn.";
@@ -172,51 +168,6 @@ where
         tracing::warn!("{DROP_THINKING_WARNING}");
     }
 
-    fn drop_unsupported_speed(
-        &mut self,
-        catalogs: &CatalogSources<'_>,
-    ) -> Result<(), RequestError<FileFailure>> {
-        let speed = match self.optional_params.get("speed") {
-            Some(value) => SpeedParam::Present(value),
-            None => SpeedParam::Absent,
-        };
-        let request = SpeedRequest {
-            model: self.model,
-            speed,
-            drop: self.drop,
-            custom_llm_provider: self.custom_llm_provider,
-        };
-        if maybe_drop_speed_param(&request, catalogs)? == SpeedDecision::Drop {
-            self.optional_params.shift_remove("speed");
-        }
-        Ok(())
-    }
-
-    async fn drop_disabled_thinking<Source, Transport>(
-        &mut self,
-        environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-        catalogs: &CatalogSources<'_>,
-    ) where
-        Source: DynamicMetadataSource,
-        Transport: ModelInfoClient,
-    {
-        let thinking = self
-            .optional_params
-            .get("thinking")
-            .filter(|value| !matches!(value, Json::Null))
-            .cloned();
-        let mut params = OptionalParams {
-            thinking,
-            ..OptionalParams::default()
-        };
-        let provider = self.provider.as_str();
-        if maybe_drop_disabled_thinking(self.model, &mut params, provider, environment, catalogs)
-            .await
-        {
-            self.optional_params.shift_remove("thinking");
-        }
-    }
-
     async fn place_system<Source, Transport>(
         &mut self,
         environment: &mut CapabilityEnvironment<'_, Source, Transport>,
@@ -265,48 +216,6 @@ where
             source,
             received: serde_json::to_string(&self.messages).unwrap_or_default(),
         })?;
-        Ok(())
-    }
-
-    fn load_config_defaults(&mut self) -> Result<(), RequestError<FileFailure>> {
-        let config = self.defaults.get_config(
-            Some(self.model),
-            self.catalog,
-            self.default_chat_max_tokens,
-        )?;
-        let Json::Object(fields) = config else {
-            return Ok(());
-        };
-        for (key, value) in fields {
-            self.optional_params.entry(key).or_insert(value);
-        }
-        Ok(())
-    }
-
-    fn drop_internal_options(&mut self) {
-        self.optional_params.shift_remove("is_vertex_request");
-        self.optional_params.shift_remove("client_metadata");
-    }
-
-    fn apply_top_k(
-        &mut self,
-        catalogs: &CatalogSources<'_>,
-    ) -> Result<(), RequestError<FileFailure>> {
-        let Some(top_k) = self.optional_params.shift_remove("top_k") else {
-            return Ok(());
-        };
-        if matches!(top_k, Json::Null) {
-            return Ok(());
-        }
-        let request = SamplingRequest {
-            model: self.model,
-            param: SamplingParam::TopK,
-            value: &top_k,
-            drop: self.drop,
-        };
-        if let Some(kept) = apply_sampling_param(&request, catalogs)? {
-            self.optional_params.insert("top_k".to_owned(), kept);
-        }
         Ok(())
     }
 
