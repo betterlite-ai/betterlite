@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use betterlite_cache::evicted_client_closer::{Clock, EvictedClientCloser};
+use betterlite_cache::llm_client_cache::LlmClientCache;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_models::decisions::Json;
 use betterlite_models::provider_model_sets::ProviderModelSet;
@@ -8,6 +10,7 @@ use futures_util::StreamExt as _;
 use crate::legacy_prediction::error::PredictionError;
 use crate::legacy_prediction::projection::LegacyMessage;
 use crate::legacy_vertex::LegacyCompletion;
+use crate::legacy_vertex::cache::ClientCache;
 use crate::legacy_vertex::complete;
 use crate::legacy_vertex::error::LegacyVertexError;
 use crate::token_cache::error::CredentialCacheError;
@@ -41,6 +44,27 @@ async fn cache_read_without_write() {
         cache.keys(),
         vec![String::from("chat-bison-proj-us-central1")]
     );
+}
+
+#[tokio::test]
+async fn cache_adapter_reads_the_entry() {
+    let clock: Clock = Arc::new(|| 1_000.0);
+    let closer = Arc::new(EvictedClientCloser::new(Arc::clone(&clock)));
+    let cache = LlmClientCache::<FixtureClient>::new(10, 60.0, clock, closer).expect("a cache");
+    let client = Arc::new(FixtureClient::default());
+    cache
+        .set_cache(
+            "chat-bison-proj-us-central1",
+            Arc::clone(&client),
+            None,
+            false,
+        )
+        .expect("a stored client");
+    let found = cache
+        .cached("chat-bison-proj-us-central1")
+        .expect("the cache read");
+    assert!(found.is_some());
+    assert!(cache.cached("missing").expect("the cache read").is_none());
 }
 
 #[tokio::test]

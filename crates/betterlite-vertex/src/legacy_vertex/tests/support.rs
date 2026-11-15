@@ -1,6 +1,7 @@
 use std::future::{Future, Ready, ready};
 use std::sync::{Arc, Mutex};
 
+use betterlite_cache::evicted_client_closer::{CloseMethod, EvictableClient};
 use betterlite_cache::llm_client_cache::LlmClientCacheError;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_models::call_helpers::finish_reason::map_finish_reason;
@@ -197,6 +198,12 @@ where
     T: Send,
 {
     async move { reply.expect("a fixture reply") }
+}
+
+impl EvictableClient for FixtureClient {
+    fn close_method(&self) -> Option<CloseMethod> {
+        None
+    }
 }
 
 impl PredictionClient for FixtureClient {
