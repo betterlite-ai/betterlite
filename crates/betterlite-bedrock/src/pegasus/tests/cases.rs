@@ -558,6 +558,15 @@ fn reply_shape_errors() {
     ));
     assert!(matches!(
         decode_body(
+            br#"{"message":"visible","finishReason":{"a":1}}"#,
+            &mut response,
+            &headers,
+            &given
+        ),
+        Err(PegasusError::FinishReasonNotMappable)
+    ));
+    assert!(matches!(
+        decode_body(
             br#"{"message":{"a":1},"finishReason":"stop"}"#,
             &mut response,
             &headers,
