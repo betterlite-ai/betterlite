@@ -274,6 +274,54 @@ fn a_null_content_index_keys_apart_from_zero() {
 }
 
 #[test]
+fn null_ids_key_like_absent_ones() {
+    let mut normalizer = XaiRealtimeNormalizer::default();
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.added","response_id":null,"item_id":null,"part":{"type":"text","text":"null-ids"}}"#,
+    );
+    let done = normalized(&mut normalizer, r#"{"type":"response.content_part.done"}"#);
+    assert_eq!(part_of(&done), json(r#"{"type":"text","text":"null-ids"}"#));
+}
+
+#[test]
+fn non_text_ids_key_parts_by_value() {
+    let mut normalizer = XaiRealtimeNormalizer::default();
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.added","response_id":7,"item_id":true,"part":{"type":"text","text":"seven"}}"#,
+    );
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.added","response_id":[1,2],"item_id":"i","part":{"type":"text","text":"list"}}"#,
+    );
+    let seven = normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":7,"item_id":true}"#,
+    );
+    assert_eq!(part_of(&seven), json(r#"{"type":"text","text":"seven"}"#));
+    let list = normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":[1,2],"item_id":"i"}"#,
+    );
+    assert_eq!(part_of(&list), json(r#"{"type":"text","text":"list"}"#));
+}
+
+#[test]
+fn object_ids_hash_by_their_entries_not_their_order() {
+    let mut normalizer = XaiRealtimeNormalizer::default();
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.added","response_id":{"a":1,"b":2},"item_id":"i","part":{"type":"text","text":"ordered"}}"#,
+    );
+    let done = normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":{"b":2,"a":1},"item_id":"i"}"#,
+    );
+    assert_eq!(part_of(&done), json(r#"{"type":"text","text":"ordered"}"#));
+}
+
+#[test]
 fn cached_parts_do_not_cross_connections() {
     let mut first = connection().normalizer;
     let mut second = connection().normalizer;
@@ -311,6 +359,10 @@ fn exceeding_the_bound_fails_on_part_cache_limit() {
     fill_cache(&mut normalizer);
     let error = cache_part(&mut normalizer, MAX_CACHED_CONTENT_PARTS)
         .expect_err("the first excess key exceeds the bound");
+    assert_eq!(
+        error.to_string(),
+        "the Grok Voice session cached more than 4096 content parts"
+    );
     assert!(matches!(
         error,
         XaiRealtimeError::ContentPartLimit { limit } if limit == MAX_CACHED_CONTENT_PARTS
@@ -396,6 +448,38 @@ fn only_conversation_item_added_repairs_roles() {
 #[case::function_arguments_get_output_only(
     r#"{"type":"response.function_call_arguments.delta","delta":"{}"}"#,
     r#"{"type":"response.function_call_arguments.delta","delta":"{}","output_index":0}"#
+)]
+#[case::output_item_done_gets_output_only(
+    r#"{"type":"response.output_item.done","item":{"type":"message"}}"#,
+    r#"{"type":"response.output_item.done","item":{"type":"message"},"output_index":0}"#
+)]
+#[case::function_arguments_done_gets_output_only(
+    r#"{"type":"response.function_call_arguments.done","arguments":"{}"}"#,
+    r#"{"type":"response.function_call_arguments.done","arguments":"{}","output_index":0}"#
+)]
+#[case::content_part_added_gets_both(
+    r#"{"type":"response.content_part.added","part":{"type":"text","text":"x"}}"#,
+    r#"{"type":"response.content_part.added","part":{"type":"text","text":"x"},"output_index":0,"content_index":0}"#
+)]
+#[case::content_part_done_gets_both(
+    r#"{"type":"response.content_part.done","part":{"type":"audio","transcript":"t"}}"#,
+    r#"{"type":"response.content_part.done","part":{"type":"audio","transcript":"t"},"output_index":0,"content_index":0}"#
+)]
+#[case::output_text_done_gets_both(
+    r#"{"type":"response.output_text.done","text":"hi"}"#,
+    r#"{"type":"response.output_text.done","text":"hi","output_index":0,"content_index":0}"#
+)]
+#[case::transcript_delta_gets_both(
+    r#"{"type":"response.output_audio_transcript.delta","delta":"t"}"#,
+    r#"{"type":"response.output_audio_transcript.delta","delta":"t","output_index":0,"content_index":0}"#
+)]
+#[case::transcript_done_gets_both(
+    r#"{"type":"response.output_audio_transcript.done","transcript":"t"}"#,
+    r#"{"type":"response.output_audio_transcript.done","transcript":"t","output_index":0,"content_index":0}"#
+)]
+#[case::audio_done_gets_both(
+    r#"{"type":"response.output_audio.done"}"#,
+    r#"{"type":"response.output_audio.done","output_index":0,"content_index":0}"#
 )]
 #[case::explicit_null_is_kept(
     r#"{"type":"response.output_text.delta","output_index":null,"content_index":3,"delta":"hi"}"#,
@@ -542,10 +626,10 @@ fn usage_defaults_fill_missing_token_details() {
 #[test]
 fn connection_uses_the_xai_origin_and_authorization_only() {
     let (connection, logger) = prepared(None, None);
-    let host = XAI_API_BASE.trim_start_matches("https://");
+    assert_eq!(XAI_API_BASE, "https://api.x.ai/v1");
     assert_eq!(
         connection.url,
-        format!("wss://{host}/v1/realtime?model={MODEL}")
+        "wss://api.x.ai/v1/realtime?model=grok-4-1-fast-non-reasoning"
     );
     assert_eq!(
         connection.headers,
