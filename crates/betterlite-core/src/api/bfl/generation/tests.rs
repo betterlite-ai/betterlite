@@ -1,11 +1,14 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error as StdError;
 use std::fs;
+use std::mem::discriminant;
 use std::path::PathBuf;
+use std::str;
 use std::time::Duration;
 
-use betterlite_config::sections::Sections;
+use betterlite_config::types::RouterSettings;
 use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::reply::ImageDatum;
 use http::HeaderMap;
@@ -28,7 +31,7 @@ fn settings(entries: &[(&str, &str)]) -> (Option<SecretString>, String) {
     for (name, value) in entries {
         found.insert((*name).to_owned(), (*value).to_owned());
     }
-    Sections::bfl_generation_settings(&found)
+    RouterSettings::bfl_generation_settings(&found)
 }
 
 fn params(entries: &[(&str, Json)]) -> IndexMap<String, Json> {
@@ -221,6 +224,7 @@ fn other_quality_values_disappear() {
 #[case::custom("1344X768", None)]
 #[case::custom_lower("1344x768", Some((1344, 768)))]
 #[case::spaced_around(" 1344x768 ", Some((1344, 768)))]
+#[case::signed("+1344x-768", Some((1344, -768)))]
 #[case::no_x("1344", None)]
 fn maps_lowercase_x_sizes_into_dimensions(
     #[case] size: &str,
@@ -247,7 +251,9 @@ fn maps_lowercase_x_sizes_into_dimensions(
 #[case::letters("1024xwide")]
 #[case::three_parts("1024x768x2")]
 #[case::empty("x512")]
+#[case::blank(" x ")]
 #[case::trailing("1344x")]
+#[case::beyond_64_bits("99999999999999999999x512")]
 fn malformed_sizes_raise_the_parse_error(#[case] size: &str) {
     let error = map_openai_params(
         &params(&[("size", text(size))]),
@@ -258,7 +264,7 @@ fn malformed_sizes_raise_the_parse_error(#[case] size: &str) {
     .unwrap_err();
 
     assert!(matches!(&error, BflError::InvalidSize { size: found, .. } if found == size));
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(StdError::source(&error).is_some());
     assert_eq!(error.status(), None);
 }
 
@@ -586,7 +592,7 @@ fn a_reply_past_the_size_limit_is_refused() {
 
 #[test]
 fn a_reply_at_the_size_limit_is_accepted() {
-    let padding = "a".repeat(MAX_REPLY_BYTES - 13);
+    let padding = "a".repeat(MAX_REPLY_BYTES.saturating_sub(13));
     let body = format!("{{\"status\":\"{padding}\"}}");
     let decoded = decode_bfl_reply(body.as_bytes()).unwrap();
 
@@ -617,10 +623,7 @@ fn accepts_https_bfl_hosts(#[case] polling_url: &str) {
 fn rejects_untrusted_polling_urls(#[case] polling_url: &str, #[case] expected: BflError) {
     let error = check_bfl_poll_url(polling_url).unwrap_err();
 
-    assert_eq!(
-        std::mem::discriminant(&error),
-        std::mem::discriminant(&expected)
-    );
+    assert_eq!(discriminant(&error), discriminant(&expected));
     assert_eq!(error.status(), Some(502));
 }
 
@@ -660,9 +663,15 @@ fn an_existing_image_lets_an_empty_result_succeed() {
 
 #[rstest]
 fn replays_the_bfl_boundary_corpus(#[files("fuzz/corpus/bfl_boundary/*")] path: PathBuf) {
-    let bytes = fs::read(path).unwrap();
-    drop(decode_bfl_reply(&bytes));
-    if let Ok(candidate) = std::str::from_utf8(&bytes) {
-        drop(check_bfl_poll_url(candidate));
+    let bytes = fs::read(&path).unwrap();
+    let text = str::from_utf8(&bytes).unwrap();
+    let decoded = decode_bfl_reply(&bytes).is_ok();
+    let polled = check_bfl_poll_url(text).is_ok();
+
+    match path.file_stem().and_then(|stem| stem.to_str()) {
+        Some("valid_sample") => assert!(decoded && !polled),
+        Some("regional_poll_host") => assert!(polled && !decoded),
+        Some("malformed_json" | "plain_http" | "suffix_confusion") => assert!(!decoded && !polled),
+        other => panic!("the corpus holds a seed with no expectation: {other:?}"),
     }
 }
