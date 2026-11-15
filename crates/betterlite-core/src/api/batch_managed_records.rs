@@ -1,10 +1,14 @@
+use std::error::Error as StdError;
+
 use async_trait::async_trait;
 use betterlite_config::sections::batch_managed_records::Settings as ConfiguredSettings;
 use betterlite_db::managed_resource_rows::files::ManagedFileTable;
 use serde::Deserialize;
-use thiserror::Error;
 
 use crate::api::managed_resource_ids::is_base64_encoded_unified_id;
+
+pub mod error;
+pub mod lookup;
 
 mod tests;
 
@@ -80,18 +84,14 @@ pub enum BatchManagedRecordsResult {
     PollerActive(bool),
 }
 
-#[derive(Debug, Error)]
-pub enum ManagedFileLookupError {
-    #[error("the managed-file lookup failed")]
-    Lookup(#[source] Box<dyn std::error::Error + Send + Sync>),
-}
-
 #[async_trait]
 pub trait ManagedFileLookup: Send + Sync {
+    type Error: StdError + Send + Sync + 'static;
+
     async fn find_by_flat_model_file_id(
         &self,
         raw_file_id: &str,
-    ) -> Result<Option<ManagedFileTable>, ManagedFileLookupError>;
+    ) -> Result<Option<ManagedFileTable>, Self::Error>;
 }
 
 pub struct ScheduledJob<'job> {

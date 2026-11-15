@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use betterlite_config::sections::batch_managed_records::Settings;
 use betterlite_core::api::batch_managed_records::{
     BatchFileIds, BatchManagedRecords, BatchManagedRecordsInput, BatchManagedRecordsResult,
-    BatchStoredObject, ManagedFileLookup, ManagedFileLookupError, ScheduledJob, ScheduledJobs,
+    BatchStoredObject, ManagedFileLookup, ScheduledJob, ScheduledJobs,
 };
 use betterlite_db::managed_resource_rows::files::ManagedFileTable;
 use serde::Deserialize;
@@ -44,18 +44,20 @@ struct ScriptedFiles {
 
 #[async_trait]
 impl ManagedFileLookup for ScriptedFiles {
+    type Error = ScriptedFailure;
+
     async fn find_by_flat_model_file_id(
         &self,
         raw_file_id: &str,
-    ) -> Result<Option<ManagedFileTable>, ManagedFileLookupError> {
+    ) -> Result<Option<ManagedFileTable>, ScriptedFailure> {
         self.lookups
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(raw_file_id.to_owned());
         if self.failures.contains(raw_file_id) {
-            return Err(ManagedFileLookupError::Lookup(Box::new(ScriptedFailure {
+            return Err(ScriptedFailure {
                 raw_file_id: raw_file_id.to_owned(),
-            })));
+            });
         }
         Ok(self
             .found

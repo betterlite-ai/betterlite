@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -8,13 +9,26 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::batch_managed_records::Settings;
+use betterlite_db::auxiliary_repository::bindings::ManagedFileTable as ManagedFileTableBinding;
+use betterlite_db::auxiliary_repository::repository::{PrismaClient, PrismaTableRepository};
+use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::managed_resource_rows::files::ManagedFileTable;
+use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::schema_daily_usage::{ADD_MANAGED_FILE_TABLE, MANAGED_OBJECT_TABLE};
+use betterlite_db::schema_managed_resources::STORAGE_BACKEND_MANAGED_FILES;
+use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_redis::config_sync::publish::redis_config_change_publisher;
+use clap::Parser;
+use deadpool_postgres::{Manager, Pool};
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
+use tokio_postgres::NoTls;
 
+use super::lookup::ManagedFileRows;
 use super::{
     BatchCostPoller, BatchDatabaseLookup, BatchFileIds, BatchManagedRecords,
     BatchManagedRecordsInput, BatchManagedRecordsResult, BatchUpdate, ManagedFileLookup,
-    ManagedFileLookupError, ScheduledJob, ScheduledJobs,
+    ScheduledJob, ScheduledJobs,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -75,16 +89,18 @@ fn managed_file(raw_file_id: &str, unified_file_id: &str) -> ManagedFileTable {
 
 #[async_trait]
 impl ManagedFileLookup for RecordingFiles {
+    type Error = ScriptedFailure;
+
     async fn find_by_flat_model_file_id(
         &self,
         raw_file_id: &str,
-    ) -> Result<Option<ManagedFileTable>, ManagedFileLookupError> {
+    ) -> Result<Option<ManagedFileTable>, ScriptedFailure> {
         self.lookups
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(raw_file_id.to_owned());
         if self.failures.contains(raw_file_id) {
-            return Err(ManagedFileLookupError::Lookup(Box::new(ScriptedFailure)));
+            return Err(ScriptedFailure);
         }
         Ok(self
             .rows
@@ -408,6 +424,93 @@ async fn poller_with_unbound_job_function_is_inactive() {
     let records = service(None::<RecordingFiles>, Some(DetachedJob), true);
     let result = records.run(&BatchManagedRecordsInput::PollerActive).await;
     assert_eq!(result, BatchManagedRecordsResult::PollerActive(false));
+}
+
+#[derive(Parser)]
+struct Environment {
+    #[arg(long, env = "POSTGRES_TEST_URL")]
+    url: Option<String>,
+}
+
+const SEED_SQL: &str = r#"
+INSERT INTO "LiteLLM_ManagedFileTable"
+    (id, unified_file_id, file_object, model_mappings, created_at, updated_at, flat_model_file_ids)
+VALUES
+    ('row-in', 'litellm_proxy:file:unified-in', '{}'::jsonb, '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ARRAY['file-raw-in']::text[]),
+    ('row-other', 'litellm_proxy:file:unified-other', '{}'::jsonb, '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ARRAY['file-other']::text[])
+"#;
+
+async fn provision() -> (PostgresFixture, PostgresStore) {
+    let url = Environment::parse_from(["batch-managed-records"])
+        .url
+        .map(SecretString::from);
+    let fixture = PostgresFixture::provision_schema(url.as_ref())
+        .resolve()
+        .await
+        .unwrap();
+    let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
+    let pool = Pool::builder(manager).max_size(2).build().unwrap();
+    (fixture, PostgresStore { pool: Some(pool) })
+}
+
+async fn migrate(store: &PostgresStore) {
+    let session = store.session().await.unwrap();
+    for migration in [
+        ADD_MANAGED_FILE_TABLE,
+        MANAGED_OBJECT_TABLE,
+        STORAGE_BACKEND_MANAGED_FILES,
+    ] {
+        session
+            .batch_execute(from_utf8(migration.bytes).unwrap())
+            .await
+            .unwrap();
+    }
+    session.batch_execute(SEED_SQL).await.unwrap();
+}
+
+async fn resolved<Files>(
+    records: &BatchManagedRecords<Files, NoJobs>,
+    raw_file_id: &str,
+) -> BatchManagedRecordsResult
+where
+    Files: ManagedFileLookup,
+{
+    let input = BatchManagedRecordsInput::ResolveInput {
+        files: ids(Some(raw_file_id), None, None),
+    };
+    records.run(&input).await
+}
+
+#[tokio::test]
+async fn postgres_managed_file_row_resolution() {
+    let (fixture, store) = provision().await;
+    migrate(&store).await;
+    let availability = Availability::default();
+    let client = PrismaClient {
+        writer: &store,
+        reader: &store,
+        availability: &availability,
+    };
+    let records = service(
+        Some(ManagedFileRows {
+            repository: PrismaTableRepository::new(
+                Some(client),
+                redis_config_change_publisher(None),
+                ManagedFileTableBinding,
+            ),
+        }),
+        Some(NoJobs),
+        true,
+    );
+    assert_eq!(
+        resolved(&records, "file-raw-in").await,
+        BatchManagedRecordsResult::Resolved(ids(Some("litellm_proxy:file:unified-in"), None, None))
+    );
+    assert_eq!(
+        resolved(&records, "file-missing").await,
+        BatchManagedRecordsResult::Resolved(ids(Some("file-missing"), None, None))
+    );
+    fixture.close_async().await.unwrap();
 }
 
 #[rstest]
