@@ -20,5 +20,8 @@ call:
       - {num_input_text_tokens: 4, num_input_image_tokens: 6, output_tokens: 2}
       - {input_tokens: 2, cost: 0.5, extra: {kept: true}, input_tokens_details: {cached_tokens: 1}}
       - {num_input_text_tokens: 5, input_tokens_details: {text_tokens: x}}
+      - {num_input_text_tokens: 0, input_tokens_details: {text_tokens: 9}}
+      - {num_input_image_tokens: 0, input_tokens_details: {image_tokens: 8}}
+      - {output_tokens: 0, num_output_tokens: 2}
 env: {}
 compare: {ignore: []}

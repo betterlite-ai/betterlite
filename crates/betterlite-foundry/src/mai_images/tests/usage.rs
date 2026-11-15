@@ -14,97 +14,113 @@ fn counts(input: i64, image: i64, text: i64, output: i64, total: i64) -> Object 
     ))
 }
 
+// The reply keeps every field it came with, so the expected object is the input with the counts [input, image, text, output, total] replaced
+fn check(usage: &str, expected_counts: [i64; 5]) {
+    let [input, image, text, output, total] = expected_counts;
+    let mut expected = object(usage);
+    expected.extend(counts(input, image, text, output, total));
+    assert_eq!(normalized(usage), expected, "{usage}");
+}
+
 pub(super) fn usage_alias_priority() {
     let zeros = counts(0, 0, 0, 0, 0);
     assert_eq!(normalize_mai_image_usage(None).unwrap(), zeros);
     assert_eq!(normalized("{}"), zeros);
-    assert_eq!(
-        normalized(r#"{"num_input_text_tokens":null,"input_tokens":null}"#),
-        zeros
+    check(
+        r#"{"num_input_text_tokens":null,"input_tokens":null}"#,
+        [0; 5],
     );
     text_aliases();
     image_aliases();
     output_aliases();
+    zero_counts_win();
     explicit_input_and_total();
     extra_fields_and_types();
 }
 
 // text: num_input_text_tokens, then details.text_tokens, then input_tokens
 fn text_aliases() {
-    assert_eq!(
-        normalized(
-            r#"{"num_input_text_tokens":5,"input_tokens_details":{"text_tokens":9},"input_tokens":20}"#
-        ),
-        counts(20, 0, 5, 0, 20)
+    check(
+        r#"{"num_input_text_tokens":5,"input_tokens_details":{"text_tokens":9},"input_tokens":20}"#,
+        [20, 0, 5, 0, 20],
     );
-    assert_eq!(
-        normalized(r#"{"input_tokens_details":{"text_tokens":9,"image_tokens":4}}"#),
-        counts(13, 4, 9, 0, 13)
+    check(
+        r#"{"input_tokens_details":{"text_tokens":9,"image_tokens":4}}"#,
+        [13, 4, 9, 0, 13],
     );
-    assert_eq!(normalized(r#"{"input_tokens":7}"#), counts(7, 0, 7, 0, 7));
+    check(r#"{"input_tokens":7}"#, [7, 0, 7, 0, 7]);
 }
 
 // image: num_input_image_tokens, then details.image_tokens
 fn image_aliases() {
-    assert_eq!(
-        normalized(r#"{"num_input_image_tokens":3,"input_tokens_details":{"image_tokens":8}}"#),
-        counts(3, 3, 0, 0, 3)
+    check(
+        r#"{"num_input_image_tokens":3,"input_tokens_details":{"image_tokens":8}}"#,
+        [3, 3, 0, 0, 3],
     );
-    assert_eq!(
-        normalized(r#"{"input_tokens_details":"not an object","num_input_text_tokens":1}"#),
-        counts(1, 0, 1, 0, 1)
+    check(
+        r#"{"input_tokens_details":"not an object","num_input_text_tokens":1}"#,
+        [1, 0, 1, 0, 1],
     );
 }
 
 // output: output_tokens, num_output_tokens, output_image_tokens
 fn output_aliases() {
-    assert_eq!(
-        normalized(r#"{"output_tokens":1,"num_output_tokens":2,"output_image_tokens":3}"#),
-        counts(0, 0, 0, 1, 1)
+    check(
+        r#"{"output_tokens":1,"num_output_tokens":2,"output_image_tokens":3}"#,
+        [0, 0, 0, 1, 1],
     );
-    assert_eq!(
-        normalized(r#"{"num_output_tokens":2,"output_image_tokens":3}"#),
-        counts(0, 0, 0, 2, 2)
+    check(
+        r#"{"num_output_tokens":2,"output_image_tokens":3}"#,
+        [0, 0, 0, 2, 2],
     );
-    assert_eq!(
-        normalized(r#"{"output_tokens":null,"output_image_tokens":3}"#),
-        counts(0, 0, 0, 3, 3)
+    check(
+        r#"{"output_tokens":null,"output_image_tokens":3}"#,
+        [0, 0, 0, 3, 3],
     );
+}
+
+// a leading alias of zero is a value, so a later alias never replaces it
+fn zero_counts_win() {
+    check(
+        r#"{"num_input_text_tokens":0,"input_tokens_details":{"text_tokens":9}}"#,
+        [0; 5],
+    );
+    check(
+        r#"{"num_input_image_tokens":0,"input_tokens_details":{"image_tokens":8}}"#,
+        [0; 5],
+    );
+    check(r#"{"output_tokens":0,"num_output_tokens":2}"#, [0; 5]);
 }
 
 // an explicit input or total, zero included, wins over the sum
 fn explicit_input_and_total() {
-    assert_eq!(
-        normalized(r#"{"num_input_text_tokens":4,"input_tokens":0,"output_tokens":2}"#),
-        counts(0, 0, 4, 2, 2)
+    check(
+        r#"{"num_input_text_tokens":4,"input_tokens":0,"output_tokens":2}"#,
+        [0, 0, 4, 2, 2],
     );
-    assert_eq!(
-        normalized(r#"{"num_input_text_tokens":4,"output_tokens":2,"total_tokens":99}"#),
-        counts(4, 0, 4, 2, 99)
+    check(
+        r#"{"num_input_text_tokens":4,"output_tokens":2,"total_tokens":99}"#,
+        [4, 0, 4, 2, 99],
     );
-    assert_eq!(
-        normalized(r#"{"num_input_text_tokens":4,"output_tokens":2,"total_tokens":0}"#),
-        counts(4, 0, 4, 2, 0)
+    check(
+        r#"{"num_input_text_tokens":4,"output_tokens":2,"total_tokens":0}"#,
+        [4, 0, 4, 2, 0],
     );
-    assert_eq!(
-        normalized(r#"{"num_input_text_tokens":4,"num_input_image_tokens":6,"output_tokens":2}"#),
-        counts(10, 6, 4, 2, 12)
+    check(
+        r#"{"num_input_text_tokens":4,"num_input_image_tokens":6,"output_tokens":2}"#,
+        [10, 6, 4, 2, 12],
     );
 }
 
 fn extra_fields_and_types() {
-    let mut expected = counts(2, 0, 2, 0, 2);
-    expected.extend(object(r#"{"cost":0.5,"extra":{"kept":true}}"#));
-    assert_eq!(
-        normalized(
-            r#"{"input_tokens":2,"cost":0.5,"extra":{"kept":true},"input_tokens_details":{"cached_tokens":1}}"#
-        ),
-        expected
-    );
+    let extras = r#"{"input_tokens":2,"cost":0.5,"extra":{"kept":true},"input_tokens_details":{"cached_tokens":1}}"#;
+    let mut expected = object(extras);
+    expected.extend(counts(2, 0, 2, 0, 2));
+    assert_eq!(normalized(extras), expected);
     // an alias behind a winning one is never read
-    assert_eq!(
-        normalized(r#"{"num_input_text_tokens":5,"input_tokens_details":{"text_tokens":"x"}}"#),
-        counts(5, 0, 5, 0, 5)
+    check(
+        r#"{"num_input_text_tokens":5,"input_tokens_details":{"text_tokens":"x"}}"#,
+        [5, 0, 5, 0, 5],
     );
     wrong_types_and_overflow();
 }
