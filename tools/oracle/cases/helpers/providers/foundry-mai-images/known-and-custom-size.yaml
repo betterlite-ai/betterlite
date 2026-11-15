@@ -1,0 +1,24 @@
+kind: helper
+name: foundry-mai-images-known-and-custom-size
+call:
+  foundry_mai_images:
+    params:
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x1024}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x768}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: " 800 x 1000 "}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024X768}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024X1024}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: large}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: axb}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: x768}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x768x1}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x768X}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1.5x1024}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 512x512}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 256x256}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1792x1024}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x1792}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024xq}, optional_params: {}, drop_params: true}
+env: {}
+compare: {ignore: []}
