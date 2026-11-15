@@ -21,6 +21,7 @@ base64 = "0.23.1"
 betterlite-env = { path = "../betterlite-env" }
 betterlite-lens = { path = "../betterlite-lens" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-redis = { path = "../betterlite-redis" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
