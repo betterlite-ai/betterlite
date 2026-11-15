@@ -10,19 +10,24 @@ fn counts(prompt: i64, completion: i64, total: i64) -> Value {
     })
 }
 // A usage object counts only when all three totals are integers, as LiteLLM's Usage view requires.
-fn usage_value(usage: &Value) -> Value {
+fn usage_value(usage: Option<&Value>) -> Value {
     let keys = ["prompt_tokens", "completion_tokens", "total_tokens"];
-    match keys.map(|key| usage[key].as_i64()) {
+    match keys.map(|key| {
+        usage
+            .and_then(|source| source.get(key))
+            .and_then(Value::as_i64)
+    }) {
         [Some(prompt), Some(completion), Some(total)] => counts(prompt, completion, total),
         _ => Value::Null,
     }
 }
 fn tool_value(call: &Value) -> Value {
+    let function = call.get("function");
     json!({
-        "id": call["id"],
-        "name": call["function"]["name"],
-        "arguments": call["function"]["arguments"],
-        "index": call["index"],
+        "id": call.get("id"),
+        "name": function.and_then(|source| source.get("name")),
+        "arguments": function.and_then(|source| source.get("arguments")),
+        "index": call.get("index"),
     })
 }
 pub(super) fn generic_view(chunk: GenericChunk) -> Value {
@@ -50,17 +55,18 @@ pub(super) fn chunk_view(chunk: InvokeChunk) -> Result<Value, serde_json::Error>
             (to_value(*reply)?, "/choices/0")
         }
     };
-    let choice = value.pointer(choice_path).cloned().unwrap_or(Value::Null);
-    let delta = &choice["delta"];
+    let choice = value.pointer(choice_path);
+    let delta = choice.and_then(|source| source.get("delta"));
     Ok(json!({
         "kind": "stream",
-        "content": delta["content"],
-        "role": delta["role"],
-        "reasoning_content": delta["reasoning_content"],
-        "finish_reason": choice["finish_reason"],
-        "tool_calls": delta["tool_calls"]
-            .as_array()
+        "content": delta.and_then(|source| source.get("content")),
+        "role": delta.and_then(|source| source.get("role")),
+        "reasoning_content": delta.and_then(|source| source.get("reasoning_content")),
+        "finish_reason": choice.and_then(|source| source.get("finish_reason")),
+        "tool_calls": delta
+            .and_then(|source| source.get("tool_calls"))
+            .and_then(Value::as_array)
             .map(|calls| calls.iter().map(tool_value).collect::<Vec<_>>()),
-        "usage": usage_value(&value["usage"]),
+        "usage": usage_value(value.get("usage")),
     }))
 }
