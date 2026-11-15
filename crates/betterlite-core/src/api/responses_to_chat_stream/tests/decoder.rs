@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::absolute_paths,
+        clippy::shadow_unrelated,
+        reason = "decoder fixtures exercise wire bytes and the recorded corpus"
+    )
+)]
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::responses_to_chat_stream::error::ResponsesChatStreamError;

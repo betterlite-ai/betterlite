@@ -30,10 +30,7 @@ pub(super) fn repr_value(value: &Value) -> String {
 // json.loads raises JSONDecodeError, whose text names the line, the column and the character
 #[must_use]
 pub(super) fn json_error_message(text: &str, source: &serde_json::Error) -> String {
-    match scanned_error(text) {
-        Some(message) => message,
-        None => source.to_string(),
-    }
+    scanned_error(text).unwrap_or_else(|| source.to_string())
 }
 
 fn repr_text(text: &str) -> String {

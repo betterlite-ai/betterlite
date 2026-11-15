@@ -2,10 +2,13 @@ use serde_json::{Map, Value};
 
 use super::super::error::ResponsesChatStreamError;
 use super::super::fields::Fields;
-use super::super::records::ChatToolCall;
+use super::super::records::{ChatToolCall, OptionalText};
 use super::optional_text;
 
 const TOOL_CALL_KEYS: [&str; 5] = ["id", "index", "type", "function", "custom"];
+
+// ChatCompletionDeltaToolCall carries these three declared fields beside id and index
+type CallParts = (OptionalText, Option<Value>, Option<Value>);
 
 pub(super) fn tool_calls(items: &[Value]) -> Result<Vec<ChatToolCall>, ResponsesChatStreamError> {
     let mut calls = Vec::with_capacity(items.len());
@@ -58,9 +61,7 @@ fn tool_call(
 }
 
 // ChatCompletionDeltaCustomToolCall: a nonnull custom payload picks the custom shape
-fn call_parts(
-    fields: &Fields,
-) -> Result<(Option<Option<String>>, Option<Value>, Option<Value>), ResponsesChatStreamError> {
+fn call_parts(fields: &Fields) -> Result<CallParts, ResponsesChatStreamError> {
     let Some(custom) = fields.get("custom").filter(|value| !value.is_null()) else {
         let Some(Value::Object(call)) = fields.get("function") else {
             return Err(ResponsesChatStreamError::Field { field: "function" });

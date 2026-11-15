@@ -15,11 +15,13 @@ use crate::api::responses_input_content::is_truthy;
 
 pub type ToolCallIndices = BTreeMap<i64, i64>;
 
+#[derive(Clone, Copy)]
 pub enum ItemEvent {
     Added,
     Done,
 }
 
+#[derive(Clone, Copy)]
 enum ContentKind {
     Created,
     Text,
@@ -82,10 +84,10 @@ fn dispatch_event(
     tool_call_index_map: Option<&mut ToolCallIndices>,
     factory: ChunkFactory,
 ) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
-    let Some(event_type) = event_type else {
+    let Some(name) = event_type else {
         return Ok(None);
     };
-    match event_type {
+    match name {
         "response.created" => {
             content_chunk(parsed_chunk, fields, factory, ContentKind::Created).map(Some)
         }
@@ -103,7 +105,7 @@ fn dispatch_event(
         }
         "response.reasoning_summary_text.delta" => reasoning_chunk(fields, factory),
         "response.completed" | "response.incomplete" => {
-            Ok(Some(terminal_chunk(fields, Some(event_type), factory)?))
+            Ok(Some(terminal_chunk(fields, Some(name), factory)?))
         }
         _ => Ok(None),
     }
@@ -123,7 +125,7 @@ fn argument_chunk(
     let output_index = field::<i64>(fields, "output_index")?.unwrap_or(0);
     let index = sequential_index(tool_call_index_map, output_index)?;
     let mut delta = delta(None);
-    delta.tool_calls = Some(vec![tool_call::delta_call(index, arguments)?]);
+    delta.tool_calls = Some(vec![tool_call::delta_call(index, arguments)]);
     Ok(Some(response_chunk(factory, None, Some(0), delta, None)))
 }
 

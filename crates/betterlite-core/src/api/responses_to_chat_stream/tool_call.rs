@@ -7,6 +7,7 @@ use crate::api::response_chat_history::tool_fields::output_tool_fields;
 
 const CONVERTED_INDEX: usize = 0;
 
+#[derive(Clone, Copy)]
 pub(super) enum CallShape<'fields> {
     Added { event: &'fields Fields, index: i64 },
     Done { index: i64 },
@@ -42,11 +43,8 @@ pub(super) fn convert(
     })
 }
 
-pub(super) fn delta_call(
-    index: i64,
-    arguments: &str,
-) -> Result<ChatToolCall, ResponsesChatStreamError> {
-    Ok(ChatToolCall {
+pub(super) fn delta_call(index: i64, arguments: &str) -> ChatToolCall {
+    ChatToolCall {
         id: Some(None),
         index: Some(index),
         kind: Some(Some("function".to_owned())),
@@ -54,7 +52,7 @@ pub(super) fn delta_call(
         custom: None,
         provider_specific_fields: None,
         extra: Map::new(),
-    })
+    }
 }
 
 // Function.__init__ sets both name and arguments, so an unset name still dumps as null

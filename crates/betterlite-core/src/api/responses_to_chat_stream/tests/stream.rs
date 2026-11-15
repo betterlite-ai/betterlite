@@ -1,4 +1,13 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        clippy::too_many_lines,
+        reason = "stream fixtures state provider JSON and wire bytes directly"
+    )
+)]
 
 use serde_json::json;
 

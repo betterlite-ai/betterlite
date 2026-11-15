@@ -1,4 +1,13 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        clippy::needless_pass_by_value,
+        clippy::shadow_reuse,
+        reason = "the shared harness takes fixture JSON and captured events by value"
+    )
+)]
 
 use std::fmt;
 use std::sync::{Arc, Mutex};

@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
 use super::fields::Fields;
-use super::records::{CHUNK_OBJECT, ChatChunk, ChunkFactory};
+use super::records::{CHUNK_OBJECT, ChatChunk, ChunkFactory, OptionalText};
 use super::usage;
 
 mod parts;
@@ -92,7 +92,7 @@ fn extra_fields(fields: &Fields) -> Map<String, Value> {
 pub(super) fn optional_text(
     value: Option<&Value>,
     field: &'static str,
-) -> Result<Option<Option<String>>, ResponsesChatStreamError> {
+) -> Result<OptionalText, ResponsesChatStreamError> {
     match value {
         None => Ok(None),
         Some(Value::Null) => Ok(Some(None)),

@@ -8,7 +8,7 @@ use super::translate::{ToolCallIndices, translate_event};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::responses_to_chat_stream::{DecodedEventLine, decode_event_line};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedChatLine {
     Padding(PaddingChunk),
     Chunk(ChatChunk),

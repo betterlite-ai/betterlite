@@ -16,6 +16,8 @@ mod text;
 mod tool_call;
 mod usage;
 
+use std::str::from_utf8;
+
 use serde_json::Value;
 
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, EventBoundary};
@@ -24,7 +26,7 @@ use records::PaddingChunk;
 
 const DATA_PREFIX: &str = "data:";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodedEventLine {
     Padding(PaddingChunk),
     Event(Value),
@@ -38,16 +40,14 @@ pub fn decode_event_line(
     limits.check(ApiBoundariesInput::Event(EventBoundary {
         known_bytes: bytes.len(),
     }))?;
-    let text = std::str::from_utf8(bytes)?;
+    let text = from_utf8(bytes)?;
     if text.is_empty() || text.starts_with("event:") {
         return Ok(DecodedEventLine::Padding(PaddingChunk::default()));
     }
-    let payload = match text.find(DATA_PREFIX) {
-        Some(index) => text
-            .get(index.saturating_add(DATA_PREFIX.len())..)
-            .unwrap_or_default(),
-        None => text,
-    };
+    let payload = text.find(DATA_PREFIX).map_or(text, |index| {
+        text.get(index.saturating_add(DATA_PREFIX.len())..)
+            .unwrap_or_default()
+    });
     let event = serde_json::from_str::<Value>(payload).map_err(|source| {
         ResponsesChatStreamError::Json {
             message: text::json_error_message(payload, &source),

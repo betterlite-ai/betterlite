@@ -27,10 +27,13 @@ impl FieldValue<'_> for i64 {
     }
 }
 
-pub(super) fn field<'value, T: FieldValue<'value>>(
+pub(super) fn field<'value, T>(
     fields: &'value Fields,
     name: &'static str,
-) -> Result<Option<T>, ResponsesChatStreamError> {
+) -> Result<Option<T>, ResponsesChatStreamError>
+where
+    T: FieldValue<'value>,
+{
     match fields.get(name) {
         None | Some(Value::Null) => Ok(None),
         Some(value) => T::read(value)

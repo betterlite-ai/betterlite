@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
-use super::records::{ChatChunk, ChunkFactory};
+use super::records::{ChatChunk, ChunkFactory, OptionalText};
 use super::translate::{delta, response_chunk};
 use super::usage;
 use crate::api::response_chat_history::metadata::{
@@ -91,7 +91,7 @@ fn terminal_metadata(response: &Map<String, Value>) -> Option<Map<String, Value>
     Some(metadata)
 }
 
-fn terminal_service_tier(response: &Map<String, Value>) -> Option<Option<String>> {
+fn terminal_service_tier(response: &Map<String, Value>) -> OptionalText {
     match response.get("service_tier") {
         Some(Value::String(tier)) => Some(Some(tier.clone())),
         None | Some(_) => None,

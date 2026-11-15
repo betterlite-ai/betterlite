@@ -52,8 +52,5 @@ fn with_cache_tokens(value: &Value) -> Value {
 }
 
 fn integer_field(fields: &Map<String, Value>, name: &str) -> Option<i64> {
-    let Some(value) = fields.get(name) else {
-        return None;
-    };
-    value.as_i64()
+    fields.get(name)?.as_i64()
 }
