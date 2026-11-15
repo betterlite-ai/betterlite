@@ -6,9 +6,11 @@ mod support;
 use std::collections::BTreeMap;
 
 use betterlite_auth::auth_identity::records::Principal;
+use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::postgres_store::errors::DbError;
 
-use super::repository::{SkillRepository as _, SkillWrite};
+use super::repository::{PrismaSkillRepository, SkillRepository as _, SkillWrite};
 use super::{
     HostedSkillStore, NEGATIVE_SKILL_SENTINEL, NewSkill, SKILL_ID_PREFIX, SkillPage, StoreError,
 };
@@ -105,6 +107,20 @@ fn create_falls_back_to_the_user_id() {
             .unwrap();
         assert_eq!(row.created_by.as_deref(), Some("legacy"));
         assert_eq!(row.updated_by.as_deref(), Some("legacy"));
+    });
+}
+
+#[test]
+fn create_uses_an_empty_user_id_as_the_owner_scope() {
+    support::runtime().block_on(async {
+        let repository = ScriptedRepository::default();
+        let store = store(repository.clone());
+        let row = store
+            .create_skill(&new_skill(), Some(""), None)
+            .await
+            .unwrap();
+        assert_eq!(row.created_by.as_deref(), Some(""));
+        assert_eq!(row.updated_by.as_deref(), Some(""));
     });
 }
 
@@ -494,6 +510,39 @@ fn delete_keeps_the_shared_message_for_missing_rows() {
             .unwrap_err();
         assert_eq!(error.to_string(), format!("Skill not found: {SKILL_ID}"));
     });
+}
+
+#[test]
+#[test]
+fn delete_denies_a_foreign_tenant() {
+    support::runtime().block_on(async {
+        let repository = ScriptedRepository::with_row(stored_row("alice"));
+        let store = store(repository.clone());
+        let error = store
+            .delete_skill(SKILL_ID, Some(&principal("bob")))
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), format!("Skill not found: {SKILL_ID}"));
+        assert_eq!(
+            page_effects(&repository),
+            vec![Effect::FindUnique(SKILL_ID.to_owned())]
+        );
+        assert!(
+            store
+                .get_skill(SKILL_ID, Some(&principal("alice")))
+                .await
+                .is_ok()
+        );
+    });
+}
+
+#[test]
+fn prisma_availability_reports_a_missing_client() {
+    let repository = PrismaSkillRepository::new(None, support::no_publish());
+    assert!(matches!(
+        repository.availability(),
+        Err(TableError::Database(DbError::NoDbConnected))
+    ));
 }
 
 #[test]

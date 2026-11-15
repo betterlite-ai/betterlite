@@ -130,7 +130,7 @@ impl<R: SkillRepository> HostedSkillStore<R> {
         let skill_id = format!("{SKILL_ID_PREFIX}{}", (self.ids)());
         let owner = get_primary_owner_scope(principal)
             .map(|scope| scope.0)
-            .or_else(|| user_id.filter(|id| !id.is_empty()).map(str::to_owned));
+            .or_else(|| user_id.map(str::to_owned));
         let Some(owner) = owner else {
             return Err(StoreError::MissingIdentity);
         };
