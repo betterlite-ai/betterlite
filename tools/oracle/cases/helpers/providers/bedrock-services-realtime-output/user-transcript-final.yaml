@@ -1,0 +1,40 @@
+kind: helper
+name: user-transcript-final
+call:
+  bedrock_services_realtime_output:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+      - 00000000-0000-4000-8000-000000000006
+      - 00000000-0000-4000-8000-000000000007
+      - 00000000-0000-4000-8000-000000000008
+      - 00000000-0000-4000-8000-000000000009
+      - 00000000-0000-4000-8000-000000000010
+    calls:
+      - {method: user_completed}
+      - {method: user_transcript, text: "Hello "}
+      - {method: user_transcript, text: world}
+      - {method: user_completed}
+      - {method: user_completed}
+      - method: content_start
+        event:
+          role: USER
+          type: TEXT
+          additionalModelFields: '{"generationStage":"SPECULATIVE"}'
+        ids: {response: null, item: null, conversation: null}
+      - {method: user_transcript, text: skipped}
+      - {method: user_completed}
+      - method: content_start
+        event:
+          role: USER
+          type: TEXT
+          additionalModelFields: '{"generationStage":"speculative"}'
+        ids: {response: null, item: null, conversation: null}
+      - {method: user_transcript, text: kept}
+      - {method: user_transcript, text: ""}
+      - {method: user_completed}
+env: {}
+compare: {ignore: []}
