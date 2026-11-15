@@ -1,5 +1,5 @@
 import os
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from typing import NotRequired, Protocol, TypedDict
 from urllib.parse import parse_qsl
 
@@ -21,18 +21,20 @@ litellm.suppress_debug_info = True
 
 HeaderMap = dict[str, str]
 JsonMap = dict[str, JsonValue]
+ValidateEnvironment = Callable[
+    [HeaderMap, str, list[AllMessageValues], JsonMap, JsonMap, str | None], dict[str, JsonValue]
+]
 
 
-# mypy rejects an empty list literal here because list[AllMessageValues] carries Any; the subclass stays clean
+# mypy rejects an empty list literal of this type because it carries Any; a subclass stays clean
 class NoMessages(list[AllMessageValues]):
     pass
 
 
 class Config(Protocol):
-    def validate_environment(
-        self, headers: HeaderMap, model: str, messages: list[AllMessageValues],
-        optional_params: JsonMap, litellm_params: JsonMap, /, *, api_key: str | None = None,
-    ) -> dict[str, JsonValue]: ...
+    # ruff counts a def's parameters (PLR0913), so the six-argument call type is a property value
+    @property
+    def validate_environment(self) -> ValidateEnvironment: ...
 
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, JsonValue]
@@ -46,22 +48,21 @@ class Petals(Config, Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
     def map_openai_params(
-        self,
-        non_default_params: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        model: str,
-        *,
-        drop_params: bool,
+        self, non_default_params: dict[str, JsonValue], optional_params: dict[str, JsonValue],
+        model: str, *, drop_params: bool,
     ) -> dict[str, JsonValue]: ...
+
+
+CompleteUrl = Callable[
+    [str | None, str | None, str, str, JsonMap | None, JsonMap], tuple[httpx.URL, str]
+]
 
 
 class Passthrough(Protocol):
     def is_streaming_request(self, endpoint: str, request_data: dict[str, JsonValue]) -> bool: ...
 
-    def get_complete_url(
-        self, api_base: str | None, api_key: str | None, model: str, endpoint: str,
-        request_query_params: JsonMap | None, /, *, litellm_params: JsonMap,
-    ) -> tuple[httpx.URL, str]: ...
+    @property
+    def get_complete_url(self) -> CompleteUrl: ...
 
 
 INFO_VIEW: Config = VLLMModelInfo()
@@ -158,7 +159,7 @@ def models_value(api_base: str | None) -> JsonValue:
 def model_info_value(call: InfoCall) -> JsonValue:
     replace_environment(call["env"])
     headers: dict[str, JsonValue] = INFO_VIEW.validate_environment(
-        call["headers"], call["model"], NoMessages(), {}, {}, api_key=call.get("api_key")
+        call["headers"], call["model"], NoMessages(), {}, {}, call.get("api_key")
     )
     error = INFO_VIEW.get_error_class("boom", 418, {})
     return {
@@ -175,7 +176,7 @@ def passthrough_value(call: PassCall) -> JsonValue:
     streaming = PASS_VIEW.is_streaming_request(call["endpoint"], call["request_data"])
     try:
         url, base = PASS_VIEW.get_complete_url(
-            call.get("api_base"), None, "m", call["endpoint"], call.get("query"), litellm_params={}
+            call.get("api_base"), None, "m", call["endpoint"], call.get("query"), {}
         )
     except ValueError:
         return {"streaming": streaming, "result": {"ok": False, "status": None}}
@@ -195,7 +196,7 @@ def validated_value(case: ValidateCase) -> JsonValue:
     given = TypeAdapter(dict[str, JsonValue]).validate_python(case["headers"])
     key = case["api_key"]
     returned: dict[str, JsonValue] = PETALS_VIEW.validate_environment(
-        case["headers"], "m", NoMessages(), {}, {}, api_key=key
+        case["headers"], "m", NoMessages(), {}, {}, key
     )
     return {"headers": returned, "given": given, "api_key": key}
 

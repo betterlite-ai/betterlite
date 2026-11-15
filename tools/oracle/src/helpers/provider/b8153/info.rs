@@ -30,10 +30,10 @@ fn setup_result<T>(result: Result<T, VllmSetupError>) -> Value
 where
     T: Serialize,
 {
-    match result {
-        Ok(value) => json!({"ok": true, "value": value}),
-        Err(_) => json!({"ok": false, "status": null}),
-    }
+    result.map_or_else(
+        |_| json!({"ok": false, "status": null}),
+        |value| json!({"ok": true, "value": value}),
+    )
 }
 
 pub(super) fn model_info_value(call: &InfoCall) -> Value {
