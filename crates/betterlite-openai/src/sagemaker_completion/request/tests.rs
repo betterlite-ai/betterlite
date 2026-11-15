@@ -175,9 +175,7 @@ async fn a_llama_2_model_name_without_chat_picks_the_base_template() {
 async fn a_mixed_case_llama_2_name_still_picks_the_llama_2_templates() {
     let fixture = Fixture::new();
     let chat = body(&fixture.request("ACME/Llama-2-13B-Chat", None)).await;
-    let prompt = chat["inputs"].as_str().expect("a prompt");
-    assert!(prompt.starts_with("<s>"));
-    assert!(prompt.contains("[INST]"));
+    assert_eq!(chat.get("inputs"), Some(&json!("<s>[INST] hi [/INST]\n")));
     let base = body(&fixture.request("ACME/Llama-2-13B", None)).await;
     assert_eq!(base.get("inputs"), Some(&json!("BASE")));
 }
