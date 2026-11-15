@@ -1,0 +1,104 @@
+from typing import Literal, NotRequired, TypeAlias, TypedDict
+
+from pydantic import JsonValue
+
+from .wire import EmbeddingReplyInput, RequestInput, ResponseInput
+
+
+class SupportedInput(TypedDict):
+    op: Literal["supported"]
+    models: list[str]
+
+
+class ChatParamsCase(TypedDict):
+    model: str
+    requested: dict[str, JsonValue]
+
+
+class ChatParamsInput(TypedDict):
+    op: Literal["chat_params"]
+    cases: list[ChatParamsCase]
+
+
+class ChunkCase(TypedDict):
+    chunk: dict[str, JsonValue]
+
+
+class ChunkInput(TypedDict):
+    op: Literal["chunk"]
+    cases: list[ChunkCase]
+
+
+class DeltaOut(TypedDict):
+    content: str | None
+    reasoning_content: NotRequired[str | None]
+
+
+class ChoiceOut(TypedDict):
+    index: int
+    delta: DeltaOut
+
+
+class ChunkOut(TypedDict):
+    id: str
+    object: str
+    created: int
+    model: str
+    choices: list[ChoiceOut]
+
+
+class EmbeddingCase(TypedDict):
+    headers: dict[str, str]
+    api_key: str | None
+    environment: dict[str, str]
+    api_base: str | None
+    model: str
+    input: str | list[str] | list[int] | list[list[int]]
+    optional_params: dict[str, JsonValue]
+    non_default_params: dict[str, JsonValue]
+
+
+class EmbeddingInput(TypedDict):
+    op: Literal["embedding"]
+    cases: list[EmbeddingCase]
+
+
+class ResponsesCase(TypedDict):
+    headers: dict[str, str]
+    api_key: str | None
+    global_api_key: str | None
+    environment: dict[str, str]
+    api_base: str | None
+    global_api_base: str | None
+
+
+class ResponsesInput(TypedDict):
+    op: Literal["responses"]
+    cases: list[ResponsesCase]
+
+
+class DecisionsCase(TypedDict):
+    cost: JsonValue
+
+
+class DecisionsInput(TypedDict):
+    op: Literal["decisions"]
+    cases: list[DecisionsCase]
+
+
+class ErrorCase(TypedDict):
+    message: str
+    status: int
+    headers: dict[str, str]
+
+
+class ErrorInput(TypedDict):
+    op: Literal["error_class"]
+    cases: list[ErrorCase]
+
+
+Input: TypeAlias = (
+    SupportedInput
+    | ChatParamsInput | ChunkInput | EmbeddingInput | ResponsesInput
+    | DecisionsInput | ErrorInput | RequestInput | ResponseInput | EmbeddingReplyInput
+)
