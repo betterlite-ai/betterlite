@@ -1,30 +1,24 @@
 pub mod transport;
 
+mod chunks;
 mod tests;
 
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_bedrock::converse_events::wire::non_empty;
-use betterlite_context::provider_message_primitives::CHAT_COMPLETION_ID_PREFIX;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_models::decisions::Json;
 use betterlite_openai::aleph_alpha::error::AlephAlphaError;
 use betterlite_openai::aleph_alpha::lines::{LineDecoder, decode_text};
 use betterlite_openai::assistants::client::ClientKind;
-use betterlite_openai::chat::response::ChatUsage;
-use betterlite_openai::stream::chunk::{Choice, Chunk, Delta};
+use betterlite_openai::stream::chunk::Chunk;
 use betterlite_prompts::message_content::Message;
-use betterlite_streaming::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use betterlite_vertex::vertex_agent_engine::error::{AgentEngineError, get_error_class};
 use betterlite_vertex::vertex_agent_engine::records::AgentQueryPayload;
-use betterlite_vertex::vertex_agent_stream::{
-    AgentEngineChunk, AgentEngineStreamError, AgentEngineUsage, parse_chunk,
-};
+use betterlite_vertex::vertex_agent_stream::AgentEngineStreamError;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::{HeaderMap, Method};
@@ -33,11 +27,9 @@ use tokio::time::timeout;
 use url::Url;
 use uuid::Uuid;
 
+use self::chunks::parse_line;
 use self::transport::{Chunks, StreamHead, StreamTransport};
 
-pub const CHUNK_OBJECT: &str = "chat.completion.chunk";
-pub const DONE_MARKER: &str = "[DONE]";
-pub const FINISH_STOP: &str = "stop";
 pub const FIRST_STREAM_RESPONSE: &str = "first stream response received";
 pub const MAX_BODY_BYTES: usize = 0x0100_0000;
 pub const MAX_LINE_BYTES: usize = TransportLimits::DEFAULT.body_bytes;
@@ -256,78 +248,5 @@ async fn error_message(mut chunks: Chunks) -> Result<String, VertexAgentStreamEr
                 limit: MAX_BODY_BYTES,
             })?;
         body.extend_from_slice(&bytes);
-    }
-}
-
-fn parse_line(
-    line: &str,
-    model: &str,
-    ids: &dyn IdSource,
-) -> Result<Option<Chunk>, VertexAgentStreamError> {
-    if line.trim().is_empty() {
-        return Ok(None);
-    }
-    if line.contains(DONE_MARKER) {
-        return Ok(Some(done_chunk(model, ids)));
-    }
-    let payload = strip_sse_data_from_chunk(Some(line)).unwrap_or(line);
-    let Ok(parsed) = serde_json::from_str::<Json>(payload) else {
-        tracing::debug!("Skipping a Vertex Agent Engine stream line that is not JSON");
-        return Ok(None);
-    };
-    if !non_empty(&parsed) {
-        return Ok(None);
-    }
-    let Json::Object(fields) = parsed else {
-        return Err(VertexAgentStreamError::ChunkNotObject);
-    };
-    Ok(Some(chunk_of(model, ids, &parse_chunk(&fields)?)))
-}
-
-// the generic iterator answers the done marker with a finished chunk and no text
-fn done_chunk(model: &str, ids: &dyn IdSource) -> Chunk {
-    chunk_of(
-        model,
-        ids,
-        &AgentEngineChunk {
-            content: None,
-            role: None,
-            finish_reason: Some(FINISH_STOP),
-            usage: None,
-        },
-    )
-}
-
-fn chunk_of(model: &str, ids: &dyn IdSource, chunk: &AgentEngineChunk<'_>) -> Chunk {
-    Chunk {
-        id: format!("{CHAT_COMPLETION_ID_PREFIX}{}", ids.next_id()),
-        object: CHUNK_OBJECT.to_owned(),
-        created: 0,
-        model: model.to_owned(),
-        choices: vec![Choice {
-            index: 0,
-            delta: Delta {
-                role: chunk.role.map(str::to_owned),
-                content: chunk.content.map(str::to_owned),
-                refusal: None,
-                tool_calls: None,
-                function_call: None,
-            },
-            finish_reason: chunk.finish_reason.map(str::to_owned),
-            logprobs: None,
-        }],
-        usage: chunk.usage.map(chat_usage),
-        system_fingerprint: None,
-        service_tier: None,
-    }
-}
-
-fn chat_usage(usage: AgentEngineUsage) -> ChatUsage {
-    ChatUsage {
-        prompt_tokens: usage.prompt_tokens,
-        completion_tokens: usage.completion_tokens,
-        total_tokens: usage.total_tokens,
-        prompt_tokens_details: None,
-        completion_tokens_details: None,
     }
 }
