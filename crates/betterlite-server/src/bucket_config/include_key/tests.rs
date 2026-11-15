@@ -7,6 +7,7 @@ use super::{posix_dirname, posix_normpath, resolve_include_object_key};
 #[rstest]
 #[case::nested("team/a.yaml", "../shared/models.yaml", "shared/models.yaml")]
 #[case::root_relative_kept("a.yaml", "../shared/models.yaml", "../shared/models.yaml")]
+#[case::parent_above_root_kept("a.yaml", "../../x.yaml", "../../x.yaml")]
 #[case::same_prefix("team/a.yaml", "models.yaml", "team/models.yaml")]
 #[case::same_prefix_nested("team/sub/a.yaml", "models.yaml", "team/sub/models.yaml")]
 #[case::dot_file("team/a.yaml", "./models.yaml", "team/models.yaml")]
