@@ -107,6 +107,14 @@ fn auth_step(
     }
 }
 
+fn event_step(event: &Value) -> HelperResult {
+    let bytes = serde_json::to_vec(event).map_err(|error| failure(error.to_string(), None))?;
+    let mut decoded =
+        decode_response_event(&bytes).map_err(|error| failure(error.to_string(), None))?;
+    restate_event_usage(&mut decoded);
+    Ok(event_value(&decoded))
+}
+
 pub(super) fn run_step(
     step: &Step,
     settings: &Settings,
@@ -141,14 +149,7 @@ pub(super) fn run_step(
             headers,
         } => auth_step(settings, api_key.as_deref(), *use_xai_oauth, headers),
         Step::Reply { status, body, now } => reply_step(*status, body, *now),
-        Step::Event { event } => {
-            let bytes =
-                serde_json::to_vec(event).map_err(|error| failure(error.to_string(), None))?;
-            let mut decoded =
-                decode_response_event(&bytes).map_err(|error| failure(error.to_string(), None))?;
-            restate_event_usage(&mut decoded);
-            Ok(event_value(&decoded))
-        }
+        Step::Event { event } => event_step(event),
         Step::Capability => Ok(json!({
             "native_websocket": SUPPORTS_NATIVE_WEBSOCKET,
         })),

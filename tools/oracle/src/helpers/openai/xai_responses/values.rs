@@ -19,7 +19,7 @@ pub(super) fn usage_json(usage: Option<&ResponseApiUsage>) -> Value {
 }
 
 // every response.* event carries the usage LiteLLM serializes, and only the terminal three restate its cost
-pub(super) fn known_usage(record: &KnownResponseEvent) -> Option<&ResponseApiUsage> {
+pub(super) const fn known_usage(record: &KnownResponseEvent) -> Option<&ResponseApiUsage> {
     if let KnownResponseEvent::ResponseCreated(fields)
     | KnownResponseEvent::ResponseInProgress(fields)
     | KnownResponseEvent::ResponseCompleted(fields)
