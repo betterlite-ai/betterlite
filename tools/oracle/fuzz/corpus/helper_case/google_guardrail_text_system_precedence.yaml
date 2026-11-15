@@ -1,0 +1,16 @@
+kind: helper
+name: google-guardrail-text-system-precedence
+call:
+  google_guardrail_text:
+    calls:
+      - function: request
+        data:
+          systemInstruction: {parts: [{text: camel}]}
+          system_instruction: {parts: [{text: snake}]}
+          contents: [{parts: [{text: body}]}]
+      - function: request
+        data:
+          systemInstruction: ""
+          config: {systemInstruction: {parts: [{text: config}]}}
+env: {}
+compare: {ignore: []}

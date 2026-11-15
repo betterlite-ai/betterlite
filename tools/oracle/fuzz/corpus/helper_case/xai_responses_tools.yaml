@@ -1,0 +1,11 @@
+kind: helper
+name: xai-responses-tools-seed
+call:
+  xai_responses:
+    env: {}
+    xai_key: null
+    generic_key: null
+    steps:
+      - {step: tools, params: {tools: [{type: web_search, allowed_domains: [seed.example]}], metadata: null}}
+env: {}
+compare: {ignore: []}
