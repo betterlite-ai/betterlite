@@ -137,34 +137,23 @@ fn a_list_purpose_mistral_lacks_is_a_400() {
 fn oracle_upload_endpoints_and_list_filters() {
     let result = run_case("file-defaults-and-list-purpose.yaml");
     let files = &result["files"];
-    assert_eq!(files["uploads"].as_array().unwrap().len(), 3);
     assert_eq!(
-        files["uploads"][0]["url"],
-        "https://api.mistral.ai/v1/files"
+        files["uploads"],
+        json!([
+            {"ok": true, "url": "https://api.mistral.ai/v1/files", "filename": "file_1704153600.jsonl", "content_type": "application/octet-stream", "content": [1_i64, 2_i64, 3_i64], "purpose": "batch"},
+            {"ok": true, "url": "https://api.mistral.ai/v1/files", "filename": "notes.txt", "content_type": "text/plain", "content": [4_i64], "purpose": "batch"},
+            {"ok": true, "url": "https://api.mistral.ai/v1/files", "filename": "data.bin", "content_type": "application/x-custom", "content": [5_i64], "purpose": "fine-tune"},
+        ])
     );
-    assert_eq!(files["uploads"][0]["filename"], "file_1704153600.jsonl");
     assert_eq!(
-        files["uploads"][0]["content_type"],
-        "application/octet-stream"
+        files["list"],
+        json!([
+            {"ok": true, "url": "https://api.mistral.ai/v1/files", "query": []},
+            {"ok": true, "url": "https://api.mistral.ai/v1/files", "query": []},
+            {"ok": true, "url": "https://api.mistral.ai/v1/files", "query": [["purpose", "batch"]]},
+            {"ok": true, "url": "https://api.mistral.ai/v1/files", "query": [["purpose", "fine-tune"]]},
+        ])
     );
-    assert_eq!(files["uploads"][0]["content"], json!([1_i64, 2_i64, 3_i64]));
-    assert_eq!(files["uploads"][0]["purpose"], "batch");
-    assert_eq!(files["uploads"][1]["filename"], "notes.txt");
-    assert_eq!(files["uploads"][1]["content_type"], "text/plain");
-    assert_eq!(files["uploads"][1]["content"], json!([4_i64]));
-    assert_eq!(files["uploads"][1]["purpose"], "batch");
-    assert_eq!(files["uploads"][2]["filename"], "data.bin");
-    assert_eq!(files["uploads"][2]["content_type"], "application/x-custom");
-    assert_eq!(files["uploads"][2]["content"], json!([5_i64]));
-    assert_eq!(files["uploads"][2]["purpose"], "fine-tune");
-    assert_eq!(
-        files["uploads"][2]["url"],
-        "https://api.mistral.ai/v1/files"
-    );
-    assert_eq!(files["list"][0]["query"], json!([]));
-    assert_eq!(files["list"][1]["query"], json!([]));
-    assert_eq!(files["list"][2]["query"], json!([["purpose", "batch"]]));
-    assert_eq!(files["list"][3]["query"], json!([["purpose", "fine-tune"]]));
 }
 
 #[test]
