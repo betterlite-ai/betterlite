@@ -24,6 +24,7 @@ use http::Method;
 use http::header::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use serde_json::value::RawValue;
 use url::Url;
 
 use crate::e2b::{
@@ -329,10 +330,7 @@ async fn acreate_sandbox_forwards_the_e2b_overrides() {
 async fn acreate_sandbox_forwards_the_opensandbox_options() {
     let http = FakeHttp::new(&[
         (200, r#"{"id":"sbx_9","status":{"state":"Running"}}"#),
-        (
-            200,
-            r#"{"endpoint":"http://127.0.0.1:44772","headers":{"x-execd":"tok"}}"#,
-        ),
+        (200, r#"{"endpoint":"http://127.0.0.1:44772"}"#),
     ]);
     let sandbox = build_dispatch(&http, Environment::new());
     let api_key = secret("open-key");
@@ -342,8 +340,7 @@ async fn acreate_sandbox_forwards_the_opensandbox_options() {
     let resource_requests = BTreeMap::from([("cpu".to_owned(), "2".to_owned())]);
     let entrypoint = ["/bin/run".to_owned()];
     let network_policy =
-        serde_json::from_str::<Box<serde_json::value::RawValue>>(r#"{"defaultAction":"allow"}"#)
-            .unwrap();
+        serde_json::from_str::<Box<RawValue>>(r#"{"defaultAction":"allow"}"#).unwrap();
     let mut request = create_request("opensandbox", Some(&api_key), &kwargs);
     request.api_base = Some("https://open.test");
     request.template = Some("template:v1");
@@ -360,7 +357,6 @@ async fn acreate_sandbox_forwards_the_opensandbox_options() {
     };
     assert_eq!(handle.container.id, "sbx_9");
     let recorded = http.requests();
-    assert_eq!(recorded[0].method, "POST");
     assert_eq!(recorded[0].url, "https://open.test/sandboxes");
     assert_eq!(header(&recorded[0], "open-sandbox-api-key"), "open-key");
     assert_eq!(

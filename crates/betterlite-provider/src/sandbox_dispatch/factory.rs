@@ -19,6 +19,7 @@ impl SandboxProvider {
         }
     }
 
+    #[must_use]
     pub fn select<'adapter, E2b, OpenSandbox>(
         self,
         e2b: &'adapter E2b,

@@ -13,7 +13,7 @@ use betterlite_provider::sandbox_dispatch::request::{
     CreateSandbox, DeleteSandbox, RunCode, SandboxCall, SandboxContainerRef,
 };
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -67,7 +67,7 @@ fn registry_answer(input: &RegistryInput) -> HelperResult {
         let tool = registry.tools.get(name).map(|tool| {
             serde_json::json!({
                 "sandbox_provider": tool.provider,
-                "api_key": tool.api_key.as_ref().map(|key| key.expose_secret()),
+                "api_key": tool.api_key.as_ref().map(ExposeSecret::expose_secret),
                 "api_base": tool.api_base,
             })
         });
@@ -82,7 +82,7 @@ fn create_answer(input: &CreateInput) -> HelperResult {
     let api_key = input.api_key.as_deref().map(SecretString::from);
     let kwargs = IndexMap::new();
     let policy = raw_policy(input)?;
-    let mut request = create_request(input, &api_key, &kwargs, policy.as_deref())?;
+    let mut request = create_request(input, api_key.as_ref(), &kwargs, policy.as_deref())?;
     let created = block_on(sandbox.acreate_sandbox(&mut request))?;
     Ok(serde_json::json!({
         "requests": http.requests(),
@@ -96,7 +96,8 @@ fn create_and_run_answer(input: &RunInput) -> HelperResult {
     let api_key = input.create.api_key.as_deref().map(SecretString::from);
     let kwargs = IndexMap::new();
     let policy = raw_policy(&input.create)?;
-    let mut create_call = create_request(&input.create, &api_key, &kwargs, policy.as_deref())?;
+    let mut create_call =
+        create_request(&input.create, api_key.as_ref(), &kwargs, policy.as_deref())?;
     let created = block_on(sandbox.acreate_sandbox(&mut create_call))?;
     let mut run = RunCode {
         call: SandboxCall {
@@ -143,14 +144,14 @@ fn delete_answer(input: &DeleteInput) -> HelperResult {
 
 fn create_request<'call>(
     input: &'call CreateInput,
-    api_key: &'call Option<SecretString>,
+    api_key: Option<&'call SecretString>,
     kwargs: &'call IndexMap<String, Json>,
     network_policy: Option<&'call serde_json::value::RawValue>,
 ) -> Result<CreateSandbox<'call>, Box<HelperError>> {
     Ok(CreateSandbox {
         call: SandboxCall {
             provider: &input.provider,
-            api_key: api_key.as_ref(),
+            api_key,
             kwargs,
             logging: None,
         },

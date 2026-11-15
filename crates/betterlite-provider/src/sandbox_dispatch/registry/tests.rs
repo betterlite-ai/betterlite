@@ -80,10 +80,8 @@ fn register(
     registry
 }
 
-fn text(value: &Option<SecretString>) -> Option<String> {
-    value
-        .as_ref()
-        .map(|secret| secret.expose_secret().to_owned())
+fn text(value: Option<&SecretString>) -> Option<String> {
+    value.map(|secret| secret.expose_secret().to_owned())
 }
 
 #[test]
@@ -99,7 +97,7 @@ fn resolves_a_configured_tool_by_name() {
     );
     let tool = registry.tools.get("tools").expect("the tool registers");
     assert_eq!(tool.provider, "e2b");
-    assert_eq!(text(&tool.api_key).as_deref(), Some("plain-key"));
+    assert_eq!(text(tool.api_key.as_ref()).as_deref(), Some("plain-key"));
     assert_eq!(tool.api_base.as_deref(), Some("https://e2b.test"));
 }
 
@@ -124,7 +122,7 @@ fn resolves_os_environ_references_through_the_lookup() {
         ]),
     );
     let tool = registry.tools.get("tools").expect("the tool registers");
-    assert_eq!(text(&tool.api_key).as_deref(), Some("resolved-key"));
+    assert_eq!(text(tool.api_key.as_ref()).as_deref(), Some("resolved-key"));
     assert_eq!(tool.api_base.as_deref(), Some("https://e2b.test"));
 }
 
@@ -170,7 +168,7 @@ fn an_empty_environment_value_resolves_to_empty_text() {
         &environment(&[("EMPTY", "")]),
     );
     let tool = registry.tools.get("tools").expect("the tool registers");
-    assert_eq!(text(&tool.api_key).as_deref(), Some(""));
+    assert_eq!(text(tool.api_key.as_ref()).as_deref(), Some(""));
 }
 
 #[test]
@@ -186,7 +184,7 @@ fn a_value_without_the_os_environ_prefix_stays_as_written() {
     );
     let tool = registry.tools.get("tools").expect("the tool registers");
     assert_eq!(
-        text(&tool.api_key).as_deref(),
+        text(tool.api_key.as_ref()).as_deref(),
         Some("aws_secret_manager/key")
     );
     assert_eq!(tool.api_base.as_deref(), Some("aws_secret_manager/base"));
@@ -287,5 +285,5 @@ fn keeps_the_last_entry_for_a_duplicate_name() {
     );
     let tool = registry.tools.get("tools").expect("the tool registers");
     assert_eq!(tool.provider, "opensandbox");
-    assert_eq!(text(&tool.api_key).as_deref(), Some("second-key"));
+    assert_eq!(text(tool.api_key.as_ref()).as_deref(), Some("second-key"));
 }
