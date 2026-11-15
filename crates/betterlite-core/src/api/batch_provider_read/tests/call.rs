@@ -10,7 +10,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::{
-    ProviderStatus, Recorded, RecordedAws, RecordedParams, answer, answered, bare_params,
+    ProviderStatus, Recorded, RecordedAws, RecordedParams, answer, answered, bare_aws, bare_params,
     bare_resources, base_settings, configured, failed, input, recorded_calls, request, scripted,
 };
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};

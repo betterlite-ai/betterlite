@@ -110,8 +110,8 @@ pub enum VertexReadCredentials {
 }
 
 impl Debug for VertexReadCredentials {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str("VertexReadCredentials(<redacted>)")
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("VertexReadCredentials(<redacted>)")
     }
 }
 
