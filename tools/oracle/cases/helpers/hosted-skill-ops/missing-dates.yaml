@@ -1,0 +1,22 @@
+kind: helper
+name: hosted-skill-ops-missing-dates
+call:
+  hosted_skill_ops:
+    now: "2026-02-03T04:05:06"
+    uuid: "00000000-0000-4000-8000-000000000005"
+    rows:
+      - {skill_id: litellm_skill_nodates, description: No dates, created_by: alice}
+      - {skill_id: litellm_skill_nulls, created_at: null, updated_at: null, created_by: alice}
+    steps:
+      - action: get
+        principal: {user_id: alice}
+        skill_id: litellm_skill_nodates
+        litellm_call_id: call-3
+      - action: get
+        principal: {user_id: alice}
+        skill_id: litellm_skill_nulls
+      - action: get
+        principal: {user_id: alice}
+        skill_id: litellm_skill_absent
+env: {}
+compare: {ignore: []}

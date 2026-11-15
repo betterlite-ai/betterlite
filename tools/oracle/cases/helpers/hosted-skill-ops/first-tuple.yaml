@@ -1,0 +1,31 @@
+kind: helper
+name: hosted-skill-ops-first-tuple
+call:
+  hosted_skill_ops:
+    now: "2026-02-03T04:05:06"
+    uuid: "00000000-0000-4000-8000-000000000001"
+    steps:
+      - action: create
+        display_title: Pair
+        principal: {user_id: alice}
+        files:
+          - [pair.zip, "cGFpcg=="]
+          - [ignored.zip, "aWdub3JlZA==", text/plain]
+        file_name: explicit.zip
+        file_type: application/x-explicit
+      - action: create
+        display_title: Typed
+        principal: {user_id: alice}
+        files:
+          - [typed.zip, "dHlwZWQ=", text/markdown]
+      - action: create
+        display_title: NullType
+        principal: {user_id: alice}
+        files:
+          - [null.zip, "bnVsbA==", null]
+      - action: create
+        display_title: Anonymous
+        files:
+          - [anon.zip, "YW5vbg=="]
+env: {}
+compare: {ignore: []}
