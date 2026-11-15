@@ -35,7 +35,11 @@ fn json_value_reads_as_int_input(#[case] value: Json, #[case] expected: Deployme
 fn text_limit(text: &str) -> Option<BTreeMap<String, i64>> {
     let value = DeploymentLimitValue::Text(text.to_owned());
     let catalog = support::catalog("gpt-4", vec![support::deployment(Some(value), None)]);
-    get_key_model_rpm_limit(&support::auth(&[]), Some("gpt-4"), Some(&catalog)).unwrap()
+    get_key_model_rpm_limit(
+        &support::auth(&[]),
+        &support::query(Some("gpt-4"), Some(&catalog)),
+    )
+    .unwrap()
 }
 
 #[rstest]

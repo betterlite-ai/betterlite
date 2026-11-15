@@ -62,26 +62,24 @@ pub fn get_key_own_model_rate_limit(
 
 pub type ModelLimitResult = Result<Option<ModelLimits>, AuthLimitInputsError>;
 
-pub fn get_key_model_rpm_limit(
-    auth: &UserAPIKeyAuth,
-    model_name: Option<&str>,
-    catalog: Option<&dyn DeploymentLimitCatalog>,
-) -> ModelLimitResult {
+// The requested model and the deployment catalog its default limit is read from.
+pub struct LimitQuery<'query> {
+    pub model_name: Option<&'query str>,
+    pub catalog: Option<&'query dyn DeploymentLimitCatalog>,
+}
+
+pub fn get_key_model_rpm_limit(auth: &UserAPIKeyAuth, query: &LimitQuery<'_>) -> ModelLimitResult {
     if let Some(limits) = key_or_team_limit(auth, ModelRateLimitKey::Rpm) {
         return Ok(Some(limits));
     }
-    default_model_limit(model_name, catalog, DeploymentLimit::Rpm)
+    default_model_limit(query, DeploymentLimit::Rpm)
 }
 
-pub fn get_key_model_tpm_limit(
-    auth: &UserAPIKeyAuth,
-    model_name: Option<&str>,
-    catalog: Option<&dyn DeploymentLimitCatalog>,
-) -> ModelLimitResult {
-    let Some(limits) = key_or_team_limit(auth, ModelRateLimitKey::Tpm) else {
-        return default_model_limit(model_name, catalog, DeploymentLimit::Tpm);
-    };
-    Ok(Some(limits))
+pub fn get_key_model_tpm_limit(auth: &UserAPIKeyAuth, query: &LimitQuery<'_>) -> ModelLimitResult {
+    if let Some(limits) = key_or_team_limit(auth, ModelRateLimitKey::Tpm) {
+        return Ok(Some(limits));
+    }
+    default_model_limit(query, DeploymentLimit::Tpm)
 }
 
 fn key_or_team_limit(
@@ -95,14 +93,13 @@ fn key_or_team_limit(
 }
 
 fn default_model_limit(
-    model_name: Option<&str>,
-    catalog: Option<&dyn DeploymentLimitCatalog>,
+    query: &LimitQuery<'_>,
     limit: DeploymentLimit,
 ) -> Result<Option<ModelLimits>, AuthLimitInputsError> {
-    let Some(requested) = model_name else {
+    let Some(requested) = query.model_name else {
         return Ok(None);
     };
-    let Some(default_limit) = deployment_default_limit(catalog, requested, limit)? else {
+    let Some(default_limit) = deployment_default_limit(query.catalog, requested, limit)? else {
         return Ok(None);
     };
     Ok(Some(ModelLimits::from([(
