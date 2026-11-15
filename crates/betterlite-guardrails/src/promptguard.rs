@@ -7,6 +7,8 @@ mod tests;
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use betterlite_http::proxy::limits::{ReadError, read_bounded};
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -18,7 +20,8 @@ use crate::guardrail_base::inputs::GuardrailApiInputs;
 
 pub const DEFAULT_API_BASE: &str = "https://api.promptguard.co";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
-pub const SUPPORTED_EVENT_HOOKS: [&str; 2] = ["pre_call", "post_call"];
+pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 2] =
+    [GuardrailEventHooks::PreCall, GuardrailEventHooks::PostCall];
 pub const API_KEY_VARIABLE: &str = "PROMPTGUARD_API_KEY";
 pub const API_BASE_VARIABLE: &str = "PROMPTGUARD_API_BASE";
 pub const BLOCK_ON_ERROR_VARIABLE: &str = "PROMPTGUARD_BLOCK_ON_ERROR";
@@ -108,7 +111,7 @@ impl PromptGuardGuardrail {
 
     async fn post(&self, request: &GuardRequest) -> Result<GuardResponse, PromptGuardError> {
         let endpoint = format!("{}{}", self.api_base, wire::GUARD_ENDPOINT);
-        let response = self
+        let mut response = self
             .client
             .post(endpoint)
             .headers(self.request_headers()?)
@@ -121,7 +124,9 @@ impl PromptGuardGuardrail {
         if !status.is_success() {
             return Err(PromptGuardError::HttpStatus { status });
         }
-        let body = read_body(response).await?;
+        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
+            .await
+            .map_err(read_error)?;
         serde_json::from_slice(&body).map_err(|source| PromptGuardError::ResponseJson { source })
     }
 }
@@ -153,15 +158,9 @@ fn request_error(source: reqwest::Error) -> PromptGuardError {
     }
 }
 
-async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, PromptGuardError> {
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(request_error)? {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(PromptGuardError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
-        body.extend_from_slice(&chunk);
+fn read_error(error: ReadError) -> PromptGuardError {
+    match error {
+        ReadError::TooLarge { limit } => PromptGuardError::ResponseTooLarge { limit },
+        ReadError::Failed(source) => request_error(source),
     }
-    Ok(body)
 }

@@ -12,6 +12,7 @@ use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
+use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_http::proxy::base_builder;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -801,6 +802,40 @@ async fn a_failed_call_returns_the_inputs_when_block_on_error_is_false() {
 }
 
 #[tokio::test]
+async fn the_configured_timeout_bounds_the_guard_call() {
+    let router = Router::new().route(
+        "/api/v1/guard",
+        post(|| async { std::future::pending::<()>().await }),
+    );
+    let (base, mut server) = serve(router).await;
+    let mut failing = with_base(args(Some("test-key"), Some(true)), Some(&base));
+    failing.timeout = Some(0.2);
+    let failing_guardrail =
+        PromptGuardGuardrail::new(failing, &env(&[]), client()).expect("guardrail");
+    let error = tokio::time::timeout(
+        Duration::from_secs(5),
+        failing_guardrail.apply_guardrail(text_inputs(), GuardrailInputType::Request),
+    )
+    .await
+    .expect("the call is bounded by the timeout")
+    .unwrap_err();
+    assert!(matches!(error, PromptGuardError::Request { .. }));
+    let mut open = with_base(args(Some("test-key"), Some(false)), Some(&base));
+    open.timeout = Some(0.2);
+    let open_guardrail = PromptGuardGuardrail::new(open, &env(&[]), client()).expect("guardrail");
+    let inputs = text_inputs();
+    let updated = tokio::time::timeout(
+        Duration::from_secs(5),
+        open_guardrail.apply_guardrail(inputs.clone(), GuardrailInputType::Request),
+    )
+    .await
+    .expect("the call is bounded by the timeout")
+    .expect("fail open");
+    assert_eq!(updated, inputs);
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn an_answer_that_is_not_json_raises() {
     let router = Router::new().route("/api/v1/guard", post(|| async { "not json" }));
     let (base, mut server) = serve(router).await;
@@ -871,5 +906,8 @@ fn the_answer_limit_is_one_mebibyte() {
 
 #[test]
 fn the_supported_event_hooks_are_pre_call_and_post_call() {
-    assert_eq!(SUPPORTED_EVENT_HOOKS, ["pre_call", "post_call"]);
+    assert_eq!(
+        SUPPORTED_EVENT_HOOKS,
+        [GuardrailEventHooks::PreCall, GuardrailEventHooks::PostCall]
+    );
 }
