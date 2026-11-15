@@ -1,15 +1,9 @@
-use http::header::InvalidHeaderValue;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum MinimaxSpeechError {
     #[error("MiniMax API key is required. Set MINIMAX_API_KEY or pass api_key")]
     MissingApiKey,
-    #[error("the authorization header cannot carry the MiniMax API key")]
-    Authorization {
-        #[source]
-        source: InvalidHeaderValue,
-    },
     #[error("the {name} option holds a value MiniMax cannot use")]
     Option { name: &'static str },
     #[error("Failed to parse MiniMax response: {source}")]
@@ -35,7 +29,7 @@ impl MinimaxSpeechError {
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::MissingApiKey | Self::Authorization { .. } => None,
+            Self::MissingApiKey => None,
             Self::Option { .. } => Some(400),
             Self::Decode { .. } | Self::NotObject | Self::Field { .. } | Self::Audio { .. } => {
                 Some(500)
