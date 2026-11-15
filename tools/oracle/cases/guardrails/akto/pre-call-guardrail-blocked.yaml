@@ -1,0 +1,22 @@
+kind: helper
+name: pre-call-guardrail-blocked
+call:
+  b3751:
+    op: send
+    settings:
+      akto_base_url: http://akto.invalid
+      akto_api_key: oracle-key
+    inputs:
+      texts: ["hello"]
+      model: gpt-4o
+    answer:
+      status: 200
+      body:
+        data:
+          guardrailsResult:
+            Allowed: false
+            Reason: PII detected
+    guardrails: true
+    ingest_data: false
+env: {}
+compare: {ignore: []}
