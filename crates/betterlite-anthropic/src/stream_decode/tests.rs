@@ -103,14 +103,12 @@ fn assert_text(outcome: &Outcome, expected: &str) {
     assert_eq!(chunk.choices[0].delta.content, expected);
 }
 
+const DROPPED: &str = "unparseable bytes from the accumulated anthropic stream buffer";
+
 fn drop_warnings(counts: &[usize]) -> Vec<String> {
     counts
         .iter()
-        .map(|count| {
-            format!(
-                "dropping {count} unparseable bytes from the accumulated anthropic stream buffer"
-            )
-        })
+        .map(|count| format!("dropping {count} {DROPPED}"))
         .collect()
 }
 
