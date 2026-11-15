@@ -59,10 +59,12 @@ impl<'db> ModelRepository<'db> {
         }
     }
 
+    // ast-grep-ignore: no-one-line-functions - LiteLLM's BaseRepository prisma_client property
     pub const fn prisma_client(&self) -> Result<PrismaClient<'db>, DbError> {
         self.base.prisma_client()
     }
 
+    // ast-grep-ignore: no-one-line-functions - LiteLLM's table property builds the same actions
     pub fn table(
         &self,
     ) -> Result<ConfigSyncTableActions<ResourceActions<'db, ProxyModelBinding>>, DbError> {

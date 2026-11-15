@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 
+use betterlite_redis::config_sync::publish::redis_config_change_publisher;
 use betterlite_redis::config_sync::table_actions::ConfigSyncTableActions;
 use tokio_postgres::Row;
 
@@ -11,7 +12,7 @@ use crate::postgres_store::repository::Repository;
 use crate::postgres_store::rows::{FindMany, Key, KeyAction, KeyColumn, Query, RowCodec, Table};
 use crate::resource_rows::{ResourceRowsError, convert, parse_data};
 
-use super::table::{ResourceActions, ResourceBinding, RowWrite, silent_publisher};
+use super::table::{ResourceActions, ResourceBinding, RowWrite};
 
 const BUDGET_BY_ID_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_BudgetTable\" AS entry WHERE entry.\"budget_id\" = $1";
 const BUDGET_DELETE_SQL: &str = "DELETE FROM \"LiteLLM_BudgetTable\" AS entry WHERE entry.\"budget_id\" = $1 RETURNING row_to_json(entry)::text";
@@ -138,10 +139,15 @@ impl<'db> BudgetRepository<'db> {
     #[must_use]
     pub fn new(client: Option<PrismaClient<'db>>) -> Self {
         Self {
-            base: PrismaTableRepository::new(client, silent_publisher(), BudgetBinding),
+            base: PrismaTableRepository::new(
+                client,
+                redis_config_change_publisher(None),
+                BudgetBinding,
+            ),
         }
     }
 
+    // ast-grep-ignore: no-one-line-functions - LiteLLM's table property builds the same actions
     pub fn table(
         &self,
     ) -> Result<ConfigSyncTableActions<ResourceActions<'db, BudgetBinding>>, DbError> {

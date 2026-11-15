@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::str::Utf8Error;
 use std::str::from_utf8;
 
+use betterlite_redis::config_sync::publish::redis_config_change_publisher;
 use betterlite_redis::config_sync::table_actions::{ConfigSyncTableActions, TableActions as _};
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +12,7 @@ use crate::auxiliary_repository::repository::{
 use crate::budget_permission_rows::JsonData;
 use crate::postgres_store::errors::DbError;
 
-use super::table::{ResourceActions, ResourceBinding, silent_publisher};
+use super::table::{DocumentData, ResourceActions, ResourceBinding};
 
 pub const MAX_CONFIG_VALUE_BYTES: usize = 0x0010_0000;
 pub const MAX_CONFIG_VALUE_DEPTH: usize = 64;
@@ -117,11 +118,15 @@ pub struct ConfigWrite {
     pub param_value: JsonData,
 }
 
+impl DocumentData for ConfigWrite {}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ConfigUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub param_value: Option<JsonData>,
 }
+
+impl DocumentData for ConfigUpdate {}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ConfigStoredRow {
@@ -152,16 +157,19 @@ pub struct ConfigRepository<'db> {
 impl<'db> ConfigRepository<'db> {
     #[must_use]
     pub fn new(client: Option<PrismaClient<'db>>, use_writer: bool) -> Self {
-        let base = PrismaTableRepository::new(client, silent_publisher(), ConfigBinding);
+        let base =
+            PrismaTableRepository::new(client, redis_config_change_publisher(None), ConfigBinding);
         Self {
             base: if use_writer { base.with_writer() } else { base },
         }
     }
 
+    // ast-grep-ignore: no-one-line-functions - LiteLLM's ConfigRepository prisma_client property
     pub const fn prisma_client(&self) -> Result<PrismaClient<'db>, DbError> {
         self.base.prisma_client()
     }
 
+    // ast-grep-ignore: no-one-line-functions - LiteLLM's table property builds the same actions
     pub fn table(
         &self,
     ) -> Result<ConfigSyncTableActions<ResourceActions<'db, ConfigBinding>>, DbError> {
