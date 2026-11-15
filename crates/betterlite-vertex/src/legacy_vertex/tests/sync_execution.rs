@@ -46,16 +46,15 @@ async fn cache_read_without_write() {
     );
 }
 
-#[tokio::test]
-async fn cache_adapter_reads_the_entry() {
+#[test]
+fn cache_adapter_reads_the_entry() {
     let clock: Clock = Arc::new(|| 1_000.0);
     let closer = Arc::new(EvictedClientCloser::new(Arc::clone(&clock)));
     let cache = LlmClientCache::<FixtureClient>::new(10, 60.0, clock, closer).expect("a cache");
-    let client = Arc::new(FixtureClient::default());
     cache
         .set_cache(
             "chat-bison-proj-us-central1",
-            Arc::clone(&client),
+            Arc::new(FixtureClient::default()),
             None,
             false,
         )
