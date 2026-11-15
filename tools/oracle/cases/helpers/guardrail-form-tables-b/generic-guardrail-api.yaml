@@ -1,0 +1,8 @@
+kind: helper
+name: generic-guardrail-api
+call:
+  b6562:
+    provider: generic_guardrail_api
+env: {}
+compare:
+  ignore: []

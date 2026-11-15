@@ -1,0 +1,7 @@
+# GCS_FLUSH_INTERVAL sets the flush interval read in __init__
+kind: helper
+name: gcs-bucket-logging-init-reads-flush-interval-env
+call:
+  b3998: {"environment": {"GCS_FLUSH_INTERVAL": "7"}, "steps": [{"do": "settings"}]}
+env: {"GCS_FLUSH_INTERVAL": "7"}
+compare: {ignore: []}

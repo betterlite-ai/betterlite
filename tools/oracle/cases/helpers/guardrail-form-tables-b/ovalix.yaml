@@ -1,0 +1,8 @@
+kind: helper
+name: ovalix
+call:
+  b6562:
+    provider: ovalix
+env: {}
+compare:
+  ignore: []

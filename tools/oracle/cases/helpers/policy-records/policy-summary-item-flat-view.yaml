@@ -1,0 +1,30 @@
+kind: helper
+name: policy-summary-item-flat-view
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicySummaryItem
+    value:
+      inherit: baseline
+      scope:
+        teams: []
+        keys: [key-a]
+        models: ["*"]
+        tags: [health]
+      guardrails:
+        add: [hipaa]
+      resolved_guardrails: [hipaa, pii]
+      inheritance_chain: [baseline, healthcare]
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicySummaryItem
+      value:
+        scope: {}
+        guardrails: {}
+        resolved_guardrails: []
+        inheritance_chain: []
+env: {}
+compare: {ignore: []}
