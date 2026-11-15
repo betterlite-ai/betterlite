@@ -126,8 +126,9 @@ pub fn decode_realtime_client_input(bytes: &[u8]) -> Result<ClientEvent, InputEr
         Some(Tag::Known(KnownType::ResponseCreate)) => ClientEvent::ResponseCreate,
         Some(Tag::Known(KnownType::ResponseCancel)) => ClientEvent::ResponseCancel,
         Some(Tag::Other(Json::Text(name))) => ClientEvent::Unknown(name),
+        // A null type is the same as no type at all
+        Some(Tag::Other(Json::Null)) | None => ClientEvent::Unknown("None".to_owned()),
         Some(Tag::Other(other)) => ClientEvent::Unknown(dumps(&other)),
-        None => ClientEvent::Unknown("None".to_owned()),
     })
 }
 

@@ -49,6 +49,8 @@ call:
       - kind: send
         message: '{"type":5}'
       - kind: send
+        message: '{"type":null}'
+      - kind: send
         message: '{"type":"session.update2"}'
       - kind: send
         message: '{"type":"session.update","session":{}}'

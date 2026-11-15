@@ -132,10 +132,9 @@ pub(super) fn unknown_client_event() {
     assert!(send(&mut input, &ids, r#"{"type":5}"#).is_empty());
     assert!(send(&mut input, &ids, r#"{"type":null}"#).is_empty());
     let log = captured.text();
-    assert!(log.contains("Unknown message type: None"));
+    assert_eq!(log.matches("Unknown message type: None").count(), 2);
     assert!(log.contains("Unknown message type: response.delete"));
     assert!(log.contains("Unknown message type: 5"));
-    assert!(log.contains("Unknown message type: null"));
     let update = send(
         &mut input,
         &ids,
