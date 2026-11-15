@@ -78,7 +78,10 @@ impl Section for Raw {
     }
 }
 
-fn enabled_setting<L: EnvironmentLookup>(lookup: &L) -> Result<bool, ConfigError> {
+fn enabled_setting<L>(lookup: &L) -> Result<bool, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let Some(text) = lookup.lookup(ENABLED_VARIABLE) else {
         return Ok(true);
     };
@@ -119,7 +122,10 @@ where
     Ok(Duration::try_from_secs_f64(selected).unwrap_or(Duration::MAX))
 }
 
-fn schema_setting<L: EnvironmentLookup>(lookup: &L) -> String {
+fn schema_setting<L>(lookup: &L) -> String
+where
+    L: EnvironmentLookup,
+{
     lookup
         .lookup(SCHEMA_VARIABLE)
         .filter(|value| !value.is_empty())
