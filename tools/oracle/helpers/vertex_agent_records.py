@@ -1,6 +1,6 @@
 import functools
 from collections.abc import Callable, Mapping, Sequence
-from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import httpx
 import litellm
@@ -159,7 +159,11 @@ class Config(Protocol):
     transform_response: TransformResponse
 
 
-CFG: Final[Config] = cast(Config, VertexAgentEngineConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L57-L65
+class TokenCounterHost(Protocol):
+    token_counter: Callable[..., int]
+
+
+CFG: Final[Config] = VertexAgentEngineConfig()  # type: ignore[no-untyped-call, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L57-L65
 
 
 def url_outcome(call: UrlCall) -> JsonValue:
@@ -205,8 +209,9 @@ def answer_state(answer: AnswerView) -> JsonValue:
 
 def response_outcome(call: ResponseCall) -> JsonValue:
     counter = Counter(call["counter"], call["prompt_tokens"], call["completion_tokens"])
-    # LiteLLM calls its counter with shapes this fixture ignores; only its int return matters
-    litellm.utils.token_counter = functools.partial(counter)
+    # LiteLLM re-imports its counter from this module on each call, so the fixture swaps it there
+    host: TokenCounterHost = litellm.utils
+    host.token_counter = functools.partial(counter)
     raw = httpx.Response(
         call["status"],
         text=call["body"],
