@@ -133,12 +133,12 @@ impl BaseContainerConfig for OpenAiContainerConfig {
         container_id: &str,
         api_base: &str,
         _context: ContainerRequestContext<'_>,
-    ) -> (String, Map<String, Value>) {
+    ) -> Result<(String, Map<String, Value>), ContainerError> {
         let segments = [urls::ContainerPathSegment::Id {
             field_name: "container_id",
             value: container_id,
         }];
-        (urls::request_url(api_base, &segments), Map::new())
+        Ok((urls::resource_url(api_base, &segments)?, Map::new()))
     }
 
     // ast-grep-ignore: no-long-names
@@ -155,12 +155,12 @@ impl BaseContainerConfig for OpenAiContainerConfig {
         container_id: &str,
         api_base: &str,
         _context: ContainerRequestContext<'_>,
-    ) -> (String, Map<String, Value>) {
+    ) -> Result<(String, Map<String, Value>), ContainerError> {
         let segments = [urls::ContainerPathSegment::Id {
             field_name: "container_id",
             value: container_id,
         }];
-        (urls::request_url(api_base, &segments), Map::new())
+        Ok((urls::resource_url(api_base, &segments)?, Map::new()))
     }
 
     // ast-grep-ignore: no-long-names
@@ -178,7 +178,7 @@ impl BaseContainerConfig for OpenAiContainerConfig {
         api_base: &str,
         _context: ContainerRequestContext<'_>,
         query: &ContainerListQuery<'_>,
-    ) -> (String, Map<String, Value>) {
+    ) -> Result<(String, Map<String, Value>), ContainerError> {
         let segments = [
             urls::ContainerPathSegment::Id {
                 field_name: "container_id",
@@ -186,10 +186,10 @@ impl BaseContainerConfig for OpenAiContainerConfig {
             },
             urls::ContainerPathSegment::Literal("files"),
         ];
-        (
-            urls::request_url(api_base, &segments),
+        Ok((
+            urls::resource_url(api_base, &segments)?,
             requests::list_query(query),
-        )
+        ))
     }
 
     // ast-grep-ignore: no-long-names
@@ -207,7 +207,7 @@ impl BaseContainerConfig for OpenAiContainerConfig {
         file_id: &str,
         api_base: &str,
         _context: ContainerRequestContext<'_>,
-    ) -> (String, Map<String, Value>) {
+    ) -> Result<(String, Map<String, Value>), ContainerError> {
         let segments = [
             urls::ContainerPathSegment::Id {
                 field_name: "container_id",
@@ -220,7 +220,7 @@ impl BaseContainerConfig for OpenAiContainerConfig {
             },
             urls::ContainerPathSegment::Literal("content"),
         ];
-        (urls::request_url(api_base, &segments), Map::new())
+        Ok((urls::resource_url(api_base, &segments)?, Map::new()))
     }
 
     // ast-grep-ignore: no-long-names

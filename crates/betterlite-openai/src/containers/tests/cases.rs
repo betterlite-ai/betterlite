@@ -223,12 +223,9 @@ fn list_limit_order() {
         order: Some("asc"),
         extra_query: None,
     };
-    let (url, params) = config.transform_container_file_list_request(
-        "cntr/abc",
-        BASE,
-        context.request(),
-        &file_query,
-    );
+    let (url, params) = config
+        .transform_container_file_list_request("cntr/abc", BASE, context.request(), &file_query)
+        .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/containers/cntr%2Fabc/files");
     assert_eq!(params.get("limit").and_then(Value::as_str), Some("1"));
     assert_eq!(params.get("order").and_then(Value::as_str), Some("asc"));
@@ -237,27 +234,34 @@ fn list_limit_order() {
 fn retrieve_delete_id() {
     let config = fresh_config();
     let context = Context::empty();
-    let (url, data) =
-        config.transform_container_retrieve_request("cntr_abc", BASE, context.request());
+    let (url, data) = config
+        .transform_container_retrieve_request("cntr_abc", BASE, context.request())
+        .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/containers/cntr_abc");
     assert!(data.is_empty());
-    let (url, _data) =
-        config.transform_container_retrieve_request("cntr/abc d", AZURE, context.request());
+    let (url, _data) = config
+        .transform_container_retrieve_request("cntr/abc d", AZURE, context.request())
+        .unwrap();
     assert_eq!(
         url,
         "https://example.openai.azure.com/openai/v1/containers/cntr%2Fabc%20d?api-version=v1"
     );
-    let (url, data) =
-        config.transform_container_delete_request("cntr_abc", BASE, context.request());
+    let (url, data) = config
+        .transform_container_delete_request("cntr_abc", BASE, context.request())
+        .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/containers/cntr_abc");
     assert!(data.is_empty());
     for refused in [".", "..", ""] {
-        let (url, _data) =
-            config.transform_container_retrieve_request(refused, BASE, context.request());
-        assert_eq!(url, "");
-        let (url, _data) =
-            config.transform_container_delete_request(refused, BASE, context.request());
-        assert_eq!(url, "");
+        let retrieve = config
+            .transform_container_retrieve_request(refused, BASE, context.request())
+            .unwrap_err();
+        assert!(matches!(retrieve, ContainerError::PathSegment { .. }));
+        assert!(retrieve.to_string().contains("container_id"));
+        let delete = config
+            .transform_container_delete_request(refused, BASE, context.request())
+            .unwrap_err();
+        assert!(matches!(delete, ContainerError::PathSegment { .. }));
+        assert!(delete.to_string().contains("container_id"));
         let segments = [urls::ContainerPathSegment::Id {
             field_name: "container_id",
             value: refused,
@@ -276,30 +280,37 @@ fn file_list_and_content() {
         order: None,
         extra_query: None,
     };
-    let (url, params) =
-        config.transform_container_file_list_request("cntr_abc", BASE, context.request(), &empty);
+    let (url, params) = config
+        .transform_container_file_list_request("cntr_abc", BASE, context.request(), &empty)
+        .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/containers/cntr_abc/files");
     assert!(params.is_empty());
-    let (url, params) = config.transform_container_file_content_request(
-        "cntr_abc",
-        "cfile_1",
-        AZURE,
-        context.request(),
-    );
+    let (url, params) = config
+        .transform_container_file_content_request("cntr_abc", "cfile_1", AZURE, context.request())
+        .unwrap();
     assert_eq!(
         url,
         "https://example.openai.azure.com/openai/v1/containers/cntr_abc/files/cfile_1/content?api-version=v1"
     );
     assert!(params.is_empty());
-    let (url, _params) =
-        config.transform_container_file_list_request("..", BASE, context.request(), &empty);
-    assert_eq!(url, "");
-    let (url, _params) =
-        config.transform_container_file_content_request("cntr_abc", "", BASE, context.request());
-    assert_eq!(url, "");
-    let (url, _params) =
-        config.transform_container_file_content_request(".", "cfile_1", BASE, context.request());
-    assert_eq!(url, "");
+    let refused_container = config
+        .transform_container_file_list_request("..", BASE, context.request(), &empty)
+        .unwrap_err();
+    assert!(matches!(
+        refused_container,
+        ContainerError::PathSegment { .. }
+    ));
+    assert!(refused_container.to_string().contains("container_id"));
+    let refused_file = config
+        .transform_container_file_content_request("cntr_abc", "", BASE, context.request())
+        .unwrap_err();
+    assert!(matches!(refused_file, ContainerError::PathSegment { .. }));
+    assert!(refused_file.to_string().contains("file_id"));
+    let refused_dot = config
+        .transform_container_file_content_request(".", "cfile_1", BASE, context.request())
+        .unwrap_err();
+    assert!(matches!(refused_dot, ContainerError::PathSegment { .. }));
+    assert!(refused_dot.to_string().contains("container_id"));
     let bytes = b"\x00raw\xffbytes".to_vec();
     assert_eq!(
         config

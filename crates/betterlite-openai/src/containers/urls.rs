@@ -29,18 +29,6 @@ pub fn resource_url(
     Ok(join_container_api_base_path(api_base, &path))
 }
 
-// B3360's request transforms have no error channel, so an id B171 refuses yields an empty URL that no transport can send
-#[must_use]
-pub fn request_url(api_base: &str, segments: &[ContainerPathSegment<'_>]) -> String {
-    match resource_url(api_base, segments) {
-        Ok(url) => url,
-        Err(error) => {
-            tracing::warn!(%error, "refusing to build a container request URL");
-            String::new()
-        }
-    }
-}
-
 #[must_use]
 pub fn join_container_api_base_path(api_base: &str, path_suffix: &str) -> String {
     let suffix = if path_suffix.starts_with('/') {

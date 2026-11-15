@@ -1,7 +1,7 @@
 task: B522
 deviations:
-  - what: A retrieve, delete, file list or file content call whose container_id or file_id is empty, "." or ".." returns an empty URL and logs a warning, where LiteLLM raises ValueError. No path is built for the refused id, and an empty URL cannot be sent. urls::resource_url returns B171's error for callers that can use it.
-    why: B3360's request transforms answer with a (url, data) pair and carry no error channel, so the OpenAI implementation cannot return B171's encode_segment error from the trait methods.
+  - what: A retrieve, delete, file list or file content call whose container_id or file_id is empty, "." or ".." returns ContainerError::PathSegment carrying B171's HttpError, where LiteLLM's encode_url_path_segment raises ValueError and the proxy answers 500. Betterlite builds no URL for the refused id.
+    why: A 500 from an unhandled exception on an id LiteLLM already rejects is a bug no working setup can rely on, so betterlite returns a typed error that names the field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L96-L113
   - what: A resource URL built from a base that is not an absolute URL joins the base's trailing slashes and the suffix as text, where LiteLLM's httpx.URL raises InvalidURL.
     why: join_container_api_base_path returns a String, so the join cannot fail. A parseable base keeps its query and fragment through the URL crate exactly as httpx.URL does.

@@ -40,27 +40,24 @@ pub(super) fn file_list(
     built: &OpenAiContainerConfig,
     context: ContainerRequestContext<'_>,
     call: &FileListCall,
-) -> Value {
+) -> Result<Value, Box<HelperError>> {
     let query = ContainerListQuery {
         after: call.after.as_deref(),
         limit: call.limit,
         order: call.order.as_deref(),
         extra_query: call.extra_query.as_ref(),
     };
-    let (url, params) = built.transform_container_file_list_request(
-        &call.container_id,
-        &call.api_base,
-        context,
-        &query,
-    );
-    json!({"url": url, "params": params})
+    let (url, params) = built
+        .transform_container_file_list_request(&call.container_id, &call.api_base, context, &query)
+        .map_err(|error| failure(&error.to_string()))?;
+    Ok(json!({"url": url, "params": params}))
 }
 
 pub(super) fn resource(
     built: &OpenAiContainerConfig,
     context: ContainerRequestContext<'_>,
     call: &ResourceCall,
-) -> Value {
+) -> Result<Value, Box<HelperError>> {
     let (url, data) = match call.kind {
         ResourceKind::Retrieve => {
             built.transform_container_retrieve_request(&call.container_id, &call.api_base, context)
@@ -68,22 +65,25 @@ pub(super) fn resource(
         ResourceKind::Delete => {
             built.transform_container_delete_request(&call.container_id, &call.api_base, context)
         }
-    };
-    json!({"url": url, "data": data})
+    }
+    .map_err(|error| failure(&error.to_string()))?;
+    Ok(json!({"url": url, "data": data}))
 }
 
 pub(super) fn content(
     built: &OpenAiContainerConfig,
     context: ContainerRequestContext<'_>,
     call: &ContentCall,
-) -> Value {
-    let (url, params) = built.transform_container_file_content_request(
-        &call.container_id,
-        &call.file_id,
-        &call.api_base,
-        context,
-    );
-    json!({"url": url, "params": params})
+) -> Result<Value, Box<HelperError>> {
+    let (url, params) = built
+        .transform_container_file_content_request(
+            &call.container_id,
+            &call.file_id,
+            &call.api_base,
+            context,
+        )
+        .map_err(|error| failure(&error.to_string()))?;
+    Ok(json!({"url": url, "params": params}))
 }
 
 pub(super) fn headers(call: &HeadersCall) -> Result<Value, Box<HelperError>> {
