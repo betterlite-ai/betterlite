@@ -278,7 +278,7 @@ fn the_count_after_a_discarded_prefix_is_the_bytes_still_buffered() {
         Ok(TransportChunk::Text(
             r#"data: nope {"type":"ping"}{"type":"ping"}"#.to_owned(),
         )),
-        Ok(TransportChunk::Text(format!("data:{}", "x".repeat(30)))),
+        Ok(TransportChunk::Text(format!("data:{}", "x".repeat(20)))),
     ];
     let outcomes = ChunkStream {
         converter: converter(),
@@ -289,14 +289,10 @@ fn the_count_after_a_discarded_prefix_is_the_bytes_still_buffered() {
     }
     .collect::<Vec<_>>();
     drop(guard);
-    assert_eq!(outcomes.len(), 3);
+    // The pop leaves 15 bytes, so this line's 20 fit; a stale count of 31 or 36 would reject it.
+    assert_eq!(outcomes.len(), 2);
     assert_text(&outcomes[0], "");
-    assert!(matches!(
-        &outcomes[1],
-        Err(DecodeError::TooLarge { limit: 44 })
-    ));
-    // The value the pop left buffered drains at end of stream.
-    assert_text(&outcomes[2], "");
+    assert_text(&outcomes[1], "");
     assert_eq!(warnings.messages(), drop_warnings(&[4]));
 }
 
