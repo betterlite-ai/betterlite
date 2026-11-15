@@ -12,6 +12,6 @@ deviations:
   - what: A connection that fails before an answer is not retried, where LiteLLM's AsyncHTTPHandler builds a second client and repeats the request once on ConnectError or RemoteProtocolError.
     why: The pooled client is injected by the caller and attempts each request once, so a guardrail never delivers the same policy check twice; B3976 records the same policy for the shared client.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
-  - what: A timeout that is not a finite, representable duration fails settings resolution with a typed error, where LiteLLM keeps the value and passes it to httpx.
+  - what: A positive timeout that no Duration can represent (infinity or an overflowing value) fails settings resolution with a typed error, where LiteLLM keeps the value and passes it to httpx; NaN takes the non-positive fallback to 5.0 with its warning.
     why: A Rust Duration cannot hold a nonfinite or overflowing value, and an unusable timeout fails at load instead of disabling the bounded request wait on every call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py#L86-L102
