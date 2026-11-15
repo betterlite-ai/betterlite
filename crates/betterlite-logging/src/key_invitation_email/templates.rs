@@ -84,13 +84,15 @@ pub struct UserInvitedEmail<'text> {
 #[must_use]
 pub fn render_key_created_email(email: &KeyCreatedEmail<'_>) -> String {
     let key_budget = budget_text(email.key_budget);
+    let recipient_email = email.recipient_email.unwrap_or("None");
+    let key_token = email.key_token.unwrap_or("None");
     fill_template(
         KEY_CREATED_EMAIL_TEMPLATE,
         &[
             ("email_logo_url", email.email_logo_url),
-            ("recipient_email", email.recipient_email.unwrap_or("None")),
+            ("recipient_email", recipient_email),
             ("key_budget", key_budget.as_str()),
-            ("key_token", email.key_token.unwrap_or("None")),
+            ("key_token", key_token),
             ("email_support_contact", email.email_support_contact),
         ],
     )
