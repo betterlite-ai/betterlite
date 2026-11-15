@@ -130,8 +130,8 @@ fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
             delta("u").trim_start_matches("data:")
         ))),
         Ok(TransportChunk::Text(format!(
-            "data: nope{}",
-            delta("w").trim_start_matches("data:")
+            "data: nope junk{}",
+            delta("z").trim_start_matches("data:")
         ))),
         Ok(TransportChunk::Text(delta("t"))),
         Ok(TransportChunk::Text(
@@ -144,13 +144,59 @@ fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
     assert_text(&outcomes[0], "");
     assert_text(&outcomes[1], "v");
     assert_text(&outcomes[2], "u");
-    assert_text(&outcomes[3], "w");
+    assert_text(&outcomes[3], "z");
     assert_text(&outcomes[4], "t");
     let Ok(DecodedChunk::Event(usage)) = &outcomes[5] else {
         panic!("the usage event after the corrupted fragments must arrive");
     };
     assert_eq!(usage.usage.as_ref().unwrap().completion_tokens, 7);
-    assert_eq!(warnings.messages(), drop_warnings(&[9, 5, 7, 4]));
+    assert_eq!(warnings.messages(), drop_warnings(&[9, 5, 7, 4, 4]));
+}
+
+#[test]
+fn a_fragment_that_cannot_close_is_not_scanned() {
+    let (guard, warnings) = fixture::capture_warnings();
+    let outcomes = fixture::drive_sync(vec![
+        Ok(TransportChunk::Text("data: nope".to_owned())),
+        Ok(TransportChunk::Text(format!(
+            "data:junk{}",
+            delta("y").trim_start_matches("data:")
+        ))),
+    ]);
+    drop(guard);
+    assert_eq!(outcomes.len(), 1);
+    assert_text(&outcomes[0], "y");
+    assert_eq!(warnings.messages(), drop_warnings(&[8]));
+}
+
+#[test]
+fn drops_many_broken_tokens_in_one_line() {
+    let (guard, warnings) = fixture::capture_warnings();
+    let tokens = "nope ".repeat(64);
+    let outcomes = fixture::drive_sync(vec![Ok(TransportChunk::Text(format!(
+        "data: {tokens}{}",
+        delta("q").trim_start_matches("data:")
+    )))]);
+    drop(guard);
+    assert_eq!(outcomes.len(), 1);
+    assert_text(&outcomes[0], "q");
+    assert_eq!(warnings.messages(), drop_warnings(&[4; 64]));
+}
+
+#[test]
+fn a_value_split_over_many_non_closing_data_lines_accumulates() {
+    let steps: Vec<fixture::Source> = std::iter::once(Ok(TransportChunk::Text(
+        r#"data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"#
+            .to_owned(),
+    )))
+    .chain((0..8).map(|_| Ok(TransportChunk::Text(format!("data:{}", "x".repeat(64))))))
+    .chain(std::iter::once(Ok(TransportChunk::Text(
+        r#"data:"}}"#.to_owned(),
+    ))))
+    .collect();
+    let outcomes = fixture::drive_sync(steps);
+    assert_eq!(outcomes.len(), 1);
+    assert_text(&outcomes[0], &"x".repeat(512));
 }
 
 #[test]

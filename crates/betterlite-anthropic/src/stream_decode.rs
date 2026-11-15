@@ -89,6 +89,11 @@ where
     if parsed.is_some() {
         return Ok(parsed);
     }
+    // The accumulator defers a fragment whose last byte cannot close a value; dropping then would rescan
+    // a buffer LiteLLM leaves alone, and a long value split over many fragments would cost O(n^2).
+    if !converter.json_could_close {
+        return Ok(None);
+    }
     discard_unparseable_prefix(converter).map_err(DecodeError::Event)
 }
 
@@ -100,31 +105,33 @@ fn discard_unparseable_prefix<Counter>(
 where
     Counter: ReasoningTokenCounter,
 {
+    let buffered = converter.state.json_buffer.snapshot();
+    let mut rest = buffered.as_str();
+    let mut dropped = false;
     loop {
-        let buffered = converter.state.json_buffer.snapshot();
-        let trimmed = buffered.trim_start();
+        let trimmed = rest.trim_start();
         let front = serde_json::Deserializer::from_str(trimmed)
             .into_iter::<Json>()
             .next();
-        let dropped = match front {
+        let end = match front {
             Some(Err(error)) if error.classify() != Category::Eof => {
                 prefix_end(trimmed).unwrap_or(trimmed.len())
             }
-            Some(_) | None => return Ok(None),
+            Some(_) | None => break,
         };
         tracing::warn!(
-            "dropping {dropped} unparseable bytes from the accumulated anthropic stream buffer"
+            "dropping {end} unparseable bytes from the accumulated anthropic stream buffer"
         );
-        converter
-            .state
-            .json_buffer
-            .set(trimmed.get(dropped..).unwrap_or_default().to_owned());
-        converter.json_could_close = true;
-        let parsed = converter.handle_accumulated_json_chunk("", false)?;
-        if parsed.is_some() {
-            return Ok(parsed);
-        }
+        rest = trimmed.get(end..).unwrap_or_default();
+        dropped = true;
     }
+    if !dropped {
+        return Ok(None);
+    }
+    // One write and one parse per call keep a line of broken values linear in its length.
+    converter.state.json_buffer.set(rest.to_owned());
+    converter.json_could_close = true;
+    converter.handle_accumulated_json_chunk("", false)
 }
 
 // The broken value ends at its own closing bracket or quote, so a valid value glued behind it survives.
