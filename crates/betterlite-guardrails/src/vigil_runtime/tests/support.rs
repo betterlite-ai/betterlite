@@ -131,7 +131,11 @@ pub(crate) fn run_build(case: BuildCase) {
     let outcome = VigilGuard::new(params);
     match expected {
         BuildExpectation::Built(built) => {
-            check_built(outcome.expect("the build case resolves"), &built, &observed);
+            check_built(
+                &outcome.expect("the build case resolves"),
+                &built,
+                &observed,
+            );
         }
         BuildExpectation::Error(fragment) => {
             check_error(outcome.err(), fragment, observed.secret.as_deref());
@@ -139,7 +143,7 @@ pub(crate) fn run_build(case: BuildCase) {
     }
 }
 
-fn check_built(guardrail: VigilGuard, built: &BuiltSettings, observed: &BaseValues) {
+fn check_built(guardrail: &VigilGuard, built: &BuiltSettings, observed: &BaseValues) {
     assert_eq!(guardrail.settings.api_base, built.api_base);
     assert_eq!(guardrail.settings.api_key.expose_secret(), built.api_key);
     assert_eq!(guardrail.settings.timeout, built.timeout);
@@ -205,7 +209,7 @@ pub(crate) async fn run_scan(scenario: Scenario) {
         .await;
     let calls = handler.calls();
     assert_calls(&calls, &analyzed, input_type, &metadata);
-    assert_outcome(result, &original, expected, expected_name);
+    assert_outcome(result, &original, expected, expected_name.as_deref());
 }
 
 fn assert_calls(
@@ -239,12 +243,12 @@ fn assert_outcome(
     result: Result<GuardrailApiInputs, GuardrailFailure>,
     original: &GuardrailApiInputs,
     expected: Expected,
-    expected_name: Option<String>,
+    expected_name: Option<&str>,
 ) {
     match expected {
         Expected::Unchanged => assert_eq!(result, Ok(original.clone())),
         Expected::Rewritten { texts, tool_calls } => {
-            assert_rewritten(result, &texts, tool_calls, original);
+            assert_rewritten(result, &texts, tool_calls.as_deref(), original);
         }
         Expected::Raised {
             message,
@@ -255,7 +259,7 @@ fn assert_outcome(
             &message,
             status_code,
             blocked_content,
-            &expected_name,
+            expected_name,
         ),
         Expected::Other(fragment) => assert_other(result, &fragment),
     }
@@ -264,12 +268,12 @@ fn assert_outcome(
 fn assert_rewritten(
     result: Result<GuardrailApiInputs, GuardrailFailure>,
     texts: &[String],
-    tool_calls: Option<Vec<GuardrailValue>>,
+    tool_calls: Option<&[GuardrailValue]>,
     original: &GuardrailApiInputs,
 ) {
     let output = result.expect("the scan should rewrite");
     assert_eq!(output.texts.as_deref(), Some(texts));
-    assert_eq!(output.tool_calls, tool_calls);
+    assert_eq!(output.tool_calls.as_deref(), tool_calls);
     assert_eq!(output.images, original.images);
     assert_eq!(output.tools, original.tools);
     assert_eq!(output.structured_messages, None);
@@ -282,7 +286,7 @@ fn assert_raised(
     message: &str,
     status_code: u16,
     blocked_content: bool,
-    expected_name: &Option<String>,
+    expected_name: Option<&str>,
 ) {
     match result {
         Err(GuardrailFailure::GuardrailRaised {
@@ -296,7 +300,7 @@ fn assert_raised(
             assert_eq!(raised_status, status_code);
             assert_eq!(raised_blocked, blocked_content);
             assert!(!wrap_default_message);
-            assert_eq!(&guardrail_name, expected_name);
+            assert_eq!(guardrail_name.as_deref(), expected_name);
         }
         other => panic!("the scan should raise a guardrail failure: {other:?}"),
     }
