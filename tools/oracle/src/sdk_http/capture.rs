@@ -65,6 +65,10 @@ impl<'sdk> Sdk<'sdk> {
             (Self::Native, SdkHttpCall::MessagesStreamLogging(logging)) => {
                 run_until_stopped(messages_stream_logging::send(logging, api_base, env), stop)
             }
+            (Self::Native, SdkHttpCall::MessagesNativeStream(relay)) => run_until_stopped(
+                messages_stream_logging::relay::send(relay, api_base, env),
+                stop,
+            ),
         }
     }
 }
