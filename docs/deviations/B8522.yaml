@@ -21,3 +21,9 @@ deviations:
   - what: The default guard call timeout is the 600 second total without LiteLLM's separate 5 second connect sub-timeout.
     why: The HTTP client comes from the caller, and the per-request timeout bounds the whole call; a working Lakera setup depends on the 600 second total, not on how fast an unreachable host is given up.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
+  - what: A timeout that is negative, NaN or outside Duration's range is refused when the guardrail is built or updated.
+    why: LiteLLM stores LitellmParams.timeout in self.timeout as a float and lets the per-call HTTP client fail or hang on every request; betterlite refuses the value up front with an error that names it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L256-L257
+  - what: A guard answer larger than 1 MiB is refused instead of being parsed.
+    why: LiteLLM reads and parses the guard answer at any size; betterlite caps the body so one guard cannot buffer an unbounded answer, the same cap other guardrail calls use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L399-L406

@@ -12,28 +12,25 @@ use super::construction::resolve_timeout;
 impl LakeraV2Guardrail {
     pub fn update_params(&mut self, params: &LitellmParams) -> Result<(), LakeraV2Error> {
         let extra = &params.base.extra;
-        // LiteLLM's update decodes into LitellmParams: an omitted key is the model default, an explicit null keeps the live value.
+        // an absent key or an explicit null takes the field default, where LiteLLM's setattr loop would store None
         let on_flagged = read_param(extra, "on_flagged", Some(LakeraOnFlagged::Block))?;
         let template = read_param::<String>(extra, "advisory_system_message", None)?;
         let payload = read_param(extra, "payload", Some(true))?;
         let breakdown = read_param(extra, "breakdown", Some(true))?;
         let dev_info = read_param(extra, "dev_info", Some(true))?;
         let timeout = resolve_timeout(params.base.fields.timeout)?;
-        let prospective_on_flagged = on_flagged.unwrap_or(self.on_flagged);
-        let prospective_payload = payload.unwrap_or(self.flags.payload);
-        let prospective_breakdown = breakdown.unwrap_or(self.flags.breakdown);
         // a rejected update leaves the live instance untouched, so validate before any write
         advisory::validate_advisory_config(
-            prospective_on_flagged,
+            on_flagged.unwrap_or(LakeraOnFlagged::Block),
             template.as_deref(),
-            Some(prospective_payload),
-            Some(prospective_breakdown),
+            payload,
+            breakdown,
         )?;
         self.base.update_params(params);
-        self.on_flagged = prospective_on_flagged;
-        self.flags.payload = prospective_payload;
-        self.flags.breakdown = prospective_breakdown;
-        self.flags.dev_info = dev_info.unwrap_or(self.flags.dev_info);
+        self.on_flagged = on_flagged.unwrap_or(LakeraOnFlagged::Block);
+        self.flags.payload = payload.unwrap_or(true);
+        self.flags.breakdown = breakdown.unwrap_or(true);
+        self.flags.dev_info = dev_info.unwrap_or(true);
         self.advisory_system_message = template;
         self.timeout = timeout;
         self.skip_flags.skip_system_message = params.base.fields.skip_system_message;
@@ -54,8 +51,7 @@ where
     T: DeserializeOwned,
 {
     match extra.0.get(key) {
-        None => Ok(default),
-        Some(GuardrailValue::Null) => Ok(None),
+        None | Some(GuardrailValue::Null) => Ok(default),
         Some(value) => serde_json::to_value(value)
             .and_then(serde_json::from_value::<T>)
             .map(Some)
