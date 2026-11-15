@@ -8,11 +8,14 @@ use super::{MODEL_KEY_FIELD, ModelInfoLookup};
 const STRICT_TOOLS_FLAG: &str = "bedrock_converse_supports_strict_tools";
 
 #[must_use]
-pub async fn converse_supports_strict_tools<Lookup: ModelInfoLookup>(
+pub async fn converse_supports_strict_tools<Lookup>(
     model: &str,
     lookup: &Lookup,
     packaged: &ModelCatalog,
-) -> bool {
+) -> bool
+where
+    Lookup: ModelInfoLookup,
+{
     let base = get_bedrock_base_model(model);
     if !base.starts_with("anthropic") {
         return false;

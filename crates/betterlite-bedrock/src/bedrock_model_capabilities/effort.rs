@@ -42,12 +42,15 @@ impl Effort {
     }
 }
 
-pub async fn normalize_opus_effort<Lookup: ModelInfoLookup>(
+pub async fn normalize_opus_effort<Lookup>(
     model: &str,
     output_config: &mut ParamValue,
     lookup: &Lookup,
     packaged: &ModelCatalog,
-) -> Result<(), CapabilityError> {
+) -> Result<(), CapabilityError>
+where
+    Lookup: ModelInfoLookup,
+{
     let ParamValue::Mapping(fields) = output_config else {
         return Ok(());
     };
@@ -75,11 +78,14 @@ fn effort_rank(effort: &ParamValue) -> Result<Option<Effort>, CapabilityError> {
     }
 }
 
-async fn effort_ceiling<Lookup: ModelInfoLookup>(
+async fn effort_ceiling<Lookup>(
     model: &str,
     lookup: &Lookup,
     packaged: &ModelCatalog,
-) -> Option<Effort> {
+) -> Option<Effort>
+where
+    Lookup: ModelInfoLookup,
+{
     let info = lookup.bedrock_model_info(model).await.ok()?;
     if let Some(Json::Text(text)) = info.fields.get(EFFORT_CEILING_FIELD)
         && let Some(effort) = Effort::parse(text)
