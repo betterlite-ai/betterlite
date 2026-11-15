@@ -112,29 +112,30 @@ fn headers() -> crate::openai_base_config::Headers {
 }
 
 #[rstest]
-#[case::adds_when_missing(None, None, true)]
-#[case::keeps_existing_exact("x-session-affinity", None, false)]
-#[case::keeps_existing_case_insensitive("X-Session-Affinity", Some("one"), false)]
+#[case::adds_when_missing(None, Some("one"), Some("one"), 2)]
+#[case::keeps_existing_exact("x-session-affinity", Some("one"), Some("explicit"), 2)]
+#[case::keeps_existing_case_insensitive("X-Session-Affinity", Some("one"), Some("explicit"), 2)]
+#[case::without_a_session_id(None, None, None, 1)]
 fn with_session_affinity_adds_only_an_absent_header(
     #[case] existing_name: Option<&str>,
     #[case] litellm_session: Option<&str>,
-    #[case] adds: bool,
+    #[case] expected: Option<&str>,
+    #[case] expected_headers: usize,
 ) {
     let mut given = headers();
     if let Some(name) = existing_name {
         given.insert(name.to_owned(), "explicit".to_owned());
     }
     let pinned = with_session_affinity(&given, &params(litellm_session, None, None));
-    if let Some(name) = existing_name {
-        assert_eq!(pinned.get(name).map(String::as_str), Some("explicit"));
-    }
-    assert_eq!(pinned.contains_key(SESSION_AFFINITY_HEADER), adds);
-    if adds {
-        assert_eq!(
-            pinned.get(SESSION_AFFINITY_HEADER).map(String::as_str),
-            litellm_session
-        );
-    }
+    assert_eq!(pinned.len(), expected_headers);
+    let affinity = existing_name
+        .and_then(|name| pinned.get(name))
+        .or_else(|| pinned.get(SESSION_AFFINITY_HEADER));
+    assert_eq!(affinity.map(String::as_str), expected);
+    assert_eq!(
+        pinned.get(AUTHORIZATION_HEADER).map(String::as_str),
+        Some("Bearer caller")
+    );
 }
 
 #[test]

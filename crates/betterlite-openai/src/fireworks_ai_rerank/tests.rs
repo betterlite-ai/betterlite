@@ -322,13 +322,18 @@ fn transform_rerank_response_falls_back_to_results_when_data_is_empty() {
 #[rstest]
 #[case::empty_object("{}")]
 #[case::empty_data(r#"{"data":[]}"#)]
-#[case::empty_data_and_results(r#"{"data":[],"results":[]}"#)]
 fn transform_rerank_response_errors_when_neither_data_nor_results_exist(#[case] payload: &str) {
     let error = transform(200, payload).unwrap_err();
     assert!(
         matches!(error, FireworksRerankError::NoResults),
         "{payload}"
     );
+}
+
+#[test]
+fn transform_rerank_response_returns_no_results_when_both_lists_are_empty() {
+    let response = transform(200, r#"{"data":[],"results":[]}"#).unwrap();
+    assert_eq!(response.results, Some(Vec::new()));
 }
 
 #[test]
@@ -376,6 +381,7 @@ fn transform_rerank_response_rejects_a_non_string_id_and_a_non_number_score() {
 #[case::empty_text(r#""""#, None)]
 #[case::empty_object_text(r#"{"text":""}"#, None)]
 #[case::object_without_text(r#"{"page":1}"#, None)]
+#[case::number_object_text(r#"{"text":7}"#, None)]
 #[case::number_document("7", None)]
 #[case::null_document("null", None)]
 fn transform_rerank_response_adds_a_document_only_for_text(
@@ -392,6 +398,16 @@ fn transform_rerank_response_adds_a_document_only_for_text(
             .map(|document| document.text.as_str()),
         expected
     );
+}
+
+#[test]
+fn transform_rerank_response_rejects_a_body_that_is_not_an_object() {
+    let error = transform(200, "[1,2]").unwrap_err();
+    let FireworksRerankError::Fireworks(error) = error else {
+        panic!("expected a FireworksError");
+    };
+    assert_eq!(error.status_code, 200);
+    assert!(error.message.starts_with("Failed to parse response"));
 }
 
 #[test]

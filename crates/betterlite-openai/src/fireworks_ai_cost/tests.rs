@@ -107,7 +107,7 @@ fn tiers() -> FireworksPricingTiers {
 #[case::first_size_match_wins("llama-v3-70b-instruct-lite-4b", "fireworks-ai-above-16b")]
 #[case::uppercased("FIREWORKS_AI/LLAMA-V3P1-70B-INSTRUCT", "fireworks-ai-above-16b")]
 #[case::provider_prefixed(
-    "fireworks_ai/accounts/fireworks/models/deepseek-v3p1",
+    "fireworks_ai/accounts/fireworks/models/llama-v3p1-70b",
     "fireworks-ai-above-16b"
 )]
 #[case::no_size("nomic-ai/nomic-embed-text-v1.5", "fireworks-ai-default")]
