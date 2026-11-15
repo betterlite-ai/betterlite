@@ -85,13 +85,22 @@ impl TableActions for BannerActions<'_> {
     }
 
     async fn create_many(&self, data: Vec<Self::CreateData>) -> Result<usize, Self::Failure> {
-        let mut created = 0_usize;
+        let mut client = self.access.write.session().await?;
+        let transaction = client
+            .transaction()
+            .await
+            .map_err(|source| TableError::Database(backend(source)))?;
         for row in &data {
-            self.changed(CREATE_SQL, &[&row.id, &row.ui_settings])
-                .await?;
-            created = created.saturating_add(1);
+            transaction
+                .execute(CREATE_SQL, &[&row.id, &row.ui_settings])
+                .await
+                .map_err(|source| TableError::Database(backend(source)))?;
         }
-        Ok(created)
+        transaction
+            .commit()
+            .await
+            .map_err(|source| TableError::Database(backend(source)))?;
+        Ok(data.len())
     }
 
     async fn update(

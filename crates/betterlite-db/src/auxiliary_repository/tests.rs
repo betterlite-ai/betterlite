@@ -291,6 +291,41 @@ async fn banner_create_many_and_delete_many_count_rows() {
 }
 
 #[tokio::test]
+async fn banner_create_many_rolls_back_a_partial_batch() {
+    let case = Case::new().await;
+    let journal = Journal::default();
+    let base = PrismaTableRepository::<UISettings>::new(
+        Some(case.client()),
+        recording_publisher(&journal),
+        UISettings,
+    );
+    let table = base.table(|access| BannerActions { access }).unwrap();
+    let rows = vec![
+        UiSettingsRow {
+            id: "rollback-first".to_owned(),
+            ui_settings: "first".to_owned(),
+        },
+        UiSettingsRow {
+            id: "rollback-first".to_owned(),
+            ui_settings: "again".to_owned(),
+        },
+    ];
+    assert!(table.create_many(rows).await.is_err());
+    assert!(journal.entries().is_empty());
+    let client = case.writer.session().await.unwrap();
+    let stored = client
+        .query(
+            "SELECT count(*) FROM \"LiteLLM_UISettings\" WHERE id = 'rollback-first'",
+            &[],
+        )
+        .await
+        .unwrap();
+    assert_eq!(stored[0].try_get::<_, i64>(0).unwrap(), 0);
+    drop(client);
+    case.close().await;
+}
+
+#[tokio::test]
 async fn redis_missing_is_noop() {
     let case = Case::new().await;
     let repository = UserBannerRepository::new(
