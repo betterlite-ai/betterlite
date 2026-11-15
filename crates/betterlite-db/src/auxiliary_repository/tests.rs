@@ -17,7 +17,7 @@ use super::decoder::decode_managed_batch_record;
 use super::file_content::ManagedFileContentRepository;
 use super::repository::{PrismaTableRepository, TableError};
 use super::session::{AutoRouterSessionRepository, AutoRouterSessionTable};
-use super::user_banner::{BannerActions, USER_BANNER_ROW_ID, UserBannerRepository};
+use super::user_banner::{BannerActions, USER_BANNER_ROW_ID, UiSettingsRow, UserBannerRepository};
 
 mod binding_cases;
 mod decoder_cases;
@@ -209,6 +209,45 @@ async fn zero_row_write_still_publishes() {
         .unwrap();
     assert_eq!(updated, 0);
     assert_eq!(journal.entries(), ["publish:litellm_uisettings"]);
+    case.close().await;
+}
+
+#[tokio::test]
+async fn banner_actions_return_rows_and_change_counts() {
+    let case = Case::new().await;
+    let journal = Journal::default();
+    let base = PrismaTableRepository::<UISettings>::new(
+        Some(case.client()),
+        recording_publisher(&journal),
+        UISettings,
+    );
+    let table = base.table(|access| BannerActions { access }).unwrap();
+    let created = table
+        .create(UiSettingsRow {
+            id: USER_BANNER_ROW_ID.to_owned(),
+            ui_settings: "first".to_owned(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(created, JsonData::String("first".to_owned()));
+    let updated = table
+        .update("second".to_owned(), USER_BANNER_ROW_ID.to_owned())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(updated, JsonData::String("second".to_owned()));
+    let updated_rows = table
+        .update_many("third".to_owned(), USER_BANNER_ROW_ID.to_owned())
+        .await
+        .unwrap();
+    assert_eq!(updated_rows, 1);
+    let deleted = table
+        .delete(USER_BANNER_ROW_ID.to_owned())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(deleted, JsonData::String("third".to_owned()));
+    assert_eq!(journal.entries().len(), 4);
     case.close().await;
 }
 
