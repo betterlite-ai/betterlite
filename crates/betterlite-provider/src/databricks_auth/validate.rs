@@ -47,28 +47,41 @@ async fn authenticate(
     env: &DatabricksEnv,
     tokens: &dyn OauthTokenSource,
 ) -> Result<(String, Headers), DatabricksError> {
-    let mut headers = request.headers;
-    let oauth = oauth_credentials(env, request.api_base.as_deref());
+    let AuthenticationRequest {
+        api_key,
+        api_base,
+        custom_endpoint,
+        headers: mut headers,
+    } = request;
+    let oauth = oauth_credentials(env, api_base.as_deref());
     if let Some((client_id, client_secret, base)) = oauth {
         debug!("Using OAuth M2M authentication for Databricks");
         let token_request = oauth_token_request(base, client_id, client_secret.expose_secret());
         let token = request_oauth_token(&token_request, tokens).await?;
         headers = Some(oauth_headers(headers, token.expose_secret()));
     }
-    let base = required_base(&request, oauth.is_some(), headers.as_ref())?;
-    Ok((base, with_api_key(request.api_key, headers)))
+    let base = required_base(
+        api_key,
+        api_base.as_deref(),
+        custom_endpoint,
+        oauth.is_some(),
+        headers.as_ref(),
+    )?;
+    Ok((base, with_api_key(api_key, headers)))
 }
 
 // LiteLLM raises the missing-key 400 before the missing-base 400, with the SDK text when no custom endpoint is set
 fn required_base(
-    request: &AuthenticationRequest<'_>,
+    api_key: Option<&SecretString>,
+    api_base: Option<&str>,
+    custom_endpoint: bool,
     oauth_authenticated: bool,
     headers: Option<&Headers>,
 ) -> Result<String, DatabricksError> {
-    if !oauth_authenticated && request.api_key.is_none() && headers.is_none_or(BTreeMap::is_empty) {
+    if !oauth_authenticated && api_key.is_none() && headers.is_none_or(BTreeMap::is_empty) {
         return Err(DatabricksError {
             status_code: 400,
-            message: if request.custom_endpoint {
+            message: if custom_endpoint {
                 MISSING_API_KEY
             } else {
                 SDK_CREDENTIALS
@@ -77,8 +90,8 @@ fn required_base(
             headers: None,
         });
     }
-    let Some(base) = request.api_base.as_deref() else {
-        let message = if request.custom_endpoint {
+    let Some(base) = api_base else {
+        let message = if custom_endpoint {
             MISSING_API_BASE
         } else {
             SDK_CREDENTIALS
