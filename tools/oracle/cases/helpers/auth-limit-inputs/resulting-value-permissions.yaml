@@ -1,0 +1,19 @@
+kind: helper
+name: auth-limit-inputs-resulting-value-permissions
+call:
+  auth_limit_inputs:
+    function: enforce_output_estimates
+    request:
+      model_fields_set: [metadata]
+      metadata:
+        other: keep
+    existing_metadata:
+      default_estimated_output_tokens: 2000
+      other: keep
+    caller:
+      api_key: sk-user
+      user_role: internal_user
+    entity: key
+env: {}
+compare:
+  ignore: []

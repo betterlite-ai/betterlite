@@ -1,0 +1,14 @@
+kind: helper
+name: post-ingest-no-write-scope-403
+call:
+  b3867:
+    request:
+      method: POST
+      path: /v1/traces
+      headers: {content-type: application/json}
+      body: '{}'
+    auth: {user_role: proxy_admin_view_only}
+    tracing: true
+    master_key: "sk-master"
+env: {}
+compare: {ignore: []}

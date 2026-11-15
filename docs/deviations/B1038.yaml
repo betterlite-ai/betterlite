@@ -1,0 +1,40 @@
+task: B1038
+deviations:
+  - what: >-
+      An async-invoke status answer without invocationArn or modelArn is rejected when the typed
+      record is decoded, while LiteLLM reads both keys unconditionally and fails the request with a
+      KeyError-driven 500.
+    why: >-
+      The typed record names the two fields the normalizer copies into the batch, so a response
+      that lacks them fails where it enters with an error naming the field instead of a bare 500.
+      AWS GetAsyncInvoke always returns both keys, so no working setup relies on the old failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1154-L1170
+  - what: >-
+      Async-invoke timestamps are read as RFC 3339 date-time strings, while LiteLLM parses them with
+      datetime.fromisoformat, which also takes other ISO 8601 spellings such as a date-time without
+      an offset.
+    why: >-
+      AWS GetAsyncInvoke returns RFC 3339 with a trailing Z, which both readers take. A spelling only
+      Python's parser accepts is unreadable here, so created_at falls back to the injected clock and
+      the status stamps stay null instead of being parsed in the host's local timezone.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L464-L465
+  - what: >-
+      A timeout that arrives as text is parsed with the shared SDK timeout grammar. Plain decimal
+      spellings, an underscore separator such as "1_000" and surrounding whitespace all read as the
+      seconds Python's float() gives, but a value float() would reject fails with the shared
+      TimeoutError instead of a bare ValueError, and an inf or nan spelling float() accepts is
+      refused as non-finite.
+    why: >-
+      cancel_batch uses the same float() read as the batch, file and SDK surfaces, so the one
+      grammar lives in one place and names the timeout field. A working setup sends a number or a
+      plain decimal string, which both readers take the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L975
+  - what: >-
+      vertex_credentials is taken as text, so a JSON object for it is refused when the request is
+      decoded. LiteLLM declares str | dict there and hands either form to the Vertex handler.
+    why: >-
+      This slice resolves the credential text that the call, litellm_settings and
+      VERTEXAI_CREDENTIALS carry and passes it to the provider dispatch. Turning an inline
+      service-account object into Google credentials is the genai setup's job in betterlite-core,
+      and the batch cancel path reads the resolved text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L342
