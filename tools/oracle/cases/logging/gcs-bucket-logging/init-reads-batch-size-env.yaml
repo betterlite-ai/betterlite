@@ -1,0 +1,7 @@
+# GCS_BATCH_SIZE sets the batch size read in __init__
+kind: helper
+name: gcs-bucket-logging-init-reads-batch-size-env
+call:
+  b3998: {"environment": {"GCS_BATCH_SIZE": "5"}, "steps": [{"do": "settings"}]}
+env: {"GCS_BATCH_SIZE": "5"}
+compare: {ignore: []}
