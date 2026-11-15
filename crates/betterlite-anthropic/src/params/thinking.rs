@@ -79,41 +79,6 @@ fn cap_tokens(non_default_params: &IndexMap<String, Json>) -> Result<Option<i64>
     }
 }
 
-async fn cap_adaptive<Source, Transport>(
-    request: &ParamsRequest<'_>,
-    non_default_params: &IndexMap<String, Json>,
-    optional_params: &mut IndexMap<String, Json>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<(), ParamsError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
-    let limit = cap_tokens(non_default_params)?;
-    let reasoning = ReasoningRequest {
-        reasoning_effort: Some("medium"),
-        model: request.model,
-        custom_llm_provider: request.provider,
-        llm_provider: request.provider,
-        budgets: request.budgets,
-    };
-    let Some(legacy) = map_reasoning_effort(&reasoning, environment, request.catalogs).await?
-    else {
-        drop_adaptive(request.model, optional_params);
-        return Ok(());
-    };
-    let Json::Object(fields) = &legacy else {
-        drop_adaptive(request.model, optional_params);
-        return Ok(());
-    };
-    if let Some(capped) = cap_thinking_to_max_tokens(fields, limit) {
-        optional_params.insert("thinking".to_owned(), capped);
-    } else {
-        drop_adaptive(request.model, optional_params);
-    }
-    Ok(())
-}
-
 async fn translate<Source, Transport>(
     request: &ParamsRequest<'_>,
     optional_params: &mut IndexMap<String, Json>,
@@ -176,7 +141,26 @@ where
         Some(Json::Text(kind)) if kind == "adaptive"
     );
     if explicit && !adaptive_model(request, environment).await {
-        return cap_adaptive(request, non_default_params, optional_params, environment).await;
+        // a model without adaptive thinking still gets the legacy budget, capped by max_tokens
+        let limit = cap_tokens(non_default_params)?;
+        let reasoning = ReasoningRequest {
+            reasoning_effort: Some("medium"),
+            model: request.model,
+            custom_llm_provider: request.provider,
+            llm_provider: request.provider,
+            budgets: request.budgets,
+        };
+        let capped = map_reasoning_effort(&reasoning, environment, request.catalogs)
+            .await?
+            .as_ref()
+            .and_then(value::as_object)
+            .and_then(|fields| cap_thinking_to_max_tokens(fields, limit));
+        let Some(capped) = capped else {
+            drop_adaptive(request.model, optional_params);
+            return Ok(());
+        };
+        optional_params.insert("thinking".to_owned(), capped);
+        return Ok(());
     }
     optional_params.insert("thinking".to_owned(), value.clone());
     translate(request, optional_params, environment).await

@@ -31,7 +31,12 @@ pub(crate) fn apply(
         "stream" if matches!(value, Json::Bool(true)) => {
             optional_params.insert("stream".to_owned(), Json::Bool(true));
         }
-        "stop" => apply_stop(request, optional_params, value)?,
+        "stop" => {
+            if let Some(sequences) = map_stop_sequences(value, request.drop.global)? {
+                let mapped = sequences.into_iter().map(Json::Text).collect();
+                optional_params.insert("stop_sequences".to_owned(), Json::List(mapped));
+            }
+        }
         "user" => apply_user(optional_params, value)?,
         "context_management" => {
             if let Some(mapped) = map_context_management(value)? {
@@ -49,19 +54,6 @@ pub(crate) fn apply(
         }
         _ => {}
     }
-    Ok(())
-}
-
-fn apply_stop(
-    request: &ParamsRequest<'_>,
-    optional_params: &mut IndexMap<String, Json>,
-    value: &Json,
-) -> Result<(), ParamsError> {
-    let Some(sequences) = map_stop_sequences(value, request.drop.global)? else {
-        return Ok(());
-    };
-    let mapped = sequences.into_iter().map(Json::Text).collect();
-    optional_params.insert("stop_sequences".to_owned(), Json::List(mapped));
     Ok(())
 }
 
@@ -112,7 +104,7 @@ fn apply_speed(
     optional_params: &mut IndexMap<String, Json>,
     value: &Json,
 ) -> Result<(), ParamsError> {
-    if value::as_str(value).is_none() {
+    if !matches!(value, Json::Text(_)) {
         return Ok(());
     }
     optional_params.insert("speed".to_owned(), value.clone());
@@ -122,10 +114,8 @@ fn apply_speed(
         drop: request.drop,
         custom_llm_provider: Some(request.provider),
     };
-    if matches!(
-        maybe_drop_speed_param(&speed, request.catalogs)?,
-        SpeedDecision::Drop
-    ) {
+    let decision = maybe_drop_speed_param(&speed, request.catalogs)?;
+    if matches!(decision, SpeedDecision::Drop) {
         optional_params.shift_remove("speed");
     }
     Ok(())

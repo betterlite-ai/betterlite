@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 
 use crate::params::error::ParamsError;
 
@@ -49,7 +50,7 @@ pub(crate) fn prompt_json(value: &Json) -> PromptJson {
 // B2202's base helpers take serde_json's map; the caller's type names the wire map it hands over
 pub(crate) fn to_wire<T>(params: &IndexMap<String, Json>) -> Result<T, ParamsError>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     let encoded = serde_json::to_value(params).map_err(ParamsError::Encode)?;
     if !encoded.is_object() {

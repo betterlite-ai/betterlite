@@ -5,11 +5,10 @@ use betterlite_anthropic::params::output_config::{
 use betterlite_anthropic::params::{DEFAULT_MAX_TOKENS, ParamsRequest, map_openai_params};
 use betterlite_config::sections::anthropic_capability_catalog::Settings;
 use betterlite_models::decisions::Json;
-use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
-use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
+use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
@@ -22,6 +21,9 @@ mod tests;
 mod warnings;
 
 const PROVIDER: &str = "anthropic";
+
+// The fixture names no huggingface model, so every step resolves through these two
+type Environment<'env> = CapabilityEnvironment<'env, NoDynamicMetadata, fixture::NoHfTransport>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -108,15 +110,11 @@ async fn run_steps(
     Ok(Value::Array(answers))
 }
 
-async fn answer<Source, Transport>(
+async fn answer(
     step: &Step,
     context: &StepContext<'_>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<Value, Box<HelperError>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
+    environment: &mut Environment<'_>,
+) -> Result<Value, Box<HelperError>> {
     match step {
         Step::MapOpenaiParams {
             model,
@@ -148,42 +146,69 @@ where
                 provider: PROVIDER,
                 global_drop: *global_drop_params,
             };
-            answer_output(&request, optional_params, context, environment).await
+            answer_output(
+                &request,
+                optional_params,
+                context.warnings,
+                context.catalogs,
+                environment,
+            )
+            .await
         }
     }
 }
 
-async fn answer_map<Source, Transport>(
+#[derive(Serialize)]
+struct MapAnswer {
+    optional_params: IndexMap<String, Json>,
+    warning: Option<String>,
+}
+
+async fn answer_map(
     request: &ParamsRequest<'_>,
     non_default: &IndexMap<String, Json>,
     optional: &IndexMap<String, Json>,
     context: &StepContext<'_>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<Value, Box<HelperError>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
+    environment: &mut Environment<'_>,
+) -> Result<Value, Box<HelperError>> {
     let mut mapped = optional.clone();
     map_openai_params(request, non_default, &mut mapped, environment)
         .await
         .or_value_error()?;
-    Ok(json!({
-        "optional_params": serde_json::to_value(&mapped).or_value_error()?,
-        "warning": context.warnings.first(),
-    }))
+    let answer = MapAnswer {
+        optional_params: mapped,
+        warning: context.warnings.first(),
+    };
+    serde_json::to_value(answer).or_value_error()
 }
 
-async fn answer_output<Source, Transport>(
+#[derive(Serialize)]
+struct OutputSide {
+    output_config: Option<Json>,
+    output_config_present: bool,
+}
+
+#[derive(Serialize)]
+struct OutputAnswer {
+    data: OutputSide,
+    optional_params: OutputSide,
+    warning: Option<String>,
+}
+
+fn output_side(params: &IndexMap<String, Json>) -> OutputSide {
+    OutputSide {
+        output_config: params.get("output_config").cloned(),
+        output_config_present: params.contains_key("output_config"),
+    }
+}
+
+async fn answer_output(
     request: &OutputConfigRequest<'_>,
     optional_params: &IndexMap<String, Json>,
-    context: &StepContext<'_>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<Value, Box<HelperError>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
+    warnings: &Warnings,
+    catalogs: &CatalogSources<'_>,
+    environment: &mut Environment<'_>,
+) -> Result<Value, Box<HelperError>> {
     // transform_request builds its body from {**optional_params} before this runs
     let mut updated_data = optional_params.clone();
     let mut updated_optional = optional_params.clone();
@@ -192,21 +217,14 @@ where
         &mut updated_data,
         &mut updated_optional,
         environment,
-        context.catalogs,
+        catalogs,
     )
     .await
     .or_value_error()?;
-    Ok(json!({
-        "data": {
-            "output_config": serde_json::to_value(updated_data.get("output_config"))
-                .or_value_error()?,
-            "output_config_present": updated_data.contains_key("output_config"),
-        },
-        "optional_params": {
-            "output_config": serde_json::to_value(updated_optional.get("output_config"))
-                .or_value_error()?,
-            "output_config_present": updated_optional.contains_key("output_config"),
-        },
-        "warning": context.warnings.first(),
-    }))
+    let answer = OutputAnswer {
+        data: output_side(&updated_data),
+        optional_params: output_side(&updated_optional),
+        warning: warnings.first(),
+    };
+    serde_json::to_value(answer).or_value_error()
 }

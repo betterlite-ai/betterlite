@@ -2,7 +2,6 @@ import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Literal, Protocol, TypeAlias, TypedDict, TypeVar
-from unittest.mock import patch
 
 import litellm
 from litellm.exceptions import BadRequestError
@@ -145,5 +144,7 @@ def answer(step: Step) -> Json:
 
 
 def run(input_value: Input) -> list[Json]:
-    with patch.object(litellm, "model_cost", input_value["fixture"]["model_cost"]):
-        return [answer(step) for step in input_value["steps"]]
+    litellm.model_cost = input_value["fixture"]["model_cost"]
+    # the proxy and Router run with this set, and an unknown model otherwise prints a banner to stdout
+    litellm.suppress_debug_info = True
+    return [answer(step) for step in input_value["steps"]]

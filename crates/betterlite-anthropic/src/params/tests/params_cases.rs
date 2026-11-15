@@ -99,6 +99,13 @@ async fn refused(model: &str, requested: &str) -> ParamsError {
     }
 }
 
+// every unsupported parameter is refused with the 400 its error names
+async fn gate_error(model: &str, requested: &str) -> ParamsError {
+    let error = refused(model, requested).await;
+    assert_eq!(error.status_code(), Some(400), "{requested}");
+    error
+}
+
 async fn check_maps(cases: &[MapCase]) {
     for (model, requested, initial, expected) in cases {
         let mapped = try_map(model, requested, initial, NONE)
@@ -137,6 +144,13 @@ async fn output_run(
     )
     .await?;
     Ok((Json::Object(optional), Json::Object(data)))
+}
+
+// an output_config the model can't take is refused with the 400 its error names
+async fn output_error(model: &str, source: &str) -> ParamsError {
+    let error = output_run(model, false, source).await.expect_err(source);
+    assert_eq!(error.status_code(), Some(400), "{source}");
+    error
 }
 
 const MAX_TOKEN_CASES: [MapCase; 13] = [
@@ -415,27 +429,29 @@ async fn invalid_output_effort() {
     keep_supported_efforts().await;
 }
 
+fn invalid_value(error: &ParamsError) -> Option<&str> {
+    match error {
+        ParamsError::InvalidEffort { value } => Some(value.as_str()),
+        _ => None,
+    }
+}
+
 async fn refuse_invalid_efforts() {
     for (model, source, value) in BAD_EFFORTS {
-        let error = output_run(model, false, source).await.expect_err(source);
-        assert!(
-            matches!(&error, ParamsError::InvalidEffort { value: named } if named == value),
-            "{source}: {error:?}"
-        );
-        assert_eq!(error.status_code(), Some(400));
+        let error = output_error(model, source).await;
+        assert_eq!(invalid_value(&error), Some(value), "{source}");
     }
 }
 
 async fn refuse_unsupported_efforts() {
     for (model, source, level) in UNSUPPORTED_EFFORTS {
-        let error = output_run(model, false, source).await.expect_err(source);
+        let error = output_error(model, source).await;
         let expected =
             format!("effort='{level}' is not supported by this model. Got model: {model}");
         assert!(
             matches!(&error, ParamsError::EffortUnsupported { message } if *message == expected),
             "{source}: {error:?}"
         );
-        assert_eq!(error.status_code(), Some(400));
     }
 }
 
@@ -446,7 +462,7 @@ async fn keep_supported_efforts() {
         let kept = output_run("effort-model", false, &source)
             .await
             .expect("a supported effort");
-        assert_eq!(kept, (json(&config), json(&config)), "{level}");
+        assert_eq!(kept, (json(&source), json(&source)), "{level}");
     }
     let format_only = format!(r#"{{"output_config":{FORMAT_ONLY}}}"#);
     let kept = output_run("plain-model", false, &format_only)
@@ -600,7 +616,7 @@ const REWRITTEN: [(&str, &str); 8] = [
 async fn parameter_body_rewrites() {
     check_rewritten_fields().await;
     check_forced_tool_gate().await;
-    check_sampling_gate().await;
+    check_sampling_params().await;
     check_tool_appends().await;
 }
 
@@ -634,12 +650,11 @@ async fn check_forced_tool_gate() {
         r#"{"tool_choice":"required"}"#,
         r#"{"tool_choice":{"type":"function","function":{"name":"a"}}}"#,
     ] {
-        let error = refused("no-forced-tools", forced).await;
+        let error = gate_error("no-forced-tools", forced).await;
         assert!(
             matches!(error, ParamsError::ForcedTool(_)),
             "{forced}: {error:?}"
         );
-        assert_eq!(error.status_code(), Some(400));
     }
     for policy in [PER_CALL, GLOBAL] {
         let (guard, warnings) = capture_warnings();
@@ -661,15 +676,14 @@ async fn check_forced_tool_gate() {
     }
 }
 
-async fn check_sampling_gate() {
+async fn check_sampling_params() {
     // the sampling gate rejects each param alone and drops both under either drop
     for rejected in [r#"{"temperature":0.5}"#, r#"{"top_p":0.9}"#] {
-        let error = refused("no-sampling", rejected).await;
+        let error = gate_error("no-sampling", rejected).await;
         assert!(
             matches!(error, ParamsError::Sampling(_)),
             "{rejected}: {error:?}"
         );
-        assert_eq!(error.status_code(), Some(400));
     }
     for policy in [PER_CALL, GLOBAL] {
         let dropped = map_with("no-sampling", r#"{"temperature":0.5,"top_p":0.9}"#, policy).await;
@@ -712,25 +726,36 @@ async fn check_native_selection() {
     assert!(plain_text.is_empty(), "{plain_text:?}");
 }
 
+fn tool_count(optional: &IndexMap<String, Json>) -> Option<usize> {
+    match optional.get("tools") {
+        Some(Json::List(tools)) => Some(tools.len()),
+        None | Some(_) => None,
+    }
+}
+
 async fn check_fallback_selection() {
     let fallback = map_with("plain-model", &format_request(""), NONE).await;
     let forced = json(r#"{"name":"json_tool_call","type":"tool"}"#);
     assert_eq!(fallback.get("tool_choice"), Some(&forced));
     assert_eq!(fallback.get("json_mode"), Some(&Json::Bool(true)));
-    assert!(matches!(fallback.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
-    let thinking = format_request(r#""reasoning_effort":"low","#);
-    let thinking_mapped = map_with("plain-model", &thinking, NONE).await;
-    assert!(thinking_mapped.get("tool_choice").is_none());
-    assert!(matches!(thinking_mapped.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
+    assert_eq!(tool_count(&fallback), Some(1));
+    check_thinking_fallback().await;
     // response_format first still sees the reasoning_effort in the initial non_default_params
     let ordered = format!(r#"{{"response_format":{FORMAT},"reasoning_effort":"low"}}"#);
     let ordered_mapped = map_with("plain-model", &ordered, NONE).await;
+    assert_eq!(tool_count(&ordered_mapped), Some(1));
+    assert_eq!(ordered_mapped.get("json_mode"), Some(&Json::Bool(true)));
     assert!(
         ordered_mapped.get("tool_choice").is_none(),
         "{ordered_mapped:?}"
     );
-    assert!(matches!(ordered_mapped.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
-    assert_eq!(ordered_mapped.get("json_mode"), Some(&Json::Bool(true)));
+}
+
+async fn check_thinking_fallback() {
+    let thinking = format_request(r#""reasoning_effort":"low","#);
+    let mapped = map_with("plain-model", &thinking, NONE).await;
+    assert_eq!(tool_count(&mapped), Some(1));
+    assert!(mapped.get("tool_choice").is_none(), "{mapped:?}");
 }
 
 async fn check_input_order() {

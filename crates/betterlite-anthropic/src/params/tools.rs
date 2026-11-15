@@ -29,7 +29,7 @@ where
 {
     let mut base = value::to_wire(optional_params)?;
     let encoded = tools
-        .iter()
+        .into_iter()
         .map(serde_json::to_value)
         .collect::<Result<Vec<_>, _>>()
         .map_err(ParamsError::Encode)?;
