@@ -1,0 +1,24 @@
+kind: helper
+name: rate-limit-model-descriptors-rated-model-group
+call:
+  b3038:
+    function: rated_model
+    requested: gpt4
+    groups:
+      gpt4: gpt-4
+    window_size: 60
+calls:
+  - b3038:
+      function: rated_model
+      requested: other
+      groups:
+        gpt4: gpt-4
+      window_size: 60
+  - b3038:
+      function: rated_model
+      requested: null
+      groups:
+        gpt4: gpt-4
+      window_size: 60
+env: {}
+compare: {ignore: []}

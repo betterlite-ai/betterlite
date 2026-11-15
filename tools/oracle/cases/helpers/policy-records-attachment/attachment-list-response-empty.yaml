@@ -1,0 +1,20 @@
+kind: helper
+name: attachment-list-response-empty
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyAttachmentListResponse
+    value: {}
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyAttachmentListResponse
+      value:
+        attachments:
+          - attachment_id: a1
+            policy_name: baseline
+        total_count: 1
+env: {}
+compare: {ignore: []}
