@@ -11,19 +11,10 @@ pub(crate) const ACCESS_KEY: &str = "AKIDEXAMPLE";
 pub(crate) const SECRET_KEY: &str = "secret";
 
 pub(crate) fn credential_environment() -> BTreeMap<String, String> {
-    BTreeMap::from([
-        ("AWS_ACCESS_KEY_ID".to_owned(), ACCESS_KEY.to_owned()),
-        ("AWS_SECRET_ACCESS_KEY".to_owned(), SECRET_KEY.to_owned()),
-        ("AWS_EC2_METADATA_DISABLED".to_owned(), "true".to_owned()),
-        (
-            "AWS_CONFIG_FILE".to_owned(),
-            "/nonexistent/betterlite-b4143-config".to_owned(),
-        ),
-        (
-            "AWS_SHARED_CREDENTIALS_FILE".to_owned(),
-            "/nonexistent/betterlite-b4143-credentials".to_owned(),
-        ),
-    ])
+    let mut environment = environment_without_keys();
+    environment.insert("AWS_ACCESS_KEY_ID".to_owned(), ACCESS_KEY.to_owned());
+    environment.insert("AWS_SECRET_ACCESS_KEY".to_owned(), SECRET_KEY.to_owned());
+    environment
 }
 
 pub(crate) fn environment_without_keys() -> BTreeMap<String, String> {
@@ -109,21 +100,18 @@ impl FakeS3 {
     }
 
     pub(crate) fn urls(&self) -> Vec<String> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|request| request.url.clone())
-            .collect()
+        let mut urls = Vec::new();
+        for request in self.requests() {
+            urls.push(request.url);
+        }
+        urls
     }
 
     pub(crate) fn headers(&self) -> Vec<(String, String)> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .first()
-            .map(|request| request.headers.clone())
-            .unwrap_or_default()
+        match self.requests().first() {
+            Some(request) => request.headers.clone(),
+            None => Vec::new(),
+        }
     }
 }
 

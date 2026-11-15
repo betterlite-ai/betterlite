@@ -44,10 +44,11 @@ fn resolves_a_leading_slash_from_the_bucket_root(
     #[case] include_entry: &str,
     #[case] expected: &str,
 ) {
-    assert_eq!(
-        resolve_include_object_key(config_object_key, include_entry),
-        expected
-    );
+    let from_declaring_key = resolve_include_object_key(config_object_key, include_entry);
+    let from_root = resolve_include_object_key("root.yaml", include_entry);
+    assert_eq!(from_declaring_key, expected);
+    assert_eq!(from_root, expected);
+    assert!(!from_declaring_key.starts_with('/'));
 }
 
 #[test]
