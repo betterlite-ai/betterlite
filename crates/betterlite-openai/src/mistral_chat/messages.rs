@@ -103,7 +103,7 @@ pub fn handle_message_with_file(messages: &mut [ChatMessage]) -> Result<(), Mist
             if let Some(id) = lifted {
                 part.fields
                     .insert(String::from("file_id"), Value::String(id));
-                part.fields.remove("file");
+                part.fields.shift_remove("file");
             }
         }
     }
