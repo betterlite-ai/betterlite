@@ -61,14 +61,9 @@ class EmbeddingConfig(Protocol):
     ) -> dict[str, JsonValue]: ...
 
     def validate_environment(
-        self,
-        _headers: dict[str, str],
-        _model: str,
-        _messages: NoMessages,
-        _optional_params: dict[str, JsonValue],
-        _litellm_params: dict[str, JsonValue],
-        _api_key: str | None,
-        /,
+        self, _headers: dict[str, str], _model: str, _messages: NoMessages,
+        _optional_params: dict[str, JsonValue], _litellm_params: dict[str, JsonValue],
+        _api_key: str | None, /,
     ) -> dict[str, JsonValue]: ...
 
     def get_complete_url(
@@ -208,9 +203,7 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     return rerank_reply(input_value)
 
 
-def embedding_params_and_url(
-    input_value: EmbeddingParamsAndUrlInput,
-) -> dict[str, JsonValue]:
+def embedding_params_and_url(input_value: EmbeddingParamsAndUrlInput) -> dict[str, JsonValue]:
     mapped = EMBEDDING.map_openai_params(
         input_value["non_default_params"],
         input_value["optional_params"],
@@ -259,9 +252,7 @@ def rerank_base(input_value: RerankBaseInput) -> dict[str, JsonValue]:
     return {"base": base}
 
 
-def rerank_url_and_headers(
-    input_value: RerankUrlAndHeadersInput,
-) -> dict[str, JsonValue]:
+def rerank_url_and_headers(input_value: RerankUrlAndHeadersInput) -> dict[str, JsonValue]:
     return {
         "url": RERANK.get_complete_url(
             api_base=input_value["api_base"], model=RERANK_MODEL, optional_params=None
