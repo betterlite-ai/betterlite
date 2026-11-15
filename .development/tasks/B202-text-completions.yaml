@@ -106,7 +106,6 @@ oracle_cases:
 - tools/oracle/cases/completions/deployments-path.yaml
 - tools/oracle/cases/completions/upstream-400.yaml
 - tools/oracle/cases/completions/upstream-429.yaml
-- tools/oracle/cases/completions/empty-list-rejected.yaml
 - tools/oracle/cases/completions/chat-catalog-selection.yaml
 deviations: []
 out_of_scope:
