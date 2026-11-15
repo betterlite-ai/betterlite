@@ -1,0 +1,45 @@
+task: B3688
+deviations:
+  - what: The redaction walks an owned JSON tree with no seen set, so every node is visited; LiteLLM keeps a set of object ids because its deepcopy preserves shared and cyclic references.
+    why: betterlite's Json tree is owned and cannot contain a shared or cyclic node, so the case the seen set guards against cannot be built; the 2,000-level payload in the tests proves the walk is iterative rather than recursive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L732-L740
+  - what: An index row renders start_time as UTC text with the +00:00 offset; LiteLLM prints str(datetime) of the payload's own datetime, which keeps the request's original offset and prints a naive datetime with none.
+    why: betterlite normalizes a parsed start time to one DateTime<Utc> and prints it the way str(datetime) prints a UTC time, so the stored instant and the day bucket are the same and only the rendered offset differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L399
+  - what: A start-time string is read from RFC 3339, then a space or T separated datetime with an offset, then a naive datetime with seconds, then minute precision with T, then a date alone; Python's datetime.fromisoformat also accepts forms such as 20260102, 2026-01-02T03 and a minute-precision timestamp with an offset.
+    why: chrono parses the explicit shapes the spend log and the database write, and Python's full ISO grammar has no counterpart here; a start time none of the accepted shapes matches is skipped the way Python skips an unparseable one, so only payloads carrying an exotic ISO form differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L241
+  - what: A unit count outside the i64 range is skipped; LiteLLM counts any positive Python int and lets the database write carry or reject the value.
+    why: betterlite's unit columns and counters are i64, so a count that cannot be stored is dropped rather than overflowed; a unit count that large cannot be written back to the column either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L263
+  - what: Unit costs and their sums are exact decimals; LiteLLM sums Python floats for the priced share of a unit row.
+    why: Money is a Decimal in betterlite from the request cost to the rollup, so repeated fractional-cent prices add up to their decimal sum instead of carrying a float's rounding error in the last bits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L100-L106
+  - what: A metadata string that is not a JSON object logs a warning before the payload is read as having no guardrail entries; LiteLLM returns an empty list silently when json.loads fails or produces a non-dict.
+    why: The string is parsed once while the payload is deserialized, and a warning is the only signal that the field held something other than the object LiteLLM writes there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L214-L218
+  - what: Retry-safety is a predicate on the sink's own error type rather than a tuple of Python exception classes, so a sink decides which of its errors are the equivalent of httpx.ConnectError.
+    why: betterlite has no httpx, and the DB layer that owns each write knows which of its errors is a connection failure; the retry loop retries every error the predicate marks and drops the rest with a warning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L168
+  - what: One retry loop attempts the metrics rows and the usage-unit rows together, where LiteLLM runs one retry loop per type and waits between their rounds; each row still gets one attempt plus three retries, the same 1, 2 and 4 second waits, and the same rows end up queued.
+    why: Both row types share one sink error type and one requeue set, so a single loop keeps one backoff per round; the only difference is that the two types' writes interleave and a round pauses once instead of each type pausing in turn.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L429-L434
+kept_bugs:
+  - what: Pending rows past 10,000 in one queue are dropped oldest first with a warning, so a database that stays down long enough loses rollups instead of holding them.
+    why: The queue is capped so a long outage cannot grow it without bound, and every flush of a queue above the cap follows the same rule, so the drop is the price of the bound LiteLLM chose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L136-L145
+  - what: An index batch that fails for any reason is logged at debug level and dropped, so a connection error during create_many loses those index rows.
+    why: skip_duplicates covers only a uniqueness conflict, and the surrounding catch treats every other failure as non-fatal to keep the spend-log write path responsive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L424-L427
+  - what: A rollup row whose upsert fails with anything other than a connection error is dropped after one attempt with a warning, without a retry or a requeue.
+    why: A constraint or validation error repeats on every retry, and dropping the row keeps it from blocking the rows behind it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L168-L174
+  - what: One failing row delays the whole flush by the full backoff, up to seven seconds, because the retry loop waits on a fixed schedule rather than on the failing row alone.
+    why: The wait is what gives a dropped connection time to recover, and every flush follows it, so the latency cost of a retry is the price of not hammering a database that is coming back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L191
+  - what: An upsert that reaches the database but returns a connection error is retried and its counters are incremented twice, because both row types are written with increments rather than absolute values.
+    why: The increment is what makes two flushes of the same day add up, and a retry cannot tell a lost response from a lost write, so a duplicate count is accepted rather than overwriting what another flush wrote.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L304-L311
+  - what: The usage-unit rollup keys a row by guardrail_id or guardrail_name without the name-to-id map the daily metrics and index rows use, so an entry carrying only a name lands under its name and not under the id the other two tables recorded.
+    why: The unit rollup and the metrics rollup read the same payloads through different key rules in LiteLLM, and a dashboard that reads both tables depends on each table keeping its own key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L257
