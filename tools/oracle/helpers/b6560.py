@@ -1,11 +1,18 @@
-import asyncio
 import json
 from typing import Literal, TypedDict, TypeVar
-from unittest.mock import patch
 
-from litellm.proxy.guardrails.guardrail_endpoints import get_provider_specific_params
-from litellm.proxy.guardrails.guardrail_registry import guardrail_class_registry
+from litellm.proxy.guardrails.guardrail_endpoints import _get_fields_from_model
+from litellm.types.guardrails import (
+    BedrockGuardrailConfigModel,
+    BedrockGuardrailStreamingParams,
+    LakeraV2GuardrailConfigModel,
+    PresidioPresidioConfigModelUserInterface,
+    ToolPermissionGuardrailConfigModel,
+)
 from litellm.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
+from litellm.types.proxy.guardrails.guardrail_hooks.hide_secrets import (
+    HideSecretsGuardrailConfigModel,
+)
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from pydantic_core import PydanticUndefinedType
 from typing_extensions import override
@@ -72,22 +79,6 @@ class SyntheticGenericFilled(GuardrailConfigModel[BaseModel]):
         return "Synthetic Generic"
 
 
-class SyntheticRegistration:
-    def __init__(self, config_model: type[GuardrailConfigModel[BaseModel]]) -> None:
-        self.config_model = config_model
-
-    def get_config_model(self) -> type[GuardrailConfigModel[BaseModel]]:
-        return self.config_model
-
-
-SYNTHETIC_REGISTRATIONS: dict[str, SyntheticRegistration] = {
-    "synthetic_literal_list": SyntheticRegistration(SyntheticLiteralList),
-    "synthetic_nested": SyntheticRegistration(SyntheticNested),
-    "synthetic_generic_unfilled": SyntheticRegistration(SyntheticGenericUnfilled),
-    "synthetic_generic_filled": SyntheticRegistration(SyntheticGenericFilled),
-}
-
-
 class UndefinedAsNull:
     def __call__(self, _value: PydanticUndefinedType) -> JsonValue:
         return None
@@ -97,18 +88,42 @@ class Input(TypedDict):
     model: str
 
 
-def route_answer() -> dict[str, JsonValue]:
-    with patch.dict(guardrail_class_registry, SYNTHETIC_REGISTRATIONS, clear=True):
-        provider_params: object = asyncio.run(get_provider_specific_params())  # type: ignore[misc, no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1915
-    return ANSWERS.validate_json(json.dumps(provider_params, default=UndefinedAsNull()))
+def as_answer(fields: dict[str, object]) -> JsonValue:
+    return ANSWERS.validate_json(json.dumps(fields, default=UndefinedAsNull()))
+
+
+def synthetic_fields(model_class: type[GuardrailConfigModel[BaseModel]]) -> dict[str, object]:
+    fields = _get_fields_from_model(model_class)
+    fields["ui_friendly_name"] = model_class.ui_friendly_name()
+    return fields
+
+
+def provider_answers() -> dict[str, dict[str, object]]:
+    bedrock_fields: dict[str, object] = {
+        **_get_fields_from_model(BedrockGuardrailConfigModel),
+        **_get_fields_from_model(BedrockGuardrailStreamingParams),
+    }
+    tool_permission_fields = _get_fields_from_model(ToolPermissionGuardrailConfigModel)
+    tool_permission_fields["ui_friendly_name"] = (
+        ToolPermissionGuardrailConfigModel.ui_friendly_name()
+    )
+    hide_secrets_fields = _get_fields_from_model(HideSecretsGuardrailConfigModel)
+    hide_secrets_fields["ui_friendly_name"] = HideSecretsGuardrailConfigModel.ui_friendly_name()
+    return {
+        "bedrock": bedrock_fields,
+        "presidio": _get_fields_from_model(PresidioPresidioConfigModelUserInterface),
+        "lakera_v2": _get_fields_from_model(LakeraV2GuardrailConfigModel),
+        "tool_permission": tool_permission_fields,
+        "hide-secrets": hide_secrets_fields,
+        "synthetic_literal_list": synthetic_fields(SyntheticLiteralList),
+        "synthetic_nested": synthetic_fields(SyntheticNested),
+    }
 
 
 def run(input_value: Input) -> JsonValue:
-    model = input_value["model"]
-    answers = route_answer()
-    if model == "synthetic_generic":
+    if input_value["model"] == "synthetic_generic":
         return {
-            "unfilled": answers["synthetic_generic_unfilled"],
-            "filled": answers["synthetic_generic_filled"],
+            "unfilled": as_answer(synthetic_fields(SyntheticGenericUnfilled)),
+            "filled": as_answer(synthetic_fields(SyntheticGenericFilled)),
         }
-    return answers[model]
+    return as_answer(provider_answers()[input_value["model"]])
