@@ -80,8 +80,7 @@ fn system_message(system: Option<&Json>) -> Result<Option<Message>, TokenCountEr
         role: "system",
         content,
     })?;
-    let message = serde_json::from_value(value)?;
-    Ok(Some(message))
+    Ok(Some(serde_json::from_value(value)?))
 }
 
 // _count_pre_call_check_tokens: chat messages plus the Anthropic system block, counted with the request's tools.
@@ -100,8 +99,7 @@ where
         wire_messages.push(message);
     }
     for message in messages {
-        let value = serde_json::to_value(message)?;
-        wire_messages.push(serde_json::from_value(value)?);
+        wire_messages.push(serde_json::from_value(serde_json::to_value(message)?)?);
     }
     counter.count_messages(&wire_messages, payload.tools).await
 }
@@ -114,9 +112,8 @@ async fn count_input_tokens<C>(
 where
     C: TokenCounter + Sync + ?Sized,
 {
-    let input = payload.input.as_ref().ok_or(TokenCountError::NoInput)?;
     let request = InputRequest {
-        input: Some(input.clone()),
+        input: Some(payload.input.cloned().ok_or(TokenCountError::NoInput)?),
         instructions: payload.instructions.map(str::to_owned),
     };
     let cache = DualLocalCache::new(
