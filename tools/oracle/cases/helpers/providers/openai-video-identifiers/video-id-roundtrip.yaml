@@ -20,6 +20,9 @@ call:
       - op: extract_original_video_id
         encoded: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTEyMw==
         capture_debug: true
+      - op: decode_video_id
+        encoded: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDptO3ZpZGVvX2lkOmE7Yg==
+        capture_debug: true
 env: {}
 compare:
   ignore: []
