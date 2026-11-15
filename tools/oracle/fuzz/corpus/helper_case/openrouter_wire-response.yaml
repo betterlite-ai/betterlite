@@ -1,0 +1,10 @@
+kind: helper
+name: openrouter-wire-response
+call:
+  b6080:
+    op: response
+    cases:
+      - body: '{"id":"c1","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hi"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2,"cost":0.25}}'
+env: {}
+compare:
+  ignore: []
