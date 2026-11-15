@@ -1823,7 +1823,9 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-secret-managers",
  "chrono",
  "jiff",
  "rstest",
@@ -1833,6 +1835,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tracing",
+ "url",
 ]
 
 [[package]]
