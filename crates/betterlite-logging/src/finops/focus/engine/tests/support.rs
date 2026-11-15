@@ -217,6 +217,23 @@ pub(super) fn settings(export_format: &str) -> ExportSettings {
     }
 }
 
+pub(super) fn overrides_with_bucket_name(bucket_name: &str) -> DestinationOverrides {
+    DestinationOverrides {
+        bucket_name: Some(bucket_name.to_owned()),
+        region_name: None,
+        endpoint_url: None,
+        aws_access_key_id: None,
+        aws_secret_access_key: None,
+        aws_session_token: None,
+        api_key: None,
+        integration_token: None,
+        base_url: None,
+        service_account_json: None,
+        api_endpoint: None,
+        connection_id: None,
+    }
+}
+
 pub(super) fn usage_row() -> UsageRow {
     UsageRow {
         date: String::from("2026-03-04"),
@@ -270,12 +287,12 @@ impl Harness {
 pub(super) fn harness(export_format: &str, rows: Vec<UsageRow>, now: DateTime<Utc>) -> Harness {
     let destination = RecordingDestination::default();
     let source = RecordingSource {
+        calls: Arc::new(Mutex::new(Vec::new())),
         rows,
-        ..RecordingSource::default()
     };
     let factory = RecordingFactory {
+        calls: Arc::new(Mutex::new(Vec::new())),
         destination: destination.clone(),
-        ..RecordingFactory::default()
     };
     let engine = FocusExportEngine::new(
         settings(export_format),
@@ -299,8 +316,8 @@ pub(super) fn harness_with_transform(
 ) -> Harness {
     let destination = RecordingDestination::default();
     let source = RecordingSource {
+        calls: Arc::new(Mutex::new(Vec::new())),
         rows,
-        ..RecordingSource::default()
     };
     let engine = FocusExportEngine {
         format: format_for(export_format).expect("the test names a supported format"),

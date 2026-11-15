@@ -6,7 +6,6 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::finops::focus::destinations::factory::error::FactoryError;
-use crate::finops::focus::destinations::factory::resolve::DestinationOverrides;
 use crate::finops::focus::engine::filename;
 use crate::finops::focus::engine::summary::{SummaryError, count_unique, sum_column};
 use crate::finops::focus::engine::{ExportError, ExportSettings, FocusExportEngine, format_for};
@@ -16,22 +15,18 @@ use crate::focus_records::transformer::transform;
 
 use super::support::{
     FailingFactory, FixedClock, PREFIX, RecordingFactory, RecordingSource, data_row,
-    empty_transform, harness, harness_with_transform, number, refusing_transform, settings, text,
-    timestamp, usage_row, window,
+    empty_transform, harness, harness_with_transform, number, overrides_with_bucket_name,
+    refusing_transform, settings, text, timestamp, usage_row, window,
 };
 
 #[test]
 fn init_builds_the_destination_with_the_settings() {
     let factory = RecordingFactory::default();
-    let overrides = DestinationOverrides {
-        bucket_name: Some(String::from("focus-bucket")),
-        ..DestinationOverrides::default()
-    };
     let configuration = ExportSettings {
         provider: String::from("s3"),
         export_format: String::from("csv"),
         prefix: String::from(PREFIX),
-        destination_config: overrides,
+        destination_config: overrides_with_bucket_name("focus-bucket"),
     };
     let clock = FixedClock {
         now: timestamp("2026-03-04T05:06:07Z"),
@@ -326,10 +321,10 @@ async fn serialize_and_upload_delivers_the_serialized_payload() {
     let expected = FocusFormat::Csv
         .encode(&table)
         .expect("the table serializes");
-    let harness = harness("csv", rows, timestamp("2026-03-04T05:06:07Z"));
+    let harness = harness_with_transform("csv", rows, timestamp("2026-03-04T05:06:07Z"), transform);
     harness
         .engine
-        .serialize_and_upload(&table, &window())
+        .export_window(&window(), None)
         .await
         .expect("the payload is delivered");
     let deliveries = harness.deliveries();
@@ -345,11 +340,15 @@ async fn serialize_and_upload_delivers_the_serialized_payload() {
 #[tokio::test]
 async fn serialize_and_upload_uses_the_parquet_extension() {
     let rows = vec![usage_row()];
-    let table = transform(&rows).expect("the usage row normalizes");
-    let harness = harness("parquet", rows, timestamp("2026-03-04T05:06:07Z"));
+    let harness = harness_with_transform(
+        "parquet",
+        rows,
+        timestamp("2026-03-04T05:06:07Z"),
+        transform,
+    );
     harness
         .engine
-        .serialize_and_upload(&table, &window())
+        .export_window(&window(), None)
         .await
         .expect("the payload is delivered");
     let deliveries = harness.deliveries();

@@ -124,7 +124,8 @@ where
             end_time: now,
             frequency: String::from("all"),
         };
-        self.serialize_and_upload(&normalized, &window).await
+        let payload = self.format.encode(&normalized)?;
+        self.upload_payload(&payload, &window).await
     }
 
     pub async fn export_window(
@@ -146,15 +147,7 @@ where
             tracing::debug!("Focus export: normalized data empty for the window");
             return Ok(());
         }
-        self.serialize_and_upload(&normalized, window).await
-    }
-
-    async fn serialize_and_upload(
-        &self,
-        table: &FocusTable,
-        window: &FocusTimeWindow,
-    ) -> Result<(), ExportError<Destination::Error, Source::Error>> {
-        let payload = self.format.encode(table)?;
+        let payload = self.format.encode(&normalized)?;
         self.upload_payload(&payload, window).await
     }
 

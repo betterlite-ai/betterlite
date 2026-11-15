@@ -11,6 +11,7 @@ use http::HeaderMap;
 use secrecy::SecretString;
 
 use crate::finops::focus::destinations::factory::FocusDestinationFactory;
+use crate::finops::focus::destinations::factory::resolve::DestinationOverrides;
 use crate::finops::vantage::sender::{CsvSender, MultipartPost};
 use crate::focus_records::destinations::FocusTimeWindow;
 use crate::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
@@ -48,6 +49,23 @@ pub(super) fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String
 
 pub(super) fn factory(variables: &[(&str, &str)]) -> TestFactory {
     factory_with_gcs_status(variables, 200)
+}
+
+pub(super) fn destination_overrides() -> DestinationOverrides {
+    DestinationOverrides {
+        bucket_name: None,
+        region_name: None,
+        endpoint_url: None,
+        aws_access_key_id: None,
+        aws_secret_access_key: None,
+        aws_session_token: None,
+        api_key: None,
+        integration_token: None,
+        base_url: None,
+        service_account_json: None,
+        api_endpoint: None,
+        connection_id: None,
+    }
 }
 
 pub(super) fn factory_with_gcs_status(variables: &[(&str, &str)], gcs_status: u16) -> TestFactory {

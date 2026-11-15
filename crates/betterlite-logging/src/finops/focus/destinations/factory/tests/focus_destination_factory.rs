@@ -11,8 +11,8 @@ use crate::mavvrik_delivery::validation::ValidationError;
 
 use super::support::{
     ACCESS_KEY, BUCKET, MAVVRIK_CONNECTION, MAVVRIK_ENDPOINT, MAVVRIK_KEY, PREFIX, SECRET_KEY,
-    SERVICE_ACCOUNT, VANTAGE_KEY, VANTAGE_TOKEN, environment, factory, factory_with_gcs_status,
-    time_window,
+    SERVICE_ACCOUNT, VANTAGE_KEY, VANTAGE_TOKEN, destination_overrides, environment, factory,
+    factory_with_gcs_status, time_window,
 };
 
 fn configured_secret(value: &Option<SecretString>) -> Option<&str> {
@@ -109,11 +109,9 @@ fn dispatch_lowercases_the_unsupported_provider() {
 
 #[test]
 fn dispatch_uses_the_configuration_override() {
-    let overrides = DestinationOverrides {
-        bucket_name: Some(String::from("override-bucket")),
-        region_name: Some(String::from("eu-west-1")),
-        ..DestinationOverrides::default()
-    };
+    let mut overrides = destination_overrides();
+    overrides.bucket_name = Some(String::from("override-bucket"));
+    overrides.region_name = Some(String::from("eu-west-1"));
     let subject = factory(&[
         ("FOCUS_S3_BUCKET_NAME", BUCKET),
         ("FOCUS_S3_REGION_NAME", "us-east-1"),
@@ -190,10 +188,8 @@ fn validation_requires_an_s3_bucket_name() {
 #[test]
 fn validation_uses_an_empty_bucket_override_as_given() {
     // docs/compatibility.md: an explicit empty value is used as given, while an empty env var counts as unset
-    let overrides = DestinationOverrides {
-        bucket_name: Some(String::new()),
-        ..DestinationOverrides::default()
-    };
+    let mut overrides = destination_overrides();
+    overrides.bucket_name = Some(String::new());
     let error = factory(&[("FOCUS_S3_BUCKET_NAME", BUCKET)])
         .create("s3", PREFIX, &overrides)
         .err()
@@ -217,10 +213,8 @@ fn validation_requires_a_vantage_api_key() {
 #[test]
 fn validation_rejects_an_empty_vantage_api_key_override() {
     // docs/compatibility.md: an explicit empty value is used as given, and an empty key names no key
-    let overrides = DestinationOverrides {
-        api_key: Some(SecretString::from("")),
-        ..DestinationOverrides::default()
-    };
+    let mut overrides = destination_overrides();
+    overrides.api_key = Some(SecretString::from(""));
     let error = factory(&[
         ("VANTAGE_API_KEY", VANTAGE_KEY),
         ("VANTAGE_INTEGRATION_TOKEN", VANTAGE_TOKEN),
@@ -293,15 +287,13 @@ fn config_prefers_the_s3_overrides_over_the_environment() {
         ("FOCUS_S3_SECRET_KEY", "env-secret-key"),
         ("FOCUS_S3_SESSION_TOKEN", "env-session-token"),
     ]);
-    let overrides = DestinationOverrides {
-        bucket_name: Some(String::from("override-bucket")),
-        region_name: Some(String::from("eu-west-1")),
-        endpoint_url: Some(String::from("https://override.example.test")),
-        aws_access_key_id: Some(SecretString::from("override-access-key")),
-        aws_secret_access_key: Some(SecretString::from("override-secret-key")),
-        aws_session_token: Some(SecretString::from("override-session-token")),
-        ..DestinationOverrides::default()
-    };
+    let mut overrides = destination_overrides();
+    overrides.bucket_name = Some(String::from("override-bucket"));
+    overrides.region_name = Some(String::from("eu-west-1"));
+    overrides.endpoint_url = Some(String::from("https://override.example.test"));
+    overrides.aws_access_key_id = Some(SecretString::from("override-access-key"));
+    overrides.aws_secret_access_key = Some(SecretString::from("override-secret-key"));
+    overrides.aws_session_token = Some(SecretString::from("override-session-token"));
     let settings =
         resolve::s3(&overrides, &variables).expect("the bucket is configured by the override");
     assert_eq!(settings.bucket_name.as_deref(), Some("override-bucket"));
@@ -386,10 +378,8 @@ fn config_uses_an_empty_s3_region_override_as_given() {
         ("FOCUS_S3_BUCKET_NAME", BUCKET),
         ("FOCUS_S3_REGION_NAME", "us-east-1"),
     ]);
-    let overrides = DestinationOverrides {
-        region_name: Some(String::new()),
-        ..DestinationOverrides::default()
-    };
+    let mut overrides = destination_overrides();
+    overrides.region_name = Some(String::new());
     let settings = resolve::s3(&overrides, &variables).expect("the bucket is configured");
     assert_eq!(settings.region_name.as_deref(), Some(""));
 }
@@ -429,12 +419,10 @@ fn config_prefers_the_vantage_overrides() {
         ("VANTAGE_INTEGRATION_TOKEN", VANTAGE_TOKEN),
         ("VANTAGE_BASE_URL", "https://env.example.test"),
     ]);
-    let overrides = DestinationOverrides {
-        api_key: Some(SecretString::from("override-key")),
-        integration_token: Some(SecretString::from("override-token")),
-        base_url: Some(String::from("https://override.example.test")),
-        ..DestinationOverrides::default()
-    };
+    let mut overrides = destination_overrides();
+    overrides.api_key = Some(SecretString::from("override-key"));
+    overrides.integration_token = Some(SecretString::from("override-token"));
+    overrides.base_url = Some(String::from("https://override.example.test"));
     let settings =
         resolve::vantage(&overrides, &variables).expect("the vantage settings are configured");
     assert_eq!(configured_secret(&settings.api_key), Some("override-key"));
@@ -469,11 +457,9 @@ fn config_prefers_the_gcs_override() {
         ("FOCUS_GCS_BUCKET_NAME", BUCKET),
         ("FOCUS_GCS_PATH_SERVICE_ACCOUNT", SERVICE_ACCOUNT),
     ]);
-    let overrides = DestinationOverrides {
-        bucket_name: Some(String::from("override-bucket")),
-        service_account_json: Some(SecretString::from("/secrets/override.json")),
-        ..DestinationOverrides::default()
-    };
+    let mut overrides = destination_overrides();
+    overrides.bucket_name = Some(String::from("override-bucket"));
+    overrides.service_account_json = Some(SecretString::from("/secrets/override.json"));
     let settings = resolve::gcs(&overrides, &variables).expect("the gcs settings are configured");
     assert_eq!(settings.bucket_name.as_deref(), Some("override-bucket"));
     assert_eq!(
@@ -502,12 +488,10 @@ fn config_prefers_the_mavvrik_overrides() {
         ("MAVVRIK_API_ENDPOINT", MAVVRIK_ENDPOINT),
         ("MAVVRIK_CONNECTION_ID", MAVVRIK_CONNECTION),
     ]);
-    let overrides = DestinationOverrides {
-        api_key: Some(SecretString::from("override-key")),
-        api_endpoint: Some(String::from("https://override.example.test")),
-        connection_id: Some(String::from("override-connection")),
-        ..DestinationOverrides::default()
-    };
+    let mut overrides = destination_overrides();
+    overrides.api_key = Some(SecretString::from("override-key"));
+    overrides.api_endpoint = Some(String::from("https://override.example.test"));
+    overrides.connection_id = Some(String::from("override-connection"));
     let settings = resolve::mavvrik(&overrides, &variables);
     assert_eq!(configured_secret(&settings.api_key), Some("override-key"));
     assert_eq!(

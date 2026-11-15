@@ -15,7 +15,7 @@ const S3_ACCESS_KEY_VARIABLE: &str = "FOCUS_S3_ACCESS_KEY";
 const S3_SECRET_KEY_VARIABLE: &str = "FOCUS_S3_SECRET_KEY";
 const S3_SESSION_TOKEN_VARIABLE: &str = "FOCUS_S3_SESSION_TOKEN";
 const VANTAGE_API_KEY_VARIABLE: &str = "VANTAGE_API_KEY";
-const VANTAGE_INTEGRATION_TOKEN_VARIABLE: &str = "VANTAGE_INTEGRATION_TOKEN";
+const VANTAGE_TOKEN_VARIABLE: &str = "VANTAGE_INTEGRATION_TOKEN";
 const VANTAGE_BASE_URL_VARIABLE: &str = "VANTAGE_BASE_URL";
 const GCS_BUCKET_NAME_VARIABLE: &str = "FOCUS_GCS_BUCKET_NAME";
 const GCS_SERVICE_ACCOUNT_VARIABLE: &str = "FOCUS_GCS_PATH_SERVICE_ACCOUNT";
@@ -129,7 +129,7 @@ pub(super) fn vantage(
     );
     let configured_integration_token = secret_or_environment(
         overrides.integration_token.as_ref(),
-        VANTAGE_INTEGRATION_TOKEN_VARIABLE,
+        VANTAGE_TOKEN_VARIABLE,
         environment,
     );
     let api_key = require_secret(configured_api_key, FactoryError::MissingVantageApiKey)?;
