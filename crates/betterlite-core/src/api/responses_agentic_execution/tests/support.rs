@@ -20,7 +20,7 @@ use indexmap::IndexMap;
 use serde_json::value::RawValue;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::task::JoinHandle;
+use tokio::task::JoinSet;
 
 use super::super::anthropic_plan::execute_anthropic_agentic_plan;
 use super::super::dispatch::call_agentic_completion_hooks;
@@ -333,7 +333,7 @@ impl AgenticCallback for RecordingCallback {
 pub(crate) fn callback_list(items: &[&Arc<RecordingCallback>]) -> Vec<Arc<dyn AgenticCallback>> {
     let mut collected: Vec<Arc<dyn AgenticCallback>> = Vec::with_capacity(items.len());
     for item in items.iter().copied() {
-        collected.push(Arc::clone(item) as Arc<dyn AgenticCallback>);
+        collected.push(Arc::clone(item));
     }
     collected
 }
@@ -504,7 +504,7 @@ pub(crate) struct Upstream {
     pub url: String,
     answers: Arc<Mutex<VecDeque<(u16, String)>>>,
     seen: Arc<Mutex<Vec<SeenRequest>>>,
-    _task: JoinHandle<()>,
+    _tasks: JoinSet<()>,
 }
 
 impl Upstream {
@@ -518,12 +518,13 @@ impl Upstream {
         );
         let answers = Arc::new(Mutex::new(VecDeque::new()));
         let seen = Arc::new(Mutex::new(Vec::new()));
-        let task = tokio::spawn(serve(listener, Arc::clone(&answers), Arc::clone(&seen)));
+        let mut tasks = JoinSet::new();
+        tasks.spawn(serve(listener, Arc::clone(&answers), Arc::clone(&seen)));
         Self {
             url,
             answers,
             seen,
-            _task: task,
+            _tasks: tasks,
         }
     }
 
