@@ -1,3 +1,4 @@
+use std::convert::identity;
 use std::error::Error;
 use std::sync::Arc;
 
@@ -15,21 +16,13 @@ use crate::client::http_transport::request::McpHttpRequest;
 use crate::client::http_transport::send::{HttpBody, McpHttpTransport};
 
 use super::error::SdkError;
-
 const MAX_REDIRECTS: usize = 20;
-pub(super) struct RequestTarget {
-    pub(super) method: Method,
-    pub(super) url: Url,
-}
 fn location_target(sent: &Url, status: u16, headers: &HeaderMap) -> Option<Url> {
     if !matches!(status, 301 | 302 | 303 | 307 | 308) {
         return None;
     }
     let raw = headers.get(LOCATION)?.to_str().ok()?;
-    match Url::parse(raw) {
-        Ok(url) => Some(url),
-        Err(_) => sent.join(raw).ok(),
-    }
+    Url::parse(raw).map_or_else(|_| sent.join(raw).ok(), Some)
 }
 fn redirected_method(method: &Method, status: u16) -> Method {
     if status == 303 && *method != Method::HEAD {
@@ -68,24 +61,19 @@ pub(super) fn next_request_within_origin(
     url: &Url,
     status: u16,
     headers: &HeaderMap,
-) -> Option<RequestTarget> {
+) -> Option<(Method, Url)> {
     let target = location_target(url, status, headers)?;
     let next_method = redirected_method(method, status);
     if next_method != *method || brings_userinfo(url, &target) || !within_origin(url, &target) {
         return None;
     }
-    Some(RequestTarget {
-        method: next_method,
-        url: target,
-    })
+    Some((next_method, target))
 }
 fn redirect_location(url: &Url, status: u16, headers: &HeaderMap) -> Option<String> {
     let mut shown = location_target(url, status, headers)?;
     shown.set_query(None);
     shown.set_fragment(None);
-    if shown.set_username("").is_err() {
-        return None;
-    }
+    shown.set_username("").ok()?;
     shown.set_password(None).ok()?;
     Some(shown.to_string())
 }
@@ -100,7 +88,6 @@ pub(super) trait OriginHop {
         &self,
         request: McpHttpRequest,
     ) -> BoxFuture<'_, Result<HttpResponse<Self::Body>, Self::Error>>;
-    fn drained(source: <Self::Body as ResponseBody>::Error) -> Self::Error;
 }
 impl OriginHop for McpHttpTransport {
     type Body = HttpBody;
@@ -110,9 +97,6 @@ impl OriginHop for McpHttpTransport {
         request: McpHttpRequest,
     ) -> BoxFuture<'_, Result<HttpResponse<HttpBody>, McpHttpError>> {
         Box::pin(self.send(request, true))
-    }
-    fn drained(source: McpHttpError) -> McpHttpError {
-        source
     }
 }
 impl OriginHop for McpHttpClient<McpHttpTransport> {
@@ -124,16 +108,14 @@ impl OriginHop for McpHttpClient<McpHttpTransport> {
     ) -> BoxFuture<'_, Result<HttpResponse<ClientBody<HttpBody>>, ClientError<McpHttpError>>> {
         Box::pin(self.send(request, false))
     }
-    fn drained(source: Arc<McpHttpError>) -> ClientError<McpHttpError> {
-        ClientError::Transport(source)
-    }
 }
 async fn follow_redirects<Hop>(
     hop: &Hop,
+    drain: fn(<Hop::Body as ResponseBody>::Error) -> Hop::Error,
     request: McpHttpRequest,
 ) -> Result<HttpResponse<Hop::Body>, Hop::Error>
 where
-    Hop: OriginHop,
+    Hop: OriginHop + Sync,
 {
     let mut method = request.method.clone();
     let mut url = request.url.clone();
@@ -147,18 +129,17 @@ where
             read_timeout: request.read_timeout,
         };
         let mut response = hop.hop(attempt).await?;
-        let followed_target =
-            next_request_within_origin(&method, &url, response.status, &response.headers);
-        let Some(target) = followed_target else {
+        let next = next_request_within_origin(&method, &url, response.status, &response.headers);
+        let Some((next_method, next_url)) = next else {
             return Ok(response);
         };
         if followed == MAX_REDIRECTS {
             return Ok(response);
         }
-        drop(response.body.read_all().await.map_err(Hop::drained)?);
-        response.body.close().await.map_err(Hop::drained)?;
-        method = target.method;
-        url = target.url;
+        drop(response.body.read_all().await.map_err(drain)?);
+        response.body.close().await.map_err(drain)?;
+        method = next_method;
+        url = next_url;
         followed = followed.saturating_add(1);
     }
 }
@@ -166,7 +147,7 @@ pub(super) async fn send_within_origin(
     transport: &McpHttpTransport,
     request: McpHttpRequest,
 ) -> Result<HttpResponse<HttpBody>, SdkError> {
-    follow_redirects(transport, request)
+    follow_redirects(transport, identity, request)
         .await
         .map_err(SdkError::from)
 }
@@ -174,22 +155,15 @@ pub(super) async fn delete_within_origin(
     client: &McpHttpClient<McpHttpTransport>,
     request: McpHttpRequest,
 ) -> Result<u16, ClientError<McpHttpError>> {
-    match follow_redirects(client, request).await {
-        Ok(response) => Ok(response.status),
-        Err(error) => Err(error),
-    }
+    follow_redirects(client, ClientError::Transport, request)
+        .await
+        .map(|response| response.status)
 }
 pub(super) fn status_error(response: HttpResponse<HttpBody>) -> SdkError {
-    let HttpResponse {
-        status,
-        headers,
-        capture,
-        ..
-    } = response;
     SdkError::Http(Arc::new(McpHttpError::Status(Box::new(ResponseHead {
-        status,
-        headers,
-        capture,
+        status: response.status,
+        headers: response.headers,
+        capture: response.capture,
     }))))
 }
 pub(super) fn legacy_failure(url: &Url, response: HttpResponse<HttpBody>) -> SdkError {

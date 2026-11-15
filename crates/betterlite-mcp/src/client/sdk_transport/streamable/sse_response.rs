@@ -1,6 +1,5 @@
-use bytes::Bytes;
-use http::Method;
-use http::header::HeaderValue;
+use futures_util::StreamExt as _;
+use http::HeaderMap;
 use rmcp::RoleClient;
 use rmcp::model::{ErrorCode, JsonRpcMessage, RequestId};
 use rmcp::service::RxJsonRpcMessage;
@@ -10,197 +9,197 @@ use tracing::{debug, warn};
 
 use crate::client::cleanup::http_client::HttpResponse;
 use crate::client::cleanup::recording::ResponseBody as _;
-use crate::client::http_transport::request::McpHttpRequest;
 use crate::client::http_transport::send::HttpBody;
 use crate::client::sdk_transport::error::SdkError;
-use crate::client::sdk_transport::event_stream::EventStream;
+use crate::client::sdk_transport::event_stream::{EventStream, is_sse_response, open_stream};
 use crate::client::sdk_transport::origin::send_within_origin;
 
-use super::post::content_type;
-use super::{CONNECTION_CLOSED, LAST_EVENT_ID, MAX_RECONNECTION_ATTEMPTS, StreamableCore};
+use super::get_stream::get_request;
+use super::post::{push, push_error};
+use super::{MAX_RECONNECTION_ATTEMPTS, Resume, StreamableCore, retry_delay};
+const CONNECTION_CLOSED: ErrorCode = ErrorCode(-32000);
+enum Step {
+    Continue,
+    Complete,
+    Reconnect,
+}
 enum Attempt {
     Complete,
     Ended,
     Retry,
 }
-pub(super) fn event_message(sse: &Sse) -> Option<Result<RxJsonRpcMessage<RoleClient>, SdkError>> {
-    if !matches!(sse.event.as_deref(), None | Some("message")) {
-        warn!("Unknown SSE event: {}", sse.event.as_deref().unwrap_or(""));
-        return None;
+pub(super) fn event_message(
+    sse: &Sse,
+) -> Option<Result<RxJsonRpcMessage<RoleClient>, serde_json::Error>> {
+    match sse.event.as_deref() {
+        None | Some("" | "message") => {}
+        Some(other) => {
+            warn!("Unknown SSE event: {other}");
+            return None;
+        }
     }
     let data = sse.data.as_deref().unwrap_or_default();
     if data.is_empty() {
         return None;
     }
-    Some(serde_json::from_str::<RxJsonRpcMessage<RoleClient>>(data).map_err(SdkError::Json))
+    Some(serde_json::from_str(data))
 }
-pub(super) fn track_event(event_id: &mut Option<String>, retry_ms: &mut Option<u64>, sse: &Sse) {
-    if let Some(id) = sse.id.as_deref() {
-        *event_id = Some(id.to_owned());
+pub(super) fn track_event(resume: &mut Resume, sse: &Sse) {
+    if let Some(id) = sse.id.as_deref()
+        && !id.is_empty()
+    {
+        resume.event_id = Some(id.to_owned());
     }
     if let Some(retry) = sse.retry {
-        *retry_ms = Some(retry);
+        resume.retry_ms = Some(retry);
     }
 }
-impl StreamableCore {
-    pub(super) async fn read_events(&self, body: HttpBody, id: RequestId) -> Result<(), SdkError> {
-        let mut events = EventStream::open(body, self.max_event_size);
-        let mut event_id: Option<String> = None;
-        let mut retry_ms: Option<u64> = None;
-        loop {
-            let Some(event) = events.next().await else {
-                return self.reconnect(event_id, retry_ms, id).await;
-            };
-            match event {
-                Err(error) => {
-                    if !matches!(&error, SdkError::Sse(_) | SdkError::EventTooLarge { .. }) {
-                        return self.reconnect(event_id, retry_ms, id).await;
-                    }
-                    return self
-                        .push_error(CONNECTION_CLOSED, format!("{error}"), id)
-                        .await;
-                }
-                Ok(sse) => {
-                    track_event(&mut event_id, &mut retry_ms, &sse);
-                    match self.handle_event(sse, &id).await {
-                        Ok(true) => return Ok(()),
-                        Ok(false) => {}
-                        Err(SdkError::Json(source)) => {
-                            let message = format!("Failed to parse SSE message: {source}");
-                            return self.push_error(ErrorCode::PARSE_ERROR, message, id).await;
-                        }
-                        Err(other) => return Err(other),
-                    }
-                }
+// Nothing here is a stream that belongs to no request, so a failure answers the request instead
+pub(super) async fn read_events(
+    core: &StreamableCore,
+    body: HttpBody,
+    headers: &HeaderMap,
+    id: RequestId,
+) -> Result<(), SdkError> {
+    let mut events = open_stream(body, core.max_event_size, headers);
+    let mut resume = Resume::default();
+    loop {
+        let Some(step) = core
+            .cancel
+            .run_until_cancelled(next_event(core, &mut events, &mut resume, &id))
+            .await
+        else {
+            return Ok(());
+        };
+        match step? {
+            Step::Continue => {}
+            Step::Complete => return Ok(()),
+            Step::Reconnect => {
+                let Some(resumed) = core
+                    .cancel
+                    .run_until_cancelled(reconnect(core, &mut resume, &id))
+                    .await
+                else {
+                    return Ok(());
+                };
+                return resumed;
             }
         }
     }
-    async fn reconnect(
-        &self,
-        last_event_id: Option<String>,
-        retry: Option<u64>,
-        id: RequestId,
-    ) -> Result<(), SdkError> {
-        let mut retry_ms = retry;
-        let mut attempt = 0_usize;
-        let mut event_id = last_event_id;
-        if event_id.is_none() {
-            return self
-                .push_error(
-                    CONNECTION_CLOSED,
-                    "SSE stream ended without a response".to_owned(),
-                    id,
-                )
-                .await;
+}
+async fn next_event(
+    core: &StreamableCore,
+    events: &mut EventStream,
+    resume: &mut Resume,
+    id: &RequestId,
+) -> Result<Step, SdkError> {
+    match events.next().await {
+        None => Ok(Step::Reconnect),
+        Some(Err(error)) if framing(&error) => {
+            push_error(core, CONNECTION_CLOSED, format!("{error}"), id.clone()).await?;
+            Ok(Step::Complete)
         }
-        loop {
-            if attempt >= MAX_RECONNECTION_ATTEMPTS {
-                return self
-                    .push_error(
-                        CONNECTION_CLOSED,
-                        "SSE stream ended and reconnection attempts were exhausted".to_owned(),
-                        id,
-                    )
-                    .await;
-            }
-            sleep(StreamableCore::retry_delay(retry_ms)).await;
-            match self
-                .reconnect_once(&mut event_id, &mut retry_ms, &id)
-                .await?
-            {
-                Attempt::Complete => return Ok(()),
-                Attempt::Ended => attempt = 0,
-                Attempt::Retry => attempt = attempt.saturating_add(1),
-            }
+        Some(Err(_)) => Ok(Step::Reconnect),
+        Some(Ok(sse)) => {
+            track_event(resume, &sse);
+            handle_event(core, sse, id).await
         }
     }
-    async fn reconnect_once(
-        &self,
-        event_id: &mut Option<String>,
-        retry_ms: &mut Option<u64>,
-        id: &RequestId,
-    ) -> Result<Attempt, SdkError> {
-        let mut headers = self.headers();
-        if let Some(current) = event_id.as_deref()
-            && let Ok(value) = HeaderValue::from_str(current)
-        {
-            headers.insert(LAST_EVENT_ID, value);
+}
+const fn framing(error: &SdkError) -> bool {
+    matches!(
+        error,
+        SdkError::Sse(_) | SdkError::EventTooLarge { .. } | SdkError::ContentType { .. }
+    )
+}
+async fn handle_event(core: &StreamableCore, sse: Sse, id: &RequestId) -> Result<Step, SdkError> {
+    let Some(parsed) = event_message(&sse) else {
+        return Ok(Step::Continue);
+    };
+    let mut message = match parsed {
+        Ok(message) => message,
+        Err(source) => {
+            let message = format!("Failed to parse SSE message: {source}");
+            push_error(core, ErrorCode::PARSE_ERROR, message, id.clone()).await?;
+            return Ok(Step::Complete);
         }
-        let request = McpHttpRequest {
-            method: Method::GET,
-            url: self.url.clone(),
-            headers,
-            body: Bytes::new(),
-            read_timeout: None,
-        };
-        let response = match send_within_origin(&self.http, request).await {
-            Ok(response) => response,
-            Err(error) => {
-                debug!("Reconnection failed: {error}");
-                return Ok(Attempt::Retry);
-            }
-        };
-        let HttpResponse {
-            status,
-            headers,
-            mut body,
-            ..
-        } = response;
-        if !(200..=299).contains(&status) {
-            drop(body.close().await);
+    };
+    let complete = rewrite_id(&mut message, id);
+    push(core, message).await?;
+    if complete {
+        return Ok(Step::Complete);
+    }
+    Ok(Step::Continue)
+}
+fn rewrite_id(message: &mut RxJsonRpcMessage<RoleClient>, id: &RequestId) -> bool {
+    match message {
+        JsonRpcMessage::Response(response) => {
+            response.id = id.clone();
+            true
+        }
+        JsonRpcMessage::Error(error) => {
+            error.id = Some(id.clone());
+            true
+        }
+        JsonRpcMessage::Request(_) | JsonRpcMessage::Notification(_) => false,
+    }
+}
+async fn reconnect(
+    core: &StreamableCore,
+    resume: &mut Resume,
+    id: &RequestId,
+) -> Result<(), SdkError> {
+    if resume.event_id.is_none() {
+        let message = "SSE stream ended without a response".to_owned();
+        return push_error(core, CONNECTION_CLOSED, message, id.clone()).await;
+    }
+    let mut attempt = 0_usize;
+    loop {
+        if attempt >= MAX_RECONNECTION_ATTEMPTS {
+            let message = "SSE stream ended and reconnection attempts were exhausted".to_owned();
+            return push_error(core, CONNECTION_CLOSED, message, id.clone()).await;
+        }
+        sleep(retry_delay(resume.retry_ms)).await;
+        match reconnect_once(core, resume, id).await? {
+            Attempt::Complete => return Ok(()),
+            Attempt::Ended => attempt = 0,
+            Attempt::Retry => attempt = attempt.saturating_add(1),
+        }
+    }
+}
+async fn reconnect_once(
+    core: &StreamableCore,
+    resume: &mut Resume,
+    id: &RequestId,
+) -> Result<Attempt, SdkError> {
+    let mut response = match send_within_origin(&core.http, get_request(core, resume)).await {
+        Ok(response) => response,
+        Err(error) => {
+            debug!("Reconnection failed: {error}");
             return Ok(Attempt::Retry);
         }
-        let is_sse = content_type(&headers).starts_with("text/event-stream");
-        let mut events = EventStream::open(body, self.max_event_size);
-        loop {
-            let Some(event) = events.next().await else {
-                return Ok(Attempt::Ended);
-            };
-            match event {
-                Err(error) => {
-                    let framing =
-                        matches!(&error, SdkError::Sse(_) | SdkError::EventTooLarge { .. });
-                    if !framing || !is_sse {
-                        return Ok(Attempt::Retry);
-                    }
-                    self.push_error(CONNECTION_CLOSED, format!("{error}"), id.clone())
-                        .await?;
-                    return Ok(Attempt::Complete);
-                }
-                Ok(sse) => {
-                    track_event(event_id, retry_ms, &sse);
-                    match self.handle_event(sse, id).await {
-                        Ok(true) => return Ok(Attempt::Complete),
-                        Ok(false) => {}
-                        Err(SdkError::Json(source)) => {
-                            let message = format!("Failed to parse SSE message: {source}");
-                            self.push_error(ErrorCode::PARSE_ERROR, message, id.clone())
-                                .await?;
-                            return Ok(Attempt::Complete);
-                        }
-                        Err(other) => return Err(other),
-                    }
-                }
-            }
-        }
+    };
+    if !(200..=299).contains(&response.status) {
+        drop(response.body.close().await);
+        return Ok(Attempt::Retry);
     }
-    async fn handle_event(&self, sse: Sse, id: &RequestId) -> Result<bool, SdkError> {
-        let Some(parsed) = event_message(&sse) else {
-            return Ok(false);
-        };
-        let mut message = parsed?;
-        let complete = match &mut message {
-            JsonRpcMessage::Response(response) => {
-                response.id = id.clone();
-                true
+    let is_sse = is_sse_response(&response.headers);
+    let HttpResponse { headers, body, .. } = response;
+    let mut events = open_stream(body, core.max_event_size, &headers);
+    loop {
+        let event = match events.next().await {
+            None => return Ok(Attempt::Ended),
+            Some(Err(error)) if framing(&error) && is_sse => {
+                push_error(core, CONNECTION_CLOSED, format!("{error}"), id.clone()).await?;
+                return Ok(Attempt::Complete);
             }
-            JsonRpcMessage::Error(error) => {
-                error.id = Some(id.clone());
-                true
-            }
-            JsonRpcMessage::Request(_) | JsonRpcMessage::Notification(_) => false,
+            Some(Err(_)) => return Ok(Attempt::Retry),
+            Some(Ok(event)) => event,
         };
-        self.push(message).await?;
-        Ok(complete)
+        track_event(resume, &event);
+        match handle_event(core, event, id).await? {
+            Step::Complete => return Ok(Attempt::Complete),
+            Step::Continue | Step::Reconnect => {}
+        }
     }
 }

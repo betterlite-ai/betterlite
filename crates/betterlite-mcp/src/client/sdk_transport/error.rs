@@ -9,15 +9,18 @@ use crate::client::http_transport::error::McpHttpError;
 use crate::client::sessions::stream::{
     MessageHandler, StreamFailure, StreamFailureKind, StreamMessage,
 };
-
 #[derive(Debug, Error)]
 pub enum SdkError {
-    #[error("the MCP HTTP request failed")]
-    Http(#[source] Arc<McpHttpError>),
+    #[error(transparent)]
+    Http(Arc<McpHttpError>),
     #[error("SSE stream failed: {0}")]
     Sse(#[source] sse_stream::Error),
     #[error("SSE stream failed: Server-sent event exceeded the {limit} byte limit.")]
     EventTooLarge { limit: usize },
+    #[error(
+        "SSE stream failed: Expected response with content type 'text/event-stream', got '{got}'."
+    )]
+    ContentType { got: String },
     #[error("the message is not valid JSON-RPC")]
     Json(#[source] serde_json::Error),
     #[error("the SSE endpoint URL is not valid")]
@@ -44,7 +47,6 @@ impl From<McpHttpError> for SdkError {
         Self::Http(Arc::new(source))
     }
 }
-
 // B4744 records the SDK runtime's exception kinds, so the transport trades its variant for that kind
 pub(super) fn report_failure(
     handler: &MessageHandler<SdkError>,

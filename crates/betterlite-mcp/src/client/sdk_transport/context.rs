@@ -1,8 +1,8 @@
 use std::future::Future;
 use std::io;
-use std::pin::Pin;
 use std::sync::Arc;
 
+use futures_util::FutureExt as _;
 use rmcp::RoleClient;
 use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
@@ -15,7 +15,6 @@ use super::error::SdkError;
 use super::legacy_sse::{LegacySse, LegacySseStreams};
 use super::stdio::StdioRw;
 use super::streamable::{StreamableHttp, StreamableStreams};
-
 pub struct StdioContext(pub StdioTransport);
 pub enum SdkTransport {
     Streamable(StreamableHttp),
@@ -39,21 +38,18 @@ fn stdio_exit(failure: ExitFailure<io::Error>) -> ExitFailure<SdkError> {
 impl TransportContext for StdioContext {
     type Streams = StdioRw;
     type Error = SdkError;
-    fn enter(&mut self) -> impl Future<Output = Result<StdioRw, SdkError>> + Send {
-        async move {
-            let streams = self
-                .0
-                .enter()
-                .await
-                .map_err(|error| SdkError::Io(Arc::new(error)))?;
-            Ok(StdioRw::new_client(streams.stdout, streams.stdin))
-        }
+    async fn enter(&mut self) -> Result<StdioRw, SdkError> {
+        let streams = self
+            .0
+            .enter()
+            .await
+            .map_err(|error| SdkError::Io(Arc::new(error)))?;
+        Ok(StdioRw::new_client(streams.stdout, streams.stdin))
     }
-    fn exit(self) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
-        async move { self.0.exit().await.map_err(stdio_exit) }
+    async fn exit(self) -> Result<(), ExitFailure<SdkError>> {
+        self.0.exit().await.map_err(stdio_exit)
     }
 }
-type BoxedResult<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 impl TransportContext for SdkTransport {
     type Streams = SdkStreams;
     type Error = SdkError;
@@ -74,14 +70,17 @@ impl TransportContext for SdkTransport {
 }
 impl Transport<RoleClient> for SdkStreams {
     type Error = SdkError;
-    fn send(&mut self, item: TxJsonRpcMessage<RoleClient>) -> BoxedResult<Result<(), SdkError>> {
+    fn send(
+        &mut self,
+        item: TxJsonRpcMessage<RoleClient>,
+    ) -> impl Future<Output = Result<(), SdkError>> + Send + 'static {
         match self {
-            Self::Streamable(streams) => Box::pin(streams.send(item)),
-            Self::LegacySse(streams) => Box::pin(streams.send(item)),
-            Self::Stdio(streams) => {
-                let sent = streams.send(item);
-                Box::pin(async move { sent.await.map_err(|error| SdkError::Io(Arc::new(error))) })
-            }
+            Self::Streamable(streams) => streams.send(item).boxed(),
+            Self::LegacySse(streams) => streams.send(item).boxed(),
+            Self::Stdio(streams) => streams
+                .send(item)
+                .map(|sent| sent.map_err(|error| SdkError::Io(Arc::new(error))))
+                .boxed(),
         }
     }
     async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleClient>> {
