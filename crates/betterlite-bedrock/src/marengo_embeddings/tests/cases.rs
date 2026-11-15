@@ -557,6 +557,24 @@ const WRAPPED_VIDEO: &str = r#"{
         r#"{"inputType": "image", "mediaSource": {"s3Location": {"uri": "s3://bucket/key.png"}}}"#
     )
 )]
+#[case::marengo_segments_vector_list(
+    r#"{"input": "one", "replies": [{}]}"#,
+    Check::Response(r#"{
+        "data": [],
+        "model": "",
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "prompt_tokens_details": {"query_count": 1, "image_count": null}},
+        "invocation_arn": null
+    }"#)
+)]
+#[case::marengo_segments_vector_list(
+    r#"{"input": "one", "replies": [{"data": [{"embedding": []}, {"embedding": null}]}]}"#,
+    Check::Response(r#"{
+        "data": [{"embedding": [], "index": 0, "object": "embedding"}],
+        "model": "",
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "prompt_tokens_details": {"query_count": 1, "image_count": null}},
+        "invocation_arn": null
+    }"#)
+)]
 fn marengo_embeddings_cases(#[case] scenario: &str, #[case] check: Check) {
     let scenario: Scenario = serde_json::from_str(scenario).unwrap();
     verify(&scenario, &check);
