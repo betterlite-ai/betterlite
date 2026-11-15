@@ -1,7 +1,6 @@
 pub mod events;
 pub mod request;
 pub mod session;
-#[cfg(test)]
 mod support;
 
 use secrecy::ExposeSecret as _;
@@ -112,22 +111,34 @@ impl MuseSampleRate {
 
     #[must_use]
     pub const fn packet_bytes(self) -> u32 {
-        let window = self
-            .bytes_per_second()
-            .checked_mul(PACKET_MS)
-            .unwrap_or(u32::MAX);
-        window.checked_div(MILLIS_PER_SECOND).unwrap_or_default()
+        let window = match self.bytes_per_second().checked_mul(PACKET_MS) {
+            Some(window) => window,
+            None => u32::MAX,
+        };
+        match window.checked_div(MILLIS_PER_SECOND) {
+            Some(packet) => packet,
+            None => 0,
+        }
     }
 
     #[must_use]
     pub const fn max_encoded_append_bytes(self) -> u32 {
-        let backlog = self
-            .bytes_per_second()
-            .checked_mul(AUDIO_BACKLOG_SECONDS)
-            .unwrap_or(u32::MAX);
-        let padded = backlog.checked_add(2).unwrap_or(u32::MAX);
-        let groups = padded.checked_div(3).unwrap_or_default();
-        groups.checked_mul(4).unwrap_or(u32::MAX)
+        let backlog = match self.bytes_per_second().checked_mul(AUDIO_BACKLOG_SECONDS) {
+            Some(backlog) => backlog,
+            None => u32::MAX,
+        };
+        let padded = match backlog.checked_add(2) {
+            Some(padded) => padded,
+            None => u32::MAX,
+        };
+        let groups = match padded.checked_div(3) {
+            Some(groups) => groups,
+            None => 0,
+        };
+        match groups.checked_mul(4) {
+            Some(encoded) => encoded,
+            None => u32::MAX,
+        }
     }
 
     #[must_use]

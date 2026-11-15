@@ -1,9 +1,13 @@
+#![cfg(test)]
+
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
+use std::vec::IntoIter;
 
+use futures_util::future::BoxFuture;
 use tracing::Event;
 use tracing::field::Field;
 use tracing::field::Visit;
@@ -19,7 +23,7 @@ use super::request::Monotonic;
 use super::request::Sleep;
 use crate::api::transcription_protocol::events::EventIdSource;
 
-pub(crate) struct FixedIds(std::vec::IntoIter<String>);
+pub(crate) struct FixedIds(IntoIter<String>);
 
 impl From<&[&str]> for FixedIds {
     fn from(ids: &[&str]) -> Self {
@@ -67,7 +71,7 @@ pub(crate) fn pacing_fakes(ticks: &[f64]) -> PacingFakes {
             .unwrap_or_default()
     });
     let recorded = Arc::clone(&delays);
-    let sleep: Sleep = Arc::new(move |delay| {
+    let sleep: Sleep = Arc::new(move |delay: f64| -> BoxFuture<'static, ()> {
         recorded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

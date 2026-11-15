@@ -1,3 +1,5 @@
+mod tests;
+
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use tracing::warn;
@@ -76,7 +78,7 @@ pub fn build_muse_realtime_url(api_base: Option<&str>) -> Result<String, MusePro
     let Some(api_base) = api_base else {
         return Ok(DEFAULT_MUSE_REALTIME_URL.to_owned());
     };
-    let parsed = Url::parse(api_base.trim()).map_err(|_| MuseProtocolError::InvalidApiBase)?;
+    let parsed = Url::parse(api_base.trim()).map_err(|_error| MuseProtocolError::InvalidApiBase)?;
     let scheme = match parsed.scheme() {
         "https" => "wss",
         other => other,

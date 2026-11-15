@@ -1,7 +1,4 @@
 use std::collections::BTreeSet;
-use std::ops::Add;
-use std::ops::Div;
-use std::ops::Sub;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -9,20 +6,14 @@ use indexmap::map::Entry;
 use serde_json::Number;
 use uuid::Uuid;
 
-use super::super::MILLIS_PER_SECOND;
-use super::super::MuseMode;
-use super::super::MuseProtocolError;
-use super::super::TURN_LIMIT;
+use super::super::{MuseMode, MuseProtocolError, TURN_LIMIT};
 use super::MuseEvent;
 use super::MuseEventTransformer;
 use crate::api::transcription_protocol::JsonObject;
-use crate::api::transcription_protocol::events::EventIdSource;
-use crate::api::transcription_protocol::events::SpeechEventType;
-use crate::api::transcription_protocol::events::completed_event;
-use crate::api::transcription_protocol::events::delta_event;
-use crate::api::transcription_protocol::events::speech_event;
-use crate::api::transcription_protocol::usage::TranscriptionUsage;
-use crate::api::transcription_protocol::usage::duration_usage;
+use crate::api::transcription_protocol::events::{
+    EventIdSource, SpeechEventType, completed_event, delta_event, speech_event,
+};
+use crate::api::transcription_protocol::usage::{TranscriptionUsage, duration_usage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Emitted {
@@ -62,51 +53,71 @@ impl TurnState {
         let mut events = Vec::new();
         let has_content = self.latest_partial.is_some() || self.final_text.is_some();
         if (self.started || has_content) && self.emitted.insert(Emitted::SpeechStarted) {
-            let event_id = ids.next_event_id();
-            events.push(MuseEvent::Speech(speech_event(
-                event_id,
-                SpeechEventType::Started,
-                &self.item_id,
-            )));
+            self.push_speech(&mut events, ids, SpeechEventType::Started);
         }
-        if self.final_text.is_none() {
-            if let Some(partial) = self.latest_partial.as_deref() {
-                let emitted = self.emitted_partial.as_str();
-                let suffix = partial.strip_prefix(emitted).unwrap_or_default();
-                if !suffix.is_empty() {
-                    let event_id = ids.next_event_id();
-                    events.push(MuseEvent::Delta(delta_event(
-                        event_id,
-                        &self.item_id,
-                        suffix,
-                    )));
-                    self.emitted_partial = partial.to_owned();
-                }
-            }
-        }
+        self.drain_partial(&mut events, ids);
         if self.stopped && self.emitted.insert(Emitted::SpeechStopped) {
-            let event_id = ids.next_event_id();
-            events.push(MuseEvent::Speech(speech_event(
-                event_id,
-                SpeechEventType::Stopped,
-                &self.item_id,
-            )));
+            self.push_speech(&mut events, ids, SpeechEventType::Stopped);
         }
-        let completed = self.final_text.is_some()
+        if self.final_text.is_some()
             && self.emitted.contains(&Emitted::SpeechStopped)
-            && self.emitted.insert(Emitted::Completed);
-        if completed {
-            let event_id = ids.next_event_id();
-            let transcript = self.final_text.clone().unwrap_or_default();
-            let usage = take_usage(unbilled);
-            events.push(MuseEvent::Completed(completed_event(
-                event_id,
-                &self.item_id,
-                &transcript,
-                usage,
-            )));
+            && self.emitted.insert(Emitted::Completed)
+        {
+            self.push_completed(&mut events, ids, unbilled);
         }
         events
+    }
+
+    fn drain_partial<Ids>(&mut self, events: &mut Vec<MuseEvent>, ids: &mut Ids)
+    where
+        Ids: EventIdSource + ?Sized,
+    {
+        if self.final_text.is_some() {
+            return;
+        }
+        let Some(partial) = self.latest_partial.as_deref() else {
+            return;
+        };
+        let suffix = partial
+            .strip_prefix(self.emitted_partial.as_str())
+            .unwrap_or_default();
+        if suffix.is_empty() {
+            return;
+        }
+        let event_id = ids.next_event_id();
+        events.push(MuseEvent::Delta(delta_event(
+            event_id,
+            &self.item_id,
+            suffix,
+        )));
+        self.emitted_partial = partial.to_owned();
+    }
+
+    fn push_speech<Ids>(&self, events: &mut Vec<MuseEvent>, ids: &mut Ids, kind: SpeechEventType)
+    where
+        Ids: EventIdSource + ?Sized,
+    {
+        let event_id = ids.next_event_id();
+        events.push(MuseEvent::Speech(speech_event(
+            event_id,
+            kind,
+            &self.item_id,
+        )));
+    }
+
+    fn push_completed<Ids>(&self, events: &mut Vec<MuseEvent>, ids: &mut Ids, unbilled: &mut f64)
+    where
+        Ids: EventIdSource + ?Sized,
+    {
+        let event_id = ids.next_event_id();
+        let transcript = self.final_text.clone().unwrap_or_default();
+        let usage = take_usage(unbilled);
+        events.push(MuseEvent::Completed(completed_event(
+            event_id,
+            &self.item_id,
+            &transcript,
+            usage,
+        )));
     }
 }
 
@@ -250,6 +261,10 @@ fn required_turn_id(frame: &JsonObject, event: &'static str) -> Result<String, M
 
 fn integer_text(number: &Number) -> Option<String> {
     let text = number.to_string();
+    // json keeps the -0 literal, while Python parses it to the integer 0 and prints "0"
+    if text == "-0" {
+        return Some("0".to_owned());
+    }
     let integer = text
         .bytes()
         .enumerate()
@@ -274,30 +289,4 @@ fn transcript_turn_id(
     let turn_id = format!("item_{}", Uuid::new_v4().simple());
     *active = Some(turn_id.clone());
     Ok(turn_id)
-}
-
-pub(super) fn update_audio_progress(
-    last_ms: &mut f64,
-    unbilled: &mut f64,
-    frame: &JsonObject,
-) -> Result<(), MuseProtocolError> {
-    let Some(Json::Number(number)) = frame.get("audioProcessedMs") else {
-        return Err(MuseProtocolError::InvalidAudioProgress);
-    };
-    let Some(processed_ms) = number
-        .as_f64()
-        .filter(|value| value.is_finite() && *value >= 0.0)
-    else {
-        return Err(MuseProtocolError::InvalidAudioProgress);
-    };
-    if processed_ms <= *last_ms {
-        return Ok(());
-    }
-    let elapsed_ms = Sub::sub(processed_ms, *last_ms);
-    *unbilled = Add::add(
-        *unbilled,
-        Div::div(elapsed_ms, f64::from(MILLIS_PER_SECOND)),
-    );
-    *last_ms = processed_ms;
-    Ok(())
 }

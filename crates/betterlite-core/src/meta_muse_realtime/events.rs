@@ -1,13 +1,14 @@
-#[cfg(test)]
 mod tests;
 mod turns;
+
+use std::ops::{Add, Div, Sub};
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
 use self::turns::TurnState;
-use self::turns::update_audio_progress;
+use super::MILLIS_PER_SECOND;
 use super::MuseMode;
 use super::MuseProtocolError;
 use super::PROVIDER_ERROR_MESSAGE;
@@ -73,4 +74,30 @@ impl MuseEventTransformer {
             Some(_) | None => Ok(Vec::new()),
         }
     }
+}
+
+fn update_audio_progress(
+    last_ms: &mut f64,
+    unbilled: &mut f64,
+    frame: &JsonObject,
+) -> Result<(), MuseProtocolError> {
+    let Some(Json::Number(number)) = frame.get("audioProcessedMs") else {
+        return Err(MuseProtocolError::InvalidAudioProgress);
+    };
+    let Some(processed_ms) = number
+        .as_f64()
+        .filter(|value| value.is_finite() && *value >= 0.0)
+    else {
+        return Err(MuseProtocolError::InvalidAudioProgress);
+    };
+    if processed_ms <= *last_ms {
+        return Ok(());
+    }
+    let elapsed_ms = Sub::sub(processed_ms, *last_ms);
+    *unbilled = Add::add(
+        *unbilled,
+        Div::div(elapsed_ms, f64::from(MILLIS_PER_SECOND)),
+    );
+    *last_ms = processed_ms;
+    Ok(())
 }

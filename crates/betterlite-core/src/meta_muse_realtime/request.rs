@@ -1,3 +1,5 @@
+mod tests;
+
 use std::mem::take;
 use std::ops::Add;
 use std::ops::Div;
@@ -146,7 +148,7 @@ where
         };
         let bytes_per_second = config.sample_rate.bytes_per_second();
         let length =
-            u32::try_from(message.len()).map_err(|_| MuseProtocolError::MessageTooLarge)?;
+            u32::try_from(message.len()).map_err(|_error| MuseProtocolError::MessageTooLarge)?;
         let packet_seconds = Div::div(f64::from(length), f64::from(bytes_per_second));
         self.sent_duration = Add::add(self.sent_duration, packet_seconds);
         Ok(())
@@ -167,7 +169,7 @@ where
         let payload = match message {
             RealtimeMessage::Text(text) => text.as_str(),
             RealtimeMessage::Binary(bytes) => {
-                from_utf8(bytes).map_err(|_| MuseProtocolError::FrameNotUtf8)?
+                from_utf8(bytes).map_err(|_error| MuseProtocolError::FrameNotUtf8)?
             }
         };
         let response = self.response_events(payload)?;
