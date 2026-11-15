@@ -36,6 +36,11 @@ fn native_websockets_are_off() {
     assert!(!plain_config().supports_native_websocket());
 }
 
+#[test]
+fn native_file_search_is_supported() {
+    assert!(plain_config().supports_native_file_search());
+}
+
 #[rstest]
 #[case::prefixed("manus/manus-1.6", "manus-1.6")]
 #[case::prefixed_lite("manus/manus-1.6-lite", "manus-1.6-lite")]

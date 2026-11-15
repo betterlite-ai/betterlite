@@ -113,6 +113,10 @@ impl ResponsesProviderConfig for ManusResponsesConfig {
         Provider::Compatible(Compatible)
     }
 
+    fn supports_native_file_search(&self) -> bool {
+        true
+    }
+
     fn supports_native_websocket(&self) -> bool {
         false
     }
