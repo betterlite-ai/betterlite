@@ -1,0 +1,20 @@
+task: B1525
+deviations:
+  - what: A Fal reply whose bytes are not JSON, or whose JSON root is not an object, fails with a typed error that keeps the upstream status and headers.
+    why: LiteLLM wraps only the JSON parse in its error construction and raises an unhandled AttributeError on a non-object root, so the client sees a 500 with the upstream status lost. No working Fal setup returns a non-object image reply, so the fix breaks nobody.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/transformation.py#L126-L137
+  - what: A Fal image reply larger than 16 MiB is refused with a typed error that keeps the upstream status and headers.
+    why: LiteLLM reads the reply without a size limit; bounded-inputs requires one on a body that comes from outside, and a reply that large is not an image result any setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/transformation.py#L127
+  - what: A GPT Image size string part that Python's int() reads past i64, such as a 20-digit dimension, keeps its original string instead of becoming an unbounded integer.
+    why: betterlite's decoded dimensions are i64; Python integers are unbounded. No working image request sends a dimension that large.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/gpt_image_2_transformation.py#L32-L36
+  - what: A GPT Image size part of exactly -9223372036854775808 keeps its original string, where Python's int() reads it and i64 holds it.
+    why: betterlite's shared size parser in betterlite-models parses the magnitude before applying the sign, so the smallest i64 overflows; that parser sits outside this task's scope, and no working image request sends the minimum i64 as a dimension.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/gpt_image_2_transformation.py#L32-L36
+  - what: A Fal image width or height integer past u64 leaves the dimension out, where LiteLLM keeps any positive Python int in provider_specific_fields.
+    why: betterlite's decoded dimensions are u64 in the shared image contract; a dimension past about 1.8e19 is not an image any working setup returns, and omitting it follows the same rule as a float or a negative value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/transformation.py#L49-L50
+  - what: A GPT Image size part written in non-ASCII decimal digits, such as Arabic-Indic, keeps its original string, where Python's int() reads those digits as a number.
+    why: betterlite's size reader accepts ASCII digits only; a working request spells its size in ASCII, and a size part the mapper cannot read stays the string it was.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/gpt_image_2_transformation.py#L32-L36
