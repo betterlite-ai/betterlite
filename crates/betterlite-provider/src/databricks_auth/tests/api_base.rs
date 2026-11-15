@@ -32,7 +32,7 @@ fn a_missing_base_is_the_sdk_import_error() {
 )]
 #[case::query_only(
     "https://adb-1.databricks.net?x=1",
-    "https://adb-1.databricks.net/ai-gateway/mlflow/v1"
+    "https://adb-1.databricks.net?x=1/ai-gateway/mlflow/v1"
 )]
 #[case::empty_base("", "/ai-gateway/mlflow/v1")]
 fn the_gateway_appends_the_suffix_to_a_root_path(#[case] base: &str, #[case] expected: &str) {

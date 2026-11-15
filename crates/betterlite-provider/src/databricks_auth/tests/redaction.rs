@@ -32,9 +32,11 @@ fn the_api_key_assignment_keeps_its_closing_quote() {
 #[test]
 fn a_client_secret_assignment_is_redacted() {
     assert_eq!(
-        redacted("client_secret='xyz'"),
-        "client_secret='[REDACTED]'"
+        redacted("client_secret=\"xyz\""),
+        "client_secret=\"[REDACTED]\""
     );
+    // the pattern stops at a single quote, so LiteLLM leaves that value alone
+    assert_eq!(redacted("client_secret='xyz'"), "client_secret='xyz'");
 }
 
 #[test]

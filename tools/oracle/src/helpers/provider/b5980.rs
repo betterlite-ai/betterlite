@@ -142,7 +142,7 @@ impl EnvInput {
     pub(super) fn build(&self) -> DatabricksEnv {
         DatabricksEnv {
             client_id: self.client_id.clone(),
-            client_secret: self.client_secret.as_ref().map(SecretString::from),
+            client_secret: self.client_secret.as_deref().map(SecretString::from),
             api_base: self.api_base.clone(),
             user_agent_override: self.user_agent_override.clone(),
             version: DEFAULT_VERSION.to_owned(),
