@@ -13,6 +13,7 @@ betterlite-context = { path = "../betterlite-context" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 chrono.workspace = true
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
@@ -23,6 +24,7 @@ serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 thiserror.workspace = true
 tracing.workspace = true
+url = "2.5.8"
 
 [dev-dependencies]
 rstest = "=0.27.0"

@@ -1,0 +1,39 @@
+kind: helper
+name: vertex-partner-openai-seed-branches
+call:
+  vertex_partner_openai:
+    token_alias_overwrite:
+      ai21_model: jamba-1.5-large@001
+      ai21_requested: {max_completion_tokens: 16}
+      ai21_optional_params: {}
+      llama_model: openai/gpt-5
+      llama_requested: {max_completion_tokens: 12, store: true}
+      llama_optional_params: {}
+    self_deployed_exclusions:
+      publisher_model: openai/gpt-oss-120b-maas
+      deployed_model: openai/gpt-5
+      requested: {web_search_options: {}, audio: {voice: alloy}, temperature: 0.4}
+      optional_params: {temperature: 0.9}
+    gpt_oss_singular_tool:
+      model: openai/gpt-oss-120b-maas
+      funded_model: groq/openai/gpt-oss-120b
+      requested: {function_call: none, functions: [], tools: []}
+      optional_params: {}
+    missing_reply_defaults:
+      requested_model: meta/llama-3.1-405b-instruct-maas
+      reply: {id: "", created: 0, model: requested-model, choices: [{index: 0, finish_reason: stop, message: {content: ""}}]}
+      named_reply: {id: reply-2, created: 12, model: upstream-two, choices: [{index: 0, finish_reason: length, message: {content: ok}}]}
+    initial_missing_role:
+      chunks:
+        - {id: chunk-2, created: 8, model: n, choices: [{index: 0, delta: {role: assistant, content: Hey}}]}
+        - {id: chunk-2, created: 8, model: n, choices: [{index: 0, delta: {content: you}}]}
+    initial_terminal_split:
+      chunks:
+        - {id: chunk-3, created: 9, model: o, choices: [{index: 2, delta: {}, finish_reason: length}]}
+        - {id: chunk-3, created: 9, model: o, choices: []}
+    empty_initial_delta:
+      chunks:
+        - {id: chunk-4, created: 10, model: p, choices: [{index: 0, delta: {role: null}}, {index: 1, delta: {content: second}}]}
+        - {id: chunk-4, created: 10, model: p, choices: [{index: 0, delta: {content: more}}]}
+env: {}
+compare: {ignore: []}
