@@ -27,17 +27,11 @@ pub struct Entry {
     pub model_name: String,
     pub model: String,
     pub id: String,
-    #[serde(default)]
     pub base_model: Option<String>,
-    #[serde(default)]
     pub max_input_tokens: Option<u64>,
-    #[serde(default)]
     pub blocked: Option<bool>,
-    #[serde(default)]
     pub supports_web_search: Option<bool>,
-    #[serde(default)]
     pub supported_environments: Option<Vec<String>>,
-    #[serde(default)]
     pub order: Option<i64>,
 }
 
@@ -45,15 +39,15 @@ pub struct Entry {
 #[serde(deny_unknown_fields)]
 pub struct Lookup {
     pub model: String,
+    pub input: Option<Json>,
+    pub instructions: Option<String>,
     #[serde(default)]
     pub specific_deployment: bool,
-    #[serde(default)]
     pub messages: Option<Vec<Json>>,
     #[serde(default)]
     pub tools: Vec<Json>,
     #[serde(default)]
     pub response_format: bool,
-    #[serde(default)]
     pub target_order: Option<i64>,
 }
 
@@ -99,30 +93,30 @@ fn ids(deployments: &[DeploymentSpec]) -> Vec<String> {
     selected
 }
 
-fn request_facts(lookup: &Lookup) -> RequestFacts {
-    RequestFacts {
-        messages: lookup.messages.clone(),
-        system: None,
-        tools: lookup.tools.clone(),
-        response_format: lookup.response_format,
-        target_order: lookup.target_order,
-        input_token_count: None,
-        compaction_pending: false,
-    }
-}
-
 async fn counted_facts(
     input: &Input,
     lookup: &Lookup,
     candidates: &Candidates,
     counter: &ProbeCounter,
 ) -> RequestFacts {
-    let mut facts = request_facts(lookup);
-    if !input.enable_pre_call_checks || facts.messages.is_none() {
+    let mut facts = RequestFacts {
+        messages: lookup.messages.clone(),
+        input: lookup.input.clone(),
+        instructions: lookup.instructions.clone(),
+        system: None,
+        tools: lookup.tools.clone(),
+        response_format: lookup.response_format,
+        target_order: lookup.target_order,
+        input_token_count: None,
+        compaction_pending: false,
+    };
+    if !input.enable_pre_call_checks || (facts.messages.is_none() && facts.input.is_none()) {
         return facts;
     }
     let payload = TokenPayload {
         messages: facts.messages.as_deref(),
+        input: facts.input.as_ref(),
+        instructions: facts.instructions.as_deref(),
         system: None,
         tools: &facts.tools,
     };

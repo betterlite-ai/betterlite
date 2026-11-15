@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Literal, Protocol
+from typing import ClassVar, Literal, Protocol
 
 import litellm
 from litellm.exceptions import (
@@ -10,7 +10,7 @@ from litellm.exceptions import (
 )
 from litellm.router import Router
 from litellm.types.router import RouterRateLimitError
-from pydantic import Field, JsonValue, TypeAdapter
+from pydantic import ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from probes.protocol import Operation, Strict
@@ -36,6 +36,8 @@ class Lookup(Strict):
     model: str
     specific_deployment: bool = False
     messages: list[dict[str, str]] | None = None
+    input: str | list[JsonValue] | None = None
+    instructions: str | None = None
     tools: list[dict[str, JsonValue]] = Field(default_factory=list)
     response_format: bool = False
     target_order: int | None = None
@@ -53,6 +55,7 @@ class Output(Strict):
 
 
 class Returned(Strict):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
     model_info: dict[str, JsonValue]
 
 
@@ -62,6 +65,7 @@ class RouterView(Protocol):
         model: str,
         request_kwargs: dict[str, object],
         messages: list[dict[str, str]] | None = None,
+        responses_input: str | list[JsonValue] | None = None,
         *,
         specific_deployment: bool = False,
     ) -> list[dict[str, JsonValue]] | dict[str, JsonValue]: ...
@@ -94,6 +98,8 @@ def request_kwargs(lookup: Lookup) -> dict[str, object]:
         kwargs["response_format"] = {"type": "json_object"}
     if lookup.tools:
         kwargs["tools"] = lookup.tools
+    if lookup.instructions is not None:
+        kwargs["instructions"] = lookup.instructions
     if lookup.target_order is not None:
         kwargs["_target_order"] = lookup.target_order
     return kwargs
@@ -135,9 +141,10 @@ class StaticEligibility(Operation):
     async def answer(self, router: RouterView, lookup: Lookup) -> Found:
         try:
             deployments = await router.async_get_healthy_deployments(
-                model=lookup.model,
-                request_kwargs=request_kwargs(lookup),
-                messages=lookup.messages,
+                lookup.model,
+                request_kwargs(lookup),
+                lookup.messages,
+                lookup.input,
                 specific_deployment=lookup.specific_deployment,
             )
         except ContextWindowExceededError:
