@@ -1,15 +1,18 @@
-use std::fmt;
-
 use secrecy::{ExposeSecret as _, SecretString};
 
 pub const MASTER_KEY_SETTING: &str = "master_key";
 pub const OVERRIDE_SETTING: &str = "dangerously_permit_weak_or_unset_master_key";
 const PUBLICLY_KNOWN_MASTER_KEY: &str = "sk-1234";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 pub enum UnsafeReason {
+    #[strum(
+        to_string = "no master key is set, so every request would be accepted without authentication."
+    )]
     NotSet,
+    #[strum(to_string = "the master key is empty.")]
     Empty,
+    #[strum(to_string = "the master key is a publicly known default.")]
     PubliclyKnown,
 }
 
@@ -23,16 +26,6 @@ impl UnsafeReason {
         }
     }
 
-    const fn headline(self) -> &'static str {
-        match self {
-            Self::NotSet => {
-                "no master key is set, so every request would be accepted without authentication."
-            }
-            Self::Empty => "the master key is empty.",
-            Self::PubliclyKnown => "the master key is a publicly known default.",
-        }
-    }
-
     pub(crate) const fn unsafe_state(self) -> &'static str {
         match self {
             Self::NotSet => {
@@ -41,12 +34,6 @@ impl UnsafeReason {
             Self::Empty => "an empty master key",
             Self::PubliclyKnown => "a publicly known master key",
         }
-    }
-}
-
-impl fmt::Display for UnsafeReason {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.headline())
     }
 }
 

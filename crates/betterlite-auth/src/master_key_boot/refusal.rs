@@ -51,7 +51,7 @@ fn source_line(refusal: &Refusal) -> String {
 fn fix_steps(refusal: &Refusal) -> String {
     let mut steps = config_steps(&refusal.origin);
     steps.extend(key_steps(refusal));
-    let numbered = (1..)
+    let numbered = (1_usize..)
         .zip(steps.iter())
         .map(|(number, step)| format!("{number}. {step}"))
         .collect::<Vec<_>>()

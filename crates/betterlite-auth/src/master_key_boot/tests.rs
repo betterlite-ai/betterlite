@@ -2,7 +2,7 @@
 
 use std::error::Error as _;
 use std::io::{self, BufWriter, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_db::database_reencryption::PREVIOUS_KEY_VARIABLE;
@@ -192,14 +192,20 @@ struct SharedLog(Arc<Mutex<Vec<u8>>>);
 
 impl SharedLog {
     fn contents(&self) -> Vec<u8> {
-        self.0.lock().unwrap().clone()
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
 impl Write for SharedLog {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -212,7 +218,7 @@ fn strong_key() {
     let verdict = boot_verdict(boot_input(Some("sk-qa-9f2c1e7a44b0d3")));
     assert!(matches!(&verdict, BootVerdict::Safe));
     let mut reporter = Recording::default();
-    assert!(enforce_boot_verdict(&verdict, &mut reporter).is_ok());
+    enforce_boot_verdict(&verdict, &mut reporter).unwrap();
     assert!(reporter.warnings.is_empty());
     assert!(reporter.announcements.is_empty());
 }
@@ -454,7 +460,7 @@ fn development_override_warning(
     };
     assert_eq!(*reason, expected);
     let mut reporter = Recording::default();
-    assert!(enforce_boot_verdict(&verdict, &mut reporter).is_ok());
+    enforce_boot_verdict(&verdict, &mut reporter).unwrap();
     assert!(
         reporter.announcements.is_empty(),
         "an overridden server announces no fix"
@@ -537,47 +543,40 @@ async fn database_with_nothing_encrypted_needs_no_migration() {
     assert!(!text.contains("master_key_rotations"));
 }
 
+#[rstest]
+#[case::salt_key(
+    true,
+    true,
+    "a salt key means the database is not encrypted with the master key"
+)]
+#[case::no_database(
+    false,
+    false,
+    "a server without a database has no ciphertext to migrate"
+)]
+#[case::salt_key_without_database(
+    true,
+    false,
+    "a salt key skips the migration even when no database is configured"
+)]
 #[tokio::test]
-async fn salt_key_or_missing_database_skips_the_migration() {
-    let salted = boot_verdict(with_database(
+async fn salt_key_or_missing_database_skips_the_migration(
+    #[case] salt_key_is_set: bool,
+    #[case] configured: bool,
+    #[case] why: &str,
+) {
+    let verdict = boot_verdict(with_database(
         boot_input(Some("sk-1234")),
         DatabaseState {
-            salt_key_is_set: true,
-            configured: true,
+            salt_key_is_set,
+            configured,
         },
     ));
     let secrets_counter = FixedCounter::new(Some(2));
-    let salted_verdict = with_stored_secrets_counted(salted, &secrets_counter).await;
+    let counted = with_stored_secrets_counted(verdict, &secrets_counter).await;
     assert!(
-        matches!(&salted_verdict, BootVerdict::Refused(refused) if refused.migration.is_none()),
-        "a salt key means the database is not encrypted with the master key"
-    );
-
-    let unconfigured = boot_verdict(with_database(
-        boot_input(Some("sk-1234")),
-        DatabaseState {
-            salt_key_is_set: false,
-            configured: false,
-        },
-    ));
-    let unconfigured_verdict = with_stored_secrets_counted(unconfigured, &secrets_counter).await;
-    assert!(
-        matches!(&unconfigured_verdict, BootVerdict::Refused(refused) if refused.migration.is_none()),
-        "a server without a database has no ciphertext to migrate"
-    );
-
-    let salted_without_database = boot_verdict(with_database(
-        boot_input(Some("sk-1234")),
-        DatabaseState {
-            salt_key_is_set: true,
-            configured: false,
-        },
-    ));
-    let skipped_verdict =
-        with_stored_secrets_counted(salted_without_database, &secrets_counter).await;
-    assert!(
-        matches!(&skipped_verdict, BootVerdict::Refused(refused) if refused.migration.is_none()),
-        "a salt key skips the migration even when no database is configured"
+        matches!(&counted, BootVerdict::Refused(refused) if refused.migration.is_none()),
+        "{why}"
     );
     assert!(
         secrets_counter.asked().is_empty(),
@@ -624,7 +623,8 @@ fn refusal_is_announced_then_raised() {
     assert!(matches!(
         &error,
         BootError::Refused {
-            reason: UnsafeReason::PubliclyKnown
+            reason: UnsafeReason::PubliclyKnown,
+            origin: KeyOrigin::Environment,
         }
     ));
     assert_eq!(

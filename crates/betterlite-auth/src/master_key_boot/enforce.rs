@@ -1,7 +1,7 @@
 use std::io;
 
 use super::refusal::render_refusal;
-use super::verdict::{BootVerdict, OVERRIDE_SETTING, UnsafeReason};
+use super::verdict::{BootVerdict, KeyOrigin, OVERRIDE_SETTING, UnsafeReason};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverrideWarning {
@@ -18,7 +18,10 @@ pub trait BootReporter {
 #[derive(Debug, thiserror::Error)]
 pub enum BootError {
     #[error("betterlite refused to start: {reason}")]
-    Refused { reason: UnsafeReason },
+    Refused {
+        reason: UnsafeReason,
+        origin: KeyOrigin,
+    },
     #[error("betterlite refused to start: {reason} The fix could not be printed.")]
     Announce {
         reason: UnsafeReason,
@@ -53,6 +56,7 @@ pub fn enforce_boot_verdict(
                 })?;
             Err(BootError::Refused {
                 reason: refusal.reason,
+                origin: refusal.origin.clone(),
             })
         }
     }
