@@ -33,7 +33,7 @@ fn token_outcome(result: Result<SecretString, Agent365TokenError>) -> Value {
         Err(Agent365TokenError::NonJsonBody { .. }) => {
             json!({"kind": "token", "error": "malformed", "variant": "non_json_body"})
         }
-        Err(Agent365TokenError::NonObjectBody) => {
+        Err(Agent365TokenError::NonObjectBody { .. }) => {
             json!({"kind": "token", "error": "malformed", "variant": "non_object_body"})
         }
         Err(Agent365TokenError::MissingAccessToken) => {
@@ -122,30 +122,26 @@ async fn run_exchange(
     Ok(outcomes)
 }
 
-fn ttl_seconds(expires_at: SystemTime) -> u64 {
-    expires_at.duration_since(UNIX_EPOCH).map_or(0, |elapsed| {
-        elapsed
-            .saturating_sub(Duration::from_secs(FIXED_NOW_SECONDS))
-            .as_secs()
-    })
+fn ttl_seconds(expires_at: SystemTime) -> Result<u64, Box<HelperError>> {
+    let start = UNIX_EPOCH + Duration::from_secs(FIXED_NOW_SECONDS);
+    let lifetime = expires_at.duration_since(start).or_value_error()?;
+    Ok(lifetime.as_secs())
 }
 
-fn cache_entries(guardrail: &Agent365Guardrail) -> Vec<Value> {
+fn cache_entries(guardrail: &Agent365Guardrail) -> Result<Vec<Value>, Box<HelperError>> {
     let cache = guardrail
         .cache
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    cache
-        .iter()
-        .rev()
-        .map(|(key, entry)| {
-            json!([
-                key,
-                entry.access_token.expose_secret(),
-                ttl_seconds(entry.expires_at)
-            ])
-        })
-        .collect()
+    let mut entries = Vec::with_capacity(cache.len());
+    for (key, entry) in cache.iter().rev() {
+        entries.push(json!([
+            key,
+            entry.access_token.expose_secret(),
+            ttl_seconds(entry.expires_at)?
+        ]));
+    }
+    Ok(entries)
 }
 
 pub(super) fn exchange_result(args: &TokenExchangeArgs) -> HelperResult {
@@ -155,7 +151,7 @@ pub(super) fn exchange_result(args: &TokenExchangeArgs) -> HelperResult {
     Ok(json!({
         "requests": poster.recorded(),
         "steps": outcomes,
-        "cache": cache_entries(&guardrail),
+        "cache": cache_entries(&guardrail)?,
     }))
 }
 
