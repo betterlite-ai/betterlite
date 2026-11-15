@@ -8,7 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 impl<Database, Reads, Clock> DailyActivityRepository<Database, Reads, Clock>
 where
     Database: DailyActivityDatabase,
-    Reads: DailyActivityProxyReads,
+    Reads: DailyActivityProxyReads + Sync,
+    Clock: Sync,
 {
     pub async fn key_metadata(
         &self,

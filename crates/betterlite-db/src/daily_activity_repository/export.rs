@@ -8,13 +8,9 @@ use crate::daily_activity_contracts::{
 };
 use crate::daily_activity_export::build_export_sql;
 use chrono::{DateTime, Utc};
+use std::vec::IntoIter;
 
-impl<Database, Reads, Clock> DailyActivityRepository<Database, Reads, Clock>
-where
-    Database: DailyActivityDatabase,
-    Reads: DailyActivityProxyReads,
-    Clock: Fn() -> DateTime<Utc>,
-{
+impl<Database, Reads, Clock> DailyActivityRepository<Database, Reads, Clock> {
     pub fn export_rows<'repository>(
         &'repository self,
         scope: &'repository DailyActivityScope,
@@ -36,15 +32,15 @@ pub struct ExportRows<'repository, Database, Reads, Clock> {
     scope: &'repository DailyActivityScope,
     export_type: ExportType,
     cursor: Option<ExportCursor>,
-    buffer: std::vec::IntoIter<ExportRow>,
+    buffer: IntoIter<ExportRow>,
     finished: bool,
 }
 
 impl<Database, Reads, Clock> ExportRows<'_, Database, Reads, Clock>
 where
     Database: DailyActivityDatabase,
-    Reads: DailyActivityProxyReads,
-    Clock: Fn() -> DateTime<Utc>,
+    Reads: DailyActivityProxyReads + Sync,
+    Clock: Fn() -> DateTime<Utc> + Sync,
 {
     pub async fn next_row(&mut self) -> Result<Option<ExportRow>> {
         loop {
@@ -55,7 +51,7 @@ where
                 return Ok(None);
             }
             let batch_size = i64::try_from(USAGE_EXPORT_BATCH_SIZE)
-                .map_err(|_| DailyActivityRepositoryError::Pagination)?;
+                .map_err(|_size| DailyActivityRepositoryError::Pagination)?;
             let query = build_export_sql(
                 self.scope,
                 self.export_type,
