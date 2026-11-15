@@ -1737,6 +1737,7 @@ dependencies = [
  "tokio-postgres",
  "tokio-postgres-rustls-improved",
  "tokio-rustls",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
