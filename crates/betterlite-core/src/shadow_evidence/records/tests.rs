@@ -6,8 +6,12 @@ use rust_decimal::Decimal;
 use super::{CallFailure, JudgeVerdict, ShadowResponse};
 
 #[test]
-fn call_failure_starts_without_spend() {
-    let failure = CallFailure::new("empty response".to_owned());
+fn call_failure_keeps_the_error_and_zero_costs() {
+    let failure = CallFailure {
+        error: "empty response".to_owned(),
+        cost: Decimal::ZERO,
+        classifier_cost: Decimal::ZERO,
+    };
     assert_eq!(failure.error, "empty response");
     assert_eq!(failure.cost, Decimal::ZERO);
     assert_eq!(failure.classifier_cost, Decimal::ZERO);

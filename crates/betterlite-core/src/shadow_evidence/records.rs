@@ -9,17 +9,6 @@ pub struct CallFailure {
     pub classifier_cost: Decimal,
 }
 
-impl CallFailure {
-    #[must_use]
-    pub fn new(error: String) -> Self {
-        Self {
-            error,
-            cost: Decimal::ZERO,
-            classifier_cost: Decimal::ZERO,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShadowResponse {
     pub text: String,
