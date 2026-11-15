@@ -1,0 +1,11 @@
+task: B3766
+deviations:
+  - what: The AIDR API call always has a timeout, 10 seconds unless litellm_params.timeout sets one, while LiteLLM passes None through to a client that then has no timeout at all.
+    why: Rule bounded-inputs requires every outbound call to carry a timeout; a hung AIDR endpoint would otherwise hold the request task forever. A working setup sees the same behavior until the provider stalls for more than ten seconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L358-L360
+  - what: The fail-open standard logging record keeps guardrail_response as an object with an "error" key holding the message, where LiteLLM stores the exception's str.
+    why: The Rust port has a typed error enum rather than an exception object; the record's status and timing are identical, and only the payload shape of the logged response differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L450-L464
+  - what: The AIDR response body is read up to 1 MiB; a larger reply, declared or streamed, fails the call with a 500, where LiteLLM reads the whole body.
+    why: Rule bounded-inputs requires every outbound response read to carry a size limit; the guard reply is a short verdict plus the redacted messages, far under one MiB for any working setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L359-L364

@@ -1,0 +1,30 @@
+kind: helper
+name: openai-evals-run-get-cancel-delete
+call:
+  openai_evals:
+    run_get_cancel_delete:
+      probes:
+        - operation: get
+          eval_id: eval/1
+          run_id: run 1
+          api_base: https://fixture.test
+          headers: {X-Kept: a}
+        - operation: delete
+          eval_id: eval-1
+          run_id: run-1
+          api_base: https://fixture.test
+          headers: {X-Kept: b}
+        - operation: cancel
+          eval_id: eval-1
+          run_id: run/1
+          api_base: https://fixture.test
+        - operation: get
+          eval_id: eval-1
+          run_id: '.'
+          api_base: https://fixture.test
+        - operation: cancel
+          eval_id: eval-1
+          run_id: ''
+          api_base: https://fixture.test
+env: {}
+compare: {ignore: []}
