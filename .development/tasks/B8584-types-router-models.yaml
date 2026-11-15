@@ -16,6 +16,11 @@ description: >-
   Tests go in `crates/betterlite-python/tests/test_types_router.py`. Tests whose names contain `names` compare every public name, field, default, required key, Literal value and Enum member with LiteLLM's module; tests whose names contain `behavior` run the validators, constructors and error messages above against LiteLLM's on the same inputs.
 scope:
   paths:
+  - "crates/betterlite-python/python/betterlite/types/utils/search.py"
+  - "crates/betterlite-python/python/betterlite/types/utils/routing.py"
+  - "crates/betterlite-python/python/betterlite/types/utils/pricing.py"
+  - "crates/betterlite-python/python/betterlite/types/utils/__init__.py"
+  - "crates/betterlite-python/python/betterlite/_router_types_*.py"
   - crates/betterlite-python/python/betterlite/_router_types.py
   - crates/betterlite-python/tests/test_types_router.py
   lint_tables: false
