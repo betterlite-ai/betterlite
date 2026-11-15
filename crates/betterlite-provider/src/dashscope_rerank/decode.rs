@@ -44,6 +44,13 @@ pub fn decode_dashscope_rerank_reply(
     for item in items {
         transformed.push(rerank_result(item)?);
     }
+    rerank_reply(fields, transformed)
+}
+
+fn rerank_reply(
+    fields: &IndexMap<String, Json>,
+    results: Vec<RerankResponseResult>,
+) -> Result<RerankResponse, DashscopeError> {
     let total_tokens = total_tokens(fields.get("usage"))?;
     let id = match fields.get("id") {
         Some(Json::Text(text)) if !text.is_empty() => text.clone(),
@@ -65,7 +72,7 @@ pub fn decode_dashscope_rerank_reply(
     };
     Ok(RerankResponse {
         id: Some(id),
-        results: Some(transformed),
+        results: Some(results),
         meta: Some(meta),
         hidden_params: BTreeMap::new(),
     })

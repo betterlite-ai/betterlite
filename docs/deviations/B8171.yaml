@@ -12,3 +12,7 @@ deviations:
   - what: When the rerank body has no usage or no total_tokens, meta.billed_units.total_tokens and meta.tokens.input_tokens are absent from the reply, where LiteLLM writes them as null.
     why: The task text asks for absent fields, and the typed RerankResponse records skip an unset field instead of serializing null.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/rerank/transformation.py#L226-L236
+kept_bugs:
+  - what: map_cohere_rerank_params silently drops rank_fields, max_chunks_per_doc, max_tokens_per_doc and instruction, so the rerank request carries only query, documents, top_n and return_documents.
+    why: LiteLLM drops them on purpose for qwen3-rerank, and a setup that passes them through the Cohere-shaped interface relies on the request succeeding without them instead of failing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/rerank/transformation.py#L129-L139

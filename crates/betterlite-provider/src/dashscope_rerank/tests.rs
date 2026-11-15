@@ -199,8 +199,9 @@ fn maps_only_the_query_and_documents_when_the_optionals_are_unset() {
             instruction: None,
         })
         .unwrap();
-    let kept: Vec<&str> = mapped.keys().map(String::as_str).collect();
-    assert_eq!(kept, vec!["query", "documents"]);
+    let mut kept: Vec<&str> = mapped.keys().map(String::as_str).collect();
+    kept.sort_unstable();
+    assert_eq!(kept, ["documents", "query"]);
 }
 
 #[test]
