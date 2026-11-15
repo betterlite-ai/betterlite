@@ -5,7 +5,7 @@ import httpx
 import litellm
 import litellm.batches.main as batches
 from litellm.types.utils import LiteLLMBatch
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, Field, InstanceOf, JsonValue, TypeAdapter
 
 JSON: Final = TypeAdapter(JsonValue)
 CAPTURED: list[tuple[str, dict[str, JsonValue | httpx.Timeout]]] = []
@@ -48,6 +48,7 @@ class AzureLitellmParams(TypedDict):
     api_base: str | None
     api_version: str | None
     max_retries: int | None
+    timeout: float | str | InstanceOf[httpx.Timeout] | None
     azure_ad_token: str | None
     tenant_id: str | None
     client_id: str | None
@@ -145,7 +146,7 @@ def json_value(value: JsonValue | httpx.Timeout) -> JsonValue:
     match value:
         case httpx.Timeout() as timeout:
             return JSON.validate_python(timeout.as_dict())
-        case _:
+        case str() | int() | float() | bool() | list() | dict() | None:
             return value
 
 
@@ -158,17 +159,14 @@ def request_value(value: JsonValue | httpx.Timeout) -> JsonValue:
     }
 
 
-def azure_params(
-    value: JsonValue | httpx.Timeout,
-    timeout: float | str | Phases | None,
-) -> dict[str, JsonValue]:
+def azure_params(value: JsonValue | httpx.Timeout) -> dict[str, JsonValue]:
     params = AZURE_LITELLM_PARAMS.validate_python(value)
     return {
         "api_key": json_value(params["api_key"]),
         "api_base": json_value(params["api_base"]),
         "api_version": json_value(params["api_version"]),
         "max_retries": json_value(params["max_retries"]),
-        "timeout": raw_timeout(timeout),
+        "timeout": json_value(params["timeout"]),
         "azure_ad_token": json_value(params["azure_ad_token"]),
         "tenant_id": json_value(params["tenant_id"]),
         "client_id": json_value(params["client_id"]),
@@ -179,25 +177,17 @@ def azure_params(
     }
 
 
-def raw_timeout(value: float | str | Phases | None) -> JsonValue:
-    match value:
-        case Phases() as phases:
-            return JSON.validate_python(phases.model_dump())
-        case _:
-            return value
-
-
 def provider_timeout(value: float | str | Phases | None) -> float | str | httpx.Timeout | None:
     match value:
         case Phases() as phases:
             return httpx.Timeout(
                 connect=phases.connect, read=phases.read, write=phases.write, pool=phases.pool
             )
-        case _:
+        case float() | str() | None:
             return value
 
 
-def capture(params: OptionalParams) -> JsonValue:
+def capture() -> JsonValue:
     provider, kwargs = CAPTURED[0]
     common: dict[str, JsonValue] = {
         "provider": provider,
@@ -220,7 +210,7 @@ def capture(params: OptionalParams) -> JsonValue:
             "api_version": json_value(kwargs["api_version"]),
             "timeout": json_value(kwargs["timeout"]),
             "max_retries": json_value(kwargs["max_retries"]),
-            "litellm_params": azure_params(kwargs["litellm_params"], params.timeout),
+            "litellm_params": azure_params(kwargs["litellm_params"]),
         }
     if provider == "vertex_ai":
         return common | {
@@ -312,5 +302,5 @@ def run(input_value: Input) -> JsonValue:
             aretrieve_batch=request.aretrieve_batch,
         )
     except RecordedError:
-        return capture(params)
+        return capture()
     raise NoProviderReached("the pinned LiteLLM retrieve call reached no provider")

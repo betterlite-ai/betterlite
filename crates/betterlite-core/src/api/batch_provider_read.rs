@@ -4,7 +4,6 @@ mod provider;
 mod resolution;
 mod timeout;
 
-#[path = "batch_provider_read/tests.rs"]
 mod tests;
 
 use std::error::Error;
