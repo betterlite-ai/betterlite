@@ -3,7 +3,7 @@ use betterlite_openai::openai_base_config::{Headers, Object};
 use serde_json::from_slice;
 
 use super::error::ReplyError;
-use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, ItemsBoundary, JsonBoundary};
+use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimitError, ApiLimits, JsonBoundary};
 
 pub const BYTE_ORDER_MARK: &[u8] = &[0xEF, 0xBB, 0xBF];
 pub const ID_FIELD: &str = "id";
@@ -36,7 +36,13 @@ pub fn decode_soniox_reply(
     body: &[u8],
     limits: &ApiLimits,
 ) -> Result<SonioxReply, ReplyError> {
-    bounded_json(limits, body.len())?;
+    bounded(
+        limits,
+        ApiBoundariesInput::Json(JsonBoundary {
+            known_bytes: body.len(),
+        }),
+        |observed, limit| ReplyError::TooLarge { observed, limit },
+    )?;
     let text = replaced_text(body);
     let payload = object_payload(body);
     Ok(SonioxReply {
@@ -61,30 +67,19 @@ pub fn identified_resource(reply: &SonioxReply) -> Result<IdentifiedResource, Re
     Ok(IdentifiedResource { id: id.to_owned() })
 }
 
-pub(super) fn bounded_json(limits: &ApiLimits, observed: usize) -> Result<(), ReplyError> {
-    let boundary = ApiBoundariesInput::Json(JsonBoundary {
-        known_bytes: observed,
-    });
-    limits
-        .check(boundary)
-        .map(drop)
-        .map_err(|_| ReplyError::TooLarge {
-            observed,
-            limit: limits.max_json_bytes,
-        })
-}
-
-pub(super) fn bounded_items(limits: &ApiLimits, observed: usize) -> Result<(), ReplyError> {
-    let boundary = ApiBoundariesInput::Items(ItemsBoundary {
-        known_count: observed,
-    });
-    limits
-        .check(boundary)
-        .map(drop)
-        .map_err(|_| ReplyError::TooManyTokens {
-            observed,
-            limit: limits.max_items,
-        })
+pub(super) fn bounded(
+    limits: &ApiLimits,
+    input: ApiBoundariesInput,
+    rejection: fn(usize, usize) -> ReplyError,
+) -> Result<(), ReplyError> {
+    match limits.check(input) {
+        Ok(_) => Ok(()),
+        Err(
+            ApiLimitError::JsonTooLarge { observed, limit }
+            | ApiLimitError::EventTooLarge { observed, limit }
+            | ApiLimitError::TooManyItems { observed, limit },
+        ) => Err(rejection(observed, limit)),
+    }
 }
 
 // httpx decodes the body with replacement characters, and json.loads skips a leading byte order mark
@@ -98,7 +93,7 @@ fn object_payload(body: &[u8]) -> Option<Object> {
         JsonValue::Null
         | JsonValue::Bool(_)
         | JsonValue::Number(_)
-        | JsonValue::Text(_)
+        | JsonValue::String(_)
         | JsonValue::Array(_) => None,
     }
 }

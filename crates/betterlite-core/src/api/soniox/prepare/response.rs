@@ -2,9 +2,9 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object;
 use serde_json::from_value;
 
-use super::decode::{SonioxReply, bounded_items};
+use super::decode::{SonioxReply, bounded};
 use super::error::ReplyError;
-use crate::api::api_boundaries::ApiLimits;
+use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, ItemsBoundary};
 use crate::api::soniox::records::tokens::SonioxToken;
 
 pub const STATUS_FIELD: &str = "status";
@@ -81,7 +81,13 @@ fn tokens_at(object: &Object, limits: &ApiLimits) -> Result<Vec<SonioxToken>, Re
             expected: "a list or null",
         });
     };
-    bounded_items(limits, entries.len())?;
+    bounded(
+        limits,
+        ApiBoundariesInput::Items(ItemsBoundary {
+            known_count: entries.len(),
+        }),
+        |observed, limit| ReplyError::TooManyTokens { observed, limit },
+    )?;
     from_value(value.clone()).map_err(|source| ReplyError::Field {
         field: TOKENS_FIELD,
         source,

@@ -30,23 +30,26 @@ struct Recorder {
     post: Option<SonioxPostCall>,
 }
 
-impl SonioxLogger for Recorder {
-    fn pre_call(&mut self, record: SonioxPreCall) -> Result<(), PrePostError> {
+impl Recorder {
+    fn fail(&self) -> Result<(), PrePostError> {
         if self.failing {
             return Err(PrePostError::CallbackFailed {
                 message: String::from("callback boom"),
             });
         }
+        Ok(())
+    }
+}
+
+impl SonioxLogger for Recorder {
+    fn pre_call(&mut self, record: SonioxPreCall) -> Result<(), PrePostError> {
+        self.fail()?;
         self.pre = Some(record);
         Ok(())
     }
 
     fn post_call(&mut self, record: SonioxPostCall) -> Result<(), PrePostError> {
-        if self.failing {
-            return Err(PrePostError::CallbackFailed {
-                message: String::from("callback boom"),
-            });
-        }
+        self.fail()?;
         self.post = Some(record);
         Ok(())
     }

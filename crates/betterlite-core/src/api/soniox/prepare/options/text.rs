@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive as _;
+use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 
 // float() and int() refuse an integer literal past f64's range with OverflowError
 const I64_CEILING: f64 = 9_223_372_036_854_775_808.0;

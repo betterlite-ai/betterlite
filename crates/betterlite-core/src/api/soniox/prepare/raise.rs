@@ -52,19 +52,15 @@ fn counts_as_message(value: &JsonValue) -> bool {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,
         JsonValue::Number(number) => number.as_f64().is_some_and(|number| number != 0.0_f64),
-        JsonValue::Text(text) => !text.is_empty(),
+        JsonValue::String(text) => !text.is_empty(),
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Object(fields) => !fields.is_empty(),
     }
 }
 
 fn message_text(value: &JsonValue) -> String {
-    match value {
-        JsonValue::Text(text) => text.clone(),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => value.to_string(),
+    if let JsonValue::String(text) = value {
+        return text.clone();
     }
+    value.to_string()
 }

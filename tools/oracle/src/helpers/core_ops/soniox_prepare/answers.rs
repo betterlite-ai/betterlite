@@ -25,13 +25,20 @@ struct Recorder {
     recorded: Option<Value>,
 }
 
-impl SonioxLogger for Recorder {
-    fn pre_call(&mut self, record: SonioxPreCall) -> Result<(), PrePostError> {
+impl Recorder {
+    fn refuse_when_failing(&self) -> Result<(), PrePostError> {
         if self.failing {
             return Err(PrePostError::CallbackFailed {
                 message: String::from("callback boom"),
             });
         }
+        Ok(())
+    }
+}
+
+impl SonioxLogger for Recorder {
+    fn pre_call(&mut self, record: SonioxPreCall) -> Result<(), PrePostError> {
+        self.refuse_when_failing()?;
         let SonioxPreCall { url, body } = record;
         self.recorded = Some(json!({
             "input": Value::Null,
@@ -45,11 +52,7 @@ impl SonioxLogger for Recorder {
     }
 
     fn post_call(&mut self, record: SonioxPostCall) -> Result<(), PrePostError> {
-        if self.failing {
-            return Err(PrePostError::CallbackFailed {
-                message: String::from("callback boom"),
-            });
-        }
+        self.refuse_when_failing()?;
         let SonioxPostCall {
             input,
             original_response,
