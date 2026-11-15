@@ -291,13 +291,16 @@ fn vertex_call_prefers_a_request_credentials_path_over_the_environment() {
 
 #[test]
 fn vertex_call_carries_a_service_account_credentials_object() {
+    let mut settings = configured();
+    settings.vertexai_credentials = Some(SecretString::from("env-credentials"));
+    let service = service_with(settings);
     let source = r#"{
         "provider": "vertex_ai",
         "vertex_credentials": {"type": "service_account", "project_id": "example"}
     }"#;
     let request: BatchProviderListInput =
         serde_json::from_str(source).expect("the object form parses");
-    let call = vertex_call(prepared(&request));
+    let call = vertex_call(service.run(&request).expect("the service prepares"));
     let Some(VertexCredentials::ServiceAccount(account)) = call.vertex_credentials else {
         panic!("expected a service-account credentials object");
     };
