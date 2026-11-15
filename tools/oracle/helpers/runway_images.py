@@ -223,7 +223,7 @@ def request_value(request: httpx.Request) -> JsonValue:
 def logging_object(model: str) -> Logging:
     return Logging(
         model=model,
-        messages=[],
+        messages=None,
         stream=False,
         call_type="image_generation",
         start_time=datetime.now(UTC),
