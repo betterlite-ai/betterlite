@@ -1,0 +1,29 @@
+kind: helper
+name: reload-db-wins-over-config
+call:
+  b4776:
+    config: null
+    reload: true
+    reload_config:
+      - agent_name: alpha
+        agent_card_params:
+          name: from-config
+      - agent_name: beta
+        agent_card_params:
+          name: beta
+    db_agents:
+      - agent_id: db-alpha
+        agent_name: alpha
+        agent_card_params: {}
+    public_groups: null
+    ids_for: []
+    stable_ids: []
+    by_id:
+      - db-alpha
+    by_name:
+      - alpha
+      - beta
+    deregister: []
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,23 @@
+task: B8990
+deviations:
+  - what: >-
+      A Vigil answer that is valid JSON but not an object (a string, number, boolean, array or
+      null) is treated as a backend failure. With fail_open the request passes unscanned; with
+      fail_closed it is blocked with "Vigil Guard backend unreachable; request blocked by
+      fail_closed policy." LiteLLM reads such an answer as an unrecognized decision instead, so
+      with fail_closed it blocks with "Vigil Guard returned an unrecognized decision."
+    why: >-
+      B3799's shared analyzer deserializes the body into the typed Analysis and reports a serde
+      error for any non-object JSON, so the runtime cannot tell it apart from a body that is not
+      JSON at all, which both sides treat as a backend failure. Both fail_closed answers are an
+      unwrapped GuardrailRaised with status 400 and blocked_content false, and both fail_open
+      answers allow the request, so only the block message differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L192-L210
+  - what: >-
+      get_config_model returns an opaque GuardrailValue holding the model class name and the UI
+      name instead of LiteLLM's GuardrailConfigModel subclass.
+    why: >-
+      Rust has no class to return; this follows the convention B5471 records for the shared
+      GuardrailContract, so the pair of keys is the same one every ported guardrail answers with.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L138-L144
+kept_bugs: []
