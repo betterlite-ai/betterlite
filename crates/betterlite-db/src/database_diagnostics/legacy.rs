@@ -11,10 +11,16 @@ pub struct TextFormatter<'dependencies> {
 
 impl TextFormatter<'_> {
     pub fn format(&self, record: &LogRecord<'_>) -> Result<String, FormatError> {
-        let message = format_message(record.message, &record.arguments)
-            .map_err(|source| FormatError::Message { source })?;
-        let timestamp = legacy_time(self.local_time, record.created)
-            .map_err(|source| FormatError::Timestamp { source })?;
+        let message = format_message(record.message, &record.arguments).map_err(|source| {
+            FormatError::Message {
+                source: Box::new(source),
+            }
+        })?;
+        let timestamp = legacy_time(self.local_time, record.created).map_err(|source| {
+            FormatError::Timestamp {
+                source: Box::new(source),
+            }
+        })?;
         let level = record.level.to_uppercase();
         let mut rendered = format!("{timestamp} - litellm_proxy_extras - {level} - {message}");
         if let Some(exception) = record.exception {

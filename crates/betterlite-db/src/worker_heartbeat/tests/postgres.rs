@@ -21,6 +21,13 @@ const SCHEMA: &str = concat!(
     r#"ALTER TABLE "LiteLLM_ProxyWorkerHeartbeat" ALTER COLUMN "last_heartbeat_at" TYPE timestamptz USING "last_heartbeat_at" AT TIME ZONE 'UTC';"#,
 );
 
+// rows just inside and just outside the 180s liveness and 3600s retention cutoffs
+const BOUNDARY_ROWS: &str = r#"INSERT INTO "LiteLLM_ProxyWorkerHeartbeat" (worker_id, hostname, last_heartbeat_at) VALUES
+    ('boundary-live', 'host', NOW() - interval '179.999999 seconds'),
+    ('boundary-dead', 'host', NOW() - interval '180 seconds'),
+    ('prune-kept', 'host', NOW() - interval '3600 seconds'),
+    ('prune-dead', 'host', NOW() - interval '3600.000001 seconds')"#;
+
 #[derive(clap::Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -198,16 +205,7 @@ async fn postgres_live_and_prune_strict_boundaries() {
     let (fixture, pool) = database().await;
     let mut client = pool.get().await.unwrap();
     let transaction = client.transaction().await.unwrap();
-    transaction
-        .batch_execute(
-            r#"INSERT INTO "LiteLLM_ProxyWorkerHeartbeat" (worker_id, hostname, last_heartbeat_at) VALUES
-                   ('boundary-live', 'host', NOW() - interval '179.999999 seconds'),
-                   ('boundary-dead', 'host', NOW() - interval '180 seconds'),
-                   ('prune-kept', 'host', NOW() - interval '3600 seconds'),
-                   ('prune-dead', 'host', NOW() - interval '3600.000001 seconds')"#,
-        )
-        .await
-        .unwrap();
+    transaction.batch_execute(BOUNDARY_ROWS).await.unwrap();
     let database = PostgresDatabase {
         client: transaction,
     };

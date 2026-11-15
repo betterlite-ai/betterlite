@@ -125,8 +125,8 @@ fn value_for<'arguments>(
     index: &mut usize,
 ) -> Result<&'arguments LogValue, MessageError> {
     match (source, name) {
-        (MessageSource::Named(values), Some(name)) => {
-            values.get(name).ok_or(MessageError::MissingArgument)
+        (MessageSource::Named(values), Some(key)) => {
+            values.get(key).ok_or(MessageError::MissingArgument)
         }
         (MessageSource::Positional(values), None) => {
             let position = *index;

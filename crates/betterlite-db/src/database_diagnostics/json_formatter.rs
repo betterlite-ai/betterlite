@@ -21,10 +21,16 @@ struct JsonRecord<'record> {
 
 impl JsonFormatter<'_> {
     pub fn format(&self, record: &LogRecord<'_>) -> Result<String, FormatError> {
-        let message = format_message(record.message, &record.arguments)
-            .map_err(|source| FormatError::Message { source })?;
-        let timestamp = format_time(self.local_time, record.created, None)
-            .map_err(|source| FormatError::Timestamp { source })?;
+        let message = format_message(record.message, &record.arguments).map_err(|source| {
+            FormatError::Message {
+                source: Box::new(source),
+            }
+        })?;
+        let timestamp = format_time(self.local_time, record.created, None).map_err(|source| {
+            FormatError::Timestamp {
+                source: Box::new(source),
+            }
+        })?;
         let level = record.level.to_uppercase();
         let stacktrace = record
             .exception
@@ -35,6 +41,8 @@ impl JsonFormatter<'_> {
             timestamp: &timestamp,
             stacktrace: stacktrace.as_deref(),
         })
-        .map_err(|source| FormatError::Serialize { source })
+        .map_err(|source| FormatError::Serialize {
+            source: Box::new(source),
+        })
     }
 }

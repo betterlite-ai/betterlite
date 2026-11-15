@@ -31,8 +31,5 @@ pub fn is_json_enabled(
 
 #[must_use]
 pub fn environment_enabled(environment: Option<&str>) -> bool {
-    match environment {
-        Some(text) => text.to_lowercase() == "true",
-        None => false,
-    }
+    environment.is_some_and(|text| text.to_lowercase() == "true")
 }

@@ -17,22 +17,23 @@ pub struct ExceptionRecord<'record> {
     pub message: &'record str,
 }
 
+// every source is boxed so no variant is over 3x the next, the limit variant_size_differences enforces
 #[derive(Debug, thiserror::Error)]
 pub enum FormatError {
     #[error("the log message could not be formatted")]
     Message {
         #[source]
-        source: MessageError,
+        source: Box<MessageError>,
     },
     #[error("the log record's timestamp could not be formatted")]
     Timestamp {
         #[source]
-        source: TimestampError,
+        source: Box<TimestampError>,
     },
     #[error("the log record could not be serialized as JSON")]
     Serialize {
         #[source]
-        source: serde_json::Error,
+        source: Box<serde_json::Error>,
     },
 }
 
