@@ -1,0 +1,23 @@
+kind: helper
+name: compatible-api-selection-unsupported-endpoint
+call:
+  compatible_api_selection:
+    calls:
+      - family: responses
+        provider: groq
+        model: llama-3.1-70b
+        identity: name
+        native: null
+        providers:
+          - provider: groq
+            supported_endpoints: ["/v1/responses/v2"]
+      - family: messages
+        provider: scx-ai
+        model: scx-model
+        identity: name
+        native: null
+        providers:
+          - provider: scx-ai
+            supported_endpoints: ["/v1/chat/completions"]
+env: {}
+compare: {ignore: []}

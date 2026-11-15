@@ -1,0 +1,48 @@
+task: B1344
+deviations:
+  - what: >-
+      A Gemini (Google AI Studio) text or multimodal embedding call sends its API key in the x-goog-api-key
+      header. LiteLLM passes the x-goog-api-key mapping that _get_token_and_url returns into set_headers, which
+      formats it into an Authorization value, so the key travels as a malformed bearer value and the provider
+      rejects the call.
+    why: >-
+      A working LiteLLM setup cannot rely on the malformed Authorization value, and that value puts the
+      credential into a header LiteLLM logs. Sending the key in the header the Gemini API reads keeps every
+      other declared header unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L1138-L1147
+  - what: >-
+      A prediction answer larger than 32 MiB is refused with a 500 before it is parsed, where LiteLLM parses
+      whatever the handler received.
+    why: >-
+      Every provider body carries a size bound so one oversized answer cannot exhaust a worker, and no working
+      setup sends an embedding answer anywhere near that size.
+    link: ""
+  - what: >-
+      A call's timeout reaches the shared transport as a total deadline, and the connect phase is bounded by the
+      pooled client's connect timeout. LiteLLM builds an httpx client per call, so its connect phase is the
+      call's own timeout, either as the shared total or as httpx.Timeout(timeout, connect=timeout). When no
+      timeout reaches the handler, LiteLLM's per-call default bounds both phases while betterlite takes the
+      deadline from the pooled client's read timeout.
+    why: >-
+      The transport's per-request input carries one deadline and takes connect from the client's limits, so a
+      handler cannot set a per-request connect phase. The value LiteLLM uses is still carried on ClientTimeout
+      and pinned by the plan tests, and the pooled client's limits belong to the task that installs it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/embedding_handler.py#L77
+  - what: >-
+      A sync multimodal call that runs past its timeout raises the shared Vertex timeout error, whose message is
+      "Timeout error occurred." and whose status is 408. LiteLLM's sync branch posts through HTTPHandler.post,
+      which wraps httpx's timeout in litellm.Timeout with the message "Connection timed out after {timeout}
+      seconds."; the status is 408 either way.
+    why: >-
+      This crate raises one typed error for every embedding handler, and the async multimodal and text handlers
+      already declare that message. The status a client acts on stays 408, and the sync wrapper's message text
+      is not part of any declared answer shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
+kept_bugs:
+  - what: >-
+      The text embedding facade's async handoff ignores a client the caller supplied, so the call posts through
+      a client the handler builds; the multimodal handoff forwards the same client.
+    why: >-
+      A setup that passes an AsyncHTTPHandler to an async text embedding call works today with the handler's own
+      client, and the task keeps that behavior so the request behaves identically after switching.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/embedding_handler.py#L49-L66

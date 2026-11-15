@@ -1,0 +1,29 @@
+kind: helper
+name: azure-sdk-client-mode
+call:
+  azure_endpoints:
+    azure_sdk_client_mode:
+      - api_version: v1
+        api_base: https://example.openai.azure.com
+        api_key: fixture-api-key
+      - api_version: latest
+        api_base: https://example.openai.azure.com
+        api_key: fixture-api-key
+        is_async: true
+      - api_version: preview
+        api_base: https://example.openai.azure.com
+        params: {azure_ad_token: fixture-ad-token}
+      - environment: {AZURE_API_VERSION: v1}
+      - api_version: V1
+      - api_version: "2024-02-01"
+        api_key: fixture-api-key
+      - api_version: v1
+        api_base: https://example.openai.azure.com
+        api_key: fixture-api-key
+        cached: open_ai
+      - api_version: v1
+        api_base: https://example.openai.azure.com
+        api_key: fixture-api-key
+        cached: other
+env: {}
+compare: {ignore: []}
