@@ -1,0 +1,6 @@
+task: B663
+deviations: []
+kept_bugs:
+  - what: An assistant contentStart whose response id is an empty string gets a new response id without a response.created event, because LiteLLM sends response.created only when the id is None but fills any falsey id.
+    why: A caller that passes an empty id relies on the output items still carrying a fresh response id, and the pitfall in the task names this order as the behavior to keep.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L747-L753
