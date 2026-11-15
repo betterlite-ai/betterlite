@@ -7,7 +7,7 @@ use betterlite_openai::dashscope_embedding::{
     map_openai_params,
 };
 use betterlite_provider::api::rerank_contracts::{
-    BaseRerankConfig, EnvironmentRequest, Headers, MapCohereRerankParams, Params,
+    BaseRerankConfig as _, EnvironmentRequest, Headers, MapCohereRerankParams, Params,
 };
 use betterlite_provider::dashscope_common::resolve_rerank_base;
 use betterlite_provider::dashscope_rerank::decode::decode_dashscope_rerank_reply;
@@ -17,7 +17,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 const DASHSCOPE_EXCEPTION: &str = "DashScopeException";
 
