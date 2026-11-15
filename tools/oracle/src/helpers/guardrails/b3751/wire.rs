@@ -85,7 +85,7 @@ pub(super) fn normalize(payload: AktoPayload) -> crate::helpers::HelperResult {
 
 // the request payload is always double encoded; the empty response payload is a bare object
 fn decode_encoded(encoded: &str, response_payload: bool) -> Result<Value, Box<HelperError>> {
-    let outer = serde_json::from_str(encoded)
+    let outer: Value = serde_json::from_str(encoded)
         .map_err(|error| failure("JsonError", None, error.to_string()))?;
     if response_payload && outer.get("body").is_none() {
         return Ok(outer);
@@ -97,7 +97,8 @@ fn decode_encoded(encoded: &str, response_payload: bool) -> Result<Value, Box<He
             "the encoded payload has no inner body".to_owned(),
         ));
     };
-    serde_json::from_str(inner).map_err(|error| failure("JsonError", None, error.to_string()))
+    serde_json::from_str(inner.as_str())
+        .map_err(|error| failure("JsonError", None, error.to_string()))
 }
 
 pub(super) fn send(input: &Input, fire_and_forget: bool) -> crate::helpers::HelperResult {

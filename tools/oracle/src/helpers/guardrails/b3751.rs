@@ -171,7 +171,7 @@ const fn fallback_name(fallback: UnreachableFallback) -> &'static str {
 }
 
 fn parse_response(input: &Input) -> crate::helpers::HelperResult {
-    let guardrail = settings(input)?;
+    let _guardrail = settings(input)?;
     let status = StatusCode::from_u16(input.answer.status.unwrap_or(200))
         .map_err(|error| failure("AktoError", None, error.to_string()))?;
     let body = answer_body(input)?.into_bytes();
