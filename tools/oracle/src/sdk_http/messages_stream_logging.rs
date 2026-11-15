@@ -21,6 +21,7 @@ pub mod call;
 mod doubles;
 pub mod outcome;
 mod recording;
+pub mod relay;
 mod session;
 
 struct Http<'call> {

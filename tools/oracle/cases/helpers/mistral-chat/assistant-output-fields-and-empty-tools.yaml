@@ -1,0 +1,42 @@
+kind: helper
+name: mistral-chat-assistant-output-fields-and-empty-tools
+call:
+  mistral_chat:
+    steps:
+      - kind: request
+        model: mistral-small-latest
+        messages:
+          - role: assistant
+            content: ""
+            tool_calls: []
+          - role: assistant
+            content: ""
+            reasoning_content: why
+            thinking_blocks:
+              - type: thinking
+                thinking: gone
+          - role: assistant
+            content: ""
+            cache_control:
+              type: ephemeral
+          - role: user
+            content: ""
+          - role: tool
+            content: ""
+            tool_call_id: call-1
+          - role: assistant
+            content: hi
+            name: dropped
+          - role: tool
+            content: ok
+            name: lookup
+            tool_call_id: call-2
+            tool_calls:
+              - id: call-3
+                type: custom
+                function:
+                  name: f
+                  arguments: "{}"
+                extra: dropped
+env: {}
+compare: {ignore: []}
