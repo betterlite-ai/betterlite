@@ -1,0 +1,17 @@
+kind: helper
+name: marengo-image-input
+call:
+  bedrock_other_marengo_embeddings:
+    marengo_image_input:
+      model: twelvelabs.marengo-embed-2-7-v1:0
+      input: ["data:image/png;base64,AAA,BBB"]
+      inference:
+        input_type: image
+        inputText: override
+        mediaSource: override
+        bucketOwner: override
+      replies:
+        - embedding: [0.5, 0.25]
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,10 @@
+kind: helper
+name: openai-evals-seed-run-list-pagination
+call:
+  openai_evals:
+    run_list_pagination:
+      probes:
+        - eval_id: eval-1
+          list_runs_params: {order: desc}
+env: {}
+compare: {ignore: []}
