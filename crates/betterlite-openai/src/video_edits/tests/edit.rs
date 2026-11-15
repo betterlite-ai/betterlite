@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read as _, Seek as _, SeekFrom};
 
 use crate::openai_video_identifiers::ids::encode_video_id_with_provider;
 use crate::openai_video_identifiers::multipart::MediaBody;
@@ -62,17 +62,31 @@ fn supplied_file() {
         "the file wins over the id"
     );
     assert_eq!(edit.body.get("prompt"), Some(&json(r#""override""#)));
-    let Some(video) = edit.files else {
+    let Some(mut video) = edit.files else {
         panic!("a supplied file selects the multipart form");
     };
     assert_eq!(video.field, "video");
     assert_eq!(video.filename, "clip.webm");
     assert_eq!(video.content_type, "video/webm");
+    let MediaBody::Stream { name, reader } = &mut video.body else {
+        panic!("the video part keeps the supplied stream");
+    };
+    assert_eq!(*name, Some("clip.webm"));
+    reader.seek(SeekFrom::Start(0)).expect("a seekable stream");
+    let mut sent = Vec::new();
+    reader.read_to_end(&mut sent).expect("a readable stream");
+    assert_eq!(sent, b"not video");
 
     let mut request = text_request("make it blue", &encoded);
     request.video_file = Some(MediaBody::Bytes(b""));
     let empty_file = transform_video_edit_request(request);
-    assert!(empty_file.files.is_some(), "an empty file is still a file");
+    let Some(empty_part) = empty_file.files else {
+        panic!("an empty file is still a file");
+    };
+    let MediaBody::Bytes(sent) = empty_part.body else {
+        panic!("the video part keeps the supplied bytes");
+    };
+    assert_eq!(sent, b"");
     assert_eq!(keys(&empty_file.body), ["prompt"]);
 }
 

@@ -1,8 +1,8 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read as _, Seek as _, SeekFrom};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use betterlite_openai::openai_video_identifiers::multipart::MediaBody;
+use betterlite_openai::openai_video_identifiers::multipart::{MediaBody, MultipartPart};
 use betterlite_openai::video_edits::character::{CharacterPart, CreateCharacter};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -46,22 +46,6 @@ impl Prepared {
                 name: self.name.as_deref(),
                 reader,
             },
-        }
-    }
-
-    pub(super) fn body(&self) -> Value {
-        match &self.kind {
-            PreparedKind::Bytes(bytes) => Value::String(STANDARD.encode(bytes)),
-            PreparedKind::Text(text) => Value::String(text.clone()),
-            PreparedKind::Reader(_) => Value::Null,
-        }
-    }
-
-    pub(super) fn body_kind(&self) -> &'static str {
-        match &self.kind {
-            PreparedKind::Bytes(_) => "bytes",
-            PreparedKind::Text(_) => "text",
-            PreparedKind::Reader(_) => "stream",
         }
     }
 }
@@ -108,23 +92,40 @@ pub(super) fn part_value(
     })
 }
 
-pub(super) fn character_files(created: &CreateCharacter<'_>, kind: &str, body: &Value) -> Value {
-    Value::Array(
-        created
-            .files
-            .iter()
-            .map(|part| match part {
-                CharacterPart::Text { field, text } => {
-                    part_value(*field, None, None, "text", &json!(*text))
-                }
-                CharacterPart::File(file) => part_value(
-                    file.field.as_str(),
-                    Some(file.filename.as_str()),
-                    Some(file.content_type),
-                    kind,
-                    body,
-                ),
-            })
-            .collect(),
-    )
+pub(super) fn file_part_value(file: &mut MultipartPart<'_>) -> Result<Value, Box<HelperError>> {
+    let (kind, body) = match &mut file.body {
+        MediaBody::Bytes(bytes) => ("bytes", STANDARD.encode(bytes)),
+        MediaBody::Text(text) => ("text", (*text).to_owned()),
+        MediaBody::Stream { reader, .. } => {
+            let mut data = Vec::new();
+            reader
+                .seek(SeekFrom::Start(0))
+                .and_then(|_| reader.read_to_end(&mut data))
+                .map_err(|error| helper_error("IoError", error.to_string()))?;
+            ("stream", STANDARD.encode(data))
+        }
+    };
+    Ok(part_value(
+        file.field.as_str(),
+        Some(file.filename.as_str()),
+        Some(file.content_type),
+        kind,
+        &Value::String(body),
+    ))
+}
+
+pub(super) fn character_files(
+    created: &mut CreateCharacter<'_>,
+) -> Result<Value, Box<HelperError>> {
+    let parts = created
+        .files
+        .iter_mut()
+        .map(|part| match part {
+            CharacterPart::Text { field, text } => {
+                Ok(part_value(field, None, None, "text", &json!(text)))
+            }
+            CharacterPart::File(file) => file_part_value(file),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::Array(parts))
 }

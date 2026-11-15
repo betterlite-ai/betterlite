@@ -8,11 +8,11 @@ from .fixtures import (
     CONFIG,
     EditBody,
     Fixture,
-    FixtureState,
     Logger,
     Parts,
+    content_of,
+    file_part_value,
     part_value,
-    state_of,
 )
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -89,19 +89,22 @@ CALLS: TypeAdapter[list[Call]] = TypeAdapter(list[Call])
 
 
 def create_character_value(call: CreateCharacterRequest) -> JsonValue:
-    state = state_of(call["fixture"])
     url, files = CONFIG.transform_video_create_character_request(
-        call["name"], state.content, call["api_base"], GenericLiteLLMParams(), {}
+        call["name"],
+        content_of(call["fixture"]),
+        call["api_base"],
+        GenericLiteLLMParams(),
+        {},
     )
     match files:
         case [
             (name_field, (None, name)),
-            (video_field, (filename, _, content_type)),
+            (video_field, (filename, content, content_type)),
             *_,
         ]:
             parts: list[JsonValue] = [
                 part_value(name_field, None, None, "text", TEXT.validate_python(name)),
-                part_value(video_field, filename, content_type, state.kind, state.body),
+                file_part_value(video_field, filename, content_type, content),
             ]
             rendered: dict[str, JsonValue] = {"url": url, "files": parts}
             return rendered
@@ -117,20 +120,17 @@ def get_character_value(call: GetCharacterRequest) -> JsonValue:
     return rendered
 
 
-def edit_files(files: Parts, state: FixtureState | None) -> JsonValue:
+def edit_files(files: Parts) -> JsonValue:
     match files:
-        case [(field, (filename, _, content_type)), *_]:
-            if state is None:
-                raise ValueError("a multipart edit needs a fixture")
-            return [part_value(field, filename, content_type, state.kind, state.body)]
+        case [(field, (filename, content, content_type)), *_]:
+            return [file_part_value(field, filename, content_type, content)]
         case _:
             raise ValueError("the transform returned no video file")
 
 
 def edit_value(call: EditRequest) -> JsonValue:
     fixture = call["fixture"]
-    state = None if fixture is None else state_of(fixture)
-    content = None if state is None else state.content
+    content = None if fixture is None else content_of(fixture)
     url, data, files = CONFIG.transform_video_edit_request(
         call["prompt"],
         call["video_id"],
@@ -141,7 +141,7 @@ def edit_value(call: EditRequest) -> JsonValue:
         call["extra_body"],
         call["prefetched_source_data"],
     )
-    rendered_files = None if files is None else edit_files(files, state)
+    rendered_files = None if files is None else edit_files(files)
     rendered: dict[str, JsonValue] = {
         "url": url,
         "body": JSON.validate_python(dict(data)),

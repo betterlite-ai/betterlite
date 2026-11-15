@@ -136,26 +136,18 @@ class NamedBytesIO(io.BytesIO):
         self.name = name
 
 
-class FixtureState:
-    def __init__(self, content: Content, kind: Kind, body: JsonValue) -> None:
-        self.content = content
-        self.kind = kind
-        self.body = body
-
-
-def state_of(spec: Fixture) -> FixtureState:
+def content_of(spec: Fixture) -> Content:
     match spec["kind"]:
         case "bytes":
-            data = base64.b64decode(spec["data_base64"])
-            return FixtureState(data, "bytes", base64.b64encode(data).decode("ascii"))
+            return base64.b64decode(spec["data_base64"])
         case "text":
-            return FixtureState(spec["value"], "text", spec["value"])
+            return spec["value"]
         case "stream":
             data = base64.b64decode(spec["data_base64"])
             name = spec["name"]
             if name is None:
-                return FixtureState(io.BytesIO(data), "stream", None)
-            return FixtureState(NamedBytesIO(data, name), "stream", None)
+                return io.BytesIO(data)
+            return NamedBytesIO(data, name)
 
 
 def part_value(
@@ -173,3 +165,23 @@ def part_value(
         "body": body,
     }
     return rendered
+
+
+def file_part_value(
+    field: str, filename: str | None, content_type: str | None, content: Content
+) -> JsonValue:
+    match content:
+        case bytes():
+            return part_value(
+                field,
+                filename,
+                content_type,
+                "bytes",
+                base64.b64encode(content).decode("ascii"),
+            )
+        case str():
+            return part_value(field, filename, content_type, "text", content)
+        case _:
+            content.seek(0)
+            data = base64.b64encode(content.read()).decode("ascii")
+            return part_value(field, filename, content_type, "stream", data)
