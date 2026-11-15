@@ -16,7 +16,7 @@ use rstest::rstest;
 use crate::stream_decode::error::DecodeError;
 use crate::stream_decode::{ChunkStream, DecodedChunk, TransportChunk, decode_anthropic_event};
 
-use fixture::{MAX_EVENT_BYTES, converter, delta};
+use fixture::{MAX_EVENT_BYTES, Outcome, converter, delta};
 
 #[rstest]
 #[case::split_event_data(scenarios::split_event_data)]
@@ -96,6 +96,26 @@ fn replays_the_anthropic_stream_decode_corpus() {
     );
 }
 
+fn assert_text(outcome: &Outcome, expected: &str) {
+    let Ok(DecodedChunk::Event(chunk)) = outcome else {
+        panic!("a text event must arrive, got {outcome:?}");
+    };
+    assert_eq!(chunk.choices[0].delta.content, expected);
+}
+
+fn drop_warnings(counts: &[usize]) -> Vec<String> {
+    counts
+        .iter()
+        .map(|count| {
+            format!(
+                "dropping {count} unparseable bytes from the accumulated anthropic stream buffer"
+            )
+        })
+        .collect()
+}
+
+// Each fragment is broken in its own way and has a valid event glued behind it, so the drop must end
+// where the broken value ends: at a closing brace, a closing quote or a bare token's boundary.
 #[test]
 fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
     let (guard, warnings) = fixture::capture_warnings();
@@ -104,10 +124,17 @@ fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
             r#"data: {"type":}{"type":"ping"}"#.to_owned(),
         )),
         Ok(TransportChunk::Text(format!(
+            r#"data: {"a"}{}"#,
+            delta("v").trim_start_matches("data:")
+        ))),
+        Ok(TransportChunk::Text(format!(
             r#"data: "bad\q"{}"#,
             delta("u").trim_start_matches("data:")
         ))),
-        Ok(TransportChunk::Text("data: nope".to_owned())),
+        Ok(TransportChunk::Text(format!(
+            "data: nope{}",
+            delta("w").trim_start_matches("data:")
+        ))),
         Ok(TransportChunk::Text(delta("t"))),
         Ok(TransportChunk::Text(
             r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}"#
@@ -115,31 +142,17 @@ fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
         )),
     ]);
     drop(guard);
-    assert_eq!(outcomes.len(), 4);
-    let Ok(DecodedChunk::Event(ping)) = &outcomes[0] else {
-        panic!("the event glued behind a broken object must arrive");
-    };
-    assert_eq!(ping.choices[0].delta.content, "");
-    let Ok(DecodedChunk::Event(glued)) = &outcomes[1] else {
-        panic!("the event glued behind a broken string must arrive");
-    };
-    assert_eq!(glued.choices[0].delta.content, "u");
-    let Ok(DecodedChunk::Event(text)) = &outcomes[2] else {
-        panic!("the text event after the corrupted fragment must arrive");
-    };
-    assert_eq!(text.choices[0].delta.content, "t");
-    let Ok(DecodedChunk::Event(usage)) = &outcomes[3] else {
-        panic!("the usage event after the corrupted fragment must arrive");
+    assert_eq!(outcomes.len(), 6);
+    assert_text(&outcomes[0], "");
+    assert_text(&outcomes[1], "v");
+    assert_text(&outcomes[2], "u");
+    assert_text(&outcomes[3], "w");
+    assert_text(&outcomes[4], "t");
+    let Ok(DecodedChunk::Event(usage)) = &outcomes[5] else {
+        panic!("the usage event after the corrupted fragments must arrive");
     };
     assert_eq!(usage.usage.as_ref().unwrap().completion_tokens, 7);
-    assert_eq!(
-        warnings.messages(),
-        [
-            "dropping 9 unparseable bytes from the accumulated anthropic stream buffer",
-            "dropping 7 unparseable bytes from the accumulated anthropic stream buffer",
-            "dropping 4 unparseable bytes from the accumulated anthropic stream buffer",
-        ]
-    );
+    assert_eq!(warnings.messages(), drop_warnings(&[9, 5, 7, 4]));
 }
 
 #[test]
@@ -169,8 +182,7 @@ fn drops_done_markers_and_keeps_later_events() {
         panic!("the text event glued behind the second [DONE] must arrive");
     };
     assert_eq!(glued_event.choices[0].delta.content, "y");
-    let message = "dropping 6 unparseable bytes from the accumulated anthropic stream buffer";
-    assert_eq!(warnings.messages(), [message, message]);
+    assert_eq!(warnings.messages(), drop_warnings(&[6, 6]));
 }
 
 #[test]
@@ -194,7 +206,7 @@ fn rejects_an_accumulated_event_over_max_event_bytes() {
     // Exactly at the limit the fragment stays buffered and the stream ends without an item.
     let at_limit: Vec<fixture::Source> = vec![
         Ok(TransportChunk::Text(r#"data: {"a":"#.to_owned())),
-        Ok(TransportChunk::Text("data: 12345678".to_owned())),
+        Ok(TransportChunk::Text("data: 123456789".to_owned())),
     ];
     let kept = ChunkStream {
         converter: converter(),
