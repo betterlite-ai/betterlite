@@ -1,8 +1,12 @@
+use std::collections::BTreeMap;
+use std::future::Future;
+
 use aws_smithy_eventstream::frame::write_message_to;
 use aws_smithy_types::event_stream::{Header, HeaderValue, Message};
 use aws_smithy_types::str_bytes::StrBytes;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use uuid::Uuid;
 
@@ -59,12 +63,12 @@ pub(super) fn chunk_frame(source: &str) -> Vec<u8> {
     event_frame("chunk", payload.as_bytes())
 }
 
-pub(super) fn json(source: &str) -> betterlite_models::decisions::Json {
+pub(super) fn json(source: &str) -> Json {
     serde_json::from_str(source).unwrap()
 }
 
-pub(super) fn request_headers() -> std::collections::BTreeMap<String, String> {
-    std::collections::BTreeMap::from([
+pub(super) fn request_headers() -> BTreeMap<String, String> {
+    BTreeMap::from([
         (
             "content-type".to_owned(),
             "application/vnd.amazon.eventstream".to_owned(),
@@ -73,9 +77,9 @@ pub(super) fn request_headers() -> std::collections::BTreeMap<String, String> {
     ])
 }
 
-pub(super) fn block_on<Future>(future: Future) -> Future::Output
+pub(super) fn block_on<F>(future: F) -> F::Output
 where
-    Future: std::future::Future,
+    F: Future,
 {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()

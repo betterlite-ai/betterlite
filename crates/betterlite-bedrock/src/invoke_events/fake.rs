@@ -9,6 +9,7 @@ use betterlite_streaming::stream_chunk_shaping::records::{
     GenericChunk, JsonObject, JsonValue, Usage,
 };
 use futures_util::Stream;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::invoke_events::error::InvokeStreamError;
@@ -45,12 +46,20 @@ pub struct FakeToolCall {
     pub function: FakeFunction,
 }
 
+// Function.__init__ takes a dict as well as a string and dumps the dict the way json.dumps does.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum FakeArguments {
+    Text(String),
+    Object(IndexMap<String, Json>),
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct FakeFunction {
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
-    pub arguments: Option<String>,
+    pub arguments: Option<FakeArguments>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -103,19 +112,7 @@ fn parse(
         .first()
         .ok_or_else(|| decode_error(response, "the buffered response has no choices"))?;
     let mut text = choice.message.content.clone().unwrap_or_default();
-    let tool_use = match (json_mode, choice.message.tool_calls.as_deref()) {
-        (Some(true), Some(calls)) => {
-            let first = calls
-                .first()
-                .ok_or_else(|| decode_error(response, "the first tool call is missing"))?;
-            if let Some(content) = json_mode_message(first.function.arguments.as_deref()) {
-                text = content;
-            }
-            None
-        }
-        (_, Some(calls)) => calls.first().map(tool_use_json),
-        (_, None) => None,
-    };
+    let tool_use = tool_use(choice, &mut text, json_mode);
     Ok(GenericChunk {
         text,
         tool_use,
@@ -124,35 +121,64 @@ fn parse(
             .reason
             .as_str()
             .to_owned(),
-        usage: Some(Usage {
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
-            total_tokens: usage.total_tokens,
-            cost: None,
-            prompt_tokens_details: None,
-            completion_tokens_details: None,
-            extra: JsonObject::new(),
-        }),
+        usage: Some(chunk_usage(usage)),
         index: Some(0),
         provider_specific_fields: None,
     })
 }
 
+// Message.__init__ drops an empty tool_calls list, so a reply without tools reaches the iterator as None.
+fn tool_use(choice: &FakeChoice, text: &mut String, json_mode: Option<bool>) -> Option<JsonValue> {
+    let tool = choice
+        .message
+        .tool_calls
+        .as_deref()
+        .and_then(|calls| calls.first());
+    match (json_mode, tool) {
+        (Some(true), Some(first)) => {
+            *text = json_mode_message(&arguments(first));
+            None
+        }
+        (_, Some(first)) => Some(tool_use_json(first)),
+        (_, None) => None,
+    }
+}
+
+// Function.__init__ keeps a string, dumps a dict, and turns an absent or null value into the empty string.
+fn arguments(call: &FakeToolCall) -> String {
+    match call.function.arguments.as_ref() {
+        None => String::new(),
+        Some(FakeArguments::Text(text)) => text.clone(),
+        Some(FakeArguments::Object(fields)) => dumps(&Json::Object(fields.clone())),
+    }
+}
+
+const fn chunk_usage(usage: &FakeUsage) -> Usage {
+    Usage {
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+        cost: None,
+        prompt_tokens_details: None,
+        completion_tokens_details: None,
+        extra: JsonObject::new(),
+    }
+}
+
 // AnthropicConfig._convert_tool_response_to_message: a json.dumps of the values field or of the whole argument object.
-fn json_mode_message(arguments: Option<&str>) -> Option<String> {
-    let raw = arguments?;
-    match decode_json_mode_arguments(raw) {
-        Err(_source) => Some(raw.to_owned()),
+fn json_mode_message(arguments: &str) -> String {
+    match decode_json_mode_arguments(arguments) {
+        Err(_source) => arguments.to_owned(),
         Ok(Json::Object(fields)) => {
             let values = fields
                 .get("values")
                 .filter(|value| !matches!(value, Json::Null));
             match values {
-                Some(value) => Some(dumps(value)),
-                None => Some(dumps(&Json::Object(fields))),
+                Some(value) => dumps(value),
+                None => dumps(&Json::Object(fields)),
             }
         }
-        Ok(other) => Some(dumps(&other)),
+        Ok(other) => dumps(&other),
     }
 }
 
@@ -165,15 +191,7 @@ fn tool_use_json(call: &FakeToolCall) -> JsonValue {
             .as_deref()
             .map_or(JsonValue::Null, |name| JsonValue::String(name.to_owned())),
     );
-    function.insert(
-        "arguments".to_owned(),
-        call.function
-            .arguments
-            .as_deref()
-            .map_or(JsonValue::Null, |arguments| {
-                JsonValue::String(arguments.to_owned())
-            }),
-    );
+    function.insert("arguments".to_owned(), JsonValue::String(arguments(call)));
     let mut tool = JsonObject::new();
     tool.insert(
         "id".to_owned(),

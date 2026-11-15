@@ -1,3 +1,4 @@
+use betterlite_anthropic::stream_state::state;
 use uuid::Uuid;
 
 use crate::agentcore_stream;
@@ -12,7 +13,7 @@ impl agentcore_stream::IdSource for IdFunction {
     }
 }
 
-impl betterlite_anthropic::stream_state::state::IdSource for IdFunction {
+impl state::IdSource for IdFunction {
     fn next_id(&self) -> Uuid {
         (self.next)()
     }

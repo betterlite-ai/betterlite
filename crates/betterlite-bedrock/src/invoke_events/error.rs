@@ -35,11 +35,23 @@ pub enum InvokeStreamError {
 
 impl InvokeStreamError {
     #[must_use]
-    pub fn status(&self) -> Option<u16> {
+    pub const fn status(&self) -> Option<u16> {
         match self {
-            Self::Frame(EventFrameError::Bedrock { status, .. }) => Some(*status),
-            Self::OpenAi(StreamError::Provider { status, .. }) => Some(*status),
-            Self::Json { .. }
+            Self::Frame(EventFrameError::Bedrock { status, .. })
+            | Self::OpenAi(StreamError::Provider { status, .. }) => Some(*status),
+            Self::Frame(
+                EventFrameError::PreludeChecksum { .. }
+                | EventFrameError::Frame(_)
+                | EventFrameError::DuplicateHeader { .. }
+                | EventFrameError::NotUtf8(_)
+                | EventFrameError::NotJson(_)
+                | EventFrameError::PayloadNotObject
+                | EventFrameError::ChunkBytesNotText
+                | EventFrameError::ChunkBase64(_)
+                | EventFrameError::Header(_),
+            )
+            | Self::OpenAi(StreamError::Chunk(_) | StreamError::ToolCallPayload)
+            | Self::Json { .. }
             | Self::Chunk { .. }
             | Self::Encode { .. }
             | Self::Anthropic(_)

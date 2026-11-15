@@ -2,10 +2,17 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat_choices::wire::{
     ProviderField, StreamChoice, StreamDelta, StreamReply,
 };
-use serde_json::Map;
+use serde_json::map;
 use uuid::Uuid;
 
 use crate::invoke_events::error::InvokeStreamError;
+
+struct Fields {
+    generation: String,
+    stop_reason: Option<String>,
+    prompt_tokens: i64,
+    generation_tokens: i64,
+}
 
 pub(crate) fn chunk_parser(
     has_finished_thinking: &mut bool,
@@ -13,43 +20,12 @@ pub(crate) fn chunk_parser(
     next_id: fn() -> Uuid,
     now: fn() -> i64,
 ) -> Result<StreamReply, InvokeStreamError> {
-    let Json::Object(fields) = chunk else {
-        return Err(invalid_chunk());
-    };
-    let Some(Json::Text(generation)) = fields.get("generation") else {
-        return Err(invalid_chunk());
-    };
-    let stop_reason = match fields.get("stop_reason") {
-        Some(Json::Null) => None,
-        Some(Json::Text(reason)) => Some(reason.clone()),
-        Some(_) | None => return Err(invalid_chunk()),
-    };
-    let prompt_tokens = token_count(fields.get("prompt_token_count"))?;
-    let generation_tokens = token_count(fields.get("generation_token_count"))?;
-    let mut generated = generation.clone();
-    if generated == "</think>" && !*has_finished_thinking {
-        tracing::debug!("Deepseek r1: </think> received, setting has_finished_thinking to True");
-        generated = String::new();
-        *has_finished_thinking = true;
-    }
-    let content = if *has_finished_thinking {
-        Some(generated.clone())
-    } else {
-        None
-    };
-    let reasoning_content = if *has_finished_thinking {
-        None
-    } else {
-        Some(generated)
-    };
-    let total_tokens = prompt_tokens
-        .checked_add(generation_tokens)
+    let fields = fields(chunk)?;
+    let (content, reasoning_content) = generation_parts(has_finished_thinking, fields.generation);
+    let total_tokens = fields
+        .prompt_tokens
+        .checked_add(fields.generation_tokens)
         .ok_or_else(invalid_chunk)?;
-    let usage = serde_json::json!({
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": generation_tokens,
-        "total_tokens": total_tokens,
-    });
     Ok(StreamReply {
         id: format!("chatcmpl-{}", (next_id)()),
         object: "chat.completion.chunk",
@@ -57,7 +33,7 @@ pub(crate) fn chunk_parser(
         model: None,
         choices: vec![StreamChoice {
             index: 0,
-            finish_reason: stop_reason,
+            finish_reason: fields.stop_reason,
             delta: StreamDelta {
                 role: None,
                 content,
@@ -66,13 +42,54 @@ pub(crate) fn chunk_parser(
                 audio: None,
                 reasoning_content,
                 reasoning: ProviderField::Absent,
-                passthrough: Map::new(),
+                passthrough: map::Map::new(),
             },
             logprobs: None,
         }],
-        usage: Some(usage),
+        usage: Some(serde_json::json!({
+            "prompt_tokens": fields.prompt_tokens,
+            "completion_tokens": fields.generation_tokens,
+            "total_tokens": total_tokens,
+        })),
         service_tier: None,
     })
+}
+
+fn fields(chunk: &Json) -> Result<Fields, InvokeStreamError> {
+    let Json::Object(values) = chunk else {
+        return Err(invalid_chunk());
+    };
+    let Some(Json::Text(generation)) = values.get("generation") else {
+        return Err(invalid_chunk());
+    };
+    let stop_reason = match values.get("stop_reason") {
+        Some(Json::Null) => None,
+        Some(Json::Text(reason)) => Some(reason.clone()),
+        Some(_) | None => return Err(invalid_chunk()),
+    };
+    Ok(Fields {
+        generation: generation.clone(),
+        stop_reason,
+        prompt_tokens: token_count(values.get("prompt_token_count"))?,
+        generation_tokens: token_count(values.get("generation_token_count"))?,
+    })
+}
+
+// the first </think> before the transition switches the stream from reasoning to content
+fn generation_parts(
+    has_finished_thinking: &mut bool,
+    generation: String,
+) -> (Option<String>, Option<String>) {
+    if generation == "</think>" && !*has_finished_thinking {
+        tracing::debug!("Deepseek r1: </think> received, setting has_finished_thinking to True");
+        *has_finished_thinking = true;
+        return (Some(String::new()), None);
+    }
+    if *has_finished_thinking {
+        (Some(generation), None)
+    } else {
+        (None, Some(generation))
+    }
 }
 
 // LiteLLM reads these with `or 0`, so absent and null count as zero and a negative count stays as sent.
