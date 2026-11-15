@@ -13,8 +13,9 @@ use tokio_util::task::TaskTracker;
 
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
-use crate::langfuse_channels::LangfuseTracing;
+use crate::langfuse_channels::{CHANNEL_RETIRE_GRACE, LangfuseTracing, release_langfuse_tracing};
 use crate::langfuse_logger::LangfuseClientBuilder;
+use crate::langfuse_logger::LangfuseLoggerRequest;
 use crate::langfuse_logger::LangfuseServices;
 use crate::langfuse_logger::budget::LangfuseClientBudget;
 use crate::langfuse_prompt_management::LangfusePromptManagement;
@@ -22,6 +23,7 @@ use crate::langfuse_rest::cache::SystemClock;
 use crate::langfuse_rest::client::{
     LangfuseApiClient, LangfuseClientConfig, LangfuseClientError, build_langfuse_client,
 };
+use crate::langfuse_settings::CredentialRequest;
 
 pub(super) use crate::langfuse_logger::tests::support as langfuse;
 
@@ -78,6 +80,13 @@ pub(super) struct Fixture {
     _probe: LangfuseTracing,
 }
 
+impl Fixture {
+    // hand the seeded channel's holder back so a retirement the logger started can finish
+    pub(super) async fn release_probe(&self) {
+        release_langfuse_tracing(&self._probe, CHANNEL_RETIRE_GRACE).await;
+    }
+}
+
 pub(super) fn env(host: &str) -> Vec<(&'static str, String)> {
     vec![
         ("LANGFUSE_HOST", host.to_owned()),
@@ -91,6 +100,25 @@ pub(super) fn borrowed(variables: &[(&'static str, String)]) -> Vec<(&'static st
         .iter()
         .map(|(name, value)| (*name, value.as_str()))
         .collect()
+}
+
+// the request LangFuseHandler._create_langfuse_logger_from_credentials builds for a dynamic host
+pub(super) fn dynamic_request<'request>(
+    public_key: &'request str,
+    secret: &'request str,
+    host: &'request str,
+) -> LangfuseLoggerRequest<'request> {
+    LangfuseLoggerRequest {
+        credentials: CredentialRequest {
+            public_key: Some(public_key),
+            secret: Some(secret),
+            secret_key: None,
+            host: Some(host),
+            allow_env_credentials: false,
+        },
+        environment: None,
+        flush_interval: 1,
+    }
 }
 
 pub(super) fn services(

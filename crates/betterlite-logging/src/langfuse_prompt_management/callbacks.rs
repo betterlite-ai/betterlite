@@ -192,8 +192,12 @@ impl LangfusePromptManagement {
             masker: None,
         };
         let logged = logger.log_event_on_langfuse(&call).await;
-        self.remember_trace_id(event, &logged)
-            .map_err(delivery_error)
+        let remembered = self.remember_trace_id(event, &logged);
+        // LiteLLM stops a dynamic-cache logger on expiry; this cache lasts one call, so stop it here
+        if !Arc::ptr_eq(&logger, &self.logger) {
+            logger.stop();
+        }
+        remembered.map_err(delivery_error)
     }
 
     // _remember_trace_id stores the trace only when the call id is a string and a trace id came back

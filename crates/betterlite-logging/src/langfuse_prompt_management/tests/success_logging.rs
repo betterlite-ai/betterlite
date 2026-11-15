@@ -2,9 +2,12 @@ use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use tokio::task::yield_now;
+use tokio::time::advance;
 
 use super::support;
 use crate::callback_logger::CallbackLogger;
+use crate::langfuse_channels::{CHANNEL_RETIRE_GRACE, release_langfuse_tracing};
 use crate::langfuse_prompt_management::LangfusePromptManagement;
 
 #[tokio::test]
@@ -113,6 +116,70 @@ async fn a_request_with_dynamic_credentials_logs_through_its_own_client() {
         .get_cache(support::CALL_ID, "langfuse")
         .expect("the trace cache reads");
     assert_eq!(trace.as_deref(), Some(support::TRACE_ID));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_dynamic_credential_event_stops_the_logger_it_built() {
+    let variables = support::env(support::HOST);
+    let fixture = support::manager(&support::borrowed(&variables)).await;
+    let services = support::services(
+        &support::borrowed(&variables),
+        support::langfuse::real_builder(),
+    );
+    let request =
+        support::dynamic_request("pk-dynamic-stop", "sk-dynamic-stop", "http://127.0.0.1:5");
+    let (exporter, _spans) = support::langfuse::recording();
+    let probe = support::langfuse::seed(&services, &request, exporter);
+    let dynamic = support::dynamic_params(&[
+        ("langfuse_host", "http://127.0.0.1:5"),
+        ("langfuse_public_key", "pk-dynamic-stop"),
+        ("langfuse_secret", "sk-dynamic-stop"),
+    ]);
+    let event = support::event_with(
+        support::success_payload(Some(support::CALL_ID)),
+        dynamic,
+        IndexMap::new(),
+    );
+    fixture
+        .manager
+        .async_log_success_event(event)
+        .await
+        .expect("the event logs");
+    release_langfuse_tracing(&probe, CHANNEL_RETIRE_GRACE).await;
+    yield_now().await;
+    yield_now().await;
+    advance(CHANNEL_RETIRE_GRACE).await;
+    yield_now().await;
+    let (rebuilt_exporter, rebuilt) = support::langfuse::recording();
+    let _reseeded = support::langfuse::seed(&services, &request, rebuilt_exporter);
+    assert_eq!(rebuilt.installed(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_success_event_keeps_the_managers_own_logger_running() {
+    let variables = support::env("http://127.0.0.1:3");
+    let fixture = support::manager(&support::borrowed(&variables)).await;
+    fixture
+        .manager
+        .async_log_success_event(support::event(support::success_payload(None)))
+        .await
+        .expect("the event logs");
+    fixture.release_probe().await;
+    yield_now().await;
+    yield_now().await;
+    advance(CHANNEL_RETIRE_GRACE).await;
+    yield_now().await;
+    let services = support::services(
+        &support::borrowed(&variables),
+        support::langfuse::real_builder(),
+    );
+    let (rebuilt_exporter, rebuilt) = support::langfuse::recording();
+    let _reseeded = support::langfuse::seed(
+        &services,
+        &support::langfuse::environment_request(),
+        rebuilt_exporter,
+    );
+    assert_eq!(rebuilt.installed(), 0);
 }
 
 #[tokio::test]
