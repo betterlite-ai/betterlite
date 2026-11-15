@@ -1,10 +1,7 @@
+use crate::api::responses_hook_policy::safety::{is_refused_tool_use_block, refused_tool_ids};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
-
-use crate::api::responses_hook_policy::safety::{is_refused_tool_use_block, refused_tool_ids};
-
-// _finalize_refused_agentic_response: refused tool_use blocks go and a client tool_use keeps the stop reason
 pub(crate) fn finalize_refused_response(
     response: &RawValue,
     tool_calls: &Json,
@@ -15,7 +12,6 @@ pub(crate) fn finalize_refused_response(
         other => Ok(other),
     }
 }
-
 fn finalize_object(mut fields: IndexMap<String, Json>, tool_calls: &Json) -> Json {
     let Some(Json::List(blocks)) = fields.get("content").cloned() else {
         return Json::Object(fields);

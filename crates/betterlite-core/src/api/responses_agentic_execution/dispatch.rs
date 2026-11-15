@@ -1,12 +1,3 @@
-use std::sync::Arc;
-
-use betterlite_context::agentic_callback::{
-    AgenticCall, AgenticCallback, AgenticGate, AgenticLogging, AgenticLoopCall,
-};
-use betterlite_context::agentic_loop_plan::{AgenticLoopPlan, FollowupMessage, JsonMap};
-use betterlite_models::decisions::Json;
-use serde_json::value::to_raw_value;
-
 use super::anthropic_plan::execute_anthropic_agentic_plan;
 use super::error::{AgenticExecutionError, CallbackError};
 use super::executor::{CallbackRun, CompletionCall, ContinuationExecutor, LoopState, PlanRun};
@@ -15,21 +6,26 @@ use super::finalize::finalize_refused_response;
 use super::hooks::hook_message;
 use super::logged_call_id;
 use super::responses_plan::execute_responses_agentic_plan;
-use super::values::{api_surface_name, raw_map, typed_map};
+use super::values::{api_surface_name, typed_map};
 use super::{AGENTIC_LOOP_API_SURFACE_KEY, AgenticResult, CUSTOM_LLM_PROVIDER_KEY, TOOLS_KEY};
 use crate::api::responses_hook_policy::agentic::get_agentic_loop_settings;
 use crate::api::responses_hook_policy::error::AgenticLoopSafetyError;
 use crate::api::responses_hook_policy::safety::{
     ApiSurface, can_finalize_turn, check_agentic_loop_safety,
 };
-
+use betterlite_context::agentic_callback::{
+    AgenticCall, AgenticCallback, AgenticGate, AgenticLogging, AgenticLoopCall,
+};
+use betterlite_context::agentic_loop_plan::{AgenticLoopPlan, FollowupMessage, JsonMap};
+use betterlite_models::decisions::Json;
+use serde_json::value::to_raw_value;
+use std::error::Error;
+use std::sync::Arc;
 enum CallbackStep {
     Done(AgenticResult),
     NoResult,
     Next,
 }
-
-// _call_agentic_completion_hooks: one dispatcher for both surfaces; only the plan path splits on surface
 pub async fn call_agentic_completion_hooks<Executor>(
     call: &CompletionCall<'_>,
     callbacks: &[Arc<dyn AgenticCallback>],
@@ -42,10 +38,8 @@ where
     let tools = parse_tools(call.optional_params)?;
     let surface_kwargs = surface_kwargs(call)?;
     let mut hook_kwargs = surface_kwargs.clone();
-    hook_kwargs.insert(
-        CUSTOM_LLM_PROVIDER_KEY.to_owned(),
-        to_raw_value(call.custom_llm_provider)?,
-    );
+    let provider = to_raw_value(call.custom_llm_provider)?;
+    hook_kwargs.insert(CUSTOM_LLM_PROVIDER_KEY.to_owned(), provider);
     let provider_kwargs = typed_map(&hook_kwargs)?;
     let logging = call.logging.map(|view| AgenticLogging {
         call_id: view.call_id.map(str::to_owned),
@@ -72,7 +66,6 @@ where
         AgenticResult::Response(_) => Ok(None),
     }
 }
-
 async fn callback_step<Executor>(
     callback: &dyn AgenticCallback,
     call: &CompletionCall<'_>,
@@ -83,15 +76,9 @@ async fn callback_step<Executor>(
 where
     Executor: ContinuationExecutor + ?Sized,
 {
-    if !callback.overrides().should_run {
-        return Ok(CallbackStep::Next);
-    }
     let Some(gate) = gate_or_skip(callback, call, tools, state).await else {
         return Ok(CallbackStep::Next);
     };
-    if !gate.run {
-        return Ok(CallbackStep::Next);
-    }
     let tool_calls = Json::Object(typed_map(&gate.tools)?);
     let fingerprint = match check_agentic_loop_safety(
         &tool_calls,
@@ -116,27 +103,36 @@ where
     };
     match plan_or_legacy(&run, executor).await {
         Ok(step) => Ok(step),
-        Err(error) => {
-            let call_id = logged_call_id(call.logging);
-            let model = call.model;
-            let message = match &error {
-                CallbackError::Hook(hook) => hook_message(hook).to_owned(),
-                other => other.to_string(),
-            };
-            tracing::error!(
-                "LiteLLM.AgenticHookError: Exception in agentic completion hooks [call_id={call_id} model={model}]: {message}"
-            );
-            Ok(CallbackStep::Next)
-        }
+        Err(error) => Ok(log_callback_error(call, &error)),
     }
 }
-
+fn log_callback_error<Source>(
+    call: &CompletionCall<'_>,
+    error: &CallbackError<Source>,
+) -> CallbackStep
+where
+    Source: Error + 'static,
+{
+    let call_id = logged_call_id(call.logging);
+    let model = call.model;
+    let message = match error {
+        CallbackError::Hook(hook) => hook_message(hook).to_owned(),
+        other => other.to_string(),
+    };
+    tracing::error!(
+        "LiteLLM.AgenticHookError: Exception in agentic completion hooks [call_id={call_id} model={model}]: {message}"
+    );
+    CallbackStep::Next
+}
 async fn gate_or_skip(
     callback: &dyn AgenticCallback,
     call: &CompletionCall<'_>,
     tools: &[FollowupMessage],
     state: &LoopState<'_>,
 ) -> Option<AgenticGate> {
+    if !callback.overrides().should_run {
+        return None;
+    }
     let gate = callback
         .should_run_agentic_loop(&AgenticCall {
             response: call.response,
@@ -149,7 +145,8 @@ async fn gate_or_skip(
         })
         .await;
     match gate {
-        Ok(ready) => Some(ready),
+        Ok(ready) if ready.run => Some(ready),
+        Ok(_) => None,
         Err(error) => {
             let call_id = logged_call_id(call.logging);
             let model = call.model;
@@ -161,8 +158,6 @@ async fn gate_or_skip(
         }
     }
 }
-
-// the safety rails run outside the callback catch: responses raises, a non-streaming turn is finalized
 fn refused(
     call: &CompletionCall<'_>,
     tool_calls: &Json,
@@ -181,7 +176,6 @@ fn refused(
         maybe_wrap_in_fake_stream(to_raw_value(&finalized)?, call.logging, call.api_surface)?;
     Ok(CallbackStep::Done(wrapped))
 }
-
 async fn plan_or_legacy<Executor>(
     run: &CallbackRun<'_>,
     executor: &Executor,
@@ -209,7 +203,6 @@ where
     let plan = run.callback.build_agentic_loop_plan(&agentic_call).await?;
     plan_step(run, &plan, executor).await
 }
-
 async fn plan_step<Executor>(
     run: &CallbackRun<'_>,
     plan: &AgenticLoopPlan,
@@ -249,17 +242,15 @@ where
     };
     Ok(CallbackStep::Done(result))
 }
-
 fn surface_kwargs(call: &CompletionCall<'_>) -> Result<JsonMap, AgenticExecutionError> {
-    let mut kwargs = raw_map(call.kwargs)?;
-    kwargs.insert(
-        AGENTIC_LOOP_API_SURFACE_KEY.to_owned(),
-        to_raw_value(api_surface_name(call.api_surface))?,
-    );
+    let mut kwargs = JsonMap::with_capacity(call.kwargs.len() + 1);
+    for (key, value) in call.kwargs {
+        kwargs.insert(key.clone(), to_raw_value(value)?);
+    }
+    let surface = to_raw_value(api_surface_name(call.api_surface))?;
+    kwargs.insert(AGENTIC_LOOP_API_SURFACE_KEY.to_owned(), surface);
     Ok(kwargs)
 }
-
-// an absent or null tools key is LiteLLM's empty list, and any other shape must be the declared list
 fn parse_tools(optional_params: &JsonMap) -> Result<Vec<FollowupMessage>, AgenticExecutionError> {
     let Some(raw) = optional_params.get(TOOLS_KEY) else {
         return Ok(Vec::new());

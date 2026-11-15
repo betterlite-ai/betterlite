@@ -1,14 +1,10 @@
-use std::error::Error;
-
-use betterlite_context::agentic_callback::error::AgenticHookError;
-use thiserror::Error;
-
 use crate::api::messages_fake_stream::MessagesFakeStreamError;
 use crate::api::responses_hook_policy::error::{
     AgenticFollowupKwargsError, AgenticLoopSafetyError, AgenticLoopSettingsError,
 };
-
-// what leaves the shared dispatcher: the rails and the settings, and a failed synthetic wrap
+use betterlite_context::agentic_callback::error::AgenticHookError;
+use std::error::Error;
+use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AgenticExecutionError {
     #[error(transparent)]
@@ -25,7 +21,6 @@ pub enum AgenticExecutionError {
     #[error(transparent)]
     Wrap(#[from] WrapError),
 }
-
 #[derive(Debug, Error)]
 pub enum WrapError {
     #[error(transparent)]
@@ -33,8 +28,6 @@ pub enum WrapError {
     #[error(transparent)]
     FakeStream(#[from] MessagesFakeStreamError),
 }
-
-// a plan the callback could not turn into a follow-up call
 #[derive(Debug, Error)]
 pub enum PatchError {
     #[error("Agentic loop plan missing patched responses input")]
@@ -51,8 +44,6 @@ pub enum PatchError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }
-
-// the per-callback guard in dispatch.rs logs these and moves on to the next callback
 #[derive(Debug, Error)]
 pub enum CallbackError<Source>
 where

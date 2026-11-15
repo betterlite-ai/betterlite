@@ -1,11 +1,3 @@
-use std::collections::BTreeSet;
-
-use betterlite_context::agentic_loop_plan::AgenticLoopRequestPatch;
-use betterlite_models::decisions::Json;
-use betterlite_openai::code_execution_records::OTHER_INTERCEPTION_PREFIXES;
-use indexmap::IndexMap;
-use serde_json::value::RawValue;
-
 use super::error::{CallbackError, PatchError};
 use super::executor::{ContinuationExecutor, PlanRun, ResponsesContinuation};
 use super::hooks::{HookRun, post_response_hook, run_agentic_loop_cleanup};
@@ -14,8 +6,12 @@ use super::{CONVERTED_STREAM_KEY, INPUT_KEY, LITELLM_LOGGING_OBJ_KEY, MODEL_KEY,
 use crate::api::responses_hook_policy::followup::{
     AgenticFollowupInput, build_agentic_followup_kwargs,
 };
-
-// _execute_responses_agentic_plan: the follow-up POST runs inside a try whose finally is cleanup
+use betterlite_context::agentic_loop_plan::AgenticLoopRequestPatch;
+use betterlite_models::decisions::Json;
+use betterlite_openai::code_execution_records::OTHER_INTERCEPTION_PREFIXES;
+use indexmap::IndexMap;
+use serde_json::value::RawValue;
+use std::collections::BTreeSet;
 pub(crate) async fn execute_responses_agentic_plan<Executor>(
     run: &PlanRun<'_, '_>,
     executor: &Executor,
@@ -38,7 +34,6 @@ where
     run_agentic_loop_cleanup(&hook, run.plan, run.run.hook_kwargs).await;
     outcome
 }
-
 fn build_continuation(run: &PlanRun<'_, '_>) -> Result<ResponsesContinuation, PatchError> {
     let empty = AgenticLoopRequestPatch::default();
     let patch = run.plan.request_patch.as_ref().unwrap_or(&empty);
@@ -60,8 +55,6 @@ fn build_continuation(run: &PlanRun<'_, '_>) -> Result<ResponsesContinuation, Pa
         kwargs,
     })
 }
-
-// B2419 filters the request's kwargs and the patch's against the request params, then counts the loop
 fn followup_kwargs(
     run: &PlanRun<'_, '_>,
     params: &IndexMap<String, Json>,
