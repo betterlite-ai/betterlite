@@ -73,42 +73,35 @@ impl FakeRepository {
     fn fail(&self) {
         self.state().failing = true;
     }
-}
 
-#[async_trait]
-impl FileContentRepository for FakeRepository {
-    async fn store_content(&self, content: &[u8]) -> Result<String, TableError> {
+    fn record(&self, call: RepoCall) -> Result<MutexGuard<'_, RepoState>, TableError> {
         let mut state = self.state();
-        state.calls.push(RepoCall::Store(content.to_vec()));
+        state.calls.push(call);
         if state.failing {
             return Err(TableError::Publish {
                 message: "publish failed".to_owned(),
             });
         }
+        Ok(state)
+    }
+}
+
+#[async_trait]
+impl FileContentRepository for FakeRepository {
+    async fn store_content(&self, content: &[u8]) -> Result<String, TableError> {
+        let mut state = self.record(RepoCall::Store(content.to_vec()))?;
         let row_id = state.row_id.clone();
         state.contents.insert(row_id.clone(), content.to_vec());
         Ok(row_id)
     }
 
     async fn load_content(&self, row_id: &str) -> Result<Option<Vec<u8>>, TableError> {
-        let mut state = self.state();
-        state.calls.push(RepoCall::Load(row_id.to_owned()));
-        if state.failing {
-            return Err(TableError::Publish {
-                message: "publish failed".to_owned(),
-            });
-        }
+        let state = self.record(RepoCall::Load(row_id.to_owned()))?;
         Ok(state.contents.get(row_id).cloned())
     }
 
     async fn delete_content(&self, row_id: &str) -> Result<(), TableError> {
-        let mut state = self.state();
-        state.calls.push(RepoCall::Delete(row_id.to_owned()));
-        if state.failing {
-            return Err(TableError::Publish {
-                message: "publish failed".to_owned(),
-            });
-        }
+        let mut state = self.record(RepoCall::Delete(row_id.to_owned()))?;
         state.contents.remove(row_id);
         Ok(())
     }
@@ -362,15 +355,14 @@ fn responses_batch_projection() {
     let body = r#"{"model":"m","input":"hello","instructions":"system","max_output_tokens":7,"temperature":0.2,"metadata":{"tag":"a"},"stream":true,"unknown":"drop"}"#;
     let parsed = parse(body);
     let request = batch(&parsed, Some("openai")).unwrap();
-    let expected = serde_json::from_str(
+    let expected = parse(
         r#"{"model":"m","messages":[{"role":"system","content":"system"},{"role":"user","content":"hello"}],"max_tokens":7,"temperature":0.2,"metadata":{"tag":"a"},"custom_llm_provider":"openai"}"#,
-    )
-    .unwrap();
-    assert_eq!(serde_json::to_value(&request).unwrap(), expected);
+    );
+    assert_eq!(parse(&serde_json::to_string(&request).unwrap()), expected);
     let repeated = batch(&parsed, Some("openai")).unwrap();
     assert_eq!(
-        serde_json::to_value(&repeated).unwrap(),
-        serde_json::to_value(&request).unwrap()
+        parse(&serde_json::to_string(&repeated).unwrap()),
+        parse(&serde_json::to_string(&request).unwrap())
     );
     assert_eq!(parse(body), parsed);
 }
@@ -418,17 +410,16 @@ fn responses_batch_missing_input() {
 #[test]
 fn responses_batch_non_string_and_empty_input() {
     let numeric = batch(&parse(r#"{"model":123,"input":"hi"}"#), None).unwrap();
-    let numeric = serde_json::to_value(&numeric).unwrap();
-    assert_eq!(numeric.pointer("/model"), Some(&json!("")));
+    let numeric_json = serde_json::to_value(&numeric).unwrap();
+    assert_eq!(numeric_json.pointer("/model"), Some(&json!("")));
 
     let unnamed = batch(&parse(r#"{"input":"hi"}"#), None).unwrap();
-    let unnamed = serde_json::to_value(&unnamed).unwrap();
-    assert_eq!(unnamed.pointer("/model"), Some(&json!("")));
+    let unnamed_json = serde_json::to_value(&unnamed).unwrap();
+    assert_eq!(unnamed_json.pointer("/model"), Some(&json!("")));
 
     let empty = batch(&parse(r#"{"model":"m","input":""}"#), None).unwrap();
-    let expected =
-        serde_json::from_str(r#"{"model":"m","messages":[{"role":"user","content":""}]}"#).unwrap();
-    assert_eq!(serde_json::to_value(&empty).unwrap(), expected);
+    let expected = parse(r#"{"model":"m","messages":[{"role":"user","content":""}]}"#);
+    assert_eq!(parse(&serde_json::to_string(&empty).unwrap()), expected);
 }
 
 #[test]
