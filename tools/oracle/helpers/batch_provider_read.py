@@ -7,20 +7,6 @@ import litellm.batches.main as batches
 from litellm.types.utils import LiteLLMBatch
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
-AZURE_PARAM_KEYS: Final = (
-    "api_key",
-    "api_base",
-    "api_version",
-    "max_retries",
-    "timeout",
-    "azure_ad_token",
-    "tenant_id",
-    "client_id",
-    "client_secret",
-    "azure_scope",
-    "azure_username",
-    "azure_password",
-)
 JSON: Final = TypeAdapter(JsonValue)
 CAPTURED: list[tuple[str, dict[str, JsonValue | httpx.Timeout]]] = []
 
@@ -35,11 +21,43 @@ class RecordedProviderError(Exception):
         self.status_code = status
 
 
+class UnknownRecordedProvider(Exception):
+    pass
+
+
+class NoProviderReached(Exception):
+    pass
+
+
 class Phases(BaseModel):
     connect: float | None = None
     read: float | None = None
     write: float | None = None
     pool: float | None = None
+
+
+class RetrieveRequest(TypedDict, total=False):
+    batch_id: str
+    extra_headers: dict[str, JsonValue] | None
+    extra_body: dict[str, JsonValue] | None
+
+
+class AzureLitellmParams(TypedDict):
+    api_key: str | None
+    api_base: str | None
+    api_version: str | None
+    max_retries: int | None
+    azure_ad_token: str | None
+    tenant_id: str | None
+    client_id: str | None
+    client_secret: str | None
+    azure_scope: str | None
+    azure_username: str | None
+    azure_password: str | None
+
+
+RETRIEVE_REQUEST: Final = TypeAdapter(RetrieveRequest)
+AZURE_LITELLM_PARAMS: Final = TypeAdapter(AzureLitellmParams)
 
 
 class OptionalParams(BaseModel):
@@ -64,6 +82,15 @@ class OptionalParams(BaseModel):
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None
     aws_session_token: str | None = None
+    aws_session_name: str | None = None
+    aws_profile_name: str | None = None
+    aws_role_name: str | None = None
+    aws_web_identity_token: str | None = None
+    aws_sts_endpoint: str | None = None
+    aws_external_id: str | None = None
+    aws_session_tags: list[dict[str, str]] | None = None
+    aws_bedrock_runtime_endpoint: str | None = None
+    aws_bedrock_project_id: str | None = None
 
 
 class Request(BaseModel):
@@ -113,95 +140,115 @@ class Recorder:
         raise RecordedError
 
 
-def plain(value: JsonValue | httpx.Timeout) -> JsonValue:
-    if isinstance(value, httpx.Timeout):
-        return JSON.validate_python(value.as_dict())
-    return JSON.validate_python(value)
+def json_value(value: JsonValue | httpx.Timeout) -> JsonValue:
+    match value:
+        case httpx.Timeout() as timeout:
+            return JSON.validate_python(timeout.as_dict())
+        case _:
+            return value
 
 
-def request_value(value: JsonValue) -> JsonValue:
-    if not isinstance(value, dict):
-        return None
+def request_value(value: JsonValue | httpx.Timeout) -> JsonValue:
+    request = RETRIEVE_REQUEST.validate_python(value)
     return {
-        "batch_id": plain(value.get("batch_id")),
-        "extra_headers": plain(value.get("extra_headers")),
-        "extra_body": plain(value.get("extra_body")),
+        "batch_id": json_value(request["batch_id"]),
+        "extra_headers": json_value(request["extra_headers"]),
+        "extra_body": json_value(request["extra_body"]),
     }
 
 
-def azure_params(value: JsonValue | httpx.Timeout) -> JsonValue:
-    if not isinstance(value, dict):
-        return None
-    return {name: plain(value.get(name)) for name in AZURE_PARAM_KEYS}
+def azure_params(
+    value: JsonValue | httpx.Timeout,
+    timeout: float | str | Phases | None,
+) -> dict[str, JsonValue]:
+    params = AZURE_LITELLM_PARAMS.validate_python(value)
+    return {
+        "api_key": json_value(params["api_key"]),
+        "api_base": json_value(params["api_base"]),
+        "api_version": json_value(params["api_version"]),
+        "max_retries": json_value(params["max_retries"]),
+        "timeout": raw_timeout(timeout),
+        "azure_ad_token": json_value(params["azure_ad_token"]),
+        "tenant_id": json_value(params["tenant_id"]),
+        "client_id": json_value(params["client_id"]),
+        "client_secret": json_value(params["client_secret"]),
+        "azure_scope": json_value(params["azure_scope"]),
+        "azure_username": json_value(params["azure_username"]),
+        "azure_password": json_value(params["azure_password"]),
+    }
+
+
+def raw_timeout(value: float | str | Phases | None) -> JsonValue:
+    match value:
+        case Phases() as phases:
+            return JSON.validate_python(phases.model_dump())
+        case _:
+            return value
 
 
 def provider_timeout(value: float | str | Phases | None) -> float | str | httpx.Timeout | None:
-    if value is None or isinstance(value, str):
-        return value
-    if isinstance(value, Phases):
-        return httpx.Timeout(
-            connect=value.connect, read=value.read, write=value.write, pool=value.pool
-        )
-    return value
+    match value:
+        case Phases() as phases:
+            return httpx.Timeout(
+                connect=phases.connect, read=phases.read, write=phases.write, pool=phases.pool
+            )
+        case _:
+            return value
 
 
-def capture() -> JsonValue:
+def capture(params: OptionalParams) -> JsonValue:
     provider, kwargs = CAPTURED[0]
+    common: dict[str, JsonValue] = {
+        "provider": provider,
+        "is_async": json_value(kwargs["_is_async"]),
+    }
     if provider == "openai":
-        return {
-            "provider": provider,
-            "is_async": plain(kwargs["_is_async"]),
-            "request": request_value(plain(kwargs["retrieve_batch_data"])),
-            "api_base": plain(kwargs["api_base"]),
-            "api_key": plain(kwargs["api_key"]),
-            "organization": plain(kwargs["organization"]),
-            "timeout": plain(kwargs["timeout"]),
-            "max_retries": plain(kwargs["max_retries"]),
+        return common | {
+            "request": request_value(kwargs["retrieve_batch_data"]),
+            "api_base": json_value(kwargs["api_base"]),
+            "api_key": json_value(kwargs["api_key"]),
+            "organization": json_value(kwargs["organization"]),
+            "timeout": json_value(kwargs["timeout"]),
+            "max_retries": json_value(kwargs["max_retries"]),
         }
     if provider == "azure":
-        return {
-            "provider": provider,
-            "is_async": plain(kwargs["_is_async"]),
-            "request": request_value(plain(kwargs["retrieve_batch_data"])),
-            "api_base": plain(kwargs["api_base"]),
-            "api_key": plain(kwargs["api_key"]),
-            "api_version": plain(kwargs["api_version"]),
-            "timeout": plain(kwargs["timeout"]),
-            "max_retries": plain(kwargs["max_retries"]),
-            "litellm_params": azure_params(kwargs["litellm_params"]),
+        return common | {
+            "request": request_value(kwargs["retrieve_batch_data"]),
+            "api_base": json_value(kwargs["api_base"]),
+            "api_key": json_value(kwargs["api_key"]),
+            "api_version": json_value(kwargs["api_version"]),
+            "timeout": json_value(kwargs["timeout"]),
+            "max_retries": json_value(kwargs["max_retries"]),
+            "litellm_params": azure_params(kwargs["litellm_params"], params.timeout),
         }
     if provider == "vertex_ai":
-        return {
-            "provider": provider,
-            "is_async": plain(kwargs["_is_async"]),
-            "batch_id": plain(kwargs["batch_id"]),
-            "api_base": plain(kwargs["api_base"]),
-            "vertex_project": plain(kwargs["vertex_project"]),
-            "vertex_location": plain(kwargs["vertex_location"]),
-            "vertex_credentials": plain(kwargs["vertex_credentials"]),
-            "timeout": plain(kwargs["timeout"]),
-            "max_retries": plain(kwargs["max_retries"]),
+        return common | {
+            "batch_id": json_value(kwargs["batch_id"]),
+            "api_base": json_value(kwargs["api_base"]),
+            "vertex_project": json_value(kwargs["vertex_project"]),
+            "vertex_location": json_value(kwargs["vertex_location"]),
+            "vertex_credentials": json_value(kwargs["vertex_credentials"]),
+            "timeout": json_value(kwargs["timeout"]),
+            "max_retries": json_value(kwargs["max_retries"]),
         }
     if provider == "anthropic":
-        return {
-            "provider": provider,
-            "is_async": plain(kwargs["_is_async"]),
-            "batch_id": plain(kwargs["batch_id"]),
-            "api_base": plain(kwargs["api_base"]),
-            "api_key": plain(kwargs["api_key"]),
-            "timeout": plain(kwargs["timeout"]),
-            "max_retries": plain(kwargs["max_retries"]),
+        return common | {
+            "batch_id": json_value(kwargs["batch_id"]),
+            "api_base": json_value(kwargs["api_base"]),
+            "api_key": json_value(kwargs["api_key"]),
+            "timeout": json_value(kwargs["timeout"]),
+            "max_retries": json_value(kwargs["max_retries"]),
         }
     if provider == "xai":
-        return {
-            "provider": provider,
-            "is_async": plain(kwargs["_is_async"]),
-            "batch_id": plain(kwargs["batch_id"]),
-            "api_base": plain(kwargs["api_base"]),
-            "api_key": plain(kwargs["api_key"]),
-            "timeout": plain(kwargs["timeout"]),
+        return common | {
+            "batch_id": json_value(kwargs["batch_id"]),
+            "api_base": json_value(kwargs["api_base"]),
+            "api_key": json_value(kwargs["api_key"]),
+            "timeout": json_value(kwargs["timeout"]),
         }
-    raise RuntimeError(f"the pinned LiteLLM retrieve reached the unknown provider {provider}")
+    raise UnknownRecordedProvider(
+        f"the pinned LiteLLM retrieve reached the unknown provider {provider}"
+    )
 
 
 def run(input_value: Input) -> JsonValue:
@@ -251,9 +298,18 @@ def run(input_value: Input) -> JsonValue:
             aws_access_key_id=params.aws_access_key_id,
             aws_secret_access_key=params.aws_secret_access_key,
             aws_session_token=params.aws_session_token,
+            aws_session_name=params.aws_session_name,
+            aws_profile_name=params.aws_profile_name,
+            aws_role_name=params.aws_role_name,
+            aws_web_identity_token=params.aws_web_identity_token,
+            aws_sts_endpoint=params.aws_sts_endpoint,
+            aws_external_id=params.aws_external_id,
+            aws_session_tags=params.aws_session_tags,
+            aws_bedrock_runtime_endpoint=params.aws_bedrock_runtime_endpoint,
+            aws_bedrock_project_id=params.aws_bedrock_project_id,
             model=request.model,
             aretrieve_batch=request.aretrieve_batch,
         )
     except RecordedError:
-        return capture()
-    raise RuntimeError("the pinned LiteLLM retrieve call reached no provider")
+        return capture(params)
+    raise NoProviderReached("the pinned LiteLLM retrieve call reached no provider")

@@ -12,6 +12,17 @@ call:
         aws_access_key_id: SEEDKEY
         aws_secret_access_key: seed-secret
         aws_session_token: seed-token
+        aws_session_name: seed-session
+        aws_profile_name: seed-profile
+        aws_role_name: seed-role
+        aws_web_identity_token: seed-identity
+        aws_sts_endpoint: https://sts.seed.example
+        aws_external_id: seed-external
+        aws_session_tags:
+          - Key: seed-tag
+            Value: seed-value
+        aws_bedrock_runtime_endpoint: https://runtime.seed.example
+        aws_bedrock_project_id: seed-project
     litellm_settings: {}
     environment: {}
     script:

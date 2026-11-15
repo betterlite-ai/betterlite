@@ -2,21 +2,21 @@ use std::collections::BTreeMap;
 use std::future::Future;
 
 use betterlite_config::sections::Section as _;
-use betterlite_config::sections::batch_provider_read::{Raw, RawSettings};
+use betterlite_config::sections::batch_provider_read::Raw;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::batch_provider_read::call::{
     AnthropicBatchReadCall, AzureBatchReadCall, AzureReadParams, BatchProviderReadCall,
-    OpenAiBatchReadCall, ProviderConfigReadCall, VertexBatchReadCall, XaiBatchReadCall,
+    OpenAiBatchReadCall, ProviderConfigReadCall, VertexBatchReadCall, VertexReadCredentials,
+    XaiBatchReadCall,
 };
 use betterlite_core::api::batch_provider_read::error::BatchProviderReadError;
 use betterlite_core::api::batch_provider_read::{
     BatchProviderRead, BatchProviderReadInput, BatchProviderReadResult, BatchReadDispatch,
     BatchReadTimeoutValue,
 };
-use betterlite_core::genai_setup::params::VertexCredentials;
 use betterlite_openai::api::batch_records::RetrieveBatchRequest;
-use betterlite_openai::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
-use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
+use betterlite_openai::batches::records::BatchObject;
+use betterlite_openai::batches::sdk::Timeout;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -28,8 +28,9 @@ use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     request: BatchProviderReadInput,
+    // the case's config keys go back through the production Raw parser, as the shared raw settings keep no Clone
     #[serde(default)]
-    litellm_settings: RawSettings,
+    litellm_settings: BTreeMap<String, Value>,
     #[serde(default)]
     environment: BTreeMap<String, String>,
     #[serde(default)]
@@ -78,28 +79,17 @@ fn secret_value(value: Option<&SecretString>) -> Value {
     })
 }
 
-fn phases_value(phases: &TimeoutPhases) -> Value {
-    json!({
-        "connect": phases.connect,
-        "read": phases.read,
-        "write": phases.write,
-        "pool": phases.pool,
-    })
-}
-
 fn timeout_value(timeout: &Timeout) -> Value {
     match timeout {
         Timeout::Seconds(seconds) => json!(seconds),
-        Timeout::Phases(phases) => phases_value(phases),
+        Timeout::Phases(phases) => json!(phases),
     }
 }
 
 fn raw_timeout_value(value: Option<&BatchReadTimeoutValue>) -> Value {
     match value {
         None => Value::Null,
-        Some(BatchReadTimeoutValue::Seconds(seconds)) => json!(seconds),
-        Some(BatchReadTimeoutValue::Text(text)) => json!(text),
-        Some(BatchReadTimeoutValue::Phases(phases)) => phases_value(phases),
+        Some(raw) => json!(raw),
     }
 }
 
@@ -128,11 +118,13 @@ fn params_value(params: &AzureReadParams) -> Value {
     })
 }
 
-fn credentials_value(credentials: Option<&VertexCredentials>) -> HelperResult {
+fn credentials_value(credentials: Option<&VertexReadCredentials>) -> HelperResult {
     match credentials {
         None => Ok(Value::Null),
-        Some(VertexCredentials::Path(path)) => Ok(Value::String(path.clone())),
-        Some(VertexCredentials::ServiceAccount(account)) => Ok(serde_json::to_value(account)?),
+        Some(VertexReadCredentials::Path(path)) => {
+            Ok(Value::String(path.expose_secret().to_owned()))
+        }
+        Some(VertexReadCredentials::ServiceAccount(account)) => Ok(serde_json::to_value(account)?),
     }
 }
 
@@ -229,32 +221,12 @@ fn failure(error: &BatchProviderReadError<ScriptedStatus>) -> Box<HelperError> {
 }
 
 // the provider answer the case scripts; the compared value is the call the service built
-fn echoed_batch() -> BatchObject {
-    BatchObject {
-        id: "batch_1".to_owned(),
-        completion_window: "24h".to_owned(),
-        created_at: 0,
-        endpoint: "/v1/chat/completions".to_owned(),
-        input_file_id: "file_1".to_owned(),
-        object: BatchObjectKind::Batch,
-        status: BatchStatus::Completed,
-        cancelled_at: None,
-        cancelling_at: None,
-        completed_at: None,
-        error_file_id: None,
-        errors: None,
-        expired_at: None,
-        expires_at: None,
-        failed_at: None,
-        finalizing_at: None,
-        in_progress_at: None,
-        metadata: None,
-        model: None,
-        output_file_id: None,
-        request_counts: None,
-        usage: None,
-        provider_fields: <_>::default(),
-    }
+fn echoed_batch() -> Result<BatchObject, Box<HelperError>> {
+    let batch = concat!(
+        r#"{"id":"batch_1","completion_window":"24h","created_at":0,"endpoint":"#,
+        r#""/v1/chat/completions","input_file_id":"file_1","object":"batch","status":"completed"}"#,
+    );
+    Ok(serde_json::from_str(batch)?)
 }
 
 pub(crate) struct Op;
@@ -263,14 +235,14 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let raw = Raw {
-            litellm_settings: input.litellm_settings.clone(),
-        };
+        let raw: Raw = serde_json::from_value(json!({
+            "litellm_settings": input.litellm_settings,
+        }))?;
         let settings = raw.convert(&input.environment).or_config_error()?;
         let service = BatchProviderRead {
             dispatch: Scripted {
                 script: input.script.clone(),
-                batch: echoed_batch(),
+                batch: echoed_batch()?,
             },
             limits: ApiLimits::default(),
             settings,
