@@ -103,12 +103,7 @@ pub fn delta(choices: &[ChoiceRecord]) -> Result<DeltaProjection, ChatOutputErro
     let mut signature = String::new();
     let mut partial_json: Option<String> = None;
     for choice in choices {
-        if let Some(content) = choice
-            .delta
-            .content
-            .as_deref()
-            .filter(|content| !content.is_empty())
-        {
+        if let Some(content) = choice.delta.content.as_deref() {
             text.push_str(content);
         }
         if !choice.delta.tool_calls.is_empty() {
