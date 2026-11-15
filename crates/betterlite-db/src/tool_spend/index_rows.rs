@@ -10,7 +10,6 @@ pub struct ToolIndexRow {
 }
 
 // json.dumps(row, default=str) writes str(datetime): a space separator, six digits of microseconds, the offset
-#[must_use]
 pub fn python_timestamp<S>(start_time: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
