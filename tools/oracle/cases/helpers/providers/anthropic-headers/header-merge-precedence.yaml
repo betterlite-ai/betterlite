@@ -1,0 +1,49 @@
+kind: helper
+name: header-merge-precedence
+call:
+  anthropic_headers:
+    environment: {ANTHROPIC_API_KEY: sk-ant-api03-fixture, ANTHROPIC_AUTH_TOKEN: auth-token-value}
+    calls:
+      - function: environment
+        model: claude-sonnet-4
+        headers:
+          - {name: anthropic-version, value: "2020-01-01"}
+          - {name: accept, value: text/plain}
+          - {name: content-type, value: text/plain}
+          - {name: x-kept, value: "yes"}
+          - {name: anthropic-beta, value: caller-beta}
+        api_key: null
+        api_base: null
+        litellm_params: {api_base: https://anthropic-proxy.example, use_bearer_for_custom_base: true}
+        messages: []
+        optional_params: {}
+        effort_used: false
+      - function: environment
+        model: claude-sonnet-4
+        headers: []
+        api_key: null
+        api_base: https://api.anthropic.com
+        litellm_params: {api_base: https://anthropic-proxy.example, use_bearer_for_custom_base: true}
+        messages: []
+        optional_params: {}
+        effort_used: false
+      - function: environment
+        model: claude-sonnet-4
+        headers: []
+        api_key: null
+        api_base: https://anthropic-proxy.example
+        litellm_params: {}
+        messages: []
+        optional_params: {}
+        effort_used: false
+      - function: environment
+        model: claude-sonnet-4
+        headers: []
+        api_key: null
+        api_base: https://anthropic-proxy.example
+        litellm_params: {api_base: https://ignored.example, use_bearer_for_custom_base: false}
+        messages: []
+        optional_params: {}
+        effort_used: false
+env: {ANTHROPIC_API_KEY: sk-ant-api03-fixture, ANTHROPIC_AUTH_TOKEN: auth-token-value}
+compare: {ignore: []}

@@ -19,8 +19,9 @@ branch_runs() {
   gh api "repos/${GH_REPO}/actions/workflows/gate.yml/runs?branch=$1&per_page=30" \
     -q '.workflow_runs[] | "\(.id) \(.run_attempt) \(.conclusion) \(.status) \(.created_at) \(.head_sha)"' 2> /dev/null
 }
+# at about 100 PR runs an hour the last 30 gate runs held no queue run of PR 1702 six minutes after its removal (11-15)
 last_queue_failure() {
-  gh run list --workflow gate.yml --limit 30 --json databaseId,headBranch,conclusion -q "[.[] | select(.conclusion == \"failure\") | select(.headBranch | startswith(\"gh-readonly-queue/main/pr-${pr}-\"))][0].databaseId // empty" 2> /dev/null
+  gh run list --workflow gate.yml --event merge_group --limit 100 --json databaseId,headBranch,conclusion -q "[.[] | select(.conclusion == \"failure\") | select(.headBranch | startswith(\"gh-readonly-queue/main/pr-${pr}-\"))][0].databaseId // empty" 2> /dev/null
 }
 queue_removal() {
   gh api graphql -F n="${pr}" -f query="query(\$n:Int!){repository(owner:\"betterlite-ai\",name:\"betterlite\"){pullRequest(number:\$n){timelineItems(last:1,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){nodes{... on RemovedFromMergeQueueEvent{createdAt reason}}}}}}" \
