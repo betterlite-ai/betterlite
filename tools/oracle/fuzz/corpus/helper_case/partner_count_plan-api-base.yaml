@@ -1,0 +1,12 @@
+kind: helper
+name: partner-count-plan-api-base-seed
+call:
+  partner_count_plan:
+    cases:
+    - model: codestral-2501@20250101
+      project: my-project
+      location: global
+      api_base: https://proxy.example/v1
+compare:
+  ignore: []
+env: {}

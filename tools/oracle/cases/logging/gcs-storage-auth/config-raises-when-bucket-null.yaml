@@ -1,0 +1,7 @@
+# no dynamic bucket and no GCS_BUCKET_NAME is a ValueError
+kind: helper
+name: gcs-storage-auth-config-raises-when-bucket-null
+call:
+  b3997: {"action": "logging_config"}
+env: {}
+compare: {ignore: []}
