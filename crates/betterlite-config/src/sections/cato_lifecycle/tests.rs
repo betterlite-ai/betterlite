@@ -73,7 +73,7 @@ fn cato_lifecycle_config_reads_a_list_mode() {
 fn cato_lifecycle_config_reads_a_tagged_mode() {
     let source = CATO_CONFIG.replace(
         "mode: pre_call",
-        "mode:\n        tags:\n          team-a: [pre_call]\n        default: post_call",
+        "mode:\n        tags:\n          Team-A: [Pre_Call]\n        default: Post_Call",
     );
     let settings = resolve(&source, &BTreeMap::new()).unwrap();
     let mode = settings.first().unwrap().mode.clone();
@@ -81,10 +81,10 @@ fn cato_lifecycle_config_reads_a_tagged_mode() {
         mode,
         Some(LitellmParamsMode::Tagged(Mode {
             tags: BTreeMap::from([(
-                "team-a".to_owned(),
-                ModeTarget::Many(vec!["pre_call".to_owned()])
+                "Team-A".to_owned(),
+                ModeTarget::Many(vec!["Pre_Call".to_owned()])
             )]),
-            default: Some(ModeTarget::One("post_call".to_owned())),
+            default: Some(ModeTarget::One("Post_Call".to_owned())),
         }))
     );
 }

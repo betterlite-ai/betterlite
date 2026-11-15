@@ -1,7 +1,5 @@
 use betterlite_config::sections::guardrail_params::records::LakeraCategoryThresholds;
 use reqwest::StatusCode;
-use serde::Serialize;
-use serde_json::json;
 
 use crate::lakera::rejection::{LakeraRejection, LakeraRejectionDetail};
 use crate::lakera::response::LakeraModerationResponse;
@@ -20,22 +18,20 @@ fn moderation(thresholds: Option<LakeraCategoryThresholds>) -> LegacyLakeraModer
     )
 }
 
-fn thresholds(
-    prompt_injection: Option<f64>,
-    jailbreak: Option<f64>,
-) -> Option<LakeraCategoryThresholds> {
-    Some(LakeraCategoryThresholds {
+fn thresholds(prompt_injection: Option<f64>, jailbreak: Option<f64>) -> LakeraCategoryThresholds {
+    LakeraCategoryThresholds {
         prompt_injection,
         jailbreak,
-    })
+    }
 }
 
-fn parse<Body>(body: Body) -> LakeraModerationResponse
-where
-    Body: Serialize,
-{
-    let value = serde_json::to_value(body).expect("the fixture is JSON");
-    serde_json::from_value(value).expect("the Lakera response parses")
+fn parse(body: &str) -> LakeraModerationResponse {
+    serde_json::from_str(body).expect("the Lakera response parses")
+}
+
+// the check of a configured guardrail on a Lakera response body
+fn verdict(configured: Option<LakeraCategoryThresholds>, body: &str) -> Option<LakeraRejection> {
+    moderation(configured).check_response_flagged(&parse(body))
 }
 
 fn rejection(rejected: Option<LakeraRejection>) -> LakeraRejectionDetail {
@@ -44,227 +40,154 @@ fn rejection(rejected: Option<LakeraRejection>) -> LakeraRejectionDetail {
     rejection.detail
 }
 
-fn assert_echoed<Expected>(detail: &LakeraRejectionDetail, expected: Expected)
-where
-    Expected: Serialize,
-{
-    let written = serde_json::to_value(&detail.lakera_ai_response).expect("the response is JSON");
-    assert_eq!(
-        written,
-        serde_json::to_value(expected).expect("the fixture is JSON")
-    );
+fn assert_echoed(detail: &LakeraRejectionDetail, expected: &str) {
+    let written = serde_json::to_string(&detail.lakera_ai_response).expect("the response is JSON");
+    assert_eq!(written, expected);
 }
 
 #[test]
 fn lakera_moderation_blocks_at_the_jailbreak_threshold() {
-    let response = parse(json!({"results": [{"category_scores": {"jailbreak": 0.8}}]}));
-    let rejected =
-        rejection(moderation(thresholds(None, Some(0.8))).check_response_flagged(&response));
+    let body = r#"{"results":[{"category_scores":{"jailbreak":0.8}}]}"#;
+    let rejected = rejection(verdict(Some(thresholds(None, Some(0.8_f64))), body));
     assert_eq!(rejected.error, "Violated jailbreak threshold");
-    assert_echoed(
-        &rejected,
-        json!({"results": [{"category_scores": {"jailbreak": 0.8}}]}),
-    );
+    assert_echoed(&rejected, body);
 }
 
 #[test]
 fn lakera_moderation_passes_below_the_jailbreak_threshold() {
-    let response = parse(json!({"results": [{"category_scores": {"jailbreak": 0.79}}]}));
-    assert!(
-        moderation(thresholds(None, Some(0.8)))
-            .check_response_flagged(&response)
-            .is_none()
-    );
+    let body = r#"{"results":[{"category_scores":{"jailbreak":0.79}}]}"#;
+    assert!(verdict(Some(thresholds(None, Some(0.8_f64))), body).is_none());
 }
 
 #[test]
 fn lakera_moderation_blocks_at_the_prompt_injection_threshold() {
-    let response = parse(json!({"results": [{"category_scores": {"prompt_injection": 0.5}}]}));
-    let rejected =
-        rejection(moderation(thresholds(Some(0.5), None)).check_response_flagged(&response));
+    let body = r#"{"results":[{"category_scores":{"prompt_injection":0.5}}]}"#;
+    let rejected = rejection(verdict(Some(thresholds(Some(0.5_f64), None)), body));
     assert_eq!(rejected.error, "Violated prompt_injection threshold");
 }
 
 #[test]
 fn lakera_moderation_passes_below_the_prompt_injection_threshold() {
-    let response = parse(json!({"results": [{"category_scores": {"prompt_injection": 0.49}}]}));
-    assert!(
-        moderation(thresholds(Some(0.5), None))
-            .check_response_flagged(&response)
-            .is_none()
-    );
+    let body = r#"{"results":[{"category_scores":{"prompt_injection":0.49}}]}"#;
+    assert!(verdict(Some(thresholds(Some(0.5_f64), None)), body).is_none());
 }
 
 #[test]
 fn lakera_moderation_reports_a_jailbreak_before_a_prompt_injection() {
-    let response = parse(
-        json!({"results": [{"category_scores": {"jailbreak": 0.9, "prompt_injection": 0.9}}]}),
-    );
-    let rejected =
-        rejection(moderation(thresholds(Some(0.5), Some(0.5))).check_response_flagged(&response));
+    let body = r#"{"results":[{"category_scores":{"jailbreak":0.9,"prompt_injection":0.9}}]}"#;
+    let rejected = rejection(verdict(
+        Some(thresholds(Some(0.5_f64), Some(0.5_f64))),
+        body,
+    ));
     assert_eq!(rejected.error, "Violated jailbreak threshold");
 }
 
 #[test]
 fn lakera_moderation_passes_when_the_breaching_score_has_no_threshold() {
-    let response = parse(
-        json!({"results": [{"category_scores": {"jailbreak": 0.99, "prompt_injection": 0.1}}]}),
-    );
-    assert!(
-        moderation(thresholds(Some(0.5), None))
-            .check_response_flagged(&response)
-            .is_none()
-    );
+    let body = r#"{"results":[{"category_scores":{"jailbreak":0.99,"prompt_injection":0.1}}]}"#;
+    assert!(verdict(Some(thresholds(Some(0.5_f64), None)), body).is_none());
 }
 
 #[test]
 fn lakera_moderation_passes_when_the_threshold_has_no_score() {
-    let response = parse(json!({"results": [{"category_scores": {"prompt_injection": 0.1}}]}));
-    assert!(
-        moderation(thresholds(Some(0.5), Some(0.5)))
-            .check_response_flagged(&response)
-            .is_none()
-    );
+    let body = r#"{"results":[{"category_scores":{"prompt_injection":0.1}}]}"#;
+    assert!(verdict(Some(thresholds(Some(0.5_f64), Some(0.5_f64))), body).is_none());
 }
 
 #[test]
 fn lakera_moderation_ignores_flagged_when_thresholds_have_no_scores() {
-    let response = parse(json!({"results": [{"flagged": true}]}));
-    assert!(
-        moderation(thresholds(Some(0.5), Some(0.5)))
-            .check_response_flagged(&response)
-            .is_none()
-    );
+    let body = r#"{"results":[{"flagged":true}]}"#;
+    assert!(verdict(Some(thresholds(Some(0.5_f64), Some(0.5_f64))), body).is_none());
 }
 
 #[test]
 fn lakera_moderation_ignores_an_empty_score_object() {
-    let response = parse(json!({"results": [{"flagged": true, "category_scores": {}}]}));
-    assert!(
-        moderation(thresholds(Some(0.5), Some(0.5)))
-            .check_response_flagged(&response)
-            .is_none()
-    );
+    let body = r#"{"results":[{"flagged":true,"category_scores":{}}]}"#;
+    assert!(verdict(Some(thresholds(Some(0.5_f64), Some(0.5_f64))), body).is_none());
 }
 
 #[test]
 fn lakera_moderation_blocks_a_flagged_response_without_thresholds() {
-    let response =
-        parse(json!({"results": [{"flagged": true, "category_scores": {"jailbreak": 0.1}}]}));
-    let rejected = rejection(moderation(None).check_response_flagged(&response));
+    let body = r#"{"results":[{"flagged":true,"category_scores":{"jailbreak":0.1}}]}"#;
+    let rejected = rejection(verdict(None, body));
     assert_eq!(rejected.error, "Violated content safety policy");
-    assert_echoed(
-        &rejected,
-        json!({"results": [{"flagged": true, "category_scores": {"jailbreak": 0.1}}]}),
-    );
+    assert_echoed(&rejected, body);
 }
 
 #[test]
 fn lakera_moderation_passes_an_unflagged_response_without_thresholds() {
-    let response = parse(json!({"results": [{"flagged": false}]}));
-    assert!(moderation(None).check_response_flagged(&response).is_none());
+    assert!(verdict(None, r#"{"results":[{"flagged":false}]}"#).is_none());
 }
 
 #[test]
 fn lakera_moderation_passes_a_response_without_a_flagged_key() {
-    let response = parse(json!({"results": [{"category_scores": {"jailbreak": 0.9}}]}));
-    assert!(moderation(None).check_response_flagged(&response).is_none());
+    let body = r#"{"results":[{"category_scores":{"jailbreak":0.9}}]}"#;
+    assert!(verdict(None, body).is_none());
 }
 
 #[test]
 fn lakera_moderation_passes_a_null_flagged_value() {
-    let response = parse(json!({"results": [{"flagged": null}]}));
-    assert!(moderation(None).check_response_flagged(&response).is_none());
+    assert!(verdict(None, r#"{"results":[{"flagged":null}]}"#).is_none());
 }
 
 #[test]
 fn lakera_moderation_passes_a_null_category_scores_map() {
-    let response = parse(json!({"results": [{"flagged": true, "category_scores": null}]}));
-    assert!(
-        moderation(thresholds(Some(0.5), Some(0.5)))
-            .check_response_flagged(&response)
-            .is_none()
-    );
+    let body = r#"{"results":[{"flagged":true,"category_scores":null}]}"#;
+    assert!(verdict(Some(thresholds(Some(0.5_f64), Some(0.5_f64))), body).is_none());
 }
 
 #[test]
 fn lakera_moderation_keeps_a_null_score_in_the_detail() {
-    let body =
-        json!({"results": [{"category_scores": {"jailbreak": null, "prompt_injection": 0.9}}]});
-    let response = parse(body.clone());
-    let rejected =
-        rejection(moderation(thresholds(Some(0.5), None)).check_response_flagged(&response));
-    assert_echoed(&rejected, &body);
+    let body = r#"{"results":[{"category_scores":{"jailbreak":null,"prompt_injection":0.9}}]}"#;
+    let rejected = rejection(verdict(Some(thresholds(Some(0.5_f64), None)), body));
+    assert_echoed(
+        &rejected,
+        r#"{"results":[{"category_scores":{"prompt_injection":0.9,"jailbreak":null}}]}"#,
+    );
 }
 
 #[test]
 fn lakera_moderation_rejects_a_score_that_is_not_a_number() {
-    let error = serde_json::from_value::<LakeraModerationResponse>(
-        json!({"results": [{"category_scores": {"jailbreak": "high"}}]}),
-    )
-    .expect_err("a score that is not a number");
+    let body = r#"{"results":[{"category_scores":{"jailbreak":"high"}}]}"#;
+    let error = serde_json::from_str::<LakeraModerationResponse>(body)
+        .expect_err("a score that is not a number");
     assert!(error.to_string().contains("expected f64"), "{error}");
 }
 
 #[test]
 fn lakera_moderation_passes_an_empty_result_list() {
-    let response = parse(json!({"results": []}));
-    assert!(moderation(None).check_response_flagged(&response).is_none());
-    assert!(
-        moderation(thresholds(Some(0.5), Some(0.5)))
-            .check_response_flagged(&response)
-            .is_none()
-    );
+    let body = r#"{"results":[]}"#;
+    assert!(verdict(None, body).is_none());
+    assert!(verdict(Some(thresholds(Some(0.5_f64), Some(0.5_f64))), body).is_none());
 }
 
 #[test]
 fn lakera_moderation_passes_a_null_result_list() {
-    let response = parse(json!({"results": null}));
-    assert!(moderation(None).check_response_flagged(&response).is_none());
+    assert!(verdict(None, r#"{"results":null}"#).is_none());
 }
 
 #[test]
 fn lakera_moderation_reads_only_the_first_result() {
-    let clean_first = parse(json!({
-        "results": [
-            {"flagged": false},
-            {"flagged": true},
-        ]
-    }));
-    assert!(
-        moderation(None)
-            .check_response_flagged(&clean_first)
-            .is_none()
-    );
-    let flagged_first = parse(json!({
-        "results": [
-            {"flagged": true},
-            {"flagged": false},
-        ]
-    }));
-    let rejected = rejection(moderation(None).check_response_flagged(&flagged_first));
+    let clean_first = r#"{"results":[{"flagged":false},{"flagged":true}]}"#;
+    assert!(verdict(None, clean_first).is_none());
+    let flagged_first = r#"{"results":[{"flagged":true},{"flagged":false}]}"#;
+    let rejected = rejection(verdict(None, flagged_first));
     assert_eq!(rejected.error, "Violated content safety policy");
 }
 
 #[test]
 fn lakera_moderation_reads_an_integer_score() {
-    let response = parse(json!({"results": [{"category_scores": {"jailbreak": 1}}]}));
-    let rejected =
-        rejection(moderation(thresholds(None, Some(1.0))).check_response_flagged(&response));
+    let body = r#"{"results":[{"category_scores":{"jailbreak":1}}]}"#;
+    let rejected = rejection(verdict(Some(thresholds(None, Some(1.0_f64))), body));
     assert_eq!(rejected.error, "Violated jailbreak threshold");
 }
 
 #[test]
 fn lakera_moderation_keeps_unknown_response_keys_in_the_detail() {
-    let body = json!({
-        "model": "lakera-guard",
-        "results": [{
-            "flagged": true,
-            "payload": [{"start": 0, "end": 4}],
-            "category_scores": {"jailbreak": 0.9, "moderated_content": 0.2},
-        }],
-    });
-    let response = parse(body.clone());
-    let rejected = rejection(moderation(None).check_response_flagged(&response));
-    assert_echoed(&rejected, &body);
+    let body = r#"{"model":"lakera-guard","results":[{"flagged":true,"payload":[{"start":0,"end":4}],"category_scores":{"jailbreak":0.9,"moderated_content":0.2}}]}"#;
+    let rejected = rejection(verdict(None, body));
+    assert_echoed(
+        &rejected,
+        r#"{"results":[{"flagged":true,"category_scores":{"jailbreak":0.9,"moderated_content":0.2},"payload":[{"end":4,"start":0}]}],"model":"lakera-guard"}"#,
+    );
 }

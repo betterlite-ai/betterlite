@@ -95,7 +95,7 @@ pub enum CatoError {
         #[source]
         source: IoError,
     },
-    #[error("the Cato Networks upstream websocket sent no message in time")]
+    #[error("the Cato Networks upstream websocket did not send or accept a message in time")]
     StreamTimeout,
     #[error("the Cato Networks upstream websocket message is not valid JSON")]
     StreamJson {
@@ -114,7 +114,7 @@ pub enum CatoError {
     #[error("Cato guardrail upstream stream failed")]
     StreamSenderFailed {
         #[source]
-        source: Box<CatoError>,
+        source: Box<Self>,
     },
     #[error("the model stream failed")]
     ModelStream {

@@ -72,7 +72,10 @@ impl CatoSocketConnector for WebSocketConnector {
                 stream: reader,
                 read_timeout: read,
             }),
-            writer: Box::new(TungsteniteWriter { sink: writer }),
+            writer: Box::new(TungsteniteWriter {
+                sink: writer,
+                write_timeout: read,
+            }),
         })
     }
 }
@@ -82,7 +85,16 @@ fn rustls_connector(verification: &Verification) -> Result<Connector, CatoError>
     let tls_config = websocket_client_config(verification).map_err(|error| match error {
         TlsError::ReadCa(source) => CatoError::WsCaFile { source },
         TlsError::RustlsConfig(source) => CatoError::WsTls { source },
-        other => CatoError::Tls { source: other },
+        other @ (TlsError::Http(_)
+        | TlsError::Policy(_)
+        | TlsError::CaLength(_)
+        | TlsError::CaTooLarge
+        | TlsError::EmptyCa
+        | TlsError::UnsupportedCurve(_)
+        | TlsError::InvalidPem(_)
+        | TlsError::InvalidDer(_)
+        | TlsError::Signatures(_)
+        | TlsError::UserAgent(_)) => CatoError::Tls { source: other },
     })?;
     Ok(Connector::Rustls(Arc::new(tls_config)))
 }
@@ -115,14 +127,19 @@ impl CatoFrameReader for TungsteniteReader {
 
 struct TungsteniteWriter {
     sink: SplitSink<SocketStream, Message>,
+    // a server that keeps its socket open but stops reading must not hold the forwarding task forever
+    write_timeout: Duration,
 }
 
 #[async_trait]
 impl CatoFrameWriter for TungsteniteWriter {
     async fn send_text(&mut self, text: &str) -> Result<(), CatoError> {
-        self.sink
-            .send(Message::Text(Utf8Bytes::from(text)))
-            .await
-            .map_err(|source| CatoError::WebSocket { source })
+        time::timeout(
+            self.write_timeout,
+            self.sink.send(Message::Text(Utf8Bytes::from(text))),
+        )
+        .await
+        .map_err(|_elapsed| CatoError::StreamTimeout)?
+        .map_err(|source| CatoError::WebSocket { source })
     }
 }

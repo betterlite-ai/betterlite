@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use futures_util::future::{Either, select};
 use reqwest::header::HeaderMap;
 use tokio::sync::mpsc;
 use tokio::task::{JoinError, JoinSet};
@@ -105,10 +106,10 @@ fn classify(mut frame: StreamMessage) -> CatoFrame {
     if frame.done == Some(true) {
         return CatoFrame::Done;
     }
-    match frame.blocking_message.take() {
-        Some(message) => CatoFrame::Blocked(message),
-        None => CatoFrame::Unknown(frame),
-    }
+    frame
+        .blocking_message
+        .take()
+        .map_or(CatoFrame::Unknown(frame), CatoFrame::Blocked)
 }
 
 // one upstream frame: a verified chunk, the end of the stream, or a block
@@ -151,10 +152,15 @@ impl StreamState {
             let Some(sender) = self.sender.as_mut() else {
                 return self.reader.recv_message().await;
             };
-            let step = tokio::select! {
-                biased;
-                joined = sender.join_next() => Await::Sender(joined),
-                message = self.reader.recv_message() => Await::Message(message),
+            // the sender is polled first, so a dead sender is reported before a waiting receive
+            let step = match select(
+                Box::pin(sender.join_next()),
+                Box::pin(self.reader.recv_message()),
+            )
+            .await
+            {
+                Either::Left((joined, _receive)) => Await::Sender(joined),
+                Either::Right((message, _join)) => Await::Message(message),
             };
             match step {
                 // a sender that finished cleanly leaves the answer to the upstream messages

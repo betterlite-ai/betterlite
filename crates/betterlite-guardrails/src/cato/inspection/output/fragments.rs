@@ -17,9 +17,11 @@ pub(crate) struct Fragment {
     pub(crate) text: String,
 }
 
+type FragmentsOf = fn(&GuardrailValue, usize) -> Vec<Fragment>;
+
 // LiteLLM reads assistant fragments from choices[] or from output[], depending on the response shape
 pub(crate) fn response_fragments(response: &GuardrailValue, kind: ResponseKind) -> Vec<Fragment> {
-    let (field, fragments_of): (&str, fn(&GuardrailValue, usize) -> Vec<Fragment>) = match kind {
+    let (field, fragments_of): (&str, FragmentsOf) = match kind {
         ResponseKind::Chat => ("choices", message_fragments),
         ResponseKind::Responses => ("output", output_item_fragments),
     };
@@ -38,34 +40,32 @@ fn message_fragments(choice: &GuardrailValue, choice_index: usize) -> Vec<Fragme
     let Some(message) = field_of(choice, "message") else {
         return Vec::new();
     };
-    let mut fragments = Vec::new();
-    if let Some(text) = field_of(message, "content").and_then(as_text) {
-        fragments.push(Fragment {
-            path: vec![
-                Step::Key("choices"),
-                Step::Index(choice_index),
-                Step::Key("message"),
-                Step::Key("content"),
-            ],
-            text: text.to_owned(),
-        });
-    }
-    fragments.extend(tool_call_fragments(message, choice_index));
-    fragments
-}
-
-// every tool call's non-empty arguments string, written back at its own index
-fn tool_call_fragments(message: &GuardrailValue, choice_index: usize) -> Vec<Fragment> {
-    let Some(tool_calls) = field_of(message, "tool_calls").and_then(as_array) else {
-        return Vec::new();
-    };
-    let route = [
+    let route = vec![
         Step::Key("choices"),
         Step::Index(choice_index),
         Step::Key("message"),
-        Step::Key("tool_calls"),
     ];
-    element_fragments(&route, tool_calls, None, &["function", "arguments"])
+    let mut fragments = Vec::new();
+    if let Some(text) = field_of(message, "content").and_then(as_text) {
+        let mut path = route.clone();
+        path.push(Step::Key("content"));
+        fragments.push(Fragment {
+            path,
+            text: text.to_owned(),
+        });
+    }
+    if let Some(tool_calls) = field_of(message, "tool_calls").and_then(as_array) {
+        let mut calls_route = route;
+        calls_route.push(Step::Key("tool_calls"));
+        let arguments = ["function", "arguments"];
+        fragments.extend(element_fragments(
+            &calls_route,
+            tool_calls,
+            None,
+            &arguments,
+        ));
+    }
+    fragments
 }
 
 // the non-empty text under `keys` in each element, with the route to it from the elements' array

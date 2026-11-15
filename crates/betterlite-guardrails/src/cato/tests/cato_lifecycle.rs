@@ -413,6 +413,7 @@ async fn post_call_success_hook_redacts_responses_function_call_arguments() {
         ["hello", "calc"]
     );
     let output = output_items(&response);
+    assert_eq!(output.len(), 3);
     let GuardrailValue::Object(function_call) = &output[0] else {
         panic!("the function call is not an object");
     };

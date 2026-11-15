@@ -15,7 +15,9 @@ use tokio::task::JoinSet;
 use tokio::time;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::Error as WebSocketError;
-use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
+use tokio_tungstenite::tungstenite::handshake::server::{
+    Callback, ErrorResponse, Request, Response,
+};
 use tokio_tungstenite::tungstenite::{Bytes, Message, Utf8Bytes};
 use tokio_tungstenite::{accept_async, accept_hdr_async};
 
@@ -30,12 +32,32 @@ use crate::cato::transport::stream::{
 };
 use crate::cato::transport::websocket::WebSocketConnector;
 
+// half the frame limit, so a few unread frames fill the socket buffers of a server that stops reading
+const WRITE_PAYLOAD_BYTES: usize = 512 * 1024;
+
 // a hook that stops relaying would otherwise hold the test suite until its timeout
 const RELAY_DEADLINE: Duration = Duration::from_secs(5);
 
 struct Report {
     headers: BTreeMap<String, String>,
     received: Vec<String>,
+}
+
+// the handshake callback that keeps what the client asked with
+struct HeaderRecorder<'headers> {
+    headers: &'headers mut BTreeMap<String, String>,
+}
+
+impl Callback for HeaderRecorder<'_> {
+    fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
+        for (name, raw) in request.headers() {
+            if let Ok(value) = raw.to_str() {
+                self.headers
+                    .insert(name.as_str().to_owned(), value.to_owned());
+            }
+        }
+        Ok(response)
+    }
 }
 
 async fn read_frames<S>(socket: &mut S, limit: usize) -> Vec<String>
@@ -68,13 +90,8 @@ async fn serve_cato_stream(listener: TcpListener, frames: Vec<Message>, wait_for
     let mut headers = BTreeMap::new();
     let mut socket = accept_hdr_async(
         stream,
-        |request: &Request, response: Response| -> Result<Response, ErrorResponse> {
-            for (name, raw) in request.headers() {
-                if let Ok(value) = raw.to_str() {
-                    headers.insert(name.as_str().to_owned(), value.to_owned());
-                }
-            }
-            Ok(response)
+        HeaderRecorder {
+            headers: &mut headers,
         },
     )
     .await
@@ -225,6 +242,34 @@ async fn websocket_connector_bounds_the_handshake_wait() {
         )
         .await;
     assert!(matches!(result, Err(CatoError::ConnectTimeout)));
+    tasks.abort_all();
+}
+
+#[tokio::test]
+async fn websocket_connector_bounds_a_write_to_a_server_that_stops_reading() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let url = format!(
+        "ws://{}/fw/v1/analyze/stream",
+        listener.local_addr().expect("address")
+    );
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let (stream, _peer) = listener.accept().await.expect("accept");
+        let _socket = accept_async(stream).await.expect("handshake");
+        pending::<()>().await;
+    });
+    let mut socket = connect_websocket(&url, None, Duration::from_millis(100))
+        .await
+        .expect("connected");
+    let payload = "x".repeat(WRITE_PAYLOAD_BYTES);
+    let mut outcome = Ok(());
+    for _attempt in 0..256 {
+        outcome = socket.writer.send_text(&payload).await;
+        if outcome.is_err() {
+            break;
+        }
+    }
+    assert!(matches!(outcome, Err(CatoError::StreamTimeout)));
     tasks.abort_all();
 }
 
