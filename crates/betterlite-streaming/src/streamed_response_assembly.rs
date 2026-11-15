@@ -216,5 +216,6 @@ where
         complex::apply(&mut draft, &streamed.chunks, request.now)?;
         ReasoningMode::Counted
     };
-    finish::finish_chat(request, streamed, draft, mode, hooks).await
+    let usage = finish::estimate_usage(request, streamed, &draft, mode, hooks).await?;
+    finish::finish_chat(request, streamed, draft, usage)
 }

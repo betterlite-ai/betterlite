@@ -1,18 +1,45 @@
 import sys
-from collections.abc import Callable
 from contextlib import redirect_stdout
-from typing import Final
+from typing import Protocol, runtime_checkable
 
-from litellm.main import stream_chunk_builder
+import litellm.main as main_module
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.utils import ModelResponse, TextCompletionResponse
 from pydantic import JsonValue as Json
 
 from .build import INPUT, ChunkWire, Input, build_chunk
-from .fixture import START_TIME, logging_fixture, prompt_callback
+from .fixture import FailingPrompt, FixedPrompt, logging_fixture, prompt_callback
 from .projection import response_view
 
-# LiteLLM's annotation says list, but its runtime raises the None-chunks APIError, so null passes.
-BUILD: Final[Callable[..., ModelResponse | TextCompletionResponse | None]] = stream_chunk_builder
+
+# LiteLLM annotates chunks as list, but null reaches its None-chunks APIError.
+class Builder(Protocol):
+    def __call__(
+        self,
+        *,
+        chunks: list[ChunkWire] | None,
+        messages: list[dict[str, Json]] | None,
+        logging_obj: Logging | None,
+        count_prompt_tokens: FixedPrompt | FailingPrompt | None,
+    ) -> ModelResponse | TextCompletionResponse | None: ...
+
+
+@runtime_checkable
+class AnyModule(Protocol): ...
+
+
+@runtime_checkable
+class BuilderModule(AnyModule, Protocol):
+    stream_chunk_builder: Builder
+
+
+# The class pattern reads the module through the protocol, so LiteLLM's loose signature stays out.
+def builder(module: AnyModule) -> Builder:
+    match module:
+        case BuilderModule():
+            return module.stream_chunk_builder
+        case AnyModule():
+            raise TypeError("litellm.main has no stream_chunk_builder")
 
 
 def assemble(request: Input) -> Json:
@@ -20,11 +47,9 @@ def assemble(request: Input) -> Json:
     chunks: list[ChunkWire] | None = None
     if raw_chunks is not None:
         chunks = [build_chunk(chunk) for chunk in raw_chunks]
-    response = BUILD(
+    response = builder(main_module)(
         chunks=chunks,
         messages=request.get("messages"),
-        start_time=START_TIME,
-        end_time=START_TIME,
         logging_obj=logging_fixture(request.get("logging")),
         count_prompt_tokens=prompt_callback(request.get("count_prompt_tokens")),
     )

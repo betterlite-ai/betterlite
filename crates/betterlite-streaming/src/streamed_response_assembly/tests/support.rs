@@ -281,7 +281,17 @@ pub(super) fn priced_logging(provider: &'static str, cost: Option<Decimal>) -> F
     FixtureLogging {
         provider: Some(provider),
         cost,
-        ..FixtureLogging::default()
+        fail: false,
+        calls: AtomicUsize::new(0),
+    }
+}
+
+pub(super) fn failing_logging(provider: &'static str) -> FixtureLogging {
+    FixtureLogging {
+        provider: Some(provider),
+        cost: None,
+        fail: true,
+        calls: AtomicUsize::new(0),
     }
 }
 

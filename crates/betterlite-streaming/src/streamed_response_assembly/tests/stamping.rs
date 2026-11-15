@@ -2,7 +2,7 @@ use rust_decimal::Decimal;
 
 use crate::streamed_response_assembly::AssemblyError;
 
-use super::support::{FixtureLogging, priced_logging};
+use super::support::{failing_logging, priced_logging};
 use super::{Harness, chat_of, cost_stream, failed, value};
 
 pub(super) async fn usage_cost_stamping() {
@@ -77,11 +77,7 @@ pub(super) async fn stamping_requires_logging() {
 }
 
 pub(super) async fn stamping_error() {
-    let logging = FixtureLogging {
-        provider: Some("openai"),
-        fail: true,
-        ..FixtureLogging::default()
-    };
+    let logging = failing_logging("openai");
     let mut harness = Harness::new(Some(cost_stream(None)));
     harness.logging = Some(&logging);
     let (result, logs) = harness.run().await;

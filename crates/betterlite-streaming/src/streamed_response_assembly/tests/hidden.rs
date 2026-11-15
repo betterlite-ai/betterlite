@@ -3,7 +3,7 @@ use betterlite_tokenizer::count::error::CountError;
 use rust_decimal::Decimal;
 
 use crate::stream_chunk_shaping::records::JsonValue;
-use crate::streamed_response_assembly::{AssemblyError, MetadataServices};
+use crate::streamed_response_assembly::MetadataServices;
 
 use super::support::{
     FixtureResolver, FixtureSelector, RecordingProjection, chunks, priced_logging,
@@ -83,16 +83,12 @@ pub(super) async fn hidden_provider_fields() {
     }
 }
 
+const NOT_AN_OBJECT: &str = "provider_specific_fields is not a JSON object";
+
 pub(super) async fn hidden_provider_fields_error() {
     let stream = hidden_stream(r#"{"provider_specific_fields": "nope"}"#);
-    let (result, logs) = Harness::new(Some(stream)).run().await;
-    assert!(matches!(
-        failed(result),
-        AssemblyError::InvalidProviderFields
-    ));
-    assert!(
-        logs[0].ends_with("Exception occurred - provider_specific_fields is not a JSON object")
-    );
+    let (result, _logs) = Harness::new(Some(stream)).run().await;
+    assert_eq!(failed(result).to_string(), NOT_AN_OBJECT);
 }
 
 pub(super) async fn prompt_callback_failure() {

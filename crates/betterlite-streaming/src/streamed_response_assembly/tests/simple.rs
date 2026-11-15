@@ -1,5 +1,5 @@
 use super::support::chunks;
-use super::{Harness, chat_of, object, response_of, value};
+use super::{Harness, chat_of, response_of};
 
 pub(super) async fn simple_text_path() {
     simple_text_join().await;
@@ -87,34 +87,32 @@ pub(super) async fn simple_first_choice_content() {
     assert_eq!(response.choices[0].message.content.as_deref(), Some("AB"));
 }
 
+const DISABLING: [&str; 8] = [
+    r#""tool_calls": []"#,
+    r#""function_call": {"name": "f", "arguments": ""}"#,
+    r#""reasoning_content": """#,
+    r#""thinking_blocks": []"#,
+    r#""annotations": []"#,
+    r#""audio": {}"#,
+    r#""images": []"#,
+    r#""provider_specific_fields": {}"#,
+];
+
+const DISABLED_STREAM: &str = r#"[
+    {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+     "choices": [{"index": 0, "delta": {"role": "assistant", "content": "A"}}]},
+    {"choices": [{"index": 0, "delta": {"content": "B", FIELD}}]}
+]"#;
+
+// Any of these fields, even empty, sends the stream through the complex path, which leaves no zero reasoning stamp.
 pub(super) async fn simple_disabled_by_fields() {
-    let disabling = [
-        ("tool_calls", value("[]")),
-        ("function_call", value(r#"{"name": "f", "arguments": ""}"#)),
-        ("reasoning_content", value(r#""""#)),
-        ("thinking_blocks", value("[]")),
-        ("annotations", value("[]")),
-        ("audio", value("{}")),
-        ("images", value("[]")),
-        ("provider_specific_fields", value("{}")),
-    ];
-    for (field, disabled) in disabling {
-        let mut delta = object(r#"{"content": "B"}"#);
-        delta.insert(field.to_owned(), disabled);
-        let mut source = String::from(
-            r#"[{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "A"}}]}, {"choices": [{"index": 0, "delta": "#,
-        );
-        source.push_str(&serde_json::to_string(&delta).expect("fixture delta serializes"));
-        source.push_str("}]}]");
-        let response = response_of(&source, 2).await;
-        assert_eq!(
-            response.choices[0].message.content.as_deref(),
-            Some("AB"),
+    for field in DISABLING {
+        let response = response_of(&DISABLED_STREAM.replace("FIELD", field), 2).await;
+        let content = response.choices[0].message.content.as_deref();
+        assert_eq!(content, Some("AB"), "{field}");
+        assert!(
+            response.usage.completion_tokens_details.is_none(),
             "{field}"
-        );
-        assert_eq!(
-            response.usage.completion_tokens_details, None,
-            "{field} must leave the fast path"
         );
     }
 }

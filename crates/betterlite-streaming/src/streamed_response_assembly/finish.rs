@@ -19,18 +19,12 @@ pub(crate) enum ReasoningMode {
     Counted,
 }
 
-pub(crate) async fn finish_chat<L, C>(
+pub(crate) fn finish_chat(
     request: &Request<'_>,
     streamed: &Streamed,
     mut draft: Draft,
-    mode: ReasoningMode,
-    hooks: &VerboseHooks<L, C>,
-) -> Result<ChatResponse, AssemblyError>
-where
-    L: LoggerSink + Sync,
-    C: ConsoleSink + Sync,
-{
-    let mut usage = estimate_usage(request, streamed, &draft, mode, hooks).await?;
+    mut usage: Usage,
+) -> Result<ChatResponse, AssemblyError> {
     propagate_hidden_fields(&mut draft.base.hidden_params, &streamed.chunks)?;
     apply_costs(request, &mut draft.base, &mut usage)?;
     if let Some(services) = request.metadata {
@@ -47,7 +41,7 @@ where
 }
 
 // LiteLLM hands the first sorted chunk's model to the counters, not the base model a later chunk may replace.
-async fn estimate_usage<L, C>(
+pub(crate) async fn estimate_usage<L, C>(
     request: &Request<'_>,
     streamed: &Streamed,
     draft: &Draft,
@@ -67,12 +61,6 @@ where
         draft.extras.function_call.as_ref(),
         draft.extras.tool_calls.as_deref(),
     )?;
-    let reasoning_tokens = match mode {
-        ReasoningMode::Zero => Some(0),
-        ReasoningMode::Counted => {
-            reasoning_tokens(draft.extras.reasoning_content.as_deref(), request).await?
-        }
-    };
     let projected = project::usage_chunks(&streamed.chunks)?;
     let first_model = streamed
         .chunks
@@ -84,7 +72,7 @@ where
         model: first_model,
         completion_output: &output,
         messages: request.messages,
-        reasoning_tokens,
+        reasoning_tokens: reasoning_tokens(draft, mode, request).await?,
         count_prompt_tokens: request.count_prompt_tokens,
     };
     calculate_usage(request.counter, hooks, &usage_request)
@@ -118,17 +106,27 @@ fn apply_costs(
     Ok(())
 }
 
+// The simple path stamps zero reasoning tokens; the complex path counts the joined reasoning text.
 async fn reasoning_tokens(
-    reasoning_content: Option<&str>,
+    draft: &Draft,
+    mode: ReasoningMode,
     request: &Request<'_>,
 ) -> Result<Option<i64>, AssemblyError> {
-    let choices: Vec<ReasoningChoice> = reasoning_content.map_or_else(Vec::new, |text| {
-        vec![ReasoningChoice {
-            message: ReasoningMessage {
-                reasoning_content: Some(text.to_owned()),
-            },
-        }]
-    });
+    if matches!(mode, ReasoningMode::Zero) {
+        return Ok(Some(0));
+    }
+    let choices: Vec<ReasoningChoice> =
+        draft
+            .extras
+            .reasoning_content
+            .as_deref()
+            .map_or_else(Vec::new, |text| {
+                vec![ReasoningChoice {
+                    message: ReasoningMessage {
+                        reasoning_content: Some(text.to_owned()),
+                    },
+                }]
+            });
     Ok(count_reasoning_tokens(request.counter, &choices).await?)
 }
 

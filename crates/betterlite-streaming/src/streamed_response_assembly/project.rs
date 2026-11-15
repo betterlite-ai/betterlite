@@ -9,10 +9,11 @@ use crate::stream_usage_assembly::wire::Chunk as UsageWireChunk;
 use super::records::{Choice, Chunk};
 
 // The shared typed records are the input to B2232/B2233/B2234/B2235, which each read their own fields.
-fn project_chunks<T, P>(projections: impl Iterator<Item = P>) -> Result<Vec<T>, serde_json::Error>
+fn project_chunks<T, P, I>(projections: I) -> Result<Vec<T>, serde_json::Error>
 where
     T: DeserializeOwned,
     P: Serialize,
+    I: Iterator<Item = P>,
 {
     projections
         .map(|projection| serde_json::to_value(projection).and_then(serde_json::from_value))

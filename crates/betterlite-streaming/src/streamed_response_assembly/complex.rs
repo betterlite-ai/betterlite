@@ -91,8 +91,10 @@ fn set_content(draft: &mut Draft, content: Option<String>) {
 }
 
 fn first_delta(chunk: &Chunk) -> Option<&Delta> {
-    let choice = chunk.choices.first()?;
-    choice.delta.as_ref()
+    match chunk.choices.first() {
+        Some(choice) => choice.delta.as_ref(),
+        None => None,
+    }
 }
 
 fn has_tool_calls(chunk: &Chunk) -> bool {
@@ -106,7 +108,10 @@ fn has_tool_calls(chunk: &Chunk) -> bool {
 }
 
 // The chunks whose first choice carries the field, in stream order.
-fn select(chunks: &[Chunk], keep: impl Fn(&Delta) -> bool) -> Vec<&Chunk> {
+fn select<K>(chunks: &[Chunk], keep: K) -> Vec<&Chunk>
+where
+    K: Fn(&Delta) -> bool,
+{
     chunks
         .iter()
         .filter(|chunk| first_delta(chunk).is_some_and(&keep))
@@ -114,10 +119,10 @@ fn select(chunks: &[Chunk], keep: impl Fn(&Delta) -> bool) -> Vec<&Chunk> {
 }
 
 // Every selected first-choice list is concatenated in stream order, and an empty join still assigns.
-fn joined_lists(
-    chunks: &[Chunk],
-    field: impl Fn(&Delta) -> Option<&[JsonValue]>,
-) -> Option<Vec<JsonValue>> {
+fn joined_lists<F>(chunks: &[Chunk], field: F) -> Option<Vec<JsonValue>>
+where
+    F: Fn(&Delta) -> Option<&[JsonValue]>,
+{
     let lists: Vec<&[JsonValue]> = chunks
         .iter()
         .filter_map(|chunk| first_delta(chunk).and_then(&field))
