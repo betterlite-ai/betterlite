@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::websearch_request_hooks::Settings;
 
 fn variables(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -20,12 +20,11 @@ fn settings(source: &str, environment: &[(&str, &str)]) -> Settings {
     config.sections.websearch_request_hooks
 }
 
-fn load_error(source: &str, environment: &[(&str, &str)]) -> String {
+fn load_error(source: &str, environment: &[(&str, &str)]) -> ConfigError {
     let lookup = variables(environment);
     ConfigLoader { lookup }
         .load(source)
         .expect_err("the config fails to load")
-        .to_string()
 }
 
 fn params(body: &str) -> String {
@@ -117,7 +116,9 @@ fn initialize_from_proxy_config_defaults_when_neither_entry_is_set() {
 fn ceiling_validation_rejects_a_bool(#[case] value: &str) {
     let error = load_error(&params(&format!("    max_agentic_loops: {value}\n")), &[]);
     assert!(
-        error.contains("litellm_settings.websearch_interception_params.max_agentic_loops"),
+        error
+            .to_string()
+            .contains("litellm_settings.websearch_interception_params.max_agentic_loops"),
         "{error}"
     );
 }
@@ -133,7 +134,7 @@ fn ceiling_validation_rejects_a_bool(#[case] value: &str) {
 )]
 fn ceiling_validation_rejects_a_value(#[case] value: &str, #[case] expected: &str) {
     let error = load_error(&params(&format!("    max_agentic_loops: {value}\n")), &[]);
-    assert!(error.contains(expected), "{error}");
+    assert!(error.to_string().contains(expected), "{error}");
 }
 
 #[rstest]
@@ -180,7 +181,7 @@ fn a_missing_environment_reference_is_a_load_error() {
         &params("    max_agentic_loops: os.environ/MAX_LOOPS\n"),
         &[],
     );
-    assert!(error.contains("MAX_LOOPS"), "{error}");
+    assert!(error.to_string().contains("MAX_LOOPS"), "{error}");
 }
 
 #[test]
@@ -195,7 +196,7 @@ fn an_environment_reference_resolves_in_the_search_tool_name() {
 #[test]
 fn a_non_list_provider_list_is_a_load_error() {
     let error = load_error(&params("    enabled_providers: bedrock\n"), &[]);
-    assert!(!error.is_empty());
+    assert!(matches!(error, ConfigError::Yaml { .. }), "{error}");
 }
 
 #[test]
@@ -205,7 +206,9 @@ fn a_list_under_the_callback_settings_entry_is_rejected() {
         &[],
     );
     assert!(
-        error.contains("callback_settings.websearch_interception.enabled_providers"),
+        error
+            .to_string()
+            .contains("callback_settings.websearch_interception.enabled_providers"),
         "{error}"
     );
 }

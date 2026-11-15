@@ -2,7 +2,7 @@ use betterlite_core::routes::CallType;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
-use crate::websearch_request_hooks::tests::{logger, object};
+use crate::websearch_request_hooks::tests::{json, logger, object};
 use crate::websearch_request_hooks::{CONVERTED_STREAM_KEY, WebSearchError};
 
 fn chat_request() -> Object {
@@ -18,7 +18,10 @@ fn the_deployment_hook_buffers_a_streamed_chat_call() {
         .unwrap()
         .unwrap();
     assert_eq!(converted.get("stream"), Some(&Json::Bool(false)));
-    assert_eq!(converted.get(CONVERTED_STREAM_KEY), Some(&Json::Bool(true)));
+    assert_eq!(
+        converted.get("_websearch_interception_converted_stream"),
+        Some(&Json::Bool(true))
+    );
 }
 
 #[test]
@@ -58,8 +61,23 @@ fn a_non_streaming_request_keeps_its_stream_and_gains_no_flag(#[case] value: &st
         .async_pre_call_deployment_hook(&object(&source), None)
         .unwrap()
         .unwrap();
+    assert_eq!(converted.get("stream"), Some(&json(value)));
     assert_eq!(converted.get(CONVERTED_STREAM_KEY), None);
-    assert_ne!(converted.get("stream"), Some(&Json::Bool(true)));
+}
+
+#[rstest]
+#[case::false_value("false")]
+#[case::null("null")]
+fn a_non_streaming_pre_request_keeps_its_stream_and_gains_no_flag(#[case] value: &str) {
+    let source = format!(
+        r#"{{"litellm_params":{{"custom_llm_provider":"bedrock"}},"stream":{value},"tools":[{{"type":"web_search_20250305","name":"web_search"}}]}}"#
+    );
+    let converted = logger(&["bedrock"])
+        .async_pre_request_hook(&object(&source))
+        .unwrap()
+        .unwrap();
+    assert_eq!(converted.get("stream"), Some(&json(value)));
+    assert_eq!(converted.get(CONVERTED_STREAM_KEY), None);
 }
 
 #[test]

@@ -126,6 +126,18 @@ fn the_pre_request_hook_inserts_the_instance_ceiling() {
 }
 
 #[test]
+fn the_pre_request_hook_leaves_the_ceiling_absent_without_an_instance_value() {
+    let request = object(
+        r#"{"litellm_params":{"custom_llm_provider":"bedrock"},"tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,
+    );
+    let converted = bedrock_logger(&["bedrock"])
+        .async_pre_request_hook(&request)
+        .unwrap()
+        .unwrap();
+    assert_eq!(converted.get("max_agentic_loops"), None);
+}
+
+#[test]
 fn the_pre_request_hook_fills_a_null_ceiling() {
     let mut logger = bedrock_logger(&["bedrock"]);
     logger.max_agentic_loops = Some(5);

@@ -14,7 +14,7 @@ fn the_deployment_hook_sets_the_native_blocks_flag() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        converted.get(EMIT_NATIVE_BLOCKS_KEY),
+        converted.get("_websearch_interception_emit_native_blocks"),
         Some(&Json::Bool(true))
     );
     assert_eq!(request.get(EMIT_NATIVE_BLOCKS_KEY), None);
