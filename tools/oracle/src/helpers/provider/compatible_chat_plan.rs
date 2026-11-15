@@ -13,6 +13,7 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::compatible_line_stream::Mode;
+use betterlite_openai::compatible_wire::{NEW_ID, system_clock};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_provider::compatible_chat_call::error::CompatibleChatError;
 use betterlite_provider::compatible_chat_call::execution::{CompatibleChatExecution, TimeoutFacts};
@@ -21,7 +22,7 @@ use betterlite_provider::compatible_chat_call::send::{
     ChatAnswer, CompatibleChatOutcome, finish_chat,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::DateTime;
+use chrono::{DateTime, FixedOffset};
 use futures_util::stream::{StreamExt as _, iter};
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -114,19 +115,24 @@ fn chat_execution<'call>(
         api_key: key,
         headers: call.headers.as_ref(),
         optional_params: &call.optional_params,
-        custom_endpoint: call.custom_endpoint,
+        custom_endpoint: call.custom_endpoint.unwrap_or(false),
         timeout,
         mode: call.mode,
         fake_stream: call.fake_stream,
         // B2230 selects the transform and B5840 the decoder; these cases carry neither
         transform_messages: None,
         streaming_decoder: None,
+        identifier: NEW_ID,
+        clock: system_clock,
     }
 }
 
-fn state(redactor: &Redactor) -> Result<LoggingState, Box<crate::helpers::HelperError>> {
+fn state(
+    redactor: &Redactor,
+    init: LoggingInit,
+) -> Result<LoggingState, Box<crate::helpers::HelperError>> {
     LoggingState::new(
-        serde_json::from_str::<LoggingInit>(INIT).map_err(|error| invalid(error.to_string()))?,
+        init,
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
             settings: CorrelationSettings::default(),
@@ -138,8 +144,8 @@ fn state(redactor: &Redactor) -> Result<LoggingState, Box<crate::helpers::Helper
     .map_err(|error| invalid(error.to_string()))
 }
 
-fn environment(redactor: &Redactor) -> Result<PrePostEnv<'_>, Box<crate::helpers::HelperError>> {
-    Ok(PrePostEnv {
+fn environment(redactor: &Redactor, now: DateTime<FixedOffset>) -> PrePostEnv<'_> {
+    PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
         decision: Decision {
@@ -151,8 +157,8 @@ fn environment(redactor: &Redactor) -> Result<PrePostEnv<'_>, Box<crate::helpers
         input_callbacks: &[],
         sentry: None,
         logger_fn: None,
-        now: DateTime::parse_from_rfc3339(NOW).map_err(|error| invalid(error.to_string()))?,
-    })
+        now,
+    }
 }
 
 fn timeout_value(facts: TimeoutFacts) -> Value {
@@ -250,8 +256,11 @@ fn answer(call: &Call) -> Result<Value, Box<crate::helpers::HelperError>> {
     let execution = chat_execution(call, key.as_ref(), seconds(call.timeout)?);
     let redactor =
         Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| invalid(error.to_string()))?;
-    let mut state = state(&redactor)?;
-    let env = environment(&redactor)?;
+    let init =
+        serde_json::from_str::<LoggingInit>(INIT).map_err(|error| invalid(error.to_string()))?;
+    let now = DateTime::parse_from_rfc3339(NOW).map_err(|error| invalid(error.to_string()))?;
+    let mut state = state(&redactor, init)?;
+    let env = environment(&redactor, now);
     let plan = match execution.plan(&mut state, &env) {
         Ok(plan) => plan,
         Err(error) => return Ok(failure(&error, None, None)),
@@ -261,7 +270,7 @@ fn answer(call: &Call) -> Result<Value, Box<crate::helpers::HelperError>> {
     let answer = fixture_answer(&plan, call)?;
     match finish_chat(&plan, answer, &mut state, &env) {
         Ok(outcome) => Ok(with_send(
-            outcome_value(outcome, &call.model, &plan.provider),
+            outcome_value(outcome, &call.model, &plan.reply.provider),
             request,
             transport_stream,
         )),
