@@ -131,16 +131,6 @@ impl<'probe> Harness<'probe> {
         })
     }
 
-    fn supplied(&self) -> SuppliedClient<'_, Client> {
-        SuppliedClient {
-            kind: match self.probe.supplied {
-                Supplied::Async => ClientKind::Async,
-                Supplied::Sync => ClientKind::Sync,
-            },
-            transport: &self.supplied,
-        }
-    }
-
     fn call<'request>(&'request self, request: &'request RerankRequest) -> RerankCall<'request> {
         RerankCall {
             request,
@@ -184,7 +174,13 @@ fn measure(
     let reply = runtime.block_on(dispatch_request(
         call,
         &prepared,
-        Some(harness.supplied()),
+        Some(SuppliedClient {
+            kind: match harness.probe.supplied {
+                Supplied::Async => ClientKind::Async,
+                Supplied::Sync => ClientKind::Sync,
+            },
+            transport: &harness.supplied,
+        }),
         &harness.factory,
         log.state,
     ))?;
