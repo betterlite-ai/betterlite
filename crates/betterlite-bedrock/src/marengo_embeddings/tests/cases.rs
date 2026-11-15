@@ -60,13 +60,28 @@ fn transform(scenario: &Scenario) -> Result<Field, MarengoEmbeddingsError> {
     Ok(to_field(&request))
 }
 
-fn to_field<T: Serialize>(value: &T) -> Field {
+fn to_field<T>(value: &T) -> Field
+where
+    T: Serialize,
+{
     serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
 }
 
-fn parse<T: DeserializeOwned>(value: &Field) -> Result<T, String> {
+fn parse<T>(value: &Field) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
     let json = serde_json::to_value(value).map_err(|error| error.to_string())?;
     serde_json::from_value(json).map_err(|error| error.to_string())
+}
+
+// arbitrary_precision reads a float in JSON text as the private number map, which Field would keep as an object
+fn parse_json<T>(text: &str) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    let value = serde_json::from_str(text).map_err(|error| error.to_string())?;
+    serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
 fn batch(scenario: &Scenario, request: &Field) -> Result<Vec<MarengoBilledRequest>, String> {
@@ -81,7 +96,7 @@ fn responses(scenario: &Scenario) -> Result<Vec<MarengoInvokeResponse>, String> 
 }
 
 fn expected_value(text: &str) -> Field {
-    serde_json::from_str(text).unwrap()
+    parse_json(text).unwrap()
 }
 
 fn verify_supported(scenario: &Scenario, marengo_3: bool) {
@@ -608,7 +623,7 @@ const WRAPPED_VIDEO: &str = r#"{
     Check::Usage(r#"{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "prompt_tokens_details": {"query_count": null, "image_count": 1}}"#)
 )]
 fn marengo_embeddings_cases(#[case] scenario: &str, #[case] check: Check) {
-    let parsed: Scenario = serde_json::from_str(scenario).unwrap();
+    let parsed: Scenario = parse_json(scenario).unwrap();
     match check {
         Check::Supported { marengo_3 } => verify_supported(&parsed, marengo_3),
         Check::Mapped(expected) => verify_mapped(&parsed, expected),
