@@ -193,7 +193,7 @@ impl Parser<'_> {
                 b'"' => return Some(Captured::Skipped),
                 b'\\' => ascii = self.escape(&mut text, ascii)?,
                 0x00..=0x1F => return None,
-                unit @ 0x20..=0x7F if ascii => text.push(char::from(unit)),
+                unit @ 0x20..=0x7F => text.push(char::from(unit)),
                 _ => ascii = false,
             }
         }
