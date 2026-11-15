@@ -129,28 +129,24 @@ fn recognizes_only_audio_transcription_models_with_both_endpoints(
     assert_eq!(is_vertex_speech_to_text_model(&catalog, model), expected);
 }
 
+fn custom_catalog(mode: &str, endpoints: &str) -> ModelCatalog {
+    let entry = format!(
+        r#"{{"vertex_ai/chirp_2": {{"litellm_provider": "vertex_ai", "mode": "{mode}", "supported_endpoints": {endpoints}}}}}"#
+    );
+    ModelCatalog::parse(entry.as_bytes(), UnknownFields::Reject).expect("a catalog")
+}
+
 #[test]
 fn an_entry_without_both_speech_to_text_endpoints_is_not_recognized() {
-    let streaming = r#"{
-        "vertex_ai/chirp_2": {
-            "litellm_provider": "vertex_ai",
-            "mode": "audio_transcription",
-            "supported_endpoints": ["/v1/audio/transcriptions", "/v1/realtime"]
-        }
-    }"#;
-    let recognized =
-        ModelCatalog::parse(streaming.as_bytes(), UnknownFields::Reject).expect("a catalog");
-    assert!(is_vertex_speech_to_text_model(&recognized, "chirp_2"));
-    let other = r#"{
-        "vertex_ai/chirp_2": {
-            "litellm_provider": "vertex_ai",
-            "mode": "audio_transcription",
-            "supported_endpoints": ["/v1/chat/completions"]
-        }
-    }"#;
-    let unrecognized =
-        ModelCatalog::parse(other.as_bytes(), UnknownFields::Reject).expect("a catalog");
-    assert!(!is_vertex_speech_to_text_model(&unrecognized, "chirp_2"));
+    let streaming = custom_catalog(
+        "audio_transcription",
+        r#"["/v1/audio/transcriptions", "/v1/realtime"]"#,
+    );
+    assert!(is_vertex_speech_to_text_model(&streaming, "chirp_2"));
+    let other = custom_catalog("audio_transcription", r#"["/v1/chat/completions"]"#);
+    assert!(!is_vertex_speech_to_text_model(&other, "chirp_2"));
+    let chat = custom_catalog("chat", r#"["/v1/audio/transcriptions", "/v1/realtime"]"#);
+    assert!(!is_vertex_speech_to_text_model(&chat, "chirp_2"));
 }
 
 #[rstest]
@@ -606,7 +602,7 @@ fn vad_interims_emit_begin_and_deltas_then_a_final_completes() {
 fn speech_started_is_emitted_once_per_turn() {
     let mut transformer = chirp_transformer(true);
     let first = transformer
-        .transform(frame(ChirpSpeechEvent::Begin, &[("hel", false)], "0.5"))
+        .transform(frame(ChirpSpeechEvent::Begin, &[("he", false)], "0.5"))
         .unwrap();
     assert_eq!(event_types(&wire_events(&first)), [STARTED, DELTA]);
     let second = transformer
@@ -694,7 +690,7 @@ fn one_frame_emits_begin_finals_interim_and_end_in_order() {
 fn a_frame_with_an_interim_and_an_end_keeps_the_turn_open() {
     let mut transformer = chirp_transformer(true);
     let events = transformer
-        .transform(frame(ChirpSpeechEvent::Begin, &[("hel", false)], "0.5"))
+        .transform(frame(ChirpSpeechEvent::Begin, &[("he", false)], "0.5"))
         .unwrap();
     let events = wire_events(&events);
     assert_eq!(event_types(&events), [STARTED, DELTA]);
@@ -818,7 +814,7 @@ fn a_discarded_turn_can_raise_the_bill() {
 fn unbilled_seconds_are_reported_once_and_only_the_difference_afterwards() {
     let mut transformer = chirp_transformer(true);
     transformer
-        .transform(frame(ChirpSpeechEvent::None, &[("hel", false)], "0.5"))
+        .transform(frame(ChirpSpeechEvent::None, &[("he", false)], "0.5"))
         .unwrap();
     assert_eq!(
         transformer.take_unbilled_usage().unwrap(),
@@ -849,6 +845,10 @@ fn billing_reports_exact_decimal_seconds() {
     transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", false)], "0.1"))
         .unwrap();
+    assert_eq!(
+        transformer.take_unbilled_usage().unwrap(),
+        Some(duration_usage(0.1))
+    );
     let events = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "0.3"))
         .unwrap();
@@ -939,15 +939,18 @@ fn uuid_item_ids_look_like_openai_item_ids() {
     let first = item_ids.next_item_id();
     let second = item_ids.next_item_id();
     assert_ne!(first, second);
-    for identifier in [first, second] {
-        let suffix = identifier.strip_prefix("item_").expect("item prefix");
-        assert_eq!(suffix.len(), 32);
-        assert!(
-            suffix
-                .chars()
-                .all(|character| character.is_ascii_hexdigit())
-        );
-    }
+    assert_item_id_is_uuid(&first);
+    assert_item_id_is_uuid(&second);
+}
+
+fn assert_item_id_is_uuid(identifier: &str) {
+    let suffix = identifier.strip_prefix("item_").expect("item prefix");
+    assert_eq!(suffix.len(), 32);
+    assert!(
+        suffix
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    );
 }
 
 #[derive(Clone, Default)]
