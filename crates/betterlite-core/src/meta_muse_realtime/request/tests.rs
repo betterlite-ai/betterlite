@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::sync::Arc;
 use std::sync::PoisonError;
 
@@ -193,12 +195,8 @@ fn rejects_a_session_update_that_changes_the_model() {
 #[test]
 fn packetizes_appended_audio_into_80ms_frames() {
     let mut config = configured_config(&[]);
-    let first: Vec<u8> = (0..3_840)
-        .map(|index| u8::try_from(index % 251).unwrap())
-        .collect();
-    let tail: Vec<u8> = (0..100)
-        .map(|index| u8::try_from(index % 7).unwrap())
-        .collect();
+    let first: Vec<u8> = (0..3_840).map(|index| index.to_le_bytes()[0]).collect();
+    let tail: Vec<u8> = (0..100).map(|index| index.to_le_bytes()[0]).collect();
     let full = configure(&mut config, &append_message(&first));
     assert_eq!(full, vec![RealtimeMessage::Binary(first)]);
     let buffered = configure(&mut config, &append_message(&tail));

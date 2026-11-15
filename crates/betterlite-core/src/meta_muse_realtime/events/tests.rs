@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -211,9 +213,9 @@ fn push_to_talk_transcripts_create_random_item_ids() {
     let events = harness.transform(r#"{"type":"transcript","transcript":"hi"}"#);
     assert_eq!(kinds(&events), vec!["started", "delta"]);
     let item_id = turn_item(&events[0]);
-    assert!(item_id.starts_with("item_"));
-    assert_eq!(item_id.len(), 37);
-    assert!(Uuid::parse_str(&item_id[5..]).is_ok());
+    let identifier = item_id.strip_prefix("item_").unwrap();
+    assert_eq!(identifier.len(), 32);
+    assert!(Uuid::parse_str(identifier).is_ok());
     assert_eq!(turn_item(&events[1]), item_id);
     drop(harness.transform(r#"{"type":"transcript","transcript":"hi there","final":true}"#));
     let next = harness.transform(r#"{"type":"transcript","transcript":"again"}"#);
@@ -300,6 +302,18 @@ fn unknown_frames_and_provider_errors() {
                 .to_owned()
         ]
     );
+}
+
+#[test]
+fn integer_turn_ids_render_the_way_python_prints_them() {
+    let mut harness = Harness::default();
+    let negative_zero = harness.transform(r#"{"type":"speechStart","turnId":-0}"#);
+    assert_eq!(turn_item(&negative_zero[0]), "0");
+    let large =
+        harness.transform(r#"{"type":"speechStart","turnId":123456789012345678901234567890}"#);
+    assert_eq!(turn_item(&large[0]), "123456789012345678901234567890");
+    let negative = harness.transform(r#"{"type":"speechStart","turnId":-12}"#);
+    assert_eq!(turn_item(&negative[0]), "-12");
 }
 
 #[test]
