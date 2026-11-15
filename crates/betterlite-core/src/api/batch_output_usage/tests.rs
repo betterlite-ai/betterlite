@@ -356,6 +356,29 @@ fn anthropic_result_usage() {
 }
 
 #[test]
+fn a_parsed_anthropic_usage_is_not_flagged() {
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "anthropic",
+        "model_info": batch_model_info(),
+        "content": {"kind": "lines", "lines": [
+            {"custom_id": "ok", "result": {"type": "succeeded", "message": {
+                "model": "claude-batch",
+                "usage": {"input_tokens": 4, "output_tokens": 1},
+            }}},
+        ]},
+    }));
+    let (outcome, logs) = run_captured(&decoded, &NoProviders);
+    let result = outcome.expect("the batch is costed");
+    assert_eq!(result.usage, totals(4, 1, 5));
+    assert!(!logged(
+        &logs,
+        Level::WARN,
+        "batch output line reported usage this parser does not understand"
+    ));
+}
+
+#[test]
 fn ocr_line_cost() {
     let decoded = input(json!({
         "kind": "output_usage",

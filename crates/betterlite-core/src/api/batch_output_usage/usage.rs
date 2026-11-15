@@ -8,7 +8,6 @@ use betterlite_logging::fields::usage::parse::usage_from_mapping;
 use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::Usage as SummedUsage;
 use indexmap::IndexMap;
-use serde_json::{Map, Value};
 
 use super::decode::object_field;
 use super::error::{BatchOutputUsageError, BatchResult};
@@ -149,14 +148,11 @@ fn anthropic_usage(value: &Json, provider: BatchOutputProvider) -> BatchResult<S
 }
 
 fn generic_usage(fields: &IndexMap<String, Json>) -> BatchResult<SummedUsage> {
-    let mut object = Map::new();
-    for (key, value) in fields {
-        let wire =
-            serde_json::to_value(value).map_err(|source| BatchOutputUsageError::Json { source })?;
-        object.insert(key.clone(), wire);
-    }
-    if is_response_api_usage(&object) {
-        let document = Value::Object(object);
+    let document =
+        serde_json::to_value(fields).map_err(|source| BatchOutputUsageError::Json { source })?;
+    if let Some(object) = document.as_object()
+        && is_response_api_usage(object)
+    {
         let converted = transform_response_api_usage(Some(&document))?;
         return Ok(SummedUsage {
             prompt_tokens: converted.prompt_tokens,
