@@ -64,7 +64,7 @@ fn model_scope_targets(
     let Some(group) = present(model_group) else {
         return;
     };
-    for (key, id) in [
+    for (key, scope_id) in [
         ("model_per_key", metadata.user_api_key_hash.as_deref()),
         ("model_per_team", metadata.user_api_key_team_id.as_deref()),
         (
@@ -76,7 +76,7 @@ fn model_scope_targets(
             metadata.user_api_key_project_id.as_deref(),
         ),
     ] {
-        if let Some(id) = present(id) {
+        if let Some(id) = present(scope_id) {
             targets.push((key.to_owned(), format!("{id}:{group}")));
         }
     }
@@ -87,14 +87,15 @@ fn agent_targets(targets: &mut Vec<(String, String)>, metadata: &ScopeMetadata) 
         return;
     };
     targets.push(("agent".to_owned(), agent.to_owned()));
-    let session = present(metadata.session_id.as_deref()).or(present(metadata.trace_id.as_deref()));
-    if let Some(session) = session {
+    let session_id =
+        present(metadata.session_id.as_deref()).or(present(metadata.trace_id.as_deref()));
+    if let Some(session) = session_id {
         targets.push(("agent_session".to_owned(), format!("{agent}:{session}")));
     }
 }
 
-fn push_target(targets: &mut Vec<(String, String)>, key: &'static str, value: Option<&str>) {
-    if let Some(value) = value {
+fn push_target(targets: &mut Vec<(String, String)>, key: &'static str, optional: Option<&str>) {
+    if let Some(value) = optional {
         targets.push((key.to_owned(), value.to_owned()));
     }
 }

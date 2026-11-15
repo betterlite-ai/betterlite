@@ -180,8 +180,8 @@ fn io_usage(reconciliation: &IoTokenReconciliation<'_>) -> IoUsage {
             tokens,
             billed_total,
         } => resolve_rerank_token_usage(tokens, billed_total).and_then(resolved_counts),
-        IoTokenResponse::Response(response) => {
-            resolved_counts(reconcile_io_usage(response_usage(response)))
+        IoTokenResponse::Response(response_object) => {
+            resolved_counts(reconcile_io_usage(response_usage(response_object)))
         }
     };
     let combined = reconciliation
@@ -189,8 +189,8 @@ fn io_usage(reconciliation: &IoTokenReconciliation<'_>) -> IoUsage {
         .and_then(|usage| resolved_counts(reconcile_io_usage(Some(ResponseUsage::Usage(usage)))));
     let response_total = match reconciliation.response {
         IoTokenResponse::Rerank { .. } => 0,
-        IoTokenResponse::Response(response) => {
-            aggregate_only_total_tokens(response_usage(response))
+        IoTokenResponse::Response(response_object) => {
+            aggregate_only_total_tokens(response_usage(response_object))
         }
     };
     let combined_total =
