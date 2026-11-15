@@ -4,7 +4,8 @@ use std::io;
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use betterlite_redis::config_sync::publish::{
     PublishChange, PublishFuture, redis_config_change_publisher,
 };
@@ -61,11 +62,16 @@ fn test_url() -> Option<SecretString> {
         .map(SecretString::from)
 }
 
+// The migrations look constraint names up across the whole database, so each fixture gets its own.
 async fn provision() -> PostgresFixture {
-    PostgresFixture::provision_schema(test_url().as_ref())
-        .resolve()
-        .await
-        .unwrap()
+    PostgresFixture::provision_with_name_generator(
+        test_url().as_ref(),
+        &FixtureSeed::default(),
+        &mut RandomDatabaseName,
+    )
+    .resolve()
+    .await
+    .unwrap()
 }
 
 pub(crate) fn store(fixture: &PostgresFixture) -> PostgresStore {
@@ -147,6 +153,8 @@ impl Case {
     pub(crate) async fn close(self) {
         self.writer.pool.unwrap().close();
         self.reader.pool.unwrap().close();
+        // The closed pools' drivers need a turn to close their sockets before DROP DATABASE.
+        tokio::task::yield_now().await;
         for fixture in self.fixtures {
             fixture.close_async().await.unwrap();
         }
