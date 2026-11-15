@@ -326,6 +326,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "recraft_images"
+path = "fuzz_targets/recraft_images.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "stability_image"
 path = "fuzz_targets/stability_image.rs"
 test = false
