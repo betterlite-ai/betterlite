@@ -9,6 +9,9 @@ deviations:
   - what: A row written here stores litellm_params and search_tool_info as JSONB documents, where LiteLLM's Prisma client sends the safe_dumps text as a JSON string and the column holds that string.
     why: The table binds the dumped text as jsonb, so the typed row carries the same parsed document LiteLLM's Prisma Json field hands back; a row LiteLLM wrote is still read through its string form.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L95-L96
+  - what: A created search tool's created_at and updated_at come from one clock reading, where LiteLLM calls datetime.now(timezone.utc) twice, so the two fields can land one millisecond apart.
+    why: The registry takes one injected clock value per operation, so the stored row and the timestamps it returns always agree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L104-L105
 kept_bugs:
   - what: update_search_tool_in_db replaces the name, litellm_params and search_tool_info together, and an absent search_tool_info is written as "{}", which erases the stored info.
     why: Callers send the whole tool on update, so a partial body already loses fields in LiteLLM and clients rely on the full replacement.
