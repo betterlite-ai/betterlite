@@ -583,6 +583,17 @@ fn a_null_first_uploaded_mask_entry_skips_the_json_mask() {
 }
 
 #[test]
+fn a_mask_conversion_error_wins_over_an_image_error() {
+    let unsupported = Json::Object(IndexMap::new());
+    let mut images = [Some(EditImage::Other(&unsupported))];
+    let options = options(&[("mask", Json::List(Vec::new()))]);
+    match transform_image_edit_request(&mut request(None, &mut images, &mut [], &options)) {
+        Err(FalEditError::UnsupportedImage { kind }) => assert_eq!(kind, "list"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn provider_options_overlay_the_generated_fields() {
     let image = EditImage::Bytes(PNG);
     let mut images = [Some(image)];
