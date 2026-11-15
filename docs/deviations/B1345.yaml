@@ -1,0 +1,6 @@
+task: B1345
+deviations:
+  - what: A reply without a truthy usageMetadata keeps usage absent, while LiteLLM's image pipeline hands the transform an ImageResponse whose constructor filled in a zero usage and then attaches the search count to it.
+    why: The task requires preserving absent usage, and a zero usage would report token counts the reply never sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2685-L2693
+kept_bugs: []
