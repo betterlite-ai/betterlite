@@ -1,0 +1,55 @@
+kind: helper
+name: google-guardrail-text-text-locations
+call:
+  google_guardrail_text:
+    calls:
+      - function: request
+        data:
+          model: gemini-2.5-flash
+          systemInstruction:
+            role: system
+            parts:
+              - {text: sys}
+              - {inlineData: {mimeType: image/png, data: x}}
+          contents:
+            - role: user
+              parts:
+                - {text: one}
+                - {text: ""}
+            - parts: [{text: two}]
+        replacement: [SYS, ONE, TWO]
+      - function: response
+        response:
+          candidates:
+            - content:
+                parts:
+                  - {text: a}
+                  - {inlineData: {mimeType: image/png, data: x}}
+                  - {text: ""}
+              finishReason: STOP
+            - content: {parts: [{text: b}]}
+        replacement: [A, B]
+      - function: request
+        data:
+          system_instruction:
+            parts:
+              - {text: old, role: system}
+              - {inlineData: {mimeType: image/png, data: x}}
+          contents: [{parts: [{text: body}]}]
+        replacement: [SNAKE, BODY]
+      - function: request
+        data:
+          config:
+            systemInstruction:
+              parts:
+                - {text: old, role: system}
+          contents: [{parts: [{text: body}]}]
+        replacement: [CAMEL, BODY]
+      - function: request
+        data:
+          config:
+            system_instruction: {parts: [{text: old}]}
+          contents: {parts: [{text: body}]}
+        replacement: [CONFIG-SNAKE, BODY]
+env: {}
+compare: {ignore: []}
