@@ -1,8 +1,8 @@
 import asyncio
 import json
 from typing import Literal, TypedDict, TypeVar
+from unittest.mock import patch
 
-from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.proxy.guardrails.guardrail_endpoints import get_provider_specific_params
 from litellm.proxy.guardrails.guardrail_registry import guardrail_class_registry
 from litellm.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
@@ -72,39 +72,19 @@ class SyntheticGenericFilled(GuardrailConfigModel[BaseModel]):
         return "Synthetic Generic"
 
 
-class SyntheticLiteralListGuardrail(CustomGuardrail):
-    @staticmethod
-    @override
-    def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
-        return SyntheticLiteralList
+class SyntheticRegistration:
+    def __init__(self, config_model: type[GuardrailConfigModel[BaseModel]]) -> None:
+        self.config_model = config_model
+
+    def get_config_model(self) -> type[GuardrailConfigModel[BaseModel]]:
+        return self.config_model
 
 
-class SyntheticNestedGuardrail(CustomGuardrail):
-    @staticmethod
-    @override
-    def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
-        return SyntheticNested
-
-
-class SyntheticUnfilledGuardrail(CustomGuardrail):
-    @staticmethod
-    @override
-    def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
-        return SyntheticGenericUnfilled
-
-
-class SyntheticFilledGuardrail(CustomGuardrail):
-    @staticmethod
-    @override
-    def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
-        return SyntheticGenericFilled
-
-
-SYNTHETIC_GUARDRAILS: dict[str, type[CustomGuardrail]] = {
-    "synthetic_literal_list": SyntheticLiteralListGuardrail,
-    "synthetic_nested": SyntheticNestedGuardrail,
-    "synthetic_generic_unfilled": SyntheticUnfilledGuardrail,
-    "synthetic_generic_filled": SyntheticFilledGuardrail,
+SYNTHETIC_REGISTRATIONS: dict[str, SyntheticRegistration] = {
+    "synthetic_literal_list": SyntheticRegistration(SyntheticLiteralList),
+    "synthetic_nested": SyntheticRegistration(SyntheticNested),
+    "synthetic_generic_unfilled": SyntheticRegistration(SyntheticGenericUnfilled),
+    "synthetic_generic_filled": SyntheticRegistration(SyntheticGenericFilled),
 }
 
 
@@ -118,14 +98,8 @@ class Input(TypedDict):
 
 
 def route_answer() -> dict[str, JsonValue]:
-    saved = dict(guardrail_class_registry)
-    guardrail_class_registry.clear()
-    guardrail_class_registry.update(SYNTHETIC_GUARDRAILS)
-    try:
-        provider_params = asyncio.run(get_provider_specific_params())
-    finally:
-        guardrail_class_registry.clear()
-        guardrail_class_registry.update(saved)
+    with patch.dict(guardrail_class_registry, SYNTHETIC_REGISTRATIONS, clear=True):
+        provider_params: object = asyncio.run(get_provider_specific_params())  # type: ignore[misc, no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1915
     return ANSWERS.validate_json(json.dumps(provider_params, default=UndefinedAsNull()))
 
 
