@@ -1,6 +1,9 @@
 use betterlite_models::decisions::Json;
+use betterlite_models::prompt_contracts::{PromptIgnoreFlags, PromptParams};
+use indexmap::IndexMap;
 
 use super::support;
+use crate::langfuse_prompt_management::completion::ChatCompletionPromptRequest;
 
 #[tokio::test]
 async fn a_missing_prompt_id_never_runs() {
@@ -50,6 +53,41 @@ async fn a_failed_fetch_does_not_run_and_does_not_propagate() {
             .should_run_prompt_management(Some("missing"), None, &dynamic)
             .await
     );
+}
+
+#[tokio::test]
+async fn a_failing_fetch_returns_the_callers_request_unchanged() {
+    let server = support::FakeLangfuse::start(vec![
+        (200, support::PROJECTS.to_owned()),
+        (404, "{}".to_owned()),
+    ])
+    .await;
+    let variables = support::env(&server.base_url);
+    let fixture = support::manager(&support::borrowed(&variables)).await;
+    let dynamic = support::no_dynamic_params();
+    let messages = vec![Json::Object(IndexMap::from([(
+        "role".to_owned(),
+        Json::Text("user".to_owned()),
+    )]))];
+    let result = fixture
+        .manager
+        .get_chat_completion_prompt(ChatCompletionPromptRequest {
+            model: "gpt-4o-mini",
+            messages: messages.clone(),
+            non_default_params: PromptParams::new(),
+            prompt_id: Some("missing"),
+            prompt_variables: None,
+            dynamic_callback_params: &dynamic,
+            prompt_spec: None,
+            prompt_label: None,
+            prompt_version: None,
+            ignore_flags: PromptIgnoreFlags::default(),
+        })
+        .await
+        .expect("the request passes through");
+    assert_eq!(result.model, "gpt-4o-mini");
+    assert_eq!(result.messages, messages);
+    assert!(result.non_default_params.is_empty());
 }
 
 #[tokio::test]
