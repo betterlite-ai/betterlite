@@ -7,8 +7,8 @@ deviations:
     why: betterlite names a failure in its module enum, and the task keeps these off the submission's 500 wrapper, so no BFL status is invented for them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/handler.py#L361-L372
 kept_bugs:
-  - what: A submission answered 4xx or 5xx becomes a BFL 500 "Request failed" error instead of keeping the provider status.
-    why: LiteLLM's HTTP client raises on the status and the handler's except catches every exception, so callers today see a 500 and a working setup cannot distinguish the provider status; the port keeps that.
+  - what: A submission answered with any status outside 2xx (a 3xx without a followed redirect, a 4xx or a 5xx) becomes a BFL 500 "Request failed" error instead of keeping the provider status.
+    why: LiteLLM's HTTP client calls raise_for_status and the handler's except catches every exception, so callers today see a 500 and a working setup cannot distinguish the provider status; the port keeps that.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/handler.py#L168-L179
   - what: A submission body carrying an errors key is rejected with the initial status even when the value is null or an empty list.
     why: LiteLLM tests membership alone, and a provider that only adds the key on failure is what working setups talk to, so the presence check is copied unchanged.

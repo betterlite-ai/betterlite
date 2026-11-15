@@ -1,0 +1,100 @@
+use std::collections::BTreeMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::decisions::Json;
+use http::header::{HeaderMap, HeaderValue};
+use indexmap::IndexMap;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
+use url::Url;
+
+use crate::api::bfl::generation_call::submit::{SubmitRequest, SubmitTransport};
+use crate::api::bfl::poll::PollTransport;
+
+const REPLY: &str = "HTTP/1.1 201 Created\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
+
+// serves one request, waits until the client has sent the tail, and returns what it sent
+async fn serve_once(listener: TcpListener, tail: &[u8]) -> String {
+    let (mut stream, _) = listener.accept().await.expect("the connection");
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    while !received.ends_with(tail) {
+        let read = stream.read(&mut chunk).await.expect("the request bytes");
+        assert_ne!(read, 0, "the client closed before sending the request");
+        received.extend_from_slice(chunk.get(..read).expect("the bytes read"));
+    }
+    stream.write_all(REPLY.as_bytes()).await.expect("the reply");
+    String::from_utf8(received).expect("the request text")
+}
+
+async fn local_server() -> (TcpListener, SocketAddr, ProxiedClient) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy"),
+    );
+    (
+        listener,
+        address,
+        ProxiedClient::outbound(&policy).expect("the client"),
+    )
+}
+
+fn key_header() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert("x-key", HeaderValue::from_static("sk-bfl"));
+    headers
+}
+
+#[tokio::test]
+async fn the_provider_client_posts_the_json_body_with_the_headers() {
+    let (listener, address, client) = local_server().await;
+    let body = Json::Object(IndexMap::from([(
+        String::from("prompt"),
+        Json::Text(String::from("a cat")),
+    )]));
+    let request = SubmitRequest {
+        url: Url::parse(&format!("http://{address}/v1/flux-pro-1.1")).expect("the URL"),
+        headers: key_header(),
+        body,
+        timeout: None,
+    };
+
+    let (response, sent) = tokio::join!(
+        client.post(request),
+        serve_once(listener, br#"{"prompt":"a cat"}"#)
+    );
+
+    let response = response.expect("the submission is answered");
+    assert_eq!(response.status, 201);
+    assert_eq!(response.body, b"{}");
+    assert!(sent.starts_with("POST /v1/flux-pro-1.1 HTTP/1.1"));
+    assert!(sent.to_ascii_lowercase().contains("x-key: sk-bfl"));
+    assert!(
+        sent.to_ascii_lowercase()
+            .contains("content-type: application/json")
+    );
+}
+
+#[tokio::test]
+async fn the_provider_client_polls_with_a_get_carrying_the_headers() {
+    let (listener, address, client) = local_server().await;
+    let url = Url::parse(&format!("http://{address}/v1/get_result?id=1")).expect("the URL");
+
+    let (response, sent) = tokio::join!(
+        client.get(url, key_header()),
+        serve_once(listener, b"\r\n\r\n")
+    );
+
+    let response = response.expect("the poll is answered");
+    assert_eq!(response.status, 201);
+    assert_eq!(response.body, b"{}");
+    assert!(sent.starts_with("GET /v1/get_result?id=1 HTTP/1.1"));
+    assert!(sent.to_ascii_lowercase().contains("x-key: sk-bfl"));
+}

@@ -21,7 +21,7 @@ use url::Url;
 
 use self::error::GenerationCallError;
 use self::params::CallParams;
-use self::prepare::{PreparedGeneration, prepare};
+use self::prepare::{PreparedGeneration, overlay_headers, prepare};
 use self::submit::{SubmitError, SubmitRequest, SubmitTransport, SuppliedTransport, TransportKind};
 use crate::api::bfl::generation::{BflImageResponse, apply_image_response};
 use crate::api::bfl::poll::{BflPoller, PollClock, PollSleeper, PollTransport};
@@ -31,7 +31,7 @@ pub struct GenerationCall<'text> {
     pub prompt: &'text str,
     pub optional_params: &'text IndexMap<String, Json>,
     pub params: CallParams,
-    pub extra_headers: Option<&'text [(String, String)]>,
+    pub extra_headers: &'text [(String, String)],
     pub timeout: Option<Duration>,
     pub aimg_generation: bool,
     pub configured_key: Option<&'text SecretString>,
@@ -90,12 +90,13 @@ where
     where
         T: SubmitTransport + PollTransport + Sync,
     {
+        let headers = overlay_headers(&prepared.headers, call.extra_headers)?;
         let url = Url::parse(&prepared.url).map_err(|source| GenerationCallError::Submission {
             source: SubmitError::Url(source),
         })?;
         let request = SubmitRequest {
             url,
-            headers: prepared.headers.clone(),
+            headers: headers.clone(),
             body: Json::Object(prepared.body.clone()),
             timeout: call.timeout,
         };
@@ -103,8 +104,8 @@ where
             .post(request)
             .await
             .map_err(|source| GenerationCallError::Submission { source })?;
-        // a rejected submission reaches LiteLLM as a raised exception, so it becomes the same 500 as a failed request
-        if response.status >= 400 {
+        // httpx raises on any status outside 2xx, so LiteLLM turns a rejection or an unfollowed redirect into the same 500 as a failed request
+        if !(200..=299).contains(&response.status) {
             return Err(GenerationCallError::SubmissionStatus {
                 status: response.status,
             });
@@ -114,7 +115,7 @@ where
             clock: self.clock,
             sleeper: self.sleeper,
         }
-        .poll(&response, &prepared.headers)
+        .poll(&response, &headers)
         .await?;
         let result = apply_image_response(&polled, data, call.now_seconds)?;
         Ok(result)
@@ -126,11 +127,15 @@ fn log_pre_call(
     prepared: &PreparedGeneration,
     log: &mut LogContext<'_, '_>,
 ) -> Result<(), GenerationCallError> {
-    let headers: IndexMap<String, Json> = prepared
+    let mut headers: IndexMap<String, Json> = prepared
         .headers
         .iter()
         .map(|(name, value)| (name.as_str().to_owned(), Json::Text(header_text(value))))
         .collect();
+    // the pre-call record carries the caller's headers as given, before the wire refuses any of them
+    for (name, value) in call.extra_headers {
+        headers.insert(name.to_ascii_lowercase(), Json::Text(value.clone()));
+    }
     let record = PreCall {
         input: Json::Text(call.prompt.to_owned()),
         model: None,

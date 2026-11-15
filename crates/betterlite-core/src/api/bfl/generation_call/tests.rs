@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod proxied;
 mod support;
 
 use std::sync::atomic::Ordering;
@@ -9,6 +10,7 @@ use betterlite_config::types::LiteLlmParams;
 use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::reply::ImageDatum;
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::error::GenerationCallError;
@@ -38,7 +40,7 @@ fn generation_call<'text>(
         prompt: PROMPT,
         optional_params,
         params,
-        extra_headers: None,
+        extra_headers: &[],
         timeout: None,
         aimg_generation: false,
         configured_key: None,
@@ -185,7 +187,7 @@ async fn extra_headers_replace_the_validated_headers_and_the_polling_key() {
         (String::from("X-Trace"), String::from("t-1")),
     ];
     let mut call = generation_call(&optional_params, key());
-    call.extra_headers = Some(&extra);
+    call.extra_headers = &extra;
 
     let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
 
@@ -211,15 +213,15 @@ async fn an_extra_header_the_wire_cannot_carry_is_a_500_before_the_submission() 
     let clock = StepClock::stepping(0);
     let sleeper = Recorder::new(&clock);
     let optional_params = IndexMap::new();
-    let call = generation_call(&optional_params, key());
     let failures = [
         (String::from("bad name"), String::from("value")),
         (String::from("x-trace"), String::from("bad\nvalue")),
+        (String::from("x-trace"), String::from("café")),
     ];
     for (name, value) in failures {
-        let extra = [(name, value)];
+        let extra = [(name.clone(), value.clone())];
         let mut broken = generation_call(&optional_params, key());
-        broken.extra_headers = Some(&extra);
+        broken.extra_headers = &extra;
 
         let outcome = run(&script, &clock, &sleeper, &broken, Vec::new()).await;
 
@@ -228,9 +230,16 @@ async fn an_extra_header_the_wire_cannot_carry_is_a_500_before_the_submission() 
             .expect_err("a header the wire cannot carry fails");
         assert!(matches!(
             &error,
-            GenerationCallError::HeaderName { .. } | GenerationCallError::HeaderValue { .. }
+            GenerationCallError::HeaderName { .. }
+                | GenerationCallError::HeaderValue { .. }
+                | GenerationCallError::HeaderNotAscii { .. }
         ));
         assert_eq!(error.status(), Some(500));
+        // LiteLLM logs the request before the POST refuses the header, so the record still names it
+        assert_eq!(text(outcome.details.get("log_event_type")), "pre_api_call");
+        let additional = object(outcome.details.get("additional_args"));
+        let headers = object(additional.get("headers"));
+        assert_eq!(text(headers.get(name.as_str())), value);
     }
     assert!(
         script
@@ -264,6 +273,48 @@ async fn a_rejected_submission_is_a_500_and_stops_before_a_poll() {
             .expect("the gets lock is not poisoned")
             .is_empty()
     );
+}
+
+#[rstest]
+#[case(300)]
+#[case(302)]
+#[case(304)]
+#[tokio::test]
+async fn a_submission_outside_2xx_is_a_500_even_when_its_body_names_a_job(#[case] status: u16) {
+    let script = Script::new(reply(status, SUBMITTED), vec![reply(200, READY)]);
+    let clock = StepClock::stepping(0);
+    let sleeper = Recorder::new(&clock);
+    let optional_params = IndexMap::new();
+    let call = generation_call(&optional_params, key());
+
+    let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
+
+    let error = outcome.result.expect_err("a non-2xx submission fails");
+    assert!(matches!(
+        &error,
+        GenerationCallError::SubmissionStatus { status: found } if *found == status
+    ));
+    assert_eq!(error.status(), Some(500));
+    assert!(
+        script
+            .gets
+            .lock()
+            .expect("the gets lock is not poisoned")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn the_last_2xx_submission_status_is_still_polled() {
+    let script = Script::new(reply(299, SUBMITTED), vec![reply(200, READY)]);
+    let clock = StepClock::stepping(0);
+    let sleeper = Recorder::new(&clock);
+    let optional_params = IndexMap::new();
+    let call = generation_call(&optional_params, key());
+
+    let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
+
+    assert!(outcome.result.is_ok());
 }
 
 #[tokio::test]
@@ -517,6 +568,41 @@ async fn a_sync_call_discards_an_async_supplied_transport() {
     assert!(result.is_ok());
     assert_eq!(provider.post_count(), 1);
     assert_eq!(supplied.post_count(), 0);
+}
+
+#[tokio::test]
+async fn an_async_call_uses_an_async_supplied_transport() {
+    let provider = Script::new(reply(500, ""), Vec::new());
+    let supplied = Script::ready();
+    let clock = StepClock::stepping(0);
+    let sleeper = Recorder::new(&clock);
+    let optional_params = IndexMap::new();
+    let mut call = generation_call(&optional_params, key());
+    call.aimg_generation = true;
+    let executor = GenerationExecutor {
+        provider: &provider,
+        clock: &clock,
+        sleeper: &sleeper,
+    };
+    let handed = SuppliedTransport {
+        kind: TransportKind::Async,
+        transport: &supplied,
+    };
+    let (redactor, mut state) = logging_state();
+    let sink = Sink::default();
+    let env = logging_env(&redactor, &sink);
+    let mut log = LogContext {
+        state: &mut state,
+        env: &env,
+    };
+
+    let result = executor
+        .image_generation(&call, Some(handed), Vec::new(), &mut log)
+        .await;
+
+    assert!(result.is_ok());
+    assert_eq!(supplied.post_count(), 1);
+    assert_eq!(provider.post_count(), 0);
 }
 
 #[tokio::test]

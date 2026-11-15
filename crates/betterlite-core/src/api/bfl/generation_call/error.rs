@@ -24,6 +24,8 @@ pub enum GenerationCallError {
         #[source]
         source: InvalidHeaderValue,
     },
+    #[error("the BFL extra header {name} holds a value that is not ASCII")]
+    HeaderNotAscii { name: String },
     #[error(transparent)]
     Logging(#[from] PrePostError),
     #[error("the BFL submission request failed")]
@@ -47,7 +49,8 @@ impl GenerationCallError {
             Self::Submission { .. }
             | Self::SubmissionStatus { .. }
             | Self::HeaderName { .. }
-            | Self::HeaderValue { .. } => Some(500),
+            | Self::HeaderValue { .. }
+            | Self::HeaderNotAscii { .. } => Some(500),
             Self::Params(_) | Self::Logging(_) => None,
         }
     }

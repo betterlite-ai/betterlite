@@ -15,7 +15,9 @@ use rstest::rstest;
 use tokio::time::Instant;
 use url::Url;
 
-use super::{BflPoller, MonotonicClock, PollClock, PollError, PollSleeper, PollTransport};
+use super::{
+    BflPoller, MonotonicClock, PollClock, PollError, PollSleeper, PollTransport, TokioSleeper,
+};
 
 const SUBMITTED: &str =
     r#"{"id":"job-1","polling_url":"https://gateway.bfl.ai/v1/get_result?id=1"}"#;
@@ -236,6 +238,59 @@ async fn a_ready_poll_returns_the_reply_after_sleeping_through_pending() {
         .poll(&submission(), &HeaderMap::new())
         .await
         .expect("a ready job returns");
+    assert_eq!(reply.status.as_deref(), Some("Ready"));
+    assert_eq!(script.urls().len(), 2);
+    assert_eq!(
+        *sleeper.slept.lock().unwrap_or_else(PoisonError::into_inner),
+        vec![Duration::from_millis(1500)]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_tokio_sleeper_waits_for_the_requested_duration() {
+    let started = Instant::now();
+
+    TokioSleeper.sleep(Duration::from_millis(1500)).await;
+
+    assert_eq!(started.elapsed(), Duration::from_millis(1500));
+}
+
+#[rstest]
+#[case("{}")]
+#[case(r#"{"status":null}"#)]
+#[case(r#"{"status":"Task not found"}"#)]
+#[tokio::test]
+async fn an_absent_or_unknown_state_sleeps_and_polls_again(#[case] first: &'static str) {
+    let script = Script::new(
+        vec![
+            Reply {
+                status: 200,
+                body: first,
+            },
+            Reply {
+                status: 200,
+                body: READY,
+            },
+        ],
+        Reply {
+            status: 200,
+            body: PENDING,
+        },
+    );
+    let clock = clock(0);
+    let sleeper = Recorder {
+        clock: &clock,
+        slept: Mutex::default(),
+    };
+    let poller = BflPoller {
+        transport: &script,
+        clock: &clock,
+        sleeper: &sleeper,
+    };
+    let reply = poller
+        .poll(&submission(), &HeaderMap::new())
+        .await
+        .expect("the job becomes ready after the unknown state");
     assert_eq!(reply.status.as_deref(), Some("Ready"));
     assert_eq!(script.urls().len(), 2);
     assert_eq!(

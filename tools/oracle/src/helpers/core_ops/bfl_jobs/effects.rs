@@ -42,20 +42,12 @@ impl Effects {
 }
 
 pub(super) struct Script<'effects> {
-    submission: Reply,
-    polls: Mutex<VecDeque<Reply>>,
-    effects: &'effects Effects,
+    pub(super) submission: Reply,
+    pub(super) polls: Mutex<VecDeque<Reply>>,
+    pub(super) effects: &'effects Effects,
 }
 
-impl<'effects> Script<'effects> {
-    pub(super) fn new(submission: Reply, polls: Vec<Reply>, effects: &'effects Effects) -> Self {
-        Self {
-            submission,
-            polls: Mutex::new(polls.into()),
-            effects,
-        }
-    }
-
+impl Script<'_> {
     // the last scripted poll repeats, so a job that stays Pending only needs one reply
     fn next_reply(&self) -> Reply {
         let mut polls = self.polls.lock().unwrap_or_else(PoisonError::into_inner);
@@ -78,7 +70,9 @@ impl SubmitTransport for Script<'_> {
             "url": request.url.to_string(),
             "headers": header_object(&request.headers),
             "body": request.body.clone(),
-            "timeout_millis": request.timeout.map(timeout_millis),
+            "timeout_millis": request
+                .timeout
+                .map(|timeout| u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX)),
         }));
         ready(Ok(response(&self.submission)))
     }
@@ -131,16 +125,12 @@ impl PollSleeper for Timeline<'_> {
     fn sleep(&self, duration: Duration) -> impl Future<Output = ()> + Send {
         self.effects.record(json!({
             "effect": "sleep",
-            "millis": timeout_millis(duration),
+            "millis": u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
         }));
         let mut current = self.millis.lock().unwrap_or_else(PoisonError::into_inner);
         *current = current.saturating_add(self.advance);
         ready(())
     }
-}
-
-fn timeout_millis(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 fn header_object(headers: &HeaderMap) -> Value {

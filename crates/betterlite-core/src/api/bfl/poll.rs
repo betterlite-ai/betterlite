@@ -59,7 +59,7 @@ impl PollError {
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
         match self {
-            Self::InitialStatus { status }
+            Self::InitialStatus { status, .. }
             | Self::InitialDecode { status, .. }
             | Self::InitialErrors { status, .. }
             | Self::PollStatus { status, .. } => Some(*status),
@@ -141,8 +141,8 @@ where
         initial: &UpstreamResponse,
         headers: &HeaderMap,
     ) -> Result<BflReply, PollError> {
-        let reply = initial_reply(initial)?;
-        let polling_url = reply
+        let submitted = initial_reply(initial)?;
+        let polling_url = submitted
             .polling_url
             .as_deref()
             .filter(|url| !url.is_empty())
