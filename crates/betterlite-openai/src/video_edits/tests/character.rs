@@ -60,10 +60,13 @@ fn get_request_path_errors() {
     assert_eq!(field_name, "character_id");
     let dot = transform_video_get_character_request("..", "https://mock.example/v1")
         .expect_err("a dot character id has no path segment");
-    let VideoEditError::CharacterId(HttpError::DotSegment { field_name }) = dot else {
+    let VideoEditError::CharacterId(HttpError::DotSegment {
+        field_name: dot_field,
+    }) = dot
+    else {
         panic!("a dot character id is a dot segment");
     };
-    assert_eq!(field_name, "character_id");
+    assert_eq!(dot_field, "character_id");
 }
 
 fn reply_decoding() {
@@ -76,13 +79,11 @@ fn reply_decoding() {
     let defaulted = decode_character_reply(br#"{"id":"c1","created_at":5,"name":"n"}"#)
         .expect("the object field defaults to character");
     assert_eq!(defaulted.object, CharacterKind::Character);
-    let wrong_object =
-        decode_character_reply(br#"{"id":"c1","created_at":5,"name":"n","object":"video"}"#);
-    assert!(wrong_object.is_err());
-    let missing_name = decode_character_reply(br#"{"id":"c1","created_at":5}"#);
-    assert!(missing_name.is_err());
-    let wrong_type = decode_character_reply(br#"{"id":1,"created_at":5,"name":"n"}"#);
-    assert!(wrong_type.is_err());
-    let empty_body = decode_character_reply(b"");
-    assert!(empty_body.is_err());
+    decode_character_reply(br#"{"id":"c1","created_at":5,"name":"n","object":"video"}"#)
+        .expect_err("an unknown object value is refused");
+    decode_character_reply(br#"{"id":"c1","created_at":5}"#)
+        .expect_err("a missing name is refused");
+    decode_character_reply(br#"{"id":1,"created_at":5,"name":"n"}"#)
+        .expect_err("a numeric id is refused");
+    decode_character_reply(b"").expect_err("an empty body is refused");
 }

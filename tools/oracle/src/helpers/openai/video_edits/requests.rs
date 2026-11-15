@@ -10,7 +10,7 @@ use betterlite_openai::video_edits::extension::{
     // ast-grep-ignore: no-long-names
     transform_video_extension_request,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::fixture::{Prepared, character_files, file_part_value, prepared};
 use super::support::helper_error;
@@ -52,7 +52,7 @@ pub(super) fn edit_request_value(request: &EditRequest) -> HelperResult {
     Ok(json!({"url": edit.url, "body": edit.body, "files": files}))
 }
 
-pub(super) fn extension_request_value(request: &ExtensionRequest) -> HelperResult {
+pub(super) fn extension_request_value(request: &ExtensionRequest) -> Value {
     // ast-grep-ignore: no-long-names
     let extension = transform_video_extension_request(VideoExtensionRequest {
         prompt: request.prompt.clone(),
@@ -61,5 +61,5 @@ pub(super) fn extension_request_value(request: &ExtensionRequest) -> HelperResul
         api_base: request.api_base.clone(),
         extra_body: request.extra_body.clone(),
     });
-    Ok(json!({"url": extension.url, "body": extension.body}))
+    json!({"url": extension.url, "body": extension.body})
 }

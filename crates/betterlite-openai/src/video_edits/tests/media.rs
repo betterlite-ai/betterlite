@@ -5,7 +5,7 @@ use crate::video_edits::character::{
     CharacterPart, CreateCharacter, transform_video_create_character_request,
 };
 
-fn part<'a>(created: &'a CreateCharacter<'_>) -> (&'a str, &'static str) {
+fn part<'created>(created: &'created CreateCharacter<'_>) -> (&'created str, &'static str) {
     match created.files.get(1) {
         Some(CharacterPart::File(file)) => (file.filename.as_str(), file.content_type),
         _ => panic!("the second part is the video file"),
@@ -18,26 +18,26 @@ fn created(video: MediaBody<'_>) -> CreateCharacter<'_> {
 
 pub(super) fn video_part_filename() {
     let mut named = Cursor::new(b"not video".to_vec());
-    let stream = created(MediaBody::Stream {
+    let named_created = created(MediaBody::Stream {
         name: Some("clip.webm"),
         reader: &mut named,
     });
-    assert_eq!(part(&stream).0, "clip.webm");
+    assert_eq!(part(&named_created).0, "clip.webm");
 
     let mut unnamed = Cursor::new(b"not video".to_vec());
-    let stream = created(MediaBody::Stream {
+    let unnamed_created = created(MediaBody::Stream {
         name: None,
         reader: &mut unnamed,
     });
-    assert_eq!(part(&stream).0, "input_video.mp4");
+    assert_eq!(part(&unnamed_created).0, "input_video.mp4");
 
     let mut empty = Cursor::new(b"not video".to_vec());
-    let stream = created(MediaBody::Stream {
+    let empty_created = created(MediaBody::Stream {
         name: Some(""),
         reader: &mut empty,
     });
     assert_eq!(
-        part(&stream).0,
+        part(&empty_created).0,
         "input_video.mp4",
         "an empty name is no name"
     );
@@ -54,18 +54,18 @@ pub(super) fn video_part_filename() {
 
 pub(super) fn known_extension_mime() {
     let mut webm = Cursor::new(b"no signature".to_vec());
-    let stream = created(MediaBody::Stream {
+    let webm_created = created(MediaBody::Stream {
         name: Some("clip.webm"),
         reader: &mut webm,
     });
-    assert_eq!(part(&stream), ("clip.webm", "video/webm"));
+    assert_eq!(part(&webm_created), ("clip.webm", "video/webm"));
 
     let mut mp4 = Cursor::new(b"no signature".to_vec());
-    let stream = created(MediaBody::Stream {
+    let mp4_created = created(MediaBody::Stream {
         name: Some("clip.mp4"),
         reader: &mut mp4,
     });
-    assert_eq!(part(&stream), ("clip.mp4", "video/mp4"));
+    assert_eq!(part(&mp4_created), ("clip.mp4", "video/mp4"));
 }
 
 fn with_ftyp() -> Vec<u8> {
@@ -78,18 +78,18 @@ fn with_ftyp() -> Vec<u8> {
 
 pub(super) fn fallback_octet_stream() {
     let mut octet = Cursor::new(with_ftyp());
-    let stream = created(MediaBody::Stream {
+    let octet_created = created(MediaBody::Stream {
         name: Some("clip.bin"),
         reader: &mut octet,
     });
-    assert_eq!(part(&stream), ("clip.bin", "video/mp4"));
+    assert_eq!(part(&octet_created), ("clip.bin", "video/mp4"));
 
     let mut image = Cursor::new(b"no ftyp".to_vec());
-    let stream = created(MediaBody::Stream {
+    let image_created = created(MediaBody::Stream {
         name: Some("clip.png"),
         reader: &mut image,
     });
-    assert_eq!(part(&stream), ("clip.png", "video/mp4"));
+    assert_eq!(part(&image_created), ("clip.png", "video/mp4"));
 
     assert_eq!(
         part(&created(MediaBody::Bytes(&with_ftyp()))).1,

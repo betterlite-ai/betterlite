@@ -96,15 +96,15 @@ fn reply_not_wrapping() {
         custom_llm_provider: Some(""),
         request_data: None,
     };
-    let unwrapped = transform_video_response(&empty_provider).expect("a video reply");
-    assert_eq!(unwrapped.id, "video_1");
+    let provider_less = transform_video_response(&empty_provider).expect("a video reply");
+    assert_eq!(provider_less.id, "video_1");
     let empty_id = VideoReply {
         body: br#"{"id":"","object":"video","status":"completed"}"#,
         custom_llm_provider: Some("openai"),
         request_data: None,
     };
-    let unwrapped = transform_video_response(&empty_id).expect("a video reply");
-    assert_eq!(unwrapped.id, "");
+    let id_less = transform_video_response(&empty_id).expect("a video reply");
+    assert_eq!(id_less.id, "");
 }
 
 fn reply_errors() {
@@ -113,17 +113,17 @@ fn reply_errors() {
         custom_llm_provider: None,
         request_data: None,
     };
-    assert!(transform_video_response(&wrong_object).is_err());
+    transform_video_response(&wrong_object).expect_err("an unknown object value is refused");
     let missing_status = VideoReply {
         body: br#"{"id":"v1","object":"video"}"#,
         custom_llm_provider: None,
         request_data: None,
     };
-    assert!(transform_video_response(&missing_status).is_err());
+    transform_video_response(&missing_status).expect_err("a missing status is refused");
     let not_json = VideoReply {
         body: b"{",
         custom_llm_provider: None,
         request_data: None,
     };
-    assert!(transform_video_response(&not_json).is_err());
+    transform_video_response(&not_json).expect_err("a body that is not json is refused");
 }

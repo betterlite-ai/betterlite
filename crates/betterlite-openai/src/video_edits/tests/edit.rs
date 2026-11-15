@@ -21,6 +21,7 @@ fn text_request<'media>(prompt: &str, video_id: &str) -> VideoEditRequest<'media
 pub(super) fn edit_prompt() {
     json_body();
     supplied_file();
+    empty_file();
 }
 
 fn json_body() {
@@ -39,9 +40,9 @@ fn json_body() {
     assert_eq!(keys(&plain.body), ["prompt", "video"]);
     assert_eq!(plain.body.get("prompt"), Some(&json(r#""make it blue""#)));
 
-    let mut request = text_request("make it blue", &encoded);
-    request.api_base = String::from("https://mock.example/v1/");
-    let slashed = transform_video_edit_request(request);
+    let mut slashed_request = text_request("make it blue", &encoded);
+    slashed_request.api_base = String::from("https://mock.example/v1/");
+    let slashed = transform_video_edit_request(slashed_request);
     assert_eq!(slashed.url, "https://mock.example/v1/edits");
 }
 
@@ -76,7 +77,10 @@ fn supplied_file() {
     let mut sent = Vec::new();
     reader.read_to_end(&mut sent).expect("a readable stream");
     assert_eq!(sent, b"not video");
+}
 
+fn empty_file() {
+    let encoded = encoded_video("vid-123");
     let mut request = text_request("make it blue", &encoded);
     request.video_file = Some(MediaBody::Bytes(b""));
     let empty_file = transform_video_edit_request(request);
@@ -104,18 +108,18 @@ pub(super) fn unused_prefetched_source() {
 
     let body = br#"{"id":"video_7","object":"video","status":"completed"}"#;
     let request_data = json(r#"{"prompt":"extend it","video":{"id":"vid-9"}}"#);
-    let reply = VideoReply {
+    let data_reply = VideoReply {
         body,
         custom_llm_provider: Some("openai"),
         request_data: Some(&request_data),
     };
-    let with_data = transform_video_response(&reply).expect("a video reply");
-    let reply = VideoReply {
+    let with_data = transform_video_response(&data_reply).expect("a video reply");
+    let bare_reply = VideoReply {
         body,
         custom_llm_provider: Some("openai"),
         request_data: None,
     };
-    let without_data = transform_video_response(&reply).expect("a video reply");
+    let without_data = transform_video_response(&bare_reply).expect("a video reply");
     assert_eq!(with_data, without_data);
     assert_eq!(
         with_data.id,

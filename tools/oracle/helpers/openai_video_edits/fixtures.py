@@ -8,7 +8,7 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.openai.videos.transformation import OpenAIVideoConfig
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.videos.main import CharacterObject, VideoObject
-from pydantic import Field, JsonValue
+from pydantic import ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 Kind: TypeAlias = Literal["bytes", "text", "stream"]
@@ -167,20 +167,28 @@ def part_value(
     return rendered
 
 
+Sent: TypeAlias = bytes | str | io.BytesIO
+SENT: TypeAdapter[Sent] = TypeAdapter(
+    Sent, config=ConfigDict(arbitrary_types_allowed=True)
+)
+
+
 def file_part_value(
     field: str, filename: str | None, content_type: str | None, content: Content
 ) -> JsonValue:
-    match content:
+    sent = SENT.validate_python(content)
+    match sent:
         case bytes():
             return part_value(
                 field,
                 filename,
                 content_type,
                 "bytes",
-                base64.b64encode(content).decode("ascii"),
+                base64.b64encode(sent).decode("ascii"),
             )
         case str():
-            return part_value(field, filename, content_type, "text", content)
-    content.seek(0)
-    data = base64.b64encode(content.read()).decode("ascii")
-    return part_value(field, filename, content_type, "stream", data)
+            return part_value(field, filename, content_type, "text", sent)
+        case io.BytesIO():
+            sent.seek(0)
+            data = base64.b64encode(sent.read()).decode("ascii")
+            return part_value(field, filename, content_type, "stream", data)

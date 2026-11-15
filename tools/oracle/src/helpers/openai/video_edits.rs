@@ -93,16 +93,17 @@ pub(crate) struct ExtensionResponse {
 fn run_call(call: &Call) -> HelperResult {
     match call {
         Call::CreateCharacterRequest(request) => requests::create_character_value(request),
-        Call::CreateCharacterResponse(reply) => replies::character_reply(reply),
+        Call::CreateCharacterResponse(reply) | Call::GetCharacterResponse(reply) => {
+            replies::character_reply(reply)
+        }
         Call::GetCharacterRequest(request) => requests::get_character_value(request),
-        Call::GetCharacterResponse(reply) => replies::character_reply(reply),
         Call::EditRequest(request) => requests::edit_request_value(request),
         Call::EditResponse(reply) => replies::video_reply_value(
             &reply.body,
             reply.provider.as_deref(),
             reply.request_data.as_ref(),
         ),
-        Call::ExtensionRequest(request) => requests::extension_request_value(request),
+        Call::ExtensionRequest(request) => Ok(requests::extension_request_value(request)),
         Call::ExtensionResponse(reply) => {
             replies::video_reply_value(&reply.body, reply.provider.as_deref(), None)
         }

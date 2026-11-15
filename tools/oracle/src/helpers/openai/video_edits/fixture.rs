@@ -121,15 +121,15 @@ pub(super) fn file_part_value(file: &mut MultipartPart<'_>) -> Result<Value, Box
 pub(super) fn character_files(
     created: &mut CreateCharacter<'_>,
 ) -> Result<Value, Box<HelperError>> {
-    let parts = created
-        .files
-        .iter_mut()
-        .map(|part| match part {
+    let mut parts = Vec::new();
+    for part in &mut created.files {
+        let rendered = match part {
             CharacterPart::Text { field, text } => {
-                Ok(part_value(field, None, None, "text", &json!(text)))
+                part_value(field, None, None, "text", &json!(text))
             }
-            CharacterPart::File(file) => file_part_value(file),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+            CharacterPart::File(file) => file_part_value(file)?,
+        };
+        parts.push(rendered);
+    }
     Ok(Value::Array(parts))
 }
