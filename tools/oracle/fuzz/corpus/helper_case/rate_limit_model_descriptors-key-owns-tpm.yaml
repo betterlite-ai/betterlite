@@ -1,0 +1,10 @@
+kind: helper
+name: rate-limit_model_descriptors-key-owns-tpm-seed
+call:
+  b3038:
+    function: key_owns_tpm
+    groups: {}
+    request_metadata: {user_api_key_metadata: {model_tpm_limit: {gpt-4: 0}}}
+    model: {requested: gpt4, group: gpt-4}
+env: {}
+compare: {ignore: []}

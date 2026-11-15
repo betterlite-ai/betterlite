@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-batch-upload-embeddings-fanout
+call:
+  vertex_batch_upload:
+    calls:
+      - content: |-
+          {"custom_id":"a#0/2","url":"/v1/embeddings","body":{"model":"text-embedding-005","input":["x","y","z"]}}
+          {"custom_id":"só/ 1#2/3","url":"/v1/embeddings","body":{"model":"text-embedding-005","input":"single","dimensions":8,"task_type":"RETRIEVAL_QUERY","title":"T"}}
+          {"url":"/v1/embeddings","body":{"input":["no id","two"]}}
+        passthrough: false
+env: {}
+compare: {ignore: []}

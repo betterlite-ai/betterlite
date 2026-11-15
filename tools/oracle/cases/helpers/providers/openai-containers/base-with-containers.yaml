@@ -1,0 +1,37 @@
+kind: helper
+name: base-with-containers
+call:
+  openai_containers:
+    supported: false
+    maps: []
+    joins: []
+    urls:
+      - api_base: "https://direct.test/v1/"
+        globals: {api_base: "https://global.test/v1", api_key: null, openai_key: null}
+        environment: {OPENAI_BASE_URL: "https://url-env.test/v1", OPENAI_API_BASE: "https://api-env.test/v1"}
+      - api_base: null
+        globals: {api_base: "https://global.test/v1", api_key: null, openai_key: null}
+        environment: {OPENAI_BASE_URL: "https://url-env.test/v1", OPENAI_API_BASE: "https://api-env.test/v1"}
+      - api_base: ""
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {OPENAI_BASE_URL: "https://url-env.test/v1", OPENAI_API_BASE: "https://api-env.test/v1"}
+      - api_base: null
+        globals: {api_base: "", api_key: null, openai_key: null}
+        environment: {OPENAI_BASE_URL: "", OPENAI_API_BASE: "https://api-env.test/v1"}
+      - api_base: null
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {}
+      - api_base: "https://direct.test/v1/containers"
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {}
+      - api_base: "https://direct.test/v1///"
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {}
+    creates: []
+    requests: []
+    headers: []
+    replies: []
+    content_replies: []
+    errors: []
+env: {}
+compare: {ignore: []}
