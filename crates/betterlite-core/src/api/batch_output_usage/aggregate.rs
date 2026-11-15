@@ -1,14 +1,20 @@
-use betterlite_models::decisions::Json;
-use betterlite_models::usage_sum::{Usage as SummedUsage, usage_sum};
+use std::collections::BTreeMap;
+
+use betterlite_models::{
+    cost_usage::CostUsage,
+    decisions::Json,
+    token_cost::prompt_overlap::prompt_tokens_details,
+    usage_sum::{CompletionTokensDetails, PromptTokensDetails, Usage as SummedUsage, usage_sum},
+};
 use rust_decimal::Decimal;
 
 use super::decode::{DecodedBatchLine, decoded_lines};
 use super::error::{BatchOutputUsageError, BatchResult};
-use super::pricing::{LineCostInput, cache_counters, line_cost};
+use super::pricing::{LineCostInput, line_cost, usage_prompt_extras};
 use super::usage::{response_body, response_model, response_was_successful, usage_for_line};
 use super::{
     BatchOutputDiagnostic, BatchOutputUsage, BatchOutputUsageRequest, BatchOutputUsageResult,
-    BatchUsageTotals, VertexRowStats,
+    VertexRowStats,
 };
 
 pub(super) mod vertex;
@@ -61,12 +67,8 @@ pub(super) fn aggregate_output(
     }
     let result = state.finish(request)?;
     tracing::debug!(
-        cost = %result.cost,
-        usage = ?result.usage,
-        models = ?result.models,
-        successful = result.successful_requests,
-        failed = result.failed_requests,
-        "batch output aggregate"
+        cost = %result.cost, usage = ?result.usage, models = ?result.models,
+        successful = result.successful_requests, failed = result.failed_requests, "batch output aggregate"
     );
     Ok(result)
 }
@@ -116,17 +118,21 @@ impl Totals {
         self.successful = self.successful.saturating_add(1);
         Ok(())
     }
-    fn finish(self, request: &BatchOutputUsageRequest) -> BatchResult<BatchOutputUsageResult> {
+    fn finish(mut self, request: &BatchOutputUsageRequest) -> BatchResult<BatchOutputUsageResult> {
         let combined = usage_sum(&self.usages)?;
         let reasoning_tokens = combined
             .completion_tokens_details
             .as_ref()
             .and_then(|details| details.reasoning_tokens)
             .unwrap_or(0);
-        let models = request
-            .model_name
-            .as_deref()
-            .map_or_else(|| self.models, |model_name| vec![model_name.to_owned()]);
+        let usage = self.batch_usage(&combined, reasoning_tokens);
+        if let Some(model_name) = request.model_name.as_deref() {
+            self.models = vec![model_name.to_owned()];
+        }
+        self.result(usage)
+    }
+
+    fn result(self, usage: SummedUsage) -> BatchResult<BatchOutputUsageResult> {
         let cost = self
             .prompt_cost
             .checked_add(self.completion_cost)
@@ -135,19 +141,48 @@ impl Totals {
             cost,
             prompt_cost: self.prompt_cost,
             completion_cost: self.completion_cost,
-            usage: BatchUsageTotals {
-                prompt_tokens: combined.prompt_tokens,
-                completion_tokens: combined.completion_tokens,
-                total_tokens: combined.total_tokens,
-                reasoning_tokens,
-                cache_read_tokens: self.cache_read,
-                cache_creation_tokens: self.cache_creation,
-            },
-            models,
+            usage,
+            models: self.models,
             successful_requests: self.successful,
             failed_requests: self.failed,
             diagnostics: self.diagnostics,
         })
+    }
+
+    // LiteLLM's Usage kwargs create a detail only while its counter is positive.
+    fn batch_usage(&self, combined: &SummedUsage, reasoning_tokens: i64) -> SummedUsage {
+        let text_tokens = combined.completion_tokens.saturating_sub(reasoning_tokens);
+        SummedUsage {
+            prompt_tokens: combined.prompt_tokens,
+            completion_tokens: combined.completion_tokens,
+            total_tokens: combined.total_tokens,
+            prompt_tokens_details: self.prompt_cache_details(),
+            completion_tokens_details: (reasoning_tokens != 0).then(|| CompletionTokensDetails {
+                text_tokens: Some(text_tokens.max(0)),
+                audio_tokens: None,
+                image_tokens: None,
+                video_tokens: None,
+                reasoning_tokens: Some(reasoning_tokens),
+                accepted_prediction_tokens: None,
+                rejected_prediction_tokens: None,
+            }),
+            numeric_extras: BTreeMap::new(),
+        }
+    }
+
+    fn prompt_cache_details(&self) -> Option<PromptTokensDetails> {
+        if self.cache_read <= 0 && self.cache_creation <= 0 {
+            return None;
+        }
+        let mut details = PromptTokensDetails::default();
+        if self.cache_read > 0 {
+            details.cached_tokens = Some(self.cache_read);
+        }
+        if self.cache_creation > 0 {
+            details.cache_write_tokens = Some(self.cache_creation);
+            details.cache_creation_tokens = Some(self.cache_creation);
+        }
+        Some(details)
     }
 
     fn add_vertex(&mut self, stats: Option<VertexRowStats>) -> BatchResult<()> {
@@ -181,29 +216,19 @@ impl Totals {
         Ok(())
     }
 
-    fn finish_vertex(self, model_name: Option<&str>) -> BatchResult<BatchOutputUsageResult> {
-        let cost = self
-            .prompt_cost
-            .checked_add(self.completion_cost)
-            .ok_or(BatchOutputUsageError::Overflow { field: "cost" })?;
-        let models = model_name.map_or_else(|| self.models, |name| vec![name.to_owned()]);
-        let result = BatchOutputUsageResult {
-            cost,
-            prompt_cost: self.prompt_cost,
-            completion_cost: self.completion_cost,
-            usage: BatchUsageTotals {
-                prompt_tokens: self.prompt_tokens,
-                completion_tokens: self.completion_tokens,
-                total_tokens: self.total_tokens,
-                reasoning_tokens: 0,
-                cache_read_tokens: 0,
-                cache_creation_tokens: 0,
-            },
-            models,
-            successful_requests: self.successful,
-            failed_requests: self.failed,
-            diagnostics: self.diagnostics,
+    fn finish_vertex(mut self, model_name: Option<&str>) -> BatchResult<BatchOutputUsageResult> {
+        if let Some(name) = model_name {
+            self.models = vec![name.to_owned()];
+        }
+        let usage = SummedUsage {
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
+            total_tokens: self.total_tokens,
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
+            numeric_extras: BTreeMap::new(),
         };
+        let result = self.result(usage)?;
         tracing::info!(
             "vertex_ai batch cost: cost={}, prompt={}, completion={}, total={}, successful={}, failed={}",
             result.cost,
@@ -238,13 +263,13 @@ fn line_stats(
         service.lookup,
         service.resolution,
     )?;
-    let (cache_read, cache_creation) = cache_counters(&usage)?;
+    let details = prompt_tokens_details(&CostUsage::from(&usage), &usage_prompt_extras(&usage))?;
     Ok(LineStats {
         prompt_cost: cost.prompt_cost,
         completion_cost: cost.completion_cost,
         usage,
-        cache_read,
-        cache_creation,
+        cache_read: details.cache_hit_tokens,
+        cache_creation: details.cache_creation_tokens,
         model,
     })
 }

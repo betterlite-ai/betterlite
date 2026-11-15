@@ -157,6 +157,8 @@ fn run_batch(input: &BatchOutputUsageInput) -> Result<Value, BatchOutputUsageErr
 }
 
 fn result_value(result: &BatchOutputUsageResult) -> Value {
+    let prompt_details = result.usage.prompt_tokens_details.as_ref();
+    let completion_details = result.usage.completion_tokens_details.as_ref();
     json!({
         "cost": result.cost.normalize().to_string(),
         "prompt_cost": result.prompt_cost.normalize().to_string(),
@@ -165,9 +167,9 @@ fn result_value(result: &BatchOutputUsageResult) -> Value {
             "prompt_tokens": result.usage.prompt_tokens,
             "completion_tokens": result.usage.completion_tokens,
             "total_tokens": result.usage.total_tokens,
-            "reasoning_tokens": result.usage.reasoning_tokens,
-            "cache_read_tokens": result.usage.cache_read_tokens,
-            "cache_creation_tokens": result.usage.cache_creation_tokens,
+            "reasoning_tokens": completion_details.and_then(|details| details.reasoning_tokens).unwrap_or(0),
+            "cache_read_tokens": prompt_details.and_then(|details| details.cached_tokens).unwrap_or(0),
+            "cache_creation_tokens": prompt_details.and_then(|details| details.cache_write_tokens).unwrap_or(0),
         },
         "models": result.models,
         "successful_requests": result.successful_requests,

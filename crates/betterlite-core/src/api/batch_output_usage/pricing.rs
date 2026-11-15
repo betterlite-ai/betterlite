@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::ocr_pricing::{OcrBatchUsage, ocr_batch_cost};
 use betterlite_models::price_lookup::PriceLookup;
 use betterlite_models::resolution::ResolutionContext;
-use betterlite_models::token_cost::prompt_overlap::{PromptExtras, prompt_tokens_details};
+use betterlite_models::token_cost::prompt_overlap::PromptExtras;
 use betterlite_models::token_rates::ModelInfo;
 use betterlite_models::usage_sum::Usage as SummedUsage;
 use indexmap::IndexMap;
@@ -106,11 +106,6 @@ pub(super) fn line_cost(
     )?)
 }
 
-pub(super) fn cache_counters(usage: &SummedUsage) -> BatchResult<(i64, i64)> {
-    let details = prompt_tokens_details(&CostUsage::from(usage), &usage_prompt_extras(usage))?;
-    Ok((details.cache_hit_tokens, details.cache_creation_tokens))
-}
-
 fn ocr_usage(body: Option<&IndexMap<String, Json>>) -> BatchResult<Option<OcrBatchUsage>> {
     let Some(Json::Object(fields)) = body.and_then(|map| map.get("usage_info")) else {
         return Ok(None);
@@ -129,7 +124,7 @@ fn ocr_usage(body: Option<&IndexMap<String, Json>>) -> BatchResult<Option<OcrBat
     }))
 }
 
-fn usage_prompt_extras(usage: &SummedUsage) -> PromptExtras {
+pub(super) fn usage_prompt_extras(usage: &SummedUsage) -> PromptExtras {
     let Some(details) = usage.prompt_tokens_details.as_ref() else {
         return PromptExtras::default();
     };

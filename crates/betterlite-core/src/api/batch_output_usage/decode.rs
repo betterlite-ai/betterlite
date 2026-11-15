@@ -76,7 +76,7 @@ pub(super) fn number_is_integer(number: &serde_json::Number) -> bool {
 // Python's bytes.strip() trims these six ASCII bytes and leaves U+001C to U+001F in the line.
 const PYTHON_STRIP_BYTES: [u8; 6] = [b' ', b'\t', b'\n', b'\r', 0x0b, 0x0c];
 
-pub(super) fn trim_python_bytes(line: &[u8]) -> &[u8] {
+pub(super) fn strip_line_bytes(line: &[u8]) -> &[u8] {
     let start = line
         .iter()
         .position(|byte| !PYTHON_STRIP_BYTES.contains(byte))
@@ -103,12 +103,15 @@ pub(super) fn integer_field(
     fields: &IndexMap<String, Json>,
     key: &'static str,
 ) -> BatchResult<Option<i64>> {
-    match fields.get(key) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => number
+    let Some(value) = fields.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Json::Null => Ok(None),
+        Json::Number(number) => number
             .as_i64()
             .map(Some)
             .ok_or(BatchOutputUsageError::NotAnInteger { field: key }),
-        Some(_) => Err(BatchOutputUsageError::NotAnInteger { field: key }),
+        _ => Err(BatchOutputUsageError::NotAnInteger { field: key }),
     }
 }

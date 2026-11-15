@@ -148,8 +148,7 @@ fn anthropic_usage(value: &Json, provider: BatchOutputProvider) -> BatchResult<S
 }
 
 fn generic_usage(fields: &IndexMap<String, Json>) -> BatchResult<SummedUsage> {
-    let document =
-        serde_json::to_value(fields).map_err(|source| BatchOutputUsageError::Json { source })?;
+    let document = serde_json::to_value(fields)?;
     if let Some(object) = document.as_object()
         && is_response_api_usage(object)
     {

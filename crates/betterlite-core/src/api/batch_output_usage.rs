@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use self::aggregate::vertex::aggregate_vertex;
 use self::decode::DecodedBatchLine;
 use self::error::{BatchOutputUsageError, BatchResult};
+use self::pricing::BatchRowPricer;
 use crate::api::api_boundaries::ApiLimits;
 
 pub mod aggregate;
@@ -89,7 +90,7 @@ pub fn decode_batch_output_usage(
     }
     let mut lines = Vec::new();
     for raw in bytes.split(|byte| *byte == b'\n') {
-        let line = decode::trim_python_bytes(raw);
+        let line = decode::strip_line_bytes(raw);
         if line.is_empty() {
             continue;
         }
@@ -107,26 +108,12 @@ pub fn decode_batch_output_usage(
     Ok(lines)
 }
 
-#[expect(
-    clippy::struct_field_names,
-    reason = "the counters keep LiteLLM's Usage names"
-)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct BatchUsageTotals {
-    pub prompt_tokens: i64,
-    pub completion_tokens: i64,
-    pub total_tokens: i64,
-    pub reasoning_tokens: i64,
-    pub cache_read_tokens: i64,
-    pub cache_creation_tokens: i64,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchOutputUsageResult {
     pub cost: Decimal,
     pub prompt_cost: Decimal,
     pub completion_cost: Decimal,
-    pub usage: BatchUsageTotals,
+    pub usage: SummedUsage,
     pub models: Vec<String>,
     pub successful_requests: usize,
     pub failed_requests: usize,
@@ -169,11 +156,13 @@ pub trait BatchOutputProviders {
     fn bedrock_converse_usage(&self, usage: &Json) -> ConverseUsageOutcome;
     fn vertex_row_stats(
         &self,
-        row: &Json,
-        model_name: Option<&str>,
-        model_info: Option<&ModelInfo>,
-        pricer: &dyn BatchRowPricer,
-    ) -> Option<VertexRowStats>;
+        _row: &Json,
+        _model_name: Option<&str>,
+        _model_info: Option<&ModelInfo>,
+        _pricer: &dyn BatchRowPricer,
+    ) -> Option<VertexRowStats> {
+        None
+    }
 }
 
 pub struct BatchOutputUsage<'service> {
