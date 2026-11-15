@@ -28,7 +28,7 @@ pub const IMAGE_EDIT_MODELS: [(&str, &str); 4] = [
     ("flux-pro-1.0-expand", "/v1/flux-pro-1.0-expand"),
 ];
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum BflError {
     #[error(
         "BFL_API_KEY is not set. Please set it via environment variable or pass api_key parameter."
@@ -160,7 +160,11 @@ pub fn check_bfl_poll_url(polling_url: &str) -> Result<Url, BflError> {
         return Err(BflError::PollingScheme);
     }
     let host = parsed.host_str().unwrap_or_default();
-    if host != REGISTERED_DOMAIN && !host.ends_with(".bfl.ai") {
+    let trusted = host == REGISTERED_DOMAIN
+        || host
+            .strip_suffix(REGISTERED_DOMAIN)
+            .is_some_and(|prefix| prefix.ends_with('.'));
+    if !trusted {
         return Err(BflError::PollingHost);
     }
     Ok(parsed)

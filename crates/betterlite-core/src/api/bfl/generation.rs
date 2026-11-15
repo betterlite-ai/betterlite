@@ -100,7 +100,7 @@ pub fn validate_environment(
         .filter(|key| !key.expose_secret().is_empty())
         .or(configured_key)
         .ok_or(BflError::MissingCredentials)?;
-    let mut value = HeaderValue::try_from(key.expose_secret().as_str())
+    let mut value = HeaderValue::try_from(key.expose_secret())
         .map_err(|source| BflError::InvalidApiKey { source })?;
     value.set_sensitive(true);
     headers.insert(HeaderName::from_static("x-key"), value);
