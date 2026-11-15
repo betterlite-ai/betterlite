@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use crate::loader::{ConfigError, ConfigLoader, parse_view};
@@ -134,22 +135,36 @@ fn aim_inspection_config_skips_a_non_aim_entry_before_resolving_its_params() {
     assert!(resolve(source, &lookup).unwrap().guardrails.is_empty());
 }
 
-#[test]
-fn aim_inspection_config_reads_the_embedding_flag_from_the_environment() {
+#[rstest]
+#[case::true_text("true", true)]
+#[case::off_text("off", false)]
+#[case::empty_text("", false)]
+fn aim_inspection_config_reads_the_embedding_flag_from_the_environment(
+    #[case] text: &str,
+    #[case] expected: bool,
+) {
     let source = format!("{AIM_CONFIG}      inspect_embeddings: os.environ/AIM_INSPECT\n");
-    for (text, expected) in [("true", true), ("off", false), ("", false)] {
-        let lookup = BTreeMap::from([("AIM_INSPECT".to_owned(), text.to_owned())]);
-        let configured = resolve(&source, &lookup).unwrap().guardrails.remove(0);
-        assert_eq!(
-            configured.inspect_embeddings, expected,
-            "AIM_INSPECT: {text}"
-        );
-    }
+    let lookup = BTreeMap::from([("AIM_INSPECT".to_owned(), text.to_owned())]);
+    let configured = resolve(&source, &lookup).unwrap().guardrails.remove(0);
+    assert_eq!(
+        configured.inspect_embeddings, expected,
+        "AIM_INSPECT: {text}"
+    );
+}
+
+#[test]
+fn aim_inspection_config_counts_an_unset_embedding_flag_as_false() {
+    let source = format!("{AIM_CONFIG}      inspect_embeddings: os.environ/AIM_INSPECT\n");
     let unset = resolve(&source, &BTreeMap::new())
         .unwrap()
         .guardrails
         .remove(0);
     assert!(!unset.inspect_embeddings);
+}
+
+#[test]
+fn aim_inspection_config_rejects_a_bad_embedding_flag_in_the_environment() {
+    let source = format!("{AIM_CONFIG}      inspect_embeddings: os.environ/AIM_INSPECT\n");
     let lookup = BTreeMap::from([("AIM_INSPECT".to_owned(), "perhaps".to_owned())]);
     assert!(matches!(
         resolve(&source, &lookup),
@@ -167,18 +182,19 @@ fn aim_inspection_config_treats_a_null_embedding_flag_as_the_default() {
     assert!(!configured.inspect_embeddings);
 }
 
-#[test]
-fn aim_inspection_config_rejects_an_embedding_flag_of_another_type() {
-    for value in ["\"true\"", "1", "1.5"] {
-        let source = format!("{AIM_CONFIG}      inspect_embeddings: {value}\n");
-        let error = resolve(&source, &BTreeMap::new()).unwrap_err();
-        assert!(
-            matches!(
-                error,
-                ConfigError::InvalidScalar { path, .. }
-                    if path == "guardrails.0.litellm_params.inspect_embeddings"
-            ),
-            "inspect_embeddings: {value}"
-        );
-    }
+#[rstest]
+#[case::quoted_bool("\"true\"")]
+#[case::integer("1")]
+#[case::float("1.5")]
+fn aim_inspection_config_rejects_an_embedding_flag_of_another_type(#[case] value: &str) {
+    let source = format!("{AIM_CONFIG}      inspect_embeddings: {value}\n");
+    let error = resolve(&source, &BTreeMap::new()).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ConfigError::InvalidScalar { path, .. }
+                if path == "guardrails.0.litellm_params.inspect_embeddings"
+        ),
+        "inspect_embeddings: {value}"
+    );
 }

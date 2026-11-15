@@ -74,8 +74,8 @@ impl Entry {
         let parameters = self.litellm_params;
         let api_key = resolve_secret(parameters.api_key, &format!("{prefix}.api_key"), lookup)?
             .filter(|key| !key.expose_secret().is_empty())
-            .or_else(|| lookup.lookup("AIM_API_KEY").filter(|key| !key.is_empty()))
-            .map(SecretString::from);
+            .or_else(|| lookup.lookup("AIM_API_KEY").map(SecretString::from))
+            .filter(|key| !key.expose_secret().is_empty());
         let api_base = parameters
             .api_base
             .map(|value| resolve_string(value, &format!("{prefix}.api_base"), lookup))
@@ -94,11 +94,14 @@ impl Entry {
 }
 
 // an os.environ reference is the one text form of the flag; any other value that is not a bool names the field
-fn embedding_flag<L: EnvironmentLookup>(
+fn embedding_flag<L>(
     value: Option<GuardrailValue>,
     prefix: &str,
     lookup: &L,
-) -> Result<bool, ConfigError> {
+) -> Result<bool, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let path = format!("{prefix}.inspect_embeddings");
     let flag = match value {
         None | Some(GuardrailValue::Null) => Some(false),
