@@ -706,6 +706,25 @@ async fn a_buffered_status_error_keeps_the_body_text() {
 }
 
 #[tokio::test]
+async fn a_reply_that_is_not_openai_json_is_a_wire_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging(&redactor);
+    let mut call = Call::new(Mode::Async);
+    call.api_base = Some(base(&listener).await);
+    let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(serve(&listener, 200, b"not json"), async {
+            let plan = plan(&call, &mut state, &env);
+            let answer = send_chat(&client(), &plan).await.unwrap();
+            finish_chat(&plan, answer, &mut state, &env)
+        })
+    })
+    .await
+    .unwrap();
+    assert!(matches!(answer, Err(CompatibleChatError::Wire(_))));
+}
+
+#[tokio::test]
 async fn a_status_body_that_is_not_utf8_is_its_own_error() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
