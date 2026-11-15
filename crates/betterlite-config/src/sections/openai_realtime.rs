@@ -1,3 +1,7 @@
+use std::collections::BTreeMap;
+
+use serde::de::IgnoredAny;
+
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
@@ -6,8 +10,8 @@ mod tests;
 pub const MAX_MESSAGE_SIZE_VARIABLE: &str = "REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES";
 pub const DEFAULT_MAX_MESSAGE_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
-#[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+// this section reads the environment only, so every YAML key is ignored here and reported by the loader
+pub type Raw = BTreeMap<String, IgnoredAny>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {
