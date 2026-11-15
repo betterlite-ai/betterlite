@@ -1,5 +1,5 @@
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::finops::focus::destinations::focus_gcs_destination::{
     FocusGcsDestination, GcsDeliveryError, GcsSettings, GcsSettingsError, MEDIA_CONTENT_TYPE,
