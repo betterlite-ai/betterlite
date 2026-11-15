@@ -277,6 +277,39 @@ async fn a_token_row_that_cannot_be_decoded_reaches_the_outer_catch() {
 }
 
 #[tokio::test]
+async fn an_empty_key_hash_never_reaches_the_owner_lookup() {
+    let db = Db::start().await;
+    let token = "";
+    let params: [&(dyn ToSql + Sync); 1] = [&token];
+    db.execute(
+        "INSERT INTO \"LiteLLM_VerificationToken\" (token, models, budget_fallbacks) \
+         VALUES ($1, ARRAY[]::TEXT[], '5'::JSONB)",
+        &params,
+    )
+    .await;
+    insert_tool(
+        &db,
+        ToolSeed {
+            id: "tool-empty-key",
+            name: "tool-empty-key",
+            key_hash: Some(""),
+            policy: ToolInputPolicy::Untrusted,
+            created_at: "2026-01-01 00:00:00",
+        },
+    )
+    .await;
+    let client = db.client().await;
+    let tools = list_tools(Some(&client), None).await;
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].user, None);
+    let tool = get_tool(Some(&client), "tool-empty-key").await.unwrap();
+    assert_eq!(tool.key_hash.as_deref(), Some(""));
+    assert_eq!(tool.user, None);
+    drop(client);
+    db.close().await;
+}
+
+#[tokio::test]
 async fn get_tool_returns_the_row_with_its_owner_and_none_for_an_unknown_name() {
     let db = Db::start().await;
     seed_owner(&db).await;
