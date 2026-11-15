@@ -66,7 +66,7 @@ fn function_calling_appends_tools_tool_choice_and_parallel_tool_calls() {
 }
 
 #[test]
-fn max_completion_tokens_is_renamed_and_an_existing_max_tokens_survives() {
+fn max_completion_tokens_is_renamed_over_an_existing_max_tokens() {
     let merged = mapped(
         false,
         &requested(r#"{"max_completion_tokens": 20}"#),
