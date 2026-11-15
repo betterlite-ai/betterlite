@@ -482,17 +482,19 @@ fn settings_enable_each_check_from_its_flag() {
     assert_eq!(resolved.checks.len(), 6);
 }
 
-#[test]
-fn a_timeout_a_duration_cannot_represent_is_rejected_at_build() {
-    for seconds in [-1.0, f64::NAN, f64::INFINITY, f64::MAX] {
-        let mut args = args();
-        args.timeout = Some(seconds);
-        let result = resolve(&args, &NoSecrets, &environment(&[]));
-        assert!(
-            matches!(result, Err(QualifireError::InvalidTimeout { .. })),
-            "timeout {seconds} is rejected"
-        );
-    }
+#[rstest]
+#[case::negative(-1.0)]
+#[case::nan(f64::NAN)]
+#[case::infinite(f64::INFINITY)]
+#[case::too_large(f64::MAX)]
+fn a_timeout_a_duration_cannot_represent_is_rejected_at_build(#[case] seconds: f64) {
+    let mut args = args();
+    args.timeout = Some(seconds);
+    let result = settings::resolve(&args, &NoSecrets, &environment(&[]));
+    assert!(
+        matches!(result, Err(QualifireError::InvalidTimeout { .. })),
+        "timeout {seconds} is rejected"
+    );
 }
 
 #[test]

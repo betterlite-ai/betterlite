@@ -121,10 +121,10 @@ fn row(content: &str) -> BTreeMap<String, GuardrailValue> {
 }
 
 fn row_from_json(value: &str) -> BTreeMap<String, GuardrailValue> {
-    match json(value) {
-        GuardrailValue::Object(object) => object,
-        _ => panic!("the test row is not a JSON object"),
-    }
+    let GuardrailValue::Object(object) = json(value) else {
+        panic!("the test row is not a JSON object");
+    };
+    object
 }
 
 fn payload_value(payload: &Payload<'_>) -> GuardrailValue {

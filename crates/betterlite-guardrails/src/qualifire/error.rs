@@ -81,7 +81,7 @@ impl QualifireError {
 }
 
 fn quoted(value: &str) -> String {
-    let mut text = String::with_capacity(value.len() + 2);
+    let mut text = String::with_capacity(value.len().saturating_add(2));
     text.push('\'');
     for character in value.chars() {
         match character {

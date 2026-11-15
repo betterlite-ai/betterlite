@@ -112,10 +112,10 @@ fn sent(seen: &Seen) -> GuardrailValue {
 
 fn dynamic(fields: &str) -> BTreeMap<String, GuardrailValue> {
     let body = format!(r#"{{"guardrails": [{{"qualifire": {{"extra_body": {fields}}}}}]}}"#);
-    match json(&body) {
-        GuardrailValue::Object(object) => object,
-        _ => panic!("the test request data is not a JSON object"),
-    }
+    let GuardrailValue::Object(object) = json(&body) else {
+        panic!("the test request data is not a JSON object");
+    };
+    object
 }
 
 async fn run(

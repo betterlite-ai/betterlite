@@ -28,6 +28,7 @@ pub enum OnFlagged {
 }
 
 impl OnFlagged {
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "block" => Some(Self::Block),

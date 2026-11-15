@@ -130,7 +130,7 @@ fn tool_calls(value: Option<&GuardrailValue>) -> Result<Option<Vec<ApiToolCall>>
     Ok((!converted.is_empty()).then_some(converted))
 }
 
-fn object<'value>(
+const fn object<'value>(
     value: &'value GuardrailValue,
     field: &'static str,
 ) -> Result<&'value BTreeMap<String, GuardrailValue>, QualifireError> {

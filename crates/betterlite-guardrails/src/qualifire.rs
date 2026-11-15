@@ -19,7 +19,7 @@ use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
-use crate::guardrail_selection::gate::GuardrailSelection;
+use crate::guardrail_selection::gate::GuardrailSelection as _;
 use crate::hook_initializers::secret_lookup::SecretLookup;
 use error::QualifireError;
 use init::QualifireArgs;
@@ -41,6 +41,10 @@ pub struct QualifireGuardrail {
     pub client: Client,
 }
 
+#[expect(
+    clippy::multiple_inherent_impl,
+    reason = "the request plan and send helpers stay beside the payload types they fill in request.rs"
+)]
 impl QualifireGuardrail {
     pub fn new(
         args: &QualifireArgs,

@@ -13,6 +13,8 @@ use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::qualifire::convert::{self, ApiMessage, ApiTool, MessageRow};
 
+pub(super) type SelectedRows = (Vec<MessageRow>, Option<String>);
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Overrides {
     pub evaluation_id: Option<String>,
@@ -85,20 +87,19 @@ impl QualifireGuardrail {
             .collect::<Result<Vec<ApiMessage>, QualifireError>>()?;
         let tools = convert::api_tools(check.available_tools)?;
         let base = &self.settings.api_base;
-        let (url, input) = match check.evaluation_id {
-            Some(_) => (
+        let (url, input) = if check.evaluation_id.is_some() {
+            (
                 format!("{base}/api/evaluation/invoke"),
                 invocation_input(check.rows),
-            ),
-            None => {
-                let tool_check = self.settings.checks.contains(&Check::ToolSelectionQuality);
-                if tool_check && tools.is_none() {
-                    tracing::debug!(
-                        "Qualifire Guardrail: tool_selection_quality_check enabled but no available_tools provided, skipping this check"
-                    );
-                }
-                (format!("{base}/api/evaluation/evaluate"), String::new())
+            )
+        } else {
+            let tool_check = self.settings.checks.contains(&Check::ToolSelectionQuality);
+            if tool_check && tools.is_none() {
+                tracing::debug!(
+                    "Qualifire Guardrail: tool_selection_quality_check enabled but no available_tools provided, skipping this check"
+                );
             }
+            (format!("{base}/api/evaluation/evaluate"), String::new())
         };
         Ok(Plan {
             url,
@@ -227,7 +228,7 @@ pub(super) fn select_rows(
     inputs: &GuardrailApiInputs,
     request_data: &BTreeMap<String, GuardrailValue>,
     input_type: GuardrailInputType,
-) -> Result<Option<(Vec<MessageRow>, Option<String>)>, QualifireError> {
+) -> Result<Option<SelectedRows>, QualifireError> {
     let mut rows = match &inputs.structured_messages {
         Some(messages) if !messages.is_empty() => convert::message_rows(messages),
         _ => request_rows(request_data)?,
@@ -273,7 +274,13 @@ fn request_rows(
 fn row_from_value(value: &GuardrailValue) -> Result<MessageRow, QualifireError> {
     match value {
         GuardrailValue::Object(row) => Ok(row.clone()),
-        _ => Err(QualifireError::InvalidField { field: "messages" }),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_) => Err(QualifireError::InvalidField { field: "messages" }),
     }
 }
 
