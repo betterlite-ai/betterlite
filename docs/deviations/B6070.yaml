@@ -15,7 +15,7 @@ deviations:
   - what: A resolved cost record with no text litellm_provider is a typed error instead of the KeyError or unhandled type error LiteLLM raises.
     why: Rule owned-behavior-is-built fixes a 500 from an unhandled exception on input LiteLLM already fails; a record without a provider names the field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/cost_calculator.py#L87-L94
-  - what: A fractional index, a response id that is not a string, or a relevance_score that is not a JSON number is a typed error. LiteLLM reaches those values with int(), float() and pydantic, so it truncates, coerces or raises.
+  - what: A response index that is not a JSON integer, a response id that is not a string, or a relevance_score that is not a JSON number is a typed error. LiteLLM reaches those values with int(), float() and pydantic, so it truncates, coerces or raises.
     why: docs/compatibility.md rejects a value the declared type cannot hold instead of converting it; int(), float() and pydantic's lax coercion are Python runtime decisions. RerankResponseResult types index as int and relevance_score as float, and RerankResponse types id as str | None.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/rerank/transformation.py#L241-L263
   - what: A body that is valid JSON but not an object becomes a FireworksError carrying the HTTP status and the body's parse message; LiteLLM raises an uncaught AttributeError from the first .get on the decoded value.
