@@ -52,15 +52,14 @@ impl ProbeReader {
 }
 
 impl Read for ProbeReader {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if matches!(self.failure, Some(Failure::Read)) {
             return Err(io::Error::other("read failed"));
         }
-        let taken = self.advance(buffer.len());
+        let taken = self.advance(buf.len());
         let start = self.position.saturating_sub(taken);
         let source = self.data.get(start..self.position).unwrap_or_default();
-        buffer
-            .get_mut(..taken)
+        buf.get_mut(..taken)
             .unwrap_or_default()
             .copy_from_slice(source);
         Ok(taken)
@@ -68,7 +67,7 @@ impl Read for ProbeReader {
 }
 
 impl Seek for ProbeReader {
-    fn seek(&mut self, target: SeekFrom) -> io::Result<u64> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.seeks = self.seeks.saturating_add(1);
         if matches!(self.failure, Some(Failure::Seek)) && self.seeks == 1 {
             return Err(io::Error::other("seek failed"));
@@ -76,7 +75,7 @@ impl Seek for ProbeReader {
         if matches!(self.failure, Some(Failure::Restore)) && self.seeks > 1 {
             return Err(io::Error::other("restore failed"));
         }
-        if let SeekFrom::Start(offset) = target {
+        if let SeekFrom::Start(offset) = pos {
             self.position =
                 usize::try_from(offset).map_err(|error| io::Error::other(error.to_string()))?;
         }
@@ -127,7 +126,10 @@ impl Capture {
             .clone()
     }
 
-    pub(crate) fn captured<T, F: FnOnce() -> T>(&self, work: F) -> T {
+    pub(crate) fn captured<T, F>(&self, work: F) -> T
+    where
+        F: FnOnce() -> T,
+    {
         let subscriber = tracing_subscriber::registry().with(self.clone());
         with_default(subscriber, work)
     }

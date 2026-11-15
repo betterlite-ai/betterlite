@@ -15,20 +15,20 @@ pub trait ReadSeek: Read + Seek {}
 
 impl<T: Read + Seek> ReadSeek for T {}
 
-pub enum MediaBody<'a> {
-    Bytes(&'a [u8]),
-    Text(&'a str),
+pub enum MediaBody<'media> {
+    Bytes(&'media [u8]),
+    Text(&'media str),
     Stream {
-        name: Option<&'a str>,
-        reader: &'a mut dyn ReadSeek,
+        name: Option<&'media str>,
+        reader: &'media mut dyn ReadSeek,
     },
 }
 
-pub struct MultipartPart<'a> {
+pub struct MultipartPart<'media> {
     pub field: String,
     pub filename: String,
     pub content_type: &'static str,
-    pub body: MediaBody<'a>,
+    pub body: MediaBody<'media>,
 }
 
 fn probe_prefix(reader: &mut dyn ReadSeek, limit: usize) -> Option<Vec<u8>> {
@@ -78,17 +78,19 @@ pub fn video_content_type(video: &mut MediaBody<'_>, filename: &str) -> &'static
     DEFAULT_VIDEO_MIME
 }
 
-pub fn add_image_to_files<'a>(
-    files: &mut Vec<MultipartPart<'a>>,
+pub fn add_image_to_files<'media>(
+    files: &mut Vec<MultipartPart<'media>>,
     field_name: &str,
-    mut image: MediaBody<'a>,
+    mut image: MediaBody<'media>,
 ) {
     let content_type = image_content_type(&mut image);
     let filename = match &image {
         MediaBody::Stream {
             name: Some(name), ..
         } => (*name).to_owned(),
-        _ => DEFAULT_IMAGE_FILENAME.to_owned(),
+        MediaBody::Bytes(_) | MediaBody::Text(_) | MediaBody::Stream { .. } => {
+            DEFAULT_IMAGE_FILENAME.to_owned()
+        }
     };
     files.push(MultipartPart {
         field: field_name.to_owned(),
@@ -99,12 +101,17 @@ pub fn add_image_to_files<'a>(
 }
 
 #[must_use]
-pub fn video_file_tuple<'a>(mut video: MediaBody<'a>, field_name: &str) -> MultipartPart<'a> {
+pub fn video_file_tuple<'media>(
+    mut video: MediaBody<'media>,
+    field_name: &str,
+) -> MultipartPart<'media> {
     let filename = match &video {
         MediaBody::Stream {
             name: Some(name), ..
         } if !name.is_empty() => (*name).to_owned(),
-        _ => DEFAULT_VIDEO_FILENAME.to_owned(),
+        MediaBody::Bytes(_) | MediaBody::Text(_) | MediaBody::Stream { .. } => {
+            DEFAULT_VIDEO_FILENAME.to_owned()
+        }
     };
     let content_type = video_content_type(&mut video, &filename);
     MultipartPart {

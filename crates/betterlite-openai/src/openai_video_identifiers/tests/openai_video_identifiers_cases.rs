@@ -1,7 +1,7 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use rstest::rstest;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, from_str};
 
 use super::fixtures::{Capture, Failure, GIF, HEIC, JPEG, PNG, ProbeReader, WEBP};
 use crate::openai_video_identifiers::ids::{
@@ -352,35 +352,25 @@ fn padding_in_the_middle() {
 
 fn character_list_rewrite() {
     let encoded = encode_character_id("char-1", "openai", Some("sora-2"));
-    let mut request = json!({
-        "model": "sora-2",
-        "prompt": "make a video",
-        "seconds": "4",
-        "characters": [
-            {"id": encoded, "role": "hero"},
-            {"role": "plain"},
-            {"id": 7},
-            "raw",
-            3
-        ]
-    })
-    .as_object()
-    .cloned()
-    .expect("object");
+    let mut request: Map<String, Value> = from_str(&format!(
+        r#"{{"model": "sora-2", "prompt": "make a video", "seconds": "4", "characters": [
+            {{"id": "{encoded}", "role": "hero"}}, {{"role": "plain"}}, {{"id": 7}}, "raw", 3]}}"#
+    ))
+    .expect("request");
     rewrite_character_ids(&mut request);
-    let expected = json!({
-        "model": "sora-2",
-        "prompt": "make a video",
-        "seconds": "4",
-        "characters": [{"id": "char-1", "role": "hero"}, {"role": "plain"}, {"id": 7}, "raw", 3]
-    });
+    let expected: Value = from_str(
+        r#"{"model": "sora-2", "prompt": "make a video", "seconds": "4", "characters":
+            [{"id": "char-1", "role": "hero"}, {"role": "plain"}, {"id": 7}, "raw", 3]}"#,
+    )
+    .expect("expected");
     assert_eq!(Value::Object(request), expected);
-    let mut plain = json!({"model": "m", "characters": "none"})
-        .as_object()
-        .cloned()
-        .expect("object");
+    let mut plain: Map<String, Value> =
+        from_str(r#"{"model": "m", "characters": "none"}"#).expect("plain");
     rewrite_character_ids(&mut plain);
-    assert_eq!(plain.get("characters"), Some(&json!("none")));
+    assert_eq!(
+        plain.get("characters"),
+        Some(&Value::String("none".to_owned()))
+    );
 }
 
 fn streamed_video(
