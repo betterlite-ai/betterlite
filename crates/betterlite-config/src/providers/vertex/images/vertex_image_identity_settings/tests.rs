@@ -140,7 +140,10 @@ fn an_os_environ_reference_in_the_module_setting_is_resolved() {
 
 #[test]
 fn an_empty_module_setting_counts_as_unset() {
-    let settings = identity("litellm_settings:\n  vertex_project: \"\"\n", &[]);
+    let settings = identity(
+        "litellm_settings:\n  vertex_project: \"\"\n  vertex_location: \"\"\n",
+        &[],
+    );
     assert_eq!(settings.module.project, None);
     assert_eq!(settings.module.location, None);
 }

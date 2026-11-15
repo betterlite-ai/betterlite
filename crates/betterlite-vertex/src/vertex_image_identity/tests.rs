@@ -244,6 +244,16 @@ fn the_module_credentials_sit_between_the_environment_and_the_application_defaul
 }
 
 #[test]
+fn an_empty_credential_text_falls_through_to_the_next_tier() {
+    let mut settings = full_settings();
+    settings.secrets.credentials = Some(credential(""));
+    assert_eq!(
+        text(settings.resolve_credentials(VertexParams::default())),
+        Some("instance-credentials")
+    );
+}
+
+#[test]
 fn a_parameter_credential_beats_every_fallback() {
     let settings = full_settings();
     let stored = credential("param-credentials");

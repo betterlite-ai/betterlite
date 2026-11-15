@@ -127,6 +127,21 @@ fn both_flat_spellings_land_on_the_native_keys() {
     );
 }
 
+#[test]
+fn an_object_image_config_is_kept_whole() {
+    let mapped = map_openai_params(
+        &object(r#"{"imageConfig":{"aspectRatio":"4:3","imageSize":"2K"}}"#),
+        &object("{}"),
+        &settings(),
+    )
+    .expect("an object imageConfig maps");
+    assert_eq!(
+        wrapped(&mapped.params),
+        json_value(r#"{"imageConfig":{"aspectRatio":"4:3","imageSize":"2K"}}"#)
+    );
+    assert_eq!(mapped.warnings, 0);
+}
+
 #[rstest]
 #[case("null")]
 #[case(r#""1K""#)]
