@@ -513,7 +513,6 @@ fn delete_keeps_the_shared_message_for_missing_rows() {
 }
 
 #[test]
-#[test]
 fn delete_denies_a_foreign_tenant() {
     support::runtime().block_on(async {
         let repository = ScriptedRepository::with_row(stored_row("alice"));

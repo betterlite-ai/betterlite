@@ -18,7 +18,7 @@ use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::Builder;
 use tracing::span::{Attributes, Id, Record};
-use tracing::{Dispatch, Event, Level, Metadata, Subscriber};
+use tracing::{Event, Level, Metadata, Subscriber};
 
 use crate::skills::store::SkillPage;
 use crate::skills::store::repository::{SkillRepository, SkillWrite};
@@ -204,16 +204,14 @@ impl SkillRepository for ScriptedRepository {
     }
 
     async fn delete(&self, skill_id: &str) -> Result<(), TableError> {
-        let failure = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.effects.push(Effect::Delete(skill_id.to_owned()));
-            state.delete_failure
-        };
-        self.failing(failure)?;
-        self.update(|state| {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.effects.push(Effect::Delete(skill_id.to_owned()));
+        let failure = state.delete_failure;
+        if failure.is_none() {
             state.rows.remove(skill_id);
-        });
-        Ok(())
+        }
+        drop(state);
+        self.failing(failure)
     }
 }
 
@@ -262,7 +260,7 @@ where
 {
     let warnings = Warnings::default();
     let subscriber = warnings.clone();
-    let value = tracing::subscriber::with_default(Dispatch::new(subscriber), run);
+    let value = tracing::subscriber::with_default(subscriber, run);
     (value, warnings.messages())
 }
 
