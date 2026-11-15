@@ -1,0 +1,38 @@
+kind: helper
+name: compatible-image-record-preexisting-unsupported-and-bad-size
+call:
+  compatible_image_record:
+    function: options
+    options:
+      - host: aiml
+        model: flux-pro
+        non_default_params: {quality: low, n: 2}
+        optional_params: {quality: hd, num_images: 4}
+        drop_params: false
+      - host: aiml
+        model: flux-pro
+        non_default_params: {style: vivid}
+        optional_params: {}
+        drop_params: false
+      - host: aiml
+        model: flux-pro
+        non_default_params: {style: vivid, size: "512"}
+        optional_params: {}
+        drop_params: true
+      - host: aiml
+        model: flux-pro
+        non_default_params: {size: "1x2x3"}
+        optional_params: {}
+        drop_params: false
+      - host: aiml
+        model: flux-pro
+        non_default_params: {size: "widexhigh"}
+        optional_params: {}
+        drop_params: false
+      - host: cometapi
+        model: any-model
+        non_default_params: {n: 3, quality: hd, response_format: url, size: "1024x768", style: vivid}
+        optional_params: {}
+        drop_params: false
+env: {}
+compare: {ignore: []}
