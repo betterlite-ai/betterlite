@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 
 use chrono::NaiveDateTime;
-use deadpool_postgres::PoolError;
+use deadpool_postgres::{Client, PoolError};
 use tokio_postgres::types::ToSql;
 
 use crate::postgres_store::errors::{DbError, backend};
@@ -13,7 +13,7 @@ use super::{FlushFuture, ToolSpendFailure, ToolSpendWriter};
 
 const INSERT_INDEX_SQL: &str =
     r#"INSERT INTO "LiteLLM_SpendLogToolIndex" (request_id, tool_name, start_time) VALUES "#;
-const SKIP_DUPLICATE_INDEX_SQL: &str = r#" ON CONFLICT (request_id, tool_name) DO NOTHING"#;
+const SKIP_DUPLICATE_INDEX_SQL: &str = " ON CONFLICT (request_id, tool_name) DO NOTHING";
 const UPSERT_ROLLUP_SQL: &str = r#"INSERT INTO "LiteLLM_DailyToolSpend" (date, tool_name, spend, total_tokens, request_count, updated_at) VALUES ($1, $2, $3::numeric::double precision, $4, $5, now()) ON CONFLICT (date, tool_name) DO UPDATE SET spend = "LiteLLM_DailyToolSpend".spend + EXCLUDED.spend, total_tokens = "LiteLLM_DailyToolSpend".total_tokens + EXCLUDED.total_tokens, request_count = "LiteLLM_DailyToolSpend".request_count + EXCLUDED.request_count, updated_at = now()"#;
 
 pub struct PostgresToolSpendWriter {
@@ -46,6 +46,45 @@ impl From<tokio_postgres::Error> for ToolSpendWriteError {
     }
 }
 
+impl PostgresToolSpendWriter {
+    async fn connected(&self) -> Result<Client, ToolSpendWriteError> {
+        self.store
+            .session()
+            .await
+            .map_err(ToolSpendWriteError::Connect)
+    }
+
+    async fn write_rollups(&self, rollups: &[ToolDayRollup]) -> Result<(), ToolSpendWriteError> {
+        if rollups.is_empty() {
+            return Ok(());
+        }
+        let mut client = self.connected().await?;
+        let transaction = client
+            .transaction()
+            .await
+            .map_err(ToolSpendWriteError::from)?;
+        for rollup in rollups {
+            transaction
+                .execute(
+                    UPSERT_ROLLUP_SQL,
+                    &[
+                        &rollup.date,
+                        &rollup.tool_name,
+                        &rollup.spend,
+                        &rollup.total_tokens,
+                        &rollup.request_count,
+                    ],
+                )
+                .await
+                .map_err(ToolSpendWriteError::from)?;
+        }
+        transaction
+            .commit()
+            .await
+            .map_err(ToolSpendWriteError::from)
+    }
+}
+
 impl ToolSpendWriter for PostgresToolSpendWriter {
     type Error = ToolSpendWriteError;
 
@@ -57,11 +96,7 @@ impl ToolSpendWriter for PostgresToolSpendWriter {
             if rows.is_empty() {
                 return Ok(());
             }
-            let client = self
-                .store
-                .session()
-                .await
-                .map_err(ToolSpendWriteError::Connect)?;
+            let client = self.connected().await?;
             let times: Vec<NaiveDateTime> =
                 rows.iter().map(|row| row.instant.naive_utc()).collect();
             let mut params: Vec<&(dyn ToSql + Sync)> =
@@ -84,39 +119,7 @@ impl ToolSpendWriter for PostgresToolSpendWriter {
         &'writer self,
         rollups: &'writer [ToolDayRollup],
     ) -> FlushFuture<'writer, Self::Error> {
-        Box::pin(async move {
-            if rollups.is_empty() {
-                return Ok(());
-            }
-            let mut client = self
-                .store
-                .session()
-                .await
-                .map_err(ToolSpendWriteError::Connect)?;
-            let transaction = client
-                .transaction()
-                .await
-                .map_err(ToolSpendWriteError::from)?;
-            for rollup in rollups {
-                transaction
-                    .execute(
-                        UPSERT_ROLLUP_SQL,
-                        &[
-                            &rollup.date,
-                            &rollup.tool_name,
-                            &rollup.spend,
-                            &rollup.total_tokens,
-                            &rollup.request_count,
-                        ],
-                    )
-                    .await
-                    .map_err(ToolSpendWriteError::from)?;
-            }
-            transaction
-                .commit()
-                .await
-                .map_err(ToolSpendWriteError::from)
-        })
+        Box::pin(self.write_rollups(rollups))
     }
 }
 
