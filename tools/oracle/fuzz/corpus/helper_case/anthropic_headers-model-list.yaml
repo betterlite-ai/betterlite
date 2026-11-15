@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-headers-model-list
+call:
+  anthropic_headers:
+    environment: {}
+    calls:
+      - function: model_list
+        models:
+          - {id: anthropic/claude-sonnet-4, object: model, created: 0, owned_by: openai, max_input_tokens: 1000}
+        display_names: {anthropic/claude-sonnet-4: Seed name}
+        listed_ids: {}
+env: {}
+compare: {ignore: []}
