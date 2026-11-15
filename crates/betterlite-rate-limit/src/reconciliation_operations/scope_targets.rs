@@ -94,8 +94,8 @@ fn agent_targets(targets: &mut Vec<(String, String)>, metadata: &ScopeMetadata) 
     }
 }
 
-fn push_target(targets: &mut Vec<(String, String)>, key: &'static str, optional: Option<&str>) {
-    if let Some(value) = optional {
+fn push_target(targets: &mut Vec<(String, String)>, key: &'static str, target_id: Option<&str>) {
+    if let Some(value) = target_id {
         targets.push((key.to_owned(), value.to_owned()));
     }
 }
