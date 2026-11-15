@@ -10,7 +10,8 @@ use betterlite_bedrock::marengo_embeddings::response::{
 };
 use betterlite_bedrock::marengo_three::error::Marengo3Error;
 use betterlite_context::non_default_params::mapper::DropPolicy;
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
 
@@ -27,12 +28,12 @@ pub(crate) struct Call {
     input: Vec<String>,
     inference: Params,
     replies: Vec<Field>,
-    async_invoke_route: bool,
+    async_invoke_route: Option<bool>,
     model_id: Option<String>,
     output_s3_uri: Option<String>,
-    drop_params: bool,
+    drop_params: Option<bool>,
     batch: Vec<Field>,
-    global_drop_params: bool,
+    global_drop_params: Option<bool>,
     deployment_drop_params: Option<Field>,
 }
 
@@ -97,7 +98,7 @@ fn policy(call: &Call) -> DropPolicy {
             )
             | None => None,
         },
-        litellm_drop_params: call.global_drop_params,
+        litellm_drop_params: call.global_drop_params.unwrap_or(false),
     }
 }
 
@@ -108,10 +109,10 @@ fn transform_all(call: &Call) -> Result<Vec<Value>, Failure> {
             model: Some(&call.model),
             input,
             inference_params: &call.inference,
-            async_invoke_route: call.async_invoke_route,
+            async_invoke_route: call.async_invoke_route.unwrap_or(false),
             model_id: call.model_id.as_deref(),
             output_s3_uri: call.output_s3_uri.as_deref(),
-            drop_params: call.drop_params,
+            drop_params: call.drop_params.unwrap_or(false),
         })?;
         requests.push(serde_json::to_value(&request)?);
     }
@@ -120,17 +121,22 @@ fn transform_all(call: &Call) -> Result<Vec<Value>, Failure> {
 
 fn async_reply(call: &Call) -> Option<&Field> {
     call.replies.first().filter(|reply| {
-        call.async_invoke_route
+        call.async_invoke_route.unwrap_or(false)
             && call.input.len() == 1
             && call.replies.len() == 1
             && matches!(*reply, Field::Mapping(entries) if entries.contains_key("invocationArn"))
     })
 }
 
+fn parse_record<T: DeserializeOwned, S: Serialize>(value: &S) -> Result<T, Failure> {
+    let json = serde_json::to_value(value)?;
+    serde_json::from_value(json).map_err(Failure::from)
+}
+
 fn response_value(call: &Call, requests: &[Value]) -> Result<Value, Failure> {
     let response: MarengoEmbeddingResponse = match async_reply(call) {
         Some(reply) => {
-            let parsed: Params = serde_json::from_value(serde_json::to_value(reply)?)?;
+            let parsed: Params = parse_record(reply)?;
             transform_async_response(&parsed, &call.model)
         }
         None => {
@@ -138,10 +144,7 @@ fn response_value(call: &Call, requests: &[Value]) -> Result<Value, Failure> {
                 .replies
                 .iter()
                 .take(call.input.len())
-                .map(|reply| {
-                    let value = serde_json::to_value(reply)?;
-                    Ok(serde_json::from_value::<MarengoInvokeResponse>(value)?)
-                })
+                .map(parse_record)
                 .collect::<Result<Vec<MarengoInvokeResponse>, Failure>>()?;
             let batch = batch_value(call, requests)?;
             transform_response(&responses, &call.model, Some(&batch))?
@@ -159,10 +162,7 @@ fn batch_value(call: &Call, requests: &[Value]) -> Result<Vec<MarengoBilledReque
             .map(|entry| Ok(serde_json::to_value(entry)?))
             .collect::<Result<Vec<_>, Failure>>()?
     };
-    entries
-        .into_iter()
-        .map(|entry| serde_json::from_value(entry).map_err(Failure::from))
-        .collect()
+    entries.iter().map(parse_record).collect()
 }
 
 impl From<Failure> for Box<HelperError> {
