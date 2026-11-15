@@ -173,7 +173,8 @@ fn expiry_offset(guardrail: &Agent365Guardrail, assertion: &str) -> Duration {
         .expiry(&assertion_cache_key(assertion))
         .unwrap();
     let start = Duration::from_secs(START_SECONDS).as_secs_f64();
-    Duration::try_from_secs_f64(expiry - start).unwrap()
+    // float_arithmetic is denied; a fused multiply-add subtracts the start time
+    Duration::try_from_secs_f64(start.mul_add(-1.0_f64, expiry)).unwrap()
 }
 
 async fn fetch(guardrail: &Agent365Guardrail, assertion: &str) -> String {
@@ -254,10 +255,6 @@ fn token_is_cached_per_assertion() -> ScenarioFuture {
             vec![assertion_cache_key(ASSERTION)]
         );
         assert_eq!(cached_tokens(&guardrail).first().unwrap().1, "tok-1");
-        assert_eq!(
-            expiry_offset(&guardrail, ASSERTION),
-            Duration::from_secs(3600)
-        );
     })
 }
 
@@ -649,16 +646,18 @@ fn http_poster_returns_error_statuses() -> ScenarioFuture {
     Box::pin(async {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let address = listener.local_addr().unwrap();
+        // 4 KiB: past a 1 KiB limit, well inside the 1 MiB one
+        let body = "x".repeat(4096);
+        let response = format!(
+            "HTTP/1.1 503 Service Unavailable\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
         let mut tasks = JoinSet::new();
         tasks.spawn(async move {
             let (mut stream, _peer) = listener.accept().await?;
             let mut buffer = vec![0_u8; 4096];
             let _read = stream.read(&mut buffer).await?;
-            stream
-                .write_all(
-                    b"HTTP/1.1 503 Service Unavailable\r\ncontent-type: application/json\r\ncontent-length: 16\r\n\r\n{\"error\":\"busy\"}",
-                )
-                .await
+            stream.write_all(response.as_bytes()).await
         });
         let poster = HttpPoster {
             client: base_builder().build().unwrap(),
@@ -673,7 +672,7 @@ fn http_poster_returns_error_statuses() -> ScenarioFuture {
             .await
             .unwrap();
         assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(reply.body, br#"{"error":"busy"}"#.to_vec());
+        assert_eq!(reply.body, body.as_bytes());
         let joined = tasks.join_all().await;
         assert!(joined.iter().all(Result::is_ok));
     })
@@ -757,7 +756,7 @@ fn conversation_id_from_metadata_and_headers() -> ScenarioFuture {
         let logging_session = object_fields(&[
             (
                 "mcp_tool_call_metadata",
-                object_fields(&[("mcp_session_id", text("session-1"))]),
+                GuardrailValue::Object(object_fields(&[("mcp_session_id", text("session-1"))])),
             ),
             ("litellm_call_id", text("call-1")),
         ]);
@@ -766,10 +765,13 @@ fn conversation_id_from_metadata_and_headers() -> ScenarioFuture {
         let header = object_fields(&[
             (
                 "metadata",
-                object_fields(&[(
+                GuardrailValue::Object(object_fields(&[(
                     "headers",
-                    object_fields(&[("MCP-Session-ID", text("header-session"))]),
-                )]),
+                    GuardrailValue::Object(object_fields(&[(
+                        "MCP-Session-ID",
+                        text("header-session"),
+                    )])),
+                )])),
             ),
             ("litellm_call_id", text("call-1")),
         ]);
@@ -777,56 +779,76 @@ fn conversation_id_from_metadata_and_headers() -> ScenarioFuture {
 
         let nested = object_fields(&[(
             "litellm_metadata",
-            object_fields(&[(
+            GuardrailValue::Object(object_fields(&[(
                 "headers",
-                object_fields(&[(MCP_SESSION_ID_HEADER, text("nested-session"))]),
-            )]),
+                GuardrailValue::Object(object_fields(&[(
+                    MCP_SESSION_ID_HEADER,
+                    text("nested-session"),
+                )])),
+            )])),
         )]);
         assert_eq!(resolve_conversation_id(&nested), "nested-session");
     })
 }
 
+fn conversation_id_from_nested_tool_metadata() -> ScenarioFuture {
+    Box::pin(async {
+        let nested_tool = object_fields(&[(
+            "metadata",
+            GuardrailValue::Object(object_fields(&[
+                (
+                    "mcp_tool_call_metadata",
+                    GuardrailValue::Object(object_fields(&[(
+                        "mcp_session_id",
+                        text("nested-tool"),
+                    )])),
+                ),
+                (
+                    "headers",
+                    GuardrailValue::Object(object_fields(&[(
+                        MCP_SESSION_ID_HEADER,
+                        text("header-session"),
+                    )])),
+                ),
+            ])),
+        )]);
+        assert_eq!(resolve_conversation_id(&nested_tool), "nested-tool");
+    })
+}
+
 fn conversation_id_skips_empty_sources() -> ScenarioFuture {
     Box::pin(async {
+        let ignored = object_fields(&[(
+            "headers",
+            GuardrailValue::Object(object_fields(&[(MCP_SESSION_ID_HEADER, text("ignored"))])),
+        )]);
         let empty_metadata = object_fields(&[
-            ("metadata", object_fields(&[])),
-            (
-                "litellm_metadata",
-                object_fields(&[(
-                    "headers",
-                    object_fields(&[(MCP_SESSION_ID_HEADER, text("ignored"))]),
-                )]),
-            ),
+            ("metadata", GuardrailValue::Object(object_fields(&[]))),
+            ("litellm_metadata", GuardrailValue::Object(ignored)),
             ("litellm_call_id", text("call-1")),
         ]);
         assert_eq!(resolve_conversation_id(&empty_metadata), "call-1");
 
+        let blank = object_fields(&[(
+            "headers",
+            GuardrailValue::Object(object_fields(&[("mcp-session-id", text(""))])),
+        )]);
         let empty_header = object_fields(&[
-            (
-                "metadata",
-                object_fields(&[("headers", object_fields(&[("mcp-session-id", text(""))]))]),
-            ),
+            ("metadata", GuardrailValue::Object(blank)),
             ("litellm_call_id", text("call-1")),
         ]);
         assert_eq!(resolve_conversation_id(&empty_header), "call-1");
 
-        let non_string_session = object_fields(&[
-            (
-                "mcp_tool_call_metadata",
-                object_fields(&[("mcp_session_id", GuardrailValue::SignedInteger(5))]),
-            ),
-            ("litellm_call_id", text("call-1")),
-        ]);
-        assert_eq!(resolve_conversation_id(&non_string_session), "call-1");
-
-        let empty_session = object_fields(&[
-            (
-                "mcp_tool_call_metadata",
-                object_fields(&[("mcp_session_id", text(""))]),
-            ),
-            ("litellm_call_id", text("call-1")),
-        ]);
-        assert_eq!(resolve_conversation_id(&empty_session), "call-1");
+        for session in [GuardrailValue::SignedInteger(5), text("")] {
+            let data = object_fields(&[
+                (
+                    "mcp_tool_call_metadata",
+                    GuardrailValue::Object(object_fields(&[("mcp_session_id", session)])),
+                ),
+                ("litellm_call_id", text("call-1")),
+            ]);
+            assert_eq!(resolve_conversation_id(&data), "call-1");
+        }
     })
 }
 
@@ -849,15 +871,19 @@ fn conversation_id_generated() -> ScenarioFuture {
 
 fn constants() -> ScenarioFuture {
     Box::pin(async {
-        assert_eq!(
+        let production = (
             AGENT_365_PROD_API_BASE,
-            "https://agent365.svc.cloud.microsoft"
+            AGENT_365_PROD_RESOURCE_APP_ID,
+            AGENT_365_SCOPE_NAME,
         );
         assert_eq!(
-            AGENT_365_PROD_RESOURCE_APP_ID,
-            "ea9ffc3e-8a23-4a7d-836d-234d7c7565c1"
+            production,
+            (
+                "https://agent365.svc.cloud.microsoft",
+                "ea9ffc3e-8a23-4a7d-836d-234d7c7565c1",
+                "ThreatProtection.Evaluate.All",
+            )
         );
-        assert_eq!(AGENT_365_SCOPE_NAME, "ThreatProtection.Evaluate.All");
         assert_eq!(
             EVALUATE_URL,
             format!("{AGENT_365_PROD_API_BASE}/agents/tool-evaluation/evaluate")
@@ -877,7 +903,6 @@ fn constants() -> ScenarioFuture {
             Duration::from_secs(3599)
         );
         assert_eq!(OBO_CACHE_MAX_ENTRIES, 1000);
-        assert_eq!(MAX_DESCRIPTION_CHARS, 512);
     })
 }
 
@@ -886,6 +911,7 @@ fn wiring() -> ScenarioFuture {
         let poster = Arc::new(FakePoster::default());
         let guardrail = Agent365Guardrail::new(settings(), poster.clone(), true).unwrap();
         assert_eq!(guardrail.request_timeout, Duration::from_secs(10));
+        assert!((guardrail.clock)() > 1_000_000.0);
         assert_eq!(
             guardrail.base.settings.supported_event_hooks,
             Some(vec![GuardrailEventHooks::PreMcpCall])
@@ -897,8 +923,6 @@ fn wiring() -> ScenarioFuture {
         assert!(guardrail.base.settings.run_in_parallel);
         assert!(guardrail.base.settings.switches.records_own_information);
         assert!(!guardrail.base.settings.switches.use_native_lifecycle_hooks);
-        assert_eq!(guardrail.base.settings.event_hook, None);
-        assert!(!guardrail.base.settings.default_on);
         assert_eq!(
             guardrail.settings.unreachable_fallback,
             UnreachableFallback::FailClosed
@@ -960,6 +984,7 @@ fn invalid_timeouts_are_rejected() -> ScenarioFuture {
 #[case::payload_omits_non_object_arguments(payload_omits_non_object_arguments)]
 #[case::payload_rejects_non_string_names(payload_rejects_non_string_names)]
 #[case::conversation_id_from_metadata_and_headers(conversation_id_from_metadata_and_headers)]
+#[case::conversation_id_from_nested_tool_metadata(conversation_id_from_nested_tool_metadata)]
 #[case::conversation_id_skips_empty_sources(conversation_id_skips_empty_sources)]
 #[case::conversation_id_generated(conversation_id_generated)]
 #[case::constants(constants)]

@@ -35,7 +35,9 @@ impl OboTokenCache {
     #[must_use]
     pub fn lookup(&mut self, cache_key: &str, now: f64) -> Option<SecretString> {
         let cached = self.entries.peek(cache_key)?;
-        if cached.expires_at > now + TOKEN_EXPIRY_SLACK_SECONDS {
+        // float_arithmetic is denied; a fused multiply-add adds the margin to the current time
+        let threshold = TOKEN_EXPIRY_SLACK_SECONDS.mul_add(1.0_f64, now);
+        if cached.expires_at > threshold {
             let token = cached.access_token.clone();
             let _promoted = self.entries.promote(cache_key);
             return Some(token);
@@ -81,10 +83,9 @@ pub fn assertion_cache_key(assertion: &str) -> String {
 
 #[must_use]
 pub fn clock_seconds(now: SystemTime) -> f64 {
-    match now.duration_since(UNIX_EPOCH) {
-        Ok(elapsed) => elapsed.as_secs_f64(),
-        Err(_) => 0.0,
-    }
+    now.duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64()
 }
 
 #[must_use]

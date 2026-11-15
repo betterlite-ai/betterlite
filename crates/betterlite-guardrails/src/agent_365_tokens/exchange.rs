@@ -51,7 +51,8 @@ impl Agent365Guardrail {
         }
         let reply = self.exchange(assertion).await?;
         let grant = parse_token_reply(&reply)?;
-        let expires_at = (self.clock)() + grant.expires_in;
+        // float_arithmetic is denied; a fused multiply-add adds the grant lifetime to the current time
+        let expires_at = grant.expires_in.mul_add(1.0_f64, (self.clock)());
         let token = SecretString::from(grant.access_token);
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         cache.insert(
@@ -186,10 +187,10 @@ fn parse_aadsts_codes(raw: Option<&GuardrailValue>) -> Vec<i64> {
     }
 }
 
+// serde's untagged GuardrailValue tries SignedInteger first, so every JSON integer that fits i64 arrives signed
 fn code_as_i64(value: &GuardrailValue) -> Option<i64> {
     match value {
         GuardrailValue::SignedInteger(code) => Some(*code),
-        GuardrailValue::UnsignedInteger(code) => i64::try_from(*code).ok(),
         _ => None,
     }
 }

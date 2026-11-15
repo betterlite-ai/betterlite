@@ -85,13 +85,21 @@ fn text_field(
     }
 }
 
-// The logging object's model_call_details reach the request data here, as they do in LiteLLM's mcp_tool_call_metadata.
+// The logging object's model_call_details reach the request data as mcp_tool_call_metadata, at the top level or under the request metadata.
 fn tool_metadata_session(data: &RequestData) -> Option<String> {
-    let metadata = match data.get("mcp_tool_call_metadata") {
-        Some(GuardrailValue::Object(metadata)) => metadata,
+    if let Some(metadata) = data.get("mcp_tool_call_metadata") {
+        return session_in(metadata);
+    }
+    let metadata = metadata_object(data)?;
+    session_in(metadata.get("mcp_tool_call_metadata"))
+}
+
+fn session_in(metadata: Option<&GuardrailValue>) -> Option<String> {
+    let fields = match metadata {
+        Some(GuardrailValue::Object(fields)) => fields,
         _ => return None,
     };
-    match metadata.get("mcp_session_id") {
+    match fields.get("mcp_session_id") {
         Some(GuardrailValue::Text(session)) if !session.is_empty() => Some(session.clone()),
         _ => None,
     }
