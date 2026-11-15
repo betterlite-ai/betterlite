@@ -288,6 +288,19 @@ fn list_replies() {
     );
     assert!(list_response(&body(&json!({"data": [{"id": "vid-9", "model": 5}]})), None).is_err());
     assert!(list_response(&body(&json!({"data": [], "first_id": 7})), Some("openai")).is_err());
+    assert!(list_response(&body(&json!({"data": [{"id": 7}]})), None).is_err());
+    assert!(list_response(&body(&json!({"data": 3})), Some("openai")).is_err());
+
+    let null_id = list_response(
+        &body(&json!({"data": [{"id": null, "object": "video"}]})),
+        None,
+    )
+    .unwrap();
+    assert_eq!(null_id.data[0].id, None);
+    assert_eq!(
+        serde_json::to_value(&null_id).unwrap(),
+        json!({"data": [{"object": "video"}]})
+    );
 
     let plain = list_response(&body(&reply), Some("")).unwrap();
     assert_eq!(plain.data[0].id.as_deref(), Some("vid-1"));
@@ -478,12 +491,27 @@ fn binary_content_case() {
 }
 
 fn invalid_seconds_case() {
-    for text in ["abc", "", "  ", "1,5", "0x10", "nan", "inf", "-infinity"] {
+    for text in [
+        "abc",
+        "",
+        "  ",
+        "1,5",
+        "0x10",
+        "nan",
+        "inf",
+        "-infinity",
+        "1_0",
+        "٤",
+    ] {
         let video = seconds_video(Some(json!(text)));
         assert_eq!(video.seconds, Some(json!(text)));
         assert!(video.usage.unwrap().is_empty());
     }
 
+    let truthy_boolean = seconds_video(Some(json!(true)));
+    assert_duration(&truthy_boolean, "1.0");
+    let false_boolean = seconds_video(Some(json!(false)));
+    assert!(false_boolean.usage.unwrap().is_empty());
     let absent = seconds_video(None);
     assert_eq!(absent.seconds, None);
     assert!(absent.usage.unwrap().is_empty());
