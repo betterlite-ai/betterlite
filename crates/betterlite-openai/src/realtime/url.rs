@@ -21,8 +21,7 @@ pub fn construct_url(api_base: &str, query_params: &QueryParams) -> Result<Strin
                 .iter()
                 .map(|(name, value)| (name.as_str(), value.as_deref().unwrap_or_default())),
         );
-        // httpx encodes * as %2A and keeps ~, while the url serializer keeps * and writes %7E;
-        // the replaces below swap both back to httpx's form
+        // httpx encodes * as %2A and keeps ~, while the url serializer keeps * and writes %7E; the replaces below undo both
         let encoded = serializer.finish().replace('*', "%2A").replace("%7E", "~");
         url.set_query(Some(&encoded));
     }
