@@ -45,6 +45,7 @@ scope:
   - crates/betterlite-core/src/operation/text_completion/**
   - crates/betterlite-core/src/dispatch/text_completion.rs
   - crates/betterlite-core/src/dispatch/text_completion/**
+  - crates/betterlite-core/src/dispatch/text_stream/tests.rs
   - tools/oracle/cases/completions/**
   - tools/oracle/helpers/b202.py
   - tools/oracle/helpers/b202/**
