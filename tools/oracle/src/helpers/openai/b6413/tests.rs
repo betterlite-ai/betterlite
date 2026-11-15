@@ -79,6 +79,31 @@ fn the_chat_case_reports_the_pinned_supported_params_and_mapping() {
 }
 
 #[test]
+fn the_chat_case_flattens_message_content_like_litellm() {
+    let result = run_case("chat-params-and-messages.yaml");
+    assert_eq!(
+        result["chat_messages"][0]["messages"][0]["content"],
+        json!("one two")
+    );
+    assert_eq!(
+        result["chat_messages"][0]["messages"][1]["content"],
+        json!("plainsunny")
+    );
+    assert_eq!(
+        result["chat_messages"][0]["messages"][2]["content"],
+        json!([{"type": "image_url", "image_url": {"url": "http://x.test/a.png"}}])
+    );
+    assert_eq!(
+        result["chat_messages"][0]["messages"][3],
+        json!({"role": "assistant"})
+    );
+    assert_eq!(
+        result["chat_messages"][0]["messages"][4]["tool_calls"][0]["function"]["name"],
+        json!("f")
+    );
+}
+
+#[test]
 fn the_embedding_case_reports_urls_headers_and_bodies() {
     let result = run_case("embedding-url-headers-body.yaml");
     assert_eq!(

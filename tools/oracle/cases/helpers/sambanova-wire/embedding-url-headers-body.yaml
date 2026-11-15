@@ -4,6 +4,7 @@ call:
   b6413:
     chat_supported: []
     chat_params: []
+    chat_messages: []
     embedding_urls:
       - {api_base: "https://api.sambanova.ai/v1"}
       - {api_base: "https://api.sambanova.ai/v1///"}

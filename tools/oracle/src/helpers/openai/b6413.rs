@@ -1,3 +1,4 @@
+use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::error::ProviderError;
 use betterlite_openai::hosted_chat_options::map_renaming_token_limit;
 use betterlite_openai::openai_base_config::{Headers, Object};
@@ -18,6 +19,8 @@ pub(crate) struct Input {
     chat_supported: Vec<SupportedCall>,
     #[serde(default)]
     chat_params: Vec<ParamsCall>,
+    #[serde(default)]
+    chat_messages: Vec<MessagesCall>,
     #[serde(default)]
     embedding_urls: Vec<UrlCall>,
     #[serde(default)]
@@ -46,6 +49,13 @@ struct ParamsCall {
     requested: IndexMap<String, Value>,
     #[serde(default)]
     existing: IndexMap<String, Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MessagesCall {
+    #[serde(default)]
+    messages: Vec<ChatMessage>,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +107,9 @@ impl crate::helpers::Helper for Op {
         Ok(json!({
             "chat_supported": input.chat_supported.iter().map(supported).collect::<Vec<_>>(),
             "chat_params": input.chat_params.iter().map(params).collect::<Vec<_>>(),
+            "chat_messages": input.chat_messages.iter().map(|call| json!({
+                "messages": sambanova_chat::transform_messages(&call.messages).ok(),
+            })).collect::<Vec<_>>(),
             "embedding_urls": input.embedding_urls.iter().map(|call| json!({
                 "url": sambanova_embedding::get_complete_url(call.api_base.as_deref()).ok(),
             })).collect::<Vec<_>>(),

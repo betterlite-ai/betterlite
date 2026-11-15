@@ -3,6 +3,9 @@ from typing import Final, Protocol, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.litellm_core_utils.prompt_templates.common_utils import (
+    handle_messages_with_content_list_to_str_conversion,
+)
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.sambanova.chat import SambanovaConfig
 from litellm.llms.sambanova.common_utils import SambaNovaError
@@ -104,6 +107,10 @@ class ParamsCall(TypedDict):
     existing: dict[str, JsonValue]
 
 
+class MessagesCall(TypedDict):
+    messages: list[AllMessageValues]
+
+
 class UrlCall(TypedDict):
     api_base: str | None
 
@@ -147,6 +154,7 @@ class ReplyShape(TypedDict):
 class Input(TypedDict):
     chat_supported: list[SupportedCall]
     chat_params: list[ParamsCall]
+    chat_messages: list[MessagesCall]
     embedding_urls: list[UrlCall]
     embedding_headers: list[HeadersCall]
     embedding_requests: list[RequestCall]
@@ -168,6 +176,12 @@ def params(config: ChatConfig, call: ParamsCall) -> JsonValue:
         call["requested"], dict(call["existing"]), call["model"], drop_params=False
     )
     answer: dict[str, JsonValue] = {"model": call["model"], "mapped": mapped}
+    return JSON.validate_python(answer)
+
+
+def messages(call: MessagesCall) -> JsonValue:
+    converted = handle_messages_with_content_list_to_str_conversion(call["messages"])
+    answer: dict[str, JsonValue] = {"messages": JSON.validate_python(converted)}
     return JSON.validate_python(answer)
 
 
@@ -264,6 +278,7 @@ def run(value: Input) -> JsonValue:
     answer: dict[str, JsonValue] = {
         "chat_supported": [supported(chat, call) for call in value["chat_supported"]],
         "chat_params": [params(chat, call) for call in value["chat_params"]],
+        "chat_messages": [messages(call) for call in value["chat_messages"]],
         "embedding_urls": [url(embedding, call) for call in value["embedding_urls"]],
         "embedding_headers": [headers(embedding, call) for call in value["embedding_headers"]],
         "embedding_requests": [request(embedding, call) for call in value["embedding_requests"]],
