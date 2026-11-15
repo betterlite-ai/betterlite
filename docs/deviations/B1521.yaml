@@ -1,0 +1,40 @@
+task: B1521
+deviations:
+  - what: >-
+      A generation reply that parses as JSON but is not an object, has no data field, has a data
+      field that is not a list, holds an entry that is not an object, or carries a url or b64_json
+      that is not text or null fails with a typed RecraftReplyError that names the shape.
+    why: >-
+      LiteLLM indexes response_data["data"] and builds an ImageObject from each entry, so those
+      bodies raise an unhandled KeyError, TypeError or pydantic ValidationError and the image call
+      surfaces an APIConnectionError with status 500. No working Recraft setup returns such a body,
+      and the typed error lets the image dispatch classify the failure; an empty data list still
+      succeeds as it does in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/image_generation/transformation.py#L133-L150
+  - what: >-
+      An edit reply with one of those shapes fails with the same typed RecraftReplyError instead of
+      an unhandled exception while the fresh response is built.
+    why: >-
+      LiteLLM's edit transform reads response_data["data"] the same way, and a provider body outside
+      the shape LiteLLM declares is not a result any working setup relies on. The fresh response
+      also takes its created timestamp from the caller, which is what LiteLLM reads from the clock
+      when it constructs the response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/image_edit/transformation.py#L149-L175
+  - what: >-
+      A generation request naming a parameter Recraft's generation path does not support fails with
+      the typed UnsupportedParameter error instead of LiteLLM's ValueError.
+    why: >-
+      LiteLLM raises ValueError, and the image call's exception mapping has no status for it, so it
+      answers APIConnectionError with status 500. A parameter name the caller can fix belongs to the
+      request rather than to an internal failure, and the typed error lets the image dispatch answer
+      a request error. drop_params still drops the name silently, as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/image_generation/transformation.py#L42-L52
+  - what: >-
+      A generation request that passes prompt or model again as a provider option fails with the
+      typed DuplicateArgument error instead of Python's TypeError for a repeated keyword argument.
+    why: >-
+      LiteLLM passes optional_params into the request TypedDict next to prompt= and model=, so a
+      repeated keyword raises TypeError and the image call answers APIConnectionError with status
+      500. The task requires the repeated argument to keep its source failure instead of silently
+      winning, and the typed error names the argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/recraft/image_generation/transformation.py#L106-L113
