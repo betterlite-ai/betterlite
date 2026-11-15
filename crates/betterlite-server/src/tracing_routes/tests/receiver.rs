@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::future::{Future, ready};
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -72,6 +72,14 @@ impl FakeStorage {
             ReadMode::Storage => Err(StubError),
         }
     }
+
+    fn read_fixture<Row>(&self, row: Row) -> Result<Vec<Row>, StubError> {
+        if matches!(self.read, ReadMode::Rows) {
+            Ok(vec![row])
+        } else {
+            self.read_rows()
+        }
+    }
 }
 
 impl TraceSpanSink for FakeStorage {
@@ -81,7 +89,7 @@ impl TraceSpanSink for FakeStorage {
         &self,
         rows: &[SpanRow],
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        std::future::ready(match &self.sink {
+        ready(match &self.sink {
             SinkMode::Ok => {
                 self.inserted.lock().expect("lock").extend_from_slice(rows);
                 Ok(())
@@ -106,77 +114,76 @@ impl TraceStorage for FakeStorage {
         &self,
         _query: ListTracesQuery,
     ) -> impl Future<Output = Result<Vec<TraceListRow>, StubError>> + Send {
-        std::future::ready(self.read_rows())
+        ready(self.read_rows())
     }
 
     fn trace_spans(
         &self,
         _query: TraceSpansQuery,
     ) -> impl Future<Output = Result<Vec<SpanQueryRow>, StubError>> + Send {
-        std::future::ready(if matches!(self.read, ReadMode::Rows) {
-            let row = SpanQueryRow {
-                span_id: "span-1".to_owned(),
-                parent_span_id: None,
-                name: "root".to_owned(),
-                span_type: SpanType::Agent,
-                agent: "root".to_owned(),
-                start_ns: 0,
-                duration_ns: 1_000_000,
-                status: "STATUS_CODE_OK".to_owned(),
-                status_message: None,
-                error_truncated: false,
-                input_preview: String::new(),
-                model: None,
-                input_tokens: 0,
-                output_tokens: 0,
-                litellm_request_id: None,
-                team_id: "team-1".to_owned(),
-                api_key_hash: "hash-1".to_owned(),
-                service: "svc".to_owned(),
-            };
-            Ok(vec![row])
-        } else {
-            self.read_rows()
-        })
+        ready(self.read_fixture(span_query_row()))
     }
 
     fn span_detail(
         &self,
         _query: SpanDetailQuery,
     ) -> impl Future<Output = Result<Vec<SpanDetailRow>, StubError>> + Send {
-        std::future::ready(if matches!(self.read, ReadMode::Rows) {
-            Ok(vec![SpanDetailRow {
-                span_id: "span-1".to_owned(),
-                input: "in".to_owned(),
-                output: "out".to_owned(),
-                attributes: IndexMap::new(),
-            }])
-        } else {
-            self.read_rows()
-        })
+        ready(self.read_fixture(span_detail_row()))
     }
 
     fn span_error(
         &self,
         _query: SpanErrorQuery,
     ) -> impl Future<Output = Result<Vec<SpanErrorRow>, StubError>> + Send {
-        std::future::ready(if matches!(self.read, ReadMode::Rows) {
-            Ok(vec![SpanErrorRow {
-                span_id: "span-1".to_owned(),
-                message: "boom".to_owned(),
-                total_chars: 4,
-                version: "0".repeat(64),
-            }])
-        } else {
-            self.read_rows()
-        })
+        ready(self.read_fixture(span_error_row()))
     }
 
     fn spend_by_request_ids(
         &self,
         _query: SpendByRequestIdsQuery,
     ) -> impl Future<Output = Result<Vec<SpendRow>, StubError>> + Send {
-        std::future::ready(self.read_rows())
+        ready(self.read_rows())
+    }
+}
+
+fn span_query_row() -> SpanQueryRow {
+    SpanQueryRow {
+        span_id: "span-1".to_owned(),
+        parent_span_id: None,
+        name: "root".to_owned(),
+        span_type: SpanType::Agent,
+        agent: "root".to_owned(),
+        start_ns: 0,
+        duration_ns: 1_000_000,
+        status: "STATUS_CODE_OK".to_owned(),
+        status_message: None,
+        error_truncated: false,
+        input_preview: String::new(),
+        model: None,
+        input_tokens: 0,
+        output_tokens: 0,
+        litellm_request_id: None,
+        team_id: "team-1".to_owned(),
+        api_key_hash: "hash-1".to_owned(),
+        service: "svc".to_owned(),
+    }
+}
+
+fn span_detail_row() -> SpanDetailRow {
+    SpanDetailRow {
+        span_id: "span-1".to_owned(),
+        input: "in".to_owned(),
+        output: "out".to_owned(),
+        attributes: IndexMap::new(),
+    }
+}
+
+fn span_error_row() -> SpanErrorRow {
+    SpanErrorRow {
+        span_id: "span-1".to_owned(),
+        message: "boom".to_owned(),
+        total_chars: 4,
+        version: "0".repeat(64),
     }
 }
 

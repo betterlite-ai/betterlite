@@ -6,12 +6,12 @@ use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse as _, Response};
 use betterlite_logging::trace_types::TraceScope;
 use betterlite_tracing::storage::trace_store::SpanErrorTarget;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::auth::auth_identity::AuthContext;
 use crate::tracing_routes::TraceRoutesState;
 use crate::tracing_routes::access::{TraceAuth, provide_trace_access};
-use crate::tracing_routes::receiver::TraceRuntime;
+use crate::tracing_routes::receiver::{TraceReadError, TraceRuntime};
 use crate::tracing_routes::router::{
     DetailBody, TraceRefQuery, ValidationBody, ValidationIssue, access_failure, read_failure,
     unauthenticated,
@@ -46,25 +46,14 @@ pub(super) async fn get_trace(
     Path(trace_id): Path<String>,
     identity: Option<Extension<AuthContext>>,
     request_uri: Uri,
-) -> Response {
-    let (receiver, scope) = match reader(identity, &app) {
-        Ok(pair) => pair,
-        Err(response) => return *response,
-    };
-    match receiver
-        .get_trace(&trace_id, &scope, &trace_ref(&request_uri))
-        .await
-    {
-        Ok(Some(trace)) => Json(trace).into_response(),
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(DetailBody {
-                detail: format!("Trace {trace_id} not found"),
-            }),
-        )
-            .into_response(),
-        Err(error) => read_failure(&error),
-    }
+) -> Result<Response, Response> {
+    let (receiver, scope) = reader(identity, &app).map_err(|response| *response)?;
+    Ok(found(
+        receiver
+            .get_trace(&trace_id, &scope, &trace_ref(&request_uri))
+            .await,
+        format!("Trace {trace_id} not found"),
+    ))
 }
 
 pub(super) async fn get_span(
@@ -77,20 +66,12 @@ pub(super) async fn get_span(
         Ok(pair) => pair,
         Err(response) => return *response,
     };
-    let reference = trace_ref(&uri);
-    match receiver.get_span(&ids.0, &ids.1, &scope, &reference).await {
-        Err(error) => read_failure(&error),
-        Ok(found) => match found {
-            Some(span) => Json(span).into_response(),
-            None => (
-                StatusCode::NOT_FOUND,
-                Json(DetailBody {
-                    detail: format!("Span {} not found", ids.1),
-                }),
-            )
-                .into_response(),
-        },
-    }
+    found(
+        receiver
+            .get_span(&ids.0, &ids.1, &scope, &trace_ref(&uri))
+            .await,
+        format!("Span {} not found", ids.1),
+    )
 }
 
 pub(super) async fn get_span_error(
@@ -117,18 +98,21 @@ pub(super) async fn get_span_error(
         span_id: &span_id,
         trace_ref: &params.trace_ref,
     };
-    match receiver
-        .get_span_error(target, &scope, params.cursor.as_deref())
-        .await
-    {
-        Ok(Some(page)) => Json(page).into_response(),
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(DetailBody {
-                detail: "Span diagnostic not found or no longer available".to_owned(),
-            }),
-        )
-            .into_response(),
+    found(
+        receiver
+            .get_span_error(target, &scope, params.cursor.as_deref())
+            .await,
+        "Span diagnostic not found or no longer available".to_owned(),
+    )
+}
+
+fn found<Payload>(result: Result<Option<Payload>, TraceReadError>, detail: String) -> Response
+where
+    Payload: Serialize,
+{
+    match result {
+        Ok(Some(value)) => Json(value).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, Json(DetailBody { detail })).into_response(),
         Err(error) => read_failure(&error),
     }
 }
