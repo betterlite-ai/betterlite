@@ -77,13 +77,13 @@ const TEXT_PROMPT: &str = r#"{"type":"text","prompt":"You are a {{role}}.","name
 pub(super) struct Fixture {
     pub(super) manager: LangfusePromptManagement,
     pub(super) spans: langfuse::Recording,
-    _probe: LangfuseTracing,
+    probe: LangfuseTracing,
 }
 
 impl Fixture {
     // hand the seeded channel's holder back so a retirement the logger started can finish
     pub(super) async fn release_probe(&self) {
-        release_langfuse_tracing(&self._probe, CHANNEL_RETIRE_GRACE).await;
+        release_langfuse_tracing(&self.probe, CHANNEL_RETIRE_GRACE).await;
     }
 }
 
@@ -95,9 +95,7 @@ pub(super) fn env(host: &str) -> Vec<(&'static str, String)> {
     ]
 }
 
-pub(super) fn borrowed<'a>(
-    variables: &'a [(&'static str, String)],
-) -> Vec<(&'static str, &'a str)> {
+pub(super) fn borrowed(variables: &[(&'static str, String)]) -> Vec<(&'static str, &str)> {
     variables
         .iter()
         .map(|(name, value)| (*name, value.as_str()))
@@ -146,7 +144,7 @@ pub(super) async fn manager(variables: &[(&str, &str)]) -> Fixture {
     Fixture {
         manager,
         spans,
-        _probe: probe,
+        probe,
     }
 }
 
@@ -169,31 +167,31 @@ pub(super) fn text_prompt() -> String {
 pub(super) fn payload(
     call_type: &str,
     call_id: Option<&str>,
-    response: Json,
+    response: &Json,
     error: Option<&str>,
 ) -> StandardLoggingPayload {
-    let call_type = serde_json::to_string(call_type).expect("the call type serializes");
-    let call_id = serde_json::to_string(&call_id).expect("the call id serializes");
-    let response = serde_json::to_string(&response).expect("the response serializes");
-    let error = serde_json::to_string(&error).expect("the error serializes");
+    let serialized_call_type = serde_json::to_string(call_type).expect("the call type serializes");
+    let serialized_call_id = serde_json::to_string(&call_id).expect("the call id serializes");
+    let serialized_response = serde_json::to_string(response).expect("the response serializes");
+    let serialized_error = serde_json::to_string(&error).expect("the error serializes");
     let source = PAYLOAD
         .replace("@trace_id", langfuse::TRACE_ID)
-        .replace("@call_type", &call_type)
-        .replace("@call_id", &call_id)
-        .replace("@response", &response)
-        .replace("@error", &error);
+        .replace("@call_type", &serialized_call_type)
+        .replace("@call_id", &serialized_call_id)
+        .replace("@response", &serialized_response)
+        .replace("@error", &serialized_error);
     serde_json::from_str(&source).expect("the payload parses")
 }
 
 pub(super) fn success_payload(call_id: Option<&str>) -> StandardLoggingPayload {
-    payload("completion", call_id, response(), None)
+    payload("completion", call_id, &response(), None)
 }
 
 pub(super) fn failure_payload(
     call_id: Option<&str>,
     error: Option<&str>,
 ) -> StandardLoggingPayload {
-    payload("completion", call_id, Json::Null, error)
+    payload("completion", call_id, &Json::Null, error)
 }
 
 pub(super) fn event(payload: StandardLoggingPayload) -> Arc<LoggerEvent> {
@@ -284,7 +282,9 @@ async fn answer(
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(head);
-    let (status, body) = answers.pop_front().unwrap_or((200, "{}".to_owned()));
+    let (status, body) = answers
+        .pop_front()
+        .unwrap_or_else(|| (200, "{}".to_owned()));
     let response = format!(
         "HTTP/1.1 {status} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
         reason(status),

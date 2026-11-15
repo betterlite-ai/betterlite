@@ -1,5 +1,5 @@
 use super::support;
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 
 #[tokio::test]
 async fn the_failure_span_takes_the_status_message_from_the_error_string() {

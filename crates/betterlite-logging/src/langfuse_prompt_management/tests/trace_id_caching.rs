@@ -1,5 +1,5 @@
 use super::support;
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 
 #[tokio::test]
 async fn a_logged_event_stores_its_trace_id_under_the_call_id() {

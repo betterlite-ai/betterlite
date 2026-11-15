@@ -1,5 +1,5 @@
 use super::support;
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 
 #[tokio::test]
 async fn callback_logger_serves_success_and_failure_events_for_langfuse() {
@@ -30,7 +30,11 @@ async fn callback_logger_ignores_a_stream_event_like_litellms_custom_logger() {
     let variables = support::env(support::HOST);
     let fixture = support::manager(&support::borrowed(&variables)).await;
     let stream = support::event(support::success_payload(Some(support::CALL_ID)));
-    assert!(fixture.manager.async_log_stream_event(stream).await.is_ok());
+    fixture
+        .manager
+        .async_log_stream_event(stream)
+        .await
+        .unwrap();
     assert!(fixture.manager.logger.flush().await);
     assert!(fixture.spans.spans().is_empty());
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::support;
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::langfuse_prompt_management::LangfusePromptManagement;
 use crate::langfuse_prompt_management::clients::PromptClientRequest;
 use crate::langfuse_prompt_management::unix_seconds;
@@ -15,7 +15,7 @@ fn the_trace_cache_clock_reads_the_wall_clock() {
         .as_secs_f64();
     let clock = unix_seconds();
     assert!(
-        (clock - now).abs() < 60.0,
+        (clock - now).abs() < 60.0_f64,
         "the clock read {clock} while the wall clock read {now}"
     );
 }

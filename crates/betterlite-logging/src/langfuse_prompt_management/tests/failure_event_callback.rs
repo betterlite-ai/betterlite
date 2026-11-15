@@ -1,5 +1,5 @@
 use super::support;
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 
 #[tokio::test]
 async fn the_sync_failure_event_reaches_the_logger_through_the_bridge() {

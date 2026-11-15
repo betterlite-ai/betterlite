@@ -6,7 +6,7 @@ use tokio::task::yield_now;
 use tokio::time::advance;
 
 use super::support;
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::langfuse_channels::{CHANNEL_RETIRE_GRACE, release_langfuse_tracing};
 use crate::langfuse_prompt_management::LangfusePromptManagement;
 

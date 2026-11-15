@@ -1,5 +1,5 @@
 use super::support;
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::langfuse_prompt_management::INTEGRATION_NAME;
 
 #[test]
