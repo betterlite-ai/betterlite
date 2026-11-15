@@ -546,6 +546,12 @@ async fn finish_fifo() {
     .await;
     assert!(harness.recv().await.contains("\"response\""));
     harness.send_text(FINISH).await;
+    wait_for(&harness.recorder.half_closes, 1).await;
+    assert_eq!(
+        harness.recorder.half_closed(),
+        vec![0],
+        "finishing half-closes the turn's last stream while its relay still runs"
+    );
     script_response(
         &responses,
         response(SpeechEventType::Unspecified, 0, 250_000_000),
@@ -557,7 +563,32 @@ async fn finish_fifo() {
     );
     drop(responses);
     assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
+}
+
+#[tokio::test]
+async fn finish_half_closes_only_the_last_stream() {
+    let (first, first_responses) = scripted(2);
+    let (second, _second_responses) = scripted(2);
+    let mut harness = harness(vec![first, second]);
+    harness.send_text(CONFIGURE).await;
+    assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
+    harness.send_audio(1).await;
+    harness.clock.advance(Duration::from_secs(240));
+    harness.send_audio(2).await;
     wait_for(&harness.recorder.half_closes, 1).await;
+    assert_eq!(
+        harness.recorder.half_closed(),
+        vec![0],
+        "the rotation half-closes the replaced stream"
+    );
+    harness.send_text(FINISH).await;
+    drop(first_responses);
+    wait_for(&harness.recorder.half_closes, 2).await;
+    assert_eq!(
+        harness.recorder.half_closed(),
+        vec![0, 1],
+        "finish half-closes the last stream after the rotation half-closed the replaced one"
+    );
 }
 
 #[tokio::test]
@@ -809,15 +840,29 @@ async fn full_outbox_close() {
 #[tokio::test]
 async fn a_closed_backend_refuses_further_messages() {
     let mut harness = harness(Vec::new());
+    harness.send_text(CONFIGURE).await;
+    assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
     harness.backend.close().await;
     harness.backend.close().await;
-    let error = harness
+    let command = harness
         .backend
         .send(CONFIGURE)
         .await
         .expect_err("a closed backend refuses commands");
     assert!(matches!(
-        error,
+        command,
+        ChirpBackendError::Closed {
+            code: NORMAL_CLOSURE_CODE,
+            ..
+        }
+    ));
+    let audio = harness
+        .backend
+        .send_audio(vec![1])
+        .await
+        .expect_err("a closed backend refuses audio");
+    assert!(matches!(
+        audio,
         ChirpBackendError::Closed {
             code: NORMAL_CLOSURE_CODE,
             ..
