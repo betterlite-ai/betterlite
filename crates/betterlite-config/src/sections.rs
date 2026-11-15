@@ -451,6 +451,9 @@ pub mod vertex_gcs_settings;
 // the view sits with the image identity code it feeds, which owns litellm_settings.vertex_credentials
 #[path = "providers/vertex/images/vertex_image_credentials.rs"]
 pub mod vertex_image_credentials;
+// its structs are public API of the Sections resolver, so the module has to be nameable from here
+#[path = "providers/vertex/images/vertex_image_identity_settings.rs"]
+pub mod vertex_image_identity_settings;
 pub mod vertex_schema_shaping;
 pub mod vigil_runtime;
 pub mod virtual_key_auth;

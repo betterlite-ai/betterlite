@@ -5,6 +5,7 @@ use serde::de::{DeserializeOwned, Error as _};
 use serde_json::Error as JsonError;
 use serde_json::error::Category;
 use serde_json::value::RawValue;
+use serde_with::{DefaultOnNull, serde_as};
 
 use super::error::GeminiImageError;
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
@@ -18,20 +19,27 @@ pub struct GoogleImageResponse {
 }
 
 // the image usage's declared shape, with absent and null counts both taking zero
+#[serde_as]
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ImageUsageMetadata {
-    pub prompt_token_count: Option<i64>,
-    pub candidates_token_count: Option<i64>,
-    pub total_token_count: Option<i64>,
-    pub prompt_tokens_details: Option<Vec<ImageTokenCountDetail>>,
+    #[serde_as(as = "DefaultOnNull")]
+    pub prompt_token_count: i64,
+    #[serde_as(as = "DefaultOnNull")]
+    pub candidates_token_count: i64,
+    #[serde_as(as = "DefaultOnNull")]
+    pub total_token_count: i64,
+    #[serde_as(as = "DefaultOnNull")]
+    pub prompt_tokens_details: Vec<ImageTokenCountDetail>,
 }
 
+#[serde_as]
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ImageTokenCountDetail {
     pub modality: String,
-    pub token_count: Option<i64>,
+    #[serde_as(as = "DefaultOnNull")]
+    pub token_count: i64,
 }
 
 #[derive(Debug, Default, Deserialize)]

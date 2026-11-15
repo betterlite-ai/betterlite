@@ -101,37 +101,36 @@ pub fn transform_image_generation_usage(
 ) -> Result<ImageUsage, GeminiImageError> {
     let mut image_tokens = 0_i64;
     let mut text_tokens = 0_i64;
-    let details = usage.prompt_tokens_details.as_deref().unwrap_or_default();
-    for detail in details {
+    for detail in &usage.prompt_tokens_details {
         if detail.modality.is_empty() {
             continue;
         }
         match detail.modality.as_str() {
             "TEXT" => {
-                text_tokens = text_tokens
-                    .checked_add(detail.token_count.unwrap_or_default())
-                    .ok_or(GeminiImageError::TokenOverflow {
+                text_tokens = text_tokens.checked_add(detail.token_count).ok_or(
+                    GeminiImageError::TokenOverflow {
                         field: "promptTokensDetails",
-                    })?;
+                    },
+                )?;
             }
             "IMAGE" => {
-                image_tokens = image_tokens
-                    .checked_add(detail.token_count.unwrap_or_default())
-                    .ok_or(GeminiImageError::TokenOverflow {
+                image_tokens = image_tokens.checked_add(detail.token_count).ok_or(
+                    GeminiImageError::TokenOverflow {
                         field: "promptTokensDetails",
-                    })?;
+                    },
+                )?;
             }
             _ => {}
         }
     }
     Ok(ImageUsage {
-        input_tokens: usage.prompt_token_count.unwrap_or_default(),
+        input_tokens: usage.prompt_token_count,
         input_tokens_details: ImageInputTokens {
             image_tokens,
             text_tokens,
         },
-        output_tokens: usage.candidates_token_count.unwrap_or_default(),
-        total_tokens: usage.total_token_count.unwrap_or_default(),
+        output_tokens: usage.candidates_token_count,
+        total_tokens: usage.total_token_count,
     })
 }
 

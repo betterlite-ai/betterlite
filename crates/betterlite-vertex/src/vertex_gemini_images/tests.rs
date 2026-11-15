@@ -404,11 +404,11 @@ fn a_body_that_is_not_json_keeps_the_upstream_status_and_headers() {
     let error = transform_image_generation_response(&reply)
         .expect_err("truncated JSON cannot become a response");
     assert!(matches!(error, GeminiImageError::NotJson { .. }));
-    assert_eq!(error.status_code(), Some(502));
+    let (status, headers) = error.upstream_answer().expect("the reply's answer is kept");
+    assert_eq!(status, 502);
     assert_eq!(
-        error
-            .headers()
-            .and_then(|headers| headers.get("x-request-id"))
+        headers
+            .get("x-request-id")
             .and_then(|value| value.to_str().ok()),
         Some("req-1")
     );
@@ -427,7 +427,7 @@ fn an_array_root_or_a_non_list_candidates_names_its_shape() {
         error,
         GeminiImageError::Shape { ref path, .. } if path == "candidates"
     ));
-    assert_eq!(error.status_code(), None);
+    assert!(error.upstream_answer().is_none());
 }
 
 #[test]

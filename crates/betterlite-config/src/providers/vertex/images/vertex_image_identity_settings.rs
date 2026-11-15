@@ -87,4 +87,5 @@ impl Sections {
     }
 }
 
+#[path = "vertex_image_identity_settings/tests.rs"]
 mod tests;

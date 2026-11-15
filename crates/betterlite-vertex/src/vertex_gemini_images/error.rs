@@ -38,24 +38,13 @@ pub enum GeminiImageError {
 }
 
 impl GeminiImageError {
-    // only a body that does not parse keeps the upstream answer; every other failure is raised locally
+    // only a body that does not parse keeps the upstream status and headers; every other failure is raised locally
     #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
+    pub fn upstream_answer(&self) -> Option<(u16, &HeaderMap)> {
         match self {
-            Self::NotJson { status, .. } => Some(*status),
-            Self::TooLarge { .. }
-            | Self::Shape { .. }
-            | Self::FieldType { .. }
-            | Self::UsageShape
-            | Self::TokenOverflow { .. }
-            | Self::Policy(_) => None,
-        }
-    }
-
-    #[must_use]
-    pub fn headers(&self) -> Option<&HeaderMap> {
-        match self {
-            Self::NotJson { headers, .. } => Some(headers),
+            Self::NotJson {
+                status, headers, ..
+            } => Some((*status, headers.as_ref())),
             Self::TooLarge { .. }
             | Self::Shape { .. }
             | Self::FieldType { .. }
