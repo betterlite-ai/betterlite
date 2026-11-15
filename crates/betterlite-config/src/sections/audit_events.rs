@@ -52,37 +52,31 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let store_audit_logs = match self.litellm_settings.store_audit_logs {
+            JsonValue::Null => None,
+            JsonValue::Bool(flag) => Some(flag),
+            JsonValue::String(text) => {
+                // a string setting resolves an os.environ reference before the same boolean text conversion
+                let resolved = resolve_string(text, STORE_AUDIT_LOGS_PATH, lookup)?;
+                text_to_bool(&resolved)
+            }
+            JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+                return Err(ConfigError::InvalidScalar {
+                    path: STORE_AUDIT_LOGS_PATH.to_owned(),
+                    value: false,
+                });
+            }
+        };
+        let s3_params = self.litellm_settings.s3_audit_callback_params;
         Ok(Settings {
-            store_audit_logs: configured_flag(self.litellm_settings.store_audit_logs, lookup)?,
+            store_audit_logs,
             // get_secret_bool reads only true and false after trimming and folding case; other text is unset
             store_audit_logs_env: lookup
                 .lookup(LITELLM_STORE_AUDIT_LOGS_ENV)
                 .as_deref()
                 .and_then(text_to_bool),
             audit_log_callbacks: self.litellm_settings.audit_log_callbacks,
-            s3_audit_callback_params: match self.litellm_settings.s3_audit_callback_params {
-                JsonValue::Null => None,
-                value => Some(value),
-            },
+            s3_audit_callback_params: (!s3_params.is_null()).then_some(s3_params),
         })
-    }
-}
-
-fn configured_flag<L>(value: JsonValue, lookup: &L) -> Result<Option<bool>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match value {
-        JsonValue::Null => Ok(None),
-        JsonValue::Bool(flag) => Ok(Some(flag)),
-        JsonValue::String(text) => {
-            // a string setting resolves an os.environ reference before the same boolean text conversion
-            let resolved = resolve_string(text, STORE_AUDIT_LOGS_PATH, lookup)?;
-            Ok(text_to_bool(&resolved))
-        }
-        _ => Err(ConfigError::InvalidScalar {
-            path: STORE_AUDIT_LOGS_PATH.to_owned(),
-            value: false,
-        }),
     }
 }

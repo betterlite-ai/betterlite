@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
 use serde_json::json;
 
 use crate::loader::{ConfigError, ConfigLoader};
@@ -45,7 +46,7 @@ fn audit_env_bool_and_unknown() {
     assert_eq!(unset.store_audit_logs_env, None);
     let padded = load(
         "{}",
-        BTreeMap::from([("LITELLM_STORE_AUDIT_LOGS".to_owned(), " TrUe ".to_owned())]),
+        BTreeMap::from([("LITELLM_STORE_AUDIT_LOGS".to_owned(), " TRUE ".to_owned())]),
     );
     assert_eq!(padded.store_audit_logs_env, Some(true));
     let disabled = load(
@@ -61,23 +62,21 @@ fn audit_env_bool_and_unknown() {
     assert!(unknown.is_audit_logging_enabled(None));
 }
 
-#[test]
-fn audit_environment_flag_matches_get_secret_bool() {
-    for (value, expected) in [
-        (" TRUE ", Some(true)),
-        ("false", Some(false)),
-        ("yes", None),
-        ("1", None),
-        ("", None),
-    ] {
-        let settings = load(
-            "{}",
-            BTreeMap::from([("LITELLM_STORE_AUDIT_LOGS".to_owned(), value.to_owned())]),
-        );
-        assert_eq!(settings.store_audit_logs_env, expected, "{value:?}");
-    }
-    let unset = load("{}", BTreeMap::new());
-    assert_eq!(unset.store_audit_logs_env, None);
+#[rstest]
+#[case::padded_true(Some(" TRUE "), Some(true))]
+#[case::explicit_false(Some("false"), Some(false))]
+#[case::yes(Some("yes"), None)]
+#[case::one(Some("1"), None)]
+#[case::empty(Some(""), None)]
+#[case::unset(None, None)]
+fn audit_environment_flag_matches_get_secret_bool(
+    #[case] value: Option<&str>,
+    #[case] expected: Option<bool>,
+) {
+    let lookup = value
+        .map(|value| BTreeMap::from([("LITELLM_STORE_AUDIT_LOGS".to_owned(), value.to_owned())]))
+        .unwrap_or_default();
+    assert_eq!(load("{}", lookup).store_audit_logs_env, expected);
 }
 
 #[test]
