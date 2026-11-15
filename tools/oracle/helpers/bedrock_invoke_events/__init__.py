@@ -81,7 +81,7 @@ def stream_view(stream: ModelResponseStream) -> StreamView:
         "reasoning_content": delta.get("reasoning_content"),
         "finish_reason": choice.get("finish_reason"),
         "tool_calls": tool_views(delta.get("tool_calls")),
-        "usage": usage_view(view["usage"]),
+        "usage": usage_view(view.get("usage")),
     }
 
 
@@ -116,7 +116,8 @@ async def collect_async(
             return values, None
         except BedrockError as error:
             return values, {"status": error.status_code}
-        except ValueError:
+        # a chunk parser indexes the payload directly, so a missing field surfaces as KeyError
+        except (KeyError, ValueError):
             return values, {"status": None}
         values.append(value)
 
@@ -127,7 +128,8 @@ def collect_sync(iterator: Iterator[ChunkLike]) -> tuple[list[ChunkLike], Failur
         values.extend(iterator)
     except BedrockError as error:
         return values, {"status": error.status_code}
-    except ValueError:
+    # a chunk parser indexes the payload directly, so a missing field surfaces as KeyError
+    except (KeyError, ValueError):
         return values, {"status": None}
     return values, None
 

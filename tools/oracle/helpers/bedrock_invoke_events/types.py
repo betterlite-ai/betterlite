@@ -122,7 +122,7 @@ class ChoiceView(TypedDict):
 
 class ChunkView(TypedDict):
     choices: list[ChoiceView]
-    usage: JsonValue | None
+    usage: NotRequired[JsonValue | None]
 
 
 class ChunkLike(Protocol): ...

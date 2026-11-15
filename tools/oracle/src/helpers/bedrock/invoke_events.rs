@@ -6,7 +6,6 @@ use betterlite_bedrock::invoke_events::{
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use bytes::Bytes;
-use futures_util::StreamExt as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -147,16 +146,12 @@ fn run_framed(
             .collect::<Vec<_>>()
     } else {
         runtime.block_on(async {
-            let mut stream = decoder.framed(
+            let stream = decoder.framed(
                 futures_util::stream::iter(chunks),
                 scenario.headers.clone(),
                 &redactor,
             );
-            let mut outcomes = Vec::new();
-            while let Some(outcome) = stream.next().await {
-                outcomes.push(outcome);
-            }
-            outcomes
+            futures_util::StreamExt::collect(stream).await
         })
     };
     let mut views = Vec::new();
@@ -183,7 +178,7 @@ fn run_fake(scenario: &FakeScenario, runtime: &tokio::runtime::Runtime) -> Value
     for step in &scenario.steps {
         let outcome = match step {
             Step::Next => Iterator::next(&mut stream),
-            Step::Anext => runtime.block_on(StreamExt::next(&mut stream)),
+            Step::Anext => runtime.block_on(futures_util::StreamExt::next(&mut stream)),
         };
         steps.push(match outcome {
             Some(Ok(chunk)) => json!({ "ok": generic_view(chunk) }),
