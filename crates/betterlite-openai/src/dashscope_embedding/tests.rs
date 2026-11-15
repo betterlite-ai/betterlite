@@ -252,7 +252,7 @@ fn headers_fail_with_the_missing_key_message() {
     None,
     "https://example.test/v1/embeddings"
 )]
-#[case::an_empty_argument_base(None, Some(""), "/embeddings")]
+#[case::an_empty_argument_base(Some(""), Some("https://env.test/v1"), "/embeddings")]
 fn complete_url_resolves_the_base_and_appends_the_route(
     #[case] api_base: Option<&str>,
     #[case] env_base: Option<&str>,

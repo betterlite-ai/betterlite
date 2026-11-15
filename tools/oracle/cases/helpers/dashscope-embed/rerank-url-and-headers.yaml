@@ -10,6 +10,7 @@ call:
     env_key: sk-rerank
     caller_headers:
       x-caller: kept
+      accept: text/plain
 env:
   DASHSCOPE_API_KEY: sk-rerank
 compare: {ignore: []}

@@ -124,6 +124,35 @@ fn headers_carry_the_bearer_key_accept_and_content_type() {
 }
 
 #[test]
+fn caller_headers_override_the_standard_ones() {
+    let key = SecretString::from("sk-rerank");
+    let mut caller = Headers::new();
+    caller.insert("Authorization".to_owned(), "Bearer caller".to_owned());
+    caller.insert("accept".to_owned(), "text/plain".to_owned());
+    caller.insert("content-type".to_owned(), "application/custom".to_owned());
+    let request = EnvironmentRequest {
+        headers: &caller,
+        model: "qwen3-rerank",
+        api_key: Some(&key),
+        optional_params: None,
+        litellm_params: None,
+    };
+    let headers = config("").validate_environment(request).unwrap();
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer caller")
+    );
+    assert_eq!(
+        headers.get("accept").map(String::as_str),
+        Some("text/plain")
+    );
+    assert_eq!(
+        headers.get("content-type").map(String::as_str),
+        Some("application/custom")
+    );
+}
+
+#[test]
 fn headers_fail_with_the_missing_key_message() {
     let caller = Headers::new();
     let request = EnvironmentRequest {
@@ -360,8 +389,8 @@ fn the_reply_reports_a_code_without_a_message_as_the_body() {
 #[case::a_missing_results(br#"{"id":"r-1"}"#)]
 #[case::a_null_results(br#"{"id":"r-1","results":null}"#)]
 fn the_reply_reports_a_missing_results_field(#[case] body: &[u8]) {
-    let error = decode_dashscope_rerank_reply(body, 500).unwrap_err();
-    assert_eq!(error.status_code, 500);
+    let error = decode_dashscope_rerank_reply(body, 200).unwrap_err();
+    assert_eq!(error.status_code, 200);
     assert!(
         error
             .message
