@@ -29,12 +29,12 @@ impl IdSource for UuidIds {
 }
 #[derive(Debug, Default, Deserialize)]
 pub struct RawUsage {
-    #[serde(default)]
-    total_tokens: Option<i64>,
-    #[serde(default)]
-    prompt_tokens: Option<i64>,
-    #[serde(default)]
-    completion_tokens: Option<i64>,
+    #[serde(default, rename = "total_tokens")]
+    total: Option<i64>,
+    #[serde(default, rename = "prompt_tokens")]
+    prompt: Option<i64>,
+    #[serde(default, rename = "completion_tokens")]
+    completion: Option<i64>,
 }
 #[derive(Debug, Deserialize)]
 pub struct RawResult {
@@ -66,10 +66,10 @@ pub fn decode_rerank_response(bytes: &[u8]) -> Result<RawRerankResponse, Firewor
     serde_json::from_slice(bytes).map_err(|source| FireworksRerankError::ResponseDecode { source })
 }
 fn project_result(result: RawResult) -> Result<RerankResponseResult, FireworksRerankError> {
-    let index = result
+    let raw = result
         .index
         .ok_or(FireworksRerankError::MissingResultField { field: "index" })?;
-    let index = index.as_i64().ok_or(FireworksRerankError::IndexShape)?;
+    let index = raw.as_i64().ok_or(FireworksRerankError::IndexShape)?;
     let relevance = result
         .relevance_score
         .ok_or(FireworksRerankError::MissingResultField {
@@ -109,7 +109,15 @@ pub fn transform_rerank_response(
                 headers: Some(headers.clone()),
             })
         }
-        other => other,
+        other @ (FireworksRerankError::MissingApiKey
+        | FireworksRerankError::MissingQuery
+        | FireworksRerankError::MissingDocuments
+        | FireworksRerankError::ResponseTooLarge { .. }
+        | FireworksRerankError::NoResults
+        | FireworksRerankError::MissingResultField { .. }
+        | FireworksRerankError::IndexShape
+        | FireworksRerankError::RelevanceScore { .. }
+        | FireworksRerankError::Fireworks(_)) => other,
     })?;
     let usage = reply.usage.unwrap_or_default();
     let results = match reply.data.filter(|data| !data.is_empty()) {
@@ -127,12 +135,12 @@ pub fn transform_rerank_response(
     let meta = RerankResponseMeta {
         api_version: None,
         billed_units: Some(Some(RerankBilledUnits {
-            search_units: Some(Some(usage.total_tokens.unwrap_or_default())),
+            search_units: Some(Some(usage.total.unwrap_or_default())),
             total_tokens: None,
         })),
         tokens: Some(Some(RerankTokens {
-            input_tokens: Some(Some(usage.prompt_tokens.unwrap_or_default())),
-            output_tokens: Some(Some(usage.completion_tokens.unwrap_or_default())),
+            input_tokens: Some(Some(usage.prompt.unwrap_or_default())),
+            output_tokens: Some(Some(usage.completion.unwrap_or_default())),
         })),
     };
     Ok(RerankResponse {

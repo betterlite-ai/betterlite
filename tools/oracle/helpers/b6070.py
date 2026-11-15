@@ -61,8 +61,19 @@ class RerankConfig(Protocol):
     ) -> RerankResponse: ...
 
 
+MixinValidate: TypeAlias = Callable[
+    [
+        dict[str, str],
+        str,
+        list[dict[str, JsonValue]],
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        str | None,
+    ],
+    dict[str, str],
+]
 MIXIN_VALIDATE = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/common_utils.py#L92-L101
-    "Callable[..., dict[str, str]]", FireworksAIMixin().validate_environment
+    MixinValidate, FireworksAIMixin().validate_environment
 )
 EMBEDDING: EmbeddingConfig = FireworksAIEmbeddingConfig()
 RERANK: RerankConfig = FireworksAIRerankConfig()
@@ -200,75 +211,69 @@ def response_answer(call: ResponseCall) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     litellm.model_cost = input_value["model_cost"]
+    api_keys: list[str | None] = [
+        common_utils.resolve_fireworks_api_key(call["argument"])
+        for call in input_value["api_keys"]
+    ]
+    sessions: list[str | None] = [
+        common_utils.get_fireworks_session_id(call["litellm_params"])
+        for call in input_value["sessions"]
+    ]
+    affinity: list[dict[str, str]] = [
+        dict(
+            common_utils.with_fireworks_session_affinity(
+                call["headers"], call["litellm_params"]
+            )
+        )
+        for call in input_value["affinity"]
+    ]
+    mixin_headers: list[dict[str, str]] = [
+        dict(
+            MIXIN_VALIDATE(
+                call["headers"],
+                MIXIN_MODEL,
+                [],
+                {},
+                call["litellm_params"],
+                call["api_key"],
+            )
+        )
+        for call in input_value["mixin_headers"]
+    ]
+    pricing: list[str] = [
+        get_base_model_for_pricing(call["model"]) for call in input_value["pricing"]
+    ]
+    rerank_urls: list[str] = [
+        RERANK.get_complete_url(call["api_base"], RERANK_MODEL)
+        for call in input_value["rerank_urls"]
+    ]
+    rerank_headers: list[dict[str, str]] = [
+        dict(
+            RERANK.validate_environment(
+                headers=call["headers"],
+                model=RERANK_MODEL,
+                api_key=call["api_key"],
+            )
+        )
+        for call in input_value["rerank_headers"]
+    ]
+    rerank_requests: list[dict[str, JsonValue]] = [
+        RERANK.transform_rerank_request(call["model"], call["params"], {})
+        for call in input_value["rerank_requests"]
+    ]
     answer: dict[str, JsonValue] = {}
-    answer["api_keys"] = JSON.validate_python(
-        [
-            common_utils.resolve_fireworks_api_key(call["argument"])
-            for call in input_value["api_keys"]
-        ]
-    )
-    answer["sessions"] = JSON.validate_python(
-        [
-            common_utils.get_fireworks_session_id(call["litellm_params"])
-            for call in input_value["sessions"]
-        ]
-    )
-    answer["affinity"] = JSON.validate_python(
-        [
-            dict(
-                common_utils.with_fireworks_session_affinity(
-                    call["headers"], call["litellm_params"]
-                )
-            )
-            for call in input_value["affinity"]
-        ]
-    )
-    answer["mixin_headers"] = JSON.validate_python(
-        [
-            dict(
-                MIXIN_VALIDATE(
-                    headers=call["headers"],
-                    model=MIXIN_MODEL,
-                    messages=[],
-                    optional_params={},
-                    litellm_params=call["litellm_params"],
-                    api_key=call["api_key"],
-                )
-            )
-            for call in input_value["mixin_headers"]
-        ]
-    )
+    answer["api_keys"] = JSON.validate_python(api_keys)
+    answer["sessions"] = JSON.validate_python(sessions)
+    answer["affinity"] = JSON.validate_python(affinity)
+    answer["mixin_headers"] = JSON.validate_python(mixin_headers)
     answer["embedding_params"] = [
         embedding_answer(call) for call in input_value["embedding_params"]
     ]
-    answer["pricing"] = JSON.validate_python(
-        [get_base_model_for_pricing(call["model"]) for call in input_value["pricing"]]
-    )
+    answer["pricing"] = JSON.validate_python(pricing)
     answer["costs"] = [cost_answer(call) for call in input_value["costs"]]
-    answer["rerank_urls"] = JSON.validate_python(
-        [
-            RERANK.get_complete_url(call["api_base"], RERANK_MODEL)
-            for call in input_value["rerank_urls"]
-        ]
-    )
-    answer["rerank_headers"] = JSON.validate_python(
-        [
-            dict(
-                RERANK.validate_environment(
-                    headers=call["headers"],
-                    model=RERANK_MODEL,
-                    api_key=call["api_key"],
-                )
-            )
-            for call in input_value["rerank_headers"]
-        ]
-    )
-    answer["rerank_requests"] = JSON.validate_python(
-        [
-            RERANK.transform_rerank_request(call["model"], call["params"], {})
-            for call in input_value["rerank_requests"]
-        ]
-    )
+    answer["rerank_urls"] = JSON.validate_python(rerank_urls)
+    answer["rerank_headers"] = JSON.validate_python(rerank_headers)
+    answer["rerank_requests"] = JSON.validate_python(rerank_requests)
     answer["rerank_responses"] = [
         response_answer(call) for call in input_value["rerank_responses"]
     ]

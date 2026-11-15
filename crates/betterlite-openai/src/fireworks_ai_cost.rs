@@ -143,7 +143,7 @@ pub fn cost_per_token(
             model: model.to_owned(),
         });
     };
-    let provider = provider.clone();
+    let billing_provider = provider.clone();
     let pricing = PricedModel {
         record,
         tiered_pricing: Vec::new(),
@@ -153,7 +153,7 @@ pub fn cost_per_token(
     let prompt_extras = PromptExtras::default();
     let request = GenericCostRequest {
         model,
-        custom_llm_provider: Some(provider.as_str()),
+        custom_llm_provider: Some(billing_provider.as_str()),
         usage,
         prompt_extras: &prompt_extras,
         supplied_pricing: Some(&pricing),

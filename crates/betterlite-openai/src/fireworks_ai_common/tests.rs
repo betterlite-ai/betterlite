@@ -16,14 +16,14 @@ fn key(text: &str) -> SecretString {
 
 fn env_with(
     fireworks: Option<&str>,
-    fireworks_ai: Option<&str>,
-    fireworksai: Option<&str>,
+    ai: Option<&str>,
+    joined: Option<&str>,
     token: Option<&str>,
 ) -> FireworksEnv {
     FireworksEnv {
         fireworks_api_key: fireworks.map(key),
-        fireworks_ai_api_key: fireworks_ai.map(key),
-        fireworksai_api_key: fireworksai.map(key),
+        fireworks_ai_api_key: ai.map(key),
+        fireworksai_api_key: joined.map(key),
         fireworks_ai_token: token.map(key),
     }
 }
@@ -41,7 +41,7 @@ fn params(
 }
 
 fn exposed(key: &Option<SecretString>) -> Option<&str> {
-    key.as_ref().map(|key| key.expose_secret())
+    key.as_ref().map(|secret| secret.expose_secret())
 }
 
 #[test]

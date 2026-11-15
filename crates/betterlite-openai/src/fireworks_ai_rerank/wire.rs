@@ -40,13 +40,13 @@ pub fn transform_rerank_request(
     } else {
         model.to_owned()
     };
-    let model = if stripped.starts_with(FIREWORKS_PREFIX) {
+    let rendered = if stripped.starts_with(FIREWORKS_PREFIX) {
         stripped
     } else {
         format!("{FIREWORKS_PREFIX}{stripped}")
     };
     Ok(RerankRequestBody {
-        model,
+        model: rendered,
         query,
         documents,
         top_n: params.top_n,

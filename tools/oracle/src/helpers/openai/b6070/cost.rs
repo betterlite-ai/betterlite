@@ -139,9 +139,12 @@ fn query(
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct UsageInput {
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    total_tokens: i64,
+    #[serde(rename = "prompt_tokens")]
+    prompt: i64,
+    #[serde(rename = "completion_tokens")]
+    completion: i64,
+    #[serde(rename = "total_tokens")]
+    total: i64,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -155,9 +158,9 @@ pub(super) fn answer(
     lookup: &ModelCostLookup,
 ) -> Result<(String, String), Box<HelperError>> {
     let usage = betterlite_models::cost_usage::CostUsage {
-        prompt_tokens: call.usage.prompt_tokens,
-        completion_tokens: call.usage.completion_tokens,
-        total_tokens: call.usage.total_tokens,
+        prompt_tokens: call.usage.prompt,
+        completion_tokens: call.usage.completion,
+        total_tokens: call.usage.total,
         prompt_details: None,
         completion_details: None,
         cache_read_tokens: None,

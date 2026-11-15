@@ -16,14 +16,14 @@ pub(crate) struct Op;
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EnvKeys {
-    #[serde(default)]
-    fireworks_api_key: Option<String>,
-    #[serde(default)]
-    fireworks_ai_api_key: Option<String>,
-    #[serde(default)]
-    fireworksai_api_key: Option<String>,
-    #[serde(default)]
-    fireworks_ai_token: Option<String>,
+    #[serde(default, rename = "fireworks_api_key")]
+    fireworks: Option<String>,
+    #[serde(default, rename = "fireworks_ai_api_key")]
+    ai: Option<String>,
+    #[serde(default, rename = "fireworksai_api_key")]
+    joined: Option<String>,
+    #[serde(default, rename = "fireworks_ai_token")]
+    token: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -119,7 +119,7 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         Ok(json!({
-            "api_keys": answers::collect(&input.api_keys, answers::api_key_answer)?,
+            "api_keys": answers::api_keys_answer(&input.api_keys),
             "sessions": answers::sessions_answer(&input.sessions),
             "affinity": answers::affinity_answer(&input.affinity),
             "mixin_headers": answers::collect(&input.mixin_headers, answers::mixin_answer)?,
