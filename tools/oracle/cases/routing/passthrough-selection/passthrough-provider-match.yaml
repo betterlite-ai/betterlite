@@ -65,7 +65,8 @@ probes:
             weight: 1
         lookups:
           - model: gpt
-            messages: true
+            messages:
+              - {role: user, content: hi}
             response_format: true
   - clock:
       unix_millis: 1700000000203

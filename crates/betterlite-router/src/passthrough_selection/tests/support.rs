@@ -343,17 +343,7 @@ impl World {
             drop_params: self.drop_params,
         };
         let mut bindings = RequestBindings::default();
-        let mut request = SelectionRequest {
-            model: lookup.model,
-            specific_deployment: lookup.specific_deployment,
-            authority: Authority {
-                team_id: None,
-                proxy_admin: false,
-            },
-            facts: lookup.facts,
-            strategy: lookup.strategy,
-            bindings: Some(&mut bindings),
-        };
+        let mut request = selection_request(lookup, &mut bindings);
         let mut random = SampleZero;
         select(
             &mut self.dispatch,
@@ -362,6 +352,23 @@ impl World {
             &services,
             &mut random,
         )
+    }
+}
+
+fn selection_request<'request>(
+    lookup: &Lookup<'request>,
+    bindings: &'request mut RequestBindings,
+) -> SelectionRequest<'request> {
+    SelectionRequest {
+        model: lookup.model,
+        specific_deployment: lookup.specific_deployment,
+        authority: Authority {
+            team_id: None,
+            proxy_admin: false,
+        },
+        facts: lookup.facts,
+        strategy: lookup.strategy,
+        bindings: Some(bindings),
     }
 }
 

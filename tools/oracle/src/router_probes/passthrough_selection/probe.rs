@@ -28,13 +28,9 @@ mod support;
 
 use support::{NoLimits, NoPolicy, NoSelector, ProbeSupport};
 
-fn message() -> Json {
-    serde_json::from_str(r#"{"role":"user","content":"hi"}"#).unwrap_or(Json::Null)
-}
-
 fn facts(lookup: &Lookup) -> RequestFacts {
     RequestFacts {
-        messages: lookup.messages.then_some(vec![message()]),
+        messages: lookup.messages.clone(),
         response_format: lookup.response_format,
         ..RequestFacts::default()
     }
@@ -46,7 +42,7 @@ fn invalid(error: impl std::fmt::Display) -> OperationError {
     }
 }
 
-fn spec(entry: &Entry) -> Result<DeploymentSpec, OperationError> {
+fn info(entry: &Entry) -> JsonObject {
     let mut info = JsonObject::from_iter([("id".to_owned(), Json::Text(entry.id.clone()))]);
     if let Some(blocked) = entry.blocked {
         info.insert("blocked".to_owned(), Json::Bool(blocked));
@@ -62,6 +58,10 @@ fn spec(entry: &Entry) -> Result<DeploymentSpec, OperationError> {
             ),
         );
     }
+    info
+}
+
+fn params(entry: &Entry) -> JsonObject {
     let mut params = JsonObject::from_iter([
         ("model".to_owned(), Json::Text(entry.model.clone())),
         ("api_key".to_owned(), Json::Text("sk-probe".to_owned())),
@@ -87,10 +87,14 @@ fn spec(entry: &Entry) -> Result<DeploymentSpec, OperationError> {
             Json::Number(serde_json::Number::from(order)),
         );
     }
+    params
+}
+
+fn spec(entry: &Entry) -> Result<DeploymentSpec, OperationError> {
     DeploymentSpec::new(
         entry.model_name.clone(),
-        params,
-        info,
+        params(entry),
+        info(entry),
         JsonObject::new(),
         String::new,
     )
@@ -182,7 +186,17 @@ impl Probe {
         lookup: &Lookup,
         random: &mut InjectedRandom<'_>,
     ) -> Result<Found, OperationError> {
-        let facts = facts(lookup);
+        let request_facts = facts(lookup);
+        let result = self.pick_deployment(lookup, &request_facts, random);
+        found(result, random)
+    }
+
+    fn pick_deployment(
+        &mut self,
+        lookup: &Lookup,
+        facts: &RequestFacts,
+        random: &mut InjectedRandom<'_>,
+    ) -> Result<Selected, PassthroughSelectionError> {
         let empty = BTreeMap::new();
         let resolver = CatalogResolver {
             catalog: &self.catalog,
@@ -206,16 +220,15 @@ impl Probe {
             drop_params: self.drop_params,
         };
         let mut bindings = RequestBindings::default();
-        let mut request = selection_request(lookup, &facts, &mut bindings);
+        let mut request = selection_request(lookup, facts, &mut bindings);
         let mut picker = NoSelector;
-        let result = select(
+        select(
             &mut self.dispatch,
             &mut picker,
             &mut request,
             &services,
             random,
-        );
-        found(result, random)
+        )
     }
 }
 

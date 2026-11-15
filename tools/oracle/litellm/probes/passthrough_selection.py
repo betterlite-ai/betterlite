@@ -33,7 +33,7 @@ class Entry(Strict):
 class Lookup(Strict):
     model: str
     specific_deployment: bool = False
-    messages: bool = False
+    messages: list[dict[str, str]] | None = None
     response_format: bool = False
     routing_strategy: Strategy | None = None
 
@@ -110,12 +110,6 @@ def request_kwargs(lookup: Lookup) -> dict[str, object]:
     return kwargs
 
 
-def messages(lookup: Lookup) -> list[dict[str, str]] | None:
-    if not lookup.messages:
-        return None
-    return [{"role": "user", "content": "hi"}]
-
-
 def selected(deployment: dict[str, JsonValue]) -> Selected:
     returned = TypeAdapter(Returned).validate_python(deployment)
     model = returned.litellm_params.get("model")
@@ -153,7 +147,7 @@ class PassthroughSelection(Operation):
             deployment = await router.async_get_available_deployment_for_pass_through(
                 lookup.model,
                 request_kwargs(lookup),
-                messages(lookup),
+                lookup.messages,
                 None,
                 specific_deployment=lookup.specific_deployment,
             )

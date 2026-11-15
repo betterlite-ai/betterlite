@@ -1,3 +1,4 @@
+use betterlite_models::decisions::Json;
 use betterlite_router::strategy_dispatch::strategy::RoutingStrategy;
 use serde::{Deserialize, Serialize};
 
@@ -45,8 +46,7 @@ pub struct Lookup {
     pub model: String,
     #[serde(default)]
     pub specific_deployment: bool,
-    #[serde(default)]
-    pub messages: bool,
+    pub messages: Option<Vec<Json>>,
     #[serde(default)]
     pub response_format: bool,
     pub routing_strategy: Option<Strategy>,
