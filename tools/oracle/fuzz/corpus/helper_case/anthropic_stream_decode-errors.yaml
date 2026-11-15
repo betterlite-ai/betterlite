@@ -8,7 +8,7 @@ call:
         value: 'data: {"type":"error","error":{"type":"rate_limit_error","message":"slow"}}'
     passthrough:
       - function: text
-        value: data: nope
+        value: 'data: nope'
       - function: bytes
         value: [255]
 env: {}
