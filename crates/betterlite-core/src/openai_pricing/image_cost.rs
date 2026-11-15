@@ -79,7 +79,7 @@ fn image_count(value: Option<&Json>) -> i64 {
 }
 
 // The calculator treats an empty or absent quality as no quality, and any other non-string is a type mismatch the source would only fail on later
-fn image_quality(value: Option<&Json>) -> Result<Option<&str>, ImageCostFailure> {
+const fn image_quality(value: Option<&Json>) -> Result<Option<&str>, ImageCostFailure> {
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) if text.is_empty() => Ok(None),
@@ -91,7 +91,7 @@ fn image_quality(value: Option<&Json>) -> Result<Option<&str>, ImageCostFailure>
 }
 
 // The source's body lookup keeps any non-string size, and the calculator then raises, so a number is a failed cost rather than the default size
-fn image_size(value: Option<&Json>) -> Result<Option<&str>, ImageCostFailure> {
+const fn image_size(value: Option<&Json>) -> Result<Option<&str>, ImageCostFailure> {
     match value {
         None => Ok(Some(DEFAULT_SIZE)),
         Some(Json::Null) => Ok(None),
