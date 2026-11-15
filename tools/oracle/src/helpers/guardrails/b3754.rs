@@ -51,11 +51,8 @@ pub(crate) struct Analyze {
     #[serde(default)]
     data: BTreeMap<String, GuardrailValue>,
     hook: HookName,
-    #[serde(default)]
     key_alias: Option<String>,
-    #[serde(default)]
     user_email: Option<String>,
-    #[serde(default)]
     answer: Option<UpstreamAnswer>,
 }
 

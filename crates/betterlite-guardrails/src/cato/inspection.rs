@@ -35,9 +35,7 @@ pub(super) fn synthetic_message(role: &str, content: &str) -> GuardrailValue {
 pub fn inspection_messages(data: &BTreeMap<String, GuardrailValue>) -> Vec<GuardrailValue> {
     let mut flattened = Vec::new();
     if let Some(GuardrailValue::Array(messages)) = data.get("messages") {
-        for message in messages {
-            flattened.push(flatten_message(message));
-        }
+        flattened.extend(messages.iter().map(flatten_message));
     }
     for source in extra_inspection_sources(data) {
         flattened.extend(source.messages);

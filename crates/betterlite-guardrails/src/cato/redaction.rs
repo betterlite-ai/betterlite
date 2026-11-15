@@ -53,18 +53,14 @@ fn write_extra_sources(
     mut offset: usize,
 ) -> Result<(), CatoError> {
     for source in sources {
-        let end = offset.saturating_add(source.messages.len());
         // LiteLLM slices past the end to a short batch instead of dropping the field
         let remaining = redacted.get(offset..).unwrap_or_default();
         let slice = remaining.get(..source.messages.len()).unwrap_or(remaining);
-        offset = end;
+        offset = offset.saturating_add(source.messages.len());
         match source.field {
             ExtraField::Input => {
-                let rewritten = data
-                    .get("input")
-                    .cloned()
-                    .and_then(|input| redacted_input(&input, slice))
-                    .ok_or(CatoError::RedactionMismatch)?;
+                let input = data.get("input").ok_or(CatoError::RedactionMismatch)?;
+                let rewritten = redacted_input(input, slice).ok_or(CatoError::RedactionMismatch)?;
                 data.insert("input".to_owned(), rewritten);
             }
             ExtraField::Instructions => {
