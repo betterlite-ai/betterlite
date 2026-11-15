@@ -7,6 +7,8 @@ pub const AZURE_OPENAI_V1_HOST_SUFFIXES: [&str; 2] =
 pub enum ApiKeyHeader {
     Authorization,
     ApiKey,
+    ApiKeyTitleCase,
+    OcpApimSubscriptionKey,
 }
 
 impl ApiKeyHeader {
@@ -15,6 +17,8 @@ impl ApiKeyHeader {
         match self {
             Self::Authorization => "Authorization",
             Self::ApiKey => "api-key",
+            Self::ApiKeyTitleCase => "Api-Key",
+            Self::OcpApimSubscriptionKey => "Ocp-Apim-Subscription-Key",
         }
     }
 }

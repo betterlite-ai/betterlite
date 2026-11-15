@@ -70,6 +70,27 @@ fn v1_host_headers() {
     assert_eq!(api_key_header_for_base(None), ApiKeyHeader::Authorization);
     assert_eq!(ApiKeyHeader::Authorization.wire_name(), "Authorization");
     assert_eq!(ApiKeyHeader::ApiKey.wire_name(), "api-key");
+    assert_eq!(ApiKeyHeader::ApiKeyTitleCase.wire_name(), "Api-Key");
+    assert_eq!(
+        ApiKeyHeader::OcpApimSubscriptionKey.wire_name(),
+        "Ocp-Apim-Subscription-Key"
+    );
+}
+
+fn assert_key_header(header: ApiKeyHeader, name: &str) {
+    let environment = environment(&[]);
+    let sources = FixtureSources::new();
+    let key = SecretString::from("v1-key".to_owned());
+    let result = get_azure_ai_auth_headers(&auth_request(
+        Some(&key),
+        None,
+        &environment,
+        header,
+        &sources,
+    ))
+    .unwrap();
+    assert_eq!(result, headers(&[(name, "v1-key")]), "{name}");
+    assert!(sources.calls().is_empty());
 }
 
 pub(super) fn openai_v1_api_key_header() {
@@ -100,4 +121,9 @@ pub(super) fn openai_v1_api_key_header() {
     .unwrap();
     assert_eq!(bearer, headers(&[("Authorization", "Bearer v1-key")]));
     assert!(sources.calls().is_empty());
+    assert_key_header(ApiKeyHeader::ApiKeyTitleCase, "Api-Key");
+    assert_key_header(
+        ApiKeyHeader::OcpApimSubscriptionKey,
+        "Ocp-Apim-Subscription-Key",
+    );
 }

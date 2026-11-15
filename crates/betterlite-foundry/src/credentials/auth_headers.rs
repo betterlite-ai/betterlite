@@ -24,7 +24,9 @@ pub fn get_azure_ai_auth_headers(
     if let Some(api_key) = request.api_key {
         let value = match request.api_key_header {
             ApiKeyHeader::Authorization => format!("Bearer {}", api_key.expose_secret()),
-            ApiKeyHeader::ApiKey => api_key.expose_secret().to_owned(),
+            ApiKeyHeader::ApiKey
+            | ApiKeyHeader::ApiKeyTitleCase
+            | ApiKeyHeader::OcpApimSubscriptionKey => api_key.expose_secret().to_owned(),
         };
         return Ok(BTreeMap::from([(
             request.api_key_header.wire_name().to_owned(),
