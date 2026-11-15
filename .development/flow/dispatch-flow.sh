@@ -155,17 +155,17 @@ if [[ -z "${LAND_ONLY}" ]]; then
       PAUSES=$((${PAUSES:-0} + 1)) exec bash "${P}/dispatch-flow.sh" "${id}" "${run}p" "${note}"
     fi
     reason=$(grep -m1 -o -E 'cannot dispatch [^:]+: .*' "${log}")
-    # a run that hit its timeout met a slow API at night, so it reruns after a doubling pause before the task parks
+    # a run that hit its timeout met a slow or hung API at night, so it reruns after a doubling pause before the task parks; night reviews that timed out had no answer at all, so theirs starts at 5 minutes (Max, 11-15)
     case ${reason} in
-      *"reviewer hit its "*" minute timeout before its answer"*) kind=review who=reviewer cap=6 ;;
-      *"ladder ran out of attempts"*" minute timeout before its final answer"*) kind=worker who=worker cap=3 ;;
+      *"reviewer hit its "*" minute timeout before its answer"*) kind=review who=reviewer cap=6 first=5 ;;
+      *"ladder ran out of attempts"*" minute timeout before its final answer"*) kind=worker who=worker cap=3 first=30 ;;
       *) kind= ;;
     esac
     if [[ -n ${kind} ]]; then
       reruns=$(cat "${main}/.git/betterlite/${id}/${kind}-reruns" 2> /dev/null)
       if [[ "${reruns:-0}" -lt ${cap} ]]; then
         echo "$((${reruns:-0} + 1))" > "${main}/.git/betterlite/${id}/${kind}-reruns"
-        pause=$((30 << ${reruns:-0}))
+        pause=$((first << ${reruns:-0}))
         say "paused: the ${who} hit its timeout, so the ${kind} runs again in ${pause} minutes"
         sleep $((pause * 60))
         maintenance
