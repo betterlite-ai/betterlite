@@ -41,7 +41,7 @@ fn params(
 }
 
 fn exposed(key: &Option<SecretString>) -> Option<&str> {
-    key.as_ref().map(|key| key.expose_secret().as_str())
+    key.as_ref().map(|key| key.expose_secret())
 }
 
 #[test]
@@ -114,8 +114,13 @@ fn headers() -> crate::openai_base_config::Headers {
 
 #[rstest]
 #[case::adds_when_missing(None, Some("one"), Some("one"), 2)]
-#[case::keeps_existing_exact("x-session-affinity", Some("one"), Some("explicit"), 2)]
-#[case::keeps_existing_case_insensitive("X-Session-Affinity", Some("one"), Some("explicit"), 2)]
+#[case::keeps_existing_exact(Some("x-session-affinity"), Some("one"), Some("explicit"), 2)]
+#[case::keeps_existing_case_insensitive(
+    Some("X-Session-Affinity"),
+    Some("one"),
+    Some("explicit"),
+    2
+)]
 #[case::without_a_session_id(None, None, None, 1)]
 fn with_session_affinity_adds_only_an_absent_header(
     #[case] existing_name: Option<&str>,

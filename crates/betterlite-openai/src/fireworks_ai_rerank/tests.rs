@@ -144,8 +144,12 @@ fn rerank_validate_environment_names_both_key_variables_when_missing() {
 
 #[test]
 fn rerank_validate_environment_sets_the_default_headers() {
-    let built =
-        validate_environment(&Headers::new(), key("direct"), &FireworksEnv::default()).unwrap();
+    let built = validate_environment(
+        &Headers::new(),
+        key("direct").as_ref(),
+        &FireworksEnv::default(),
+    )
+    .unwrap();
     assert_eq!(
         built.get(AUTHORIZATION_HEADER).map(String::as_str),
         Some("Bearer direct")
@@ -160,7 +164,8 @@ fn rerank_validate_environment_sets_the_default_headers() {
 #[test]
 fn rerank_validate_environment_lets_an_exact_authorization_override() {
     let given = Headers::from([("Authorization".to_owned(), "Bearer caller".to_owned())]);
-    let built = validate_environment(&given, key("direct"), &FireworksEnv::default()).unwrap();
+    let built =
+        validate_environment(&given, key("direct").as_ref(), &FireworksEnv::default()).unwrap();
     assert_eq!(
         built.get(AUTHORIZATION_HEADER).map(String::as_str),
         Some("Bearer caller")
@@ -170,7 +175,8 @@ fn rerank_validate_environment_lets_an_exact_authorization_override() {
 #[test]
 fn rerank_validate_environment_keeps_a_lowercase_authorization_apart() {
     let given = Headers::from([("authorization".to_owned(), "Bearer caller".to_owned())]);
-    let built = validate_environment(&given, key("direct"), &FireworksEnv::default()).unwrap();
+    let built =
+        validate_environment(&given, key("direct").as_ref(), &FireworksEnv::default()).unwrap();
     assert_eq!(
         built.get(AUTHORIZATION_HEADER).map(String::as_str),
         Some("Bearer direct")
@@ -184,7 +190,8 @@ fn rerank_validate_environment_keeps_a_lowercase_authorization_apart() {
 #[test]
 fn rerank_validate_environment_lets_other_caller_headers_override() {
     let given = Headers::from([("Content-Type".to_owned(), "text/plain".to_owned())]);
-    let built = validate_environment(&given, key("direct"), &FireworksEnv::default()).unwrap();
+    let built =
+        validate_environment(&given, key("direct").as_ref(), &FireworksEnv::default()).unwrap();
     assert_eq!(
         built.get(CONTENT_TYPE_HEADER).map(String::as_str),
         Some("text/plain")

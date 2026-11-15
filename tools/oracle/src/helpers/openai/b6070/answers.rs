@@ -53,7 +53,7 @@ fn helper_error(class: &str, message: String) -> Box<HelperError> {
 pub(super) fn api_key_answer(call: &ApiKeyCall) -> Result<Value, Box<HelperError>> {
     let argument = call.argument.as_deref().map(SecretString::from);
     let resolved = resolve_api_key(argument.as_ref(), &env_of(&call.env));
-    Ok(json!(resolved.map(|key| key.expose_secret().clone())))
+    Ok(json!(resolved.map(|key| key.expose_secret().to_owned())))
 }
 pub(super) fn sessions_answer(items: &[SessionCall]) -> Value {
     let mut answers = Vec::with_capacity(items.len());
