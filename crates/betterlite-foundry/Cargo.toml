@@ -10,13 +10,16 @@ betterlite-azure = { path = "../betterlite-azure" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 chrono.workspace = true
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 rust_decimal.workspace = true
 secrecy.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+url = "2.5.8"
 
 [dev-dependencies]
 rstest = "=0.27.0"
