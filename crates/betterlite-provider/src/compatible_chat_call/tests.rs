@@ -213,12 +213,8 @@ async fn base(listener: &TcpListener) -> String {
     format!("http://{}/v1", listener.local_addr().unwrap())
 }
 
-#[test]
-fn plan_consumes_options_and_extra_body_wins() {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, env) = logging(&redactor);
-    let mut call = Call::new(Mode::Async);
-    call.options = IndexMap::from([
+fn consumed_options() -> IndexMap<String, Json> {
+    IndexMap::from([
         ("temperature".to_owned(), number(0.2)),
         (
             "max_retries".to_owned(),
@@ -237,7 +233,15 @@ fn plan_consumes_options_and_extra_body_wins() {
                 ("top_p".to_owned(), number(0.1)),
             ])),
         ),
-    ]);
+    ])
+}
+
+#[test]
+fn plan_consumes_options_and_extra_body_wins() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging(&redactor);
+    let mut call = Call::new(Mode::Async);
+    call.options = consumed_options();
     let plan = plan(&call, &mut state, &env);
     assert_eq!(plan.url, "https://example.test/v1/chat/completions");
     assert_eq!(plan.body.get("temperature"), Some(&number(0.9)));
