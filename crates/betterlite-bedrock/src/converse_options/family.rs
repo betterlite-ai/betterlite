@@ -39,11 +39,11 @@ pub fn requires_min_max_tokens(model: &str) -> bool {
 
 #[must_use]
 pub fn is_nova_2_model(model: &str) -> bool {
-    let unwrapped = strip_first_prefix(model, &CONVERSE_WRAPPERS);
-    let unwrapped = strip_first_prefix(unwrapped, &REGION_PREFIXES);
+    let without_wrapper = strip_first_prefix(model, &CONVERSE_WRAPPERS);
+    let without_region = strip_first_prefix(without_wrapper, &REGION_PREFIXES);
     NOVA_2_PREFIXES
         .iter()
-        .any(|prefix| unwrapped.starts_with(prefix))
+        .any(|prefix| without_region.starts_with(prefix))
 }
 
 #[must_use]
@@ -55,7 +55,7 @@ pub fn is_deepseek_model(model: &str, base_model: &str) -> bool {
 
 // DeepSeek R1 always reasons, so it rejects every reasoning request shape the other DeepSeek models accept.
 #[must_use]
-pub fn model_rejects_reasoning_effort_param(model: &str, base_model: &str) -> bool {
+pub fn rejects_reasoning_effort(model: &str, base_model: &str) -> bool {
     [model, base_model]
         .into_iter()
         .any(|name| name.contains(DEEPSEEK_R1_MARKER))

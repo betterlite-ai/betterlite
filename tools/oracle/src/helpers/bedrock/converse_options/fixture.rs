@@ -62,8 +62,7 @@ impl ModelInfoClient for NoHfTransport {
     }
 }
 
-// The cases put every capability flag in `model_cost`, so the raw catalog walk sees only the fixture
-// while the packaged cost map still answers the effort-ceiling fallback the Python side reads.
+// Every capability flag sits in model_cost, so the raw catalog walk sees only the fixture.
 pub(super) struct Fixture {
     entries: ModelCostMap,
     typed: ModelCatalog,

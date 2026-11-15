@@ -12,9 +12,7 @@ use crate::model_routes::{ParamMap, ParamValue};
 const ADAPTIVE_EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 const NOVA_2_EFFORTS: [&str; 3] = ["low", "medium", "high"];
 
-pub fn transform_reasoning_effort_to_reasoning_config(
-    reasoning_effort: &str,
-) -> Result<ParamMap, ConverseOptionsError> {
+pub fn nova_reasoning_config(reasoning_effort: &str) -> Result<ParamMap, ConverseOptionsError> {
     if !NOVA_2_EFFORTS.contains(&reasoning_effort) {
         return Err(ConverseOptionsError::NovaEffort {
             value: reasoning_effort.to_owned(),
@@ -48,7 +46,7 @@ pub fn output_config_effort(effort: &str) -> Option<&'static str> {
 }
 
 // The membership check runs first; only a permitted effort reaches the model-capability check.
-pub async fn validate_anthropic_adaptive_effort<Source, Transport>(
+pub async fn validate_adaptive_effort<Source, Transport>(
     model: &str,
     effort: &ParamValue,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,

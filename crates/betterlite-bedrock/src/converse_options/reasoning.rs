@@ -12,8 +12,7 @@ use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::bedrock_model_capabilities::effort::normalize_opus_effort;
 use crate::converse_options::effort::{
-    output_config_effort, transform_reasoning_effort_to_reasoning_config,
-    validate_anthropic_adaptive_effort,
+    nova_reasoning_config, output_config_effort, validate_adaptive_effort,
 };
 use crate::converse_options::error::ConverseOptionsError;
 use crate::converse_options::family::{
@@ -34,7 +33,7 @@ pub struct ReasoningSources<'source, Lookup> {
     pub packaged: &'source ModelCatalog,
 }
 
-pub async fn handle_reasoning_effort_parameter<Source, Transport, Lookup>(
+pub async fn handle_reasoning_effort<Source, Transport, Lookup>(
     model: &str,
     reasoning_effort: &str,
     optional_params: &mut ParamMap,
@@ -63,9 +62,7 @@ where
         return Ok(());
     }
     if is_nova_2_model(model) {
-        optional_params.extend(transform_reasoning_effort_to_reasoning_config(
-            reasoning_effort,
-        )?);
+        optional_params.extend(nova_reasoning_config(reasoning_effort)?);
         return Ok(());
     }
     map_anthropic_reasoning_effort(
@@ -166,7 +163,7 @@ where
         | ParamValue::Text(_)
         | ParamValue::List(_) => ParamValue::Null,
     };
-    validate_anthropic_adaptive_effort(model, &effort, environment, sources.catalogs).await?;
+    validate_adaptive_effort(model, &effort, environment, sources.catalogs).await?;
     optional_params.insert(OUTPUT_CONFIG_FIELD.to_owned(), output_config);
     optional_params.insert(
         "_output_config_normalized".to_owned(),

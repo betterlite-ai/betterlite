@@ -12,9 +12,7 @@ use betterlite_bedrock::converse_options::error::ConverseOptionsError;
 use betterlite_bedrock::converse_options::family::{
     is_nova_2_model, is_openai_gpt_reasoning_model, requires_min_max_tokens,
 };
-use betterlite_bedrock::converse_options::reasoning::{
-    ReasoningSources, handle_reasoning_effort_parameter,
-};
+use betterlite_bedrock::converse_options::reasoning::{ReasoningSources, handle_reasoning_effort};
 use betterlite_bedrock::converse_options::supported::{
     auto_tool_choice, supported_openai_params, supports_sampling_params,
 };
@@ -137,8 +135,7 @@ fn handle(
                 lookup: &lookup,
                 packaged: &fixture.packaged,
             };
-            handle_reasoning_effort_parameter(model, effort, &mut params, &mut capability, &sources)
-                .await
+            handle_reasoning_effort(model, effort, &mut params, &mut capability, &sources).await
         })
         .map_err(|error| helper_error(&error, error.status_code()))?;
     Ok(

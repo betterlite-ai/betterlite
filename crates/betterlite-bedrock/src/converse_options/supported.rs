@@ -8,8 +8,7 @@ use betterlite_models::model_capability_predicates::{
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 
 use crate::converse_options::family::{
-    is_deepseek_model, is_nova_2_model, is_openai_gpt_reasoning_model,
-    model_rejects_reasoning_effort_param,
+    is_deepseek_model, is_nova_2_model, is_openai_gpt_reasoning_model, rejects_reasoning_effort,
 };
 use crate::model_routes::{ParamMap, ParamValue};
 
@@ -63,7 +62,7 @@ pub fn supports_sampling_params(model: &str, catalogs: &CatalogSources<'_>) -> b
 
 // No DeepSeek accepts the Anthropic-shaped thinking field, even when its supports_reasoning flag is true.
 #[must_use]
-pub async fn model_accepts_anthropic_thinking_param<Source, Transport>(
+pub async fn accepts_thinking_param<Source, Transport>(
     model: &str,
     base_model: &str,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
@@ -214,11 +213,11 @@ async fn push_reasoning_param<Source, Transport>(
     let raw_effort = model.contains("gpt-oss")
         || is_openai_gpt_reasoning_model(model)
         || is_openai_gpt_reasoning_model(base_model)
-        || (deepseek && !model_rejects_reasoning_effort_param(model, base_model))
+        || (deepseek && !rejects_reasoning_effort(model, base_model))
         || (!deepseek && is_nova_2_model(model));
     if raw_effort {
         params.push("reasoning_effort".to_owned());
-    } else if model_accepts_anthropic_thinking_param(model, base_model, environment).await {
+    } else if accepts_thinking_param(model, base_model, environment).await {
         params.extend(["thinking", "reasoning_effort", "output_config"].map(str::to_owned));
     }
 }
