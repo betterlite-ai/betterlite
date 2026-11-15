@@ -17,7 +17,39 @@ pub enum SdkResult {
     MessagesHeaderStream { value: HeaderStreamRun },
     MessagesStreamLogging { value: StreamLoggingRun },
     MessagesNativeStream { value: Vec<StepOutcome> },
+    ResponsesAgenticContinuation { value: AgenticContinuationRun },
     Failure(Failure),
+}
+
+// the shared dispatcher's observable output: the hook order, what the caller got, or the refusal
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgenticContinuationRun {
+    pub trace: Vec<AgenticTrace>,
+    pub returned: Option<AgenticIdentity>,
+    pub error: Option<AgenticFailure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgenticTrace {
+    pub callback: String,
+    pub hook: String,
+    pub kwargs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgenticIdentity {
+    pub created_at: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgenticFailure {
+    pub class: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
