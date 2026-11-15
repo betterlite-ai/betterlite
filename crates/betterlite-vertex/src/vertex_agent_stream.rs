@@ -43,32 +43,32 @@ pub fn parse_chunk(fields: &Extra) -> Result<AgentEngineChunk<'_>, AgentEngineSt
 
 // the first part that is an object carrying a text key decides, and no later part is read
 fn content_text(fields: &Extra) -> Result<Option<&str>, AgentEngineStreamError> {
-    let Some(content) = fields.get("content") else {
+    let Some(content_value) = fields.get("content") else {
         return Ok(None);
     };
-    let content = match content {
+    let content_object = match content_value {
         Json::Null => return Ok(None),
-        Json::Object(content) => content,
+        Json::Object(content_fields) => content_fields,
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             return Err(AgentEngineStreamError::FieldType { field: "content" });
         }
     };
-    let Some(parts) = content.get("parts") else {
+    let Some(parts_value) = content_object.get("parts") else {
         return Ok(None);
     };
-    let parts = match parts {
+    let part_list = match parts_value {
         Json::Null => return Ok(None),
-        Json::List(parts) => parts,
+        Json::List(part_items) => part_items,
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
             return Err(AgentEngineStreamError::FieldType { field: "parts" });
         }
     };
-    for part in parts {
-        if let Json::Object(part) = part
-            && let Some(text) = part.get("text")
+    for part in part_list {
+        if let Json::Object(part_fields) = part
+            && let Some(text_value) = part_fields.get("text")
         {
-            return match text {
-                Json::Text(text) => Ok(Some(text)),
+            return match text_value {
+                Json::Text(text_content) => Ok(Some(text_content)),
                 Json::Null => Ok(None),
                 Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
                     Err(AgentEngineStreamError::FieldType { field: "text" })
