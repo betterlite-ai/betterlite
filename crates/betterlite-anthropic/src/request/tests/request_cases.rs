@@ -5,11 +5,10 @@ use betterlite_prompts::system_placement::text_parts::CONVERTED_SYSTEM_NOTE;
 
 use crate::anthropic_capability_catalog::thinking::DROP_DISABLED_THINKING_WARNING;
 use crate::capabilities::speed::DROP_UNSUPPORTED_SPEED_WARNING;
-use crate::option_primitives::OptionDefaults;
 use crate::params::output_config::DROP_OUTPUT_CONFIG_WARNING;
 use crate::request::system::translate_system_message;
 
-use super::fixture::{InliningFetcher, Outcome, Scenario, expect_absent, expect_field, fields};
+use super::fixture::{InliningFetcher, Outcome, Scenario, expect_absent, expect_field};
 
 const ONE_USER: &str = r#"[{"role":"user","content":"u"}]"#;
 const TOOL_USER: &str = r#"[{"role":"user","content":"weather?"},{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":"sunny"}]"#;
@@ -239,7 +238,7 @@ fn advisor_blocks_follow_tool() {
 }
 
 #[test]
-fn case_3_thinking_history_warning() {
+fn case_3_thinking_history() {
     unpaired_thinking_is_dropped();
     thinking_survives_the_rest();
 }
@@ -300,32 +299,19 @@ fn thinking_survives_the_rest() {
 
 #[test]
 fn case_4_billing_metadata_policy() {
-    billing_headers_are_stripped();
-    billing_headers_survive();
+    let stripped = Scenario::new("plain-model", BILLING_HISTORY)
+        .strip_billing()
+        .run()
+        .ok();
+    expect_field(&stripped, "system", STRIPPED_SYSTEM);
+    let kept = Scenario::new("plain-model", BILLING_HISTORY).run().ok();
+    expect_field(&kept, "system", KEPT_SYSTEM);
 }
 
 const BILLING_HISTORY: &str = r#"[{"role":"system","content":"x-anthropic-billing-header: abc"},{"role":"system","content":"kept"},{"role":"system","content":[{"type":"text","text":"x-anthropic-billing-header: x"},{"type":"text","text":" x-anthropic-billing-header: y"},{"type":"text","text":"X-anthropic-billing-header: z"},{"type":"text","text":"KEEP"}]},{"role":"user","content":"hi"}]"#;
 
-fn billing_headers_are_stripped() {
-    let outcome = Scenario::new("plain-model", BILLING_HISTORY)
-        .strip_billing()
-        .run()
-        .ok();
-    expect_field(
-        &outcome,
-        "system",
-        r#"[{"type":"text","text":"kept"},{"type":"text","text":" x-anthropic-billing-header: y"},{"type":"text","text":"X-anthropic-billing-header: z"},{"type":"text","text":"KEEP"}]"#,
-    );
-}
-
-fn billing_headers_survive() {
-    let outcome = Scenario::new("plain-model", BILLING_HISTORY).run().ok();
-    expect_field(
-        &outcome,
-        "system",
-        r#"[{"type":"text","text":"x-anthropic-billing-header: abc"},{"type":"text","text":"kept"},{"type":"text","text":"x-anthropic-billing-header: x"},{"type":"text","text":" x-anthropic-billing-header: y"},{"type":"text","text":"X-anthropic-billing-header: z"},{"type":"text","text":"KEEP"}]"#,
-    );
-}
+const STRIPPED_SYSTEM: &str = r#"[{"type":"text","text":"kept"},{"type":"text","text":" x-anthropic-billing-header: y"},{"type":"text","text":"X-anthropic-billing-header: z"},{"type":"text","text":"KEEP"}]"#;
+const KEPT_SYSTEM: &str = r#"[{"type":"text","text":"x-anthropic-billing-header: abc"},{"type":"text","text":"kept"},{"type":"text","text":"x-anthropic-billing-header: x"},{"type":"text","text":" x-anthropic-billing-header: y"},{"type":"text","text":"X-anthropic-billing-header: z"},{"type":"text","text":"KEEP"}]"#;
 
 #[test]
 fn case_5_user_id_metadata() {
@@ -401,20 +387,14 @@ fn option_metadata_user_id() {
 
 fn configured_metadata_default() {
     let configured = one_user("plain-model")
-        .defaults(OptionDefaults {
-            metadata: Some(fields(r#"{"user_id":"cfg-user"}"#)),
-            ..OptionDefaults::default()
-        })
+        .defaults(r#"{"metadata":{"user_id":"cfg-user"}}"#)
         .run()
         .ok();
     expect_field(&configured, "metadata", r#"{"user_id":"cfg-user"}"#);
 
     let blocked = one_user("plain-model")
         .optional(r#"{"metadata":null}"#)
-        .defaults(OptionDefaults {
-            metadata: Some(fields(r#"{"user_id":"cfg-user"}"#)),
-            ..OptionDefaults::default()
-        })
+        .defaults(r#"{"metadata":{"user_id":"cfg-user"}}"#)
         .run()
         .ok();
     expect_field(&blocked, "metadata", "null");
@@ -466,7 +446,7 @@ fn declared_tools_stay_alone() {
         .optional(&format!(r#"{{"tools":[{WEATHER_TOOL}]}}"#))
         .run()
         .ok();
-    expect_field(&plain, "tools", &format!(r#"[{WEATHER_TOOL}]"#));
+    expect_field(&plain, "tools", &format!("[{WEATHER_TOOL}]"));
 
     let listed = Scenario::new(
         "plain-model",
@@ -475,7 +455,7 @@ fn declared_tools_stay_alone() {
     .optional(&format!(r#"{{"tools":[{WEATHER_TOOL}]}}"#))
     .run()
     .ok();
-    expect_field(&listed, "tools", &format!(r#"[{WEATHER_TOOL}]"#));
+    expect_field(&listed, "tools", &format!("[{WEATHER_TOOL}]"));
 }
 
 #[test]
@@ -737,7 +717,7 @@ fn additions_keep_the_call_order() {
 }
 
 #[test]
-fn case_10_assembly_option_cleanup() {
+fn case_10_option_cleanup() {
     max_tokens_defaults();
     internal_options_are_removed();
     top_k_sampling_gate();
@@ -752,20 +732,14 @@ fn max_tokens_defaults() {
     expect_field(&plain, "max_tokens", "4096");
 
     let configured = one_user("plain-model")
-        .defaults(OptionDefaults {
-            max_tokens: Some(100),
-            ..OptionDefaults::default()
-        })
+        .defaults(r#"{"max_tokens":100}"#)
         .run()
         .ok();
     expect_field(&configured, "max_tokens", "100");
 
     let explicit = one_user("plain-model")
         .optional(r#"{"max_tokens":5}"#)
-        .defaults(OptionDefaults {
-            max_tokens: Some(100),
-            ..OptionDefaults::default()
-        })
+        .defaults(r#"{"max_tokens":100}"#)
         .run()
         .ok();
     expect_field(&explicit, "max_tokens", "5");

@@ -118,7 +118,12 @@ pub fn add_optional_betas(
     }
     add_structured_output_beta(headers, params);
     add_speed_beta(headers, params);
-    add_advisor_beta(headers, tools);
+    if tools
+        .iter()
+        .any(|tool| tool_kind(tool) == Some(ADVISOR_TYPE))
+    {
+        ensure_beta_header(headers, ADVISOR_TOOL_BETA);
+    }
     Ok(())
 }
 
@@ -197,15 +202,6 @@ fn add_structured_output_beta(headers: &mut AnthropicHeaders, params: &IndexMap<
 fn add_speed_beta(headers: &mut AnthropicHeaders, params: &IndexMap<String, Json>) {
     if matches!(params.get(SPEED), Some(Json::Text(value)) if value == FAST_SPEED) {
         ensure_beta_header(headers, FAST_MODE_BETA);
-    }
-}
-
-fn add_advisor_beta(headers: &mut AnthropicHeaders, tools: &[PromptJson]) {
-    if tools
-        .iter()
-        .any(|tool| tool_kind(tool) == Some(ADVISOR_TYPE))
-    {
-        ensure_beta_header(headers, ADVISOR_TOOL_BETA);
     }
 }
 

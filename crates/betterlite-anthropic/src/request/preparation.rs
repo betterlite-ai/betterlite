@@ -108,10 +108,14 @@ where
         Fetcher: RemoteMediaFetcher + Sync,
     {
         let typed: Vec<Message> = convert::convert_each(&self.messages)?;
-        let inlines = |media: &RemoteMedia| {
-            INLINE_REMOTE_IMAGE_URLS(media) && media.url.starts_with("http://")
-        };
-        let inlined = async_inline_remote_media(&typed, &inlines, fetcher).await?;
+        let inlined = async_inline_remote_media(
+            &typed,
+            &|media: &RemoteMedia| {
+                INLINE_REMOTE_IMAGE_URLS(media) && media.url.starts_with("http://")
+            },
+            fetcher,
+        )
+        .await?;
         if inlined != typed {
             self.messages = convert::convert_each(&inlined)?;
         }

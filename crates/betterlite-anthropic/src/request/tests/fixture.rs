@@ -209,21 +209,27 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     fn new(model_cost: &str) -> Self {
+        let map = ModelCostMap::parse(model_cost.as_bytes()).expect("model cost map");
+        let catalog = ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("empty catalog");
+        let patterns = CandidatePatterns::new().expect("candidate patterns");
+        let runtime = serde_json::from_str(model_cost).expect("runtime catalog");
+        let packaged = serde_json::from_str("{}").expect("packaged catalog");
+        let hf = HfConfigClient {
+            client: NoHfTransport,
+            base_url: HF_CONFIG_BASE_URL.to_owned(),
+        };
         Self {
-            map: ModelCostMap::parse(model_cost.as_bytes()).expect("model cost map"),
-            catalog: ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("empty catalog"),
+            map,
+            catalog,
             generalizations: CatalogGeneralizations::default(),
             provider_catalog: Catalog::new(),
-            hf: HfConfigClient {
-                client: NoHfTransport,
-                base_url: HF_CONFIG_BASE_URL.to_owned(),
-            },
+            hf,
             known_model_names: BTreeSet::new(),
             custom_providers: BTreeSet::new(),
             environment: BTreeMap::new(),
-            patterns: CandidatePatterns::new().expect("candidate patterns"),
-            runtime: serde_json::from_str(model_cost).expect("runtime catalog"),
-            packaged: serde_json::from_str("{}").expect("packaged catalog"),
+            patterns,
+            runtime,
+            packaged,
         }
     }
 
@@ -371,8 +377,8 @@ impl Scenario {
         self
     }
 
-    pub(crate) fn defaults(mut self, defaults: OptionDefaults) -> Self {
-        self.defaults = defaults;
+    pub(crate) fn defaults(mut self, source: &str) -> Self {
+        self.defaults = serde_json::from_str(source).expect("case option defaults");
         self
     }
 

@@ -1,12 +1,12 @@
 pub mod beta_headers;
 pub mod code_execution;
-mod convert;
+pub mod convert;
 pub mod error;
 pub mod metadata;
 mod preparation;
 pub mod system;
 mod tests;
-mod tool_list;
+pub mod tool_list;
 
 use std::collections::BTreeMap;
 

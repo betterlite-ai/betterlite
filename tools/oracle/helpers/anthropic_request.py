@@ -7,7 +7,8 @@ import litellm
 from litellm.exceptions import BadRequestError
 from litellm.llms.anthropic.chat.transformation import AnthropicConfig
 from litellm.llms.anthropic.common_utils import AnthropicError
-from pydantic import JsonValue as Json, TypeAdapter
+from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 from typing_extensions import override
 
 REVERSE_MAP_KEY: Final = "_anthropic_tool_name_map"

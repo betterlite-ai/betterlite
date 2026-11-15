@@ -1,13 +1,13 @@
 use betterlite_prompts::arguments::json::Json;
 use serde::Serialize;
 
+use super::beta_headers::tool_kind;
 use super::convert::{self, ConvertError};
 
 const CODE_EXECUTION: &str = "code_execution";
 const CODE_EXECUTION_TYPE: &str = "code_execution_20250522";
 const CONTAINER_UPLOAD: &str = "container_upload";
 const CONTENT: &str = "content";
-const TYPE: &str = "type";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AnthropicCodeExecutionTool {
@@ -24,7 +24,10 @@ pub fn add_code_execution_tool(
     if !has_container_upload(messages) {
         return Ok(());
     }
-    if tools.iter().any(has_code_execution_type) {
+    if tools
+        .iter()
+        .any(|tool| tool_kind(tool).is_some_and(|kind| kind.starts_with(CODE_EXECUTION)))
+    {
         return Ok(());
     }
     let tool = AnthropicCodeExecutionTool {
@@ -36,36 +39,12 @@ pub fn add_code_execution_tool(
 }
 
 fn has_container_upload(messages: &[Json]) -> bool {
-    for message in messages {
-        let Some(Json::List(blocks)) = message.as_object().and_then(|fields| fields.get(CONTENT))
-        else {
-            continue;
-        };
-        if blocks.iter().any(is_container_upload) {
-            return true;
+    messages.iter().any(|message| {
+        match message.as_object().and_then(|fields| fields.get(CONTENT)) {
+            Some(Json::List(blocks)) => blocks
+                .iter()
+                .any(|block| tool_kind(block) == Some(CONTAINER_UPLOAD)),
+            Some(_) | None => false,
         }
-    }
-    false
-}
-
-fn is_container_upload(block: &Json) -> bool {
-    match block
-        .as_object()
-        .and_then(|fields| fields.get(TYPE))
-        .and_then(Json::as_str)
-    {
-        Some(kind) => kind == CONTAINER_UPLOAD,
-        None => false,
-    }
-}
-
-fn has_code_execution_type(tool: &Json) -> bool {
-    match tool
-        .as_object()
-        .and_then(|fields| fields.get(TYPE))
-        .and_then(Json::as_str)
-    {
-        Some(kind) => kind.starts_with(CODE_EXECUTION),
-        None => false,
-    }
+    })
 }
