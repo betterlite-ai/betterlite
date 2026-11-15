@@ -551,3 +551,17 @@ path = "fuzz_targets/hosted_vllm_embedding_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "minimax_speech_reply"
+path = "fuzz_targets/minimax_speech_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "modelscope_image_reply"
+path = "fuzz_targets/modelscope_image_reply.rs"
+test = false
+doc = false
+bench = false
