@@ -57,16 +57,16 @@ pub(super) struct AssistantMessagePayload {
 
 #[derive(Debug, Serialize)]
 pub(super) struct ToolCallPayload {
-    id: String,
+    pub(super) id: String,
     #[serde(rename = "type")]
-    call_type: String,
-    function: ToolCallFunctionPayload,
+    pub(super) call_type: String,
+    pub(super) function: ToolCallFunctionPayload,
 }
 
 #[derive(Debug, Serialize)]
 pub(super) struct ToolCallFunctionPayload {
-    name: String,
-    arguments: String,
+    pub(super) name: String,
+    pub(super) arguments: String,
 }
 
 pub(super) fn build(
