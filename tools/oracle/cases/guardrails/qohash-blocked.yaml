@@ -1,0 +1,13 @@
+kind: helper
+name: qohash-blocked
+call:
+  b8212:
+    settings: {guardrail_name: qostodian_nexus, extra_headers: []}
+    inputs: {texts: ["secret prompt"]}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body: {action: BLOCKED, blocked_reason: "pii found"}
+env: {}
+compare: {ignore: []}
