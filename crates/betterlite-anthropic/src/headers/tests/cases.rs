@@ -170,140 +170,155 @@ fn default_native_version_case() {
 
 fn api_key_and_bearer_case() {
     let features = HeaderFeatures::default();
-    native_key_headers(&features);
-    bearer_token_headers(&features);
-    resolved_key_beats_token(&features);
-    custom_base_bearer_headers(&features);
-    official_base_keeps_key(&features);
-    custom_base_without_flag(&features);
-    environment_token_headers();
-    environment_key_headers();
-    caller_key_headers();
-    empty_caller_key_headers();
+    for scenario in &NATIVE_AUTH_SCENARIOS {
+        assert_auth_headers(scenario, &features);
+    }
+    for scenario in &ENVIRONMENT_AUTH_SCENARIOS {
+        assert_environment_auth(scenario);
+    }
 }
 
-fn native_key_headers(features: &HeaderFeatures) {
-    let key = fixture::secret("sk-ant-api03-fixture");
-    let native = get_anthropic_headers(&fixture::request(Some(&key), None, features));
-    assert_eq!(
-        fixture::header(&native, X_API_KEY),
-        Some("sk-ant-api03-fixture")
-    );
-    assert!(!native.values.contains_key(AUTHORIZATION_HEADER));
+struct AuthHeadersScenario {
+    api_key: Option<&'static str>,
+    auth_token: Option<&'static str>,
+    api_base: Option<&'static str>,
+    use_bearer_for_custom_base: bool,
+    expected: &'static [(&'static str, &'static str)],
+    absent: &'static [&'static str],
 }
 
-fn bearer_token_headers(features: &HeaderFeatures) {
-    let token = fixture::secret("auth-token-value");
-    let bearer = get_anthropic_headers(&fixture::request(None, Some(&token), features));
-    assert_eq!(
-        fixture::header(&bearer, AUTHORIZATION_HEADER),
-        Some("Bearer auth-token-value")
-    );
-    assert!(!bearer.values.contains_key(X_API_KEY));
-}
-
-fn resolved_key_beats_token(features: &HeaderFeatures) {
-    let key = fixture::secret("sk-ant-api03-fixture");
-    let token = fixture::secret("auth-token-value");
-    let both = get_anthropic_headers(&fixture::request(Some(&key), Some(&token), features));
-    assert_eq!(
-        fixture::header(&both, X_API_KEY),
-        Some("sk-ant-api03-fixture")
-    );
-    assert!(!both.values.contains_key(AUTHORIZATION_HEADER));
-}
-
-fn custom_base_bearer_headers(features: &HeaderFeatures) {
-    let custom_key = fixture::secret("sk-custom-key");
-    let custom_base = get_anthropic_headers(&HeaderRequest {
+const NATIVE_AUTH_SCENARIOS: [AuthHeadersScenario; 6] = [
+    AuthHeadersScenario {
+        api_key: Some("sk-ant-api03-fixture"),
+        auth_token: None,
+        api_base: None,
+        use_bearer_for_custom_base: false,
+        expected: &[(X_API_KEY, "sk-ant-api03-fixture")],
+        absent: &[AUTHORIZATION_HEADER],
+    },
+    AuthHeadersScenario {
+        api_key: None,
+        auth_token: Some("auth-token-value"),
+        api_base: None,
+        use_bearer_for_custom_base: false,
+        expected: &[(AUTHORIZATION_HEADER, "Bearer auth-token-value")],
+        absent: &[X_API_KEY],
+    },
+    AuthHeadersScenario {
+        api_key: Some("sk-ant-api03-fixture"),
+        auth_token: Some("auth-token-value"),
+        api_base: None,
+        use_bearer_for_custom_base: false,
+        expected: &[(X_API_KEY, "sk-ant-api03-fixture")],
+        absent: &[AUTHORIZATION_HEADER],
+    },
+    AuthHeadersScenario {
+        api_key: Some("sk-custom-key"),
+        auth_token: None,
         api_base: Some("https://anthropic-proxy.example"),
         use_bearer_for_custom_base: true,
-        ..fixture::request(Some(&custom_key), None, features)
-    });
-    assert_eq!(
-        fixture::header(&custom_base, AUTHORIZATION_HEADER),
-        Some("Bearer sk-custom-key")
-    );
-    assert!(!custom_base.values.contains_key(X_API_KEY));
-}
-
-fn official_base_keeps_key(features: &HeaderFeatures) {
-    let custom_key = fixture::secret("sk-custom-key");
-    let official_base = get_anthropic_headers(&HeaderRequest {
+        expected: &[(AUTHORIZATION_HEADER, "Bearer sk-custom-key")],
+        absent: &[X_API_KEY],
+    },
+    AuthHeadersScenario {
+        api_key: Some("sk-custom-key"),
+        auth_token: None,
         api_base: Some("https://api.anthropic.com"),
         use_bearer_for_custom_base: true,
-        ..fixture::request(Some(&custom_key), None, features)
-    });
-    assert_eq!(
-        fixture::header(&official_base, X_API_KEY),
-        Some("sk-custom-key")
-    );
-}
-
-fn custom_base_without_flag(features: &HeaderFeatures) {
-    let key = fixture::secret("sk-ant-api03-fixture");
-    let bearer_off = get_anthropic_headers(&HeaderRequest {
+        expected: &[(X_API_KEY, "sk-custom-key")],
+        absent: &[],
+    },
+    AuthHeadersScenario {
+        api_key: Some("sk-ant-api03-fixture"),
+        auth_token: None,
         api_base: Some("https://anthropic-proxy.example"),
-        ..fixture::request(Some(&key), None, features)
+        use_bearer_for_custom_base: false,
+        expected: &[(X_API_KEY, "sk-ant-api03-fixture")],
+        absent: &[AUTHORIZATION_HEADER],
+    },
+];
+
+struct EnvironmentAuthScenario {
+    settings_api_key: Option<&'static str>,
+    settings_auth_token: Option<&'static str>,
+    caller_api_key: Option<&'static str>,
+    expected: (&'static str, &'static str),
+    absent: &'static [&'static str],
+}
+
+const ENVIRONMENT_AUTH_SCENARIOS: [EnvironmentAuthScenario; 4] = [
+    EnvironmentAuthScenario {
+        settings_api_key: None,
+        settings_auth_token: Some("auth-token-value"),
+        caller_api_key: None,
+        expected: (AUTHORIZATION_HEADER, "Bearer auth-token-value"),
+        absent: &[],
+    },
+    EnvironmentAuthScenario {
+        settings_api_key: Some("sk-ant-api03-env"),
+        settings_auth_token: Some("auth-token-value"),
+        caller_api_key: None,
+        expected: (X_API_KEY, "sk-ant-api03-env"),
+        absent: &[AUTHORIZATION_HEADER],
+    },
+    EnvironmentAuthScenario {
+        settings_api_key: Some("sk-ant-api03-env"),
+        settings_auth_token: Some("auth-token-value"),
+        caller_api_key: Some("sk-ant-api03-caller"),
+        expected: (X_API_KEY, "sk-ant-api03-caller"),
+        absent: &[],
+    },
+    EnvironmentAuthScenario {
+        settings_api_key: None,
+        settings_auth_token: Some("auth-token-value"),
+        caller_api_key: Some(""),
+        expected: (X_API_KEY, ""),
+        absent: &[AUTHORIZATION_HEADER],
+    },
+];
+
+fn assert_auth_headers(scenario: &AuthHeadersScenario, features: &HeaderFeatures) {
+    let api_key = scenario.api_key.map(fixture::secret);
+    let auth_token = scenario.auth_token.map(fixture::secret);
+    let headers = get_anthropic_headers(&HeaderRequest {
+        api_key: api_key.as_ref(),
+        auth_token: auth_token.as_ref(),
+        api_base: scenario.api_base,
+        use_bearer_for_custom_base: scenario.use_bearer_for_custom_base,
+        ..fixture::request(None, None, features)
     });
-    assert_eq!(
-        fixture::header(&bearer_off, X_API_KEY),
-        Some("sk-ant-api03-fixture")
-    );
-    assert!(!bearer_off.values.contains_key(AUTHORIZATION_HEADER));
+    assert_header_expectations(&headers, scenario.expected, scenario.absent);
 }
 
-fn environment_token_headers() {
+fn assert_environment_auth(scenario: &EnvironmentAuthScenario) {
+    let settings = fixture::settings(scenario.settings_api_key, scenario.settings_auth_token);
     let params = fixture::params();
     let messages = Vec::new();
-    let token_only = fixture::settings(None, Some("auth-token-value"));
-    let resolved_token = validated(&messages, &params, &token_only);
-    assert_eq!(
-        fixture::header(&resolved_token, AUTHORIZATION_HEADER),
-        Some("Bearer auth-token-value")
-    );
-}
-
-fn environment_key_headers() {
-    let params = fixture::params();
-    let messages = Vec::new();
-    let both_env = fixture::settings(Some("sk-ant-api03-env"), Some("auth-token-value"));
-    let resolved_key = validated(&messages, &params, &both_env);
-    assert_eq!(
-        fixture::header(&resolved_key, X_API_KEY),
-        Some("sk-ant-api03-env")
-    );
-    assert!(!resolved_key.values.contains_key(AUTHORIZATION_HEADER));
-}
-
-fn caller_key_headers() {
-    let params = fixture::params();
-    let messages = Vec::new();
-    let settings = fixture::settings(Some("sk-ant-api03-env"), Some("auth-token-value"));
-    let caller_key = fixture::secret("sk-ant-api03-caller");
     let caller_headers = IndexMap::new();
     let litellm_params = fixture::litellm_params();
+    let caller_key = scenario.caller_api_key.map(fixture::secret);
     let mut request = caller_request(&caller_headers, &litellm_params, &messages, &params);
-    request.api_key = Some(&caller_key);
-    let explicit = validate_environment(&request, &settings).unwrap();
-    assert_eq!(
-        fixture::header(&explicit, X_API_KEY),
-        Some("sk-ant-api03-caller")
-    );
+    request.api_key = caller_key.as_ref();
+    let headers = validate_environment(&request, &settings).unwrap();
+    assert_header_expectations(&headers, &[scenario.expected], scenario.absent);
 }
 
-fn empty_caller_key_headers() {
-    let params = fixture::params();
-    let messages = Vec::new();
-    let empty_key = fixture::secret("");
-    let caller_headers = IndexMap::new();
-    let litellm_params = fixture::litellm_params();
-    let mut request = caller_request(&caller_headers, &litellm_params, &messages, &params);
-    request.api_key = Some(&empty_key);
-    let token_only = fixture::settings(None, Some("auth-token-value"));
-    let empty = validate_environment(&request, &token_only).unwrap();
-    assert_eq!(fixture::header(&empty, X_API_KEY), Some(""));
-    assert!(!empty.values.contains_key(AUTHORIZATION_HEADER));
+fn assert_header_expectations(
+    headers: &AnthropicHeaders,
+    expected: &[(&str, &str)],
+    absent: &[&str],
+) {
+    for &(name, value) in expected {
+        assert_eq!(fixture::header(headers, name), Some(value));
+    }
+    for &name in absent {
+        assert!(!headers.values.contains_key(name));
+    }
+}
+
+fn assert_beta_tokens(headers: &AnthropicHeaders, expected: &[&str]) {
+    let expected_set: BTreeSet<&str> = expected.iter().copied().collect();
+    assert_eq!(fixture::beta_tokens(headers), expected_set);
 }
 
 fn oauth_beta_merge_case() {
@@ -544,76 +559,76 @@ fn user_beta_preserved_case() {
     let settings = fixture::settings(Some("sk-ant-api03-fixture"), None);
     let params = fixture::params();
     let litellm_params = fixture::litellm_params();
-    let messages = Vec::new();
-    caller_betas_case(&settings, &params, &litellm_params, &messages);
-    spaced_betas_case(&settings, &params, &litellm_params, &messages);
-    file_betas_case(&settings, &params, &litellm_params);
-    absent_betas_case(&settings, &params, &litellm_params);
+    for scenario in &CALLER_BETA_SCENARIOS {
+        assert_caller_beta_scenario(scenario, &settings, &params, &litellm_params);
+    }
 }
 
-fn caller_betas_case(
-    settings: &AnthropicSettings,
-    params: &HeaderParams,
-    litellm_params: &HeaderLiteLlmParams,
-    messages: &[Json],
-) {
-    let caller_headers = fixture::headers(&[(OAUTH_BETA_HEADER_NAME, "custom-one,custom-two")]);
-    let merged = validated_headers(&caller_headers, params, litellm_params, settings, messages);
-    assert_eq!(
-        fixture::beta_tokens(&merged),
-        BTreeSet::from(["custom-one", "custom-two"])
-    );
+struct CallerBetaScenario {
+    caller_betas: Option<&'static str>,
+    message: Option<&'static str>,
+    expected_header: Option<&'static str>,
+    header_absent: bool,
+    expected_tokens: &'static [&'static str],
 }
 
-fn spaced_betas_case(
-    settings: &AnthropicSettings,
-    params: &HeaderParams,
-    litellm_params: &HeaderLiteLlmParams,
-    messages: &[Json],
-) {
-    // spelling, padding and empty tokens survive, and a repeated token collapses
-    let caller_headers = fixture::headers(&[(OAUTH_BETA_HEADER_NAME, " beta-b ,alpha ,, beta-b ")]);
-    let preserved = validated_headers(&caller_headers, params, litellm_params, settings, messages);
-    assert_eq!(
-        fixture::header(&preserved, OAUTH_BETA_HEADER_NAME),
-        Some(", beta-b ,alpha ")
-    );
-    assert_eq!(
-        fixture::beta_tokens(&preserved),
-        BTreeSet::from(["", " beta-b ", "alpha "])
-    );
-}
+const CALLER_BETA_SCENARIOS: [CallerBetaScenario; 4] = [
+    CallerBetaScenario {
+        caller_betas: Some("custom-one,custom-two"),
+        message: None,
+        expected_header: None,
+        header_absent: false,
+        expected_tokens: &["custom-one", "custom-two"],
+    },
+    CallerBetaScenario {
+        caller_betas: Some(" beta-b ,alpha ,, beta-b "),
+        message: None,
+        expected_header: Some(", beta-b ,alpha "),
+        header_absent: false,
+        expected_tokens: &["", " beta-b ", "alpha "],
+    },
+    CallerBetaScenario {
+        caller_betas: Some("custom-beta"),
+        message: Some(r#"{"role":"user","content":[{"type":"file","file":{"file_id":"file_1"}}]}"#),
+        expected_header: None,
+        header_absent: false,
+        expected_tokens: &[FILE_CODE_EXECUTION_BETA, FILES_API_BETA, "custom-beta"],
+    },
+    CallerBetaScenario {
+        caller_betas: None,
+        message: None,
+        expected_header: None,
+        header_absent: true,
+        expected_tokens: &[],
+    },
+];
 
-fn file_betas_case(
-    settings: &AnthropicSettings,
-    params: &HeaderParams,
-    litellm_params: &HeaderLiteLlmParams,
-) {
-    let messages = vec![fixture::json(
-        r#"{"role":"user","content":[{"type":"file","file":{"file_id":"file_1"}}]}"#,
-    )];
-    let caller_headers = fixture::headers(&[(OAUTH_BETA_HEADER_NAME, "custom-beta")]);
-    let combined = validated_headers(&caller_headers, params, litellm_params, settings, &messages);
-    assert_eq!(
-        fixture::beta_tokens(&combined),
-        BTreeSet::from([FILE_CODE_EXECUTION_BETA, FILES_API_BETA, "custom-beta",])
-    );
-}
-
-fn absent_betas_case(
+fn assert_caller_beta_scenario(
+    scenario: &CallerBetaScenario,
     settings: &AnthropicSettings,
     params: &HeaderParams,
     litellm_params: &HeaderLiteLlmParams,
 ) {
-    let caller_headers = IndexMap::new();
-    let messages = Vec::new();
-    let plain = validated_headers(&caller_headers, params, litellm_params, settings, &messages);
-    assert!(!plain.values.contains_key(OAUTH_BETA_HEADER_NAME));
+    let messages: Vec<Json> = scenario.message.map(fixture::json).into_iter().collect();
+    let caller_headers = scenario.caller_betas.map_or_else(IndexMap::new, |value| {
+        fixture::headers(&[(OAUTH_BETA_HEADER_NAME, value)])
+    });
+    let headers = validated_headers(&caller_headers, params, litellm_params, settings, &messages);
+    if scenario.header_absent {
+        assert!(!headers.values.contains_key(OAUTH_BETA_HEADER_NAME));
+    } else if let Some(value) = scenario.expected_header {
+        assert_eq!(
+            fixture::header(&headers, OAUTH_BETA_HEADER_NAME),
+            Some(value)
+        );
+    }
+    assert_beta_tokens(&headers, scenario.expected_tokens);
 }
 
 fn catalog_model_list_case() {
-    let models = catalog_models();
-    let response = catalog_response(&models);
+    let (models, display_names, listed_ids) = catalog_fixture();
+    let response =
+        anthropic_model_list_response(&models, &display_names, &listed_ids, "2023-02-28T18:56:42Z");
     assert!(!response.has_more);
     assert_eq!(response.first_id.as_deref(), Some("sonnet-listed"));
     assert_eq!(response.last_id.as_deref(), Some("anthropic/claude-opus-4"));
@@ -624,8 +639,12 @@ fn catalog_model_list_case() {
     empty_catalog_response();
 }
 
-fn catalog_models() -> Vec<ModelRecord> {
-    vec![
+fn catalog_fixture() -> (
+    Vec<ModelRecord>,
+    BTreeMap<String, String>,
+    BTreeMap<String, String>,
+) {
+    let models = vec![
         ModelRecord {
             id: "anthropic/claude-sonnet-4".to_owned(),
             max_input_tokens: Some(200_000),
@@ -636,10 +655,7 @@ fn catalog_models() -> Vec<ModelRecord> {
             max_input_tokens: None,
             max_output_tokens: None,
         },
-    ]
-}
-
-fn catalog_response(models: &[ModelRecord]) -> ModelListResponse {
+    ];
     let display_names = BTreeMap::from([(
         "anthropic/claude-sonnet-4".to_owned(),
         "Claude Sonnet 4".to_owned(),
@@ -651,7 +667,7 @@ fn catalog_response(models: &[ModelRecord]) -> ModelListResponse {
         ),
         ("anthropic/claude-opus-4".to_owned(), String::new()),
     ]);
-    anthropic_model_list_response(models, &display_names, &listed_ids, "2023-02-28T18:56:42Z")
+    (models, display_names, listed_ids)
 }
 
 fn listed_entry_fields(response: &ModelListResponse) {
@@ -756,106 +772,110 @@ fn oauth_header_resolves() {
 
 fn conversation_betas_case() {
     let settings = fixture::settings(Some("sk-ant-api03-fixture"), None);
-    output_config_betas(&settings);
-    thinking_display_betas(&settings);
-    tool_change_betas(&settings);
-    computer_tool_betas(&settings);
-    mcp_server_betas(&settings);
-    combined_betas(&settings);
+    for scenario in &CONVERSATION_BETA_SCENARIOS {
+        assert_conversation_beta_scenario(scenario, &settings);
+    }
 }
 
-fn output_config_betas(settings: &AnthropicSettings) {
-    let messages = vec![fixture::json(
-        r#"{"role":"user","content":"hi","output_config":{"effort":"high"}}"#,
-    )];
-    let detected = validated(&messages, &fixture::params(), settings);
-    assert_eq!(
-        fixture::beta_tokens(&detected),
-        BTreeSet::from([OUTPUT_CONFIG_BETA])
-    );
+struct ConversationBetaScenario {
+    message: Option<&'static str>,
+    params: Option<&'static str>,
+    expected_tokens: &'static [&'static str],
+    absent: bool,
 }
 
-fn thinking_display_betas(settings: &AnthropicSettings) {
-    let adaptive = fixture::params_from(r#"{"thinking":{"type":"adaptive","display":"updates"}}"#);
-    let adaptive_headers = validated(&[], &adaptive, settings);
-    assert_eq!(
-        fixture::beta_tokens(&adaptive_headers),
-        BTreeSet::from([THINKING_DISPLAY_BETA])
-    );
+const CONVERSATION_BETA_SCENARIOS: [ConversationBetaScenario; 11] = [
+    ConversationBetaScenario {
+        message: Some(r#"{"role":"user","content":"hi","output_config":{"effort":"high"}}"#),
+        params: None,
+        expected_tokens: &[OUTPUT_CONFIG_BETA],
+        absent: false,
+    },
+    ConversationBetaScenario {
+        message: None,
+        params: Some(r#"{"thinking":{"type":"adaptive","display":"updates"}}"#),
+        expected_tokens: &[THINKING_DISPLAY_BETA],
+        absent: false,
+    },
+    ConversationBetaScenario {
+        message: None,
+        params: Some(r#"{"thinking":{"type":"enabled","display":"updates"}}"#),
+        expected_tokens: &[THINKING_DISPLAY_BETA],
+        absent: false,
+    },
+    ConversationBetaScenario {
+        message: None,
+        params: Some(r#"{"thinking":{"type":"disabled","display":"updates"}}"#),
+        expected_tokens: &[],
+        absent: true,
+    },
+    ConversationBetaScenario {
+        message: Some(
+            r#"{"role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_reference"}}]}"#,
+        ),
+        params: None,
+        expected_tokens: &[TOOL_CHANGES_BETA],
+        absent: false,
+    },
+    ConversationBetaScenario {
+        message: None,
+        params: Some(r#"{"tools":[{"type":"computer_20250124"}]}"#),
+        expected_tokens: &["computer-use-2025-01-24"],
+        absent: false,
+    },
+    ConversationBetaScenario {
+        message: None,
+        params: Some(r#"{"tools":[{"type":"computer_20241022"}]}"#),
+        expected_tokens: &["computer-use-2024-10-22"],
+        absent: false,
+    },
+    ConversationBetaScenario {
+        message: None,
+        params: Some(r#"{"tools":[{"type":"custom_20250101"}]}"#),
+        expected_tokens: &[],
+        absent: true,
+    },
+    ConversationBetaScenario {
+        message: None,
+        params: Some(r#"{"mcp_servers":[{"type":"url","name":"docs"}]}"#),
+        expected_tokens: &[MCP_CLIENT_BETA],
+        absent: false,
+    },
+    ConversationBetaScenario {
+        message: None,
+        params: Some(r#"{"mcp_servers":[]}"#),
+        expected_tokens: &[],
+        absent: true,
+    },
+    ConversationBetaScenario {
+        message: Some(r#"{"role":"user","content":"hi","output_config":{"effort":"high"}}"#),
+        params: Some(r#"{"thinking":{"type":"adaptive","display":"updates"}}"#),
+        expected_tokens: &[OUTPUT_CONFIG_BETA, THINKING_DISPLAY_BETA],
+        absent: false,
+    },
+];
 
-    let enabled = fixture::params_from(r#"{"thinking":{"type":"enabled","display":"updates"}}"#);
-    let enabled_headers = validated(&[], &enabled, settings);
-    assert_eq!(
-        fixture::beta_tokens(&enabled_headers),
-        BTreeSet::from([THINKING_DISPLAY_BETA])
-    );
-
-    let disabled = fixture::params_from(r#"{"thinking":{"type":"disabled","display":"updates"}}"#);
-    let disabled_headers = validated(&[], &disabled, settings);
-    assert!(!disabled_headers.values.contains_key(OAUTH_BETA_HEADER_NAME));
-}
-
-fn tool_change_betas(settings: &AnthropicSettings) {
-    let messages = vec![fixture::json(
-        r#"{"role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_reference"}}]}"#,
-    )];
-    let detected = validated(&messages, &fixture::params(), settings);
-    assert_eq!(
-        fixture::beta_tokens(&detected),
-        BTreeSet::from([TOOL_CHANGES_BETA])
-    );
-}
-
-fn computer_tool_betas(settings: &AnthropicSettings) {
-    let new_version = fixture::params_from(r#"{"tools":[{"type":"computer_20250124"}]}"#);
-    let new_headers = validated(&[], &new_version, settings);
-    assert_eq!(
-        fixture::beta_tokens(&new_headers),
-        BTreeSet::from(["computer-use-2025-01-24"])
-    );
-
-    let old_version = fixture::params_from(r#"{"tools":[{"type":"computer_20241022"}]}"#);
-    let old_headers = validated(&[], &old_version, settings);
-    assert_eq!(
-        fixture::beta_tokens(&old_headers),
-        BTreeSet::from(["computer-use-2024-10-22"])
-    );
-
-    let custom = fixture::params_from(r#"{"tools":[{"type":"custom_20250101"}]}"#);
-    let custom_headers = validated(&[], &custom, settings);
-    assert!(!custom_headers.values.contains_key(OAUTH_BETA_HEADER_NAME));
-}
-
-fn mcp_server_betas(settings: &AnthropicSettings) {
-    let servers = fixture::params_from(r#"{"mcp_servers":[{"type":"url","name":"docs"}]}"#);
-    let with_servers = validated(&[], &servers, settings);
-    assert_eq!(
-        fixture::beta_tokens(&with_servers),
-        BTreeSet::from([MCP_CLIENT_BETA])
-    );
-
-    let empty = fixture::params_from(r#"{"mcp_servers":[]}"#);
-    let empty_servers = validated(&[], &empty, settings);
-    assert!(!empty_servers.values.contains_key(OAUTH_BETA_HEADER_NAME));
-}
-
-fn combined_betas(settings: &AnthropicSettings) {
-    let messages = vec![fixture::json(
-        r#"{"role":"user","content":"hi","output_config":{"effort":"high"}}"#,
-    )];
-    let params = fixture::params_from(r#"{"thinking":{"type":"adaptive","display":"updates"}}"#);
-    let combined = validated(&messages, &params, settings);
-    assert_eq!(
-        fixture::beta_tokens(&combined),
-        BTreeSet::from([OUTPUT_CONFIG_BETA, THINKING_DISPLAY_BETA])
-    );
+fn assert_conversation_beta_scenario(
+    scenario: &ConversationBetaScenario,
+    settings: &AnthropicSettings,
+) {
+    let messages: Vec<Json> = scenario.message.map(fixture::json).into_iter().collect();
+    let params = scenario
+        .params
+        .map_or_else(fixture::params, fixture::params_from);
+    let headers = validated(&messages, &params, settings);
+    if scenario.absent {
+        assert!(!headers.values.contains_key(OAUTH_BETA_HEADER_NAME));
+    } else {
+        assert_beta_tokens(&headers, scenario.expected_tokens);
+    }
 }
 
 fn header_merge_precedence_case() {
     merged_headers_apply_caller_and_base();
-    explicit_api_base_wins();
-    explicit_base_without_bearer();
-    bearer_flag_off_keeps_key();
+    for scenario in &EXPLICIT_BASE_SCENARIOS {
+        assert_explicit_base_scenario(scenario);
+    }
 }
 
 fn precedence_caller_headers() -> IndexMap<String, String> {
@@ -913,52 +933,45 @@ fn merged_headers_apply_caller_and_base() {
     assert!(!merged.values.contains_key(X_API_KEY));
 }
 
-fn explicit_api_base_wins() {
-    let settings = fixture::settings(Some("sk-ant-api03-fixture"), None);
-    let params = fixture::params();
-    let messages = Vec::new();
-    let caller_headers = precedence_caller_headers();
-    let litellm_params = custom_base_params();
-    let mut request = caller_request(&caller_headers, &litellm_params, &messages, &params);
-    request.api_base = Some("https://api.anthropic.com");
-    let explicit = validate_environment(&request, &settings).unwrap();
-    assert_eq!(
-        fixture::header(&explicit, X_API_KEY),
-        Some("sk-ant-api03-fixture")
-    );
-    assert!(!explicit.values.contains_key(AUTHORIZATION_HEADER));
+struct ExplicitBaseScenario {
+    litellm_api_base: Option<&'static str>,
+    litellm_bearer: bool,
+    request_api_base: &'static str,
 }
 
-fn explicit_base_without_bearer() {
-    let settings = fixture::settings(Some("sk-ant-api03-fixture"), None);
-    let params = fixture::params();
-    let messages = Vec::new();
-    let caller_headers = precedence_caller_headers();
-    let default_params = HeaderLiteLlmParams::default();
-    let mut request = caller_request(&caller_headers, &default_params, &messages, &params);
-    request.api_base = Some("https://anthropic-proxy.example");
-    let custom_explicit = validate_environment(&request, &settings).unwrap();
-    assert_eq!(
-        fixture::header(&custom_explicit, X_API_KEY),
-        Some("sk-ant-api03-fixture")
-    );
-}
+const EXPLICIT_BASE_SCENARIOS: [ExplicitBaseScenario; 3] = [
+    ExplicitBaseScenario {
+        litellm_api_base: Some("https://anthropic-proxy.example"),
+        litellm_bearer: true,
+        request_api_base: "https://api.anthropic.com",
+    },
+    ExplicitBaseScenario {
+        litellm_api_base: None,
+        litellm_bearer: false,
+        request_api_base: "https://anthropic-proxy.example",
+    },
+    ExplicitBaseScenario {
+        litellm_api_base: Some("https://anthropic-proxy.example"),
+        litellm_bearer: false,
+        request_api_base: "https://anthropic-proxy.example",
+    },
+];
 
-fn bearer_flag_off_keeps_key() {
+fn assert_explicit_base_scenario(scenario: &ExplicitBaseScenario) {
     let settings = fixture::settings(Some("sk-ant-api03-fixture"), None);
     let params = fixture::params();
     let messages = Vec::new();
     let caller_headers = precedence_caller_headers();
-    let bearer_off = HeaderLiteLlmParams {
-        api_base: Some("https://anthropic-proxy.example".to_owned()),
-        use_bearer_for_custom_base: false,
+    let litellm_params = HeaderLiteLlmParams {
+        api_base: scenario.litellm_api_base.map(str::to_owned),
+        use_bearer_for_custom_base: scenario.litellm_bearer,
     };
-    let mut request = caller_request(&caller_headers, &bearer_off, &messages, &params);
-    request.api_base = Some("https://anthropic-proxy.example");
-    let plain = validate_environment(&request, &settings).unwrap();
-    assert_eq!(
-        fixture::header(&plain, X_API_KEY),
-        Some("sk-ant-api03-fixture")
+    let mut request = caller_request(&caller_headers, &litellm_params, &messages, &params);
+    request.api_base = Some(scenario.request_api_base);
+    let headers = validate_environment(&request, &settings).unwrap();
+    assert_header_expectations(
+        &headers,
+        &[(X_API_KEY, "sk-ant-api03-fixture")],
+        &[AUTHORIZATION_HEADER],
     );
-    assert!(!plain.values.contains_key(AUTHORIZATION_HEADER));
 }
