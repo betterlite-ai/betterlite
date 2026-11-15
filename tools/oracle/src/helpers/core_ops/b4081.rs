@@ -48,7 +48,9 @@ impl cost::PriceMap for CasePrices<'_> {
         let usage = chat_text::field(response, "usage")?;
         let prompt = token_count(usage, "prompt_tokens")?;
         let completion = token_count(usage, "completion_tokens")?;
-        Some(price.prompt * Decimal::from(prompt) + price.completion * Decimal::from(completion))
+        let prompt_charge = price.prompt.checked_mul(Decimal::from(prompt))?;
+        let completion_charge = price.completion.checked_mul(Decimal::from(completion))?;
+        prompt_charge.checked_add(completion_charge)
     }
 }
 
