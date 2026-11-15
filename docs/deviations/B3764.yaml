@@ -1,0 +1,6 @@
+task: B3764
+deviations:
+  - what: A lone UTF-16 surrogate in content (a JSON \ud800 escape with no pair) is never hashed or stored, because betterlite's JSON parser refuses it before the guardrail runs. LiteLLM hashes and stores such content with surrogatepass.
+    why: A Rust string holds only valid UTF-8, so there is no lone surrogate to hash. Every string that can reach the store hashes and measures exactly as LiteLLM does, since a valid string encodes the same under surrogatepass and strict UTF-8.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L249-L257
+kept_bugs: []

@@ -1,0 +1,88 @@
+kind: helper
+name: agentic-loop-anthropic
+call:
+  b3764: {
+      "seed": {
+        "scope": "hash-a",
+        "call_id": "call-1",
+        "originals": {
+          "47080470c1aeb2a10e9df746": "original one",
+          "29e0e91a3bcefa7f8d341741": "original two"
+        }
+      },
+      "call": {
+        "scope": "hash-a",
+        "call_id": "call-1",
+        "model": "gpt-4o",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ],
+        "response": {
+          "content": [
+            {
+              "type": "text",
+              "text": "let me look"
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_0",
+              "name": "compresr_retrieve",
+              "input": {
+                "hash": "47080470c1aeb2a10e9df746"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_1",
+              "name": "compresr_retrieve",
+              "input": {
+                "hash": "29e0e91a3bcefa7f8d341741"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_other",
+              "name": "search",
+              "input": {}
+            }
+          ]
+        },
+        "request_tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "compresr_retrieve",
+              "description": "Retrieve original content.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hash"
+                ]
+              }
+            }
+          }
+        ],
+        "optional_params": {
+          "max_tokens": 256,
+          "temperature": 0.5
+        },
+        "kwargs": {
+          "litellm_call_id": "call-1",
+          "metadata": {
+            "user": "u"
+          },
+          "_compresr_state": 1
+        }
+      }
+    }
+env: {}
+compare:
+  ignore: []

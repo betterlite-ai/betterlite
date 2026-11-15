@@ -1,0 +1,78 @@
+kind: helper
+name: recovery-store-scoped
+call:
+  b3764: {
+      "seed": {
+        "scope": "hash-a",
+        "call_id": "call-1",
+        "originals": {
+          "47080470c1aeb2a10e9df746": "original one",
+          "29e0e91a3bcefa7f8d341741": "original two"
+        }
+      },
+      "call": {
+        "scope": "hash-b",
+        "call_id": "call-1",
+        "model": "gpt-4o",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ],
+        "response": {
+          "choices": [
+            {
+              "message": {
+                "content": "thinking",
+                "tool_calls": [
+                  {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                      "name": "compresr_retrieve",
+                      "arguments": "{\"hash\": \"47080470c1aeb2a10e9df746\"}"
+                    }
+                  },
+                  {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {
+                      "name": "search",
+                      "arguments": "{}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "request_tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "compresr_retrieve",
+              "description": "Retrieve original content.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hash"
+                ]
+              }
+            }
+          }
+        ],
+        "optional_params": {},
+        "kwargs": {
+          "litellm_call_id": "call-1"
+        }
+      }
+    }
+env: {}
+compare:
+  ignore: []
