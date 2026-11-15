@@ -50,10 +50,29 @@ pub struct RedisDistributedLock<Client> {
     pub namespace: Option<String>,
 }
 
-impl<Client> RedisDistributedLock<Client> {
+impl<Client: RedisCommands> RedisDistributedLock<Client> {
     fn namespaced(&self, key: &str) -> String {
         check_and_fix_namespace(self.namespace.as_deref(), Some(key))
             .unwrap_or_else(|| key.to_owned())
+    }
+
+    async fn run_command(&self, command: &Cmd) -> Result<Value, CommandError> {
+        let result = self.client.run(command).await;
+        if let Err(error) = &result {
+            tracing::warn!(%error, "redis distributed lock command failed");
+        }
+        result
+    }
+
+    fn eval_if_owner(&self, script: &'static str, key: &str, token: &str) -> Cmd {
+        let mut command = Cmd::new();
+        command
+            .arg("EVAL")
+            .arg(script)
+            .arg(1)
+            .arg(self.namespaced(key))
+            .arg(token);
+        command
     }
 }
 
@@ -68,58 +87,27 @@ impl<Client: RedisCommands> DistributedLock for RedisDistributedLock<Client> {
             .arg("NX")
             .arg("PX")
             .arg(ttl.as_millis());
-        match self.client.run(&command).await {
+        match self.run_command(&command).await {
             Ok(Value::Nil) => LockAcquisition::Held,
             Ok(_value) => LockAcquisition::Acquired,
-            Err(error) => {
-                tracing::warn!(%error, "redis distributed lock acquire failed");
-                LockAcquisition::Error
-            }
+            Err(_error) => LockAcquisition::Error,
         }
     }
 
     async fn extend(&self, key: &str, token: &str, ttl: Duration) -> bool {
-        let mut command = Cmd::new();
-        command
-            .arg("EVAL")
-            .arg(EXTEND_IF_OWNER)
-            .arg(1)
-            .arg(self.namespaced(key))
-            .arg(token)
-            .arg(ttl.as_millis());
-        match self.client.run(&command).await {
-            Ok(Value::Int(1)) => true,
-            Ok(_value) => false,
-            Err(error) => {
-                tracing::warn!(%error, "redis distributed lock extend failed");
-                false
-            }
-        }
+        let mut command = self.eval_if_owner(EXTEND_IF_OWNER, key, token);
+        command.arg(ttl.as_millis());
+        matches!(self.run_command(&command).await, Ok(Value::Int(1)))
     }
 
     async fn release(&self, key: &str, token: &str) {
-        let mut command = Cmd::new();
-        command
-            .arg("EVAL")
-            .arg(RELEASE_IF_OWNER)
-            .arg(1)
-            .arg(self.namespaced(key))
-            .arg(token);
-        if let Err(error) = self.client.run(&command).await {
-            tracing::warn!(%error, "redis distributed lock release failed");
-        }
+        let command = self.eval_if_owner(RELEASE_IF_OWNER, key, token);
+        drop(self.run_command(&command).await);
     }
 
     async fn is_held(&self, key: &str) -> bool {
         let mut command = Cmd::new();
         command.arg("EXISTS").arg(self.namespaced(key));
-        match self.client.run(&command).await {
-            Ok(Value::Int(count)) => count > 0,
-            Ok(_value) => false,
-            Err(error) => {
-                tracing::warn!(%error, "redis distributed lock is_held failed");
-                false
-            }
-        }
+        matches!(self.run_command(&command).await, Ok(Value::Int(count)) if count > 0)
     }
 }

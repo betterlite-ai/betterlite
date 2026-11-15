@@ -275,11 +275,8 @@ async fn a_failed_refresh_is_returned_and_still_releases() {
 #[tokio::test(start_paused = true)]
 async fn a_cancelled_run_leaves_the_lease_to_expire() {
     let lock = FakeLock::new(vec![LockAcquisition::Acquired]);
-    let run = coordinator(lock.clone(), tunables()).run(
-        key(),
-        delayed(Duration::from_secs(30)),
-        reread(),
-    );
+    let coordinator = coordinator(lock.clone(), tunables());
+    let run = coordinator.run(key(), delayed(Duration::from_secs(30)), reread());
     let expired = tokio::time::timeout(Duration::from_millis(20), run).await;
     assert!(expired.is_err());
     let events = lock.events();

@@ -31,7 +31,8 @@ from litellm.proxy._experimental.mcp_server.outbound_credentials.types import (
 )
 from litellm.types.llms.custom_http import httpxSpecialProvider
 from litellm.types.utils import LlmProviders
-from pydantic import JsonValue as Json, SecretStr
+from pydantic import JsonValue as Json
+from pydantic import SecretStr
 
 T = TypeVar("T")
 HEX_LENGTH = 32
@@ -231,11 +232,11 @@ class ScriptedTokens:
     async def refresh(self) -> OAuthToken | None:
         self.refreshes += 1
         await asyncio.sleep(0.05)
-        return OAuthToken(access_token="fresh")
+        return OAuthToken(access_token="fresh")  # noqa: S106
 
     async def reread(self) -> OAuthToken | None:
         self.rereads += 1
-        return OAuthToken(access_token="reread")
+        return OAuthToken(access_token="reread")  # noqa: S106
 
 
 async def run_case() -> Json:

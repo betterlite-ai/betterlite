@@ -40,7 +40,7 @@ pub struct RedisRefreshCoordinator<Lock, Output, Error> {
     pub lock: Lock,
     pub tunables: RedisTunables,
     pub new_token: fn() -> String,
-    marker: PhantomData<fn() -> (Output, Error)>,
+    pub marker: PhantomData<fn() -> (Output, Error)>,
 }
 
 impl<Lock, Output, Error> RedisRefreshCoordinator<Lock, Output, Error> {

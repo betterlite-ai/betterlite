@@ -62,16 +62,12 @@ fn lock(
     )
 }
 
-fn namespaced(
+fn with_namespace(
+    mut lock: RedisDistributedLock<Arc<FakeRedis>>,
     namespace: &str,
-    replies: Vec<Result<Value, CommandError>>,
-) -> (RedisDistributedLock<Arc<FakeRedis>>, Arc<FakeRedis>) {
-    let (lock, redis) = lock(replies);
-    let lock = RedisDistributedLock {
-        client: lock.client,
-        namespace: Some(namespace.to_owned()),
-    };
-    (lock, redis)
+) -> RedisDistributedLock<Arc<FakeRedis>> {
+    lock.namespace = Some(namespace.to_owned());
+    lock
 }
 
 fn commands(redis: &FakeRedis) -> Vec<Vec<String>> {
@@ -191,7 +187,8 @@ async fn is_held_is_false_on_a_backend_failure() {
 
 #[tokio::test]
 async fn every_key_carries_the_namespace() {
-    let (lock, redis) = namespaced("ns", vec![Ok(Value::Okay), Ok(Value::Int(1))]);
+    let (lock, redis) = lock(vec![Ok(Value::Okay), Ok(Value::Int(1))]);
+    let lock = with_namespace(lock, "ns");
     assert_eq!(
         lock.acquire(KEY, TOKEN, ttl()).await,
         LockAcquisition::Acquired
@@ -204,14 +201,16 @@ async fn every_key_carries_the_namespace() {
 
 #[tokio::test]
 async fn an_already_prefixed_key_keeps_one_namespace() {
-    let (lock, redis) = namespaced("ns", vec![Ok(Value::Int(0))]);
+    let (lock, redis) = lock(vec![Ok(Value::Int(0))]);
+    let lock = with_namespace(lock, "ns");
     assert!(!lock.is_held("ns:already-prefixed").await);
     assert_eq!(commands(&redis)[0], vec!["EXISTS", "ns:already-prefixed"]);
 }
 
 #[tokio::test]
 async fn an_empty_namespace_leaves_keys_bare() {
-    let (lock, redis) = namespaced("", vec![Ok(Value::Int(0))]);
+    let (lock, redis) = lock(vec![Ok(Value::Int(0))]);
+    let lock = with_namespace(lock, "");
     assert!(!lock.is_held(KEY).await);
     assert_eq!(commands(&redis)[0], vec!["EXISTS", KEY]);
 }
