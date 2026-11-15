@@ -12,8 +12,8 @@ pub fn filter_context_management(request: &mut Object, betas: &mut BTreeSet<Stri
     let Some(Json::Object(management)) = request.get("context_management") else {
         return;
     };
-    let management = management.clone();
-    let Some(Json::List(edits)) = management.get("edits") else {
+    let mut updated = management.clone();
+    let Some(Json::List(edits)) = updated.get("edits") else {
         request.shift_remove("context_management");
         return;
     };
@@ -28,7 +28,6 @@ pub fn filter_context_management(request: &mut Object, betas: &mut BTreeSet<Stri
         request.shift_remove("context_management");
         return;
     }
-    let mut updated = management;
     updated.insert("edits".to_owned(), Json::List(retained));
     request.insert("context_management".to_owned(), Json::Object(updated));
 }

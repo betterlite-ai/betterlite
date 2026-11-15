@@ -28,7 +28,7 @@ fn call_with(header: &str) -> Call {
     call
 }
 
-pub(super) fn run() {
+pub(crate) fn run() {
     let (_guard, logs) = capture_logs();
 
     // only the betas the provider can never map are reported, sorted like Python renders them

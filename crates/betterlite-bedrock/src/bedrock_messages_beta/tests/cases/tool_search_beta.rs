@@ -1,4 +1,4 @@
-use super::super::super::support::{Call, Fixture, Session, headers, list};
+use crate::bedrock_messages_beta::tests::support::{Call, Fixture, Session, headers, list};
 
 const SEARCH: &str = r#"[{"type": "tool_search_tool_regex_20251119", "name": "tool_search"}]"#;
 const WITH_EXAMPLES: &str = r#"[{"type": "tool_search_tool_regex_20251119", "name": "tool_search", "input_examples": [{"query": "x"}]}]"#;
@@ -22,7 +22,7 @@ fn betas(tools: &str, header: &str, model: &str, provider: Option<&str>) -> Vec<
         .expect("the beta headers resolve")
 }
 
-pub(super) fn run() {
+pub(crate) fn run() {
     // supported: the advanced beta is discarded and the Bedrock tool-search beta replaces it
     assert_eq!(
         betas(SEARCH, ADVANCED, "fixture-tool-search", None),

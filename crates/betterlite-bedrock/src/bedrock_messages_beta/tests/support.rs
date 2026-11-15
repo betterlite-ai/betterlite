@@ -92,17 +92,17 @@ pub(super) fn js(text: &str) -> Json {
 }
 
 pub(super) fn obj(text: &str) -> Object {
-    let Some(Json::Object(object)) = js(text) else {
-        panic!("fixture JSON is an object");
-    };
-    object
+    match js(text) {
+        Json::Object(object) => object,
+        other => panic!("fixture JSON is an object, not {other:?}"),
+    }
 }
 
 pub(super) fn list(text: &str) -> Vec<Json> {
-    let Some(Json::List(items)) = js(text) else {
-        panic!("fixture JSON is a list");
-    };
-    items
+    match js(text) {
+        Json::List(items) => items,
+        other => panic!("fixture JSON is a list, not {other:?}"),
+    }
 }
 
 pub(super) fn headers(text: &str) -> BTreeMap<String, BetaHeader> {
@@ -142,7 +142,7 @@ impl Call {
             params: &self.params,
             headers: &self.header_values,
             outgoing: &mut self.outgoing,
-            injected_thinking_for_clear_thinking: self.injected,
+            clear_thinking_injected: self.injected,
             subclass_provider: self.subclass_provider.as_deref(),
         }
     }
@@ -187,9 +187,13 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Self {
+        let entries =
+            ModelCostMap::parse(MODEL_COST.as_bytes()).expect("the model cost map parses");
+        let patterns = CandidatePatterns::new().expect("the candidate patterns compile");
+        let runtime = serde_json::from_str(MODEL_COST).expect("the raw catalog parses");
         let mut bundled = BundledCatalog::default();
         Self {
-            entries: ModelCostMap::parse(MODEL_COST.as_bytes()).expect("the model cost map parses"),
+            entries,
             typed: ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("an empty catalog"),
             packaged: bundled.get(),
             provider_catalog: Catalog::new(),
@@ -200,8 +204,8 @@ impl Fixture {
             known_model_names: BTreeSet::new(),
             custom_providers: BTreeSet::new(),
             environment: BTreeMap::new(),
-            patterns: CandidatePatterns::new().expect("the candidate patterns compile"),
-            runtime: serde_json::from_str(MODEL_COST).expect("the raw catalog parses"),
+            patterns,
+            runtime,
             unlisted: RawCatalog::new(),
         }
     }

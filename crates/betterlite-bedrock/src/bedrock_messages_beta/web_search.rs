@@ -21,10 +21,7 @@ impl WebSearchError {
     }
 }
 
-pub fn reject_unsupported_web_search_tools(
-    request: &Object,
-    model: &str,
-) -> Result<(), WebSearchError> {
+pub fn reject_web_search_tools(request: &Object, model: &str) -> Result<(), WebSearchError> {
     let Some(Json::List(tools)) = request.get("tools") else {
         return Ok(());
     };

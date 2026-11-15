@@ -7,7 +7,7 @@ const TOOL_SEARCH: &str = r#"[{"type": "tool_search_tool_regex_20251119", "name"
 const ADVANCED: &str = "advanced-tool-use-2025-11-20";
 const TOOL_SEARCH_BETA: &str = "tool-search-tool-2025-10-19";
 
-pub(super) fn run() {
+pub(crate) fn run() {
     assert_eq!(CUSTOM_LLM_PROVIDER, "bedrock");
     assert_eq!(beta_headers_provider(None), "bedrock");
     assert_eq!(beta_headers_provider(Some("")), "bedrock");

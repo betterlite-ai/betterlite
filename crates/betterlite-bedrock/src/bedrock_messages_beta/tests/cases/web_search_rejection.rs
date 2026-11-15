@@ -1,17 +1,15 @@
 use crate::bedrock_messages_beta::tests::support::obj;
-use crate::bedrock_messages_beta::web_search::{
-    WebSearchError, reject_unsupported_web_search_tools,
-};
+use crate::bedrock_messages_beta::web_search::{WebSearchError, reject_web_search_tools};
 
 const MODEL: &str = "claude-opus-4-5";
 
 const MESSAGE: &str = "Bedrock does not support Anthropic's server-side web search tool (tool type 'web_search_20250305', model 'claude-opus-4-5'). To use web search with this model, enable LiteLLM's web search interception so the proxy executes the search instead: https://docs.litellm.ai/docs/integrations/websearch_interception. Alternatively, remove the web_search tool from the request.";
 
 fn reject(tools: &str) -> Result<(), WebSearchError> {
-    reject_unsupported_web_search_tools(&obj(tools), MODEL)
+    reject_web_search_tools(&obj(tools), MODEL)
 }
 
-pub(super) fn run() {
+pub(crate) fn run() {
     assert!(reject(r#"{"max_tokens": 8}"#).is_ok());
     assert!(reject(r#"{"tools": "web_search_20250305"}"#).is_ok());
     assert!(reject(r#"{"tools": {"type": "web_search_20250305"}}"#).is_ok());

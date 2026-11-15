@@ -10,7 +10,7 @@ fn resolve(call: &mut Call) -> Vec<String> {
         .expect("the beta headers resolve")
 }
 
-pub(super) fn run() {
+pub(crate) fn run() {
     // auto betas read the original tools and messages, and the extras add their own
     let mut call = Call::default();
     call.model = "claude-sonnet-4-5".to_owned();

@@ -27,7 +27,7 @@ fn filtered(request: &str) -> (Object, BTreeSet<String>) {
     (request, betas)
 }
 
-pub(super) fn run() {
+pub(crate) fn run() {
     let (_guard, logs) = capture_logs();
 
     // a non-object context_management is left for someone else

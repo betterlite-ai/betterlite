@@ -39,7 +39,7 @@ const ALLOWED_ORDER: [&str; 16] = [
     "anthropic_version",
 ];
 
-pub(super) fn run() {
+pub(crate) fn run() {
     let (_guard, logs) = capture_logs();
 
     let request = obj(
