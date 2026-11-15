@@ -56,7 +56,7 @@ class _Response(httpx.Response):
 class _Handler:
     def __init__(self, replies: list[Reply]) -> None:
         self._replies = replies
-        self.requests: list[dict[str, JsonValue]] = []
+        self.requests: list[JsonValue] = []
 
     def _record(
         self, method: str, url: str, headers: dict[str, str], body: JsonValue
@@ -146,9 +146,6 @@ class SandboxToolRegistry(Protocol):
     def resolve_sandbox_tool(self, name: str) -> dict[str, JsonValue] | None: ...
 
 
-TOOLS: Final[SandboxToolRegistry] = sandbox_tools
-
-
 def config_for(provider: str) -> SandboxConfig:
     config = ProviderConfigManager.get_provider_sandbox_config(SandboxProviders(provider))
     if config is None:
@@ -186,16 +183,17 @@ def create_sandbox(
     )
 
 
-def registry_answer(input_value: Input) -> JsonValue:
+def registry_answer(input_value: Input, registry: SandboxToolRegistry) -> JsonValue:
     tools = input_value.get("tools")
     names = input_value.get("names")
     if tools is None or names is None:
         raise ValueError("the registry operation needs tools and names")
-    TOOLS.register_sandbox_tools(tools)
+    registry.register_sandbox_tools(tools)
     resolved: dict[str, JsonValue] = {}
     for name in names:
-        resolved[name] = TOOLS.resolve_sandbox_tool(name)
-    return JSON.validate_python({"resolved": resolved})
+        resolved[name] = registry.resolve_sandbox_tool(name)
+    answer: dict[str, JsonValue] = {"resolved": resolved}
+    return JSON.validate_python(answer)
 
 
 def create_answer(input_value: Input) -> JsonValue:
@@ -204,12 +202,11 @@ def create_answer(input_value: Input) -> JsonValue:
         raise ValueError("the create operation needs a provider")
     handler = handler_for(input_value)
     handle = create_sandbox(config_for(provider), input_value, handler)
-    return JSON.validate_python(
-        {
-            "requests": handler.requests,
-            "handle": JSON.validate_json(handle.model_dump_json()),
-        }
-    )
+    answer: dict[str, JsonValue] = {
+        "requests": handler.requests,
+        "handle": JSON.validate_json(handle.model_dump_json()),
+    }
+    return JSON.validate_python(answer)
 
 
 def create_and_run_answer(input_value: Input) -> JsonValue:
@@ -235,13 +232,12 @@ def create_and_run_answer(input_value: Input) -> JsonValue:
             client=handler,
         )
     )
-    return JSON.validate_python(
-        {
-            "requests": handler.requests,
-            "handle": JSON.validate_json(handle.model_dump_json()),
-            "result": JSON.validate_json(result.model_dump_json()),
-        }
-    )
+    answer: dict[str, JsonValue] = {
+        "requests": handler.requests,
+        "handle": JSON.validate_json(handle.model_dump_json()),
+        "result": JSON.validate_json(result.model_dump_json()),
+    }
+    return JSON.validate_python(answer)
 
 
 def delete_answer(input_value: Input) -> JsonValue:
@@ -258,7 +254,8 @@ def delete_answer(input_value: Input) -> JsonValue:
             client=handler,
         )
     )
-    return JSON.validate_python({"requests": handler.requests, "deleted": deleted})
+    answer: dict[str, JsonValue] = {"requests": handler.requests, "deleted": deleted}
+    return JSON.validate_python(answer)
 
 
 def run(input_value: Input) -> JsonValue:
@@ -268,7 +265,7 @@ def run(input_value: Input) -> JsonValue:
             os.environ[name] = value
     operation = input_value["operation"]
     if operation == "registry":
-        return registry_answer(input_value)
+        return registry_answer(input_value, sandbox_tools)
     if operation == "create":
         return create_answer(input_value)
     if operation == "create_and_run":
