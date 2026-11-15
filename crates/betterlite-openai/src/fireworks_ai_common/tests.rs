@@ -96,6 +96,7 @@ fn generated() -> Option<SessionMetadata> {
 #[case::empty_litellm_session_skipped(params(Some(""), Some("two"), None), Some("two"))]
 #[case::empty_session_skipped(params(Some(""), Some(""), Some(SessionMetadata { litellm_session_id_generated: Some(false), session_id: Some("three".to_owned()) })), Some("three"))]
 #[case::generated_marker_returns_none(params(Some("one"), Some("two"), generated()), None)]
+#[case::empty_metadata_session_skipped(params(None, None, Some(SessionMetadata { litellm_session_id_generated: None, session_id: Some(String::new()) })), None)]
 #[case::no_session_id(params(None, None, None), None)]
 fn get_session_id_follows_the_litellm_order(
     #[case] params: SessionParams,
