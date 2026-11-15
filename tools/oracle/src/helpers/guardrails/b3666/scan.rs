@@ -10,11 +10,16 @@ use super::{Data, Settings, guardrail_of};
 
 const SCAN_TTL_SECONDS: i64 = 3600;
 
+#[derive(Default)]
+struct CacheState {
+    entries: BTreeMap<String, Vec<String>>,
+    last: Vec<String>,
+}
+
 // Stands in for DualCache and keeps the last list written, as the Python probe does
 #[derive(Default)]
 struct Store {
-    entries: Mutex<BTreeMap<String, Vec<String>>>,
-    last: Mutex<Vec<String>>,
+    state: Mutex<CacheState>,
 }
 
 impl ScanCacheStore for Store {
@@ -24,12 +29,8 @@ impl ScanCacheStore for Store {
         &self,
         key: &str,
     ) -> impl Future<Output = Result<Option<Vec<String>>, Infallible>> + Send {
-        ready(Ok(self
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(key)
-            .cloned()))
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        ready(Ok(state.entries.get(key).cloned()))
     }
 
     fn set(
@@ -38,14 +39,9 @@ impl ScanCacheStore for Store {
         hashes: Vec<String>,
         _ttl_seconds: i64,
     ) -> impl Future<Output = Result<(), Infallible>> + Send {
-        self.last
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone_from(&hashes);
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), hashes);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.last.clone_from(&hashes);
+        state.entries.insert(key.to_owned(), hashes);
         ready(Ok(()))
     }
 }
@@ -78,9 +74,10 @@ pub(super) async fn scan(
             .mark_texts_scanned(texts, data, &store, SCAN_TTL_SECONDS)
             .await;
         let last = store
-            .last
+            .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .last
             .clone();
         return json!(last);
     }
