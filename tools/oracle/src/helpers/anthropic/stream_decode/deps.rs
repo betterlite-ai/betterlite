@@ -6,7 +6,7 @@ use betterlite_anthropic::usage::ReasoningTokenCounter;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::helpers::{HelperCall, HelperError, OrHelperError, invoke};
+use crate::helpers::{HelperCall, HelperError, OrHelperError as _, invoke};
 
 pub(super) struct FixedIds {
     values: Mutex<VecDeque<Uuid>>,

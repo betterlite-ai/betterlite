@@ -16,7 +16,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError};
+use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 use deps::{FixedIds, TokenCountFailure, TokenizerCounter};
 
