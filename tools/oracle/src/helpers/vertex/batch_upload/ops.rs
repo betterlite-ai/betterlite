@@ -167,8 +167,12 @@ fn build_mappers() -> Result<Mappers, Box<HelperError>> {
     Ok(Mappers { cache })
 }
 
-fn thinking_settings() -> ThinkingSettings {
-    ThinkingSettings {
+pub(super) fn run(input: &Input) -> HelperResult {
+    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let mappers = build_mappers()?;
+    let options = OptionSettings::default();
+    let schema = SchemaSettings::default();
+    let thinking = ThinkingSettings {
         budgets: ThinkingBudgets {
             minimal: 128,
             minimal_flash: 1,
@@ -180,15 +184,7 @@ fn thinking_settings() -> ThinkingSettings {
             disable: 0,
         },
         default_thinking_level_low: false,
-    }
-}
-
-pub(super) fn run(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-    let mappers = build_mappers()?;
-    let options = OptionSettings::default();
-    let schema = SchemaSettings::default();
-    let thinking = thinking_settings();
+    };
     let context = RowContext {
         mappers: &mappers,
         fetcher: &NoFetch,

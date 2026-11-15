@@ -58,9 +58,9 @@ where
 }
 
 // one Vertex row per chunk, LF before every row but the first, and the next line is read only once the rows in hand are sent
-async fn next_chunk<'ctx, Mappers, Fetcher>(
-    mut state: RowState<'ctx, Mappers, Fetcher>,
-) -> Result<Option<(Vec<u8>, RowState<'ctx, Mappers, Fetcher>)>, UploadError<Mappers::Error>>
+async fn next_chunk<Mappers, Fetcher>(
+    mut state: RowState<'_, Mappers, Fetcher>,
+) -> Result<Option<(Vec<u8>, RowState<'_, Mappers, Fetcher>)>, UploadError<Mappers::Error>>
 where
     Mappers: RowMappers + Sync,
     Fetcher: RemoteMediaFetcher + Sync,

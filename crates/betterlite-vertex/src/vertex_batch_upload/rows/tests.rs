@@ -54,7 +54,7 @@ async fn first_failure(line: &str) -> String {
     &[r#"{"key": "s%2F%201", "request": {"content": {"parts": [{"text": "x"}]}}}"#]
 )]
 #[case::ascii_json_bytes(
-    r#"{"custom_id":"só","url":"/v1/embeddings","body":{"input":"é😀"}}"#,
+    r#"{"custom_id":"s\u00f3","url":"/v1/embeddings","body":{"input":"\u00e9\ud83d\ude00"}}"#,
     &[r#"{"key": "s%C3%B3", "request": {"content": {"parts": [{"text": "\u00e9\ud83d\ude00"}]}}}"#]
 )]
 #[case::no_custom_id_no_key(
@@ -171,6 +171,17 @@ async fn chat_options(#[case] option: &str, #[case] expected: &str) {
     ))
     .await;
     assert!(rows.first().unwrap().contains(expected));
+}
+
+#[tokio::test]
+async fn chat_key_order() {
+    let body = r#""model":"gemini-2.0-flash","messages":[{"role":"user","content":"hi"}],"temperature":0.5,"max_tokens":16"#;
+    let rows = rows_of(&format!(
+        r#"{{"custom_id":"a","url":"/v1/chat/completions","body":{{{body}}}}}"#
+    ))
+    .await;
+    let text = rows.first().unwrap();
+    assert!(text.starts_with(r#"{"request": {"contents": [{"role": "user", "parts": [{"text": "hi"}]}], "generationConfig": {"temperature": 0.5, "max_output_tokens": 16}, "labels": "#));
 }
 
 #[rstest]

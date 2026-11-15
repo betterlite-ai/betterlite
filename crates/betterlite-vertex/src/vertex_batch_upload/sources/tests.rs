@@ -157,8 +157,8 @@ async fn lazy_next_row() {
     assert!(one.first().unwrap().is_ok());
     assert_eq!(counters.reads.load(Ordering::SeqCst), 1);
     assert!(counters.closed.load(Ordering::SeqCst));
-    let (file, _counters) = tracked(&content);
-    let two = upload(file, "batch", &Json::Bool(false), 2).await;
+    let (second, _counters) = tracked(&content);
+    let two = upload(second, "batch", &Json::Bool(false), 2).await;
     assert!(matches!(two.last(), Some(Err(UploadError::Line(_)))));
 }
 
@@ -177,7 +177,7 @@ async fn local_path_close() {
         &context,
         MAX_LINE_BYTES,
     ));
-    assert!(stream.next().await.unwrap().is_ok());
+    stream.next().await.unwrap().unwrap();
     assert!(is_open(&path));
     drop(stream);
     assert!(!is_open(&path));
@@ -221,12 +221,12 @@ async fn tuple_payload_uses_its_content() {
 }
 
 #[rstest]
-#[case::two_full_and_one(FileContent::Bytes(vec![b'x'; 2_097_153]), &[1_048_576, 1_048_576, 1])]
-#[case::exactly_one(FileContent::Bytes(vec![b'x'; 1_048_576]), &[1_048_576])]
-#[case::one_past(FileContent::Bytes(vec![b'x'; 1_048_577]), &[1_048_576, 1])]
+#[case::two_full_and_one(FileContent::Bytes(vec![b'x'; 0x0020_0001]), &[0x0010_0000, 0x0010_0000, 1])]
+#[case::exactly_one(FileContent::Bytes(vec![b'x'; 0x0010_0000]), &[0x0010_0000])]
+#[case::one_past(FileContent::Bytes(vec![b'x'; 0x0010_0001]), &[0x0010_0000, 1])]
 #[case::empty(FileContent::Bytes(Vec::new()), &[])]
-#[case::text_is_one_chunk(FileContent::Text("x".repeat(1_572_864)), &[1_572_864])]
-#[case::handle(FileContent::Handle(Box::new(Cursor::new(vec![b'x'; 1_048_581]))), &[1_048_576, 5])]
+#[case::text_is_one_chunk(FileContent::Text("x".repeat(0x0018_0000)), &[0x0018_0000])]
+#[case::handle(FileContent::Handle(Box::new(Cursor::new(vec![b'x'; 0x0010_0005]))), &[0x0010_0000, 5])]
 #[tokio::test]
 async fn raw_chunk_boundaries(#[case] content: FileContent, #[case] sizes: &[usize]) {
     let chunks = upload(

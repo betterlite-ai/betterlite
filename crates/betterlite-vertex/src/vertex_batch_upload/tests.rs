@@ -19,7 +19,7 @@ use crate::vertex_batch_upload::sources::FileTypes;
 use crate::vertex_batch_upload::upload::error::UploadError;
 use crate::vertex_batch_upload::upload::vertex_batch_upload;
 
-pub(crate) const MAX_LINE_BYTES: usize = 1_048_576;
+pub(crate) const MAX_LINE_BYTES: usize = 0x0010_0000;
 
 pub(crate) struct Support;
 

@@ -1,5 +1,3 @@
-use std::error::Error as StdError;
-
 use betterlite_models::decisions::text::TextError;
 use thiserror::Error;
 
@@ -8,7 +6,7 @@ use crate::gemini_options::error::GeminiOptionsError;
 use crate::gemini_request::error::BodyError;
 
 #[derive(Debug, Error)]
-pub enum RowError<Mapped: StdError + 'static> {
+pub enum RowError<Mapped> {
     #[error("`{0}` must be {1}")]
     Field(&'static str, &'static str),
     #[error("`input` is required on /v1/embeddings batch requests, but was not provided")]

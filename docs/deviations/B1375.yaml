@@ -3,6 +3,9 @@ deviations:
   - what: A batch line longer than the byte limit the caller passes fails the upload with a typed error, where LiteLLM reads a line of any size into memory.
     why: A file without line breaks would otherwise be held whole in memory, and every input has a limit.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L711
+  - what: Inside a chat row only the top-level keys, the keys of each contents item and the generationConfig keys follow LiteLLM's order, and the keys of tools, parts and other nested objects are alphabetical.
+    why: B1321 builds the Gemini body through serde_json::Value, which sorts keys, and the order is put back only where LiteLLM's order is fixed by its code; the JSON is the same either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1200-L1250
 kept_bugs:
   - what: A developer message is replaced by a system message that keeps only role and content, so its name and every other field are lost.
     why: A working LiteLLM setup sends exactly that Vertex request, and the task fixes the projection.

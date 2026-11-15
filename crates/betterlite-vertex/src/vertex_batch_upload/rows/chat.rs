@@ -18,6 +18,18 @@ use crate::vertex_batch_upload::line::BatchLine;
 use crate::vertex_batch_upload::rows::error::RowError;
 use crate::vertex_batch_upload::rows::{RowContext, RowMappers};
 
+const BODY_ORDER: [&str; 9] = [
+    "contents",
+    "system_instruction",
+    "tools",
+    "toolConfig",
+    "safetySettings",
+    "generationConfig",
+    "cachedContent",
+    "serviceTier",
+    "labels",
+];
+
 // LiteLLM's `body or {}`, then the Responses bridge for a /responses route, then the Gemini body transform
 pub async fn rows<Mappers, Fetcher>(
     line: &BatchLine,
@@ -43,7 +55,8 @@ where
     } else {
         body
     };
-    let mut request = vertex_request(&chat, context).await?;
+    let (mut request, optional) = vertex_request(&chat, context).await?;
+    restore_key_order(&mut request, &optional);
     if let Some(custom_id) = &line.custom_id {
         attach_labels::<Mappers::Error>(&mut request, custom_id)?;
     }
@@ -73,7 +86,7 @@ where
 async fn vertex_request<Mappers, Fetcher>(
     chat: &Object,
     context: &RowContext<'_, Mappers, Fetcher>,
-) -> Result<IndexMap<String, OutputJson>, RowError<Mappers::Error>>
+) -> Result<(IndexMap<String, OutputJson>, Object), RowError<Mappers::Error>>
 where
     Mappers: RowMappers + Sync,
     Fetcher: RemoteMediaFetcher + Sync,
@@ -107,7 +120,29 @@ where
         schema_template: None,
     };
     let transformed = transform(&input, context.capabilities, context.fetcher).await?;
-    Ok(encode(&transformed.body)?)
+    Ok((encode(&transformed.body)?, optional))
+}
+
+// B1321 builds the body through serde_json::Value, which sorts every object's keys, so the order LiteLLM writes is put back
+fn restore_key_order(request: &mut IndexMap<String, OutputJson>, optional: &Object) {
+    let rank = |name: &String| {
+        BODY_ORDER
+            .iter()
+            .position(|known| known == name)
+            .unwrap_or(BODY_ORDER.len())
+    };
+    request.sort_by(|left, _, right, _| rank(left).cmp(&rank(right)));
+    if let Some(OutputJson::List(items)) = request.get_mut("contents") {
+        for item in items {
+            if let OutputJson::Object(fields) = item {
+                fields.sort_by(|left, _, right, _| (left != "role").cmp(&(right != "role")));
+            }
+        }
+    }
+    if let Some(OutputJson::Object(config)) = request.get_mut("generationConfig") {
+        let position = |name: &String| optional.get_index_of(name).unwrap_or(usize::MAX);
+        config.sort_by(|left, _, right, _| position(left).cmp(&position(right)));
+    }
 }
 
 // LiteLLM maps the whole chat body with drop_params=false, and a key the mapper does not know is ignored

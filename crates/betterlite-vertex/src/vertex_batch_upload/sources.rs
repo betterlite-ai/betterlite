@@ -13,7 +13,7 @@ pub mod error;
 mod tests;
 
 // LiteLLM reads raw uploads in 1 MiB chunks
-const RAW_CHUNK_BYTES: u64 = 1_048_576;
+const RAW_CHUNK_BYTES: u64 = 0x0010_0000;
 
 pub type Reader = Box<dyn AsyncRead + Send + Unpin>;
 

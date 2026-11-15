@@ -20,7 +20,7 @@ pub enum LineError {
 }
 
 // serde_json's own object type sorts keys, and the row builders read these fields in the order the caller sent them
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct BatchLine {
     pub custom_id: Option<String>,
