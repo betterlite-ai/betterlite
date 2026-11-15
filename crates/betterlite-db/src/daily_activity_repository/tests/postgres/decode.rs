@@ -10,8 +10,9 @@ async fn postgres_decode_every_column_type() {
             .query(
                 "SELECT 'a'::text AS t, 'b'::varchar AS v, 'c'::bpchar AS b, 'd'::name AS n,
                         8::int8 AS i8, 4::int4 AS i4, 2::int2 AS i2,
-                        1.5::float8 AS f8, 0.25::float4 AS f4,
-                        NULL::text AS nt, NULL::int8 AS ni, NULL::float8 AS nf",
+                        1.5::float8 AS f8, 0.25::float4 AS f4, 4.5::numeric AS num,
+                        NULL::text AS nt, NULL::int8 AS ni, NULL::float8 AS nf,
+                        NULL::numeric AS nnum",
                 &[],
             )
             .await
@@ -32,9 +33,14 @@ async fn postgres_decode_every_column_type() {
             row.optional::<Decimal>("f4").unwrap(),
             Some(Decimal::new(25, 2))
         );
+        assert_eq!(
+            row.optional::<Decimal>("num").unwrap(),
+            Some(Decimal::new(45, 1))
+        );
         assert_eq!(row.optional::<String>("nt").unwrap(), None);
         assert_eq!(row.optional::<i64>("ni").unwrap(), None);
         assert_eq!(row.optional::<Decimal>("nf").unwrap(), None);
+        assert_eq!(row.optional::<Decimal>("nnum").unwrap(), None);
         assert_eq!(row.integer_if_present("i8").unwrap(), Some(8));
         assert_eq!(row.integer_if_present("ni").unwrap(), None);
         assert_eq!(row.integer_if_present("absent").unwrap(), None);

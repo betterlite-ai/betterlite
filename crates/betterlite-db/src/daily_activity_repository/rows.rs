@@ -185,6 +185,9 @@ fn decode_column(
             .map_err(|source| RowError::Decode { source })?;
         return number_value(value.map(f64::from), name);
     }
+    if column_type == &Type::NUMERIC {
+        return column_value(row, index, DatabaseValue::Number);
+    }
     Err(RowError::UnsupportedColumn {
         column: name.to_owned(),
     })
