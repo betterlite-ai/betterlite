@@ -1,0 +1,26 @@
+task: B8217
+deviations:
+  - what: The initializers return argument structs and register nothing. LiteLLM builds the callback object and adds it to `litellm.logging_callback_manager`.
+    why: The callback classes have their own tasks and B3682 owns the registry and the registration, as with B3681. The structs carry the same data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/__init__.py#L12-L25
+  - what: A refusal is a ThirdPartyInitAError, not a Python ValueError or Exception. The error names the field and never a value that could be a secret.
+    why: Same outcome with a Rust error type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/__init__.py#L24-L26
+  - what: >-
+      A cisco, generic_api or grayswan config that writes optional_params is read through the keys it wrote, plus the on_flagged_action default listed under kept_bugs. LiteLLM validates optional_params as CiscoAIDefenseGuardrailConfigModelOptionalParams for every guardrail, so it also rejects values outside that model's bounds (a timeout below 1 or above 60, a fallback_on_error outside allow and block, an inspection_type outside chat and mcp) at config load and hands the other defaults of that model (inspection_type "chat", fallback_on_error "block", timeout 10.0) to a getattr. betterlite takes only the values the config wrote and checks the types of the reading guardrail.
+    why: >-
+      Those defaults and bounds belong to another guardrail's optional-params model winning pydantic's method resolution order. The cisco helper skips them on purpose, and the generic_api and grayswan fields it would leak into are not Cisco fields, except on_flagged_action.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py#L48-L116
+  - what: The dict branch of the cisco helper, where a null entry of a plain dict optional_params ends the lookup, is not built. A null entry falls through to the top-level param, as it does for the model object a config always produces.
+    why: LitellmParams validates optional_params into a model, so a dict only reaches the helper from code that skips validation, and a config file or the admin API never produces one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/__init__.py#L51-L65
+  - what: The grayswan categories param is read from optional_params only. The top-level categories key is the content filter's list in betterlite's config types, so it never holds Gray Swan's dict.
+    why: LiteLLM's top-level fallback reads the same content filter field, so a dict there fails validation in LiteLLM too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/__init__.py#L48-L52
+kept_bugs:
+  - what: A Gray Swan config that writes optional_params without on_flagged_action gets "block", not Gray Swan's own default "passthrough", because LitellmParams reads optional_params through the Cisco model whose on_flagged_action defaults to "block".
+    why: A setup that tuned only the threshold or the timeout runs with block today, so switching would turn blocked requests into passthrough ones.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py#L95-L102
+  - what: A Gray Swan config with no optional_params and no top-level on_flagged_action gets "monitor", the default of the Pillar mixin's top-level field, instead of "passthrough".
+    why: The Gray Swan fallback reads the top-level litellm_params attribute, which the Pillar config model declares with the default "monitor", and a setup without the key runs in monitor mode today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L750-L760
