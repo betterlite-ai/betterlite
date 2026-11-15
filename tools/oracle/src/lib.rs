@@ -302,7 +302,7 @@ pub fn run() -> Result<ExitCode, OracleError> {
     let options = arguments.options;
     let cases = case::load_cases(&options.paths)?;
     if let Some(operation) = arguments.operation {
-        return runner::run_cases(&options, helper_cases_calling(cases, &operation)?);
+        return runner::run_cases(&options, cli::helper_cases_calling(cases, &operation)?);
     }
     let sdk_cases = case::load_sdk_http_cases(&options.paths)?;
     let probe_cases = case::load_probe_cases(&options.paths)?;
@@ -320,25 +320,4 @@ pub fn run() -> Result<ExitCode, OracleError> {
     } else {
         status
     })
-}
-
-fn helper_cases_calling(
-    cases: Vec<case::LoadedCase>,
-    operation: &str,
-) -> Result<Vec<case::LoadedCase>, OracleError> {
-    let mut selected = Vec::new();
-    for loaded in cases {
-        if let case::LoadedCase::Helper(helper) = &loaded
-            && helper.call.operation == operation
-        {
-            selected.push(loaded);
-        }
-    }
-    if selected.is_empty() {
-        return Err(OracleError::CaseInvalid {
-            path: PathBuf::from("<arguments>"),
-            message: format!("no helper case calls operation {operation}"),
-        });
-    }
-    Ok(selected)
 }

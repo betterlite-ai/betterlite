@@ -562,7 +562,7 @@ fn k_keeps_only_the_helper_cases_calling_the_operation(
     #[case] operation: &str,
     #[case] count: usize,
 ) {
-    let selected = crate::helper_cases_calling(mixed_cases(), operation).unwrap();
+    let selected = crate::cli::helper_cases_calling(mixed_cases(), operation).unwrap();
     assert_eq!(selected.len(), count);
     for loaded in &selected {
         assert!(matches!(loaded, LoadedCase::Helper(helper) if helper.call.operation == operation));
@@ -573,7 +573,7 @@ fn k_keeps_only_the_helper_cases_calling_the_operation(
 #[case::prefix("b47")]
 #[case::http_case_name("test")]
 fn k_fails_when_no_helper_case_calls_the_operation(#[case] operation: &str) {
-    let error = crate::helper_cases_calling(mixed_cases(), operation).unwrap_err();
+    let error = crate::cli::helper_cases_calling(mixed_cases(), operation).unwrap_err();
     assert_eq!(
         error.to_string(),
         format!("invalid case <arguments>: no helper case calls operation {operation}")
