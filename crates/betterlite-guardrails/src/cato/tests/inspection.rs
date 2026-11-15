@@ -283,3 +283,13 @@ fn cato_guardrail_ignores_an_empty_messages_list() {
     let data = body(&[("messages", list(&[]))]);
     assert!(inspection_messages(&data).is_empty());
 }
+
+#[test]
+fn cato_guardrail_skips_extra_sources_that_inspect_no_text() {
+    let data = body(&[
+        ("messages", list(&[object(&[("content", text("chat"))])])),
+        ("instructions", text("")),
+        ("prompt", text("")),
+    ]);
+    assert!(extra_inspection_sources(&data).is_empty());
+}

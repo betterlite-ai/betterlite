@@ -262,6 +262,14 @@ fn cato_guardrail_anonymize_rejects_a_string_batch_of_the_wrong_size() {
 }
 
 #[test]
+fn cato_guardrail_anonymize_rejects_a_string_batch_without_redacted_content() {
+    let mut data = body(&[("input", list(&[text("a"), text("b")]))]);
+    let response = redacted(vec![without_content(), without_content()]);
+    let error = anonymize_request(&response, &mut data).expect_err("mismatch");
+    assert!(matches!(error, CatoError::RedactionMismatch));
+}
+
+#[test]
 fn cato_guardrail_anonymize_passes_through_without_a_redacted_chat() {
     let mut data = body(&[("messages", list(&[object(&[("content", text("hi"))])]))]);
     let original = data.clone();
