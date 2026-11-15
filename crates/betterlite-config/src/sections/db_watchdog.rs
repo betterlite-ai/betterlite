@@ -106,12 +106,22 @@ fn timeout_setting<L>(
 where
     L: EnvironmentLookup,
 {
-    let configured = match lookup.lookup(name) {
-        Some(text) => betterlite_env::number::<f64>(name, &text)?,
-        None => None,
+    let text = lookup.lookup(name).unwrap_or_default();
+    let trimmed = text.trim();
+    // Python's float() reads inf and nan words too, so betterlite_env::number's digit-only check doesn't fit
+    let configured = if trimmed.is_empty() {
+        default
+    } else {
+        trimmed
+            .parse::<f64>()
+            .map_err(|_source| ConfigError::Environment {
+                source: betterlite_env::EnvError::Number {
+                    name: name.to_owned(),
+                },
+            })?
     };
     // Python's max(minimum, value): NaN and negative infinity select the minimum, positive infinity stays
-    let selected = configured.unwrap_or(default).max(minimum);
+    let selected = configured.max(minimum);
     Ok(Duration::try_from_secs_f64(selected).unwrap_or(Duration::MAX))
 }
 

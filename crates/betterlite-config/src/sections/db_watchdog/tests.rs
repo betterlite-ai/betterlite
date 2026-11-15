@@ -141,3 +141,24 @@ fn watchdog_nonfinite_values(#[case] name: &str) {
     };
     assert_eq!(actual, Duration::MAX);
 }
+
+#[rstest]
+#[case::probe_infinity(PROBE_TIMEOUT_VARIABLE, "infinity", Duration::MAX)]
+#[case::probe_nan(PROBE_TIMEOUT_VARIABLE, "NaN", Duration::from_millis(500))]
+#[case::probe_negative_infinity(PROBE_TIMEOUT_VARIABLE, "-inf", Duration::from_millis(500))]
+#[case::reconnect_infinity(RECONNECT_TIMEOUT_VARIABLE, "+Inf", Duration::MAX)]
+#[case::reconnect_nan(RECONNECT_TIMEOUT_VARIABLE, "nan", Duration::from_secs(1))]
+#[case::reconnect_negative_infinity(
+    RECONNECT_TIMEOUT_VARIABLE,
+    "-infinity",
+    Duration::from_secs(1)
+)]
+fn watchdog_nonfinite_words(#[case] name: &str, #[case] value: &str, #[case] expected: Duration) {
+    let settings = settings(&[(name, value)]).expect("Python's float() words load");
+    let actual = if name == PROBE_TIMEOUT_VARIABLE {
+        settings.probe_timeout
+    } else {
+        settings.reconnect_timeout
+    };
+    assert_eq!(actual, expected);
+}
