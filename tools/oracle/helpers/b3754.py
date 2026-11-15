@@ -98,18 +98,6 @@ def construct_answer(input_value: ConstructInput) -> dict[str, JsonValue]:
     return answer
 
 
-async def run_guardrail(
-    guardrail: CatoNetworksGuardrail,
-    data: dict[str, JsonValue],
-    hook: str,
-    key_alias: str | None,
-    user_email: str | None,
-) -> None:
-    await guardrail.call_cato_guardrail(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L295-L300
-        data, hook=hook, key_alias=key_alias, user_email=user_email
-    )
-
-
 def summarize(
     guardrail: CatoNetworksGuardrail,
     data: dict[str, JsonValue],
@@ -150,12 +138,11 @@ def analyze_answer(input_value: AnalyzeInput) -> dict[str, JsonValue]:
     rejected: JsonValue = None
     try:
         asyncio.run(
-            run_guardrail(
-                guardrail,
+            guardrail.call_cato_guardrail(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L295-L300
                 data,
-                input_value["hook"],
-                input_value["key_alias"],
-                input_value["user_email"],
+                hook=input_value["hook"],
+                key_alias=input_value["key_alias"],
+                user_email=input_value["user_email"],
             )
         )
     except HTTPException as error:

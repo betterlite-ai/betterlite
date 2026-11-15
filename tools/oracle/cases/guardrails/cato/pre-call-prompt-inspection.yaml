@@ -12,6 +12,7 @@ call:
     user_email: null
     answer:
       status: 200
+      headers: {}
       body: {required_action: null}
 env: {}
 compare: {ignore: []}

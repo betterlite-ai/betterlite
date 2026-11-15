@@ -13,6 +13,7 @@ call:
     user_email: null
     answer:
       status: 200
+      headers: {}
       body:
         required_action: {action_type: surprise_action}
 env: {}

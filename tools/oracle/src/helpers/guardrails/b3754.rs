@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::slice::from_ref;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::tls::VerifySetting;
@@ -12,7 +13,7 @@ use serde_json::{Value, json};
 use crate::case::UpstreamAnswer;
 use crate::helpers::{HelperError, HelperResult};
 use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, ProviderCall, redact};
+use crate::routing_mock_scripts::{MockScript, redact};
 
 pub(crate) struct Op;
 
@@ -36,11 +37,8 @@ pub(crate) struct Construct {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum HookName {
-    #[serde(rename = "pre_call")]
     PreCall,
-    #[serde(rename = "moderation")]
     Moderation,
-    #[serde(rename = "output")]
     Output,
 }
 
@@ -95,9 +93,10 @@ fn build(
 }
 
 fn helper_error(error: &CatoError) -> Box<HelperError> {
-    let class = match error {
-        CatoError::MissingApiKey => "CatoNetworksGuardrailMissingSecrets",
-        _ => "CatoError",
+    let class = if matches!(error, CatoError::MissingApiKey) {
+        "CatoNetworksGuardrailMissingSecrets"
+    } else {
+        "CatoError"
     };
     fail(class, error.to_string())
 }
@@ -105,7 +104,7 @@ fn helper_error(error: &CatoError) -> Box<HelperError> {
 fn construct_answer(construct: &Construct) -> HelperResult {
     let guardrail = build(&construct.settings, &construct.environment)?;
     Ok(json!({
-        "api_key": guardrail.api_key().expose_secret(),
+        "api_key": guardrail.api_key.expose_secret(),
         "api_base": guardrail.api_base,
         "ws_api_base": guardrail.ws_api_base,
         "inspect_embeddings": guardrail.inspect_embeddings,
@@ -119,22 +118,29 @@ fn construct_answer(construct: &Construct) -> HelperResult {
     }))
 }
 
-fn analyze_answer(analyze: &Analyze) -> HelperResult {
+fn upstream(
+    analyze: &Analyze,
+) -> Result<(Option<MockProvider>, std::net::TcpListener, String), Box<HelperError>> {
     let io = |error: std::io::Error| fail("OSError", error.to_string());
     // with no answer the listener stays bound and silent, so the call fails instead of reaching Cato
     let silent = std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
+    let address = silent.local_addr().map_err(io)?;
     let mock = analyze
         .answer
         .as_ref()
-        .map(|reply| {
-            MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start)
-        })
+        .map(|reply| MockScript::try_from(from_ref(reply)).and_then(MockProvider::start))
         .transpose()
         .map_err(|error| fail("MockError", error.to_string()))?;
-    let base = match &mock {
-        Some(provider) => provider.base_url.clone(),
-        None => format!("http://{}", silent.local_addr().map_err(io)?),
-    };
+    let base = mock.as_ref().map_or_else(
+        || format!("http://{address}"),
+        |provider| provider.base_url.clone(),
+    );
+    Ok((mock, silent, base))
+}
+
+fn analyze_answer(analyze: &Analyze) -> HelperResult {
+    let io = |error: std::io::Error| fail("OSError", error.to_string());
+    let (mock, silent, base) = upstream(analyze)?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -147,12 +153,9 @@ fn analyze_answer(analyze: &Analyze) -> HelperResult {
         HookName::Moderation => CallHook::Moderation,
         HookName::Output => CallHook::Output,
     };
-    let outcome = runtime.block_on(guardrail.call(
-        &mut data,
-        hook,
-        analyze.key_alias.as_deref(),
-        analyze.user_email.as_deref(),
-    ));
+    let key_alias = analyze.key_alias.as_deref();
+    let user_email = analyze.user_email.as_deref();
+    let outcome = runtime.block_on(guardrail.call(&mut data, hook, key_alias, user_email));
     drop(silent);
     let calls = mock
         .map(MockProvider::finish)
@@ -178,7 +181,7 @@ fn headers_summary(headers: &BTreeMap<String, String>, guardrail: &CatoGuardrail
     // the mock stores credential headers as a hash, so the expected header goes through the same hash
     let mut expected = BTreeMap::from([(
         "authorization".to_owned(),
-        format!("Bearer {}", guardrail.api_key().expose_secret()),
+        format!("Bearer {}", guardrail.api_key.expose_secret()),
     )]);
     redact(&mut expected);
     json!({

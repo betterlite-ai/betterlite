@@ -20,6 +20,7 @@ call:
     user_email: null
     answer:
       status: 200
+      headers: {}
       body:
         required_action: {action_type: anonymize_action}
         redacted_chat:

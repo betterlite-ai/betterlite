@@ -13,6 +13,7 @@ call:
     user_email: null
     answer:
       status: 200
+      headers: {}
       body:
         required_action: {action_type: block_action, detection_message: blocked by the finance policy}
         analysis_result:
