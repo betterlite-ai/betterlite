@@ -55,7 +55,9 @@ fn write_extra_sources(
 ) -> Result<(), CatoError> {
     for source in sources {
         let end = offset.saturating_add(source.messages.len());
-        let slice = redacted.get(offset..end).unwrap_or_default();
+        // LiteLLM slices past the end to a short batch instead of dropping the field
+        let remaining = redacted.get(offset..).unwrap_or_default();
+        let slice = remaining.get(..source.messages.len()).unwrap_or(remaining);
         offset = end;
         match source.field {
             ExtraField::Input => {

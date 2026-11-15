@@ -286,6 +286,48 @@ fn cato_guardrail_anonymize_passes_through_with_an_empty_redacted_chat() {
 }
 
 #[test]
+fn cato_guardrail_anonymize_applies_a_prompt_list_batch_that_stops_early() {
+    let mut data = body(&[("prompt", list(&[text("a"), text("b"), text("c")]))]);
+    let response = redacted(vec![with_content("A"), with_content("B")]);
+    anonymize_request(&response, &mut data).expect("rewritten");
+    assert_eq!(
+        data.get("prompt"),
+        Some(&list(&[text("A"), text("B"), text("c")]))
+    );
+}
+
+#[test]
+fn cato_guardrail_anonymize_applies_a_schema_batch_that_stops_early() {
+    let mut data = body(&[(
+        "tools",
+        list(&[object(&[(
+            "function",
+            object(&[
+                ("description", text("original description")),
+                ("title", text("original title")),
+                ("enum", list(&[text("a"), text("b")])),
+            ]),
+        )])]),
+    )]);
+    let response = redacted(vec![
+        with_content("REDACTED DESCRIPTION"),
+        with_content("REDACTED TITLE"),
+    ]);
+    anonymize_request(&response, &mut data).expect("rewritten");
+    assert_eq!(
+        data.get("tools"),
+        Some(&list(&[object(&[(
+            "function",
+            object(&[
+                ("description", text("REDACTED DESCRIPTION")),
+                ("enum", list(&[text("a"), text("b")])),
+                ("title", text("REDACTED TITLE")),
+            ]),
+        )])]))
+    );
+}
+
+#[test]
 fn cato_guardrail_anonymize_rejects_a_string_batch_with_an_empty_redacted_chat() {
     let mut data = body(&[("input", list(&[text("a")]))]);
     let response = AnalyzeResponse {

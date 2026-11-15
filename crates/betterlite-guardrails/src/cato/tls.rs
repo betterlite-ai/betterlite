@@ -4,7 +4,6 @@ use betterlite_config::tls::{Verification, VerifySetting};
 use super::WsSsl;
 
 const SSL_VERIFY_VARIABLE: &str = "SSL_VERIFY";
-const SSL_CERT_FILE_VARIABLE: &str = "SSL_CERT_FILE";
 
 pub(super) fn resolve_verification<L>(
     ssl_verify: Option<&VerifySetting>,
@@ -62,8 +61,7 @@ fn ca_verification<L>(lookup: &L) -> Verification
 where
     L: EnvironmentLookup,
 {
-    environment_value(lookup, SSL_CERT_FILE_VARIABLE)
-        .map_or(Verification::Enabled, Verification::CaFile)
+    environment_value(lookup, "SSL_CERT_FILE").map_or(Verification::Enabled, Verification::CaFile)
 }
 
 pub(super) fn environment_value<L>(lookup: &L, variable: &str) -> Option<String>
