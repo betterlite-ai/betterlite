@@ -13,7 +13,7 @@ use crate::presidio_actions::request_data::RequestData;
 use crate::presidio_response::wire::ResponseBody;
 
 use super::support::{
-    GUARDRAIL_NAME, SAFE, UNSAFE, field, guard_at, messages_of, mock, seen, text,
+    GUARDRAIL_NAME, Reply, SAFE, UNSAFE, field, guard_at, messages_of, mock, seen, text,
 };
 
 const SECRET_SCAN: &str =
@@ -27,6 +27,7 @@ const LOGGED_WITH_DICT_INFORMATION: &str = r#"{"messages":[{"role":"user","conte
 const LOGGED_WITH_EXISTING_ENTRY: &str = r#"{"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{"id":"call-1","guardrail_information":[{"guardrail_name":"older"}]}}"#;
 const LOGGED_WITH_NON_OBJECT: &str =
     r#"{"messages":[{"role":"user","content":"hello"}],"standard_logging_object":"not-an-object"}"#;
+const LOGGED_WITHOUT_HISTORY: &str = r#"{"standard_logging_object":{}}"#;
 
 static CLOCK_TICKS: AtomicU64 = AtomicU64::new(0);
 
@@ -44,43 +45,24 @@ fn xecguard_runtime_sync_logging_hook_appends_an_entry() {
 }
 
 pub(super) async fn logging_skips_existing() {
-    let mock = mock((200, UNSAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_WITH_INFORMATION);
-    let before = values(&kwargs);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    assert_eq!(values(&kwargs), before);
-    assert!(seen(&mock).is_empty());
+    assert_logging_untouched(LOGGED_WITH_INFORMATION, chat_body("answer")).await;
 }
 
 pub(super) async fn logging_scans_empty_information() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_WITH_EMPTY_INFORMATION);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    assert_eq!(logged_entries(&kwargs).len(), 1);
-    assert_eq!(seen(&mock).len(), 1);
+    assert_information_scanned(LOGGED_WITH_EMPTY_INFORMATION).await;
 }
 
 pub(super) async fn logging_appends_response_entry() {
-    let mock = mock((200, UNSAFE), (200, SAFE));
-    let mut guard = guard_at(&mock.base);
-    guard.clock = ticking_clock;
-    let mut kwargs = logged(LOGGED_REQUEST);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    let entries = logged_entries(&kwargs);
+    let entries = scan_logged(
+        LOGGED_REQUEST,
+        chat_body("answer"),
+        (200, UNSAFE),
+        "response",
+        2,
+    )
+    .await;
     assert_eq!(entries.len(), 1);
     assert_logging_entry(&entries[0]);
-    let seen = seen(&mock);
-    assert_eq!(seen.len(), 1);
-    assert_eq!(text(field(&seen[0].body, "scan_type")), "response");
-    assert_eq!(messages_of(&seen[0].body).len(), 2);
 }
 
 fn assert_logging_entry(entry: &GuardrailValue) {
@@ -122,44 +104,23 @@ fn assert_logging_entry(entry: &GuardrailValue) {
 }
 
 pub(super) async fn logging_appends_request_entry() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_REQUEST);
-    guard.async_logging_hook(&mut kwargs, &empty_body()).await;
-    let entries = logged_entries(&kwargs);
+    let entries = scan_logged(LOGGED_REQUEST, empty_body(), (200, SAFE), "input", 1).await;
     assert_eq!(entries.len(), 1);
     assert_eq!(text(field(&entries[0], "guardrail_status")), "success");
-    let seen = seen(&mock);
-    assert_eq!(seen.len(), 1);
-    assert_eq!(text(field(&seen[0].body, "scan_type")), "input");
-    assert_eq!(messages_of(&seen[0].body).len(), 1);
 }
 
 pub(super) async fn logging_empty_history() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(r#"{"standard_logging_object":{}}"#);
-    let before = values(&kwargs);
-    guard.async_logging_hook(&mut kwargs, &empty_body()).await;
-    assert_eq!(values(&kwargs), before);
-    assert!(seen(&mock).is_empty());
+    assert_logging_untouched(LOGGED_WITHOUT_HISTORY, empty_body()).await;
 }
 
 pub(super) async fn logging_failed_scan() {
-    let mock = mock((500, "{}"), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_REQUEST);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    assert!(logged_entries(&kwargs).is_empty());
-    assert_eq!(seen(&mock).len(), 1);
+    assert_not_appended(LOGGED_REQUEST, (500, "{}")).await;
 }
 
 pub(super) async fn logging_swallowed_failure() {
     let mock = mock((200, SAFE), (200, SAFE));
     let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_REQUEST);
+    let kwargs = logged(LOGGED_REQUEST);
     let before = values(&kwargs);
     let sink = LogSink::default();
     let writer = sink.clone();
@@ -170,7 +131,7 @@ pub(super) async fn logging_swallowed_failure() {
         .finish();
     let guardrail = set_default(subscriber);
     let mut kwargs_without_object: RequestData = kwargs.clone();
-    kwargs_without_object.remove("standard_logging_object");
+    kwargs_without_object.shift_remove("standard_logging_object");
     let before_without_object = values(&kwargs_without_object);
     guard
         .async_logging_hook(&mut kwargs_without_object, &chat_body("answer"))
@@ -189,73 +150,39 @@ pub(super) async fn logging_swallowed_failure() {
 }
 
 pub(super) async fn logging_scans_null_information() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_WITH_NULL_INFORMATION);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    assert_eq!(logged_entries(&kwargs).len(), 1);
-    assert_eq!(seen(&mock).len(), 1);
+    assert_information_scanned(LOGGED_WITH_NULL_INFORMATION).await;
 }
 
 pub(super) async fn logging_skips_string_information() {
-    let mock = mock((200, UNSAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_WITH_STRING_INFORMATION);
-    let before = values(&kwargs);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    assert_eq!(values(&kwargs), before);
-    assert!(seen(&mock).is_empty());
+    assert_logging_untouched(LOGGED_WITH_STRING_INFORMATION, chat_body("answer")).await;
 }
 
 pub(super) async fn logging_replaces_non_list_entry() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_WITH_DICT_INFORMATION);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    let entries = logged_entries(&kwargs);
+    let entries = append_to(LOGGED_WITH_DICT_INFORMATION).await;
     assert_eq!(entries.len(), 1);
     assert_eq!(text(field(&entries[0], "guardrail_mode")), "logging_only");
 }
 
 pub(super) async fn logging_appends_to_existing_list() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_WITH_EXISTING_ENTRY);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    let entries = logged_entries(&kwargs);
+    let entries = append_to(LOGGED_WITH_EXISTING_ENTRY).await;
     assert_eq!(entries.len(), 2);
     assert_eq!(text(field(&entries[0], "guardrail_name")), "older");
     assert_eq!(text(field(&entries[1], "guardrail_mode")), "logging_only");
 }
 
 pub(super) async fn logging_swallowed_non_object() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_WITH_NON_OBJECT);
-    let before = values(&kwargs);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    assert_eq!(values(&kwargs), before);
-    assert_eq!(seen(&mock).len(), 1);
+    assert_not_appended(LOGGED_WITH_NON_OBJECT, (200, SAFE)).await;
 }
 
 pub(super) async fn logging_redacts_secret_fields() {
-    let mock = mock((200, SECRET_SCAN), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut kwargs = logged(LOGGED_REQUEST);
-    guard
-        .async_logging_hook(&mut kwargs, &chat_body("answer"))
-        .await;
-    let entries = logged_entries(&kwargs);
+    let entries = scan_logged(
+        LOGGED_REQUEST,
+        chat_body("answer"),
+        (200, SECRET_SCAN),
+        "response",
+        2,
+    )
+    .await;
     assert_eq!(entries.len(), 1);
     let response = field(&entries[0], "guardrail_response");
     let mut names = keys(response);
@@ -263,7 +190,50 @@ pub(super) async fn logging_redacts_secret_fields() {
     assert_eq!(names, ["decision", "trace_id"]);
     assert_eq!(text(field(response, "decision")), "UNSAFE");
     assert_eq!(text(field(response, "trace_id")), "trace-9");
-    assert!(!format!("{:?}", values(&kwargs)).contains("leak"));
+    assert!(!format!("{entries:?}").contains("leak"));
+}
+
+async fn scan_logged(
+    kwargs_json: &str,
+    result: ResponseBody,
+    scan: Reply,
+    scan_type: &str,
+    messages: usize,
+) -> Vec<GuardrailValue> {
+    let mock = mock(scan, (200, SAFE));
+    let mut guard = guard_at(&mock.base);
+    guard.clock = ticking_clock;
+    let mut kwargs = logged(kwargs_json);
+    guard.async_logging_hook(&mut kwargs, &result).await;
+    let sent = seen(&mock);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(text(field(&sent[0].body, "scan_type")), scan_type);
+    assert_eq!(messages_of(&sent[0].body).len(), messages);
+    logged_entries(&kwargs)
+}
+
+async fn append_to(kwargs_json: &str) -> Vec<GuardrailValue> {
+    scan_logged(kwargs_json, chat_body("answer"), (200, SAFE), "response", 2).await
+}
+
+async fn assert_information_scanned(kwargs_json: &str) {
+    let entries = append_to(kwargs_json).await;
+    assert_eq!(entries.len(), 1);
+}
+
+async fn assert_not_appended(kwargs_json: &str, scan: Reply) {
+    let entries = scan_logged(kwargs_json, chat_body("answer"), scan, "response", 2).await;
+    assert!(entries.is_empty());
+}
+
+async fn assert_logging_untouched(kwargs_json: &str, result: ResponseBody) {
+    let mock = mock((200, UNSAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut kwargs = logged(kwargs_json);
+    let before = values(&kwargs);
+    guard.async_logging_hook(&mut kwargs, &result).await;
+    assert_eq!(values(&kwargs), before);
+    assert!(seen(&mock).is_empty());
 }
 
 fn logged(json: &str) -> RequestData {

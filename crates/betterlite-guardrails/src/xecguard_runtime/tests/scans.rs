@@ -7,8 +7,8 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 
 use super::support::{
-    GUARDRAIL_NAME, SAFE, UNSAFE, USER_REQUEST, field, guard_at, guard_named, guard_with_block,
-    inputs, messages_of, mock, request_data, seen, text,
+    GUARDRAIL_NAME, Reply, SAFE, Seen, UNSAFE, USER_REQUEST, field, guard_at, guard_named,
+    guard_with_block, inputs, messages_of, mock, request_data, seen, text,
 };
 
 const GROUNDING_UNSAFE: &str = r#"{"decision":"UNSAFE","trace_id":"trace-3","xecguard_result":{"violated_rules_list":["RuleA"],"rationale":"not grounded"}}"#;
@@ -17,101 +17,30 @@ const MULTI_TURN_GROUNDING_REQUEST: &str = r#"{"model":"gpt-4o","messages":[{"ro
 const GROUNDING_REQUEST: &str = r#"{"model":"gpt-4o","messages":[{"role":"user","content":"question"}],"response":{"choices":[{"message":{"role":"assistant","content":"answer"}}]},"metadata":{"xecguard_grounding_documents":[{"document_id":"doc-1","context":"the context"}]}}"#;
 
 pub(super) async fn safe_request_scan() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut data = request_data(USER_REQUEST);
-    let original = inputs(&["hello"]);
-    let returned = guard
-        .apply_guardrail(
-            original.clone(),
-            &mut data,
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .expect("a pass");
-    assert_eq!(returned, original);
-    let seen = seen(&mock);
+    let (seen, messages) = passed(USER_REQUEST, &["hello"], GuardrailInputType::Request).await;
+    assert_eq!(messages, [("user".to_owned(), "hello".to_owned())]);
     assert_eq!(seen.len(), 1);
-    let messages = messages_of(&seen[0].body);
-    assert_eq!(messages.len(), 1);
-    assert_eq!(text(field(&messages[0], "role")), "user");
-    assert_eq!(text(field(&messages[0], "content")), "hello");
 }
 
 pub(super) async fn unsafe_request_scan() {
-    let mock = mock((200, UNSAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut data = request_data(USER_REQUEST);
-    let failure = guard
-        .apply_guardrail(
-            inputs(&["hello"]),
-            &mut data,
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .expect_err("an UNSAFE scan blocks the request");
-    let (status, detail) = blocked_object(&failure);
-    assert_eq!(status, 400);
-    assert_eq!(
-        detail.get("error").map_or("", text),
-        "Blocked by XecGuard: policies=[HarmfulContent] trace_id=trace-2 rationale=forbidden"
-    );
-    assert_eq!(
-        detail.get("guardrail_name").map_or("", text),
-        GUARDRAIL_NAME
-    );
-    let response = detail.get("xecguard_response").expect("the scan result");
-    assert_eq!(text(field(response, "decision")), "UNSAFE");
-    assert_eq!(text(field(response, "trace_id")), "trace-2");
+    assert_scan_block(USER_REQUEST, &["hello"], GuardrailInputType::Request).await;
 }
 
 pub(super) async fn safe_response_scan() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut data = request_data(RESPONSE_REQUEST);
-    let original = inputs(&["answer"]);
-    let returned = guard
-        .apply_guardrail(
-            original.clone(),
-            &mut data,
-            GuardrailInputType::Response,
-            None,
-        )
-        .await
-        .expect("a pass");
-    assert_eq!(returned, original);
-    let seen = seen(&mock);
+    let (seen, messages) =
+        passed(RESPONSE_REQUEST, &["answer"], GuardrailInputType::Response).await;
+    assert_eq!(
+        messages,
+        [
+            ("user".to_owned(), "question".to_owned()),
+            ("assistant".to_owned(), "answer".to_owned()),
+        ]
+    );
     assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0].path, "/xecguard/v1/scan");
-    assert_eq!(text(field(&seen[0].body, "scan_type")), "response");
-    let messages = messages_of(&seen[0].body);
-    assert_eq!(messages.len(), 2);
-    assert_eq!(text(field(&messages[1], "role")), "assistant");
-    assert_eq!(text(field(&messages[1], "content")), "answer");
 }
 
 pub(super) async fn unsafe_response_scan() {
-    let mock = mock((200, UNSAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut data = request_data(GROUNDING_REQUEST);
-    let failure = guard
-        .apply_guardrail(
-            inputs(&["answer"]),
-            &mut data,
-            GuardrailInputType::Response,
-            None,
-        )
-        .await
-        .expect_err("an UNSAFE response scan blocks the response");
-    let (status, detail) = blocked_object(&failure);
-    assert_eq!(status, 400);
-    assert_eq!(
-        detail.get("error").map_or("", text),
-        "Blocked by XecGuard: policies=[HarmfulContent] trace_id=trace-2 rationale=forbidden"
-    );
-    assert_eq!(seen(&mock).len(), 1);
+    assert_scan_block(GROUNDING_REQUEST, &["answer"], GuardrailInputType::Response).await;
 }
 
 pub(super) async fn grounding_block() {
@@ -237,21 +166,7 @@ async fn blocked_name(api_base: &str, name: Option<&str>) -> String {
 }
 
 pub(super) async fn grounding_failure_fails_open() {
-    let mock = mock((200, SAFE), (500, "{}"));
-    let guard = guard_with_block(&mock.base, false);
-    let mut data = request_data(GROUNDING_REQUEST);
-    let original = inputs(&["answer"]);
-    let returned = guard
-        .apply_guardrail(
-            original.clone(),
-            &mut data,
-            GuardrailInputType::Response,
-            None,
-        )
-        .await
-        .expect("a fail-open grounding pass");
-    assert_eq!(returned, original);
-    let seen = seen(&mock);
+    let seen = grounded_response((500, "{}"), Some(false)).await;
     assert_eq!(seen.len(), 2);
     assert_eq!(seen[1].path, "/xecguard/v1/grounding");
 }
@@ -285,21 +200,7 @@ pub(super) async fn grounding_failure_blocks() {
 }
 
 pub(super) async fn grounding_passes() {
-    let mock = mock((200, SAFE), (200, SAFE));
-    let guard = guard_at(&mock.base);
-    let mut data = request_data(GROUNDING_REQUEST);
-    let original = inputs(&["answer"]);
-    let returned = guard
-        .apply_guardrail(
-            original.clone(),
-            &mut data,
-            GuardrailInputType::Response,
-            None,
-        )
-        .await
-        .expect("a grounded pass");
-    assert_eq!(returned, original);
-    let seen = seen(&mock);
+    let seen = grounded_response((200, SAFE), None).await;
     assert_eq!(seen.len(), 2);
     assert_eq!(text(field(&seen[1].body, "strictness")), "BALANCED");
 }
@@ -324,6 +225,85 @@ pub(super) async fn request_ignores_grounding_documents() {
     assert_eq!(seen[0].path, "/xecguard/v1/scan");
     assert_eq!(text(field(&seen[0].body, "scan_type")), "input");
     assert_eq!(messages_of(&seen[0].body).len(), 3);
+}
+
+async fn passed(
+    data_json: &str,
+    texts: &[&str],
+    input_type: GuardrailInputType,
+) -> (Vec<Seen>, Vec<(String, String)>) {
+    let mock = mock((200, SAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut data = request_data(data_json);
+    let original = inputs(texts);
+    let returned = guard
+        .apply_guardrail(original.clone(), &mut data, input_type, None)
+        .await
+        .expect("a pass");
+    assert_eq!(returned, original);
+    let seen = seen(&mock);
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].path, "/xecguard/v1/scan");
+    let scan_type = match input_type {
+        GuardrailInputType::Request => "input",
+        GuardrailInputType::Response => "response",
+    };
+    assert_eq!(text(field(&seen[0].body, "scan_type")), scan_type);
+    let messages = messages_of(&seen[0].body)
+        .iter()
+        .map(|message| {
+            (
+                text(field(message, "role")).to_owned(),
+                text(field(message, "content")).to_owned(),
+            )
+        })
+        .collect();
+    (seen, messages)
+}
+
+async fn assert_scan_block(data_json: &str, texts: &[&str], input_type: GuardrailInputType) {
+    let mock = mock((200, UNSAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut data = request_data(data_json);
+    let failure = guard
+        .apply_guardrail(inputs(texts), &mut data, input_type, None)
+        .await
+        .expect_err("an UNSAFE scan blocks the request");
+    let (status, detail) = blocked_object(&failure);
+    assert_eq!(status, 400);
+    assert_eq!(
+        detail.get("error").map_or("", text),
+        "Blocked by XecGuard: policies=[HarmfulContent] trace_id=trace-2 rationale=forbidden"
+    );
+    assert_eq!(
+        detail.get("guardrail_name").map_or("", text),
+        GUARDRAIL_NAME
+    );
+    let response = detail.get("xecguard_response").expect("the scan result");
+    assert_eq!(text(field(response, "decision")), "UNSAFE");
+    assert_eq!(text(field(response, "trace_id")), "trace-2");
+    assert_eq!(seen(&mock).len(), 1);
+}
+
+async fn grounded_response(grounding: Reply, block: Option<bool>) -> Vec<Seen> {
+    let mock = mock((200, SAFE), grounding);
+    let guard = match block {
+        Some(block_on_error) => guard_with_block(&mock.base, block_on_error),
+        None => guard_at(&mock.base),
+    };
+    let mut data = request_data(GROUNDING_REQUEST);
+    let original = inputs(&["answer"]);
+    let returned = guard
+        .apply_guardrail(
+            original.clone(),
+            &mut data,
+            GuardrailInputType::Response,
+            None,
+        )
+        .await
+        .expect("a grounded pass");
+    assert_eq!(returned, original);
+    seen(&mock)
 }
 
 fn blocked_object(failure: &GuardrailFailure) -> (u16, &IndexMap<String, GuardrailValue>) {
