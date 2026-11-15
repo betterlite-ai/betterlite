@@ -9,7 +9,7 @@ use betterlite_guardrails::compresr_transport::{
 };
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use tokio::net::TcpListener;
 use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinSet;
@@ -70,6 +70,7 @@ async fn record(State(mock): State<Mock>, request: Request) -> (StatusCode, Stri
         "content_type": header("content-type"),
         "api_key": header("x-api-key"),
     }));
+    drop(seen);
     (mock.status, mock.body)
 }
 
@@ -110,7 +111,7 @@ fn transport_for(
     api_base: &str,
 ) -> Result<CompresrTransport, Box<HelperError>> {
     let mut transport_settings = settings.transport()?;
-    transport_settings.api_base = api_base.to_owned();
+    api_base.clone_into(&mut transport_settings.api_base);
     CompresrTransport::new(
         transport_settings,
         SecretString::from(API_KEY),
@@ -143,22 +144,29 @@ pub(super) fn run(settings: &Settings, goals: &[Goal], reply: &Reply) -> HelperR
     let outcome = with_default(subscriber, || {
         runtime.block_on(transport.compress(&targets))
     });
-    let mut answer = match outcome {
-        Ok(CompressOutcome::Results(results)) => json!({
-            "outcome": "results",
-            "results": results.iter().map(result_json).collect::<Vec<_>>(),
-        }),
-        Ok(CompressOutcome::Uncompressed) => json!({"outcome": "uncompressed"}),
-        Err(error) => json!({
-            "outcome": "raised",
-            "status": error.status_code(),
-            "detail": {"error": error.to_string()},
-        }),
-    };
+    let mut answer = Map::new();
+    match outcome {
+        Ok(CompressOutcome::Results(results)) => {
+            answer.insert("outcome".to_owned(), json!("results"));
+            answer.insert(
+                "results".to_owned(),
+                json!(results.iter().map(result_json).collect::<Vec<_>>()),
+            );
+        }
+        Ok(CompressOutcome::Uncompressed) => {
+            answer.insert("outcome".to_owned(), json!("uncompressed"));
+        }
+        Err(error) => {
+            answer.insert("outcome".to_owned(), json!("raised"));
+            answer.insert("status".to_owned(), json!(error.status_code()));
+            answer.insert("detail".to_owned(), json!({"error": error.to_string()}));
+        }
+    }
     let recorded = seen.lock().unwrap_or_else(PoisonError::into_inner);
-    answer["path"] = Value::Array(recorded.paths.clone());
-    answer["body"] = Value::Array(recorded.bodies.clone());
-    answer["headers"] = Value::Array(recorded.headers.clone());
-    answer["logs"] = logs.records();
-    Ok(answer)
+    answer.insert("path".to_owned(), Value::Array(recorded.paths.clone()));
+    answer.insert("body".to_owned(), Value::Array(recorded.bodies.clone()));
+    answer.insert("headers".to_owned(), Value::Array(recorded.headers.clone()));
+    drop(recorded);
+    answer.insert("logs".to_owned(), logs.records());
+    Ok(Value::Object(answer))
 }

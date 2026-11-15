@@ -11,7 +11,7 @@ use betterlite_guardrails::compresr_transport::response::{safe_int, safe_respons
 use betterlite_guardrails::compresr_transport::{DEFAULT_COMPRESS_TIMEOUT, TransportSettings};
 use betterlite_guardrails::generic_guardrail_contracts::{GuardrailMessage, UnreachableFallback};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
@@ -55,12 +55,12 @@ impl Settings {
     }
 }
 
-fn validated(settings: &Settings) -> HelperResult {
+fn validated(settings: &Settings) -> Value {
     let trimmed = settings.api_base.trim_end_matches('/');
-    Ok(match validate_api_base(trimmed) {
+    match validate_api_base(trimmed) {
         Ok(api_base) => json!({"accepted": true, "api_base": api_base}),
         Err(_rejected) => json!({"accepted": false}),
-    })
+    }
 }
 
 #[derive(Deserialize)]
@@ -104,7 +104,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ValidateApiBase { settings } => validated(settings),
+            Input::ValidateApiBase { settings } => Ok(validated(settings)),
             Input::QueryForTarget {
                 messages,
                 target_idx,
