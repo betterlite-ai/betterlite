@@ -8,6 +8,7 @@ use betterlite_config::sections::guardrail_translation::LakeraOnFlagged;
 use rstest::rstest;
 
 use crate::guardrail_base::failure::GuardrailFailure;
+use crate::guardrail_initializers::lakera_v2::LakeraV2Args;
 use crate::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
 use crate::lakera_v2::Data;
 use crate::lakera_v2::error::LakeraV2Error;
@@ -15,7 +16,8 @@ use crate::lakera_v2::guardrail::LakeraV2Guardrail;
 
 use super::{
     ATTACK_ONLY, CollectingSink, EMAIL_SPAN, ESCAPED_TEMPLATE_TEXT, Hook, MIXED, PII_ONLY, args,
-    base, build, chat_data, content_of, context, flagged, invocation, message, run_hook, serve,
+    base, body_of, build, chat_data, content_of, context, flagged, invocation, message, run_hook,
+    serve,
 };
 
 #[tokio::test]
@@ -139,6 +141,26 @@ async fn pre_call_monitor_allows_a_non_pii_verdict() {
 }
 
 #[tokio::test]
+async fn pre_call_monitor_forwards_multimodal_pii_it_cannot_mask() {
+    let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Monitor, None);
+    let mut data = chat_data();
+    data.insert(
+        "messages".to_owned(),
+        GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
+            ("role".to_owned(), GuardrailValue::Text("user".to_owned())),
+            ("content".to_owned(), text_part("email a@example.com")),
+        ]))]),
+    );
+    let original = data.clone();
+    let outcome = run_hook(&guardrail, &mut data, None, Hook::Pre)
+        .await
+        .expect("the unredacted request is forwarded");
+    assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
+    assert_eq!(data, original);
+}
+
+#[tokio::test]
 async fn pre_call_does_not_run_when_every_message_is_skipped() {
     let server = serve(200, flagged(ATTACK_ONLY, "[]")).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
@@ -204,41 +226,55 @@ async fn during_call_blocks_pii_in_advisory_mode() {
     ));
 }
 
+#[tokio::test]
+async fn during_call_allows_a_non_pii_verdict_in_advisory_mode() {
+    let server = serve(200, flagged(ATTACK_ONLY, "[]")).await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::InjectSystemMessage, None);
+    let mut data = chat_data();
+    let outcome = run_hook(&guardrail, &mut data, None, Hook::During)
+        .await
+        .expect("advisory mode has nothing to inject during during_call");
+    assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
+    assert_eq!(content_of(&data, 0).as_deref(), Some("email a@example.com"));
+}
+
 fn assistant_response() -> Data {
     assistant_response_with(GuardrailValue::Null)
 }
 
 fn assistant_response_with(first_content: GuardrailValue) -> Data {
+    response_with_choices(vec![
+        first_content,
+        GuardrailValue::Text("email a@example.com".to_owned()),
+    ])
+}
+
+fn response_with_choices(contents: Vec<GuardrailValue>) -> Data {
+    let choices = contents
+        .into_iter()
+        .map(|content| {
+            GuardrailValue::Object(BTreeMap::from([(
+                "message".to_owned(),
+                GuardrailValue::Object(BTreeMap::from([
+                    (
+                        "role".to_owned(),
+                        GuardrailValue::Text("assistant".to_owned()),
+                    ),
+                    ("content".to_owned(), content),
+                ])),
+            )]))
+        })
+        .collect();
     let mut response = Data::new();
-    response.insert(
-        "choices".to_owned(),
-        GuardrailValue::Array(vec![
-            GuardrailValue::Object(BTreeMap::from([(
-                "message".to_owned(),
-                GuardrailValue::Object(BTreeMap::from([
-                    (
-                        "role".to_owned(),
-                        GuardrailValue::Text("assistant".to_owned()),
-                    ),
-                    ("content".to_owned(), first_content),
-                ])),
-            )])),
-            GuardrailValue::Object(BTreeMap::from([(
-                "message".to_owned(),
-                GuardrailValue::Object(BTreeMap::from([
-                    (
-                        "role".to_owned(),
-                        GuardrailValue::Text("assistant".to_owned()),
-                    ),
-                    (
-                        "content".to_owned(),
-                        GuardrailValue::Text("email a@example.com".to_owned()),
-                    ),
-                ])),
-            )])),
-        ]),
-    );
+    response.insert("choices".to_owned(), GuardrailValue::Array(choices));
     response
+}
+
+fn text_part(text: &str) -> GuardrailValue {
+    GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
+        ("type".to_owned(), GuardrailValue::Text("text".to_owned())),
+        ("text".to_owned(), GuardrailValue::Text(text.to_owned())),
+    ]))])
 }
 
 fn choice_content(response: &Data, index: usize) -> Option<GuardrailValue> {
@@ -323,7 +359,9 @@ fn update_refuses_the_escaped_template_and_keeps_the_instance() {
         LakeraOnFlagged::InjectSystemMessage,
         Some("ok {reason}"),
     );
-    let params = update_params(r#", "advisory_system_message": "Watch out for {{reason}}""#);
+    let params = update_params(
+        r#", "on_flagged": "inject_system_message", "advisory_system_message": "Watch out for {{reason}}""#,
+    );
     let error = guardrail
         .update_params(&params)
         .expect_err("the template is invalid");
@@ -370,14 +408,82 @@ fn update_rejects_a_wrong_typed_payload() {
     assert!(guardrail.flags.payload);
 }
 
+fn built(args: LakeraV2Args) -> LakeraV2Guardrail {
+    let env = BTreeMap::new();
+    LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built")
+}
+
+#[test]
+fn update_resets_omitted_params_to_the_model_defaults() {
+    let mut args = args();
+    args.on_flagged = Some(LakeraOnFlagged::Monitor);
+    args.payload = Some(false);
+    args.breakdown = Some(false);
+    args.dev_info = Some(false);
+    let mut guardrail = built(args);
+    guardrail
+        .update_params(&update_params(""))
+        .expect("a valid update");
+    assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Block);
+    assert!(guardrail.flags.payload);
+    assert!(guardrail.flags.breakdown);
+    assert!(guardrail.flags.dev_info);
+}
+
+#[test]
+fn update_keeps_the_live_values_for_explicit_nulls() {
+    let mut args = args();
+    args.on_flagged = Some(LakeraOnFlagged::Monitor);
+    args.payload = Some(false);
+    args.breakdown = Some(false);
+    args.dev_info = Some(false);
+    let mut guardrail = built(args);
+    let params = update_params(
+        r#", "on_flagged": null, "payload": null, "breakdown": null, "dev_info": null"#,
+    );
+    guardrail.update_params(&params).expect("a valid update");
+    assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Monitor);
+    assert!(!guardrail.flags.payload);
+    assert!(!guardrail.flags.breakdown);
+    assert!(!guardrail.flags.dev_info);
+}
+
+#[test]
+fn update_to_advisory_mode_defaults_an_omitted_payload_to_true() {
+    let mut args = args();
+    args.payload = Some(false);
+    let mut guardrail = built(args);
+    let params = update_params(
+        r#", "on_flagged": "inject_system_message", "advisory_system_message": "Why: {reason}""#,
+    );
+    guardrail
+        .update_params(&params)
+        .expect("the omitted payload defaults to true");
+    assert_eq!(guardrail.on_flagged, LakeraOnFlagged::InjectSystemMessage);
+    assert!(guardrail.flags.payload);
+}
+
 #[test]
 fn timeout_is_resolved_from_the_configured_seconds() {
     let mut args = args();
     args.timeout = Some(2.5);
-    let env = BTreeMap::new();
-    let guardrail =
-        LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built");
-    assert_eq!(guardrail.timeout, Some(Duration::from_millis(2500)));
+    assert_eq!(built(args).timeout, Duration::from_millis(2500));
+}
+
+#[test]
+fn the_default_timeout_is_lite_llms_six_hundred_seconds() {
+    assert_eq!(built(args()).timeout, Duration::from_secs(600));
+}
+
+#[test]
+fn update_resets_an_omitted_timeout_to_the_default() {
+    let mut args = args();
+    args.timeout = Some(2.5);
+    let mut guardrail = built(args);
+    guardrail
+        .update_params(&update_params(""))
+        .expect("a valid update");
+    assert_eq!(guardrail.timeout, Duration::from_secs(600));
 }
 
 #[tokio::test]
@@ -404,6 +510,160 @@ async fn post_call_leaves_out_choices_with_an_empty_content() {
         choice_content(&response, 1),
         Some(GuardrailValue::Text("email [MASKED EMAIL]".to_owned()))
     );
+}
+
+#[tokio::test]
+async fn post_call_sends_only_choices_with_content_to_the_guard() {
+    let server = serve(200, flagged(ATTACK_ONLY, "[]")).await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = chat_data();
+    let mut response = response_with_choices(vec![
+        GuardrailValue::Null,
+        GuardrailValue::Text(String::new()),
+        GuardrailValue::Array(Vec::new()),
+        GuardrailValue::Text("email a@example.com".to_owned()),
+    ]);
+    run_hook(&guardrail, &mut data, Some(&mut response), Hook::Post)
+        .await
+        .expect_err("blocked");
+    let body = body_of(&server);
+    let Some(GuardrailValue::Array(messages)) = body.get("messages") else {
+        panic!("the guard request has no messages: {body:?}");
+    };
+    assert_eq!(messages.len(), 2);
+    let Some(GuardrailValue::Object(assistant)) = messages.get(1) else {
+        panic!("the assistant message is missing: {messages:?}");
+    };
+    assert_eq!(
+        assistant.get("content"),
+        Some(&GuardrailValue::Text("email a@example.com".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn post_call_blocks_a_choice_with_a_text_part_list() {
+    let server = serve(200, flagged(ATTACK_ONLY, "[]")).await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = chat_data();
+    let list = text_part("email a@example.com");
+    let mut response = response_with_choices(vec![list.clone()]);
+    let error = run_hook(&guardrail, &mut data, Some(&mut response), Hook::Post)
+        .await
+        .expect_err("blocked");
+    assert!(matches!(
+        error,
+        GuardrailFailure::HttpObject { status: 400, .. }
+    ));
+    let body = body_of(&server);
+    let Some(GuardrailValue::Array(messages)) = body.get("messages") else {
+        panic!("the guard request has no messages: {body:?}");
+    };
+    assert_eq!(messages.len(), 2);
+    let Some(GuardrailValue::Object(assistant)) = messages.get(1) else {
+        panic!("the assistant message is missing: {messages:?}");
+    };
+    assert_eq!(assistant.get("content"), Some(&list));
+}
+
+#[tokio::test]
+async fn post_call_keeps_a_text_part_list_unmasked() {
+    let server = serve(
+        200,
+        flagged(
+            PII_ONLY,
+            r#"[{"message_id":2,"start":6,"end":19,"detector_type":"pii/email"}]"#,
+        ),
+    )
+    .await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = chat_data();
+    let list = text_part("email a@example.com");
+    let mut response = response_with_choices(vec![
+        list.clone(),
+        GuardrailValue::Text("email a@example.com".to_owned()),
+    ]);
+    let outcome = run_hook(&guardrail, &mut data, Some(&mut response), Hook::Post)
+        .await
+        .expect("the list is left as it is");
+    assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
+    assert_eq!(choice_content(&response, 0), Some(list));
+    assert_eq!(
+        choice_content(&response, 1),
+        Some(GuardrailValue::Text("email [MASKED EMAIL]".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn post_call_masks_the_choice_after_a_skipped_system_message() {
+    let server = serve(
+        200,
+        flagged(
+            PII_ONLY,
+            r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#,
+        ),
+    )
+    .await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = Data::new();
+    data.insert(
+        "messages".to_owned(),
+        GuardrailValue::Array(vec![
+            message("system", "secret a@example.com"),
+            message("user", "email a@example.com"),
+        ]),
+    );
+    let mut response =
+        response_with_choices(vec![GuardrailValue::Text("email a@example.com".to_owned())]);
+    let sink = CollectingSink::default();
+    let suppressed = BTreeSet::new();
+    let mut call = invocation(&data);
+    let scope = ScopeFlags {
+        skip_system_message: true,
+        skip_tool_message: false,
+        scan: ScanScope::AllMessages,
+    };
+    let mut call_context = context(scope, &mut call, &sink, &suppressed);
+    guardrail
+        .post_call(&mut data, &mut response, &mut call_context)
+        .await
+        .expect("masked");
+    assert_eq!(
+        choice_content(&response, 0),
+        Some(GuardrailValue::Text("email [MASKED EMAIL]".to_owned()))
+    );
+    let Some(GuardrailValue::Array(messages)) = data.get("messages") else {
+        panic!("the request messages are missing");
+    };
+    assert_eq!(
+        messages.get(0),
+        Some(&message("system", "secret a@example.com"))
+    );
+    assert_eq!(
+        messages.get(1),
+        Some(&message("user", "email a@example.com"))
+    );
+}
+
+#[rstest]
+#[case::pre_call(Hook::Pre)]
+#[case::during_call(Hook::During)]
+#[case::post_call(Hook::Post)]
+#[tokio::test]
+async fn hooks_report_the_applied_guardrail_for_an_unflagged_answer(#[case] hook: Hook) {
+    let server = serve(
+        200,
+        r#"{"flagged":false,"payload":[],"breakdown":[]}"#.to_owned(),
+    )
+    .await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = chat_data();
+    let mut response = assistant_response();
+    let outcome = run_hook(&guardrail, &mut data, Some(&mut response), hook)
+        .await
+        .expect("unflagged");
+    assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
+    assert_eq!(content_of(&data, 0).as_deref(), Some("email a@example.com"));
+    assert_eq!(response, assistant_response());
 }
 
 #[rstest]

@@ -2,8 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::IntoFuture as _;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use axum::Router;
 use axum::body::Bytes;
@@ -177,6 +178,10 @@ struct Server {
 }
 
 async fn serve(status: u16, body: String) -> Server {
+    serve_after(None, status, body).await
+}
+
+async fn serve_after(delay: Option<Duration>, status: u16, body: String) -> Server {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let captured = Arc::new(Mutex::new(Captured::default()));
@@ -197,6 +202,9 @@ async fn serve(status: u16, body: String) -> Server {
                 .collect();
             recorded.body = String::from_utf8(bytes.to_vec()).unwrap();
             drop(recorded);
+            if let Some(pause) = delay {
+                tokio::time::sleep(pause).await;
+            }
             (AxumStatusCode::from_u16(status).unwrap(), body)
         }
     };
@@ -232,6 +240,16 @@ fn lakera_message(role: &str, content: &str) -> Message {
 fn invocation(data: &Data) -> GuardrailInvocation {
     GuardrailInvocation::begin(GuardrailHookName::PreCall, data, None, SystemTime::now())
         .expect("an invocation")
+}
+
+static CLOCK_TICKS: AtomicU64 = AtomicU64::new(0);
+
+// Starts at 1_700_000_000 s and advances 1 s per read, so a reused or hardcoded read stands out.
+fn ticking_clock() -> SystemTime {
+    let tick = CLOCK_TICKS.fetch_add(1, Ordering::Relaxed);
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_700_000_000_u64.saturating_add(tick)))
+        .expect("a clock tick")
 }
 
 fn context<'context>(
@@ -302,7 +320,7 @@ fn constructor_applies_the_declared_defaults() {
     assert!(guardrail.flags.dev_info);
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Block);
     assert!(guardrail.advisory_system_message.is_none());
-    assert!(guardrail.timeout.is_none());
+    assert_eq!(guardrail.timeout, Duration::from_secs(600));
 }
 
 #[test]
@@ -372,6 +390,28 @@ fn constructor_refuses_the_escaped_reason_template() {
     )
     .expect_err("the escaped placeholder is not a field");
     assert_eq!(error.to_string(), ESCAPED_TEMPLATE_TEXT);
+}
+
+#[test]
+fn the_constructor_refuses_the_escaped_reason_template() {
+    let mut args = args();
+    args.on_flagged = Some(LakeraOnFlagged::InjectSystemMessage);
+    args.advisory_system_message = Some("Watch out for {{reason}}".to_owned());
+    let env = BTreeMap::new();
+    let error = LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env)
+        .expect_err("the constructor validates the template");
+    assert_eq!(error.to_string(), ESCAPED_TEMPLATE_TEXT);
+}
+
+#[test]
+fn the_constructor_refuses_advisory_mode_without_payload() {
+    let mut args = args();
+    args.on_flagged = Some(LakeraOnFlagged::InjectSystemMessage);
+    args.payload = Some(false);
+    let env = BTreeMap::new();
+    let error = LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env)
+        .expect_err("the constructor validates the flags");
+    assert_eq!(error.to_string(), PAYLOAD_TEXT);
 }
 
 #[test]
@@ -751,6 +791,45 @@ async fn call_v2_guard_records_a_failed_response() {
         .await
         .expect_err("the body does not decode");
     assert!(matches!(error, LakeraV2Error::Decode { .. }), "{error}");
+    let record = record_of(&data);
+    assert_eq!(
+        record_field(record, "guardrail_status"),
+        &GuardrailValue::Text("guardrail_failed_to_respond".to_owned())
+    );
+    assert_eq!(
+        record_field(record, "guardrail_response"),
+        &GuardrailValue::Text(error.to_string())
+    );
+    assert_eq!(sink.records.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn call_v2_guard_fails_on_an_error_status() {
+    let server = serve(401, r#"{"error": "invalid api key"}"#.to_owned()).await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = chat_data();
+    let sink = CollectingSink::default();
+    let suppressed = BTreeSet::new();
+    let mut call = invocation(&data);
+    let mut call_context = context(ScopeFlags::default(), &mut call, &sink, &suppressed);
+    let messages = vec![lakera_message("user", "hello")];
+    let error = guardrail
+        .call_v2_guard(
+            &messages,
+            &mut data,
+            GuardrailEventHooks::PreCall,
+            &mut call_context,
+        )
+        .await
+        .expect_err("a 401 is not a guard answer");
+    assert!(
+        matches!(
+            &error,
+            LakeraV2Error::Transport { source }
+                if source.status().map(|status| status.as_u16()) == Some(401)
+        ),
+        "{error}"
+    );
     let record = record_of(&data);
     assert_eq!(
         record_field(record, "guardrail_status"),

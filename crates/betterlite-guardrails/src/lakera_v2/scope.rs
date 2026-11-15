@@ -175,11 +175,11 @@ pub fn apply_redacted_back(
     redacted: &[Message],
     scope: ScopeFlags,
 ) -> Result<(), LakeraV2Error> {
-    let original = match data.get("messages") {
+    let messages = match data.get("messages") {
         Some(GuardrailValue::Array(messages)) => Some(messages.clone()),
         _ => None,
     };
-    let Some(original) = original else {
+    let Some(original) = messages else {
         let mut values = Vec::with_capacity(redacted.len());
         for message in redacted {
             values.push(message_value(message)?);

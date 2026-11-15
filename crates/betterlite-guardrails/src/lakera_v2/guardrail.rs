@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::guardrail_identity::item::{GuardrailFlag, GuardrailValue};
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
@@ -25,6 +25,8 @@ pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
 ];
 
 pub const DEFAULT_API_BASE: &str = "https://api.lakera.ai";
+// LiteLLM falls back to httpx's 600s total timeout when the guardrail config sets none.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LakeraV2Flags {
@@ -45,7 +47,8 @@ pub struct LakeraV2Guardrail {
     pub on_flagged: LakeraOnFlagged,
     pub advisory_system_message: Option<String>,
     pub skip_flags: GuardrailSkipFlags,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
+    pub clock: fn() -> SystemTime,
 }
 
 impl LakeraV2Guardrail {

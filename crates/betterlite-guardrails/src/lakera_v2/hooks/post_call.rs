@@ -116,7 +116,9 @@ fn mask_assistant_messages(
         let Some(choice) = choice_indices.get(position) else {
             continue;
         };
-        write_choice_content(response, *choice, scope::content_text(message)?)?;
+        if let Ok(content) = scope::content_text(message) {
+            write_choice_content(response, *choice, content)?;
+        }
     }
     Ok(())
 }
@@ -137,15 +139,21 @@ fn response_messages(response: &Data) -> (Vec<GuardrailValue>, Vec<usize>) {
         let Some(GuardrailValue::Text(role)) = message.get("role") else {
             continue;
         };
-        let Some(GuardrailValue::Text(content)) = message.get("content") else {
+        let Some(content) = message.get("content") else {
             continue;
         };
-        if role.is_empty() || content.is_empty() {
+        let empty = match content {
+            GuardrailValue::Null => true,
+            GuardrailValue::Text(text) => text.is_empty(),
+            GuardrailValue::Array(items) => items.is_empty(),
+            _ => false,
+        };
+        if role.is_empty() || empty {
             continue;
         }
         messages.push(GuardrailValue::Object(BTreeMap::from([
             ("role".to_owned(), GuardrailValue::Text(role.clone())),
-            ("content".to_owned(), GuardrailValue::Text(content.clone())),
+            ("content".to_owned(), content.clone()),
         ])));
         indices.push(index);
     }

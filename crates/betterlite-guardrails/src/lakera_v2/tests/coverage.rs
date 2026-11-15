@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::SystemTime;
+use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_config::sections::guardrail_translation::LakeraOnFlagged;
 use rstest::rstest;
+use secrecy::SecretString;
 
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
@@ -19,7 +20,7 @@ use crate::lakera_v2::scope::{
 use super::{
     ATTACK_ONLY, CollectingSink, EMAIL_SPAN, Hook, PAYLOAD_TEXT, PII_ONLY, args, base, build,
     chat_data, content_of, context, flagged, invocation, lakera_message, message, response_with,
-    run_hook, serve, validate_advisory_config,
+    run_hook, serve, serve_after, ticking_clock, validate_advisory_config,
 };
 
 fn text(value: &str) -> GuardrailValue {
@@ -326,18 +327,15 @@ async fn pre_call_advisory_mode_injects_for_a_non_pii_verdict_on_multimodal_inpu
 }
 
 #[tokio::test]
-async fn call_v2_guard_records_real_times() {
+async fn call_v2_guard_records_the_clock_times() {
     let server = serve(200, flagged(ATTACK_ONLY, "[]")).await;
-    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    guardrail.clock = ticking_clock;
     let mut data = chat_data();
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
     let mut call_context = context(flags(false, false), &mut call, &sink, &suppressed);
-    let before = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64();
     guardrail
         .call_v2_guard(
             &[lakera_message("user", "hi")],
@@ -349,10 +347,9 @@ async fn call_v2_guard_records_real_times() {
         .expect("an answer");
     let records = sink.records.lock().unwrap();
     let record = records.first().expect("one record");
-    let start = record.start_time.expect("a start time");
-    let end = record.end_time.expect("an end time");
-    assert!(start >= before - 1.0 && start <= end, "{start} {end}");
-    assert!(record.duration.expect("a duration") >= 0.0);
+    assert_eq!(record.start_time, Some(1_700_000_000.0));
+    assert_eq!(record.end_time, Some(1_700_000_001.0));
+    assert_eq!(record.duration, Some(1.0));
 }
 
 fn breakdown_of(items: usize) -> String {
@@ -368,9 +365,55 @@ async fn call_v2_guard_reads_an_answer_of_several_kilobytes() {
     let server = serve(200, breakdown_of(200)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
-    run_hook(&guardrail, &mut data, None, Hook::Pre)
+    let outcome = run_hook(&guardrail, &mut data, None, Hook::Pre)
         .await
         .expect("a 10 KB answer is fine");
+    assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
+    assert_eq!(content_of(&data, 0).as_deref(), Some("email a@example.com"));
+}
+
+#[rstest]
+#[case::configured_allows(Some(1000.0), Duration::from_secs(500), true)]
+#[case::configured_expires(Some(100.0), Duration::from_secs(500), false)]
+#[case::default_allows(None, Duration::from_secs(500), true)]
+#[case::default_expires(None, Duration::from_secs(700), false)]
+#[tokio::test(start_paused = true)]
+async fn a_stalled_guard_call_ends_at_its_timeout(
+    #[case] timeout: Option<f64>,
+    #[case] delay: Duration,
+    #[case] answers: bool,
+) {
+    let server = serve_after(Some(delay), 200, flagged(PII_ONLY, EMAIL_SPAN)).await;
+    let mut args = args();
+    args.api_base = Some(server.base_url.clone());
+    args.api_key = Some(SecretString::from("k"));
+    args.timeout = timeout;
+    let env = BTreeMap::new();
+    let guardrail =
+        LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built");
+    let mut data = chat_data();
+    let sink = CollectingSink::default();
+    let suppressed = BTreeSet::new();
+    let mut call = invocation(&data);
+    let mut call_context = context(flags(false, false), &mut call, &sink, &suppressed);
+    let result = guardrail
+        .call_v2_guard(
+            &[lakera_message("user", "hi")],
+            &mut data,
+            GuardrailEventHooks::PreCall,
+            &mut call_context,
+        )
+        .await;
+    if answers {
+        result.expect("the answer arrives inside the timeout");
+        return;
+    }
+    let error = result.expect_err("the answer arrives after the timeout");
+    let source = match error {
+        LakeraV2Error::Transport { source } => source,
+        other => panic!("expected the timeout as a transport error: {other:?}"),
+    };
+    assert!(source.is_timeout(), "{source}");
 }
 
 #[tokio::test]

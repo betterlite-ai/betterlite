@@ -18,3 +18,6 @@ deviations:
   - what: A template the format engine cannot parse or fully evaluate is refused with betterlite's own message, where LiteLLM lets Python's ValueError or AttributeError from str.format escape.
     why: Python's Formatter messages name Python internals, and betterlite implements the format subset an advisory message needs (fields, conversions, fill, alignment, width, precision). Attribute access and negative indexes are refused instead of evaluated.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L333-L359
+  - what: The default guard call timeout is the 600 second total without LiteLLM's separate 5 second connect sub-timeout.
+    why: The HTTP client comes from the caller, and the per-request timeout bounds the whole call; a working Lakera setup depends on the 600 second total, not on how fast an unreachable host is given up.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167

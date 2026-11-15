@@ -41,7 +41,7 @@ pub enum LakeraV2Error {
         #[source]
         source: TryFromFloatSecsError,
     },
-    #[error("the Lakera v2 guard call could not be sent")]
+    #[error("the Lakera v2 guard call failed")]
     Transport {
         #[source]
         source: reqwest::Error,

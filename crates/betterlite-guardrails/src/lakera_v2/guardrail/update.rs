@@ -12,11 +12,12 @@ use super::construction::resolve_timeout;
 impl LakeraV2Guardrail {
     pub fn update_params(&mut self, params: &LitellmParams) -> Result<(), LakeraV2Error> {
         let extra = &params.base.extra;
-        let on_flagged = read_option::<LakeraOnFlagged>(extra, "on_flagged")?;
-        let template = read_option::<String>(extra, "advisory_system_message")?;
-        let payload = read_option::<bool>(extra, "payload")?;
-        let breakdown = read_option::<bool>(extra, "breakdown")?;
-        let dev_info = read_option::<bool>(extra, "dev_info")?;
+        // LiteLLM's update decodes into LitellmParams: an omitted key is the model default, an explicit null keeps the live value.
+        let on_flagged = read_param(extra, "on_flagged", Some(LakeraOnFlagged::Block))?;
+        let template = read_param::<String>(extra, "advisory_system_message", None)?;
+        let payload = read_param(extra, "payload", Some(true))?;
+        let breakdown = read_param(extra, "breakdown", Some(true))?;
+        let dev_info = read_param(extra, "dev_info", Some(true))?;
         let timeout = resolve_timeout(params.base.fields.timeout)?;
         let prospective_on_flagged = on_flagged.unwrap_or(self.on_flagged);
         let prospective_payload = payload.unwrap_or(self.flags.payload);
@@ -44,12 +45,17 @@ impl LakeraV2Guardrail {
     }
 }
 
-fn read_option<T>(extra: &OpaqueParams, key: &str) -> Result<Option<T>, LakeraV2Error>
+fn read_param<T>(
+    extra: &OpaqueParams,
+    key: &str,
+    default: Option<T>,
+) -> Result<Option<T>, LakeraV2Error>
 where
     T: DeserializeOwned,
 {
     match extra.0.get(key) {
-        None | Some(GuardrailValue::Null) => Ok(None),
+        None => Ok(default),
+        Some(GuardrailValue::Null) => Ok(None),
         Some(value) => serde_json::to_value(value)
             .and_then(serde_json::from_value::<T>)
             .map(Some)

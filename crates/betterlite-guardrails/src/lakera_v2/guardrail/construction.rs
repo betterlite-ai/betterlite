@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_translation::LakeraOnFlagged;
@@ -10,7 +10,7 @@ use crate::guardrail_message_scope::scoped_indices::GuardrailSkipFlags;
 
 use super::super::advisory;
 use super::super::error::LakeraV2Error;
-use super::{DEFAULT_API_BASE, LakeraV2Flags, LakeraV2Guardrail};
+use super::{DEFAULT_API_BASE, DEFAULT_TIMEOUT, LakeraV2Flags, LakeraV2Guardrail};
 
 impl LakeraV2Guardrail {
     pub fn new(
@@ -51,6 +51,7 @@ impl LakeraV2Guardrail {
             advisory_system_message: args.advisory_system_message,
             skip_flags,
             timeout,
+            clock: SystemTime::now,
         })
     }
 }
@@ -80,11 +81,10 @@ fn resolve_api_base(args: &LakeraV2Args, env: &dyn EnvironmentLookup) -> String 
     }
 }
 
-pub(super) fn resolve_timeout(timeout: Option<f64>) -> Result<Option<Duration>, LakeraV2Error> {
+pub(super) fn resolve_timeout(timeout: Option<f64>) -> Result<Duration, LakeraV2Error> {
     let Some(seconds) = timeout else {
-        return Ok(None);
+        return Ok(DEFAULT_TIMEOUT);
     };
     Duration::try_from_secs_f64(seconds)
-        .map(Some)
         .map_err(|source| LakeraV2Error::Timeout { seconds, source })
 }

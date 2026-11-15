@@ -38,9 +38,9 @@ impl LakeraV2Guardrail {
         event: GuardrailEventHooks,
         context: &mut HookContext<'_>,
     ) -> Result<(LakeraResponse, BTreeMap<String, u64>), LakeraV2Error> {
-        let started_at = SystemTime::now();
+        let started_at = (self.clock)();
         let result = self.post_guard(messages).await;
-        let finished_at = SystemTime::now();
+        let finished_at = (self.clock)();
         let input = record_input(&result, event, started_at, finished_at)?;
         let sink = context.sink;
         let invocation = &mut *context.invocation;
@@ -66,17 +66,16 @@ impl LakeraV2Guardrail {
             metadata: self.metadata.as_ref(),
             dev_info: self.flags.dev_info,
         };
-        let mut builder = self
+        let mut response = self
             .client
             .post(format!("{}{GUARD_PATH}", self.api_base))
             .bearer_auth(self.api_key.expose_secret())
-            .json(&request);
-        if let Some(timeout) = self.timeout {
-            builder = builder.timeout(timeout);
-        }
-        let mut response = builder
+            .json(&request)
+            .timeout(self.timeout)
             .send()
             .await
+            .map_err(|source| LakeraV2Error::Transport { source })?
+            .error_for_status()
             .map_err(|source| LakeraV2Error::Transport { source })?;
         let read = read_bounded(&mut response, MAX_RESPONSE_BYTES).await;
         let bytes = read.map_err(|error| match error {
@@ -103,14 +102,12 @@ fn record_input(
             GuardrailStatus::GuardrailFailedToRespond,
         ),
     };
-    let start_time = epoch_seconds(started_at);
-    let end_time = epoch_seconds(finished_at);
     let duration = finished_at.duration_since(started_at).unwrap_or_default();
     Ok(GuardrailRecordInput {
         guardrail_response,
         guardrail_status,
-        start_time: Some(start_time),
-        end_time: Some(end_time),
+        start_time: Some(epoch_seconds(started_at)),
+        end_time: Some(epoch_seconds(finished_at)),
         duration: Some(duration.as_secs_f64()),
         masked_entity_count: Some(BTreeMap::new()),
         guardrail_provider: None,
