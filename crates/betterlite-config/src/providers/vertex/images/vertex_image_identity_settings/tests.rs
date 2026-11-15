@@ -162,3 +162,67 @@ fn an_application_default_that_is_a_broken_document_names_the_variable() {
         .expect_err("the credential document is incomplete");
     assert_eq!(error.category(), "invalid_scalar");
 }
+
+#[test]
+fn the_module_credentials_load_apart_from_the_environment_credentials() {
+    let settings = identity(
+        "litellm_settings:\n  vertex_credentials: /keys/module.json\n",
+        &[("VERTEXAI_CREDENTIALS", "/keys/environment.json")],
+    );
+    assert_eq!(
+        settings
+            .module
+            .credentials
+            .as_ref()
+            .and_then(ConfiguredCredentials::as_text),
+        Some("/keys/module.json")
+    );
+    assert_eq!(
+        settings
+            .environment
+            .credentials
+            .as_ref()
+            .and_then(ConfiguredCredentials::as_text),
+        Some("/keys/environment.json")
+    );
+}
+
+#[test]
+fn the_module_credentials_are_absent_without_the_key_and_ignore_the_environment() {
+    let settings = identity("", &[("VERTEXAI_CREDENTIALS", "/keys/environment.json")]);
+    assert!(settings.module.credentials.is_none());
+}
+
+#[test]
+fn an_os_environ_reference_in_the_module_credentials_is_resolved() {
+    let settings = identity(
+        "litellm_settings:\n  vertex_credentials: os.environ/MODULE_KEYS\n",
+        &[("MODULE_KEYS", "/keys/from-env.json")],
+    );
+    assert_eq!(
+        settings
+            .module
+            .credentials
+            .as_ref()
+            .and_then(ConfiguredCredentials::as_text),
+        Some("/keys/from-env.json")
+    );
+}
+
+#[test]
+fn a_module_credential_document_loads_as_a_source_and_a_broken_one_names_the_key() {
+    let document =
+        r#"{"type":"service_account","private_key":"key","client_email":"sa@example.com"}"#;
+    let settings = identity(
+        &format!("litellm_settings:\n  vertex_credentials: '{document}'\n"),
+        &[],
+    );
+    let credentials = settings.module.credentials.expect("the document parses");
+    assert_eq!(credentials.as_text(), None);
+    let broken = ConfigLoader {
+        lookup: lookup(&[]),
+    }
+    .load("litellm_settings:\n  vertex_credentials: '{\"type\":\"service_account\"}'\n")
+    .expect_err("the credential document is incomplete");
+    assert_eq!(broken.category(), "invalid_scalar");
+}

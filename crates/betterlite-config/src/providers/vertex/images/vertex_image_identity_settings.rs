@@ -12,11 +12,12 @@ pub struct ImageIdentityEnvironment {
     pub application_credentials: Option<ConfiguredCredentials>,
 }
 
-// litellm_settings.vertex_project and litellm_settings.vertex_location, the litellm.vertex_* globals
+// litellm_settings.vertex_project, vertex_location and vertex_credentials, the litellm.vertex_* globals
 #[derive(Debug, Clone, Default)]
 pub struct ImageIdentityModule {
     pub project: Option<String>,
     pub location: Option<String>,
+    pub credentials: Option<ConfiguredCredentials>,
 }
 
 // what get_secret_str answers for the four names after the environment's own reads came back empty
@@ -74,6 +75,7 @@ impl Sections {
                     .vertex_location
                     .clone()
                     .filter(|text| !text.is_empty()),
+                credentials: self.vertex_image_credentials.credentials.clone(),
             },
             secrets: ImageIdentitySecrets {
                 project: present("VERTEXAI_PROJECT"),

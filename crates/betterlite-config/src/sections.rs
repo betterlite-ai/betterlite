@@ -448,6 +448,9 @@ pub mod verbose_hooks;
 pub mod vertex_credential_sources;
 pub mod vertex_embedding_dispatch;
 pub mod vertex_gcs_settings;
+// the view sits with the image identity code it feeds, which owns litellm_settings.vertex_credentials
+#[path = "providers/vertex/images/vertex_image_credentials.rs"]
+pub mod vertex_image_credentials;
 pub mod vertex_schema_shaping;
 pub mod vigil_runtime;
 pub mod virtual_key_auth;
@@ -633,7 +636,7 @@ sections! {
     two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,
     usage_v2_accounting, user_delete, user_fields, user_info, user_update, user_url_policy,
     vector_context_shaping, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
-    vertex_gcs_settings, vertex_schema_shaping, vigil_runtime, virtual_key_auth, virtual_key_routes, voyage_credentials,
+    vertex_gcs_settings, vertex_image_credentials, vertex_schema_shaping, vigil_runtime, virtual_key_auth, virtual_key_routes, voyage_credentials,
     websearch_request_hooks, worker_options_reload, xai_identity, xai_oauth_settings, xecguard_runtime,
     config_param_cache, data_cloud_credentials, db_watchdog, enterprise_ml_credentials, fallback_errors, gateway_provider_keys, hosted_platform_keys, mcp_discovery, model_hub_credentials, prompts, public_skills_index, regional_host_keys, smtp_transport, weighted_failover,
 }
