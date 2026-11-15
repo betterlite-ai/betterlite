@@ -10,6 +10,7 @@ use axum::extract::{Request, State};
 use axum::http::StatusCode as AxumStatus;
 use axum::routing::post;
 use reqwest::StatusCode;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
@@ -238,6 +239,44 @@ async fn akto_guardrail_send_request_times_out_at_the_guardrail_timeout() {
         )
         .await
         .expect_err("timeout");
+    assert!(matches!(error, AktoError::Transport { .. }));
+}
+
+// httpx applies a scalar timeout to each phase, so a body that trickles in under the read timeout still completes
+#[tokio::test]
+async fn akto_guardrail_send_request_applies_one_total_deadline() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let mut server = JoinSet::new();
+    server.spawn(async move {
+        let (mut stream, _) = listener.accept().await?;
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 12\r\n\r\n",
+            )
+            .await?;
+        for _ in 0..12 {
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            stream.write_all(b" ").await?;
+        }
+        Ok::<(), std::io::Error>(())
+    });
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    guardrail.timeout = Duration::from_millis(150);
+    let payload = guardrail
+        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
+        .expect("payload");
+    let error = guardrail
+        .send_request(
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: false,
+            },
+            &payload,
+        )
+        .await
+        .expect_err("total deadline");
     assert!(matches!(error, AktoError::Transport { .. }));
 }
 
