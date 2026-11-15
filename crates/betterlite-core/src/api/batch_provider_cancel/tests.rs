@@ -304,22 +304,20 @@ async fn first_call(settings: Settings, provider: &str, params: CancelParams) ->
 }
 
 // every declared provider reaches its branch with the shared values of the call
+#[rstest]
+#[case::openai("openai", "openai")]
+#[case::hosted_vllm("hosted_vllm", "openai")]
+#[case::litellm_proxy("litellm_proxy", "openai")]
+#[case::azure("azure", "azure")]
+#[case::vertex_ai("vertex_ai", "vertex")]
+#[case::xai("xai", "xai")]
 #[tokio::test]
-async fn batch_cancel() {
+async fn batch_cancel(#[case] provider: &str, #[case] expected: &str) {
     let mut settings = base_settings();
     settings.api_key = Some(SecretString::from("sk-configured".to_owned()));
-    for (provider, expected) in [
-        ("openai", "openai"),
-        ("hosted_vllm", "openai"),
-        ("litellm_proxy", "openai"),
-        ("azure", "azure"),
-        ("vertex_ai", "vertex"),
-        ("xai", "xai"),
-    ] {
-        let entry = first_call(settings.clone(), provider, base_params()).await;
-        assert_eq!(branch(&entry), expected);
-        assert_eq!(values(&entry), &expected_values());
-    }
+    let entry = first_call(settings, provider, base_params()).await;
+    assert_eq!(branch(&entry), expected);
+    assert_eq!(values(&entry), &expected_values());
 }
 
 fn status_response(raw: &str) -> AsyncInvokeStatus {
