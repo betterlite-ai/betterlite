@@ -1,0 +1,28 @@
+kind: helper
+name: policy-test-response-matching
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyTestResponse
+    value:
+      context:
+        team_alias: healthcare-team
+        key_alias: dev-key
+        model: gpt-4
+        tags: [prod]
+      matching_policies: [healthcare, baseline]
+      resolved_guardrails: [hipaa, pii]
+      message: null
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyTestResponse
+      value:
+        context: {}
+        matching_policies: []
+        resolved_guardrails: []
+        message: No policies are loaded
+env: {}
+compare: {ignore: []}
