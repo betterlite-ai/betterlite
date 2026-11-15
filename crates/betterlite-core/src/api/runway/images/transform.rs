@@ -57,11 +57,11 @@ fn poll_headers(
 ) -> Result<HeaderMap, RunwayImageError> {
     let authorization = header_value(original, "authorization").unwrap_or_default();
     let version = header_value(original, VERSION_HEADER).unwrap_or(default_version);
+    let mut bearer =
+        HeaderValue::try_from(authorization).map_err(RunwayTaskError::InvalidHeader)?;
+    bearer.set_sensitive(true);
     let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::try_from(authorization).map_err(RunwayTaskError::InvalidHeader)?,
-    );
+    headers.insert(AUTHORIZATION, bearer);
     headers.insert(
         HeaderName::from_static(VERSION_HEADER),
         HeaderValue::try_from(version).map_err(RunwayTaskError::InvalidHeader)?,

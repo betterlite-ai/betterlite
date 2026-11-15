@@ -21,8 +21,24 @@ pub fn apply_task_output(task: &RunwayTask, mut response: ImageResponse) -> Imag
                 revised_prompt: None,
                 url: fields.get("url").cloned(),
             }),
-            TaskOutput::Unsupported(_) => {}
+            TaskOutput::Unsupported(raw) => {
+                // B1534 leaves a mapping with a non-string value undecoded; LiteLLM still appends an entry for it
+                if let Ok(serde_json::Value::Object(object)) = serde_json::from_str(raw) {
+                    data.push(ImageData {
+                        b64_json: string_member(&object, "b64_json"),
+                        revised_prompt: None,
+                        url: string_member(&object, "url"),
+                    });
+                }
+            }
         }
     }
     response
+}
+
+fn string_member(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
+    object
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
 }

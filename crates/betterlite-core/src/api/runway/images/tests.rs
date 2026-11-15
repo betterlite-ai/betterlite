@@ -347,11 +347,36 @@ fn a_mapping_without_image_fields_still_adds_an_entry() {
 #[test]
 fn other_members_are_skipped() {
     let finished = apply_task_output(
-        &task(r#"{"status":"SUCCEEDED","output":[7,true,null,{"n":1}]}"#),
+        &task(r#"{"status":"SUCCEEDED","output":[7,true,null,[1],1.5]}"#),
         response(3, None),
     );
     assert_eq!(finished.data, Some(Vec::new()));
     assert_eq!(finished.created, 3);
+}
+
+#[rstest]
+#[case::numeric_sibling(
+    r#"{"url":"https://o.test/a.png","width":1024}"#,
+    Some("https://o.test/a.png"),
+    None
+)]
+#[case::null_url(r#"{"url":null}"#, None, None)]
+#[case::nested_value(r#"{"b64_json":"QUJD","meta":{"a":1}}"#, None, Some("QUJD"))]
+fn a_mapping_with_a_non_string_value_still_adds_an_entry(
+    #[case] member: &str,
+    #[case] url: Option<&str>,
+    #[case] b64_json: Option<&str>,
+) {
+    let body = format!(r#"{{"status":"SUCCEEDED","output":[{member}]}}"#);
+    let finished = apply_task_output(&task(&body), response(0, None));
+    assert_eq!(
+        finished.data,
+        Some(vec![ImageData {
+            b64_json: b64_json.map(str::to_owned),
+            revised_prompt: None,
+            url: url.map(str::to_owned),
+        }])
+    );
 }
 
 #[rstest]
@@ -453,6 +478,7 @@ async fn forwards_only_the_original_authorization_and_version() {
     let polled = &requests[0].1;
     assert_eq!(polled.len(), 2);
     assert_eq!(polled[AUTHORIZATION], "Bearer caller");
+    assert!(polled[AUTHORIZATION].is_sensitive());
     assert_eq!(polled["x-runway-version"], "2020-02-02");
 }
 
