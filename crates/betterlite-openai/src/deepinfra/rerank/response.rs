@@ -15,15 +15,9 @@ use crate::api::rerank_contracts::records::{
 };
 use crate::api::vector_store_records::records::score::Score;
 
-use super::{HeaderMap, RerankLimits};
+use super::RerankLimits;
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("{message}")]
-pub struct BaseLlmException {
-    pub status_code: u16,
-    pub message: String,
-    pub headers: HeaderMap,
-}
+pub mod error;
 
 pub trait RerankLogging {
     fn post_call(&mut self, original_response: &str) -> Result<(), LoggingFailure>;
@@ -82,10 +76,17 @@ enum Presence {
 // ast-grep-ignore: no-custom-serde
 impl<'de> Deserialize<'de> for Presence {
     // ast-grep-ignore: no-custom-serde
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         Ok(match Json::deserialize(deserializer)? {
             Json::Null => Self::Null,
-            present => Self::Value(present),
+            present @ (Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_)) => Self::Value(present),
         })
     }
 }
@@ -256,7 +257,7 @@ fn hidden_params(inference: &IndexMap<String, Json>) -> BTreeMap<String, Json> {
             String::from("cost"),
             value(
                 "cost",
-                Json::Number(Number::from_f64(0.0).unwrap_or_else(|| Number::from(0))),
+                Json::Number(Number::from_f64(0.0).unwrap_or_else(|| Number::from(0_i32))),
             ),
         ),
         (
@@ -268,41 +269,4 @@ fn hidden_params(inference: &IndexMap<String, Json>) -> BTreeMap<String, Json> {
             value("tokens_input", Json::Number(Number::from(0))),
         ),
     ])
-}
-
-// LiteLLM picks {"detail": {"error": ...}} first, then a string detail, and swallows every parse or type failure
-#[must_use]
-pub fn decode_deepinfra_error(message: &str, limits: RerankLimits) -> String {
-    if message.len() > limits.max_body_bytes {
-        return message.to_owned();
-    }
-    let Ok(Json::Object(fields)) = serde_json::from_str::<Json>(message) else {
-        return message.to_owned();
-    };
-    let selected = match fields.get("detail") {
-        Some(Json::Object(detail)) => match detail.get("error") {
-            Some(Json::Text(text)) => Some(text.clone()),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => None,
-        },
-        Some(Json::Text(text)) => Some(text.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_)) | None => None,
-    };
-    selected.unwrap_or_else(|| message.to_owned())
-}
-
-#[must_use]
-pub fn get_error_class(
-    error_message: &str,
-    status_code: u16,
-    headers: HeaderMap,
-    limits: RerankLimits,
-) -> BaseLlmException {
-    BaseLlmException {
-        status_code,
-        message: decode_deepinfra_error(error_message, limits),
-        headers,
-    }
 }
