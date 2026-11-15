@@ -15,7 +15,15 @@ const MANTLE_REGION: &str = "eu-west-1";
 const MANTLE_DEFAULT_URL: &str = "https://bedrock-mantle.eu-west-1.api.aws/anthropic/v1/messages";
 const MANTLE_ENVIRONMENT_URL: &str = "https://env.example/anthropic/v1/messages";
 
-const MANTLE_CASES: &[(Option<&str>, Option<&str>, Option<&str>, &str, &str)] = &[
+type MantleCase = (
+    Option<&'static str>,
+    Option<&'static str>,
+    Option<&'static str>,
+    &'static str,
+    &'static str,
+);
+
+const MANTLE_CASES: &[MantleCase] = &[
     (None, None, None, MANTLE_REGION, MANTLE_DEFAULT_URL),
     (None, None, Some(""), MANTLE_REGION, MANTLE_DEFAULT_URL),
     (None, None, Some("/v1"), MANTLE_REGION, MANTLE_DEFAULT_URL),
