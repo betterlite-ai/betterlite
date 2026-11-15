@@ -5,6 +5,7 @@ use betterlite_config::tls::Verification;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
+use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -17,7 +18,8 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use crate::realtime::connect::{RealtimeConnectSettings, prepare_connection};
-use crate::realtime::logging::PrePostLogger;
+use crate::realtime::error::RealtimeError;
+use crate::realtime::logging::{PrePostLogger, RealtimeLogRecord, RealtimeLogger};
 use crate::realtime::url::QueryParams;
 
 #[derive(Default)]
@@ -93,6 +95,7 @@ fn records_the_realtime_pre_call() {
         state.model_call_details.get("log_event_type"),
         Some(&Json::Text(String::from("pre_api_call")))
     );
+    assert_eq!(state.model_call_details.get("input"), Some(&Json::Null));
     let Some(Json::Object(arguments)) = state.model_call_details.get("additional_args") else {
         panic!("the pre call records additional_args");
     };
@@ -123,6 +126,34 @@ fn records_the_realtime_pre_call() {
             Json::Text(String::from("realtime-a")),
         )])))
     );
+}
+
+struct FailingLogger;
+
+impl RealtimeLogger for FailingLogger {
+    fn pre_call(&mut self, _record: RealtimeLogRecord<'_>) -> Result<(), PrePostError> {
+        Err(PrePostError::RawRequestCaptured)
+    }
+}
+
+#[test]
+fn pre_call_failure_stops_the_connection() {
+    let key = SecretString::from("sk-test".to_owned());
+    let settings = RealtimeConnectSettings {
+        api_base: None,
+        api_key: Some(&key),
+        model: "realtime-a",
+        query_params: None,
+        beta_realtime: true,
+        ssl_verification: &Verification::Enabled,
+        max_message_size_bytes: 4_096,
+    };
+    assert!(matches!(
+        prepare_connection(&settings, &mut FailingLogger),
+        Err(RealtimeError::Logging {
+            source: PrePostError::RawRequestCaptured
+        })
+    ));
 }
 
 #[test]
