@@ -19,14 +19,14 @@ use crate::stream_decode::{ChunkStream, TransportChunk, decode_anthropic_event};
 use fixture::{MAX_EVENT_BYTES, converter};
 
 #[rstest]
-#[case::case_1_split_event_data(scenarios::split_event_data)]
-#[case::case_2_split_unicode(scenarios::split_unicode)]
-#[case::case_3_multi_line_sse(scenarios::multi_line_sse)]
-#[case::case_4_done_marker(scenarios::done_marker)]
-#[case::case_5_invalid_json_event(scenarios::invalid_json_event)]
-#[case::case_6_native_error_event(scenarios::native_error_event)]
-#[case::case_7_truncated_final_event(scenarios::truncated_final_event)]
-#[case::case_8_passthrough_chunk_conversion(scenarios::passthrough_chunk_conversion)]
+#[case::split_event_data(scenarios::split_event_data)]
+#[case::split_unicode(scenarios::split_unicode)]
+#[case::multi_line_sse(scenarios::multi_line_sse)]
+#[case::done_marker(scenarios::done_marker)]
+#[case::invalid_json_event(scenarios::invalid_json_event)]
+#[case::native_error_event(scenarios::native_error_event)]
+#[case::truncated_final_event(scenarios::truncated_final_event)]
+#[case::passthrough_chunk_conversion(scenarios::passthrough_chunk_conversion)]
 fn stream_decode_cases(#[case] scenario: fn()) {
     scenario();
 }

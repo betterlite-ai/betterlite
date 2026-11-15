@@ -82,6 +82,10 @@ pub(super) fn split_event_data() {
         assert_eq!(contents(outcomes), ["a", "b", "", "", "", "d"]);
         assert_empty_generic(generic(&outcomes[2]));
     }
+    split_event_data_edges();
+}
+
+fn split_event_data_edges() {
     // A nondict JSON value reaches the parser directly and fails there, without starting accumulation.
     let directly = drive_sync(vec![
         Ok(TransportChunk::Text("data: [1,2]".to_owned())),
@@ -224,6 +228,10 @@ pub(super) fn invalid_json_event() {
     assert_eq!(receiving, "Error receiving chunk from stream: bad read");
     let other = failure(&sync[4]).to_string();
     assert_eq!(other, "connection reset");
+    invalid_json_at_end_of_stream();
+}
+
+fn invalid_json_at_end_of_stream() {
     // The malformed JSON is silently left in the accumulator at end of stream.
     let truncated = drive_sync(vec![Ok(TransportChunk::Text(
         r#"data: {"type":"content_block_delta""#.to_owned(),
