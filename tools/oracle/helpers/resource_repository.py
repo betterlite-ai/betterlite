@@ -1,15 +1,51 @@
+import asyncio
 from typing import TypedDict
 
-from litellm.repositories import config_repository
-from litellm.repositories.config_repository import ConfigParam
+from litellm.proxy.db.prisma_client import PrismaWrapper
+from litellm.proxy.utils import PrismaClient
+from litellm.repositories.config_repository import ConfigParam, ConfigRepository
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 
 class Input(TypedDict):
     raw: str
 
 
+class FakeRow:
+    def __init__(self, raw: str) -> None:
+        self.param_name = "param_name"
+        self.param_value = raw
+
+
+class FakeTable:
+    def __init__(self, row: FakeRow) -> None:
+        self.row = row
+
+    async def find_unique(self, *, where: dict[str, str]) -> FakeRow:
+        del where
+        return self.row
+
+
+class FakeDb(PrismaWrapper):
+    def __init__(self, table: FakeTable) -> None:
+        self.table = table
+
+    @override
+    def __getattr__(self, name: str) -> FakeTable:
+        del name
+        return self.table
+
+
+class FakeClient(PrismaClient):
+    def __init__(self, table: FakeTable) -> None:
+        self.db = FakeDb(table)
+
+
+# get_param decodes a stored string through the pin's own config-value conversion.
 def run(input_value: Input) -> JsonValue:
-    decoded = config_repository._decoded_json(input_value["raw"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L13-L15
-    param = ConfigParam("param_name", decoded)
+    table = FakeTable(FakeRow(input_value["raw"]))
+    param: ConfigParam | None = asyncio.run(ConfigRepository(FakeClient(table)).get_param("param_name"))
+    if param is None:
+        raise ValueError("the fake config table returned no row")
     return TypeAdapter(JsonValue).validate_python(param.param_value)
