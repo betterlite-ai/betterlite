@@ -7,6 +7,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::credential_sources::getters::VertexParams;
 use crate::endpoint_target::target::get_api_base;
+use crate::model_urls::error::VertexUrlError;
 use crate::studio_interactions::credentials::RequestHeaders;
 use crate::studio_interactions::urls::Lifecycle;
 use crate::token_cache::probe::AccessToken;
@@ -56,7 +57,7 @@ impl VertexInteractionsConfig {
                 .explicit_vertex_ai_location()
                 .unwrap_or(DEFAULT_LOCATION),
         ))
-        .map_err(|error| VertexInteractionsError::Location(error.into()))?;
+        .map_err(|error| VertexInteractionsError::Location(VertexUrlError::from(error)))?;
         let base_url = get_api_base(call.api_base, Some(location))
             .map_err(VertexInteractionsError::ApiBase)?;
         Ok(VertexInteractionsTarget {

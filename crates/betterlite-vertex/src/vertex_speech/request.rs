@@ -6,6 +6,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::endpoint_target::region::DEFAULT_LOCATION;
+use crate::model_urls::error::VertexUrlError;
 use crate::studio_interactions::credentials::RequestHeaders;
 use crate::vertex_interactions::mint::MintAccessToken;
 
@@ -119,7 +120,7 @@ pub async fn prepare_request(
         .filter(|value| !value.is_empty())
         .unwrap_or(DEFAULT_LOCATION);
     validate_vertex_location(Some(location))
-        .map_err(|error| VertexSpeechError::Location(error.into()))?;
+        .map_err(|error| VertexSpeechError::Location(VertexUrlError::from(error)))?;
     headers.insert(
         "Authorization".to_owned(),
         SecretString::from(format!("Bearer {}", access.token.expose_secret())),

@@ -11,6 +11,7 @@ use secrecy::SecretString;
 
 use crate::model_urls::Endpoint;
 use crate::model_urls::base_url::get_vertex_base_url;
+use crate::model_urls::error::VertexUrlError;
 use crate::vertex_gemini_transcription::error::VertexGeminiTranscriptionError;
 use crate::vertex_gemini_transcription::types::{
     AudioTranscriptionConfig, Content, GenerationConfig, InlineData, Part, Role,
@@ -49,9 +50,8 @@ pub fn complete_url(
     model: &str,
 ) -> Result<String, VertexGeminiTranscriptionError> {
     let checked_location = validate_vertex_location(Some(location.unwrap_or(DEFAULT_LOCATION)))
-        .map_err(|error| VertexGeminiTranscriptionError::Location {
-            source: error.into(),
-        })?;
+        .map_err(VertexUrlError::from)
+        .map_err(|source| VertexGeminiTranscriptionError::Location { source })?;
     let Some(requested) = project.or(credential_project) else {
         return Err(VertexGeminiTranscriptionError::ProjectRequired);
     };
