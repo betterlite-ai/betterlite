@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-completion-auth
+call: {anthropic_completion: {function: auth, cases: [{api_key: sk-legacy, headers: {x-custom: kept}}, {api_key: null, headers: {}}]}}
+env: {}
+compare: {ignore: []}
