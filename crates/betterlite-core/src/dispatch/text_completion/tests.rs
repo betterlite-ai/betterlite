@@ -302,10 +302,10 @@ async fn failure_becomes_rejected() {
     })
     .await;
     assert!(matches!(
-        throttled,
+        &throttled,
         DispatchError::Rejected {
             status: 429,
-            ref error_type,
+            error_type,
             ..
         } if error_type == "throttling_error"
     ));
@@ -320,10 +320,10 @@ async fn failure_becomes_rejected() {
     })
     .await;
     assert!(matches!(
-        unmapped,
+        &unmapped,
         DispatchError::Rejected {
             status: 500,
-            ref error_type,
+            error_type,
             ..
         } if error_type.is_empty()
     ));

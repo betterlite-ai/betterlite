@@ -342,43 +342,42 @@ async fn parameters_and_controls() {
     let body = r#"{"model":"text-model","prompt":"hi","temperature":0.7,"logprobs":2,"top_logprobs":1,"max_retries":5,"api_base":"http://evil.example","api_key":"sk-evil","api_version":"2099-01-01","metadata":{"user":"x"},"mock_response":"not a mock","mock_timeout":true,"num_retries":3,"timeout":1,"extra_headers":{"x-caller":"yes"}}"#;
     let answered = call("/v1/completions", body, 200, ANSWER).await;
     assert_eq!(answered.status, StatusCode::OK);
-    assert_sampling_parameters_forwarded(&answered);
-    assert_controls_absent(&answered);
+    assert_sent_body(
+        &answered,
+        &[
+            r#""temperature":0.7"#,
+            r#""logprobs":2"#,
+            r#""top_logprobs":1"#,
+        ],
+        true,
+    );
+    assert_sent_body(
+        &answered,
+        &[
+            "max_retries",
+            "api_base",
+            "api_key",
+            "api_version",
+            "metadata",
+            "mock_response",
+            "mock_timeout",
+            "num_retries",
+            "sk-evil",
+            "evil.example",
+            "2099-01-01",
+            "not a mock",
+        ],
+        false,
+    );
     assert_upstream_request_headers(&answered);
 }
 
-fn assert_sampling_parameters_forwarded(answered: &Answered) {
-    for expected in [
-        r#""temperature":0.7"#,
-        r#""logprobs":2"#,
-        r#""top_logprobs":1"#,
-    ] {
-        assert!(
-            answered.sent.contains(expected),
-            "{expected} missing: {}",
-            answered.sent
-        );
-    }
-}
-
-fn assert_controls_absent(answered: &Answered) {
-    for control in [
-        "max_retries",
-        "api_base",
-        "api_key",
-        "api_version",
-        "metadata",
-        "mock_response",
-        "mock_timeout",
-        "num_retries",
-        "sk-evil",
-        "evil.example",
-        "2099-01-01",
-        "not a mock",
-    ] {
-        assert!(
-            !answered.sent.contains(control),
-            "{control} leaked: {}",
+fn assert_sent_body(answered: &Answered, needles: &[&str], expected_present: bool) {
+    for needle in needles {
+        assert_eq!(
+            answered.sent.contains(needle),
+            expected_present,
+            "{needle} expected present={expected_present}: {}",
             answered.sent
         );
     }
