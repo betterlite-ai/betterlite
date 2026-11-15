@@ -73,10 +73,10 @@ impl PromptTableActions for FakePromptTable {
         query: PromptRowQuery,
     ) -> impl Future<Output = Result<Vec<PromptRow>, Self::Failure>> + Send {
         self.queries.lock().unwrap().push(query);
-        let result = match self.failure {
-            Some(message) => Err(io::Error::other(message)),
-            None => Ok(self.rows.clone()),
-        };
+        let result = self.failure.map_or_else(
+            || Ok(self.rows.clone()),
+            |message| Err(io::Error::other(message)),
+        );
         ready(result)
     }
 
@@ -224,9 +224,18 @@ async fn the_prompt_table_actions_expose_every_table_operation() {
     };
     let updated = table.update(PromptRowFilter::default(), update).await;
     let deleted = table.delete_many(PromptRowFilter::default()).await;
-    assert!(created.is_err());
-    assert!(updated.is_err());
-    assert!(deleted.is_err());
+    assert_eq!(
+        created.expect_err("create fails").to_string(),
+        "create is not scripted"
+    );
+    assert_eq!(
+        updated.expect_err("update fails").to_string(),
+        "update is not scripted"
+    );
+    assert_eq!(
+        deleted.expect_err("delete fails").to_string(),
+        "delete is not scripted"
+    );
 }
 
 #[test]

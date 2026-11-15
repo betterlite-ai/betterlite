@@ -29,20 +29,19 @@ pub fn get_version_number(prompt_id: &str) -> i64 {
 }
 
 fn version_suffix(prompt_id: &str, marker: &str) -> Option<i64> {
-    prompt_id.split_once(marker).and_then(|(_, rest)| {
-        rest.split_once(marker)
-            .map_or(rest, |(head, _)| head)
-            .parse::<i64>()
-            .ok()
-    })
+    let (_, rest) = prompt_id.split_once(marker)?;
+    rest.split_once(marker)
+        .map_or(rest, |(head, _)| head)
+        .parse::<i64>()
+        .ok()
 }
 
 #[must_use]
 pub fn prompt_environment_or_default(environment: Option<&str>) -> String {
-    match environment {
-        Some(environment) => environment.to_owned(),
-        None => DEFAULT_PROMPT_ENVIRONMENT.to_owned(),
-    }
+    environment.map_or_else(
+        || DEFAULT_PROMPT_ENVIRONMENT.to_owned(),
+        |requested| requested.to_owned(),
+    )
 }
 
 #[must_use]
@@ -68,10 +67,9 @@ pub fn parse_prompt_version(raw_version: Option<&Json>) -> Option<i64> {
 
 #[must_use]
 pub fn spec_version(prompt: &PromptSpec) -> i64 {
-    match prompt.version {
-        Some(version) => version,
-        None => get_version_number(&prompt.prompt_id),
-    }
+    prompt
+        .version
+        .unwrap_or_else(|| get_version_number(&prompt.prompt_id))
 }
 
 #[must_use]
@@ -85,10 +83,11 @@ pub fn default_serve_environment(prompts: &[&PromptSpec]) -> String {
             return environment.to_owned();
         }
     }
-    match present.into_iter().next() {
-        Some(environment) => environment.to_owned(),
-        None => DEFAULT_PROMPT_ENVIRONMENT.to_owned(),
-    }
+    present
+        .into_iter()
+        .next()
+        .unwrap_or(DEFAULT_PROMPT_ENVIRONMENT)
+        .to_owned()
 }
 
 mod tests;

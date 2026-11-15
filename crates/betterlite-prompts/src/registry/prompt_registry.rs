@@ -14,6 +14,7 @@ pub struct InMemoryPromptRegistry {
 }
 
 impl InMemoryPromptRegistry {
+    #[must_use]
     pub fn resolve_prompt_spec(
         &self,
         prompt_id: &str,
@@ -26,16 +27,16 @@ impl InMemoryPromptRegistry {
             .values()
             .filter(|spec| get_base_prompt_id(&spec.prompt_id) == base_prompt_id)
             .collect();
-        let resolved_environment = match environment {
-            Some(environment) => environment.to_owned(),
-            None => default_serve_environment(&base_matches),
-        };
+        let resolved_environment = environment.map_or_else(
+            || default_serve_environment(&base_matches),
+            |requested| requested.to_owned(),
+        );
         let mut candidates = base_matches.into_iter().filter(|spec| {
             prompt_environment_or_default(Some(spec.environment.as_str())) == resolved_environment
         });
-        if let Some(version) = version {
+        if let Some(requested_version) = version {
             return candidates
-                .find(|spec| spec_version(spec) == version)
+                .find(|spec| spec_version(spec) == requested_version)
                 .cloned();
         }
         let mut selected = candidates.next()?;
@@ -47,6 +48,7 @@ impl InMemoryPromptRegistry {
         Some(selected.clone())
     }
 
+    #[must_use]
     pub fn get_prompt_callback_for_prompt(
         &self,
         prompt: &PromptSpec,
