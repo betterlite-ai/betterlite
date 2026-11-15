@@ -1,17 +1,13 @@
 import asyncio
 import json
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 import httpx
-from fastapi import HTTPException
-from litellm.llms.openai.chat.guardrail_translation.handler import (
-    OpenAIChatCompletionsHandler,
-)
 from litellm.proxy.guardrails.guardrail_hooks.qualifire.qualifire import (
     QualifireGuardrail,
 )
-from litellm.types.utils import ModelResponse
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
@@ -36,12 +32,30 @@ class Settings(TypedDict, total=False):
     timeout: float
 
 
+class ChoiceMessage(TypedDict):
+    content: str
+
+
+class Choice(TypedDict):
+    message: ChoiceMessage
+
+
+class Response(TypedDict):
+    choices: list[Choice]
+
+
+class Inputs(TypedDict, total=False):
+    texts: list[str]
+    structured_messages: list[dict[str, JsonValue]]
+    model: str
+
+
 class Call(TypedDict):
     settings: Settings
     messages: list[dict[str, JsonValue]]
     answer: Answer
     tools: NotRequired[list[dict[str, JsonValue]]]
-    response: NotRequired[dict[str, JsonValue]]
+    response: NotRequired[Response]
 
 
 class Captured(TypedDict):
@@ -94,51 +108,36 @@ def build(call: Call) -> QualifireGuardrail:
     )
 
 
-def request_data(call: Call, *, request: bool) -> dict[str, JsonValue]:
+def request_data(call: Call) -> dict[str, JsonValue]:
     data: dict[str, JsonValue] = {"messages": list(call["messages"])}
-    if request:
-        data["model"] = "gpt-4o"
     tools = call.get("tools")
     if tools is not None:
         data["tools"] = JSON.validate_python(tools)
+    if "response" not in call:
+        data["model"] = "gpt-4o"
     return data
 
 
-def fire_request(
-    handler: OpenAIChatCompletionsHandler,
-    guardrail: QualifireGuardrail,
-    data: dict[str, JsonValue],
-) -> None:
-    asyncio.run(handler.process_input_messages(data, guardrail))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L103
-
-
-def fire_response(
-    handler: OpenAIChatCompletionsHandler,
-    guardrail: QualifireGuardrail,
-    response: dict[str, JsonValue],
-    data: dict[str, JsonValue],
-) -> None:
-    answer = ModelResponse.model_validate_json(json.dumps(response))
-    asyncio.run(handler.process_output_response(answer, guardrail, None, None, data))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L383
+def guardrail_inputs(call: Call) -> Inputs:
+    response = call.get("response")
+    if response is not None:
+        return {"texts": [choice["message"]["content"] for choice in response["choices"]]}
+    return {"structured_messages": list(call["messages"]), "model": "gpt-4o"}
 
 
 def outcome(
-    handler: OpenAIChatCompletionsHandler,
     guardrail: QualifireGuardrail,
     call: Call,
     captured: list[Captured],
 ) -> Result:
     status: int | None = None
     detail: JsonValue = None
-    response = call.get("response")
+    kind: Literal["request", "response"] = "response" if "response" in call else "request"
     try:
-        if response is not None:
-            fire_response(handler, guardrail, response, request_data(call, request=False))
-        else:
-            fire_request(handler, guardrail, request_data(call, request=True))
+        asyncio.run(guardrail.apply_guardrail(guardrail_inputs(call), request_data(call), kind))  # type: ignore[misc]  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L423
     except HTTPException as error:
         status = error.status_code
-        detail = error.detail  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L409
+        detail = JSON.validate_python(error.detail)
     except httpx.HTTPStatusError as error:
         status = error.response.status_code
     return {
@@ -153,5 +152,4 @@ def run(call: Call) -> JsonValue:
     guardrail = build(call)
     transport = httpx.MockTransport(Reply(call["answer"], captured))
     guardrail.async_handler.client = httpx.AsyncClient(transport=transport)
-    handler = OpenAIChatCompletionsHandler()
-    return JSON.validate_python(outcome(handler, guardrail, call, captured))
+    return JSON.validate_python(outcome(guardrail, call, captured))
