@@ -22,14 +22,6 @@ class APIError(Exception):
         self.status_code = status
 
 
-class UnknownRecordedProvider(Exception):
-    pass
-
-
-class NoProviderReached(Exception):
-    pass
-
-
 class Phases(BaseModel):
     connect: float | None = None
     read: float | None = None
@@ -37,7 +29,7 @@ class Phases(BaseModel):
     pool: float | None = None
 
 
-class RetrieveRequest(TypedDict, total=False):
+class RetrieveRequest(TypedDict):
     batch_id: str
     extra_headers: dict[str, JsonValue] | None
     extra_body: dict[str, JsonValue] | None
@@ -146,7 +138,7 @@ def json_value(value: JsonValue | httpx.Timeout) -> JsonValue:
     match value:
         case httpx.Timeout() as timeout:
             return JSON.validate_python(timeout.as_dict())
-        case str() | int() | float() | bool() | list() | dict() | None:
+        case str() | int() | float() | list() | dict() | None:
             return value
 
 
@@ -159,7 +151,7 @@ def request_value(value: JsonValue | httpx.Timeout) -> JsonValue:
     }
 
 
-def azure_params(value: JsonValue | httpx.Timeout) -> dict[str, JsonValue]:
+def azure_params(value: JsonValue | httpx.Timeout) -> JsonValue:
     params = AZURE_LITELLM_PARAMS.validate_python(value)
     return {
         "api_key": json_value(params["api_key"]),
@@ -183,7 +175,7 @@ def provider_timeout(value: float | str | Phases | None) -> float | str | httpx.
             return httpx.Timeout(
                 connect=phases.connect, read=phases.read, write=phases.write, pool=phases.pool
             )
-        case float() | str() | None:
+        case int() | float() | str() | None:
             return value
 
 
@@ -237,7 +229,7 @@ def capture() -> JsonValue:
             "api_key": json_value(kwargs["api_key"]),
             "timeout": json_value(kwargs["timeout"]),
         }
-    raise UnknownRecordedProvider(
+    raise LookupError(
         f"the pinned LiteLLM retrieve reached the unknown provider {provider}"
     )
 
@@ -303,4 +295,4 @@ def run(input_value: Input) -> JsonValue:
         )
     except RecordedError:
         return capture()
-    raise NoProviderReached("the pinned LiteLLM retrieve call reached no provider")
+    raise LookupError("the pinned LiteLLM retrieve call reached no provider")
