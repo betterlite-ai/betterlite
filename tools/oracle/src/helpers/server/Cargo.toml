@@ -24,6 +24,7 @@ betterlite-db = { path = "../../../../../crates/betterlite-db" }
 betterlite-gateway = { path = "../../../../../crates/betterlite-gateway" }
 betterlite-guardrails = { path = "../../../../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-mcp = { path = "../../../../../crates/betterlite-mcp" }
 betterlite-ocr = { path = "../../../../../crates/betterlite-ocr" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
@@ -31,6 +32,7 @@ betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
 betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }
+betterlite-tracing = { path = "../../../../../crates/betterlite-tracing" }
 betterlite-transcribe = { path = "../../../../../crates/betterlite-transcribe" }
 chrono.workspace = true
 flate2 = "1.1.5"

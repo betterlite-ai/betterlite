@@ -1,0 +1,118 @@
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+use url::{ParseError, Url};
+
+use super::error::CompresrTransportError;
+
+mod tests;
+
+const BLOCKED_METADATA_HOSTS: [&str; 4] = [
+    "metadata.google.internal",
+    "metadata.goog",
+    "metadata.azure.com",
+    "metadata.azure.internal",
+];
+
+const BLOCKED_METADATA_IPS: [IpAddr; 4] = [
+    IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)),
+    IpAddr::V6(Ipv6Addr::new(0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0x254)),
+    IpAddr::V4(Ipv4Addr::new(100, 100, 100, 200)),
+    IpAddr::V4(Ipv4Addr::new(168, 63, 129, 16)),
+];
+
+pub fn validate_api_base(url: &str) -> Result<String, CompresrTransportError> {
+    let parsed = Url::parse(url).map_err(|error| {
+        // ParseError is non-exhaustive; only the host and scheme failures read differently
+        if matches!(error, ParseError::EmptyHost) {
+            CompresrTransportError::NoHost
+        } else if matches!(error, ParseError::RelativeUrlWithoutBase) {
+            CompresrTransportError::Scheme
+        } else {
+            CompresrTransportError::InvalidApiBase
+        }
+    })?;
+    // urlparse removes the leading controls and the tabs the WHATWG parse ignores, so read the scheme the same way
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(CompresrTransportError::Scheme);
+    }
+    let Some(raw_host) = parsed.host_str() else {
+        return Err(CompresrTransportError::NoHost);
+    };
+    // host_str keeps the brackets of an IPv6 literal, and LiteLLM lowercases the hostname before matching
+    let host = raw_host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase();
+    let literal = parse_ip_literal(&host);
+    if BLOCKED_METADATA_HOSTS.contains(&host.as_str())
+        || literal.is_some_and(|address| BLOCKED_METADATA_IPS.contains(&address))
+    {
+        return Err(CompresrTransportError::BlockedHost { host });
+    }
+    Ok(url.to_owned())
+}
+
+#[must_use]
+pub fn parse_ip_literal(host: &str) -> Option<IpAddr> {
+    if let Ok(address) = host.parse::<IpAddr>() {
+        return Some(map_ipv4_mapped(address));
+    }
+    let magnitude = parse_integer_literal(host)?;
+    Some(map_ipv4_mapped(integer_to_ip(magnitude)))
+}
+
+fn map_ipv4_mapped(address: IpAddr) -> IpAddr {
+    match address {
+        IpAddr::V6(six) => six.to_ipv4_mapped().map_or(address, IpAddr::V4),
+        IpAddr::V4(four) => IpAddr::V4(four),
+    }
+}
+
+fn integer_to_ip(magnitude: u128) -> IpAddr {
+    u32::try_from(magnitude).map_or_else(
+        |_too_wide| IpAddr::V6(Ipv6Addr::from(magnitude)),
+        |four| IpAddr::V4(Ipv4Addr::from(four)),
+    )
+}
+
+// Python's int(text, 0): an optional sign, 0x/0o/0b prefixes, single underscores between digits, and no leading zero in decimal
+fn parse_integer_literal(text: &str) -> Option<u128> {
+    let trimmed = text.trim();
+    let unsigned = trimmed.strip_prefix('+').unwrap_or(trimmed);
+    let (radix, digits) = match unsigned.get(..2).map(str::to_ascii_lowercase).as_deref() {
+        Some("0x") => (16, unsigned.get(2..)?),
+        Some("0o") => (8, unsigned.get(2..)?),
+        Some("0b") => (2, unsigned.get(2..)?),
+        _ => (10, unsigned),
+    };
+    // A base prefix is the one place Python's int(text, 0) lets an underscore open the digits
+    let cleaned = digits_without_underscores(digits, radix != 10)?;
+    // ipaddress refuses a negative magnitude, and int(text, 0) refuses a sign after a base prefix
+    if cleaned.starts_with('+') || cleaned.starts_with('-') {
+        return None;
+    }
+    if radix == 10 && cleaned.len() > 1 && cleaned.starts_with('0') {
+        return None;
+    }
+    u128::from_str_radix(&cleaned, radix).ok()
+}
+
+fn digits_without_underscores(digits: &str, allow_leading_underscore: bool) -> Option<String> {
+    if digits.is_empty() {
+        return None;
+    }
+    let mut cleaned = String::with_capacity(digits.len());
+    let mut after_underscore = !allow_leading_underscore;
+    for character in digits.chars() {
+        if character == '_' {
+            if after_underscore {
+                return None;
+            }
+            after_underscore = true;
+        } else {
+            cleaned.push(character);
+            after_underscore = false;
+        }
+    }
+    (!after_underscore).then_some(cleaned)
+}

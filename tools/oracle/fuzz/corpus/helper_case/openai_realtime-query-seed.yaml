@@ -1,0 +1,20 @@
+kind: helper
+name: openai-realtime-query-seed
+call:
+  openai_realtime:
+    kind: connect
+    api_key: sk-realtime-1234567890
+    model: gpt-4o-realtime-preview
+    scope_headers: [["OpenAI-Beta", "realtime=v1"]]
+    ssl_verification: enabled
+    max_message_size_bytes: 4096
+    openai_api_base: null
+    openai_api_key: null
+    queries:
+      - {api_base: "https://example.test/base?keep=1", query_params: {}}
+      - {api_base: null, query_params: {intent: transcription}}
+      - {api_base: null, query_params: {intent: null, model: explicit}}
+    failures: []
+    http_setups: []
+env: {REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "4096"}
+compare: {ignore: []}
