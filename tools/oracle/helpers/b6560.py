@@ -109,7 +109,7 @@ def named_answer(model_class: ModelClass) -> dict[str, JsonValue]:
 
 
 def provider_fields() -> dict[str, dict[str, JsonValue]]:
-    models: tuple[ModelClass, ...] = (ToolPermissionModel, HideSecretsModel, LakeraModel)  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L12
+    models: tuple[ModelClass, ...] = (ToolPermissionModel, HideSecretsModel, LakeraModel)  # type: ignore[misc, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L12
     tool_permission, hide_secrets, lakera = models
     bedrock: dict[str, JsonValue] = {
         **as_answer(BedrockModel),
