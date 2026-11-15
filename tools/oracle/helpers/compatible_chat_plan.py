@@ -62,32 +62,10 @@ class CompletionParams(TypedDict):
     fake_stream: bool
 
 
-# completion is unannotated, so this view names its parameters and its Any-laden return
+# completion is unannotated, so this view types its arguments through CompletionParams
 class Completion(Protocol):
-    def completion(
-        self,
-        *,
-        model: str,
-        messages: list[dict[str, JsonValue]],
-        api_base: str,
-        custom_llm_provider: str,
-        custom_prompt_dict: dict[str, JsonValue],
-        model_response: ModelResponse,
-        print_verbose: Callable[[str], None],
-        encoding: None,
-        api_key: str | None,
-        logging_obj: Logging,
-        optional_params: dict[str, JsonValue],
-        acompletion: bool,
-        litellm_params: dict[str, JsonValue],
-        logger_fn: None,
-        headers: dict[str, str] | None,
-        timeout: float | None,
-        client: AsyncHTTPHandler | HTTPHandler,
-        custom_endpoint: bool | None,
-        streaming_decoder: None,
-        fake_stream: bool,
-    ) -> Reply | Deferred: ...
+    @property
+    def completion(self) -> Callable[..., Reply | Deferred]: ...
 
 
 class ChatHandler(OpenAILikeChatHandler):

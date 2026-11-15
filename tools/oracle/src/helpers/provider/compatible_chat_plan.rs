@@ -232,7 +232,7 @@ fn outcome_value(outcome: CompatibleChatOutcome, model: &str, provider: &str) ->
     }
 }
 
-fn failure(error: &CompatibleChatError, request: Option<Value>, transport: Option<bool>) -> Value {
+fn failure(error: &CompatibleChatError, request: Option<&Value>, transport: Option<bool>) -> Value {
     json!({
         "request": request,
         "transport_stream": transport,
@@ -274,6 +274,6 @@ fn answer(call: &Call) -> Result<Value, Box<crate::helpers::HelperError>> {
             request,
             transport_stream,
         )),
-        Err(error) => Ok(failure(&error, Some(request), Some(transport_stream))),
+        Err(error) => Ok(failure(&error, Some(&request), Some(transport_stream))),
     }
 }
