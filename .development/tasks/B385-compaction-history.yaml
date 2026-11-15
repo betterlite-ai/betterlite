@@ -15,6 +15,7 @@ description: 'Implement CompactionHistory, tool-pair partitioning, token budget,
   Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B336 calls this service.'
 scope:
   paths:
+  - "crates/betterlite-server/Cargo.toml"
   - crates/betterlite-router/src/compaction_history.rs
   - crates/betterlite-router/src/compaction_history/**
   - crates/betterlite-server/src/routing/compaction_history.rs

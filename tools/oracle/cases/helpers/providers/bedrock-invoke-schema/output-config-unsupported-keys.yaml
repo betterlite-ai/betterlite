@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-invoke-output-config-unsupported-keys
+call:
+  bedrock_invoke_schema:
+    model_cost:
+      config-model: {litellm_provider: bedrock, supports_output_config: true}
+      effort-model: {litellm_provider: bedrock, supports_max_reasoning_effort: true}
+      plain-model: {litellm_provider: bedrock}
+    steps:
+      - {function: strip_unsupported_config_keys, model: plain-model, body: {output_config: not-a-dict}}
+      - {function: strip_unsupported_config_keys, model: plain-model, body: {output_config: {}}}
+      - {function: strip_unsupported_config_keys, model: plain-model, body: {output_config: {format: {type: json_schema, schema: {type: object}}}}}
+      - {function: strip_unsupported_config_keys, model: config-model, body: {output_config: {effort: high, format: {type: json_schema, schema: {type: object}}}}}
+      - {function: strip_unsupported_config_keys, model: effort-model, body: {output_config: {effort: low}}}
+      - {function: strip_unsupported_config_keys, model: plain-model, body: {output_config: {effort: high, format: {type: json_schema, schema: {type: object}}}}}
+      - {function: strip_unsupported_config_keys, model: plain-model, body: {output_config: {effort: low, format: false}}}
+      - {function: strip_unsupported_config_keys, model: plain-model, body: {output_config: {effort: low, format: null}}}
+      - {function: strip_unsupported_config_keys, model: plain-model, body: {output_config: {effort: low}}}
+env: {}
+compare: {ignore: []}
