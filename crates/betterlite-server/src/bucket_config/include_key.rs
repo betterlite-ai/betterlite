@@ -1,5 +1,5 @@
-// object keys are POSIX names, so this follows posixpath rather than a file-system path type
 fn posix_normpath(path: &str) -> String {
+    // object keys are POSIX names, so this follows posixpath rather than a file-system path type
     let leading_slashes = path
         .chars()
         .take_while(|character| *character == '/')
