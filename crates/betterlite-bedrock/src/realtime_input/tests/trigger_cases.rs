@@ -9,6 +9,8 @@ use crate::realtime_session::records::Setting;
 
 const RESPONSE_CREATE: &str = r#"{"type":"response.create"}"#;
 const APPEND: &str = r#"{"type":"input_audio_buffer.append","audio":"QUJD"}"#;
+const SESSION_RATE_8000: &str =
+    r#"{"type":"session.update","session":{"input_sample_rate_hertz":8000}}"#;
 const FIXTURE: &[u8] = include_bytes!("../ready_trigger.pcm");
 const FIXTURE_SHA256: &str = "961653bfc4a99686cca3f2d64f10c9fa5589cfb511098508ca916c7f20a826bd";
 
@@ -34,7 +36,11 @@ fn chunks(frames: &[InputFrame]) -> Vec<Vec<u8>> {
 pub(super) fn response_create_ready_audio() {
     let (mut input, ids) = new_input();
     assert!(send(&mut input, &ids, RESPONSE_CREATE).is_empty());
-    input.session.prompt_started = true;
+    assert_eq!(send(&mut input, &ids, SESSION_RATE_8000).len(), 2);
+    assert_eq!(
+        input.session.input_audio.sample_rate_hertz,
+        Setting(Some(8000))
+    );
     let frames = input
         .transform_realtime_request(RESPONSE_CREATE.as_bytes(), &ids)
         .unwrap();
@@ -48,15 +54,18 @@ pub(super) fn response_create_ready_audio() {
         .unwrap();
     assert_eq!(repeated.len(), 125, "an open content gets no second start");
     assert_eq!(chunks(&repeated), chunks(&frames));
-    input.open_audio = Some(Setting(Some(8000)));
+    input.open_audio = Some(Setting(Some(24000)));
     let reused = input
         .transform_realtime_request(RESPONSE_CREATE.as_bytes(), &ids)
         .unwrap();
-    assert_eq!(reused.len(), 125);
-    assert_eq!(input.open_audio, Some(Setting(Some(8000))));
+    assert_eq!(reused.len(), 125, "an open content is reused at any rate");
+    assert_eq!(input.open_audio, Some(Setting(Some(24000))));
     let (mut streamed, streamed_ids) = new_input();
     send(&mut streamed, &streamed_ids, APPEND);
-    streamed.session.prompt_started = true;
+    assert_eq!(
+        send(&mut streamed, &streamed_ids, SESSION_RATE_8000).len(),
+        2
+    );
     assert!(send(&mut streamed, &streamed_ids, RESPONSE_CREATE).is_empty());
 }
 

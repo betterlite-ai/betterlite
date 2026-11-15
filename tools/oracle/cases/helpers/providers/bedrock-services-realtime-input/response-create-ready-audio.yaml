@@ -31,7 +31,7 @@ call:
       - kind: send
         message: '{"type":"response.create"}'
       - kind: send
-        message: '{"type":"session.update","session":{}}'
+        message: '{"type":"session.update","session":{"input_sample_rate_hertz":8000}}'
       - kind: send
         message: '{"type":"response.create"}'
       - kind: send
