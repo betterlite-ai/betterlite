@@ -41,31 +41,31 @@ impl Section for Raw {
             lookup,
             COOLDOWN_VARIABLE,
             DEFAULT_COOLDOWN_SECONDS,
-            ConfigError::InvalidInteger,
+            |path, source| ConfigError::InvalidInteger { path, source },
         )?;
         let escalation = setting(
             lookup,
             ESCALATION_VARIABLE,
             DEFAULT_ESCALATION_THRESHOLD,
-            ConfigError::InvalidInteger,
+            |path, source| ConfigError::InvalidInteger { path, source },
         )?;
         let watchdog = setting(
             lookup,
             WATCHDOG_VARIABLE,
             DEFAULT_WATCHDOG_SECONDS,
-            ConfigError::InvalidFloat,
+            |path, source| ConfigError::InvalidFloat { path, source },
         )?;
         let auth_timeout = setting(
             lookup,
             AUTH_TIMEOUT_VARIABLE,
             DEFAULT_AUTH_TIMEOUT_SECONDS,
-            ConfigError::InvalidFloat,
+            |path, source| ConfigError::InvalidFloat { path, source },
         )?;
         let auth_lock = setting(
             lookup,
             AUTH_LOCK_VARIABLE,
             DEFAULT_AUTH_LOCK_SECONDS,
-            ConfigError::InvalidFloat,
+            |path, source| ConfigError::InvalidFloat { path, source },
         )?;
         Ok(ReconnectSettings {
             cooldown: Duration::from_secs(u64::try_from(cooldown).unwrap_or(1).max(1)),
@@ -77,15 +77,11 @@ impl Section for Raw {
     }
 }
 
-fn setting<T, L>(
-    lookup: &L,
-    name: &str,
-    default: T,
-    invalid: fn(String, T::Err) -> ConfigError,
-) -> Result<T, ConfigError>
+fn setting<T, L, F>(lookup: &L, name: &str, default: T, invalid: F) -> Result<T, ConfigError>
 where
     L: EnvironmentLookup,
     T: FromStr,
+    F: FnOnce(String, T::Err) -> ConfigError,
 {
     let Some(text) = lookup.lookup(name) else {
         return Ok(default);
