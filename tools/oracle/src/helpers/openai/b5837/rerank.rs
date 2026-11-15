@@ -98,10 +98,7 @@ pub(crate) fn select(input: &Input) -> Value {
 pub(crate) fn params(cases: &[Case], header_cases: &[Case]) -> Value {
     let mut mapped_cases = Vec::with_capacity(cases.len());
     for case in cases {
-        mapped_cases.push(match mapped(case) {
-            Ok(found) => json!(found),
-            Err(_) => Value::Null,
-        });
+        mapped_cases.push(mapped(case).map_or(Value::Null, |found| json!(found)));
     }
     let found: Vec<Value> = header_cases
         .iter()
@@ -117,15 +114,16 @@ pub(crate) fn params(cases: &[Case], header_cases: &[Case]) -> Value {
                 .as_deref()
                 .filter(|key| !key.is_empty())
                 .map(SecretString::from);
-            match NvidiaNimRerankConfig::validate_environment_with_keys(
+            NvidiaNimRerankConfig::validate_environment_with_keys(
                 case.headers.clone(),
                 call_key.as_ref(),
                 env_key.as_ref(),
                 global_key.as_ref(),
-            ) {
-                Ok(merged) => json!({"ok": true, "headers": merged}),
-                Err(_) => json!({"ok": false}),
-            }
+            )
+            .map_or_else(
+                |_| json!({"ok": false}),
+                |merged| json!({"ok": true, "headers": merged}),
+            )
         })
         .collect();
     json!({"mapped": mapped_cases, "headers": found})
@@ -147,10 +145,10 @@ pub(crate) fn request(cases: &[Case]) -> Value {
                     config.transform_rerank_request(&case.model, &optional, &Headers::new(), None)
                 }
             };
-            match outcome {
-                Ok(body) => json!({"ok": true, "body": body}),
-                Err(_) => json!({"ok": false}),
-            }
+            outcome.map_or_else(
+                |_| json!({"ok": false}),
+                |body| json!({"ok": true, "body": body}),
+            )
         })
         .collect();
     json!({"bodies": bodies})
@@ -191,8 +189,8 @@ fn one_response(case: &Case) -> Value {
             config.transform_rerank_response(RerankResponse::default(), request)
         }
     };
-    match outcome {
-        Ok(response) => serde_json::to_value(response).unwrap_or(Value::Null),
-        Err(_) => json!({"ok": false}),
-    }
+    outcome.map_or_else(
+        |_| json!({"ok": false}),
+        |response| serde_json::to_value(response).unwrap_or(Value::Null),
+    )
 }
