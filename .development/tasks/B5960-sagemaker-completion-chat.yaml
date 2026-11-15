@@ -153,4 +153,4 @@ pitfalls:
   - 'The prompt echo is removed only when the prompt contains `<s>`; a Llama-2 template without it leaves the echo in place.'
   - A model name that holds `llama-2` picks a template name only when hf_model_name is absent, and `chat` is tested on the lowercased model name.
 review_level: standard
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 8}
