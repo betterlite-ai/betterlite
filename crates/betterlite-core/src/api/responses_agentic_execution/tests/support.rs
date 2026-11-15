@@ -430,10 +430,14 @@ impl Default for PlanState {
 pub(crate) fn plan_harness(fixture: Fixture, script: Script) -> PlanHarness {
     let order = Arc::new(Mutex::new(Vec::new()));
     let callback = recording("cb", script, &order);
+    let provider_kwargs = fixture.kwargs.clone();
     PlanHarness {
         fixture,
         callback,
-        state: PlanState::default(),
+        state: PlanState {
+            provider_kwargs,
+            ..PlanState::default()
+        },
     }
 }
 

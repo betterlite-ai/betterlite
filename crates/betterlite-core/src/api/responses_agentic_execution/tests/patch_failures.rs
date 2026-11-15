@@ -82,7 +82,7 @@ fn cleanup_harness() -> PlanHarness {
         fixture(),
         Script::default().with_cleanup_error("cleanup broke"),
     );
-    harness.state.logging = None;
+    harness.fixture.call_id = None;
     harness
 }
 

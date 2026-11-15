@@ -115,7 +115,7 @@ pub(super) async fn post_failure_caught() {
     assert!(outcome.is_none());
     assert_log(
         &log,
-        "LiteLLM.AgenticHookError: Exception in async_post_agentic_loop_response_hook [call_id=call-1 model=gpt-4o]: post broke",
+        "LiteLLM.AgenticHookError: Exception in agentic completion hooks [call_id=call-1 model=gpt-4o]: post broke",
     );
     assert_eq!(order_log(&order), ["e:gate", "e:plan", "e:post", "q:gate"]);
 }
