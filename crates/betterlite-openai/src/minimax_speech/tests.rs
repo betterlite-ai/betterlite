@@ -10,7 +10,9 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::error::MinimaxSpeechError;
-use super::params::{DEFAULT_VOICE_ID, MappedOptions, VoiceInput, map_openai_params};
+use super::params::{
+    DEFAULT_VOICE_ID, MappedOptions, SUPPORTED_OPENAI_PARAMS, VoiceInput, map_openai_params,
+};
 use super::reply::{SpeechReply, decode_speech_reply};
 use super::request::{get_complete_url, speech_request_body, validate_environment};
 use crate::openai_base_config::{Headers, Object};
@@ -65,6 +67,14 @@ fn headers(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
         );
     }
     found
+}
+
+#[test]
+fn advertises_the_three_openai_options() {
+    assert_eq!(
+        SUPPORTED_OPENAI_PARAMS,
+        ["voice", "response_format", "speed"]
+    );
 }
 
 #[rstest]
