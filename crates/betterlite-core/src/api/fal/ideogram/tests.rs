@@ -301,7 +301,7 @@ fn ideogram_mapping_rejects_unsupported_parameters() {
         false,
     ) {
         Err(IdeogramError::UnsupportedParameters { parameters, model }) => {
-            assert_eq!(parameters, ["seed", "user"]);
+            assert_eq!(parameters, ["seed"]);
             assert_eq!(model, "fal-ai/ideogram/v3");
         }
         other => panic!("{other:?}"),

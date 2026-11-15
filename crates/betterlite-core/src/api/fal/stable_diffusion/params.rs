@@ -17,7 +17,6 @@ pub fn map_openai_params(
     drop_params: bool,
 ) -> Result<ImageParams, StableDiffusionError> {
     let mut mapped = optional_params;
-    let mut unsupported = Vec::new();
     for (name, value) in non_default_params {
         // LiteLLM tests the OpenAI name, so a provider option already holds the destination
         if mapped.contains_key(name) {
@@ -27,21 +26,17 @@ pub fn map_openai_params(
             .iter()
             .find(|(source, _)| *source == name.as_str())
         else {
-            if !drop_params {
-                unsupported.push(name.clone());
+            if drop_params {
+                continue;
             }
-            continue;
+            return Err(StableDiffusionError::UnsupportedParameters {
+                parameters: vec![name.clone()],
+                model: model.to_owned(),
+            });
         };
         mapped.insert((*destination).to_owned(), translated_value(name, value)?);
     }
-    if unsupported.is_empty() {
-        Ok(mapped)
-    } else {
-        Err(StableDiffusionError::UnsupportedParameters {
-            parameters: unsupported,
-            model: model.to_owned(),
-        })
-    }
+    Ok(mapped)
 }
 
 fn translated_value(name: &str, value: &Json) -> Result<Json, StableDiffusionError> {

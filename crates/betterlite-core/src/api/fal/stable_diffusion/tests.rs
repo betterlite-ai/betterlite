@@ -271,7 +271,7 @@ fn stable_diffusion_mapping_rejects_unsupported_parameters() {
     let non_default = params(&[("seed", number(1)), ("user", text("alice"))]);
     match map_openai_params(&non_default, ImageParams::new(), MODEL, false) {
         Err(StableDiffusionError::UnsupportedParameters { parameters, model }) => {
-            assert_eq!(parameters, ["seed", "user"]);
+            assert_eq!(parameters, ["seed"]);
             assert_eq!(model, MODEL);
         }
         other => panic!("{other:?}"),

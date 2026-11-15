@@ -11,17 +11,19 @@ pub fn map_openai_params(
     drop_params: bool,
 ) -> Result<ImageParams, IdeogramError> {
     let mut mapped = optional_params;
-    let mut unsupported = Vec::new();
     for (name, value) in non_default_params {
         // LiteLLM tests the OpenAI name, so a provider option already holds the destination
         if mapped.contains_key(name) {
             continue;
         }
         if !GENERIC_OPENAI_PARAMS.contains(&name.as_str()) {
-            if !drop_params {
-                unsupported.push(name.clone());
+            if drop_params {
+                continue;
             }
-            continue;
+            return Err(IdeogramError::UnsupportedParameters {
+                parameters: vec![name.clone()],
+                model: model.to_owned(),
+            });
         }
         match name.as_str() {
             "n" => {
@@ -33,12 +35,5 @@ pub fn map_openai_params(
             _ => {}
         }
     }
-    if unsupported.is_empty() {
-        Ok(mapped)
-    } else {
-        Err(IdeogramError::UnsupportedParameters {
-            parameters: unsupported,
-            model: model.to_owned(),
-        })
-    }
+    Ok(mapped)
 }
