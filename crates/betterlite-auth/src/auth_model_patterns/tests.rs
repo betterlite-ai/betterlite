@@ -24,8 +24,8 @@ use super::grant::{
     resolve_team_alias,
 };
 use super::pattern::{
-    CatalogProviderInference, IdentifiedModel, ProviderInference, is_model_allowed_by_pattern,
-    is_wildcard_pattern, matches_wildcard_patterns,
+    CatalogProviderInference, IdentifiedModel, ProviderInference, UnresolvedProviderInference,
+    is_model_allowed_by_pattern, is_wildcard_pattern, matches_wildcard_patterns,
 };
 use super::view::{Deployment, DeploymentView, ModelAccessView, ModelGroupAlias};
 use crate::auth_request_models::RequestedModels;
@@ -115,6 +115,14 @@ fn wildcard_provider() -> FixedProvider {
             model: "bedrockz/anthropic.claude-3".to_owned(),
         },
     );
+    // a namespace the inference consumed and restated as a provider model
+    identities.insert(
+        "openai-proxy/chat".to_owned(),
+        IdentifiedModel {
+            provider: "openai".to_owned(),
+            model: "gpt-4o".to_owned(),
+        },
+    );
     FixedProvider(identities)
 }
 
@@ -185,9 +193,11 @@ fn provider_wildcard() {
     assert!(is_model_allowed_by_pattern("gpt-4o\n", "gpt-*"));
     assert!(!is_model_allowed_by_pattern("gpt-4o\nmore", "gpt-*"));
     assert!(!is_model_allowed_by_pattern("bedrock/gpt-4o", "openai/*"));
-    // a pattern the regex engine cannot compile denies instead of failing the request
+    // a pattern the engine cannot compile denies instead of failing the request
     assert!(!is_model_allowed_by_pattern("a", "a["));
     assert!(!is_model_allowed_by_pattern("a", "a[b-"));
+    assert!(!is_model_allowed_by_pattern("a", "a[*"));
+    assert!(!is_model_allowed_by_pattern("a", "a(*"));
 
     // a model that carries the namespace matches directly
     assert!(check_model_access("openai/gpt-4o", &models, &ctx));
@@ -199,6 +209,31 @@ fn provider_wildcard() {
         &models,
         &ctx
     ));
+    // not even when the pattern names the provider the inference reported for the full string
+    assert!(!check_model_access(
+        "bedrockz/anthropic.claude-3",
+        &grant(&["bedrock/*"]),
+        &ctx
+    ));
+    // a namespace the inference did consume is rebuilt into its provider model
+    assert!(check_model_access("openai-proxy/chat", &models, &ctx));
+}
+
+#[test]
+fn provider_wildcard_keeps_pythons_regex_syntax() {
+    // a lookahead the Rust regex crate cannot compile still narrows an allowlist wildcard
+    let lookahead = "openai/(?!gpt-4o).*";
+    assert!(is_model_allowed_by_pattern("openai/gpt-4.1", lookahead));
+    assert!(!is_model_allowed_by_pattern("openai/gpt-4o", lookahead));
+    // a backreference the Rust regex crate cannot compile still matches one
+    let backreference = "(gpt)-\\1-*";
+    assert!(is_model_allowed_by_pattern("gpt-gpt-mini", backreference));
+    assert!(!is_model_allowed_by_pattern(
+        "gpt-other-mini",
+        backreference
+    ));
+    // Python's \w is Unicode-aware, and the allowlist engine follows it
+    assert!(is_model_allowed_by_pattern("éllo", "\\w*"));
 }
 
 #[test]
@@ -229,6 +264,12 @@ fn provider_wildcard_requires_a_known_provider() {
         &["openai/*".to_owned()],
         &provider
     ));
+    // the stage's inference for a server without a catalog never places a model
+    assert!(
+        UnresolvedProviderInference
+            .identify("openai/gpt-4o")
+            .is_none()
+    );
 }
 
 #[test]

@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use betterlite_models::catalog::ModelCatalog;
-use betterlite_models::identity::provider_id::ProviderId;
-use regex::Regex;
+use betterlite_models::lookup::resolve::split_model;
+use pcre2::bytes::RegexBuilder;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentifiedModel {
@@ -21,27 +21,10 @@ pub struct CatalogProviderInference<'catalog> {
 
 impl ProviderInference for CatalogProviderInference<'_> {
     fn identify(&self, model: &str) -> Option<IdentifiedModel> {
-        if let Some((prefix, rest)) = model.split_once('/') {
-            if prefix.parse::<ProviderId>().is_err() || rest.is_empty() {
-                return None;
-            }
-            return Some(IdentifiedModel {
-                provider: prefix.to_owned(),
-                model: rest.to_owned(),
-            });
-        }
-        let catalog = self.catalog?;
-        // an exact catalog entry wins; the fallback generalizations route an otherwise-unknown id
-        if let Some(metadata) = catalog.metadata(model) {
-            return Some(IdentifiedModel {
-                provider: metadata.provider.to_owned(),
-                model: model.to_owned(),
-            });
-        }
-        let provider = catalog.generalizations.match_routing(model)?;
+        let split = split_model(self.catalog?, model);
         Some(IdentifiedModel {
-            provider: provider.to_owned(),
-            model: model.to_owned(),
+            provider: split.provider?,
+            model: split.model,
         })
     }
 }
@@ -66,9 +49,15 @@ pub fn is_model_allowed_by_pattern(model: &str, allowed_model_pattern: &str) -> 
     if !is_wildcard_pattern(allowed_model_pattern) {
         return false;
     }
-    // Python's re.match with a `$` also matches before one trailing newline, so the group keeps that
-    let expression = format!("^{}(?:\\n)?$", allowed_model_pattern.replace('*', ".*"));
-    Regex::new(&expression).is_ok_and(|pattern| pattern.is_match(model))
+    // re.match starts at the subject start, and its `$` also accepts one trailing newline
+    let converted = allowed_model_pattern.replace('*', ".*");
+    let expression =
+        format!("(*UTF)(*UCP)(*LIMIT_MATCH=1000000)(*LIMIT_DEPTH=256)\\A(?:^{converted}$)");
+    let Ok(pattern) = RegexBuilder::new().build(&expression) else {
+        return false;
+    };
+    // a match that runs past the limits is reported as an error, and the pattern then grants nothing
+    matches!(pattern.is_match(model.as_bytes()), Ok(true))
 }
 
 #[must_use]
