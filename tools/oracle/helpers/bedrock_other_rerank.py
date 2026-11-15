@@ -15,31 +15,15 @@ from typing_extensions import TypedDict, override
 JsonObject = dict[str, JsonValue]
 Document = str | JsonObject
 Function = Literal[
-    "text_and_json_document_source",
-    "rerank_model_arn",
-    "top_n",
-    "results_index_score",
-    "return_document_content",
-    "rerank_error",
-    "rerank_transport_logging",
+    "text_and_json_document_source", "rerank_model_arn", "top_n", "results_index_score",
+    "return_document_content", "rerank_error", "rerank_transport_logging",
 ]
 
 
 RerankArgs: TypeAlias = tuple[
-    str,
-    str,
-    list[Document],
-    JsonObject,
-    Logging,
-    int | None,
-    list[str] | None,
-    bool | None,
-    int | None,
-    bool | None,
-    float | httpx.Timeout | None,
-    str | None,
-    JsonObject | None,
-    HTTPHandler | AsyncHTTPHandler | None,
+    str, str, list[Document], JsonObject, Logging, int | None, list[str] | None,
+    bool | None, int | None, bool | None, float | httpx.Timeout | None, str | None,
+    JsonObject | None, HTTPHandler | AsyncHTTPHandler | None,
 ]
 
 
@@ -171,20 +155,26 @@ def use_environment() -> None:
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = os.devnull
 
 
-def prepare_value(probe: Probe) -> JsonValue:
-    logging = RecordingLogging()
+def perform(probe: Probe, logging: RecordingLogging) -> Transport:
     transport = Transport(probe)
     call_value(BedrockRerankHandler(), probe, logging, transport)
+    return transport
+
+
+def prepare_value(probe: Probe) -> JsonValue:
+    logging = RecordingLogging()
+    transport = perform(probe, logging)
     request = transport.requests[0]
     text = request.content.decode("utf-8")
+    headers = dict(request.headers)
     payload: JsonObject = {
         "posted_url": str(request.url),
         "posted_text": text,
         "posted_body": TypeAdapter(JsonValue).validate_json(text),
-        "content_type": request.headers.get("content-type"),
+        "content_type": headers.get("content-type"),
         "signed_headers": {
-            "authorization": "authorization" in request.headers,
-            "amz_date": "x-amz-date" in request.headers,
+            "authorization": "authorization" in headers,
+            "amz_date": "x-amz-date" in headers,
         },
         "pre_call": {
             "input": logging.pre_input,
@@ -204,22 +194,21 @@ def error_value(probe: Probe) -> JsonValue:
     logging = RecordingLogging()
     status: int | None = None
     try:
-        call_value(BedrockRerankHandler(), probe, logging, Transport(probe))
+        perform(probe, logging)
     except BedrockError as error:
         status = error.status_code
     except (httpx.HTTPError, TypeError, ValueError):
         status = None
     else:
-        payload: JsonObject = {"ok": True, "status": None, "post_call": logging.post_called}
-        return TypeAdapter(JsonValue).validate_python(payload)
+        success: JsonObject = {"ok": True, "status": None, "post_call": logging.post_called}
+        return TypeAdapter(JsonValue).validate_python(success)
     failure: JsonObject = {"ok": False, "status": status, "post_call": logging.post_called}
     return TypeAdapter(JsonValue).validate_python(failure)
 
 
 def transport_value(probe: Probe) -> JsonValue:
     logging = RecordingLogging()
-    transport = Transport(probe)
-    call_value(BedrockRerankHandler(), probe, logging, transport)
+    transport = perform(probe, logging)
     payload: JsonObject = {
         "posted_url": str(transport.requests[0].url),
         "timeout_ms": probe["timeout_ms"],
