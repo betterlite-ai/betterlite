@@ -77,11 +77,11 @@ fn a_partial_usage_metadata_defaults_the_missing_counts() {
         output,
         json!({
             "chunks": [
-                {"content": null, "role": null, "finish_reason": null, "usage": [7, 0, 0]},
+                {"content": null, "role": null, "finish_reason": null, "usage": [7_u64, 0_u64, 0_u64]},
                 {"content": null, "role": null, "finish_reason": null, "usage": null},
-                {"content": null, "role": null, "finish_reason": null, "usage": [1, 2, 3]},
-                {"content": "x", "role": "assistant", "finish_reason": null, "usage": [0, 0, 9]},
-                {"content": null, "role": null, "finish_reason": null, "usage": [0, 0, 0]}
+                {"content": null, "role": null, "finish_reason": null, "usage": [1_u64, 2_u64, 3_u64]},
+                {"content": "x", "role": "assistant", "finish_reason": null, "usage": [0_u64, 0_u64, 9_u64]},
+                {"content": null, "role": null, "finish_reason": null, "usage": [0_u64, 0_u64, 0_u64]}
             ]
         })
     );
