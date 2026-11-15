@@ -1,3 +1,3 @@
-# the task's case filter pins this test name, which truncates "after lookups" to fit 30 characters
 [default.extend-identifiers]
+# the task's case filter pins this test name, which truncates "after lookups" to fit 30 characters
 ensure_no_hook_stops_afte_1794 = "ensure_no_hook_stops_afte_1794"
