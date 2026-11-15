@@ -542,6 +542,21 @@ async fn malformed_token_stats_on_a_successful_response_do_not_raise() {
     );
 }
 
+#[tokio::test]
+async fn an_api_key_that_is_not_a_header_value_goes_through_the_fail_policy() {
+    let transport = CompresrTransport::new(
+        settings("http://127.0.0.1:1"),
+        SecretString::from("bad\nkey"),
+        reqwest::Client::default(),
+    )
+    .expect("transport");
+    let error = transport
+        .compress(&[target("context", "query")])
+        .await
+        .expect_err("failure");
+    assert_eq!(error.status_code(), Some(502));
+}
+
 #[test]
 fn a_cloud_metadata_api_base_is_refused_before_any_request() {
     assert_eq!(

@@ -175,3 +175,17 @@ fn the_fallback_query_is_absent_without_a_user_message() {
     let conversation = messages(r#"[{"role":"system","content":"rules"}]"#);
     assert_eq!(fallback_query(&conversation), (String::new(), None));
 }
+
+#[test]
+fn a_tool_call_entry_that_is_not_an_object_is_skipped() {
+    let conversation = messages(
+        r#"[
+            {"role":"assistant","tool_calls":[
+                5,
+                {"id":"call_1","function":{"name":"search","arguments":"{}"}}
+            ]},
+            {"role":"tool","tool_call_id":"call_1","content":"output"}
+        ]"#,
+    );
+    assert_eq!(query_for_target(&conversation, 1, "fallback"), "search: {}");
+}
