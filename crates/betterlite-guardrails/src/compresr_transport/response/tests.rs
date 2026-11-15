@@ -18,11 +18,11 @@ fn body(source: &str) -> Option<&str> {
 }
 
 #[rstest]
-#[case::signed(r#"42"#, 42)]
-#[case::negative(r#"-5"#, -5)]
-#[case::unsigned_large(r#"18446744073709551615"#, i64::MAX)]
-#[case::decimal(r#"4.9"#, 4)]
-#[case::negative_decimal(r#"-4.9"#, -4)]
+#[case::signed("42", 42)]
+#[case::negative("-5", -5)]
+#[case::unsigned_large("18446744073709551615", i64::MAX)]
+#[case::decimal("4.9", 4)]
+#[case::negative_decimal("-4.9", -4)]
 #[case::numeric_text(r#""42""#, 42)]
 #[case::padded_text(r#"" 42 ""#, 42)]
 #[case::non_numeric_text(r#""lots""#, 0)]
@@ -72,13 +72,14 @@ fn response_text_is_bounded_to_the_limit(
 
 #[test]
 fn a_single_response_is_its_own_result() {
-    let results = parse_results(
+    let Ok(results) = parse_results(
         body(
             r#"{"data":{"compressed_context":"short","original_tokens":10,"compressed_tokens":4}}"#,
         ),
         1,
-    )
-    .expect("results");
+    ) else {
+        panic!("a single response must parse");
+    };
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].compressed_context.as_deref(), Some("short"));
     assert_eq!(results[0].original_tokens, 10);
@@ -87,7 +88,7 @@ fn a_single_response_is_its_own_result() {
 
 #[test]
 fn a_batch_response_keeps_one_result_per_input_in_order() {
-    let results = parse_results(
+    let Ok(results) = parse_results(
         body(
             r#"{"data":{"results":[
                 {"compressed_context":"one","original_tokens":5,"compressed_tokens":1},
@@ -95,8 +96,9 @@ fn a_batch_response_keeps_one_result_per_input_in_order() {
             ]}}"#,
         ),
         2,
-    )
-    .expect("results");
+    ) else {
+        panic!("a batch response must parse");
+    };
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].compressed_context.as_deref(), Some("one"));
     assert_eq!(results[1].compressed_context.as_deref(), Some("two"));
