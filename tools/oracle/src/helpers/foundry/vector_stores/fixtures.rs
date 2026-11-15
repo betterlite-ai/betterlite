@@ -91,24 +91,16 @@ impl FixtureExecutor {
     }
 }
 
+type EmbeddingCall = Result<EmbeddingResponse, EmbeddingCallError>;
+
 #[async_trait]
 impl QueryEmbeddingExecutor for FixtureExecutor {
-    fn embed(
-        &self,
-        model: &str,
-        query: &str,
-        configuration: &Params,
-    ) -> Result<EmbeddingResponse, EmbeddingCallError> {
+    fn embed(&self, model: &str, query: &str, configuration: &Params) -> EmbeddingCall {
         self.respond(model, query, configuration)
     }
 
-    async fn aembed(
-        &self,
-        model: &str,
-        query: &str,
-        configuration: &Params,
-    ) -> Result<EmbeddingResponse, EmbeddingCallError> {
-        self.respond(model, query, configuration)
+    async fn aembed(&self, model: &str, query: &str, configuration: &Params) -> EmbeddingCall {
+        self.embed(model, query, configuration)
     }
 }
 

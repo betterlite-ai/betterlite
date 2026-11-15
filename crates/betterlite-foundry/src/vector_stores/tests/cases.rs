@@ -7,7 +7,9 @@ use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::vector_stores::create::{CreateStep, create_vector_store};
-use crate::vector_stores::embedding::{query_embedding_configuration, query_embedding_model};
+use crate::vector_stores::embedding::{
+    aembed_query, query_embedding_configuration, query_embedding_model, query_text,
+};
 use crate::vector_stores::environment::{
     EnvironmentRequest, Headers, Params, auth_credentials, complete_url, endpoints_by_type,
     validate_environment,
@@ -17,11 +19,10 @@ use crate::vector_stores::reply::{
     AzureSearchStoreReply, SEARCH_RESULTS_OBJECT, decode_azure_search_reply,
 };
 use crate::vector_stores::search::{
-    AzureSearchStoreRequest, SearchCall, SearchLogging, SearchQuery, asearch_request,
-    search_request,
+    AzureSearchStoreRequest, SearchCall, SearchLogging, SearchQuery, search_request,
 };
 
-use super::support::{FailingExecutor, FixtureExecutor, NoSources, empty_credentials};
+use super::support::{FixtureExecutor, NoSources, empty_credentials};
 
 const API_BASE: &str = "https://foundry-search.example";
 const EMBEDDING_MODEL: &str = "openai/text-embedding-3-small";
@@ -408,7 +409,7 @@ fn search_query_fields_embedding_configuration() {
 
 // an executor failure surfaces with LiteLLM's wrapped diagnostic before any request body exists
 fn search_query_fields_reports_embedding_failure() {
-    let executor = FailingExecutor::new("fixture embedding failure");
+    let executor = FixtureExecutor::failing("fixture embedding failure");
     let litellm_params = embedding_params();
     let query = SearchQuery::Text("q".to_owned());
     let mut logging = SearchLogging::default();
@@ -456,24 +457,18 @@ fn vector_query_with_embedding() {
 
 fn vector_query_with_embedding_async() {
     let executor = FixtureExecutor::new(vec![0.125, 0.5]);
-    let litellm_params = embedding_params();
     let query = SearchQuery::Sequence(vec!["async".to_owned(), "query".to_owned()]);
-    let mut logging = SearchLogging::default();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .expect("runtime");
-    let call = runtime
-        .block_on(asearch_request(AzureSearchStoreRequest {
-            vector_store_id: "async-store",
-            query: &query,
-            optional_params: &Params::new(),
-            api_base: API_BASE,
-            litellm_params: &litellm_params,
-            logging: &mut logging,
-            embedding_executor: &executor,
-        }))
-        .expect("async search");
-    assert_eq!(call.body.vector_queries[0].vector, vec![0.125_f64, 0.5_f64]);
+    let vector = runtime
+        .block_on(aembed_query(
+            &query_text(&query),
+            &embedding_params(),
+            &executor,
+        ))
+        .expect("embedding");
+    assert_eq!(vector, vec![0.125_f64, 0.5_f64]);
     assert_eq!(executor.calls()[0].query, "async query");
 }
 

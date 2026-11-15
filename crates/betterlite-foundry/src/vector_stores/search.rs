@@ -131,13 +131,16 @@ fn vector_field(litellm_params: &Params) -> Result<String, AzureSearchError> {
 }
 
 fn top_k(optional_params: &Params) -> Result<i64, AzureSearchError> {
-    match optional_params.get("top_k") {
-        None | Some(Json::Null) => Ok(DEFAULT_TOP_K),
-        Some(Json::Number(number)) => number.as_i64().ok_or(AzureSearchError::InvalidField {
+    let Some(value) = optional_params.get("top_k") else {
+        return Ok(DEFAULT_TOP_K);
+    };
+    match value {
+        Json::Null => Ok(DEFAULT_TOP_K),
+        Json::Number(number) => number.as_i64().ok_or(AzureSearchError::InvalidField {
             field: "top_k",
             expected: "an integer",
         }),
-        Some(Json::Text(_) | Json::Bool(_) | Json::List(_) | Json::Object(_)) => {
+        Json::Text(_) | Json::Bool(_) | Json::List(_) | Json::Object(_) => {
             Err(AzureSearchError::InvalidField {
                 field: "top_k",
                 expected: "an integer",

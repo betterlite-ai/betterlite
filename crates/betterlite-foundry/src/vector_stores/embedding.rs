@@ -34,32 +34,24 @@ pub fn query_text(query: &SearchQuery) -> String {
 }
 
 pub fn query_embedding_model(litellm_params: &Params) -> Result<&str, AzureSearchError> {
-    match litellm_params.get("litellm_embedding_model") {
-        Some(Json::Text(model)) if !model.is_empty() => Ok(model),
-        None
-        | Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        ) => Err(AzureSearchError::MissingEmbeddingModel),
+    let Some(Json::Text(model)) = litellm_params.get("litellm_embedding_model") else {
+        return Err(AzureSearchError::MissingEmbeddingModel);
+    };
+    if model.is_empty() {
+        return Err(AzureSearchError::MissingEmbeddingModel);
     }
+    Ok(model)
 }
 
 #[must_use]
 pub fn query_embedding_configuration(litellm_params: &Params) -> Params {
-    match litellm_params.get("litellm_embedding_config") {
-        Some(Json::Object(configuration)) => configuration
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect(),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Params::new()
-        }
-    }
+    let Some(Json::Object(configuration)) = litellm_params.get("litellm_embedding_config") else {
+        return Params::new();
+    };
+    configuration
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
 // only the first record's vector is validated, and it keeps its own element order
@@ -88,14 +80,16 @@ pub fn embed_query(
 }
 
 pub async fn aembed_query(
-    query_text: &str,
+    input: &str,
     litellm_params: &Params,
-    executor: &dyn QueryEmbeddingExecutor,
+    embedder: &dyn QueryEmbeddingExecutor,
 ) -> Result<Vec<f64>, AzureSearchError> {
-    let model = query_embedding_model(litellm_params)?;
-    let configuration = query_embedding_configuration(litellm_params);
-    let response = executor
-        .aembed(model, query_text, &configuration)
+    let response = embedder
+        .aembed(
+            query_embedding_model(litellm_params)?,
+            input,
+            &query_embedding_configuration(litellm_params),
+        )
         .await
         .map_err(|source| AzureSearchError::Embedding { source })?;
     first_embedding_vector(&response.data)

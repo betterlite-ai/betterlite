@@ -110,11 +110,7 @@ fn loads_azure_search_vector_field() {
         &[],
     );
     assert_eq!(deployment(&both).vector_field, "customVector");
-    loads_azure_search_vector_field_edges();
-}
-
-// an explicit empty vector field is used as given, while a null one falls through to the default
-fn loads_azure_search_vector_field_edges() {
+    // an explicit empty vector field is used as given, while a null one falls through to the default
     let empty = load(
         "      azure_search_vector_field: \"\"\n",
         "litellm_settings:\n  azure_search_vector_field: moduleVector\n",
@@ -141,17 +137,16 @@ fn rejects_unrelated_key() {
         paths,
         vec!["litellm_settings.foundry_vector_store_unrelated".to_owned()]
     );
-    rejects_unrelated_deployment_key();
-}
-
-fn rejects_unrelated_deployment_key() {
-    let unrelated = format!("{BASE}      foundry_vector_store_unrelated: 1\n");
-    let error = load_source(unrelated, &[]).unwrap_err();
-    let ConfigError::Unsupported { paths } = error else {
+    let deployment_unrelated = format!("{BASE}      foundry_vector_store_unrelated: 1\n");
+    let deployment_error = load_source(deployment_unrelated, &[]).unwrap_err();
+    let ConfigError::Unsupported {
+        paths: deployment_paths,
+    } = deployment_error
+    else {
         panic!("the unrelated key loaded without an unsupported-key error");
     };
     assert_eq!(
-        paths,
+        deployment_paths,
         vec!["model_list.0.litellm_params.foundry_vector_store_unrelated".to_owned()]
     );
 }

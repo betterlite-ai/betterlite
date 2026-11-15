@@ -70,17 +70,15 @@ fn resolve_params<L>(params: Params, prefix: &str, lookup: &L) -> Result<Params,
 where
     L: EnvironmentLookup,
 {
+    let name_path = format!("{prefix}.azure_search_service_name");
+    let field_path = format!("{prefix}.azure_search_vector_field");
+    let azure_search_service_name =
+        resolve_text(params.azure_search_service_name, &name_path, lookup)?;
+    let azure_search_vector_field =
+        resolve_text(params.azure_search_vector_field, &field_path, lookup)?;
     Ok(Params {
-        azure_search_service_name: resolve_text(
-            params.azure_search_service_name,
-            &format!("{prefix}.azure_search_service_name"),
-            lookup,
-        )?,
-        azure_search_vector_field: resolve_text(
-            params.azure_search_vector_field,
-            &format!("{prefix}.azure_search_vector_field"),
-            lookup,
-        )?,
+        azure_search_service_name,
+        azure_search_vector_field,
     })
 }
 

@@ -26,6 +26,7 @@ pub(super) struct Call {
 
 pub(super) struct FixtureExecutor {
     vector: Vec<f64>,
+    failure: Option<String>,
     calls: Mutex<Vec<Call>>,
 }
 
@@ -33,6 +34,15 @@ impl FixtureExecutor {
     pub(super) fn new(vector: Vec<f64>) -> Self {
         Self {
             vector,
+            failure: None,
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(super) fn failing(message: &str) -> Self {
+        Self {
+            vector: Vec::new(),
+            failure: Some(message.to_owned()),
             calls: Mutex::new(Vec::new()),
         }
     }
@@ -82,6 +92,11 @@ impl QueryEmbeddingExecutor for FixtureExecutor {
         query: &str,
         configuration: &Params,
     ) -> Result<EmbeddingResponse, EmbeddingCallError> {
+        if let Some(message) = &self.failure {
+            return Err(EmbeddingCallError::Provider {
+                message: message.clone(),
+            });
+        }
         self.record(model, query, configuration);
         Ok(self.response())
     }
@@ -92,45 +107,7 @@ impl QueryEmbeddingExecutor for FixtureExecutor {
         query: &str,
         configuration: &Params,
     ) -> Result<EmbeddingResponse, EmbeddingCallError> {
-        self.record(model, query, configuration);
-        Ok(self.response())
-    }
-}
-
-pub(super) struct FailingExecutor {
-    message: String,
-}
-
-impl FailingExecutor {
-    pub(super) fn new(message: &str) -> Self {
-        Self {
-            message: message.to_owned(),
-        }
-    }
-}
-
-#[async_trait]
-impl QueryEmbeddingExecutor for FailingExecutor {
-    fn embed(
-        &self,
-        _model: &str,
-        _query: &str,
-        _configuration: &Params,
-    ) -> Result<EmbeddingResponse, EmbeddingCallError> {
-        Err(EmbeddingCallError::Provider {
-            message: self.message.clone(),
-        })
-    }
-
-    async fn aembed(
-        &self,
-        _model: &str,
-        _query: &str,
-        _configuration: &Params,
-    ) -> Result<EmbeddingResponse, EmbeddingCallError> {
-        Err(EmbeddingCallError::Provider {
-            message: self.message.clone(),
-        })
+        self.embed(model, query, configuration)
     }
 }
 

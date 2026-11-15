@@ -110,12 +110,17 @@ fn score_field(
     reply: &AzureSearchStoreReply<'_>,
     fields: &IndexMap<String, Json>,
 ) -> Result<Score, AzureSearchError> {
-    match fields.get(SCORE_FIELD) {
-        None | Some(Json::Null) => Ok(Score(Decimal::ZERO)),
-        Some(Json::Number(number)) => {
+    let Some(value) = fields.get(SCORE_FIELD) else {
+        return Ok(Score(Decimal::ZERO));
+    };
+    match value {
+        Json::Null => Ok(Score(Decimal::ZERO)),
+        Json::Number(number) => {
             Score::try_from(number.clone()).map_err(|source| AzureSearchError::Score { source })
         }
-        Some(_) => Err(shape_error(reply, "@search.score is not a number")),
+        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+            Err(shape_error(reply, "@search.score is not a number"))
+        }
     }
 }
 
