@@ -1,0 +1,8 @@
+kind: helper
+name: aim
+call:
+  b6562:
+    provider: aim
+env: {}
+compare:
+  ignore: []

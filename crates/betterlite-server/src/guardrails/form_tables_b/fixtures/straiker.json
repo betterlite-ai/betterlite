@@ -1,0 +1,119 @@
+{
+  "api_base": {
+    "default_value": "https://api.prod.straiker.ai",
+    "description": "Straiker API base URL. Use the regional variant for non-US tenants.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "default_value": null,
+    "description": "Straiker DefendAI environment API key (Bearer token). Env: STRAIKER_API_KEY.",
+    "required": true,
+    "type": "string"
+  },
+  "default_app": {
+    "default_value": "LiteLLM Gateway",
+    "description": "Default application registered in the Straiker Defend Console. Overridden per-request by metadata.agent_id when present.",
+    "required": false,
+    "type": "string"
+  },
+  "optional_params": {
+    "description": "Optional parameters for the guardrail",
+    "fields": {
+      "agent_ref": {
+        "description": "v3 only. Names the Straiker agent this route's traffic belongs to when one gateway fronts several applications, sent as x-s6r-agent. It wins over a client-supplied x-s6r-agent header. Names ONE agent, never a kind of agent: Straiker keys per-agent state on it, so sharing a value across applications merges them into one agent.",
+        "required": false,
+        "type": "string"
+      },
+      "api_version": {
+        "description": "Straiker detect API the gateway calls. 'v1' posts the structured webhook envelope to /api/v1/detect/webhook (legacy Defend, UUID collection key). 'v3' relays the provider request and response to /api/v3/detect, the v3 platform's only detect route, which accepts only an sk_agt_ integration key. Unset: chosen from the key prefix, so a v3 key needs no extra configuration.",
+        "options": [
+          "v1",
+          "v3"
+        ],
+        "required": false,
+        "type": "select"
+      },
+      "client": {
+        "description": "v3 only. Optional x-s6r-client routing hint. Leave unset on a shared gateway; set it on a route that serves a single application.",
+        "required": false,
+        "type": "string"
+      },
+      "custom_headers": {
+        "description": "Additional HTTP headers sent to Straiker, excluding Authorization and the webhook-format header.",
+        "dict_value_type": "string",
+        "required": false,
+        "type": "dict"
+      },
+      "fail_on_error": {
+        "default_value": true,
+        "description": "Behavior on any guardrail error, not just unreachability. True (default) blocks the request on error; False logs and allows the request to proceed.",
+        "required": false,
+        "type": "boolean"
+      },
+      "format_hint": {
+        "description": "v3 only. Optional x-s6r-format hint. Only breaks the messages-array tie between formats.",
+        "options": [
+          "anthropic.messages",
+          "openai.chat"
+        ],
+        "required": false,
+        "type": "select"
+      },
+      "initial_backoff": {
+        "default_value": 0.1,
+        "description": "Initial retry backoff in seconds.",
+        "required": false,
+        "type": "number"
+      },
+      "max_backoff": {
+        "default_value": 2.0,
+        "description": "Maximum retry backoff in seconds.",
+        "required": false,
+        "type": "number"
+      },
+      "max_payload_bytes": {
+        "default_value": 524288,
+        "description": "Maximum serialized webhook payload size sent to Straiker.",
+        "required": false,
+        "type": "number"
+      },
+      "max_retries": {
+        "default_value": 2,
+        "description": "Retries on transient HTTP (408/429/5xx) and network errors.",
+        "required": false,
+        "type": "number"
+      },
+      "metadata": {
+        "description": "Default metadata key/values added to the webhook metadata bag on every request. On key conflict with request-derived metadata, these configured values win.",
+        "dict_value_type": "string",
+        "required": false,
+        "type": "dict"
+      },
+      "timeout": {
+        "default_value": 5.0,
+        "description": "Per-attempt HTTP timeout in seconds.",
+        "required": false,
+        "type": "number"
+      },
+      "unreachable_fallback": {
+        "default_value": "fail_closed",
+        "description": "Behavior when Straiker is unreachable after retries.",
+        "options": [
+          "fail_open",
+          "fail_closed"
+        ],
+        "required": false,
+        "type": "select"
+      },
+      "verbose": {
+        "default_value": false,
+        "description": "Log webhook request/response payloads and record action/turn_id in response hidden params.",
+        "required": false,
+        "type": "boolean"
+      }
+    },
+    "required": false,
+    "type": "nested"
+  }
+}

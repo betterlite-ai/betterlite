@@ -1,0 +1,45 @@
+{
+  "kind": "helper",
+  "name": "token-cache-hit",
+  "call": {
+    "b4657": {
+      "function": "cache",
+      "operations": [
+        {
+          "op": "get_or_compute",
+          "key": "slot",
+          "fingerprint": "alice",
+          "compute": {
+            "kind": "token",
+            "access_token": "tok-1",
+            "expires_in": 3600
+          }
+        },
+        {
+          "op": "get_or_compute",
+          "key": "slot",
+          "fingerprint": "alice",
+          "compute": {
+            "kind": "token",
+            "access_token": "tok-2",
+            "expires_in": 3600
+          }
+        },
+        {
+          "op": "get_or_compute",
+          "key": "slot",
+          "fingerprint": "bob",
+          "compute": {
+            "kind": "token",
+            "access_token": "tok-3",
+            "expires_in": 3600
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

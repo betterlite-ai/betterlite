@@ -1,0 +1,7 @@
+# GCS_USE_BATCHED_LOGGING=false turns batched logging off in __init__
+kind: helper
+name: gcs-bucket-logging-init-reads-batched-logging-env
+call:
+  b3998: {"environment": {"GCS_USE_BATCHED_LOGGING": "false"}, "steps": [{"do": "settings"}]}
+env: {"GCS_USE_BATCHED_LOGGING": "false"}
+compare: {ignore: []}
