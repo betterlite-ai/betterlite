@@ -251,12 +251,20 @@ fn retrieve_delete_id() {
         config.transform_container_delete_request("cntr_abc", BASE, context.request());
     assert_eq!(url, "https://api.openai.com/v1/containers/cntr_abc");
     assert!(data.is_empty());
-    let (url, _data) = config.transform_container_retrieve_request(".", BASE, context.request());
-    assert_eq!(url, "https://api.openai.com/v1/containers/%2E");
-    let (url, _data) = config.transform_container_retrieve_request("..", BASE, context.request());
-    assert_eq!(url, "https://api.openai.com/v1/containers/%2E%2E");
-    let (url, _data) = config.transform_container_retrieve_request("", BASE, context.request());
-    assert_eq!(url, "https://api.openai.com/v1/containers/");
+    for refused in [".", "..", ""] {
+        let (url, _data) =
+            config.transform_container_retrieve_request(refused, BASE, context.request());
+        assert_eq!(url, "");
+        let (url, _data) =
+            config.transform_container_delete_request(refused, BASE, context.request());
+        assert_eq!(url, "");
+        let segments = [urls::ContainerPathSegment::Id {
+            field_name: "container_id",
+            value: refused,
+        }];
+        let error = urls::resource_url(BASE, &segments).unwrap_err();
+        assert!(error.to_string().contains("container_id"));
+    }
 }
 
 fn file_list_and_content() {
@@ -283,6 +291,15 @@ fn file_list_and_content() {
         "https://example.openai.azure.com/openai/v1/containers/cntr_abc/files/cfile_1/content?api-version=v1"
     );
     assert!(params.is_empty());
+    let (url, _params) =
+        config.transform_container_file_list_request("..", BASE, context.request(), &empty);
+    assert_eq!(url, "");
+    let (url, _params) =
+        config.transform_container_file_content_request("cntr_abc", "", BASE, context.request());
+    assert_eq!(url, "");
+    let (url, _params) =
+        config.transform_container_file_content_request(".", "cfile_1", BASE, context.request());
+    assert_eq!(url, "");
     let bytes = b"\x00raw\xffbytes".to_vec();
     assert_eq!(
         config

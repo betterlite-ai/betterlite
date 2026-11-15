@@ -138,7 +138,7 @@ impl BaseContainerConfig for OpenAiContainerConfig {
             field_name: "container_id",
             value: container_id,
         }];
-        (urls::resource_url(api_base, &segments), Map::new())
+        (urls::request_url(api_base, &segments), Map::new())
     }
 
     // ast-grep-ignore: no-long-names
@@ -160,7 +160,7 @@ impl BaseContainerConfig for OpenAiContainerConfig {
             field_name: "container_id",
             value: container_id,
         }];
-        (urls::resource_url(api_base, &segments), Map::new())
+        (urls::request_url(api_base, &segments), Map::new())
     }
 
     // ast-grep-ignore: no-long-names
@@ -187,7 +187,7 @@ impl BaseContainerConfig for OpenAiContainerConfig {
             urls::ContainerPathSegment::Literal("files"),
         ];
         (
-            urls::resource_url(api_base, &segments),
+            urls::request_url(api_base, &segments),
             requests::list_query(query),
         )
     }
@@ -220,7 +220,7 @@ impl BaseContainerConfig for OpenAiContainerConfig {
             },
             urls::ContainerPathSegment::Literal("content"),
         ];
-        (urls::resource_url(api_base, &segments), Map::new())
+        (urls::request_url(api_base, &segments), Map::new())
     }
 
     // ast-grep-ignore: no-long-names

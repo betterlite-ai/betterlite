@@ -1,5 +1,5 @@
+use betterlite_http::error::HttpError;
 use betterlite_http::url_path::encode_segment;
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use url::Url;
 
 #[derive(Debug)]
@@ -12,19 +12,33 @@ pub enum ContainerPathSegment<'value> {
 }
 
 // A resource URL keeps the base's query and fragment, since Azure bases carry ?api-version=...
-#[must_use]
-pub fn resource_url(api_base: &str, segments: &[ContainerPathSegment<'_>]) -> String {
+pub fn resource_url(
+    api_base: &str,
+    segments: &[ContainerPathSegment<'_>],
+) -> Result<String, HttpError> {
     let mut path = String::new();
     for segment in segments {
         path.push('/');
         match segment {
             ContainerPathSegment::Id { field_name, value } => {
-                path.push_str(&encode_id(value, field_name));
+                path.push_str(&encode_segment(value, field_name)?);
             }
             ContainerPathSegment::Literal(literal) => path.push_str(literal),
         }
     }
-    join_container_api_base_path(api_base, &path)
+    Ok(join_container_api_base_path(api_base, &path))
+}
+
+// B3360's request transforms have no error channel, so an id B171 refuses yields an empty URL that no transport can send
+#[must_use]
+pub fn request_url(api_base: &str, segments: &[ContainerPathSegment<'_>]) -> String {
+    match resource_url(api_base, segments) {
+        Ok(url) => url,
+        Err(error) => {
+            tracing::warn!(%error, "refusing to build a container request URL");
+            String::new()
+        }
+    }
 }
 
 #[must_use]
@@ -40,12 +54,4 @@ pub fn join_container_api_base_path(api_base: &str, path_suffix: &str) -> String
     let path = format!("{}{suffix}", url.path().trim_end_matches('/'));
     url.set_path(&path);
     url.to_string()
-}
-
-// Pending B3360: its request transforms have no error channel, so an id B171 refuses cannot be reported yet
-fn encode_id(value: &str, field_name: &str) -> String {
-    match encode_segment(value, field_name) {
-        Ok(encoded) => encoded,
-        Err(_error) => utf8_percent_encode(value, NON_ALPHANUMERIC).to_string(),
-    }
 }
