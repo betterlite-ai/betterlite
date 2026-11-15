@@ -574,6 +574,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "perplexity_chat_reply"
+path = "fuzz_targets/perplexity_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "text_response"
 path = "fuzz_targets/text_response.rs"
 test = false
