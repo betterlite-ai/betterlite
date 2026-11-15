@@ -20,7 +20,7 @@ class Input(TypedDict):
 
 def run(input_value: Input) -> JsonValue:
     provider = input_value["provider"]
-    text = json.dumps(asyncio.run(get_provider_specific_params()), default=UndefinedAsNull())
+    text = json.dumps(asyncio.run(get_provider_specific_params()), default=UndefinedAsNull())  # type: ignore[no-untyped-call, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1915
     params = ANSWERS.validate_json(text)
     if provider not in params:
         raise ValueError(f"no config model for {provider}")
