@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
+use std::net::TcpListener as StdTcpListener;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -105,7 +107,7 @@ fn user_text(content: &str) -> GuardrailApiInputs {
 }
 
 fn sent(seen: &Seen) -> GuardrailValue {
-    json(std::str::from_utf8(&seen.body).unwrap())
+    json(from_utf8(&seen.body).unwrap())
 }
 
 fn dynamic(fields: &str) -> BTreeMap<String, GuardrailValue> {
@@ -377,7 +379,7 @@ async fn a_slow_answer_times_out() {
 
 #[tokio::test]
 async fn an_unreachable_server_is_a_request_error() {
-    let address = std::net::TcpListener::bind("127.0.0.1:0")
+    let address = StdTcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
         .unwrap();
