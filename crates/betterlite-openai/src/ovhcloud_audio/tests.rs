@@ -11,7 +11,7 @@ use super::request::{
 use crate::api::audio_file_input::ProcessedAudioFile;
 use crate::openai_base_config::{Headers, Object};
 
-fn object(value: serde_json::Value) -> Object {
+fn object(value: Value) -> Object {
     serde_json::from_value(value).expect("a JSON object")
 }
 
@@ -153,9 +153,9 @@ fn transcription_request_skips_every_unset_supported_param() {
 #[case::a_null_duration_stays_null(json!({"duration": null}), "", json!({"duration": null}))]
 #[case::no_duration_key_adds_none(json!({"text": "x"}), "x", json!({"text": "x"}))]
 fn decode_transcription_reply_reads_the_text_and_normalizes_the_duration(
-    #[case] source: serde_json::Value,
+    #[case] source: Value,
     #[case] text: &str,
-    #[case] hidden: serde_json::Value,
+    #[case] hidden: Value,
 ) {
     let body = serde_json::to_vec(&source).expect("bytes");
     let transcription =

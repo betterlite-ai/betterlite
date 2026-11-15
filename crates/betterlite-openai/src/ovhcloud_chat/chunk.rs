@@ -109,11 +109,12 @@ fn error_chunk(error: &Json) -> OvhCloudError {
     let status_code = match fields.get("code") {
         None => Some(DEFAULT_STATUS),
         Some(Json::Null) => None,
-        Some(Json::Number(number)) => number
-            .as_u64()
-            .and_then(|value| u16::try_from(value).ok())
-            .map(Some)
-            .unwrap_or_else(|| shape("error.code")),
+        Some(Json::Number(number)) => {
+            let Some(value) = number.as_u64().and_then(|value| u16::try_from(value).ok()) else {
+                return shape("error.code");
+            };
+            Some(value)
+        }
         Some(_) => return shape("error.code"),
     };
     OvhCloudError {
