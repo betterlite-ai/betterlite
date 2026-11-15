@@ -72,11 +72,11 @@ async fn event_step(
     input: &Input,
     session: &Session,
 ) -> Result<Value, Box<HelperError>> {
-    let Some(base) = &input.payload else {
-        return Err(failure("ValueError", "an event step needs a payload"));
-    };
-    let Some(id) = &step.id else {
-        return Err(failure("ValueError", "an event step needs an id"));
+    let (Some(base), Some(id)) = (&input.payload, &step.id) else {
+        return Err(failure(
+            "ValueError",
+            "an event step needs a payload and an id",
+        ));
     };
     let event = Arc::new(LoggerEvent {
         payload: Arc::new(payload_for(base, id, step.response_id.as_deref())),
@@ -96,11 +96,11 @@ fn payload_for(
     response_id: Option<&str>,
 ) -> StandardLoggingPayload {
     let mut payload = base.clone();
-    payload.id = id.to_owned();
-    payload.response = response_id.map(|id| {
+    id.clone_into(&mut payload.id);
+    payload.response = response_id.map(|response| {
         Json::Object(IndexMap::from([(
             "id".to_owned(),
-            Json::Text(id.to_owned()),
+            Json::Text(response.to_owned()),
         )]))
     });
     payload

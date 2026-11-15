@@ -57,7 +57,7 @@ fn no_items_make_an_empty_document() {
 
 #[test]
 fn non_ascii_text_is_not_escaped() {
-    let items = vec![item("chatcmpl-é", None, Json::Null)];
+    let items = vec![item("chatcmpl-\u{e9}", None, Json::Null)];
     let ndjson = combine_payloads_to_ndjson(&items).expect("the payloads serialize");
-    assert!(ndjson.contains("chatcmpl-é"));
+    assert!(ndjson.contains("chatcmpl-\u{e9}"));
 }

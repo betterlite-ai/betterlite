@@ -5,6 +5,7 @@ use std::time::Duration;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use tokio::task::yield_now;
 use tokio::time::{advance, timeout};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -57,10 +58,10 @@ async fn callback_logger_flushes_on_the_interval() {
         &event("chatcmpl-1", None, Json::Null, IndexMap::new()),
     )
     .await;
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert!(harness.requests().is_empty());
     advance(Duration::from_secs(1)).await;
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert_eq!(harness.requests().len(), 1);
     assert_eq!(harness.queue_len(), 0);
     shutdown.cancel();

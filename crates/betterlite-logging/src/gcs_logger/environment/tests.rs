@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
+use crate::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource as _;
 use crate::gcs_client::gcs_storage_auth::{BUCKET_NAME_ENV, SERVICE_ACCOUNT_ENV};
 use crate::gcs_mock::settings::{ENABLE_ENV, LATENCY_ENV};
 

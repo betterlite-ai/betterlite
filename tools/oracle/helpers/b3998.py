@@ -71,28 +71,20 @@ class Bridge(Protocol[Item]):
     log_queue: Queue[Item]
 
     def _drain_queue_batch(self) -> list[Item]: ...
-
     def _group_items_by_config(self, items: list[Item]) -> dict[str, list[Item]]: ...
-
     def _combine_payloads_to_ndjson(self, items: list[Item]) -> str: ...
-
     async def _send_grouped_batch(
         self, items: list[Item], config_key: str
     ) -> tuple[int, int]: ...
-
     def _get_config_key(self, kwargs: dict[str, JsonValue]) -> str: ...
-
     def _sanitize_config_key(self, config_key: str) -> str: ...
-
     def _get_object_date_from_datetime(self, datetime_obj: datetime) -> str: ...
-
     async def get_request_response_payload(
         self,
         request_id: str,
         start_time_utc: datetime | None,
         end_time_utc: datetime | None,
     ) -> dict[str, JsonValue] | None: ...
-
     async def async_log_success_event(
         self,
         kwargs: dict[str, JsonValue],
@@ -100,7 +92,6 @@ class Bridge(Protocol[Item]):
         start_time: float,
         end_time: float,
     ) -> None: ...
-
     async def async_log_failure_event(
         self,
         kwargs: dict[str, JsonValue],
@@ -108,10 +99,22 @@ class Bridge(Protocol[Item]):
         start_time: float,
         end_time: float,
     ) -> None: ...
-
     async def async_send_batch(self) -> None: ...
-
     async def flush_queue(self) -> None: ...
+
+    async def oracle_event(
+        self, kwargs: dict[str, JsonValue], response: JsonValue, *, failed: bool
+    ) -> None:
+        if failed:
+            await self.async_log_failure_event(kwargs, response, 0.0, 0.0)
+        else:
+            await self.async_log_success_event(kwargs, response, 0.0, 0.0)
+
+    async def oracle_send(self, *, flush: bool) -> None:
+        if flush:
+            await self.flush_queue()
+        else:
+            await self.async_send_batch()
 
     def oracle_settings(self) -> JsonValue:
         return [
@@ -216,10 +219,7 @@ async def queue_step(step: Step, input_value: Input, probe: Probe) -> JsonValue:
         response_id = step.get("response_id")
         response: JsonValue = None if response_id is None else {"id": response_id}
         kwargs = event_kwargs(base, step, id_value, response)
-        if action == "event":
-            await probe.async_log_success_event(kwargs, response, 0.0, 0.0)
-        else:
-            await probe.async_log_failure_event(kwargs, response, 0.0, 0.0)
+        await probe.oracle_event(kwargs, response, failed=action == "failure")
         return None
     if action == "settings":
         return probe.oracle_settings()
@@ -254,10 +254,10 @@ async def send_step(step: Step, probe: Probe, recorder: Recorder) -> JsonValue:
         return await probe.oracle_grouped()
     report: dict[str, JsonValue] = {}
     if action == "send":
-        await probe.async_send_batch()
+        await probe.oracle_send(flush=False)
     elif action == "flush":
         probe.last_flush_time = 0.0
-        await probe.flush_queue()
+        await probe.oracle_send(flush=True)
         report["updated"] = probe.last_flush_time > 0.0
     else:
         await asyncio.sleep(WAIT_SECONDS)

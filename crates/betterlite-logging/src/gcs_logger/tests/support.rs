@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 
 pub(crate) const CLOUD_PLATFORM: &str = "https://www.googleapis.com/auth/cloud-platform";
 
@@ -60,6 +61,7 @@ pub(crate) struct CapturedRequest {
 pub(crate) struct Upstream {
     pub(crate) address: SocketAddr,
     captured: Arc<Mutex<Vec<CapturedRequest>>>,
+    _tasks: JoinSet<()>,
 }
 
 impl Upstream {
@@ -101,6 +103,28 @@ pub(crate) async fn token_server(access_token: &str) -> Upstream {
     .await
 }
 
+async fn read_request(socket: &mut TcpStream) -> CapturedRequest {
+    let mut raw = Vec::new();
+    while !raw.ends_with(b"\r\n\r\n") {
+        raw.push(socket.read_u8().await.expect("the request has a head"));
+    }
+    let head = String::from_utf8(raw).expect("the head is text");
+    let length: usize = head
+        .lines()
+        .filter_map(|line| line.split_once(": "))
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        .map_or(0, |(_, value)| value.trim().parse().expect("a length"));
+    let mut body = vec![0; length];
+    socket
+        .read_exact(&mut body)
+        .await
+        .expect("the request has its body");
+    CapturedRequest {
+        head,
+        body: String::from_utf8(body).expect("the body is text"),
+    }
+}
+
 // answers every request with the given status and body, and keeps what each request sent
 pub(crate) async fn upstream(status: u16, reply: String) -> Upstream {
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -109,30 +133,14 @@ pub(crate) async fn upstream(status: u16, reply: String) -> Upstream {
     let address = listener.local_addr().expect("the listener has an address");
     let captured = Arc::new(Mutex::new(Vec::new()));
     let seen = Arc::clone(&captured);
-    tokio::spawn(async move {
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
         loop {
             let (mut socket, _) = listener.accept().await.expect("a client connects");
-            let mut head = Vec::new();
-            while !head.ends_with(b"\r\n\r\n") {
-                head.push(socket.read_u8().await.expect("the request has a head"));
-            }
-            let head = String::from_utf8(head).expect("the head is text");
-            let length: usize = head
-                .lines()
-                .filter_map(|line| line.split_once(": "))
-                .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-                .map_or(0, |(_, value)| value.trim().parse().expect("a length"));
-            let mut body = vec![0; length];
-            socket
-                .read_exact(&mut body)
-                .await
-                .expect("the request has its body");
+            let request = read_request(&mut socket).await;
             seen.lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .push(CapturedRequest {
-                    head,
-                    body: String::from_utf8(body).expect("the body is text"),
-                });
+                .push(request);
             let response = format!(
                 "HTTP/1.1 {status} Reply\r\ncontent-type: application/json\r\nx-reply: marker\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
                 reply.len()
@@ -143,5 +151,9 @@ pub(crate) async fn upstream(status: u16, reply: String) -> Upstream {
                 .expect("the reply is written");
         }
     });
-    Upstream { address, captured }
+    Upstream {
+        address,
+        captured,
+        _tasks: tasks,
+    }
 }

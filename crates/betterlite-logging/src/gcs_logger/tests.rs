@@ -126,16 +126,16 @@ async fn a_service_account_token_carries_the_cloud_platform_scope() {
         .ensure_access_token_async(token_request(Some(&document)))
         .await
         .expect("the service account builds a token");
-    let claims = access
+    let segment = access
         .token
         .expose_secret()
         .split('.')
         .nth(1)
         .expect("the token is a JWT");
-    let claims = URL_SAFE_NO_PAD
-        .decode(claims)
+    let decoded = URL_SAFE_NO_PAD
+        .decode(segment)
         .expect("the claims are base64url");
-    let claims: JwtClaims = serde_json::from_slice(&claims).expect("the claims are JSON");
+    let claims: JwtClaims = serde_json::from_slice(&decoded).expect("the claims are JSON");
     assert_eq!(claims.scope, CLOUD_PLATFORM);
     assert_eq!(claims.iss, "first@example.iam.gserviceaccount.com");
 }

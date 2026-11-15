@@ -27,14 +27,14 @@ fn inputs(environment: &[(&str, &str)]) -> CatalogInputs {
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
             .expect("the proxy policy resolves"),
     );
-    let environment: BTreeMap<String, String> = environment
+    let variables: BTreeMap<String, String> = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     CatalogInputs {
         config: Arc::new(config),
         http: ProxiedClient::outbound(&policy).expect("the HTTP client builds"),
-        env: Arc::new(environment),
+        env: Arc::new(variables),
         callback_settings,
         tracker: TaskTracker::new(),
         shutdown: CancellationToken::new(),

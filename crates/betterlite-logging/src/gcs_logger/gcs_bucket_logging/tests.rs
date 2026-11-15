@@ -68,7 +68,7 @@ async fn callback_logger_accepts_events_when_the_upload_fails() {
         .logger
         .async_log_success_event(event("chatcmpl-1", None, Json::Null, IndexMap::new()))
         .await;
-    assert!(success.is_ok());
+    success.expect("the callback accepts the success event");
     let failure = harness
         .logger
         .async_log_failure_event(event(
@@ -78,7 +78,7 @@ async fn callback_logger_accepts_events_when_the_upload_fails() {
             IndexMap::new(),
         ))
         .await;
-    assert!(failure.is_ok());
+    failure.expect("the callback accepts the failure event");
     assert_eq!(harness.requests().len(), 1);
     assert_eq!(harness.queue_len(), 1);
 }

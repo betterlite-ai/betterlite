@@ -9,7 +9,6 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use http::HeaderMap;
 use indexmap::IndexMap;
-use rust_decimal::Decimal;
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -19,10 +18,8 @@ use url::Url;
 
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
-use crate::fields::payload::records::{StandardLoggingHiddenParams, StandardLoggingMetadata};
-use crate::fields::status::{GuardrailStatus, LoggingStatus, StatusFields};
+use crate::fields::status::LoggingStatus;
 use crate::gcs_client::gcs_storage_auth::GcsBucketBase;
-use crate::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
 use crate::gcs_client::gcs_storage_auth::initialization_behaviors::initialize;
 use crate::gcs_logger::gcs_bucket_logging::event_enqueue_behaviors::enqueue;
 use crate::gcs_logger::gcs_bucket_logging::initialization_behaviors::start;
@@ -306,68 +303,120 @@ pub(crate) fn now() -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
+const PAYLOAD: &str = r#"{
+  "id": "chatcmpl-1",
+  "trace_id": "trace-1",
+  "session_id": "session-1",
+  "litellm_call_id": null,
+  "call_type": "completion",
+  "stream": null,
+  "response_cost": 0.5,
+  "cost_breakdown": null,
+  "autorouter_savings": null,
+  "autorouter_savings_estimate": null,
+  "autorouter_baseline_observation": null,
+  "response_cost_failure_debug_info": null,
+  "status": "success",
+  "status_fields": {
+    "llm_api_status": "success",
+    "guardrail_status": "not_run"
+  },
+  "custom_llm_provider": null,
+  "total_tokens": 0,
+  "prompt_tokens": 0,
+  "completion_tokens": 0,
+  "startTime": 0.5,
+  "endTime": 0.5,
+  "completionStartTime": 0.5,
+  "response_time": 0.5,
+  "model_map_information": {
+    "model_map_key": "gpt-4o",
+    "model_map_value": null
+  },
+  "model": "gpt-4o",
+  "model_id": null,
+  "model_group": null,
+  "api_base": "https://api.openai.com",
+  "metadata": {
+    "user_api_key_hash": null,
+    "user_api_key_alias": null,
+    "user_api_key_spend": null,
+    "user_api_key_max_budget": null,
+    "user_api_key_budget_reset_at": null,
+    "user_api_key_user_spend": null,
+    "user_api_key_user_max_budget": null,
+    "user_api_key_team_spend": null,
+    "user_api_key_team_max_budget": null,
+    "user_api_key_org_id": null,
+    "user_api_key_org_alias": null,
+    "user_api_key_team_id": null,
+    "user_api_key_project_id": null,
+    "user_api_key_project_alias": null,
+    "user_api_key_user_id": null,
+    "user_api_key_user_email": null,
+    "user_api_key_team_alias": null,
+    "user_api_key_end_user_id": null,
+    "user_api_key_request_route": null,
+    "user_api_key_auth_metadata": null,
+    "spend_logs_metadata": null,
+    "requester_ip_address": null,
+    "user_agent": null,
+    "requester_metadata": null,
+    "requester_custom_headers": null,
+    "prompt_management_metadata": null,
+    "mcp_tool_call_metadata": null,
+    "vector_store_request_metadata": null,
+    "routing_decision": null,
+    "applied_guardrails": null,
+    "usage_object": null,
+    "cold_storage_object_key": null,
+    "team_alias": null,
+    "team_id": null,
+    "used_client_oauth_token": null
+  },
+  "cache_hit": null,
+  "cache_key": null,
+  "saved_cache_cost": 0.5,
+  "request_tags": [],
+  "end_user": null,
+  "requester_ip_address": null,
+  "user_agent": null,
+  "messages": null,
+  "response": null,
+  "error_str": null,
+  "error_information": null,
+  "model_parameters": {},
+  "hidden_params": {
+    "model_id": null,
+    "cache_key": null,
+    "api_base": null,
+    "response_cost": null,
+    "litellm_overhead_time_ms": null,
+    "additional_headers": null,
+    "batch_models": null,
+    "batch_successful_requests": null,
+    "batch_failed_requests": null,
+    "litellm_model_name": null,
+    "usage_object": null
+  },
+  "guardrail_information": null,
+  "standard_built_in_tools_params": null
+}"#;
+
 pub(crate) fn payload(id: &str, error: Option<&str>) -> StandardLoggingPayload {
-    let status = if error.is_some() {
-        LoggingStatus::Failure
-    } else {
-        LoggingStatus::Success
-    };
-    let response = Json::Object(IndexMap::from([(
+    let mut built: StandardLoggingPayload =
+        serde_json::from_str(PAYLOAD).expect("the fixture payload parses");
+    if error.is_some() {
+        built.status = LoggingStatus::Failure;
+        built.status_fields.llm_api_status = LoggingStatus::Failure;
+    }
+    built.id = id.to_owned();
+    built.response = Some(Json::Object(IndexMap::from([(
         "id".to_owned(),
         Json::Text(id.to_owned()),
-    )]));
-    StandardLoggingPayload {
-        classifier_input: None,
-        originating_request_masked: None,
-        id: id.to_owned(),
-        trace_id: "trace-1".to_owned(),
-        session_id: "session-1".to_owned(),
-        litellm_call_id: Some("call-1".to_owned()),
-        call_type: "completion".to_owned(),
-        stream: Some(false),
-        response_cost: Decimal::new(5, 1),
-        cost_breakdown: None,
-        autorouter_savings: None,
-        autorouter_savings_estimate: None,
-        baseline_observation: None,
-        cost_failure_info: None,
-        zero_cost_diagnostic: None,
-        status,
-        status_fields: StatusFields {
-            llm_api_status: status,
-            guardrail_status: GuardrailStatus::NotRun,
-        },
-        custom_llm_provider: Some("openai".to_owned()),
-        total_tokens: 5,
-        prompt_tokens: 2,
-        completion_tokens: 3,
-        start_time: Decimal::new(17_040_672_000, 1),
-        end_time: Decimal::new(17_040_672_015, 1),
-        completion_start_time: Decimal::new(17_040_672_005, 1),
-        response_time: Decimal::new(15, 1),
-        model_map_information: IndexMap::new(),
-        model: "gpt-4o".to_owned(),
-        model_id: Some("model-1".to_owned()),
-        model_group: None,
-        api_base: "https://api.openai.com".to_owned(),
-        metadata: StandardLoggingMetadata::default(),
-        cache_hit: None,
-        cache_key: None,
-        saved_cache_cost: Decimal::ZERO,
-        request_tags: Vec::new(),
-        request_model_access_groups: None,
-        end_user: None,
-        requester_ip_address: None,
-        user_agent: None,
-        messages: None,
-        response: Some(response),
-        error_str: error.map(str::to_owned),
-        error_information: None,
-        model_parameters: IndexMap::new(),
-        hidden_params: StandardLoggingHiddenParams::default(),
-        guardrail_information: None,
-        standard_built_in_tools_params: None,
-    }
+    )])));
+    built.error_str = error.map(str::to_owned);
+    built
 }
 
 pub(crate) fn event(
@@ -451,12 +500,12 @@ impl CapturedLogs {
 }
 
 impl io::Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

@@ -133,11 +133,11 @@ pub(super) fn uploads(client: &RecordingClient) -> usize {
 
 pub(super) fn requests_json(client: &RecordingClient) -> Result<Value, regex::Error> {
     let sent = client.sent.lock().unwrap_or_else(PoisonError::into_inner);
-    let entries = sent
-        .iter()
-        .map(request_json)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Value::Array(entries))
+    Ok(Value::Array(
+        sent.iter()
+            .map(request_json)
+            .collect::<Result<Vec<_>, _>>()?,
+    ))
 }
 
 fn request_json(request: &GcsRequest) -> Result<Value, regex::Error> {
