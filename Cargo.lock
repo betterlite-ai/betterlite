@@ -2135,6 +2135,7 @@ dependencies = [
  "deadpool-postgres",
  "flate2",
  "futures-util",
+ "google-cloud-auth",
  "h2",
  "hex",
  "hmac 0.13.0",

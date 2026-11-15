@@ -1,0 +1,100 @@
+use betterlite_models::decisions::Json;
+
+use crate::gcs_client::gcs_storage_auth::config_resolution_behaviors::logging_config;
+use crate::gcs_client::gcs_storage_auth::header_construction_behaviors::construct_request_headers;
+use crate::gcs_client::gcs_storage_auth::upload_behaviors::log_json_data_on_gcs;
+use crate::gcs_mock::auth::VertexAuth;
+use crate::gcs_mock::client::GcsHttpClient;
+use crate::types::gcs_storage_auth::type_definitions::{GcsLoggingKwargs, GcsLoggingPayload};
+
+use super::GcsBucketLogger;
+use super::QueuedItem;
+use super::naming_format_behaviors::{generate_batch_object_name, get_object_date};
+use super::ndjson_behaviors::combine_payloads_to_ndjson;
+
+// a null dynamic params object means the base bucket, as kwargs.get(...) returning None does in LiteLLM
+pub(super) fn dynamic_params(dynamic: &Json) -> Option<Json> {
+    match dynamic {
+        Json::Null => None,
+        other => Some(other.clone()),
+    }
+}
+
+#[must_use]
+pub async fn send_grouped_batch<Auth, Http>(
+    logger: &GcsBucketLogger<Auth, Http>,
+    items: &[QueuedItem],
+) -> (usize, usize)
+where
+    Auth: VertexAuth + Clone,
+    Http: GcsHttpClient,
+{
+    if items.is_empty() {
+        return (0, 0);
+    }
+    match upload_group(logger, items).await {
+        Ok(()) => (items.len(), 0),
+        Err(message) => {
+            tracing::error!(
+                message = %message,
+                "GCS Bucket error logging batch payload to GCS bucket"
+            );
+            (0, items.len())
+        }
+    }
+}
+
+async fn upload_group<Auth, Http>(
+    logger: &GcsBucketLogger<Auth, Http>,
+    items: &[QueuedItem],
+) -> Result<(), String>
+where
+    Auth: VertexAuth + Clone,
+    Http: GcsHttpClient,
+{
+    let kwargs = logging_kwargs(items);
+    let config = logging_config(&logger.base, &kwargs)
+        .await
+        .map_err(|error| error.to_string())?;
+    let headers = construct_request_headers(
+        &logger.base,
+        &config.bucket_name,
+        config.path_service_account.as_ref(),
+        Some(&config.vertex_instance),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    let date = get_object_date(logger.clock.now());
+    let batch_id = batch_id(logger);
+    let object_name = generate_batch_object_name(&date, &batch_id);
+    let ndjson = combine_payloads_to_ndjson(items).map_err(|error| error.to_string())?;
+    log_json_data_on_gcs(
+        &logger.base,
+        &headers,
+        &config.bucket_name,
+        &object_name,
+        &GcsLoggingPayload::Text(ndjson),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn logging_kwargs(items: &[QueuedItem]) -> GcsLoggingKwargs {
+    let Some(first) = items.first() else {
+        return GcsLoggingKwargs::default();
+    };
+    GcsLoggingKwargs {
+        dynamic_params: dynamic_params(first.dynamic_params.as_ref()),
+    }
+}
+
+// the first item's kwargs pick the bucket and the credentials for the whole group
+fn batch_id<Auth, Http>(logger: &GcsBucketLogger<Auth, Http>) -> String {
+    let millis = logger.clock.now().timestamp_millis();
+    let uuid = logger.ids.uuid_hex();
+    let suffix = uuid.get(..8).unwrap_or_default();
+    format!("{millis}-{suffix}")
+}
+
+mod tests;
