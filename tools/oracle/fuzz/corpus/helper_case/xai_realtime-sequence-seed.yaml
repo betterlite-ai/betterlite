@@ -1,0 +1,18 @@
+kind: helper
+name: xai-realtime-sequence-seed
+call:
+  xai_realtime:
+    kind: sequence
+    events:
+      - {type: ping}
+      - {type: response.output_text.delta, delta: hi}
+      - {type: conversation.item.added, item: {type: function_call, role: tool}}
+      - {type: response.content_part.done, response_id: response-1, item_id: item-1}
+    sessions:
+      - {turn_detection: {type: server_vad}}
+    model: grok-4-1-fast-non-reasoning
+    api_key: null
+    scope_headers: []
+    max_message_size_bytes: 1048576
+env: {}
+compare: {ignore: []}
