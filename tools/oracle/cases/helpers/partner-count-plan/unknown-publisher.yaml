@@ -1,0 +1,11 @@
+kind: helper
+name: partner-count-plan-unknown-publisher
+call:
+  partner_count_plan:
+    cases:
+    - model: gemini-2.5-pro
+      project: my-project
+      location: us-east5
+compare:
+  ignore: []
+env: {}
