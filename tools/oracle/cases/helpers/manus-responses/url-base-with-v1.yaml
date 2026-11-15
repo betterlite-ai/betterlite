@@ -1,0 +1,15 @@
+kind: helper
+name: manus-responses-url-base-with-v1
+env: {}
+compare: {ignore: []}
+call:
+  b8104:
+    op: urls
+    environment: {MANUS_API_BASE: "https://env:3/v1", MANUS_API_KEY: env-key}
+    sdk: {api_base: null, api_key: null}
+    probes:
+      - {api_base: "https://explicit:1/v1"}
+      - {api_base: "https://explicit:1/v1/"}
+      - {api_base: "https://explicit:1///"}
+      - {api_base: "https://explicit:1/v1beta"}
+      - {api_base: null}
