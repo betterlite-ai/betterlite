@@ -135,22 +135,12 @@ pub(crate) enum Effect {
     Delete(String),
 }
 
+#[derive(Default)]
 pub(crate) struct State {
     pub(crate) effects: Vec<Effect>,
     pub(crate) rows: BTreeMap<String, SkillTable>,
     pub(crate) page: Vec<SkillTable>,
     pub(crate) create_failure: bool,
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            effects: Vec::new(),
-            rows: BTreeMap::new(),
-            page: Vec::new(),
-            create_failure: false,
-        }
-    }
 }
 
 #[derive(Clone, Default)]
@@ -256,12 +246,12 @@ impl SkillRepository for ScriptedRepository {
 
 pub(crate) fn upload<'request>(
     file_name: &'request str,
-    file_content: &'request [u8],
+    content: &'request [u8],
     file_type: SkillUploadType<'request>,
 ) -> SkillUpload<'request> {
     SkillUpload {
         file_name,
-        file_content,
+        content,
         file_type,
     }
 }

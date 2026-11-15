@@ -28,7 +28,7 @@ pub(super) fn selected_file<'request>(
     let Some(upload) = uploads.first() else {
         return selected;
     };
-    selected.content = Some(upload.file_content);
+    selected.content = Some(upload.content);
     selected.name = Some(upload.file_name);
     selected.file_type = match upload.file_type {
         SkillUploadType::Defaulted => Some(DEFAULT_FILE_TYPE),

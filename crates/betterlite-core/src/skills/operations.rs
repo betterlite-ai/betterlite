@@ -48,7 +48,7 @@ pub struct HostedSkillCreation<'request> {
 // One uploaded tuple; a two-element tuple names no MIME type and falls back to application/zip
 pub struct SkillUpload<'request> {
     pub file_name: &'request str,
-    pub file_content: &'request [u8],
+    pub content: &'request [u8],
     pub file_type: SkillUploadType<'request>,
 }
 
