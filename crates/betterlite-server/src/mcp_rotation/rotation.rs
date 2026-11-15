@@ -189,7 +189,7 @@ where
     }
 }
 
-// Python's decoder receives the stored value itself, so a bare text is a legacy ciphertext it decrypts.
+// Python reads a stored string with its text branch, so the value is quoted into stored JSON text.
 fn decode_stored_map<N, D>(
     cipher: &StoredCipher<N, D>,
     text: &str,
@@ -198,16 +198,6 @@ fn decode_stored_map<N, D>(
 where
     D: SecretDiagnostics,
 {
-    match decode_secret_map(cipher, Some(text), field) {
-        Err(SecretError::MapDecode { .. }) if !starts_with_json(text) => {
-            let quoted =
-                serde_json::to_string(text).map_err(|source| SecretError::MapEncode { source })?;
-            decode_secret_map(cipher, Some(&quoted), field)
-        }
-        other => other,
-    }
-}
-
-fn starts_with_json(text: &str) -> bool {
-    matches!(text.trim_start().chars().next(), Some('{' | '"'))
+    let quoted = serde_json::to_string(text).map_err(|source| SecretError::MapEncode { source })?;
+    decode_secret_map(cipher, Some(&quoted), field)
 }
