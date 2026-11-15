@@ -12,10 +12,10 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Number;
 
+use super::reply::{NativeTranscriptionReply, decode_native_transcription};
 use super::{
-    NativeError, SUPPORTED_OPENAI_PARAMS, complete_url, decode_native_transcription,
-    get_error_class, map_openai_params, resolve_stt_base_url, transform_request,
-    validate_environment,
+    NativeError, SUPPORTED_OPENAI_PARAMS, complete_url, get_error_class, map_openai_params,
+    resolve_stt_base_url, transform_request, validate_environment,
 };
 
 const MISSING_BASE: &str = "api_base is required for Azure AI Speech transcription. Use a Cognitive Services endpoint like https://{region}.api.cognitive.microsoft.com or an STT endpoint like https://{region}.stt.speech.microsoft.com.";
@@ -57,7 +57,7 @@ fn headers(pairs: &[(&str, &str)]) -> Headers {
         .collect()
 }
 
-fn decode(body: &str) -> Result<super::NativeTranscriptionReply, NativeError> {
+fn decode(body: &str) -> Result<NativeTranscriptionReply, NativeError> {
     decode_native_transcription(200, &headers(&[("x-request-id", "req-1")]), body.as_bytes())
 }
 
@@ -195,9 +195,9 @@ fn completion_url_requires_a_base() {
         "https://speech.test/speech/recognition/conversation/cognitiveservices/v1?language=en-US&format=simple"
     );
     let wrong: IndexMap<String, Json> = params(&[("language", Json::Bool(true))]);
-    let error = complete_url(Some("https://speech.test"), None, &wrong).unwrap_err();
+    let field = complete_url(Some("https://speech.test"), None, &wrong).unwrap_err();
     assert_eq!(
-        native_status(&error),
+        native_status(&field),
         (
             None,
             "the transcription field `language` is not a string".to_owned()
@@ -293,7 +293,6 @@ fn native_reply_accepts_missing_and_success_status(#[case] body: &str) {
 #[case::nbest_empty_display(r#"{"NBest":[{"Display":""}]}"#, "")]
 #[case::nbest_empty_item(r#"{"NBest":[{}]}"#, "")]
 #[case::nbest_empty_list(r#"{"NBest":[]}"#, "")]
-#[case::nbest_number_display(r#"{"NBest":[{"Display":7}]}"#, "")]
 #[case::nbest_text_item(r#"{"NBest":["best"]}"#, "")]
 #[case::nbest_object(r#"{"NBest":{"Display":"best"}}"#, "")]
 #[case::empty_object(r#"{}"#, "")]
@@ -307,14 +306,20 @@ fn native_reply_falls_back_to_nbest(#[case] body: &str, #[case] expected: &str) 
 
 #[test]
 fn native_reply_refuses_wrongly_typed_nbest_fields() {
-    let error = decode(r#"{"NBest":[{"Display":{"nested":1}}]}"#).unwrap_err();
-    assert_eq!(
-        native_status(&error),
-        (
-            None,
-            "the transcription field `NBest[0].Display` is not a string".to_owned()
-        )
-    );
+    for body in [
+        r#"{"NBest":[{"Display":{"nested":1}}]}"#,
+        r#"{"NBest":[{"Display":7}]}"#,
+    ] {
+        let error = decode(body).unwrap_err();
+        assert_eq!(
+            native_status(&error),
+            (
+                None,
+                "the transcription field `NBest[0].Display` is not a string".to_owned()
+            ),
+            "{body}"
+        );
+    }
     let lexical = decode(r#"{"NBest":[{"Lexical":5}]}"#).unwrap_err();
     assert_eq!(
         native_status(&lexical),
@@ -356,7 +361,6 @@ fn recognition_failure_keeps_raw_status_and_headers() {
 #[case::number(Json::Number(Number::from(1)), "1")]
 #[case::true_status(Json::Bool(true), "true")]
 #[case::false_status(Json::Bool(false), "false")]
-#[case::null_status(Json::Null, "null")]
 #[case::empty_list(Json::List(Vec::new()), "[]")]
 #[case::object(
     Json::Object(IndexMap::from([(

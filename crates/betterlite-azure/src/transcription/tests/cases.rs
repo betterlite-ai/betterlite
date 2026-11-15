@@ -10,21 +10,22 @@ use betterlite_openai::api::audio_file_input::{AudioFile, AuthorizedAudioFiles};
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
+use http::Method;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Number;
 use uuid::Uuid;
 
 use super::fixtures::{
-    API_BASE, API_KEY, API_VERSION, BOUNDARY, Cache, INPUT, Inputs, Recorder, audio_file,
-    azure_call, finish, header, params, part, part_names, response, start, text,
+    API_KEY, BOUNDARY, Cache, INPUT, Inputs, Recorder, audio_file, azure_call, finish, header,
+    params, part, part_names, response, start, text,
 };
 use crate::endpoints::projection::{ClientKind, SuppliedClient};
 use crate::transcription::call::AzureTranscriptionError;
+use crate::transcription::native::reply::decode_native_transcription;
 use crate::transcription::native::{
-    NativeError, SUPPORTED_OPENAI_PARAMS, complete_url, decode_native_transcription,
-    get_error_class, map_openai_params, resolve_stt_base_url, transform_request,
-    validate_environment,
+    NativeError, SUPPORTED_OPENAI_PARAMS, complete_url, get_error_class, map_openai_params,
+    resolve_stt_base_url, transform_request, validate_environment,
 };
 
 #[rstest]
@@ -92,7 +93,7 @@ fn openai_transcription_route() {
 }
 
 fn assert_openai_request(request: &OutboundRequest) {
-    assert_eq!(request.method, http::Method::POST);
+    assert_eq!(request.method, Method::POST);
     assert_eq!(
         request.url.as_str(),
         "https://example.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2024-06-01"
@@ -171,6 +172,10 @@ fn cognitive_stt_base() {
     ] {
         assert_eq!(resolve_stt_base_url(base).expect(base), expected, "{base}");
     }
+    assert_openai_host_refused();
+}
+
+fn assert_openai_host_refused() {
     let refusal = resolve_stt_base_url("https://example.openai.azure.com").expect_err("refused");
     assert_eq!(refusal.status(), Some(400));
     assert_eq!(
@@ -390,10 +395,7 @@ fn async_textual_phase(inputs: &Inputs, cache: &mut Cache, logger: &mut Recorder
         Some(&String::from("text/plain"))
     );
     let post = logger.posts.last().expect("the async post_call ran");
-    assert_eq!(
-        post.authorization,
-        Some(format!("Bearer {API_KEY}")).as_deref()
-    );
+    assert_eq!(post.authorization, Some(format!("Bearer {API_KEY}")));
     assert_eq!(
         post.api_base.as_deref(),
         Some("https://example.openai.azure.com/openai/")
@@ -623,15 +625,15 @@ fn sync_and_async_versions() {
     let mut async_call = azure_call(&file);
     async_call.atranscription = true;
     let mut async_cache = Cache::default();
-    let (request, _) =
+    let (async_request, _) =
         start(&inputs, &mut async_cache, &async_call, &mut logger).expect("the async call starts");
     assert!(
-        request
+        async_request
             .url
             .as_str()
             .ends_with("?api-version=2025-02-01-preview"),
         "{}",
-        request.url
+        async_request.url
     );
 }
 
@@ -642,8 +644,9 @@ fn version_one_is_rejected() {
     let mut version_one = azure_call(&file);
     version_one.api_version = Some(String::from("v1"));
     let mut version_one_cache = Cache::default();
-    let sync = start(&inputs, &mut version_one_cache, &version_one, &mut logger)
-        .expect_err("sync rejects v1");
+    let Err(sync) = start(&inputs, &mut version_one_cache, &version_one, &mut logger) else {
+        panic!("sync rejects v1");
+    };
     assert_eq!(sync.status(), Some(500));
     assert_eq!(
         sync.to_string(),
@@ -681,8 +684,10 @@ fn supplied_openai_is_rejected() {
     });
     supplied_openai.atranscription = true;
     let mut supplied_cache = Cache::default();
-    let async_error = start(&inputs, &mut supplied_cache, &supplied_openai, &mut logger)
-        .expect_err("async rejects a supplied OpenAI client");
+    let Err(async_error) = start(&inputs, &mut supplied_cache, &supplied_openai, &mut logger)
+    else {
+        panic!("async rejects a supplied OpenAI client");
+    };
     assert_eq!(async_error.status(), Some(500));
     assert_eq!(
         async_error.to_string(),
@@ -734,8 +739,9 @@ fn azure_transcription_secret_safe_failure() {
     let inputs = Inputs::default();
     let mut cache = Cache::default();
     let mut logger = Recorder::default();
-    let error =
-        start(&inputs, &mut cache, &call, &mut logger).expect_err("the header refuses the key");
+    let Err(error) = start(&inputs, &mut cache, &call, &mut logger) else {
+        panic!("the header refuses the key");
+    };
     assert!(matches!(error, AzureTranscriptionError::Header { .. }));
     let debug = format!("{error:?}");
     let display = error.to_string();

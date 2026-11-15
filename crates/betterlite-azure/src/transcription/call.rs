@@ -1,9 +1,7 @@
 pub mod client;
 pub mod logging;
-mod reply;
+pub mod reply;
 pub mod request;
-
-pub use self::reply::finish_transcription;
 
 use std::time::Duration;
 
@@ -25,9 +23,8 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use self::client::{ClientWiring, Connection, SelectedClient, request_auth, select_client};
-use self::logging::{
-    AzureTranscriptionLogger, AzureTranscriptionPostCall, AzureTranscriptionPreCall,
-};
+use self::logging::{AzureTranscriptionLogger, AzureTranscriptionPreCall};
+use self::reply::log_failure;
 use self::request::{OutboundTarget, outbound_request};
 use crate::endpoints::initialize::EndpointError;
 use crate::endpoints::projection::{CallableProvider, LiteLlmParams, SessionKind, SuppliedClient};

@@ -6,7 +6,7 @@ use std::path::Path;
 
 use betterlite_openai::openai_base_config::Headers;
 
-use crate::transcription::native::decode_native_transcription;
+use crate::transcription::native::reply::decode_native_transcription;
 
 #[test]
 fn replays_the_azure_transcription_corpus() {

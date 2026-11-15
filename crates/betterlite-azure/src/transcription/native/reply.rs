@@ -23,16 +23,16 @@ pub fn decode_native_transcription(
     let Json::Object(fields) = document else {
         return Err(NativeError::NotObject);
     };
-    match fields.get("RecognitionStatus") {
-        None | Some(Json::Null) => {}
-        Some(Json::Text(value)) if value == "Success" => {}
-        Some(value) => {
-            return Err(NativeError::RecognitionStatus {
-                status,
-                headers: headers.clone(),
-                value: value_text(value),
-            });
-        }
+    // a missing or null status passes, and so does exactly "Success"
+    if let Some(value) = fields.get("RecognitionStatus")
+        && !matches!(value, Json::Null)
+        && !matches!(value, Json::Text(text) if text == "Success")
+    {
+        return Err(NativeError::RecognitionStatus {
+            status,
+            headers: headers.clone(),
+            value: value_text(value),
+        });
     }
     let text = extract_text(&fields)?;
     Ok(NativeTranscriptionReply {
@@ -84,6 +84,8 @@ fn nbest_text(best: &IndexMap<String, Json>, name: &str) -> Result<String, Nativ
 fn value_text(value: &Json) -> String {
     match value {
         Json::Text(text) => text.clone(),
-        _ => serde_json::to_string(value).unwrap_or_default(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            serde_json::to_string(value).unwrap_or_default()
+        }
     }
 }

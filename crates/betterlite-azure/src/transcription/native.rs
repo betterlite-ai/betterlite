@@ -14,10 +14,8 @@ use thiserror::Error;
 
 use super::encoding::quote_plus;
 
-mod reply;
+pub mod reply;
 mod tests;
-
-pub use self::reply::{NativeTranscriptionReply, decode_native_transcription};
 
 pub const COGNITIVE_SERVICES_DOMAIN: &str = "api.cognitive.microsoft.com";
 pub const STT_SPEECH_DOMAIN: &str = "stt.speech.microsoft.com";
@@ -93,7 +91,14 @@ impl NativeError {
     pub const fn headers(&self) -> Option<&Headers> {
         match self {
             Self::RecognitionStatus { headers, .. } | Self::Failed { headers, .. } => Some(headers),
-            _ => None,
+            Self::MissingApiKey
+            | Self::MissingApiBase
+            | Self::AzureOpenAiEndpoint
+            | Self::Json { .. }
+            | Self::NotObject
+            | Self::Field { .. }
+            | Self::Url { .. }
+            | Self::AudioFile(_) => None,
         }
     }
 }
@@ -213,7 +218,7 @@ pub fn transform_request(
 
 // get_error_class: the caller's message, status and headers on the native exception
 #[must_use]
-pub fn get_error_class(message: String, status: u16, headers: Headers) -> NativeError {
+pub const fn get_error_class(message: String, status: u16, headers: Headers) -> NativeError {
     NativeError::Failed {
         message,
         status,

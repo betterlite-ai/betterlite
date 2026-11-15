@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::azure_endpoints::Settings;
 use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_openai::transcription::client::ClientKind as CallKind;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::azure_urls::{EndpointSelection, select_base_url_or_endpoint};
 use crate::credentials::cache::RefreshProviderCache;
@@ -72,13 +73,18 @@ pub fn select_client<'data>(
     if !accepted {
         return Err(not_azure(is_async));
     }
-    let material = client_material(outcome.inputs, connection, &outcome.custom_query, wiring);
+    let material = client_material(
+        outcome.inputs,
+        connection,
+        outcome.custom_query.as_ref(),
+        wiring,
+    );
     let authorization = format!(
         "Bearer {}",
         material
             .api_key
             .as_ref()
-            .map_or(SENTINEL, |key| key.expose_secret())
+            .map_or(SENTINEL, ExposeSecret::expose_secret)
     );
     Ok(SelectedClient {
         base_url: normalized_base_url(&material.selection)?,
@@ -117,7 +123,7 @@ fn client_request<'data>(
     }
 }
 
-fn not_azure(is_async: bool) -> AzureTranscriptionError {
+const fn not_azure(is_async: bool) -> AzureTranscriptionError {
     if is_async {
         AzureTranscriptionError::NotAsyncAzureClient
     } else {
@@ -137,7 +143,7 @@ struct ClientMaterial<'data> {
 fn client_material<'data>(
     inputs: Option<ClientInputs<'data>>,
     connection: &Connection,
-    custom_query: &Option<BTreeMap<String, String>>,
+    custom_query: Option<&BTreeMap<String, String>>,
     wiring: &ClientWiring<'_, 'data>,
 ) -> ClientMaterial<'data> {
     if let Some(ClientInputs::Azure(inputs)) = inputs {
@@ -150,16 +156,16 @@ fn client_material<'data>(
         };
     }
     // the supplied client keeps its own api-version, and a cached client falls back to the version a construction resolves
-    let api_version = match custom_query {
-        Some(query) => query.get("api-version").cloned(),
-        None => {
+    let api_version = custom_query.map_or_else(
+        || {
             let configured = connection
                 .api_version
                 .clone()
                 .or_else(|| wiring.environment.lookup("AZURE_API_VERSION"));
             Some(configured.unwrap_or_else(|| wiring.settings.azure_default_api_version.clone()))
-        }
-    };
+        },
+        |query| query.get("api-version").cloned(),
+    );
     ClientMaterial {
         selection: select_base_url_or_endpoint(EndpointSelection {
             azure_endpoint: connection.api_base.clone(),
@@ -171,7 +177,7 @@ fn client_material<'data>(
         provider: connection
             .provider
             .as_ref()
-            .map(|provider| TokenProvider(provider.provider.clone())),
+            .map(|provider| TokenProvider(Arc::clone(&provider.provider))),
     }
 }
 

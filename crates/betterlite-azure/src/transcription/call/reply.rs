@@ -12,9 +12,9 @@ use betterlite_openai::transcription::duration::{duration_number, srt_vtt_durati
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
 
 use super::logging::{AzureTranscriptionLogger, AzureTranscriptionPostCall};
-use super::{AzureTranscriptionError, Pending, log_failure};
+use super::{AzureTranscriptionError, Pending};
 
-fn log_failure(
+pub(super) fn log_failure(
     input: &str,
     error: &AzureTranscriptionError,
     logger: &mut dyn AzureTranscriptionLogger,

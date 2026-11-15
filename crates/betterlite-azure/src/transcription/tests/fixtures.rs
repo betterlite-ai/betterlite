@@ -27,9 +27,9 @@ use crate::transcription::call::client::ClientWiring;
 use crate::transcription::call::logging::{
     AzureTranscriptionLogger, AzureTranscriptionPostCall, AzureTranscriptionPreCall,
 };
+use crate::transcription::call::reply::finish_transcription;
 use crate::transcription::call::{
     AzureTranscriptionCall, AzureTranscriptionError, Pending, audio_transcriptions,
-    finish_transcription,
 };
 
 pub(crate) const API_BASE: &str = "https://example.openai.azure.com";

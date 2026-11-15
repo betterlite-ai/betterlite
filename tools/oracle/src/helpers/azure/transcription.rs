@@ -7,9 +7,10 @@ use std::path::Path;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use betterlite_azure::transcription::native::reply::decode_native_transcription;
 use betterlite_azure::transcription::native::{
-    NativeError, SUPPORTED_OPENAI_PARAMS, complete_url, decode_native_transcription,
-    get_error_class, map_openai_params, transform_request, validate_environment,
+    NativeError, SUPPORTED_OPENAI_PARAMS, complete_url, get_error_class, map_openai_params,
+    transform_request, validate_environment,
 };
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{AudioFile, AuthorizedAudioFiles};

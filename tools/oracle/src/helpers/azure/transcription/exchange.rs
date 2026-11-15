@@ -18,9 +18,8 @@ use betterlite_azure::transcription::call::client::ClientWiring;
 use betterlite_azure::transcription::call::logging::{
     AzureTranscriptionLogger, AzureTranscriptionPostCall, AzureTranscriptionPreCall,
 };
-use betterlite_azure::transcription::call::{
-    AzureTranscriptionCall, audio_transcriptions, finish_transcription,
-};
+use betterlite_azure::transcription::call::reply::finish_transcription;
+use betterlite_azure::transcription::call::{AzureTranscriptionCall, audio_transcriptions};
 use betterlite_config::sections::azure_endpoints::Settings;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::error::PrePostError;
@@ -28,7 +27,6 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use http::HeaderMap;
 use http::header::{CONTENT_LENGTH, HeaderName, HeaderValue};
-use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -149,10 +147,10 @@ impl AzureTranscriptionLogger for Recorder {
     }
 
     fn post_call(&mut self, record: AzureTranscriptionPostCall<'_>) {
-        let (original, error_text) = match &record.original_response {
-            Json::Object(_) => (record.original_response.clone(), false),
+        let (original, error_text) = match record.original_response {
+            Json::Object(fields) => (Json::Object(fields), false),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                (Value::Null, true)
+                (Json::Null, true)
             }
         };
         self.post = json!({
@@ -170,7 +168,7 @@ pub(super) fn exchange(probe: &Probe) -> Result<Value, Box<HelperError>> {
     let file = processed_file();
     let call = call_for(probe, &file);
     let settings = Settings::default();
-    let environment = BTreeMap::new();
+    let environment = BTreeMap::<String, String>::new();
     let sources = NoSources;
     let mut cache = Cache::default();
     let mut refresh = RefreshProviderCache::new(&sources);

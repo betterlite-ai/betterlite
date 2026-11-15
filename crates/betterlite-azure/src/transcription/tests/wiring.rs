@@ -108,40 +108,48 @@ impl LogSink for Sink {
     }
 }
 
-// PrePostLogger hands both records to B249's pre_call and post_call
-#[test]
-fn pre_post_logger_records_the_azure_calls() {
+fn logging_state(redactor: &Redactor) -> LoggingState {
     let init: LoggingInit = serde_json::from_str(
         r#"{"model":"whisper","call_type":"atranscription","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
     )
     .expect("the logging fixture is valid");
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-    let mut state = LoggingState::new(
+    LoggingState::new(
         init,
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
             settings: CorrelationSettings::default(),
         },
-        &redactor,
+        redactor,
         || String::from("generated"),
         Duration::default,
     )
-    .expect("the logging state builds");
-    let sink = Sink::default();
-    let env = PrePostEnv {
+    .expect("the logging state builds")
+}
+
+fn logging_env<'setup>(redactor: &'setup Redactor, sink: &'setup Sink) -> PrePostEnv<'setup> {
+    PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
         decision: Decision {
             content: false,
             key_info: false,
         },
-        redactor: &redactor,
-        log: &sink,
+        redactor,
+        log: sink,
         input_callbacks: &[],
         sentry: None,
         logger_fn: None,
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses"),
-    };
+    }
+}
+
+// PrePostLogger hands both records to B249's pre_call and post_call
+#[test]
+fn pre_post_logger_records_the_azure_calls() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+    let mut state = logging_state(&redactor);
+    let sink = Sink::default();
+    let env = logging_env(&redactor, &sink);
     let mut logger = PrePostLogger {
         state: &mut state,
         env: &env,
@@ -154,14 +162,21 @@ fn pre_post_logger_records_the_azure_calls() {
             data: IndexMap::from([(String::from("model"), text("whisper"))]),
         })
         .expect("pre_call records");
-    let details = &logger.state.model_call_details;
-    assert_eq!(details.get("log_event_type"), Some(&text("pre_api_call")));
-    assert_eq!(details.get("input"), Some(&text("audio_file_1")));
-    let Some(Json::Object(pre_args)) = details.get("additional_args") else {
+    let pre_details = &logger.state.model_call_details;
+    assert_eq!(
+        pre_details.get("log_event_type"),
+        Some(&text("pre_api_call"))
+    );
+    assert_eq!(pre_details.get("input"), Some(&text("audio_file_1")));
+    let Some(Json::Object(pre_args)) = pre_details.get("additional_args") else {
         panic!("pre_call recorded additional_args");
     };
     assert_eq!(pre_args.get("atranscription"), Some(&Json::Bool(true)));
     assert!(pre_args.contains_key("complete_input_dict"));
+    record_post_call(&mut logger);
+}
+
+fn record_post_call(logger: &mut PrePostLogger<'_, '_>) {
     logger.post_call(AzureTranscriptionPostCall {
         input: "a.wav",
         authorization: None,
@@ -169,8 +184,11 @@ fn pre_post_logger_records_the_azure_calls() {
         original_response: text("hi"),
         data: None,
     });
-    let details = &logger.state.model_call_details;
-    assert_eq!(details.get("log_event_type"), Some(&text("post_api_call")));
-    assert_eq!(details.get("input"), Some(&text("a.wav")));
-    assert_eq!(details.get("original_response"), Some(&text("hi")));
+    let post_details = &logger.state.model_call_details;
+    assert_eq!(
+        post_details.get("log_event_type"),
+        Some(&text("post_api_call"))
+    );
+    assert_eq!(post_details.get("input"), Some(&text("a.wav")));
+    assert_eq!(post_details.get("original_response"), Some(&text("hi")));
 }
