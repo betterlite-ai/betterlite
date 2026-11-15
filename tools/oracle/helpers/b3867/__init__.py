@@ -3,8 +3,8 @@ import asyncio
 import litellm
 from pydantic import JsonValue
 
-from .fakes import Input
 from .service import dispatch
+from .types import Input
 
 __all__ = ["litellm", "run"]
 

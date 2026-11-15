@@ -23,17 +23,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import Message, Scope
 
-from .fakes import (
-    ERROR_PAGE,
-    PAGE,
-    SPAN,
-    TRACE,
-    AuthInput,
-    Input,
-    RequestInput,
-    Script,
-    ScriptedReceiver,
-)
+from .fakes import ScriptedReceiver
+from .types import ERROR_PAGE, PAGE, SPAN, TRACE, AuthInput, Input, RequestInput, Script
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 

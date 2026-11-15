@@ -1,6 +1,6 @@
 import json
 from collections.abc import AsyncIterable
-from typing import NotRequired, TypeVar, TypedDict
+from typing import TypeVar
 
 from litellm.rust_bridge.traces import ClickHouseStorage, QueryScope
 from litellm.tracing import TracingPayloadTooLargeError
@@ -17,48 +17,12 @@ from litellm.tracing.types import (
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
+from .types import ERROR_PAGE, PAGE, SPAN, TRACE, Script
+
 OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-PAGE: TypeAdapter[TracePage] = TypeAdapter(TracePage)
-TRACE: TypeAdapter[Trace | None] = TypeAdapter(Trace | None)
-SPAN: TypeAdapter[SpanDetail | None] = TypeAdapter(SpanDetail | None)
-ERROR_PAGE: TypeAdapter[SpanErrorPage | None] = TypeAdapter(SpanErrorPage | None)
 
 DEFAULT_MESSAGE = "the trace read failed"
 DEFAULT_REJECTION = "OTLP payload rejected"
-
-
-class RequestInput(TypedDict):
-    method: str
-    path: str
-    headers: NotRequired[dict[str, str]]
-    query: NotRequired[dict[str, str]]
-    body: NotRequired[str]
-    body_base64: NotRequired[bool]
-
-
-class AuthInput(TypedDict):
-    user_role: NotRequired[str]
-    team_id: NotRequired[str]
-    token: NotRequired[str]
-    project_id: NotRequired[str]
-    org_id: NotRequired[str]
-
-
-class Script(TypedDict):
-    decoder: NotRequired[JsonValue]
-    list_traces: NotRequired[JsonValue]
-    get_trace: NotRequired[JsonValue]
-    get_span: NotRequired[JsonValue]
-    get_span_error: NotRequired[JsonValue]
-
-
-class Input(TypedDict):
-    request: RequestInput
-    auth: NotRequired[AuthInput]
-    tracing: NotRequired[bool]
-    master_key: NotRequired[str]
-    script: NotRequired[Script]
-
 
 ReadValue = TypeVar("ReadValue")
 
