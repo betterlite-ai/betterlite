@@ -9,6 +9,7 @@ use crate::classifier_message_text::error::ClassifierTextError;
 use crate::classifier_message_text::markers::{
     CODEX_REMINDER_MARKERS, DEFAULT_REMINDER_MARKERS, MarkerPair,
 };
+use crate::classifier_message_text::text::strip_reminder_blocks;
 
 const SYSTEM_SENTINEL: &str = "You are currently running in \"Plan\" mode.";
 const TAIL_SENTINEL: &str = "Plan mode is active";
@@ -62,6 +63,10 @@ fn one_pair<'marker>(open: &'marker str, close: &'marker str) -> Vec<MarkerPair<
 
 fn ask_texts(asks: &[ExtractedAsk]) -> Vec<&str> {
     asks.iter().map(|ask| ask.text.as_str()).collect()
+}
+
+fn assert_strip(text: &str, expected: &str) {
+    assert_eq!(strip_reminder_blocks(text, default_markers()), expected);
 }
 
 fn last_ask_index(messages: &[ChatMessage], markers: &[MarkerPair<'_>]) -> Option<usize> {

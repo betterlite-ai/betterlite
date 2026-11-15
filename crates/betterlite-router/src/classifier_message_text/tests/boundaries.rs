@@ -3,8 +3,8 @@ use betterlite_openai::chat::{ChatMessage, MessageContent, Role};
 use rstest::rstest;
 
 use super::{
-    TAIL_SENTINEL, body, chat, default_markers, encrypted_item, kind_part, last_ask_index,
-    one_pair, resolved_ask, resolver, text, text_part,
+    TAIL_SENTINEL, assert_strip, body, chat, default_markers, encrypted_item, kind_part,
+    last_ask_index, one_pair, resolved_ask, resolver, text, text_part,
 };
 use crate::classifier_message_text::asks::{
     current_ask_and_system_prompt, human_asks_newest_first, newest_turn_ask,
@@ -16,227 +16,6 @@ use crate::classifier_message_text::image::inline_image_part;
 use crate::classifier_message_text::markers::{MarkerPair, is_codex_user_agent};
 use crate::classifier_message_text::plan::{PLAN_MODE_TOOL_NAME, matched_plan_mode_sentinel};
 use crate::classifier_message_text::text::{message_text, strip_reminder_blocks};
-
-#[derive(Debug, Clone, Copy)]
-enum Boundary {
-    EmptyMessageList,
-    BlankTextIsNotAsk,
-    EmptyMarkersStripNothing,
-    MarkerAtBothEnds,
-    OverlappingMarkerPairs,
-    TextPartNotStringNamesIndex,
-    ImageUrlNotStringNamesField,
-    JsonTextPartNullNamesIndex,
-    LastAskIndexWithSystemTail,
-    LastAskIndexNotZero,
-    StripBlockAtEnd,
-    NewestTurnNoMessages,
-    ReminderOnlyOnlyMessages,
-    NewestTurnAllSystem,
-    CodexPrefixNeedsSeparator,
-    CodexPrefixCases,
-    PlanToolsNotList,
-    PlanFunctionNameMismatchSkipsTopLevel,
-    PlanSentinelAtNewestAskOnly,
-    PlanEmptyPatternMatchesEmptyText,
-    PlanEmptyTextsSkipEmptyPattern,
-    PlanEmptyBodySystemMatchesEmptyPattern,
-    PlanBodyMessagesNonListFallsBack,
-    PlanNewestAskBeforeAssistant,
-    PlanFunctionTypeWithoutObject,
-    EncryptedInputNotList,
-    EncryptedItemNotObject,
-    EncryptedContentNotList,
-    EncryptedPartNotObject,
-    EncryptedResolvedWithoutAsk,
-    EncryptedNonAgentSelected,
-    EncryptedEmptyStringAbsent,
-    EncryptedNonStringErrors,
-}
-
-#[rstest]
-#[case::empty_message_list(Boundary::EmptyMessageList)]
-#[case::blank_text_is_not_ask(Boundary::BlankTextIsNotAsk)]
-#[case::empty_markers_strip_nothing(Boundary::EmptyMarkersStripNothing)]
-#[case::marker_at_both_ends(Boundary::MarkerAtBothEnds)]
-#[case::overlapping_marker_pairs(Boundary::OverlappingMarkerPairs)]
-#[case::text_part_not_string_names_index(Boundary::TextPartNotStringNamesIndex)]
-#[case::image_url_not_string_names_field(Boundary::ImageUrlNotStringNamesField)]
-#[case::json_text_part_null_names_index(Boundary::JsonTextPartNullNamesIndex)]
-#[case::last_ask_index_with_system_tail(Boundary::LastAskIndexWithSystemTail)]
-#[case::last_ask_index_not_zero(Boundary::LastAskIndexNotZero)]
-#[case::strip_block_at_end(Boundary::StripBlockAtEnd)]
-#[case::newest_turn_no_messages(Boundary::NewestTurnNoMessages)]
-#[case::reminder_only_only_messages(Boundary::ReminderOnlyOnlyMessages)]
-#[case::newest_turn_all_system(Boundary::NewestTurnAllSystem)]
-#[case::codex_prefix_needs_separator(Boundary::CodexPrefixNeedsSeparator)]
-#[case::codex_prefix_cases(Boundary::CodexPrefixCases)]
-#[case::plan_tools_not_list(Boundary::PlanToolsNotList)]
-#[case::plan_function_name_mismatch_skips_top_level(
-    Boundary::PlanFunctionNameMismatchSkipsTopLevel
-)]
-#[case::plan_sentinel_at_newest_ask_only(Boundary::PlanSentinelAtNewestAskOnly)]
-#[case::plan_empty_pattern_matches_empty_text(Boundary::PlanEmptyPatternMatchesEmptyText)]
-#[case::plan_empty_texts_skip_empty_pattern(Boundary::PlanEmptyTextsSkipEmptyPattern)]
-#[case::plan_empty_body_system_matches_empty_pattern(
-    Boundary::PlanEmptyBodySystemMatchesEmptyPattern
-)]
-#[case::plan_body_messages_non_list_falls_back(Boundary::PlanBodyMessagesNonListFallsBack)]
-#[case::plan_newest_ask_before_assistant(Boundary::PlanNewestAskBeforeAssistant)]
-#[case::plan_function_type_without_object(Boundary::PlanFunctionTypeWithoutObject)]
-#[case::encrypted_input_not_list(Boundary::EncryptedInputNotList)]
-#[case::encrypted_item_not_object(Boundary::EncryptedItemNotObject)]
-#[case::encrypted_content_not_list(Boundary::EncryptedContentNotList)]
-#[case::encrypted_part_not_object(Boundary::EncryptedPartNotObject)]
-#[case::encrypted_resolved_without_ask(Boundary::EncryptedResolvedWithoutAsk)]
-#[case::encrypted_non_agent_selected(Boundary::EncryptedNonAgentSelected)]
-#[case::encrypted_empty_string_absent(Boundary::EncryptedEmptyStringAbsent)]
-#[case::encrypted_non_string_errors(Boundary::EncryptedNonStringErrors)]
-fn classifier_message_text_boundaries(#[case] boundary: Boundary) {
-    match boundary {
-        Boundary::EmptyMessageList => assert_empty_message_list(),
-        Boundary::BlankTextIsNotAsk => assert_blank_text_is_not_ask(),
-        Boundary::EmptyMarkersStripNothing => assert_empty_markers_strip_nothing(),
-        Boundary::MarkerAtBothEnds => assert_strip(
-            "<system-reminder>a</system-reminder>keep<system-reminder>b</system-reminder>",
-            "keep",
-        ),
-        Boundary::OverlappingMarkerPairs => assert_overlapping_marker_pairs(),
-        Boundary::TextPartNotStringNamesIndex => assert_text_part_not_string_names_index(),
-        Boundary::ImageUrlNotStringNamesField => assert_image_url_not_string_names_field(),
-        Boundary::JsonTextPartNullNamesIndex => assert_json_text_part_null_names_index(),
-        Boundary::LastAskIndexWithSystemTail => {
-            let messages = [
-                text(Role::User, "ask"),
-                text(Role::System, "trailing system"),
-            ];
-            assert_last_ask(&messages, Some(0));
-        }
-        Boundary::LastAskIndexNotZero => {
-            let messages = [
-                text(Role::User, "<system-reminder>plumbing</system-reminder>"),
-                text(Role::User, "the ask"),
-            ];
-            assert_last_ask(&messages, Some(1));
-        }
-        Boundary::StripBlockAtEnd => {
-            assert_strip("keep <system-reminder></system-reminder>", "keep");
-        }
-        Boundary::NewestTurnNoMessages => assert_newest_turn_no_messages(),
-        Boundary::ReminderOnlyOnlyMessages => assert_reminder_only_only_messages(),
-        Boundary::NewestTurnAllSystem => assert_newest_turn_all_system(),
-        Boundary::CodexPrefixNeedsSeparator => assert_codex_prefix_needs_separator(),
-        Boundary::CodexPrefixCases => assert_codex_prefix_cases(),
-        Boundary::PlanToolsNotList => assert_plan_tools_not_list(),
-        Boundary::PlanFunctionNameMismatchSkipsTopLevel => {
-            assert_plan_function_name_mismatch_skips_top_level();
-        }
-        Boundary::PlanSentinelAtNewestAskOnly => {
-            let messages = [
-                text(Role::User, "older ask"),
-                text(Role::Assistant, "reply"),
-                text(Role::User, TAIL_SENTINEL),
-            ];
-            assert_plan_pattern(&messages, TAIL_SENTINEL);
-        }
-        Boundary::PlanEmptyPatternMatchesEmptyText => {
-            assert_plan_empty_pattern_matches_empty_text()
-        }
-        Boundary::PlanEmptyTextsSkipEmptyPattern => assert_plan_empty_texts_skip_empty_pattern(),
-        Boundary::PlanEmptyBodySystemMatchesEmptyPattern => {
-            assert_plan_empty_body_system_matches_empty_pattern()
-        }
-        Boundary::PlanBodyMessagesNonListFallsBack => {
-            assert_plan_body_messages_non_list_falls_back();
-        }
-        Boundary::PlanNewestAskBeforeAssistant => {
-            let messages = [
-                text(Role::User, TAIL_SENTINEL),
-                text(Role::Assistant, "reply"),
-            ];
-            assert_plan_pattern(&messages, TAIL_SENTINEL);
-        }
-        Boundary::PlanFunctionTypeWithoutObject => assert_plan_function_type_without_object(),
-        Boundary::EncryptedInputNotList => {
-            assert_encrypted_input(
-                Some(body(serde_json::json!("not a list"))),
-                Vec::new(),
-                Ok(None),
-            );
-            assert_encrypted_input(None, Vec::new(), Ok(None));
-        }
-        Boundary::EncryptedItemNotObject => {
-            assert_encrypted_input(
-                Some(body(serde_json::json!([7, {"type": "agent_message"}]))),
-                Vec::new(),
-                Ok(None),
-            );
-        }
-        Boundary::EncryptedContentNotList => {
-            assert_encrypted_input(
-                Some(body(serde_json::json!({
-                    "type": "agent_message",
-                    "content": "plain"
-                }))),
-                vec![resolved_ask()],
-                Ok(None),
-            );
-        }
-        Boundary::EncryptedPartNotObject => {
-            assert_encrypted_input(
-                Some(body(serde_json::json!({
-                    "type": "agent_message",
-                    "content": [7, {"type": "encrypted_content", "encrypted_content": "blob"}]
-                }))),
-                vec![resolved_ask()],
-                Ok(None),
-            );
-        }
-        Boundary::EncryptedResolvedWithoutAsk => {
-            assert_encrypted_input(
-                Some(Json::List(vec![encrypted_item()])),
-                vec![vec![body(
-                    serde_json::json!({"role": "assistant", "content": "reply"}),
-                )]],
-                Ok(None),
-            );
-        }
-        Boundary::EncryptedNonAgentSelected => {
-            assert_encrypted_input(
-                Some(body(serde_json::json!({
-                    "type": "message",
-                    "content": [{"type": "encrypted_content", "encrypted_content": "blob"}]
-                }))),
-                vec![resolved_ask()],
-                Ok(None),
-            );
-        }
-        Boundary::EncryptedEmptyStringAbsent => {
-            assert_encrypted_input(
-                Some(body(serde_json::json!({
-                    "type": "agent_message",
-                    "content": [{"type": "encrypted_content", "encrypted_content": ""}]
-                }))),
-                vec![resolved_ask()],
-                Ok(None),
-            );
-        }
-        Boundary::EncryptedNonStringErrors => {
-            assert_encrypted_input(
-                Some(body(serde_json::json!({
-                    "type": "agent_message",
-                    "content": [{"type": "encrypted_content", "encrypted_content": 7}]
-                }))),
-                vec![resolved_ask()],
-                Err(ClassifierTextError::EncryptedContentNotString),
-            );
-        }
-    }
-}
-
-fn assert_strip(text: &str, expected: &str) {
-    assert_eq!(strip_reminder_blocks(text, default_markers()), expected);
-}
 
 fn assert_last_ask(messages: &[ChatMessage], expected: Option<usize>) {
     assert_eq!(last_ask_index(messages, default_markers()), expected);
@@ -255,6 +34,18 @@ fn assert_encrypted_input(
     let task =
         encrypted_classifier_task(input.as_ref(), false, resolver(resolved), default_markers());
     assert_eq!(task, expected);
+}
+
+fn assert_encrypted_absent(input: Json, resolved: Vec<Vec<Json>>) {
+    assert_encrypted_input(Some(input), resolved, Ok(None));
+}
+
+fn assert_encrypted_absent_with_ask(item: Json) {
+    assert_encrypted_absent(item, vec![resolved_ask()]);
+}
+
+fn assert_encrypted_input_error(item: Json, expected: ClassifierTextError) {
+    assert_encrypted_input(Some(item), vec![resolved_ask()], Err(expected));
 }
 
 fn assert_empty_message_list() {
@@ -284,6 +75,13 @@ fn assert_blank_text_is_not_ask() {
 
 fn assert_empty_markers_strip_nothing() {
     assert_eq!(strip_reminder_blocks("  plain  ", &[]), "plain");
+}
+
+fn assert_marker_at_both_ends() {
+    assert_strip(
+        "<system-reminder>a</system-reminder>keep<system-reminder>b</system-reminder>",
+        "keep",
+    );
 }
 
 fn assert_overlapping_marker_pairs() {
@@ -328,6 +126,26 @@ fn assert_json_text_part_null_names_index() {
     ]));
     let error = message_text(Some(&content)).unwrap_err();
     assert_eq!(error, ClassifierTextError::PartTextNotString { part: 1 });
+}
+
+fn assert_last_ask_index_with_system_tail() {
+    let messages = [
+        text(Role::User, "ask"),
+        text(Role::System, "trailing system"),
+    ];
+    assert_last_ask(&messages, Some(0));
+}
+
+fn assert_last_ask_index_not_zero() {
+    let messages = [
+        text(Role::User, "<system-reminder>plumbing</system-reminder>"),
+        text(Role::User, "the ask"),
+    ];
+    assert_last_ask(&messages, Some(1));
+}
+
+fn assert_strip_block_at_end() {
+    assert_strip("keep <system-reminder></system-reminder>", "keep");
 }
 
 fn assert_newest_turn_no_messages() {
@@ -376,6 +194,15 @@ fn assert_plan_function_name_mismatch_skips_top_level() {
     assert_eq!(result, None);
 }
 
+fn assert_plan_sentinel_at_newest_ask_only() {
+    let messages = [
+        text(Role::User, "older ask"),
+        text(Role::Assistant, "reply"),
+        text(Role::User, TAIL_SENTINEL),
+    ];
+    assert_plan_pattern(&messages, TAIL_SENTINEL);
+}
+
 fn assert_plan_empty_pattern_matches_empty_text() {
     let messages = [text(Role::User, "   ")];
     let patterns = vec![String::new()];
@@ -408,10 +235,118 @@ fn assert_plan_body_messages_non_list_falls_back() {
     assert_eq!(result.as_deref(), Some(TAIL_SENTINEL));
 }
 
+fn assert_plan_newest_ask_before_assistant() {
+    let messages = [
+        text(Role::User, TAIL_SENTINEL),
+        text(Role::Assistant, "reply"),
+    ];
+    assert_plan_pattern(&messages, TAIL_SENTINEL);
+}
+
 fn assert_plan_function_type_without_object() {
     let body = body(serde_json::json!({
         "tools": [{"type": "function", "name": PLAN_MODE_TOOL_NAME}]
     }));
     let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
     assert_eq!(result.as_deref(), Some(PLAN_MODE_TOOL_NAME));
+}
+
+fn assert_encrypted_input_not_list() {
+    assert_encrypted_absent(body(serde_json::json!("not a list")), Vec::new());
+    assert_encrypted_input(None, Vec::new(), Ok(None));
+}
+
+fn assert_encrypted_item_not_object() {
+    assert_encrypted_absent(
+        body(serde_json::json!([7, {"type": "agent_message"}])),
+        Vec::new(),
+    );
+}
+
+fn assert_encrypted_content_not_list() {
+    assert_encrypted_absent_with_ask(body(
+        serde_json::json!({"type": "agent_message", "content": "plain"}),
+    ));
+}
+
+fn assert_encrypted_part_not_object() {
+    assert_encrypted_absent_with_ask(body(serde_json::json!({
+        "type": "agent_message",
+        "content": [7, {"type": "encrypted_content", "encrypted_content": "blob"}]
+    })));
+}
+
+fn assert_encrypted_resolved_without_ask() {
+    assert_encrypted_absent(
+        Json::List(vec![encrypted_item()]),
+        vec![vec![body(
+            serde_json::json!({"role": "assistant", "content": "reply"}),
+        )]],
+    );
+}
+
+fn assert_encrypted_non_agent_selected() {
+    assert_encrypted_absent_with_ask(body(serde_json::json!({
+        "type": "message",
+        "content": [{"type": "encrypted_content", "encrypted_content": "blob"}]
+    })));
+}
+
+fn assert_encrypted_empty_string_absent() {
+    assert_encrypted_absent_with_ask(body(serde_json::json!({
+        "type": "agent_message",
+        "content": [{"type": "encrypted_content", "encrypted_content": ""}]
+    })));
+}
+
+fn assert_encrypted_non_string_errors() {
+    assert_encrypted_input_error(
+        body(serde_json::json!({
+            "type": "agent_message",
+            "content": [{"type": "encrypted_content", "encrypted_content": 7}]
+        })),
+        ClassifierTextError::EncryptedContentNotString,
+    );
+}
+
+#[rstest]
+#[case::empty_message_list(assert_empty_message_list)]
+#[case::blank_text_is_not_ask(assert_blank_text_is_not_ask)]
+#[case::empty_markers_strip_nothing(assert_empty_markers_strip_nothing)]
+#[case::marker_at_both_ends(assert_marker_at_both_ends)]
+#[case::overlapping_marker_pairs(assert_overlapping_marker_pairs)]
+#[case::text_part_not_string_names_index(assert_text_part_not_string_names_index)]
+#[case::image_url_not_string_names_field(assert_image_url_not_string_names_field)]
+#[case::json_text_part_null_names_index(assert_json_text_part_null_names_index)]
+#[case::last_ask_index_with_system_tail(assert_last_ask_index_with_system_tail)]
+#[case::last_ask_index_not_zero(assert_last_ask_index_not_zero)]
+#[case::strip_block_at_end(assert_strip_block_at_end)]
+#[case::newest_turn_no_messages(assert_newest_turn_no_messages)]
+#[case::reminder_only_only_messages(assert_reminder_only_only_messages)]
+#[case::newest_turn_all_system(assert_newest_turn_all_system)]
+#[case::codex_prefix_needs_separator(assert_codex_prefix_needs_separator)]
+#[case::codex_prefix_cases(assert_codex_prefix_cases)]
+#[case::plan_tools_not_list(assert_plan_tools_not_list)]
+#[case::plan_function_name_mismatch_skips_top_level(
+    assert_plan_function_name_mismatch_skips_top_level
+)]
+#[case::plan_sentinel_at_newest_ask_only(assert_plan_sentinel_at_newest_ask_only)]
+#[case::plan_empty_pattern_matches_empty_text(assert_plan_empty_pattern_matches_empty_text)]
+#[case::plan_empty_texts_skip_empty_pattern(assert_plan_empty_texts_skip_empty_pattern)]
+#[case::plan_empty_body_system_matches_empty_pattern(
+    assert_plan_empty_body_system_matches_empty_pattern
+)]
+#[case::plan_body_messages_non_list_falls_back(assert_plan_body_messages_non_list_falls_back)]
+#[case::plan_newest_ask_before_assistant(assert_plan_newest_ask_before_assistant)]
+#[case::plan_function_type_without_object(assert_plan_function_type_without_object)]
+#[case::encrypted_input_not_list(assert_encrypted_input_not_list)]
+#[case::encrypted_item_not_object(assert_encrypted_item_not_object)]
+#[case::encrypted_content_not_list(assert_encrypted_content_not_list)]
+#[case::encrypted_part_not_object(assert_encrypted_part_not_object)]
+#[case::encrypted_resolved_without_ask(assert_encrypted_resolved_without_ask)]
+#[case::encrypted_non_agent_selected(assert_encrypted_non_agent_selected)]
+#[case::encrypted_empty_string_absent(assert_encrypted_empty_string_absent)]
+#[case::encrypted_non_string_errors(assert_encrypted_non_string_errors)]
+fn classifier_message_text_boundaries(#[case] assertion: fn()) {
+    assertion();
 }
