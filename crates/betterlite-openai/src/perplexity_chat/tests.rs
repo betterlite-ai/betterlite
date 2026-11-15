@@ -566,8 +566,8 @@ fn citation_tokens_alone_create_empty_prompt_token_details() {
 fn non_list_choices_fail_with_the_field_and_leave_the_reply_unchanged(#[case] choices: Value) {
     let mut reply = json!({"choices": choices});
     let original = reply.clone();
-    let error = enhance::apply(&mut reply, br#"{"citations": ["abcd"]}"#)
-        .expect_err("the choices shape failure");
+    let error =
+        apply(&mut reply, br#"{"citations": ["abcd"]}"#).expect_err("the choices shape failure");
     assert!(matches!(
         error,
         PerplexityReplyError::Shape { field: "choices" }
