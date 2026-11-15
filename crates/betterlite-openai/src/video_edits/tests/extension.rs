@@ -17,6 +17,14 @@ fn extension_request(prompt: &str, video_id: &str) -> VideoExtensionRequest {
 }
 
 pub(super) fn video_extension() {
+    request_body();
+    extra_body_overwrite();
+    reply_wrapping();
+    reply_not_wrapping();
+    reply_errors();
+}
+
+fn request_body() {
     let encoded = encoded_video("vid-123");
     let extension = transform_video_extension_request(extension_request("extend", &encoded));
     assert_eq!(extension.url, "https://mock.example/v1/extensions");
@@ -32,7 +40,10 @@ pub(super) fn video_extension() {
     request.seconds = String::from("08");
     let supplied = transform_video_extension_request(request);
     assert_eq!(supplied.body.get("seconds"), Some(&json(r#""08""#)));
+}
 
+fn extra_body_overwrite() {
+    let encoded = encoded_video("vid-123");
     let mut request = extension_request("extend", &encoded);
     request.extra_body = Some(options(
         r#"{"prompt":"again","seconds":"12","video":{"id":"other"}}"#,
@@ -45,7 +56,9 @@ pub(super) fn video_extension() {
         overwritten.body.get("video"),
         Some(&json(r#"{"id":"other"}"#))
     );
+}
 
+fn reply_wrapping() {
     let reply = VideoReply {
         body: VIDEO.as_bytes(),
         custom_llm_provider: Some("azure"),
@@ -68,7 +81,9 @@ pub(super) fn video_extension() {
     assert!(wrapped.error.is_none());
     assert!(wrapped.progress.is_none());
     assert!(wrapped.remixed_from_video_id.is_none());
+}
 
+fn reply_not_wrapping() {
     let missing = VideoReply {
         body: VIDEO.as_bytes(),
         custom_llm_provider: None,
@@ -90,7 +105,9 @@ pub(super) fn video_extension() {
     };
     let unwrapped = transform_video_response(&empty_id).expect("a video reply");
     assert_eq!(unwrapped.id, "");
+}
 
+fn reply_errors() {
     let wrong_object = VideoReply {
         body: br#"{"id":"v1","object":"clip","status":"completed"}"#,
         custom_llm_provider: None,

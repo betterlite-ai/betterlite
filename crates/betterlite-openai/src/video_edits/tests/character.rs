@@ -10,6 +10,13 @@ use crate::video_edits::error::VideoEditError;
 use crate::video_edits::response::{CharacterKind, decode_character_reply};
 
 pub(super) fn character_create_get() {
+    create_request();
+    get_request_ids();
+    get_request_path_errors();
+    reply_decoding();
+}
+
+fn create_request() {
     let created = transform_video_create_character_request(
         "hero",
         MediaBody::Bytes(b"not video"),
@@ -32,7 +39,9 @@ pub(super) fn character_create_get() {
         panic!("the video part keeps the supplied bytes");
     };
     assert_eq!(*bytes, b"not video".as_slice());
+}
 
+fn get_request_ids() {
     let encoded = encode_character_id("char-1", "openai", Some("sora-2"));
     let lookup = transform_video_get_character_request(&encoded, "https://mock.example/v1")
         .expect("the character id is a path segment");
@@ -40,6 +49,9 @@ pub(super) fn character_create_get() {
     let escaped = transform_video_get_character_request("a b/c+d", "https://mock.example/v1/")
         .expect("the character id is a path segment");
     assert_eq!(escaped, "https://mock.example/v1/characters/a%20b%2Fc%2Bd");
+}
+
+fn get_request_path_errors() {
     let empty = transform_video_get_character_request("", "https://mock.example/v1")
         .expect_err("an empty character id has no path segment");
     let VideoEditError::CharacterId(HttpError::Required { field_name }) = empty else {
@@ -52,7 +64,9 @@ pub(super) fn character_create_get() {
         panic!("a dot character id is a dot segment");
     };
     assert_eq!(field_name, "character_id");
+}
 
+fn reply_decoding() {
     let body = br#"{"id":"character_abc","object":"character","created_at":1700000000,"name":"hero","extra":1}"#;
     let object = decode_character_reply(body).expect("a character reply");
     assert_eq!(object.id, "character_abc");

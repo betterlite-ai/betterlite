@@ -19,6 +19,11 @@ fn text_request<'media>(prompt: &str, video_id: &str) -> VideoEditRequest<'media
 }
 
 pub(super) fn edit_prompt() {
+    json_body();
+    supplied_file();
+}
+
+fn json_body() {
     let encoded = encoded_video("vid-123");
     let mut request = text_request("make it blue", &encoded);
     request.extra_body = Some(options(r#"{"prompt":"override","duration":8}"#));
@@ -38,7 +43,10 @@ pub(super) fn edit_prompt() {
     request.api_base = String::from("https://mock.example/v1/");
     let slashed = transform_video_edit_request(request);
     assert_eq!(slashed.url, "https://mock.example/v1/edits");
+}
 
+fn supplied_file() {
+    let encoded = encoded_video("vid-123");
     let mut cursor = Cursor::new(b"not video".to_vec());
     let mut request = text_request("make it blue", &encoded);
     request.video_file = Some(MediaBody::Stream {
