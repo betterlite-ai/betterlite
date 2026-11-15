@@ -240,10 +240,10 @@ async fn deployment_candidate(lookup: &CatalogLookup, deployment: &DeploymentInp
         custom_llm_provider,
     };
     let provider = get_native_compaction_provider(lookup, &params).await;
-    let mut supports = false;
-    if let Some(native) = &provider {
-        supports = native.supports_native_compaction(&params).await;
-    }
+    let supports = match &provider {
+        Some(native) => native.supports_native_compaction(&params).await,
+        None => false,
+    };
     let compatible_defaults = provider
         .as_ref()
         .is_some_and(|native| native.compatible_defaults(&deployment.litellm_params));
