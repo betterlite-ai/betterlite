@@ -251,6 +251,14 @@ fn cato_guardrail_ws_ssl_uses_a_configured_ca_file() {
     assert_eq!(guardrail.ws_ssl, Some(WsSsl::CaFile(TRUSTED_CA.to_owned())));
 }
 
+#[test]
+fn cato_guardrail_constructor_rejects_a_missing_ca_file() {
+    let mut params = params();
+    params.ssl_verify = Some(VerifySetting::Path("/nonexistent/ca.pem".to_owned()));
+    let error = CatoGuardrail::new(params, &BTreeMap::new()).expect_err("missing ca file");
+    assert!(matches!(error, CatoError::Tls { .. }));
+}
+
 #[rstest]
 #[case::false_string("false", Some(WsSsl::Disabled))]
 #[case::true_string("true", Some(WsSsl::SystemRoots))]

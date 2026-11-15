@@ -286,6 +286,18 @@ fn cato_guardrail_anonymize_passes_through_with_an_empty_redacted_chat() {
 }
 
 #[test]
+fn cato_guardrail_anonymize_rejects_a_string_batch_with_an_empty_redacted_chat() {
+    let mut data = body(&[("input", list(&[text("a")]))]);
+    let response = AnalyzeResponse {
+        required_action: None,
+        analysis_result: None,
+        redacted_chat: Some(RedactedChat::default()),
+    };
+    let error = anonymize_request(&response, &mut data).expect_err("empty batch");
+    assert!(matches!(error, CatoError::RedactionMismatch));
+}
+
+#[test]
 fn cato_guardrail_anonymize_leaves_a_responses_input_list_unchanged() {
     let input = list(&[object(&[
         ("type", text("input_text")),
