@@ -46,7 +46,7 @@ fn build_continuation(run: &PlanRun<'_, '_>) -> Result<ResponsesContinuation, Pa
     let kwargs = followup_kwargs(run, &params, patch)?;
     let mut model = run.run.call.model.to_owned();
     if let Some(patched) = &patch.model {
-        model = patched.clone();
+        model.clone_from(patched);
     }
     Ok(ResponsesContinuation {
         model,

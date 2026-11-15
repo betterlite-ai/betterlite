@@ -42,32 +42,26 @@ pub(crate) fn text_field(value: Json, field: &'static str) -> Result<String, Pat
     if let Json::Text(text) = value {
         return Ok(text);
     }
-    Err(PatchError::Field {
-        field,
-        expected: "a string",
-    })
+    Err(PatchError::Field(Box::new((field, "a string"))))
 }
 pub(crate) fn count_field(value: Json, field: &'static str) -> Result<u64, PatchError> {
     let Json::Number(number) = value else {
-        return Err(PatchError::Field {
+        return Err(PatchError::Field(Box::new((
             field,
-            expected: "a non-negative integer",
-        });
+            "a non-negative integer",
+        ))));
     };
-    number.as_u64().ok_or_else(|| PatchError::Field {
+    number.as_u64().ok_or(PatchError::Field(Box::new((
         field,
-        expected: "a non-negative integer",
-    })
+        "a non-negative integer",
+    ))))
 }
 pub(crate) fn message_list(
     value: Json,
     field: &'static str,
 ) -> Result<Vec<FollowupMessage>, PatchError> {
     let Json::List(items) = value else {
-        return Err(PatchError::Field {
-            field,
-            expected: "a list of messages",
-        });
+        return Err(PatchError::Field(Box::new((field, "a list of messages"))));
     };
     let mut messages = Vec::with_capacity(items.len());
     for item in items {

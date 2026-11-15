@@ -51,10 +51,7 @@ fn build_continuation(run: &PlanRun<'_, '_>) -> Result<AnthropicContinuation, Pa
     let continuation_messages = message_list(raw_messages, MESSAGES_KEY)?;
     let raw_stream = take_or(&mut extras, STREAM_KEY, Json::Bool(run.run.call.stream));
     let Json::Bool(stream) = raw_stream else {
-        return Err(PatchError::Field {
-            field: STREAM_KEY,
-            expected: "a boolean",
-        });
+        return Err(PatchError::Field(Box::new((STREAM_KEY, "a boolean"))));
     };
     let fallback = Json::Number(Number::from(computed));
     let raw_max_tokens = take_or(&mut extras, MAX_TOKENS_KEY, fallback);
@@ -78,10 +75,14 @@ fn followup_model(
     };
     let mut logged = match recorded {
         Json::Null => run.call.model.to_owned(),
-        value => text_field(value, MODEL_KEY)?,
+        value @ (Json::Bool(_)
+        | Json::Number(_)
+        | Json::Text(_)
+        | Json::List(_)
+        | Json::Object(_)) => text_field(value, MODEL_KEY)?,
     };
     if let Some(patched) = &patch.model {
-        logged = patched.clone();
+        logged.clone_from(patched);
     }
     Ok(logged)
 }

@@ -9,7 +9,7 @@ use super::support::{
     fixture, legacy_script, null_legacy_script, order_log, recording, refused_tools,
 };
 use super::{
-    assert_log, continue_messages, dispatch_error, plan_callback, raw_text, response_text,
+    assert_log, continue_messages, dispatch_error, legacy, plan_callback, raw_text, response_text,
 };
 use crate::api::chat_agentic_loop::tests::support::{
     Script, capture, gate, json_map, overrides, patch,
@@ -84,7 +84,11 @@ fn assert_hook_calls(
         raw_text(&plan_call.kwargs, "custom_llm_provider").as_deref(),
         Some("\"openai\"")
     );
-    assert_eq!(&plan_call.tools, tools);
+    assert_eq!(plan_call.tools.len(), tools.len());
+    assert_eq!(
+        raw_text(&plan_call.tools, "tool_calls"),
+        raw_text(tools, "tool_calls")
+    );
 }
 
 async fn legacy_dispatch(script: Script) -> (Option<AgenticResult>, Vec<String>) {

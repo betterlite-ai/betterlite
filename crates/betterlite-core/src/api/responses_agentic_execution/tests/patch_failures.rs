@@ -6,7 +6,7 @@ use serde_json::value::RawValue;
 use super::super::error::{CallbackError, PatchError};
 use super::support::{
     ANTHROPIC_BODY, NEXT_BODY, PlanHarness, RecordingCallback, ScriptedExecutor, anthropic_fixture,
-    callback_list, dispatch, fixture, order_log, plan_harness, plan_with_patch, recording,
+    callback_list, dispatch, fixture, plan_harness, plan_with_patch, recording,
 };
 use super::{assert_log, continue_messages, legacy, response_text};
 use crate::api::chat_agentic_loop::tests::support::{
@@ -57,7 +57,10 @@ pub(super) async fn provider_failure_cleans_up() {
 fn assert_provider_failure(error: CallbackError<StopError>) {
     match error {
         CallbackError::Execution(source) => assert_eq!(source.message, "provider exploded"),
-        other => panic!("expected the provider failure, got {other}"),
+        other @ (CallbackError::Hook(_)
+        | CallbackError::Patch(_)
+        | CallbackError::Wrap(_)
+        | CallbackError::Json(_)) => panic!("expected the provider failure, got {other}"),
     }
 }
 

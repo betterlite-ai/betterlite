@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::api::responses_objects::wire::{
     ResponsesObjectsDecodeError, WireDecodeLimits,
@@ -38,6 +37,8 @@ pub enum HttpExecutorError {
     Transport(#[from] TransportError),
     #[error("the provider answered the agentic follow-up with status {status}: {body}")]
     Status { status: u16, body: String },
+    #[error("the provider's agentic follow-up error answer is not UTF-8")]
+    StatusBodyNotUtf8(#[source] std::str::Utf8Error),
     #[error(transparent)]
     Decode(#[from] ResponsesObjectsDecodeError),
     #[error("the anthropic follow-up is served by the messages transport, not this executor")]
@@ -66,9 +67,12 @@ impl ContinuationExecutor for ResponsesHttpExecutor {
         };
         let response = self.client.send_buffered(request).await?;
         if !(200..300).contains(&response.status) {
+            let body = std::str::from_utf8(&response.body)
+                .map_err(HttpExecutorError::StatusBodyNotUtf8)?
+                .to_owned();
             return Err(HttpExecutorError::Status {
                 status: response.status,
-                body: String::from_utf8_lossy(&response.body).into_owned(),
+                body,
             });
         }
         let _decoded: ResponsesApiResponse =

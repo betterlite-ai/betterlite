@@ -9,7 +9,9 @@ pub(crate) fn finalize_refused_response(
     let value: Json = serde_json::from_str(response.get())?;
     match value {
         Json::Object(fields) => Ok(finalize_object(fields, tool_calls)),
-        other => Ok(other),
+        other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Ok(other)
+        }
     }
 }
 fn finalize_object(mut fields: IndexMap<String, Json>, tool_calls: &Json) -> Json {

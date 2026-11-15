@@ -333,7 +333,8 @@ impl AgenticCallback for RecordingCallback {
 pub(crate) fn callback_list(items: &[&Arc<RecordingCallback>]) -> Vec<Arc<dyn AgenticCallback>> {
     let mut collected: Vec<Arc<dyn AgenticCallback>> = Vec::with_capacity(items.len());
     for item in items.iter().copied() {
-        collected.push(Arc::clone(item));
+        let callback: Arc<dyn AgenticCallback> = Arc::clone(item);
+        collected.push(callback);
     }
     collected
 }
@@ -512,10 +513,10 @@ pub(crate) struct SeenRequest {
 
 // the mock provider both sides of the oracle share: one scripted answer per request, requests kept
 pub(crate) struct Upstream {
-    pub url: String,
-    answers: Arc<Mutex<VecDeque<(u16, String)>>>,
-    seen: Arc<Mutex<Vec<SeenRequest>>>,
-    _tasks: JoinSet<()>,
+    pub(crate) url: String,
+    pub(crate) answers: Arc<Mutex<VecDeque<(u16, String)>>>,
+    pub(crate) seen: Arc<Mutex<Vec<SeenRequest>>>,
+    pub(crate) _tasks: JoinSet<()>,
 }
 
 impl Upstream {

@@ -117,7 +117,10 @@ where
     let model = call.model;
     let message = match error {
         CallbackError::Hook(hook) => hook_message(hook).to_owned(),
-        other => other.to_string(),
+        other @ (CallbackError::Patch(_)
+        | CallbackError::Wrap(_)
+        | CallbackError::Json(_)
+        | CallbackError::Execution(_)) => other.to_string(),
     };
     tracing::error!(
         "LiteLLM.AgenticHookError: Exception in agentic completion hooks [call_id={call_id} model={model}]: {message}"
@@ -243,7 +246,7 @@ where
     Ok(CallbackStep::Done(result))
 }
 fn surface_kwargs(call: &CompletionCall<'_>) -> Result<JsonMap, AgenticExecutionError> {
-    let mut kwargs = JsonMap::with_capacity(call.kwargs.len() + 1);
+    let mut kwargs = JsonMap::with_capacity(call.kwargs.len().saturating_add(1));
     for (key, value) in call.kwargs {
         kwargs.insert(key.clone(), to_raw_value(value)?);
     }

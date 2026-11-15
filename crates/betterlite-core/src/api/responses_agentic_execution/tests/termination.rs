@@ -72,7 +72,7 @@ pub(super) fn non_object_finalize_keeps_value() {
     let tools =
         Json::Object(typed_map(&refused_tools("web_search", "call-ws")).expect("the tool map"));
     assert_eq!(
-        finalize_refused_response(&raw(r#"[1,2]"#), &tools).expect("a list survives"),
+        finalize_refused_response(&raw("[1,2]"), &tools).expect("a list survives"),
         json("[1,2]")
     );
     assert_eq!(

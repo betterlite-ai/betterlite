@@ -26,7 +26,12 @@ pub enum WrapError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    FakeStream(#[from] MessagesFakeStreamError),
+    FakeStream(Box<MessagesFakeStreamError>),
+}
+impl From<MessagesFakeStreamError> for WrapError {
+    fn from(source: MessagesFakeStreamError) -> Self {
+        Self::FakeStream(Box::new(source))
+    }
 }
 #[derive(Debug, Error)]
 pub enum PatchError {
@@ -34,11 +39,8 @@ pub enum PatchError {
     MissingResponsesInput,
     #[error("Agentic loop plan missing patched messages")]
     MissingMessages,
-    #[error("the agentic follow-up field `{field}` must be {expected}")]
-    Field {
-        field: &'static str,
-        expected: &'static str,
-    },
+    #[error("the agentic follow-up field `{}` must be {}", .0.0, .0.1)]
+    Field(Box<(&'static str, &'static str)>),
     #[error(transparent)]
     Depth(#[from] AgenticFollowupKwargsError),
     #[error(transparent)]

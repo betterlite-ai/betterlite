@@ -58,17 +58,17 @@ fn assert_log(log: &Capture, needle: &str) {
 }
 
 fn number(map: &IndexMap<String, Json>, key: &str) -> Option<i64> {
-    match map.get(key) {
-        Some(Json::Number(value)) => value.as_i64(),
-        _ => None,
-    }
+    let Some(Json::Number(value)) = map.get(key) else {
+        return None;
+    };
+    value.as_i64()
 }
 
 fn text(map: &IndexMap<String, Json>, key: &str) -> Option<String> {
-    match map.get(key) {
-        Some(Json::Text(value)) => Some(value.clone()),
-        _ => None,
-    }
+    let Some(Json::Text(value)) = map.get(key) else {
+        return None;
+    };
+    Some(value.clone())
 }
 
 fn raw_text(map: &JsonMap, key: &str) -> Option<String> {
