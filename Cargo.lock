@@ -1595,6 +1595,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "caseless",
  "chrono",
  "futures-util",
  "hex",
