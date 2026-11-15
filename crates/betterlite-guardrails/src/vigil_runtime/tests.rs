@@ -90,6 +90,9 @@ use support::{run_build, run_scan};
 #[case::an_invalid_tool_call_is_not_a_backend_failure(Case::scan(
     text_cases::an_invalid_tool_call_is_not_a_backend_failure()
 ))]
+#[case::a_non_object_answer_is_a_backend_failure(Case::scan(
+    text_cases::a_non_object_answer_is_a_backend_failure()
+))]
 #[case::a_raised_failure_carries_the_guardrail_name(Case::scan(
     text_cases::a_raised_failure_carries_the_guardrail_name()
 ))]

@@ -9,8 +9,8 @@ use crate::guardrail_base::inputs::GuardrailLogTarget;
 use super::cases::Scenario;
 use super::fixtures::{
     BACKEND_CLOSED, HARMFUL, UNRECOGNIZED, allowed, blocked, header_args, message,
-    missing_decision, other, raised, request, response, rewritten, sanitized, tool_call,
-    tool_param, unavailable, unknown_decision,
+    missing_decision, non_object_answer, other, raised, request, response, rewritten, sanitized,
+    tool_call, tool_param, unavailable, unknown_decision,
 };
 
 fn add_media(case: &mut Scenario) {
@@ -175,6 +175,13 @@ pub(crate) fn an_invalid_header_fails_open() -> Scenario {
 pub(crate) fn an_invalid_header_fails_closed() -> Scenario {
     let mut case = request(Some(vec!["hello"]), Vec::new());
     case.args = header_args("fail_closed");
+    case.expected = raised(BACKEND_CLOSED, 400, false);
+    case
+}
+
+pub(crate) fn a_non_object_answer_is_a_backend_failure() -> Scenario {
+    let mut case = request(Some(vec!["secret"]), vec![non_object_answer()]);
+    case.analyzed = vec!["secret"];
     case.expected = raised(BACKEND_CLOSED, 400, false);
     case
 }

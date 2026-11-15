@@ -186,6 +186,10 @@ pub(crate) fn missing_decision() -> ScanResponse {
     Ok(json_body("{}"))
 }
 
+pub(crate) fn non_object_answer() -> ScanResponse {
+    Ok(json_body("null"))
+}
+
 pub(crate) fn unknown_decision() -> ScanResponse {
     Ok(json_body(r#"{"decision": "UNKNOWN"}"#))
 }
