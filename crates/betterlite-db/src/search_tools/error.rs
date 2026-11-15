@@ -30,3 +30,12 @@ pub enum SearchToolsError {
     #[error("Error getting search tool from DB: {0}")]
     Get(#[source] StoreError),
 }
+
+impl SearchToolsError {
+    // LiteLLM logs the exception in the operation that raises it, before the prefixed re-raise
+    #[must_use]
+    pub(super) fn logged(self) -> Self {
+        tracing::error!("{self}");
+        self
+    }
+}

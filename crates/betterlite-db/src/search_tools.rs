@@ -7,6 +7,5 @@ pub mod list;
 pub mod record;
 pub mod registry;
 pub mod table_client;
-#[cfg(test)]
 mod tests;
 pub mod update;

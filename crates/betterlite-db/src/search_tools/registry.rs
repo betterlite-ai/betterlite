@@ -31,47 +31,42 @@ impl SearchToolRegistry {
         }
     }
 
-    pub async fn add_search_tool_to_db<Table>(
+    pub async fn add_search_tool_to_db<Table: SearchToolTableClient>(
         &self,
         search_tool: SearchTool,
         table: &Table,
-    ) -> Result<SearchTool, SearchToolsError>
-    where
-        Table: SearchToolTableClient,
-    {
-        create::persist((self.now)(), search_tool, table)
-            .await
-            .map_err(SearchToolsError::Add)
-            .inspect_err(|error| tracing::error!("{error}"))
+    ) -> Result<SearchTool, SearchToolsError> {
+        let record = create::persist((self.now)(), &search_tool, table).await?;
+        let mut stored = search_tool;
+        stored.search_tool_id = Some(record.search_tool_id);
+        stored.created_at = Some(isoformat(record.created_at));
+        stored.updated_at = Some(isoformat(record.updated_at));
+        Ok(stored)
     }
 
-    pub async fn delete_search_tool_from_db<Table>(
+    pub async fn delete_search_tool_from_db<Table: SearchToolTableClient>(
         &self,
         search_tool_id: &str,
         table: &Table,
-    ) -> Result<DeletedSearchTool, SearchToolsError>
-    where
-        Table: SearchToolTableClient,
-    {
-        delete::remove(search_tool_id, table)
-            .await
-            .map_err(SearchToolsError::Delete)
-            .inspect_err(|error| tracing::error!("{error}"))
+    ) -> Result<DeletedSearchTool, SearchToolsError> {
+        let existing = delete::lookup::existing(search_tool_id, table).await?;
+        let message = format!("Search tool {search_tool_id} deleted successfully");
+        delete::remove(search_tool_id, table).await?;
+        Ok(DeletedSearchTool {
+            message,
+            search_tool_name: existing.search_tool_name,
+        })
     }
 
-    pub async fn update_search_tool_in_db<Table>(
+    pub async fn update_search_tool_in_db<Table: SearchToolTableClient>(
         &self,
         search_tool_id: &str,
         search_tool: &SearchTool,
         table: &Table,
-    ) -> Result<SearchToolRow, SearchToolsError>
-    where
-        Table: SearchToolTableClient,
-    {
-        update::replace(search_tool_id, search_tool, (self.now)(), table)
-            .await
-            .map_err(SearchToolsError::Update)
-            .inspect_err(|error| tracing::error!("{error}"))
+    ) -> Result<SearchToolRow, SearchToolsError> {
+        let updated_at = (self.now)();
+        let record = update::replace(search_tool_id, search_tool, updated_at, table).await?;
+        Ok(Self::convert_prisma_to_dict(&record))
     }
 
     pub async fn get_all_search_tools_from_db<Table, Client>(
@@ -82,23 +77,27 @@ impl SearchToolRegistry {
         Table: SearchToolTableClient,
         Client: DbReconnect + Send,
     {
-        list::read_all(table, reconnect)
-            .await
-            .map_err(SearchToolsError::List)
-            .inspect_err(|error| tracing::error!("{error}"))
+        let records = list::read_all(table, reconnect).await?;
+        let mut tools = Vec::with_capacity(records.len());
+        for record in &records {
+            let row = Self::convert_prisma_to_dict(record);
+            let tool = SearchTool::try_from(row)
+                .map_err(|error| SearchToolsError::List(error).logged())?;
+            tools.push(tool);
+        }
+        Ok(tools)
     }
 
-    pub async fn get_search_tool_by_id_from_db<Table>(
+    pub async fn get_search_tool_by_id_from_db<Table: SearchToolTableClient>(
         &self,
         search_tool_id: &str,
         table: &Table,
-    ) -> Result<Option<SearchTool>, SearchToolsError>
-    where
-        Table: SearchToolTableClient,
-    {
+    ) -> Result<Option<SearchTool>, SearchToolsError> {
         get_by_id::lookup(search_tool_id, table)
-            .await
-            .map_err(SearchToolsError::Get)
-            .inspect_err(|error| tracing::error!("{error}"))
+            .await?
+            .map(|record| Self::convert_prisma_to_dict(&record))
+            .map(SearchTool::try_from)
+            .transpose()
+            .map_err(|error| SearchToolsError::Get(error).logged())
     }
 }

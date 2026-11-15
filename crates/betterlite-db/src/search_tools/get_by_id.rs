@@ -1,6 +1,5 @@
-use super::convert::tool::SearchTool;
-use super::error::StoreError;
-use super::registry::SearchToolRegistry;
+use super::error::{SearchToolsError, StoreError};
+use super::record::SearchToolRecord;
 use super::table_client::SearchToolTableClient;
 
 mod tests;
@@ -8,13 +7,12 @@ mod tests;
 pub async fn lookup<Table>(
     search_tool_id: &str,
     table: &Table,
-) -> Result<Option<SearchTool>, StoreError>
+) -> Result<Option<SearchToolRecord>, SearchToolsError>
 where
     Table: SearchToolTableClient,
 {
-    let Some(record) = table.find_unique(search_tool_id).await? else {
-        return Ok(None);
-    };
-    let row = SearchToolRegistry::convert_prisma_to_dict(&record);
-    Ok(Some(SearchTool::try_from(row)?))
+    table
+        .find_unique(search_tool_id)
+        .await
+        .map_err(|error| SearchToolsError::Get(StoreError::Table(error)).logged())
 }

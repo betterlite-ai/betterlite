@@ -29,7 +29,7 @@ fn strip_nul(data: JsonValue) -> JsonValue {
     }
 }
 
-// Credentials pass through unchanged: this text is what the table stores
+// Credentials pass through unchanged: this is the JSON text the table binds
 pub fn safe_dumps<Data>(data: &Data) -> Result<String, serde_json::Error>
 where
     Data: Serialize,
@@ -45,14 +45,17 @@ pub fn dump_fields(search_tool: &SearchTool) -> Result<DumpedFields, StoreError>
             field: "litellm_params",
             source,
         })?;
-    let search_tool_info = match &search_tool.search_tool_info {
-        Some(info) => safe_dumps(info),
-        None => safe_dumps(&BTreeMap::<String, JsonValue>::new()),
-    }
-    .map_err(|source| StoreError::Field {
-        field: "search_tool_info",
-        source,
-    })?;
+    let search_tool_info = search_tool
+        .search_tool_info
+        .as_ref()
+        .map_or_else(
+            || safe_dumps(&BTreeMap::<String, JsonValue>::new()),
+            safe_dumps,
+        )
+        .map_err(|source| StoreError::Field {
+            field: "search_tool_info",
+            source,
+        })?;
     Ok(DumpedFields {
         litellm_params,
         search_tool_info,

@@ -1,5 +1,8 @@
-use super::error::StoreError;
+use super::error::{SearchToolsError, StoreError};
+use super::record::SearchToolRecord;
 use super::table_client::SearchToolTableClient;
+
+pub(crate) mod lookup;
 
 mod tests;
 
@@ -12,20 +15,12 @@ pub struct DeletedSearchTool {
 pub async fn remove<Table>(
     search_tool_id: &str,
     table: &Table,
-) -> Result<DeletedSearchTool, StoreError>
+) -> Result<SearchToolRecord, SearchToolsError>
 where
     Table: SearchToolTableClient,
 {
-    let existing =
-        table
-            .find_unique(search_tool_id)
-            .await?
-            .ok_or_else(|| StoreError::NotFound {
-                search_tool_id: search_tool_id.to_owned(),
-            })?;
-    table.delete(search_tool_id).await?;
-    Ok(DeletedSearchTool {
-        message: format!("Search tool {search_tool_id} deleted successfully"),
-        search_tool_name: existing.search_tool_name,
-    })
+    table
+        .delete(search_tool_id)
+        .await
+        .map_err(|error| SearchToolsError::Delete(StoreError::Table(error)).logged())
 }
