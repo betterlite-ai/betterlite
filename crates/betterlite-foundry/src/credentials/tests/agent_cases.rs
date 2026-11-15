@@ -8,12 +8,13 @@ use crate::credentials::error::CredentialsError;
 use crate::credentials::{AZURE_AI_AGENTS_SCOPE, AZURE_ENTRA_CREDENTIAL_HELP};
 
 use super::builders::{agent_request, environment, headers, object};
-use super::support::{FixtureSources, secrets};
+use super::support::{FixtureSources, Outcome, secrets};
 
 pub(super) fn agent_entra_scope() {
     client_secret_grant();
     explicit_agent_scope();
     configured_grants();
+    provider_outcomes();
     static_token();
     unresolved();
 }
@@ -22,11 +23,7 @@ fn client_secret_grant() {
     let environment = environment(&[]);
     let secrets = secrets();
     let sources = FixtureSources::new();
-    let params = object([
-        ("tenant_id", Json::Text("tenant".to_owned())),
-        ("client_id", Json::Text("client".to_owned())),
-        ("client_secret", Json::Text("secret".to_owned())),
-    ]);
+    let params = grant_params();
     let token =
         get_azure_ai_agent_entra_token(&agent_request(&params, &environment, &secrets, &sources))
             .unwrap();
@@ -110,6 +107,54 @@ fn configured_grants() {
     for (params, token, call) in &cases {
         assert_grant(params, token, call);
     }
+}
+
+fn provider_outcomes() {
+    non_text_token();
+    provider_failure();
+}
+
+fn non_text_token() {
+    let environment = environment(&[]);
+    let secrets = secrets();
+    let params = grant_params();
+    let mut sources = FixtureSources::new();
+    sources.client_secret = Ok(Outcome::NonText("dict".to_owned()));
+    let error =
+        get_azure_ai_agent_entra_token(&agent_request(&params, &environment, &secrets, &sources))
+            .unwrap_err();
+    assert!(matches!(&error, CredentialsError::TokenNotString { .. }));
+    assert_eq!(
+        error.to_string(),
+        "Azure AD token must be a string, got dict"
+    );
+}
+
+fn provider_failure() {
+    let environment = environment(&[]);
+    let secrets = secrets();
+    let params = grant_params();
+    let mut sources = FixtureSources::new();
+    sources.client_secret = Ok(Outcome::Raise {
+        class: "ValueError".to_owned(),
+        message: "provider refused".to_owned(),
+    });
+    let error =
+        get_azure_ai_agent_entra_token(&agent_request(&params, &environment, &secrets, &sources))
+            .unwrap_err();
+    assert!(matches!(&error, CredentialsError::ProviderFailed { .. }));
+    assert_eq!(
+        error.to_string(),
+        "Failed to get Azure AD token: provider refused"
+    );
+}
+
+fn grant_params() -> Object {
+    object([
+        ("tenant_id", Json::Text("tenant".to_owned())),
+        ("client_id", Json::Text("client".to_owned())),
+        ("client_secret", Json::Text("secret".to_owned())),
+    ])
 }
 
 fn static_token() {

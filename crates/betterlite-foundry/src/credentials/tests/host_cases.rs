@@ -109,7 +109,7 @@ pub(super) fn openai_v1_api_key_header() {
     .unwrap();
     assert_eq!(result, headers(&[("api-key", "v1-key")]));
     assert!(sources.calls().is_empty());
-    let custom = api_key_header_for_base(Some("https://res.services.ai.azure.com/custom"));
+    let custom = api_key_header_for_base(Some("https://res.example.com/custom"));
     assert_eq!(custom, ApiKeyHeader::Authorization);
     let bearer = get_azure_ai_auth_headers(&auth_request(
         Some(&key),
