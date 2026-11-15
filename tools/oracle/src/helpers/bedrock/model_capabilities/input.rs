@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-pub(super) enum Input {
+pub(crate) enum Input {
     MantleApiBase {
         region: String,
         cases: Vec<MantleCase>,
@@ -42,18 +42,18 @@ pub(super) enum Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct MantleCase {
+pub(crate) struct MantleCase {
     #[serde(default)]
-    pub(super) api_base: Option<String>,
+    pub(crate) api_base: Option<String>,
     #[serde(default)]
-    pub(super) aws_bedrock_runtime_endpoint: Option<String>,
+    pub(crate) aws_bedrock_runtime_endpoint: Option<String>,
     #[serde(default)]
-    pub(super) environment: BTreeMap<String, String>,
+    pub(crate) environment: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct EffortCase {
-    pub(super) model: String,
-    pub(super) output_config: ParamValue,
+pub(crate) struct EffortCase {
+    pub(crate) model: String,
+    pub(crate) output_config: ParamValue,
 }
