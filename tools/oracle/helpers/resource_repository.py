@@ -45,7 +45,8 @@ class FakeClient(PrismaClient):
 # get_param decodes a stored string through the pin's own config-value conversion.
 def run(input_value: Input) -> JsonValue:
     table = FakeTable(FakeRow(input_value["raw"]))
-    param: ConfigParam | None = asyncio.run(ConfigRepository(FakeClient(table)).get_param("param_name"))
+    repository = ConfigRepository(FakeClient(table))
+    param: ConfigParam | None = asyncio.run(repository.get_param("param_name"))
     if param is None:
         raise ValueError("the fake config table returned no row")
     return TypeAdapter(JsonValue).validate_python(param.param_value)
