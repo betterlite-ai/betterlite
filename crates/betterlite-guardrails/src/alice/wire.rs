@@ -16,7 +16,7 @@ pub struct AliceReplacement {
     pub text: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct AliceVerdict {
     pub verdict: Option<String>,

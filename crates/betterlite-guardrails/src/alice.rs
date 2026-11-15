@@ -5,7 +5,7 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 pub mod error;
 pub mod json_safe;
@@ -33,7 +33,7 @@ pub const DEFAULT_BLOCK_MESSAGE: &str = "Blocked by your organization's content 
 // LiteLLM falls back to httpx's 600 second read/write timeout when no guardrail timeout is configured
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AliceConfigModel {
     #[serde(default)]
@@ -71,28 +71,22 @@ impl AliceGuardrail {
         client: reqwest::Client,
         timeout: Duration,
     ) -> Result<Self, AliceError> {
-        let configured_key = params.api_key.filter(|key| !key.expose_secret().is_empty());
-        let api_key = match configured_key {
-            Some(key) => key,
-            None => {
+        let api_key = params
+            .api_key
+            .filter(|key| !key.expose_secret().is_empty())
+            .or_else(|| {
                 let from_env = get_secret_str("ALICE_API_KEY");
-                if from_env.is_empty() {
-                    return Err(AliceError::MissingSecrets);
-                }
-                SecretString::from(from_env)
-            }
-        };
-        let base = match params.api_base.filter(|base| !base.is_empty()) {
-            Some(base) => base,
-            None => {
+                (!from_env.is_empty()).then_some(SecretString::from(from_env))
+            })
+            .ok_or(AliceError::MissingSecrets)?;
+        let base = params
+            .api_base
+            .filter(|base| !base.is_empty())
+            .or_else(|| {
                 let from_env = get_secret_str("ALICE_API_BASE");
-                if from_env.is_empty() {
-                    DEFAULT_API_BASE.to_owned()
-                } else {
-                    from_env
-                }
-            }
-        };
+                (!from_env.is_empty()).then_some(from_env)
+            })
+            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         Ok(Self {
             api_key,
             evaluate_url: format!("{}{EVALUATE_PATH}", base.trim_end_matches('/')),
