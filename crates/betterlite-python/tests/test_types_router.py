@@ -829,8 +829,10 @@ def test_names_error_signatures() -> None:
     theirs_limit = SIGNATURE.validate_python(theirs[limit])
     assert [item[0] for item in ours_limit] == [item[0] for item in theirs_limit]
     assert [item[2] for item in ours_limit] == [item[2] for item in theirs_limit]
-    assert {item[1] for item in ours_limit[2:]} == {"KEYWORD_ONLY"}
-    assert {item[1] for item in theirs_limit[2:]} == {"POSITIONAL_OR_KEYWORD"}
+    ours_kinds = NAMES.validate_python([item[1] for item in ours_limit[2:]])
+    theirs_kinds = NAMES.validate_python([item[1] for item in theirs_limit[2:]])
+    assert set(ours_kinds) == {"KEYWORD_ONLY"}
+    assert set(theirs_kinds) == {"POSITIONAL_OR_KEYWORD"}
 
 
 def test_names_enum_strings() -> None:
