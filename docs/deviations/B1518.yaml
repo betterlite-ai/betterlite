@@ -1,0 +1,9 @@
+task: B1518
+deviations:
+  - what: BFL edit image or mask URLs fail with HTTP 400, type invalid_request_error, param image or mask and code unsupported_media_url; supplied bytes and local file handles remain usable and no URL is fetched.
+    why: Max has not decided whether request-media downloads are allowed; retain the current no-download boundary and build no fetch service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/transformation.py#L183-L290
+  - what: An edit reply whose result is not the documented object carrying a string sample yields BFL's 500 No image URL in BFL result, and a body that is not a JSON object yields the typed reply decode error with the upstream status; LiteLLM calls dict-style get on the value and passes a non-string sample into ImageObject, raising AttributeError or a pydantic validation error with no status.
+    why: A reply whose shape is not the one BFL documents is a broken upstream answer, and a typed error names the failure where an internal crash names nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/transformation.py#L304-L324
+kept_bugs: []
