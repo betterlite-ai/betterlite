@@ -57,6 +57,17 @@ class VariationHandler(Protocol):
 HANDLER: Final[VariationHandler] = OpenAIImageVariationsHandler()
 
 
+# the class the handler reads its config from, aliased so the protocol member can name it
+ConfigManager: TypeAlias = ProviderConfigManager
+
+
+class ConfigRegistry(Protocol):
+    ProviderConfigManager: type[ConfigManager]
+
+
+REGISTRY: ConfigRegistry = variation_handler
+
+
 class AbsentProviderConfigManager(ProviderConfigManager):
     @staticmethod
     @override
@@ -224,9 +235,9 @@ def request_value(probe: Probe) -> Json:
     previous_session = litellm.client_session
     if supplied is None:
         litellm.client_session = httpx.Client(transport=transport)
-    previous_config = variation_handler.ProviderConfigManager
+    previous_config = REGISTRY.ProviderConfigManager
     if probe.missing_config:
-        variation_handler.ProviderConfigManager = AbsentProviderConfigManager
+        REGISTRY.ProviderConfigManager = AbsentProviderConfigManager
     optional_params: dict[str, Json] = dict(probe.optional_params)
     litellm_params: dict[str, Json] = {}
     error: Json = None
@@ -261,7 +272,7 @@ def request_value(probe: Probe) -> Json:
     else:
         result = DOCUMENT.validate_json(response.model_dump_json())
     finally:
-        variation_handler.ProviderConfigManager = previous_config
+        REGISTRY.ProviderConfigManager = previous_config
         litellm.client_session = previous_session
     answer["supplied"] = probe.client is not None
     answer["kind"] = "sync"
