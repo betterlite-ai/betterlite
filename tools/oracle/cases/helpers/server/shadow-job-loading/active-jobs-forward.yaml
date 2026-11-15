@@ -1,0 +1,30 @@
+kind: helper
+name: shadow-job-loading-active-jobs-forward
+call:
+  b4083:
+    operation: load_jobs
+    hook_calls: 1
+    model_group: arm-router
+    aliases: {}
+    metadata:
+      user_api_key_hash: key-hash
+      routing_decision: {router_model_name: incumbent-router}
+    rows:
+      - id: job-forward
+        target_type: key
+        target_id: key-hash
+        stopped_at: null
+        router_name: arm-router
+        router_names: []
+        models: []
+        direction: forward
+        baseline_model: null
+        shadow_percentage: 100.0
+        judge_model: judge-model
+        max_turns: 5
+        max_budget: null
+        ends_at: "2099-01-01T00:00:00Z"
+    stats:
+      - {job_id: job-forward, attempts: 1, spend: "0.25"}
+env: {}
+compare: {ignore: []}

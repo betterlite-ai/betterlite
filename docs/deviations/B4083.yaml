@@ -1,0 +1,29 @@
+task: B4083
+deviations:
+  - what: >-
+      A cache read that fails returns no active jobs and stores nothing, so sampling pauses for that request
+      and the next request fills the cache. LiteLLM's hook does the same around its cache-first read, and the
+      ten-second TTL bounds the pause.
+    why: >-
+      Keep the sampling loop lock-free and never block request logging on a transient cache or database fault;
+      B118 retries on the next request because the failed read is not cached.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L851-L903
+  - what: >-
+      The cross-pod spend counter is injected as the SpendCounter trait on the shadow job loader instead of
+      callable fields. read_spend(counter_key, fallback_spend, max_budget) returns a Decimal, and
+      add_spend(counter_key, cost) takes one; LiteLLM passes and returns floats. Production adapters over
+      B2321::get_current_spend and B3015::increment_spend_counter implement the trait in B8660, and tests inject
+      an in-memory counter. A failed write logs at warn and continues, so the attempt row is still recorded.
+    why: >-
+      Money in betterlite is Decimal end to end (no-float-money), and the counter is external to the shadow
+      pipeline, so tests must control it without a proxy global. The write still happens before the attempt
+      insert, so a lost row leaves the job's budget gate closed on the next read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L828-L845
+  - what: >-
+      A funnel flush drops the batch it snapshotted on any database error instead of retrying it, logging the
+      job and its dropped counters at error level.
+    why: >-
+      The counters are advisory coverage stats and the spend update job runs again on its next cycle; a
+      repeated increment is worse than an undercount, the same call LiteLLM makes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/shadow_eval_funnel.py#L47-L65
+kept_bugs: []

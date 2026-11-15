@@ -1,0 +1,22 @@
+kind: helper
+name: shadow-job-loading-job-validation-reverse-multiple-routers
+call:
+  b4083:
+    operation: validate_job
+    arm_router: router-a
+    rows:
+      - id: two-routers
+        target_type: key
+        target_id: key-1
+        router_name: router-a
+        router_names: [router-b, router-c]
+        models: []
+        direction: reverse
+        baseline_model: baseline-model
+        shadow_percentage: 100.0
+        judge_model: judge-model
+        max_turns: 5
+        max_budget: null
+        ends_at: "2099-01-01T00:00:00Z"
+env: {}
+compare: {ignore: []}
