@@ -15,24 +15,30 @@ pub(super) fn chat_usage(value: &Value) -> Result<Value, ResponsesChatStreamErro
     Ok(Value::Object(fields))
 }
 
-// Usage.__init__ folds the DeepSeek and Anthropic cache counters into prompt_tokens_details
+// Usage.__init__ folds the DeepSeek and Anthropic cache counters into the token detail block
 fn with_cache_tokens(value: &Value) -> Value {
     let Value::Object(fields) = value else {
         return value.clone();
     };
-    if is_response_api_usage(fields) {
-        return value.clone();
-    }
+    let (block, alias) = if is_response_api_usage(fields) {
+        ("input_tokens_details", Some("input_token_details"))
+    } else {
+        ("prompt_tokens_details", None)
+    };
     let cached = integer_field(fields, "cache_read_input_tokens")
         .or_else(|| integer_field(fields, "prompt_cache_hit_tokens"));
     let created = integer_field(fields, "cache_creation_input_tokens");
     if cached.is_none() && created.is_none() {
         return value.clone();
     }
-    let mut mapped = fields.clone();
-    let mut details = match fields.get("prompt_tokens_details") {
+    let mut details = match fields.get(block) {
         Some(Value::Object(details)) => details.clone(),
-        None | Some(_) => Map::new(),
+        None | Some(Value::Null) => match alias.and_then(|name| fields.get(name)) {
+            Some(Value::Object(details)) => details.clone(),
+            None | Some(Value::Null) => Map::new(),
+            Some(_) => return value.clone(),
+        },
+        Some(_) => return value.clone(),
     };
     if let Some(tokens) = cached {
         details.insert("cached_tokens".to_owned(), Value::from(tokens));
@@ -40,7 +46,8 @@ fn with_cache_tokens(value: &Value) -> Value {
     if let Some(tokens) = created {
         details.insert("cache_write_tokens".to_owned(), Value::from(tokens));
     }
-    mapped.insert("prompt_tokens_details".to_owned(), Value::Object(details));
+    let mut mapped = fields.clone();
+    mapped.insert(block.to_owned(), Value::Object(details));
     Value::Object(mapped)
 }
 

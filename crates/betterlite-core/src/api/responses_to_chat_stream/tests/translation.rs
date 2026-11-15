@@ -487,6 +487,7 @@ fn terminal_usage_keeps_response_api_cache_keys_verbatim() {
             "usage": {
                 "input_tokens": 2,
                 "output_tokens": 5,
+                "input_tokens_details": {"cached_tokens": 1},
                 "cache_read_input_tokens": 7,
                 "cache_creation_input_tokens": 3,
             },
@@ -497,7 +498,30 @@ fn terminal_usage_keeps_response_api_cache_keys_verbatim() {
     assert_eq!(usage["prompt_tokens"], json!(2));
     assert_eq!(usage["cache_read_input_tokens"], json!(7));
     assert_eq!(usage["cache_creation_input_tokens"], json!(3));
-    assert_eq!(usage["prompt_tokens_details"], json!(null));
+    let details = &usage["prompt_tokens_details"];
+    assert_eq!(details["cached_tokens"], json!(7));
+    assert_eq!(details["cache_write_tokens"], json!(3));
+    assert_eq!(details["cache_creation_tokens"], json!(3));
+    assert_eq!(details["cached_tokens_details"], json!(null));
+}
+
+#[test]
+fn terminal_usage_folds_cache_counters_into_the_input_token_details_alias() {
+    let chunk = translated(&json!({
+        "type": "response.completed",
+        "response": {
+            "usage": {
+                "input_tokens": 2,
+                "output_tokens": 5,
+                "input_token_details": {"audio_tokens": 4},
+                "cache_read_input_tokens": 7,
+            },
+        },
+    }))
+    .unwrap();
+    let details = &chunk["usage"]["prompt_tokens_details"];
+    assert_eq!(details["audio_tokens"], json!(4));
+    assert_eq!(details["cached_tokens"], json!(7));
 }
 
 #[test]
