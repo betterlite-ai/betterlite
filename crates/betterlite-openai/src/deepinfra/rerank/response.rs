@@ -113,6 +113,10 @@ fn decoded(
     logging
         .post_call(text)
         .map_err(|_failure| ResponseFailure)?;
+    // LiteLLM reads every field with response_json.get, so a parsed body that is not an object fails the block
+    if !matches!(parsed, Json::Object(_)) {
+        return Err(ResponseFailure);
+    }
     let plain = serde_json::to_value(&parsed).map_err(|_error| ResponseFailure)?;
     serde_json::from_value(plain).map_err(|_error| ResponseFailure)
 }

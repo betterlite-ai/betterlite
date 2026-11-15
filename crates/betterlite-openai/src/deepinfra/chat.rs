@@ -30,10 +30,10 @@ impl DeepInfraChatSettings {
                 .split_whitespace()
                 .any(|known| known == name.as_str())
         });
-        match unknown {
-            Some(name) => Err(DeepInfraError::UnknownSetting { name: name.clone() }),
-            None => Ok(Self { settings }),
+        if let Some(name) = unknown {
+            return Err(DeepInfraError::UnknownSetting { name: name.clone() });
         }
+        Ok(Self { settings })
     }
 
     #[must_use]
@@ -88,7 +88,7 @@ pub fn map_openai_params(request: MapRequest<'_>) -> Result<(), DeepInfraError> 
         };
         if name == "tool_choice" {
             let tolerated = matches!(&value, Json::Text(text) if text.as_str() == "auto" || text.as_str() == "none");
-            if !tolerated && !(drop_params.global || drop_params.request) {
+            if !(tolerated || drop_params.global || drop_params.request) {
                 return Err(DeepInfraError::UnsupportedToolChoice);
             }
             continue;
@@ -128,7 +128,14 @@ pub fn transform_request(
         environment: request.environment,
         downloads: request.downloads,
     };
-    let body = content.transform(mode)?.to_body()?;
+    let transformed = content.transform(mode)?;
+    let mut body = transformed.to_body()?;
+    // to_body builds its messages through serde_json::Value, whose maps sort keys, so the typed list is
+    // rebuilt here to keep the caller's key order inside a tool content part for the json.dumps fallback
+    body.insert(
+        String::from("messages"),
+        Json::List(messages_json(&transformed.messages)?),
+    );
     let mut value = as_model_json(&body)?;
     if let ModelJson::Object(fields) = &mut value
         && let Some(ModelJson::List(messages)) = fields.get_mut("messages")
@@ -140,16 +147,28 @@ pub fn transform_request(
     as_prompt_object(&value)
 }
 
+fn messages_json(messages: &[ChatMessage]) -> Result<Vec<Json>, ChatContentError> {
+    messages
+        .iter()
+        .map(|message| {
+            let text = serde_json::to_string(message)
+                .map_err(|source| ChatContentError::MessageShape { source })?;
+            serde_json::from_str(&text).map_err(|source| ChatContentError::MessageShape { source })
+        })
+        .collect()
+}
+
+// a string roundtrip, unlike serde_json::Value, keeps the key order of the object it converts
 fn as_model_json(body: &Object) -> Result<ModelJson, ChatContentError> {
-    let plain =
-        serde_json::to_value(body).map_err(|source| ChatContentError::MessageShape { source })?;
-    serde_json::from_value(plain).map_err(|source| ChatContentError::MessageShape { source })
+    let text =
+        serde_json::to_string(body).map_err(|source| ChatContentError::MessageShape { source })?;
+    serde_json::from_str(&text).map_err(|source| ChatContentError::MessageShape { source })
 }
 
 fn as_prompt_object(value: &ModelJson) -> Result<Object, ChatContentError> {
-    let plain =
-        serde_json::to_value(value).map_err(|source| ChatContentError::MessageShape { source })?;
-    serde_json::from_value(plain).map_err(|source| ChatContentError::MessageShape { source })
+    let text =
+        serde_json::to_string(value).map_err(|source| ChatContentError::MessageShape { source })?;
+    serde_json::from_str(&text).map_err(|source| ChatContentError::MessageShape { source })
 }
 
 fn tool_message_content(message: &mut ModelJson) {

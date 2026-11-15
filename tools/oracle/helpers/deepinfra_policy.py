@@ -207,10 +207,11 @@ def response_record(case: ResponseCase) -> JsonValue:
         model_response=RerankResponse(),
         logging_obj=recording,
     )
+    # pydantic keeps PrivateAttr values here, and _hidden_params has no public reader
+    private: dict[str, JsonValue] | None = transformed.__pydantic_private__
     return {
         "response": VALUE.validate_json(transformed.model_dump_json()),
-        # pydantic keeps PrivateAttr values here, and _hidden_params has no public reader
-        "hidden_params": VALUE.validate_python(transformed.__pydantic_private__),
+        "hidden_params": VALUE.validate_python(private),
         "calls": VALUE.validate_python(recording.calls),
     }
 

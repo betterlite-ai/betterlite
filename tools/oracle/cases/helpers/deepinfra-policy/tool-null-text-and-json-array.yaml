@@ -10,8 +10,12 @@ call:
       - model: deepinfra-model
         messages: [{role: tool, content: [{type: text, text: null}], tool_call_id: c2}]
         optional_params: {}
+      # parts here carry one key each, since the oracle's serde_json::Value input sorts a part's keys
       - model: deepinfra-model
-        messages: [{role: tool, content: [{type: text, text: a}, {type: text, text: b}]}]
+        messages: [{role: tool, content: [{type: text}, {type: text}]}]
+        optional_params: {}
+      - model: deepinfra-model
+        messages: [{role: tool, content: [{type: audio}]}]
         optional_params: {}
       - model: deepinfra-model
         messages:

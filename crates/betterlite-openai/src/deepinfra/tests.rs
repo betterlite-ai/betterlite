@@ -311,12 +311,12 @@ fn a_single_text_tool_part_with_a_null_text_keeps_null() {
 #[test]
 fn any_other_tool_content_list_becomes_python_json_text() {
     let transformed = tool_messages(
-        r#"[{"role": "tool", "content": [{"type": "text", "text": "café"}, {"type": "text", "text": "done"}]}]"#,
+        r#"[{"role": "tool", "content": [{"type": "text", "text": "é"}, {"type": "text", "text": "done"}]}]"#,
     );
     // Python's json.dumps escapes non-ASCII, so the content text keeps a literal backslash-u escape
     let expected = serde_json::json!({
         "role": "tool",
-        "content": r#"[{"type": "text", "text": "caf\u00e9"}, {"type": "text", "text": "done"}]"#,
+        "content": r#"[{"type": "text", "text": "\u00e9"}, {"type": "text", "text": "done"}]"#,
     });
     assert_eq!(serde_json::to_value(&transformed[0]).unwrap(), expected);
 }
@@ -326,6 +326,20 @@ fn any_other_tool_content_list_becomes_python_json_text() {
 fn a_single_non_text_tool_part_keeps_its_python_json_text() {
     let transformed =
         tool_messages(r#"[{"role": "tool", "content": [{"type": "audio", "text": "kept"}]}]"#);
+    assert_eq!(
+        serde_json::to_value(&transformed[0]).unwrap(),
+        serde_json::json!({
+            "role": "tool",
+            "content": r#"[{"type": "audio", "text": "kept"}]"#,
+        })
+    );
+}
+
+// the deviation log records that a typed part writes type first, whatever position the caller gave it
+#[test]
+fn a_dumped_tool_part_writes_type_before_the_callers_other_keys() {
+    let transformed =
+        tool_messages(r#"[{"role": "tool", "content": [{"text": "kept", "type": "audio"}]}]"#);
     assert_eq!(
         serde_json::to_value(&transformed[0]).unwrap(),
         serde_json::json!({
@@ -830,7 +844,7 @@ fn error_extraction_swallows_a_message_past_the_byte_limit() {
 }
 
 #[rstest]
-fn replays_the_deepinfra_payload_corpus(#[files("fuzz/corpus/deepinfra_payload/*")] path: PathBuf) {
+fn replays_deepinfra_payload_corpus(#[files("fuzz/corpus/deepinfra_payload/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
     let Some((&tag, payload)) = bytes.split_first() else {
         return;
