@@ -82,7 +82,7 @@ def remove_ttl(call: RemoveTtlCall) -> JsonValue:
         request = case["request"]
         try:
             CONFIG.remove_ttl(request, case["model"])
-        except AttributeError:
+        except (AttributeError, TypeError):
             requests.append({"raised": True})
             continue
         requests.append(request)

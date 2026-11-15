@@ -67,5 +67,18 @@ call:
         request:
           tools:
             - {name: keep, cache_control: {ttl: "5m"}}
+      - model: anthropic.claude-4-5-fixture
+        request:
+          tools: 5
+      - model: anthropic.claude-4-5-fixture
+        request:
+          messages: null
+      - model: anthropic.claude-4-5-fixture
+        request:
+          tools: false
+      - model: anthropic.claude-4-5-fixture
+        request:
+          tools: {name: keep}
+          messages: {role: user}
 env: {}
 compare: {ignore: []}

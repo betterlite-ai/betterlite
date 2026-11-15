@@ -1,6 +1,7 @@
-use crate::bedrock_model_capabilities::CapabilityError;
 use crate::bedrock_model_capabilities::catalog_flags::is_claude_4_5_on_bedrock;
 use crate::model_routes::{ParamMap, ParamValue};
+
+use super::MessageOptionsError;
 
 const EXTENDED_TTLS: [&str; 2] = ["5m", "1h"];
 
@@ -8,14 +9,14 @@ pub fn remove_ttl_from_cache_control(
     request: &mut ParamMap,
     model: Option<&str>,
     model_cost: &ParamMap,
-) -> Result<(), CapabilityError> {
+) -> Result<(), MessageOptionsError> {
     let mut supported = false;
     if let Some(name) = model
         && !name.is_empty()
     {
         supported = is_claude_4_5_on_bedrock(name, model_cost)?;
     }
-    if let Some(ParamValue::List(tools)) = request.get_mut("tools") {
+    if let Some(tools) = iterable_items(request, "tools")? {
         for tool in tools {
             let ParamValue::Mapping(fields) = tool else {
                 continue;
@@ -28,7 +29,7 @@ pub fn remove_ttl_from_cache_control(
     if let Some(ParamValue::List(system)) = request.get_mut("system") {
         sanitize_content(system, supported);
     }
-    if let Some(ParamValue::List(messages)) = request.get_mut("messages") {
+    if let Some(messages) = iterable_items(request, "messages")? {
         for message in messages {
             let ParamValue::Mapping(fields) = message else {
                 continue;
@@ -39,6 +40,20 @@ pub fn remove_ttl_from_cache_control(
         }
     }
     Ok(())
+}
+
+// Python iterates a present tools or messages value, so null, a bool or a number raises TypeError.
+fn iterable_items<'request>(
+    request: &'request mut ParamMap,
+    field: &'static str,
+) -> Result<Option<&'request mut Vec<ParamValue>>, MessageOptionsError> {
+    match request.get_mut(field) {
+        Some(ParamValue::List(items)) => Ok(Some(items)),
+        Some(ParamValue::Null | ParamValue::Bool(_) | ParamValue::Number(_)) => {
+            Err(MessageOptionsError::NotIterable { field })
+        }
+        Some(ParamValue::Text(_) | ParamValue::Mapping(_)) | None => Ok(None),
+    }
 }
 
 fn sanitize_content(content: &mut [ParamValue], supported: bool) {

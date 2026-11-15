@@ -21,6 +21,8 @@ pub const CLEAR_THINKING_LOG_PREFIX: &str = "Bedrock clear_thinking_20251015:";
 pub enum MessageOptionsError {
     #[error("thinking.budget_tokens must be an integer")]
     BudgetTokens,
+    #[error("{field} is not iterable")]
+    NotIterable { field: &'static str },
     #[error(transparent)]
     Capability(#[from] CapabilityError),
 }

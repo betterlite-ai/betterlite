@@ -144,7 +144,9 @@ pub(super) fn cache_ttl_model_policy() {
         let failure = remove_ttl_from_cache_control(&mut request, Some("malformed"), &model_cost);
         assert!(matches!(
             failure,
-            Err(CapabilityError::MalformedEntry { .. })
+            Err(MessageOptionsError::Capability(
+                CapabilityError::MalformedEntry { .. }
+            ))
         ));
         assert_eq!(request, map(STRIPPED));
     }
@@ -157,6 +159,34 @@ pub(super) fn cache_ttl_model_policy() {
         remove_ttl_from_cache_control(&mut request, Some("claude-4-5-fixture"), &model_cost)
             .expect("a dict-shaped map reads");
         assert_eq!(request, containers);
+    }
+
+    {
+        let mappings = map(r#"{"tools": {"name": "keep"}, "messages": {"role": "user"}}"#);
+        let mut request = mappings.clone();
+        remove_ttl_from_cache_control(&mut request, Some("claude-4-5-fixture"), &model_cost)
+            .expect("Python iterates a mapping's keys");
+        assert_eq!(request, mappings);
+    }
+
+    for (fields, field) in [
+        (r#"{"tools": null}"#, "tools"),
+        (r#"{"tools": 5}"#, "tools"),
+        (r#"{"tools": true}"#, "tools"),
+        (r#"{"messages": null}"#, "messages"),
+        (r#"{"messages": 5}"#, "messages"),
+        (r#"{"messages": false}"#, "messages"),
+    ] {
+        let mut request = map(fields);
+        let failure =
+            remove_ttl_from_cache_control(&mut request, Some("claude-4-5-fixture"), &model_cost);
+        assert!(
+            matches!(
+                failure,
+                Err(MessageOptionsError::NotIterable { field: found }) if found == field
+            ),
+            "{fields}"
+        );
     }
 }
 
