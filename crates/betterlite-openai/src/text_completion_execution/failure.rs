@@ -1,13 +1,11 @@
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::envelope::WireField;
 use betterlite_redact::secret::Redactor;
-use http::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::text_completion_request::CompletionRequestError;
 use crate::text_completion_transport::error::{
     ErrorStatus, TextCompletionError, TextCompletionFailure,
 };
-use crate::text_completion_transport::logging::SecretHeaders;
 
 use super::catalog::CompletionRoute;
 
@@ -18,7 +16,6 @@ pub struct CompletionFailure {
     pub error_type: Option<String>,
     pub param: Option<String>,
     pub message: String,
-    pub upstream_headers: HeaderMap,
 }
 
 impl CompletionFailure {
@@ -28,7 +25,6 @@ impl CompletionFailure {
             error_type: Some(String::from("internal_server_error")),
             param: None,
             message,
-            upstream_headers: HeaderMap::new(),
         }
     }
 
@@ -39,7 +35,6 @@ impl CompletionFailure {
             error_type: None,
             param: None,
             message,
-            upstream_headers: HeaderMap::new(),
         }
     }
 
@@ -53,14 +48,12 @@ impl CompletionFailure {
                 error_type: Some(String::from("internal_server_error")),
                 param: None,
                 message: String::from("betterlite does not serve chat-model text completions yet"),
-                upstream_headers: HeaderMap::new(),
             },
             CompletionRoute::Unsupported { provider } => Self {
                 status: 501,
                 error_type: Some(String::from("internal_server_error")),
                 param: None,
                 message: format!("betterlite does not serve text completions for {provider}"),
-                upstream_headers: HeaderMap::new(),
             },
         }
     }
@@ -72,7 +65,6 @@ pub(super) fn request_failure(error: CompletionRequestError) -> CompletionFailur
         error_type: Some(String::from("invalid_request_error")),
         param: None,
         message: error.to_string(),
-        upstream_headers: HeaderMap::new(),
     }
 }
 
@@ -88,23 +80,8 @@ pub(super) fn transport_failure(
             error_type: None,
             param: None,
             message: error.to_string(),
-            upstream_headers: HeaderMap::new(),
         },
     }
-}
-
-fn response_headers(headers: &SecretHeaders) -> HeaderMap {
-    let mut map = HeaderMap::new();
-    for (name, value) in &headers.0 {
-        let (Ok(name), Ok(value)) = (
-            HeaderName::try_from(name.as_str()),
-            HeaderValue::try_from(value.as_str()),
-        ) else {
-            continue;
-        };
-        map.insert(name, value);
-    }
-    map
 }
 
 // getattr(e, "type", "None") in proxy_server.py's completion except: a null field stays null, a missing one is the literal "None"
@@ -138,16 +115,10 @@ pub(super) fn wrapped_failure(
         redactor,
     );
     let metadata = class.metadata();
-    let upstream_headers = error
-        .headers
-        .as_ref()
-        .map(response_headers)
-        .unwrap_or_default();
     CompletionFailure {
         status: metadata.status_code,
         error_type: exception_text(metadata.error_type),
         param: exception_text(metadata.param),
         message: error.message.clone(),
-        upstream_headers,
     }
 }

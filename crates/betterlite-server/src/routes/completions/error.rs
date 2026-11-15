@@ -1,8 +1,7 @@
 use axum::Json;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_core::dispatch::error::DispatchError;
-use betterlite_openai::chat::deployment::ChatDeployment;
 use serde::Serialize;
 
 use crate::routes::chat::headers::failure_headers;
@@ -86,12 +85,8 @@ pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
     }
 }
 
-pub(super) fn render(
-    answer: &FailureAnswer,
-    upstream: Option<&HeaderMap>,
-    call_id: &str,
-    deployment: Option<&ChatDeployment>,
-) -> Response {
+// proxy_server.py's completion except answers a failure with litellm_call_id_headers alone, so no provider or deployment header comes back
+pub(super) fn render(answer: &FailureAnswer, call_id: &str) -> Response {
     let status_code =
         StatusCode::from_u16(answer.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let body = ErrorBody {
@@ -104,7 +99,7 @@ pub(super) fn render(
     };
     (
         status_code,
-        failure_headers(None, upstream, call_id, deployment),
+        failure_headers(None, None, call_id, None),
         Json(body),
     )
         .into_response()

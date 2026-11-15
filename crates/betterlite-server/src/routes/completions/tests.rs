@@ -357,12 +357,23 @@ async fn provider_error(status: u16, error_type: Option<&str>) {
             .and_then(|error| error.code.as_deref()),
         Some(code.as_str())
     );
+    // proxy_server.py's completion except answers with litellm_call_id_headers alone, so the provider's x-request-id never comes back
+    assert!(
+        !answered.headers.contains_key("llm_provider-x-request-id"),
+        "{:?}",
+        answered.headers
+    );
+    assert!(
+        !answered.headers.contains_key("x-litellm-timeout"),
+        "{:?}",
+        answered.headers
+    );
     assert_eq!(
         answered
             .headers
-            .get("llm_provider-x-request-id")
-            .map(|value| value.to_str().ok()),
-        Some(Some("provider-call"))
+            .get("x-litellm-call-id")
+            .and_then(|value| value.to_str().ok()),
+        Some("caller-id")
     );
 }
 

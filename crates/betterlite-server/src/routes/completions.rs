@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use async_trait::async_trait;
@@ -64,13 +64,10 @@ struct CompletionState {
     dispatch: Arc<Dispatch>,
 }
 
-type UpstreamSlot = Arc<Mutex<Option<HeaderMap>>>;
-
-// one per request: the upstream answer headers a failed call has to answer with stay on the request
+// one per request: LiteLLM's completion route answers a failure with the call id header alone, never with the provider's
 struct CompletionCalls {
     state: Arc<ServerState>,
     execution: Arc<CompletionExecutor>,
-    last_upstream: UpstreamSlot,
 }
 
 #[async_trait]
@@ -95,18 +92,12 @@ impl TextCompletionCall for CompletionCalls {
                 upstream_headers: answer.upstream_headers,
                 upstream_time: answer.upstream_time,
             }),
-            Err(failure) => {
-                *self
-                    .last_upstream
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner) = Some(failure.upstream_headers);
-                Err(TextCompletionFailure {
-                    status: failure.status,
-                    error_type: failure.error_type,
-                    param: failure.param,
-                    message: failure.message,
-                })
-            }
+            Err(failure) => Err(TextCompletionFailure {
+                status: failure.status,
+                error_type: failure.error_type,
+                param: failure.param,
+                message: failure.message,
+            }),
         }
     }
 }
@@ -130,12 +121,7 @@ async fn completions(
     let request = match CompletionRequest::parse(&body) {
         Ok(request) => request,
         Err(error) => {
-            return render(
-                &FailureAnswer::request(error.to_string()),
-                None,
-                &call_id,
-                None,
-            );
+            return render(&FailureAnswer::request(error.to_string()), &call_id);
         }
     };
     let model = path_model
@@ -144,7 +130,7 @@ async fn completions(
         .unwrap_or_else(|| String::from("None"));
     let Ok(deployment) = pick_deployment(&state.state.executor, &model) else {
         let missing = DispatchError::MissingDeployment { model_id: model };
-        return render(&failure_answer(missing), None, &call_id, None);
+        return render(&failure_answer(missing), &call_id);
     };
     execute(&state, request, deployment, &call_id, started).await
 }
@@ -157,7 +143,7 @@ async fn execute(
     started: Instant,
 ) -> Response {
     let asked_model = request.model.clone();
-    let (operation, last_upstream) = operation(state, request, deployment, call_id);
+    let operation = operation(state, request, deployment, call_id);
     let context = DispatchContext::start(CallInputs {
         now: SystemTime::now,
         id: Uuid::new_v4,
@@ -183,20 +169,9 @@ async fn execute(
             let unbuilt = DispatchError::NotBuilt {
                 entry: "text_stream",
             };
-            render(&failure_answer(unbuilt), None, call_id, Some(deployment))
+            render(&failure_answer(unbuilt), call_id)
         }
-        Err(error) => {
-            let upstream = last_upstream
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone();
-            render(
-                &failure_answer(error),
-                upstream.as_ref(),
-                call_id,
-                Some(deployment),
-            )
-        }
+        Err(error) => render(&failure_answer(error), call_id),
     }
 }
 
@@ -205,12 +180,10 @@ fn operation(
     request: CompletionRequest,
     deployment: &ChatDeployment,
     call_id: &str,
-) -> (Operation, UpstreamSlot) {
-    let last_upstream: UpstreamSlot = Arc::new(Mutex::new(None));
+) -> Operation {
     let calls = Arc::new(CompletionCalls {
         state: Arc::clone(&state.state),
         execution: Arc::clone(&state.execution),
-        last_upstream: Arc::clone(&last_upstream),
     });
     let streaming = request.stream == Some(true);
     let request = TextCompletionRequest {
@@ -220,10 +193,9 @@ fn operation(
         dispatch: Arc::clone(&state.dispatch),
         calls,
     };
-    let operation = if streaming {
+    if streaming {
         Operation::TextStream(request)
     } else {
         Operation::TextCompletion(request)
-    };
-    (operation, last_upstream)
+    }
 }
