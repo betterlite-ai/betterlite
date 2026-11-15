@@ -34,6 +34,11 @@ pub(super) fn edit_prompt() {
     assert_eq!(keys(&plain.body), ["prompt", "video"]);
     assert_eq!(plain.body.get("prompt"), Some(&json(r#""make it blue""#)));
 
+    let mut request = text_request("make it blue", &encoded);
+    request.api_base = String::from("https://mock.example/v1/");
+    let slashed = transform_video_edit_request(request);
+    assert_eq!(slashed.url, "https://mock.example/v1/edits");
+
     let mut cursor = Cursor::new(b"not video".to_vec());
     let mut request = text_request("make it blue", &encoded);
     request.video_file = Some(MediaBody::Stream {
