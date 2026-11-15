@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::realtime_contracts::config::BaseRealtimeConfig;
+use betterlite_core::api::realtime_contracts::config::BaseRealtimeConfig as _;
 use betterlite_core::api::realtime_contracts::error::WebSocketError;
 use betterlite_core::api::realtime_contracts::events::RealtimeResponseTransformInput;
 use betterlite_core::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};

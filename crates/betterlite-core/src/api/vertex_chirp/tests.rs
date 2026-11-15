@@ -15,7 +15,7 @@ use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::api_boundaries::ApiLimits;
-use crate::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
+use crate::api::realtime_contracts::config::{BaseRealtimeConfig as _, Environment};
 use crate::api::realtime_contracts::error::{HeaderMap, WebSocketError};
 use crate::api::realtime_contracts::events::{
     AllDeltaType, RealtimeResponseTransformInput, RealtimeResponseTypedDict,
@@ -44,12 +44,12 @@ struct FixedIds {
 
 impl ChirpIds for FixedIds {
     fn event_id(&mut self) -> String {
-        self.events += 1;
+        self.events = self.events.saturating_add(1);
         format!("event_fixed_{}", self.events)
     }
 
     fn item_id(&mut self) -> String {
-        self.items += 1;
+        self.items = self.items.saturating_add(1);
         format!("item_fixed_{}", self.items)
     }
 
@@ -697,12 +697,12 @@ fn the_decoder_reads_backend_events() {
         decode_chirp_backend_event(CONFIGURED.as_bytes(), ApiLimits::default()).unwrap(),
         ChirpBackendEvent::Configured
     );
-    match decode_chirp_backend_event(INTERIM.as_bytes(), ApiLimits::default()).unwrap() {
-        ChirpBackendEvent::Response(response) => {
-            assert_eq!(response.billed_seconds, Decimal::new(5, 1));
-        }
-        other => panic!("a response frame, not {other:?}"),
-    }
+    let ChirpBackendEvent::Response(response) =
+        decode_chirp_backend_event(INTERIM.as_bytes(), ApiLimits::default()).unwrap()
+    else {
+        panic!("a response frame");
+    };
+    assert_eq!(response.billed_seconds, Decimal::new(5, 1));
 }
 
 #[rstest]

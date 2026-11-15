@@ -243,10 +243,10 @@ where
         logging_session_id: &str,
         _session_configuration_request: Option<&str>,
     ) -> Option<Json> {
-        {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.session_id = Some(logging_session_id.to_owned());
-        }
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .session_id = Some(logging_session_id.to_owned());
         let session = default_session_config(model).openai_session(logging_session_id);
         let event = created_event(self.ids.clone().next_event_id(), &session);
         serde_json::to_value(&event)
