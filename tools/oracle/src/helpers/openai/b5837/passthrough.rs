@@ -21,33 +21,35 @@ fn metadata(model_group: Option<&str>) -> Object {
     params
 }
 
+fn url_case(case: &Case) -> Value {
+    let config = NvidiaNimPassthroughConfig {
+        api_base_env: case.env_base.clone(),
+        api_key_env: None,
+    };
+    let litellm_params = metadata(case.model_group.as_deref());
+    let target = PassthroughTarget {
+        model: &case.model,
+        custom_llm_provider: PROVIDER,
+        endpoint: &case.endpoint,
+    };
+    let request = PassthroughUrlRequest {
+        api_base: case.api_base.as_deref(),
+        api_key: None,
+        target,
+        request_query_params: None,
+        litellm_params: &litellm_params,
+    };
+    match config.get_complete_url(&request) {
+        Ok((url, root)) => json!({"ok": true, "url": url.as_str(), "root": root}),
+        Err(_) => json!({"ok": false}),
+    }
+}
+
 pub(crate) fn urls(cases: &[Case]) -> Value {
-    let urls: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            let config = NvidiaNimPassthroughConfig {
-                api_base_env: case.env_base.clone(),
-                api_key_env: None,
-            };
-            let litellm_params = metadata(case.model_group.as_deref());
-            let target = PassthroughTarget {
-                model: &case.model,
-                custom_llm_provider: PROVIDER,
-                endpoint: &case.endpoint,
-            };
-            let request = PassthroughUrlRequest {
-                api_base: case.api_base.as_deref(),
-                api_key: None,
-                target,
-                request_query_params: None,
-                litellm_params: &litellm_params,
-            };
-            match config.get_complete_url(&request) {
-                Ok((url, root)) => json!({"ok": true, "url": url.as_str(), "root": root}),
-                Err(_) => json!({"ok": false}),
-            }
-        })
-        .collect();
+    let mut urls = Vec::with_capacity(cases.len());
+    for case in cases {
+        urls.push(url_case(case));
+    }
     json!({"urls": urls})
 }
 
