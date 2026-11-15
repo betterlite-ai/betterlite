@@ -64,7 +64,12 @@ fn restore_numbers(value: &GuardrailValue) -> GuardrailValue {
                     .collect(),
             )
         }
-        scalar => scalar.clone(),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_) => value.clone(),
     }
 }
 
