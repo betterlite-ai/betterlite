@@ -498,6 +498,11 @@ async fn cas_only_three_fields_including_null_author() {
         .await
         .unwrap();
     let file_object: String = row.try_get(0).unwrap();
+    // Prisma stores a Python str in a Json field as a JSON string, not as a decoded object
+    assert!(matches!(
+        serde_json::from_str::<JsonData>(&file_object).unwrap(),
+        JsonData::String(_)
+    ));
     let written = decode_managed_batch_record::<BatchObject>(file_object.as_bytes())
         .unwrap()
         .unwrap();
