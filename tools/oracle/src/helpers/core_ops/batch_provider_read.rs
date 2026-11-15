@@ -198,8 +198,8 @@ fn anthropic_value(call: &AnthropicBatchReadCall) -> Value {
 
 fn failure(error: &BatchProviderReadError<ScriptedStatus>) -> Box<HelperError> {
     let (class, status): (&str, Option<u16>) = match error {
-        BatchProviderReadError::Unsupported { .. } => ("BadRequestError", Some(400)),
-        BatchProviderReadError::InvalidVertexCredentials => ("BadRequestError", Some(400)),
+        BatchProviderReadError::Unsupported { .. }
+        | BatchProviderReadError::InvalidVertexCredentials => ("BadRequestError", Some(400)),
         BatchProviderReadError::Timeout(_) | BatchProviderReadError::Limits(_) => {
             ("ValueError", None)
         }
