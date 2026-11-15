@@ -1,0 +1,46 @@
+kind: helper
+name: streaming-trim-condition-exception
+call:
+  b3700:
+    patterns: []
+    blocked_words: []
+    categories:
+      - category: stream_policy
+        action: MASK
+        severity_threshold: medium
+        file_text: |
+          category_name: stream_policy
+          description: stream policy
+          default_action: MASK
+          keywords:
+            - keyword: target
+              severity: high
+          exceptions:
+            - allowed phrase
+    guardrail_id: null
+    policy_template: null
+    pattern_redaction_format: null
+    keyword_redaction_tag: null
+    close_after: null
+    items:
+      - id: chatcmpl-stream
+        created: 1700000000
+        model: gpt-test
+        object: chat.completion.chunk
+        choices:
+          - index: 0
+            delta:
+              content: "allowed phrase xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            finish_reason: null
+      - id: chatcmpl-stream
+        created: 1700000000
+        model: gpt-test
+        object: chat.completion.chunk
+        choices:
+          - index: 0
+            delta:
+              content: " target"
+            finish_reason: "stop"
+env:
+  LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS: "true"
+compare: {ignore: []}

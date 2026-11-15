@@ -1,6 +1,6 @@
 pub mod bedrock;
 pub mod error;
-mod extras;
+pub(crate) mod extras;
 pub mod hide_secrets;
 pub mod lakera;
 pub mod lakera_v2;
