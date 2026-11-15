@@ -1,0 +1,12 @@
+kind: helper
+name: tool-spend-oversized-seed
+call:
+  tool_spend:
+    rows:
+      - {request_id: req-1, tool_name: search, start_time: "2026-01-02T00:00:00Z", refused: false}
+      - {request_id: req-2, tool_name: refused, start_time: "2026-01-02T00:00:00Z", refused: true}
+    max_bytes: 100
+    max_rows: 100
+    queued_bytes: 89
+env: {}
+compare: {ignore: []}

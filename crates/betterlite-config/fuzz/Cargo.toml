@@ -107,3 +107,10 @@ path = "fuzz_targets/replicate_price.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "spend_statement_limits"
+path = "fuzz_targets/spend_statement_limits.rs"
+test = false
+doc = false
+bench = false
