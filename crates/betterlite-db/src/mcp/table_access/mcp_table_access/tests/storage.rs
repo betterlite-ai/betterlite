@@ -7,7 +7,7 @@ use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::database_replica::availability::Availability;
 use crate::mcp::table_access::actions::mcp_server_table_actions;
 use crate::mcp::table_access::filter::FindServers;
-use crate::mcp::table_access::mcp_server_write_if_identifier_free;
+use crate::mcp::table_access::lock::mcp_server_write_if_identifier_free;
 use crate::mcp::table_access::rows::{CREDENTIAL_TABLE, KeyValues, RowFields, ServerUpdate};
 use crate::mcp::table_access::sql;
 use crate::mcp::table_access::store::{McpTableStore, db_transaction_manager};

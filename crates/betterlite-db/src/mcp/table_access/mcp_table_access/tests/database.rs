@@ -11,7 +11,7 @@ use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::budget_permission_rows::JsonData;
 use crate::database_replica::availability::Availability;
 use crate::mcp::table_access::filter::{FindServers, ServerFilter};
-use crate::mcp::table_access::mcp_server_write_if_identifier_free;
+use crate::mcp::table_access::lock::mcp_server_write_if_identifier_free;
 use crate::mcp::table_access::rows::{KeyValues, RowFields, ServerUpdate};
 use crate::mcp::table_access::store::{LockedTable, McpTableStore, db_transaction_manager};
 use crate::mcp::table_access::types::{

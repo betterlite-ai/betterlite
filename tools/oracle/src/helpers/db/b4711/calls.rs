@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
+use betterlite_db::mcp::table_access::lock::{find_identifier_conflict, mcp_identifier_lock_keys};
 use betterlite_db::mcp::table_access::rows::RowFields;
 use betterlite_db::mcp::table_access::server_reads::{
     get_mcp_server, get_mcp_servers, identifier_field,
 };
 use betterlite_db::mcp::table_access::{
-    McpIdentifierConflict, approve_mcp_server, find_identifier_conflict, get_all_mcp_servers,
-    get_mcp_submissions, mcp_identifier_lock_keys, reject_mcp_server, set_mcp_server_pinned_tools,
+    McpIdentifierConflict, approve_mcp_server, get_all_mcp_servers, get_mcp_submissions,
+    reject_mcp_server, set_mcp_server_pinned_tools,
 };
 // ast-grep-ignore: no-long-names
 use betterlite_db::mcp::table_access::get_active_submitted_mcp_server_ids_for_user as active_ids;

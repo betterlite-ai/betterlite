@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
+use crate::mcp::table_access::McpIdentifierConflict;
 use crate::mcp::table_access::filter::ServerFilter;
+use crate::mcp::table_access::lock::{
+    find_identifier_conflict, identifier_where, mcp_identifier_lock_keys,
+};
 use crate::mcp::table_access::rows::RowFields;
 use crate::mcp::table_access::server_reads::identifier_field;
 use crate::mcp::table_access::types::IdentifierField;
-use crate::mcp::table_access::{
-    McpIdentifierConflict, find_identifier_conflict, identifier_where, mcp_identifier_lock_keys,
-};
 use crate::mcp_stored_contracts::JsonValue;
 
 use super::support::{FakeStore, row};
