@@ -12,3 +12,6 @@ deviations:
   - what: A stored credentials blob whose text is malformed or is valid JSON that is not an object is a typed McpEncodingError instead of a Python exception.
     why: LiteLLM's _credentials_blob_to_mutable_dict passes whatever json.loads produced on to callers that then fail with an unhandled TypeError, and a working setup cannot store such a row; betterlite names the corrupt credentials column instead of answering 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L474-L476
+  - what: The credentials object on a request is an open JSON map, so a key outside MCPCredentials or a value of the wrong type is carried to the stored blob as given; LiteLLM's pydantic model drops the unknown key or rejects the wrong-typed value before the write.
+    why: The credentials column is parsed as an open map on the read path, and the writer lifts the token-exchange keys out of the same map before it encrypts the seven secret fields, so one map type serves both directions; no working setup sends a key or value outside MCPCredentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L156
