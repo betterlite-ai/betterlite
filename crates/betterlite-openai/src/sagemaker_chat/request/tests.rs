@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use betterlite_prompts::arguments::json::Object as Body;
+use betterlite_prompts::arguments::json::{Json, Object as Body};
 use serde_json::{Value, json};
 
 use super::{
@@ -85,7 +85,10 @@ fn the_body_carries_the_model_the_messages_and_the_options() {
     let options = options(r#"{"temperature": 0.7}"#);
     let built = transform_request(&request(&messages, &options, None)).expect("a body");
     assert_eq!(keys(&built), ["model", "messages", "temperature"]);
-    assert_eq!(built.get("model"), Some(&json!("endpoint")));
+    assert_eq!(
+        built.get("model"),
+        Some(&Json::Text(String::from("endpoint")))
+    );
 }
 
 #[test]
@@ -95,7 +98,10 @@ fn the_hf_model_name_replaces_the_model_and_keeps_its_place() {
     let built =
         transform_request(&request(&messages, &options, Some("hf-endpoint"))).expect("a body");
     assert_eq!(keys(&built), ["model", "messages", "temperature"]);
-    assert_eq!(built.get("model"), Some(&json!("hf-endpoint")));
+    assert_eq!(
+        built.get("model"),
+        Some(&Json::Text(String::from("hf-endpoint")))
+    );
 }
 
 #[test]

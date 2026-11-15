@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use serde_json::{Value, json};
 
 use super::{Options, SUPPORTED_OPENAI_PARAMS, map_openai_params};
@@ -137,43 +138,29 @@ fn the_supported_options_keep_the_pinned_order() {
     );
 }
 
-#[test]
-fn a_falsy_allow_zero_temperature_flag_still_rewrites_a_zero_temperature() {
-    for flag in [
-        json!(null),
-        json!(false),
-        json!(0),
-        json!(0.0),
-        json!(""),
-        json!([]),
-        json!({}),
-    ] {
-        let mut requested = Options::from([
-            (String::from("temperature"), json!(0)),
-            (String::from("aws_sagemaker_allow_zero_temp"), flag.clone()),
-        ]);
-        let mut mapped = Options::new();
-        map_openai_params(&mut requested, &mut mapped);
-        assert_eq!(mapped.get("temperature"), Some(&json!(0.01)), "{flag}");
-    }
-}
-
-#[test]
-fn a_truthy_allow_zero_temperature_flag_keeps_a_zero_temperature() {
-    for flag in [
-        json!(true),
-        json!(1),
-        json!(-0.5),
-        json!("yes"),
-        json!([0]),
-        json!({"k": 0}),
-    ] {
-        let mut requested = Options::from([
-            (String::from("temperature"), json!(0)),
-            (String::from("aws_sagemaker_allow_zero_temp"), flag.clone()),
-        ]);
-        let mut mapped = Options::new();
-        map_openai_params(&mut requested, &mut mapped);
-        assert_eq!(mapped.get("temperature"), Some(&json!(0)), "{flag}");
-    }
+#[rstest]
+#[case::falsy_null(json!(null), json!(0.01))]
+#[case::falsy_bool(json!(false), json!(0.01))]
+#[case::falsy_integer(json!(0), json!(0.01))]
+#[case::falsy_float(json!(0.0), json!(0.01))]
+#[case::falsy_text(json!(""), json!(0.01))]
+#[case::falsy_list(json!([]), json!(0.01))]
+#[case::falsy_object(json!({}), json!(0.01))]
+#[case::truthy_bool(json!(true), json!(0))]
+#[case::truthy_integer(json!(1), json!(0))]
+#[case::truthy_negative_float(json!(-0.5), json!(0))]
+#[case::truthy_text(json!("yes"), json!(0))]
+#[case::truthy_list(json!([0]), json!(0))]
+#[case::truthy_object(json!({"k": 0}), json!(0))]
+fn the_allow_zero_temperature_flag_decides_a_zero_temperature(
+    #[case] flag: Value,
+    #[case] expected: Value,
+) {
+    let mut requested = Options::from([
+        (String::from("temperature"), json!(0)),
+        (String::from("aws_sagemaker_allow_zero_temp"), flag.clone()),
+    ]);
+    let mut mapped = Options::new();
+    map_openai_params(&mut requested, &mut mapped);
+    assert_eq!(mapped.get("temperature"), Some(&expected), "{flag}");
 }

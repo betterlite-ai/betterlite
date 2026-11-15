@@ -1,3 +1,4 @@
+use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use serde_json::Value;
 
@@ -22,12 +23,13 @@ const BEST_OF: &str = "best_of";
 pub fn map_openai_params(non_default_params: &mut Options, optional_params: &mut Options) {
     let allow_zero = non_default_params
         .get(ALLOW_ZERO_TEMPERATURE)
-        .is_some_and(is_truthy);
+        .and_then(|flag| serde_json::from_value::<Json>(flag.clone()).ok())
+        .is_some_and(|flag| flag.is_truthy());
     for (name, value) in non_default_params.iter() {
         match name.as_str() {
             "temperature" => {
                 // TGI rejects a zero temperature; the flag is the caller's way to keep it
-                let temperature = if is_zero(value) && !allow_zero {
+                let temperature = if value.as_f64() == Some(0.0) && !allow_zero {
                     Value::from(ZERO_TEMPERATURE)
                 } else {
                     value.clone()
@@ -43,8 +45,8 @@ pub fn map_openai_params(non_default_params: &mut Options, optional_params: &mut
             }
             "max_tokens" => {
                 // TGI rejects max_new_tokens 0 as well, and only max_tokens gets the rewrite
-                let limit = if is_zero(value) {
-                    Value::from(1)
+                let limit = if value.as_f64() == Some(0.0) {
+                    Value::from(1_u64)
                 } else {
                     value.clone()
                 };
@@ -56,28 +58,7 @@ pub fn map_openai_params(non_default_params: &mut Options, optional_params: &mut
             _ => {}
         }
     }
-    non_default_params.remove(ALLOW_ZERO_TEMPERATURE);
-}
-
-// the option map is LiteLLM's free-form dict, where the flag is read for its truth
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_some_and(|parsed| parsed != 0.0_f64),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(items) => !items.is_empty(),
-        Value::Object(fields) => !fields.is_empty(),
-    }
-}
-
-fn is_zero(value: &Value) -> bool {
-    match value {
-        Value::Number(number) => number.as_f64() == Some(0.0_f64),
-        Value::Null | Value::Bool(_) | Value::String(_) | Value::Array(_) | Value::Object(_) => {
-            false
-        }
-    }
+    non_default_params.shift_remove(ALLOW_ZERO_TEMPERATURE);
 }
 
 mod tests;

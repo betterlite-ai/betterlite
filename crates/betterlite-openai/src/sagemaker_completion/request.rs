@@ -52,7 +52,7 @@ pub async fn transform_request(
 ) -> Result<IndexMap<String, Value>, RequestError> {
     let prompt = transform_prompt(input).await?;
     let mut inference_params = input.optional_params.clone();
-    let stream = inference_params.remove("stream");
+    let stream = inference_params.shift_remove("stream");
     let mut data = IndexMap::new();
     let parameters: Map<String, Value> = inference_params.into_iter().collect();
     data.insert(String::from("parameters"), Value::Object(parameters));
