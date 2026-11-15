@@ -101,7 +101,7 @@ async fn xecguard_runtime_cases(#[case] case: Case) {
         Case::GroundingFailureBlocks => scans::grounding_failure_blocks().await,
         Case::GroundingPasses => scans::grounding_passes().await,
         Case::RequestIgnoresGroundingDocuments => {
-            scans::request_ignores_grounding_documents().await
+            scans::request_ignores_grounding_documents().await;
         }
         Case::LoggingSkipsExistingInformation => logging::logging_skips_existing().await,
         Case::LoggingScansEmptyInformation => logging::logging_scans_empty_information().await,

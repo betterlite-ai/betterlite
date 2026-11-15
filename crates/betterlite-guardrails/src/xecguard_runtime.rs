@@ -14,6 +14,7 @@ use crate::guardrail_base::GuardrailBase;
 use crate::presidio_actions::request_data::RequestData;
 use crate::presidio_response::wire::ResponseBody;
 use crate::third_party_init_b::xecguard::XecGuardArgs;
+use crate::xecguard_primitives::logging_hook::logging_hook;
 use crate::xecguard_primitives::settings::XecGuardSettings;
 
 #[derive(Debug)]
@@ -51,7 +52,7 @@ impl XecGuardGuard {
         kwargs: RequestData,
         result: ResponseBody,
     ) -> (RequestData, ResponseBody) {
-        crate::xecguard_primitives::logging_hook::logging_hook(
+        logging_hook(
             kwargs,
             result,
             async |hooked_kwargs: &mut RequestData, hooked_result: &mut ResponseBody| {

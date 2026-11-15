@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::io::{self, Write};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -28,8 +27,6 @@ const LOGGED_WITH_EXISTING_ENTRY: &str = r#"{"messages":[{"role":"user","content
 const LOGGED_WITH_NON_OBJECT: &str =
     r#"{"messages":[{"role":"user","content":"hello"}],"standard_logging_object":"not-an-object"}"#;
 const LOGGED_WITHOUT_HISTORY: &str = r#"{"standard_logging_object":{}}"#;
-
-static CLOCK_TICKS: AtomicU64 = AtomicU64::new(0);
 
 #[test]
 fn xecguard_runtime_sync_logging_hook_appends_an_entry() {
@@ -94,9 +91,9 @@ fn assert_logging_entry(entry: &GuardrailValue) {
     );
     assert_eq!(
         field(entry, "end_time"),
-        &GuardrailValue::Decimal(1_700_000_001.0_f64)
+        &GuardrailValue::Decimal(1_700_000_000.0_f64)
     );
-    assert_eq!(field(entry, "duration"), &GuardrailValue::Decimal(1.0_f64));
+    assert_eq!(field(entry, "duration"), &GuardrailValue::Decimal(0.0_f64));
     assert_eq!(
         text(field(field(entry, "guardrail_response"), "decision")),
         "UNSAFE"
@@ -202,7 +199,7 @@ async fn scan_logged(
 ) -> Vec<GuardrailValue> {
     let mock = mock(scan, (200, SAFE));
     let mut guard = guard_at(&mock.base);
-    guard.clock = ticking_clock;
+    guard.clock = fixed_clock;
     let mut kwargs = logged(kwargs_json);
     guard.async_logging_hook(&mut kwargs, &result).await;
     let sent = seen(&mock);
@@ -280,11 +277,10 @@ fn keys(value: &GuardrailValue) -> Vec<&str> {
     }
 }
 
-fn ticking_clock() -> SystemTime {
-    let tick = CLOCK_TICKS.fetch_add(1, Ordering::Relaxed);
+fn fixed_clock() -> SystemTime {
     SystemTime::UNIX_EPOCH
-        .checked_add(Duration::from_secs(1_700_000_000_u64.saturating_add(tick)))
-        .expect("the clock tick")
+        .checked_add(Duration::from_secs(1_700_000_000_u64))
+        .expect("the fixed clock")
 }
 
 #[derive(Clone, Default)]

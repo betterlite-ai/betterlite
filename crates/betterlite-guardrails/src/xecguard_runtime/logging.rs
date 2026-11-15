@@ -86,9 +86,9 @@ fn logged_values(
 ) -> Result<BTreeMap<String, GuardrailValue>, XecGuardRuntimeError> {
     let mut values = BTreeMap::new();
     for (key, raw) in kwargs {
-        let value = serde_json::from_str(raw.get())
+        let parsed = serde_json::from_str(raw.get())
             .map_err(|source| XecGuardRuntimeError::LoggedJson { source })?;
-        values.insert(key.clone(), value);
+        values.insert(key.clone(), parsed);
     }
     Ok(values)
 }
