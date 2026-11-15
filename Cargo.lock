@@ -1090,6 +1090,7 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
  "betterlite-context",
  "betterlite-error",
@@ -1098,6 +1099,8 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "hex",
@@ -2215,6 +2218,7 @@ name = "betterlite-logging-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-logging",
+ "betterlite-models",
  "chrono",
  "libfuzzer-sys",
  "serde_json",
@@ -2393,6 +2397,7 @@ dependencies = [
  "serde_with",
  "sha2 0.11.1",
  "speedate",
+ "subtle",
  "tempfile",
  "thiserror",
  "tokio",

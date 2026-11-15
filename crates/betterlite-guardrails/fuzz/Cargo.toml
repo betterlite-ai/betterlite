@@ -178,3 +178,10 @@ path = "fuzz_targets/singulr_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "cato_response"
+path = "fuzz_targets/cato_response.rs"
+test = false
+doc = false
+bench = false
