@@ -36,6 +36,7 @@ impl VllmModelInfo<'_> {
         }
     }
 
+    #[must_use]
     pub fn get_error_class(&self, message: &str, status_code: u16, headers: &Headers) -> VllmError {
         VllmError::Api {
             status_code,

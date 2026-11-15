@@ -299,7 +299,7 @@ fn the_complete_url_reports_the_missing_base() {
 }
 
 #[test]
-fn an_unparseable_base_is_a_passthrough_error() {
+fn an_unparsable_base_is_a_passthrough_error() {
     let environment = environment(&[]);
     let config = VllmPassthroughConfig {
         environment: &environment,
