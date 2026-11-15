@@ -2,8 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{UpstreamResponse, transport_error::TransportError};
 use betterlite_openai::chat_choices::endpoint::ModelListTransport;
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
