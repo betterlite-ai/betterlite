@@ -92,20 +92,6 @@ where
     toolset_from_row(table.create(row).await?)
 }
 
-pub async fn get_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) -> ToolsetLookup {
-    let Some(row) = table.find_unique(toolset_id).await? else {
-        return Ok(None);
-    };
-    toolset_from_row(row).map(Some)
-}
-
-pub async fn get_mcp_toolset_by_name<T: ToolsetTable>(table: &T, name: &str) -> ToolsetLookup {
-    let Some(row) = table.find_first_by_name(name).await? else {
-        return Ok(None);
-    };
-    toolset_from_row(row).map(Some)
-}
-
 pub async fn list_mcp_toolsets<T>(
     table: &T,
     toolset_ids: Option<&[String]>,
@@ -157,13 +143,6 @@ where
         )
         .await?;
     optional_toolset(stored)
-}
-
-pub async fn delete_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) -> ToolsetLookup {
-    let Some(row) = table.delete(toolset_id).await? else {
-        return Ok(None);
-    };
-    toolset_from_row(row).map(Some)
 }
 
 fn optional_toolset(row: Option<ToolsetRow>) -> ToolsetLookup {

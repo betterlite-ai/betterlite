@@ -3,7 +3,10 @@ use std::future::Future;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Deserializer};
 
-use super::{MCPToolset, MCPToolsetStorageError, MCPToolsetTool, UpdateMCPToolsetRequest};
+use super::{
+    MCPToolset, MCPToolsetStorageError, MCPToolsetTool, ToolsetLookup, UpdateMCPToolsetRequest,
+    optional_toolset,
+};
 
 #[derive(Debug, Clone)]
 pub struct ToolsetRow {
@@ -102,6 +105,24 @@ pub trait ToolsetTable: Send + Sync {
         &self,
         toolset_id: &str,
     ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send;
+
+    fn get_mcp_toolset(&self, toolset_id: &str) -> impl Future<Output = ToolsetLookup> + Send {
+        let found = self.find_unique(toolset_id);
+        async move { optional_toolset(found.await?) }
+    }
+
+    fn get_mcp_toolset_by_name(
+        &self,
+        toolset_name: &str,
+    ) -> impl Future<Output = ToolsetLookup> + Send {
+        let found = self.find_first_by_name(toolset_name);
+        async move { optional_toolset(found.await?) }
+    }
+
+    fn delete_mcp_toolset(&self, toolset_id: &str) -> impl Future<Output = ToolsetLookup> + Send {
+        let found = self.delete(toolset_id);
+        async move { optional_toolset(found.await?) }
+    }
 }
 
 pub fn toolset_from_row(row: ToolsetRow) -> Result<MCPToolset, MCPToolsetStorageError> {

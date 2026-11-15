@@ -16,8 +16,7 @@ use super::table::{
 };
 use super::{
     MCPToolsetStorageError, MCPToolsetTool, NewMCPToolsetRequest, UpdateMCPToolsetRequest,
-    create_mcp_toolset, delete_mcp_toolset, get_mcp_toolset, get_mcp_toolset_by_name,
-    list_mcp_toolsets, update_mcp_toolset,
+    create_mcp_toolset, list_mcp_toolsets, update_mcp_toolset,
 };
 
 mod postgres;
@@ -261,7 +260,7 @@ async fn create_stores_an_empty_tools_json_array_when_the_request_omits_them() {
 #[tokio::test]
 async fn get_returns_the_stored_toolset() {
     let table = FakeTable::with_rows(vec![toolset_row("id-1", "alpha")]);
-    let found = get_mcp_toolset(&table, "id-1").await.unwrap();
+    let found = table.get_mcp_toolset("id-1").await.unwrap();
     assert_eq!(
         found.map(|toolset| toolset.toolset_name),
         Some("alpha".to_owned())
@@ -271,7 +270,7 @@ async fn get_returns_the_stored_toolset() {
 #[tokio::test]
 async fn get_returns_none_for_an_unknown_id() {
     let table = FakeTable::with_rows(vec![toolset_row("id-1", "alpha")]);
-    assert!(get_mcp_toolset(&table, "id-2").await.unwrap().is_none());
+    assert!(table.get_mcp_toolset("id-2").await.unwrap().is_none());
 }
 
 #[tokio::test]
@@ -280,7 +279,7 @@ async fn get_by_name_finds_the_matching_row() {
         toolset_row("id-1", "alpha"),
         toolset_row("id-2", "beta"),
     ]);
-    let found = get_mcp_toolset_by_name(&table, "beta").await.unwrap();
+    let found = table.get_mcp_toolset_by_name("beta").await.unwrap();
     assert_eq!(
         found.map(|toolset| toolset.toolset_id),
         Some("id-2".to_owned())
@@ -291,7 +290,8 @@ async fn get_by_name_finds_the_matching_row() {
 async fn get_by_name_returns_none_for_an_unknown_name() {
     let table = FakeTable::with_rows(vec![toolset_row("id-1", "alpha")]);
     assert!(
-        get_mcp_toolset_by_name(&table, "gamma")
+        table
+            .get_mcp_toolset_by_name("gamma")
             .await
             .unwrap()
             .is_none()
@@ -448,7 +448,7 @@ async fn update_returns_none_when_the_toolset_is_not_found() {
 #[tokio::test]
 async fn delete_returns_the_removed_toolset() {
     let table = FakeTable::with_rows(vec![toolset_row("id-1", "alpha")]);
-    let removed = delete_mcp_toolset(&table, "id-1").await.unwrap();
+    let removed = table.delete_mcp_toolset("id-1").await.unwrap();
     assert_eq!(
         removed.map(|toolset| toolset.toolset_name),
         Some("alpha".to_owned())
@@ -459,7 +459,7 @@ async fn delete_returns_the_removed_toolset() {
 #[tokio::test]
 async fn delete_returns_none_when_the_toolset_is_not_found() {
     let table = FakeTable::with_rows(vec![toolset_row("id-1", "alpha")]);
-    assert!(delete_mcp_toolset(&table, "id-2").await.unwrap().is_none());
+    assert!(table.delete_mcp_toolset("id-2").await.unwrap().is_none());
 }
 
 #[test]

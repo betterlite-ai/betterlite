@@ -1,8 +1,7 @@
-use betterlite_config::sections::mcp_toolset_storage::table::ToolsetRow;
+use betterlite_config::sections::mcp_toolset_storage::table::{ToolsetRow, ToolsetTable as _};
 use betterlite_config::sections::mcp_toolset_storage::{
     MCPToolset, MCPToolsetStorageError, MCPToolsetTool, NewMCPToolsetRequest,
-    UpdateMCPToolsetRequest, create_mcp_toolset, delete_mcp_toolset, get_mcp_toolset,
-    get_mcp_toolset_by_name, list_mcp_toolsets, update_mcp_toolset,
+    UpdateMCPToolsetRequest, create_mcp_toolset, list_mcp_toolsets, update_mcp_toolset,
 };
 use chrono::NaiveDateTime;
 use serde::Deserialize;
@@ -118,17 +117,15 @@ async fn create(input: &Input, store: &store::Store) -> HelperResult {
 
 async fn get(input: &Input, store: &store::Store) -> HelperResult {
     let toolset_id = required(input.toolset_id.as_deref())?;
-    let found = get_mcp_toolset(store, toolset_id)
-        .await
-        .map_err(|error| storage_error(&error))?;
+    let lookup = store.get_mcp_toolset(toolset_id).await;
+    let found = lookup.map_err(|error| storage_error(&error))?;
     optional(found)
 }
 
 async fn get_by_name(input: &Input, store: &store::Store) -> HelperResult {
     let toolset_name = required(input.toolset_name.as_deref())?;
-    let found = get_mcp_toolset_by_name(store, toolset_name)
-        .await
-        .map_err(|error| storage_error(&error))?;
+    let lookup = store.get_mcp_toolset_by_name(toolset_name).await;
+    let found = lookup.map_err(|error| storage_error(&error))?;
     optional(found)
 }
 
@@ -149,9 +146,8 @@ async fn update(input: &Input, store: &store::Store) -> HelperResult {
 
 async fn delete(input: &Input, store: &store::Store) -> HelperResult {
     let toolset_id = required(input.toolset_id.as_deref())?;
-    let removed = delete_mcp_toolset(store, toolset_id)
-        .await
-        .map_err(|error| storage_error(&error))?;
+    let lookup = store.delete_mcp_toolset(toolset_id).await;
+    let removed = lookup.map_err(|error| storage_error(&error))?;
     optional(removed)
 }
 

@@ -20,10 +20,10 @@ use tokio_postgres::types::ToSql;
 
 use crate::loader::startup::process_environment;
 use crate::sections::mcp_toolset_storage::sql::MCPToolsetRepository;
+use crate::sections::mcp_toolset_storage::table::ToolsetTable as _;
 use crate::sections::mcp_toolset_storage::{
     MCPToolsetStorageError, NewMCPToolsetRequest, UpdateMCPToolsetRequest, create_mcp_toolset,
-    delete_mcp_toolset, get_mcp_toolset, get_mcp_toolset_by_name, list_mcp_toolsets,
-    update_mcp_toolset,
+    list_mcp_toolsets, update_mcp_toolset,
 };
 
 use super::tool;
@@ -133,12 +133,14 @@ async fn postgres_round_trip_keeps_every_field() {
     assert_eq!(created.updated_by.as_deref(), Some("creator"));
     assert!(created.created_at.is_some());
     assert!(created.updated_at.is_some());
-    let loaded = get_mcp_toolset(&repository, &created.toolset_id)
+    let loaded = repository
+        .get_mcp_toolset(&created.toolset_id)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(loaded, created);
-    let by_name = get_mcp_toolset_by_name(&repository, "alpha")
+    let by_name = repository
+        .get_mcp_toolset_by_name("alpha")
         .await
         .unwrap()
         .unwrap();
@@ -168,11 +170,9 @@ async fn postgres_lists_only_the_requested_ids() {
         .await
         .unwrap();
     assert_eq!(listed, vec![beta.clone()]);
-    let fetched = get_mcp_toolset(&repository, &beta.toolset_id)
-        .await
-        .unwrap();
+    let fetched = repository.get_mcp_toolset(&beta.toolset_id).await.unwrap();
     assert_eq!(fetched, Some(beta.clone()));
-    let by_name = get_mcp_toolset_by_name(&repository, "beta").await.unwrap();
+    let by_name = repository.get_mcp_toolset_by_name("beta").await.unwrap();
     assert_eq!(by_name, Some(beta.clone()));
     assert_eq!(
         list_mcp_toolsets(&repository, Some(&ids), true)
@@ -284,7 +284,8 @@ async fn postgres_update_empties_the_tools_without_touching_another_toolset() {
         .unwrap();
     assert!(emptied.tools.is_empty());
     assert_eq!(emptied.toolset_id, created.toolset_id);
-    let untouched = get_mcp_toolset(&repository, &other.toolset_id)
+    let untouched = repository
+        .get_mcp_toolset(&other.toolset_id)
         .await
         .unwrap()
         .unwrap();
@@ -308,24 +309,28 @@ async fn postgres_delete_removes_the_row_once() {
     let other = create_mcp_toolset(&repository, &payload, "creator")
         .await
         .unwrap();
-    let removed = delete_mcp_toolset(&repository, &created.toolset_id)
+    let removed = repository
+        .delete_mcp_toolset(&created.toolset_id)
         .await
         .unwrap();
     assert_eq!(removed, Some(created.clone()));
     assert!(
-        get_mcp_toolset(&repository, &other.toolset_id)
+        repository
+            .get_mcp_toolset(&other.toolset_id)
             .await
             .unwrap()
             .is_some()
     );
     assert!(
-        delete_mcp_toolset(&repository, &created.toolset_id)
+        repository
+            .delete_mcp_toolset(&created.toolset_id)
             .await
             .unwrap()
             .is_none()
     );
     assert!(
-        get_mcp_toolset(&repository, &created.toolset_id)
+        repository
+            .get_mcp_toolset(&created.toolset_id)
             .await
             .unwrap()
             .is_none()
@@ -365,9 +370,7 @@ async fn postgres_surfaces_a_query_error_as_a_storage_error() {
     let case = Case::new().await;
     case.execute("DROP TABLE \"LiteLLM_MCPToolsetTable\"", &[])
         .await;
-    let error = get_mcp_toolset(&case.repository(), "id-1")
-        .await
-        .unwrap_err();
+    let error = case.repository().get_mcp_toolset("id-1").await.unwrap_err();
     assert!(matches!(
         error,
         MCPToolsetStorageError::Table(TableError::Database(_))
@@ -384,7 +387,8 @@ async fn postgres_reads_a_tools_column_stored_as_a_json_array() {
         &[&"id-array", &"alpha", &r#"[{"server_id": "s1", "tool_name": "t1"}]"#],
     )
     .await;
-    let loaded = get_mcp_toolset(&repository, "id-array")
+    let loaded = repository
+        .get_mcp_toolset("id-array")
         .await
         .unwrap()
         .unwrap();
