@@ -5,6 +5,8 @@ from typing import Literal, NotRequired, Protocol, TypedDict
 
 import httpx
 import litellm
+from fastuuid import UUID
+from litellm._uuid import uuid as litellm_uuid
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.infinity.rerank.transformation import InfinityRerankConfig
 from litellm.llms.jina_ai.rerank.transformation import JinaAIRerankConfig
@@ -15,6 +17,7 @@ Params = dict[str, JsonValue]
 Document = str | dict[str, JsonValue]
 OptText = str | None
 OptCount = int | None
+FALLBACK_ID = 0x0000_0000_0000_4000_8000_0000_0000_0001
 ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 MapParams = Callable[
@@ -98,6 +101,14 @@ class RecordingLogging(Logging):
     logger_fn: Hook | None = None
 
 
+class FixedUuid:
+    def __init__(self, value: int) -> None:
+        self.value = UUID(int=value)
+
+    def __call__(self) -> UUID:
+        return self.value
+
+
 JINA: RerankConfig = JinaAIRerankConfig()
 INFINITY: RerankConfig = InfinityRerankConfig()
 
@@ -149,6 +160,8 @@ def decode_reply(config: RerankConfig, input_value: Input, logging_object: Loggi
     reply = input_value.get("reply")
     if reply is None:
         return None
+    # an id-less reply must carry the same fixed id as the Rust helper
+    litellm_uuid.uuid4 = FixedUuid(FALLBACK_ID)
     transformed = config.transform_rerank_response(
         input_value["model"],
         httpx.Response(reply["status"], content=reply["body"]),

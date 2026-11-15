@@ -121,6 +121,7 @@ fn the_output_counter_is_not_clamped_at_zero() {
         result["response"]["meta"]["tokens"],
         json!({"input_tokens": 10_i32, "output_tokens": -6_i32})
     );
+    assert_eq!(result["response"]["id"], FIXED_ID);
 }
 
 #[test]
