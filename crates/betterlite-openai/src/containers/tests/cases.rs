@@ -80,6 +80,11 @@ fn base_with_v1() {
         urls::join_container_api_base_path("https://example.test", "/containers"),
         "https://example.test/containers"
     );
+    // a base that is not an absolute URL has no parsed path, so the join trims its slashes as text
+    assert_eq!(
+        urls::join_container_api_base_path("api.openai.com/v1/", "/containers"),
+        "api.openai.com/v1/containers"
+    );
 }
 
 fn base_with_containers() {
