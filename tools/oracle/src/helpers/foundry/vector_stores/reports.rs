@@ -19,13 +19,13 @@ use super::scenarios::{
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
-        Input::StoreTypeEndpoints(input) => Ok(store_type_endpoints_report(input)),
-        Input::AuthCredentials(input) => Ok(credentials::credentials_report(input)),
-        Input::SearchQueryFields(input) => Ok(search_report(input)),
-        Input::VectorQueryWithEmbedding(input) => embedded_report(input),
-        Input::DocumentScoreCitation(input) => Ok(citation::citation_report(input)),
-        Input::UnsupportedStoreCreate(input) => Ok(create::create_report(input)),
-        Input::AzureSearchEndpoint(input) => Ok(endpoint_report(input)),
+        Input::StoreTypeEndpoints(params) => Ok(store_type_endpoints_report(params)),
+        Input::AuthCredentials(scenarios) => Ok(credentials::credentials_report(scenarios)),
+        Input::SearchQueryFields(searches) => Ok(search_report(searches)),
+        Input::VectorQueryWithEmbedding(scenarios) => embedded_report(scenarios),
+        Input::DocumentScoreCitation(responses) => Ok(citation::citation_report(responses)),
+        Input::UnsupportedStoreCreate(params) => Ok(create::create_report(params)),
+        Input::AzureSearchEndpoint(scenarios) => Ok(endpoint_report(scenarios)),
     }
 }
 
@@ -49,7 +49,7 @@ fn search_outcome(scenario: &SearchScenario) -> Value {
     let embedding = scenario
         .embedding
         .clone()
-        .unwrap_or_else(|| vec![0.25, 0.5]);
+        .unwrap_or_else(|| vec![0.25_f64, 0.5_f64]);
     let executor = FixtureExecutor::new(vec![embedding]);
     let mut logging = SearchLogging::default();
     let outcome = search_request(AzureSearchStoreRequest {

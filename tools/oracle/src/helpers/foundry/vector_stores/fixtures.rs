@@ -57,6 +57,7 @@ impl FixtureExecutor {
             query: query.to_owned(),
             configuration: configuration.clone(),
         });
+        drop(calls);
         let selected = self
             .vectors
             .get(index)

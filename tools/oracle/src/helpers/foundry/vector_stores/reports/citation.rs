@@ -23,7 +23,7 @@ pub(super) fn citation_report(input: &DocumentScoreCitationInput) -> Value {
 fn citation_outcome(scenario: &CitationScenario) -> Value {
     let mut logging = SearchLogging::default();
     if let Some(search) = &scenario.before_search {
-        let executor = FixtureExecutor::new(vec![vec![0.25, 0.5]]);
+        let executor = FixtureExecutor::new(vec![vec![0.25_f64, 0.5_f64]]);
         let call = search_request(AzureSearchStoreRequest {
             vector_store_id: &search.vector_store_id,
             query: &search.query,
