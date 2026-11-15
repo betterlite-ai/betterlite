@@ -1,0 +1,9 @@
+kind: helper
+name: legacy-vertex-plan-null-fields-seed
+call:
+  legacy_vertex_plan:
+    model: "chat-bison"
+    project: null
+    location: null
+env: {}
+compare: {ignore: []}
