@@ -1,3 +1,5 @@
+use std::ops::Not as _;
+
 use uuid::Uuid;
 
 pub const CONFIG_GUARDRAIL_ID_NAMESPACE: Uuid =
@@ -12,7 +14,6 @@ pub fn stable_guardrail_id(guardrail_name: &str, taken: &dyn Fn(&str) -> bool) -
             _ => format!("{guardrail_name}:{occurrence}"),
         })
         .map(|seed| Uuid::new_v5(&CONFIG_GUARDRAIL_ID_NAMESPACE, seed.as_bytes()).to_string())
-        .skip_while(|candidate| taken(candidate))
-        .next()
+        .find(|candidate| taken(candidate).not())
         .unwrap_or_default()
 }
