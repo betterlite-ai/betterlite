@@ -13,7 +13,6 @@ use betterlite_http::proxy::base_builder;
 
 use super::error::{ZscalerAiGuardError, ZscalerErrorDetail};
 use super::metadata;
-use super::printed::{quote_text, repr_text, str_text};
 use super::wire::PolicyResponse;
 use super::{SUPPORTED_EVENT_HOOKS, ZscalerAiGuard};
 use crate::generic_guardrail_contracts::GuardrailInputType;
@@ -613,47 +612,6 @@ async fn a_transport_error_is_a_500() {
         .unwrap_err();
     assert!(matches!(error, ZscalerAiGuardError::Request { .. }));
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-}
-
-#[test]
-fn printed_text_is_a_string_or_the_value_repr() {
-    assert_eq!(str_text(&GuardrailValue::Text("abc".to_owned())), "abc");
-    assert_eq!(str_text(&GuardrailValue::SignedInteger(7)), "7");
-    assert_eq!(str_text(&GuardrailValue::Null), "None");
-    assert_eq!(str_text(&GuardrailValue::Boolean(true)), "True");
-}
-
-#[test]
-fn printed_repr_renders_each_value_like_python() {
-    assert_eq!(repr_text(&GuardrailValue::Null), "None");
-    assert_eq!(repr_text(&GuardrailValue::Boolean(false)), "False");
-    assert_eq!(repr_text(&GuardrailValue::SignedInteger(-3)), "-3");
-    assert_eq!(repr_text(&GuardrailValue::UnsignedInteger(3)), "3");
-    assert_eq!(repr_text(&GuardrailValue::Decimal(2.0)), "2.0");
-    assert_eq!(repr_text(&GuardrailValue::Decimal(1.25)), "1.25");
-    assert_eq!(repr_text(&GuardrailValue::Text("a".to_owned())), "'a'");
-    assert_eq!(
-        repr_text(&GuardrailValue::Array(vec![
-            GuardrailValue::SignedInteger(1),
-            GuardrailValue::Null,
-        ])),
-        "[1, None]"
-    );
-    let mut fields = BTreeMap::new();
-    let _previous = fields.insert("k".to_owned(), GuardrailValue::Text("v".to_owned()));
-    assert_eq!(repr_text(&GuardrailValue::Object(fields)), "{'k': 'v'}");
-}
-
-#[test]
-fn printed_repr_quotes_and_escapes_strings() {
-    assert_eq!(quote_text("plain"), "'plain'");
-    assert_eq!(quote_text("a space"), "'a space'");
-    assert_eq!(quote_text("it's"), "\"it's\"");
-    assert_eq!(quote_text("a'b\"c"), r#"'a\'b"c'"#);
-    assert_eq!(quote_text("a\\b\n\t"), r"'a\\b\n\t'");
-    assert_eq!(quote_text("\u{7}"), r"'\x07'");
-    assert_eq!(quote_text("\u{2028}"), r"'\u2028'");
-    assert_eq!(quote_text("\u{e0001}"), r"'\U000e0001'");
 }
 
 #[test]

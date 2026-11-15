@@ -2,7 +2,6 @@ pub mod error;
 mod guardrail;
 pub mod init;
 mod metadata;
-mod printed;
 pub mod settings;
 mod tests;
 pub mod wire;

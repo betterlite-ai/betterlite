@@ -8,10 +8,10 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, Header
 use secrecy::ExposeSecret as _;
 
 use super::error::ZscalerAiGuardError;
-use super::printed::{quote_text, repr_text, str_text};
 use super::wire::{Direction, PolicyRequest, PolicyResponse};
 use super::{Inputs, MAX_RESPONSE_BYTES, ZscalerAiGuard, metadata, settings};
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::generic_guardrail_contracts::headers::{python_repr, python_str, quote_python_string};
 
 struct UserKeyHeaders {
     alias: Option<String>,
@@ -189,11 +189,11 @@ fn status_code_reason(answer: &PolicyResponse) -> String {
         answer
             .status_code
             .as_ref()
-            .map_or_else(|| "None".to_owned(), str_text),
+            .map_or_else(|| "None".to_owned(), python_str),
         answer
             .error_message
             .as_ref()
-            .map_or_else(|| "None".to_owned(), str_text),
+            .map_or_else(|| "None".to_owned(), python_str),
     )
 }
 
@@ -220,7 +220,7 @@ fn match_answer(answer: &PolicyResponse) -> Result<(), ZscalerAiGuardError> {
             answer
                 .action
                 .as_ref()
-                .map_or_else(|| "None".to_owned(), str_text),
+                .map_or_else(|| "None".to_owned(), python_str),
         ),
     })
 }
@@ -246,7 +246,7 @@ fn blocking_info(answer: &PolicyResponse) -> Result<String, ZscalerAiGuardError>
     let transaction = answer
         .transaction_id
         .as_ref()
-        .map_or_else(|| "None".to_owned(), repr_text);
+        .map_or_else(|| "None".to_owned(), python_repr);
     let mut detectors: Vec<String> = Vec::new();
     for (name, details) in &answer.detector_responses {
         let GuardrailValue::Object(fields) = details else {
@@ -257,7 +257,7 @@ fn blocking_info(answer: &PolicyResponse) -> Result<String, ZscalerAiGuardError>
             Some(GuardrailValue::Text(action)) if action == "BLOCK"
         );
         if blocking {
-            detectors.push(quote_text(name));
+            detectors.push(quote_python_string(name));
         }
     }
     Ok(format!(

@@ -1,6 +1,20 @@
 use super::GuardrailExtraValue;
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use unicode_general_category::{GeneralCategory, get_general_category};
+
+// the categories Python's str.isprintable() rejects, so repr escapes exactly its characters
+const NON_PRINTABLE: [GeneralCategory; 8] = [
+    GeneralCategory::Control,
+    GeneralCategory::Format,
+    GeneralCategory::PrivateUse,
+    GeneralCategory::Surrogate,
+    GeneralCategory::Unassigned,
+    GeneralCategory::LineSeparator,
+    GeneralCategory::ParagraphSeparator,
+    GeneralCategory::SpaceSeparator,
+];
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct HeaderContext {
@@ -42,7 +56,7 @@ pub fn sanitize_inbound_headers(
     let mut sanitized = BTreeMap::new();
     for (name, raw_value) in headers {
         if header_value_allowed(name, extra_allowlist) {
-            sanitized.insert(name.clone(), coerce_header_value(raw_value));
+            sanitized.insert(name.clone(), python_str(raw_value));
         } else {
             sanitized.insert(name.clone(), "[present]".to_owned());
         }
@@ -147,15 +161,17 @@ fn logging_headers(
     context.headers.as_ref()
 }
 
-fn coerce_header_value(raw_value: &GuardrailExtraValue) -> String {
-    if let GuardrailExtraValue::Text(text) = raw_value {
+// Python's str(): a string as given, and every other value by its repr text
+pub(crate) fn python_str(value: &GuardrailExtraValue) -> String {
+    if let GuardrailExtraValue::Text(text) = value {
         text.clone()
     } else {
-        format_python_value(raw_value)
+        python_repr(value)
     }
 }
 
-fn format_python_value(value: &GuardrailExtraValue) -> String {
+// Python's repr(): strings are quoted and the rest is written the way Python prints the value
+pub(crate) fn python_repr(value: &GuardrailExtraValue) -> String {
     match value {
         GuardrailExtraValue::Null => "None".to_owned(),
         GuardrailExtraValue::Boolean(boolean) => {
@@ -167,12 +183,12 @@ fn format_python_value(value: &GuardrailExtraValue) -> String {
         }
         GuardrailExtraValue::SignedInteger(number) => number.to_string(),
         GuardrailExtraValue::UnsignedInteger(number) => number.to_string(),
-        GuardrailExtraValue::Decimal(number) => number.to_string(),
+        GuardrailExtraValue::Decimal(number) => decimal_repr(*number),
         GuardrailExtraValue::Text(text) => quote_python_string(text),
         GuardrailExtraValue::Array(values) => {
             let rendered_values = values
                 .iter()
-                .map(format_python_value)
+                .map(python_repr)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("[{rendered_values}]")
@@ -184,7 +200,7 @@ fn format_python_value(value: &GuardrailExtraValue) -> String {
                     format!(
                         "{}: {}",
                         quote_python_string(key),
-                        format_python_value(nested_value)
+                        python_repr(nested_value)
                     )
                 })
                 .collect::<Vec<_>>()
@@ -194,7 +210,8 @@ fn format_python_value(value: &GuardrailExtraValue) -> String {
     }
 }
 
-fn quote_python_string(value: &str) -> String {
+// Python repr() quotes with ' unless the text holds one and no ", and escapes every character str.isprintable() rejects
+pub(crate) fn quote_python_string(value: &str) -> String {
     let quote = if value.contains('\'') && !value.contains('"') {
         '"'
     } else {
@@ -204,16 +221,40 @@ fn quote_python_string(value: &str) -> String {
     for character in value.chars() {
         match character {
             '\\' => quoted.push_str("\\\\"),
-            delimiter if delimiter == quote => {
-                quoted.push('\\');
-                quoted.push(delimiter);
-            }
             '\n' => quoted.push_str("\\n"),
             '\r' => quoted.push_str("\\r"),
             '\t' => quoted.push_str("\\t"),
-            other => quoted.push(other),
+            escaped if escaped == quote => {
+                quoted.push('\\');
+                quoted.push(escaped);
+            }
+            other if other == ' ' || !NON_PRINTABLE.contains(&get_general_category(other)) => {
+                quoted.push(other);
+            }
+            other => {
+                let _written = write_escape(&mut quoted, other);
+            }
         }
     }
     quoted.push(quote);
     quoted
+}
+
+// Python's repr(float) keeps the .0 on a whole number and writes every other value in its shortest form
+fn decimal_repr(number: f64) -> String {
+    if number.is_finite() && number.fract() == 0.0 {
+        format!("{number:.1}")
+    } else {
+        number.to_string()
+    }
+}
+
+fn write_escape(rendered: &mut String, character: char) -> std::fmt::Result {
+    if let Ok(code) = u8::try_from(character) {
+        write!(rendered, "\\x{code:02x}")
+    } else if let Ok(code) = u16::try_from(character) {
+        write!(rendered, "\\u{code:04x}")
+    } else {
+        write!(rendered, "\\U{:08x}", u32::from(character))
+    }
 }

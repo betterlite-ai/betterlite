@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::error::ZscalerAiGuardError;
-use super::printed::str_text;
+use crate::generic_guardrail_contracts::headers::python_str;
 
 const METADATA: &str = "metadata";
 const LITELLM_METADATA: &str = "litellm_metadata";
@@ -59,7 +59,7 @@ fn metadata_value(
         .and_then(|fields| fields.get(key))
         .filter(|value| !matches!(value, GuardrailValue::Null))
     {
-        return Ok(Some(str_text(value).trim().to_owned()));
+        return Ok(Some(python_str(value).trim().to_owned()));
     }
     // transform_user_api_key_dict_to_metadata prefixes key_alias with user_api_key_
     if key == ALIAS
@@ -67,14 +67,14 @@ fn metadata_value(
             .and_then(|fields| fields.get(KEY_ALIAS))
             .filter(|value| !matches!(value, GuardrailValue::Null))
     {
-        return Ok(Some(str_text(value).trim().to_owned()));
+        return Ok(Some(python_str(value).trim().to_owned()));
     }
     let metadata = section(request_data, METADATA)?;
     if let Some(value) = metadata
         .and_then(|fields| fields.get(key))
         .filter(|value| !matches!(value, GuardrailValue::Null))
     {
-        return Ok(Some(str_text(value).trim().to_owned()));
+        return Ok(Some(python_str(value).trim().to_owned()));
     }
     Ok(None)
 }
