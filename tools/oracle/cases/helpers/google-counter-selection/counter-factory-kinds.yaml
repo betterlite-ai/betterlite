@@ -1,0 +1,7 @@
+kind: helper
+name: google-counter-selection-factory-kinds
+call:
+  google_counter_selection:
+    providers: []
+env: {}
+compare: {ignore: []}
