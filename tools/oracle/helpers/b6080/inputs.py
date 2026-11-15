@@ -29,13 +29,27 @@ class ChunkInput(TypedDict):
     cases: list[ChunkCase]
 
 
+class FunctionOut(TypedDict):
+    name: str
+    arguments: str
+
+
+class ToolCallOut(TypedDict):
+    index: int
+    type: str
+    id: str
+    function: FunctionOut
+
+
 class DeltaOut(TypedDict):
     content: str | None
     reasoning_content: NotRequired[str | None]
+    tool_calls: list[ToolCallOut] | None
 
 
 class ChoiceOut(TypedDict):
     index: int
+    finish_reason: str | None
     delta: DeltaOut
 
 
@@ -45,6 +59,7 @@ class ChunkOut(TypedDict):
     created: int
     model: str
     choices: list[ChoiceOut]
+    usage: dict[str, JsonValue] | None
 
 
 class EmbeddingCase(TypedDict):

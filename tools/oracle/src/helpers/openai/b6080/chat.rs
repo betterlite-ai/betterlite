@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use betterlite_openai::chat::ChatMessage;
+use betterlite_openai::chat_choices::wire::{DeltaToolCall, StreamChoice};
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
@@ -124,23 +125,44 @@ pub(super) fn chunk(case: &ChunkCase) -> Value {
             return json!({"error": {"message": error.message, "status": error.status_code}});
         }
     };
-    let choices: Vec<Value> = reply
-        .choices
-        .iter()
-        .map(|choice| {
-            let mut delta = Map::new();
-            delta.insert(String::from("content"), json!(choice.delta.content));
-            if let Some(reasoning) = &choice.delta.reasoning_content {
-                delta.insert(String::from("reasoning_content"), json!(reasoning));
-            }
-            json!({"index": choice.index, "delta": delta})
-        })
-        .collect();
+    let choices: Vec<Value> = reply.choices.iter().map(choice_json).collect();
     json!({
         "id": reply.id,
         "object": reply.object,
         "created": reply.created,
         "model": reply.model,
         "choices": choices,
+        "usage": reply.usage,
+    })
+}
+
+fn choice_json(choice: &StreamChoice) -> Value {
+    let mut delta = Map::new();
+    delta.insert(String::from("content"), json!(choice.delta.content));
+    if let Some(reasoning) = &choice.delta.reasoning_content {
+        delta.insert(String::from("reasoning_content"), json!(reasoning));
+    }
+    let calls: Option<Vec<Value>> = choice
+        .delta
+        .tool_calls
+        .as_ref()
+        .map(|calls| calls.iter().map(tool_call_json).collect());
+    delta.insert(String::from("tool_calls"), json!(calls));
+    json!({
+        "index": choice.index,
+        "finish_reason": choice.finish_reason,
+        "delta": delta,
+    })
+}
+
+fn tool_call_json(call: &DeltaToolCall) -> Value {
+    json!({
+        "index": call.index,
+        "type": call.kind,
+        "id": call.id.clone().flatten(),
+        "function": call.function.as_ref().map(|function| json!({
+            "name": function.name,
+            "arguments": function.arguments,
+        })),
     })
 }
