@@ -68,35 +68,8 @@ impl Entry {
         L: EnvironmentLookup,
     {
         let prefix = format!("guardrails.{index}.litellm_params");
-        let configured_key = self
-            .litellm_params
-            .api_key
-            .filter(|key| !key.expose_secret().is_empty());
-        let api_key = match configured_key {
-            Some(key) => Some(SecretString::from(resolve_string(
-                key.expose_secret().to_owned(),
-                &format!("{prefix}.api_key"),
-                lookup,
-            )?)),
-            None => lookup
-                .lookup(API_KEY_ENV)
-                .filter(|key| !key.is_empty())
-                .map(SecretString::from),
-        };
-        let api_base = match self
-            .litellm_params
-            .api_base
-            .filter(|value| !value.is_empty())
-        {
-            Some(value) => Some(resolve_string(
-                value,
-                &format!("{prefix}.api_base"),
-                lookup,
-            )?),
-            None => lookup
-                .lookup(API_BASE_ENV)
-                .filter(|value| !value.is_empty()),
-        };
+        let api_key = resolve_api_key(self.litellm_params.api_key, &prefix, lookup)?;
+        let api_base = resolve_api_base(self.litellm_params.api_base, &prefix, lookup)?;
         let fallback_path = format!("{prefix}.unreachable_fallback");
         let unreachable_fallback = match self.litellm_params.unreachable_fallback {
             Some(value) => parse_unreachable_fallback(&value, &fallback_path)?,
@@ -108,6 +81,48 @@ impl Entry {
             api_base,
             unreachable_fallback,
         })
+    }
+}
+
+fn resolve_api_key<L>(
+    configured: Option<SecretString>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<Option<SecretString>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let configured = configured.filter(|key| !key.expose_secret().is_empty());
+    match configured {
+        Some(key) => Ok(Some(SecretString::from(resolve_string(
+            key.expose_secret().to_owned(),
+            &format!("{prefix}.api_key"),
+            lookup,
+        )?))),
+        None => Ok(lookup
+            .lookup(API_KEY_ENV)
+            .filter(|key| !key.is_empty())
+            .map(SecretString::from)),
+    }
+}
+
+fn resolve_api_base<L>(
+    configured: Option<String>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<Option<String>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    match configured.filter(|value| !value.is_empty()) {
+        Some(value) => Ok(Some(resolve_string(
+            value,
+            &format!("{prefix}.api_base"),
+            lookup,
+        )?)),
+        None => Ok(lookup
+            .lookup(API_BASE_ENV)
+            .filter(|value| !value.is_empty())),
     }
 }
 
