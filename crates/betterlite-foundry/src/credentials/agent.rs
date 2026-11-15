@@ -5,7 +5,7 @@ use betterlite_azure::credentials::source::{CallableTokenProvider, CredentialSou
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::CredentialsError;
 use super::{

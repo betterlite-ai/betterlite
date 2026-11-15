@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_azure::credentials::source::CredentialSources;
 use betterlite_prompts::arguments::json::Object;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::entra::{EntraTokenRequest, get_azure_ai_entra_token};
 use super::error::CredentialsError;
