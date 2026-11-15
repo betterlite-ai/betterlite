@@ -182,8 +182,16 @@ fn upload_size_boundaries_restore_a_seekable_position() {
 #[test]
 fn batch_size_and_extension_prefers_the_extension() {
     let oversized = vec![b'x'; 2_000_000];
+    let mut body = FileBody::Bytes(&oversized);
     assert_eq!(
-        batch_failure(&oversized, Some("x.txt")),
+        check_batch_file_upload(
+            Some("x.txt"),
+            &mut body,
+            Some(1),
+            LineShape::OpenAi,
+            limits()
+        )
+        .unwrap(),
         Some(BatchValidationFailure::WrongExtension {
             filename: "x.txt".to_owned(),
         })
