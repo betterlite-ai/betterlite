@@ -231,15 +231,15 @@ def conflict_view(conflict: mcp_db.McpIdentifierConflict | None) -> ConflictView
     return {"field": conflict.field, "value": conflict.value, "server_id": conflict.server_id}
 
 
-def create_call(client: FakeClient, value: CreateIfFree) -> CreateOutput:
-    request = NewMCPServerRequest.model_construct(
-        server_name=value["server_name"], alias=value["alias"]
-    )
+def create_call(client: FakeClient, call: CreateIfFree) -> CreateOutput:
+    req = NewMCPServerRequest.model_construct(server_name=call["server_name"], alias=call["alias"])
     conflict: mcp_db.McpIdentifierConflict | None = None
     with suppress(LookupError):
-        match asyncio.run(mcp_db.create_mcp_server_if_identifier_free(client, request, "tester")):
+        match asyncio.run(mcp_db.create_mcp_server_if_identifier_free(client, req, "tester")):
             case mcp_db.McpIdentifierConflict() as found:
                 conflict = found
+            case _:
+                pass
     table = client.fake_table
     return {"conflict": conflict_view(conflict), "lock_keys": table.locks, "written": table.created}
 

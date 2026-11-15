@@ -2,10 +2,9 @@ use crate::proxy_helpers::checks::{self, ProxyCheckError};
 
 mod tests;
 
+#[must_use]
 // ast-grep-ignore: no-one-line-functions - mirrors LiteLLM's fn _get_prisma_client_or_none over an injected handle
-pub fn get_prisma_client_or_none<'database, Client>(
-    database: Option<&'database Client>,
-) -> Option<&'database Client> {
+pub const fn get_prisma_client_or_none<Client>(database: Option<&Client>) -> Option<&Client> {
     database
 }
 
