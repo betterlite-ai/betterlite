@@ -110,19 +110,13 @@ class Fixture:
 
 
 class Logger(Logging):
+    @override
     def __init__(self) -> None:
-        self.seen: dict[str, str | None] = {}
+        pass
 
     @override
-    def pre_call(
-        self,
-        input: str | None = None,
-        api_key: str = "",
-        model: str | None = None,
-        additional_args: dict[str, JsonValue] | None = None,
-    ) -> None:
-        self.seen = {"input": input, "api_key": api_key, "model": model}
-        del additional_args
+    def pre_call(self, *args: JsonValue, **params: JsonValue) -> None:
+        del args, params
 
 
 def apply_globals(values: Controls) -> None:
