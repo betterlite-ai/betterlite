@@ -14,6 +14,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::Runtime;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
@@ -118,7 +119,6 @@ fn query_json(value: &QueryParams) -> Value {
 
 fn pre_call_json(call: &RecordedCall) -> Value {
     json!({
-        "input": Value::Null,
         "api_base": call.api_base,
         "header_names": call.headers.keys().cloned().collect::<Vec<_>>(),
         "openai_beta": call.headers.get(OPENAI_BETA_HEADER),
@@ -126,43 +126,54 @@ fn pre_call_json(call: &RecordedCall) -> Value {
     })
 }
 
+fn connect_view(
+    input: &Input,
+    setup: &QuerySetup,
+    beta: bool,
+    verification: &Verification,
+    logger: &mut RecordingLogger,
+) -> Result<Value, Box<HelperError>> {
+    let params: Option<QueryParams> = setup
+        .query_params
+        .as_ref()
+        .map(|map| map.clone().into_iter().collect());
+    let api_key = input.api_key.as_deref().map(SecretString::from);
+    let start = logger.calls.len();
+    let plan = prepare_connection(
+        &RealtimeConnectSettings {
+            api_base: setup.api_base.as_deref(),
+            api_key: api_key.as_ref(),
+            model: &input.model,
+            query_params: params.as_ref(),
+            beta_realtime: beta,
+            ssl_verification: verification,
+            max_message_size_bytes: input.max_message_size_bytes,
+        },
+        &mut *logger,
+    )
+    .map_err(|error| helper_error(&error.to_string()))?;
+    let call = logger
+        .calls
+        .get(start)
+        .ok_or_else(|| helper_error("the pre-call log was not recorded"))?;
+    Ok(json!({
+        "url": plan.url,
+        "headers": plan.headers.iter().map(|(name, value)| (name.clone(), value.clone())).collect::<Vec<_>>(),
+        "max_size": plan.max_message_size_bytes,
+        "ssl": plan.ssl,
+        "pre_call": pre_call_json(call),
+    }))
+}
+
 fn connect_answer(input: &Input) -> HelperResult {
     let verification = input.ssl_verification.verification();
     let beta = beta_realtime(input);
     let mut logger = RecordingLogger::default();
-    let mut connects = Vec::with_capacity(input.queries.len());
-    for setup in &input.queries {
-        let params: Option<QueryParams> = setup
-            .query_params
-            .as_ref()
-            .map(|map| map.clone().into_iter().collect());
-        let api_key = input.api_key.as_deref().map(SecretString::from);
-        let start = logger.calls.len();
-        let plan = prepare_connection(
-            &RealtimeConnectSettings {
-                api_base: setup.api_base.as_deref(),
-                api_key: api_key.as_ref(),
-                model: &input.model,
-                query_params: params.as_ref(),
-                beta_realtime: beta,
-                ssl_verification: &verification,
-                max_message_size_bytes: input.max_message_size_bytes,
-            },
-            &mut logger,
-        )
-        .map_err(|error| helper_error(&error.to_string()))?;
-        let call = logger
-            .calls
-            .get(start)
-            .ok_or_else(|| helper_error("the pre-call log was not recorded"))?;
-        connects.push(json!({
-            "url": plan.url,
-            "headers": plan.headers.iter().map(|(name, value)| (name.clone(), value.clone())).collect::<Vec<_>>(),
-            "max_size": plan.max_message_size_bytes,
-            "ssl": plan.ssl,
-            "pre_call": pre_call_json(call),
-        }));
-    }
+    let connects = input
+        .queries
+        .iter()
+        .map(|setup| connect_view(input, setup, beta, &verification, &mut logger))
+        .collect::<Result<Vec<_>, Box<HelperError>>>()?;
     Ok(json!({"connects": connects}))
 }
 
@@ -204,34 +215,43 @@ const fn failure_frame(action: &ClientAction) -> Option<&RealtimeClose> {
     }
 }
 
+fn failure_view(
+    input: &Input,
+    failure: &FailureSetup,
+    redactor: &Redactor,
+    executor: &Runtime,
+) -> Result<Value, Box<HelperError>> {
+    let mut socket = RecordingSocket {
+        scope: WebSocketScope {
+            headers: input.scope_headers.clone(),
+        },
+        sent: Vec::new(),
+        closed: None,
+        close_error: failure.close_error.clone(),
+    };
+    let action = failure_action(input.kind, failure, redactor)?;
+    if let Some(frame) = failure_frame(&action) {
+        drop(executor.block_on(socket.close(frame.code, Some(&frame.reason))));
+    }
+    if let ClientAction::RefuseHandshake { status_code } = action {
+        executor
+            .block_on(close_after_handshake_refusal(&mut socket, status_code))
+            .map_err(|error| helper_error(&error.to_string()))?;
+    }
+    Ok(json!({
+        "sent": sent_json(&socket)?,
+        "closed": closed_json(&socket),
+        "close_raised": socket.close_error.is_some(),
+    }))
+}
+
 fn failure_answer(input: &Input) -> HelperResult {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|error| helper_error(&error.to_string()))?;
     let executor = runtime()?;
     let mut failures = Vec::with_capacity(input.failures.len());
     for failure in &input.failures {
-        let mut socket = RecordingSocket {
-            scope: WebSocketScope {
-                headers: input.scope_headers.clone(),
-            },
-            sent: Vec::new(),
-            closed: None,
-            close_error: failure.close_error.clone(),
-        };
-        let action = failure_action(input.kind, failure, &redactor)?;
-        if let Some(frame) = failure_frame(&action) {
-            drop(executor.block_on(socket.close(frame.code, Some(&frame.reason))));
-        }
-        if let ClientAction::RefuseHandshake { status_code } = action {
-            executor
-                .block_on(close_after_handshake_refusal(&mut socket, status_code))
-                .map_err(|error| helper_error(&error.to_string()))?;
-        }
-        failures.push(json!({
-            "sent": sent_json(&socket)?,
-            "closed": closed_json(&socket),
-            "close_raised": socket.close_error.is_some(),
-        }));
+        failures.push(failure_view(input, failure, &redactor, &executor)?);
     }
     Ok(json!({"failures": failures}))
 }
