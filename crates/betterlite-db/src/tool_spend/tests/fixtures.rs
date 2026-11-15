@@ -4,7 +4,7 @@ use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
-use tokio_postgres::{Client, Config, NoTls};
+use tokio_postgres::{Client, Config, NoTls, Row};
 
 use crate::postgres_store::session::PostgresStore;
 
@@ -83,39 +83,35 @@ impl ToolSpendCase {
     }
 
     pub(super) async fn index_rows(&self) -> Vec<(String, String, NaiveDateTime)> {
-        let rows = self
-            .client
-            .query(INDEX_ROWS_SQL, &[])
-            .await
-            .expect("the tool index rows");
-        rows.iter()
-            .map(|row| {
-                (
-                    row.get("request_id"),
-                    row.get("tool_name"),
-                    row.get("start_time"),
-                )
-            })
-            .collect()
+        self.rows(INDEX_ROWS_SQL, |row| {
+            (
+                row.get("request_id"),
+                row.get("tool_name"),
+                row.get("start_time"),
+            )
+        })
+        .await
     }
 
     pub(super) async fn daily_rollups(&self) -> Vec<(String, String, f64, i64, i64)> {
-        let rows = self
-            .client
-            .query(DAILY_ROLLUPS_SQL, &[])
-            .await
-            .expect("the daily tool spend rollups");
-        rows.iter()
-            .map(|row| {
-                (
-                    row.get("date"),
-                    row.get("tool_name"),
-                    row.get("spend"),
-                    row.get("total_tokens"),
-                    row.get("request_count"),
-                )
-            })
-            .collect()
+        self.rows(DAILY_ROLLUPS_SQL, |row| {
+            (
+                row.get("date"),
+                row.get("tool_name"),
+                row.get("spend"),
+                row.get("total_tokens"),
+                row.get("request_count"),
+            )
+        })
+        .await
+    }
+
+    async fn rows<T, Read>(&self, sql: &str, read: Read) -> Vec<T>
+    where
+        Read: Fn(&Row) -> T,
+    {
+        let rows = self.client.query(sql, &[]).await.expect("a fixture query");
+        rows.iter().map(read).collect()
     }
 }
 

@@ -1,6 +1,8 @@
+use std::slice::from_ref;
 use std::time::Duration;
 
 use chrono::DateTime;
+use rust_decimal::Decimal;
 
 use super::fixtures::{ToolSpendCase, unreachable_store};
 use super::{FixedJitter, REQUEST_TIME, RecordingPause, policy, transaction};
@@ -26,8 +28,14 @@ async fn flushes_index_rows_and_daily_rollups() {
         store: case.store.clone(),
     };
     let transactions = [
-        transaction("req-1", "2026-01-02", &["search", "fetch"], (125, 2), 42),
-        transaction("req-2", "2026-01-03", &["fetch"], (75, 2), 8),
+        transaction(
+            "req-1",
+            "2026-01-02",
+            &["search", "fetch"],
+            Decimal::new(125, 2),
+            42,
+        ),
+        transaction("req-2", "2026-01-03", &["fetch"], Decimal::new(75, 2), 8),
     ];
     let jitter = FixedJitter { nanos: 0 };
     let pause = RecordingPause::default();
@@ -91,7 +99,7 @@ async fn rolls_back_every_daily_increment_when_a_later_upsert_fails() {
         "req-1",
         "2026-01-02",
         &["alpha", "blocked"],
-        (125, 2),
+        Decimal::new(125, 2),
         42,
     )];
     let jitter = FixedJitter { nanos: 0 };
@@ -136,7 +144,7 @@ async fn retries_a_pool_that_cannot_connect_and_then_gives_up() {
         "req-1",
         "2026-01-02",
         &["search"],
-        (125, 2),
+        Decimal::new(125, 2),
         42,
     )];
     let jitter = FixedJitter { nanos: 0 };
@@ -172,11 +180,11 @@ async fn an_index_statement_skips_a_duplicate_row() {
         DateTime::from_timestamp(REQUEST_TIME, 0).expect("a test instant"),
     );
     writer
-        .write_index_rows(std::slice::from_ref(&row))
+        .write_index_rows(from_ref(&row))
         .await
         .expect("the first index write");
     writer
-        .write_index_rows(std::slice::from_ref(&row))
+        .write_index_rows(from_ref(&row))
         .await
         .expect("a duplicate index row is skipped");
     assert_eq!(

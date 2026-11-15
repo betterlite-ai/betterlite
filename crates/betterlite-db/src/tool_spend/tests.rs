@@ -71,6 +71,17 @@ impl FakeWriter {
         failures.pop_front().map(|(_, failure)| failure)
     }
 
+    fn record<T>(&self, writes: &Mutex<Vec<T>>, batch: T, stage: Stage) -> Result<(), FakeFailure> {
+        writes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(batch);
+        match self.take_failure(stage) {
+            Some(failure) => Err(failure),
+            None => Ok(()),
+        }
+    }
+
     fn index_calls(&self) -> Vec<Vec<(String, String)>> {
         self.index_writes
             .lock()
@@ -98,14 +109,7 @@ impl ToolSpendWriter for FakeWriter {
                 .iter()
                 .map(|row| (row.request_id.clone(), row.tool_name.clone()))
                 .collect();
-            self.index_writes
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(recorded);
-            match self.take_failure(Stage::Index) {
-                Some(failure) => Err(failure),
-                None => Ok(()),
-            }
+            self.record(&self.index_writes, recorded, Stage::Index)
         })
     }
 
@@ -113,16 +117,7 @@ impl ToolSpendWriter for FakeWriter {
         &'writer self,
         rollups: &'writer [ToolDayRollup],
     ) -> FlushFuture<'writer, Self::Error> {
-        Box::pin(async move {
-            self.rollup_writes
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(rollups.to_vec());
-            match self.take_failure(Stage::Rollup) {
-                Some(failure) => Err(failure),
-                None => Ok(()),
-            }
-        })
+        Box::pin(async move { self.record(&self.rollup_writes, rollups.to_vec(), Stage::Rollup) })
     }
 }
 
@@ -165,32 +160,17 @@ fn transaction(
     request_id: &str,
     date: &str,
     tool_names: &[&str],
-    spend: (i64, u32),
+    spend: Decimal,
     total_tokens: i64,
 ) -> ToolUsageTransaction {
+    let start_time = DateTime::from_timestamp(REQUEST_TIME, 0).expect("a test instant");
     ToolUsageTransaction {
         request_id: request_id.to_owned(),
         date: date.to_owned(),
-        start_time: DateTime::from_timestamp(REQUEST_TIME, 0).unwrap(),
+        start_time,
         tool_names: tool_names.iter().map(|name| (*name).to_owned()).collect(),
-        spend: Decimal::new(spend.0, spend.1),
+        spend,
         total_tokens,
-    }
-}
-
-fn rollup(
-    date: &str,
-    tool_name: &str,
-    spend: (i64, u32),
-    total_tokens: i64,
-    request_count: i64,
-) -> ToolDayRollup {
-    ToolDayRollup {
-        date: date.to_owned(),
-        tool_name: tool_name.to_owned(),
-        spend: Decimal::new(spend.0, spend.1),
-        total_tokens,
-        request_count,
     }
 }
 
@@ -219,20 +199,32 @@ async fn flush_with(
 
 fn mixed_batch() -> [ToolUsageTransaction; 2] {
     [
-        transaction("req-1", "2026-01-02", &["search", "fetch"], (125, 2), 42),
-        transaction("req-2", "2026-01-02", &["fetch"], (75, 2), 8),
+        transaction(
+            "req-1",
+            "2026-01-02",
+            &["search", "fetch"],
+            Decimal::new(125, 2),
+            42,
+        ),
+        transaction("req-2", "2026-01-02", &["fetch"], Decimal::new(75, 2), 8),
     ]
 }
 
 #[test]
 fn daily_totals_add_money_exactly() {
     let batch = [
-        transaction("req-1", "2026-01-02", &["search"], (1, 1), 3),
-        transaction("req-2", "2026-01-02", &["search"], (2, 1), 5),
+        transaction("req-1", "2026-01-02", &["search"], Decimal::new(1, 1), 3),
+        transaction("req-2", "2026-01-02", &["search"], Decimal::new(2, 1), 5),
     ];
     assert_eq!(
         daily_rollups(&batch),
-        [rollup("2026-01-02", "search", (3, 1), 8, 2)]
+        [ToolDayRollup {
+            date: String::from("2026-01-02"),
+            tool_name: String::from("search"),
+            spend: Decimal::new(3, 1),
+            total_tokens: 8,
+            request_count: 2,
+        }]
     );
 }
 
@@ -279,8 +271,20 @@ async fn flushes_every_index_row_then_one_grouped_rollup_batch() {
     assert_eq!(
         writer.rollup_calls(),
         [vec![
-            rollup("2026-01-02", "fetch", (200, 2), 50, 2),
-            rollup("2026-01-02", "search", (125, 2), 42, 1),
+            ToolDayRollup {
+                date: String::from("2026-01-02"),
+                tool_name: String::from("fetch"),
+                spend: Decimal::new(200, 2),
+                total_tokens: 50,
+                request_count: 2,
+            },
+            ToolDayRollup {
+                date: String::from("2026-01-02"),
+                tool_name: String::from("search"),
+                spend: Decimal::new(125, 2),
+                total_tokens: 42,
+                request_count: 1,
+            },
         ]]
     );
 }
@@ -292,7 +296,7 @@ async fn flushes_a_bounded_statement_per_slice() {
         "req-1",
         "2026-01-02",
         &["a", "b", "c"],
-        (1, 0),
+        Decimal::new(1, 0),
         1,
     )];
     let (outcome, _) = flush_with(&writer, &batch, policy(2_000_000, 2, 3), 0).await;
