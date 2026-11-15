@@ -62,7 +62,7 @@ fn words(rows: &[String]) -> Vec<&str> {
     rows.iter().map(String::as_str).collect()
 }
 
-fn batch_lengths<'rows, Row>(batches: &[&'rows [Row]]) -> Vec<usize> {
+fn batch_lengths<Row>(batches: &[&[Row]]) -> Vec<usize> {
     batches.iter().map(|batch| batch.len()).collect()
 }
 
