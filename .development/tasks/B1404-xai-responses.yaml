@@ -26,6 +26,15 @@ description: >-
   180 behavior tests, 120 adapters and 55 wiring lines, capped at 650.
 scope:
   paths:
+    - "tools/oracle/helpers/b8153.py"
+    - "tools/oracle/helpers/b6413.py"
+    - "tools/oracle/helpers"
+    - "crates/betterlite-openai/src/sambanova_embedding"
+    - "crates/betterlite-openai/src/perplexity_cost.rs"
+    - "crates/betterlite-openai/src/perplexity_cost"
+    - "crates/betterlite-openai/src/perplexity_chat.rs"
+    - "crates/betterlite-openai/src/perplexity_chat/enhance.rs"
+    - "crates/betterlite-openai/src/perplexity_chat"
     - crates/betterlite-openai/src/xai_responses.rs
     - crates/betterlite-openai/src/xai_responses/**
     - tools/oracle/src/helpers/openai/xai_responses.rs
