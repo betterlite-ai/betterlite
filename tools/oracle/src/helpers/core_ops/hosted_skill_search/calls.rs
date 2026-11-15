@@ -52,7 +52,7 @@ pub(super) async fn index_value(input: &Input, effects: &Effects) -> HelperResul
 
 pub(super) async fn search_value(input: &Input, effects: &Effects) -> HelperResult {
     let embedder = ScriptedEmbedder::new(input, effects)?;
-    let router: Option<&dyn Embedder> = if input.router { Some(&embedder) } else { None };
+    let router: Option<&dyn Embedder> = input.router.then_some(&embedder);
     let index = SkillSearchIndex::default();
     let outcome = search_skills(
         &input.query,
@@ -71,17 +71,14 @@ pub(super) async fn search_value(input: &Input, effects: &Effects) -> HelperResu
 
 pub(super) async fn hosted_value(input: &Input, effects: &Effects) -> HelperResult {
     let embedder = ScriptedEmbedder::new(input, effects)?;
-    let router: Option<&dyn Embedder> = if input.router { Some(&embedder) } else { None };
+    let router: Option<&dyn Embedder> = input.router.then_some(&embedder);
     let index = SkillSearchIndex::default();
     let repository = ScriptedRepository::new(input, effects)?;
     let ids: SkillIdSource = Arc::new(|| TEST_SKILL_ID.to_owned());
     let clock: Clock = Arc::new(|| CACHE_CLOCK);
     let store =
         HostedSkillStore::new(repository, ids, clock).map_err(|error| store_error(&error))?;
-    let principal = match &input.principal {
-        Some(fields) => Some(principal_of(fields)?),
-        None => None,
-    };
+    let principal = input.principal.as_ref().map(principal_of).transpose()?;
     let outcome = search_hosted_skills(
         &store,
         principal.as_ref(),

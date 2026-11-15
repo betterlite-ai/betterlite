@@ -251,14 +251,10 @@ fn rank_in(
 
 fn search_outcome(
     index: &SkillSearchIndex,
-    embedder: Option<&FixedEmbedder>,
+    embedder: Option<&dyn Embedder>,
     model: Option<&str>,
     skills: &[SkillTable],
 ) -> SkillSearchOutcome {
-    let embedder: Option<&dyn Embedder> = match embedder {
-        Some(value) => Some(value),
-        None => None,
-    };
     runtime()
         .block_on(search_skills(
             "q",
@@ -339,6 +335,10 @@ fn scores(outcome: &SkillSearchOutcome) -> Vec<f64> {
     }
 }
 
+fn score_bits(text: &str) -> u64 {
+    text.parse::<f64>().expect("a score").to_bits()
+}
+
 fn unsupported() -> SkillSearchOutcome {
     SkillSearchOutcome::UnsupportedProvider {
         reason: "query is only supported for custom_llm_provider=litellm_proxy".to_owned(),
@@ -393,12 +393,12 @@ fn rank_orders_by_score_and_keeps_ties() {
             .map(f64::to_bits)
             .collect::<Vec<u64>>(),
         [
-            0.9486832980505138_f64,
-            0.7071067811865475,
-            0.7071067811865475,
-            0.31622776601683794,
+            "0.9486832980505138",
+            "0.7071067811865475",
+            "0.7071067811865475",
+            "0.31622776601683794",
         ]
-        .map(f64::to_bits)
+        .map(score_bits)
         .to_vec()
     );
 }

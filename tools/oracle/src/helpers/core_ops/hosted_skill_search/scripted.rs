@@ -124,12 +124,12 @@ fn visible_rows(
     let offset = usize::try_from(page.offset).unwrap_or(0);
     let limit = usize::try_from(page.limit).unwrap_or(usize::MAX);
     rows.iter()
-        .filter(|row| match created_by {
-            None => true,
-            Some(scopes) => row
-                .created_by
-                .as_deref()
-                .is_some_and(|owner| scopes.iter().any(|scope| scope.as_str() == owner)),
+        .filter(|row| {
+            created_by.is_none_or(|scopes| {
+                row.created_by
+                    .as_deref()
+                    .is_some_and(|owner| scopes.iter().any(|scope| scope.as_str() == owner))
+            })
         })
         .skip(offset)
         .take(limit)
