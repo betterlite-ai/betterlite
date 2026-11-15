@@ -76,7 +76,12 @@ class RerankConfig(Protocol):
     def get_complete_url(self) -> Callable[[str | None, str, JsonObject | None], str]: ...
 
 
-MULTIMODAL: MultimodalConfig = MultimodalImpl()
+class MultimodalConfigImpl(MultimodalImpl):
+    def __init__(self) -> None:
+        pass
+
+
+MULTIMODAL: MultimodalConfig = MultimodalConfigImpl()
 RERANK: RerankConfig = RerankImpl()
 
 
@@ -166,10 +171,8 @@ class FixedUuid(ModuleType):
 
 
 class RecordingLogging(Logging):
-    calls: list[str]
-
     def __init__(self) -> None:
-        self.calls = []
+        self.calls: list[str] = []
 
     @override
     def post_call(self, original_response: str, *_args: JsonValue, **_kwargs: JsonValue) -> None:
@@ -237,14 +240,14 @@ def rerank_reply_fields(response: RerankResponse) -> JsonValue:
         if "document" in result:
             item["document"] = result["document"]
         results.append(item)
-    tokens = reply["meta"]["tokens"]
     return {
         "id": reply["id"],
         "results": results,
         "meta": {
             "billed_units": {"total_tokens": reply["meta"]["billed_units"]["total_tokens"]},
             "tokens": {
-                "input_tokens": tokens["input_tokens"], "output_tokens": tokens["output_tokens"],
+                "input_tokens": reply["meta"]["tokens"]["input_tokens"],
+                "output_tokens": reply["meta"]["tokens"]["output_tokens"],
             },
         },
     }
