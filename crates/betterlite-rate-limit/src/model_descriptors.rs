@@ -60,6 +60,14 @@ fn inherited_team_limit(
     if key_owns_limit { None } else { team_limit }
 }
 
+#[derive(Clone, Copy)]
+struct ScopeDescriptor<'scope> {
+    key: &'scope str,
+    id: Option<&'scope str>,
+    requests: Option<i64>,
+    tokens: Option<i64>,
+}
+
 impl ModelDescriptorBuilder {
     #[must_use]
     pub fn rated_model(&self, requested: Option<&str>) -> Option<RateLimitedModel> {
@@ -94,6 +102,24 @@ impl ModelDescriptorBuilder {
         }
     }
 
+    fn push_model_descriptor(
+        &self,
+        out: &mut Vec<RateLimitDescriptor>,
+        model: &RateLimitedModel,
+        descriptor: ScopeDescriptor<'_>,
+    ) {
+        if descriptor.requests.is_none() && descriptor.tokens.is_none() {
+            return;
+        }
+        let value = format!("{}:{}", descriptor.id.unwrap_or(NONE_TEXT), model.group);
+        out.push(self.descriptor(
+            descriptor.key,
+            value,
+            descriptor.requests,
+            descriptor.tokens,
+        ));
+    }
+
     #[must_use]
     pub fn organization_descriptors(
         &self,
@@ -120,15 +146,16 @@ impl ModelDescriptorBuilder {
                 &model,
                 (ModelRateLimitKey::Rpm, ModelRateLimitKey::Tpm),
             );
-            if requests.is_some() || tokens.is_some() {
-                let value = format!("{}:{}", account.org_id.unwrap_or(NONE_TEXT), model.group);
-                descriptors.push(self.descriptor(
-                    "model_per_organization",
-                    value,
+            self.push_model_descriptor(
+                &mut descriptors,
+                &model,
+                ScopeDescriptor {
+                    key: "model_per_organization",
+                    id: account.org_id,
                     requests,
                     tokens,
-                ));
-            }
+                },
+            );
         }
         descriptors
     }
@@ -148,11 +175,16 @@ impl ModelDescriptorBuilder {
         };
         let tokens = model.limit_in(get_key_model_tpm_limit(auth, &query)?.as_ref());
         let requests = model.limit_in(get_key_model_rpm_limit(auth, &query)?.as_ref());
-        if requests.is_some() || tokens.is_some() {
-            let api_key = account_limits(auth).hashed_api_key.unwrap_or(NONE_TEXT);
-            let value = format!("{api_key}:{}", model.group);
-            out.push(self.descriptor("model_per_key", value, requests, tokens));
-        }
+        self.push_model_descriptor(
+            out,
+            &model,
+            ScopeDescriptor {
+                key: "model_per_key",
+                id: account_limits(auth).hashed_api_key,
+                requests,
+                tokens,
+            },
+        );
         Ok(())
     }
 
@@ -165,13 +197,23 @@ impl ModelDescriptorBuilder {
         let Some(model) = self.rated_model(requested_model) else {
             return;
         };
-        let requests = inherited_team_limit(auth, &model, ModelRateLimitKey::Rpm);
-        let tokens = inherited_team_limit(auth, &model, ModelRateLimitKey::Tpm);
-        if requests.is_some() || tokens.is_some() {
-            let team_id = account_limits(auth).team_id.unwrap_or(NONE_TEXT);
-            let value = format!("{team_id}:{}", model.group);
-            out.push(self.descriptor("model_per_team", value, requests, tokens));
+        let mut limits = [None, None];
+        for (slot, kind) in limits
+            .iter_mut()
+            .zip([ModelRateLimitKey::Rpm, ModelRateLimitKey::Tpm])
+        {
+            *slot = inherited_team_limit(auth, &model, kind);
         }
+        self.push_model_descriptor(
+            out,
+            &model,
+            ScopeDescriptor {
+                key: "model_per_team",
+                id: account_limits(auth).team_id,
+                requests: limits[0],
+                tokens: limits[1],
+            },
+        );
     }
 
     pub fn project_model_descriptor(
@@ -180,19 +222,23 @@ impl ModelDescriptorBuilder {
         requested_model: Option<&str>,
         out: &mut Vec<RateLimitDescriptor>,
     ) {
-        let Some(model) = self.rated_model(requested_model) else {
-            return;
-        };
-        let (requests, tokens) = metadata_limits(
-            auth,
-            MetadataAccessor::Project,
-            &model,
-            (ModelRateLimitKey::Rpm, ModelRateLimitKey::Tpm),
-        );
-        if requests.is_some() || tokens.is_some() {
-            let project_id = account_limits(auth).project_id.unwrap_or(NONE_TEXT);
-            let value = format!("{project_id}:{}", model.group);
-            out.push(self.descriptor("model_per_project", value, requests, tokens));
+        if let Some(model) = self.rated_model(requested_model) {
+            let (requests, tokens) = metadata_limits(
+                auth,
+                MetadataAccessor::Project,
+                &model,
+                (ModelRateLimitKey::Rpm, ModelRateLimitKey::Tpm),
+            );
+            self.push_model_descriptor(
+                out,
+                &model,
+                ScopeDescriptor {
+                    key: "model_per_project",
+                    id: account_limits(auth).project_id,
+                    requests,
+                    tokens,
+                },
+            );
         }
     }
 
@@ -214,14 +260,20 @@ impl ModelDescriptorBuilder {
             &model,
             (ModelRateLimitKey::Itpm, ModelRateLimitKey::Otpm),
         );
-        let value = format!("{project_id}:{}", model.group);
         for (key, limit) in [
             (PROJECT_ITPM_DESCRIPTOR_KEY, input_tokens),
             (PROJECT_OTPM_DESCRIPTOR_KEY, output_tokens),
         ] {
-            if limit.is_some() {
-                out.push(self.descriptor(key, value.clone(), None, limit));
-            }
+            self.push_model_descriptor(
+                out,
+                &model,
+                ScopeDescriptor {
+                    key,
+                    id: Some(project_id),
+                    requests: None,
+                    tokens: limit,
+                },
+            );
         }
     }
 
