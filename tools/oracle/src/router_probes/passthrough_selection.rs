@@ -2,11 +2,9 @@ use betterlite_models::decisions::Json;
 use betterlite_router::strategy_dispatch::strategy::RoutingStrategy;
 use serde::{Deserialize, Serialize};
 
-use crate::router_probes::ProbeOutput;
-use crate::router_probes::error::OperationError;
-use crate::router_probes::random::InjectedRandom;
-
 mod probe;
+
+pub(crate) use probe::run;
 
 // The strategies whose selection needs no selector state; every other one would need the router's live selectors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,11 +90,4 @@ pub struct Found {
 #[serde(deny_unknown_fields)]
 pub struct Output {
     pub lookups: Vec<Found>,
-}
-
-pub(crate) fn run(
-    input: &Input,
-    random: &mut InjectedRandom<'_>,
-) -> Result<ProbeOutput, OperationError> {
-    probe::run(input, random)
 }

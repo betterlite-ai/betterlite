@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Display;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -22,7 +23,7 @@ use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
-use super::{Entry, Found, Input, Lookup, Outcome, Output, Picked, Strategy};
+use super::{Entry, Found, Input, Lookup, Outcome, Output, Picked};
 
 mod support;
 
@@ -31,14 +32,20 @@ use support::{NoLimits, NoPolicy, NoSelector, ProbeSupport};
 fn facts(lookup: &Lookup) -> RequestFacts {
     RequestFacts {
         messages: lookup.messages.clone(),
+        input: None,
+        instructions: None,
+        system: None,
+        tools: Vec::new(),
         response_format: lookup.response_format,
-        ..RequestFacts::default()
+        target_order: None,
+        input_token_count: None,
+        compaction_pending: false,
     }
 }
 
 fn invalid<E>(error: E) -> OperationError
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     OperationError::InvalidRequest {
         message: error.to_string(),
@@ -46,51 +53,54 @@ where
 }
 
 fn info(entry: &Entry) -> JsonObject {
-    let mut info = JsonObject::from_iter([("id".to_owned(), Json::Text(entry.id.clone()))]);
+    let mut info = JsonObject::new();
+    info.insert("id".to_owned(), Json::Text(entry.id.clone()));
     if let Some(blocked) = entry.blocked {
         info.insert("blocked".to_owned(), Json::Bool(blocked));
     }
     if let Some(environments) = &entry.supported_environments {
+        let names = environments.iter().map(|name| Json::Text(name.clone()));
         info.insert(
             "supported_environments".to_owned(),
-            Json::List(
-                environments
-                    .iter()
-                    .map(|name| Json::Text(name.clone()))
-                    .collect(),
-            ),
+            Json::List(names.collect()),
         );
     }
     info
 }
 
 fn params(entry: &Entry) -> JsonObject {
-    let mut params = JsonObject::from_iter([
+    let mut fields = vec![
         ("model".to_owned(), Json::Text(entry.model.clone())),
         ("api_key".to_owned(), Json::Text("sk-probe".to_owned())),
-    ]);
+    ];
     if let Some(pass_through) = entry.use_in_pass_through {
-        params.insert("use_in_pass_through".to_owned(), Json::Bool(pass_through));
+        fields.push(("use_in_pass_through".to_owned(), Json::Bool(pass_through)));
     }
-    for (key, value) in [
-        ("weight", entry.weight),
-        ("rpm", entry.rpm),
-        ("tpm", entry.tpm),
-    ] {
-        if let Some(value) = value {
-            params.insert(
-                key.to_owned(),
-                Json::Number(serde_json::Number::from(value)),
-            );
-        }
+    if let Some(weight) = entry.weight {
+        fields.push((
+            "weight".to_owned(),
+            Json::Number(serde_json::Number::from(weight)),
+        ));
+    }
+    if let Some(rpm) = entry.rpm {
+        fields.push((
+            "rpm".to_owned(),
+            Json::Number(serde_json::Number::from(rpm)),
+        ));
+    }
+    if let Some(tpm) = entry.tpm {
+        fields.push((
+            "tpm".to_owned(),
+            Json::Number(serde_json::Number::from(tpm)),
+        ));
     }
     if let Some(order) = entry.order {
-        params.insert(
+        fields.push((
             "order".to_owned(),
             Json::Number(serde_json::Number::from(order)),
-        );
+        ));
     }
-    params
+    JsonObject::from_iter(fields)
 }
 
 fn spec(entry: &Entry) -> Result<DeploymentSpec, OperationError> {
@@ -128,13 +138,6 @@ fn picked(deployment: &DeploymentSpec) -> Picked {
     }
 }
 
-fn strategy_override(strategy: Option<Strategy>) -> StrategyOverride<'static> {
-    match strategy {
-        Some(strategy) => StrategyOverride::Text(strategy.routing().wire_name()),
-        None => StrategyOverride::Absent,
-    }
-}
-
 fn selection_request<'request>(
     lookup: &'request Lookup,
     facts: &'request RequestFacts,
@@ -148,7 +151,11 @@ fn selection_request<'request>(
             proxy_admin: false,
         },
         facts,
-        strategy: strategy_override(lookup.routing_strategy),
+        strategy: lookup
+            .routing_strategy
+            .map_or(StrategyOverride::Absent, |strategy| {
+                StrategyOverride::Text(strategy.routing().wire_name())
+            }),
         bindings: Some(bindings),
     }
 }
