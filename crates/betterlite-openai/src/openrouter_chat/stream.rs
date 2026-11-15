@@ -1,12 +1,13 @@
 use serde_json::{Map, Value};
+use uuid::Uuid;
 
-use crate::chat_choices::wire::{StreamChoice, StreamReply};
+use crate::chat_choices::stream::chunk_parser as base_chunk_parser;
+use crate::chat_choices::wire::StreamReply;
 use crate::openai_base_config::Headers;
 use crate::openrouter_chat::error::{OpenRouterError, key_error};
 
-pub const CHUNK_OBJECT: &str = "chat.completion.chunk";
-
-// B010's iterator calls this for one parsed chunk; every missing key is LiteLLM's KeyError branch
+// B010's iterator calls this for one parsed chunk; the key reads stay here because LiteLLM's
+// override reads them before it builds the same ModelResponseStream the base parser normalizes
 pub fn chunk_parser(chunk: &Value) -> Result<StreamReply, OpenRouterError> {
     let Some(fields) = chunk.as_object() else {
         return Err(key_error("choices", chunk));
@@ -18,50 +19,40 @@ pub fn chunk_parser(chunk: &Value) -> Result<StreamReply, OpenRouterError> {
         .get("choices")
         .and_then(Value::as_array)
         .ok_or_else(|| key_error("choices", chunk))?;
-    let mut choices = Vec::with_capacity(raw_choices.len());
     for raw in raw_choices {
-        choices.push(choice(raw, chunk)?);
+        if raw
+            .as_object()
+            .and_then(|choice| choice.get("delta"))
+            .is_none_or(|delta| !delta.is_object())
+        {
+            return Err(key_error("delta", chunk));
+        }
     }
-    let id = fields
-        .get("id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| key_error("id", chunk))?;
-    let created = fields
-        .get("created")
-        .and_then(Value::as_i64)
-        .ok_or_else(|| key_error("created", chunk))?;
-    let model = fields
-        .get("model")
-        .and_then(Value::as_str)
-        .ok_or_else(|| key_error("model", chunk))?;
-    Ok(StreamReply {
-        id: id.to_owned(),
-        object: CHUNK_OBJECT,
-        created,
-        model: Some(model.to_owned()),
-        choices,
-        usage: fields
-            .get("usage")
-            .cloned()
-            .filter(|usage| !usage.is_null()),
-        service_tier: None,
-    })
-}
-
-fn choice(raw: &Value, chunk: &Value) -> Result<StreamChoice, OpenRouterError> {
-    let delta = raw
-        .as_object()
-        .and_then(|fields| fields.get("delta"))
-        .filter(|delta| delta.is_object())
-        .ok_or_else(|| key_error("delta", chunk))?;
-    let mut choice: StreamChoice =
-        serde_json::from_value(raw.clone()).map_err(|_| unexpected(chunk))?;
-    choice.delta.reasoning_content = match delta.get("reasoning") {
-        Some(Value::String(text)) => Some(text.clone()),
-        Some(Value::Null) | None => None,
-        Some(_) => return Err(unexpected(chunk)),
-    };
-    Ok(choice)
+    if fields.get("id").and_then(Value::as_str).is_none() {
+        return Err(key_error("id", chunk));
+    }
+    if fields.get("created").and_then(Value::as_i64).is_none() {
+        return Err(key_error("created", chunk));
+    }
+    if fields.get("model").and_then(Value::as_str).is_none() {
+        return Err(key_error("model", chunk));
+    }
+    let mut reply =
+        base_chunk_parser(chunk, Uuid::nil, i64::default).map_err(|_| unexpected(chunk))?;
+    // the override assigns delta["reasoning_content"] = delta.get("reasoning") on every choice,
+    // so a chunk without the reasoning key clears whatever reasoning_content it carried
+    for (choice, raw) in reply.choices.iter_mut().zip(raw_choices) {
+        let carries_reasoning = raw
+            .as_object()
+            .and_then(|fields| fields.get("delta"))
+            .is_some_and(|delta| delta.get("reasoning").is_some());
+        if !carries_reasoning {
+            choice.delta.reasoning_content = None;
+        }
+    }
+    // ModelResponseStream is built without service_tier, so the chunk's own key never reaches it
+    reply.service_tier = None;
+    Ok(reply)
 }
 
 fn stream_error(error: &Value, chunk: &Value) -> OpenRouterError {

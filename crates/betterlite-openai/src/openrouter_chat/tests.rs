@@ -51,10 +51,11 @@ impl ChatPolicy for FakePolicy {
         vec!["stream", "temperature"]
     }
 
-    fn map_params(&self, _model: &str, requested: &Object, optional_params: &mut Object) {
+    fn map_params(&self, model: &str, requested: &Object, optional_params: &mut Object) {
         self.record("map_params");
+        let supported = self.supported_params(model);
         for (name, value) in requested {
-            if ["stream", "temperature", "reasoning_effort", "thinking"].contains(&name.as_str()) {
+            if supported.contains(&name.as_str()) {
                 optional_params.insert(name.clone(), value.clone());
             }
         }
@@ -210,6 +211,29 @@ fn map_openai_params_drops_a_null_openrouter_key() {
         optional.get("extra_body"),
         Some(&Json::Object(object(json!({"models": ["m"]}))))
     );
+}
+
+#[test]
+fn map_openai_params_copies_the_openrouter_only_params() {
+    let config = config();
+    let requested = object(json!({
+        "reasoning_effort": "low",
+        "thinking": {"type": "enabled"},
+        "stream": true,
+        "provider": {"order": ["x"]}
+    }));
+    let mut optional = Object::new();
+    config.map_openai_params("openrouter/x", &requested, &mut optional);
+    assert_eq!(
+        optional.get("reasoning_effort"),
+        Some(&Json::Text(String::from("low")))
+    );
+    assert_eq!(
+        optional.get("thinking"),
+        Some(&Json::Object(object(json!({"type": "enabled"}))))
+    );
+    assert_eq!(optional.get("stream"), Some(&Json::Bool(true)));
+    assert!(!optional.contains_key("provider"));
 }
 
 #[rstest::rstest]
@@ -379,7 +403,7 @@ fn transform_request_merges_extra_body_over_the_base_body() {
         .unwrap();
     assert_eq!(
         body.get("model"),
-        Some(&Json::Text("overridden/model".into()))
+        Some(&Json::Text(String::from("overridden/model")))
     );
     assert_eq!(
         body.get("usage"),
@@ -497,7 +521,59 @@ fn stream_chunk_copies_reasoning_into_reasoning_content() {
     );
     assert_eq!(reply.choices[0].delta.content.as_deref(), Some("hi"));
     assert_eq!(reply.choices[1].delta.reasoning_content, None);
-    assert_eq!(reply.usage, Some(json!({"prompt_tokens": 3})));
+    assert_eq!(
+        reply.usage,
+        Some(json!({
+            "prompt_tokens": 3,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": null
+        }))
+    );
+}
+
+#[test]
+fn stream_chunk_maps_finish_reason_and_numbers_tool_calls() {
+    let chunk = json!({
+        "id": "c",
+        "created": 1,
+        "model": "m",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"tool_calls": [
+                    {"id": "call_1", "function": {"name": "f", "arguments": ""}},
+                    {"id": "call_2", "index": 5, "function": {"name": "g", "arguments": "{}"}}
+                ]},
+                "finish_reason": "tool_use"
+            },
+            {"index": 1, "delta": {"content": "x"}, "finish_reason": ""}
+        ]
+    });
+    let reply = chunk_parser(&chunk).unwrap();
+    assert_eq!(
+        reply.choices[0].finish_reason.as_deref(),
+        Some("tool_calls")
+    );
+    assert_eq!(reply.choices[1].finish_reason, None);
+    let calls = reply.choices[0].delta.tool_calls.as_ref().unwrap();
+    assert_eq!(calls[0].index, Some(0));
+    assert_eq!(calls[1].index, Some(5));
+    assert_eq!(calls[0].kind.as_deref(), Some("function"));
+    assert_eq!(calls[1].kind.as_deref(), Some("function"));
+}
+
+#[test]
+fn stream_chunk_drops_the_service_tier() {
+    let chunk = json!({
+        "id": "c",
+        "created": 1,
+        "model": "m",
+        "choices": [],
+        "service_tier": "auto"
+    });
+    assert_eq!(chunk_parser(&chunk).unwrap().service_tier, None);
 }
 
 #[test]
@@ -510,6 +586,18 @@ fn stream_chunk_drops_a_null_usage() {
         "usage": null
     });
     assert_eq!(chunk_parser(&chunk).unwrap().usage, None);
+}
+
+#[test]
+fn stream_chunk_clears_a_reasoning_content_without_a_reasoning_key() {
+    let chunk = json!({
+        "id": "c",
+        "created": 1,
+        "model": "m",
+        "choices": [{"index": 0, "delta": {"content": "x", "reasoning_content": "old"}}]
+    });
+    let reply = chunk_parser(&chunk).unwrap();
+    assert_eq!(reply.choices[0].delta.reasoning_content, None);
 }
 
 #[test]
@@ -562,6 +650,10 @@ fn stream_chunk_error_defaults_metadata_and_user() {
 #[case::no_choices(json!({"id": "c", "created": 1, "model": "m"}), "choices")]
 #[case::no_delta(
     json!({"id": "c", "created": 1, "model": "m", "choices": [{"index": 0}]}),
+    "delta"
+)]
+#[case::delta_not_object(
+    json!({"id": "c", "created": 1, "model": "m", "choices": [{"index": 0, "delta": "x"}]}),
     "delta"
 )]
 #[case::choices_before_id(json!({}), "choices")]
