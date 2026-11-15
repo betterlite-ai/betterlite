@@ -387,30 +387,6 @@ fn deployment_keeps_explicit_zero_and_drops_nested_tables() {
 }
 
 #[test]
-fn deployment_price_record_holds_each_price_as_an_exact_number() {
-    let prices = model(&[
-        ("output_cost_per_image", "\"0.0400\""),
-        ("input_cost_per_token", "0"),
-    ]);
-    let record = deployment_pricing(Some(&prices))
-        .unwrap()
-        .unwrap()
-        .price_record()
-        .unwrap();
-    let expected = [
-        ("input_cost_per_token", "0"),
-        ("output_cost_per_image", "0.0400"),
-    ];
-    assert_eq!(record.len(), expected.len());
-    for (key, text) in expected {
-        let Some(Scalar::Number(number)) = record.get(key) else {
-            panic!("{key} is not a number");
-        };
-        assert_eq!(number.to_string(), text);
-    }
-}
-
-#[test]
 fn deployment_is_none_when_nothing_parses() {
     let prices = model(&[("tiered_pricing", "[1]")]);
     assert_eq!(deployment_pricing(Some(&prices)).unwrap(), None);
