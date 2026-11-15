@@ -195,6 +195,13 @@ fn roundtrip_headers_keep_present_values() {
         metadata::proxy_request_headers(&data),
         BTreeMap::from([("hl-roundtrip-id".to_owned(), "kept".to_owned())])
     );
+    let mut mixed = proxy_data(&[("HL-Roundtrip-Id", "Upper")]);
+    let lowered = metadata::proxy_request_headers(&mixed);
+    let prepared = roundtrip_headers(&lowered, &mut mixed, fixed_id);
+    assert_eq!(
+        prepared.get("hl-roundtrip-id").map(String::as_str),
+        Some("Upper")
+    );
 }
 
 #[test]
