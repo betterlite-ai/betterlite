@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, cast
 
 import litellm
 from litellm.llms.vertex_ai.audio_transcription import realtime_transformation
@@ -108,11 +108,12 @@ def _frame(frame: Frame) -> vertex_ai_speech_to_text.VertexSpeechStreamingEventU
 
 
 def _punctuation(input_value: PunctuationInput) -> Json:
-    answers = [
+    answers: list[Json] = [
         realtime_transformation.new_words(pair["previous"], pair["current"])
         for pair in input_value["pairs"]
     ]
-    return _JSON.validate_python({"answers": answers})
+    document: dict[str, Json] = {"answers": answers}
+    return _JSON.validate_python(document)
 
 
 def _trace(input_value: TraceInput) -> Json:
@@ -130,7 +131,7 @@ def _trace(input_value: TraceInput) -> Json:
     transformer.configure(config, input_value["session_id"])
     events: list[Json] = []
     for frame in input_value["frames"]:
-        emitted = transformer.transform(_frame(frame))
+        emitted = cast("tuple[object, ...]", transformer.transform(_frame(frame)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py#L230
         events.extend(_JSON.validate_python(event) for event in emitted)
     usage = transformer.take_unbilled_usage()
     repeated_usage = transformer.take_unbilled_usage()
@@ -163,7 +164,8 @@ def _sessions(input_value: SessionsInput) -> Json:
         _session_document(payload, input_value["expected_model"])
         for payload in input_value["payloads"]
     ]
-    return _JSON.validate_python({"sessions": sessions})
+    document: dict[str, Json] = {"sessions": sessions}
+    return _JSON.validate_python(document)
 
 
 def run(input_value: PunctuationInput | TraceInput | SessionsInput) -> Json:
