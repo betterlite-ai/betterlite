@@ -44,6 +44,7 @@ fn compatible_host(#[case] hostname: Option<&str>, #[case] expected: bool) {
 #[case::marker_case_sensitive("https://r.cognitiveservices.azure.com/OpenAI/models", false)]
 #[case::marker_without_slash("https://r.cognitiveservices.azure.com/v1", false)]
 #[case::marker_in_query("https://r.cognitiveservices.azure.com/models?api=/v1/x", false)]
+#[case::azure_dot_segment("https://resource.openai.azure.com/v1/../speech/recognition", false)]
 #[case::lookalike_glued("https://xapi.openai.com/v1/models", false)]
 #[case::lookalike_suffix("https://api.openai.com.attacker.example/v1/models", false)]
 #[case::lookalike_azure_suffix("https://openai.azure.com.attacker.example/openai/x", false)]

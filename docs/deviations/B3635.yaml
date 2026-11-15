@@ -7,9 +7,12 @@ deviations:
     why: LiteLLM adds the path-marker requirement so Speech, Vision and Language services on the shared Azure domains are not misclassified as Azure OpenAI; betterlite keeps it.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L96-L97"
   - what: URL classification uses the url crate, which rejects hosts and ports Python's urlparse reads anyway; such a route is classified as not OpenAI in betterlite.
-    why: Inputs like https://api.openai.com:99999/x or https://api.openai.com:abc/x have no fetchable host, so no working setup routes through them; for every fetchable URL the hostname and path agree with urlparse.
+    why: Inputs like https://api.openai.com:99999/x or https://api.openai.com:abc/x have no fetchable host, so no working setup routes through them; every fetchable URL keeps the host name and path it resolves to.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L90-L93"
   - what: The url crate normalizes a host before classification (percent-decoding and IDNA mapping), so https://api%2Eopenai.com/v1/models and an IDNA dot spelling of the same host classify as OpenAI; urlparse compares the raw netloc and would not.
     why: Both spellings resolve to api.openai.com for the HTTP client that sends the relayed request, so pricing the reply is correct; no working setup loses cost tracking by this, and a look-alike host still does not normalize to the OpenAI host.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L90-L94"
+  - what: The url crate resolves dot segments in the path before the Azure marker check, so a marker that only appears before a ".." segment (…/v1/../speech/recognition) does not classify as Azure OpenAI; urlparse checks the raw path and would classify it.
+    why: The normalized path is the one the URL resolves to, and LiteLLM's raw-path check would misread a Speech path as Azure OpenAI; no working setup routes an Azure OpenAI request through a dot-segment spelling.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L96-L97"
 kept_bugs: []
