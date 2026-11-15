@@ -376,6 +376,14 @@ fn invalid_turn_ids_and_transcripts_are_errors() {
             .iter()
             .all(|error| matches!(error, MuseProtocolError::InvalidTurnId { .. }))
     );
+    assert_eq!(
+        turn_errors[0].to_string(),
+        "speechStart event has invalid turnId"
+    );
+    assert_eq!(
+        turn_errors[5].to_string(),
+        "speechEnd event has invalid turnId"
+    );
     let numeric = harness.transform(r#"{"type":"speechStart","turnId":7}"#);
     assert_eq!(turn_item(&numeric[0]), "7");
     let padded = harness.transform(r#"{"type":"speechStart","turnId":" t2 "}"#);
