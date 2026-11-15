@@ -5,11 +5,11 @@ import ssl
 from typing import Literal, TypeAlias, TypedDict
 
 import httpx
-from fastapi import HTTPException
 from litellm.proxy.guardrails.guardrail_hooks.cato_networks.cato_networks import (
     CatoNetworksGuardrail,
 )
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 BODY: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
@@ -58,18 +58,24 @@ class Recorder:
         return httpx.Response(self.answer["status"], json=self.answer["body"])
 
 
-class WsSslProbe(CatoNetworksGuardrail):
+class _ProbeMeta(type):
+    pass
+
+
+class WsSslProbe(CatoNetworksGuardrail, metaclass=_ProbeMeta):
+    # the metaclass keeps mypy's __init_subclass__ check away from LiteLLM's untyped kwargs
     def ws_ssl_kind(self) -> JsonValue:
-        value = self._ws_connect_ssl_kwargs.get("ssl")
-        if value is None:
+        kwargs = self._ws_connect_ssl_kwargs
+        if "ssl" not in kwargs:
             return None
+        value = kwargs["ssl"]
         match value:
-            case ssl.SSLContext():
-                return "disabled" if value.verify_mode == ssl.CERT_NONE else "system_roots"
             case bool():
                 return "system_roots" if value else "disabled"
             case str():
                 return {"ca_file": value}
+            case object():  # SSLContext's typeshed __new__ carries Any, so this names the rest
+                return "disabled" if value.verify_mode == ssl.CERT_NONE else "system_roots"
 
 
 def build(settings: Settings, environment: dict[str, str]) -> WsSslProbe:
@@ -87,7 +93,7 @@ def construct_answer(input_value: ConstructInput) -> dict[str, JsonValue]:
     guardrail = build(input_value["settings"], input_value["environment"])
     supported = guardrail.supported_event_hooks
     hooks: list[JsonValue] = [hook.value for hook in supported] if supported is not None else []
-    answer: dict[str, JsonValue] = {
+    return {
         "api_key": guardrail.api_key,
         "api_base": guardrail.api_base,
         "ws_api_base": guardrail.ws_api_base,
@@ -95,7 +101,6 @@ def construct_answer(input_value: ConstructInput) -> dict[str, JsonValue]:
         "supported_event_hooks": hooks,
         "ws_ssl": guardrail.ws_ssl_kind(),
     }
-    return answer
 
 
 def summarize(
@@ -113,16 +118,17 @@ def summarize(
     }
     if seen:
         request = seen[0]
+        headers: dict[str, str] = dict(request.headers.items())
         answer["path"] = request.url.path
         answer["headers"] = {
-            "authorization_bearer_ok": request.headers.get("authorization")
+            "authorization_bearer_ok": headers.get("authorization")
             == f"Bearer {guardrail.api_key}",
-            "x-cato-litellm-hook": request.headers.get("x-cato-litellm-hook"),
-            "x-cato-litellm-version": request.headers.get("x-cato-litellm-version"),
-            "x-cato-call-id": request.headers.get("x-cato-call-id"),
-            "x-cato-user-email": request.headers.get("x-cato-user-email"),
-            "x-cato-gateway-key-alias": request.headers.get("x-cato-gateway-key-alias"),
-            "content_type": request.headers.get("content-type"),
+            "x-cato-litellm-hook": headers.get("x-cato-litellm-hook"),
+            "x-cato-litellm-version": headers.get("x-cato-litellm-version"),
+            "x-cato-call-id": headers.get("x-cato-call-id"),
+            "x-cato-user-email": headers.get("x-cato-user-email"),
+            "x-cato-gateway-key-alias": headers.get("x-cato-gateway-key-alias"),
+            "content_type": headers.get("content-type"),
         }
         answer["body"] = BODY.validate_json(request.content)
     return answer

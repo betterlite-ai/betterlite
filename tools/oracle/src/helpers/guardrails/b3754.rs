@@ -166,11 +166,11 @@ fn analyze_answer(analyze: &Analyze) -> HelperResult {
     let rejected = match outcome {
         Ok(()) => Value::Null,
         Err(CatoError::Blocked { .. } | CatoError::RedactionMismatch) => json!({"status": 400}),
-        Err(error) => return Err(helper_error(error)),
+        Err(error) => return Err(helper_error(&error)),
     };
     Ok(json!({
         "path": recorded.map(|call| call.request.path.clone()),
-        "headers": recorded.map(|call| headers_summary(&call.request.headers, guardrail)),
+        "headers": recorded.map(|call| headers_summary(&call.request.headers, &guardrail)),
         "body": recorded.map(|call| call.request.body.clone()),
         "data": data,
         "rejected": rejected,
@@ -179,10 +179,8 @@ fn analyze_answer(analyze: &Analyze) -> HelperResult {
 
 fn headers_summary(headers: &BTreeMap<String, String>, guardrail: &CatoGuardrail) -> Value {
     // the mock stores credential headers as a hash, so the expected header goes through the same hash
-    let mut expected = BTreeMap::from([(
-        "authorization".to_owned(),
-        format!("Bearer {}", guardrail.api_key.expose_secret()),
-    )]);
+    let bearer = format!("Bearer {}", guardrail.api_key.expose_secret());
+    let mut expected = BTreeMap::from([("authorization".to_owned(), bearer)]);
     redact(&mut expected);
     json!({
         "authorization_bearer_ok": headers.get("authorization") == expected.get("authorization"),
