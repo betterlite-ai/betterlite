@@ -1,7 +1,10 @@
+import litellm
 from pydantic import JsonValue as Json
 
 from .contracts import Input
 from .scenario import scenario
+
+litellm.suppress_debug_info = True
 
 
 def run(input_value: Input) -> Json:

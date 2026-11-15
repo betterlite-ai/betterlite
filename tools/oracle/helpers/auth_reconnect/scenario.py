@@ -1,16 +1,13 @@
 import asyncio
 import os
-import time
 
-from litellm._logging import verbose_proxy_logger
-from litellm.proxy import utils as proxy_utils
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.db.routing_prisma_wrapper import RoutingPrismaWrapper
 from litellm.proxy.utils import _StaleReadEngine  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4351-L4392
 from pydantic import JsonValue as Json
 
 from .client import FakeClient, wrapper_for
-from .contracts import DATABASE_URL_ENV, Scenario, Target
+from .contracts import DATABASE_URL_ENV, Scenario, Target, scripted_proxy
 from .fakes import FakeRouting, FakeWrapper, Recorder, ScriptedTime
 
 
@@ -75,13 +72,8 @@ def scenario(entry: Scenario) -> Json:
         db = writer
     client = FakeClient(entry, db, writer, reader, effects)
     stale = stale_for(entry["stale"], writer, reader, routing=routing)
-    object.__setattr__(proxy_utils, "verbose_proxy_logger", Recorder(effects))
-    object.__setattr__(proxy_utils, "time", ScriptedTime(entry["clock"]))
-    try:
+    with scripted_proxy(Recorder(effects), ScriptedTime(entry["clock"])):
         result = asyncio.run(attempt(client, entry, stale))
-    finally:
-        object.__setattr__(proxy_utils, "verbose_proxy_logger", verbose_proxy_logger)
-        object.__setattr__(proxy_utils, "time", time)
     return {
         "name": entry["name"],
         "result": result,

@@ -1,5 +1,8 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Literal, Protocol, TypedDict
 
+from litellm.proxy import utils as proxy_utils
 from pydantic import JsonValue as Json
 
 DATABASE_URL_ENV = "DATABASE_URL"
@@ -10,6 +13,21 @@ LogArgument = str | int | float | BaseException
 
 # the base passes prisma's HttpConfig through this slot, and this helper never reads it
 class OpaqueHttpClient(Protocol): ...
+
+
+# the surface of litellm._logging.verbose_proxy_logger that attempt_db_reconnect calls
+class ScriptedLogger(Protocol):
+    def debug(self, message: str, *args: LogArgument) -> None: ...
+
+    def info(self, message: str, *args: LogArgument) -> None: ...
+
+    def warning(self, message: str, *args: LogArgument) -> None: ...
+
+    def error(self, message: str, *args: LogArgument) -> None: ...
+
+
+class ScriptedClock(Protocol):
+    def time(self) -> float: ...
 
 
 class Settings(TypedDict):
@@ -125,3 +143,16 @@ def logged_fields(message: str, args: tuple[LogArgument, ...]) -> dict[str, Json
             text = TIMEOUT_ERROR
         fields[name] = text
     return fields
+
+
+@contextmanager
+def scripted_proxy(logger: ScriptedLogger, clock: ScriptedClock) -> Iterator[None]:
+    original_logger = proxy_utils.verbose_proxy_logger
+    original_time = proxy_utils.time
+    object.__setattr__(proxy_utils, "verbose_proxy_logger", logger)
+    object.__setattr__(proxy_utils, "time", clock)
+    try:
+        yield
+    finally:
+        object.__setattr__(proxy_utils, "verbose_proxy_logger", original_logger)
+        object.__setattr__(proxy_utils, "time", original_time)
