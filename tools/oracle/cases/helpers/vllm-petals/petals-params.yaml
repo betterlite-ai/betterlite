@@ -3,6 +3,7 @@ name: petals-params
 call:
   b8153:
     op: petals_params
+    env: {DEFAULT_MAX_TOKENS: "77"}
     cases:
       - {non_default: {max_tokens: 8, temperature: 0.5, top_p: 0.9, stream: true, top_k: 3}, optional: {seed: 4}}
       - {non_default: {}}
@@ -12,5 +13,6 @@ call:
       - {headers: {a: "b"}, api_key: "k"}
       - {headers: {}, api_key: null}
       - {headers: {}, api_key: ""}
-env: {}
+# LiteLLM reads DEFAULT_MAX_TOKENS when its process imports; the op env above is the value both helpers resolve
+env: {DEFAULT_MAX_TOKENS: "77"}
 compare: {ignore: []}

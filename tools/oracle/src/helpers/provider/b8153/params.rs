@@ -2,15 +2,21 @@ use std::collections::BTreeMap;
 
 use betterlite_prompts::arguments::json::Object as Params;
 use betterlite_provider::petals::config::{
-    PetalsConfig, REQUEST_HEADERS, SUPPORTED_OPENAI_PARAMS, map_openai_params,
+    REQUEST_HEADERS, SUPPORTED_OPENAI_PARAMS, map_openai_params,
 };
 use betterlite_provider::petals::error::get_error_class;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::helpers::HelperResult;
+
+use super::petals_config;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ParamsInput {
+    #[serde(default)]
+    env: BTreeMap<String, String>,
     cases: Vec<MapCase>,
     validate: Vec<ValidateCase>,
 }
@@ -32,8 +38,8 @@ struct ValidateCase {
     api_key: Option<String>,
 }
 
-pub(crate) fn params_value(input: &ParamsInput) -> Value {
-    let config = PetalsConfig::default();
+pub(crate) fn params_value(input: &ParamsInput) -> HelperResult {
+    let config = petals_config(&input.env)?;
     let mapped: Vec<Value> = input
         .cases
         .iter()
@@ -55,11 +61,11 @@ pub(crate) fn params_value(input: &ParamsInput) -> Value {
         })
         .collect();
     let error = get_error_class("boom", 418, &BTreeMap::new());
-    json!({
+    Ok(json!({
         "config": config.get_config(),
         "supported": SUPPORTED_OPENAI_PARAMS,
         "mapped": mapped,
         "validated": validated,
-        "error": {"status": error.status_code, "message": error.message},
-    })
+        "error": {"status": error.status_code},
+    }))
 }

@@ -3,6 +3,7 @@ name: petals-request
 call:
   b8153:
     op: petals_request
+    env: {DEFAULT_MAX_TOKENS: "77"}
     custom_prompt_dict:
       m:
         roles:
@@ -27,5 +28,6 @@ call:
       - model: "m"
         messages: [{role: "user", content: "hi"}]
         api_base: "http://petals.test/v1/generate"
-env: {HF_HUB_OFFLINE: "1"}
+# LiteLLM reads DEFAULT_MAX_TOKENS when its process imports; the op env above is the value both helpers resolve
+env: {HF_HUB_OFFLINE: "1", DEFAULT_MAX_TOKENS: "77"}
 compare: {ignore: []}

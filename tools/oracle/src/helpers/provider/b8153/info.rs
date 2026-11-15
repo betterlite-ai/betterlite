@@ -32,7 +32,7 @@ where
 {
     match result {
         Ok(value) => json!({"ok": true, "value": value}),
-        Err(error) => json!({"ok": false, "message": error.to_string()}),
+        Err(_) => json!({"ok": false, "status": null}),
     }
 }
 
@@ -52,7 +52,7 @@ fn model_info_value(call: &InfoCall) -> Value {
         "api_base": setup_result(info.get_api_base(call.api_base.as_deref())),
         "models": setup_result(info.get_models(call.api_base.as_deref())),
         "headers": headers,
-        "error": {"status": error.status(), "message": error.to_string()},
+        "error": {"status": error.status()},
     })
 }
 

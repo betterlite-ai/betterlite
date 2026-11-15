@@ -47,7 +47,7 @@ fn passthrough_value(call: &PassCall) -> Value {
     };
     let result = match config.get_complete_url(&request) {
         Ok((url, base)) => json!({"ok": true, "url": url.as_str(), "base": base}),
-        Err(error) => json!({"ok": false, "message": error.to_string()}),
+        Err(_) => json!({"ok": false, "status": null}),
     };
     json!({
         "streaming": config.is_streaming_request(&call.endpoint, &call.request_data),

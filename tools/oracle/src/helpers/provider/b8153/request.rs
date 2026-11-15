@@ -1,11 +1,8 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
 
 use betterlite_prompts::arguments::json::{Json, Object as Params};
 use betterlite_prompts::builtin::Message;
-use betterlite_prompts::factory::PromptFactory;
-use betterlite_prompts::factory::hub::{Hub, builtin_entries};
-use betterlite_provider::petals::config::{PetalsConfig, map_openai_params};
+use betterlite_provider::petals::config::map_openai_params;
 use betterlite_provider::petals::request::{CustomPrompt, RequestBody, RequestContext};
 use chrono::DateTime;
 use serde::Deserialize;
@@ -14,13 +11,15 @@ use tokio::runtime::Runtime;
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::{FIXED_NOW, runtime};
+use super::{FIXED_NOW, petals_config, prompts, runtime};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RequestInput {
     #[serde(default)]
     custom_prompt_dict: BTreeMap<String, CustomPrompt>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
     requests: Vec<RequestCase>,
 }
 
@@ -41,17 +40,10 @@ struct RequestCase {
     stream: Option<Json>,
 }
 
-fn factory() -> PromptFactory {
-    PromptFactory {
-        cache: Mutex::new(builtin_entries()),
-        hub: Hub::Unreachable,
-    }
-}
-
 pub(crate) fn request_values(input: &RequestInput) -> HelperResult {
     let executor = runtime()?;
-    let config = PetalsConfig::default();
-    let prompts = factory();
+    let config = petals_config(&input.env)?;
+    let prompts = prompts();
     let context = RequestContext {
         config: &config,
         prompts: &prompts,
@@ -80,11 +72,7 @@ fn one_request(
         &options,
     )) {
         Ok(body) => Ok(json!({"ok": true, "form": form(&body)?})),
-        Err(error) => Ok(json!({
-            "ok": false,
-            "status": error.status(),
-            "message": error.to_string(),
-        })),
+        Err(error) => Ok(json!({"ok": false, "status": error.status()})),
     }
 }
 

@@ -4,6 +4,12 @@ mod passthrough;
 mod reply;
 mod request;
 
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
+use betterlite_prompts::factory::PromptFactory;
+use betterlite_prompts::factory::hub::{Hub, builtin_entries};
+use betterlite_provider::petals::config::{PetalsConfig, max_new_tokens_default};
 use serde::Deserialize;
 use tokio::runtime::{Builder, Runtime};
 
@@ -35,7 +41,7 @@ impl Helper for Op {
         match input {
             Input::VllmModelInfo(info) => Ok(model_info_values(info)),
             Input::VllmPassthrough(pass) => Ok(passthrough_values(pass)),
-            Input::PetalsParams(params) => Ok(params_value(params)),
+            Input::PetalsParams(params) => params_value(params),
             Input::PetalsRequest(request) => request_values(request),
             Input::PetalsReply(replies) => reply_values(replies),
         }
@@ -56,4 +62,34 @@ fn runtime() -> Result<Runtime, Box<HelperError>> {
                 message: source.to_string(),
             })
         })
+}
+
+fn prompts() -> PromptFactory {
+    PromptFactory {
+        cache: Mutex::new(builtin_entries()),
+        hub: Hub::Unreachable,
+    }
+}
+
+// LiteLLM's petals class default is litellm.max_tokens, which DEFAULT_MAX_TOKENS sets when LiteLLM imports (constants.py L90)
+fn petals_config(env: &BTreeMap<String, String>) -> Result<PetalsConfig, Box<HelperError>> {
+    let max_new_tokens = max_new_tokens_default(env).map_err(|source| {
+        Box::new(HelperError {
+            class: String::from("ValueError"),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: source.to_string(),
+        })
+    })?;
+    Ok(PetalsConfig {
+        max_length: None,
+        max_new_tokens,
+        do_sample: None,
+        temperature: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+    })
 }

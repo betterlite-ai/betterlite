@@ -19,44 +19,15 @@ call:
       - {model: "meta-llama/llama-2-7b-chat", body: "boom", status: 500, headers: {}, messages: [{role: "user", content: "hi"}]}
       - {model: "meta-llama/llama-2-7b-chat", body: '{"outputs": "hello"}', status: 302, headers: {}, messages: [{role: "user", content: "hi"}]}
       - {model: "meta-llama/llama-2-7b-chat", body: "", status: 204, headers: {}, messages: [{role: "user", content: "hi"}]}
+      - {model: "tiiuae/falcon-7b", body: '{"outputs": "hello"}', status: 200, headers: {}, messages: [{role: "user", content: "hi"}]}
 env: {HF_HUB_OFFLINE: "1"}
 compare:
   ignore:
     - pointer: /value/replies/0/created
       why: LiteLLM stamps int(time.time()), betterlite takes the caller's clock
-    - pointer: /value/replies/0/usage
-      why: LiteLLM counts with its tokenizer, betterlite takes an injected counter
     - pointer: /value/replies/1/created
       why: LiteLLM stamps int(time.time()), betterlite takes the caller's clock
-    - pointer: /value/replies/1/usage
-      why: LiteLLM counts with its tokenizer, betterlite takes an injected counter
     - pointer: /value/replies/2/created
       why: LiteLLM stamps int(time.time()), betterlite takes the caller's clock
-    - pointer: /value/replies/2/usage
-      why: LiteLLM counts with its tokenizer, betterlite takes an injected counter
     - pointer: /value/replies/3/created
       why: LiteLLM stamps int(time.time()), betterlite takes the caller's clock
-    - pointer: /value/replies/3/usage
-      why: LiteLLM counts with its tokenizer, betterlite takes an injected counter
-    - pointer: /value/replies/4/message
-      why: LiteLLM answers a malformed reply with its Python crash text, betterlite names the decode failure (B8153 deviation)
-    - pointer: /value/replies/5/message
-      why: LiteLLM answers a malformed reply with its Python crash text, betterlite names the decode failure (B8153 deviation)
-    - pointer: /value/replies/6/message
-      why: LiteLLM answers a malformed reply with its Python crash text, betterlite names the decode failure (B8153 deviation)
-    - pointer: /value/replies/7/message
-      why: LiteLLM answers a malformed reply with its Python crash text, betterlite names the decode failure (B8153 deviation)
-    - pointer: /value/replies/8/message
-      why: LiteLLM answers a malformed reply with its Python crash text, betterlite names the decode failure (B8153 deviation)
-    - pointer: /value/replies/9/message
-      why: LiteLLM answers a malformed reply with its Python crash text, betterlite names the decode failure (B8153 deviation)
-    - pointer: /value/replies/10/message
-      why: LiteLLM prefixes the status error with its exception class, betterlite keeps PetalsException - body
-    - pointer: /value/replies/11/message
-      why: LiteLLM prefixes the status error with its exception class, betterlite keeps PetalsException - body
-    - pointer: /value/replies/12/message
-      why: LiteLLM prefixes the status error with its exception class, betterlite keeps PetalsException - body
-    - pointer: /value/replies/13/message
-      why: LiteLLM answers a redirect with its connection error text, betterlite keeps PetalsException - body
-    - pointer: /value/replies/14/message
-      why: LiteLLM crashes on the empty body, betterlite names the decode failure (B8153 deviation)

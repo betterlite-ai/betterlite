@@ -11,12 +11,10 @@ from litellm.llms.petals.completion.transformation import PetalsConfig
 from litellm.llms.vllm.common_utils import VLLMModelInfo
 from litellm.llms.vllm.passthrough.transformation import VLLMPassthroughConfig
 from litellm.types.llms.openai import AllMessageValues
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import ModelResponse, Usage
 from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
-
-PETALS_BASE = "http://petals.test/v1/generate"
 
 
 class Config(Protocol):
@@ -139,16 +137,16 @@ def replace_environment(values: dict[str, str]) -> None:
 def api_base_value(api_base: str | None) -> JsonValue:
     try:
         value = VLLMModelInfo.get_api_base(api_base)
-    except ValueError as error:
-        return {"ok": False, "message": str(error)}
+    except ValueError:
+        return {"ok": False, "status": None}
     return {"ok": True, "value": value}
 
 
 def models_value(api_base: str | None) -> JsonValue:
     try:
         VLLMModelInfo().get_models(None, api_base)
-    except ValueError as error:
-        return {"ok": False, "message": str(error)}
+    except ValueError:
+        return {"ok": False, "status": None}
     raise ValueError("the vllm models lookup resolved a key")
 
 
@@ -163,7 +161,7 @@ def model_info_value(call: InfoCall) -> JsonValue:
         "api_base": api_base_value(call.get("api_base")),
         "models": models_value(call.get("api_base")),
         "headers": headers,
-        "error": {"status": error.status_code, "message": error.message},
+        "error": {"status": error.status_code},
     }
 
 
@@ -174,8 +172,8 @@ def passthrough_value(call: PassCall) -> JsonValue:
         url, base = PASS_VIEW.get_complete_url(
             call.get("api_base"), None, "m", call["endpoint"], call.get("query"), {}
         )
-    except ValueError as error:
-        return {"streaming": streaming, "result": {"ok": False, "message": str(error)}}
+    except ValueError:
+        return {"streaming": streaming, "result": {"ok": False, "status": None}}
     return {"streaming": streaming, "result": {"ok": True, "url": str(url), "base": base}}
 
 
@@ -205,8 +203,15 @@ def params_value(cases: list[MapCase], validate: list[ValidateCase]) -> JsonValu
         "supported": supported,
         "mapped": [mapped_value(case) for case in cases],
         "validated": [validated_value(case) for case in validate],
-        "error": {"status": error.status_code, "message": error.message},
+        "error": {"status": error.status_code},
     }
+
+
+# DEFAULT_MAX_TOKENS becomes litellm.max_tokens, the PetalsConfig class default (constants.py L90)
+def apply_max_new_tokens(values: dict[str, str]) -> None:
+    text = values.get("DEFAULT_MAX_TOKENS", "").strip()
+    if text != "":
+        PetalsConfig.max_new_tokens = int(text)
 
 
 def request_value(call: RequestCase) -> JsonValue:
@@ -226,15 +231,21 @@ def request_value(call: RequestCase) -> JsonValue:
 
 
 def reply_of(response: ModelResponse) -> JsonValue:
-    choices: list[JsonValue] = [
-        {"index": c.index, "content": c.message.content, "finish_reason": c.finish_reason}
-        for c in response.choices
-    ]
+    dump = TypeAdapter(dict[str, JsonValue]).validate_json(response.model_dump_json())
+    usage = TypeAdapter(Usage).validate_python(dump["usage"])
     return {
         "ok": True,
         "model": response.model,
         "created": response.created,
-        "choices": choices,
+        "choices": [
+            {"index": c.index, "content": c.message.content, "finish_reason": c.finish_reason}
+            for c in response.choices
+        ],
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        },
     }
 
 
@@ -246,13 +257,13 @@ def reply_value(call: ReplyCase) -> JsonValue:
         reply: ModelResponse = litellm.completion(
             model=f"petals/{call['model']}",
             messages=call["messages"],
-            api_base=PETALS_BASE,
+            api_base="http://petals.test/v1/generate",
             client=client,
         )
     except openai.APIStatusError as error:
-        return {"ok": False, "status": error.status_code, "message": str(error)}
-    except openai.APIConnectionError as error:
-        return {"ok": False, "status": 500, "message": str(error)}
+        return {"ok": False, "status": error.status_code}
+    except openai.APIConnectionError:
+        return {"ok": False, "status": 500}
     return reply_of(reply)
 
 
@@ -265,10 +276,14 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
         calls = TypeAdapter(list[PassCall]).validate_python(input_value["calls"])
         return {"calls": [passthrough_value(call) for call in calls]}
     if op == "petals_params":
+        env = TypeAdapter(dict[str, str]).validate_python(input_value.get("env") or {})
+        apply_max_new_tokens(env)
         cases = TypeAdapter(list[MapCase]).validate_python(input_value["cases"])
         validate = TypeAdapter(list[ValidateCase]).validate_python(input_value["validate"])
         return params_value(cases, validate)
     if op == "petals_request":
+        env = TypeAdapter(dict[str, str]).validate_python(input_value.get("env") or {})
+        apply_max_new_tokens(env)
         requests = TypeAdapter(list[RequestCase]).validate_python(input_value["requests"])
         custom = input_value.get("custom_prompt_dict")
         if custom is not None:
