@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::vertex_schema_shaping::{Raw, Settings};
@@ -10,6 +11,8 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_prompts::arguments::json::{Json, Object};
 use http::header::{HeaderMap, HeaderValue};
 use rstest::rstest;
+use tempfile::NamedTempFile;
+use tracing::subscriber::with_default;
 
 use super::decode::decode_google_image;
 use super::error::GeminiImageError;
@@ -132,6 +135,42 @@ fn a_non_object_image_config_is_dropped_with_a_warning() {
             .expect("a non-object imageConfig is ignored");
         assert_eq!(wrapped(&mapped.params), json_value("{}"), "{value}");
         assert_eq!(mapped.warnings, 1, "{value}");
+    }
+}
+
+// the warning goes through LiteLLM's logger, so the captured fmt line carries its exact text
+fn warning_text(value: &str) -> String {
+    let log = NamedTempFile::new().expect("the log file opens");
+    let writer = Arc::new(log.reopen().expect("the log reopens"));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(writer)
+        .finish();
+    let source = format!(r#"{{"imageConfig":{value}}}"#);
+    with_default(subscriber, || {
+        let mapped = map_openai_params(&object(&source), &object("{}"), &settings())
+            .expect("a non-object imageConfig is ignored");
+        assert_eq!(mapped.warnings, 1);
+        fs::read_to_string(log.path()).expect("the log is readable")
+    })
+}
+
+#[test]
+fn a_non_object_image_config_names_the_python_type_it_dropped() {
+    for (value, name) in [
+        ("null", "NoneType"),
+        ("true", "bool"),
+        ("3", "int"),
+        ("-3", "int"),
+        ("1.5", "float"),
+        (r#""1K""#, "str"),
+        ("[]", "list"),
+    ] {
+        let log = warning_text(value);
+        assert!(
+            log.contains(&format!("got {name} — ignoring.")),
+            "{value} should warn with {name}: {log}"
+        );
     }
 }
 
@@ -344,6 +383,14 @@ fn an_array_root_or_a_non_list_candidates_names_its_shape() {
         GeminiImageError::Shape { ref path, .. } if path == "candidates"
     ));
     assert_eq!(error.status_code(), None);
+}
+
+#[test]
+fn a_reply_at_the_limit_still_parses() {
+    let mut reply = reply(r#"{"candidates":[]}"#);
+    reply.body.resize(MAX_RESPONSE_BYTES, b' ');
+    let response = transform_image_generation_response(&reply).expect("a body at the limit parses");
+    assert_eq!(response, ImageGenerationResponse::default());
 }
 
 #[test]

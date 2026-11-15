@@ -68,7 +68,7 @@ pub fn map_openai_params(
                     );
                 }
             },
-            "tools" | "web_search_options" => {}
+            // tools and web_search_options belong to the tools mapping below, which reads them itself
             _ => {}
         }
     }

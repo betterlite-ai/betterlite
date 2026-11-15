@@ -14,12 +14,3 @@ pub enum ImageIdentityError {
     #[error("the Vertex AI access token could not be minted")]
     Auth(#[source] CredentialCacheError),
 }
-
-impl ImageIdentityError {
-    #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
-        match self {
-            Self::MissingTarget | Self::Location(_) | Self::Auth(_) => None,
-        }
-    }
-}

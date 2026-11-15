@@ -446,7 +446,7 @@ async fn a_custom_base_skips_credentials_and_returns_the_callers_headers() {
 }
 
 #[tokio::test]
-async fn an_empty_parameter_base_skips_credentials_without_being_used() {
+async fn an_empty_parameter_base_alone_is_the_same_as_no_base() {
     let asked = Asked::default();
     let cache = cache(&asked, false);
     let headers = caller_headers();
@@ -458,14 +458,14 @@ async fn an_empty_parameter_base_skips_credentials_without_being_used() {
     };
     let resolved = validate_environment(&cache, &ImageIdentitySettings::default(), &request)
         .await
-        .expect("a non-None base skips validation");
+        .expect("the executor answers a token");
     assert_eq!(
         resolved
-            .get("x-goog-user-project")
+            .get("Authorization")
             .map(|value| value.expose_secret()),
-        Some("billing")
+        Some("Bearer vertex-token")
     );
-    assert!(asked.lock().expect("the record is not poisoned").is_empty());
+    assert_eq!(asked.lock().expect("the record is not poisoned").len(), 1);
 }
 
 #[tokio::test]

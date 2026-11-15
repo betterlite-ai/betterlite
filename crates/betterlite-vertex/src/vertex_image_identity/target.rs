@@ -39,11 +39,9 @@ pub fn complete_url(
     }
     let project = settings
         .resolve_project(target.params)
-        .filter(|project| !project.is_empty())
         .ok_or(ImageIdentityError::MissingTarget)?;
     let location = settings
         .resolve_location(target.params)
-        .filter(|location| !location.is_empty())
         .ok_or(ImageIdentityError::MissingTarget)?;
     let base_url = get_vertex_base_url(Some(location)).map_err(ImageIdentityError::Location)?;
     Ok(format!(
