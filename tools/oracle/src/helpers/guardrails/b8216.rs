@@ -83,17 +83,19 @@ fn output(
     recorded: Option<crate::routing_mock_scripts::ProviderCall>,
     api_key: Option<&str>,
 ) -> HelperResult {
-    let (path, headers, body) = match recorded {
+    let (method, path, headers, body) = match recorded {
         Some(provider_call) => (
+            Some(provider_call.request.method),
             Some(provider_call.request.path),
             Some(provider_call.request.headers),
             Some(provider_call.request.body),
         ),
-        None => (None, None, None),
+        None => (None, None, None, None),
     };
     let headers = headers.map(|headers| header_subset(&headers, api_key));
     match result {
         Ok(inputs) => Ok(json!({
+            "method": method,
             "path": path,
             "headers": headers,
             "body": body,
@@ -103,6 +105,7 @@ fn output(
             "blocked": true,
             "status": error.status_code().as_u16(),
             "detail": error.detail(),
+            "method": method,
             "path": path,
             "headers": headers,
             "body": body,

@@ -71,6 +71,7 @@ class Call(TypedDict):
 
 
 class Captured(TypedDict, total=False):
+    method: str
     path: str
     headers: dict[str, JsonValue]
     body: JsonValue
@@ -85,6 +86,7 @@ class Handler:
         headers: dict[str, JsonValue] = {
             name: request.headers[name] for name in HEADER_NAMES if name in request.headers
         }
+        self.captured["method"] = request.method
         self.captured["path"] = request.url.path
         self.captured["headers"] = headers
         self.captured["body"] = JSON.validate_json(request.content)
@@ -120,6 +122,7 @@ def blocked(captured: Captured, error: HTTPException) -> JsonValue:
         "blocked": True,
         "status": error.status_code,
         "detail": detail,
+        "method": captured.get("method"),
         "path": captured.get("path"),
         "headers": captured.get("headers"),
         "body": captured.get("body"),
@@ -140,6 +143,7 @@ def run(input_value: Call) -> JsonValue:
             raise
         return blocked(captured, error)
     return {
+        "method": captured.get("method"),
         "path": captured.get("path"),
         "headers": captured.get("headers"),
         "body": captured.get("body"),

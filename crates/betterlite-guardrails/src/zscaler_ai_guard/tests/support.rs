@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_http::proxy::base_builder;
@@ -16,6 +16,7 @@ use super::super::init::ZscalerArgs;
 use super::super::{Inputs, ZscalerAiGuard};
 
 pub(super) struct Seen {
+    pub(super) method: Method,
     pub(super) path: String,
     pub(super) headers: HeaderMap,
     pub(super) body: GuardrailValue,
@@ -31,13 +32,14 @@ pub(super) async fn mock(status: u16, reply: &str) -> Mock {
     let recorded = Arc::new(Mutex::new(Vec::new()));
     let captures = Arc::clone(&recorded);
     let reply = reply.to_owned();
-    let answer = move |uri: Uri, headers: HeaderMap, bytes: Bytes| {
+    let answer = move |method: Method, uri: Uri, headers: HeaderMap, bytes: Bytes| {
         let captures = Arc::clone(&captures);
         let reply = reply.clone();
         async move {
             let body =
                 serde_json::from_slice::<GuardrailValue>(&bytes).unwrap_or(GuardrailValue::Null);
             captures.lock().unwrap().push(Seen {
+                method,
                 path: uri.path().to_owned(),
                 headers,
                 body,

@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use axum::http::StatusCode;
+use axum::http::{Method, StatusCode};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_http::proxy::base_builder;
 
@@ -156,7 +156,7 @@ async fn the_request_carries_the_documented_headers_and_body() {
         ZscalerAiGuard::new(args, &environment, base_builder().build().unwrap()).unwrap();
     let data = request_data(
         r#"{
-            "metadata": {"user_api_key_metadata": {"user_api_key_user_id": "user-1"}},
+            "metadata": {"user_api_key_user_id": "user-1"},
             "litellm_metadata": {"user_api_key_alias": "alias-1", "user_api_key_team_id": "team-1"}
         }"#,
     );
@@ -170,6 +170,7 @@ async fn the_request_carries_the_documented_headers_and_body() {
         .unwrap();
     let seen = mock.seen.lock().unwrap();
     assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, Method::POST);
     assert_eq!(seen[0].path, "/v1/detection/execute-policy");
     assert_eq!(
         seen[0]
