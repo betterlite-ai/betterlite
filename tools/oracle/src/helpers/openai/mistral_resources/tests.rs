@@ -46,6 +46,13 @@ fn oracle_ocr_reads_back_as_user_data() {
     assert_eq!(files["uploads"][0]["content_type"], "application/pdf");
     assert_eq!(files["list"][0]["query"], json!([["purpose", "ocr"]]));
     assert_eq!(files["list"][1]["query"], json!([["purpose", "ocr"]]));
+    assert_eq!(result["create"], json!([]));
+}
+
+#[test]
+fn oracle_ocr_file_and_list_bodies_map_every_purpose() {
+    let result = run_case("ocr-user-data-round-trip.yaml");
+    let files = &result["files"];
     let purposes: Vec<&Value> = files["bodies"]
         .as_array()
         .unwrap()
@@ -78,10 +85,9 @@ fn oracle_ocr_reads_back_as_user_data() {
             &json!("batch"),
         ]
     );
-    assert_eq!(replies[0]["bytes"], 5);
-    assert_eq!(replies[1]["bytes"], 0);
-    assert_eq!(replies[5]["created_at"], 1_704_153_600);
-    assert_eq!(result["create"], json!([]));
+    assert_eq!(replies[0]["bytes"], json!(5_i64));
+    assert_eq!(replies[1]["bytes"], json!(0_i64));
+    assert_eq!(replies[5]["created_at"], json!(1_704_153_600_i64));
 }
 
 #[test]
@@ -104,7 +110,7 @@ fn a_list_purpose_mistral_lacks_is_a_400() {
         "env": {},
         "files": {
             "api_base": null,
-            "now": 1_704_153_600,
+            "now": 1_704_153_600_i64,
             "uploads": [],
             "list_purposes": ["vision"],
             "bodies": [],
@@ -128,7 +134,7 @@ fn oracle_upload_defaults_and_list_filters() {
         files["uploads"][0]["content_type"],
         "application/octet-stream"
     );
-    assert_eq!(files["uploads"][0]["content"], json!([1, 2, 3]));
+    assert_eq!(files["uploads"][0]["content"], json!([1_i64, 2_i64, 3_i64]));
     assert_eq!(files["uploads"][1]["content_type"], "text/plain");
     assert_eq!(files["uploads"][2]["content_type"], "application/x-custom");
     assert_eq!(files["list"][0]["query"], json!([]));
