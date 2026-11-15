@@ -19,12 +19,38 @@ pub(crate) enum Case {
     Scan(Box<Scenario>),
 }
 
+impl Case {
+    pub(crate) fn build(build_case: BuildCase) -> Self {
+        Self::Build(Box::new(build_case))
+    }
+
+    pub(crate) fn scan(scenario: Scenario) -> Self {
+        Self::Scan(Box::new(scenario))
+    }
+}
+
 pub(crate) struct BuildCase {
     pub(crate) args: VigilGuardArgs,
     pub(crate) defaults: EnvironmentDefaults,
     pub(crate) hooks: Option<Vec<GuardrailEventHooks>>,
     pub(crate) strict_modes: bool,
     pub(crate) expected: BuildExpectation,
+}
+
+impl BuildCase {
+    pub(crate) fn new(
+        args: VigilGuardArgs,
+        defaults: EnvironmentDefaults,
+        expected: BuildExpectation,
+    ) -> Self {
+        Self {
+            args,
+            defaults,
+            hooks: None,
+            strict_modes: true,
+            expected,
+        }
+    }
 }
 
 pub(crate) enum BuildExpectation {
@@ -38,6 +64,30 @@ pub(crate) struct BuiltSettings {
     pub(crate) timeout: RequestTimeout,
     pub(crate) fallback: UnreachableFallback,
     pub(crate) hooks: Vec<GuardrailEventHooks>,
+}
+
+impl BuiltSettings {
+    pub(crate) fn with_timeout(mut self, timeout: RequestTimeout) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub(crate) fn with_fallback(mut self, fallback: UnreachableFallback) -> Self {
+        self.fallback = fallback;
+        self
+    }
+
+    pub(crate) fn with_hooks(mut self, hooks: Vec<GuardrailEventHooks>) -> Self {
+        self.hooks = hooks;
+        self
+    }
+}
+
+impl Scenario {
+    pub(crate) fn fail_open(&mut self, analyzed: Vec<&'static str>) {
+        self.args.unreachable_fallback = "fail_open".to_owned();
+        self.analyzed = analyzed;
+    }
 }
 
 pub(crate) struct Scenario {

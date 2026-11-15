@@ -18,6 +18,11 @@ use crate::vigil_guard::handler_protocol::HttpResponse;
 
 use super::cases::{Expected, ScanResponse, Scenario};
 
+pub(crate) const HARMFUL: &str = "Harmful content";
+pub(crate) const BACKEND_CLOSED: &str =
+    "Vigil Guard backend unreachable; request blocked by fail_closed policy.";
+pub(crate) const UNRECOGNIZED: &str = "Vigil Guard returned an unrecognized decision.";
+
 pub(crate) fn args(
     api_base: Option<&str>,
     api_key: Option<&str>,
@@ -31,18 +36,6 @@ pub(crate) fn args(
         unreachable_fallback: unreachable_fallback.to_owned(),
         timeout,
         event_hook: LitellmParamsMode::One("pre_call".to_owned()),
-        default_on: false,
-    }
-}
-
-pub(crate) fn args_with_hook(api_base: &str, api_key: &str, event_hook: &str) -> VigilGuardArgs {
-    VigilGuardArgs {
-        name: String::new(),
-        api_base: Some(api_base.to_owned()),
-        api_key: Some(SecretString::from(api_key)),
-        unreachable_fallback: "fail_closed".to_owned(),
-        timeout: None,
-        event_hook: LitellmParamsMode::One(event_hook.to_owned()),
         default_on: false,
     }
 }
@@ -66,19 +59,16 @@ pub(crate) fn loaded_defaults(source: &str, variables: &[(&str, &str)]) -> Envir
         .vigil_runtime
 }
 
-pub(crate) fn texts_inputs(texts: Option<Vec<&str>>) -> GuardrailApiInputs {
-    GuardrailApiInputs {
-        texts: texts.map(|items| items.iter().map(|text| (*text).to_owned()).collect()),
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model: None,
-        stream_holdback_chars: None,
-    }
+pub(crate) fn header_args(fallback: &str) -> VigilGuardArgs {
+    args(
+        Some("https://vigil.example"),
+        Some("bad\nkey"),
+        fallback,
+        None,
+    )
 }
 
-pub(crate) fn scan_case(inputs: GuardrailApiInputs, responses: Vec<ScanResponse>) -> Scenario {
+pub(crate) fn request(texts: Option<Vec<&str>>, responses: Vec<ScanResponse>) -> Scenario {
     Scenario {
         args: args(
             Some("https://vigil.example"),
@@ -86,7 +76,15 @@ pub(crate) fn scan_case(inputs: GuardrailApiInputs, responses: Vec<ScanResponse>
             "fail_closed",
             None,
         ),
-        inputs,
+        inputs: GuardrailApiInputs {
+            texts: texts.map(|items| items.iter().map(|text| (*text).to_owned()).collect()),
+            images: None,
+            tools: None,
+            tool_calls: None,
+            structured_messages: None,
+            model: None,
+            stream_holdback_chars: None,
+        },
         input_type: GuardrailInputType::Request,
         request_data: BTreeMap::new(),
         logging: None,
@@ -95,6 +93,37 @@ pub(crate) fn scan_case(inputs: GuardrailApiInputs, responses: Vec<ScanResponse>
         metadata: Vec::new(),
         expected: Expected::Unchanged,
     }
+}
+
+pub(crate) fn response(
+    texts: Option<Vec<&str>>,
+    calls: &[(&str, &str)],
+    responses: Vec<ScanResponse>,
+) -> Scenario {
+    let mut scenario = request(texts, responses);
+    scenario.input_type = GuardrailInputType::Response;
+    let tool_calls = calls.iter().map(|(id, arguments)| tool_call(id, arguments));
+    scenario.inputs.tool_calls = Some(tool_calls.collect());
+    scenario
+}
+
+pub(crate) fn rewritten(texts: Vec<&str>, tool_calls: Option<Vec<GuardrailValue>>) -> Expected {
+    Expected::Rewritten {
+        texts: texts.iter().map(|text| (*text).to_owned()).collect(),
+        tool_calls,
+    }
+}
+
+pub(crate) fn raised(message: &str, status_code: u16, blocked_content: bool) -> Expected {
+    Expected::Raised {
+        message: message.to_owned(),
+        status_code,
+        blocked_content,
+    }
+}
+
+pub(crate) fn other(fragment: &str) -> Expected {
+    Expected::Other(fragment.to_owned())
 }
 
 pub(crate) fn tool_call(id: &str, arguments: &str) -> GuardrailValue {
