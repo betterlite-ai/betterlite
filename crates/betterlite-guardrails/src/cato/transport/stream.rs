@@ -62,7 +62,6 @@ pub async fn relay_output_stream(
     let mut state = StreamState {
         reader: socket.reader,
         sender: Some(sender),
-        finished: false,
     };
     while let Some(chunk) = state.next_chunk().await? {
         if output.send(chunk).await.is_err() {
@@ -70,7 +69,6 @@ pub async fn relay_output_stream(
             break;
         }
     }
-    state.finish();
     Ok(())
 }
 
@@ -120,46 +118,23 @@ enum Await {
 
 struct StreamState {
     reader: Box<dyn CatoFrameReader>,
+    // dropping the set cancels the forwarding task, as LiteLLM's finally block cancels its task
     sender: Option<JoinSet<Result<(), CatoError>>>,
-    finished: bool,
 }
 
 impl StreamState {
     async fn next_chunk(&mut self) -> Result<Option<BTreeMap<String, GuardrailValue>>, CatoError> {
-        if self.finished {
-            return Ok(None);
-        }
-        let message = match self.next_message().await {
-            Ok(message) => message,
-            Err(error) => {
-                self.finish();
-                return Err(error);
-            }
-        };
-        let Some(bytes) = message else {
-            self.finish();
+        let Some(bytes) = self.next_message().await? else {
             return Err(CatoError::StreamClosed);
         };
-        let frame = match serde_json::from_slice::<StreamMessage>(&bytes) {
-            Ok(frame) => frame,
-            Err(source) => {
-                self.finish();
-                return Err(CatoError::StreamJson { source });
-            }
-        };
+        let frame = serde_json::from_slice::<StreamMessage>(&bytes)
+            .map_err(|source| CatoError::StreamJson { source })?;
         match classify(frame) {
             CatoFrame::Chunk(chunk) => Ok(Some(chunk)),
-            CatoFrame::Done => {
-                self.finish();
-                Ok(None)
-            }
-            CatoFrame::Blocked(message) => {
-                self.finish();
-                Err(CatoError::StreamBlocked { message })
-            }
+            CatoFrame::Done => Ok(None),
+            CatoFrame::Blocked(message) => Err(CatoError::StreamBlocked { message }),
             CatoFrame::Unknown(frame) => {
                 tracing::error!(?frame, "Cato: unknown message received");
-                self.finish();
                 Ok(None)
             }
         }
@@ -188,11 +163,5 @@ impl StreamState {
                 Await::Message(message) => return message,
             }
         }
-    }
-
-    // dropping the sender cancels the forwarding task, as LiteLLM's finally block cancels its task
-    fn finish(&mut self) {
-        self.finished = true;
-        drop(self.sender.take());
     }
 }

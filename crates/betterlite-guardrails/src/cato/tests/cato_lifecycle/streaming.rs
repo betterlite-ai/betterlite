@@ -21,6 +21,9 @@ use crate::cato::transport::stream::{
 type Sent = Arc<Mutex<Vec<String>>>;
 type Chunks = mpsc::Receiver<Result<GuardrailValue, ModelStreamError>>;
 
+// a relay that stops consuming or waiting would otherwise hold the test suite until its timeout
+const RELAY_DEADLINE: Duration = Duration::from_secs(5);
+
 enum FakeFrame {
     Message(Result<Option<Vec<u8>>, CatoError>),
     AfterSentTexts(usize, Result<Option<Vec<u8>>, CatoError>),
@@ -170,7 +173,12 @@ async fn relay(
     chunks: Chunks,
 ) -> (Result<(), CatoError>, mpsc::Receiver<GuardrailValue>) {
     let (output, delivered) = mpsc::channel(16);
-    let result = relay_output_stream(connector, guardrail, HeaderMap::new(), chunks, &output).await;
+    let result = time::timeout(
+        RELAY_DEADLINE,
+        relay_output_stream(connector, guardrail, HeaderMap::new(), chunks, &output),
+    )
+    .await
+    .expect("the relay finishes");
     drop(output);
     (result, delivered)
 }

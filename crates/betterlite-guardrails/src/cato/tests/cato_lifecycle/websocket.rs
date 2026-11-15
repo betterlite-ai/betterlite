@@ -10,6 +10,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio::time;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::Error as WebSocketError;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
@@ -24,6 +25,9 @@ use crate::cato::tests::support::{assert_header, chat_data};
 use crate::cato::tests::{list, object, text};
 use crate::cato::transport::stream::{CatoSocket, DONE_FRAME, MAX_FRAME_BYTES};
 use crate::cato::transport::websocket::WebSocketConnector;
+
+// a hook that stops relaying would otherwise hold the test suite until its timeout
+const RELAY_DEADLINE: Duration = Duration::from_secs(5);
 
 struct Report {
     headers: BTreeMap<String, String>,
@@ -245,9 +249,13 @@ async fn streaming_iterator_hook_relays_the_stream_with_cato_headers() {
     let (sender, chunks) = mpsc::channel(8);
     sender.send(Ok(chunk.clone())).await.expect("chunk");
     drop(sender);
-    streaming_iterator_hook(&guardrail, &chat_data(), CALLER, chunks, output)
-        .await
-        .expect("relayed");
+    time::timeout(
+        RELAY_DEADLINE,
+        streaming_iterator_hook(&guardrail, &chat_data(), CALLER, chunks, output),
+    )
+    .await
+    .expect("the relay finishes")
+    .expect("relayed");
     assert_eq!(delivered.recv().await, Some(chunk.clone()));
     assert!(delivered.recv().await.is_none());
     let joined = tasks.join_next().await.expect("server task");
