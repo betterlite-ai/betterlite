@@ -14,10 +14,8 @@ use crate::focus_records::destinations::FocusDestination as _;
 use crate::gcs_mock::client::GcsMockError;
 
 fn service_account(destination: &FocusGcsDestination<FakeAuth, FakeGcsHttp>) -> Option<&str> {
-    destination
-        .service_account_json
-        .as_ref()
-        .map(|value| value.expose_secret().as_str())
+    let path = destination.service_account_json.as_ref()?;
+    Some(path.expose_secret())
 }
 
 #[test]

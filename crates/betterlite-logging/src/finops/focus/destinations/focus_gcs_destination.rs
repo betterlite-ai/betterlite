@@ -78,20 +78,12 @@ impl<Auth, Http> FocusGcsDestination<Auth, Http> {
     }
 }
 
-impl<Auth, Http> FocusDestination for FocusGcsDestination<Auth, Http>
+impl<Auth, Http> FocusGcsDestination<Auth, Http>
 where
     Auth: VertexAuth + Clone + Debug + 'static,
     Http: GcsHttpClient + Debug + 'static,
 {
-    type Error = GcsDeliveryError<Auth, Http>;
-
-    async fn deliver<'delivery>(
-        &'delivery self,
-        content: &'delivery [u8],
-        time_window: &'delivery FocusTimeWindow,
-        filename: &'delivery str,
-    ) -> Result<(), Self::Error> {
-        let object_name = object_key::build(&self.prefix, time_window, filename);
+    async fn request_headers(&self) -> Result<HeaderMap, GcsDeliveryError<Auth, Http>> {
         let mut auth_headers = construct_request_headers(
             &self.base,
             &self.bucket_name,
@@ -115,11 +107,34 @@ where
                 header_value,
             );
         }
-        let encoded_name = encode_object_name(&object_name, Encoding::Gcs);
-        let url = format!(
-            "{MEDIA_UPLOAD_ROOT}/{}/o?uploadType=media&name={encoded_name}",
-            self.bucket_name
-        );
+        Ok(headers)
+    }
+
+    fn upload_url(&self, object_name: &str) -> String {
+        format!(
+            "{MEDIA_UPLOAD_ROOT}/{bucket}/o?uploadType=media&name={encoded_name}",
+            bucket = self.bucket_name,
+            encoded_name = encode_object_name(object_name, Encoding::Gcs),
+        )
+    }
+}
+
+impl<Auth, Http> FocusDestination for FocusGcsDestination<Auth, Http>
+where
+    Auth: VertexAuth + Clone + Debug + 'static,
+    Http: GcsHttpClient + Debug + 'static,
+{
+    type Error = GcsDeliveryError<Auth, Http>;
+
+    async fn deliver<'delivery>(
+        &'delivery self,
+        content: &'delivery [u8],
+        time_window: &'delivery FocusTimeWindow,
+        filename: &'delivery str,
+    ) -> Result<(), Self::Error> {
+        let object_name = object_key::build(&self.prefix, time_window, filename);
+        let headers = self.request_headers().await?;
+        let url = self.upload_url(&object_name);
         let response = self
             .base
             .client
