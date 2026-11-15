@@ -241,6 +241,17 @@ fn delta_reads_nullable_reasoning_as_empty() {
 }
 
 #[test]
+fn delta_accumulates_reasoning_without_thinking_blocks() {
+    let choices = choices(
+        r#"[{"delta": {"reasoning_content": "why"}}, {"delta": {"reasoning_content": "not"}}]"#,
+    );
+    assert_rendered(
+        &delta(&choices).expect("projects a delta"),
+        r#"{"type": "thinking_delta", "thinking": "whynot"}"#,
+    );
+}
+
+#[test]
 fn delta_skips_reasoning_beside_thinking_blocks() {
     let choices = choices(r#"[{"delta": {"reasoning_content": "why", "thinking_blocks": []}}]"#);
     assert_rendered(
