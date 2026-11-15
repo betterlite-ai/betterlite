@@ -97,18 +97,22 @@ pub(super) fn user_env_rows(rows: &[EnvVarInput]) -> Vec<StoredUserEnvVarRow> {
         .collect()
 }
 
-fn parse_inner(value: &JsonValue) -> Result<Value, Box<HelperError>> {
-    let JsonValue::String(text) = value else {
-        return Err(helper_error(
-            "SerializationError",
-            "the rotated value is not JSON text",
-        ));
-    };
-    serde_json::from_str(text)
-        .map_err(|source| helper_error("SerializationError", &source.to_string()))
+#[derive(Debug, thiserror::Error)]
+pub(super) enum RenderError {
+    #[error("the rotated value is not JSON text")]
+    NotText,
+    #[error("the rotated value is not valid JSON")]
+    Json(#[source] serde_json::Error),
 }
 
-fn server_write(server_id: &str, update: &ServerUpdate) -> Result<Value, Box<HelperError>> {
+fn parse_inner(value: &JsonValue) -> Result<Value, RenderError> {
+    let JsonValue::String(text) = value else {
+        return Err(RenderError::NotText);
+    };
+    serde_json::from_str(text).map_err(RenderError::Json)
+}
+
+fn server_write(server_id: &str, update: &ServerUpdate) -> Result<Value, RenderError> {
     let credentials = update.credentials.as_ref().map(parse_inner).transpose()?;
     let env_vars = update.env_vars.as_ref().map(parse_inner).transpose()?;
     let mut data = json!({
@@ -132,8 +136,8 @@ fn server_write(server_id: &str, update: &ServerUpdate) -> Result<Value, Box<Hel
 pub(super) enum StoreFailure {
     #[error("the injected store failure at write {index}")]
     Injected { index: usize },
-    #[error("the helper could not render a write: {message}")]
-    Render { message: String },
+    #[error("the helper could not render a write")]
+    Render(#[source] RenderError),
 }
 
 #[derive(Default)]
@@ -146,22 +150,9 @@ pub(super) struct FakeStore {
     pub(super) fail_at: Option<usize>,
 }
 
-pub(super) fn empty_store(recorder: Arc<Mutex<Vec<Value>>>) -> FakeStore {
-    FakeStore {
-        servers: Vec::new(),
-        oauth_clients: Vec::new(),
-        user_credentials: Vec::new(),
-        user_env_vars: Vec::new(),
-        recorder,
-        fail_at: None,
-    }
-}
-
 impl FakeStore {
-    fn record(&self, write: Result<Value, Box<HelperError>>) -> Result<(), StoreFailure> {
-        let write = write.map_err(|error| StoreFailure::Render {
-            message: error.message,
-        })?;
+    fn record(&self, write: Result<Value, RenderError>) -> Result<(), StoreFailure> {
+        let write = write.map_err(StoreFailure::Render)?;
         let mut writes = self.recorder.lock().unwrap_or_else(PoisonError::into_inner);
         let index = writes.len();
         if self.fail_at == Some(index) {

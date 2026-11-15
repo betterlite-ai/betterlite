@@ -12,7 +12,9 @@ use super::super::codec::{
     reencrypt_credentials_blob, reencrypt_user_credential, reencrypt_user_env_var,
 };
 use super::super::error::RotationCodecError;
-use super::support::{NEW_KEY, OLD_KEY, blob, cipher, json, new_key, object, open, sealed, string};
+use super::support::{
+    NEW_KEY, OLD_KEY, blob, cipher, exposed, json, new_key, object, open, sealed, string,
+};
 
 const SECRET_FIELDS: [&str; 7] = [
     "auth_value",
@@ -230,7 +232,7 @@ fn decrypt_credentials_keeps_undecryptable_strings() {
 fn user_legacy_base64() {
     let old = cipher(OLD_KEY);
     let plaintext = decode_user_credential("aGVsbG8tdG9rZW4=", &old);
-    assert_eq!(plaintext.as_deref(), Some("hello-token"));
+    assert_eq!(exposed(plaintext).as_deref(), Some("hello-token"));
     let rotated = reencrypt_user_credential("aGVsbG8tdG9rZW4=", &old, &new_key())
         .unwrap()
         .unwrap();
@@ -243,8 +245,14 @@ fn user_legacy_base64() {
 #[test]
 fn user_empty_plaintext() {
     let old = cipher(OLD_KEY);
-    assert_eq!(decode_user_credential("", &old).as_deref(), Some(""));
-    assert_eq!(decode_user_credential("***", &old).as_deref(), Some(""));
+    assert_eq!(
+        exposed(decode_user_credential("", &old)).as_deref(),
+        Some("")
+    );
+    assert_eq!(
+        exposed(decode_user_credential("***", &old)).as_deref(),
+        Some("")
+    );
     let rotated = reencrypt_user_credential("", &old, &new_key())
         .unwrap()
         .unwrap();
@@ -264,9 +272,8 @@ fn user_empty_plaintext() {
 #[case::not_base64("not a ciphertext")]
 fn user_decode_error_classes(#[case] unreadable: &str) {
     let old = cipher(OLD_KEY);
-    assert_eq!(
-        decode_user_credential(unreadable, &old),
-        None,
+    assert!(
+        decode_user_credential(unreadable, &old).is_none(),
         "{unreadable:?} must not decode"
     );
     assert_eq!(
@@ -283,7 +290,7 @@ fn user_env_no_base64_fallback() {
         None
     );
     assert_eq!(
-        decode_user_credential("aGVsbG8tdG9rZW4=", &old).as_deref(),
+        exposed(decode_user_credential("aGVsbG8tdG9rZW4=", &old)).as_deref(),
         Some("hello-token")
     );
 }

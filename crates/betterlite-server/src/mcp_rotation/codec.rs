@@ -46,7 +46,7 @@ pub fn is_falsey(value: &JsonValue) -> bool {
 }
 
 pub fn encrypt_stored_value<N, D>(
-    value: JsonValue,
+    value: StoredValue<JsonValue>,
     cipher: &StoredCipher<N, D>,
     key: Option<&SecretString>,
 ) -> Result<JsonValue, SecretError>
@@ -54,11 +54,7 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    let stored = match value {
-        JsonValue::String(text) => StoredValue::Text(SecretString::from(text)),
-        other => StoredValue::Other(other),
-    };
-    Ok(match cipher.encrypt_value(stored, key)? {
+    Ok(match cipher.encrypt_value(value, key)? {
         StoredValue::Text(sealed) => JsonValue::String(sealed.expose_secret().to_owned()),
         StoredValue::Other(other) => other,
     })
@@ -77,7 +73,11 @@ where
         let Some(value) = credentials.get_mut(field) else {
             continue;
         };
-        *value = encrypt_stored_value(take(value), cipher, key)?;
+        let stored = match take(value) {
+            JsonValue::String(text) => StoredValue::Text(SecretString::from(text)),
+            other => StoredValue::Other(other),
+        };
+        *value = encrypt_stored_value(stored, cipher, key)?;
     }
     Ok(())
 }
@@ -121,14 +121,19 @@ where
     Ok(Some(JsonValue::String(text)))
 }
 
-pub fn decode_user_credential<N, D>(stored: &str, cipher: &StoredCipher<N, D>) -> Option<String>
+pub fn decode_user_credential<N, D>(
+    stored: &str,
+    cipher: &StoredCipher<N, D>,
+) -> Option<SecretString>
 where
     D: SecretDiagnostics,
 {
     let value = StoredValue::<()>::Text(SecretString::from(stored.to_owned()));
     match cipher.decrypt_value(value, USER_CREDENTIAL_KEY, DROP_UNREADABLE) {
-        Some(StoredValue::Text(plaintext)) => Some(plaintext.expose_secret().to_owned()),
-        Some(StoredValue::Other(())) | None => decode_legacy_base64_text(stored).ok(),
+        Some(StoredValue::Text(plaintext)) => Some(plaintext),
+        Some(StoredValue::Other(())) | None => decode_legacy_base64_text(stored)
+            .ok()
+            .map(SecretString::from),
     }
 }
 
@@ -145,7 +150,7 @@ where
         return Ok(None);
     };
     Ok(Some(encrypt_stored_value(
-        JsonValue::String(plaintext),
+        StoredValue::Text(plaintext),
         cipher,
         Some(new_key),
     )?))
@@ -163,7 +168,7 @@ where
     let value = StoredValue::<()>::Text(SecretString::from(stored.to_owned()));
     match cipher.decrypt_value(value, USER_ENV_VARS_KEY, DROP_UNREADABLE) {
         Some(StoredValue::Text(plaintext)) => Ok(Some(encrypt_stored_value(
-            JsonValue::String(plaintext.expose_secret().to_owned()),
+            StoredValue::Text(plaintext),
             cipher,
             Some(new_key),
         )?)),

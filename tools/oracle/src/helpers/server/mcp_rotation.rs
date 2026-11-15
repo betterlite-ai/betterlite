@@ -12,7 +12,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use self::store::{
-    FakeStore, cipher, empty_store, oauth_rows, server_rows, user_credential_rows, user_env_rows,
+    FakeStore, cipher, oauth_rows, server_rows, user_credential_rows, user_env_rows,
 };
 use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_server::mcp_rotation::rotation::Rotation;
@@ -176,7 +176,10 @@ fn prepare_store(
     input: &Input,
     recorder: &Arc<Mutex<Vec<Value>>>,
 ) -> Result<FakeStore, Box<HelperError>> {
-    let mut store = empty_store(Arc::clone(recorder));
+    let mut store = FakeStore {
+        recorder: Arc::clone(recorder),
+        ..FakeStore::default()
+    };
     match input {
         Input::RotateServers {
             servers,

@@ -85,10 +85,16 @@ pub fn string(text: &str) -> JsonValue {
 
 #[must_use]
 pub fn sealed(text: &str, key: &str) -> String {
-    match encrypt_stored_value(string(text), &cipher(key), None).unwrap() {
+    let value = StoredValue::Text(SecretString::from(text.to_owned()));
+    match encrypt_stored_value(value, &cipher(key), None).unwrap() {
         JsonValue::String(ciphertext) => ciphertext,
         _other => panic!("a sealed text value is a string"),
     }
+}
+
+#[must_use]
+pub fn exposed(secret: Option<SecretString>) -> Option<String> {
+    secret.map(|value| value.expose_secret().to_owned())
 }
 
 #[must_use]

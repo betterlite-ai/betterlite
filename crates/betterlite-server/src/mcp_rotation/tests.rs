@@ -6,28 +6,29 @@ mod env_vars;
 mod rotation;
 mod support;
 
+use std::sync::{Arc, Mutex, PoisonError};
+
+use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableAccess, TableError};
+use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::mcp_server_encoding::credentials::CredentialBlob;
 use betterlite_db::mcp_stored_contracts::JsonValue;
-use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
+use betterlite_redis::config_sync::table_actions::TableActions;
 use betterlite_secrets::secret_codec::secret_map::{
     SecretMap, decode_secret_map, encrypt_secret_map,
 };
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use thiserror::Error;
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
 use self::support::{NEW_KEY, OLD_KEY, TestCipher, cipher, new_key, open, sealed, string};
 use super::codec::encrypt_credentials;
 use super::rotation::Rotation;
-use super::store::{
-    McpRotationStore, ServerUpdate, StoredOAuthClientRow, StoredServerRow, StoredUserCredentialRow,
-    StoredUserEnvVarRow,
-};
+use super::tables::{McpUpdateActions, PostgresRotationStore};
 
 const SCHEMA: &str = r#"
 CREATE TABLE "LiteLLM_MCPServerTable" (
@@ -36,17 +37,20 @@ CREATE TABLE "LiteLLM_MCPServerTable" (
     env_vars JSONB,
     static_headers JSONB,
     env JSONB,
-    updated_by TEXT
+    updated_by TEXT,
+    updated_at TIMESTAMP NOT NULL DEFAULT '2000-01-01'
 );
 CREATE TABLE "LiteLLM_MCPServerOAuthClient" (
     server_id TEXT PRIMARY KEY,
-    credentials JSONB
+    credentials JSONB,
+    updated_at TIMESTAMP NOT NULL DEFAULT '2000-01-01'
 );
 CREATE TABLE "LiteLLM_MCPUserCredentials" (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     server_id TEXT NOT NULL,
     credential_b64 TEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT '2000-01-01',
     UNIQUE (user_id, server_id)
 );
 CREATE TABLE "LiteLLM_MCPUserEnvVars" (
@@ -54,6 +58,7 @@ CREATE TABLE "LiteLLM_MCPUserEnvVars" (
     user_id TEXT NOT NULL,
     server_id TEXT NOT NULL,
     values_b64 TEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT '2000-01-01',
     UNIQUE (user_id, server_id)
 );
 CREATE FUNCTION reject_boom() RETURNS trigger AS $$
@@ -67,19 +72,6 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER reject_boom_update BEFORE UPDATE ON "LiteLLM_MCPServerTable"
 FOR EACH ROW EXECUTE FUNCTION reject_boom();
 "#;
-
-const SERVER_ROWS_SQL: &str = r#"SELECT server_id, credentials::text, env_vars::text, static_headers::text, env::text FROM "LiteLLM_MCPServerTable""#;
-const SERVER_UPDATE_SQL: &str = r#"UPDATE "LiteLLM_MCPServerTable" SET credentials = COALESCE(to_jsonb($2::text), credentials), env_vars = COALESCE(to_jsonb($3::text), env_vars), static_headers = COALESCE(to_jsonb($4::text), static_headers), env = COALESCE(to_jsonb($5::text), env), updated_by = $6 WHERE server_id = $1"#;
-const OAUTH_ROWS_SQL: &str =
-    r#"SELECT server_id, credentials::text FROM "LiteLLM_MCPServerOAuthClient""#;
-const OAUTH_UPDATE_SQL: &str = r#"UPDATE "LiteLLM_MCPServerOAuthClient" SET credentials = to_jsonb($2::text) WHERE server_id = $1"#;
-const USER_CREDENTIAL_ROWS_SQL: &str =
-    r#"SELECT user_id, server_id, credential_b64 FROM "LiteLLM_MCPUserCredentials""#;
-const USER_CREDENTIAL_UPDATE_SQL: &str = r#"UPDATE "LiteLLM_MCPUserCredentials" SET credential_b64 = $3 WHERE user_id = $1 AND server_id = $2"#;
-const USER_ENV_ROWS_SQL: &str =
-    r#"SELECT user_id, server_id, values_b64 FROM "LiteLLM_MCPUserEnvVars""#;
-const USER_ENV_UPDATE_SQL: &str =
-    r#"UPDATE "LiteLLM_MCPUserEnvVars" SET values_b64 = $3 WHERE user_id = $1 AND server_id = $2"#;
 
 const INSERT_SERVER_SQL: &str = r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, credentials, env_vars, static_headers) VALUES ('s1', to_jsonb($1::text), to_jsonb($2::text), to_jsonb($3::text))"#;
 const INSERT_BOOM_SQL: &str = r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, credentials) VALUES ('boom', to_jsonb($1::text))"#;
@@ -101,175 +93,15 @@ const OAUTH_CREDENTIALS_SQL: &str =
 const USER_CREDENTIAL_SQL: &str = r#"SELECT credential_b64 FROM "LiteLLM_MCPUserCredentials" WHERE user_id = $1 AND server_id = 's1'"#;
 const USER_ENV_SQL: &str =
     r#"SELECT values_b64 FROM "LiteLLM_MCPUserEnvVars" WHERE user_id = $1 AND server_id = 's1'"#;
+const TOUCHED_SQL: &str = r#"SELECT
+    (SELECT updated_at > '2001-01-01' FROM "LiteLLM_MCPServerTable" WHERE server_id = 's1'),
+    (SELECT updated_at > '2001-01-01' FROM "LiteLLM_MCPServerOAuthClient" WHERE server_id = 'oauth-1'),
+    (SELECT updated_at > '2001-01-01' FROM "LiteLLM_MCPUserCredentials" WHERE id = 'c1'),
+    (SELECT updated_at > '2001-01-01' FROM "LiteLLM_MCPUserCredentials" WHERE id = 'c2'),
+    (SELECT updated_at > '2001-01-01' FROM "LiteLLM_MCPUserEnvVars" WHERE id = 'e1')"#;
+const USER_ENV_VAR_UPDATE_SQL: &str =
+    r#"UPDATE "LiteLLM_MCPUserEnvVars" SET values_b64 = $3 WHERE user_id = $1 AND server_id = $2"#;
 const DROP_TRIGGER_SQL: &str = r#"DROP TRIGGER reject_boom_update ON "LiteLLM_MCPServerTable""#;
-
-#[derive(Debug, Error)]
-enum PostgresRotationError {
-    #[error("the MCP rotation query failed")]
-    Database(#[from] DbError),
-    #[error("the rotated MCP value cannot be stored")]
-    Json(#[from] serde_json::Error),
-}
-
-struct PostgresRotationStore {
-    store: PostgresStore,
-}
-
-fn update_columns(update: &ServerUpdate) -> Result<[Option<String>; 4], PostgresRotationError> {
-    let credentials = update
-        .credentials
-        .as_ref()
-        .map(serde_json::to_string)
-        .transpose()?;
-    let env_vars = update
-        .env_vars
-        .as_ref()
-        .map(serde_json::to_string)
-        .transpose()?;
-    let static_headers = update
-        .static_headers
-        .as_ref()
-        .map(serde_json::to_string)
-        .transpose()?;
-    let env = update.env.as_ref().map(serde_json::to_string).transpose()?;
-    Ok([credentials, env_vars, static_headers, env])
-}
-
-impl McpRotationStore for PostgresRotationStore {
-    type Error = PostgresRotationError;
-
-    async fn server_rows(&self) -> Result<Vec<StoredServerRow>, Self::Error> {
-        let client = self.store.session().await?;
-        let rows = client.query(SERVER_ROWS_SQL, &[]).await.map_err(backend)?;
-        let mut found = Vec::with_capacity(rows.len());
-        for row in rows {
-            found.push(StoredServerRow {
-                server_id: row.try_get("server_id").map_err(backend)?,
-                credentials: row.try_get("credentials").map_err(backend)?,
-                env_vars: row.try_get("env_vars").map_err(backend)?,
-                static_headers: row.try_get("static_headers").map_err(backend)?,
-                env: row.try_get("env").map_err(backend)?,
-            });
-        }
-        Ok(found)
-    }
-
-    async fn update_server(
-        &self,
-        server_id: &str,
-        update: &ServerUpdate,
-    ) -> Result<(), Self::Error> {
-        let [credentials, env_vars, static_headers, env] = update_columns(update)?;
-        let client = self.store.session().await?;
-        client
-            .execute(
-                SERVER_UPDATE_SQL,
-                &[
-                    &server_id,
-                    &credentials,
-                    &env_vars,
-                    &static_headers,
-                    &env,
-                    &update.updated_by,
-                ],
-            )
-            .await
-            .map_err(backend)?;
-        Ok(())
-    }
-
-    async fn oauth_client_rows(&self) -> Result<Vec<StoredOAuthClientRow>, Self::Error> {
-        let client = self.store.session().await?;
-        let rows = client.query(OAUTH_ROWS_SQL, &[]).await.map_err(backend)?;
-        let mut found = Vec::with_capacity(rows.len());
-        for row in rows {
-            found.push(StoredOAuthClientRow {
-                server_id: row.try_get("server_id").map_err(backend)?,
-                credentials: row.try_get("credentials").map_err(backend)?,
-            });
-        }
-        Ok(found)
-    }
-
-    async fn update_oauth_client(
-        &self,
-        server_id: &str,
-        credentials: &JsonValue,
-    ) -> Result<(), Self::Error> {
-        let credentials = serde_json::to_string(credentials)?;
-        let client = self.store.session().await?;
-        client
-            .execute(OAUTH_UPDATE_SQL, &[&server_id, &credentials])
-            .await
-            .map_err(backend)?;
-        Ok(())
-    }
-
-    async fn user_credential_rows(&self) -> Result<Vec<StoredUserCredentialRow>, Self::Error> {
-        let client = self.store.session().await?;
-        let rows = client
-            .query(USER_CREDENTIAL_ROWS_SQL, &[])
-            .await
-            .map_err(backend)?;
-        let mut found = Vec::with_capacity(rows.len());
-        for row in rows {
-            found.push(StoredUserCredentialRow {
-                user_id: row.try_get("user_id").map_err(backend)?,
-                server_id: row.try_get("server_id").map_err(backend)?,
-                credential_b64: row.try_get("credential_b64").map_err(backend)?,
-            });
-        }
-        Ok(found)
-    }
-
-    async fn update_user_credential(
-        &self,
-        user_id: &str,
-        server_id: &str,
-        credential_b64: &str,
-    ) -> Result<(), Self::Error> {
-        let client = self.store.session().await?;
-        client
-            .execute(
-                USER_CREDENTIAL_UPDATE_SQL,
-                &[&user_id, &server_id, &credential_b64],
-            )
-            .await
-            .map_err(backend)?;
-        Ok(())
-    }
-
-    async fn user_env_var_rows(&self) -> Result<Vec<StoredUserEnvVarRow>, Self::Error> {
-        let client = self.store.session().await?;
-        let rows = client
-            .query(USER_ENV_ROWS_SQL, &[])
-            .await
-            .map_err(backend)?;
-        let mut found = Vec::with_capacity(rows.len());
-        for row in rows {
-            found.push(StoredUserEnvVarRow {
-                user_id: row.try_get("user_id").map_err(backend)?,
-                server_id: row.try_get("server_id").map_err(backend)?,
-                values_b64: row.try_get("values_b64").map_err(backend)?,
-            });
-        }
-        Ok(found)
-    }
-
-    async fn update_user_env_var(
-        &self,
-        user_id: &str,
-        server_id: &str,
-        values_b64: &str,
-    ) -> Result<(), Self::Error> {
-        let client = self.store.session().await?;
-        client
-            .execute(USER_ENV_UPDATE_SQL, &[&user_id, &server_id, &values_b64])
-            .await
-            .map_err(backend)?;
-        Ok(())
-    }
-}
 
 #[derive(Parser)]
 struct Environment {
@@ -438,9 +270,96 @@ async fn assert_oauth(client: &Client, server_id: &str, key: &str) {
     assert_eq!(open(&field, key).as_deref(), Some("client-id-value"));
 }
 
+fn recording_publisher(journal: &Arc<Mutex<Vec<String>>>) -> PublishChange<TableError> {
+    let entries = Arc::clone(journal);
+    Arc::new(move |object_type: &str| {
+        let mut recorded = entries.lock().unwrap_or_else(PoisonError::into_inner);
+        recorded.push(object_type.to_owned());
+        let future: PublishFuture<TableError> = Box::pin(async { Ok(()) });
+        future
+    })
+}
+
+fn published(journal: &Arc<Mutex<Vec<String>>>) -> Vec<String> {
+    journal
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+// Prisma stamps updated_at on every update, so each rotated row moves past its seeded date.
+async fn assert_touched(client: &Client) {
+    let row = client.query_one(TOUCHED_SQL, &[]).await.unwrap();
+    let touched: Vec<bool> = (0..5).map(|index| row.get(index)).collect();
+    assert_eq!(touched, [true, true, true, false, true]);
+}
+
+fn keys(user_id: &str, server_id: &str) -> Vec<String> {
+    vec![user_id.to_owned(), server_id.to_owned()]
+}
+
+// The one-statement actions report whether a row matched and how many rows changed.
+async fn assert_update_results(writer: &PostgresStore) {
+    let actions = McpUpdateActions {
+        access: TableAccess {
+            read: writer,
+            write: writer,
+        },
+        update_sql: USER_ENV_VAR_UPDATE_SQL,
+    };
+    let data = vec![Some("replacement".to_owned())];
+    let hit = actions.update(data.clone(), keys("u1", "s1")).await;
+    assert_eq!(hit.unwrap(), Some(()));
+    let miss = actions.update(data.clone(), keys("nobody", "s1")).await;
+    assert_eq!(miss.unwrap(), None);
+    let many = actions.update_many(data.clone(), keys("u1", "s1")).await;
+    assert_eq!(many.unwrap(), 1);
+    let none = actions.update_many(data, keys("nobody", "s1")).await;
+    assert_eq!(none.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn table_actions_only_update() {
+    let store = PostgresStore { pool: None };
+    let actions = McpUpdateActions {
+        access: TableAccess {
+            read: &store,
+            write: &store,
+        },
+        update_sql: USER_ENV_VAR_UPDATE_SQL,
+    };
+    assert!(matches!(
+        actions.create(()).await,
+        Err(TableError::MissingRow)
+    ));
+    assert!(matches!(
+        actions.create_many(vec![()]).await,
+        Err(TableError::MissingRow)
+    ));
+    assert!(matches!(
+        actions.upsert(keys("u", "s"), ()).await,
+        Err(TableError::MissingRow)
+    ));
+    assert!(matches!(
+        actions.delete(keys("u", "s")).await,
+        Err(TableError::MissingRow)
+    ));
+    assert!(matches!(
+        actions.delete_many(keys("u", "s")).await,
+        Err(TableError::MissingRow)
+    ));
+    assert!(actions.update(Vec::new(), keys("u", "s")).await.is_err());
+    assert!(
+        actions
+            .update_many(Vec::new(), keys("u", "s"))
+            .await
+            .is_err()
+    );
+}
+
 async fn user_stages(
     client: &Client,
-    store: &PostgresRotationStore,
+    store: &PostgresRotationStore<'_>,
     old: &TestCipher,
     key: &SecretString,
 ) {
@@ -477,11 +396,19 @@ async fn postgres_rows_and_failures() {
     let (fixture, pool, client) = database().await;
     let texts = texts();
     seed(&client, &texts).await;
-    let store = PostgresRotationStore {
-        store: PostgresStore {
-            pool: Some(pool.clone()),
-        },
+    let writer = PostgresStore {
+        pool: Some(pool.clone()),
     };
+    let availability = Availability::default();
+    let journal = Arc::new(Mutex::new(Vec::new()));
+    let store = PostgresRotationStore::new(
+        Some(PrismaClient {
+            writer: &writer,
+            reader: &writer,
+            availability: &availability,
+        }),
+        &recording_publisher(&journal),
+    );
     let old = cipher(OLD_KEY);
     let key = new_key();
     let abort = Rotation {
@@ -492,6 +419,11 @@ async fn postgres_rows_and_failures() {
     .servers("rotator")
     .await;
     assert!(abort.is_err(), "the boom row aborts the server stage");
+    assert_eq!(
+        published(&journal),
+        ["litellm_mcpservertable"],
+        "only the committed server write is published"
+    );
     assert_server_credentials(&client).await;
     assert_server_env_vars(&client).await;
     assert_server_headers(&client).await;
@@ -509,6 +441,13 @@ async fn postgres_rows_and_failures() {
     assert_oauth(&client, "oauth-1", NEW_KEY).await;
     assert_oauth(&client, "oauth-2", NEW_KEY).await;
     user_stages(&client, &store, &old, &key).await;
+    assert_eq!(
+        published(&journal),
+        ["litellm_mcpservertable"; 3],
+        "the OAuth client and user tables are not config-synced"
+    );
+    assert_touched(&client).await;
+    assert_update_results(&writer).await;
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();

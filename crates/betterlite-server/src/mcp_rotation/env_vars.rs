@@ -9,7 +9,7 @@ use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
 use betterlite_secrets::secret_codec::{
     DecryptPolicy, FailureLog, FailureValue, NonceSource, StoredCipher, StoredValue,
 };
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use super::codec::{encrypt_stored_value, is_falsey};
 use super::error::RotationCodecError;
@@ -104,11 +104,7 @@ where
     let stored = StoredValue::<()>::Text(SecretString::from(text));
     match cipher.decrypt_value(stored, GLOBAL_ENV_VAR_KEY, DROP_UNREADABLE) {
         Some(StoredValue::Text(plaintext)) => {
-            *value = encrypt_stored_value(
-                JsonValue::String(plaintext.expose_secret().to_owned()),
-                cipher,
-                Some(new_key),
-            )?;
+            *value = encrypt_stored_value(StoredValue::Text(plaintext), cipher, Some(new_key))?;
             Ok(true)
         }
         Some(StoredValue::Other(())) | None => {
