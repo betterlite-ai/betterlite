@@ -36,6 +36,8 @@ impl Resolved {
     }
 }
 
+// OPENAI_COMPATIBLE_BATCH_AND_FILES_PROVIDERS shares one branch whose base always resolves;
+// xai reads only what the caller passes, with no litellm_settings fallback
 fn resolve(
     provider: BatchProvider,
     input: &BatchProviderCreateInput,
@@ -43,15 +45,36 @@ fn resolve(
 ) -> Resolved {
     let resources = resource_settings(settings);
     let options = request_options(&input.optional_params);
+    let mut resolved = Resolved::empty();
     match provider {
         BatchProvider::Openai | BatchProvider::HostedVllm | BatchProvider::LitellmProxy => {
-            openai_compatible(&resources, &options)
+            resolved.api_base = Some(resources.openai_base(&options));
+            resolved.api_key = resources.openai_api_key(&options).cloned();
+            resolved.organization = resources.openai_organization(&options).map(str::to_owned);
         }
-        BatchProvider::Azure => azure(&resources, &options),
-        BatchProvider::VertexAi => vertex(&resources, &options, &input.optional_params),
-        BatchProvider::Xai => xai(&options),
-        BatchProvider::Bedrock | BatchProvider::Mistral => Resolved::empty(),
+        BatchProvider::Azure => {
+            resolved.api_base = resources.azure_base(&options).map(str::to_owned);
+            resolved.api_version = resources.azure_version(&options).map(str::to_owned);
+            resolved.api_key = resources.azure_api_key(&options).cloned();
+        }
+        BatchProvider::VertexAi => {
+            let requested = &input.optional_params.vertex_credentials;
+            resolved.api_base = Some(options.api_base.clone().unwrap_or_default());
+            resolved.vertex_project = resources.vertex_project(&options).map(str::to_owned);
+            resolved.vertex_location = resources.vertex_location(&options).map(str::to_owned);
+            resolved.vertex_credentials = requested.clone().or_else(|| {
+                resources
+                    .vertex_credentials(&options)
+                    .map(|secret| VertexCredentials::Text(secret.clone()))
+            });
+        }
+        BatchProvider::Xai => {
+            resolved.api_base.clone_from(&options.api_base);
+            resolved.api_key.clone_from(&options.api_key);
+        }
+        BatchProvider::Bedrock | BatchProvider::Mistral => {}
     }
+    resolved
 }
 
 // the litellm_settings keys create_batch reads, under the names the config loads them as
@@ -90,55 +113,6 @@ fn request_options(params: &BatchOptionalParams) -> ResourceSdkRequestOptions {
         vertex_project: params.vertex_project.clone(),
         vertex_location: params.vertex_location.clone(),
         vertex_credentials: None,
-    }
-}
-
-// OPENAI_COMPATIBLE_BATCH_AND_FILES_PROVIDERS shares one branch, whose base always resolves
-fn openai_compatible(
-    resources: &ResourceSdkSettings,
-    options: &ResourceSdkRequestOptions,
-) -> Resolved {
-    Resolved {
-        api_base: Some(resources.openai_base(options)),
-        api_key: resources.openai_api_key(options).cloned(),
-        organization: resources.openai_organization(options).map(str::to_owned),
-        ..Resolved::empty()
-    }
-}
-
-fn azure(resources: &ResourceSdkSettings, options: &ResourceSdkRequestOptions) -> Resolved {
-    Resolved {
-        api_base: resources.azure_base(options).map(str::to_owned),
-        api_version: resources.azure_version(options).map(str::to_owned),
-        api_key: resources.azure_api_key(options).cloned(),
-        ..Resolved::empty()
-    }
-}
-
-fn vertex(
-    resources: &ResourceSdkSettings,
-    options: &ResourceSdkRequestOptions,
-    params: &BatchOptionalParams,
-) -> Resolved {
-    Resolved {
-        api_base: Some(options.api_base.clone().unwrap_or_default()),
-        vertex_project: resources.vertex_project(options).map(str::to_owned),
-        vertex_location: resources.vertex_location(options).map(str::to_owned),
-        vertex_credentials: params.vertex_credentials.clone().or_else(|| {
-            resources
-                .vertex_credentials(options)
-                .map(|secret| VertexCredentials::Text(secret.clone()))
-        }),
-        ..Resolved::empty()
-    }
-}
-
-// xai reads only what the caller passes; no litellm_settings key falls back into it
-fn xai(options: &ResourceSdkRequestOptions) -> Resolved {
-    Resolved {
-        api_base: options.api_base.clone(),
-        api_key: options.api_key.clone(),
-        ..Resolved::empty()
     }
 }
 
