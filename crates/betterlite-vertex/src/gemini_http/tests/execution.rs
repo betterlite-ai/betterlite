@@ -791,6 +791,62 @@ async fn execution_streaming_refuses_an_overlong_line() {
     assert!(stream.next_chunk().await.is_none());
 }
 
+#[tokio::test]
+async fn execution_streaming_refuses_an_oversized_error_body() {
+    let body = object(BODY);
+    let optional = object("{}");
+    let call = vertex_call(&body, &optional);
+    let fixture = auth();
+    let oversized = vec![b'e'; MAX_RESPONSE_BYTES.saturating_add(1)];
+    let recorder = Arc::new(Recorder::scripted(
+        Vec::new(),
+        vec![stream_reply(500, vec![Piece::Bytes(oversized)])],
+    ));
+    let clients = pooled(&recorder);
+    let mut stream = async_streaming(
+        &call,
+        &catalog(),
+        &llm(&fixture),
+        &clients,
+        Box::new(fixed_id),
+    )
+    .await
+    .unwrap();
+    let error = stream.next_chunk().await.unwrap().unwrap_err();
+    assert!(matches!(
+        error,
+        GeminiStreamError::TooLarge { limit } if limit == MAX_RESPONSE_BYTES
+    ));
+}
+
+#[tokio::test]
+async fn execution_streaming_keeps_an_error_body_at_the_limit() {
+    let body = object(BODY);
+    let optional = object("{}");
+    let call = vertex_call(&body, &optional);
+    let fixture = auth();
+    let at_limit = vec![b'e'; MAX_RESPONSE_BYTES];
+    let recorder = Arc::new(Recorder::scripted(
+        Vec::new(),
+        vec![stream_reply(500, vec![Piece::Bytes(at_limit)])],
+    ));
+    let clients = pooled(&recorder);
+    let mut stream = async_streaming(
+        &call,
+        &catalog(),
+        &llm(&fixture),
+        &clients,
+        Box::new(fixed_id),
+    )
+    .await
+    .unwrap();
+    let error = stream.next_chunk().await.unwrap().unwrap_err();
+    let GeminiStreamError::Http(GeminiHttpError::Provider(provider)) = error else {
+        panic!("an error body at the limit is the provider's message");
+    };
+    assert_eq!(provider.message.len(), MAX_RESPONSE_BYTES);
+}
+
 fn stream_call<'call>(url: &'call str) -> StreamCall<'call> {
     StreamCall {
         url,
