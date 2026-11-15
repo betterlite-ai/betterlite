@@ -814,6 +814,19 @@ async fn an_answer_that_is_not_json_raises() {
 }
 
 #[tokio::test]
+async fn an_answer_that_is_not_an_object_raises() {
+    let router = Router::new().route("/api/v1/guard", post(|| async { "[]" }));
+    let (base, mut server) = serve(router).await;
+    let guardrail = guardrail_at(&base, true);
+    let error = guardrail
+        .apply_guardrail(text_inputs(), GuardrailInputType::Request)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, PromptGuardError::ResponseJson { .. }));
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn an_answer_larger_than_the_limit_is_refused() {
     let oversized = "x".repeat(MAX_RESPONSE_BYTES.checked_add(1).expect("size"));
     let router = Router::new().route("/api/v1/guard", post(move || async move { oversized }));
