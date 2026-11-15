@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
-use std::sync::Arc;
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
@@ -24,8 +23,8 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use indexmap::IndexMap;
 
-use super::ModelInfoLookup;
-use super::tool_search::supports_tool_search;
+use super::super::ModelInfoLookup;
+use super::super::tool_search::supports_tool_search;
 use crate::mantle_inputs::region::split_region_prefix;
 use crate::model_routes::ParamMap;
 
@@ -37,10 +36,6 @@ const NORMALIZERS: NameNormalizers = NameNormalizers {
 
 pub(super) fn map(source: &str) -> ParamMap {
     serde_json::from_str(source).expect("fixture map parses")
-}
-
-pub(super) fn packaged() -> Arc<ModelCatalog> {
-    BundledCatalog::default().get()
 }
 
 pub(super) fn runtime() -> tokio::runtime::Runtime {

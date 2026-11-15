@@ -220,7 +220,8 @@ pub(super) fn native_responses() {
     );
     assert_eq!(
         outcome(supports_openai_responses(Some("only_the_pair"), &cost)),
-        "false"
+        "true",
+        "the bedrock/-prefixed string entry answers when the raw key is absent"
     );
     assert_eq!(
         outcome(supports_openai_responses(Some("missing"), &cost)),
