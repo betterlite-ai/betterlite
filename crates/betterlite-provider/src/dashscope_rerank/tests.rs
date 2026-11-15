@@ -366,12 +366,11 @@ fn the_reply_keeps_a_truthy_id_and_mints_one_otherwise(
 ) {
     let response = decode_dashscope_rerank_reply(body, 200).unwrap();
     let id = response.id.expect("id");
-    match expected {
-        Some(given) => assert_eq!(id, given),
-        None => {
-            let minted = Uuid::parse_str(&id).expect("minted id is a uuid");
-            assert_eq!(minted.get_version_num(), 4);
-        }
+    if let Some(given) = expected {
+        assert_eq!(id, given);
+    } else {
+        let minted = Uuid::parse_str(&id).expect("minted id is a uuid");
+        assert_eq!(minted.get_version_num(), 4);
     }
 }
 
