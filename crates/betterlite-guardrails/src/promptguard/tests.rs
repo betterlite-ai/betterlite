@@ -779,5 +779,5 @@ async fn an_answer_of_exactly_the_limit_is_read() {
 
 #[test]
 fn the_answer_limit_is_one_mebibyte() {
-    assert_eq!(MAX_RESPONSE_BYTES, 1_048_576);
+    assert_eq!(MAX_RESPONSE_BYTES, 0x0010_0000);
 }

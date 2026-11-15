@@ -53,7 +53,7 @@ fn promptguard_args_leave_absent_values_absent() {
     let built = initialize_promptguard(&params(body), None).expect("args");
     assert_eq!(built.name, "");
     assert_eq!(built.api_base, None);
-    assert_eq!(built.api_key, None);
+    assert!(built.api_key.is_none());
     assert_eq!(built.block_on_error, None);
     assert_eq!(built.timeout, None);
     assert!(!built.default_on);
@@ -76,7 +76,7 @@ fn promptguard_nulls_stay_absent() {
     }"#;
     let built = initialize_promptguard(&params(body), Some("pg-check")).expect("args");
     assert_eq!(built.api_base, None);
-    assert_eq!(built.api_key, None);
+    assert!(built.api_key.is_none());
     assert_eq!(built.block_on_error, None);
     assert_eq!(built.timeout, None);
     assert!(!built.default_on);

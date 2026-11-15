@@ -135,13 +135,13 @@ pub fn extract_user_texts(messages: &[GuardrailMessage]) -> Vec<String> {
 }
 
 fn append_content_texts(content: Option<&GuardrailValue>, texts: &mut Vec<String>) {
-    let Some(content) = content else {
+    let Some(value) = content else {
         return;
     };
-    if let GuardrailValue::Text(text) = content {
+    if let GuardrailValue::Text(text) = value {
         texts.push(text.clone());
     }
-    if let GuardrailValue::Array(parts) = content {
+    if let GuardrailValue::Array(parts) = value {
         for part in parts {
             append_part_text(part, texts);
         }
