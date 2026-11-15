@@ -234,6 +234,20 @@ pub(super) fn query_model_or_explicit() {
     .unwrap();
     assert_eq!(unchanged.force_transcription_model, None);
 
+    let starred = params(&[("model", Some("a*b~c"))]);
+    let starred_plan = prepare(
+        Some("https://example.test/"),
+        Some(&starred),
+        false,
+        &Verification::Enabled,
+        &mut RecordingLogger::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        starred_plan.url,
+        "wss://example.test/v1/realtime?model=a%2Ab~c"
+    );
+
     let null_intent = params(&[("intent", None), ("model", Some("m"))]);
     let null_plan = prepare(
         Some("https://example.test/"),

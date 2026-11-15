@@ -101,6 +101,17 @@ fn records_the_realtime_pre_call() {
             "wss://api.openai.com/v1/realtime?model=realtime-a"
         )))
     );
+    let Some(Json::Object(recorded_headers)) = arguments.get("headers") else {
+        panic!("the pre call records headers");
+    };
+    assert_eq!(
+        recorded_headers.get("OpenAI-Beta"),
+        Some(&Json::Text(String::from("realtime=v1")))
+    );
+    let Some(Json::Text(authorization)) = recorded_headers.get("Authorization") else {
+        panic!("the pre call records the Authorization header");
+    };
+    assert_ne!(authorization.as_str(), "Bearer sk-test");
     let Some(Json::Object(body)) = arguments.get("complete_input_dict") else {
         panic!("the pre call records complete_input_dict");
     };

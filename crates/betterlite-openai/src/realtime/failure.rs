@@ -45,7 +45,8 @@ pub fn client_action(
             close_error,
         } => {
             let attempted = internal_error_close(message, redactor);
-            if close_failure_is_ignored(close_error) {
+            if close_error.contains("already completed") || close_error.contains("websocket.close")
+            {
                 return Ok(ClientAction::IgnoreCloseFailure { attempted });
             }
             Err(RealtimeError::UnexpectedCloseFailure {
@@ -60,8 +61,4 @@ fn internal_error_close(message: &str, redactor: &Redactor) -> RealtimeClose {
         code: 1011,
         reason: redactor.redact_string(&format!("Internal server error: {message}")),
     }
-}
-
-fn close_failure_is_ignored(close_error: &str) -> bool {
-    close_error.contains("already completed") || close_error.contains("websocket.close")
 }
