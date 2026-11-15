@@ -209,6 +209,28 @@ fn one_reasoning_token_is_split_at_the_reasoning_rate() {
 }
 
 #[test]
+fn top_level_reasoning_tokens_win_over_the_completion_details() {
+    let mut usage = usage(10, 10);
+    usage.reasoning_tokens = Some(2);
+    usage.tokens.completion_details = Some(CompletionDetails {
+        text_tokens: None,
+        audio_tokens: None,
+        image_tokens: None,
+        video_tokens: None,
+        reasoning_tokens: Some(4),
+    });
+    let result = run(
+        json!({
+            "output_cost_per_token": "0.5",
+            "output_cost_per_reasoning_token": "2"
+        }),
+        &usage,
+    )
+    .expect("the reasoning split");
+    assert_eq!(result.completion_cost, dec("8"));
+}
+
+#[test]
 fn reasoning_tokens_fall_back_to_the_completion_details() {
     let mut usage = usage(10, 10);
     usage.tokens.completion_details = Some(CompletionDetails {

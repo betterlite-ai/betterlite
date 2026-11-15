@@ -12,5 +12,9 @@ call:
         id: resp-2
         start_time: '2026-01-01T00:00:00+00:00'
         body: '{"id":"resp-2","object":"chat.completion","created":1,"model":"sonar","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"citations":["https://example.com/a","https://example.com/bb","https://example.com/cccc"]}'
+      - model: sonar
+        id: resp-3
+        start_time: '2026-01-01T00:00:00+00:00'
+        body: '{"id":"resp-3","object":"chat.completion","created":1,"model":"sonar","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},"citations":["abc"]}'
 env: {}
 compare: {ignore: []}

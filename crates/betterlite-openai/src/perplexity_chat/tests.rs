@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -196,6 +198,7 @@ fn supported_openai_params_never_lists_tools(#[case] unsupported: &'static str) 
 #[case::list_entry(json!([[12_345_678]]), Some(2))]
 #[case::object_entry(json!([{"a": 1}]), Some(1))]
 #[case::empty_array_entry(json!([[]]), None)]
+#[case::three_characters(json!(["abc"]), Some(1))]
 fn citation_tokens_are_quarter_characters(#[case] citations: Value, #[case] expected: Option<i64>) {
     let raw = if citations.is_null() {
         json!({"usage": {}})
@@ -463,6 +466,15 @@ fn a_non_object_choice_skips_the_citation_copies() {
     let raw = json!({"citations": ["https://a.example"]});
     let enhanced = enhanced_reply(r#"{"choices":[7]}"#, &raw.to_string());
     assert_eq!(enhanced["citations"], Value::Null);
+}
+
+#[rstest]
+fn replays_the_perplexity_chat_reply_corpus(
+    #[files("fuzz/corpus/perplexity_chat_reply/*")] path: PathBuf,
+) {
+    let body = fs::read(path).expect("the corpus fixture");
+    let reply: Value = serde_json::from_slice(&body).unwrap_or_default();
+    let _enhanced = with_perplexity_fields(reply, &body);
 }
 
 #[test]
