@@ -94,9 +94,9 @@ async fn migrate(store: &PostgresStore) {
 
 pub(crate) struct Case {
     fixtures: Vec<PostgresFixture>,
-    pub writer: PostgresStore,
-    pub reader: PostgresStore,
-    pub availability: Availability,
+    pub(crate) writer: PostgresStore,
+    pub(crate) reader: PostgresStore,
+    pub(crate) availability: Availability,
 }
 
 impl Case {
@@ -265,8 +265,7 @@ pub(crate) async fn insert_session(
     store: &PostgresStore,
     api_key: &str,
     session_id: &str,
-    router_name: &str,
-    last_model: &str,
+    (router_name, last_model): (&str, &str),
     last_turn_at: Option<&str>,
 ) {
     execute(

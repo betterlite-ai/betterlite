@@ -58,12 +58,28 @@ fn truthy_null_json_is_validated(#[case] stored: &str) {
     assert!(decode_managed_batch_record::<BatchObject>(stored.as_bytes()).is_err());
 }
 
+const PADDED_PREFIX: &str = r#"{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"batch","status":"validating","padding":""#;
+const PADDED_SUFFIX: &str = "\"}";
+
+fn padded(room: usize) -> String {
+    format!("{PADDED_PREFIX}{}{PADDED_SUFFIX}", "a".repeat(room))
+}
+
+fn nested(depth: usize) -> String {
+    format!(
+        r#"{{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"batch","status":"validating","extra":{}"a"{}}}"#,
+        "[".repeat(depth),
+        "]".repeat(depth)
+    )
+}
+
 #[test]
 fn native_managed_batch_record_limits() {
-    let prefix = r#"{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"batch","status":"validating","padding":""#;
-    let suffix = "\"}";
-    let room = 0x0010_0000_usize - prefix.len() - suffix.len();
-    let exact = format!("{prefix}{}{suffix}", "a".repeat(room));
+    let room = 0x0010_0000_usize
+        .checked_sub(PADDED_PREFIX.len())
+        .and_then(|room| room.checked_sub(PADDED_SUFFIX.len()))
+        .unwrap();
+    let exact = padded(room);
     assert_eq!(exact.len(), 0x0010_0000);
     assert!(
         decode_managed_batch_record::<BatchObject>(exact.as_bytes())
@@ -78,13 +94,6 @@ fn native_managed_batch_record_limits() {
         ))
     ));
 
-    let nested = |depth: usize| {
-        format!(
-            r#"{{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"batch","status":"validating","extra":{}"a"{}}}"#,
-            "[".repeat(depth),
-            "]".repeat(depth)
-        )
-    };
     let shallow = nested(63);
     assert!(
         decode_managed_batch_record::<BatchObject>(shallow.as_bytes())
@@ -96,13 +105,17 @@ fn native_managed_batch_record_limits() {
         decode_managed_batch_record::<BatchObject>(deep.as_bytes()),
         Err(ManagedBatchRecordError::Stored(ResourceRowsError::TooDeep))
     ));
-    let quoted_shallow = serde_json::to_string(&shallow).unwrap();
+}
+
+#[test]
+fn quoted_batch_record_depth_limits() {
+    let quoted_shallow = serde_json::to_string(&nested(63)).unwrap();
     assert!(
         decode_managed_batch_record::<BatchObject>(quoted_shallow.as_bytes())
             .unwrap()
             .is_some()
     );
-    let quoted_deep = serde_json::to_string(&deep).unwrap();
+    let quoted_deep = serde_json::to_string(&nested(64)).unwrap();
     assert!(matches!(
         decode_managed_batch_record::<BatchObject>(quoted_deep.as_bytes()),
         Err(ManagedBatchRecordError::Stored(ResourceRowsError::TooDeep))

@@ -21,6 +21,7 @@ use super::session::{AutoRouterSessionRepository, AutoRouterSessionTable};
 use super::user_banner::{BannerActions, USER_BANNER_ROW_ID, UiSettingsRow, UserBannerRepository};
 
 mod banner_cases;
+mod batch_cases;
 mod binding_cases;
 mod decoder_cases;
 mod support;
@@ -52,6 +53,21 @@ fn unchanged(status: Option<&str>) -> BatchUnchanged {
         status: status.map(str::to_owned),
         updated_before: None,
     }
+}
+
+async fn racer_cas(
+    repository: &ManagedBatchRepository<'_>,
+    stored: &BatchObject,
+    expected: Option<&str>,
+) -> bool {
+    repository
+        .compare_and_set(
+            &write_of(stored, "validating"),
+            &unchanged(expected),
+            Some("racer"),
+        )
+        .await
+        .unwrap()
 }
 
 #[test]
@@ -99,19 +115,22 @@ async fn default_read_and_explicit_writer() {
         .store(true, Ordering::SeqCst);
     let access = routed.access().unwrap();
     assert!(eq(access.read, &case.writer));
+    assert!(eq(access.write, &case.writer));
+    case.close().await;
+}
 
+#[tokio::test]
+async fn reader_role_reads_its_own_database() {
+    let case = Case::split().await;
+    let journal = Journal::default();
     insert_session(
         &case.reader,
         "reader-key",
         "session-1",
-        "router-1",
-        "from-reader",
+        ("router-1", "from-reader"),
         Some("2026-01-01 00:00:00"),
     )
     .await;
-    case.availability
-        .reader_unavailable
-        .store(false, Ordering::SeqCst);
     let repository =
         AutoRouterSessionRepository::new(Some(case.client()), recording_publisher(&journal));
     let row = repository
@@ -349,30 +368,12 @@ async fn postgres_batch_compare_and_set_race() {
         .unwrap();
     stored.id = "batch-race".to_owned();
     set_batch_status(&case.writer, "batch-race", "cancelled").await;
-    assert!(
-        !repository
-            .compare_and_set(
-                &write_of(&stored, "validating"),
-                &unchanged(Some("in_progress")),
-                Some("racer"),
-            )
-            .await
-            .unwrap()
-    );
+    assert!(!racer_cas(&repository, &stored, Some("in_progress")).await);
     assert_eq!(
         repository.load_status("batch-race").await.unwrap(),
         Some("cancelled".to_owned())
     );
-    assert!(
-        repository
-            .compare_and_set(
-                &write_of(&stored, "validating"),
-                &unchanged(Some("cancelled")),
-                Some("racer"),
-            )
-            .await
-            .unwrap()
-    );
+    assert!(racer_cas(&repository, &stored, Some("cancelled")).await);
     assert_eq!(
         repository.load_status("batch-race").await.unwrap(),
         Some("validating".to_owned())
@@ -430,7 +431,7 @@ async fn cas_updated_before_bounds_the_update() {
     let stale = BatchUnchanged {
         unified_object_id: None,
         status: Some("in_progress".to_owned()),
-        updated_before: Some(Utc::now() - Duration::days(1)),
+        updated_before: Some(Utc::now().checked_sub_signed(Duration::days(1)).unwrap()),
     };
     assert!(
         !repository
@@ -441,7 +442,7 @@ async fn cas_updated_before_bounds_the_update() {
     let fresh = BatchUnchanged {
         unified_object_id: None,
         status: Some("in_progress".to_owned()),
-        updated_before: Some(Utc::now() + Duration::days(1)),
+        updated_before: Some(Utc::now().checked_add_signed(Duration::days(1)).unwrap()),
     };
     assert!(
         repository
@@ -488,89 +489,6 @@ async fn cas_multiple_matches_returns_true() {
         .await
         .unwrap();
     assert_eq!(rows[0].try_get::<_, i64>(0).unwrap(), 2);
-    drop(client);
-    case.close().await;
-}
-
-#[tokio::test]
-async fn cas_only_three_fields_including_null_author() {
-    let case = Case::new().await;
-    insert_batch(&case.writer, "author-null", Some("in_progress"), BATCH_JSON).await;
-    let client = case.writer.session().await.unwrap();
-    client
-        .execute(
-            "UPDATE \"LiteLLM_ManagedObjectTable\" SET created_by = 'creator', team_id = 'team', api_key = 'key', request_tags = '[\"tag\"]'::jsonb WHERE unified_object_id = 'author-null'",
-            &[],
-        )
-        .await
-        .unwrap();
-    let model_object_id: String = client
-        .query_one(
-            "SELECT model_object_id FROM \"LiteLLM_ManagedObjectTable\" WHERE unified_object_id = 'author-null'",
-            &[],
-        )
-        .await
-        .unwrap()
-        .get(0);
-    drop(client);
-    let repository = ManagedBatchRepository::new(
-        Some(case.client()),
-        recording_publisher(&Journal::default()),
-    );
-    let mut stored = repository
-        .load_batch::<BatchObject>("author-null")
-        .await
-        .unwrap()
-        .unwrap();
-    stored.id = "author-null".to_owned();
-    stored.status = BatchStatus::Completed;
-    assert!(
-        repository
-            .compare_and_set(
-                &write_of(&stored, "completed"),
-                &unchanged(Some("in_progress")),
-                None,
-            )
-            .await
-            .unwrap()
-    );
-    let client = case.writer.session().await.unwrap();
-    let row = client
-        .query_one(
-            "SELECT file_object::text, status, updated_by, created_by, team_id, api_key, model_object_id, request_tags::text FROM \"LiteLLM_ManagedObjectTable\" WHERE unified_object_id = 'author-null'",
-            &[],
-        )
-        .await
-        .unwrap();
-    let file_object: String = row.try_get(0).unwrap();
-    // Prisma stores a Python str in a Json field as a JSON string, not as a decoded object
-    assert!(matches!(
-        serde_json::from_str::<JsonData>(&file_object).unwrap(),
-        JsonData::String(_)
-    ));
-    let written = decode_managed_batch_record::<BatchObject>(file_object.as_bytes())
-        .unwrap()
-        .unwrap();
-    assert_eq!(written, stored);
-    assert_eq!(row.try_get::<_, String>(1).unwrap(), "completed");
-    assert_eq!(row.try_get::<_, Option<String>>(2).unwrap(), None);
-    assert_eq!(
-        row.try_get::<_, Option<String>>(3).unwrap(),
-        Some("creator".to_owned())
-    );
-    assert_eq!(
-        row.try_get::<_, Option<String>>(4).unwrap(),
-        Some("team".to_owned())
-    );
-    assert_eq!(
-        row.try_get::<_, Option<String>>(5).unwrap(),
-        Some("key".to_owned())
-    );
-    assert_eq!(row.try_get::<_, String>(6).unwrap(), model_object_id);
-    assert_eq!(
-        row.try_get::<_, Option<String>>(7).unwrap(),
-        Some("[\"tag\"]".to_owned())
-    );
     drop(client);
     case.close().await;
 }
@@ -709,15 +627,12 @@ async fn file_delete_missing_only_is_swallowed() {
     case.close().await;
 }
 
-#[tokio::test]
-async fn postgres_latest_session_exact_key_partition() {
-    let case = Case::new().await;
+async fn seeded_sessions(case: &Case) {
     insert_session(
         &case.writer,
         "key-a",
         "session-1",
-        "router-1",
-        "router-one",
+        ("router-1", "router-one"),
         Some("2026-01-01 00:00:00"),
     )
     .await;
@@ -725,8 +640,7 @@ async fn postgres_latest_session_exact_key_partition() {
         &case.writer,
         "key-a",
         "session-1",
-        "router-2",
-        "router-two",
+        ("router-2", "router-two"),
         Some("2026-01-02 00:00:00"),
     )
     .await;
@@ -734,8 +648,7 @@ async fn postgres_latest_session_exact_key_partition() {
         &case.writer,
         "key-a",
         "session-2",
-        "router-1",
-        "other-session",
+        ("router-1", "other-session"),
         Some("2026-01-03 00:00:00"),
     )
     .await;
@@ -743,49 +656,22 @@ async fn postgres_latest_session_exact_key_partition() {
         &case.writer,
         "key-b",
         "session-1",
-        "router-1",
-        "other-key",
+        ("router-1", "other-key"),
         Some("2026-01-04 00:00:00"),
     )
     .await;
-    let repository = AutoRouterSessionRepository::new(
-        Some(case.client()),
-        recording_publisher(&Journal::default()),
-    );
-    let row = repository
-        .find_latest_for_key("key-a", "session-1")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(row.last_model, "router-two");
-    let row = repository
-        .find_latest_for_key("key-b", "session-1")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(row.last_model, "other-key");
-    assert_eq!(
-        repository
-            .find_latest_for_key("key-a", "session-2")
-            .await
-            .unwrap()
-            .unwrap()
-            .last_model,
-        "other-session"
-    );
-    assert!(
-        repository
-            .find_latest_for_key("key-c", "session-1")
-            .await
-            .unwrap()
-            .is_none()
-    );
-    case.close().await;
 }
 
-#[tokio::test]
-async fn session_desc_null_and_tie_semantics() {
-    let case = Case::new().await;
+async fn latest_model(
+    repository: &AutoRouterSessionRepository<'_>,
+    api_key: &str,
+    session_id: &str,
+) -> Result<Option<String>, TableError> {
+    let row = repository.find_latest_for_key(api_key, session_id).await?;
+    Ok(row.map(|row| row.last_model))
+}
+
+async fn allow_null_turn_at(case: &Case) {
     let client = case.writer.session().await.unwrap();
     client
         .batch_execute(
@@ -793,13 +679,41 @@ async fn session_desc_null_and_tie_semantics() {
         )
         .await
         .unwrap();
-    drop(client);
+}
+
+#[tokio::test]
+async fn postgres_latest_session_exact_key_partition() {
+    let case = Case::new().await;
+    seeded_sessions(&case).await;
+    let repository = AutoRouterSessionRepository::new(
+        Some(case.client()),
+        recording_publisher(&Journal::default()),
+    );
+    let latest = latest_model(&repository, "key-a", "session-1")
+        .await
+        .unwrap();
+    assert_eq!(latest.as_deref(), Some("router-two"));
+    let latest = latest_model(&repository, "key-b", "session-1")
+        .await
+        .unwrap();
+    assert_eq!(latest.as_deref(), Some("other-key"));
+    let latest = latest_model(&repository, "key-a", "session-2")
+        .await
+        .unwrap();
+    assert_eq!(latest.as_deref(), Some("other-session"));
+    let missing = latest_model(&repository, "key-c", "session-1")
+        .await
+        .unwrap();
+    assert!(missing.is_none());
+    case.close().await;
+}
+
+async fn insert_tie_rows(case: &Case) {
     insert_session(
         &case.writer,
         "tie-key",
         "session-1",
-        "router-1",
-        "tied-one",
+        ("router-1", "tied-one"),
         Some("2026-01-02 00:00:00"),
     )
     .await;
@@ -807,11 +721,17 @@ async fn session_desc_null_and_tie_semantics() {
         &case.writer,
         "tie-key",
         "session-1",
-        "router-2",
-        "tied-two",
+        ("router-2", "tied-two"),
         Some("2026-01-02 00:00:00"),
     )
     .await;
+}
+
+#[tokio::test]
+async fn session_desc_null_and_tie_semantics() {
+    let case = Case::new().await;
+    allow_null_turn_at(&case).await;
+    insert_tie_rows(&case).await;
     let repository = AutoRouterSessionRepository::new(
         Some(case.client()),
         recording_publisher(&Journal::default()),
@@ -826,8 +746,7 @@ async fn session_desc_null_and_tie_semantics() {
         &case.writer,
         "tie-key",
         "session-1",
-        "router-3",
-        "null-turn",
+        ("router-3", "null-turn"),
         None,
     )
     .await;
@@ -846,8 +765,7 @@ async fn session_missing_or_invalid_row() {
         &case.writer,
         "invalid-key",
         "session-1",
-        "router-1",
-        "invalid",
+        ("router-1", "invalid"),
         Some("2026-01-01 00:00:00"),
     )
     .await;
