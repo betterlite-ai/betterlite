@@ -1,0 +1,69 @@
+kind: helper
+name: spend-event-body-policy-and-model-parameters
+call:
+  spend_event_projection:
+    function: build
+    kwargs:
+      model: gpt-4
+      standard_logging_object:
+        id: sl-1
+        model: gpt-4
+        model_parameters: {temperature: 0.2}
+        messages: [{role: user, content: hello}]
+        response: {id: resp-1, choices: [{message: {content: hi}}]}
+        response_cost: 0.5
+    litellm_params:
+      api_base: "https://api.example"
+      proxy_server_request: {url: "https://proxy/chat", body: {model: gpt-4}}
+    metadata: null
+    litellm_metadata: null
+    typed_auth: {metadata: null, litellm_metadata: null}
+    response: {kind: mapping, fields: {id: resp-1, model: gpt-4, status: completed, choices: [{message: {content: hi}}], output_text: hi}}
+    start_time: "2026-01-01T00:00:00Z"
+    end_time: "2026-01-01T00:00:01Z"
+    store_bodies: false
+    cache: "on"
+calls:
+  - spend_event_projection:
+      function: build
+      kwargs:
+        model: gpt-4
+        standard_logging_object:
+          id: sl-1
+          model_parameters: {temperature: 0.2}
+          messages: [{role: user, content: hello}]
+          response: {id: resp-1}
+        standard_callback_dynamic_params: {turn_off_message_logging: true}
+      litellm_params:
+        proxy_server_request: {url: "https://proxy/chat", body: {model: gpt-4}}
+      metadata: null
+      litellm_metadata: null
+      typed_auth: {metadata: null, litellm_metadata: null}
+      response: {kind: model, fields: {id: resp-1, usage: {prompt_tokens: 3, completion_tokens: 4, total_tokens: 7}, usage_info: null, background: false, choices: [{message: {content: hi}}]}}
+      start_time: "2026-01-01T00:00:00Z"
+      end_time: "2026-01-01T00:00:01Z"
+      store_bodies: true
+      cache: "on"
+  - spend_event_projection:
+      function: build
+      kwargs: {model: gpt-4}
+      litellm_params: {proxy_server_request: {url: "https://proxy/chat"}}
+      metadata: null
+      litellm_metadata: null
+      typed_auth: {metadata: null, litellm_metadata: null}
+      response: {kind: absent}
+      start_time: "2026-01-01T00:00:00Z"
+      end_time: "2026-01-01T00:00:01Z"
+      store_bodies: true
+      cache: "on"
+  - spend_event_projection:
+      function: offloadable
+      kind: batch
+  - spend_event_projection:
+      function: offloadable
+      kind: interactions
+  - spend_event_projection:
+      function: offloadable
+      kind: model
+env: {}
+compare: {ignore: []}

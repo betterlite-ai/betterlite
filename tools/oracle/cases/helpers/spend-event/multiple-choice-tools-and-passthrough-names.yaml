@@ -1,0 +1,76 @@
+kind: helper
+name: spend-event-multiple-choice-tools-and-passthrough-names
+call:
+  spend_event_projection:
+    function: build
+    kwargs:
+      model: gpt-4
+      tools:
+        - {function: {name: "  alpha  "}}
+        - {name: beta}
+        - {function: {parameters: {}}, name: gamma}
+        - {function: {name: "   "}}
+        - {name: ""}
+        - {function: {name: alpha}}
+        - {function: text, name: delta}
+      passthrough_logging_payload:
+        request_body:
+          tools: [{name: pass-one}, {function: {name: alpha}}, {type: custom}]
+    litellm_params: {}
+    metadata: null
+    litellm_metadata: null
+    typed_auth: {metadata: null, litellm_metadata: null}
+    response: {kind: absent}
+    start_time: "2026-01-01T00:00:00Z"
+    end_time: "2026-01-01T00:00:01Z"
+    store_bodies: false
+    cache: "on"
+calls:
+  - spend_event_projection:
+      function: build
+      kwargs: {model: gpt-4, passthrough_logging_payload: {}}
+      litellm_params: {}
+      metadata: null
+      litellm_metadata: null
+      typed_auth: {metadata: null, litellm_metadata: null}
+      response:
+        kind: mapping
+        fields:
+          id: resp-1
+          model: gpt-4
+          choices:
+            - message:
+                tool_calls:
+                  - {id: call-a, type: function, function: {name: " first ", arguments: "{}"}}
+                  - {id: call-b, type: function, function: {name: second, arguments: "{}"}}
+            - message:
+                tool_calls:
+                  - {id: call-c, type: function, function: {name: first, arguments: "{}"}}
+      start_time: "2026-01-01T00:00:00Z"
+      end_time: "2026-01-01T00:00:01Z"
+      store_bodies: true
+      cache: "on"
+  - spend_event_projection:
+      function: build
+      kwargs: {model: gpt-4}
+      litellm_params: {}
+      metadata: null
+      litellm_metadata: null
+      typed_auth: {metadata: null, litellm_metadata: null}
+      response:
+        kind: model
+        fields:
+          id: resp-2
+          output:
+            - {type: function_call, name: search, call_id: c1, arguments: "{}"}
+            - {type: message, name: ignored}
+            - {type: function_call, name: fetch, call_id: c2, arguments: "{}"}
+      start_time: "2026-01-01T00:00:00Z"
+      end_time: "2026-01-01T00:00:01Z"
+      store_bodies: false
+      cache: "on"
+  - spend_event_projection:
+      function: restore
+      line: '{"version":1,"litellm_call_id":null,"call_type":null,"model":null,"custom_llm_provider":null,"stream":null,"complete_streaming_response":false,"cache_hit":null,"response_cost":null,"start_time":"2026-01-01T00:00:00Z","end_time":"2026-01-01T00:00:01Z","completion_start_time":null,"agent_id":null,"litellm_trace_id":null,"litellm_params":{"api_base":null,"custom_llm_provider":null,"litellm_call_id":null,"user_api_key_end_user_id":null,"metadata":null,"litellm_metadata":null,"proxy_server_request":null,"preset_cache_key":null},"standard_logging_object":null,"standard_callback_dynamic_params":null,"response":null,"combined_usage":null,"realtime_tools":null,"realtime_tool_calls":null,"request_tool_names":["b","a","b"]}'
+env: {}
+compare: {ignore: []}
