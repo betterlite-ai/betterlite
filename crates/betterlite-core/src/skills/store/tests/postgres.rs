@@ -137,6 +137,40 @@ async fn postgres_owner_roundtrip() {
         StoreError::NotFound { .. }
     ));
 
+    let older = "litellm_skill_older";
+    let older_title = "Older";
+    let older_owner = "alice";
+    writer
+        .session()
+        .await
+        .unwrap()
+        .execute(
+            "INSERT INTO \"LiteLLM_SkillsTable\" (skill_id, display_title, created_by, created_at) \
+             VALUES ($1, $2, $3, TIMESTAMP '2020-01-01 00:00:00')",
+            &[&older, &older_title, &older_owner],
+        )
+        .await
+        .unwrap();
+    let ordered = store
+        .list_skills(page, Some(&principal("alice")))
+        .await
+        .unwrap();
+    assert_eq!(ordered.len(), 2);
+    assert_eq!(ordered[0].skill_id, SKILL_ID);
+    assert_eq!(ordered[1].skill_id, older);
+    let second = store
+        .list_skills(
+            SkillPage {
+                limit: 1,
+                offset: 1,
+            },
+            Some(&principal("alice")),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].skill_id, older);
+
     drop(store);
     writer.pool.unwrap().close();
     fixture.close_async().await.unwrap();
