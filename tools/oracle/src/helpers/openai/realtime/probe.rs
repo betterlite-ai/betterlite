@@ -101,10 +101,6 @@ pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
         .map_err(|error| helper_error(&error.to_string()))
 }
 
-pub(super) fn socket_headers(input: &Input) -> Vec<(String, String)> {
-    input.scope_headers.clone()
-}
-
 pub(super) fn beta_realtime(input: &Input) -> bool {
     let headers: Vec<HeaderPair> = input
         .scope_headers

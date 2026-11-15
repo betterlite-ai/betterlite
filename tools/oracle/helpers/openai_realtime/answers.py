@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from datetime import UTC, datetime
 
 import litellm
@@ -8,7 +9,7 @@ from litellm.llms.openai.realtime.http_transformation import OpenAIRealtimeHTTPC
 from litellm.types.realtime import RealtimeQueryParams
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from .probe import ProbeServer, install, restore
+from .probe import REAL_WEBSOCKETS, FakeWebsockets, ProbeServer
 from .types import (
     HEADERS,
     JSON,
@@ -90,7 +91,7 @@ async def probe_call(
         function_id="fn-1",
         litellm_trace_id="trace-1",
     )
-    install(server)
+    sys.modules["websockets"] = FakeWebsockets(server)
     try:
         await RUNNER.async_realtime(
             model=input_value["model"],
@@ -101,7 +102,7 @@ async def probe_call(
             query_params=query_params,
         )
     finally:
-        restore()
+        sys.modules["websockets"] = REAL_WEBSOCKETS
     return logging_obj
 
 

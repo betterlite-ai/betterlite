@@ -19,7 +19,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 
 use self::probe::{
     RecordedCall, RecordingLogger, RecordingSocket, beta_realtime, closed_json, helper_error,
-    runtime, sent_json, socket_headers,
+    runtime, sent_json,
 };
 
 mod probe;
@@ -102,10 +102,6 @@ impl Helper for Op {
     }
 }
 
-fn query_params(value: &BTreeMap<String, Option<String>>) -> QueryParams {
-    value.clone().into_iter().collect()
-}
-
 fn query_json(value: &QueryParams) -> Value {
     Value::Object(
         value
@@ -136,7 +132,10 @@ fn connect_answer(input: &Input) -> HelperResult {
     let mut logger = RecordingLogger::default();
     let mut connects = Vec::with_capacity(input.queries.len());
     for setup in &input.queries {
-        let params = setup.query_params.as_ref().map(query_params);
+        let params: Option<QueryParams> = setup
+            .query_params
+            .as_ref()
+            .map(|map| map.clone().into_iter().collect());
         let api_key = input.api_key.as_deref().map(SecretString::from);
         let start = logger.calls.len();
         let plan = prepare_connection(
@@ -213,7 +212,7 @@ fn failure_answer(input: &Input) -> HelperResult {
     for failure in &input.failures {
         let mut socket = RecordingSocket {
             scope: WebSocketScope {
-                headers: socket_headers(input),
+                headers: input.scope_headers.clone(),
             },
             sent: Vec::new(),
             closed: None,
@@ -249,8 +248,7 @@ fn http_answer(input: &Input) -> HelperResult {
         };
         let api_base = settings.api_base(setup.api_base.as_deref());
         let api_key = settings.api_key(setup.api_key.as_deref());
-        let copied = setup.headers.clone();
-        let headers = validate_environment(&copied, Some(&api_key));
+        let headers = validate_environment(&setup.headers, Some(&api_key));
         http.push(json!({
             "api_base": api_base,
             "api_key": api_key.expose_secret(),

@@ -16,6 +16,7 @@ call:
       - {api_base: "https://api.openai.com/?keep=1", query_params: {intent: transcription}}
       - {api_base: null, query_params: {intent: chat}}
       - {api_base: "https://api.openai.com/?keep=1", query_params: {intent: "", model: explicit}}
+      - {api_base: "https://api.openai.com/", query_params: {model: "a*b~c"}}
     failures: []
     http_setups: []
 env:

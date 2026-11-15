@@ -54,11 +54,19 @@ class HeadersValidator(Protocol):
     ) -> dict[str, str]: ...
 
 
+class ClientSocket(Protocol):
+    async def send_text(self, data: str) -> None: ...
+
+    async def receive_text(self) -> str: ...
+
+    async def close(self, code: int = 1000, reason: str | None = None) -> None: ...
+
+
 class RealtimeRunner(Protocol):
     async def async_realtime(
         self,
         model: str,
-        websocket: object,
+        websocket: ClientSocket,
         logging_obj: Logging,
         api_base: str | None = None,
         api_key: str | None = None,

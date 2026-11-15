@@ -2,7 +2,7 @@ import asyncio
 import ssl as ssl_module
 import sys
 from types import ModuleType, TracebackType
-from typing import Protocol, Self
+from typing import Self
 
 from typing_extensions import override
 from websockets import exceptions as websockets_exceptions
@@ -12,17 +12,9 @@ from websockets.datastructures import Headers
 from websockets.exceptions import InvalidStatus
 from websockets.http11 import Response
 
-from .types import CloseFrame, FailMode, FailureSetup, SslKind
+from .types import ClientSocket, CloseFrame, FailMode, FailureSetup, SslKind
 
 REAL_WEBSOCKETS: ModuleType = sys.modules["websockets"]
-
-
-class ClientSocket(Protocol):
-    async def send_text(self, data: str) -> None: ...
-
-    async def receive_text(self) -> str: ...
-
-    async def close(self, code: int = 1000, reason: str | None = None) -> None: ...
 
 
 class ProbeClient(ClientSocket):
@@ -143,11 +135,3 @@ def ssl_kind(value: bool | str | ssl_module.SSLContext | None) -> SslKind:
     if value is True:
         return "insecure"
     return "shared"
-
-
-def install(server: ProbeServer) -> None:
-    sys.modules["websockets"] = FakeWebsockets(server)
-
-
-def restore() -> None:
-    sys.modules["websockets"] = REAL_WEBSOCKETS
