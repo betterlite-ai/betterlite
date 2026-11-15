@@ -99,30 +99,28 @@ impl Helper for Op {
         let provider = input.provider;
         let key = input.api_key.clone().map(SecretString::from);
         let mapped = map_params(provider, &input.options, &input.non_default);
-        let (headers, url) = match provider {
-            HostProvider::Jina => (
-                jina_request_headers(key.as_ref()),
-                jina_complete_url(input.api_base.as_deref()),
-            ),
-            HostProvider::Infinity => (
-                Ok(infinity_request_headers(
-                    &input.headers,
-                    key.as_ref(),
-                    &settings(input)?,
-                )),
-                infinity_complete_url(input.api_base.as_deref()),
-            ),
-        };
         let fail = |error: HostRerankError| failure(provider, &error);
-        let resolved_headers = headers.map_err(fail)?;
-        let resolved_url = url.map_err(fail)?;
+        let headers = match provider {
+            HostProvider::Jina => jina_request_headers(key.as_ref()),
+            HostProvider::Infinity => Ok(infinity_request_headers(
+                &input.headers,
+                key.as_ref(),
+                &settings(input)?,
+            )),
+        }
+        .map_err(fail)?;
+        let url = match provider {
+            HostProvider::Jina => jina_complete_url(input.api_base.as_deref()),
+            HostProvider::Infinity => infinity_complete_url(input.api_base.as_deref()),
+        }
+        .map_err(fail)?;
         let request = transform_request(provider, &input.model, &mapped).map_err(fail)?;
         let mut hook = Vec::new();
         let response = decode_reply(provider, input.reply.as_ref(), &mut hook)?;
         Ok(json!({
             "mapped": mapped,
-            "headers": resolved_headers,
-            "url": resolved_url,
+            "headers": headers,
+            "url": url,
             "request": request,
             "response": response,
             "hook": hook,
