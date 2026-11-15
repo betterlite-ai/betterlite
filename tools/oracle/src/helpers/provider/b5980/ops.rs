@@ -22,7 +22,7 @@ use betterlite_provider::databricks_responses::DatabricksResponsesAPIConfig;
 use secrecy::SecretString;
 use serde_json::json;
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError};
+use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 use super::{
     ApiBaseCase, DEFAULT_VERSION, EmbeddingCase, EnvInput, UrlCase, UserAgentCase, ValidateCase,
@@ -37,7 +37,7 @@ struct ScriptedTokens {
 }
 
 impl ScriptedTokens {
-    fn new(reply: OauthReply) -> Self {
+    const fn new(reply: OauthReply) -> Self {
         Self {
             reply,
             sent: Mutex::new(Vec::new()),
@@ -72,7 +72,10 @@ impl OauthTokenSource for ScriptedTokens {
     }
 }
 
-fn run_async<F: Future>(future: F) -> Result<F::Output, Box<HelperError>> {
+fn run_async<F>(future: F) -> Result<F::Output, Box<HelperError>>
+where
+    F: Future,
+{
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .or_config_error()?;
@@ -181,11 +184,11 @@ fn embedding_case(case: &EmbeddingCase) -> Result<serde_json::Value, Box<HelperE
     });
     configure(
         run_async(prepare_embedding(preparation, &case.env.build(), &tokens)),
-        render_embedding,
+        |prepared| render_embedding(&prepared),
     )
 }
 
-fn render_embedding(prepared: PreparedEmbedding) -> serde_json::Value {
+fn render_embedding(prepared: &PreparedEmbedding) -> serde_json::Value {
     json!({
         "url": prepared.url,
         "headers": watched(&prepared.headers),

@@ -101,8 +101,11 @@ pub(super) struct UserAgentCase {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct EmbeddingCase {
-    pub(super) model: String,
-    pub(super) input: Json,
+    // the handler builds the request body from both, and that body is B1425's transport, so the prepare step never reads them
+    #[serde(rename = "model")]
+    _model: String,
+    #[serde(rename = "input")]
+    _input: Json,
     #[serde(default)]
     pub(super) optional_params: Object,
     pub(super) api_key: Option<String>,

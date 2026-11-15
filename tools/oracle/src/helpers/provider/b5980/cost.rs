@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use serde_json::json;
 
-use crate::helpers::{HelperResult, OrHelperError};
+use crate::helpers::{HelperResult, OrHelperError as _};
 
 use super::{CostCase, RateCase};
 
