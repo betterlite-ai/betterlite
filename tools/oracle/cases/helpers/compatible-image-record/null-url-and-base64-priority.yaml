@@ -1,0 +1,41 @@
+kind: helper
+name: compatible-image-record-null-url-and-base64-priority
+call:
+  compatible_image_record:
+    function: request
+    requests:
+      - host: aiml
+        model: flux-pro
+        prompt: a cat
+        optional_params: {}
+        api_key: env-key
+        api_base: null
+        env: {}
+        reply:
+          status: 200
+          headers: {}
+          body: '{"data":[{"url":null,"b64_json":"b64","revised_prompt":"paint"},{"b64_json":"","image_base64":"fallback","revised_prompt":"paint"},{"b64_json":"direct","image_base64":"other"},{"width":1024}]}'
+      - host: aiml
+        model: flux-pro
+        prompt: a cat
+        optional_params: {}
+        api_key: env-key
+        api_base: null
+        env: {}
+        reply:
+          status: 200
+          headers: {}
+          body: '{"images":[{"url":"https://mock/a.png","image_base64":"b64","revised_prompt":"paint"},{"image_base64":"b64"}]}'
+      - host: cometapi
+        model: any-model
+        prompt: a cat
+        optional_params: {}
+        api_key: env-key
+        api_base: null
+        env: {}
+        reply:
+          status: 200
+          headers: {}
+          body: '{"created":7,"data":[{"url":"https://mock/a.png","b64_json":"b64","revised_prompt":"paint"},{"url":null}]}'
+env: {}
+compare: {ignore: []}
