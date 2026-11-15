@@ -7,6 +7,6 @@ deviations:
     why: A working Vertex setup can return an empty candidate; null content and zero completion tokens are what the response contract already allows, and rule errors-match-litellm fixes a 500 no caller can act on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_non_gemini.py#L407
 kept_bugs:
-  - what: A synchronous custom or private request with stream=true sends the instance with "stream": true in its parameters, because the source copies optional_params into instances before it pops stream.
+  - what: A synchronous custom or private request with stream=true sends the instance with the "stream" field set to true in its parameters, because the source copies optional_params into instances before it pops stream.
     why: LiteLLM copies the options into the instance at L208 and pops stream at L254, so the body a working setup sends today carries the flag; betterlite copies the same options at the same point and sends the same body.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_non_gemini.py#L208
