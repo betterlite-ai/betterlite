@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::str::from_utf8;
 
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_models::usage_sum::Usage;
@@ -131,8 +132,7 @@ pub fn decode_vertex_agent_buffer(
     body: &[u8],
     model: &str,
 ) -> Result<AgentAnswer, AgentEngineError> {
-    let text =
-        std::str::from_utf8(body).map_err(|source| AgentEngineError::NotUtf8(status, source))?;
+    let text = from_utf8(body).map_err(|source| AgentEngineError::NotUtf8(status, source))?;
     let mut content = String::new();
     for line in text.trim().lines().map(str::trim) {
         if let Ok(Json::Object(fields)) = serde_json::from_str::<Json>(line) {
@@ -158,12 +158,16 @@ fn extract_text(fields: &Extra) -> String {
         && let Some(Json::List(parts)) = content.get("parts")
     {
         for part in parts {
-            if let Json::Object(part) = part
-                && let Some(text) = part.get("text")
+            if let Json::Object(part_fields) = part
+                && let Some(found) = part_fields.get("text")
             {
-                return match text {
+                return match found {
                     Json::Text(text) => text.clone(),
-                    _ => String::new(),
+                    Json::Null
+                    | Json::Bool(_)
+                    | Json::Number(_)
+                    | Json::List(_)
+                    | Json::Object(_) => String::new(),
                 };
             }
         }
@@ -220,8 +224,8 @@ where
 {
     let prompt = counter.count_messages(TOKEN_MODEL, messages).await?;
     let completion = counter.count_response_tokens(TOKEN_MODEL, content).await?;
-    let prompt_tokens = i64::try_from(prompt).map_err(|_| CountError::Overflow)?;
-    let completion_tokens = i64::try_from(completion).map_err(|_| CountError::Overflow)?;
+    let prompt_tokens = i64::try_from(prompt).map_err(|_overflow| CountError::Overflow)?;
+    let completion_tokens = i64::try_from(completion).map_err(|_overflow| CountError::Overflow)?;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
         .ok_or(CountError::Overflow)?;
