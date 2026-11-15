@@ -1,0 +1,41 @@
+kind: helper
+name: rate-limit-model-descriptors-key-owns-tpm
+call:
+  b3038:
+    function: key_owns_tpm
+    groups: {}
+    request_metadata:
+      user_api_key_metadata:
+        model_tpm_limit:
+          gpt-4: 0
+    model:
+      requested: gpt4
+      group: gpt-4
+calls:
+  - b3038:
+      function: key_owns_tpm
+      groups: {}
+      request_metadata:
+        user_api_key_model_max_budget:
+          gpt-4:
+            tpm_limit: 3
+      model:
+        requested: gpt4
+        group: gpt-4
+  - b3038:
+      function: key_owns_tpm
+      groups: {}
+      request_metadata: {}
+      model:
+        requested: gpt4
+        group: gpt-4
+  - b3038:
+      function: key_owns_tpm
+      groups: {}
+      request_metadata:
+        user_api_key_metadata:
+          model_tpm_limit:
+            gpt-4: 3
+      model: null
+env: {}
+compare: {ignore: []}
