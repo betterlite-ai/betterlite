@@ -168,14 +168,18 @@ const RESOURCE_REPLIES: &[(&str, Result<&str, Failure>)] = &[
     ("resource-malformed-id.json", Err(Failure::Shape)),
 ];
 
-const TRANSCRIPT_REPLIES: &[(&str, Result<(Option<&str>, usize), Failure>)] = &[
+type TranscriptExpectation = Result<(Option<&'static str>, usize), Failure>;
+
+type StatusExpectation = Result<(Option<&'static str>, Option<i64>), Failure>;
+
+const TRANSCRIPT_REPLIES: &[(&str, TranscriptExpectation)] = &[
     ("transcript-ok.json", Ok((Some("hello"), 1))),
     ("transcript-null-tokens.json", Ok((Some("hello"), 0))),
     ("transcript-malformed-tokens.json", Err(Failure::Field)),
     ("transcript-tokens-not-a-list.json", Err(Failure::Shape)),
 ];
 
-const STATUS_REPLIES: &[(&str, Result<(Option<&str>, Option<i64>), Failure>)] = &[
+const STATUS_REPLIES: &[(&str, StatusExpectation)] = &[
     ("status-fields.json", Ok((Some("completed"), Some(1500)))),
     ("status-wrong-typed.json", Err(Failure::Shape)),
 ];
