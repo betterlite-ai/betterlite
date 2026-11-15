@@ -61,8 +61,7 @@ impl<P: ChatPolicy> OpenrouterConfig<P> {
             );
         }
         self.policy.map_params(model, &requested, optional_params);
-        // the base mapping filters by its own supported list; LiteLLM's super() call reads this
-        // override's list, which always carries the two OpenRouter-only names
+        // the base mapping filters by its own list; LiteLLM's super() call reads this override's list, which carries the two OpenRouter-only names
         for name in OPENROUTER_ONLY_PARAMS {
             if let Some(value) = requested.get(name) {
                 optional_params.insert(name.to_owned(), value.clone());

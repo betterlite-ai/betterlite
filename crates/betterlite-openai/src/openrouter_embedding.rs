@@ -121,8 +121,7 @@ pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Obje
 }
 
 pub fn decode_embedding_response(raw: &[u8]) -> Result<EmbeddingResponse, EmbeddingDecodeError> {
-    // LiteLLM checks a successful reply for an error object before it builds the response, and
-    // hosted_vllm::embedding keeps the crate's one public port of that check
+    // LiteLLM checks a successful reply for an error object before it builds the response; hosted_vllm::embedding holds the crate's one port of that check
     if let Err(HostedVllmEmbeddingError::Provider {
         message,
         status_code,

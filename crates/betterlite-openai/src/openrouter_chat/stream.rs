@@ -6,14 +6,12 @@ use crate::chat_choices::wire::StreamReply;
 use crate::openai_base_config::Headers;
 use crate::openrouter_chat::error::{OpenRouterError, key_error};
 
-// B010's iterator calls this for one parsed chunk; the key reads stay here because LiteLLM's
-// override reads them before it builds the same ModelResponseStream the base parser normalizes
+// B010 calls this per parsed chunk; the key reads stay here because LiteLLM's override reads them before the base parser normalizes its ModelResponseStream
 pub fn chunk_parser(chunk: &Value) -> Result<StreamReply, OpenRouterError> {
     let raw_choices = checked_choices(chunk)?;
     let mut reply =
         base_chunk_parser(chunk, Uuid::nil, i64::default).map_err(|_source| unexpected(chunk))?;
-    // the override assigns delta["reasoning_content"] = delta.get("reasoning") on every choice,
-    // so a chunk without the reasoning key clears whatever reasoning_content it carried
+    // the override assigns delta["reasoning_content"] = delta.get("reasoning") on every choice, so a missing key clears what it carried
     for (choice, raw) in reply.choices.iter_mut().zip(raw_choices) {
         let carries_reasoning = raw
             .as_object()
@@ -28,8 +26,7 @@ pub fn chunk_parser(chunk: &Value) -> Result<StreamReply, OpenRouterError> {
     Ok(reply)
 }
 
-// the override reads choices, each choice's delta, id, created and model in this order, and a
-// missing or wrong-shaped one is the KeyError branch rather than the unexpected-response one
+// the override reads choices, each delta, id, created and model in this order; a missing or wrong-shaped one is the KeyError branch
 fn checked_choices(chunk: &Value) -> Result<&[Value], OpenRouterError> {
     let Some(fields) = chunk.as_object() else {
         return Err(key_error("choices", chunk));
