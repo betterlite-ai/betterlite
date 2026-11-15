@@ -432,12 +432,20 @@ fn a_wrong_shape_is_a_decode_error_and_not_a_json_failure(#[case] provider: Host
     assert!(matches!(syntax, Err(HostRerankError::Json { .. })));
 }
 
+fn nested_body(depth: usize) -> Vec<u8> {
+    let mut body = "[".repeat(depth);
+    body.push_str(&"]".repeat(depth));
+    body.into_bytes()
+}
+
 fn over_limit(body: &[u8]) -> bool {
     let (reply, _) = decode(HostProvider::Infinity, 200, body);
     matches!(
         reply,
         Err(HostRerankError::Decode {
-            source: ShapeDecodeError::JsonTooLarge | ShapeDecodeError::TooManyItems
+            source: ShapeDecodeError::JsonTooLarge
+                | ShapeDecodeError::TooManyItems
+                | ShapeDecodeError::TooDeep
         })
     )
 }
@@ -447,6 +455,8 @@ fn over_limit(body: &[u8]) -> bool {
 #[case::bytes_at_the_limit(at_the_byte_limit(), false)]
 #[case::items_at_the_limit(results_of(199_999), false)]
 #[case::items(results_of(200_001), true)]
+#[case::nesting_at_the_limit(nested_body(129), false)]
+#[case::nesting(nested_body(130), true)]
 fn the_decoder_limits_hold(#[case] body: Vec<u8>, #[case] expected: bool) {
     assert_eq!(over_limit(&body), expected);
 }
