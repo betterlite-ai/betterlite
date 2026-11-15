@@ -27,6 +27,19 @@ pub(super) fn map(json: &str) -> JsonMap {
     serde_json::from_str(json).unwrap()
 }
 
+// The proxy sets the authenticated key inside litellm_params.metadata before the request reaches a hook
+pub(super) fn caller_params(scope: &str) -> JsonMap {
+    map(&format!(
+        r#"{{"litellm_params":{{"metadata":{{"user_api_key_auth":{{"api_key":"{scope}"}}}}}}}}"#
+    ))
+}
+
+pub(super) fn with_caller(extra: &str, scope: &str) -> JsonMap {
+    let mut kwargs = map(extra);
+    kwargs.extend(caller_params(scope));
+    kwargs
+}
+
 pub(super) fn messages(json: &str) -> Vec<FollowupMessage> {
     serde_json::from_str(json).unwrap()
 }
@@ -79,7 +92,6 @@ pub(super) fn responses_response(hash: &str) -> String {
 }
 
 pub(super) struct Setup {
-    pub(super) scope: &'static str,
     pub(super) logging: Option<AgenticLogging>,
     pub(super) optional_params: JsonMap,
     pub(super) kwargs: JsonMap,
@@ -90,13 +102,12 @@ pub(super) struct Setup {
 
 pub(super) fn setup() -> Setup {
     Setup {
-        scope: SCOPE,
         logging: Some(AgenticLogging {
             call_id: Some(CALL_ID.to_owned()),
             agentic_loop_params: None,
         }),
         optional_params: JsonMap::new(),
-        kwargs: JsonMap::new(),
+        kwargs: with_caller("{}", SCOPE),
         tools: None,
         marker: None,
         now: NOW,
@@ -137,7 +148,6 @@ pub(super) fn plan_with(
             stream: false,
             kwargs: &setup.kwargs,
         },
-        caller_scope: setup.scope,
         own_marker: setup.marker,
         now: setup.now,
     };

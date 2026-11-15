@@ -11,8 +11,8 @@ use crate::compresr_recovery::tools::{holds_retrieve_tool, merged_tools};
 use crate::generic_guardrail_contracts::GuardrailToolParam;
 
 use super::support::{
-    HASH_ONE, NOW, RETRIEVE_TOOL, Setup, anthropic_response, chat_response, map, messages,
-    plan_with, raw, responses_response, seeded, setup, value,
+    HASH_ONE, NOW, RETRIEVE_TOOL, SCOPE, anthropic_response, chat_response, map, messages,
+    plan_with, raw, responses_response, seeded, setup, value, with_caller,
 };
 
 const OTHER_CALL_ONLY: &str = r#"{"choices":[{"message":{"content":"x","tool_calls":[{"id":"c","type":"function","function":{"name":"search","arguments":"{}"}}]}}]}"#;
@@ -132,16 +132,33 @@ fn plan_without_stored_originals_skips_the_loop_agentic() {
     assert_skipped(&plan);
 }
 
+#[derive(Clone, Copy)]
+enum Logging {
+    Absent,
+    WithoutCallId,
+    CallId(&'static str),
+}
+
+// The kwargs carry the same call id as the seed, so reading litellm_call_id instead of the logging object would find the original
 #[rstest]
-#[case::no_logging(None)]
-#[case::no_call_id(Some(None))]
-#[case::empty_call_id(Some(Some("")))]
-fn plan_without_a_call_id_skips_the_loop_agentic(#[case] call_id: Option<Option<&str>>) {
+#[case::no_logging(Logging::Absent)]
+#[case::no_call_id(Logging::WithoutCallId)]
+#[case::empty_call_id(Logging::CallId(""))]
+#[case::other_logging_call_id(Logging::CallId("call-2"))]
+fn plan_without_a_call_id_skips_the_loop_agentic(#[case] logging: Logging) {
     let mut request = setup();
-    request.logging = call_id.map(|id| AgenticLogging {
-        call_id: id.map(str::to_owned),
-        agentic_loop_params: None,
-    });
+    request.logging = match logging {
+        Logging::Absent => None,
+        Logging::WithoutCallId => Some(AgenticLogging {
+            call_id: None,
+            agentic_loop_params: None,
+        }),
+        Logging::CallId(id) => Some(AgenticLogging {
+            call_id: Some(id.to_owned()),
+            agentic_loop_params: None,
+        }),
+    };
+    request.kwargs = with_caller(r#"{"litellm_call_id":"call-1"}"#, SCOPE);
     let plan = plan_with(&store_with_original(), &chat_response(HASH_ONE), &request).unwrap();
     assert_skipped(&plan);
 }
@@ -149,14 +166,24 @@ fn plan_without_a_call_id_skips_the_loop_agentic(#[case] call_id: Option<Option<
 #[rstest]
 #[case::other_caller("scope-b", NOW)]
 #[case::no_scope("", NOW)]
-#[case::expired("scope-a", NOW.saturating_add(ORIGINALS_TTL))]
+#[case::expired(SCOPE, NOW.saturating_add(ORIGINALS_TTL))]
 fn plan_for_another_caller_or_after_expiry_skips_the_loop_agentic(
     #[case] scope: &'static str,
     #[case] now: Duration,
 ) {
     let mut request = setup();
-    request.scope = scope;
+    request.kwargs = with_caller("{}", scope);
     request.now = now;
+    let plan = plan_with(&store_with_original(), &chat_response(HASH_ONE), &request).unwrap();
+    assert_skipped(&plan);
+}
+
+// A request body can place a user_api_key string and a foreign auth object in metadata; only the proxy-set key counts
+#[test]
+fn plan_ignores_a_claimed_tenant_agentic() {
+    let mut request = setup();
+    request.kwargs =
+        map(r#"{"metadata":{"user_api_key":"scope-a","user_api_key_auth":{"api_key":"scope-b"}}}"#);
     let plan = plan_with(&store_with_original(), &chat_response(HASH_ONE), &request).unwrap();
     assert_skipped(&plan);
 }
@@ -202,7 +229,7 @@ fn plan_max_tokens_prefers_the_optional_params_agentic(
 ) {
     let mut request = setup();
     request.optional_params = map(optional);
-    request.kwargs = map(kwargs);
+    request.kwargs = with_caller(kwargs, SCOPE);
     let plan = plan_with(&store_with_original(), &chat_response(HASH_ONE), &request).unwrap();
     assert_eq!(plan.request_patch.unwrap().max_tokens, expected);
 }
@@ -216,7 +243,7 @@ fn plan_rejects_a_max_tokens_that_is_not_an_integer_agentic(
 ) {
     let mut request = setup();
     request.optional_params = map(optional);
-    request.kwargs = map(kwargs);
+    request.kwargs = with_caller(kwargs, SCOPE);
     let outcome = plan_with(&store_with_original(), &chat_response(HASH_ONE), &request);
     assert!(matches!(
         outcome,
@@ -231,8 +258,10 @@ fn plan_rejects_a_max_tokens_that_is_not_an_integer_agentic(
 fn plan_forwards_the_other_params_and_cleans_the_kwargs_agentic() {
     let mut request = setup();
     request.optional_params = map(r#"{"temperature":0.2,"max_tokens":9}"#);
-    request.kwargs =
-        map(r#"{"litellm_call_id":"call-1","_compresr_state":1,"litellm_logging_obj":"x"}"#);
+    request.kwargs = with_caller(
+        r#"{"litellm_call_id":"call-1","_compresr_state":1,"litellm_logging_obj":"x"}"#,
+        SCOPE,
+    );
     let plan = plan_with(&store_with_original(), &chat_response(HASH_ONE), &request).unwrap();
     let patch = plan.request_patch.unwrap();
     assert_eq!(
@@ -241,7 +270,7 @@ fn plan_forwards_the_other_params_and_cleans_the_kwargs_agentic() {
     );
     assert_eq!(
         serde_json::to_string(&patch.kwargs).unwrap(),
-        r#"{"litellm_call_id":"call-1"}"#
+        r#"{"litellm_call_id":"call-1","litellm_params":{"metadata":{"user_api_key_auth":{"api_key":"scope-a"}}}}"#
     );
 }
 
@@ -249,7 +278,7 @@ fn plan_forwards_the_other_params_and_cleans_the_kwargs_agentic() {
 #[case::tool_calls_not_a_list(r#"{"tool_calls":5}"#, true)]
 #[case::no_tool_calls("{}", false)]
 fn plan_reads_the_gate_tool_calls_agentic(#[case] tools: &str, #[case] fails: bool) {
-    let mut request: Setup = setup();
+    let mut request = setup();
     request.tools = Some(map(tools));
     let outcome = plan_with(&store_with_original(), &chat_response(HASH_ONE), &request);
     if fails {

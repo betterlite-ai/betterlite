@@ -11,6 +11,7 @@ use super::followup;
 use super::kwargs::follow_up_kwargs;
 use super::response::ModelResponse;
 use super::retrieval::resolve_retrievals;
+use super::scope::caller_scope;
 use super::store::{RecoveryStore, StoreKey};
 use super::tools::{
     COMPRESR_RETRIEVE_TOOL_NAME, RetrieveCall, TOOL_CALLS_KEY, holds_retrieve_tool, retrieve_calls,
@@ -22,8 +23,6 @@ const TOOL_TYPE_KEY: &str = "tool_type";
 
 pub struct PlanRequest<'call> {
     pub call: AgenticLoopCall<'call>,
-    // The hash of the authenticated virtual key, or empty when the proxy runs without per-key auth
-    pub caller_scope: &'call str,
     pub own_marker: Option<&'call str>,
     pub now: Duration,
 }
@@ -57,8 +56,12 @@ pub fn build_plan(
     };
     let pruned = store.prune(request.now);
     tracing::debug!(pruned, "Compresr: pruned the recovery store");
-    let call_id = call.logging.and_then(|record| record.call_id.as_deref());
-    let key = StoreKey::resolve(call_id, request.caller_scope);
+    // LiteLLM reads the logging object's call id only, never the request's litellm_call_id
+    let call_id = call
+        .logging
+        .and_then(|record| record.call_id.as_deref())
+        .filter(|call_id| !call_id.is_empty());
+    let key = StoreKey::resolve(call_id, &caller_scope(call.kwargs));
     let resolution = resolve_retrievals(store, key.as_ref(), calls, request.now);
     if !resolution.resolved_any {
         return Ok(AgenticLoopPlan::default());
