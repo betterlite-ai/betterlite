@@ -62,12 +62,12 @@ pub fn trim_streamed_choice_buffer(
     match cut {
         None => deferred(state, next_trim_len),
         Some(head_scan) => {
-            let tail = tail.to_owned();
+            let owned_tail = tail.to_owned();
             trimmed(
                 source,
                 state,
                 CutResult {
-                    tail,
+                    tail: owned_tail,
                     head_scan,
                     dropped_phrases,
                     open_sentence,

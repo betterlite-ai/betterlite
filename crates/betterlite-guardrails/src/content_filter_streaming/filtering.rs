@@ -36,101 +36,77 @@ pub(super) fn filter_streamed_text(
     mask_patterns_and_words(source, &filtered, detections).map(|masked| (masked, winners))
 }
 
+// Where a category check reads its categories and writes its mask and detections
+struct CheckScan<'scan> {
+    categories: &'scan CategoryLoadResult,
+    keyword_redaction_tag: &'scan str,
+    text: &'scan str,
+    filtered: &'scan mut String,
+    detections: &'scan mut Vec<StreamedDetection>,
+}
+
+impl CheckScan<'_> {
+    // The check whose first match the scan keeps, with a dropped phrase suppressing the first two
+    fn winner(
+        &mut self,
+        check: DetectionCheck,
+        carried: Option<&CategoryMatch>,
+        scanned: Option<CategoryMatch>,
+    ) -> Result<Option<CategoryMatch>, ContentFilterActionError> {
+        let Some(winner) = earlier_match(carried, scanned, check, self.categories) else {
+            return Ok(None);
+        };
+        let mut plain = Vec::new();
+        let masked = if check == DetectionCheck::CategoryKeyword {
+            handle_category_keyword_match(
+                &winner,
+                self.filtered.as_str(),
+                self.keyword_redaction_tag,
+                Some(&mut plain),
+            )
+        } else {
+            handle_conditional_match(&winner, self.text, Some(&mut plain))
+        };
+        let position = check_position(check, &winner, self.categories);
+        key_plain(check, position, &mut plain, self.detections);
+        *self.filtered = masked?;
+        Ok(Some(winner))
+    }
+}
+
 fn category_checks(
     source: &ContentFilterSource<'_>,
     input: &ScanInput<'_>,
     filtered: &mut String,
     detections: &mut Vec<StreamedDetection>,
 ) -> Result<CarriedMatches, ContentFilterActionError> {
-    let conditional = conditional_winner(source, input, filtered, detections)?;
-    let phrase = phrase_winner(source, input, filtered, detections)?;
-    let keyword = keyword_winner(source, input, filtered, detections)?;
+    let mut scan = CheckScan {
+        categories: source.categories,
+        keyword_redaction_tag: source.keyword_redaction_tag,
+        text: input.text,
+        filtered,
+        detections,
+    };
+    let conditional = scan.winner(
+        DetectionCheck::Conditional,
+        input.carried.conditional.as_ref(),
+        check_conditional_categories(input.conditional_text, &[], source.categories)?,
+    )?;
+    let phrase = scan.winner(
+        DetectionCheck::Phrase,
+        input.carried.phrase.as_ref(),
+        check_phrase_patterns(input.conditional_text, &[], source.categories)?,
+    )?;
+    let keyword = scan.winner(
+        DetectionCheck::CategoryKeyword,
+        input.carried.keyword.as_ref(),
+        check_category_keywords(input.text, &[], source.categories)?,
+    )?;
     Ok(CarriedMatches {
         conditional,
         phrase,
         keyword,
     })
-}
-
-fn conditional_winner(
-    source: &ContentFilterSource<'_>,
-    input: &ScanInput<'_>,
-    filtered: &mut String,
-    detections: &mut Vec<StreamedDetection>,
-) -> Result<Option<CategoryMatch>, ContentFilterActionError> {
-    let found = earlier_match(
-        input.carried.conditional.as_ref(),
-        check_conditional_categories(input.conditional_text, &[], source.categories)?,
-        DetectionCheck::Conditional,
-        source.categories,
-    );
-    if let Some(found) = found.as_ref() {
-        let mut plain = Vec::new();
-        let masked = handle_conditional_match(found, input.text, Some(&mut plain));
-        let position = check_position(DetectionCheck::Conditional, found, source.categories);
-        key_plain(
-            DetectionCheck::Conditional,
-            position,
-            &mut plain,
-            detections,
-        );
-        *filtered = masked?;
-    }
-    Ok(found)
-}
-
-fn phrase_winner(
-    source: &ContentFilterSource<'_>,
-    input: &ScanInput<'_>,
-    filtered: &mut String,
-    detections: &mut Vec<StreamedDetection>,
-) -> Result<Option<CategoryMatch>, ContentFilterActionError> {
-    let found = earlier_match(
-        input.carried.phrase.as_ref(),
-        check_phrase_patterns(input.conditional_text, &[], source.categories)?,
-        DetectionCheck::Phrase,
-        source.categories,
-    );
-    if let Some(found) = found.as_ref() {
-        let mut plain = Vec::new();
-        let masked = handle_conditional_match(found, input.text, Some(&mut plain));
-        let position = check_position(DetectionCheck::Phrase, found, source.categories);
-        key_plain(DetectionCheck::Phrase, position, &mut plain, detections);
-        *filtered = masked?;
-    }
-    Ok(found)
-}
-
-fn keyword_winner(
-    source: &ContentFilterSource<'_>,
-    input: &ScanInput<'_>,
-    filtered: &mut String,
-    detections: &mut Vec<StreamedDetection>,
-) -> Result<Option<CategoryMatch>, ContentFilterActionError> {
-    let found = earlier_match(
-        input.carried.keyword.as_ref(),
-        check_category_keywords(input.text, &[], source.categories)?,
-        DetectionCheck::CategoryKeyword,
-        source.categories,
-    );
-    if let Some(found) = found.as_ref() {
-        let mut plain = Vec::new();
-        let masked = handle_category_keyword_match(
-            found,
-            filtered,
-            source.keyword_redaction_tag,
-            Some(&mut plain),
-        );
-        let position = check_position(DetectionCheck::CategoryKeyword, found, source.categories);
-        key_plain(
-            DetectionCheck::CategoryKeyword,
-            position,
-            &mut plain,
-            detections,
-        );
-        *filtered = masked?;
-    }
-    Ok(found)
 }
 
 // Patterns and blocked words run over the chunk alone, so their spans keep the buffer's own offsets
@@ -246,6 +222,23 @@ fn check_position(
     found: &CategoryMatch,
     categories: &CategoryLoadResult,
 ) -> (usize, usize) {
+    let phrase = found.matched.strip_prefix("phrase: ").unwrap_or_default();
+    let phrase_pattern = categories
+        .loaded_categories
+        .get(&found.category)
+        .and_then(|config| {
+            config
+                .phrase_patterns
+                .iter()
+                .position(|pattern| pattern.source == phrase)
+        })
+        .unwrap_or(usize::MAX);
+    let keyword = categories
+        .always_block_category_keywords
+        .keys()
+        .chain(categories.category_keywords.keys())
+        .position(|keyword| *keyword == found.matched)
+        .unwrap_or(usize::MAX);
     match check {
         DetectionCheck::Conditional => (
             category_position(&categories.conditional_categories, &found.category),
@@ -253,9 +246,9 @@ fn check_position(
         ),
         DetectionCheck::Phrase => (
             category_position(&categories.loaded_categories, &found.category),
-            phrase_position(found, categories),
+            phrase_pattern,
         ),
-        DetectionCheck::CategoryKeyword => (keyword_position(found, categories), 0),
+        DetectionCheck::CategoryKeyword => (keyword, 0),
         DetectionCheck::Pattern | DetectionCheck::BlockedWord => (usize::MAX, usize::MAX),
     }
 }
@@ -264,28 +257,5 @@ fn category_position<Entry>(categories: &BTreeMap<String, Entry>, name: &str) ->
     categories
         .keys()
         .position(|category| category == name)
-        .unwrap_or(usize::MAX)
-}
-
-fn phrase_position(found: &CategoryMatch, categories: &CategoryLoadResult) -> usize {
-    let source = found.matched.strip_prefix("phrase: ").unwrap_or_default();
-    categories
-        .loaded_categories
-        .get(&found.category)
-        .and_then(|config| {
-            config
-                .phrase_patterns
-                .iter()
-                .position(|pattern| pattern.source == source)
-        })
-        .unwrap_or(usize::MAX)
-}
-
-fn keyword_position(found: &CategoryMatch, categories: &CategoryLoadResult) -> usize {
-    categories
-        .always_block_category_keywords
-        .keys()
-        .chain(categories.category_keywords.keys())
-        .position(|keyword| *keyword == found.matched)
         .unwrap_or(usize::MAX)
 }
