@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Protocol, TypeAlias, runtime_checkable
+from typing import Final, Protocol, TypeAlias, runtime_checkable
 
 from litellm.llms.litellm_proxy.chat.transformation import LiteLLMProxyChatConfig
 from litellm.llms.litellm_proxy.image_edit.transformation import LiteLLMProxyImageEditConfig
@@ -101,6 +101,7 @@ class EditConfig(Protocol):
 
 
 ARBITRARY: ConfigDict = ConfigDict(arbitrary_types_allowed=True)
+VALUE: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 CHAT: ChatConfig = TypeAdapter(ChatConfig, config=ARBITRARY).validate_python(
     LiteLLMProxyChatConfig()

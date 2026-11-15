@@ -2,8 +2,8 @@ from typing import Literal, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
 
-from .boundary import EDIT, GENERATION
-from .environment import VALUE, install_environment
+from .boundary import EDIT, GENERATION, VALUE
+from .environment import install_environment
 
 
 class ImageCase(TypedDict):

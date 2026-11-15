@@ -5,8 +5,8 @@ import litellm
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from pydantic import JsonValue, TypeAdapter
 
-from .boundary import CHAT
-from .environment import VALUE, install_environment
+from .boundary import CHAT, VALUE
+from .environment import install_environment
 
 
 class ModelsCase(TypedDict):

@@ -1,15 +1,12 @@
 import os
 from typing import Final
 
-from pydantic import JsonValue, TypeAdapter
-
 MANAGED_ENV: Final = (
     "LITELLM_PROXY_API_BASE",
     "LITELLM_PROXY_API_KEY",
     "USE_LITELLM_PROXY",
     "OPENAI_API_KEY",
 )
-VALUE: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
 def install_environment(
