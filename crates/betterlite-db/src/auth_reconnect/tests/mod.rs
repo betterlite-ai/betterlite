@@ -472,6 +472,21 @@ async fn missing_database_url_error() {
 }
 
 #[tokio::test]
+async fn empty_database_url_error() {
+    let effects = fakes::effects();
+    let engine = FakeEngine::new(EngineScript::default(), Arc::clone(&effects));
+    let policy = policy_with_engine(engine, Arc::clone(&effects));
+    let empty = SecretString::from("");
+    let attempt = request("empty_url", &empty);
+    assert!(!policy.attempt_db_reconnect(&attempt, None).await);
+    assert_eq!(policy.snapshot().consecutive_failures, 1);
+    assert_eq!(
+        fakes::recorded(&effects),
+        vec![Effect::LockAcquire, Effect::LockRelease]
+    );
+}
+
+#[tokio::test]
 async fn dead_recreate_failure_keeps_marker() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
