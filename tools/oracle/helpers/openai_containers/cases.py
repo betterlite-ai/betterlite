@@ -1,9 +1,9 @@
 from typing import Literal, TypeAlias, TypedDict
 
+from litellm.types.containers.main import ContainerCreateOptionalRequestParams as CreateParams
 from pydantic import JsonValue
 
-ResourceKind: TypeAlias = Literal["retrieve", "delete"]
-MetadataKind: TypeAlias = Literal["retrieve", "list", "delete", "file_list"]
+ReplyKind: TypeAlias = Literal["create", "retrieve", "list", "delete", "file_list"]
 
 
 class Globals(TypedDict):
@@ -13,7 +13,7 @@ class Globals(TypedDict):
 
 
 class MapCall(TypedDict):
-    params: dict[str, JsonValue]
+    params: CreateParams
     drop_params: bool
 
 
@@ -33,33 +33,40 @@ class CreateCall(TypedDict):
     params: dict[str, JsonValue]
 
 
-class ListCall(TypedDict):
-    api_base: str
+class QueryCall(TypedDict):
     after: str | None
     limit: int | None
     order: str | None
     extra_query: dict[str, JsonValue] | None
+
+
+class ListCall(TypedDict):
+    kind: Literal["list"]
+    api_base: str
+    query: QueryCall
 
 
 class FileListCall(TypedDict):
+    kind: Literal["file_list"]
     container_id: str
     api_base: str
-    after: str | None
-    limit: int | None
-    order: str | None
-    extra_query: dict[str, JsonValue] | None
+    query: QueryCall
 
 
 class ResourceCall(TypedDict):
-    kind: ResourceKind
+    kind: Literal["retrieve", "delete"]
     container_id: str
     api_base: str
 
 
 class ContentCall(TypedDict):
+    kind: Literal["content"]
     container_id: str
     file_id: str
     api_base: str
+
+
+RequestCall: TypeAlias = ListCall | FileListCall | ResourceCall | ContentCall
 
 
 class HeadersCall(TypedDict):
@@ -70,11 +77,11 @@ class HeadersCall(TypedDict):
 
 
 class ReplyCall(TypedDict):
+    kind: ReplyKind
     body: str
 
 
-class MetadataCall(TypedDict):
-    kind: MetadataKind
+class BodyCall(TypedDict):
     body: str
 
 
@@ -90,12 +97,8 @@ class Input(TypedDict):
     joins: list[JoinCall]
     urls: list[UrlCall]
     creates: list[CreateCall]
-    lists: list[ListCall]
-    file_lists: list[FileListCall]
-    resources: list[ResourceCall]
-    contents: list[ContentCall]
+    requests: list[RequestCall]
     headers: list[HeadersCall]
-    create_replies: list[ReplyCall]
-    metadata_replies: list[MetadataCall]
-    content_replies: list[ReplyCall]
+    replies: list[ReplyCall]
+    content_replies: list[BodyCall]
     errors: list[ErrorCall]

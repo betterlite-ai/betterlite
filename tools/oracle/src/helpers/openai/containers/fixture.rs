@@ -28,17 +28,6 @@ impl ContainerCosts for FixtureCost {
     }
 }
 
-pub(super) fn failure(message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("OpenAiContainerError"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
-    })
-}
-
 pub(super) fn call_config(
     call_globals: &Globals,
     environment: &BTreeMap<String, String>,

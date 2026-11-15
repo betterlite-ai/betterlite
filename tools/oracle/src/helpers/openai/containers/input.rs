@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_openai::api::container_contracts::config::ContainerListQuery;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -17,21 +18,13 @@ pub(crate) struct Input {
     #[serde(default)]
     pub(super) creates: Vec<CreateCall>,
     #[serde(default)]
-    pub(super) lists: Vec<ListCall>,
-    #[serde(default)]
-    pub(super) file_lists: Vec<FileListCall>,
-    #[serde(default)]
-    pub(super) resources: Vec<ResourceCall>,
-    #[serde(default)]
-    pub(super) contents: Vec<ContentCall>,
+    pub(super) requests: Vec<RequestCall>,
     #[serde(default)]
     pub(super) headers: Vec<HeadersCall>,
     #[serde(default)]
-    pub(super) create_replies: Vec<ReplyCall>,
+    pub(super) replies: Vec<ReplyCall>,
     #[serde(default)]
-    pub(super) metadata_replies: Vec<MetadataCall>,
-    #[serde(default)]
-    pub(super) content_replies: Vec<ReplyCall>,
+    pub(super) content_replies: Vec<BodyCall>,
     #[serde(default)]
     pub(super) errors: Vec<ErrorCall>,
 }
@@ -78,46 +71,49 @@ pub(crate) struct CreateCall {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ListCall {
-    pub(super) api_base: String,
-    pub(super) after: Option<String>,
-    pub(super) limit: Option<i64>,
-    pub(super) order: Option<String>,
-    pub(super) extra_query: Option<Map<String, Value>>,
+pub(crate) struct QueryCall {
+    after: Option<String>,
+    limit: Option<i64>,
+    order: Option<String>,
+    extra_query: Option<Map<String, Value>>,
+}
+
+impl<'call> From<&'call QueryCall> for ContainerListQuery<'call> {
+    fn from(query: &'call QueryCall) -> Self {
+        Self {
+            after: query.after.as_deref(),
+            limit: query.limit,
+            order: query.order.as_deref(),
+            extra_query: query.extra_query.as_ref(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct FileListCall {
-    pub(super) container_id: String,
-    pub(super) api_base: String,
-    pub(super) after: Option<String>,
-    pub(super) limit: Option<i64>,
-    pub(super) order: Option<String>,
-    pub(super) extra_query: Option<Map<String, Value>>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ResourceKind {
-    Retrieve,
-    Delete,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ResourceCall {
-    pub(super) kind: ResourceKind,
-    pub(super) container_id: String,
-    pub(super) api_base: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ContentCall {
-    pub(super) container_id: String,
-    pub(super) file_id: String,
-    pub(super) api_base: String,
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum RequestCall {
+    List {
+        api_base: String,
+        query: QueryCall,
+    },
+    FileList {
+        container_id: String,
+        api_base: String,
+        query: QueryCall,
+    },
+    Retrieve {
+        container_id: String,
+        api_base: String,
+    },
+    Delete {
+        container_id: String,
+        api_base: String,
+    },
+    Content {
+        container_id: String,
+        file_id: String,
+        api_base: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -132,14 +128,9 @@ pub(crate) struct HeadersCall {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ReplyCall {
-    pub(super) body: String,
-}
-
-#[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum MetadataKind {
+pub(crate) enum ReplyKind {
+    Create,
     Retrieve,
     List,
     Delete,
@@ -148,8 +139,14 @@ pub(crate) enum MetadataKind {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct MetadataCall {
-    pub(super) kind: MetadataKind,
+pub(crate) struct ReplyCall {
+    pub(super) kind: ReplyKind,
+    pub(super) body: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BodyCall {
     pub(super) body: String,
 }
 

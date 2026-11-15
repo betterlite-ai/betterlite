@@ -7,16 +7,15 @@ call:
     joins: []
     urls: []
     creates: []
-    lists: []
-    file_lists: []
-    resources: []
-    contents: []
+    requests: []
     headers: []
-    create_replies:
-      - body: '{"id":"cntr_abc","object":"container","created_at":1700000000,"status":"running","expires_after":{"anchor":"last_active_at","minutes":20},"last_active_at":null,"name":"box"}'
-      - body: '{"id":"cntr_none","object":"container","created_at":1700000001,"status":"running","expires_after":null,"last_active_at":null,"name":null}'
-      - body: '{"id":"cntr_bad","object":"container.deleted","created_at":1700000002,"status":"running"}'
-    metadata_replies: []
+    replies:
+      - kind: create
+        body: '{"id":"cntr_abc","object":"container","created_at":1700000000,"status":"running","expires_after":{"anchor":"last_active_at","minutes":20},"last_active_at":null,"name":"box"}'
+      - kind: create
+        body: '{"id":"cntr_none","object":"container","created_at":1700000001,"status":"running","expires_after":null,"last_active_at":null,"name":null}'
+      - kind: create
+        body: '{"id":"cntr_bad","object":"container.deleted","created_at":1700000002,"status":"running"}'
     content_replies: []
     errors: []
 env: {}

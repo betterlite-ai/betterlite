@@ -28,13 +28,9 @@ call:
         globals: {api_base: null, api_key: null, openai_key: null}
         environment: {}
     creates: []
-    lists: []
-    file_lists: []
-    resources: []
-    contents: []
+    requests: []
     headers: []
-    create_replies: []
-    metadata_replies: []
+    replies: []
     content_replies: []
     errors: []
 env: {}

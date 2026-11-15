@@ -33,13 +33,9 @@ call:
       - name: cntr-given
         params:
           extra_headers: {only: dropped}
-    lists: []
-    file_lists: []
-    resources: []
-    contents: []
+    requests: []
     headers: []
-    create_replies: []
-    metadata_replies: []
+    replies: []
     content_replies: []
     errors: []
 env: {}

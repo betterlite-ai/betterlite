@@ -19,13 +19,9 @@ call:
         path_suffix: "/containers"
     urls: []
     creates: []
-    lists: []
-    file_lists: []
-    resources: []
-    contents: []
+    requests: []
     headers: []
-    create_replies: []
-    metadata_replies: []
+    replies: []
     content_replies: []
     errors: []
 env: {}

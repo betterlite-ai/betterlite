@@ -7,20 +7,18 @@ call:
     joins: []
     urls: []
     creates: []
-    lists: []
-    file_lists: []
-    resources:
+    requests:
       - kind: delete
         container_id: cntr_seed
         api_base: "https://api.openai.com/v1/containers"
-    contents:
-      - container_id: cntr_seed
+      - kind: content
+        container_id: cntr_seed
         file_id: cfile_seed
         api_base: "https://api.openai.com/v1/containers"
     headers: []
-    create_replies:
-      - body: '{"id":"cntr_seed","object":"container","created_at":7,"status":"running"}'
-    metadata_replies:
+    replies:
+      - kind: create
+        body: '{"id":"cntr_seed","object":"container","created_at":7,"status":"running"}'
       - kind: delete
         body: '{"id":"cntr_seed","object":"container.deleted","deleted":false}'
       - kind: file_list

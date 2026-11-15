@@ -7,10 +7,7 @@ call:
     joins: []
     urls: []
     creates: []
-    lists: []
-    file_lists: []
-    resources: []
-    contents: []
+    requests: []
     headers:
       - api_key: null
         headers: {x-trace: seed}
@@ -20,8 +17,7 @@ call:
         headers: {}
         globals: {api_base: null, api_key: null, openai_key: null}
         environment: {OPENAI_API_KEY: sk-env-seed}
-    create_replies: []
-    metadata_replies: []
+    replies: []
     content_replies: []
     errors:
       - message: upstream unavailable

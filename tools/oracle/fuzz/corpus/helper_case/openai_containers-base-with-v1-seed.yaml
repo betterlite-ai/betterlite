@@ -12,18 +12,12 @@ call:
         globals: {api_base: null, api_key: null, openai_key: null}
         environment: {OPENAI_BASE_URL: "https://seed-env.test/v1"}
     creates: []
-    lists:
-      - api_base: "https://api.openai.com/v1/containers"
-        after: null
-        limit: 3
-        order: asc
-        extra_query: null
-    file_lists: []
-    resources: []
-    contents: []
+    requests:
+      - kind: list
+        api_base: "https://api.openai.com/v1/containers"
+        query: {after: null, limit: 3, order: asc, extra_query: null}
     headers: []
-    create_replies: []
-    metadata_replies: []
+    replies: []
     content_replies: []
     errors: []
 env: {}

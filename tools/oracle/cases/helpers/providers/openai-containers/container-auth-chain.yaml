@@ -7,10 +7,7 @@ call:
     joins: []
     urls: []
     creates: []
-    lists: []
-    file_lists: []
-    resources: []
-    contents: []
+    requests: []
     headers:
       - api_key: sk-explicit
         headers: {}
@@ -40,8 +37,7 @@ call:
         headers: {Authorization: "Bearer stale", authorization: kept, x-extra: "yes"}
         globals: {api_base: null, api_key: null, openai_key: null}
         environment: {}
-    create_replies: []
-    metadata_replies: []
+    replies: []
     content_replies: []
     errors: []
 env: {}

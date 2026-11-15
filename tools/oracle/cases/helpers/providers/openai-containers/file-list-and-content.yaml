@@ -7,34 +7,29 @@ call:
     joins: []
     urls: []
     creates: []
-    lists: []
-    file_lists:
-      - container_id: cntr_abc
+    requests:
+      - kind: file_list
+        container_id: cntr_abc
         api_base: "https://example.openai.azure.com/openai/v1/containers?api-version=v1"
-        after: null
-        limit: 20
-        order: null
-        extra_query: null
-      - container_id: cntr/abc
+        query: {after: null, limit: 20, order: null, extra_query: null}
+      - kind: file_list
+        container_id: cntr/abc
         api_base: "https://api.openai.com/v1/containers"
-        after: null
-        limit: null
-        order: null
-        extra_query: null
-    resources: []
-    contents:
-      - container_id: cntr_abc
+        query: {after: null, limit: null, order: null, extra_query: null}
+      - kind: content
+        container_id: cntr_abc
         file_id: cfile_1
         api_base: "https://api.openai.com/v1/containers"
-      - container_id: cntr/abc
+      - kind: content
+        container_id: cntr/abc
         file_id: cfile/1 x
         api_base: "https://example.openai.azure.com/openai/v1/containers?api-version=v1"
-      - container_id: cntr_abc
+      - kind: content
+        container_id: cntr_abc
         file_id: cfile-2
         api_base: "https://api.openai.com/v1/containers/"
     headers: []
-    create_replies: []
-    metadata_replies: []
+    replies: []
     content_replies:
       - body: "raw file bytes"
       - body: "line one\nline two"

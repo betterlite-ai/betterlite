@@ -7,13 +7,9 @@ call:
     joins: []
     urls: []
     creates: []
-    lists: []
-    file_lists: []
-    resources: []
-    contents: []
+    requests: []
     headers: []
-    create_replies: []
-    metadata_replies:
+    replies:
       - kind: retrieve
         body: '{"id":"cntr_abc","object":"container","created_at":1700000000,"status":"running","expires_after":{"anchor":"last_active_at","minutes":20},"last_active_at":null,"name":"box"}'
       - kind: retrieve
@@ -34,6 +30,12 @@ call:
         body: '{}'
       - kind: file_list
         body: '{"object":"list","data":[{"id":"cfile_1","object":"container.file.deleted","container_id":"cntr_abc","bytes":12,"created_at":3,"path":"/mnt/data/a.txt","source":"user"}],"has_more":false}'
+      - kind: retrieve
+        body: '["cntr_array","container",1700000000,"running",null,null,null]'
+      - kind: retrieve
+        body: '{"id":"cntr_first","object":"container","created_at":1,"status":"running","id":"cntr_last"}'
+      - kind: create
+        body: '{"id":"cntr_new","object":"container","created_at":9,"status":"running"}'
     content_replies:
       - body: "raw file bytes"
       - body: ""
