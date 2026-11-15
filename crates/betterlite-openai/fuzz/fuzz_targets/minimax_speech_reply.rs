@@ -6,7 +6,7 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
     let headers = HeaderMap::new();
-    let _reply = decode_speech_reply(SpeechReply {
+    let _reply = decode_speech_reply(&SpeechReply {
         status: 200,
         headers: &headers,
         body: bytes,

@@ -11,7 +11,7 @@ pub struct ImageReply<'reply> {
 }
 
 pub fn decode_image_generation_reply(
-    reply: ImageReply<'_>,
+    reply: &ImageReply<'_>,
     created_seconds: i64,
 ) -> Result<ImageGenerationReply, ModelScopeImageError> {
     let parsed: Value =

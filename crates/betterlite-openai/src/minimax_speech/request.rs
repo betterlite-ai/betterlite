@@ -20,13 +20,11 @@ const DEFAULT_FORMAT: &str = "mp3";
 // MiniMax's base carries no version, unlike its chat base that already ends in /v1
 #[must_use]
 pub fn get_complete_url(api_base: Option<&str>, environment_base: Option<&str>) -> String {
-    format!(
-        "{}{TTS_ENDPOINT_PATH}",
-        api_base
-            .or(environment_base)
-            .unwrap_or(TTS_BASE_URL)
-            .trim_end_matches('/')
-    )
+    let base = api_base
+        .or(environment_base)
+        .unwrap_or(TTS_BASE_URL)
+        .trim_end_matches('/');
+    format!("{base}{TTS_ENDPOINT_PATH}")
 }
 
 pub fn validate_environment(
@@ -59,6 +57,37 @@ fn take(params: &mut Object, name: &str, default: Value) -> Value {
     }
 }
 
+fn build_voice_setting(params: &mut Object, voice: &str) -> Object {
+    let fallback = if voice.is_empty() {
+        DEFAULT_VOICE_ID
+    } else {
+        voice
+    };
+    let voice_id = take(params, "voice_id", Value::String(fallback.to_owned()));
+    let speed = take(params, "speed", Value::from(DEFAULT_SPEED));
+    let vol = take(params, "vol", Value::from(DEFAULT_VOL));
+    let pitch = take(params, "pitch", Value::from(DEFAULT_PITCH));
+    Object::from_iter([
+        (String::from("voice_id"), voice_id),
+        (String::from("speed"), speed),
+        (String::from("vol"), vol),
+        (String::from("pitch"), pitch),
+    ])
+}
+
+fn build_audio_setting(params: &mut Object) -> Object {
+    let sample_rate = take(params, "sample_rate", Value::from(DEFAULT_SAMPLE_RATE));
+    let bitrate = take(params, "bitrate", Value::from(DEFAULT_BITRATE));
+    let format = take(params, "format", Value::from(DEFAULT_FORMAT));
+    let channel = take(params, "channel", Value::from(DEFAULT_CHANNEL));
+    Object::from_iter([
+        (String::from("sample_rate"), sample_rate),
+        (String::from("bitrate"), bitrate),
+        (String::from("format"), format),
+        (String::from("channel"), channel),
+    ])
+}
+
 #[must_use]
 pub fn speech_request_body(
     model: &str,
@@ -67,42 +96,13 @@ pub fn speech_request_body(
     optional_params: &Object,
 ) -> Object {
     let mut params = optional_params.clone();
-    let voice_id = take(
-        &mut params,
-        "voice_id",
-        Value::String(
-            if voice.is_empty() {
-                DEFAULT_VOICE_ID
-            } else {
-                voice
-            }
-            .to_owned(),
-        ),
-    );
-    let speed = take(&mut params, "speed", Value::from(DEFAULT_SPEED));
-    let format = take(&mut params, "format", Value::from(DEFAULT_FORMAT));
-    let vol = take(&mut params, "vol", Value::from(DEFAULT_VOL));
-    let pitch = take(&mut params, "pitch", Value::from(DEFAULT_PITCH));
-    let sample_rate = take(&mut params, "sample_rate", Value::from(DEFAULT_SAMPLE_RATE));
-    let bitrate = take(&mut params, "bitrate", Value::from(DEFAULT_BITRATE));
-    let channel = take(&mut params, "channel", Value::from(DEFAULT_CHANNEL));
+    let voice_setting = build_voice_setting(&mut params, voice);
+    let audio_setting = build_audio_setting(&mut params);
     let output_format = take(
         &mut params,
         "output_format",
         Value::from(DEFAULT_OUTPUT_FORMAT),
     );
-    let voice_setting = Object::from_iter([
-        (String::from("voice_id"), voice_id),
-        (String::from("speed"), speed),
-        (String::from("vol"), vol),
-        (String::from("pitch"), pitch),
-    ]);
-    let audio_setting = Object::from_iter([
-        (String::from("sample_rate"), sample_rate),
-        (String::from("bitrate"), bitrate),
-        (String::from("format"), format),
-        (String::from("channel"), channel),
-    ]);
     let mut body = Object::from_iter([
         (String::from("model"), Value::from(model)),
         (String::from("text"), Value::from(text)),

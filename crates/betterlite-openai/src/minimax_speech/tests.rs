@@ -41,7 +41,7 @@ async fn decode(
     status: u16,
     headers: &HeaderMap,
 ) -> Result<Decoded, MinimaxSpeechError> {
-    let response = decode_speech_reply(SpeechReply {
+    let response = decode_speech_reply(&SpeechReply {
         status,
         headers,
         body: body.as_bytes(),
@@ -124,19 +124,19 @@ fn a_voice_object_names_the_voice_from_its_first_string_key() {
 
 #[test]
 fn a_voice_object_uses_id_then_name() {
-    let fields = object(json!({"id": "nova"}));
-    let by_id = map_openai_params(Some(VoiceInput::Fields(&fields)), &Object::new())
+    let by_id_fields = object(json!({"id": "nova"}));
+    let by_id = map_openai_params(Some(VoiceInput::Fields(&by_id_fields)), &Object::new())
         .expect("the voice object is valid");
     assert_eq!(by_id.voice, "female-yujie");
-    let fields = object(json!({"name": "shimmer"}));
-    let by_name = map_openai_params(Some(VoiceInput::Fields(&fields)), &Object::new())
+    let by_name_fields = object(json!({"name": "shimmer"}));
+    let by_name = map_openai_params(Some(VoiceInput::Fields(&by_name_fields)), &Object::new())
         .expect("the voice object is valid");
     assert_eq!(by_name.voice, "female-tianmei");
 }
 
 #[test]
 fn a_voice_object_without_a_usable_name_takes_the_default() {
-    let fields = object(json!({"voice_id": 5, "id": "   "}));
+    let fields = object(json!({"voice_id": 5_i32, "id": "   "}));
     let result = map_openai_params(Some(VoiceInput::Fields(&fields)), &Object::new())
         .expect("the voice object is valid");
     assert_eq!(result.voice, DEFAULT_VOICE_ID);
@@ -152,11 +152,11 @@ fn the_voice_argument_wins_only_until_the_voice_id_option_is_passed_through() {
 }
 
 #[rstest]
-#[case::mp3("mp3", "mp3")]
-#[case::pcm("pcm", "pcm")]
-#[case::wav("wav", "wav")]
-#[case::flac("flac", "flac")]
-#[case::unknown("opus", "mp3")]
+#[case::mp3(Some(json!("mp3")), "mp3")]
+#[case::pcm(Some(json!("pcm")), "pcm")]
+#[case::wav(Some(json!("wav")), "wav")]
+#[case::flac(Some(json!("flac")), "flac")]
+#[case::unknown(Some(json!("opus")), "mp3")]
 #[case::missing(None, "mp3")]
 #[case::null(Some(Value::Null), "mp3")]
 fn maps_the_response_format(#[case] format: Option<Value>, #[case] expected: &str) {
@@ -170,19 +170,19 @@ fn maps_the_response_format(#[case] format: Option<Value>, #[case] expected: &st
 
 #[test]
 fn rejects_a_response_format_that_is_not_a_string() {
-    let error = map_openai_params(None, &object(json!({"response_format": 4})))
+    let error = map_openai_params(None, &object(json!({"response_format": 4_i32})))
         .expect_err("a number is not a response_format");
     assert_eq!(error.status_code(), Some(400));
 }
 
 #[rstest]
-#[case::below(json!(0.2), 0.5)]
-#[case::at_minimum(json!(0.5), 0.5)]
-#[case::inside(json!(1.25), 1.25)]
-#[case::at_maximum(json!(2), 2.0)]
-#[case::above(json!(3), 2.0)]
-#[case::missing(None, 1.0)]
-#[case::null(Some(Value::Null), 1.0)]
+#[case::below(Some(json!(0.2_f64)), 0.5_f64)]
+#[case::at_minimum(Some(json!(0.5_f64)), 0.5_f64)]
+#[case::inside(Some(json!(1.25_f64)), 1.25_f64)]
+#[case::at_maximum(Some(json!(2_i32)), 2.0_f64)]
+#[case::above(Some(json!(3_i32)), 2.0_f64)]
+#[case::missing(None, 1.0_f64)]
+#[case::null(Some(Value::Null), 1.0_f64)]
 fn clamps_the_speed(#[case] speed: Option<Value>, #[case] expected: f64) {
     let params = match speed {
         Some(value) => object(json!({"speed": value})),
@@ -215,12 +215,12 @@ fn extra_body_options_overwrite_the_mapped_ones() {
     let result = mapped(
         None,
         json!({
-            "extra_body": {"language_boost": "auto", "speed": 2, "ignored": null},
-            "speed": 0.75
+            "extra_body": {"language_boost": "auto", "speed": 2_i32, "ignored": null},
+            "speed": 0.75_f64
         }),
     );
     assert_eq!(result.params["language_boost"], "auto");
-    assert_eq!(result.params["speed"], 2);
+    assert_eq!(result.params["speed"], 2_i32);
     assert!(!result.params.contains_key("ignored"));
 }
 
@@ -301,8 +301,8 @@ fn builds_the_default_body() {
             "text": "hello",
             "stream": false,
             "output_format": "hex",
-            "voice_setting": {"voice_id": "male-qn-qingse", "speed": 1.0, "vol": 1.0, "pitch": 0},
-            "audio_setting": {"sample_rate": 32_000, "bitrate": 128_000, "format": "mp3", "channel": 1}
+            "voice_setting": {"voice_id": "male-qn-qingse", "speed": 1.0_f64, "vol": 1.0_f64, "pitch": 0_i32},
+            "audio_setting": {"sample_rate": 32_000_i32, "bitrate": 128_000_i32, "format": "mp3", "channel": 1_i32}
         })
     );
 }
@@ -311,31 +311,31 @@ fn builds_the_default_body() {
 fn the_body_takes_the_mapped_options() {
     let options = mapped(
         Some(VoiceInput::Text("shimmer")),
-        json!({"response_format": "wav", "speed": 1.5}),
+        json!({"response_format": "wav", "speed": 1.5_f64}),
     );
     let body = speech_request_body("speech-01", "hello", &options.voice, &options.params);
     assert_eq!(body["voice_setting"]["voice_id"], "female-tianmei");
-    assert_eq!(body["voice_setting"]["speed"], 1.5);
+    assert_eq!(body["voice_setting"]["speed"], 1.5_f64);
     assert_eq!(body["audio_setting"]["format"], "wav");
 }
 
 #[test]
 fn the_body_takes_audio_and_voice_settings_from_the_options() {
     let options = object(json!({
-        "vol": 3.0,
-        "pitch": -4,
-        "sample_rate": 16_000,
-        "bitrate": 64_000,
-        "channel": 2,
+        "vol": 3.0_f64,
+        "pitch": -4_i32,
+        "sample_rate": 16_000_i32,
+        "bitrate": 64_000_i32,
+        "channel": 2_i32,
         "format": "flac",
         "output_format": "url"
     }));
     let body = speech_request_body("speech-01", "hello", "nova", &options);
-    assert_eq!(body["voice_setting"]["vol"], 3.0);
-    assert_eq!(body["voice_setting"]["pitch"], -4);
-    assert_eq!(body["audio_setting"]["sample_rate"], 16_000);
-    assert_eq!(body["audio_setting"]["bitrate"], 64_000);
-    assert_eq!(body["audio_setting"]["channel"], 2);
+    assert_eq!(body["voice_setting"]["vol"], 3.0_f64);
+    assert_eq!(body["voice_setting"]["pitch"], -4_i32);
+    assert_eq!(body["audio_setting"]["sample_rate"], 16_000_i32);
+    assert_eq!(body["audio_setting"]["bitrate"], 64_000_i32);
+    assert_eq!(body["audio_setting"]["channel"], 2_i32);
     assert_eq!(body["audio_setting"]["format"], "flac");
     assert_eq!(body["output_format"], "url");
 }
@@ -345,7 +345,7 @@ fn an_absent_or_null_voice_setting_takes_the_default() {
     let options = object(json!({"voice_id": null, "speed": null, "format": null}));
     let body = speech_request_body("speech-01", "hello", "", &options);
     assert_eq!(body["voice_setting"]["voice_id"], DEFAULT_VOICE_ID);
-    assert_eq!(body["voice_setting"]["speed"], 1.0);
+    assert_eq!(body["voice_setting"]["speed"], 1.0_f64);
     assert_eq!(body["audio_setting"]["format"], "mp3");
 }
 
@@ -633,7 +633,7 @@ fn replays_the_minimax_speech_reply_corpus() {
     let headers = HeaderMap::new();
     paths.into_iter().for_each(|path| {
         let bytes = fs::read(&path).expect("the corpus seed reads");
-        let _decoded = decode_speech_reply(SpeechReply {
+        let _decoded = decode_speech_reply(&SpeechReply {
             status: 200,
             headers: &headers,
             body: &bytes,

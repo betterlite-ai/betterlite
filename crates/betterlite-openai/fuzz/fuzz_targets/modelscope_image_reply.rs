@@ -5,7 +5,7 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
     let _reply = decode_image_generation_reply(
-        ImageReply {
+        &ImageReply {
             status: 200,
             body: bytes,
         },

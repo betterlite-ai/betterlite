@@ -28,7 +28,7 @@ pub struct SpeechReply<'reply> {
     pub body: &'reply [u8],
 }
 
-pub fn decode_speech_reply(reply: SpeechReply<'_>) -> Result<SpeechResponse, MinimaxSpeechError> {
+pub fn decode_speech_reply(reply: &SpeechReply<'_>) -> Result<SpeechResponse, MinimaxSpeechError> {
     let parsed: Value = serde_json::from_slice(reply.body)
         .map_err(|source| MinimaxSpeechError::Decode { source })?;
     let Value::Object(fields) = parsed else {
@@ -54,7 +54,7 @@ fn check_status(fields: &Object, raw_status: u16) -> Result<(), MinimaxSpeechErr
     let Value::Number(number) = status else {
         return Err(MinimaxSpeechError::Field { field: "status" });
     };
-    if number.as_f64() == Some(0.0) {
+    if number.as_f64() == Some(0.0_f64) {
         return Ok(());
     }
     let detail = match fields.get("ced") {
@@ -99,7 +99,7 @@ fn check_audio_url(fields: &Object) -> Result<(), MinimaxSpeechError> {
 // data.audio comes first and the older top-level audio_file only when data.audio is absent or null
 fn audio_text(fields: &Object) -> Result<String, MinimaxSpeechError> {
     let data = data_object(fields)?;
-    match data.and_then(|data| data.get("audio")) {
+    match data.and_then(|contents| contents.get("audio")) {
         Some(Value::String(text)) => return Ok(text.clone()),
         Some(Value::Null) | None => {}
         Some(_) => return Err(MinimaxSpeechError::Field { field: "audio" }),

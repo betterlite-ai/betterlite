@@ -57,7 +57,7 @@ fn voice_from_fields(fields: &Object) -> Option<String> {
 }
 
 // A missing voice falls back to the voice_id option and then to MiniMax's default
-fn resolve_voice_id(voice: Option<VoiceInput<'_>>, params: &mut Object) -> String {
+fn resolve_voice_id(voice: Option<&VoiceInput<'_>>, params: &mut Object) -> String {
     let named = match voice {
         Some(VoiceInput::Text(text)) => Some(extract_voice_id(text)),
         Some(VoiceInput::Fields(fields)) => voice_from_fields(fields),
@@ -85,16 +85,16 @@ fn mapped_format(response_format: Option<&Value>) -> &'static str {
 }
 
 fn mapped_speed(speed: Option<Value>) -> Result<f64, MinimaxSpeechError> {
-    let Some(speed) = speed.filter(|value| !value.is_null()) else {
+    let Some(value) = speed.filter(|value| !value.is_null()) else {
         return Ok(DEFAULT_SPEED);
     };
-    let Value::Number(number) = speed else {
+    let Value::Number(number) = value else {
         return Err(MinimaxSpeechError::Option { name: "speed" });
     };
-    let value = number
+    let mapped = number
         .as_f64()
         .ok_or(MinimaxSpeechError::Option { name: "speed" })?;
-    Ok(value.clamp(MIN_SPEED, MAX_SPEED))
+    Ok(mapped.clamp(MIN_SPEED, MAX_SPEED))
 }
 
 pub fn map_openai_params(
@@ -102,7 +102,7 @@ pub fn map_openai_params(
     optional_params: &Object,
 ) -> Result<MappedOptions, MinimaxSpeechError> {
     let mut params = optional_params.clone();
-    let mapped_voice = resolve_voice_id(voice, &mut params);
+    let mapped_voice = resolve_voice_id(voice.as_ref(), &mut params);
     let response_format = params.remove("response_format");
     if matches!(&response_format, Some(value) if !value.is_null() && !value.is_string()) {
         return Err(MinimaxSpeechError::Option {
