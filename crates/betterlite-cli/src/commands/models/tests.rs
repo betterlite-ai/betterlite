@@ -205,7 +205,7 @@ fn add_model_rejects_a_param_without_an_equals_sign() {
     let (result, stdout, _stderr) = run(command, &server);
 
     assert!(
-        matches!(result, Err(ModelsError::Pair { flag: "--param", ref value }) if value == "broken"),
+        matches!(&result, Err(ModelsError::Pair { flag: "--param", value }) if *value == "broken"),
         "{result:?}"
     );
     assert!(stdout.is_empty(), "{stdout}");
@@ -224,7 +224,7 @@ fn add_model_rejects_a_duplicate_param_key() {
     let (result, _stdout, _stderr) = run(command, &server);
 
     assert!(
-        matches!(result, Err(ModelsError::Duplicate { flag: "--param", ref key }) if key == "rpm"),
+        matches!(&result, Err(ModelsError::Duplicate { flag: "--param", key }) if *key == "rpm"),
         "{result:?}"
     );
     assert!(server.finish().is_empty());

@@ -4,6 +4,8 @@ use fancy_regex::Regex;
 use crate::commands::models::ModelsError;
 use crate::commands::models::value::ModelObject;
 
+use super::field_object;
+
 pub(super) const MODEL_REGEX_FLAG: &str = "--only-models-matching-regex";
 pub(super) const ACCESS_REGEX_FLAG: &str = "--only-access-groups-matching-regex";
 
@@ -11,12 +13,12 @@ pub(super) fn compile(
     pattern: Option<&str>,
     flag: &'static str,
 ) -> Result<Option<Regex>, ModelsError> {
-    match pattern {
-        None => Ok(None),
-        Some(pattern) => Regex::new(pattern)
-            .map(Some)
-            .map_err(|source| ModelsError::Regex { flag, source }),
-    }
+    let Some(text) = pattern else {
+        return Ok(None);
+    };
+    Regex::new(text)
+        .map(Some)
+        .map_err(|source| ModelsError::Regex { flag, source })
 }
 
 pub(super) fn filter_model(
@@ -31,15 +33,8 @@ pub(super) fn filter_model(
     {
         return Ok(false);
     }
-    let params = match model.get("litellm_params") {
-        Some(JsonValue::Object(params)) => params,
-        None | Some(JsonValue::Null) => return Ok(false),
-        Some(_) => {
-            return Err(ModelsError::EntryField {
-                index,
-                field: "litellm_params",
-            });
-        }
+    let Some(params) = field_object(model, "litellm_params", index)? else {
+        return Ok(false);
     };
     let Some(JsonValue::Text(model_id)) = params.get("model") else {
         return Ok(false);
@@ -54,20 +49,15 @@ pub(super) fn filter_model(
     {
         return Ok(false);
     }
-    let info = match model.get("model_info") {
-        Some(JsonValue::Object(info)) => Some(info),
-        None | Some(JsonValue::Null) => None,
-        Some(_) => {
-            return Err(ModelsError::EntryField {
-                index,
-                field: "model_info",
-            });
-        }
-    };
-    let Some(access_regex) = access_regex else {
+    let info = field_object(model, "model_info", index)?;
+    let Some(regex) = access_regex else {
         return Ok(true);
     };
-    let Some(JsonValue::Array(groups)) = info.and_then(|info| info.get("access_groups")) else {
+    groups_match(info, regex)
+}
+
+fn groups_match(info: Option<&ModelObject>, access_regex: &Regex) -> Result<bool, ModelsError> {
+    let Some(JsonValue::Array(groups)) = info.and_then(|object| object.get("access_groups")) else {
         return Ok(false);
     };
     for group in groups {

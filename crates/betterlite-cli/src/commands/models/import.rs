@@ -44,10 +44,10 @@ pub(super) fn import_models(
     stdout: &mut dyn Write,
 ) -> Result<(), ModelsError> {
     let document = read_document(options)?;
-    let JsonValue::Object(document) = document else {
+    let JsonValue::Object(root) = document else {
         return Err(ModelsError::MissingModelList);
     };
-    let Some(model_list) = document.get("model_list") else {
+    let Some(model_list) = root.get("model_list") else {
         return Err(ModelsError::MissingModelList);
     };
     let JsonValue::Array(entries) = model_list else {
@@ -113,10 +113,7 @@ fn send_new_model(client: &Client, info: &ModelYamlInfo<'_>) -> Result<(), Model
     Ok(())
 }
 
-fn yaml_info<'model>(
-    model: &'model ModelObject,
-    index: usize,
-) -> Result<ModelYamlInfo<'model>, ModelsError> {
+fn yaml_info(model: &ModelObject, index: usize) -> Result<ModelYamlInfo<'_>, ModelsError> {
     let Some(JsonValue::Text(model_name)) = model.get("model_name") else {
         return Err(ModelsError::EntryField {
             index,
@@ -161,10 +158,10 @@ fn field_object<'model>(
     }
 }
 
-fn access_group_names<'model>(
-    model_info: Option<&'model ModelObject>,
+fn access_group_names(
+    model_info: Option<&ModelObject>,
     index: usize,
-) -> Result<Vec<&'model str>, ModelsError> {
+) -> Result<Vec<&str>, ModelsError> {
     let groups = match model_info.and_then(|info| info.get("access_groups")) {
         None | Some(JsonValue::Null) => return Ok(Vec::new()),
         Some(JsonValue::Array(groups)) => groups,

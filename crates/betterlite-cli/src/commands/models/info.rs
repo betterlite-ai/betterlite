@@ -110,8 +110,8 @@ pub(super) fn get_models_info(
         });
     }
     let mut columns = Vec::new();
-    for name in options.columns.split(',') {
-        let name = name.trim();
+    for raw in options.columns.split(',') {
+        let name = raw.trim();
         match InfoColumn::from_name(name) {
             Some(column) => columns.push(column),
             None => {
@@ -155,18 +155,18 @@ fn info_cell(column: InfoColumn, model: &InfoRow) -> Result<String, ModelsError>
         InfoColumn::UpstreamModel | InfoColumn::CredentialName => {
             let params = object_value(model.litellm_params.as_ref(), "litellm_params")?;
             Ok(params
-                .and_then(|params| params.get(field))
+                .and_then(|object| object.get(field))
                 .map_or_else(String::new, cell_text))
         }
         InfoColumn::Id => {
             let info = object_value(model.model_info.as_ref(), "model_info")?;
             Ok(info
-                .and_then(|info| info.get(field))
+                .and_then(|object| object.get(field))
                 .map_or_else(String::new, cell_text))
         }
         InfoColumn::CreatedAt | InfoColumn::UpdatedAt => {
             let info = object_value(model.model_info.as_ref(), "model_info")?;
-            let text = match info.and_then(|info| info.get(field)) {
+            let text = match info.and_then(|object| object.get(field)) {
                 None | Some(JsonValue::Null) => None,
                 Some(JsonValue::Text(text)) => Some(text.as_str()),
                 Some(_) => return Err(ModelsError::FieldType { field }),
@@ -175,7 +175,7 @@ fn info_cell(column: InfoColumn, model: &InfoRow) -> Result<String, ModelsError>
         }
         InfoColumn::InputCost | InfoColumn::OutputCost => {
             let info = object_value(model.model_info.as_ref(), "model_info")?;
-            let cost = cost_value(info.and_then(|info| info.get(field)), field)?;
+            let cost = cost_value(info.and_then(|object| object.get(field)), field)?;
             format_cost_per_1k_tokens(cost, field)
         }
     }
