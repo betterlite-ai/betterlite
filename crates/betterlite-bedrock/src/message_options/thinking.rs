@@ -122,7 +122,7 @@ where
     minimal.insert("type".to_owned(), ParamValue::Text(ENABLED.to_owned()));
     minimal.insert(
         "budget_tokens".to_owned(),
-        ParamValue::Number(budget.into()),
+        ParamValue::Number(serde_json::Number::from(budget)),
     );
     request.insert("thinking".to_owned(), ParamValue::Mapping(minimal));
     tracing::debug!("{CLEAR_THINKING_LOG_PREFIX} injected thinking with budget_tokens={budget}");
