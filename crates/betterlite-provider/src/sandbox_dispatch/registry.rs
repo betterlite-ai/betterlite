@@ -79,11 +79,11 @@ impl SandboxToolRegistry {
 }
 
 fn resolve_value(
-    value: Option<&str>,
+    raw: Option<&str>,
     lookup: &SecretLookup,
     environment: &BTreeMap<String, String>,
 ) -> Result<Option<SecretString>, SandboxRegistryError> {
-    let Some(value) = value else {
+    let Some(value) = raw else {
         return Ok(None);
     };
     if value.starts_with(OS_ENVIRON_PREFIX) {

@@ -6,9 +6,9 @@ use betterlite_models::sandbox::CodeExecutionResult;
 
 use crate::e2b::{
     CreateSandbox as E2bCreate, DeleteSandbox as E2bDelete, E2bSandbox, RunCode as E2bRun,
-    SandboxRef,
+    SandboxHttp as E2bHttp, SandboxRef,
 };
-use crate::opensandbox::helpers::{OpenSandbox, PollClock};
+use crate::opensandbox::helpers::{OpenSandbox, PollClock, SandboxHttp as OpenSandboxHttp};
 use crate::opensandbox::lifecycle::{
     ContainerRef as OpenContainerRef, CreateSandboxRequest as OpenCreate,
     DeleteSandbox as OpenDelete, RunCode as OpenRun, SandboxOptions as OpenOptions,
@@ -34,7 +34,7 @@ pub trait SandboxAdapter: Send + Sync {
 #[async_trait]
 impl<Http, Environment> SandboxAdapter for E2bSandbox<Http, Environment>
 where
-    Http: crate::e2b::SandboxHttp,
+    Http: E2bHttp,
     Environment: EnvironmentLookup + Send + Sync,
 {
     async fn create(&self, request: &CreateSandbox<'_>) -> AdapterResult<SandboxContainer> {
@@ -67,7 +67,7 @@ where
 #[async_trait]
 impl<Http, Environment, Clock> SandboxAdapter for OpenSandbox<Http, Environment, Clock>
 where
-    Http: crate::opensandbox::helpers::SandboxHttp,
+    Http: OpenSandboxHttp,
     Environment: EnvironmentLookup + Send + Sync,
     Clock: PollClock,
 {
@@ -92,7 +92,7 @@ where
     }
 }
 
-fn e2b_run<'call>(request: &RunCode<'call>) -> AdapterResult<E2bRun<'call>> {
+const fn e2b_run<'call>(request: &RunCode<'call>) -> AdapterResult<E2bRun<'call>> {
     let SandboxContainerRef::Container(sandbox) = request.container else {
         return Err(SandboxLifecycleError::ContainerHandleRequired { provider: "e2b" });
     };
@@ -107,7 +107,7 @@ fn e2b_run<'call>(request: &RunCode<'call>) -> AdapterResult<E2bRun<'call>> {
     })
 }
 
-fn e2b_delete<'call>(request: &DeleteSandbox<'call>) -> E2bDelete<'call> {
+const fn e2b_delete<'call>(request: &DeleteSandbox<'call>) -> E2bDelete<'call> {
     E2bDelete {
         container: e2b_ref(request.container),
         api_key: request.call.api_key,
@@ -115,7 +115,7 @@ fn e2b_delete<'call>(request: &DeleteSandbox<'call>) -> E2bDelete<'call> {
     }
 }
 
-fn e2b_ref(container: SandboxContainerRef<'_>) -> SandboxRef<'_> {
+const fn e2b_ref(container: SandboxContainerRef<'_>) -> SandboxRef<'_> {
     match container {
         SandboxContainerRef::Id(id) => SandboxRef::Id(id),
         SandboxContainerRef::Container(SandboxContainer::E2b(handle)) => SandboxRef::Handle(handle),
@@ -125,7 +125,7 @@ fn e2b_ref(container: SandboxContainerRef<'_>) -> SandboxRef<'_> {
     }
 }
 
-fn open_create<'call>(request: &CreateSandbox<'call>) -> OpenCreate<'call> {
+const fn open_create<'call>(request: &CreateSandbox<'call>) -> OpenCreate<'call> {
     OpenCreate {
         template: request.template,
         timeout: request.timeout,
@@ -147,7 +147,7 @@ fn open_create<'call>(request: &CreateSandbox<'call>) -> OpenCreate<'call> {
     }
 }
 
-fn open_run<'call>(request: &RunCode<'call>) -> OpenRun<'call> {
+const fn open_run<'call>(request: &RunCode<'call>) -> OpenRun<'call> {
     let container = open_container(request.container);
     let options = open_options(
         &request.call,
@@ -164,14 +164,14 @@ fn open_run<'call>(request: &RunCode<'call>) -> OpenRun<'call> {
     }
 }
 
-fn open_delete<'call>(request: &DeleteSandbox<'call>) -> OpenDelete<'call> {
+const fn open_delete<'call>(request: &DeleteSandbox<'call>) -> OpenDelete<'call> {
     OpenDelete {
         container: open_container(request.container),
         options: open_options(&request.call, request.api_base, false, None, None),
     }
 }
 
-fn open_options<'call>(
+const fn open_options<'call>(
     call: &SandboxCall<'call>,
     api_base: Option<&'call str>,
     use_server_proxy: bool,
@@ -187,7 +187,7 @@ fn open_options<'call>(
     }
 }
 
-fn open_container(container: SandboxContainerRef<'_>) -> OpenContainerRef<'_> {
+const fn open_container(container: SandboxContainerRef<'_>) -> OpenContainerRef<'_> {
     match container {
         SandboxContainerRef::Container(SandboxContainer::OpenSandbox(handle)) => {
             OpenContainerRef::Cached(handle)
