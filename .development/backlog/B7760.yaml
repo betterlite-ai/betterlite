@@ -1,7 +1,7 @@
 id: B7760
 milestone: M11 distribution
 title: Terraform provider Go source kept verbatim and checked offline
-status: blocked
+status: todo
 depends_on: []
 file: tasks/B7760-terraform-provider-source.yaml
 covers:
@@ -13,5 +13,5 @@ parent: B155
 split_from: B155
 resolution: null
 superseded_by: null
-blocked_reason: "waits for Max: the gate has no pinned go or terraform toolchain and the provider tree needs a budget exclude"
+blocked_reason: null
 pr: null
