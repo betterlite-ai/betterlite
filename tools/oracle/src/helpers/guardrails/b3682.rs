@@ -25,13 +25,12 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input.function {
             Function::StableGuardrailId => {
-                let taken = |candidate: &str| {
+                let id = stable_guardrail_id(&input.guardrail_name, &|candidate: &str| {
                     input
                         .existing_ids
                         .iter()
                         .any(|existing| existing.as_str() == candidate)
-                };
-                let id = stable_guardrail_id(&input.guardrail_name, &taken);
+                });
                 Ok(serde_json::json!({ "id": id }))
             }
         }

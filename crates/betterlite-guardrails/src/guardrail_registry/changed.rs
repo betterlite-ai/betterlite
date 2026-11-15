@@ -11,13 +11,13 @@ pub fn params_changed(
     existing: Option<&Guardrail>,
     new: &Guardrail,
 ) -> Result<bool, RegistryError> {
-    let Some(existing) = existing else {
+    let Some(existing_guardrail) = existing else {
         return Ok(true);
     };
-    if existing.guardrail_name != new.guardrail_name {
+    if existing_guardrail.guardrail_name != new.guardrail_name {
         return Ok(true);
     }
-    let existing_params = params_map(&existing.litellm_params)?;
+    let existing_params = params_map(&existing_guardrail.litellm_params)?;
     let new_params = params_map(&new.litellm_params)?;
     let mut changed = Vec::new();
     for key in existing_params.keys() {

@@ -104,17 +104,17 @@ impl InMemoryGuardrailHandler {
         source: GuardrailDefinitionLocation,
     ) -> Result<Option<Guardrail>, RegistryError> {
         let guardrail_id = guardrail.guardrail_id.clone().filter(|id| !id.is_empty());
-        let Some(guardrail_id) = guardrail_id else {
+        let Some(held_id) = guardrail_id else {
             tracing::error!("Cannot reinitialize guardrail without guardrail_id");
             return Ok(None);
         };
-        let previous = self.guardrails.get(&guardrail_id).cloned();
-        let previous_source = self.sources.get(&guardrail_id).copied().unwrap_or(source);
-        self.delete_in_memory_guardrail(&guardrail_id);
+        let previous = self.guardrails.get(&held_id).cloned();
+        let previous_source = self.sources.get(&held_id).copied().unwrap_or(source);
+        self.delete_in_memory_guardrail(&held_id);
         match self.initialize_guardrail(guardrail.clone(), source) {
             Ok(initialized) => Ok(Some(initialized)),
             Err(error) => {
-                self.restore_guardrail(&guardrail_id, previous, previous_source, &error);
+                self.restore_guardrail(&held_id, previous, previous_source, &error);
                 Err(RegistryError::InitFailed {
                     source: Box::new(error),
                 })
@@ -210,10 +210,10 @@ impl InMemoryGuardrailHandler {
         guardrail: Guardrail,
         source: GuardrailDefinitionLocation,
     ) {
-        let mut callbacks = callbacks.into_iter();
+        let mut remaining = callbacks.into_iter();
         let slots = CallbackSlots {
-            primary: callbacks.next(),
-            siblings: callbacks.collect(),
+            primary: remaining.next(),
+            siblings: remaining.collect(),
         };
         self.guardrails.insert(guardrail_id.clone(), guardrail);
         self.callbacks.insert(guardrail_id.clone(), slots);
@@ -227,7 +227,7 @@ impl InMemoryGuardrailHandler {
         previous_source: GuardrailDefinitionLocation,
         error: &RegistryError,
     ) {
-        let Some(previous) = previous else {
+        let Some(previous_guardrail) = previous else {
             return;
         };
         tracing::error!(
@@ -235,7 +235,7 @@ impl InMemoryGuardrailHandler {
             %error,
             "Reinitializing guardrail with updated params failed; restoring the previous configuration"
         );
-        if let Err(restore) = self.initialize_guardrail(previous, previous_source) {
+        if let Err(restore) = self.initialize_guardrail(previous_guardrail, previous_source) {
             tracing::error!(%guardrail_id, %restore, "Restoring previous guardrail also failed");
         }
     }

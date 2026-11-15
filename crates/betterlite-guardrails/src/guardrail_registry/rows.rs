@@ -162,10 +162,10 @@ fn encode_params(params: &LitellmParams) -> Result<String, RegistryError> {
 }
 
 fn encode_info(info: Option<&OpaqueParams>) -> Result<String, RegistryError> {
-    let Some(info) = info else {
+    let Some(stored_info) = info else {
         return Ok(DEFAULT_INFO.to_owned());
     };
-    let encoded = serde_json::to_string(info);
+    let encoded = serde_json::to_string(stored_info);
     let text = encoded.map_err(|source| RegistryError::Encode { source })?;
     Ok(text)
 }

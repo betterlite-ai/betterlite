@@ -67,12 +67,12 @@ impl<R: GuardrailRows> GuardrailRegistry<R> {
             .update(guardrail_id, row)
             .await
             .map_err(|source| wrapped(UPDATE_CONTEXT, RegistryError::Rows(source)))?;
-        let Some(updated) = updated else {
+        let Some(updated_row) = updated else {
             return Err(RegistryError::UpdateNotFound {
                 guardrail_id: guardrail_id.to_owned(),
             });
         };
-        row_to_guardrail(&updated).map_err(|source| wrapped(UPDATE_CONTEXT, source))
+        row_to_guardrail(&updated_row).map_err(|source| wrapped(UPDATE_CONTEXT, source))
     }
 
     pub async fn get_all_guardrails_from_db(&self) -> Result<Vec<Guardrail>, RegistryError> {
@@ -99,10 +99,10 @@ impl<R: GuardrailRows> GuardrailRegistry<R> {
             .find_by_id(guardrail_id)
             .await
             .map_err(|source| wrapped(GET_ONE_CONTEXT, RegistryError::Rows(source)))?;
-        let Some(row) = row else {
+        let Some(stored_row) = row else {
             return Ok(None);
         };
-        row_to_guardrail(&row)
+        row_to_guardrail(&stored_row)
             .map(Some)
             .map_err(|source| wrapped(GET_ONE_CONTEXT, source))
     }
@@ -116,10 +116,10 @@ impl<R: GuardrailRows> GuardrailRegistry<R> {
             .find_by_name(guardrail_name)
             .await
             .map_err(|source| wrapped(GET_ONE_CONTEXT, RegistryError::Rows(source)))?;
-        let Some(row) = row else {
+        let Some(stored_row) = row else {
             return Ok(None);
         };
-        row_to_guardrail(&row)
+        row_to_guardrail(&stored_row)
             .map(Some)
             .map_err(|source| wrapped(GET_ONE_CONTEXT, source))
     }
