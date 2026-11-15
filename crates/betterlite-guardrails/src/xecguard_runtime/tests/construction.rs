@@ -26,7 +26,7 @@ use super::support::{
 fn xecguard_runtime_block_on_error_text(#[case] text: &str, #[case] expected: bool) {
     let mut environment = environment();
     environment.block_on_error = Some(text.to_owned());
-    let guard = new_guard(args(), &environment, base(None, None));
+    let guard = new_guard(&args(), &environment, base(None, None));
     assert_eq!(guard.settings.block_on_error, expected);
 }
 
@@ -77,7 +77,7 @@ pub(super) fn environment_fallbacks() {
 }
 
 pub(super) fn unset_defaults() {
-    let guard = new_guard(args(), &RuntimeSettings::default(), base(None, None));
+    let guard = new_guard(&args(), &RuntimeSettings::default(), base(None, None));
     assert_eq!(guard.settings.api_base, "https://api-xecguard.cycraft.ai");
     assert_eq!(guard.settings.model, "xecguard_v2");
     assert!(guard.settings.block_on_error);
@@ -95,7 +95,8 @@ pub(super) fn missing_key() {
         base(None, None),
         client(),
     )
-    .expect_err("a key is required");
+    .err()
+    .expect("a key is required");
     assert_eq!(
         error.to_string(),
         "XecGuard API key is required. Set XECGUARD_API_KEY in the environment or pass api_key in the guardrail config."
@@ -160,7 +161,8 @@ pub(super) fn unrepresentable_timeout() {
         base(Some(GUARDRAIL_NAME), Some(-1.0_f64)),
         client(),
     )
-    .expect_err("a negative timeout is not a duration");
+    .err()
+    .expect("a negative timeout is not a duration");
     assert_eq!(
         error.to_string(),
         "the XecGuard timeout is not a representable duration"
