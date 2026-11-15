@@ -196,7 +196,9 @@ def _response(
 ) -> Json:
     message = _frame_message(frame)
     try:
-        result: Json = _JSON.validate_python(config.transform_realtime_response(message, model, logging_obj, state))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/realtime.py#L29-L37
+        result: Json = _JSON.validate_python(config.transform_realtime_response(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/realtime.py#L29-L37
+            message, model, logging_obj, state
+        ))
     except realtime_transformation.ChirpProtocolError:
         protocol_failure: dict[str, Json] = {"result": None, "error": {"kind": "protocol"}}
         return _JSON.validate_python(protocol_failure)
