@@ -117,15 +117,14 @@ pub(super) fn transcription_request_value(
 }
 
 pub(super) fn transcription_reply_value(provider: AudioProvider, call: &ReplyCall) -> Value {
-    let reply = match provider {
-        AudioProvider::Ovhcloud => ovhcloud_reply(call.body.as_bytes(), call.status, &call.headers)
-            .map(|transcription| json!({"text": transcription.response.text})),
-        AudioProvider::Scaleway => {
-            scaleway_reply(call.body.as_bytes(), call.status, &call.headers).map(scaleway_text)
-        }
-    };
-    match reply {
-        Ok(value) => json!({"ok": true, "value": value}),
+    if provider == AudioProvider::Scaleway {
+        return match scaleway_reply(call.body.as_bytes(), call.status, &call.headers) {
+            Ok(transcription) => json!({"ok": true, "value": scaleway_text(transcription)}),
+            Err(error) => json!({"raised": error.status_code}),
+        };
+    }
+    match ovhcloud_reply(call.body.as_bytes(), call.status, &call.headers) {
+        Ok(transcription) => json!({"ok": true, "value": {"text": transcription.response.text}}),
         Err(error) => json!({"raised": error.status_code}),
     }
 }

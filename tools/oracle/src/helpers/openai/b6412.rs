@@ -71,7 +71,7 @@ pub(crate) enum HeaderProvider {
     ScalewayAudio,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AudioProvider {
     Ovhcloud,
@@ -161,21 +161,19 @@ fn embedding_values(
     replies: &[ReplyCall],
 ) -> Value {
     json!({
-        "headers": headers
-            .iter()
-            .map(|call| header_value(HeaderProvider::OvhcloudEmbedding, call))
-            .collect::<Vec<Value>>(),
-        "requests": requests
-            .iter()
-            .map(|call| {
-                let mapped = map_openai_params(&call.non_default_params, JsonObject::new());
-                json!({"value": pairs(&transform_embedding_request(&call.model, &call.input, &mapped))})
-            })
-            .collect::<Vec<Value>>(),
-        "replies": replies
-            .iter()
-            .map(embedding_reply_value)
-            .collect::<Vec<Value>>(),
+        "headers": collected(headers, |call| header_value(HeaderProvider::OvhcloudEmbedding, call)),
+        "requests": collected(requests, embedding_request_value),
+        "replies": collected(replies, embedding_reply_value),
+    })
+}
+
+fn embedding_request_value(call: &EmbeddingCall) -> Value {
+    json!({
+        "value": pairs(&transform_embedding_request(
+            &call.model,
+            &call.input,
+            &map_openai_params(&call.non_default_params, JsonObject::new()),
+        )),
     })
 }
 
@@ -185,28 +183,27 @@ fn transcription_values(
     replies: &[ReplyCall],
 ) -> Value {
     json!({
-        "requests": requests
-            .iter()
-            .map(|call| transcription_request_value(provider, call))
-            .collect::<Vec<Value>>(),
-        "replies": replies
-            .iter()
-            .map(|reply| transcription_reply_value(provider, reply))
-            .collect::<Vec<Value>>(),
+        "requests": collected(requests, |call| transcription_request_value(provider, call)),
+        "replies": collected(replies, |reply| transcription_reply_value(provider, reply)),
     })
 }
 
 fn scaleway_key_values(calls: &[HeaderCall], replies: &[ReplyCall]) -> Value {
     json!({
-        "headers": calls
-            .iter()
-            .map(|call| header_value(HeaderProvider::ScalewayAudio, call))
-            .collect::<Vec<Value>>(),
-        "replies": replies
-            .iter()
-            .map(|reply| transcription_reply_value(AudioProvider::Scaleway, reply))
-            .collect::<Vec<Value>>(),
+        "headers": collected(calls, |call| header_value(HeaderProvider::ScalewayAudio, call)),
+        "replies": collected(replies, |reply| transcription_reply_value(AudioProvider::Scaleway, reply)),
     })
+}
+
+fn collected<T, F>(items: &[T], value: F) -> Value
+where
+    F: Fn(&T) -> Value,
+{
+    let mut values = Vec::with_capacity(items.len());
+    for item in items {
+        values.push(value(item));
+    }
+    Value::Array(values)
 }
 
 fn pairs(body: &JsonObject) -> Value {
