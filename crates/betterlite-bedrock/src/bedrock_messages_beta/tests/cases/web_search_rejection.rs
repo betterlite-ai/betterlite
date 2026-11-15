@@ -10,9 +10,9 @@ fn reject(tools: &str) -> Result<(), WebSearchError> {
 }
 
 pub(crate) fn run() {
-    assert!(reject(r#"{"max_tokens": 8}"#).is_ok());
-    assert!(reject(r#"{"tools": "web_search_20250305"}"#).is_ok());
-    assert!(reject(r#"{"tools": {"type": "web_search_20250305"}}"#).is_ok());
+    reject(r#"{"max_tokens": 8}"#).expect("a request without tools passes");
+    reject(r#"{"tools": "web_search_20250305"}"#).expect("plain text tools pass");
+    reject(r#"{"tools": {"type": "web_search_20250305"}}"#).expect("an object tools value passes");
 
     // a native tool is rejected with the tool type and the requested model
     let error = reject(r#"{"tools": [{"type": "web_search_20250305", "name": "web_search"}]}"#)
@@ -40,10 +40,8 @@ pub(crate) fn run() {
     );
 
     // converted function tools, bare names, non-dict entries and non-string types pass
-    assert!(
-        reject(
-            r#"{"tools": [{"type": "function", "function": {"name": "web_search"}}, {"name": "web_search"}, "x", {"type": 5}]}"#
-        )
-        .is_ok()
-    );
+    reject(
+        r#"{"tools": [{"type": "function", "function": {"name": "web_search"}}, {"name": "web_search"}, "x", {"type": 5}]}"#,
+    )
+    .expect("converted function tools and non-dict entries pass");
 }

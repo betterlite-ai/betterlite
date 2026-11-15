@@ -19,17 +19,15 @@ const MIXED_EDITS: &str = r#"{
   "max_tokens": 8
 }"#;
 
-fn filtered(request: &str) -> (Object, BTreeSet<String>) {
-    let mut request = obj(request);
+fn filtered(text: &str) -> (Object, BTreeSet<String>) {
+    let mut request = obj(text);
     let mut betas = BTreeSet::new();
     betas.insert("effort-2025-11-24".to_owned());
     filter_context_management(&mut request, &mut betas);
     (request, betas)
 }
 
-pub(crate) fn run() {
-    let (_guard, logs) = capture_logs();
-
+fn malformed_shapes() {
     // a non-object context_management is left for someone else
     let untouched = r#"{"context_management": "text", "max_tokens": 8}"#;
     assert_eq!(filtered(untouched).0, obj(untouched));
@@ -54,7 +52,9 @@ pub(crate) fn run() {
         .0
         .is_empty()
     );
+}
 
+fn retained_edits() {
     // retained edits keep their order and every field, and their other fields survive
     let (request, betas) = filtered(MIXED_EDITS);
     assert_eq!(
@@ -78,7 +78,12 @@ pub(crate) fn run() {
             "effort-2025-11-24".to_owned(),
         ])
     );
+}
 
+pub(crate) fn run() {
+    let (_guard, logs) = capture_logs();
+    malformed_shapes();
+    retained_edits();
     // an absent field is not the filter's business either
     assert_eq!(
         filtered(r#"{"max_tokens": 8}"#).0,

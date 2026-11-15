@@ -63,10 +63,10 @@ pub(crate) fn run() {
 
     // every allowed field survives in its input order, output_config included
     let full = obj(ALLOWED);
-    let kept = strip_unsupported_fields(&full).expect("the allowed request strips");
-    let order: Vec<&str> = kept.keys().map(String::as_str).collect();
+    let all_kept = strip_unsupported_fields(&full).expect("the allowed request strips");
+    let order: Vec<&str> = all_kept.keys().map(String::as_str).collect();
     assert_eq!(order, ALLOWED_ORDER);
-    assert_eq!(kept, full);
+    assert_eq!(all_kept, full);
 
     // nothing to strip leaves the logs silent
     assert_eq!(logs.debugs().len(), 1);

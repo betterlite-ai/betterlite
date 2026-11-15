@@ -325,6 +325,7 @@ impl Logs {
                 messages.push(message.clone());
             }
         }
+        drop(records);
         messages
     }
 }

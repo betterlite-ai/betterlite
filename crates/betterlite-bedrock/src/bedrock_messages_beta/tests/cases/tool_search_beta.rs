@@ -12,25 +12,29 @@ const TOOL_EXAMPLES_BETA: &str = "tool-examples-2025-10-29";
 fn betas(tools: &str, header: &str, model: &str, provider: Option<&str>) -> Vec<String> {
     let fixture = Fixture::new();
     let mut session = Session::new(&fixture);
-    let mut call = Call::default();
-    call.model = model.to_owned();
-    call.tools = list(tools);
-    call.header_values = headers(header);
-    call.subclass_provider = provider.map(str::to_owned);
+    let mut call = Call {
+        model: model.to_owned(),
+        tools: list(tools),
+        header_values: headers(header),
+        subclass_provider: provider.map(str::to_owned),
+        ..Call::default()
+    };
     session
         .betas(call.request())
         .expect("the beta headers resolve")
 }
 
-pub(crate) fn run() {
-    // supported: the advanced beta is discarded and the Bedrock tool-search beta replaces it
+// the advanced beta is discarded, and the Bedrock tool-search beta replaces it only where supported
+fn replaces_advanced_beta() {
     assert_eq!(
         betas(SEARCH, ADVANCED, "fixture-tool-search", None),
         [TOOL_SEARCH_BETA]
     );
-    // unsupported: the discard still happens, and no tool-search beta is added back
     assert!(betas(SEARCH, ADVANCED, "claude-sonnet-4-5", None).is_empty());
-    // tool examples ride along when the provider keeps them
+}
+
+// tool examples ride along when the provider keeps them, and an added beta always brings them
+fn keeps_examples_beta() {
     assert_eq!(
         betas(
             SEARCH,
@@ -40,7 +44,6 @@ pub(crate) fn run() {
         ),
         [TOOL_EXAMPLES_BETA, TOOL_SEARCH_BETA]
     );
-    // input examples or programmatic calls leave the set untouched
     assert_eq!(
         betas(
             WITH_EXAMPLES,
@@ -50,6 +53,10 @@ pub(crate) fn run() {
         ),
         [TOOL_SEARCH_BETA]
     );
+}
+
+// input examples or programmatic calls never change the added beta, and a user beta brings examples
+fn keeps_added_examples() {
     assert_eq!(
         betas(
             PROGRAMMATIC,
@@ -59,7 +66,6 @@ pub(crate) fn run() {
         ),
         [TOOL_SEARCH_BETA]
     );
-    // a user tool-search beta the adjust never added still pulls in the examples beta
     assert_eq!(
         betas(
             "[]",
@@ -69,11 +75,20 @@ pub(crate) fn run() {
         ),
         [TOOL_EXAMPLES_BETA, TOOL_SEARCH_BETA]
     );
-    // without a tool-search tool the set stays untouched
+}
+
+// the adjust discards the user's advanced beta before the provider filter sees it
+fn leaves_untouched() {
     assert_eq!(
         betas("[]", ADVANCED, "fixture-tool-search", Some("anthropic")),
         ["advanced-tool-use-2025-11-20"]
     );
-    // the adjust discards the user's advanced beta before the provider filter sees it
     assert!(betas(SEARCH, ADVANCED, "fixture-tool-search", Some("anthropic")).is_empty());
+}
+
+pub(crate) fn run() {
+    replaces_advanced_beta();
+    keeps_examples_beta();
+    keeps_added_examples();
+    leaves_untouched();
 }
