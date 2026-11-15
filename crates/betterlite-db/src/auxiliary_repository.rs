@@ -7,3 +7,8 @@ pub mod session;
 pub mod user_banner;
 
 mod tests;
+
+pub use crate::spend_reset_unit_of_work::{
+    BudgetCascadeUnitOfWork, SpendDecrement, SpendResetData, SpendResetUnitOfWork, UnitOfWorkError,
+    spend_reset_data,
+};
