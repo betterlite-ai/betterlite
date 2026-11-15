@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::default_calculator::{
     DefaultImageCostRequest, default_image_cost_calculator,
@@ -51,14 +49,6 @@ fn warn_and_zero(model: &str, failure: &ImageCostFailure, endpoint: &str) -> Dec
     Decimal::ZERO
 }
 
-// The source rewrites an x-separated size to its "-x-" spelling before it builds catalog keys, so either spelling prices the same entry
-fn normalized_size(size: &str) -> Cow<'_, str> {
-    if size.contains('x') && !size.contains("-x-") {
-        return Cow::Owned(size.replace('x', "-x-"));
-    }
-    Cow::Borrowed(size)
-}
-
 fn calculated_cost(
     request: &ImageCostRequest<'_>,
     quality: Option<&Json>,
@@ -91,13 +81,18 @@ fn calculated_cost(
             return Err(ImageCostFailure::NotText { field: "size" });
         }
     };
-    let price_size = normalized_size(raw_size);
+    // LiteLLM rewrites an x separator to "-x-" before building catalog keys; the models calculator rewrites it only for the dimension parse, so the key lookup needs the rewritten spelling here
+    let price_size = if raw_size.contains("-x-") {
+        raw_size.to_owned()
+    } else {
+        raw_size.replace('x', "-x-")
+    };
     let calculation = DefaultImageCostRequest {
         model: request.model,
         custom_llm_provider: Some(OPENAI_PROVIDER),
         quality: quality_text,
         n_images: Some(image_count),
-        size: Some(price_size.as_ref()),
+        size: Some(price_size.as_str()),
         model_info: None,
     };
     Ok(default_image_cost_calculator(&calculation, lookup)?)
