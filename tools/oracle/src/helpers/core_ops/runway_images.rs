@@ -114,7 +114,7 @@ where
     })
 }
 
-fn task_error_name(error: &RunwayTaskError) -> &'static str {
+const fn task_error_name(error: &RunwayTaskError) -> &'static str {
     match error {
         RunwayTaskError::TimedOut { .. } => "timeout",
         RunwayTaskError::Failed { .. } => "failed",
@@ -132,7 +132,7 @@ fn task_error_name(error: &RunwayTaskError) -> &'static str {
     }
 }
 
-fn image_error_name(error: &RunwayImageError) -> &'static str {
+const fn image_error_name(error: &RunwayImageError) -> &'static str {
     match error {
         RunwayImageError::Submission { .. } => "submission",
         RunwayImageError::MissingTaskId => "missing_task_id",
@@ -142,7 +142,7 @@ fn image_error_name(error: &RunwayImageError) -> &'static str {
     }
 }
 
-fn cost_error_name(error: &ImageCostError) -> &'static str {
+const fn cost_error_name(error: &ImageCostError) -> &'static str {
     match error {
         ImageCostError::UnknownModel { .. } => "unknown_model",
         ImageCostError::NotImageResponse => "not_image_response",
