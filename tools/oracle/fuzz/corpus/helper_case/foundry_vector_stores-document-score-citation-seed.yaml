@@ -1,0 +1,21 @@
+kind: helper
+name: foundry-vector-stores-document-score-citation-seed
+call:
+  foundry_vector_stores:
+    document_score_citation:
+      responses:
+        - status: 200
+          body: '{"value":[{"id":"seed-doc","content":"seed text","@search.score":0.5}]}'
+        - status: 200
+          body: '{"value":'
+        - status: 200
+          headers: [[x-seed, present]]
+          body: '{"value":[{"id":"seed-doc","content":"seed text","@search.score":0.25}]}'
+          before_search:
+            vector_store_id: seed-store
+            query: seed question
+            api_base: https://seed.search.example
+            litellm_params:
+              litellm_embedding_model: openai/text-embedding-3-small
+env: {}
+compare: {ignore: []}

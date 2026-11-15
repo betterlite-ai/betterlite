@@ -1,7 +1,7 @@
 id: B5980
 milestone: M3 providers
 title: Databricks credentials, endpoint URLs, embeddings, Responses and pricing
-status: todo
+status: done
 depends_on: [B1425, B507, B1672, B171]
 file: tasks/B5980-databricks-auth-embedding-responses.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/databricks/responses/transformation.py"
 parent: B042
 split_from: B5841
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1890

@@ -1,0 +1,11 @@
+task: B609
+deviations:
+  - what: A streamed Anthropic thinking delta followed by a usage block that reports no thinking tokens counts 0 reasoning tokens, and the rest of the completion tokens are text tokens.
+    why: LiteLLM estimates them with its tiktoken based token_counter, which is an async engine behind a model catalog in betterlite and cannot run inside the synchronous chunk parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2296-L2303
+  - what: A buffered fake response whose tool call carries no id reaches the client with a null id, where LiteLLM substitutes a random uuid4.
+    why: LiteLLM invents that id inside ChatCompletionMessageToolCall.__init__ while it builds the provider's response object, so the value differs on every call and nothing can rely on it; betterlite keeps the buffered wire as sent and takes every id from an injected clock instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1302-L1305
+  - what: A buffered fake response whose tool call carries no function is accepted and yields a tool call with a null name and empty arguments, where LiteLLM refuses the response because ChatCompletionMessageToolCall requires function.
+    why: betterlite reads the buffered reply as data, so the missing function becomes an empty call rather than a validation failure of the whole response; LiteLLM only builds those tool calls from its own provider transforms, which always set function, so no working setup reaches this shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1289-L1300
