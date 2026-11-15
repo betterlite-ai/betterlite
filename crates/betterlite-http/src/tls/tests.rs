@@ -17,3 +17,5 @@ mod curve_policy;
 mod local_tls;
 
 mod trust;
+
+mod websocket_config;
