@@ -1,0 +1,17 @@
+task: B8153
+deviations:
+  - what: The in-process vLLM engine path answers a typed error with status 400 and LiteLLM's "No module named 'vllm'" message.
+    why: betterlite cannot load vLLM's Python engine, so the path never runs here. LiteLLM raises a VLLMError with status_code 0 when the import fails, which a caller sees as a server fault; the typed 400 says plainly that this path is not supported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/completion/handler.py#L25-L35
+  - what: The petals local torch branch answers a typed error with status 400 and LiteLLM's torch/transformers/petals import message.
+    why: LiteLLM runs the model in process when api_base is absent and raises a bare Exception when the packages are missing, which reaches the caller as HTTP 500. betterlite does not embed torch, so a request without api_base is refused with the same message and a typed status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/handler.py#L90-L97
+  - what: A petals 2xx reply that is not a JSON object with a non-empty string outputs ends in a typed 500 decode error naming the failed shape.
+    why: LiteLLM swallows the decode exception (the PetalsError it builds is never raised) and then crashes in its tokenizer on a null content, so the caller gets an APIConnectionError whose message is a Python traceback. betterlite names the decode failure with the same status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/handler.py#L80-L88
+  - what: A petals request for a model whose prompt factory returns no prompt (falcon-7b, mpt-7b, codellama-34b) posts empty inputs and its reply ends in a typed 500 naming the missing prompt.
+    why: LiteLLM posts inputs None for that model and only fails when its tokenizer counts the None prompt, so the caller gets an APIConnectionError whose message is a Python traceback. betterlite keeps the same empty inputs and status, and the reply error names the cause instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/handler.py#L130
+  - what: A custom prompt dictionary entry that lacks roles, initial_prompt_value or final_prompt_value ends in a typed error naming the missing field.
+    why: LiteLLM reads the three keys directly, so a missing one raises KeyError inside completion and surfaces as a server fault. betterlite refuses the entry with an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/handler.py#L42-L50

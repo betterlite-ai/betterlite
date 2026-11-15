@@ -1,0 +1,39 @@
+kind: helper
+name: get-trace-no-read-scope-403
+call:
+  b3867:
+    request:
+      method: GET
+      path: /v1/traces/trace-1
+      query:
+        trace_ref: env-a
+    auth: {user_role: internal_user}
+    tracing: true
+    master_key: "sk-master"
+    script:
+      get_trace:
+        value: {
+              summary: {
+                trace_id: trace-1,
+                name: demo,
+                service: svc,
+                input_preview: hi,
+                start_time: "2026-01-01T00:00:00Z",
+                duration_ms: 1.5,
+                status: ok,
+                span_count: 1,
+                agent_count: 0,
+                agent_invocations: 0,
+                llm_calls: 1,
+                tool_calls: 0,
+                error_count: 0,
+                input_tokens: 1,
+                output_tokens: 2,
+                models: [gpt-4o],
+                spend: null
+              },
+              agents: [],
+              spans: []
+            }
+env: {}
+compare: {ignore: []}

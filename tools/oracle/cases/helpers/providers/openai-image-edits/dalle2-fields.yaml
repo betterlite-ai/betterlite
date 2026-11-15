@@ -1,0 +1,43 @@
+kind: helper
+name: openai-image-edits-dalle2-fields
+call:
+  openai_image_edits:
+    transform:
+      - model: DALL-E-2
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: dall_e_2
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}, null]
+        mask: null
+        options: {}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: dall-e-2-preview
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: dall-e-2
+        prompt: change
+        image: [{content_base64: /9j/, name: photo.jpg}]
+        mask: [{content_base64: iVBORw0KGgo=, name: null}]
+        options: {}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: deepinfra-policy-rerank-seed
+call:
+  deepinfra_policy:
+    operation: rerank_response
+    params:
+      - {model: BAAI/bge-reranker-v2-m3, body: '{"scores": [0.5], "request_id": "req-seed"}', fail_logging: false}
+env: {}
+compare: {ignore: []}

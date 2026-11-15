@@ -1,0 +1,34 @@
+kind: helper
+name: sequential-tool-indices
+call:
+  responses_to_chat_stream:
+    mode: event
+    events:
+      - {"type": "response.output_item.added", "output_index": 2, "item": {"type": "function_call", "id": "fc_a", "call_id": "call_a", "name": "f", "arguments": "{}"}}
+      - {"type": "response.output_item.added", "output_index": 5, "item": {"type": "function_call", "id": "fc_b", "call_id": "call_b", "name": "g", "arguments": "{}"}}
+      - {"type": "response.output_item.added", "output_index": 2, "item": {"type": "custom_tool_call", "id": "ct_c", "call_id": "call_c", "name": "", "input": "raw"}}
+      - {"type": "response.function_call_arguments.delta", "output_index": 5, "delta": "x"}
+      - {"type": "response.custom_tool_call_input.delta", "delta": "y"}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/steps/0/id
+      why: LiteLLM mints a random chatcmpl id before any response.created arrives
+    - pointer: /value/steps/0/created
+      why: the chunk's created timestamp is the wall clock
+    - pointer: /value/steps/1/id
+      why: LiteLLM mints a random chatcmpl id before any response.created arrives
+    - pointer: /value/steps/1/created
+      why: the chunk's created timestamp is the wall clock
+    - pointer: /value/steps/2/id
+      why: LiteLLM mints a random chatcmpl id before any response.created arrives
+    - pointer: /value/steps/2/created
+      why: the chunk's created timestamp is the wall clock
+    - pointer: /value/steps/3/id
+      why: LiteLLM mints a random chatcmpl id before any response.created arrives
+    - pointer: /value/steps/3/created
+      why: the chunk's created timestamp is the wall clock
+    - pointer: /value/steps/4/id
+      why: LiteLLM mints a random chatcmpl id before any response.created arrives
+    - pointer: /value/steps/4/created
+      why: the chunk's created timestamp is the wall clock

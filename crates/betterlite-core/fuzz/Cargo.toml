@@ -221,6 +221,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "file_upload_validation"
+path = "fuzz_targets/file_upload_validation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "listen_query"
 path = "fuzz_targets/listen_query.rs"
 test = false
@@ -300,6 +307,20 @@ bench = false
 [[bin]]
 name = "fal_image_reply"
 path = "fuzz_targets/fal_image_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "interactions_sse"
+path = "fuzz_targets/interactions_sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses_chat_event_line"
+path = "fuzz_targets/responses_chat_event_line.rs"
 test = false
 doc = false
 bench = false

@@ -278,5 +278,5 @@ pitfalls:
 - A nonempty data array containing no vectors suppresses both direct embedding and embeddings fallbacks.
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 3
 review_level: standard

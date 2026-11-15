@@ -47,6 +47,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "petals_reply"
+path = "fuzz_targets/petals_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sap_credentials"
 path = "fuzz_targets/sap_credentials.rs"
 test = false
@@ -126,6 +133,20 @@ bench = false
 [[bin]]
 name = "oci_chat_bytes"
 path = "fuzz_targets/oci_chat_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nvidia_nim_rerank_reply"
+path = "fuzz_targets/nvidia_nim_rerank_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "databricks_oauth_reply"
+path = "fuzz_targets/databricks_oauth_reply.rs"
 test = false
 doc = false
 bench = false
