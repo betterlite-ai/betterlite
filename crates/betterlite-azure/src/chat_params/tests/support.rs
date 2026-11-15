@@ -297,13 +297,7 @@ pub(super) fn composed(
     system_first: bool,
 ) -> Object {
     let optional = mapped(model, requested, "{}", DropParams::default()).unwrap();
-    gpt5::transform_request(
-        model,
-        &messages(messages_text),
-        &optional,
-        system_first,
-    )
-    .unwrap()
+    gpt5::transform_request(model, &messages(messages_text), &optional, system_first).unwrap()
 }
 
 pub(super) fn o_series_body(
