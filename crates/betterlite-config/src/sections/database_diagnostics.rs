@@ -8,6 +8,9 @@ mod tests;
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {}
 
+// the sections macro reads every section's settings through the module's Settings name
+pub type Settings = DiagnosticSettings;
+
 impl Section for Raw {
     type Settings = DiagnosticSettings;
 
