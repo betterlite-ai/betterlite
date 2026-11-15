@@ -82,7 +82,7 @@ fn a_non_string_variable_is_substituted_as_its_json_text() {
 
 // the corpus the fuzz target replays, compiled the way that target compiles it
 #[rstest]
-fn every_corpus_prompt_compiles(#[files("fuzz/corpus/langfuse_response/*")] path: PathBuf) {
+fn replays_the_langfuse_prompt_corpus(#[files("fuzz/corpus/langfuse_response/*")] path: PathBuf) {
     let body = fs::read(&path).expect("the corpus file");
     let Ok(prompt) = serde_json::from_slice::<Prompt>(&body) else {
         return;
