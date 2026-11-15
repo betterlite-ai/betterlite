@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-batch-upload-seed
+call:
+  vertex_batch_upload:
+    calls:
+      - content: '{"custom_id":"a","url":"/v1/embeddings","body":{"input":["x","y"]}}'
+        passthrough: false
+env: {}
+compare: {ignore: []}

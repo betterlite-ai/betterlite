@@ -1,0 +1,39 @@
+kind: helper
+name: optional-model-override
+call:
+  proxy_options:
+    operation: chat_request
+    params:
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        non_default: {}
+        optional_params:
+          model: litellm_proxy/other
+          messages:
+            - role: system
+              content: second
+            - role: user
+              content: also
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        non_default:
+          messages:
+            - role: user
+              content: dropped
+          model: dropped-model
+        optional_params:
+          temperature: 0.2
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        non_default: {}
+        optional_params:
+          messages: replaced
+          temperature: 0.1
+env: {}
+compare: {ignore: []}

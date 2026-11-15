@@ -1,0 +1,32 @@
+kind: helper
+name: base-with-v1
+call:
+  openai_containers:
+    supported: false
+    maps: []
+    joins:
+      - api_base: "https://example.openai.azure.com/openai/v1/containers?api-version=v1"
+        path_suffix: "/cntr_abc/files"
+      - api_base: "https://example.openai.azure.com/openai/v1/containers?api-version=v1"
+        path_suffix: "cntr_abc"
+      - api_base: "https://api.openai.com/v1/"
+        path_suffix: "/containers"
+      - api_base: "https://api.openai.com/v1#frag"
+        path_suffix: "/containers"
+      - api_base: "https://api.openai.com"
+        path_suffix: "/containers"
+      - api_base: "http://localhost:8080/v1"
+        path_suffix: "/containers"
+      - api_base: "api.openai.com/v1/?api-version=v1"
+        path_suffix: "/containers"
+      - api_base: "host/v1#frag?x"
+        path_suffix: "cntr_abc"
+    urls: []
+    creates: []
+    requests: []
+    headers: []
+    replies: []
+    content_replies: []
+    errors: []
+env: {}
+compare: {ignore: []}

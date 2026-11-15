@@ -1,0 +1,181 @@
+kind: helper
+name: anthropic-request-missing-tool-definition
+call:
+  anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: weather?
+      role: user
+    - content: null
+      role: assistant
+      tool_calls:
+      - function:
+          arguments: '{}'
+          name: get_weather
+        id: call_1
+        type: function
+    - content: sunny
+      role: tool
+      tool_call_id: call_1
+    model: plain-model
+    modify_params: false
+    optional_params: {}
+    strips_billing_metadata: false
+calls:
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: weather?
+      role: user
+    - content: null
+      role: assistant
+      tool_calls:
+      - function:
+          arguments: '{}'
+          name: get_weather
+        id: call_1
+        type: function
+    - content: sunny
+      role: tool
+      tool_call_id: call_1
+    model: plain-model
+    modify_params: false
+    optional_params:
+      tools: []
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params:
+      tools:
+      - input_schema:
+          properties: {}
+          type: object
+        name: plain_tool
+        type: custom
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers:
+      x-api-key: k
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    - content: null
+      role: assistant
+      tool_calls:
+      - function:
+          arguments: '{}'
+          name: my.tool
+        id: call_1
+        type: function
+    model: plain-model
+    modify_params: false
+    optional_params:
+      tool_choice:
+        name: my.tool
+        type: tool
+      tools:
+      - description: d
+        input_schema:
+          properties: {}
+          type: object
+        name: my.tool
+        type: custom
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params:
+      _anthropic_tool_name_map:
+        stale: x
+    messages:
+    - content: u
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params:
+      tools:
+      - input_schema:
+          properties: {}
+          type: object
+        name: plain_tool
+        type: custom
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params:
+      _anthropic_tool_name_map:
+        stale: x
+    messages:
+    - content: u
+      role: user
+    - content: null
+      role: assistant
+      tool_calls:
+      - function:
+          arguments: '{}'
+          name: my.tool
+        id: call_1
+        type: function
+    model: plain-model
+    modify_params: false
+    optional_params:
+      tools:
+      - input_schema:
+          properties: {}
+          type: object
+        name: my.tool
+        type: custom
+    strips_billing_metadata: false
+env: {}
+compare:
+  ignore: []

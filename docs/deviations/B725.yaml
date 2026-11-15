@@ -1,0 +1,9 @@
+task: B725
+deviations:
+  - what: Config-row JSON over 1048576 bytes or nested deeper than 64 levels fails the row decode with a bounded-input error instead of reaching json.loads.
+    why: The new outside-byte entry point must satisfy bounded-inputs; the pin has no equivalent bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L13-L15
+  - what: A config value that json.loads decodes exactly can change shape, since an integer past the 64-bit range decodes to the nearest f64 and NaN, Infinity or a float literal beyond f64 range fails the decode.
+    why: JsonData carries serde_json's number model and betterlite emits standard JSON, which has no non-finite or arbitrary-precision number.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/config_repository.py#L13-L15
+kept_bugs: []

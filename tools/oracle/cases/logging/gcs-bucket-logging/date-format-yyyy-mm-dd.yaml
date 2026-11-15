@@ -1,0 +1,7 @@
+# the object date formats as YYYY-MM-DD
+kind: helper
+name: gcs-bucket-logging-date-format-yyyy-mm-dd
+call:
+  b3998: {"timestamp": 1715947200, "steps": [{"do": "date"}]}
+env: {}
+compare: {ignore: []}
