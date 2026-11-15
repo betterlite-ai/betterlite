@@ -1,0 +1,14 @@
+kind: helper
+name: regional-poll-host
+call:
+  bfl_generation:
+    operation: poll_host
+    urls:
+      - https://api.bfl.ai/v1/get_result?id=1
+      - https://gateway.bfl.ai/v1/get_result?id=2
+      - https://bfl.ai.example.test/v1/get_result
+      - https://evilbfl.ai/v1/get_result
+      - http://api.bfl.ai/v1/get_result
+      - v1/get_result
+env: {}
+compare: {ignore: []}
