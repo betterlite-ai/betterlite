@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::jina_infinity_rerank::Settings;
@@ -22,7 +22,7 @@ fn load(variables: &[(&str, &str)], source: &str) -> Result<Settings, ConfigErro
 }
 
 fn revealed(key: Option<&SecretString>) -> Option<&str> {
-    key.map(|secret| secret.expose_secret().as_str())
+    key.map(ExposeSecret::expose_secret)
 }
 
 #[rstest]
