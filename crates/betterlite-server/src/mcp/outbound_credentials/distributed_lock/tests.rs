@@ -166,7 +166,7 @@ async fn release_swallows_a_backend_failure() {
 
 #[tokio::test]
 async fn is_held_asks_exists() {
-    let (lock, redis) = lock(vec![Ok(Value::Int(1))]);
+    let (lock, redis) = lock(vec![Ok(Value::Int(2))]);
     assert!(lock.is_held(KEY).await);
     assert_eq!(commands(&redis)[0], vec!["EXISTS", KEY]);
 }

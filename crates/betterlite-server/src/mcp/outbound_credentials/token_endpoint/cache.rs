@@ -137,7 +137,7 @@ impl ExchangedTokenCache {
 
     fn guard(&self, cache_key: &str) -> Arc<KeyGuard> {
         let mut guards = self.guards.lock().unwrap_or_else(PoisonError::into_inner);
-        guards.retain(|_, weak| weak.strong_count() > 0);
+        guards.retain(|_, weak| weak.strong_count() != 0);
         if let Some(existing) = guards.get(cache_key).and_then(Weak::upgrade) {
             return existing;
         }
