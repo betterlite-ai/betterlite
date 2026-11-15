@@ -11,6 +11,7 @@ use crate::token_refresh::ensure_access_token;
 
 use super::body::body_request;
 use super::error::GeminiCallError;
+use super::target::resolve_target;
 use super::{CallDeps, GeminiCall, GeminiReply, GeminiStream};
 
 // LiteLLM's acompletion branch: B1316 builds the URL, the headers and the request and then runs it
@@ -34,6 +35,8 @@ where
     let access = ensure_access_token(call.provider, lookup)
         .await
         .map_err(|source| GeminiHttpError::Credentials { source })?;
+    // LiteLLM resolves the URL before the async body transform, so a bad target fails before any cache or media request
+    resolve_target(call, optional_params, deps.catalog, &access, stream)?;
     let request = body_request(call, optional_params, deps, &access);
     let transformed = transform_request_body_async(deps.cache, request, deps.hooks).await?;
     let http = HttpCall {

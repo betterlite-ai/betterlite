@@ -82,8 +82,6 @@ pub(super) const STREAM_CHUNK: &str =
     r#"data: {"responseId":"r1","candidates":[{"content":{"parts":[{"text":"he"}]}}]}"#;
 pub(super) const SCHEMA_ERROR: &str = "GenerateContentRequest.tools[0].function_declarations[0].parameters.properties: should be non-empty for OBJECT type";
 
-static NO_HEADERS: BTreeMap<String, String> = BTreeMap::new();
-
 // the order a call touches its dependencies, recorded by the fixtures that stand in for them
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Stage {
@@ -501,6 +499,17 @@ pub(super) struct Setup {
     pub(super) timeout: Option<Duration>,
 }
 
+// what a test changes about the default call: Vertex in us-central1 with no key, headers or flags
+#[derive(Default)]
+pub(super) struct Variation {
+    pub(super) provider: Option<VertexCapabilityProvider>,
+    pub(super) location: Option<&'static str>,
+    pub(super) api_base: Option<&'static str>,
+    pub(super) gemini_api_key: Option<SecretString>,
+    pub(super) extra_headers: BTreeMap<String, String>,
+    pub(super) use_psc_endpoint_format: Option<bool>,
+}
+
 pub(super) struct Fixture {
     pub(super) runtime: Runtime,
     pub(super) order: Arc<Order>,
@@ -596,19 +605,26 @@ impl Fixture {
         self.transport.calls.load(Ordering::SeqCst)
     }
 
-    fn call<'call>(&'call self, optional_params: &'call Object, setup: Setup) -> GeminiCall<'call> {
+    fn call<'call>(
+        &'call self,
+        optional_params: &'call Object,
+        setup: Setup,
+        variation: &'call Variation,
+    ) -> GeminiCall<'call> {
         GeminiCall {
-            provider: VertexCapabilityProvider::VertexAi,
+            provider: variation
+                .provider
+                .unwrap_or(VertexCapabilityProvider::VertexAi),
             model: MODEL,
             messages: &self.messages,
             optional_params,
             litellm_params: &self.litellm_params,
-            api_base: None,
-            gemini_api_key: None,
+            api_base: variation.api_base,
+            gemini_api_key: variation.gemini_api_key.as_ref(),
             project: Some(PROJECT),
-            location: Some(LOCATION),
+            location: variation.location.or(Some(LOCATION)),
             credentials: None,
-            extra_headers: &NO_HEADERS,
+            extra_headers: &variation.extra_headers,
             timeout: setup.timeout,
             acompletion: setup.acompletion,
             modify_params: false,
@@ -632,16 +648,25 @@ impl Fixture {
     }
 
     pub(super) fn run(&self, setup: Setup) -> Result<GeminiReply, GeminiCallError> {
-        let optional_params = optional_params(setup);
-        let call = self.call(&optional_params, setup);
+        self.run_with(setup, &Variation::default())
+    }
+
+    pub(super) fn run_with(
+        &self,
+        setup: Setup,
+        variation: &Variation,
+    ) -> Result<GeminiReply, GeminiCallError> {
+        let optional_params = optional_params(setup, variation);
+        let call = self.call(&optional_params, setup, variation);
         let deps = self.deps();
         self.runtime
             .block_on(completion(&call, &deps, Box::new(fixed_id)))
     }
 
     pub(super) fn cache_deadline(&self, setup: Setup) -> Duration {
-        let optional_params = optional_params(setup);
-        let call = self.call(&optional_params, setup);
+        let variation = Variation::default();
+        let optional_params = optional_params(setup, &variation);
+        let call = self.call(&optional_params, setup, &variation);
         let deps = self.deps();
         let access = AccessToken {
             token: SecretString::from(TOKEN),
@@ -653,10 +678,13 @@ impl Fixture {
     }
 }
 
-fn optional_params(setup: Setup) -> Object {
+fn optional_params(setup: Setup, variation: &Variation) -> Object {
     let mut optional_params = Object::new();
     if let Some(stream) = setup.stream {
         optional_params.insert("stream".to_owned(), Json::Bool(stream));
+    }
+    if let Some(flag) = variation.use_psc_endpoint_format {
+        optional_params.insert("use_psc_endpoint_format".to_owned(), Json::Bool(flag));
     }
     optional_params
 }

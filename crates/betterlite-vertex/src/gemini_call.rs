@@ -29,6 +29,7 @@ pub mod error;
 pub mod selection;
 pub mod stream;
 mod sync_call;
+mod target;
 
 mod tests;
 

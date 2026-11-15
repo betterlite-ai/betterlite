@@ -11,18 +11,15 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::cache_lookup::transport::CacheTransport;
-use crate::endpoint_target::target::{TargetProvider, TokenUrlInput, get_token_and_url};
 use crate::gemini_http::call::{ClientKind, Clients};
 use crate::gemini_http::error::{GeminiHttpError, get_error_class};
-use crate::gemini_http::headers::{psc_endpoint_format, request_headers};
+use crate::gemini_http::headers::request_headers;
 use crate::gemini_http::post::{GeminiPost, PostRequest};
 use crate::gemini_http::stream::StreamSetup;
 use crate::gemini_request::orchestration::transform_request_body;
 use crate::gemini_response::complete::{CompleteRequest, RawResponse, transform_response};
 use crate::gemini_stream::StreamOptions;
-use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::model_policy::error::VertexAiError;
-use crate::model_urls::{ApiVersion, UrlMode};
 use crate::token_refresh::ensure_access_token;
 use crate::vertex_embedding_call::post::{ClientTimeout, PostError};
 
@@ -30,6 +27,7 @@ use super::body::body_request;
 use super::error::GeminiCallError;
 use super::selection::sync_client_timeout;
 use super::stream::SyncGeminiStream;
+use super::target::resolve_target;
 use super::{CallDeps, GeminiCall, GeminiReply, GeminiStream};
 
 const TIMEOUT_MESSAGE: &str = "Timeout error occurred.";
@@ -96,23 +94,7 @@ where
     let access = ensure_access_token(call.provider, lookup)
         .await
         .map_err(|source| GeminiHttpError::Credentials { source })?;
-    let target = get_token_and_url(
-        deps.catalog,
-        &TokenUrlInput {
-            provider: target_provider(call.provider),
-            model: call.model,
-            auth_token: Some(&access.token),
-            gemini_api_key: call.gemini_api_key,
-            project: Some(access.project.as_str()),
-            location: call.location,
-            stream,
-            api_base: call.api_base,
-            api_version: ApiVersion::V1,
-            mode: UrlMode::Chat,
-            use_psc_endpoint_format: psc_endpoint_format(optional_params)?,
-        },
-    )
-    .map_err(|source| GeminiHttpError::Target { source })?;
+    let target = resolve_target(call, optional_params, deps.catalog, &access, stream)?;
     let headers = request_headers(target.auth.as_ref(), call.extra_headers);
     let request = body_request(call, optional_params, deps, &access);
     let transformed = transform_request_body(deps.cache, request, deps.hooks).await?;
@@ -219,13 +201,4 @@ fn log_request(url: &str, model: &str, body_bytes: usize) {
         body_bytes,
         "sending the Gemini request"
     );
-}
-
-const fn target_provider(provider: VertexCapabilityProvider) -> TargetProvider {
-    match provider {
-        VertexCapabilityProvider::VertexAi | VertexCapabilityProvider::VertexAiBeta => {
-            TargetProvider::Vertex
-        }
-        VertexCapabilityProvider::Gemini => TargetProvider::Gemini,
-    }
 }

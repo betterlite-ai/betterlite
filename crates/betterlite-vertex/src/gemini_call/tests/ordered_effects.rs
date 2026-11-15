@@ -1,10 +1,12 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 
 use rstest::rstest;
+use secrecy::SecretString;
 use tempfile::NamedTempFile;
 use tracing::Level;
 use tracing::subscriber::with_default;
@@ -14,11 +16,12 @@ use crate::gemini_call::error::GeminiCallError;
 use crate::gemini_http::call::ClientKind;
 use crate::gemini_http::error::{GeminiHttpError, GeminiStreamError};
 use crate::gemini_stream::error::StreamError;
+use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::post::{ClientTimeout, HANDLER_DEFAULT_TIMEOUT, Timeout};
 
 use super::support::{
-    ANSWER, BODY, Reply, SCHEMA_ERROR, STREAM_CHUNK, Setup, Stage, TOKEN, complete_reply,
-    error_reply, line, pooled_fixture, stream_reply, supplied_fixture,
+    ANSWER, BODY, Reply, SCHEMA_ERROR, STREAM_CHUNK, Setup, Stage, TOKEN, Variation,
+    complete_reply, error_reply, line, pooled_fixture, stream_reply, supplied_fixture,
 };
 
 const VERTEX_URL: &str = "https://us-central1-aiplatform.googleapis.com/v1/projects/project-p/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent";
@@ -371,6 +374,125 @@ fn ordered_effects_sync_stream_surfaces_a_chunk_error_once() {
     ));
     let after = fixture.runtime.block_on(stream.next_chunk());
     assert!(after.is_none(), "a failed stream stays finished");
+}
+
+#[rstest]
+#[case::async_complete(true, None)]
+#[case::async_stream(true, Some(true))]
+#[case::sync_complete(false, None)]
+#[case::sync_stream(false, Some(true))]
+fn ordered_effects_target_error_precedes_the_transform(acompletion: bool, stream: Option<bool>) {
+    let fixture = pooled_fixture(Vec::new(), Vec::new());
+    let variation = Variation {
+        location: Some("us central1"),
+        ..Variation::default()
+    };
+    let reply = fixture.run_with(
+        Setup {
+            acompletion,
+            stream,
+            timeout: None,
+        },
+        &variation,
+    );
+    assert!(matches!(
+        reply,
+        Err(GeminiCallError::Http(GeminiHttpError::Target { .. }))
+    ));
+    assert_eq!(fixture.order.stages(), vec![Stage::Auth]);
+    assert_eq!(fixture.cache_calls(), 0);
+    assert!(fixture.recorder.posts().is_empty());
+    assert!(fixture.recorder.opens().is_empty());
+}
+
+#[test]
+fn ordered_effects_sync_completion_posts_the_caller_headers() {
+    let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new());
+    let variation = Variation {
+        extra_headers: BTreeMap::from([("x-goog-user-project".to_owned(), "other".to_owned())]),
+        ..Variation::default()
+    };
+    let reply = fixture.run_with(
+        Setup {
+            acompletion: false,
+            stream: None,
+            timeout: None,
+        },
+        &variation,
+    );
+    assert!(matches!(reply, Ok(GeminiReply::Complete(_))));
+    let posts = fixture.recorder.posts();
+    assert_eq!(
+        posts[0]
+            .headers
+            .get("x-goog-user-project")
+            .map(String::as_str),
+        Some("other")
+    );
+    assert_eq!(
+        posts[0].headers.get("Authorization"),
+        Some(&format!("Bearer {TOKEN}"))
+    );
+}
+
+#[rstest]
+#[case::psc_flag_set(
+    Some(true),
+    "https://psc.example.com/v1/projects/project-p/locations/us-central1/endpoints/gemini-2.5-flash:generateContent"
+)]
+#[case::psc_flag_absent(
+    None,
+    "https://psc.example.com/v1/projects/project-p/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
+)]
+fn ordered_effects_sync_completion_reads_the_psc_flag(flag: Option<bool>, expected: &str) {
+    let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new());
+    let variation = Variation {
+        api_base: Some("https://psc.example.com"),
+        use_psc_endpoint_format: flag,
+        ..Variation::default()
+    };
+    let reply = fixture.run_with(
+        Setup {
+            acompletion: false,
+            stream: None,
+            timeout: None,
+        },
+        &variation,
+    );
+    assert!(matches!(reply, Ok(GeminiReply::Complete(_))));
+    assert_eq!(fixture.recorder.posts()[0].url, expected);
+}
+
+#[test]
+fn ordered_effects_sync_gemini_posts_to_studio_with_the_api_key() {
+    let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new());
+    let variation = Variation {
+        provider: Some(VertexCapabilityProvider::Gemini),
+        gemini_api_key: Some(SecretString::from("studio-key")),
+        ..Variation::default()
+    };
+    let reply = fixture.run_with(
+        Setup {
+            acompletion: false,
+            stream: None,
+            timeout: None,
+        },
+        &variation,
+    );
+    assert!(matches!(reply, Ok(GeminiReply::Complete(_))));
+    let posts = fixture.recorder.posts();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(
+        posts[0].url,
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    );
+    assert_eq!(
+        posts[0].headers.get("x-goog-api-key").map(String::as_str),
+        Some("studio-key")
+    );
+    assert!(!posts[0].headers.contains_key("Authorization"));
+    assert_eq!(fixture.loads(), 0);
+    assert!(!fixture.order.stages().contains(&Stage::Auth));
 }
 
 #[test]
