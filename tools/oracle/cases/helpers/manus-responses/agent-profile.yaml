@@ -1,0 +1,14 @@
+kind: helper
+name: manus-responses-agent-profile
+env: {}
+compare: {ignore: []}
+call:
+  b8104:
+    op: create_requests
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    probes:
+      - {model: manus/manus-1.6, input: hi, optional_params: {}}
+      - {model: manus/manus-1.6-lite, input: hi, optional_params: {}}
+      - {model: manus-1.6, input: hi, optional_params: {}}
+      - {model: a/b/c, input: hi, optional_params: {}}

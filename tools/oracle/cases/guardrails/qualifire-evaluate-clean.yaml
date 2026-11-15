@@ -1,0 +1,19 @@
+kind: helper
+name: qualifire-evaluate-clean
+call:
+  b8213:
+    settings: {api_key: oracle-key}
+    messages:
+      - {role: system, content: "You are a helpful assistant."}
+      - {role: user, content: "What is the capital of France?"}
+    answer:
+      status: 200
+      headers: {}
+      body:
+        score: 100
+        status: passed
+        evaluationResults:
+          - results:
+              - {name: prompt_injections, flagged: false}
+env: {}
+compare: {ignore: []}
