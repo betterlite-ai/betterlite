@@ -132,9 +132,8 @@ def normalize_payload(payload: dict[str, Json]) -> dict[str, Json]:
 
 
 def capture_request(request: httpx.Request) -> Json:
-    query = TypeAdapter(dict[str, Json]).validate_python(
-        dict(parse_qsl(request.url.query.decode(), keep_blank_values=True))
-    )
+    pairs = dict(parse_qsl(request.url.query.decode(), keep_blank_values=True))
+    query = TypeAdapter(dict[str, Json]).validate_python(pairs)
     decoded = TypeAdapter(Json).validate_json(request.content)
     body = TypeAdapter(dict[str, Json]).validate_python(decoded)
     return {

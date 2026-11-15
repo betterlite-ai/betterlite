@@ -1,18 +1,21 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::future::IntoFuture as _;
+use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::Router;
+use axum::body::to_bytes;
 use axum::extract::{Request, State};
-use axum::http::StatusCode as AxumStatus;
+use axum::http::{HeaderMap, StatusCode as AxumStatus};
 use axum::routing::post;
 use reqwest::StatusCode;
-use tokio::io::AsyncWriteExt;
+use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use super::{fixed_clock, guardrail, guardrail_at, inputs, log_path, log_to};
 use crate::akto::error::AktoError;
@@ -32,7 +35,7 @@ struct Recorded {
 
 type Captures = Arc<Mutex<Vec<Recorded>>>;
 
-fn header_text(headers: &axum::http::HeaderMap, name: &str) -> Option<String> {
+fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(name)
         .and_then(|value| value.to_str().ok())
@@ -41,9 +44,7 @@ fn header_text(headers: &axum::http::HeaderMap, name: &str) -> Option<String> {
 
 async fn capture(State(captures): State<Captures>, request: Request) -> (AxumStatus, &'static str) {
     let (parts, body) = request.into_parts();
-    let bytes = axum::body::to_bytes(body, 1024 * 1024)
-        .await
-        .expect("body bytes");
+    let bytes = to_bytes(body, 1024 * 1024).await.expect("body bytes");
     captures.lock().expect("captures").push(Recorded {
         path: parts.uri.path().to_owned(),
         query: parts.uri.query().map(str::to_owned),
@@ -57,7 +58,7 @@ async fn capture(State(captures): State<Captures>, request: Request) -> (AxumSta
     )
 }
 
-async fn serve_router(router: Router) -> (String, JoinSet<std::io::Result<()>>) {
+async fn serve_router(router: Router) -> (String, JoinSet<io::Result<()>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("address"));
     let mut server = JoinSet::new();
@@ -65,7 +66,7 @@ async fn serve_router(router: Router) -> (String, JoinSet<std::io::Result<()>>) 
     (base, server)
 }
 
-async fn serve(captures: Captures) -> (String, JoinSet<std::io::Result<()>>) {
+async fn serve(captures: Captures) -> (String, JoinSet<io::Result<()>>) {
     let router = Router::new()
         .route("/api/http-proxy", post(capture))
         .with_state(captures);
@@ -73,7 +74,7 @@ async fn serve(captures: Captures) -> (String, JoinSet<std::io::Result<()>>) {
 }
 
 // Hardcoded independently of MAX_RESPONSE_BYTES, so a mutation of that constant can't move this boundary too.
-const SPEC_MAX_RESPONSE_BYTES: usize = 1_048_576;
+const SPEC_MAX_RESPONSE_BYTES: usize = 0x0010_0000;
 
 fn padded_body(size: usize) -> String {
     let base = "{\"data\":{\"guardrailsResult\":{\"Allowed\":true}}}";
@@ -82,12 +83,12 @@ fn padded_body(size: usize) -> String {
     body
 }
 
-async fn serve_fixed_body(body: String) -> (String, JoinSet<std::io::Result<()>>) {
+async fn serve_fixed_body(body: String) -> (String, JoinSet<io::Result<()>>) {
     let router = Router::new().route(
         "/api/http-proxy",
         post(move || {
-            let body = body.clone();
-            async move { (AxumStatus::OK, body) }
+            let answer = body.clone();
+            async move { (AxumStatus::OK, answer) }
         }),
     );
     serve_router(router).await
@@ -215,7 +216,7 @@ async fn akto_guardrail_send_request_times_out_at_the_guardrail_timeout() {
     let router = Router::new().route(
         "/api/http-proxy",
         post(|| async {
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            sleep(Duration::from_secs(30)).await;
             (AxumStatus::OK, "{}")
         }),
     );
@@ -253,17 +254,17 @@ async fn akto_guardrail_send_request_applies_one_total_deadline() {
             )
             .await?;
         stream.write_all(b"  ").await?;
-        tokio::time::sleep(Duration::from_millis(60)).await;
+        sleep(Duration::from_millis(60)).await;
         stream.write_all(b"  ").await?;
-        tokio::time::sleep(Duration::from_millis(60)).await;
+        sleep(Duration::from_millis(60)).await;
         stream.write_all(b"  ").await?;
-        tokio::time::sleep(Duration::from_millis(60)).await;
+        sleep(Duration::from_millis(60)).await;
         stream.write_all(b"  ").await?;
-        tokio::time::sleep(Duration::from_millis(60)).await;
+        sleep(Duration::from_millis(60)).await;
         stream.write_all(b"  ").await?;
-        tokio::time::sleep(Duration::from_millis(60)).await;
+        sleep(Duration::from_millis(60)).await;
         stream.write_all(b"  ").await?;
-        Ok::<(), std::io::Error>(())
+        Ok::<(), io::Error>(())
     });
     let mut guardrail = guardrail();
     guardrail.base_url = base;
@@ -319,8 +320,8 @@ async fn akto_guardrail_fire_and_forget_swallows_an_error_status() {
             },
             &payload,
         )
-        .await;
-    }
+        .await
+    };
     let written = fs::read_to_string(&path).expect("log contents");
     fs::remove_file(&path).expect("remove log");
     assert!(written.contains("non-200"));
@@ -345,8 +346,8 @@ async fn akto_guardrail_fire_and_forget_sends_the_request() {
             },
             &payload,
         )
-        .await;
-    }
+        .await
+    };
     let recorded = captures.lock().expect("captures").pop().expect("request");
     assert_eq!(
         recorded.query.as_deref(),

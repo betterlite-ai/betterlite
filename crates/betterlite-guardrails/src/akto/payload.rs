@@ -60,7 +60,6 @@ pub fn build_akto_payload(
     include_response: bool,
 ) -> Result<AktoPayload, AktoError> {
     let request_body = build_request_body(inputs, request_data);
-    let request_headers = build_request_headers(request_data);
     let mut tag = BTreeMap::from([("gen-ai".to_owned(), "Gen AI".to_owned())]);
     for name in ["user_id", "team_id"] {
         let value =
@@ -72,10 +71,9 @@ pub fn build_akto_payload(
     let (response_payload, response_headers) =
         response_encoding(inputs, request_data, include_response)?;
     let tag_text = serde_json::to_string(&tag).map_err(|source| AktoError::Encode { source })?;
-    let status = status_code.to_string();
     Ok(AktoPayload {
         path: extract_request_path(request_data),
-        request_headers: serde_json::to_string(&request_headers)
+        request_headers: serde_json::to_string(&build_request_headers(request_data))
             .map_err(|source| AktoError::Encode { source })?,
         response_headers,
         method: "POST".to_owned(),
@@ -84,9 +82,9 @@ pub fn build_akto_payload(
         ip: extract_client_ip(request_data),
         dest_ip: "127.0.0.1".to_owned(),
         time: (guardrail.now_millis)().to_string(),
-        status_code: status.clone(),
+        status_code: status_code.to_string(),
         request_type: "HTTP/1.1".to_owned(),
-        status,
+        status: status_code.to_string(),
         akto_account_id: guardrail.account_id.clone(),
         akto_vxlan_id: guardrail.vxlan_id.clone(),
         is_pending: "false".to_owned(),
@@ -162,7 +160,7 @@ fn build_request_body(
     ]);
     let configured_tools = inputs.tools.as_ref().filter(|value| present(value));
     if let Some(tools) =
-        configured_tools.or(request_data.get("tools").filter(|value| present(value)))
+        configured_tools.or_else(|| request_data.get("tools").filter(|value| present(value)))
     {
         body.insert("tools".to_owned(), tools.clone());
     }

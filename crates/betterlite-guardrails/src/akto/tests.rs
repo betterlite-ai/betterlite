@@ -6,7 +6,10 @@ mod config;
 mod transport;
 
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
+use std::path::{Path, PathBuf};
+use std::process;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,7 +18,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::StatusCode;
 use rstest::rstest;
 use secrecy::SecretString;
-use tracing::subscriber::set_default;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 
 use super::AktoMirroring;
@@ -106,14 +109,9 @@ fn decode_double(encoded: &str) -> GuardrailValue {
 
 #[test]
 fn akto_guardrail_payload_double_encodes_request_and_response() {
-    let payload = build_akto_payload(
-        &guardrail_at(fixed_clock),
-        &inputs(),
-        &BTreeMap::new(),
-        200,
-        true,
-    )
-    .expect("payload");
+    let guardrail = guardrail_at(fixed_clock);
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, true).expect("payload");
     let fields = payload_fields(&payload);
     assert_eq!(
         decode_double(&string_field(&fields, "requestPayload")),
@@ -181,10 +179,10 @@ fn akto_guardrail_payload_uses_the_route_metadata(
     #[case] expected: &str,
 ) {
     let mut request_data = BTreeMap::new();
-    if let Some(route) = route {
+    if let Some(found) = route {
         request_data.insert(
             "metadata".to_owned(),
-            object(vec![("user_api_key_request_route", text(route))]),
+            object(vec![("user_api_key_request_route", text(found))]),
         );
     } else {
         request_data.insert(
@@ -633,11 +631,11 @@ fn akto_guardrail_response_rejects_a_non_text_reason() {
     );
 }
 
-fn log_path(name: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("betterlite-akto-{}-{name}", std::process::id()))
+fn log_path(name: &str) -> PathBuf {
+    env::temp_dir().join(format!("betterlite-akto-{}-{name}", process::id()))
 }
 
-fn log_to(path: &std::path::Path) -> tracing::subscriber::DefaultGuard {
+fn log_to(path: &Path) -> DefaultGuard {
     let writer = Arc::new(fs::File::create(path).expect("log file"));
     let subscriber = fmt::Subscriber::builder()
         .with_max_level(tracing::Level::ERROR)
