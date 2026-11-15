@@ -66,6 +66,7 @@ class RouterView(Protocol):
         request_kwargs: dict[str, object],
         messages: list[dict[str, str]] | None = None,
         responses_input: str | list[JsonValue] | None = None,
+        /,
         *,
         specific_deployment: bool = False,
     ) -> list[dict[str, JsonValue]] | dict[str, JsonValue]: ...
