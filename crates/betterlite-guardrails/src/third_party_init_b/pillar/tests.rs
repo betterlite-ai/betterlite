@@ -180,6 +180,16 @@ fn pillar_optional_params_do_not_supply_on_flagged_action() {
     assert_eq!(optional_only.on_flagged_action.as_deref(), Some("monitor"));
 }
 
+#[test]
+fn pillar_reads_a_null_optional_params_as_no_optional_params() {
+    let built = initialize_pillar(
+        &params(r#", "include_scanners": false, "optional_params": null"#),
+        Some("pillar-check"),
+    )
+    .unwrap();
+    assert_eq!(built.include_scanners, Some(false));
+}
+
 #[rstest]
 #[case::scalar(r#", "optional_params": "text""#)]
 #[case::wrong_async_mode(r#", "optional_params": {"async_mode": "yes"}"#)]
