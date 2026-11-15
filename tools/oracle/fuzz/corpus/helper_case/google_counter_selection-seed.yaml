@@ -1,0 +1,10 @@
+kind: helper
+name: google-counter-selection-seed
+call:
+  google_counter_selection:
+    providers:
+      - vertex_ai
+      - gemini
+      - null
+env: {}
+compare: {ignore: []}
