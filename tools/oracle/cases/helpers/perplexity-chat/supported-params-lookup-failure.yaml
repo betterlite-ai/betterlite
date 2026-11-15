@@ -6,9 +6,9 @@ call:
     steps:
       - model: sonar-pro
         reasoning: error
-        web_search: true
+        web_search: 'true'
       - model: sonar-pro
-        reasoning: true
+        reasoning: 'true'
         web_search: error
       - model: sonar-pro
         reasoning: error

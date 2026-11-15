@@ -23,7 +23,10 @@ struct Step {
 }
 
 pub(super) fn run(steps: &Steps) -> HelperResult {
-    let outcomes: Vec<Value> = steps.steps.iter().map(outcome).collect();
+    let mut outcomes = Vec::with_capacity(steps.steps.len());
+    for step in &steps.steps {
+        outcomes.push(outcome(step));
+    }
     Ok(Value::Array(outcomes))
 }
 

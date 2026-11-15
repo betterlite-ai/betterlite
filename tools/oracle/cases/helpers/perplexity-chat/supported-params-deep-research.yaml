@@ -5,7 +5,7 @@ call:
     function: supported_params
     steps:
       - model: sonar-deep-research
-        reasoning: true
-        web_search: true
+        reasoning: 'true'
+        web_search: 'true'
 env: {}
 compare: {ignore: []}

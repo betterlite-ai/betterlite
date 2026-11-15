@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use betterlite_openai::perplexity_chat::with_perplexity_fields;
 
@@ -44,12 +44,21 @@ fn projection(reply: &Value) -> Value {
 }
 
 fn usage_projection(usage: &Value) -> Value {
+    let mut fields = Map::new();
+    for name in [
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "citation_tokens",
+    ] {
+        let value = usage.get(name).cloned().unwrap_or(Value::Null);
+        fields.insert(String::from(name), value);
+    }
     let details = usage.get("prompt_tokens_details");
-    json!({
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-        "citation_tokens": usage.get("citation_tokens"),
-        "web_search_requests": details.and_then(|details| details.get("web_search_requests")),
-    })
+    let requests = details
+        .and_then(|details| details.get("web_search_requests"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    fields.insert(String::from("web_search_requests"), requests);
+    Value::Object(fields)
 }

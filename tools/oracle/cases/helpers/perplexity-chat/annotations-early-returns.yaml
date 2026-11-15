@@ -15,7 +15,7 @@ call:
       - model: sonar
         id: resp-3
         start_time: '2026-01-01T00:00:00+00:00'
-        body: '{"id":"resp-3","object":"chat.completion","created":1,"model":"sonar","choices":[{"index":0,"finish_reason":"stop"}],"citations":["https://a.example"]}'
+        body: '{"id":"resp-3","object":"chat.completion","created":1,"model":"sonar","choices":[{"index":0,"message":{"role":"assistant","content":null},"finish_reason":"stop"}],"citations":["https://a.example"]}'
       - model: sonar
         id: resp-4
         start_time: '2026-01-01T00:00:00+00:00'
