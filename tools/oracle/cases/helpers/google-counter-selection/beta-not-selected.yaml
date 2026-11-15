@@ -1,0 +1,9 @@
+kind: helper
+name: google-counter-selection-beta-not-selected
+call:
+  google_counter_selection:
+    providers:
+      - vertex_ai_beta
+      - vertex_ai
+env: {}
+compare: {ignore: []}
