@@ -15,3 +15,6 @@ deviations:
   - what: binds_unreachable_fallback answers from the constructor's parameter-name list passed in as data, instead of calling inspect.signature on a live class.
     why: betterlite has no conduct-litellm-guard package to introspect; B9451's Conduct builder always answers with the missing-package error, so the helper's input is the parameter names inspect.signature would have returned, and the membership rule stays LiteLLM's, **kwargs included in neither branch.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py#L90-L92
+  - what: An Alice response body over 1048576 bytes is refused before it is parsed, following unreachable_fallback, where LiteLLM parses a response of any length.
+    why: The bounded-inputs rule needs finite memory on every outbound read, and a verdict is a small JSON object, so a megabyte is malformed rather than large. MAX_RESPONSE_BYTES in crates/betterlite-guardrails/src/alice/transport.rs draws the line, and alice_guardrail_refuses_a_body_over_the_response_cap proves the contrast with the body exactly at the cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L213-L236
