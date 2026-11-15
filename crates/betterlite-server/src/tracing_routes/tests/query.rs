@@ -40,7 +40,8 @@ fn derives_the_query_scope(
     #[case] project_id: Option<&str>,
     #[case] expected: QueryScope,
 ) {
-    let scope = trace_query_scope(&auth(role, team_id, token, project_id)).expect("scope");
+    let request = auth(role, team_id, token, project_id);
+    let scope = trace_query_scope(&request).expect("scope");
     assert_eq!(scope, expected);
 }
 

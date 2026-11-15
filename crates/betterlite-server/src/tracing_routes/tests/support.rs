@@ -111,6 +111,25 @@ impl FakeQueryStore {
             seen: Mutex::new(Vec::new()),
         }
     }
+
+    fn answer(
+        &self,
+        sql: Option<String>,
+        scope: &QueryScope,
+        secret: &SecretString,
+        reply: &QueryAnswer,
+    ) -> Result<String, QueryRunError> {
+        self.seen.lock().expect("lock").push(SeenQuery {
+            sql,
+            scope: scope.clone(),
+            secret: secret_text(secret),
+        });
+        match reply {
+            QueryAnswer::Ok(result) => Ok(result.clone()),
+            QueryAnswer::Invalid(message) => Err(QueryRunError::Invalid(message.clone())),
+            QueryAnswer::Unavailable(message) => Err(QueryRunError::Unavailable(message.clone())),
+        }
+    }
 }
 
 #[async_trait]
@@ -121,16 +140,8 @@ impl TraceQueryStore for FakeQueryStore {
         scope: &QueryScope,
         secret: &SecretString,
     ) -> Result<String, QueryRunError> {
-        self.seen.lock().expect("lock").push(SeenQuery {
-            sql: Some(sql.to_owned()),
-            scope: scope.clone(),
-            secret: secret_text(secret),
-        });
-        match &self.sql {
-            QueryAnswer::Ok(result) => Ok(result.clone()),
-            QueryAnswer::Invalid(message) => Err(QueryRunError::Invalid(message.clone())),
-            QueryAnswer::Unavailable(message) => Err(QueryRunError::Unavailable(message.clone())),
-        }
+        let owned = Some(sql.to_owned());
+        self.answer(owned, scope, secret, &self.sql)
     }
 
     async fn query_help(
@@ -138,16 +149,7 @@ impl TraceQueryStore for FakeQueryStore {
         scope: &QueryScope,
         secret: &SecretString,
     ) -> Result<String, QueryRunError> {
-        self.seen.lock().expect("lock").push(SeenQuery {
-            sql: None,
-            scope: scope.clone(),
-            secret: secret_text(secret),
-        });
-        match &self.help {
-            QueryAnswer::Ok(result) => Ok(result.clone()),
-            QueryAnswer::Invalid(message) => Err(QueryRunError::Invalid(message.clone())),
-            QueryAnswer::Unavailable(message) => Err(QueryRunError::Unavailable(message.clone())),
-        }
+        self.answer(None, scope, secret, &self.help)
     }
 }
 
@@ -171,25 +173,41 @@ pub(super) struct FakeRuntime {
 }
 
 impl FakeRuntime {
+    fn record_trace(&self, trace: &str, reference: &str) {
+        let seen = (trace.to_owned(), reference.to_owned());
+        *self.seen_trace.lock().expect("lock") = Some(seen);
+    }
+
     pub(super) fn new() -> Self {
+        let ingest = IngestAnswer::Ok(0);
+        let list = ReadAnswer::Ok(TracePage {
+            data: Vec::new(),
+            next_cursor: None,
+        });
+        let trace = ReadAnswer::Ok(None);
+        let span = ReadAnswer::Ok(None);
+        let span_error = ReadAnswer::Ok(None);
+        let queries = Arc::new(FakeQueryStore::new(
+            QueryAnswer::Ok("{}".to_owned()),
+            QueryAnswer::Ok("{}".to_owned()),
+        ));
+        let seen_ingest = Mutex::new(None);
+        let seen_list = Mutex::new(None);
+        let seen_trace = Mutex::new(None);
+        let seen_span = Mutex::new(None);
+        let seen_error = Mutex::new(None);
         Self {
-            ingest: IngestAnswer::Ok(0),
-            list: ReadAnswer::Ok(TracePage {
-                data: Vec::new(),
-                next_cursor: None,
-            }),
-            trace: ReadAnswer::Ok(None),
-            span: ReadAnswer::Ok(None),
-            span_error: ReadAnswer::Ok(None),
-            queries: Arc::new(FakeQueryStore::new(
-                QueryAnswer::Ok("{}".to_owned()),
-                QueryAnswer::Ok("{}".to_owned()),
-            )),
-            seen_ingest: Mutex::new(None),
-            seen_list: Mutex::new(None),
-            seen_trace: Mutex::new(None),
-            seen_span: Mutex::new(None),
-            seen_error: Mutex::new(None),
+            ingest,
+            list,
+            trace,
+            span,
+            span_error,
+            queries,
+            seen_ingest,
+            seen_list,
+            seen_trace,
+            seen_span,
+            seen_error,
         }
     }
 }
@@ -237,11 +255,11 @@ impl TraceRuntime for FakeRuntime {
 
     async fn get_trace(
         &self,
-        trace_id: &str,
-        scope: &TraceScope,
-        trace_ref: &str,
+        trace: &str,
+        _scope: &TraceScope,
+        reference: &str,
     ) -> Result<Option<Trace>, TraceReadError> {
-        *self.seen_trace.lock().expect("lock") = Some((trace_id.to_owned(), trace_ref.to_owned()));
+        self.record_trace(trace, reference);
         read_answer(&self.trace)
     }
 
@@ -252,12 +270,13 @@ impl TraceRuntime for FakeRuntime {
         scope: &TraceScope,
         trace_ref: &str,
     ) -> Result<Option<SpanDetail>, TraceReadError> {
-        *self.seen_span.lock().expect("lock") = Some(SeenSpan {
+        let seen = SeenSpan {
             trace_id: trace_id.to_owned(),
             span_id: span_id.to_owned(),
             scope: scope.clone(),
             trace_ref: trace_ref.to_owned(),
-        });
+        };
+        *self.seen_span.lock().expect("lock") = Some(seen);
         read_answer(&self.span)
     }
 
@@ -267,22 +286,27 @@ impl TraceRuntime for FakeRuntime {
         scope: &TraceScope,
         cursor: Option<&str>,
     ) -> Result<Option<SpanErrorPage>, TraceReadError> {
-        *self.seen_error.lock().expect("lock") = Some(SeenError {
+        let mut slot = self.seen_error.lock().expect("lock");
+        *slot = Some(SeenError {
             trace_id: target.trace_id.to_owned(),
             span_id: target.span_id.to_owned(),
             scope: scope.clone(),
             trace_ref: target.trace_ref.to_owned(),
             cursor: cursor.map(str::to_owned),
         });
+        drop(slot);
         read_answer(&self.span_error)
     }
 
     fn query_store(&self) -> Arc<dyn TraceQueryStore> {
-        Arc::clone(&self.queries)
+        Arc::clone(&self.queries) as Arc<dyn TraceQueryStore>
     }
 }
 
-fn read_answer<T: Clone>(answer: &ReadAnswer<T>) -> Result<T, TraceReadError> {
+fn read_answer<T>(answer: &ReadAnswer<T>) -> Result<T, TraceReadError>
+where
+    T: Clone,
+{
     match answer {
         ReadAnswer::Ok(value) => Ok(value.clone()),
         ReadAnswer::InvalidCursor(message) => Err(TraceReadError::InvalidCursor(message.clone())),
@@ -433,6 +457,18 @@ pub(super) fn span_row() -> SpanRow {
 }
 
 pub(super) fn decoded_span() -> DecodedSpan {
+    let normalized = NormalizedSpan {
+        observation_type: SpanType::Llm,
+        agent_name: "researcher".to_owned(),
+        litellm_request_id: "req-1".to_owned(),
+        model: "gpt-4o".to_owned(),
+        input_tokens: 3,
+        output_tokens: 4,
+        input: "hello".to_owned(),
+        output: "world".to_owned(),
+    };
+    let resource = IndexMap::from([("service.name".to_owned(), "demo".to_owned())]);
+    let attributes = IndexMap::from([("gen_ai.response.id".to_owned(), "req-1".to_owned())]);
     DecodedSpan {
         trace_id: "trace-1".to_owned(),
         span_id: "span-1".to_owned(),
@@ -440,25 +476,16 @@ pub(super) fn decoded_span() -> DecodedSpan {
         trace_state: String::new(),
         name: "chat gpt-4o".to_owned(),
         kind: "SPAN_KIND_CLIENT".to_owned(),
-        resource_attributes: IndexMap::from([("service.name".to_owned(), "demo".to_owned())]),
+        resource_attributes: resource,
         scope_name: String::new(),
         scope_version: String::new(),
-        attributes: IndexMap::from([("gen_ai.response.id".to_owned(), "req-1".to_owned())]),
+        attributes,
         start_ns: 1_000_000,
         end_ns: 2_000_000,
         status_code: "STATUS_CODE_OK".to_owned(),
         status_message: String::new(),
         events: Vec::new(),
-        normalized: NormalizedSpan {
-            observation_type: SpanType::Llm,
-            agent_name: "researcher".to_owned(),
-            litellm_request_id: "req-1".to_owned(),
-            model: "gpt-4o".to_owned(),
-            input_tokens: 3,
-            output_tokens: 4,
-            input: "hello".to_owned(),
-            output: "world".to_owned(),
-        },
+        normalized,
         consumed_attributes: vec!["gen_ai.response.id".to_owned()],
     }
 }

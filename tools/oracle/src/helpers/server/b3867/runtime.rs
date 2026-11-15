@@ -72,7 +72,9 @@ impl TraceRuntime for ScriptedRuntime {
         _scope: &TraceScope,
         _trace_ref: &str,
     ) -> Result<Option<SpanDetail>, TraceReadError> {
-        read_answer(&self.script.get_span)
+        let script = &self.script;
+        let section = &script.get_span;
+        read_answer(section)
     }
 
     async fn get_span_error(

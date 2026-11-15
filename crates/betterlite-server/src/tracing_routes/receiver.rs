@@ -204,10 +204,9 @@ where
         scope: &TraceScope,
         trace_ref: &str,
     ) -> Result<Option<SpanDetail>, TraceReadError> {
-        self.store
-            .get_span(trace_id, span_id, scope, trace_ref)
-            .await
-            .map_err(read_failure)
+        let store = &self.store;
+        let found = store.get_span(trace_id, span_id, scope, trace_ref).await;
+        found.map_err(read_failure)
     }
 
     async fn get_span_error(
@@ -223,7 +222,7 @@ where
     }
 
     fn query_store(&self) -> Arc<dyn TraceQueryStore> {
-        Arc::clone(&self.queries)
+        Arc::clone(&self.queries) as Arc<dyn TraceQueryStore>
     }
 }
 

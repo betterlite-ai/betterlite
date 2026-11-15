@@ -107,12 +107,11 @@ impl TraceAccessContext {
     }
 
     pub fn writer(&self) -> Result<(&Arc<dyn TraceRuntime>, &Tenant), AccessError> {
-        let tenant = self
-            .write_tenant
-            .as_ref()
-            .ok_or(AccessError::NotAllowedToIngest)?;
-        let receiver = self.receiver.as_ref().ok_or(AccessError::Unavailable)?;
-        Ok((receiver, tenant))
+        match (&self.write_tenant, &self.receiver) {
+            (Some(tenant), Some(receiver)) => Ok((receiver, tenant)),
+            (None, _) => Err(AccessError::NotAllowedToIngest),
+            (_, None) => Err(AccessError::Unavailable),
+        }
     }
 }
 

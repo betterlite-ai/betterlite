@@ -64,7 +64,7 @@ fn viewer() -> Principal {
 }
 
 fn app(runtime: &Arc<FakeRuntime>, master_key: Option<&str>) -> Router {
-    let receiver: Arc<dyn TraceRuntime> = Arc::clone(runtime);
+    let receiver: Arc<dyn TraceRuntime> = Arc::clone(runtime) as Arc<dyn TraceRuntime>;
     application(Some(receiver), master_key)
 }
 

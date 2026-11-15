@@ -40,12 +40,12 @@ pub fn otlp_retry_response(
     status: StatusCode,
     message: &str,
 ) -> Response {
-    let mut response = otlp_encoded_response(content_type, status, Some(message));
-    response.headers_mut().insert(
+    let (mut parts, body) = otlp_encoded_response(content_type, status, Some(message)).into_parts();
+    parts.headers.insert(
         header::RETRY_AFTER,
         HeaderValue::from_static(OTLP_RETRY_AFTER),
     );
-    response
+    Response::from_parts(parts, body)
 }
 
 #[must_use]

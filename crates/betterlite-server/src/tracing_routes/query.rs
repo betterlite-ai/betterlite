@@ -95,7 +95,7 @@ pub fn provide_trace_query_secret(
 ) -> Result<SecretString, QueryAccessError> {
     match master_key {
         Some(key) if !key.expose_secret().is_empty() => Ok(key.clone()),
-        Some(_unusable) | None => Err(QueryAccessError::SecretMissing),
+        Some(_) | None => Err(QueryAccessError::SecretMissing),
     }
 }
 

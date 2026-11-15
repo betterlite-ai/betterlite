@@ -42,53 +42,51 @@ pub(super) fn reader(
 }
 
 pub(super) async fn get_trace(
-    State(state): State<TraceRoutesState>,
-    caller: Option<Extension<AuthContext>>,
+    State(app): State<TraceRoutesState>,
     Path(trace_id): Path<String>,
-    uri: Uri,
-) -> Response {
-    let (receiver, scope) = match reader(caller, &state) {
-        Ok(pair) => pair,
-        Err(response) => return response,
-    };
-    let trace_ref = Query::<TraceRefQuery>::try_from_uri(&uri)
-        .map_or_else(|_rejection| String::new(), |Query(params)| params.trace_ref);
-    match receiver.get_trace(&trace_id, &scope, &trace_ref).await {
-        Ok(Some(trace)) => Json(trace).into_response(),
-        Ok(None) => {
-            let body = DetailBody {
+    identity: Option<Extension<AuthContext>>,
+    request_uri: Uri,
+) -> Result<Response, Response> {
+    let (receiver, scope) = reader(identity, &app)?;
+    match receiver
+        .get_trace(&trace_id, &scope, &trace_ref(&request_uri))
+        .await
+    {
+        Ok(Some(trace)) => Ok(Json(trace).into_response()),
+        Ok(None) => Ok((
+            StatusCode::NOT_FOUND,
+            Json(DetailBody {
                 detail: format!("Trace {trace_id} not found"),
-            };
-            (StatusCode::NOT_FOUND, Json(body)).into_response()
-        }
-        Err(error) => read_failure(&error),
+            }),
+        )
+            .into_response()),
+        Err(error) => Ok(read_failure(&error)),
     }
 }
 
 pub(super) async fn get_span(
     State(state): State<TraceRoutesState>,
-    caller: Option<Extension<AuthContext>>,
-    Path((trace_id, span_id)): Path<(String, String)>,
     uri: Uri,
+    caller: Option<Extension<AuthContext>>,
+    Path(ids): Path<(String, String)>,
 ) -> Response {
     let (receiver, scope) = match reader(caller, &state) {
         Ok(pair) => pair,
         Err(response) => return response,
     };
-    let trace_ref = Query::<TraceRefQuery>::try_from_uri(&uri)
-        .map_or_else(|_rejection| String::new(), |Query(params)| params.trace_ref);
-    match receiver
-        .get_span(&trace_id, &span_id, &scope, &trace_ref)
-        .await
-    {
-        Ok(Some(span)) => Json(span).into_response(),
-        Ok(None) => {
-            let body = DetailBody {
-                detail: format!("Span {span_id} not found"),
-            };
-            (StatusCode::NOT_FOUND, Json(body)).into_response()
-        }
+    let reference = trace_ref(&uri);
+    match receiver.get_span(&ids.0, &ids.1, &scope, &reference).await {
         Err(error) => read_failure(&error),
+        Ok(found) => match found {
+            Some(span) => Json(span).into_response(),
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(DetailBody {
+                    detail: format!("Span {} not found", ids.1),
+                }),
+            )
+                .into_response(),
+        },
     }
 }
 
@@ -121,14 +119,20 @@ pub(super) async fn get_span_error(
         .await
     {
         Ok(Some(page)) => Json(page).into_response(),
-        Ok(None) => {
-            let body = DetailBody {
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(DetailBody {
                 detail: "Span diagnostic not found or no longer available".to_owned(),
-            };
-            (StatusCode::NOT_FOUND, Json(body)).into_response()
-        }
+            }),
+        )
+            .into_response(),
         Err(error) => read_failure(&error),
     }
+}
+
+fn trace_ref(uri: &Uri) -> String {
+    Query::<TraceRefQuery>::try_from_uri(uri)
+        .map_or_else(|_rejection| String::new(), |Query(params)| params.trace_ref)
 }
 
 fn cursor_limit(cursor: Option<&str>) -> Option<Response> {

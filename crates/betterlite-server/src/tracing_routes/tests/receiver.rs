@@ -103,8 +103,8 @@ impl TraceStorage for FakeStorage {
     }
 
     async fn trace_spans(&self, _query: TraceSpansQuery) -> Result<Vec<SpanQueryRow>, StubError> {
-        match self.read {
-            ReadMode::Rows => Ok(vec![SpanQueryRow {
+        if matches!(self.read, ReadMode::Rows) {
+            let row = SpanQueryRow {
                 span_id: "span-1".to_owned(),
                 parent_span_id: None,
                 name: "root".to_owned(),
@@ -123,32 +123,34 @@ impl TraceStorage for FakeStorage {
                 team_id: "team-1".to_owned(),
                 api_key_hash: "hash-1".to_owned(),
                 service: "svc".to_owned(),
-            }]),
-            ReadMode::Ok | ReadMode::Storage => self.read_rows(),
+            };
+            return Ok(vec![row]);
         }
+        self.read_rows()
     }
 
     async fn span_detail(&self, _query: SpanDetailQuery) -> Result<Vec<SpanDetailRow>, StubError> {
-        match self.read {
-            ReadMode::Rows => Ok(vec![SpanDetailRow {
+        if matches!(self.read, ReadMode::Rows) {
+            return Ok(vec![SpanDetailRow {
                 span_id: "span-1".to_owned(),
                 input: "in".to_owned(),
                 output: "out".to_owned(),
                 attributes: IndexMap::new(),
-            }]),
-            ReadMode::Ok | ReadMode::Storage => self.read_rows(),
+            }]);
         }
+        self.read_rows()
     }
 
     async fn span_error(&self, _query: SpanErrorQuery) -> Result<Vec<SpanErrorRow>, StubError> {
-        match self.read {
-            ReadMode::Rows => Ok(vec![SpanErrorRow {
+        if matches!(self.read, ReadMode::Rows) {
+            Ok(vec![SpanErrorRow {
                 span_id: "span-1".to_owned(),
                 message: "boom".to_owned(),
                 total_chars: 4,
                 version: "0".repeat(64),
-            }]),
-            ReadMode::Ok | ReadMode::Storage => self.read_rows(),
+            }])
+        } else {
+            self.read_rows()
         }
     }
 
