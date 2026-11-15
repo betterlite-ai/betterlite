@@ -1,0 +1,9 @@
+kind: helper
+name: explicit-api-key-fresh-login-check
+call:
+  b4577:
+    operation: fresh_login
+    api_key: sk-explicit
+    tty: false
+env: {}
+compare: {ignore: []}

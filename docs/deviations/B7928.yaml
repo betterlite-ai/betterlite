@@ -1,0 +1,46 @@
+task: B7928
+deviations:
+  - what: >-
+      OCI model fields keep LiteLLM's camelCase wire names as pydantic aliases while the Python
+      attributes are snake_case. Validation, model_json_schema() and the default model_dump() and
+      model_dump_json() output still use the wire names; attribute access, model_fields keys and a
+      dump with by_alias=False use the snake_case names.
+    why: >-
+      The Python rules reject mixed-case class attributes, so the attributes cannot keep LiteLLM's
+      spelling. The aliases keep the request and response JSON that LiteLLM's transformation sends
+      byte for byte, and construction with LiteLLM's camelCase keywords still works.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L46
+  - what: >-
+      Fields and TypedDict entries that LiteLLM types as dict[str, object], list[dict[str, object]],
+      object, or a bare dict are typed dict[str, JsonValue], list[dict[str, JsonValue]], JsonValue,
+      or dict[str, JsonValue] | None.
+    why: >-
+      The Python rules forbid object and Any in type annotations, and JsonValue is the JSON type the
+      wheel uses. A JSON body from the OCI API validates the same; a non-JSON Python object, which
+      object and bare dict accept, is rejected here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L108
+  - what: >-
+      The same JsonValue substitution applies to the openai_evals TypedDicts and response models,
+      where LiteLLM writes dict[str, object] and builtins.object.
+    why: >-
+      Same rule and the same validation difference as the OCI models above; every value an evals
+      API response carries is JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai_evals.py#L19
+  - what: >-
+      WatsonXAIEndpoint and WatsonXModelPattern derive from enum.StrEnum instead of (str, Enum).
+    why: >-
+      Ruff UP042 requires StrEnum for a str-mixin Enum. Member names, values, comparisons to str and
+      JSON serialization are unchanged; str() and repr text is not part of parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/watsonx.py#L51
+  - what: >-
+      The four Cohere message subclasses declare role as str with a default, a pattern and a
+      JSON-schema const, instead of LiteLLM's role: Literal["USER"], Literal["CHATBOT"],
+      Literal["SYSTEM"] and Literal["TOOL"] overrides of the base role: str.
+    why: >-
+      Strict basedpyright rejects a mutable field whose type narrows the field of its base class
+      (reportIncompatibleVariableOverride), and mypy's mutable-override error code rejects the same
+      override, so the subclass field cannot carry the Literal type. The default and const keep the
+      wire schema and the pattern keeps the accepted values to the one LiteLLM's Literal accepts;
+      each role schema carries a redundant pattern key, and a rejected value fails with
+      string_pattern_mismatch instead of literal_error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L229-L233

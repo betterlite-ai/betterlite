@@ -1,0 +1,16 @@
+kind: helper
+name: voice-dict-precedence
+call:
+  vertex_speech:
+    function: voice_dict_precedence
+    cases:
+      - {litellm_voice: {languageCode: de-DE, name: de-DE-Wavenet-A}}
+      - {litellm_voice: {languageCode: en-GB, name: en-GB-Neural2-A, ssmlGender: FEMALE}}
+      - {litellm_voice: {}, mapped_voice: {name: mapped}}
+      - {mapped_voice: {name: mapped}}
+      - {voice: alloy}
+      - {voice: alloy, mapped_voice: {name: mapped}}
+      - {voice: alloy, mapped_voice: {name: mapped}, litellm_voice: {name: litellm}}
+      - {}
+env: {}
+compare: {ignore: []}

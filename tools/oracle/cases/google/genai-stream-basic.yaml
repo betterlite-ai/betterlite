@@ -1,0 +1,17 @@
+kind: helper
+name: genai-stream-basic
+call:
+  b3487:
+    mode: sync
+    provider: gemini
+    model: gemini-2.5-flash
+    lines:
+      - ''
+      - 'data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}'
+      - 'data: {"candidates":[{"content":{"parts":[{"text":" world"}]}}]}'
+      - ''
+      - ''
+      - 'data: {"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2}}'
+      - ''
+env: {}
+compare: {ignore: []}
