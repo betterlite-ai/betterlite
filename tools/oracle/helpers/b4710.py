@@ -1,7 +1,8 @@
 import asyncio
 import os
+from collections.abc import Coroutine
 from types import TracebackType
-from typing import Final, Literal, NotRequired, Self, TypedDict
+from typing import Final, Literal, NotRequired, Self, TypedDict, TypeVar
 
 from litellm.proxy._experimental.mcp_server.db import (
     create_mcp_server,
@@ -18,6 +19,7 @@ from litellm.types.mcp import MCPCredentials
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
+T = TypeVar("T")
 AUDIT_FIELDS: Final[frozenset[str]] = frozenset({"created_by", "updated_by"})
 JSON_TEXT_FIELDS: Final[frozenset[str]] = frozenset({
     "credentials",
@@ -221,44 +223,39 @@ def plaintext_value(field: str, text: str) -> JsonValue:
             raise ValueError(f"the {other} column is not stored as JSON text")
 
 
-def plaintext_payload(payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    view: dict[str, JsonValue] = dict(payload)
+def captured_payload(table: RecordingTable) -> dict[str, JsonValue]:
+    view: dict[str, JsonValue] = dict(table.writes[0])
     for field in JSON_TEXT_FIELDS:
-        stored = payload.get(field)
+        stored = view.get(field)
         if stored is None:
             continue
         view[field] = plaintext_value(field, TypeAdapter(str).validate_python(stored))
-    return view
+    return {field: entry for field, entry in view.items() if field not in AUDIT_FIELDS}
 
 
-def captured_payload(table: RecordingTable) -> dict[str, JsonValue]:
-    payload = plaintext_payload(table.writes[0])
-    return {field: entry for field, entry in payload.items() if field not in AUDIT_FIELDS}
+def recorded_write(table: RecordingTable, write: Coroutine[None, None, T]) -> dict[str, JsonValue]:
+    try:
+        asyncio.run(write)
+    except CapturedWriteError:
+        return captured_payload(table)
+    raise RuntimeError("the write entry returned without writing the prepared payload")
 
 
 def prepare_create(value: PrepareCreate) -> JsonValue:
     table = RecordingTable()
     request = TypeAdapter(NewMCPServerRequest).validate_python(value["request"])
-    minted = "server_id" not in value["request"] or value["request"]["server_id"] is None
-    try:
-        asyncio.run(create_mcp_server(FakeClient(table), request, "tester"))
-    except CapturedWriteError:
-        payload = captured_payload(table)
-        if minted:
-            del payload["server_id"]
-        return TypeAdapter(JsonValue).validate_python(payload)
-    raise RuntimeError("the create entry returned without writing the prepared payload")
+    payload = recorded_write(table, create_mcp_server(FakeClient(table), request, "tester"))
+    if "server_id" not in value["request"] or value["request"]["server_id"] is None:
+        del payload["server_id"]
+    return TypeAdapter(JsonValue).validate_python(payload)
 
 
 def prepare_update(value: PrepareUpdate) -> JsonValue:
     table = RecordingTable()
     request = TypeAdapter(UpdateMCPServerRequest).validate_python(value["request"])
     original = set(value["original_fields"])
-    try:
-        asyncio.run(update_mcp_server(FakeClient(table), request, "tester", fields_set=original))
-    except CapturedWriteError:
-        return TypeAdapter(JsonValue).validate_python(captured_payload(table))
-    raise RuntimeError("the update entry returned without writing the prepared payload")
+    payload = recorded_write(table, update_mcp_server(FakeClient(table), request, "tester", fields_set=original))
+    return TypeAdapter(JsonValue).validate_python(payload)
 
 
 def encrypt(value: EncryptCredentials) -> JsonValue:

@@ -163,16 +163,10 @@ fn plaintext_view(
     cipher: &DbCipher,
 ) -> Result<JsonValue, McpEncodingError> {
     for field in JSON_TEXT_FIELDS {
-        let stored = match data.get(field) {
-            Some(JsonValue::String(text)) => text.clone(),
-            Some(JsonValue::Null)
-            | Some(JsonValue::Bool(_))
-            | Some(JsonValue::Number(_))
-            | Some(JsonValue::Array(_))
-            | Some(JsonValue::Object(_))
-            | None => continue,
+        let Some(JsonValue::String(text)) = data.get(field) else {
+            continue;
         };
-        let view = plaintext_value(field, &stored, cipher)?;
+        let view = plaintext_value(field, text, cipher)?;
         data.insert(field.to_owned(), view);
     }
     Ok(JsonValue::Object(data))
