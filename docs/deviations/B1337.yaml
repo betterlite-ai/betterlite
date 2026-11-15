@@ -1,0 +1,20 @@
+task: B1337
+deviations:
+  - what: An empty api_base counts as missing and answers the required-base 400.
+    why: LiteLLM checks api_base only against None, so an empty string passes, leaves the URL empty and fails later as an unhandled transport error with a Vertex 500. A deployment that never set a base cannot rely on that failure, and betterlite reads an empty value as unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_gemma_models/main.py#L97-L102
+  - what: >-
+      A base with no path, such as https://ep.example, is requested as https://ep.example/, one trailing slash more
+      than LiteLLM sends, because B1304's custom-base builder appends the "/" that url::Url normalizes an empty path
+      to where Python's urlparse reports an empty path for the same text.
+    why: >-
+      B1304 owns the custom-base builder and its empty-path branch, and both spellings address the same resource. The
+      plan test pins the slash rather than hiding it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L688-L689
+  - what: >-
+      A rejected prediction whose body is not UTF-8 is answered with "Request failed: {n} bytes that are not UTF-8"
+      instead of LiteLLM's message built from response.text, which replaces each undecodable byte.
+    why: >-
+      betterlite's response format refuses bytes it cannot decode rather than mangling them; the status and the
+      "Request failed:" prefix stay as LiteLLM writes them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_gemma_models/transformation.py#L351-L355
