@@ -1,0 +1,14 @@
+kind: helper
+name: partner-count-plan-meta-publisher
+call:
+  partner_count_plan:
+    cases:
+    - model: meta/llama-3.1-405b-instruct-maas
+      project: my-project
+      location: us-central1
+    - model: llama-3.3-70b-instruct-maas
+      project: my-project
+      location: asia-southeast1
+compare:
+  ignore: []
+env: {}
