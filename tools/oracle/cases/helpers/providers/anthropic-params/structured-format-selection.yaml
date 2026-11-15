@@ -16,5 +16,7 @@ call:
       - {function: map_openai_params, model: no-forced-tools, non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}, optional_params: {}, drop_params: false, global_drop_params: false}
       - {function: map_openai_params, model: fallback-model, non_default_params: {response_format: {type: text}}, optional_params: {}, drop_params: false, global_drop_params: false}
       - {function: map_openai_params, model: native-model, non_default_params: {response_format: {type: text}}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: fallback-model, non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}, reasoning_effort: low}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: fallback-model, non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}, optional_params: {thinking: {type: enabled, budget_tokens: 1024}}, drop_params: false, global_drop_params: false}
 env: {}
 compare: {ignore: []}

@@ -211,10 +211,12 @@ where
                 "data": {
                     "output_config": serde_json::to_value(updated_data.get("output_config"))
                         .or_value_error()?,
+                    "output_config_present": updated_data.contains_key("output_config"),
                 },
                 "optional_params": {
                     "output_config": serde_json::to_value(updated_optional.get("output_config"))
                         .or_value_error()?,
+                    "output_config_present": updated_optional.contains_key("output_config"),
                 },
                 "warning": context.warnings.first(),
             }))

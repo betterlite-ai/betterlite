@@ -5,6 +5,7 @@ use rstest::rstest;
 
 use super::fixture::{Fixture, Session, capture_warnings};
 use crate::anthropic_capability_catalog::DropParams;
+use crate::anthropic_capability_catalog::forced_tool::DROP_FORCED_TOOL_WARNING;
 use crate::capabilities::speed::DROP_UNSUPPORTED_SPEED_WARNING;
 use crate::params::error::ParamsError;
 use crate::params::output_config::apply as apply_output_config;
@@ -18,12 +19,12 @@ const MODELS: &str = r#"{
     "effort-model": {"litellm_provider": "anthropic", "supports_output_config": true, "supports_max_reasoning_effort": true, "supports_xhigh_reasoning_effort": true},
     "plain-model": {"litellm_provider": "anthropic"},
     "fast-model": {"litellm_provider": "anthropic", "supports_speed": true},
-    "no-forced-tools": {"litellm_provider": "anthropic", "supports_forced_tool_use": false}
+    "no-forced-tools": {"litellm_provider": "anthropic", "supports_forced_tool_use": false},
+    "no-sampling": {"litellm_provider": "anthropic", "supports_sampling_params": false}
 }"#;
 
 const FORMAT: &str = r#"{"type":"json_schema","json_schema":{"schema":{"type":"object"}}}"#;
 const FORMAT_ONLY: &str = r#"{"format":{"type":"json_schema"}}"#;
-const EFFORT_AND_FORMAT: &str = r#"{"effort":"high","format":{"type":"json_schema"}}"#;
 const NONE: DropParams = DropParams {
     global: false,
     call: false,
@@ -40,15 +41,8 @@ const PER_CALL: DropParams = DropParams {
 // model, request, optional params before the call, optional params after it
 type MapCase = (&'static str, &'static str, &'static str, &'static str);
 
-// model, global drop, output_config sent, optional params after, body after, warns
-type OutputCase = (
-    &'static str,
-    bool,
-    &'static str,
-    &'static str,
-    &'static str,
-    bool,
-);
+// model, global drop, output_config sent, every field of the optional params and the body after, warns
+type OutputCase = (&'static str, bool, &'static str, &'static str, bool);
 
 fn json(source: &str) -> Json {
     serde_json::from_str(source).expect("case JSON")
@@ -118,7 +112,7 @@ async fn check_maps(cases: &[MapCase]) {
     }
 }
 
-// the optional params and the body after _apply_output_config, a missing config reading null
+// the optional params and the body after _apply_output_config, whole so a removed config reads absent
 async fn output_run(
     model: &str,
     global_drop: bool,
@@ -142,10 +136,7 @@ async fn output_run(
         &catalogs,
     )
     .await?;
-    let read = |fields: &IndexMap<String, Json>| {
-        fields.get("output_config").cloned().unwrap_or(Json::Null)
-    };
-    Ok((read(&optional), read(&data)))
+    Ok((Json::Object(optional), Json::Object(data)))
 }
 
 const MAX_TOKEN_CASES: [MapCase; 13] = [
@@ -315,89 +306,82 @@ const OUTPUT_CASES: [OutputCase; 9] = [
         "plain-model",
         true,
         r#"{"output_config":{"effort":"high","format":{"type":"json_schema"}}}"#,
-        FORMAT_ONLY,
-        FORMAT_ONLY,
+        r#"{"output_config":{"format":{"type":"json_schema"}}}"#,
         true,
     ),
     (
         "plain-model",
         true,
         r#"{"output_config":{"effort":"high"}}"#,
-        "null",
-        "null",
+        "{}",
         true,
     ),
     (
         "plain-model",
         true,
         r#"{"output_config":{"format":null,"effort":"high"}}"#,
-        "null",
-        "null",
+        "{}",
         true,
     ),
     (
         "plain-model",
         true,
         r#"{"output_config":{"format":{"type":"json_schema"}}}"#,
-        FORMAT_ONLY,
-        FORMAT_ONLY,
+        r#"{"output_config":{"format":{"type":"json_schema"}}}"#,
         false,
     ),
     (
         "effort-model",
         true,
         r#"{"output_config":{"effort":"high","format":{"type":"json_schema"}}}"#,
-        EFFORT_AND_FORMAT,
-        EFFORT_AND_FORMAT,
+        r#"{"output_config":{"effort":"high","format":{"type":"json_schema"}}}"#,
         false,
     ),
     (
         "plain-model",
         false,
         r#"{"output_config":{"effort":"high","format":{"type":"json_schema"}}}"#,
-        EFFORT_AND_FORMAT,
-        EFFORT_AND_FORMAT,
+        r#"{"output_config":{"effort":"high","format":{"type":"json_schema"}}}"#,
         false,
     ),
     (
         "plain-model",
         true,
         r#"{"output_config":null}"#,
-        "null",
-        "null",
+        r#"{"output_config":null}"#,
         false,
     ),
     (
         "plain-model",
         true,
         r#"{"output_config":{}}"#,
-        "{}",
-        "{}",
+        r#"{"output_config":{}}"#,
         false,
     ),
     (
         "plain-model",
         true,
         r#"{"output_config":"x"}"#,
-        r#""x""#,
-        r#""x""#,
+        r#"{"output_config":"x"}"#,
         false,
     ),
 ];
 
 async fn output_format_with_effort_drop_warning() {
-    for (model, global, source, optional, data, warns) in OUTPUT_CASES {
+    // the whole maps compare too, so a removed output_config reads absent instead of null
+    for (model, global, source, expected, warns) in OUTPUT_CASES {
         let (guard, warnings) = capture_warnings();
         let result = output_run(model, global, source).await.expect("applies");
         drop(guard);
-        assert_eq!(result, (json(optional), json(data)), "{model} {source}");
-        let expected = warns.then(|| DROP_OUTPUT_CONFIG_WARNING.replacen("%s", model, 1));
-        assert_eq!(warnings.messages().first().cloned(), expected, "{source}");
+        assert_eq!(result, (json(expected), json(expected)), "{model} {source}");
+        let warned = warns.then(|| DROP_OUTPUT_CONFIG_WARNING.replacen("%s", model, 1));
+        assert_eq!(warnings.messages().first().cloned(), warned, "{source}");
     }
-    let (absent, _) = output_run("plain-model", true, "{}")
+    let (absent_optional, absent_data) = output_run("plain-model", true, "{}")
         .await
         .expect("applies");
-    assert_eq!(absent, Json::Null);
+    assert_eq!(absent_optional, json("{}"));
+    assert_eq!(absent_data, json("{}"));
 }
 
 // model, output_config sent, the value the error names
@@ -452,11 +436,11 @@ async fn invalid_output_effort() {
             .expect("a supported effort");
         assert_eq!(kept, (json(&config), json(&config)), "{level}");
     }
-    let format_only = r#"{"output_config":{"format":{"type":"json_schema"}}}"#;
-    let kept = output_run("plain-model", false, format_only)
+    let format_only = format!(r#"{{"output_config":{FORMAT_ONLY}}}"#);
+    let kept = output_run("plain-model", false, &format_only)
         .await
         .expect("a format needs no effort capability");
-    assert_eq!(kept, (json(FORMAT_ONLY), json(FORMAT_ONLY)));
+    assert_eq!(kept, (json(&format_only), json(&format_only)));
 }
 
 async fn speed_drop_policy() {
@@ -623,6 +607,49 @@ async fn parameter_body_rewrites() {
         ),
     ])
     .await;
+    // the forced-tool gate reads both a required string and a named tool choice
+    for forced in [
+        r#"{"tool_choice":"required"}"#,
+        r#"{"tool_choice":{"type":"function","function":{"name":"a"}}}"#,
+    ] {
+        let error = refused("no-forced-tools", forced).await;
+        assert!(
+            matches!(error, ParamsError::ForcedTool(_)),
+            "{forced}: {error:?}"
+        );
+        assert_eq!(error.status_code(), Some(400));
+    }
+    for policy in [PER_CALL, GLOBAL] {
+        let (guard, warnings) = capture_warnings();
+        let downgraded = map_with(
+            "no-forced-tools",
+            r#"{"tool_choice":"required","parallel_tool_calls":false}"#,
+            policy,
+        )
+        .await;
+        drop(guard);
+        assert_eq!(
+            Json::Object(downgraded),
+            json(r#"{"tool_choice":{"type":"auto","disable_parallel_tool_use":true}}"#)
+        );
+        assert_eq!(
+            warnings.messages().first().cloned(),
+            Some(DROP_FORCED_TOOL_WARNING.replacen("%s", "no-forced-tools", 1))
+        );
+    }
+    // the sampling gate rejects each param alone and drops both under either drop
+    for rejected in [r#"{"temperature":0.5}"#, r#"{"top_p":0.9}"#] {
+        let error = refused("no-sampling", rejected).await;
+        assert!(
+            matches!(error, ParamsError::Sampling(_)),
+            "{rejected}: {error:?}"
+        );
+        assert_eq!(error.status_code(), Some(400));
+    }
+    for policy in [PER_CALL, GLOBAL] {
+        let dropped = map_with("no-sampling", r#"{"temperature":0.5,"top_p":0.9}"#, policy).await;
+        assert!(dropped.is_empty(), "{dropped:?}");
+    }
     let stopped = map_with("plain-model", r#"{"stop":["END","  "]}"#, GLOBAL).await;
     assert_eq!(stopped.get("stop_sequences"), Some(&json(r#"["END"]"#)));
     let search = r#"{"web_search_options":{"search_context_size":"low"}}"#;
@@ -653,6 +680,19 @@ async fn structured_format_selection() {
     let thinking = map_with("plain-model", &thinking, NONE).await;
     assert!(thinking.get("tool_choice").is_none());
     assert!(matches!(thinking.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
+    // response_format first still sees the reasoning_effort in the initial non_default_params
+    let ordered = format!(r#"{{"response_format":{FORMAT},"reasoning_effort":"low"}}"#);
+    let ordered = map_with("plain-model", &ordered, NONE).await;
+    assert!(ordered.get("tool_choice").is_none(), "{ordered:?}");
+    assert!(matches!(ordered.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
+    assert_eq!(ordered.get("json_mode"), Some(&Json::Bool(true)));
+    // thinking already in optional_params is not part of the initial check, so the choice stays forced
+    let sent = r#"{"thinking":{"type":"enabled","budget_tokens":1024}}"#;
+    let accumulated = try_map("plain-model", &format_request(""), sent, NONE)
+        .await
+        .expect("the format maps");
+    assert_eq!(accumulated.get("tool_choice"), Some(&forced));
+    assert_eq!(accumulated.get("max_tokens"), Some(&json("5120")));
     let unforced = map_with("no-forced-tools", &format_request(""), NONE).await;
     assert!(unforced.get("tool_choice").is_none());
     assert_eq!(unforced.get("json_mode"), Some(&Json::Bool(true)));

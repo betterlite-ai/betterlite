@@ -126,8 +126,14 @@ def output_answer(request: Transformer[MessageT], step: OutputStep) -> Json:
             headers=headers,
         )
     return {
-        "data": {"output_config": data.get("output_config")},
-        "optional_params": {"output_config": optional_params.get("output_config")},
+        "data": {
+            "output_config": data.get("output_config"),
+            "output_config_present": "output_config" in data,
+        },
+        "optional_params": {
+            "output_config": optional_params.get("output_config"),
+            "output_config_present": "output_config" in optional_params,
+        },
         "warning": warnings.first(),
     }
 

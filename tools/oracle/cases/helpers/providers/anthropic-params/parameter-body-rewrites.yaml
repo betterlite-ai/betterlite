@@ -4,6 +4,8 @@ call:
   anthropic_params:
     fixture:
       model_cost:
+        no-forced-tools: {litellm_provider: anthropic, supports_forced_tool_use: false}
+        no-sampling: {litellm_provider: anthropic, supports_sampling_params: false}
         plain-model: {litellm_provider: anthropic}
       packaged: {}
     default_max_tokens: 4096
@@ -13,5 +15,13 @@ call:
       - {function: map_openai_params, model: plain-model, non_default_params: {web_search_options: {search_context_size: low}}, optional_params: {tools: [{name: a, input_schema: {type: object}}]}, drop_params: false, global_drop_params: false}
       - {function: map_openai_params, model: plain-model, non_default_params: {tools: [{type: mcp, server_url: "https://mcp.example", server_label: tools}], mcp_servers: []}, optional_params: {}, drop_params: false, global_drop_params: false}
       - {function: map_openai_params, model: plain-model, non_default_params: {stop: ["END", "  "]}, optional_params: {}, drop_params: false, global_drop_params: true}
+      - {function: map_openai_params, model: no-forced-tools, non_default_params: {tool_choice: required}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: no-forced-tools, non_default_params: {tool_choice: {type: function, function: {name: a}}}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: no-forced-tools, non_default_params: {tool_choice: required, parallel_tool_calls: false}, optional_params: {}, drop_params: true, global_drop_params: false}
+      - {function: map_openai_params, model: no-forced-tools, non_default_params: {tool_choice: required, parallel_tool_calls: false}, optional_params: {}, drop_params: false, global_drop_params: true}
+      - {function: map_openai_params, model: no-sampling, non_default_params: {temperature: 0.5}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: no-sampling, non_default_params: {top_p: 0.9}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: no-sampling, non_default_params: {temperature: 0.5, top_p: 0.9}, optional_params: {}, drop_params: true, global_drop_params: false}
+      - {function: map_openai_params, model: no-sampling, non_default_params: {temperature: 0.5, top_p: 0.9}, optional_params: {}, drop_params: false, global_drop_params: true}
 env: {}
 compare: {ignore: []}
