@@ -79,8 +79,7 @@ where
     chosen_deployment(dispatch, picker, outcome, &pool, request)
 }
 
-// The two no-deployment errors differ: the specific-deployment arm skips the model-name search, and the
-// environment gate runs at construction, so a group it empties is missing from LiteLLM and takes the 400.
+// A specific lookup always takes the no-deployments error; only a group the environment gate emptied takes the 400.
 fn empty_candidates(
     specific_deployment: bool,
     group: String,
