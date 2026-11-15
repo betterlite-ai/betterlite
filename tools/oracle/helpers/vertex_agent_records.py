@@ -160,7 +160,7 @@ class Config(Protocol):
 
 
 class TokenCounterHost(Protocol):
-    token_counter: Callable[..., int]
+    token_counter: Callable[[str], int]
 
 
 CFG: Final[Config] = VertexAgentEngineConfig()  # type: ignore[no-untyped-call, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L57-L65
