@@ -5,6 +5,7 @@ use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 use secrecy::SecretString;
 use tempfile::NamedTempFile;
@@ -54,7 +55,10 @@ fn ordered_effects_sync_completion_authenticates_transforms_then_posts() {
     let posts = fixture.recorder.posts();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].url, VERTEX_URL);
-    assert_eq!(posts[0].body.as_slice(), BODY.as_bytes());
+    assert_eq!(
+        serde_json::from_slice::<Json>(&posts[0].body).expect("the posted body is JSON"),
+        serde_json::from_str::<Json>(BODY).expect("the expected body is JSON")
+    );
     assert_eq!(
         posts[0].headers.get("Authorization"),
         Some(&format!("Bearer {TOKEN}"))
@@ -93,7 +97,10 @@ fn ordered_effects_sync_stream_opens_only_when_iterated() {
     let opens = fixture.recorder.opens();
     assert_eq!(opens.len(), 1);
     assert_eq!(opens[0].url, STREAM_URL);
-    assert_eq!(opens[0].body.as_slice(), BODY.as_bytes());
+    assert_eq!(
+        serde_json::from_slice::<Json>(&opens[0].body).expect("the opened body is JSON"),
+        serde_json::from_str::<Json>(BODY).expect("the expected body is JSON")
+    );
     assert_eq!(
         opens[0].headers.get("Authorization"),
         Some(&format!("Bearer {TOKEN}"))
@@ -125,7 +132,10 @@ fn ordered_effects_async_completion_authenticates_once() {
     let posts = fixture.recorder.posts();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].url, VERTEX_URL);
-    assert_eq!(posts[0].body.as_slice(), BODY.as_bytes());
+    assert_eq!(
+        serde_json::from_slice::<Json>(&posts[0].body).expect("the posted body is JSON"),
+        serde_json::from_str::<Json>(BODY).expect("the expected body is JSON")
+    );
     assert_eq!(posts[0].timeout, ClientTimeout::HandlerDefault);
     assert!(fixture.recorder.opens().is_empty());
 }

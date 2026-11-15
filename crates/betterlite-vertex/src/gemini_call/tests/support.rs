@@ -750,7 +750,7 @@ pub(super) fn supplied_fixture(
     pooled: (Vec<Reply>, Vec<OpenReply>),
 ) -> Fixture {
     let order = Arc::new(Order::default());
-    let caller = Arc::new(Recorder::scripted(Arc::clone(&order), caller.0, caller.1));
-    let pooled = Arc::new(Recorder::scripted(Arc::clone(&order), pooled.0, pooled.1));
-    Fixture::new(order, pooled, Some((kind, caller)))
+    let caller_recorder = Arc::new(Recorder::scripted(Arc::clone(&order), caller.0, caller.1));
+    let pooled_recorder = Arc::new(Recorder::scripted(Arc::clone(&order), pooled.0, pooled.1));
+    Fixture::new(order, pooled_recorder, Some((kind, caller_recorder)))
 }
