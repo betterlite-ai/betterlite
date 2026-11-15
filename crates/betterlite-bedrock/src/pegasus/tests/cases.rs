@@ -132,6 +132,11 @@ fn media_source(json: &str) -> Option<Field> {
 }
 
 fn text_video_prompt() {
+    roles_and_content();
+    content_fragments();
+}
+
+fn roles_and_content() {
     let prompt = |json: &str| convert_messages_to_prompt(&prompt_messages(json)).unwrap();
     assert_eq!(
         prompt(r#"[{"role":"system","content":"be brief"},{"content":"hi"}]"#),
@@ -145,6 +150,22 @@ fn text_video_prompt() {
         prompt(r#"[{"role":"user","content":"  padded  "}]"#),
         "user:   padded"
     );
+    assert!(matches!(
+        convert_messages_to_prompt(&prompt_messages(r#"[{"role":5,"content":"x"}]"#)),
+        Err(PegasusError::NotText { field: "role" })
+    ));
+    assert!(matches!(
+        convert_messages_to_prompt(&prompt_messages(r#"[{"content":5}]"#)),
+        Err(PegasusError::NotText { field: "content" })
+    ));
+    assert!(matches!(
+        convert_messages_to_prompt(&prompt_messages(r#"[{"content":{}}]"#)),
+        Err(PegasusError::NotText { field: "content" })
+    ));
+}
+
+fn content_fragments() {
+    let prompt = |json: &str| convert_messages_to_prompt(&prompt_messages(json)).unwrap();
     assert_eq!(
         prompt(
             r#"[{"content":["a",{"type":"text","text":"b"},{"type":"image_url"},{"type":"video_url"},{"type":"audio_url"},{"type":"tool_use"},5]}]"#
@@ -202,6 +223,11 @@ fn response_format_json() {
 }
 
 fn segments_and_response() {
+    content_and_choices();
+    non_text_finish_reasons();
+}
+
+fn content_and_choices() {
     let headers = header_counts("3", "5");
     let given = messages(r#"[{"role":"user","content":"hi"}]"#);
     let mut full = response(vec![
@@ -231,10 +257,37 @@ fn segments_and_response() {
     assert_eq!(missing.choices[0].finish_reason.as_deref(), Some("stop"));
 }
 
+fn non_text_finish_reasons() {
+    let given = messages(r#"[{"role":"user","content":"hi"}]"#);
+    let headers = header_counts("3", "5");
+    for body in [
+        br#"{"message":"visible","finishReason":null}"#.as_slice(),
+        br#"{"message":"visible","finishReason":0}"#.as_slice(),
+        br#"{"message":"visible","finishReason":1}"#.as_slice(),
+        br#"{"message":"visible","finishReason":false}"#.as_slice(),
+        br#"{"message":"visible","finishReason":1.5}"#.as_slice(),
+    ] {
+        let mut numeric = single_choice();
+        block_on(decode_pegasus_reply(
+            body,
+            &context(200, &headers, &given, 10.0),
+            &mut numeric,
+            &FixtureCounter::counting(0, 0),
+        ))
+        .unwrap();
+        assert_eq!(
+            numeric.choices[0].finish_reason.as_deref(),
+            Some("stop"),
+            "{body:?}"
+        );
+    }
+}
+
 fn usage_and_finish_reason() {
     header_counts_win();
     counted_usage();
     mixed_case_headers();
+    python_int_headers();
 }
 
 fn header_counts_win() {
@@ -314,6 +367,19 @@ fn mixed_case_headers() {
         (3, 5)
     );
     assert_eq!(mixed_case.usage.total_tokens, 8);
+}
+
+fn python_int_headers() {
+    let given = messages(r#"[{"role":"user","content":"hi"}]"#);
+    let mut padded = single_choice();
+    block_on(decode_pegasus_reply(
+        br#"{"message":"visible"}"#,
+        &context(200, &header_counts(" 1_0 ", "+4"), &given, 5.5),
+        &mut padded,
+        &FixtureCounter::counting(100, 200),
+    ))
+    .unwrap();
+    assert_eq!(padded.usage.total_tokens, 14);
 }
 
 fn pegasus_options() {
