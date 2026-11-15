@@ -1,5 +1,6 @@
 use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
+use base64::alphabet;
+use base64::engine::{GeneralPurpose, GeneralPurposeConfig};
 use betterlite_http::error::HttpError;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use futures_util::StreamExt as _;
@@ -15,6 +16,11 @@ use super::error::MinimaxSpeechError;
 
 const SUCCESS_STATUS: u16 = 200;
 const FAILURE_STATUS: u16 = 500;
+// CPython's non-validating b64decode keeps nonzero trailing bits but still requires padding
+const AUDIO_BASE64: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+);
 
 pub struct SpeechReply<'reply> {
     pub status: u16,
@@ -124,7 +130,7 @@ fn decode_audio(text: &str) -> Result<Vec<u8>, MinimaxSpeechError> {
     if let Ok(bytes) = hex::decode(&compact) {
         return Ok(bytes);
     }
-    STANDARD
+    AUDIO_BASE64
         .decode(compact.as_bytes())
         .map_err(|source| MinimaxSpeechError::Audio { source })
 }

@@ -3,3 +3,6 @@ deviations:
   - what: A speech or image reply with a field of the wrong type fails with a typed error, status 500.
     why: LiteLLM raises a raw TypeError or KeyError there, which its proxy answers with a 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/text_to_speech/transformation.py
+  - what: A MiniMax audio field with stray characters or with more padding than the final group needs fails with a typed 500.
+    why: LiteLLM's base64.b64decode ignores such characters; betterlite decodes with the base64 crate, which needs canonical base64, and MiniMax sends hex or canonical base64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/text_to_speech/transformation.py#L353

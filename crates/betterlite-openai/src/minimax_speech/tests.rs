@@ -182,6 +182,7 @@ fn rejects_a_response_format_that_is_not_a_string() {
 #[case::at_maximum(json!(2), 2.0)]
 #[case::above(json!(3), 2.0)]
 #[case::missing(None, 1.0)]
+#[case::null(Some(Value::Null), 1.0)]
 fn clamps_the_speed(#[case] speed: Option<Value>, #[case] expected: f64) {
     let params = match speed {
         Some(value) => object(json!({"speed": value})),
@@ -301,7 +302,7 @@ fn builds_the_default_body() {
             "stream": false,
             "output_format": "hex",
             "voice_setting": {"voice_id": "male-qn-qingse", "speed": 1.0, "vol": 1.0, "pitch": 0},
-            "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1}
+            "audio_setting": {"sample_rate": 32_000, "bitrate": 128_000, "format": "mp3", "channel": 1}
         })
     );
 }
@@ -323,8 +324,8 @@ fn the_body_takes_audio_and_voice_settings_from_the_options() {
     let options = object(json!({
         "vol": 3.0,
         "pitch": -4,
-        "sample_rate": 16000,
-        "bitrate": 64000,
+        "sample_rate": 16_000,
+        "bitrate": 64_000,
         "channel": 2,
         "format": "flac",
         "output_format": "url"
@@ -332,8 +333,8 @@ fn the_body_takes_audio_and_voice_settings_from_the_options() {
     let body = speech_request_body("speech-01", "hello", "nova", &options);
     assert_eq!(body["voice_setting"]["vol"], 3.0);
     assert_eq!(body["voice_setting"]["pitch"], -4);
-    assert_eq!(body["audio_setting"]["sample_rate"], 16000);
-    assert_eq!(body["audio_setting"]["bitrate"], 64000);
+    assert_eq!(body["audio_setting"]["sample_rate"], 16_000);
+    assert_eq!(body["audio_setting"]["bitrate"], 64_000);
     assert_eq!(body["audio_setting"]["channel"], 2);
     assert_eq!(body["audio_setting"]["format"], "flac");
     assert_eq!(body["output_format"], "url");
@@ -388,6 +389,33 @@ async fn decodes_base64_when_the_audio_is_not_hex() {
         .await
         .expect("the reply carries base64 audio");
     assert_eq!(decoded.body, b"Hello".to_vec());
+}
+
+#[tokio::test]
+async fn decodes_base64_audio_with_nonzero_trailing_bits() {
+    let headers = HeaderMap::new();
+    let decoded = decode(r#"{"data": {"audio": "SGVsbG9="}}"#, 200, &headers)
+        .await
+        .expect("b64decode keeps nonzero trailing bits");
+    assert_eq!(decoded.body, b"Hello".to_vec());
+}
+
+#[tokio::test]
+async fn base64_audio_without_padding_is_an_error() {
+    let headers = HeaderMap::new();
+    let error = decode(r#"{"data": {"audio": "SGVsbG8"}}"#, 200, &headers)
+        .await
+        .expect_err("b64decode needs the final group padded");
+    assert_eq!(error.status_code(), Some(500));
+}
+
+#[tokio::test]
+async fn base64_audio_with_stray_characters_is_an_error() {
+    let headers = HeaderMap::new();
+    let error = decode(r#"{"data": {"audio": "SGVsbG8h!"}}"#, 200, &headers)
+        .await
+        .expect_err("betterlite needs canonical base64 characters");
+    assert_eq!(error.status_code(), Some(500));
 }
 
 #[tokio::test]

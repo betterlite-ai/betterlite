@@ -85,7 +85,7 @@ fn mapped_format(response_format: Option<&Value>) -> &'static str {
 }
 
 fn mapped_speed(speed: Option<Value>) -> Result<f64, MinimaxSpeechError> {
-    let Some(speed) = speed else {
+    let Some(speed) = speed.filter(|value| !value.is_null()) else {
         return Ok(DEFAULT_SPEED);
     };
     let Value::Number(number) = speed else {

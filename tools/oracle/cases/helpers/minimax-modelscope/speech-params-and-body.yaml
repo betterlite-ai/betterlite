@@ -46,6 +46,8 @@ call:
       - kind: speech_params
         params: {speed: 7}
       - kind: speech_params
+        params: {speed: null}
+      - kind: speech_params
         params: {instructions: "speak slowly", language_boost: auto}
       - kind: speech_params
         params: {extra_body: {language_boost: auto, speed: 2, ignored: null}, speed: 0.75}
