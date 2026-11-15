@@ -42,7 +42,7 @@ pub struct RetiredAgentRecord {
 }
 
 // the nested agent relation filter of update_many, agent: {is: {enabled: true, identity_managed: true}}
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AgentStateFilter {
     pub enabled: bool,
     pub identity_managed: bool,

@@ -1,7 +1,8 @@
 #![cfg(test)]
 
+use crate::agent_store::records::AgentStateFilter;
 use crate::agent_store::tests::support::{
-    FakeRecords, RecordedAuthentication, authentication_context, fixed_clock, store,
+    FakeCall, FakeRecords, RecordedAuthentication, authentication_context, fixed_clock, store,
 };
 use crate::identity::FailureCode;
 
@@ -34,8 +35,10 @@ async fn record_authentication_checks_the_agent_filter() {
             agent_id: String::from("agent-1"),
             revision: String::from("rev-1"),
             active: true,
-            agent_enabled: true,
-            agent_identity_managed: true,
+            agent: AgentStateFilter {
+                enabled: true,
+                identity_managed: true,
+            },
             at: fixed_clock(),
         }]
     );
@@ -77,7 +80,7 @@ async fn record_authentication_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
     {
         let mut state = fake.state();
-        state.authentication_fails = true;
+        state.failure = Some(FakeCall::Authentication);
     }
     let failure = store(&fake)
         .record_authentication(&authentication_context("agent-1", Some("rev-1")))

@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::agent_store::tests::support::{
-    FakeRecords, RecordedEnrollment, human_row, microsoft_subject, store,
+    FakeCall, FakeRecords, RecordedEnrollment, human_row, microsoft_subject, store,
 };
 use crate::identity::FailureCode;
 
@@ -118,7 +118,7 @@ async fn enroll_upsert_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
     {
         let mut state = fake.state();
-        state.enrollment_fails = true;
+        state.failure = Some(FakeCall::Enrollment);
     }
     let failure = store(&fake)
         .enroll_interactive_human(&microsoft_subject(), "user-1")

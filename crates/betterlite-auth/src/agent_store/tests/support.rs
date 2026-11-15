@@ -11,9 +11,9 @@ use crate::agent_store::AgentIdentityStore;
 use crate::agent_store::cache::ManagementObjectCache;
 use crate::agent_store::error::AgentStoreError;
 use crate::agent_store::records::{
-    AgentRecords, AuthenticationFilter, IdentityRecord, IdentityRecords, InteractiveEnrollment,
-    RetiredAgentRecord, RetiredAgentRecords, RetiredIdentityRecord, RetiredIdentityRecords,
-    VerifiedSubjectRecords, VerifiedSubjectRow,
+    AgentRecords, AgentStateFilter, AuthenticationFilter, IdentityRecord, IdentityRecords,
+    InteractiveEnrollment, RetiredAgentRecord, RetiredAgentRecords, RetiredIdentityRecord,
+    RetiredIdentityRecords, VerifiedSubjectRecords, VerifiedSubjectRow,
 };
 use crate::identity::MicrosoftInteractiveSubject;
 
@@ -79,13 +79,23 @@ pub(crate) struct RecordedSubjectKey {
     pub oid: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FakeCall {
+    Agent,
+    Identity,
+    Authentication,
+    Subject,
+    Enrollment,
+    RetiredIdentity,
+    RetiredAgent,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RecordedAuthentication {
     pub agent_id: String,
     pub revision: String,
     pub active: bool,
-    pub agent_enabled: bool,
-    pub agent_identity_managed: bool,
+    pub agent: AgentStateFilter,
     pub at: DateTime<Utc>,
 }
 
@@ -108,19 +118,13 @@ pub(crate) struct RecordedCacheWrite {
 #[derive(Default)]
 pub(crate) struct FakeState {
     pub agent: Option<AgentResponse>,
-    pub agent_fails: bool,
     pub identity: Option<IdentityRecord>,
-    pub identity_fails: bool,
     pub authentication_count: u64,
-    pub authentication_fails: bool,
     pub subject: Option<VerifiedSubjectRow>,
-    pub subject_fails: bool,
     pub enrollment_row: Option<VerifiedSubjectRow>,
-    pub enrollment_fails: bool,
     pub retired_identity: Option<RetiredIdentityRecord>,
-    pub retired_identity_fails: bool,
     pub retired_agent: Option<RetiredAgentRecord>,
-    pub retired_agent_fails: bool,
+    pub failure: Option<FakeCall>,
     pub agent_reads: Vec<String>,
     pub identity_reads: Vec<RecordedBindingKey>,
     pub authentications: Vec<RecordedAuthentication>,
@@ -157,7 +161,7 @@ impl AgentRecords for FakeRecords {
     async fn find_unique(&self, agent_id: &str) -> Result<Option<AgentResponse>, AgentStoreError> {
         let mut state = self.state();
         state.agent_reads.push(agent_id.to_owned());
-        if state.agent_fails {
+        if state.failure == Some(FakeCall::Agent) {
             return Err(store_failure());
         }
         Ok(state.agent.clone())
@@ -178,7 +182,7 @@ impl IdentityRecords for FakeRecords {
             tenant_id: tenant_id.to_owned(),
             client_id: client_id.to_owned(),
         });
-        if state.identity_fails {
+        if state.failure == Some(FakeCall::Identity) {
             return Err(store_failure());
         }
         Ok(state.identity.clone())
@@ -194,11 +198,10 @@ impl IdentityRecords for FakeRecords {
             agent_id: filter.agent_id.to_owned(),
             revision: filter.revision.to_owned(),
             active: filter.active,
-            agent_enabled: filter.agent.enabled,
-            agent_identity_managed: filter.agent.identity_managed,
+            agent: filter.agent,
             at,
         });
-        if state.authentication_fails {
+        if state.failure == Some(FakeCall::Authentication) {
             return Err(store_failure());
         }
         Ok(state.authentication_count)
@@ -219,7 +222,7 @@ impl VerifiedSubjectRecords for FakeRecords {
             tenant_id: tenant_id.to_owned(),
             oid: oid.to_owned(),
         });
-        if state.subject_fails {
+        if state.failure == Some(FakeCall::Subject) {
             return Err(store_failure());
         }
         Ok(state.subject.clone())
@@ -237,7 +240,7 @@ impl VerifiedSubjectRecords for FakeRecords {
             user_id: enrollment.user_id.to_owned(),
             verified_via: enrollment.verified_via.to_owned(),
         });
-        if state.enrollment_fails {
+        if state.failure == Some(FakeCall::Enrollment) {
             return Err(store_failure());
         }
         Ok(state
@@ -261,7 +264,7 @@ impl RetiredIdentityRecords for FakeRecords {
             tenant_id: tenant_id.to_owned(),
             client_id: client_id.to_owned(),
         });
-        if state.retired_identity_fails {
+        if state.failure == Some(FakeCall::RetiredIdentity) {
             return Err(store_failure());
         }
         Ok(state.retired_identity.clone())
@@ -276,7 +279,7 @@ impl RetiredAgentRecords for FakeRecords {
     ) -> Result<Option<RetiredAgentRecord>, AgentStoreError> {
         let mut state = self.state();
         state.retired_agent_reads.push(agent_id.to_owned());
-        if state.retired_agent_fails {
+        if state.failure == Some(FakeCall::RetiredAgent) {
             return Err(store_failure());
         }
         Ok(state.retired_agent.clone())

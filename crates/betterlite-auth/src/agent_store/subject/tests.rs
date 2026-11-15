@@ -3,7 +3,9 @@
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 
-use crate::agent_store::tests::support::{FakeRecords, RecordedSubjectKey, human_row, store};
+use crate::agent_store::tests::support::{
+    FakeCall, FakeRecords, RecordedSubjectKey, human_row, store,
+};
 use crate::identity::FailureCode;
 
 #[rstest]
@@ -84,7 +86,7 @@ async fn subject_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
     {
         let mut state = fake.state();
-        state.subject_fails = true;
+        state.failure = Some(FakeCall::Subject);
     }
     let oid = JsonData::String(String::from("oid-2"));
     let failure = store(&fake)

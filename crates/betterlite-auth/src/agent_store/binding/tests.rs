@@ -5,7 +5,7 @@ use rstest::rstest;
 
 use crate::agent_store::records::RetiredIdentityRecord;
 use crate::agent_store::tests::support::{
-    FakeCache, FakeRecords, RecordedBindingKey, RecordedCacheWrite, binding, store,
+    FakeCache, FakeCall, FakeRecords, RecordedBindingKey, RecordedCacheWrite, binding, store,
     store_with_cache,
 };
 use crate::identity::FailureCode;
@@ -139,7 +139,7 @@ async fn bound_agent_id_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
     {
         let mut state = fake.state();
-        state.identity_fails = true;
+        state.failure = Some(FakeCall::Identity);
     }
     let failure = store(&fake)
         .bound_agent_id("tenant-1", "client-1")

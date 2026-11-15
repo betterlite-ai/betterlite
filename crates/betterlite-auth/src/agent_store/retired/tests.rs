@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use crate::agent_store::records::RetiredAgentRecord;
-use crate::agent_store::tests::support::{FakeRecords, store, store_without_retired_agents};
+use crate::agent_store::tests::support::{
+    FakeCall, FakeRecords, store, store_without_retired_agents,
+};
 use crate::identity::FailureCode;
 
 #[tokio::test]
@@ -51,7 +53,7 @@ async fn retired_agent_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
     {
         let mut state = fake.state();
-        state.retired_agent_fails = true;
+        state.failure = Some(FakeCall::RetiredAgent);
     }
     let failure = store(&fake)
         .retired_agent("agent-1")

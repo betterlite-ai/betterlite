@@ -2,7 +2,7 @@
 
 use crate::agent_store::records::RetiredIdentityRecord;
 use crate::agent_store::tests::support::{
-    FakeRecords, RecordedBindingKey, store, store_without_retired,
+    FakeCall, FakeRecords, RecordedBindingKey, store, store_without_retired,
 };
 use crate::identity::FailureCode;
 
@@ -58,7 +58,7 @@ async fn unbound_client_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
     {
         let mut state = fake.state();
-        state.retired_identity_fails = true;
+        state.failure = Some(FakeCall::RetiredIdentity);
     }
     let failure = store(&fake)
         .unbound_client("tenant-1", "client-1")

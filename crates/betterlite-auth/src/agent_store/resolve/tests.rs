@@ -6,7 +6,7 @@ use rstest::rstest;
 use crate::agent_identity::error::POLICY_UNAVAILABLE_STATUS;
 use crate::agent_policy::{ManagedAgentMode, PolicyFlag};
 use crate::agent_store::tests::support::{
-    FakeRecords, RecordedSubjectKey, application_claims, autonomous_agent, binding,
+    FakeCall, FakeRecords, RecordedSubjectKey, application_claims, autonomous_agent, binding,
     delegated_agent, delegated_claims, human_row, store,
 };
 use crate::identity::FailureCode;
@@ -86,7 +86,7 @@ async fn resolve_agent_read_failure_is_policy_unavailable() {
     {
         let mut state = fake.state();
         state.identity = Some(binding("agent-1"));
-        state.agent_fails = true;
+        state.failure = Some(FakeCall::Agent);
     }
     let failure = store(&fake)
         .resolve_verified_claims(&application_claims())
@@ -316,7 +316,7 @@ async fn resolve_subject_read_failure_is_policy_unavailable() {
         let mut state = fake.state();
         state.agent = Some(delegated_agent());
         state.identity = Some(binding("agent-2"));
-        state.subject_fails = true;
+        state.failure = Some(FakeCall::Subject);
     }
     let failure = store(&fake)
         .resolve_verified_claims(&delegated_claims())

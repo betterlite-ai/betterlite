@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::agent_store::tests::support::{FakeRecords, autonomous_agent, store};
+use crate::agent_store::tests::support::{FakeCall, FakeRecords, autonomous_agent, store};
 use crate::identity::FailureCode;
 
 #[tokio::test]
@@ -30,7 +30,7 @@ async fn agent_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
     {
         let mut state = fake.state();
-        state.agent_fails = true;
+        state.failure = Some(FakeCall::Agent);
     }
     let failure = store(&fake)
         .agent("agent-1")
