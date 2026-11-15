@@ -25,7 +25,7 @@ def answer(call: Call) -> JsonValue:
         "file": ("batch.jsonl", call["content"].encode("utf-8"), "application/jsonl"),
         "purpose": "batch",
     }
-    plan = cast(dict[str, UploadPlan], VertexAIFilesConfig().transform_create_file_request("", create_file_data, {}, {"passthrough": call["passthrough"]}))  # noqa: E501  # type: ignore[no-untyped-call, misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1055-L1059
+    plan = cast(dict[str, UploadPlan], VertexAIFilesConfig().transform_create_file_request("", create_file_data, {}, {"passthrough": call["passthrough"]}))  # type: ignore[no-untyped-call, misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1055-L1059
     stream = plan["streaming_media_upload"]["body_stream"]
     chunks: list[JsonValue] = [chunk.decode("utf-8") for chunk in stream.iter_bytes()]
     return {"chunks": chunks}
