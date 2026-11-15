@@ -23,7 +23,7 @@ fn first_text(fields: &Map<String, Value>) -> String {
 }
 
 // seconds wins when the key is present and not null, even when it is zero; the value lands on duration in the kept body
-fn normalized_duration(fields: &Map<String, Value>) -> Option<Value> {
+pub(super) fn normalized_duration(fields: &Map<String, Value>) -> Option<Value> {
     match fields.get("seconds") {
         Some(value) if !value.is_null() => Some(value.clone()),
         _ => fields

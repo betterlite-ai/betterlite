@@ -4,7 +4,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::reply::decode_transcription_reply;
+use super::reply::{decode_transcription_reply, normalized_duration};
 use super::request::{
     complete_url, map_openai_params, transcription_request, validate_environment,
 };
@@ -180,4 +180,29 @@ fn decode_transcription_reply_reports_a_body_that_is_not_json() {
 fn decode_transcription_reply_reports_a_json_body_that_is_not_an_object() {
     let error = decode_transcription_reply(b"[]", 200, &Headers::new()).expect_err("an error");
     assert_eq!(error.status_code, Some(200));
+}
+
+// the duration filter only decides whether the key is written, so the kept body cannot tell a null duration from an absent one
+#[test]
+fn normalized_duration_reads_seconds_else_a_set_duration() {
+    let seconds = json!({"seconds": 0, "duration": 9});
+    assert_eq!(
+        normalized_duration(seconds.as_object().expect("an object")),
+        Some(json!(0))
+    );
+    let null_seconds = json!({"seconds": null, "duration": 9});
+    assert_eq!(
+        normalized_duration(null_seconds.as_object().expect("an object")),
+        Some(json!(9))
+    );
+    let null_duration = json!({"duration": null});
+    assert_eq!(
+        normalized_duration(null_duration.as_object().expect("an object")),
+        None
+    );
+    let absent = json!({});
+    assert_eq!(
+        normalized_duration(absent.as_object().expect("an object")),
+        None
+    );
 }
