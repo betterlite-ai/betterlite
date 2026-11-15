@@ -1,8 +1,10 @@
-use betterlite_openai::minimax_speech::params::{VoiceInput, map_openai_params};
+use betterlite_openai::minimax_speech::error::MinimaxSpeechError;
+use betterlite_openai::minimax_speech::params::{MappedOptions, VoiceInput, map_openai_params};
 use betterlite_openai::minimax_speech::reply::{SpeechReply, decode_speech_reply};
 use betterlite_openai::minimax_speech::request::{
     get_complete_url, speech_request_body, validate_environment,
 };
+use betterlite_openai::modelscope_image::error::ModelScopeImageError;
 use betterlite_openai::modelscope_image::params::map_openai_params as map_image_params;
 use betterlite_openai::modelscope_image::reply::{ImageReply, decode_image_generation_reply};
 use betterlite_openai::modelscope_image::request::{
@@ -20,10 +22,11 @@ use super::input::{Step, Voice};
 
 const BODY_LIMIT: usize = 1024 * 1024;
 
-fn invalid(message: String) -> Box<HelperError> {
+// LiteLLM raises here and the call ends, so a failed step ends the run with its status
+fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
     Box::new(HelperError {
-        class: String::from("InvalidInput"),
-        status: None,
+        class: class.to_owned(),
+        status,
         error_type: None,
         param: None,
         code: None,
@@ -31,40 +34,45 @@ fn invalid(message: String) -> Box<HelperError> {
     })
 }
 
-// LiteLLM raises here and the call ends, so a failed step ends the run with its status
-fn failure<T>(class: &str, status: Option<u16>, message: String) -> Result<T, Box<HelperError>> {
-    Err(Box::new(HelperError {
-        class: class.to_owned(),
-        status,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    }))
+trait ProviderFailure {
+    fn helper_error(self) -> Box<HelperError>;
+}
+
+impl ProviderFailure for MinimaxSpeechError {
+    fn helper_error(self) -> Box<HelperError> {
+        failure("MinimaxException", self.status_code(), self.to_string())
+    }
+}
+
+impl ProviderFailure for ModelScopeImageError {
+    fn helper_error(self) -> Box<HelperError> {
+        failure("ModelScopeImageError", self.status_code(), self.to_string())
+    }
+}
+
+fn mapped_options(
+    voice: Option<&Voice>,
+    params: &Object,
+) -> Result<MappedOptions, Box<HelperError>> {
+    map_openai_params(voice.map(Voice::input), params).map_err(|error| {
+        failure(
+            "UnsupportedParamsError",
+            error.status_code(),
+            error.to_string(),
+        )
+    })
 }
 
 fn header_map(headers: &Headers) -> Result<HeaderMap, Box<HelperError>> {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
-        let header_name =
-            HeaderName::from_bytes(name.as_bytes()).map_err(|error| invalid(error.to_string()))?;
-        let header_value =
-            HeaderValue::from_str(value).map_err(|error| invalid(error.to_string()))?;
+        let header_name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|error| failure("InvalidInput", None, error.to_string()))?;
+        let header_value = HeaderValue::from_str(value)
+            .map_err(|error| failure("InvalidInput", None, error.to_string()))?;
         map.insert(header_name, header_value);
     }
     Ok(map)
-}
-
-fn speech_params(voice: Option<&Voice>, params: &Object) -> Result<Value, Box<HelperError>> {
-    let voice = voice.map(Voice::input);
-    match map_openai_params(voice, params) {
-        Ok(mapped) => Ok(json!({"voice": mapped.voice, "params": mapped.params})),
-        Err(error) => failure(
-            "UnsupportedParamsError",
-            error.status_code(),
-            error.to_string(),
-        ),
-    }
 }
 
 fn speech_body(
@@ -73,16 +81,7 @@ fn speech_body(
     input: &str,
     params: &Object,
 ) -> Result<Value, Box<HelperError>> {
-    let mapped = match map_openai_params(voice.map(Voice::input), params) {
-        Ok(mapped) => mapped,
-        Err(error) => {
-            return failure(
-                "UnsupportedParamsError",
-                error.status_code(),
-                error.to_string(),
-            );
-        }
-    };
+    let mapped = mapped_options(voice, params)?;
     Ok(Value::Object(speech_request_body(
         model,
         input,
@@ -99,15 +98,14 @@ fn speech_headers(
     let key = api_key.map(|text| SecretString::from(text.to_owned()));
     let global = global_key.map(|text| SecretString::from(text.to_owned()));
     let environment = environment_key.map(|text| SecretString::from(text.to_owned()));
-    match validate_environment(
+    let headers = validate_environment(
         &Headers::new(),
         key.as_ref(),
         global.as_ref(),
         environment.as_ref(),
-    ) {
-        Ok(headers) => Ok(serde_json::to_value(headers)?),
-        Err(error) => failure("ValueError", error.status_code(), error.to_string()),
-    }
+    )
+    .map_err(|error| failure("ValueError", error.status_code(), error.to_string()))?;
+    Ok(serde_json::to_value(headers)?)
 }
 
 fn render_audio(response: SpeechResponse) -> Result<Value, Box<HelperError>> {
@@ -116,10 +114,10 @@ fn render_audio(response: SpeechResponse) -> Result<Value, Box<HelperError>> {
     let headers = response.headers.clone();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
-        .map_err(|error| invalid(error.to_string()))?;
+        .map_err(|error| failure("InvalidInput", None, error.to_string()))?;
     let audio = runtime
         .block_on(response.content(BODY_LIMIT))
-        .map_err(|error| invalid(error.to_string()))?;
+        .map_err(|error| failure("InvalidInput", None, error.to_string()))?;
     Ok(json!({
         "status": status,
         "content_type": content_type,
@@ -130,13 +128,14 @@ fn render_audio(response: SpeechResponse) -> Result<Value, Box<HelperError>> {
 
 fn speech_reply(status: u16, headers: &Headers, body: &str) -> Result<Value, Box<HelperError>> {
     let map = header_map(headers)?;
-    match decode_speech_reply(SpeechReply {
+    let reply = SpeechReply {
         status,
         headers: &map,
         body: body.as_bytes(),
-    }) {
+    };
+    match decode_speech_reply(reply) {
         Ok(response) => render_audio(response),
-        Err(error) => failure("MinimaxException", error.status_code(), error.to_string()),
+        Err(error) => Err(error.helper_error()),
     }
 }
 
@@ -146,33 +145,30 @@ fn image_params(
     drop_params: bool,
 ) -> Result<Value, Box<HelperError>> {
     let mut optional = Object::new();
-    match map_image_params(params, &mut optional, model, drop_params) {
-        Ok(()) => Ok(json!({"params": optional})),
-        Err(error) => failure(
+    map_image_params(params, &mut optional, model, drop_params).map_err(|error| {
+        failure(
             "UnsupportedOptionError",
             error.status_code(),
             error.to_string(),
-        ),
-    }
+        )
+    })?;
+    Ok(json!({"params": optional}))
 }
 
 fn image_reply(status: u16, body: &str, created: i64) -> Result<Value, Box<HelperError>> {
-    match decode_image_generation_reply(
+    let reply = decode_image_generation_reply(
         ImageReply {
             status,
             body: body.as_bytes(),
         },
         created,
-    ) {
-        Ok(reply) => Ok(
-            json!({"created": reply.created, "data": reply.data.iter().map(datum).collect::<Vec<Value>>()}),
-        ),
-        Err(error) => failure(
-            "ModelScopeImageError",
-            error.status_code(),
-            error.to_string(),
-        ),
-    }
+    )
+    .map_err(ProviderFailure::helper_error)?;
+    let data = reply.data.iter().map(datum).collect::<Vec<Value>>();
+    let mut payload = Object::new();
+    payload.insert(String::from("created"), Value::from(reply.created));
+    payload.insert(String::from("data"), Value::Array(data));
+    Ok(Value::Object(payload))
 }
 
 fn datum(image: &betterlite_openai::image_generation::reply::ImageDatum) -> Value {
@@ -200,7 +196,10 @@ impl Voice {
 
 pub(crate) fn execute(step: &Step) -> Result<Value, Box<HelperError>> {
     match step {
-        Step::SpeechParams { voice, params } => speech_params(voice.as_ref(), params),
+        Step::SpeechParams { voice, params } => {
+            let mapped = mapped_options(voice.as_ref(), params)?;
+            Ok(json!({"voice": mapped.voice, "params": mapped.params}))
+        }
         Step::SpeechBody {
             model,
             input,
