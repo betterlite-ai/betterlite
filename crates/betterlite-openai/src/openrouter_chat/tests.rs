@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::{Value, json};
@@ -116,17 +116,20 @@ fn object(value: Value) -> Object {
     }
 }
 
-fn request<'a>(
-    model: &'a str,
-    messages: &'a [ChatMessage],
-    optional_params: &'a Object,
-) -> ChatRequest<'a> {
+static EMPTY_PARAMS: LazyLock<Object> = LazyLock::new(Object::new);
+static EMPTY_HEADERS: LazyLock<Headers> = LazyLock::new(Headers::new);
+
+fn request<'request>(
+    model: &'request str,
+    messages: &'request [ChatMessage],
+    optional_params: &'request Object,
+) -> ChatRequest<'request> {
     ChatRequest {
         model,
         messages,
         optional_params,
-        litellm_params: &Object::new(),
-        headers: &Headers::new(),
+        litellm_params: &EMPTY_PARAMS,
+        headers: &EMPTY_HEADERS,
     }
 }
 

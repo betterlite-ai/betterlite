@@ -113,8 +113,8 @@ fn get_complete_url_follows_the_base_order(
     #[case] env: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    assert_eq!(
-        get_complete_url(api_base, global_api_base, &environment(env)),
-        expected
-    );
+    let url = get_complete_url(api_base, global_api_base, &environment(env));
+    assert_eq!(url, expected);
+    assert!(url.ends_with("/responses"));
+    assert!(!url.contains("//responses"));
 }

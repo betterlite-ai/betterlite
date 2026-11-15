@@ -1,6 +1,6 @@
 use serde_json::{Map, Value};
 
-use crate::chat_choices::wire::{ProviderField, StreamChoice, StreamReply};
+use crate::chat_choices::wire::{StreamChoice, StreamReply};
 use crate::openai_base_config::Headers;
 use crate::openrouter_chat::error::{OpenRouterError, key_error};
 

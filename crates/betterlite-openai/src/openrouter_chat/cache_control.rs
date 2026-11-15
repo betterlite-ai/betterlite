@@ -1,5 +1,5 @@
-use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
+use serde_json::Value;
 
 use crate::chat::{ChatMessage, ContentPart, MessageContent};
 
@@ -30,7 +30,7 @@ fn moved_message(message: &ChatMessage) -> ChatMessage {
     let Some(cache_control) = message.passthrough.shift_remove(CACHE_CONTROL) else {
         return message;
     };
-    if matches!(cache_control, Json::Null) {
+    if cache_control.is_null() {
         return message;
     }
     match message.content.as_ref() {
@@ -44,13 +44,13 @@ fn moved_message(message: &ChatMessage) -> ChatMessage {
         }
         Some(MessageContent::Text(text)) => {
             message.content = Some(MessageContent::Parts(vec![text_block(
-                Json::Text(text.clone()),
+                Value::String(text.clone()),
                 cache_control,
             )]));
         }
         None => {
             message.content = Some(MessageContent::Parts(vec![text_block(
-                Json::Null,
+                Value::Null,
                 cache_control,
             )]));
         }
@@ -58,7 +58,7 @@ fn moved_message(message: &ChatMessage) -> ChatMessage {
     message
 }
 
-fn text_block(text: Json, cache_control: Json) -> ContentPart {
+fn text_block(text: Value, cache_control: Value) -> ContentPart {
     let mut fields = IndexMap::new();
     fields.insert(String::from("text"), text);
     fields.insert(CACHE_CONTROL.to_owned(), cache_control);

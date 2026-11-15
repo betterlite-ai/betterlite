@@ -34,6 +34,7 @@ pub struct ChatRequest<'request> {
     pub headers: &'request Headers,
 }
 
+#[derive(Debug)]
 pub struct ChatReply {
     pub body: Value,
     pub additional_headers: AdditionalHeaders,
