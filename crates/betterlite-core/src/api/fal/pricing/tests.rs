@@ -14,7 +14,7 @@ use serde_json::Number;
 
 use super::keyed::{keyed_quality, keyed_size, parse_keyed_dimensions};
 use super::{
-    DEFAULT_KEYED_DIMENSIONS, FAL_AI_QUEUE_DEFAULT_BASE, FAL_KEYED_PRICING_DEFAULT_QUALITY,
+    DEFAULT_KEYED_DIMENSIONS, FAL_AI_QUEUE_DEFAULT_BASE, FAL_KEYED_DEFAULT_QUALITY,
     FAL_NAMED_IMAGE_SIZES, FAL_PIXELS_PER_MEGAPIXEL, FAL_TEXT_TO_IMAGE_DEFAULT_SIZE,
     FalCostRequest, FalImageResponse, FalPricingError, cost_calculator, fal_ai_passthrough_cost,
     fal_ai_queue_base, image_dimensions, resolution_key,
@@ -169,7 +169,7 @@ fn the_published_constants_match_the_source() {
         )
         .as_str()
     );
-    assert_eq!(FAL_KEYED_PRICING_DEFAULT_QUALITY, "high");
+    assert_eq!(FAL_KEYED_DEFAULT_QUALITY, "high");
     assert_eq!(FAL_PIXELS_PER_MEGAPIXEL, 1_048_576);
     assert_eq!(FAL_NAMED_IMAGE_SIZES.len(), 6);
     assert_eq!(FAL_NAMED_IMAGE_SIZES[1], ("square", "512-x-512"));
@@ -268,12 +268,12 @@ fn image_dimensions_requires_two_positive_exact_integers() {
 }
 
 #[rstest]
-#[case::absent(None, FAL_KEYED_PRICING_DEFAULT_QUALITY)]
+#[case::absent(None, FAL_KEYED_DEFAULT_QUALITY)]
 #[case::named(Some(text("medium")), "medium")]
-#[case::auto(Some(text("auto")), FAL_KEYED_PRICING_DEFAULT_QUALITY)]
-#[case::number(Some(integer(5)), FAL_KEYED_PRICING_DEFAULT_QUALITY)]
-#[case::boolean(Some(Json::Bool(true)), FAL_KEYED_PRICING_DEFAULT_QUALITY)]
-#[case::explicit_null(Some(Json::Null), FAL_KEYED_PRICING_DEFAULT_QUALITY)]
+#[case::auto(Some(text("auto")), FAL_KEYED_DEFAULT_QUALITY)]
+#[case::number(Some(integer(5)), FAL_KEYED_DEFAULT_QUALITY)]
+#[case::boolean(Some(Json::Bool(true)), FAL_KEYED_DEFAULT_QUALITY)]
+#[case::explicit_null(Some(Json::Null), FAL_KEYED_DEFAULT_QUALITY)]
 fn keyed_quality_is_a_string_other_than_auto(
     #[case] quality: Option<Json>,
     #[case] expected: &str,
@@ -542,13 +542,13 @@ fn a_deployment_image_price_wins_even_when_it_is_zero() {
     .expect("the deployment price prices the images");
     assert_eq!(cost, Decimal::ZERO);
     let priced = record(&[("output_cost_per_image", "0.25")]);
-    let cost = cost_calculator(
+    let priced_cost = cost_calculator(
         &request(FLUX_SCHNELL, &images, None, Some(&priced)),
         &fixture.catalog,
         &fixture.lookup,
     )
     .expect("the deployment price prices the images");
-    assert_eq!(cost, decimal("0.5"));
+    assert_eq!(priced_cost, decimal("0.5"));
 }
 
 #[test]
@@ -836,10 +836,6 @@ fn passthrough_cost_distinguishes_an_unavailable_price_from_zero() {
             "fal_ai/fal-ai/zero",
             r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0}"#,
         ),
-        (
-            "fal_ai/fal-ai/flag",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": true}"#,
-        ),
     ]);
     let body = object(&[]);
     assert_eq!(
@@ -856,16 +852,25 @@ fn passthrough_cost_distinguishes_an_unavailable_price_from_zero() {
         fal_ai_passthrough_cost("fal-ai/zero", &body, &lookup).expect("the zero price is a price"),
         Some(Decimal::ZERO)
     );
-    assert_eq!(
-        fal_ai_passthrough_cost("fal-ai/flag", &body, &lookup)
-            .expect("the boolean price is a price"),
-        Some(Decimal::ONE)
-    );
     let flag = object(&[("resolution", Json::Bool(true))]);
     assert_eq!(
         fal_ai_passthrough_cost("fal-ai/zero", &flag, &lookup)
             .expect("a boolean resolution is ignored"),
         Some(Decimal::ZERO)
+    );
+}
+
+#[test]
+fn a_boolean_catalog_price_reads_as_one() {
+    let lookup = lookup_from(&[(
+        "fal_ai/fal-ai/flag",
+        r#"{"litellm_provider": "fal_ai", "output_cost_per_image": true}"#,
+    )]);
+    let body = object(&[]);
+    assert_eq!(
+        fal_ai_passthrough_cost("fal-ai/flag", &body, &lookup)
+            .expect("the boolean price is a price"),
+        Some(Decimal::ONE)
     );
 }
 

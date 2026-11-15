@@ -6,9 +6,9 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use super::{
-    DEFAULT_KEYED_DIMENSIONS, FAL_AI_PROVIDER, FAL_KEYED_PRICING_DEFAULT_QUALITY,
-    FAL_NAMED_IMAGE_SIZES, FAL_TEXT_TO_IMAGE_DEFAULT_SIZE, FalPricingError, image_dimensions,
-    image_price, positive_integer,
+    DEFAULT_KEYED_DIMENSIONS, FAL_AI_PROVIDER, FAL_KEYED_DEFAULT_QUALITY, FAL_NAMED_IMAGE_SIZES,
+    FAL_TEXT_TO_IMAGE_DEFAULT_SIZE, FalPricingError, image_dimensions, image_price,
+    positive_integer,
 };
 use crate::cost::image_dispatch::options::OptionalParams;
 
@@ -56,7 +56,7 @@ pub(super) fn keyed_quality(optional_params: Option<&OptionalParams>) -> &str {
             | Json::List(_)
             | Json::Object(_),
         )
-        | None => FAL_KEYED_PRICING_DEFAULT_QUALITY,
+        | None => FAL_KEYED_DEFAULT_QUALITY,
     }
 }
 

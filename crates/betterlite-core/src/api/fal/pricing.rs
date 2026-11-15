@@ -17,7 +17,7 @@ use serde_json::Number;
 
 use crate::cost::image_dispatch::options::OptionalParams;
 
-pub const FAL_KEYED_PRICING_DEFAULT_QUALITY: &str = "high";
+pub const FAL_KEYED_DEFAULT_QUALITY: &str = "high";
 const DEFAULT_KEYED_DIMENSIONS: (u64, u64) = (1024, 768);
 pub const FAL_TEXT_TO_IMAGE_DEFAULT_SIZE: &str = "1024-x-768";
 pub const FAL_PIXELS_PER_MEGAPIXEL: u64 = 1_048_576;
@@ -138,10 +138,7 @@ fn fallback_cost(
     images: &[Option<&IndexMap<String, Json>>],
     keyed_costs: &[Option<Decimal>],
 ) -> Result<Decimal, FalPricingError> {
-    let deployment_record = match deployment {
-        Some(pricing) => Some(deployment_price_record(pricing)?),
-        None => None,
-    };
+    let deployment_record = deployment.map(deployment_price_record).transpose()?;
     let resolved = resolve_image_model_info(
         model,
         Some(FAL_AI_PROVIDER),
