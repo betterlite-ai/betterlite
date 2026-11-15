@@ -205,6 +205,11 @@ fn bytes_after_the_record_are_refused() {
 }
 
 #[test]
+fn the_metadata_body_limit_is_one_mebibyte() {
+    assert_eq!(METADATA_BODY_LIMIT, 1_048_576);
+}
+
+#[test]
 fn a_body_at_the_limit_is_still_parsed() {
     let mut body = format!(r#"{{"id":"my-bucket/o/1",{CREATED_JSON}}}"#).into_bytes();
     body.resize(METADATA_BODY_LIMIT, b' ');
