@@ -1,0 +1,11 @@
+task: B7923
+deviations:
+  - what: Bare `dict` annotations are written `dict[str, JsonValue]`, and `BedrockToolSpec` takes its `parameters` as a `BedrockToolParameters` TypedDict with a required `type` key. Runtime values are unchanged.
+    why: Strict typing allows neither a bare dict nor an `Any` read, and `parameters["type"]` has to be typed as the `"object"` literal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L292-L317
+  - what: '`GenericStreamingChunk.tool_use` is typed by `ChatCompletionToolCallChunk` defined in `converse/tool_call_chunk.py`, not imported from the OpenAI types.'
+    why: The OpenAI types package is another task's and has not merged. It has the same keys, so the import can replace the local copy later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L606-L622
+  - what: '`ServerSentEvent.__init__` takes `**fields` typed by a TypedDict and raises `TypeError` for an unknown keyword itself.'
+    why: A parameter named `id` is not allowed by the lint rules without a suppression, and the task allows none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L454-L472
