@@ -46,6 +46,9 @@ description: >-
   - xecguard: api_base, api_key, xecguard_model, policy_names, block_on_error, grounding_strictness, timeout.
 scope:
   paths:
+    - "crates/betterlite-guardrails/src/lakera_v2/tests.rs"
+    - "crates/betterlite-guardrails/src/lakera_v2"
+    - "crates/betterlite-guardrails/Cargo.toml"
     - crates/betterlite-guardrails/src/third_party_init_b.rs
     - crates/betterlite-guardrails/src/third_party_init_b/**
   lint_tables: false

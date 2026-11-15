@@ -1,0 +1,23 @@
+kind: helper
+name: manus-responses-request-extra-body-override
+env: {}
+compare: {ignore: []}
+call:
+  b8104:
+    op: create_requests
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    probes:
+      - model: manus/manus-1.6
+        input: hi
+        optional_params:
+          extra_body: {task_mode: chat, agent_profile: custom, vendor: 7}
+      - model: manus/manus-1.6
+        input: hi
+        optional_params:
+          extra_body: {}
+      - model: manus/manus-1.6
+        input: hi
+        optional_params:
+          store: true
+          extra_body: {store: false}
