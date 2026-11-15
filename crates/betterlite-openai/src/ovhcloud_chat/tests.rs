@@ -1,4 +1,14 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        clippy::needless_pass_by_value,
+        clippy::unwrap_in_result,
+        reason = "json! fixtures state the chat wire the transforms read, and the small helpers keep each test on its scenario"
+    )
+)]
 
 use std::collections::BTreeMap;
 

@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "json! fixtures state the embedding wire the transforms read, numbers included"
+    )
+)]
 
 use std::fs;
 use std::path::PathBuf;
@@ -107,7 +115,13 @@ fn a_lowercase_authorization_header_does_not_replace_the_default_one() {
 
 #[test]
 fn transform_embedding_request_puts_input_and_model_first() {
-    let optional = object(json!({"user": "u", "dimensions": 3}));
+    let optional = Object::from([
+        (String::from("user"), Json::Text(String::from("u"))),
+        (
+            String::from("dimensions"),
+            Json::Number(serde_json::Number::from(3_i32)),
+        ),
+    ]);
     let body = transform_embedding_request("m", &Json::Text(String::from("hi")), &optional);
     assert_eq!(
         body.keys().cloned().collect::<Vec<String>>(),

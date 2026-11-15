@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "json! fixtures state the transcription wire the transforms read, numbers included"
+    )
+)]
 
 use rstest::rstest;
 use secrecy::SecretString;
