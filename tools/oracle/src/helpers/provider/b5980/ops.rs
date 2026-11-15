@@ -202,11 +202,11 @@ fn watched(headers: &Headers) -> BTreeMap<String, String> {
 }
 
 pub(super) fn responses_url_values(env: &EnvInput, cases: &[UrlCase]) -> Vec<serde_json::Value> {
-    let env = env.build();
+    let resolved = env.build();
     let config = DatabricksResponsesAPIConfig;
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
-        let outcome = match config.complete_url(case.api_base.as_deref(), &env) {
+        let outcome = match config.complete_url(case.api_base.as_deref(), &resolved) {
             Ok(url) => json!({"url": url}),
             Err(error) => json!({"status": error.status_code}),
         };
