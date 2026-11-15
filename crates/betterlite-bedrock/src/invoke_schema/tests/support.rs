@@ -21,11 +21,18 @@ pub(crate) struct Query {
 
 #[derive(Default)]
 pub(crate) struct Capabilities {
-    pub(crate) native: bool,
-    pub(crate) output_config: bool,
+    pub(crate) factory_flags: Vec<&'static str>,
     pub(crate) effort: bool,
     pub(crate) queries: Vec<Query>,
     pub(crate) effort_models: Vec<String>,
+}
+
+impl Capabilities {
+    pub(crate) fn with_flag(flag: &'static str) -> Self {
+        let mut capabilities = Self::default();
+        capabilities.factory_flags.push(flag);
+        capabilities
+    }
 }
 
 impl InvokeSchemaCapabilities for Capabilities {
@@ -39,11 +46,7 @@ impl InvokeSchemaCapabilities for Capabilities {
             provider: request.custom_llm_provider.map(str::to_owned),
             key: key.to_owned(),
         });
-        ready(match key {
-            "supports_native_structured_output" => self.native,
-            "supports_output_config" => self.output_config,
-            _ => false,
-        })
+        ready(self.factory_flags.iter().any(|flag| *flag == key))
     }
 
     fn supports_effort_param(&mut self, model: &str) -> impl Future<Output = bool> + Send {

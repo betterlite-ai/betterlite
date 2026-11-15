@@ -176,20 +176,18 @@ pub async fn strip_unsupported_config_keys<Capabilities>(
 }
 
 pub fn normalize_tool_custom_field(body: &mut Object) {
-    let Some(tools) = tool_objects(body) else {
-        return;
-    };
-    for fields in tools {
-        let Some(Json::Object(custom)) = fields.shift_remove(CUSTOM) else {
-            continue;
+    for_each_tool_object(body, |_, fields| {
+        let defer_loading = match fields.shift_remove(CUSTOM) {
+            Some(Json::Object(mut custom)) => custom.shift_remove(DEFER_LOADING),
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+            | None => None,
         };
-        if fields.contains_key(DEFER_LOADING) {
-            continue;
+        if let Some(Json::Bool(deferred)) = defer_loading {
+            fields
+                .entry(DEFER_LOADING.to_owned())
+                .or_insert(Json::Bool(deferred));
         }
-        if let Some(deferred @ Json::Bool(_)) = custom.get(DEFER_LOADING) {
-            fields.insert(DEFER_LOADING.to_owned(), deferred.clone());
-        }
-    }
+    });
 }
 
 #[must_use]
@@ -236,51 +234,55 @@ pub fn normalize_schema_custom_types(schema: &mut Json) {
     }
 }
 
-pub fn normalize_tool_schema_types(body: &mut Object) {
-    let Some(tools) = tool_objects(body) else {
-        return;
-    };
-    for fields in tools {
-        if let Some(schema) = fields.get_mut("input_schema") {
-            normalize_schema_custom_types(schema);
-        }
-    }
-}
-
-fn tools_of(body: &mut Object) -> Option<&mut Vec<Json>> {
-    match body.get_mut(TOOLS) {
-        Some(Json::List(tools)) => Some(tools),
-        _ => None,
-    }
-}
-
-fn tool_objects(body: &mut Object) -> Option<impl Iterator<Item = &mut Object>> {
-    Some(tools_of(body)?.iter_mut().filter_map(|tool| match tool {
-        Json::Object(fields) => Some(fields),
-        _ => None,
-    }))
-}
-
-pub fn ensure_tool_names(body: &mut Object) {
-    let Some(tools) = tools_of(body) else {
+fn for_each_tool_object<Apply>(body: &mut Object, mut apply: Apply)
+where
+    Apply: FnMut(usize, &mut Object),
+{
+    let Some(Json::List(tools)) = body.get_mut(TOOLS) else {
         return;
     };
     for (index, tool) in tools.iter_mut().enumerate() {
+        if let Json::Object(fields) = tool {
+            apply(index, fields);
+        }
+    }
+}
+
+pub fn normalize_tool_schema_types(body: &mut Object) {
+    for_each_tool_object(body, |_, fields| {
+        if let Some(schema) = fields.get_mut("input_schema") {
+            normalize_schema_custom_types(schema);
+        }
+    });
+}
+
+pub fn ensure_tool_names(body: &mut Object) {
+    let Some(Json::List(tools)) = body.get_mut(TOOLS) else {
+        return;
+    };
+    let mut unnamed = Vec::new();
+    for (index, tool) in tools.iter().enumerate() {
         let Json::Object(fields) = tool else {
             continue;
         };
-        let blank = match fields.get(NAME) {
-            None | Some(Json::Null) => true,
-            // Python's str.strip also trims the separators U+001C to U+001F
-            Some(Json::Text(name)) => name.chars().all(|character| {
+        // Python's str.strip also trims the separators U+001C to U+001F
+        let blank = fields.get(NAME).is_none_or(|name| match name {
+            Json::Null => true,
+            Json::Text(text) => text.chars().all(|character| {
                 character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
             }),
-            Some(_) => false,
-        };
+            Json::Bool(_) | Json::Number(_) | Json::Object(_) | Json::List(_) => false,
+        });
         if blank {
-            let name = format!("{UNNAMED_TOOL_PREFIX}{index}");
-            fields.insert(NAME.to_owned(), Json::Text(name));
+            unnamed.push(index);
         }
+    }
+    for index in unnamed {
+        let Some(Json::Object(fields)) = tools.get_mut(index) else {
+            continue;
+        };
+        let name = format!("{UNNAMED_TOOL_PREFIX}{index}");
+        fields.insert(NAME.to_owned(), Json::Text(name));
     }
 }
 

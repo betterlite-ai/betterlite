@@ -77,8 +77,9 @@ class Collector(logging.Handler):
         self.seen = False
 
     @override
-    def emit(self, _record: logging.LogRecord) -> None:
-        self.seen = True
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.levelno >= logging.WARNING:
+            self.seen = True
 
 
 def warned_answer(step: ApplyStep | StripStep) -> JsonValue:

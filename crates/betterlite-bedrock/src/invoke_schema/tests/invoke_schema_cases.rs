@@ -117,6 +117,18 @@ fn user_message(content: Json) -> Json {
     json_object(&[("role", text("user")), ("content", content)])
 }
 
+fn type_format() -> Json {
+    schema_format(type_object())
+}
+
+fn message_body(messages: Vec<Json>, format: Json) -> Object {
+    let output_config = json_object(&[("format", format)]);
+    object(&[
+        ("messages", list(messages)),
+        ("output_config", output_config),
+    ])
+}
+
 fn tool_with(custom: Json, defer: Option<Json>) -> Json {
     let mut tool = object(&[("name", text("t")), ("custom", custom)]);
     if let Some(value) = defer {
@@ -201,18 +213,12 @@ async fn legacy_dict_wins() {
 }
 
 async fn empty_legacy_hides_the_nested_schema() {
-    let mut capabilities = Capabilities::default();
-    let mut body = object(&[
-        ("messages", list(vec![user_message(text("hi"))])),
-        ("output_format", json_object(&[])),
-        (
-            "output_config",
-            json_object(&[("format", schema_format(type_object()))]),
-        ),
-    ]);
-    apply_structured_output("plain", &mut body, &mut capabilities).await;
+    let mut body = message_body(vec![user_message(text("hi"))], type_format());
+    body.insert("output_format".to_owned(), json_object(&[]));
+    apply_structured_output("plain", &mut body, &mut Capabilities::default()).await;
     assert!(body.get("output_config").is_none());
-    assert_eq!(content_of(&body, 0), vec![block("hi")]);
+    assert!(body.get("output_format").is_none());
+    assert_eq!(messages_of(&body), vec![user_message(text("hi"))]);
 }
 
 async fn non_dict_legacy_falls_back_to_the_nested_format() {
@@ -236,17 +242,10 @@ async fn non_dict_legacy_falls_back_to_the_nested_format() {
 }
 
 async fn non_dict_format_is_dropped() {
-    let mut capabilities = Capabilities::default();
-    let mut body = object(&[
-        ("messages", list(vec![user_message(text("hi"))])),
-        (
-            "output_config",
-            json_object(&[("format", text("not-a-dict"))]),
-        ),
-    ]);
-    apply_structured_output("plain", &mut body, &mut capabilities).await;
+    let mut body = message_body(vec![user_message(text("hi"))], text("not-a-dict"));
+    apply_structured_output("plain", &mut body, &mut Capabilities::default()).await;
     assert!(body.get("output_config").is_none());
-    assert_eq!(content_of(&body, 0), vec![block("hi")]);
+    assert_eq!(messages_of(&body), vec![user_message(text("hi"))]);
 }
 
 fn only_dict_formats_are_returned() {
@@ -256,86 +255,45 @@ fn only_dict_formats_are_returned() {
 }
 
 async fn missing_content_becomes_one_block() {
-    let mut capabilities = Capabilities::default();
-    let mut body = object(&[
-        (
-            "messages",
-            list(vec![json_object(&[("role", text("user"))])]),
-        ),
-        (
-            "output_config",
-            json_object(&[("format", schema_format(type_object()))]),
-        ),
-    ]);
-    apply_structured_output("plain", &mut body, &mut capabilities).await;
+    let mut body = message_body(vec![json_object(&[("role", text("user"))])], type_format());
+    apply_structured_output("plain", &mut body, &mut Capabilities::default()).await;
     assert_eq!(content_of(&body, 0), vec![block(r#"{"type":"object"}"#)]);
 }
 
 async fn invalid_content_leaves_the_message_alone() {
-    let mut capabilities = Capabilities::default();
     for content in [Json::Null, flag(true)] {
-        let message = user_message(content);
-        let mut body = object(&[
-            ("messages", list(vec![message.clone()])),
-            (
-                "output_config",
-                json_object(&[("format", schema_format(type_object()))]),
-            ),
-        ]);
-        apply_structured_output("plain", &mut body, &mut capabilities).await;
-        assert_eq!(messages_of(&body), vec![message]);
+        let mut body = message_body(vec![user_message(content.clone())], type_format());
+        apply_structured_output("plain", &mut body, &mut Capabilities::default()).await;
+        assert_eq!(messages_of(&body), vec![user_message(content)]);
     }
 }
 
 async fn no_user_message_leaves_the_body_alone() {
-    let mut capabilities = Capabilities::default();
-    let mut body = object(&[
-        (
-            "messages",
-            list(vec![json_object(&[("role", text("assistant"))])]),
-        ),
-        (
-            "output_config",
-            json_object(&[("format", schema_format(type_object()))]),
-        ),
-    ]);
-    apply_structured_output("plain", &mut body, &mut capabilities).await;
-    assert_eq!(
-        body,
-        object(&[(
-            "messages",
-            list(vec![json_object(&[("role", text("assistant"))])])
-        )])
-    );
+    let assistant = json_object(&[("role", text("assistant"))]);
+    let mut body = message_body(vec![assistant.clone()], type_format());
+    apply_structured_output("plain", &mut body, &mut Capabilities::default()).await;
+    assert_eq!(body, object(&[("messages", list(vec![assistant]))]));
 }
 
 async fn empty_or_non_list_messages_are_not_inlined() {
-    let mut capabilities = Capabilities::default();
     for messages in [list(Vec::new()), text("messages")] {
         let mut body = object(&[
             ("messages", messages.clone()),
-            (
-                "output_config",
-                json_object(&[("format", schema_format(type_object()))]),
-            ),
+            ("output_config", json_object(&[("format", type_format())])),
         ]);
-        apply_structured_output("plain", &mut body, &mut capabilities).await;
+        apply_structured_output("plain", &mut body, &mut Capabilities::default()).await;
         assert!(body.get("output_config").is_none());
         assert_eq!(body.get("messages"), Some(&messages));
     }
 }
 
 async fn empty_schema_is_not_inlined() {
-    let mut capabilities = Capabilities::default();
-    let mut body = object(&[
-        ("messages", list(vec![user_message(text("hi"))])),
-        (
-            "output_config",
-            json_object(&[("format", schema_format(json_object(&[])))]),
-        ),
-    ]);
-    apply_structured_output("plain", &mut body, &mut capabilities).await;
-    assert_eq!(content_of(&body, 0), vec![block("hi")]);
+    let mut body = message_body(
+        vec![user_message(text("hi"))],
+        schema_format(json_object(&[])),
+    );
+    apply_structured_output("plain", &mut body, &mut Capabilities::default()).await;
+    assert_eq!(messages_of(&body), vec![user_message(text("hi"))]);
 }
 
 fn converter_finds_the_last_user_message() {
@@ -356,7 +314,7 @@ fn converter_finds_the_last_user_message() {
             ("content", list(vec![block(r#"{"type":"object"}"#)]))
         ]))
     );
-    assert_eq!(messages.get(0), Some(&user_message(text("old"))));
+    assert_eq!(messages.first(), Some(&user_message(text("old"))));
 }
 
 fn test_output_config_unsupported_keys() {
@@ -400,18 +358,16 @@ async fn non_config_shapes_pass_through() {
     assert!(capabilities.effort_models.is_empty());
 }
 
-async fn supported_config_keeps_every_key() {
-    let mut capabilities = Capabilities {
-        native: false,
-        output_config: true,
-        effort: false,
-        queries: Vec::new(),
-        effort_models: Vec::new(),
-    };
+async fn strip_keeps_config(capabilities: &mut Capabilities, model: &str) {
     let config = json_object(&[("effort", text("high")), ("format", type_custom())]);
     let mut body = object(&[("output_config", config.clone())]);
-    strip_unsupported_config_keys("config-model", &mut body, &mut capabilities).await;
+    strip_unsupported_config_keys(model, &mut body, capabilities).await;
     assert_eq!(body.get("output_config"), Some(&config));
+}
+
+async fn supported_config_keeps_every_key() {
+    let mut capabilities = Capabilities::with_flag("supports_output_config");
+    strip_keeps_config(&mut capabilities, "config-model").await;
     assert_eq!(
         capabilities.queries,
         vec![Query {
@@ -425,16 +381,12 @@ async fn supported_config_keeps_every_key() {
 
 async fn effort_flag_keeps_every_key() {
     let mut capabilities = Capabilities {
-        native: false,
-        output_config: false,
+        factory_flags: Vec::new(),
         effort: true,
         queries: Vec::new(),
         effort_models: Vec::new(),
     };
-    let config = json_object(&[("effort", text("high")), ("format", type_custom())]);
-    let mut body = object(&[("output_config", config.clone())]);
-    strip_unsupported_config_keys("effort-model", &mut body, &mut capabilities).await;
-    assert_eq!(body.get("output_config"), Some(&config));
+    strip_keeps_config(&mut capabilities, "effort-model").await;
     assert_eq!(capabilities.effort_models, vec!["effort-model".to_owned()]);
 }
 
@@ -503,7 +455,7 @@ fn custom_fields_are_normalized() {
     normalize_tool_custom_field(&mut body);
     let tools = tools_in(&body);
     assert_eq!(
-        tools.get(0),
+        tools.first(),
         Some(&json_object(&[
             ("name", text("t")),
             ("defer_loading", flag(true))
@@ -605,58 +557,32 @@ fn test_schema_custom_types() {
     non_tool_shapes_pass_through();
 }
 
-fn custom_schema() -> Json {
+fn schema_with(kind: &str) -> Json {
+    let typed = json_object(&[("type", text(kind))]);
     json_object(&[
-        ("type", text("custom")),
-        ("items", type_custom()),
-        ("additionalProperties", type_custom()),
+        ("type", text(kind)),
+        ("items", typed.clone()),
+        ("additionalProperties", typed.clone()),
         (
             "properties",
-            json_object(&[("a", type_custom()), ("b", text("skip"))]),
+            json_object(&[("a", typed.clone()), ("b", text("skip"))]),
         ),
         (
             "allOf",
-            list(vec![type_custom(), text("skip"), flag(false)]),
+            list(vec![typed.clone(), text("skip"), flag(false)]),
         ),
-        ("anyOf", list(vec![type_custom()])),
+        ("anyOf", list(vec![typed.clone()])),
         (
             "oneOf",
-            list(vec![json_object(&[
-                ("type", text("custom")),
-                ("items", type_custom()),
-            ])]),
-        ),
-    ])
-}
-
-fn normalized_schema() -> Json {
-    json_object(&[
-        ("type", text("object")),
-        ("items", type_object()),
-        ("additionalProperties", type_object()),
-        (
-            "properties",
-            json_object(&[("a", type_object()), ("b", text("skip"))]),
-        ),
-        (
-            "allOf",
-            list(vec![type_object(), text("skip"), flag(false)]),
-        ),
-        ("anyOf", list(vec![type_object()])),
-        (
-            "oneOf",
-            list(vec![json_object(&[
-                ("type", text("object")),
-                ("items", type_object()),
-            ])]),
+            list(vec![json_object(&[("type", text(kind)), ("items", typed)])]),
         ),
     ])
 }
 
 fn every_schema_edge_is_normalized() {
-    let mut schema = custom_schema();
+    let mut schema = schema_with("custom");
     normalize_schema_custom_types(&mut schema);
-    assert_eq!(schema, normalized_schema());
+    assert_eq!(schema, schema_with("object"));
 }
 
 fn only_the_named_edges_and_string_custom_change() {
@@ -689,7 +615,7 @@ fn wrapper_normalizes_dict_input_schemas() {
     normalize_tool_schema_types(&mut body);
     let tools = tools_in(&body);
     assert_eq!(
-        tools.get(0),
+        tools.first(),
         Some(&json_object(&[
             ("name", text("t")),
             ("input_schema", type_object())
@@ -728,8 +654,8 @@ fn invalid_name_shapes_pass_through() {
     }
 }
 
-fn unnamed_tools() -> Json {
-    list(vec![
+fn named_tool_body() -> Object {
+    let tools = list(vec![
         json_object(&[]),
         json_object(&[("name", Json::Null)]),
         json_object(&[("name", text(""))]),
@@ -740,11 +666,8 @@ fn unnamed_tools() -> Json {
         json_object(&[("name", flag(false))]),
         text("junk"),
         json_object(&[("input_schema", type_custom())]),
-    ])
-}
-
-fn named_tool_body() -> Object {
-    let mut body = object(&[("tools", unnamed_tools())]);
+    ]);
+    let mut body = object(&[("tools", tools)]);
     normalize_tool_schema_types(&mut body);
     ensure_tool_names(&mut body);
     body
@@ -787,16 +710,6 @@ fn non_blank_names_are_retained() {
     );
 }
 
-fn native_capabilities() -> Capabilities {
-    Capabilities {
-        native: true,
-        output_config: false,
-        effort: false,
-        queries: Vec::new(),
-        effort_models: Vec::new(),
-    }
-}
-
 fn assert_native_queries(capabilities: &Capabilities) {
     assert!(
         capabilities
@@ -836,11 +749,10 @@ fn assert_plain_warnings(warnings: &Warnings) {
 fn test_native_output_format_support() {
     let tokio_runtime = runtime();
     let (guard, warnings) = capture_warnings();
-    let mut native = native_capabilities();
+    let mut native = Capabilities::with_flag("supports_native_structured_output");
     tokio_runtime.block_on(async {
-        native_keeps_sibling_keys(&mut native).await;
+        native_restores_the_selected_format(&mut native).await;
         non_dict_or_missing_config_is_replaced(&mut native).await;
-        legacy_dict_wins_for_native(&mut native).await;
     });
     assert_native_queries(&native);
     assert!(warnings.messages().is_empty());
@@ -854,26 +766,30 @@ fn test_native_output_format_support() {
     drop(guard);
 }
 
-async fn native_keeps_sibling_keys(capabilities: &mut Capabilities) {
-    let mut body = object(&[
+async fn native_restores_the_selected_format(capabilities: &mut Capabilities) {
+    let config = json_object(&[("effort", text("high")), ("format", type_format())]);
+    let mut sibling_body = object(&[
         ("messages", list(vec![user_message(text("hi"))])),
+        ("output_config", config.clone()),
+    ]);
+    apply_structured_output("native-model", &mut sibling_body, capabilities).await;
+    assert_eq!(sibling_body.get("output_config"), Some(&config));
+    assert_eq!(messages_of(&sibling_body), vec![user_message(text("hi"))]);
+
+    let legacy = json_object(&[("schema", type_object())]);
+    let mut legacy_body = object(&[
+        ("messages", list(vec![user_message(text("hi"))])),
+        ("output_format", legacy.clone()),
         (
             "output_config",
-            json_object(&[
-                ("effort", text("high")),
-                ("format", schema_format(type_object())),
-            ]),
+            json_object(&[("format", schema_format(string_schema()))]),
         ),
     ]);
-    apply_structured_output("native-model", &mut body, capabilities).await;
+    apply_structured_output("native-model", &mut legacy_body, capabilities).await;
     assert_eq!(
-        body.get("output_config"),
-        Some(&json_object(&[
-            ("effort", text("high")),
-            ("format", schema_format(type_object())),
-        ]))
+        legacy_body.get("output_config"),
+        Some(&json_object(&[("format", legacy)]))
     );
-    assert_eq!(content_of(&body, 0), vec![block("hi")]);
 }
 
 async fn non_dict_or_missing_config_is_replaced(capabilities: &mut Capabilities) {
@@ -894,33 +810,8 @@ async fn non_dict_or_missing_config_is_replaced(capabilities: &mut Capabilities)
     }
 }
 
-async fn legacy_dict_wins_for_native(capabilities: &mut Capabilities) {
-    let mut body = object(&[
-        ("messages", list(vec![user_message(text("hi"))])),
-        ("output_format", json_object(&[("schema", type_object())])),
-        (
-            "output_config",
-            json_object(&[("format", schema_format(string_schema()))]),
-        ),
-    ]);
-    apply_structured_output("native-model", &mut body, capabilities).await;
-    assert_eq!(
-        body.get("output_config"),
-        Some(&json_object(&[(
-            "format",
-            json_object(&[("schema", type_object())])
-        )]))
-    );
-}
-
 async fn plain_inlines_and_warns(capabilities: &mut Capabilities) {
-    let mut body = object(&[
-        ("messages", list(vec![user_message(text("hi"))])),
-        (
-            "output_config",
-            json_object(&[("format", schema_format(type_object()))]),
-        ),
-    ]);
+    let mut body = message_body(vec![user_message(text("hi"))], type_format());
     apply_structured_output("plain", &mut body, capabilities).await;
     assert_eq!(
         content_of(&body, 0),
@@ -929,25 +820,14 @@ async fn plain_inlines_and_warns(capabilities: &mut Capabilities) {
 }
 
 async fn plain_warns_even_when_nothing_is_appended(capabilities: &mut Capabilities) {
-    for entries in [
-        vec![(
-            "output_config",
-            json_object(&[("format", schema_format(type_object()))]),
-        )],
-        vec![
-            (
-                "messages",
-                list(vec![json_object(&[("role", text("assistant"))])]),
-            ),
-            (
-                "output_config",
-                json_object(&[("format", schema_format(type_object()))]),
-            ),
-        ],
-    ] {
-        let mut body = object(&entries);
-        apply_structured_output("plain", &mut body, capabilities).await;
-    }
+    let mut without_messages =
+        object(&[("output_config", json_object(&[("format", type_format())]))]);
+    apply_structured_output("plain", &mut without_messages, capabilities).await;
+    let mut without_user = message_body(
+        vec![json_object(&[("role", text("assistant"))])],
+        type_format(),
+    );
+    apply_structured_output("plain", &mut without_user, capabilities).await;
 }
 
 async fn no_dict_format_asks_nothing(capabilities: &mut Capabilities) {
