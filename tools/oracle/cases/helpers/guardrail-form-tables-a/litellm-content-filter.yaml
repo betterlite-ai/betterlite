@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-litellm-content-filter
+call:
+  b6561:
+    provider: litellm_content_filter
+env: {}
+compare:
+  ignore: []

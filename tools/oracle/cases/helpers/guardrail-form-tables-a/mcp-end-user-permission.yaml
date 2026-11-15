@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-mcp-end-user-permission
+call:
+  b6561:
+    provider: mcp_end_user_permission
+env: {}
+compare:
+  ignore: []

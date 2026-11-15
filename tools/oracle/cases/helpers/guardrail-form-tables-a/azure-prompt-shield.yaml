@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-azure-prompt-shield
+call:
+  b6561:
+    provider: azure/prompt_shield
+env: {}
+compare:
+  ignore: []

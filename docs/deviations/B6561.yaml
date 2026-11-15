@@ -1,0 +1,9 @@
+task: B6561
+deviations:
+  - what: Provider settings are written as data tables and no longer read off the classes.
+    why: Rust has no annotation reflection. Each table is checked against LiteLLM's real class by an oracle case, so a drift shows up as a failing case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1976-L2003
+kept_bugs:
+  - what: A tuple-annotated field projects as type "string", so decision_model's required checks field renders as a text box and the nested check fields never reach the form.
+    why: LiteLLM's annotation mapper knows list, dict, Literal and the scalar types only. A working dashboard reads the string type LiteLLM sends for this field, so the table keeps it as FormShape::Other.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/decision_model.py#L33

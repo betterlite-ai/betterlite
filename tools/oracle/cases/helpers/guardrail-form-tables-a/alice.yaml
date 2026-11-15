@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-alice
+call:
+  b6561:
+    provider: alice
+env: {}
+compare:
+  ignore: []
