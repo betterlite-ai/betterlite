@@ -1,17 +1,17 @@
 import asyncio
 import os
 import time
+from collections.abc import Awaitable, Callable
 
 from litellm._logging import verbose_proxy_logger
 from litellm.proxy import utils as proxy_utils
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.db.routing_prisma_wrapper import RoutingPrismaWrapper
-from litellm.proxy.utils import _StaleReadEngine
 from pydantic import JsonValue as Json
 
 from .client import FakeClient, wrapper_for
 from .contracts import DATABASE_URL_ENV, Scenario, Target
-from .fakes import FakeRouting, FakeWrapper, Recorder, ScriptedTime
+from .fakes import FakeRouting, FakeWrapper, Recorder, ScriptedTime, Stale
 
 
 def stale_for(
@@ -20,11 +20,11 @@ def stale_for(
     reader: FakeWrapper,
     *,
     routing: bool,
-) -> _StaleReadEngine | None:
+) -> Stale | None:
     if stale is None:
         return None
     wrapper = wrapper_for(stale["target"], writer, reader, routing=routing)
-    return _StaleReadEngine(wrapper=wrapper, generation=stale["generation"])
+    return Stale(wrapper, stale["generation"])
 
 
 def seconds(value: int | None) -> float | None:
@@ -41,13 +41,14 @@ def set_database_url(url: str | None) -> None:
 
 
 async def attempt(
-    client: FakeClient,
+    callback: Callable[..., Awaitable[bool]],
     entry: Scenario,
-    stale: _StaleReadEngine | None,
+    stale: Stale | None,
 ) -> bool:
     request = entry["request"]
     set_database_url(entry["database_url"])
-    return await client.attempt_db_reconnect(
+    # the observation's class is private to LiteLLM, so the stand-in passes through a callable
+    return await callback(
         reason=request["reason"],
         force=request["force"],
         timeout_seconds=seconds(request["timeout_ms"]),
@@ -78,7 +79,7 @@ def scenario(entry: Scenario) -> Json:
     object.__setattr__(proxy_utils, "verbose_proxy_logger", Recorder(effects))
     object.__setattr__(proxy_utils, "time", ScriptedTime(entry["clock"]))
     try:
-        result = asyncio.run(attempt(client, entry, stale))
+        result = asyncio.run(attempt(client.attempt_db_reconnect, entry, stale))
     finally:
         object.__setattr__(proxy_utils, "verbose_proxy_logger", verbose_proxy_logger)
         object.__setattr__(proxy_utils, "time", time)
