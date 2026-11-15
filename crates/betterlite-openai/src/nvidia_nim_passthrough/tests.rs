@@ -1,7 +1,15 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "json! fixtures state the passthrough bodies and litellm params"
+    )
+)]
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::{Value, json};
 
 use super::{
@@ -9,7 +17,7 @@ use super::{
     version_deduplicated_root,
 };
 use crate::openai_base_config::{Headers, Object};
-use crate::passthrough::transformation::BasePassthroughConfig;
+use crate::passthrough::transformation::BasePassthroughConfig as _;
 use crate::passthrough::transformation::types::{
     PassthroughError, PassthroughLogging, PassthroughTarget, PassthroughUrlRequest, RelayCallType,
     RelayedBody, RelayedResponse,
@@ -18,7 +26,9 @@ use crate::passthrough::transformation::types::{
 fn object(value: Value) -> Object {
     match value {
         Value::Object(fields) => fields,
-        _ => panic!("the fixture is not an object"),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            panic!("the fixture is not an object")
+        }
     }
 }
 
@@ -30,7 +40,7 @@ fn target(model: &'static str) -> PassthroughTarget<'static> {
     }
 }
 
-fn params(model_group: Value) -> Object {
+fn params(model_group: &Value) -> Object {
     object(json!({"litellm_metadata": {"model_group": model_group}}))
 }
 
@@ -122,11 +132,11 @@ fn get_api_key_prefers_the_argument() {
     assert_eq!(
         config
             .get_api_key(Some(&argument))
-            .map(|key| key.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("argument-key")
     );
     assert_eq!(
-        config.get_api_key(None).map(|key| key.expose_secret()),
+        config.get_api_key(None).map(ExposeSecret::expose_secret),
         Some("env-key")
     );
 }
@@ -180,7 +190,7 @@ fn is_streaming_request_reads_the_stream_flag(#[case] request_data: Value, #[cas
 #[test]
 fn get_complete_url_joins_the_root_and_the_native_endpoint() {
     let config = NvidiaNimPassthroughConfig::default();
-    let litellm_params = params(json!("group"));
+    let litellm_params = params(&json!("group"));
     let request = url_request(
         Some("https://h/v1"),
         "meta/llama",
@@ -195,7 +205,7 @@ fn get_complete_url_joins_the_root_and_the_native_endpoint() {
 #[test]
 fn get_complete_url_strips_the_model_and_model_group_segments() {
     let config = NvidiaNimPassthroughConfig::default();
-    let litellm_params = params(json!("group/model"));
+    let litellm_params = params(&json!("group/model"));
     let model_request = url_request(
         Some("https://h"),
         "group/model",

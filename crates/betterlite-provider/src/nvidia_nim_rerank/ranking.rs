@@ -20,19 +20,10 @@ const RANKING_SUFFIX: &str = "/ranking";
 const V1_SUFFIX: &str = "/v1";
 
 // LiteLLM keeps top_n on the per-request config instance and strips it from the /v1/ranking body
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct NvidiaNimRankingConfig {
     pub retrieval: NvidiaNimRerankConfig,
     pub top_n: Mutex<Option<i64>>,
-}
-
-impl Default for NvidiaNimRankingConfig {
-    fn default() -> Self {
-        Self {
-            retrieval: NvidiaNimRerankConfig::default(),
-            top_n: Mutex::new(None),
-        }
-    }
 }
 
 impl BaseRerankConfig for NvidiaNimRankingConfig {

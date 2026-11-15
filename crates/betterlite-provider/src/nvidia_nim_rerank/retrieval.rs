@@ -46,13 +46,13 @@ impl NvidiaNimRerankConfig {
         env_api_key: Option<&SecretString>,
         global_api_key: Option<&SecretString>,
     ) -> Result<Headers, NvidiaNimRerankError> {
-        let Some(api_key) = api_key.or(env_api_key).or(global_api_key) else {
+        let Some(resolved_key) = api_key.or(env_api_key).or(global_api_key) else {
             return Err(NvidiaNimRerankError::MissingApiKey);
         };
         let mut merged = Headers::from([
             (
                 AUTHORIZATION.to_owned(),
-                format!("Bearer {}", api_key.expose_secret()),
+                format!("Bearer {}", resolved_key.expose_secret()),
             ),
             (ACCEPT.to_owned(), JSON_CONTENT_TYPE.to_owned()),
             (CONTENT_TYPE.to_owned(), JSON_CONTENT_TYPE.to_owned()),

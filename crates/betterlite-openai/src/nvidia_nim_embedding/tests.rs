@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "json! fixtures state the embedding parameters LiteLLM maps"
+    )
+)]
 
 use serde_json::{Value, json};
 
@@ -8,13 +16,15 @@ use crate::openai_base_config::Object;
 fn object(value: Value) -> Object {
     match value {
         Value::Object(fields) => fields,
-        _ => panic!("the fixture is not an object"),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            panic!("the fixture is not an object")
+        }
     }
 }
 
-fn mapped(non_default: Value, optional: Value, kwargs: Option<Value>) -> Object {
-    let kwargs = kwargs.map(object);
-    map_params(&object(non_default), object(optional), kwargs.as_ref()).unwrap()
+fn mapped(non_default: Value, optional: Value, extra: Option<Value>) -> Object {
+    let extra = extra.map(object);
+    map_params(&object(non_default), object(optional), extra.as_ref()).unwrap()
 }
 
 #[test]

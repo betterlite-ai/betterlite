@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "json! fixtures state the provider JSON LiteLLM hands the chat mapper"
+    )
+)]
 
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -9,7 +17,9 @@ use crate::openai_base_config::Object;
 fn object(value: Value) -> Object {
     match value {
         Value::Object(fields) => fields,
-        _ => panic!("the fixture is not an object"),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            panic!("the fixture is not an object")
+        }
     }
 }
 

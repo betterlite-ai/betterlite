@@ -48,7 +48,7 @@ impl NvidiaNimPassthroughConfig {
     pub fn get_api_base<'base>(&'base self, api_base: Option<&'base str>) -> Option<&'base str> {
         api_base
             .filter(|base| !base.is_empty())
-            .or(self.api_base_env.as_deref().filter(|base| !base.is_empty()))
+            .or_else(|| self.api_base_env.as_deref().filter(|base| !base.is_empty()))
     }
 
     #[must_use]
@@ -58,22 +58,23 @@ impl NvidiaNimPassthroughConfig {
     ) -> Option<&'key SecretString> {
         api_key
             .filter(|key| !key.expose_secret().is_empty())
-            .or(self
-                .api_key_env
-                .as_ref()
-                .filter(|key| !key.expose_secret().is_empty()))
+            .or_else(|| {
+                self.api_key_env
+                    .as_ref()
+                    .filter(|key| !key.expose_secret().is_empty())
+            })
     }
 }
 
 #[must_use]
 pub fn validate_environment(headers: Headers, api_key: Option<&SecretString>) -> Headers {
-    let Some(api_key) = api_key else {
+    let Some(key) = api_key else {
         return headers;
     };
     let mut merged = headers;
     merged.insert(
         AUTHORIZATION.to_owned(),
-        format!("Bearer {}", api_key.expose_secret()),
+        format!("Bearer {}", key.expose_secret()),
     );
     merged
 }

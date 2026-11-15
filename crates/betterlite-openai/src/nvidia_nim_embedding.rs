@@ -17,7 +17,6 @@ pub enum NvidiaNimEmbeddingError {
     ExtraBodyNotObject,
 }
 
-#[must_use]
 pub fn map_params(
     non_default_params: &Object,
     mut optional_params: Object,
@@ -33,9 +32,9 @@ pub fn map_params(
             optional_params.insert(name.clone(), value.clone());
         }
     }
-    if let Some(kwargs) = kwargs {
+    if let Some(extra) = kwargs {
         let body = extra_body_object(&mut optional_params)?;
-        for (name, value) in kwargs {
+        for (name, value) in extra {
             body.insert(name.clone(), value.clone());
         }
     }
