@@ -1,0 +1,20 @@
+kind: helper
+name: openai-realtime-http-seed
+call:
+  openai_realtime:
+    kind: http
+    api_key: null
+    model: gpt-realtime
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 4096
+    openai_api_base: "https://env.test/base"
+    openai_api_key: null
+    queries: []
+    failures: []
+    http_setups:
+      - {api_base: null, api_key: null, litellm_api_base: null, litellm_api_key: null, litellm_openai_key: null, api_version: null, headers: {}}
+      - {api_base: "https://explicit.test/v1/", api_key: sk-explicit, litellm_api_base: null, litellm_api_key: null, litellm_openai_key: null, api_version: null, headers: {X-Test: "1"}}
+env:
+  OPENAI_API_BASE: "https://env.test/base"
+compare: {ignore: []}
