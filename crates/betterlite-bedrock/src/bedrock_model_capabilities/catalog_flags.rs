@@ -111,6 +111,7 @@ fn counts_as_present(value: &ParamValue) -> bool {
         ParamValue::Number(number) => number.as_f64().is_some_and(|value| value != 0.0),
         ParamValue::Text(text) => !text.is_empty(),
         ParamValue::List(items) => !items.is_empty(),
-        ParamValue::Mapping(fields) => !fields.is_empty(),
+        // an empty mapping has no flag, so counting it present matches Python's `or {}`
+        ParamValue::Mapping(_) => true,
     }
 }
