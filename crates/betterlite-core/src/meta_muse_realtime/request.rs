@@ -251,14 +251,14 @@ where
         match frame.get("sessionId") {
             None | Some(Json::Null) => self.transformer_events(&frame),
             Some(Json::Text(session_id)) => {
-                let session_id = session_id.trim();
-                if session_id.is_empty() {
+                let trimmed = session_id.trim();
+                if trimmed.is_empty() {
                     return Err(MuseProtocolError::InvalidHandshake);
                 }
                 let Some(config) = self.session.as_ref() else {
                     return Err(MuseProtocolError::SessionNotConfigured);
                 };
-                let session = config.openai_session(session_id);
+                let session = config.openai_session(trimmed);
                 let event_id = self.ids.next_event_id();
                 event_json(&MuseEvent::Created(created_event(event_id, &session)))
             }

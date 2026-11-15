@@ -137,12 +137,12 @@ impl MuseEventTransformer {
         Ids: EventIdSource + ?Sized,
     {
         let turn_id = required_turn_id(frame, "speechStart")?;
-        let turn = turn(&mut self.turns, &turn_id);
-        if !turn.stopped {
-            turn.started = true;
-            self.active_turn_id = Some(turn.item_id.clone());
+        let state = turn(&mut self.turns, &turn_id);
+        if !state.stopped {
+            state.started = true;
+            self.active_turn_id = Some(state.item_id.clone());
         }
-        Ok(turn.drain(ids, &mut self.unbilled_seconds))
+        Ok(state.drain(ids, &mut self.unbilled_seconds))
     }
 
     pub(super) fn transcript<Ids>(
@@ -164,15 +164,15 @@ impl MuseEventTransformer {
             return Ok(Vec::new());
         }
         let turn_id = transcript_turn_id(frame, &mut self.active_turn_id, mode)?;
-        let turn = turn(&mut self.turns, &turn_id);
+        let state = turn(&mut self.turns, &turn_id);
         if matches!(frame.get("final"), Some(Json::Bool(true))) {
-            finish(turn, text);
-            release_active(&mut self.active_turn_id, turn);
+            finish(state, text);
+            release_active(&mut self.active_turn_id, state);
         }
-        if turn.final_text.is_none() {
-            turn.latest_partial = Some(text.clone());
+        if state.final_text.is_none() {
+            state.latest_partial = Some(text.clone());
         }
-        Ok(turn.drain(ids, &mut self.unbilled_seconds))
+        Ok(state.drain(ids, &mut self.unbilled_seconds))
     }
 
     pub(super) fn speech_end<Ids>(
@@ -184,9 +184,9 @@ impl MuseEventTransformer {
         Ids: EventIdSource + ?Sized,
     {
         let turn_id = required_turn_id(frame, "speechEnd")?;
-        let turn = turn(&mut self.turns, &turn_id);
-        turn.stopped = true;
-        Ok(turn.drain(ids, &mut self.unbilled_seconds))
+        let state = turn(&mut self.turns, &turn_id);
+        state.stopped = true;
+        Ok(state.drain(ids, &mut self.unbilled_seconds))
     }
 
     pub(super) fn speech_complete<Ids>(
@@ -203,10 +203,10 @@ impl MuseEventTransformer {
             });
         };
         let turn_id = required_turn_id(frame, "speechComplete")?;
-        let turn = turn(&mut self.turns, &turn_id);
-        finish(turn, text);
-        release_active(&mut self.active_turn_id, turn);
-        Ok(turn.drain(ids, &mut self.unbilled_seconds))
+        let state = turn(&mut self.turns, &turn_id);
+        finish(state, text);
+        release_active(&mut self.active_turn_id, state);
+        Ok(state.drain(ids, &mut self.unbilled_seconds))
     }
 }
 
