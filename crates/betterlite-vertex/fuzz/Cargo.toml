@@ -22,6 +22,7 @@ indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
+uuid.workspace = true
 
 [[bin]]
 name = "cache_created"
@@ -59,8 +60,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gemma_reply"
+path = "fuzz_targets/gemma_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "generate_content"
 path = "fuzz_targets/generate_content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "google_count"
+path = "fuzz_targets/google_count.rs"
 test = false
 doc = false
 bench = false
@@ -150,6 +165,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_batch_payload"
+path = "fuzz_targets/vertex_batch_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_batch_records"
 path = "fuzz_targets/vertex_batch_records.rs"
 test = false
@@ -159,6 +181,13 @@ bench = false
 [[bin]]
 name = "vertex_batch_rows"
 path = "fuzz_targets/vertex_batch_rows.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_embedding"
+path = "fuzz_targets/vertex_embedding.rs"
 test = false
 doc = false
 bench = false
