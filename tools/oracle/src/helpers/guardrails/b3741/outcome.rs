@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::agent_365_tokens::Agent365Guardrail;
@@ -123,9 +123,12 @@ async fn run_exchange(
 }
 
 fn ttl_seconds(expires_at: SystemTime) -> Result<u64, Box<HelperError>> {
-    let start = UNIX_EPOCH + Duration::from_secs(FIXED_NOW_SECONDS);
-    let lifetime = expires_at.duration_since(start).or_value_error()?;
-    Ok(lifetime.as_secs())
+    let since_epoch = expires_at.duration_since(UNIX_EPOCH).or_value_error()?;
+    since_epoch
+        .as_secs()
+        .checked_sub(FIXED_NOW_SECONDS)
+        .ok_or("a cached Agent 365 token expires before the fixed helper clock")
+        .or_value_error()
 }
 
 fn cache_entries(guardrail: &Agent365Guardrail) -> Result<Vec<Value>, Box<HelperError>> {
@@ -141,6 +144,7 @@ fn cache_entries(guardrail: &Agent365Guardrail) -> Result<Vec<Value>, Box<Helper
             ttl_seconds(entry.expires_at)?
         ]));
     }
+    drop(cache);
     Ok(entries)
 }
 

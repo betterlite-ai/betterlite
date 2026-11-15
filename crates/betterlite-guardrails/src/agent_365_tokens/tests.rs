@@ -403,6 +403,23 @@ fn test_throttled_and_server_errors() -> ScenarioFuture {
     })
 }
 
+fn test_lifetime_past_the_clock_range_is_refused() -> ScenarioFuture {
+    Box::pin(async {
+        let poster = Arc::new(FakePoster::default());
+        poster.queue(vec![reply(
+            200,
+            r#"{"access_token":"tok-1","expires_in":1e19}"#,
+        )]);
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
+
+        assert!(matches!(
+            token_error(guardrail.get_obo_token(ASSERTION).await),
+            Agent365TokenError::TokenExpiry
+        ));
+        assert!(cached_tokens(&guardrail).is_empty());
+    })
+}
+
 fn malformed_variant(error: &Agent365TokenError) -> &'static str {
     match error {
         Agent365TokenError::NonJsonBody { .. } => "non_json_body",
@@ -984,6 +1001,7 @@ fn test_invalid_timeouts_are_rejected() -> ScenarioFuture {
 #[case::constants(test_constants)]
 #[case::wiring(test_wiring)]
 #[case::invalid_timeouts_are_rejected(test_invalid_timeouts_are_rejected)]
+#[case::lifetime_past_the_clock_range_is_refused(test_lifetime_past_the_clock_range_is_refused)]
 #[tokio::test]
 async fn agent_365_token_behaviors(#[case] scenario: Scenario) {
     scenario().await;

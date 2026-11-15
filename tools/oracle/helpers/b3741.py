@@ -150,7 +150,8 @@ class Probe(Agent365Guardrail, metaclass=_ProbeMeta):
 def capture_request(request: httpx.Request) -> dict[str, JsonValue]:
     body = request.content.decode()
     parsed = urllib.parse.parse_qs(body, keep_blank_values=True)
-    form = JSON.validate_python({name: values[0] for name, values in parsed.items()})
+    fields: dict[str, str] = {name: values[0] for name, values in parsed.items()}
+    form = JSON.validate_python(fields)
     return {"url": str(request.url), "content_type": request.headers["content-type"], "form": form}
 
 
@@ -162,10 +163,11 @@ def make_guardrail() -> Probe:
 
 
 def exchange_outcome(error: Agent365TokenExchangeError) -> dict[str, JsonValue]:
+    codes: list[int] = list(error.aadsts_codes)
     return {
         "kind": "token", "error": "exchange", "status_code": error.status_code,
         "error_code": error.error_code, "description": error.description,
-        "aadsts_codes": JSON.validate_python([int(code) for code in error.aadsts_codes]),
+        "aadsts_codes": JSON.validate_python(codes),
         "gateway_owned": error.gateway_owned,
     }
 
@@ -257,7 +259,10 @@ def payload_request(args: PayloadAssembly) -> RequestPayload:
     if session is not None:
         details: LoggingDetails = logging_obj
         details.model_call_details["mcp_tool_call_metadata"] = {"mcp_session_id": session}
-    data: RequestPayload = {"litellm_call_id": args["litellm_call_id"], "litellm_logging_obj": logging_obj}
+    data: RequestPayload = {
+        "litellm_call_id": args["litellm_call_id"],
+        "litellm_logging_obj": logging_obj,
+    }
     if args["metadata"] is not None:
         data["metadata"] = args["metadata"]
     if args["litellm_metadata"] is not None:

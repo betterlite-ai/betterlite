@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -17,7 +18,7 @@ use super::{FIXED_NOW_SECONDS, ScriptedReply};
 use crate::helpers::{HelperError, OrHelperError as _};
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct Recorded {
+pub(super) struct Recorded {
     url: String,
     content_type: Option<String>,
     form: BTreeMap<String, String>,
@@ -25,7 +26,7 @@ struct Recorded {
 
 pub(super) struct ScriptedReplies {
     replies: Vec<PostReply>,
-    served: Mutex<usize>,
+    served: AtomicUsize,
     repeat_last_reply: bool,
     requests: Mutex<Vec<Recorded>>,
 }
@@ -46,22 +47,19 @@ impl ScriptedReplies {
         }
         Ok(Self {
             replies: prepared,
-            served: Mutex::new(0),
+            served: AtomicUsize::new(0),
             repeat_last_reply,
             requests: Mutex::new(Vec::new()),
         })
     }
 
     fn next_reply(&self) -> Option<PostReply> {
-        let mut served = self.served.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(reply) = self.replies.get(*served) {
-            *served = served.saturating_add(1);
-            return Some(reply.clone());
+        let index = self.served.fetch_add(1, Ordering::Relaxed);
+        match self.replies.get(index) {
+            Some(reply) => Some(reply.clone()),
+            None if self.repeat_last_reply => self.replies.last().cloned(),
+            None => None,
         }
-        if self.repeat_last_reply {
-            return self.replies.last().cloned();
-        }
-        None
     }
 
     fn record(&self, url: &str, headers: &HeaderMap, body: &[u8]) {
@@ -120,7 +118,10 @@ pub(super) fn guardrail(
         event_hook: None,
         default_on: false,
     };
-    let now = UNIX_EPOCH + Duration::from_secs(FIXED_NOW_SECONDS);
+    let now = UNIX_EPOCH
+        .checked_add(Duration::from_secs(FIXED_NOW_SECONDS))
+        .ok_or("the fixed helper clock is past SystemTime's range")
+        .or_config_error()?;
     let clock: Arc<dyn Fn() -> SystemTime + Send + Sync> = Arc::new(move || now);
     Agent365Guardrail::new(settings, poster, true, clock).or_config_error()
 }
