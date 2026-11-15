@@ -94,6 +94,10 @@ fn streaming_params_from_litellm_params_rejects_wrong_types() {
             name: "streaming_sampling_rate"
         })
     ));
+}
+
+#[test]
+fn streaming_params_from_litellm_params_rejects_wrong_flag_and_optional_params() {
     let wrong_flag = params(
         r#"{
             "guardrail": "crowdstrike_aidr",

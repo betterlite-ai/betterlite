@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
@@ -41,7 +42,7 @@ fn handler() -> CrowdStrikeAidr {
         Dependencies {
             client: reqwest::Client::default(),
             sink: Box::new(DiscardSink),
-            now: std::time::SystemTime::now,
+            now: SystemTime::now,
         },
     )
     .expect("the constructor gets both secrets")

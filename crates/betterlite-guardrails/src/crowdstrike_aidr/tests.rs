@@ -3,12 +3,14 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::future::IntoFuture as _;
+use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use axum::Router;
 use axum::body::Bytes;
+use axum::http::HeaderMap;
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
@@ -18,6 +20,7 @@ use secrecy::ExposeSecret as _;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use super::api::call_guard;
 use super::error::CrowdStrikeError;
@@ -86,15 +89,15 @@ fn payload() -> GuardPayload {
 async fn serve(
     status: StatusCode,
     body: &'static str,
-) -> (String, Arc<Mutex<Vec<u8>>>, JoinSet<std::io::Result<()>>) {
+) -> (String, Arc<Mutex<Vec<u8>>>, JoinSet<io::Result<()>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let captured = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&captured);
     let answer = move |bytes: Bytes| {
-        let sink = Arc::clone(&sink);
+        let reply_sink = Arc::clone(&sink);
         async move {
-            *sink.lock().unwrap() = bytes.to_vec();
+            *reply_sink.lock().unwrap() = bytes.to_vec();
             (status, body)
         }
     };
@@ -235,7 +238,7 @@ fn update_in_memory_litellm_params() {
     assert_eq!(guardrail.settings.api_key.expose_secret(), "new-key");
     assert_eq!(guardrail.settings.api_base, "https://new.test");
     assert!(!guardrail.settings.fail_on_error);
-    assert_eq!(guardrail.settings.timeout, Some(2.5));
+    assert_eq!(guardrail.settings.timeout, Some(2.5_f64));
     assert!(guardrail.settings.streaming.buffer_release_on_scan);
     assert_eq!(guardrail.settings.streaming.sampling_rate, 4);
     let defaults: LitellmParams =
@@ -313,7 +316,7 @@ async fn _call_crowdstrike_aidr_guard_success() {
         .expect("a 200 with a parsable result succeeds");
     assert_eq!(result.transformed, Some(false));
     assert_eq!(
-        result.detectors.as_ref().and_then(|d| d.get("p")),
+        result.detectors.as_ref().and_then(|found| found.get("p")),
         Some(&GuardrailValue::SignedInteger(1))
     );
 }
@@ -327,10 +330,10 @@ async fn _call_crowdstrike_aidr_guard_blocked() {
         .await
         .expect_err("a blocked verdict raises");
     assert!(matches!(
-        error,
+        &error,
         CrowdStrikeError::Blocked {
-            guardrail_name: Some(ref name)
-        } if name == "cs-aidr"
+            guardrail_name: Some(name)
+        } if name.as_str() == "cs-aidr"
     ));
     assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -403,15 +406,15 @@ async fn _call_crowdstrike_aidr_guard_sends_the_bearer_header() {
     let base = format!("http://{}", listener.local_addr().unwrap());
     let authorization = Arc::new(Mutex::new(String::new()));
     let sink = Arc::clone(&authorization);
-    let answer = move |headers: axum::http::HeaderMap| {
-        let sink = Arc::clone(&sink);
+    let answer = move |headers: HeaderMap| {
+        let header_sink = Arc::clone(&sink);
         async move {
             let value = headers
                 .get("authorization")
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or_default()
                 .to_owned();
-            *sink.lock().unwrap() = value;
+            *header_sink.lock().unwrap() = value;
             (StatusCode::OK, r#"{"result": {}}"#)
         }
     };
@@ -434,11 +437,12 @@ async fn serve_raw(reply: Vec<u8>) -> (String, JoinSet<()>) {
     let mut server = JoinSet::new();
     server.spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
-        socket.read(&mut [0_u8; 8192]).await.unwrap();
+        let consumed = socket.read(&mut [0_u8; 8192]).await.unwrap();
+        assert!(consumed > 0);
         socket.write_all(&reply).await.unwrap();
         socket.shutdown().await.unwrap();
         let mut rest = Vec::new();
-        socket.read_to_end(&mut rest).await.ok();
+        let _unread = socket.read_to_end(&mut rest).await;
     });
     (base, server)
 }
@@ -454,7 +458,8 @@ fn padded_reply(total: usize) -> Vec<u8> {
 
 fn push_stream_chunk(reply: &mut Vec<u8>) {
     reply.extend_from_slice(b"61A80\r\n");
-    reply.resize(reply.len() + 400_000, b' ');
+    let padded = reply.len().saturating_add(400_000);
+    reply.resize(padded, b' ');
     reply.extend_from_slice(b"\r\n");
 }
 
@@ -507,11 +512,12 @@ async fn _call_crowdstrike_aidr_guard_reports_a_timeout() {
     let mut server = JoinSet::new();
     server.spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
-        socket.read(&mut [0_u8; 8192]).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        let consumed = socket.read(&mut [0_u8; 8192]).await.unwrap();
+        assert!(consumed > 0);
+        sleep(Duration::from_secs(60)).await;
     });
     let mut guardrail = handler_for(&base, None);
-    guardrail.settings.timeout = Some(0.2);
+    guardrail.settings.timeout = Some(0.2_f64);
     let error = call_guard(&guardrail, &payload(), "test")
         .await
         .expect_err("a reply that never comes times out");
