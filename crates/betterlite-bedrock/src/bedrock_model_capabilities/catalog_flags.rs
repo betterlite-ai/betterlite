@@ -108,7 +108,7 @@ fn counts_as_present(value: &ParamValue) -> bool {
     match value {
         ParamValue::Null => false,
         ParamValue::Bool(flag) => *flag,
-        ParamValue::Number(number) => number.as_f64().is_some_and(|value| value != 0.0),
+        ParamValue::Number(number) => number.as_f64().is_some_and(|as_float| as_float != 0.0_f64),
         ParamValue::Text(text) => !text.is_empty(),
         ParamValue::List(items) => !items.is_empty(),
         // an empty mapping has no flag, so counting it present matches Python's `or {}`

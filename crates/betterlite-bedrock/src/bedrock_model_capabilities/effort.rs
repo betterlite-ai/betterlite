@@ -104,7 +104,7 @@ where
     packaged_effort(ceiling)
 }
 
-fn packaged_effort(ceiling: ReasoningEffort) -> Option<Effort> {
+const fn packaged_effort(ceiling: ReasoningEffort) -> Option<Effort> {
     match ceiling {
         ReasoningEffort::Low => Some(Effort::Low),
         ReasoningEffort::Medium => Some(Effort::Medium),

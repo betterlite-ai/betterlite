@@ -67,9 +67,9 @@ fn strip_version_suffix(model: &str) -> Option<String> {
     {
         return None;
     }
-    if let Some(revision) = revision
-        && (revision.is_empty()
-            || !revision
+    if let Some(digits) = revision
+        && (digits.is_empty()
+            || !digits
                 .chars()
                 .all(|value| get_general_category(value) == GeneralCategory::DecimalNumber))
     {
