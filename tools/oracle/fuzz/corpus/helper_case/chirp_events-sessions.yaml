@@ -1,0 +1,11 @@
+kind: helper
+name: chirp-events-sessions-seed
+call:
+  chirp_events:
+    function: sessions
+    expected_model: chirp_2
+    payloads:
+      - '{"type":"session.update","session":{"type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":24000}}}}}'
+      - '{"type":"session.update","session":{"type":"translation"}}'
+env: {}
+compare: {ignore: []}
