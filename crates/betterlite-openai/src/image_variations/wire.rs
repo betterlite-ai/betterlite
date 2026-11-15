@@ -18,7 +18,7 @@ use super::call::PreparedImageVariation;
 use super::error::ImageVariationSource;
 
 // the SDK's create_variation body writes these keywords in this order; the rest arrive through extra_body
-const FORM_PARAMS: [&'static str; 5] = ["model", "n", "response_format", "size", "user"];
+const FORM_PARAMS: [&str; 5] = ["model", "n", "response_format", "size", "user"];
 
 pub fn outbound_request(
     prepared: &PreparedImageVariation,
@@ -120,7 +120,7 @@ fn json_value(value: &Json) -> JsonValue {
         Json::Object(fields) => JsonValue::Object(
             fields
                 .iter()
-                .map(|(name, value)| (name.clone(), json_value(value)))
+                .map(|(name, item)| (name.clone(), json_value(item)))
                 .collect(),
         ),
     }
@@ -137,10 +137,16 @@ fn form_part(field: MultipartField) -> MultipartPart {
 
 fn image_part(prepared: &PreparedImageVariation) -> MultipartPart {
     let image = &prepared.data.image;
-    let name = image
+    let supplied = image
         .filename
         .clone()
         .unwrap_or_else(|| String::from("upload"));
+    // httpx keeps the last path component of a file object's name, and a tuple's filename as given
+    let name = if image.content_type.is_some() {
+        supplied
+    } else {
+        uploaded_name(&supplied)
+    };
     // httpx guesses a missing part type through Python's mimetypes table, and writes no name or type for ""
     let content_type = image
         .content_type
@@ -152,6 +158,16 @@ fn image_part(prepared: &PreparedImageVariation) -> MultipartPart {
         content_type,
         data: image.content.clone(),
     }
+}
+
+// Python's Path(value.name).name: the last component, ignoring trailing slashes and "." components
+fn uploaded_name(file_name: &str) -> String {
+    file_name
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .next_back()
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn guessed_content_type(file_name: &str) -> String {
@@ -217,13 +233,18 @@ fn take_extra(
     options: &mut IndexMap<String, Json>,
     field: &'static str,
 ) -> Result<IndexMap<String, Json>, ImageVariationSource> {
-    match options.shift_remove(field) {
-        None | Some(Json::Null) => Ok(IndexMap::new()),
-        Some(Json::Object(fields)) => Ok(fields),
-        Some(_) => Err(ImageVariationSource::Option {
-            field: String::from(field),
-        }),
+    let Some(value) = options.shift_remove(field) else {
+        return Ok(IndexMap::new());
+    };
+    if matches!(value, Json::Null) {
+        return Ok(IndexMap::new());
     }
+    let Json::Object(fields) = value else {
+        return Err(ImageVariationSource::Option {
+            field: String::from(field),
+        });
+    };
+    Ok(fields)
 }
 
 fn insert_header(

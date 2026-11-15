@@ -23,6 +23,7 @@ use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use tokio::runtime::Builder;
 
 use crate::api::image_contracts::records::{ImageFile, ImageHeaders, ImageParams};
 use crate::image_variations::call::{PreparedImageVariation, prepare_image_variation};
@@ -404,10 +405,7 @@ pub(super) fn logged_records(call: ImageVariationRequest) -> Vec<Json> {
         };
         begin_image_variation(call, &mut hooks).unwrap()
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     let sent = runtime.block_on(send_image_variation(&prepared, &FakeTransport::ok()));
     let mut hooks = PrePostLogger {
         state: &mut state,

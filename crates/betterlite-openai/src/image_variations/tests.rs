@@ -317,8 +317,8 @@ async fn a_non_text_extra_header_names_its_key() {
     assert_eq!(failure.status_code, 500);
     assert!(failure.message.contains("x-count"));
     assert!(matches!(
-        *failure.source,
-        ImageVariationSource::Option { ref field } if field == "x-count"
+        &*failure.source,
+        ImageVariationSource::Option { field } if field == "x-count"
     ));
     assert!(transport.calls().is_empty());
 }
@@ -383,8 +383,8 @@ async fn the_timeout_option_overrides_the_client_deadline() {
         panic!("a text timeout is not an SDK timeout");
     };
     assert!(matches!(
-        source,
-        ImageVariationSource::Option { ref field } if field == "timeout"
+        &source,
+        ImageVariationSource::Option { field } if field == "timeout"
     ));
 }
 
@@ -428,17 +428,39 @@ async fn binary_file_descriptor() {
     assert_eq!(part.file_name.as_deref(), Some("cat.png"));
     assert_eq!(part.content_type.as_deref(), Some("image/png"));
     assert_eq!(recorder.post.len(), 1);
+    nested_upload_names().await;
+    tuple_upload_name().await;
+}
+
+// httpx names a file object's part after Path(value.name).name, the last component
+async fn nested_upload_names() {
+    let nested_prepared = prepared(request(image(Some("dir/cat.png"), "NESTEDDATA"))).unwrap();
+    let nested = send_and_record(&nested_prepared).await;
+    let nested_part = nested.part("image").unwrap();
+    assert_eq!(nested_part.file_name.as_deref(), Some("cat.png"));
+    assert_eq!(nested_part.content_type.as_deref(), Some("image/png"));
+    // a trailing slash is no path component either
+    let slashed_prepared = prepared(request(image(Some("dir/cat.png/"), "SLASHDATA"))).unwrap();
+    let slashed = send_and_record(&slashed_prepared).await;
+    assert_eq!(
+        slashed.part("image").unwrap().file_name.as_deref(),
+        Some("cat.png")
+    );
+}
+
+// a tuple filename keeps its value as given, beside the tuple's own content type
+async fn tuple_upload_name() {
     let typed = ImageFile {
         filename: Some(String::from("pic.webp")),
         content: b"WEBP".to_vec(),
         content_type: Some(String::from("image/webp")),
     };
     let typed_prepared = prepared(request(typed)).unwrap();
-    let outgoing = send_and_record(&typed_prepared).await;
-    let typed_part = outgoing.part("image").unwrap();
-    assert_eq!(typed_part.file_name.as_deref(), Some("pic.webp"));
-    assert_eq!(typed_part.content_type.as_deref(), Some("image/webp"));
-    assert_eq!(typed_part.data, b"WEBP");
+    let sent = send_and_record(&typed_prepared).await;
+    let part = sent.part("image").unwrap();
+    assert_eq!(part.file_name.as_deref(), Some("pic.webp"));
+    assert_eq!(part.content_type.as_deref(), Some("image/webp"));
+    assert_eq!(part.data, b"WEBP");
 }
 
 async fn variation_missing_config_data() {
