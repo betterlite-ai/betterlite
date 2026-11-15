@@ -66,10 +66,19 @@ impl crate::helpers::Helper for Op {
         };
         let mut selected = BTreeMap::new();
         for model in &input.models {
-            // main.py rewrites an openai model the chat catalog lacks to the text-completion-openai identity
-            let target = match route_for(&deployment(model)?, &catalog) {
-                CompletionRoute::Text { model: bare } => format!("text-completion-openai/{bare}"),
-                CompletionRoute::Chat { .. } | CompletionRoute::Unsupported { .. } => model.clone(),
+            let resolved = deployment(model)?;
+            let route = route_for(&resolved, &catalog);
+            // main.py prefixes only an openai model the chat catalog lacks; a text-catalog name keeps the name it arrived with
+            let target = match &resolved.provider {
+                Provider::OpenAi { .. } => match route {
+                    CompletionRoute::Text { model: bare } => {
+                        format!("text-completion-openai/{bare}")
+                    }
+                    CompletionRoute::Chat { .. } | CompletionRoute::Unsupported { .. } => {
+                        model.clone()
+                    }
+                },
+                Provider::Unsupported { .. } => model.clone(),
             };
             selected.insert(model.clone(), target);
         }
