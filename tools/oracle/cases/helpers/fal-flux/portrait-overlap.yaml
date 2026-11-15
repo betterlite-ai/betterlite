@@ -1,0 +1,30 @@
+kind: helper
+name: fal-flux-portrait-overlap
+call:
+  fal_flux:
+    operation: portrait_overlap
+    profiles: [ultra, pro_v11]
+    sizes:
+      - "499x1000"
+      - "500x1000"
+      - "599x1000"
+      - "600x1000"
+      - "649x1000"
+      - "650x1000"
+      - "699x1000"
+      - "700x1000"
+      - "749x1000"
+      - "750x1000"
+      - "949x1000"
+      - "950x1000"
+      - "1050x1000"
+      - "1051x1000"
+      - "1299x1000"
+      - "1300x1000"
+      - "1699x1000"
+      - "1700x1000"
+      - "2299x1000"
+      - "2300x1000"
+env: {}
+compare:
+  ignore: []
