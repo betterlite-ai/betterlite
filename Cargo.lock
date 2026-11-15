@@ -1457,6 +1457,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-cli",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -1632,12 +1633,15 @@ version = "0.0.0"
 dependencies = [
  "betterlite-config",
  "betterlite-core",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "chrono",
+ "http 1.5.0",
  "jiff",
  "libfuzzer-sys",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]

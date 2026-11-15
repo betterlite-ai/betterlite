@@ -1,0 +1,7 @@
+# the upload returns the parsed JSON response
+kind: helper
+name: gcs-storage-auth-upload-returns-json-response
+call:
+  b3997: {"action": "upload", "bucket": "env-bucket", "object_name": "log.json", "payload": "text", "body": "{\"name\": \"obj\", \"bucket\": \"env-bucket\", \"size\": \"12\"}"}
+env: {}
+compare: {ignore: []}
