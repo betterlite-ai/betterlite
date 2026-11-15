@@ -45,15 +45,15 @@ class MappingConfig(Protocol):
 class AuthConfig(Protocol):
     def validate_environment(
         self,
-        headers: dict[str, str],
-        model: str,
-        messages: list[AllMessageValues],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        *,
-        api_key: str | None = None,
-        api_base: str | None = None,
-    ) -> dict[str, str]: ...
+        _headers: dict[str, str],
+        _model: str,
+        _messages: list[AllMessageValues],
+        _optional_params: dict[str, JsonValue],
+        _litellm_params: dict[str, JsonValue],
+        _api_key: str | None = None,
+        _api_base: str | None = None,
+        /,
+    ) -> dict[str, str]: ...  # positional-only: LiteLLM names them api_key and api_base
 
 
 class NoMessages(list[AllMessageValues]):
@@ -152,17 +152,15 @@ def mapping_outcome(config: MappingConfig, model: str, case: MappingCase) -> Jso
             non_default, optional, model, drop_params=case["drop_params"]
         )
     except ValueError:
-        return JSON.validate_python({"error": {"status": None}})
-    return JSON.validate_python({"params": PARAMS.validate_python(mapped)})
+        return {"error": {"status": None}}
+    return {"params": PARAMS.validate_python(mapped)}
 
 
 def url_pair(generic: UrlConfig, gpt: UrlConfig, api_base: str | None, model: str) -> JsonValue:
-    return JSON.validate_python(
-        {
-            "generic": generic.get_complete_url(api_base, None, model, {}, {}),
-            "gpt": gpt.get_complete_url(api_base, None, model, {}, {}),
-        }
-    )
+    return {
+        "generic": generic.get_complete_url(api_base, None, model, {}, {}),
+        "gpt": gpt.get_complete_url(api_base, None, model, {}, {}),
+    }
 
 
 def generic_base_only(call: GenericBaseOnly) -> JsonValue:
@@ -174,12 +172,10 @@ def generic_base_only(call: GenericBaseOnly) -> JsonValue:
         for api_base in call["api_bases"]
         for model in call["models"]
     ]
-    return JSON.validate_python(
-        {
-            "urls": urls,
-            "cases": [mapping_outcome(generic, call["model"], case) for case in call["cases"]],
-        }
-    )
+    return {
+        "urls": urls,
+        "cases": [mapping_outcome(generic, call["model"], case) for case in call["cases"]],
+    }
 
 
 def key_outcome(config: AuthConfig, case: KeyCase) -> JsonValue:
@@ -190,40 +186,34 @@ def key_outcome(config: AuthConfig, case: KeyCase) -> JsonValue:
             NoMessages(),
             {},
             {},
-            api_key=case["api_key"],
-            api_base=None,
+            case["api_key"],
+            None,
         )
     except ValueError:
-        return JSON.validate_python({"error": {"status": None}})
-    return JSON.validate_python({"headers": HEADERS.validate_python(headers)})
+        return {"error": {"status": None}}
+    return {"headers": JSON.validate_python(HEADERS.validate_python(headers))}
 
 
 def key_scheme(call: KeyScheme) -> JsonValue:
     apply_environment(call["environment"])
     config = FalAIImageGenerationConfig()
-    return JSON.validate_python(
-        {"cases": [key_outcome(config, case) for case in call["cases"]]}
-    )
+    return {"cases": [key_outcome(config, case) for case in call["cases"]]}
 
 
 def reply_outcome(case: ReplyCase) -> JsonValue:
     reply = PARAMS.validate_json(case["body"])
     images = fal_images_to_image_objects(reply.get("images"))
-    return JSON.validate_python(
-        {
-            "images": [
-                TypeAdapter(ImageFields).validate_json(image.model_dump_json())
-                for image in images
-            ]
-        }
-    )
+    return {
+        "images": [
+            JSON.validate_python(TypeAdapter(ImageFields).validate_json(image.model_dump_json()))
+            for image in images
+        ]
+    }
 
 
 def gpt_destination_precedence(call: GptDestinationPrecedence) -> JsonValue:
     config = FalAIGPTImage2Config()
-    return JSON.validate_python(
-        {"cases": [mapping_outcome(config, call["model"], case) for case in call["cases"]]}
-    )
+    return {"cases": [mapping_outcome(config, call["model"], case) for case in call["cases"]]}
 
 
 def pricing_quality_alias(call: PricingQualityAlias) -> JsonValue:
@@ -232,13 +222,12 @@ def pricing_quality_alias(call: PricingQualityAlias) -> JsonValue:
         JSON.validate_python(map_gpt_image_quality(quality, call["model"], call["catalog"]))
         for quality in call["qualities"]
     ]
-    return JSON.validate_python({"supported": sorted(supported), "mapped": mapped})
+    return {"supported": JSON.validate_python(sorted(supported)), "mapped": mapped}
 
 
 def malformed_size_kept(call: MalformedSizeKept) -> JsonValue:
-    return JSON.validate_python(
-        {"sizes": [JSON.validate_python(map_gpt_image_size(size)) for size in call["sizes"]]}
-    )
+    sizes = [JSON.validate_python(map_gpt_image_size(size)) for size in call["sizes"]]
+    return {"sizes": sizes}
 
 
 def run(input_value: Input) -> JsonValue:
@@ -252,6 +241,4 @@ def run(input_value: Input) -> JsonValue:
         return pricing_quality_alias(input_value)
     if input_value["operation"] == "malformed_size_kept":
         return malformed_size_kept(input_value)
-    return JSON.validate_python(
-        {"cases": [reply_outcome(case) for case in input_value["replies"]]}
-    )
+    return {"cases": [reply_outcome(case) for case in input_value["replies"]]}
