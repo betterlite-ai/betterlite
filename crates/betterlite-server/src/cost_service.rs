@@ -75,13 +75,13 @@ pub fn name_normalizers() -> NameNormalizers {
 
 // The one cost resource the request owners share: the catalog bound to its effective lookup, the installed policies and the configured adjustments.
 pub struct CostService<Formulas> {
-    pub lookup: CatalogLookup,
-    policies: Policies<Formulas>,
-    pattern: SizePattern,
-    models: ProviderModelSets,
-    database: TimeZoneDatabase,
-    discount: BTreeMap<String, AdjustmentEntry>,
-    margin: BTreeMap<String, AdjustmentEntry>,
+    pub(crate) lookup: CatalogLookup,
+    pub(crate) policies: Policies<Formulas>,
+    pub(crate) pattern: SizePattern,
+    pub(crate) models: ProviderModelSets,
+    pub(crate) database: TimeZoneDatabase,
+    pub(crate) discount: BTreeMap<String, AdjustmentEntry>,
+    pub(crate) margin: BTreeMap<String, AdjustmentEntry>,
 }
 
 // One charge to price: the call's inputs and the token counter of its model.
