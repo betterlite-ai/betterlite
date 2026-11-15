@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{
@@ -13,7 +15,6 @@ use super::ENDPOINT;
 use super::append_singular_image;
 use super::map_openai_params;
 use super::size::map_aspect_ratio;
-use crate::api::fal::images::SINGLE_IMAGE_OPENAI_PARAMS;
 use crate::api::fal::images::UrlOnlyImageError;
 use crate::api::fal::images::decode::MAX_FAL_REPLY_BYTES;
 use crate::api::fal::images::error::FalImageError;
@@ -130,11 +131,6 @@ fn bria_wide_dimensions_round_before_dividing() {
         map_aspect_ratio("15312238733059686x9007199254740993"),
         "16:9"
     );
-}
-
-#[test]
-fn bria_supported_params_are_n_response_format_and_size() {
-    assert_eq!(SINGLE_IMAGE_OPENAI_PARAMS, ["n", "response_format", "size"]);
 }
 
 #[test]
@@ -366,4 +362,23 @@ fn appended_at(body: &[u8]) -> ImageResponse {
     let mut response = ImageResponse::default();
     append_singular_image(&mut response, 200, &headers(), body).expect("a reply at the limit");
     response
+}
+
+// the fuzz target feeds these seeds to the same entry point, so a panic here is a panic there
+#[rstest]
+fn replays_the_bria_image_corpus(#[files("fuzz/corpus/fal_image_reply/*")] path: PathBuf) {
+    let bytes = fs::read(&path).expect("a corpus file");
+    let mut response = ImageResponse::default();
+    drop(append_singular_image(
+        &mut response,
+        200,
+        &headers(),
+        &bytes,
+    ));
+    if path
+        .file_name()
+        .is_some_and(|name| name == "bria_singular-image.json")
+    {
+        assert_eq!(response.data, Some(vec![url_image("https://a.test/1.png")]));
+    }
 }

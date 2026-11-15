@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::Sections;
 use betterlite_core::api::fal::bria;
-use betterlite_core::api::fal::images::SINGLE_IMAGE_OPENAI_PARAMS;
 use betterlite_core::api::fal::images::UrlOnlyImageError;
-use betterlite_core::api::fal::images::params::image_generation_body;
+use betterlite_core::api::fal::images::params::{GENERIC_OPENAI_PARAMS, image_generation_body};
 use betterlite_core::api::fal::images::settings::FalImageSettings;
 use betterlite_core::api::fal::recraft;
 use betterlite_models::decisions::Json;
@@ -167,7 +166,7 @@ fn model_report(
         })
         .collect();
     json!({
-        "supported": SINGLE_IMAGE_OPENAI_PARAMS,
+        "supported": GENERIC_OPENAI_PARAMS,
         "urls": urls,
         "cases": outcomes,
         "bodies": body_values,
@@ -231,17 +230,23 @@ fn reply_outcome(case: &ReplyCase, append: AppendImages) -> Value {
         &case.headers,
         case.body.as_bytes(),
     ) {
-        Ok(()) => json!({"images": image_urls(&response)}),
+        Ok(()) => json!({"images": image_fields(&response)}),
         Err(_) => json!({"error": {"status": case.status}}),
     }
 }
 
-fn image_urls(response: &ImageResponse) -> Vec<Value> {
+fn image_fields(response: &ImageResponse) -> Vec<Value> {
     response
         .data
         .as_deref()
         .unwrap_or_default()
         .iter()
-        .map(|image| json!({"url": image.url.as_deref()}))
+        .map(|image| {
+            json!({
+                "url": image.url.as_deref(),
+                "b64_json": image.b64_json.as_deref(),
+                "revised_prompt": image.revised_prompt.as_deref(),
+            })
+        })
         .collect()
 }

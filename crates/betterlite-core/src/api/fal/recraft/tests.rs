@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{
@@ -13,7 +15,6 @@ use super::ENDPOINT;
 use super::append_url_images;
 use super::map_openai_params;
 use super::size::{SQUARE_HD, map_image_size};
-use crate::api::fal::images::SINGLE_IMAGE_OPENAI_PARAMS;
 use crate::api::fal::images::UrlOnlyImageError;
 use crate::api::fal::images::decode::MAX_FAL_REPLY_BYTES;
 use crate::api::fal::images::error::FalImageError;
@@ -103,11 +104,6 @@ fn recraft_custom_dimensions_become_integer_objects(
 #[case::non_ascii_digits("١٠٢٤x٧٦٨")]
 fn recraft_unreadable_sizes_become_square_hd(#[case] size: &str) {
     assert_eq!(map_image_size(size), text(SQUARE_HD));
-}
-
-#[test]
-fn recraft_supported_params_are_n_response_format_and_size() {
-    assert_eq!(SINGLE_IMAGE_OPENAI_PARAMS, ["n", "response_format", "size"]);
 }
 
 #[test]
@@ -324,4 +320,25 @@ fn recraft_reply_size_is_bounded() {
     let mut response = ImageResponse::default();
     append_url_images(&mut response, 200, &headers(), &at_bound).expect("a reply at the limit");
     assert_eq!(response.data, Some(Vec::new()));
+}
+
+// the fuzz target feeds these seeds to the same entry point, so a panic here is a panic there
+#[rstest]
+fn replays_the_recraft_image_corpus(#[files("fuzz/corpus/fal_image_reply/*")] path: PathBuf) {
+    let bytes = fs::read(&path).expect("a corpus file");
+    let mut response = ImageResponse::default();
+    drop(append_url_images(&mut response, 200, &headers(), &bytes));
+    if path
+        .file_name()
+        .is_some_and(|name| name == "mixed-list.json")
+    {
+        assert_eq!(
+            response.data,
+            Some(vec![
+                url_image(Some("https://a.test/1.png")),
+                url_image(Some("https://b.test/2.png")),
+                url_image(None),
+            ])
+        );
+    }
 }

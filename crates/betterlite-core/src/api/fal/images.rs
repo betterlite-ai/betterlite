@@ -11,8 +11,7 @@ use thiserror::Error;
 
 use crate::api::fal::images::decode::MAX_FAL_REPLY_BYTES;
 use crate::api::fal::images::error::FalImageError;
-
-pub const SINGLE_IMAGE_OPENAI_PARAMS: [&str; 3] = ["n", "response_format", "size"];
+use crate::api::fal::images::params::GENERIC_OPENAI_PARAMS;
 
 #[derive(Debug, Error)]
 pub enum UrlOnlyImageError {
@@ -47,19 +46,18 @@ pub fn map_url_only_params(
         if mapped.contains_key(name) {
             continue;
         }
-        match name.as_str() {
-            "n" | "response_format" => {}
-            "size" => {
-                let (destination, translated) = translate_size(value)?;
-                mapped.insert(destination.to_owned(), translated);
+        if !GENERIC_OPENAI_PARAMS.contains(&name.as_str()) {
+            if drop_params {
+                continue;
             }
-            _ if drop_params => {}
-            _ => {
-                return Err(UrlOnlyImageError::UnsupportedParameters {
-                    parameters: vec![name.clone()],
-                    model: model.to_owned(),
-                });
-            }
+            return Err(UrlOnlyImageError::UnsupportedParameters {
+                parameters: vec![name.clone()],
+                model: model.to_owned(),
+            });
+        }
+        if name == "size" {
+            let (destination, translated) = translate_size(value)?;
+            mapped.insert(destination.to_owned(), translated);
         }
     }
     Ok(mapped)

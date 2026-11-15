@@ -128,6 +128,8 @@ Input: TypeAlias = IgnoredCount | SizeCall | ReplyCall
 
 class ImageUrl(TypedDict):
     url: str | None
+    b64_json: str | None
+    revised_prompt: str | None
 
 
 class ImageResponseFields(TypedDict):
