@@ -13,6 +13,8 @@ const FIRST_ACCESS: &str = "AKIAFIRSTEXAMPLE00000";
 const FIRST_SECRET: &str = "firstSecretKey0000000000000000000000000000";
 const SECOND_ACCESS: &str = "AKIASECONDEXAMPLE0000";
 const SECOND_SECRET: &str = "secondSecretKey000000000000000000000000000";
+const LEAK_ACCESS: &str = "AKIALEAKEXAMPLE00000";
+const LEAK_SECRET: &str = "leakSecretKey0000000000000000000000000000";
 
 fn params_for(access: &str, secret_key: &str) -> ParamMap {
     params(&[
@@ -88,16 +90,14 @@ fn rerank_credential_identity_isolation() {
 
 #[test]
 fn rerank_secret_safe_failure() {
-    let access = "AKIALEAKEXAMPLE00000";
-    let secret_key = "leakSecretKey0000000000000000000000000000";
-    let source = Source::with(access, secret_key);
+    let source = Source::with(LEAK_ACCESS, LEAK_SECRET);
     let documented = request(
         "arn:aws:bedrock:us-east-1:123456789012:rerank-model/test",
         "q",
         vec![text("a")],
     );
     let run = run_with_source(
-        call(&documented, params_for(access, secret_key)),
+        call(&documented, params_for(LEAK_ACCESS, LEAK_SECRET)),
         Reply::status(403, &[("x-amzn-errortype", "AccessDenied")], "denied"),
         Some(ClientKind::Sync),
         &source,
@@ -105,17 +105,27 @@ fn rerank_secret_safe_failure() {
     let error = run.result.as_ref().unwrap_err();
     let request_debug = format!("{:?}", run.posted());
     assert!(request_debug.contains("header_names"));
-    let shown = [
-        format!("{error:?}"),
-        error.to_string(),
-        request_debug,
-        serde_json::to_string(&run.state.model_call_details).expect("the details serialize"),
-    ];
-    for text in &shown {
-        assert_eq!(
-            secrets_in(text, &[access, secret_key]),
-            Vec::<String>::new(),
-            "a failure path hides the fixture credentials"
-        );
-    }
+    assert_eq!(
+        secrets_in(&format!("{error:?}"), &[LEAK_ACCESS, LEAK_SECRET]),
+        Vec::<String>::new(),
+        "the debug error hides the fixture credentials"
+    );
+    assert_eq!(
+        secrets_in(&error.to_string(), &[LEAK_ACCESS, LEAK_SECRET]),
+        Vec::<String>::new(),
+        "the error message hides the fixture credentials"
+    );
+    assert_eq!(
+        secrets_in(&request_debug, &[LEAK_ACCESS, LEAK_SECRET]),
+        Vec::<String>::new(),
+        "the debug request hides the fixture credentials"
+    );
+    assert_eq!(
+        secrets_in(
+            &serde_json::to_string(&run.state.model_call_details).expect("the details serialize"),
+            &[LEAK_ACCESS, LEAK_SECRET]
+        ),
+        Vec::<String>::new(),
+        "the logging details hide the fixture credentials"
+    );
 }
