@@ -1,0 +1,16 @@
+kind: helper
+name: missing-key
+call:
+  xai_responses:
+    env:
+      XAI_API_BASE: "https://env.example/v1"
+      XAI_OAUTH_TOKEN_DIR: "/proc/betterlite-xai-responses-oauth"
+    xai_key: null
+    generic_key: null
+    steps:
+      - {step: auth, api_key: null, use_xai_oauth: false, headers: {}}
+      - {step: auth, api_key: null, use_xai_oauth: true, headers: {}}
+      - {step: url, api_base: null, litellm_api_base: null, api_key: null, use_xai_oauth: false}
+      - {step: url, api_base: null, litellm_api_base: "https://global.example/v1", api_key: null, use_xai_oauth: true}
+env: {}
+compare: {ignore: []}
