@@ -90,7 +90,7 @@ impl FramedState<'_> {
         }
     }
 
-    pub(crate) fn finish(&mut self, pending: &mut Pending, redactor: &Redactor) {
+    pub(crate) fn finish(&self, pending: &mut Pending, redactor: &Redactor) {
         let headers = self.response_headers.as_ref();
         let error = self.tally.undecoded_stream_error(headers, redactor);
         pending.extend(error.map(|source| Err(InvokeStreamError::Frame(source))));
@@ -118,12 +118,11 @@ where
             if self.state.done {
                 return None;
             }
-            match self.chunks.next() {
-                Some(chunk) => self.state.absorb(&chunk, &mut self.pending),
-                None => {
-                    self.state.done = true;
-                    self.state.finish(&mut self.pending, self.redactor);
-                }
+            if let Some(chunk) = self.chunks.next() {
+                self.state.absorb(&chunk, &mut self.pending);
+            } else {
+                self.state.done = true;
+                self.state.finish(&mut self.pending, self.redactor);
             }
         }
     }
