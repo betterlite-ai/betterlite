@@ -76,11 +76,12 @@ fn provider_fields(fields: &IndexMap<String, Json>) -> Option<FalImageProviderSp
     (provider != FalImageProviderSpecificFields::default()).then_some(provider)
 }
 
-pub fn decode_fal_image_reply(
+// The size cap, JSON decode and object check every Fal image reply goes through
+pub fn decode_fal_image_object(
     status: u16,
     headers: &ImageHeaders,
     body: &[u8],
-) -> Result<Vec<FalImage>, FalImageError> {
+) -> Result<IndexMap<String, Json>, FalImageError> {
     if body.len() > MAX_FAL_REPLY_BYTES {
         return Err(FalImageError::ReplyTooLarge {
             status,
@@ -94,12 +95,23 @@ pub fn decode_fal_image_reply(
             headers: headers.clone(),
             source,
         })?;
-    let Json::Object(fields) = value else {
-        return Err(FalImageError::ReplyNotAnObject {
-            status,
-            headers: headers.clone(),
-        });
-    };
+    match value {
+        Json::Object(fields) => Ok(fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Err(FalImageError::ReplyNotAnObject {
+                status,
+                headers: headers.clone(),
+            })
+        }
+    }
+}
+
+pub fn decode_fal_image_reply(
+    status: u16,
+    headers: &ImageHeaders,
+    body: &[u8],
+) -> Result<Vec<FalImage>, FalImageError> {
+    let fields = decode_fal_image_object(status, headers, body)?;
     Ok(fields
         .get("images")
         .map_or_else(Vec::new, fal_images_to_image_objects))

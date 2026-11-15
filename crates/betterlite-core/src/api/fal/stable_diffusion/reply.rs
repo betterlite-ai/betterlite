@@ -4,7 +4,7 @@ use betterlite_openai::api::image_contracts::records::{
 };
 use indexmap::IndexMap;
 
-use crate::api::fal::ideogram::reply::decode_reply_object;
+use crate::api::fal::images::decode::decode_fal_image_object;
 use crate::api::fal::stable_diffusion::error::StableDiffusionError;
 
 pub fn transform_reply(
@@ -12,7 +12,7 @@ pub fn transform_reply(
     hidden_params: &mut HiddenParams,
     reply: &ImageHttpResponse,
 ) -> Result<(), StableDiffusionError> {
-    let fields = decode_reply_object(reply)?;
+    let fields = decode_fal_image_object(reply.status_code, &reply.headers, &reply.body)?;
     let images = appended_images(fields.get("images"))?;
     response.data.get_or_insert_with(Vec::new).extend(images);
     copy_hidden(&fields, hidden_params);
