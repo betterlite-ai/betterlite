@@ -15,7 +15,7 @@ const ITEM_KIB: i64 = 1024;
 #[derive(Clone)]
 enum CachedEntry {
     Missing,
-    Found(SkillTable),
+    Found(Box<SkillTable>),
 }
 
 pub(crate) enum CachedRow {
@@ -54,15 +54,18 @@ impl SkillCache {
         let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         let inner = &mut *guard;
         let (cached, _) = lookup_marked(&mut inner.markers, &mut inner.entries, skill_id)?;
+        drop(guard);
         Ok(match cached {
             None => CachedRow::Miss,
             Some(CachedEntry::Missing) => CachedRow::Missing,
-            Some(CachedEntry::Found(row)) => CachedRow::Row(Box::new(row)),
+            Some(CachedEntry::Found(row)) => CachedRow::Row(row),
         })
     }
 
     pub(crate) fn store(&self, skill_id: &str, row: Option<&SkillTable>) -> Result<(), StoreError> {
-        let entry = row.map_or(CachedEntry::Missing, |row| CachedEntry::Found(row.clone()));
+        let entry = row.map_or(CachedEntry::Missing, |found| {
+            CachedEntry::Found(Box::new(found.clone()))
+        });
         let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         let inner = &mut *guard;
         store_marked(
@@ -72,6 +75,7 @@ impl SkillCache {
             entry,
             None,
         )?;
+        drop(guard);
         Ok(())
     }
 }

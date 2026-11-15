@@ -165,8 +165,8 @@ class WarningRecorder(logging.Handler):
         self.messages: list[JsonValue] = []
 
     @override
-    def emit(self, _record: logging.LogRecord) -> None:
-        self.messages.append({"level": "warn"})
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append({"level": record.levelname.lower()})
 
 
 def principal_of(fields: PrincipalFields) -> UserAPIKeyAuth:

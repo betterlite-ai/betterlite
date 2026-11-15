@@ -24,6 +24,6 @@ impl<Inner: Subscriber> Layer<Inner> for WarnLog {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(json!({"level": "warn"}));
+            .push(json!({"level": "warning"}));
     }
 }

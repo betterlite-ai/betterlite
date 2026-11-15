@@ -41,21 +41,13 @@ fn rows_json(rows: &[SkillTable]) -> Result<Value, Box<crate::helpers::HelperErr
         .map(Value::Array)
 }
 
-fn invalid(step: &Step) -> Value {
-    json!({"action": step.action.as_str(), "error": "invalid_input"})
-}
-
-fn error_answer(action: &str, error: &StoreError) -> Value {
-    json!({"action": action, "error": token(error)})
-}
-
 fn row_answer(
     action: &str,
     outcome: Result<SkillTable, StoreError>,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     match outcome {
-        Ok(row) => row_json(&row).map(|row| json!({"action": action, "row": row})),
-        Err(error) => Ok(error_answer(action, &error)),
+        Ok(row) => row_json(&row).map(|value| json!({"action": action, "row": value})),
+        Err(error) => Ok(json!({"action": action, "error": token(&error)})),
     }
 }
 
@@ -83,7 +75,7 @@ async fn run_step<R: SkillRepository>(
         _ => return Ok(json!({"action": action, "error": "invalid_input"})),
     }
     let Some(fields) = step.data.as_ref() else {
-        return Ok(invalid(step));
+        return Ok(json!({"action": action, "error": "invalid_input"}));
     };
     let data = new_skill(fields)?;
     row_answer(
@@ -106,8 +98,8 @@ async fn list_step<R: SkillRepository>(
         store.list_skills(page_of(step), caller).await
     };
     match outcome {
-        Ok(rows) => rows_json(&rows).map(|rows| json!({"action": action, "rows": rows})),
-        Err(error) => Ok(error_answer(action, &error)),
+        Ok(rows) => rows_json(&rows).map(|value| json!({"action": action, "rows": value})),
+        Err(error) => Ok(json!({"action": action, "error": token(&error)})),
     }
 }
 
@@ -117,7 +109,7 @@ async fn skill_step<R: SkillRepository>(
     caller: Option<&Principal>,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     let Some(skill_id) = step.skill_id.as_deref() else {
-        return Ok(invalid(step));
+        return Ok(json!({"action": step.action.as_str(), "error": "invalid_input"}));
     };
     let action = step.action.as_str();
     if action == "get" {
@@ -129,11 +121,11 @@ async fn skill_step<R: SkillRepository>(
                 "action": action,
                 "result": {"id": deleted.id, "type": deleted.r#type},
             })),
-            Err(error) => Ok(error_answer(action, &error)),
+            Err(error) => Ok(json!({"action": action, "error": token(&error)})),
         };
     }
     let Some(row) = store.fetch_skill_from_db(skill_id, caller).await else {
         return Ok(json!({"action": action, "row": null}));
     };
-    row_json(&row).map(|row| json!({"action": action, "row": row}))
+    row_json(&row).map(|value| json!({"action": action, "row": value}))
 }

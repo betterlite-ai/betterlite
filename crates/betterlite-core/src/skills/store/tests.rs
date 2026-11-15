@@ -397,7 +397,8 @@ fn get_allows_a_caller_without_a_principal() {
     support::runtime().block_on(async {
         let repository = ScriptedRepository::with_row(stored_row("alice"));
         let store = store(repository.clone());
-        assert!(store.get_skill(SKILL_ID, None).await.is_ok());
+        let row = store.get_skill(SKILL_ID, None).await.unwrap();
+        assert_eq!(row, stored_row("alice"));
     });
 }
 
@@ -569,12 +570,11 @@ fn delete_denies_a_foreign_tenant() {
             page_effects(&repository),
             vec![Effect::FindUnique(SKILL_ID.to_owned())]
         );
-        assert!(
-            store
-                .get_skill(SKILL_ID, Some(&principal("alice")))
-                .await
-                .is_ok()
-        );
+        let row = store
+            .get_skill(SKILL_ID, Some(&principal("alice")))
+            .await
+            .unwrap();
+        assert_eq!(row, stored_row("alice"));
     });
 }
 
@@ -603,7 +603,7 @@ fn create_does_not_touch_the_cache() {
         assert_eq!(
             page_effects(&repository),
             vec![
-                Effect::Create(SkillWrite {
+                Effect::Create(Box::new(SkillWrite {
                     skill_id: SKILL_ID.to_owned(),
                     display_title: Some("Title".to_owned()),
                     description: None,
@@ -615,7 +615,7 @@ fn create_does_not_touch_the_cache() {
                     file_type: None,
                     created_by: "alice".to_owned(),
                     updated_by: "alice".to_owned(),
-                }),
+                })),
                 Effect::FindUnique(SKILL_ID.to_owned()),
             ]
         );
@@ -702,7 +702,7 @@ fn fetch_returns_none_without_a_database_and_without_a_warning() {
 #[test]
 fn availability_is_reported_by_the_repository() {
     let repository = ScriptedRepository::default();
-    assert!(repository.availability().is_ok());
+    repository.availability().unwrap();
     repository.update(|state| state.available = false);
-    assert!(repository.availability().is_err());
+    repository.availability().unwrap_err();
 }

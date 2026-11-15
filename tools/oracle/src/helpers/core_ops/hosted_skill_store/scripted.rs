@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_core::skills::store::SkillPage;
@@ -131,14 +132,8 @@ impl Scripted {
             .effects
             .push(json!({"kind": "create", "data": data}));
     }
-}
 
-impl SkillRepository for Scripted {
-    fn availability(&self) -> Result<(), TableError> {
-        Ok(())
-    }
-
-    async fn create(&self, write: SkillWrite) -> Result<SkillTable, TableError> {
+    fn created_row(&self, write: SkillWrite) -> Result<SkillTable, TableError> {
         let metadata = write
             .metadata
             .as_deref()
@@ -149,7 +144,7 @@ impl SkillRepository for Scripted {
         self.failure("create")?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let stored = metadata.unwrap_or_else(|| Value::Object(Map::new()));
-        let row = serde_json::from_value(json!({
+        let row: SkillTable = serde_json::from_value(json!({
             "skill_id": &write.skill_id,
             "display_title": &write.display_title,
             "description": &write.description,
@@ -170,14 +165,14 @@ impl SkillRepository for Scripted {
         Ok(row)
     }
 
-    async fn find_unique(&self, skill_id: &str) -> Result<Option<SkillTable>, TableError> {
+    fn found_row(&self, skill_id: &str) -> Result<Option<SkillTable>, TableError> {
         self.push_effect(json!({"kind": "find_unique", "where": {"skill_id": skill_id}}));
         self.failure("find_unique")?;
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(state.rows.get(skill_id).cloned())
     }
 
-    async fn find_many(
+    fn found_page(
         &self,
         page: SkillPage,
         created_by: Option<Vec<String>>,
@@ -197,7 +192,7 @@ impl SkillRepository for Scripted {
         Ok(rows)
     }
 
-    async fn delete(&self, skill_id: &str) -> Result<(), TableError> {
+    fn deleted_row(&self, skill_id: &str) -> Result<(), TableError> {
         self.push_effect(json!({"kind": "delete", "where": {"skill_id": skill_id}}));
         self.failure("delete")?;
         self.state
@@ -206,5 +201,37 @@ impl SkillRepository for Scripted {
             .rows
             .remove(skill_id);
         Ok(())
+    }
+}
+
+impl SkillRepository for Scripted {
+    fn availability(&self) -> Result<(), TableError> {
+        Ok(())
+    }
+
+    fn create(
+        &self,
+        write: SkillWrite,
+    ) -> impl Future<Output = Result<SkillTable, TableError>> + Send {
+        ready(self.created_row(write))
+    }
+
+    fn find_unique(
+        &self,
+        skill_id: &str,
+    ) -> impl Future<Output = Result<Option<SkillTable>, TableError>> + Send {
+        ready(self.found_row(skill_id))
+    }
+
+    fn find_many(
+        &self,
+        page: SkillPage,
+        created_by: Option<Vec<String>>,
+    ) -> impl Future<Output = Result<Vec<SkillTable>, TableError>> + Send {
+        ready(self.found_page(page, created_by))
+    }
+
+    fn delete(&self, skill_id: &str) -> impl Future<Output = Result<(), TableError>> + Send {
+        ready(self.deleted_row(skill_id))
     }
 }

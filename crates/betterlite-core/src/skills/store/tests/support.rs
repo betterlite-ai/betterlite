@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::auth_identity::roles::Role;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
@@ -16,30 +19,31 @@ use clap::Parser;
 use deadpool_postgres::tokio_postgres::NoTls;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use tracing::span::{Attributes, Id, Record};
+use tracing::subscriber::with_default;
 use tracing::{Event, Level, Metadata, Subscriber};
 
 use crate::skills::store::SkillPage;
 use crate::skills::store::repository::{SkillRepository, SkillWrite};
 
-pub(crate) fn principal(user: &str) -> betterlite_auth::auth_identity::records::Principal {
+pub(crate) fn principal(user: &str) -> Principal {
     let document = format!(
         r#"{{"principal_type":"human","subject":"{user}","auth_method":"api_key","user":{{"id":"{user}"}},"teams":[{{"id":"team-1"}}],"organization":{{"id":"org-1"}},"credential_ref":{{"key_id":"key-1","token_id":"token-1"}}}}"#
     );
     serde_json::from_str(&document).unwrap()
 }
 
-pub(crate) fn admin(user: &str) -> betterlite_auth::auth_identity::records::Principal {
+pub(crate) fn admin(user: &str) -> Principal {
     let mut identity = principal(user);
-    identity.roles = vec![betterlite_auth::auth_identity::roles::Role::PlatformAdmin];
+    identity.roles = vec![Role::PlatformAdmin];
     identity
 }
 
 pub(crate) const NOW: &str = "2026-01-01T00:00:00.123456";
 pub(crate) const SKILL_ID: &str = "litellm_skill_00000000-0000-4000-8000-000000000000";
 
-pub(crate) fn runtime() -> tokio::runtime::Runtime {
+pub(crate) fn runtime() -> Runtime {
     Builder::new_current_thread().enable_all().build().unwrap()
 }
 
@@ -48,12 +52,12 @@ pub(crate) fn fixed_ids() -> Arc<dyn Fn() -> String + Send + Sync> {
 }
 
 pub(crate) fn fixed_clock() -> Arc<dyn Fn() -> f64 + Send + Sync> {
-    Arc::new(|| 1000.0)
+    Arc::new(|| 1_000.0_f64)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Effect {
-    Create(SkillWrite),
+    Create(Box<SkillWrite>),
     FindUnique(String),
     FindMany {
         page: SkillPage,
@@ -115,13 +119,62 @@ impl ScriptedRepository {
             .clone()
     }
 
-    fn failing(&self, failure: Option<&'static str>) -> Result<(), TableError> {
-        match failure {
-            Some(message) => Err(TableError::Publish {
-                message: message.to_owned(),
-            }),
-            None => Ok(()),
+    fn failing(failure: Option<&'static str>) -> Result<(), TableError> {
+        let Some(message) = failure else {
+            return Ok(());
+        };
+        Err(TableError::Publish {
+            message: message.to_owned(),
+        })
+    }
+
+    fn created_row(&self, write: SkillWrite) -> Result<SkillTable, TableError> {
+        let failure = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            state.effects.push(Effect::Create(Box::new(write.clone())));
+            state.create_failure
+        };
+        Self::failing(failure)?;
+        let row = row_for(&write, NOW);
+        self.update(|state| {
+            state.rows.insert(write.skill_id.clone(), row.clone());
+        });
+        Ok(row)
+    }
+
+    fn found_row(&self, skill_id: &str) -> Result<Option<SkillTable>, TableError> {
+        let (found, failure) = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            state.effects.push(Effect::FindUnique(skill_id.to_owned()));
+            (state.rows.get(skill_id).cloned(), state.find_failure)
+        };
+        Self::failing(failure)?;
+        Ok(found)
+    }
+
+    fn found_page(
+        &self,
+        page: SkillPage,
+        created_by: Option<Vec<String>>,
+    ) -> Result<Vec<SkillTable>, TableError> {
+        let (rows, failure) = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            state.effects.push(Effect::FindMany { page, created_by });
+            (state.page.clone(), state.find_failure)
+        };
+        Self::failing(failure)?;
+        Ok(rows)
+    }
+
+    fn deleted_row(&self, skill_id: &str) -> Result<(), TableError> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.effects.push(Effect::Delete(skill_id.to_owned()));
+        let failure = state.delete_failure;
+        if failure.is_none() {
+            state.rows.remove(skill_id);
         }
+        drop(state);
+        Self::failing(failure)
     }
 }
 
@@ -165,53 +218,30 @@ impl SkillRepository for ScriptedRepository {
         Err(TableError::Database(DbError::NoDbConnected))
     }
 
-    async fn create(&self, write: SkillWrite) -> Result<SkillTable, TableError> {
-        let failure = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.effects.push(Effect::Create(write.clone()));
-            state.create_failure
-        };
-        self.failing(failure)?;
-        let row = row_for(&write, NOW);
-        self.update(|state| {
-            state.rows.insert(write.skill_id.clone(), row.clone());
-        });
-        Ok(row)
+    fn create(
+        &self,
+        write: SkillWrite,
+    ) -> impl Future<Output = Result<SkillTable, TableError>> + Send {
+        ready(self.created_row(write))
     }
 
-    async fn find_unique(&self, skill_id: &str) -> Result<Option<SkillTable>, TableError> {
-        let (found, failure) = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.effects.push(Effect::FindUnique(skill_id.to_owned()));
-            (state.rows.get(skill_id).cloned(), state.find_failure)
-        };
-        self.failing(failure)?;
-        Ok(found)
+    fn find_unique(
+        &self,
+        skill_id: &str,
+    ) -> impl Future<Output = Result<Option<SkillTable>, TableError>> + Send {
+        ready(self.found_row(skill_id))
     }
 
-    async fn find_many(
+    fn find_many(
         &self,
         page: SkillPage,
         created_by: Option<Vec<String>>,
-    ) -> Result<Vec<SkillTable>, TableError> {
-        let (rows, failure) = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.effects.push(Effect::FindMany { page, created_by });
-            (state.page.clone(), state.find_failure)
-        };
-        self.failing(failure)?;
-        Ok(rows)
+    ) -> impl Future<Output = Result<Vec<SkillTable>, TableError>> + Send {
+        ready(self.found_page(page, created_by))
     }
 
-    async fn delete(&self, skill_id: &str) -> Result<(), TableError> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.effects.push(Effect::Delete(skill_id.to_owned()));
-        let failure = state.delete_failure;
-        if failure.is_none() {
-            state.rows.remove(skill_id);
-        }
-        drop(state);
-        self.failing(failure)
+    fn delete(&self, skill_id: &str) -> impl Future<Output = Result<(), TableError>> + Send {
+        ready(self.deleted_row(skill_id))
     }
 }
 
@@ -260,7 +290,7 @@ where
 {
     let warnings = Warnings::default();
     let subscriber = warnings.clone();
-    let value = tracing::subscriber::with_default(subscriber, run);
+    let value = with_default(subscriber, run);
     (value, warnings.messages())
 }
 

@@ -10,6 +10,7 @@ use base64::engine::general_purpose::STANDARD;
 use betterlite_anthropic::skills::wire::DeleteSkillResponse;
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_context::dynamic_logging_cache::Clock;
+use betterlite_context::local_ttl_cache::CacheError;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
@@ -79,7 +80,7 @@ pub enum StoreError {
     #[error("the skill metadata could not be encoded as JSON")]
     Metadata(#[source] PrivateJsonError),
     #[error(transparent)]
-    Cache(#[from] betterlite_context::local_ttl_cache::CacheError),
+    Cache(#[from] CacheError),
 }
 
 impl StoreError {
@@ -97,7 +98,12 @@ impl From<TableError> for StoreError {
     fn from(error: TableError) -> Self {
         match error {
             TableError::Database(DbError::NoDbConnected) => Self::NoDatabase,
-            other => Self::Repository {
+            other @ (TableError::Database(_)
+            | TableError::Batch(_)
+            | TableError::Row(_)
+            | TableError::MissingRow
+            | TableError::RowCount { .. }
+            | TableError::Publish { .. }) => Self::Repository {
                 source: Box::new(other),
             },
         }
@@ -128,10 +134,10 @@ impl<R: SkillRepository> HostedSkillStore<R> {
     ) -> Result<SkillTable, StoreError> {
         self.repository.availability()?;
         let skill_id = format!("{SKILL_ID_PREFIX}{}", (self.ids)());
-        let owner = get_primary_owner_scope(principal)
+        let chosen_owner = get_primary_owner_scope(principal)
             .map(|scope| scope.0)
             .or_else(|| user_id.map(str::to_owned));
-        let Some(owner) = owner else {
+        let Some(owner) = chosen_owner else {
             return Err(StoreError::MissingIdentity);
         };
         let metadata = data
@@ -176,8 +182,8 @@ impl<R: SkillRepository> HostedSkillStore<R> {
         if scopes.as_ref().is_some_and(Vec::is_empty) {
             return Ok(Vec::new());
         }
-        let created_by = scopes.map(|scopes| {
-            scopes
+        let created_by = scopes.map(|allowed| {
+            allowed
                 .into_iter()
                 .map(|scope| scope.0)
                 .collect::<Vec<String>>()

@@ -12,7 +12,7 @@ use super::super::repository::PrismaSkillRepository;
 use super::super::{HostedSkillStore, NewSkill, SkillPage, StoreError};
 use super::support::{self, SKILL_ID, admin, principal};
 
-type Store<'a> = HostedSkillStore<PrismaSkillRepository<'a>>;
+type Store<'db> = HostedSkillStore<PrismaSkillRepository<'db>>;
 
 #[tokio::test]
 async fn postgres_owner_roundtrip() {
@@ -32,7 +32,7 @@ async fn postgres_owner_roundtrip() {
     fixture.close_async().await.unwrap();
 }
 
-fn managed_store<'a>(writer: &'a PostgresStore, availability: &'a Availability) -> Store<'a> {
+fn managed_store<'db>(writer: &'db PostgresStore, availability: &'db Availability) -> Store<'db> {
     let client = PrismaClient {
         writer,
         reader: writer,
@@ -51,7 +51,7 @@ async fn create_row(store: &Store<'_>) -> SkillTable {
     metadata.insert("note".to_owned(), JsonData::String("a\0b".to_owned()));
     metadata.insert(
         "tier".to_owned(),
-        JsonData::Number(serde_json::Number::from(2)),
+        JsonData::Number(serde_json::Number::from(2_i32)),
     );
     let data = NewSkill {
         display_title: Some("Round trip".to_owned()),
@@ -80,7 +80,7 @@ fn assert_created_fields(created: &SkillTable) {
             .metadata
             .as_ref()
             .map(|metadata| metadata.get("tier")),
-        Some(Some(&JsonData::Number(serde_json::Number::from(2))))
+        Some(Some(&JsonData::Number(serde_json::Number::from(2_i32))))
     );
     assert!(created.created_at.is_some());
     assert!(created.updated_at.is_some());
