@@ -2,8 +2,10 @@ use std::collections::BTreeMap;
 use std::str;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
+use serde_json::error::Category;
 
 use super::failure::{BATCH_MISMATCH, Failure, UNEXPECTED_SHAPE, UNREADABLE};
 use super::{CompressionResult, SAFE_RESPONSE_TEXT_LIMIT};
@@ -48,17 +50,22 @@ pub(super) fn parse_results(
             detail: safe_response_text(None, SAFE_RESPONSE_TEXT_LIMIT),
         });
     };
-    let Ok(parsed) = serde_json::from_str::<GuardrailValue>(text) else {
-        return Err(Failure {
-            message: UNREADABLE,
-            detail: safe_response_text(Some(text), SAFE_RESPONSE_TEXT_LIMIT),
-        });
-    };
-    let GuardrailValue::Object(fields) = parsed else {
-        return Err(Failure {
-            message: UNEXPECTED_SHAPE,
-            detail: safe_response_text(Some(text), SAFE_RESPONSE_TEXT_LIMIT),
-        });
+    // OpaqueParams reads serde_json's arbitrary_precision number marker into the matching value,
+    // so a float token stat stays a number instead of the private-key object an untagged enum sees
+    let fields = match serde_json::from_str::<OpaqueParams>(text) {
+        Ok(params) => params.0,
+        Err(error) if error.classify() == Category::Data => {
+            return Err(Failure {
+                message: UNEXPECTED_SHAPE,
+                detail: safe_response_text(Some(text), SAFE_RESPONSE_TEXT_LIMIT),
+            });
+        }
+        Err(_unreadable) => {
+            return Err(Failure {
+                message: UNREADABLE,
+                detail: safe_response_text(Some(text), SAFE_RESPONSE_TEXT_LIMIT),
+            });
+        }
     };
     let Some(GuardrailValue::Object(data)) = fields.get("data") else {
         return Err(Failure {

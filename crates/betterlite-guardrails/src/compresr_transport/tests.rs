@@ -11,6 +11,7 @@ use axum::body::to_bytes;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -50,7 +51,8 @@ async fn record(
         .collect();
     let parsed = String::from_utf8(bytes.to_vec())
         .ok()
-        .and_then(|text| serde_json::from_str(&text).ok());
+        .and_then(|text| serde_json::from_str::<OpaqueParams>(&text).ok())
+        .map(|params| GuardrailValue::Object(params.0));
     recorded.lock().expect("recorded").push(Recorded {
         method: parts.method.as_str().to_owned(),
         path: parts.uri.path().to_owned(),
@@ -229,8 +231,8 @@ async fn the_api_key_and_json_content_type_are_sent_as_headers() {
 async fn the_optional_ratios_are_sent_only_when_set() {
     let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
     let mut built = settings(&base);
-    built.dynamic_min_ratio = Some(0.2);
-    built.dynamic_max_ratio = Some(0.8);
+    built.dynamic_min_ratio = Some(0.2_f64);
+    built.dynamic_max_ratio = Some(0.8_f64);
     let transport = configured(built);
     transport
         .compress(&[target("context", "query")])
@@ -306,7 +308,7 @@ async fn a_passthrough_key_the_request_names_is_replaced_by_the_named_value() {
 async fn a_passthrough_ratio_bound_loses_to_the_one_named_in_the_settings() {
     let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
     let mut built = settings(&base);
-    built.dynamic_min_ratio = Some(0.25);
+    built.dynamic_min_ratio = Some(0.25_f64);
     built.compression_params = BTreeMap::from([(
         "dynamic_min_ratio".to_owned(),
         GuardrailValue::Decimal(0.75),
@@ -328,7 +330,7 @@ async fn a_passthrough_ratio_bound_loses_to_the_one_named_in_the_settings() {
 async fn a_passthrough_ratio_bound_survives_when_the_other_bound_is_the_one_set() {
     let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
     let mut built = settings(&base);
-    built.dynamic_max_ratio = Some(0.9);
+    built.dynamic_max_ratio = Some(0.9_f64);
     built.compression_params = BTreeMap::from([
         (
             "dynamic_min_ratio".to_owned(),
@@ -357,7 +359,7 @@ async fn a_passthrough_ratio_bound_survives_when_the_other_bound_is_the_one_set(
 async fn a_passthrough_maximum_ratio_survives_when_the_minimum_is_the_one_set() {
     let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
     let mut built = settings(&base);
-    built.dynamic_min_ratio = Some(0.2);
+    built.dynamic_min_ratio = Some(0.2_f64);
     built.compression_params =
         BTreeMap::from([("dynamic_max_ratio".to_owned(), GuardrailValue::Decimal(0.8))]);
     let transport = configured(built);
@@ -378,7 +380,11 @@ const ONE_MIB: usize = 1024 * 1024;
 fn reply_of_length(total: usize) -> String {
     let prefix = r#"{"data":{"compressed_context":""#;
     let suffix = r#""}}"#;
-    let padding = "a".repeat(total - prefix.len() - suffix.len());
+    let padding = "a".repeat(
+        total
+            .saturating_sub(prefix.len())
+            .saturating_sub(suffix.len()),
+    );
     format!("{prefix}{padding}{suffix}")
 }
 

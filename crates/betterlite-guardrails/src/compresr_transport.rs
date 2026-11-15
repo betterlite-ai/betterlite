@@ -99,12 +99,12 @@ impl CompresrTransport {
         let request = payload::build(&self.settings, targets);
         let headers = match self.request_headers() {
             Ok(headers) => headers,
-            Err(failure) => return self.failed(failure),
+            Err(failure) => return self.failed(&failure),
         };
         let body = match serde_json::to_vec(&request.payload) {
             Ok(body) => body,
             Err(source) => {
-                return self.failed(Failure {
+                return self.failed(&Failure {
                     message: REQUEST_FAILED,
                     detail: source.to_string(),
                 });
@@ -121,7 +121,7 @@ impl CompresrTransport {
         let response = match sent {
             Ok(response) => response,
             Err(source) => {
-                return self.failed(Failure {
+                return self.failed(&Failure {
                     message: REQUEST_FAILED,
                     detail: source.to_string(),
                 });
@@ -145,14 +145,14 @@ impl CompresrTransport {
                 "status {status}, body {}",
                 response::safe_response_text(body.as_deref(), SAFE_RESPONSE_TEXT_LIMIT)
             );
-            return self.failed(Failure {
+            return self.failed(&Failure {
                 message: SERVICE_ERROR,
                 detail,
             });
         }
         match response::parse_results(body.as_deref(), expected) {
             Ok(results) => Ok(CompressOutcome::Results(results)),
-            Err(failure) => self.failed(failure),
+            Err(failure) => self.failed(&failure),
         }
     }
 
@@ -169,7 +169,7 @@ impl CompresrTransport {
         Ok(headers)
     }
 
-    fn failed(&self, failure: Failure) -> Result<CompressOutcome, CompresrTransportError> {
+    fn failed(&self, failure: &Failure) -> Result<CompressOutcome, CompresrTransportError> {
         if self.settings.fallback == UnreachableFallback::FailOpen {
             tracing::warn!(
                 detail = %failure.detail,

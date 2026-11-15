@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_guardrails::compresr_transport::api_base::validate_api_base;
 use betterlite_guardrails::compresr_transport::content::replace_text_in_content;
 use betterlite_guardrails::compresr_transport::query::{
@@ -30,7 +30,7 @@ pub(crate) struct Settings {
     dynamic: bool,
     dynamic_min_ratio: Option<f64>,
     dynamic_max_ratio: Option<f64>,
-    compression_params: BTreeMap<String, GuardrailValue>,
+    compression_params: OpaqueParams,
     timeout: Option<f64>,
     fallback: UnreachableFallback,
 }
@@ -45,7 +45,7 @@ impl Settings {
             dynamic: self.dynamic,
             dynamic_min_ratio: self.dynamic_min_ratio,
             dynamic_max_ratio: self.dynamic_max_ratio,
-            compression_params: self.compression_params.clone(),
+            compression_params: self.compression_params.0.clone(),
             timeout: self
                 .timeout
                 .map_or(Ok(DEFAULT_COMPRESS_TIMEOUT), Duration::try_from_secs_f64)

@@ -69,10 +69,10 @@ fn map_ipv4_mapped(address: IpAddr) -> IpAddr {
 }
 
 fn integer_to_ip(magnitude: u128) -> IpAddr {
-    match u32::try_from(magnitude) {
-        Ok(four) => IpAddr::V4(Ipv4Addr::from(four)),
-        Err(_) => IpAddr::V6(Ipv6Addr::from(magnitude)),
-    }
+    u32::try_from(magnitude).map_or_else(
+        |_too_wide| IpAddr::V6(Ipv6Addr::from(magnitude)),
+        |four| IpAddr::V4(Ipv4Addr::from(four)),
+    )
 }
 
 // Python's int(text, 0): an optional sign, 0x/0o/0b prefixes, single underscores between digits, and no leading zero in decimal

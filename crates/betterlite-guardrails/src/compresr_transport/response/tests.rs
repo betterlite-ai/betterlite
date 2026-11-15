@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -9,33 +10,25 @@ use rstest::rstest;
 use super::{parse_body, parse_results, safe_int, safe_response_text};
 use crate::compresr_transport::failure::{BATCH_MISMATCH, UNEXPECTED_SHAPE, UNREADABLE};
 
-fn value(source: &str) -> GuardrailValue {
-    serde_json::from_str(source).unwrap()
-}
-
-fn body(source: &str) -> Option<&str> {
-    Some(source)
-}
-
 #[rstest]
-#[case::signed("42", 42)]
-#[case::negative("-5", -5)]
-#[case::unsigned_large("18446744073709551615", i64::MAX)]
-#[case::decimal("4.9", 4)]
-#[case::negative_decimal("-4.9", -4)]
-#[case::numeric_text(r#""42""#, 42)]
-#[case::padded_text(r#"" 42 ""#, 42)]
-#[case::non_numeric_text(r#""lots""#, 0)]
-#[case::float_text(r#""4.5""#, 0)]
-#[case::underscored_text(r#""1_0""#, 0)]
-#[case::null("null", 0)]
-#[case::boolean_true("true", 1)]
-#[case::boolean_false("false", 0)]
-#[case::list("[]", 0)]
-#[case::object("{}", 0)]
-#[case::huge_decimal("1e300", 0)]
-fn token_stats_parse_defensively(#[case] source: &str, #[case] expected: i64) {
-    assert_eq!(safe_int(Some(&value(source))), expected);
+#[case::signed(GuardrailValue::SignedInteger(42), 42)]
+#[case::negative(GuardrailValue::SignedInteger(-5), -5)]
+#[case::unsigned_large(GuardrailValue::UnsignedInteger(u64::MAX), i64::MAX)]
+#[case::decimal(GuardrailValue::Decimal(4.9_f64), 4)]
+#[case::negative_decimal(GuardrailValue::Decimal(-4.9_f64), -4)]
+#[case::numeric_text(GuardrailValue::Text("42".to_owned()), 42)]
+#[case::padded_text(GuardrailValue::Text(" 42 ".to_owned()), 42)]
+#[case::non_numeric_text(GuardrailValue::Text("lots".to_owned()), 0)]
+#[case::float_text(GuardrailValue::Text("4.5".to_owned()), 0)]
+#[case::underscored_text(GuardrailValue::Text("1_0".to_owned()), 0)]
+#[case::null(GuardrailValue::Null, 0)]
+#[case::boolean_true(GuardrailValue::Boolean(true), 1)]
+#[case::boolean_false(GuardrailValue::Boolean(false), 0)]
+#[case::list(GuardrailValue::Array(Vec::new()), 0)]
+#[case::object(GuardrailValue::Object(BTreeMap::new()), 0)]
+#[case::huge_decimal(GuardrailValue::Decimal(1e300_f64), 0)]
+fn token_stats_parse_defensively(#[case] value: GuardrailValue, #[case] expected: i64) {
+    assert_eq!(safe_int(Some(&value)), expected);
 }
 
 #[test]
@@ -61,7 +54,7 @@ fn an_undecodable_body_becomes_a_marker() {
 #[case::exact("hello", 5, "hello")]
 #[case::truncated("hello", 4, "hell")]
 #[case::empty("", 500, "")]
-#[case::characters_not_bytes("ééé", 2, "éé")]
+#[case::characters_not_bytes("\u{e9}\u{e9}\u{e9}", 2, "\u{e9}\u{e9}")]
 fn response_text_is_bounded_to_the_limit(
     #[case] text: &str,
     #[case] limit: usize,
@@ -73,7 +66,7 @@ fn response_text_is_bounded_to_the_limit(
 #[test]
 fn a_single_response_is_its_own_result() {
     let Ok(results) = parse_results(
-        body(
+        Some(
             r#"{"data":{"compressed_context":"short","original_tokens":10,"compressed_tokens":4}}"#,
         ),
         1,
@@ -89,7 +82,7 @@ fn a_single_response_is_its_own_result() {
 #[test]
 fn a_batch_response_keeps_one_result_per_input_in_order() {
     let Ok(results) = parse_results(
-        body(
+        Some(
             r#"{"data":{"results":[
                 {"compressed_context":"one","original_tokens":5,"compressed_tokens":1},
                 {"compressed_context":"two","original_tokens":6,"compressed_tokens":2}
@@ -116,7 +109,7 @@ fn a_batch_response_keeps_one_result_per_input_in_order() {
 #[case::not_a_list(r#"{"data":{"results":"one"}}"#, 2)]
 #[case::non_object_result(r#"{"data":{"results":["one","two"]}}"#, 2)]
 fn a_batch_without_one_object_per_input_fails(#[case] source: &str, #[case] expected: usize) {
-    let failure = parse_results(body(source), expected).expect_err("failure");
+    let failure = parse_results(Some(source), expected).expect_err("failure");
     assert_eq!(failure.message, BATCH_MISMATCH);
 }
 
@@ -126,22 +119,60 @@ fn a_batch_without_one_object_per_input_fails(#[case] source: &str, #[case] expe
 #[case::no_data(r#"{"results":[]}"#)]
 #[case::data_not_an_object(r#"{"data":[]}"#)]
 fn an_unexpected_body_shape_fails(#[case] source: &str) {
-    let failure = parse_results(body(source), 1).expect_err("failure");
+    let failure = parse_results(Some(source), 1).expect_err("failure");
     assert_eq!(failure.message, UNEXPECTED_SHAPE);
 }
 
-#[rstest]
-#[case::not_json("{")]
-#[case::number_out_of_range(r#"{"data":{"original_tokens":1e400}}"#)]
-fn an_unreadable_body_fails(#[case] source: &str) {
-    let failure = parse_results(body(source), 1).expect_err("failure");
+#[test]
+fn an_unreadable_body_fails() {
+    let failure = parse_results(Some("{"), 1).expect_err("failure");
     assert_eq!(failure.message, UNREADABLE);
+}
+
+#[test]
+fn a_float_token_stat_in_the_body_is_read_as_a_number() {
+    let Ok(results) = parse_results(
+        Some(
+            r#"{"data":{"compressed_context":"short","original_tokens":4.9,"compressed_tokens":-4.9}}"#,
+        ),
+        1,
+    ) else {
+        panic!("a response with float stats must parse");
+    };
+    assert_eq!(results[0].original_tokens, 4);
+    assert_eq!(results[0].compressed_tokens, -4);
+}
+
+#[test]
+fn a_token_stat_past_the_float_range_is_zero() {
+    let Ok(results) = parse_results(
+        Some(r#"{"data":{"compressed_context":"short","original_tokens":1e400}}"#),
+        1,
+    ) else {
+        panic!("a response with an unrepresentable stat must still parse");
+    };
+    assert_eq!(results[0].compressed_context.as_deref(), Some("short"));
+    assert_eq!(results[0].original_tokens, 0);
 }
 
 #[test]
 fn an_unread_body_is_unreadable() {
     let failure = parse_results(None, 1).expect_err("failure");
     assert_eq!(failure.message, UNREADABLE);
+}
+
+#[test]
+fn a_batch_result_reads_float_stats_as_numbers() {
+    let Ok(results) = parse_results(
+        Some(
+            r#"{"data":{"results":[{"compressed_context":"one","original_tokens":2.5},{"compressed_context":"two","compressed_tokens":3.5}]}}"#,
+        ),
+        2,
+    ) else {
+        panic!("a batch response with float stats must parse");
+    };
+    assert_eq!(results[0].original_tokens, 2);
+    assert_eq!(results[1].compressed_tokens, 3);
 }
 
 #[test]

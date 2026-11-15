@@ -7,32 +7,28 @@ use rstest::rstest;
 use super::{parse_ip_literal, validate_api_base};
 use crate::compresr_transport::error::CompresrTransportError;
 
-fn v4(first: u8, second: u8, third: u8, fourth: u8) -> Option<IpAddr> {
-    Some(IpAddr::V4(Ipv4Addr::new(first, second, third, fourth)))
-}
-
-fn metadata_ip() -> Option<IpAddr> {
-    v4(169, 254, 169, 254)
+fn v4(first: u8, second: u8, third: u8, fourth: u8) -> IpAddr {
+    IpAddr::V4(Ipv4Addr::new(first, second, third, fourth))
 }
 
 #[rstest]
-#[case::dotted_quad("169.254.169.254", metadata_ip())]
-#[case::decimal_single_integer("2852039166", metadata_ip())]
-#[case::hex_single_integer("0xa9fea9fe", metadata_ip())]
-#[case::hex_uppercase("0XA9FEA9FE", metadata_ip())]
-#[case::binary("0b1010", v4(0, 0, 0, 10))]
-#[case::octal("0o10", v4(0, 0, 0, 8))]
-#[case::hex_underscore_after_prefix("0x_a9fea9fe", metadata_ip())]
-#[case::octal_underscore_after_prefix("0o_10", v4(0, 0, 0, 8))]
-#[case::binary_underscore_after_prefix("0b_10", v4(0, 0, 0, 2))]
+#[case::dotted_quad("169.254.169.254", Some(v4(169, 254, 169, 254)))]
+#[case::decimal_single_integer("2852039166", Some(v4(169, 254, 169, 254)))]
+#[case::hex_single_integer("0xa9fea9fe", Some(v4(169, 254, 169, 254)))]
+#[case::hex_uppercase("0XA9FEA9FE", Some(v4(169, 254, 169, 254)))]
+#[case::binary("0b1010", Some(v4(0, 0, 0, 10)))]
+#[case::octal("0o10", Some(v4(0, 0, 0, 8)))]
+#[case::hex_underscore_after_prefix("0x_a9fea9fe", Some(v4(169, 254, 169, 254)))]
+#[case::octal_underscore_after_prefix("0o_10", Some(v4(0, 0, 0, 8)))]
+#[case::binary_underscore_after_prefix("0b_10", Some(v4(0, 0, 0, 2)))]
 #[case::sign_after_prefix("0x_+a9fea9fe", None)]
 #[case::sign_without_underscore("0x+a9fea9fe", None)]
 #[case::minus_after_prefix("0x_-a9fea9fe", None)]
-#[case::underscored("1_000", v4(0, 0, 3, 232))]
-#[case::whitespace(" 2852039166 ", metadata_ip())]
-#[case::zero("0", v4(0, 0, 0, 0))]
-#[case::mapped_ipv6("::ffff:169.254.169.254", metadata_ip())]
-#[case::mapped_ipv6_hex("::ffff:a9fe:a9fe", metadata_ip())]
+#[case::underscored("1_000", Some(v4(0, 0, 3, 232)))]
+#[case::whitespace(" 2852039166 ", Some(v4(169, 254, 169, 254)))]
+#[case::zero("0", Some(v4(0, 0, 0, 0)))]
+#[case::mapped_ipv6("::ffff:169.254.169.254", Some(v4(169, 254, 169, 254)))]
+#[case::mapped_ipv6_hex("::ffff:a9fe:a9fe", Some(v4(169, 254, 169, 254)))]
 #[case::ipv6(
     "fd00:ec2::254",
     Some(IpAddr::V6(Ipv6Addr::new(0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0x254)))
@@ -46,9 +42,9 @@ fn metadata_ip() -> Option<IpAddr> {
 #[case::trailing_underscore_after_prefix("0x_ff_", None)]
 #[case::leading_underscore("_100", None)]
 #[case::negative("-1", None)]
-#[case::explicit_plus("+5", v4(0, 0, 0, 5))]
+#[case::explicit_plus("+5", Some(v4(0, 0, 0, 5)))]
 #[case::doubled_plus("++5", None)]
-#[case::hex_with_leading_zero("0x00ff", v4(0, 0, 0, 255))]
+#[case::hex_with_leading_zero("0x00ff", Some(v4(0, 0, 0, 255)))]
 #[case::node_style("0x10.0x10.0x10.0x10", None)]
 #[case::hostname("metadata.google.internal", None)]
 #[case::empty("", None)]

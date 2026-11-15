@@ -109,9 +109,10 @@ fn passthrough(settings: &TransportSettings) -> BTreeMap<String, GuardrailValue>
         .compression_params
         .iter()
         .filter(|(key, _)| {
-            !NAMED_KEYS.contains(&key.as_str())
-                && !(key.as_str() == "dynamic_min_ratio" && settings.dynamic_min_ratio.is_some())
-                && !(key.as_str() == "dynamic_max_ratio" && settings.dynamic_max_ratio.is_some())
+            let replaced = NAMED_KEYS.contains(&key.as_str())
+                || (key.as_str() == "dynamic_min_ratio" && settings.dynamic_min_ratio.is_some())
+                || (key.as_str() == "dynamic_max_ratio" && settings.dynamic_max_ratio.is_some());
+            !replaced
         })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()

@@ -10,7 +10,13 @@ mod tests;
 pub fn render_tool_intent(function: &GuardrailValue) -> String {
     match function {
         GuardrailValue::Object(fields) => render_intent_fields(fields),
-        _ => String::new(),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_) => String::new(),
     }
 }
 
