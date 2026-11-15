@@ -16,7 +16,7 @@ from litellm.types.utils import Choices, LlmProviders, Message, ModelResponse
 from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-# The Pegasus transformation reads neither logging_obj nor encoding, so its view passes None for both.
+# Pegasus ignores logging_obj and encoding, so the view passes None for both.
 @runtime_checkable
 class Transform(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
