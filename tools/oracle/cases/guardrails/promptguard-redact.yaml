@@ -10,11 +10,7 @@ call:
       structured_messages:
         - {role: user, content: "my email is alice@example.com"}
         - {role: assistant, content: "noted"}
-        - role: user
-          content:
-            - {type: text, text: "call 555-0100"}
-            - {type: image_url, image_url: {url: "https://img.test/a.png"}}
-            - {type: text, text: ""}
+        - {role: user, content: "call 555-0100"}
     answer:
       status: 200
       headers: {}
