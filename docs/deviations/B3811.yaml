@@ -26,6 +26,22 @@ deviations:
       The shared renderer takes string context pairs and cannot carry a null, and printing "None" would put
       Python's spelling of an absent value into a message a caller reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L452-L462
+  - what: >-
+      A JSON integer outside the i64 and u64 ranges is compared as its nearest f64 value, so a pattern
+      sees the float's text and a failure message prints that text instead of the exact digits.
+    why: >-
+      GuardrailValue holds i64, u64 and f64 only, while Python's json.loads keeps an arbitrary precision
+      int. An allowed_param_patterns entry anchored to the exact digits of such an argument no longer
+      matches, and the last-pattern-failure message for it carries the float's text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L380-L393
+  - what: >-
+      An argument object whose only key is "$serde_json::private::Number" and whose value there is a
+      numeric string is read as that number, not as an object with that key.
+    why: >-
+      serde_json with arbitrary_precision writes every non-integer JSON number as exactly that one-entry
+      map, and after parsing that number cannot be told apart from a caller's object using the reserved
+      key. Reading the key as the number keeps the value LiteLLM's json.loads gives a float argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L307-L337
 kept_bugs:
   - what: >-
       A tool call evaluated against a rule whose id repeats checks that rule against the parameter patterns
