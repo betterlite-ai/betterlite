@@ -91,6 +91,10 @@ fn records_the_realtime_pre_call() {
         env: &env,
     };
     prepare_connection(&settings, &mut logger).expect("the connection prepares");
+    assert_pre_call_details(&state);
+}
+
+fn assert_pre_call_details(state: &LoggingState) {
     assert_eq!(
         state.model_call_details.get("log_event_type"),
         Some(&Json::Text(String::from("pre_api_call")))

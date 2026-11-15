@@ -3,6 +3,7 @@ use super::failure::RealtimeClose;
 pub const MESSAGE_TOO_BIG_CODE: u16 = 1009;
 pub const MESSAGE_TOO_BIG_REASON: &str = "message too big";
 
+#[must_use]
 pub fn oversized_message_close(
     message_bytes: usize,
     max_size_bytes: usize,

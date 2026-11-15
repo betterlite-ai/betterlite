@@ -86,10 +86,10 @@ impl RealtimeHttpSettings {
 #[must_use]
 pub fn validate_environment(headers: &Headers, api_key: Option<&SecretString>) -> Headers {
     let mut validated = headers.clone();
-    let authorization = match api_key {
-        Some(key) => format!("Bearer {}", key.expose_secret()),
-        None => String::from("Bearer "),
-    };
+    let authorization = api_key.map_or_else(
+        || String::from("Bearer "),
+        |key| format!("Bearer {}", key.expose_secret()),
+    );
     validated.insert(String::from("Authorization"), authorization);
     validated.insert(
         String::from("Content-Type"),

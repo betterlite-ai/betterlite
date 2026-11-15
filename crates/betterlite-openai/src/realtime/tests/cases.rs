@@ -6,59 +6,55 @@ use crate::realtime::connect::{RealtimeConnectSettings, prepare_connection};
 use crate::realtime::error::RealtimeError;
 use crate::realtime::failure::{ClientAction, RealtimeClose, RealtimeFailure, client_action};
 use crate::realtime::headers::additional_headers;
-use crate::realtime::http_config::{RealtimeHttpSettings, validate_environment};
+use crate::realtime::http_config::validate_environment;
 use crate::realtime::ssl::{RealtimeSsl, ssl_config};
+use crate::realtime::url::QueryParams;
 
-use super::fixture::{KEY, MAX_SIZE, MODEL, RecordingLogger, params, prepare, redactor};
+use super::fixture::{
+    DEFAULT_URL, KEY, MAX_SIZE, MODEL, RecordingLogger, http_auth_settings, http_bases,
+    logged_plan, params, plan_for, prepare, redactor, url_for,
+};
+
+fn example_url(query_params: &QueryParams) -> String {
+    url_for(Some("https://example.test/"), Some(query_params))
+}
+
+fn forced_model(query_params: &QueryParams) -> Option<String> {
+    plan_for(
+        Some("https://example.test/"),
+        Some(query_params),
+        &Verification::Enabled,
+    )
+    .force_transcription_model
+}
 
 pub(super) fn ws_wss_scheme() {
-    let mut logger = RecordingLogger::default();
-    let default_plan = prepare(None, None, false, &Verification::Enabled, &mut logger).unwrap();
-    assert_eq!(
-        default_plan.url,
-        "wss://api.openai.com/v1/realtime?model=realtime-a"
-    );
+    let (default_plan, logger) = logged_plan(None, None, false);
+    assert_eq!(default_plan.url, DEFAULT_URL);
     assert_eq!(default_plan.ssl, RealtimeSsl::Shared);
     assert_eq!(logger.calls.len(), 1);
     assert_eq!(logger.calls[0].api_base, default_plan.url);
 
-    let secure = prepare(
-        Some("https://api.openai.com/"),
-        None,
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(
-        secure.url,
-        "wss://api.openai.com/v1/realtime?model=realtime-a"
-    );
+    assert_eq!(url_for(Some("https://api.openai.com/"), None), DEFAULT_URL);
 
-    let plain = prepare(
+    let plain = plan_for(
         Some("http://127.0.0.1:8080/base/path"),
         None,
-        false,
         &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
+    );
     assert_eq!(
         plain.url,
         "ws://127.0.0.1:8080/v1/realtime?model=realtime-a"
     );
     assert_eq!(plain.ssl, RealtimeSsl::None);
 
-    let empty_query = params(&[]);
-    let kept = prepare(
-        Some("https://example.test/a/b?q=1#frag"),
-        Some(&empty_query),
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(kept.url, "wss://example.test/v1/realtime?q=1#frag");
+    assert_eq!(
+        url_for(
+            Some("https://example.test/a/b?q=1#frag"),
+            Some(&params(&[]))
+        ),
+        "wss://example.test/v1/realtime?q=1#frag"
+    );
 
     let empty_base = prepare(
         Some(""),
@@ -74,206 +70,91 @@ pub(super) fn ws_wss_scheme() {
 }
 
 pub(super) fn replace_path_with_v1_realtime() {
-    let replaced = prepare(
-        Some("https://api.openai.com/v1/realtime"),
-        None,
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
     assert_eq!(
-        replaced.url,
-        "wss://api.openai.com/v1/realtime?model=realtime-a"
+        url_for(Some("https://api.openai.com/v1/realtime"), None),
+        DEFAULT_URL
     );
-
-    let no_slash = prepare(
-        Some("https://api.openai.com"),
-        None,
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(
-        no_slash.url,
-        "wss://api.openai.com/v1/realtime?model=realtime-a"
-    );
+    assert_eq!(url_for(Some("https://api.openai.com"), None), DEFAULT_URL);
 
     let empty_query = params(&[]);
-    let with_query = prepare(
-        Some("https://example.test/a/b?q=1"),
-        Some(&empty_query),
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(with_query.url, "wss://example.test/v1/realtime?q=1");
+    assert_eq!(
+        url_for(Some("https://example.test/a/b?q=1"), Some(&empty_query)),
+        "wss://example.test/v1/realtime?q=1"
+    );
+    assert_eq!(
+        url_for(Some("https://example.test//a//b"), Some(&empty_query)),
+        "wss://example.test/v1/realtime"
+    );
 
     let chosen = params(&[("model", Some("m"))]);
-    let replaced_query = prepare(
-        Some("https://example.test/a/b?q=1"),
-        Some(&chosen),
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(replaced_query.url, "wss://example.test/v1/realtime?model=m");
-
-    let fragment = prepare(
-        Some("https://example.test/a/b?q=1#frag"),
-        Some(&chosen),
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(fragment.url, "wss://example.test/v1/realtime?model=m#frag");
-
-    let doubled = prepare(
-        Some("https://example.test//a//b"),
-        Some(&empty_query),
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(doubled.url, "wss://example.test/v1/realtime");
-
-    let default_port = prepare(
-        Some("https://example.test:443/x"),
-        None,
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
     assert_eq!(
-        default_port.url,
-        "wss://example.test/v1/realtime?model=realtime-a"
+        url_for(Some("https://example.test/a/b?q=1"), Some(&chosen)),
+        "wss://example.test/v1/realtime?model=m"
+    );
+    assert_eq!(
+        url_for(Some("https://example.test/a/b?q=1#frag"), Some(&chosen)),
+        "wss://example.test/v1/realtime?model=m#frag"
     );
 
-    let already_ws = prepare(
-        Some("wss://example.test/x"),
-        None,
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
     assert_eq!(
-        already_ws.url,
-        "wss://example.test/v1/realtime?model=realtime-a"
+        url_for(Some("https://example.test:443/x"), None),
+        DEFAULT_URL
     );
+    assert_eq!(url_for(Some("wss://example.test/x"), None), DEFAULT_URL);
 }
 
 pub(super) fn query_model_or_explicit() {
-    let mut logger = RecordingLogger::default();
-    let fallback = prepare(
-        Some("https://example.test/"),
-        None,
-        false,
-        &Verification::Enabled,
-        &mut logger,
-    )
-    .unwrap();
-    assert_eq!(
-        fallback.url,
-        "wss://example.test/v1/realtime?model=realtime-a"
-    );
-    assert_eq!(
-        logger.calls[0].query_params,
-        params(&[("model", Some("realtime-a"))])
-    );
-    assert_eq!(fallback.force_transcription_model, None);
+    fallback_and_suppression();
+    transcription_intent();
+    escaped_and_null_query();
+}
 
-    let empty = params(&[]);
-    let mut empty_logger = RecordingLogger::default();
-    let suppressed = prepare(
-        Some("https://example.test/"),
-        Some(&empty),
-        false,
-        &Verification::Enabled,
-        &mut empty_logger,
-    )
-    .unwrap();
+fn fallback_and_suppression() {
+    let (fallback_plan, fallback_log) = logged_plan(None, None, false);
+    assert_eq!(
+        fallback_log.calls[0].query_params,
+        params(&[("model", Some(MODEL))])
+    );
+    assert_eq!(fallback_plan.force_transcription_model, None);
+
+    let (suppressed, empty_log) =
+        logged_plan(Some("https://example.test/"), Some(&params(&[])), false);
     assert_eq!(suppressed.url, "wss://example.test/v1/realtime");
-    assert!(empty_logger.calls[0].query_params.is_empty());
+    assert!(empty_log.calls[0].query_params.is_empty());
+}
 
+fn transcription_intent() {
     let transcription = params(&[
         ("model", Some("explicit")),
         ("intent", Some("transcription")),
     ]);
-    let forced = prepare(
-        Some("https://example.test/"),
-        Some(&transcription),
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
     assert_eq!(
-        forced.url,
+        example_url(&transcription),
         "wss://example.test/v1/realtime?model=explicit&intent=transcription"
     );
-    assert_eq!(
-        forced.force_transcription_model.as_deref(),
-        Some("realtime-a")
-    );
+    assert_eq!(forced_model(&transcription).as_deref(), Some(MODEL));
 
     let chat = params(&[("model", Some("explicit")), ("intent", Some("chat"))]);
-    let unchanged = prepare(
-        Some("https://example.test/"),
-        Some(&chat),
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(unchanged.force_transcription_model, None);
+    assert_eq!(forced_model(&chat), None);
+}
 
+fn escaped_and_null_query() {
     let starred = params(&[("model", Some("a*b~c"))]);
-    let starred_plan = prepare(
-        Some("https://example.test/"),
-        Some(&starred),
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
     assert_eq!(
-        starred_plan.url,
+        example_url(&starred),
         "wss://example.test/v1/realtime?model=a%2Ab~c"
     );
 
     let null_intent = params(&[("intent", None), ("model", Some("m"))]);
-    let null_plan = prepare(
-        Some("https://example.test/"),
-        Some(&null_intent),
-        false,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
     assert_eq!(
-        null_plan.url,
+        example_url(&null_intent),
         "wss://example.test/v1/realtime?intent=&model=m"
     );
-    assert_eq!(null_plan.force_transcription_model, None);
+    assert_eq!(forced_model(&null_intent), None);
 }
 
 pub(super) fn beta_header_only_when_client_sends() {
-    let mut logger = RecordingLogger::default();
-    let plain = prepare(
-        Some("https://example.test/"),
-        None,
-        false,
-        &Verification::Enabled,
-        &mut logger,
-    )
-    .unwrap();
+    let (plain, logger) = logged_plan(Some("https://example.test/"), None, false);
     assert_eq!(plain.headers.len(), 1);
     assert_eq!(
         plain.headers.get("Authorization").map(String::as_str),
@@ -283,14 +164,7 @@ pub(super) fn beta_header_only_when_client_sends() {
     assert_eq!(logger.calls[0].headers, plain.headers);
     assert!(plain.event_normalizer.is_none());
 
-    let beta = prepare(
-        Some("https://example.test/"),
-        None,
-        true,
-        &Verification::Enabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
+    let (beta, beta_log) = logged_plan(Some("https://example.test/"), None, true);
     assert_eq!(
         beta.headers.get("Authorization").map(String::as_str),
         Some("Bearer sk-test")
@@ -300,6 +174,7 @@ pub(super) fn beta_header_only_when_client_sends() {
         Some("realtime=v1")
     );
     assert!(beta.event_normalizer.is_none());
+    assert_eq!(beta_log.calls.len(), 1);
 
     let key = SecretString::from(String::new());
     let headers = additional_headers(&key, false);
@@ -310,13 +185,12 @@ pub(super) fn beta_header_only_when_client_sends() {
 }
 
 pub(super) fn http_session_paths() {
-    let empty = RealtimeHttpSettings {
-        litellm_api_base: None,
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        openai_api_base: None,
-        openai_api_key: None,
-    };
+    default_http_paths();
+    explicit_and_global_bases();
+}
+
+fn default_http_paths() {
+    let empty = http_bases(None, None);
     assert_eq!(empty.api_base(None), "https://api.openai.com");
     assert_eq!(
         empty.complete_url(None),
@@ -330,38 +204,28 @@ pub(super) fn http_session_paths() {
         empty.transcription_session_url(None),
         "https://api.openai.com/v1/realtime/transcription_sessions"
     );
+}
 
+fn explicit_and_global_bases() {
+    let empty = http_bases(None, None);
+    let explicit = "http://explicit.example/v1/";
+    assert_eq!(empty.api_base(Some(explicit)), explicit);
     assert_eq!(
-        empty.api_base(Some("http://explicit.example/v1/")),
-        "http://explicit.example/v1/"
-    );
-    assert_eq!(
-        empty.complete_url(Some("http://explicit.example/v1/")),
+        empty.complete_url(Some(explicit)),
         "http://explicit.example/v1/realtime/client_secrets"
     );
     assert_eq!(
         empty.calls_url(Some("http://explicit.example///")),
         "http://explicit.example/v1/realtime/calls"
     );
-    let doubled = RealtimeHttpSettings {
-        litellm_api_base: Some(String::from("http://x/v1/v1")),
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        openai_api_base: None,
-        openai_api_key: None,
-    };
+
+    let doubled = http_bases(Some("http://x/v1/v1"), None);
     assert_eq!(
         doubled.complete_url(None),
         "http://x/v1/v1/realtime/client_secrets"
     );
 
-    let globals = RealtimeHttpSettings {
-        litellm_api_base: Some(String::from("http://global.example")),
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        openai_api_base: Some(String::from("http://env.example/")),
-        openai_api_key: None,
-    };
+    let globals = http_bases(Some("http://global.example"), Some("http://env.example/"));
     assert_eq!(globals.api_base(None), "http://global.example");
     assert_eq!(globals.api_base(Some("")), "http://global.example");
     assert_eq!(
@@ -369,13 +233,7 @@ pub(super) fn http_session_paths() {
         "http://global.example/v1/realtime/transcription_sessions"
     );
 
-    let env_only = RealtimeHttpSettings {
-        litellm_api_base: Some(String::new()),
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        openai_api_base: Some(String::from("http://env.example/")),
-        openai_api_key: None,
-    };
+    let env_only = http_bases(Some(""), Some("http://env.example/"));
     assert_eq!(env_only.api_base(None), "http://env.example/");
     assert_eq!(
         env_only.calls_url(None),
@@ -385,7 +243,7 @@ pub(super) fn http_session_paths() {
 
 pub(super) fn missing_api_key() {
     let mut logger = RecordingLogger::default();
-    let settings = RealtimeConnectSettings {
+    let config = RealtimeConnectSettings {
         api_base: None,
         api_key: None,
         model: MODEL,
@@ -394,7 +252,7 @@ pub(super) fn missing_api_key() {
         ssl_verification: &Verification::Enabled,
         max_message_size_bytes: MAX_SIZE,
     };
-    let error = prepare_connection(&settings, &mut logger)
+    let error = prepare_connection(&config, &mut logger)
         .err()
         .expect("a missing key is refused");
     assert!(matches!(error, RealtimeError::MissingApiKey));
@@ -404,17 +262,17 @@ pub(super) fn missing_api_key() {
     );
     assert!(logger.calls.is_empty());
 
-    let empty_key = SecretString::from(String::new());
-    let settings = RealtimeConnectSettings {
+    let blank_key = SecretString::from(String::new());
+    let keyed_settings = RealtimeConnectSettings {
         api_base: None,
-        api_key: Some(&empty_key),
+        api_key: Some(&blank_key),
         model: MODEL,
         query_params: None,
         beta_realtime: false,
         ssl_verification: &Verification::Enabled,
         max_message_size_bytes: MAX_SIZE,
     };
-    let plan = prepare_connection(&settings, &mut logger).unwrap();
+    let plan = prepare_connection(&keyed_settings, &mut logger).unwrap();
     assert_eq!(
         plan.headers.get("Authorization").map(String::as_str),
         Some("Bearer ")
@@ -431,47 +289,52 @@ pub(super) fn handshake_refusal() {
 }
 
 pub(super) fn redacted_close_reason() {
+    redacted_other_errors();
+    ignored_close_failures();
+    unknown_close_failure();
+}
+
+fn redacted_other_errors() {
     let redactor = redactor();
-    let other = client_action(
-        RealtimeFailure::Other {
-            message: "connect failed with Bearer abcdefghij1234567890",
-        },
-        &redactor,
-    )
-    .unwrap();
     assert_eq!(
-        other,
+        client_action(
+            RealtimeFailure::Other {
+                message: "connect failed with Bearer abcdefghij1234567890",
+            },
+            &redactor,
+        )
+        .unwrap(),
         ClientAction::Close(RealtimeClose {
             code: 1011,
             reason: String::from("Internal server error: connect failed with REDACTED"),
         })
     );
-
-    let plain = client_action(
-        RealtimeFailure::Other {
-            message: "connection reset",
-        },
-        &redactor,
-    )
-    .unwrap();
     assert_eq!(
-        plain,
+        client_action(
+            RealtimeFailure::Other {
+                message: "connection reset",
+            },
+            &redactor,
+        )
+        .unwrap(),
         ClientAction::Close(RealtimeClose {
             code: 1011,
             reason: String::from("Internal server error: connection reset"),
         })
     );
+}
 
-    let completed = client_action(
-        RealtimeFailure::CloseFailed {
-            message: "connection reset",
-            close_error: "sent 1011 (internal error) already completed",
-        },
-        &redactor,
-    )
-    .unwrap();
+fn ignored_close_failures() {
+    let redactor = redactor();
     assert_eq!(
-        completed,
+        client_action(
+            RealtimeFailure::CloseFailed {
+                message: "connection reset",
+                close_error: "sent 1011 (internal error) already completed",
+            },
+            &redactor,
+        )
+        .unwrap(),
         ClientAction::IgnoreCloseFailure {
             attempted: RealtimeClose {
                 code: 1011,
@@ -479,7 +342,6 @@ pub(super) fn redacted_close_reason() {
             },
         }
     );
-
     let library = client_action(
         RealtimeFailure::CloseFailed {
             message: "connection reset",
@@ -489,7 +351,10 @@ pub(super) fn redacted_close_reason() {
     )
     .unwrap();
     assert!(matches!(library, ClientAction::IgnoreCloseFailure { .. }));
+}
 
+fn unknown_close_failure() {
+    let redactor = redactor();
     let failure = client_action(
         RealtimeFailure::CloseFailed {
             message: "connection reset",
@@ -505,49 +370,33 @@ pub(super) fn redacted_close_reason() {
 }
 
 pub(super) fn realtime_ssl_and_size() {
-    let ws_url = "ws://example.test/v1/realtime";
+    let plain_url = "ws://example.test/v1/realtime";
+    let secure_url = "wss://example.test/v1/realtime";
     let ca_file = Verification::CaFile(String::from("/etc/ca.pem"));
     assert_eq!(
-        ssl_config(ws_url, &Verification::Enabled),
+        ssl_config(plain_url, &Verification::Enabled),
         RealtimeSsl::None
     );
     assert_eq!(
-        ssl_config(ws_url, &Verification::Disabled),
+        ssl_config(plain_url, &Verification::Disabled),
         RealtimeSsl::None
     );
-    assert_eq!(ssl_config(ws_url, &ca_file), RealtimeSsl::None);
-
-    let wss_url = "wss://example.test/v1/realtime";
+    assert_eq!(ssl_config(plain_url, &ca_file), RealtimeSsl::None);
     assert_eq!(
-        ssl_config(wss_url, &Verification::Enabled),
+        ssl_config(secure_url, &Verification::Enabled),
         RealtimeSsl::Shared
     );
     assert_eq!(
-        ssl_config(wss_url, &Verification::Disabled),
+        ssl_config(secure_url, &Verification::Disabled),
         RealtimeSsl::Insecure
     );
-    assert_eq!(ssl_config(wss_url, &ca_file), RealtimeSsl::Shared);
+    assert_eq!(ssl_config(secure_url, &ca_file), RealtimeSsl::Shared);
 
-    let http_plan = prepare(
-        Some("http://example.test"),
-        None,
-        false,
-        &Verification::Disabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(http_plan.ssl, RealtimeSsl::None);
-    assert_eq!(http_plan.max_message_size_bytes, MAX_SIZE);
-
-    let https_plan = prepare(
-        Some("https://example.test"),
-        None,
-        false,
-        &Verification::Disabled,
-        &mut RecordingLogger::default(),
-    )
-    .unwrap();
-    assert_eq!(https_plan.ssl, RealtimeSsl::Insecure);
+    let plain_plan = plan_for(Some("http://example.test"), None, &Verification::Disabled);
+    assert_eq!(plain_plan.ssl, RealtimeSsl::None);
+    assert_eq!(plain_plan.max_message_size_bytes, MAX_SIZE);
+    let tls_plan = plan_for(Some("https://example.test"), None, &Verification::Disabled);
+    assert_eq!(tls_plan.ssl, RealtimeSsl::Insecure);
 
     let key = SecretString::from(KEY.to_owned());
     let settings = RealtimeConnectSettings {
@@ -564,16 +413,12 @@ pub(super) fn realtime_ssl_and_size() {
 }
 
 pub(super) fn realtime_http_auth() {
-    let litellm_key = SecretString::from("sk-litellm".to_owned());
-    let openai_key = SecretString::from("sk-openai".to_owned());
-    let env_key = SecretString::from("sk-env".to_owned());
-    let all = RealtimeHttpSettings {
-        litellm_api_base: None,
-        litellm_api_key: Some(litellm_key),
-        litellm_openai_key: Some(openai_key),
-        openai_api_base: None,
-        openai_api_key: Some(env_key),
-    };
+    api_key_precedence();
+    validated_headers();
+}
+
+fn api_key_precedence() {
+    let all = http_auth_settings(Some("sk-litellm"), Some("sk-openai"), Some("sk-env"));
     assert_eq!(
         all.api_key(Some("sk-explicit")).expose_secret(),
         "sk-explicit"
@@ -581,33 +426,15 @@ pub(super) fn realtime_http_auth() {
     assert_eq!(all.api_key(None).expose_secret(), "sk-litellm");
     assert_eq!(all.api_key(Some("")).expose_secret(), "sk-litellm");
 
-    let openai_only = RealtimeHttpSettings {
-        litellm_api_base: None,
-        litellm_api_key: None,
-        litellm_openai_key: all.litellm_openai_key.clone(),
-        openai_api_base: None,
-        openai_api_key: all.openai_api_key.clone(),
-    };
+    let openai_only = http_auth_settings(None, Some("sk-openai"), Some("sk-env"));
     assert_eq!(openai_only.api_key(None).expose_secret(), "sk-openai");
-
-    let env_only = RealtimeHttpSettings {
-        litellm_api_base: None,
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        openai_api_base: None,
-        openai_api_key: all.openai_api_key.clone(),
-    };
+    let env_only = http_auth_settings(None, None, Some("sk-env"));
     assert_eq!(env_only.api_key(None).expose_secret(), "sk-env");
-
-    let nothing = RealtimeHttpSettings {
-        litellm_api_base: None,
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        openai_api_base: None,
-        openai_api_key: None,
-    };
+    let nothing = http_auth_settings(None, None, None);
     assert_eq!(nothing.api_key(None).expose_secret(), "");
+}
 
+fn validated_headers() {
     let headers = Headers::from([
         (String::from("Authorization"), String::from("Bearer old")),
         (String::from("Content-Type"), String::from("text/plain")),
