@@ -125,21 +125,27 @@ where
         let finals = final_texts(&frame.results);
         let mut events = Vec::new();
         if frame.speech_event == ChirpSpeechEvent::Begin {
-            events.extend(self.begin()?);
+            events.extend(self.speech_marker(SpeechEventType::Started)?);
         }
         for text in finals {
             events.extend(self.final_result(text)?);
         }
         if !interim.is_empty() {
-            events.extend(self.hypothesis(&interim)?);
+            events.extend(self.preview_events(&interim)?);
         }
         if frame.speech_event == ChirpSpeechEvent::End {
-            events.extend(self.stop()?);
+            events.extend(self.speech_marker(SpeechEventType::Stopped)?);
         }
         Ok(events)
     }
 
-    fn begin(&mut self) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+    fn speech_marker(
+        &mut self,
+        event_type: SpeechEventType,
+    ) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+        if event_type == SpeechEventType::Stopped && self.turn.is_none() {
+            return Ok(Vec::new());
+        }
         let server_vad = self
             .configured
             .as_ref()
@@ -147,49 +153,29 @@ where
             .config
             .server_vad;
         let turn = self.require_turn();
-        if turn.started_emitted || !server_vad {
+        let emitted = match event_type {
+            SpeechEventType::Started => &mut turn.started_emitted,
+            SpeechEventType::Stopped => &mut turn.stopped_emitted,
+        };
+        if *emitted || !server_vad {
             return Ok(Vec::new());
         }
-        turn.started_emitted = true;
+        *emitted = true;
         let item_id = turn.item_id.clone();
         Ok(vec![ChirpEvent::Speech(speech_event(
             self.event_ids.next_event_id(),
-            SpeechEventType::Started,
+            event_type,
             &item_id,
         ))])
     }
 
-    fn stop(&mut self) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
-        let Some(turn) = self.turn.as_mut() else {
-            return Ok(Vec::new());
-        };
-        let server_vad = self
-            .configured
-            .as_ref()
-            .ok_or(ChirpProtocolError::Unconfigured)?
-            .config
-            .server_vad;
-        if turn.stopped_emitted || !server_vad {
-            return Ok(Vec::new());
-        }
-        turn.stopped_emitted = true;
+    fn preview_events(&mut self, text: &str) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+        let mut events = self.speech_marker(SpeechEventType::Started)?;
+        let turn = self.require_turn();
+        let joined = join_transcript(&turn.committed, text);
+        let delta = new_words(&turn.preview, &joined);
+        turn.preview = joined;
         let item_id = turn.item_id.clone();
-        Ok(vec![ChirpEvent::Speech(speech_event(
-            self.event_ids.next_event_id(),
-            SpeechEventType::Stopped,
-            &item_id,
-        ))])
-    }
-
-    fn hypothesis(&mut self, text: &str) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
-        let mut events = self.begin()?;
-        let (item_id, delta) = {
-            let turn = self.require_turn();
-            let joined = join_transcript(&turn.committed, text);
-            let delta = new_words(&turn.preview, &joined);
-            turn.preview = joined;
-            (turn.item_id.clone(), delta)
-        };
         if !delta.is_empty() {
             events.push(ChirpEvent::Delta(delta_event(
                 self.event_ids.next_event_id(),
@@ -201,28 +187,15 @@ where
     }
 
     fn final_result(&mut self, text: &str) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
-        let mut events = self.begin()?;
+        let mut events = self.preview_events(text)?;
+        let turn = self.require_turn();
+        turn.committed.clone_from(&turn.preview);
         let server_vad = self
             .configured
             .as_ref()
             .ok_or(ChirpProtocolError::Unconfigured)?
             .config
             .server_vad;
-        let (item_id, delta) = {
-            let turn = self.require_turn();
-            let committed = join_transcript(&turn.committed, text);
-            let delta = new_words(&turn.preview, &committed);
-            turn.committed.clone_from(&committed);
-            turn.preview = committed;
-            (turn.item_id.clone(), delta)
-        };
-        if !delta.is_empty() {
-            events.push(ChirpEvent::Delta(delta_event(
-                self.event_ids.next_event_id(),
-                &item_id,
-                &delta,
-            )));
-        }
         if !server_vad {
             return Ok(events);
         }
@@ -240,7 +213,7 @@ where
             };
             (turn.item_id.clone(), transcript)
         };
-        let mut events = self.stop()?;
+        let mut events = self.speech_marker(SpeechEventType::Stopped)?;
         self.turn = None;
         let usage = self.take_unbilled_usage()?;
         events.push(ChirpEvent::Completed(completed_event(
