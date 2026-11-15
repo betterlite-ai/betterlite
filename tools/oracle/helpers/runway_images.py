@@ -1,7 +1,7 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Protocol, TypedDict, runtime_checkable
 
 import httpx
 import litellm
@@ -22,6 +22,7 @@ SUBMISSION_URL = "https://submission.example.test/v1/text_to_image"
 PROVIDER = "runwayml"
 
 
+@runtime_checkable
 class ClientCache(Protocol):
     def set_cache(self, key: str, value: HTTPHandler, *, ttl: int) -> None: ...
 
@@ -29,6 +30,25 @@ class ClientCache(Protocol):
 CLIENT_CACHE: TypeAdapter[ClientCache] = TypeAdapter(
     ClientCache, config=ConfigDict(arbitrary_types_allowed=True)
 )
+
+
+RequestTransform = Callable[
+    [str, str, dict[str, JsonValue], dict[str, JsonValue], dict[str, JsonValue]],
+    dict[str, JsonValue],
+]
+ResponseTransform = Callable[
+    [
+        str,
+        httpx.Response,
+        ImageResponse,
+        Logging,
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        None,
+    ],
+    ImageResponse,
+]
 
 
 class ImageConfig(Protocol):
@@ -42,26 +62,15 @@ class ImageConfig(Protocol):
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
+    @property
     def transform_image_generation_request(  # ast-grep-ignore: no-long-names
         self,
-        model: str,
-        prompt: str,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        headers: dict[str, JsonValue],
-    ) -> dict[str, JsonValue]: ...
+    ) -> RequestTransform: ...
 
+    @property
     def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
-        model: str,
-        raw_response: httpx.Response,
-        model_response: ImageResponse,
-        logging_obj: Logging,
-        request_data: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        encoding: None,
-    ) -> ImageResponse: ...
+    ) -> ResponseTransform: ...
 
 
 class ImageSeed(TypedDict):

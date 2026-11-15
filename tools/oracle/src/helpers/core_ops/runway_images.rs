@@ -1,9 +1,8 @@
-use std::collections::{BTreeMap, VecDeque};
+mod fakes;
+mod script;
+
+use std::collections::BTreeMap;
 use std::fmt::Display;
-use std::future::{Future, ready};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
 
 use betterlite_core::api::runway::images::cost::cost_calculator;
 use betterlite_core::api::runway::images::error::RunwayImageError;
@@ -11,21 +10,18 @@ use betterlite_core::api::runway::images::params::{map_openai_params, request_bo
 use betterlite_core::api::runway::images::transform::RunwayImageTransform;
 use betterlite_core::api::runway::images::{RunwayImageConfig, SUPPORTED_OPENAI_PARAMS};
 use betterlite_core::api::runway::tasks::error::RunwayTaskError;
-use betterlite_core::api::runway::tasks::poll::{PollClock, TaskTransport};
 use betterlite_core::cost::image_dispatch::policy::{ImageResponseView, PricedImage};
-use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::image_cost::ImageBilling;
 use betterlite_models::image_cost::error::ImageCostError;
-use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
+use betterlite_models::price_lookup::PriceRecord;
 use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse,
 };
-use reqwest::header::{AUTHORIZATION, HeaderMap};
 use serde::Deserialize;
-use serde_json::{Value, json};
-use url::Url;
+use serde_json::json;
 
+use self::fakes::{Clock, EmptyLookup};
+use self::script::Script;
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 #[derive(Debug, Deserialize)]
@@ -104,128 +100,6 @@ pub(crate) enum Input {
     Cost(Cost),
 }
 
-struct Script {
-    replies: Mutex<VecDeque<(u16, String)>>,
-    requests: Mutex<Vec<(String, HeaderMap)>>,
-}
-
-impl Script {
-    fn new(replies: &[Reply]) -> Self {
-        Self {
-            replies: Mutex::new(
-                replies
-                    .iter()
-                    .map(|reply| (reply.status, reply.body.clone()))
-                    .collect(),
-            ),
-            requests: Mutex::default(),
-        }
-    }
-
-    fn describe(&self) -> Vec<Value> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|(url, headers)| {
-                json!({
-                    "url": url,
-                    "headers": {
-                        "authorization": header_text(headers, AUTHORIZATION.as_str()),
-                        "x-runway-version": header_text(headers, "x-runway-version"),
-                    },
-                })
-            })
-            .collect()
-    }
-}
-
-impl TaskTransport for Script {
-    fn get(
-        &self,
-        url: Url,
-        headers: HeaderMap,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((url.to_string(), headers));
-        let (status, body) = self
-            .replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or((500, String::new()));
-        ready(Ok(UpstreamResponse {
-            status,
-            headers: HeaderMap::new(),
-            body: body.into_bytes(),
-        }))
-    }
-}
-
-fn header_text(headers: &HeaderMap, name: &str) -> String {
-    headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default()
-        .to_owned()
-}
-
-struct Clock {
-    millis: AtomicU64,
-    step: u64,
-    pauses: Mutex<Vec<u64>>,
-}
-
-impl Clock {
-    fn new(step: u64) -> Self {
-        Self {
-            millis: AtomicU64::new(0),
-            step,
-            pauses: Mutex::default(),
-        }
-    }
-}
-
-impl PollClock for Clock {
-    fn now(&self) -> Duration {
-        Duration::from_millis(self.millis.fetch_add(self.step, Ordering::SeqCst))
-    }
-
-    fn pause(&self, duration: Duration) -> impl Future<Output = ()> + Send {
-        self.pauses
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(duration.as_secs());
-        ready(())
-    }
-}
-
-struct EmptyLookup;
-
-impl PriceLookup for EmptyLookup {
-    fn effective_model_info(
-        &self,
-        _model: &str,
-        _custom_provider: Option<&str>,
-    ) -> Option<PriceRecord> {
-        None
-    }
-
-    fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
-        None
-    }
-
-    fn effective_priced_model(
-        &self,
-        _model: &str,
-        _custom_provider: Option<&str>,
-    ) -> Option<PricedModel> {
-        None
-    }
-}
-
 fn failure<E>(error: E) -> Box<HelperError>
 where
     E: Display,
@@ -272,9 +146,15 @@ fn cost_error_name(error: &ImageCostError) -> &'static str {
     match error {
         ImageCostError::UnknownModel { .. } => "unknown_model",
         ImageCostError::NotImageResponse => "not_image_response",
+        ImageCostError::NoPrice { .. } => "no_price",
         ImageCostError::WrongFieldType { .. } => "wrong_field_type",
+        ImageCostError::MalformedSize { .. } => "malformed_size",
+        ImageCostError::DimensionOverflow => "dimension_overflow",
+        ImageCostError::CounterOverflow => "counter_overflow",
         ImageCostError::Overflow => "overflow",
-        _ => "other",
+        ImageCostError::Rate(_) => "rate",
+        ImageCostError::Tier(_) => "tier",
+        ImageCostError::TokenCost(_) => "token_cost",
     }
 }
 
@@ -329,7 +209,7 @@ fn response(input: &ResponseInput) -> HelperResult {
         Ok(finished) => Ok(json!({
             "response": finished,
             "gets": transport.describe(),
-            "sleeps": *clock.pauses.lock().unwrap_or_else(PoisonError::into_inner),
+            "sleeps": clock.pauses(),
         })),
         Err(error) => Ok(json!({"error": image_error_name(&error)})),
     }

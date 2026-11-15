@@ -28,7 +28,8 @@ call:
             - b64_json: null
               url: https://delivery.test/d.png
               revised_prompt: null
-          prices: {}
+          prices:
+            output_cost_per_image: 0.25
         - data:
             - b64_json: null
               url: null
