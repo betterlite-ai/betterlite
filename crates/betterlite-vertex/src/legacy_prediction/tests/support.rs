@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::future::Future;
+use std::future::ready;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -254,7 +255,7 @@ fn replied<T>(
 where
     T: Send,
 {
-    std::future::ready(reply.expect("a fixture reply"))
+    ready(reply.expect("a fixture reply"))
 }
 
 impl PredictionClient for FixtureClient {
