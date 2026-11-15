@@ -6,7 +6,7 @@ use super::support::{
 };
 use crate::realtime_session::records::{
     ContentRole, ContentType, ExactDecimal, InferenceConfiguration, Infinite, MaxResponseTokens,
-    Setting, UpdateFrame,
+    Setting, UpdateFrame, UsageEvent,
 };
 
 pub(super) fn session_update_options() {
@@ -136,6 +136,10 @@ fn instructions_add_content_frames() {
     assert_eq!(state.names.content, CONTENT);
     assert_eq!(state.names.audio_content, AUDIO_CONTENT);
     assert!(state.prompt_started);
+    assert!(!state.transcript.active);
+    assert_eq!(state.transcript.buffer, "");
+    assert_eq!(state.cumulative_usage, UsageEvent::default());
+    assert_eq!(state.reported_usage, UsageEvent::default());
     assert_instruction_frames(&frames, "be helpful");
     let empty = apply(&mut state, r#"{"session":{"instructions":""}}"#, &[]);
     assert_eq!(empty.len(), 2);
