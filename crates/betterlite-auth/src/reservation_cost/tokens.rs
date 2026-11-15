@@ -21,7 +21,7 @@ pub(crate) async fn counted_input_tokens(
         Some(count) => Some(count),
         None => tokens.count_input_tokens_for_model(body, model).await,
     };
-    count.and_then(|count| i64::try_from(count).ok())
+    count.and_then(|value| i64::try_from(value).ok())
 }
 
 pub(crate) fn estimated_output_tokens(body: &JsonObject, route: &str, info: &CostInfo) -> i64 {

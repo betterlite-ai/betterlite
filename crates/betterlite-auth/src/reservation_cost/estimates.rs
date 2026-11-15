@@ -108,9 +108,9 @@ fn flat_max_cost(
     let output_rate = info
         .output_cost_per_token
         .unwrap_or_default()
-        .max(info.output_cost_per_reasoning_token.unwrap_or_default());
+        .max(info.output_reasoning_rate.unwrap_or_default());
     let priced_output =
-        info.output_cost_per_token.is_some() || info.output_cost_per_reasoning_token.is_some();
+        info.output_cost_per_token.is_some() || info.output_reasoning_rate.is_some();
     if !priced_output && output_tokens > 0 {
         return Ok(None);
     }
