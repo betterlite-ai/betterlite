@@ -1,0 +1,14 @@
+task: B3242
+deviations:
+  - what: >-
+      PolicyAttachmentCreateRequest stores priority as a 32-bit integer, so a request whose priority
+      falls outside that range is refused with an error naming the field. LiteLLM's pydantic model
+      accepts any Python integer there, and the value only fails later, against the Prisma INTEGER
+      column.
+    why: >-
+      The priority column is a 32-bit INTEGER, so no value outside that range can ever be stored.
+      Refusing it where the record is parsed reports the bad field instead of a database error, and
+      no working setup can depend on a priority it never saved.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L308-L313
+kept_bugs: []
