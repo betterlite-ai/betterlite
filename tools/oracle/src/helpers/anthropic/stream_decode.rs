@@ -181,11 +181,14 @@ fn async_outcomes(input: &Input) -> Result<Vec<Value>, Box<HelperError>> {
 
 fn passthrough_outcomes(input: &Input) -> Result<Vec<Conversion>, Box<HelperError>> {
     let mut decoder = converter(&input.ids)?;
-    Ok(input
-        .passthrough
-        .iter()
-        .map(|step| convert_chunk_to_generic_chunk(&mut decoder, passthrough_chunk(step)))
-        .collect())
+    let mut outcomes = Vec::with_capacity(input.passthrough.len());
+    for step in &input.passthrough {
+        outcomes.push(convert_chunk_to_generic_chunk(
+            &mut decoder,
+            passthrough_chunk(step),
+        ));
+    }
+    Ok(outcomes)
 }
 
 fn classify(conversions: Vec<Conversion>) -> Result<Vec<Value>, Box<HelperError>> {
@@ -215,13 +218,16 @@ fn passthrough_chunk(step: &PassthroughStep) -> TransportChunk {
 
 // The labels match the adapter's: a native error leaves run() in Python, so the adapter reports it instead.
 fn error_label(error: &Failure) -> Result<Value, Box<HelperError>> {
-    match error {
-        DecodeError::Event(StreamEventError::Anthropic(native)) => Err(native_error(native)),
-        DecodeError::Receiving { .. } => Ok(json!({ "error": "receiving" })),
-        DecodeError::Parsing { .. } => Ok(json!({ "error": "parsing" })),
-        DecodeError::Other { .. } => Ok(json!({ "error": "other" })),
-        DecodeError::Event(_) | DecodeError::TooLarge { .. } => Ok(json!({ "error": "event" })),
-    }
+    let label = match error {
+        DecodeError::Event(StreamEventError::Anthropic(native)) => {
+            return Err(native_error(native));
+        }
+        DecodeError::Receiving { .. } => "receiving",
+        DecodeError::Parsing { .. } => "parsing",
+        DecodeError::Other { .. } => "other",
+        DecodeError::Event(_) | DecodeError::TooLarge { .. } => "event",
+    };
+    Ok(json!({ "error": label }))
 }
 
 fn native_error(native: &AnthropicError) -> Box<HelperError> {
