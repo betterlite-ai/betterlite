@@ -1,0 +1,31 @@
+kind: helper
+name: runway-image-preset-fallback
+call:
+  runway_images:
+    operation: mapping
+    params:
+      model: gen4_image
+      prompt: a cat
+      calls:
+        - non_default_params:
+            size: 1024x1024
+          optional_params: {}
+          drop_params: false
+        - non_default_params:
+            size: 1792x1024
+          optional_params: {}
+          drop_params: false
+        - non_default_params:
+            size: 1024x1792
+          optional_params: {}
+          drop_params: false
+        - non_default_params:
+            size: 1920x1080
+          optional_params: {}
+          drop_params: false
+        - non_default_params:
+            size: 1080x1920
+          optional_params: {}
+          drop_params: false
+env: {}
+compare: {ignore: []}

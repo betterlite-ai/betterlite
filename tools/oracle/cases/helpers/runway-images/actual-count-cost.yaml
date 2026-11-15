@@ -1,0 +1,48 @@
+kind: helper
+name: runway-image-actual-count-cost
+call:
+  runway_images:
+    operation: cost
+    params:
+      model: gen4_image
+      calls:
+        - data:
+            - b64_json: null
+              url: https://delivery.test/a.png
+              revised_prompt: null
+            - b64_json: null
+              url: https://delivery.test/b.png
+              revised_prompt: null
+            - b64_json: QUJD
+              url: null
+              revised_prompt: null
+          prices:
+            output_cost_per_image: 0.5
+        - data: []
+          prices:
+            output_cost_per_image: 0.5
+        - data:
+            - b64_json: null
+              url: https://delivery.test/c.png
+              revised_prompt: null
+            - b64_json: null
+              url: https://delivery.test/d.png
+              revised_prompt: null
+          prices: {}
+        - data:
+            - b64_json: null
+              url: null
+              revised_prompt: null
+          prices:
+            output_cost_per_image: 0
+        - data:
+            - b64_json: null
+              url: null
+              revised_prompt: null
+            - b64_json: null
+              url: null
+              revised_prompt: null
+          prices:
+            output_cost_per_image: null
+env: {}
+compare: {ignore: []}

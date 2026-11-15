@@ -1,0 +1,27 @@
+kind: helper
+name: runway-image-default-host-poll
+call:
+  runway_images:
+    operation: response
+    params:
+      model: gen4_image
+      environment:
+        RUNWAYML_API_BASE: https://proxy.example.test
+      submission:
+        status: 200
+        headers: {}
+        body: '{"id":"task_abc","status":"PENDING"}'
+      request_headers:
+        Authorization: Bearer case-token
+        X-Runway-Version: "2025-03-03"
+      created: 11
+      data: []
+      step_millis: 0
+      replies:
+        - status: 200
+          body: '{"id":"task_abc","status":"RUNNING"}'
+        - status: 200
+          body: '{"id":"task_abc","status":"SUCCEEDED","output":["https://delivery.test/a.png"]}'
+env:
+  RUNWAYML_API_BASE: https://proxy.example.test
+compare: {ignore: []}

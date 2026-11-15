@@ -1,0 +1,15 @@
+kind: helper
+name: runway-image-fuzz-seed
+call:
+  runway_images:
+    operation: mapping
+    params:
+      model: gen4_image
+      prompt: a cat
+      calls:
+        - non_default_params:
+            size: 1024x1024
+          optional_params: {}
+          drop_params: false
+env: {}
+compare: {ignore: []}

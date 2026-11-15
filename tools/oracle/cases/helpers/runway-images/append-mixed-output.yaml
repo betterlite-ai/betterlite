@@ -1,0 +1,26 @@
+kind: helper
+name: runway-image-append-mixed-output
+call:
+  runway_images:
+    operation: response
+    params:
+      model: gen4_image
+      environment: {}
+      submission:
+        status: 200
+        headers: {}
+        body: '{"id":"task_mix","status":"RUNNING"}'
+      request_headers:
+        Authorization: Bearer case-token
+        X-Runway-Version: "2024-11-06"
+      created: 21
+      data:
+        - b64_json: null
+          url: https://delivery.test/old.png
+          revised_prompt: kept
+      step_millis: 0
+      replies:
+        - status: 200
+          body: '{"id":"task_mix","status":"SUCCEEDED","output":["https://delivery.test/string.png",{"url":"https://delivery.test/object.png","b64_json":"QUJD"},{"url":"https://delivery.test/only.png"},{},7,true,null]}'
+env: {}
+compare: {ignore: []}
