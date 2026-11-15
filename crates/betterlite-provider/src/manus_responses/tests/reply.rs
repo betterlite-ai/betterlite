@@ -263,7 +263,7 @@ fn post_call_records_the_raw_text_first() {
 }
 
 #[test]
-fn the_processed_and_raw_headers_are_recorded() {
+fn the_raw_upstream_headers_are_recorded() {
     let upstream = headered_response(
         200,
         r#"{"id":"resp_1","created_at":5,"output":[]}"#,
@@ -287,6 +287,16 @@ fn the_processed_and_raw_headers_are_recorded() {
             ),
         ])))
     );
+}
+
+#[test]
+fn the_processed_upstream_headers_are_recorded() {
+    let upstream = headered_response(
+        200,
+        r#"{"id":"resp_1","created_at":5,"output":[]}"#,
+        upstream_headers(),
+    );
+    let (_, logging) = created(&upstream);
     let Some(Json::Object(additional)) = logging.model_call_details.get("additional_headers")
     else {
         panic!("the processed headers should be a JSON object");
