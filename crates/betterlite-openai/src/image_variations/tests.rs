@@ -451,14 +451,14 @@ async fn nested_upload_names() {
 // a tuple filename keeps its value as given, beside the tuple's own content type
 async fn tuple_upload_name() {
     let typed = ImageFile {
-        filename: Some(String::from("pic.webp")),
+        filename: Some(String::from("dir/pic.webp")),
         content: b"WEBP".to_vec(),
         content_type: Some(String::from("image/webp")),
     };
     let typed_prepared = prepared(request(typed)).unwrap();
     let sent = send_and_record(&typed_prepared).await;
     let part = sent.part("image").unwrap();
-    assert_eq!(part.file_name.as_deref(), Some("pic.webp"));
+    assert_eq!(part.file_name.as_deref(), Some("dir/pic.webp"));
     assert_eq!(part.content_type.as_deref(), Some("image/webp"));
     assert_eq!(part.data, b"WEBP");
 }
