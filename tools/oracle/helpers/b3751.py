@@ -1,6 +1,7 @@
 import asyncio
 import os
 from typing import Literal, Protocol, TypedDict, cast
+from urllib.parse import parse_qsl
 
 import httpx
 from litellm.proxy.guardrails.guardrail_hooks.akto.akto import AktoGuardrail
@@ -131,7 +132,9 @@ def normalize_payload(payload: dict[str, Json]) -> dict[str, Json]:
 
 
 def capture_request(request: httpx.Request) -> Json:
-    query = TypeAdapter(dict[str, Json]).validate_python(dict(request.url.params))
+    query = TypeAdapter(dict[str, Json]).validate_python(
+        dict(parse_qsl(request.url.query.decode(), keep_blank_values=True))
+    )
     decoded = TypeAdapter(Json).validate_json(request.content)
     body = TypeAdapter(dict[str, Json]).validate_python(decoded)
     return {

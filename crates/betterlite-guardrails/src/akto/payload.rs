@@ -200,21 +200,28 @@ fn message(role: &str, content: &str) -> GuardrailValue {
     ]))
 }
 
+fn proxy_headers(
+    request_data: &BTreeMap<String, GuardrailValue>,
+) -> Option<&BTreeMap<String, GuardrailValue>> {
+    let GuardrailValue::Object(proxy_request) = request_data.get("proxy_server_request")? else {
+        return None;
+    };
+    match proxy_request.get("headers") {
+        Some(GuardrailValue::Object(headers)) => Some(headers),
+        _ => None,
+    }
+}
+
 fn build_request_headers(
     request_data: &BTreeMap<String, GuardrailValue>,
 ) -> BTreeMap<String, String> {
     let mut headers = BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]);
-    let Some(GuardrailValue::Object(proxy_request)) = request_data.get("proxy_server_request")
-    else {
-        return headers;
-    };
-    let Some(GuardrailValue::Object(proxy_headers)) = proxy_request.get("headers") else {
-        return headers;
-    };
-    headers.extend(proxy_headers.iter().filter_map(|(name, value)| {
-        let text = value_text(value);
-        (!name.is_empty() && !text.is_empty()).then(|| (name.to_lowercase(), text))
-    }));
+    if let Some(proxied) = proxy_headers(request_data) {
+        headers.extend(proxied.iter().filter_map(|(name, value)| {
+            let text = value_text(value);
+            (!name.is_empty() && !text.is_empty()).then(|| (name.to_lowercase(), text))
+        }));
+    }
     headers
 }
 
@@ -255,24 +262,17 @@ fn extract_request_path(request_data: &BTreeMap<String, GuardrailValue>) -> Stri
 }
 
 fn extract_client_ip(request_data: &BTreeMap<String, GuardrailValue>) -> String {
-    let Some(GuardrailValue::Object(proxy_request)) = request_data.get("proxy_server_request")
-    else {
+    let Some(proxied) = proxy_headers(request_data) else {
         return String::new();
     };
-    let Some(GuardrailValue::Object(proxy_headers)) = proxy_request.get("headers") else {
-        return String::new();
-    };
-    let header = |name: &str| match proxy_headers.get(name) {
+    let header = |name: &str| match proxied.get(name) {
         Some(GuardrailValue::Text(text)) if !text.is_empty() => Some(text.clone()),
         _ => None,
     };
     let Some(ip) = header("x-forwarded-for").or_else(|| header("x-real-ip")) else {
         return String::new();
     };
-    match ip.split_once(',') {
-        Some((first, _rest)) => first.trim().to_owned(),
-        None => ip,
-    }
+    ip.split(',').next().unwrap_or_default().trim().to_owned()
 }
 
 fn value_text(value: &GuardrailValue) -> String {
