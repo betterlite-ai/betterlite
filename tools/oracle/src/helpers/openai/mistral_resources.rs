@@ -1,9 +1,11 @@
+use crate::helpers::HelperError;
 use betterlite_config::sections::mistral_resources::Settings;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
 use betterlite_openai::mistral_batches::records::MistralBatchJob;
 use betterlite_openai::mistral_batches::transformation::{
     create_batch, retrieve_batch, to_batch_object,
 };
+use betterlite_openai::mistral_files::error::MistralFilesError;
 use betterlite_openai::mistral_files::records::MistralFile;
 use betterlite_openai::mistral_files::transformation::{
     FileUploadRequest, create_upload, list_request, to_file_object,
@@ -11,7 +13,6 @@ use betterlite_openai::mistral_files::transformation::{
 use betterlite_openai::mistral_identity::auth_headers;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
-use http::header::AUTHORIZATION;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -72,7 +73,21 @@ fn resource_settings(env: &BTreeMap<String, String>) -> Settings {
             .map(|value| SecretString::from(value.as_str())),
     }
 }
-fn upload_outcome(upload: &Upload, section: &FilesSection, settings: &Settings) -> Value {
+fn file_failure(error: &MistralFilesError) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: String::from("MistralError"),
+        status: error.status_code(),
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
+}
+fn upload_outcome(
+    upload: &Upload,
+    section: &FilesSection,
+    settings: &Settings,
+) -> Result<Value, Box<HelperError>> {
     let request = FileUploadRequest {
         file: FileData::Tuple3 {
             filename: upload.filename.clone(),
@@ -81,33 +96,35 @@ fn upload_outcome(upload: &Upload, section: &FilesSection, settings: &Settings) 
         },
         purpose: Some(upload.purpose.clone()),
     };
-    match create_upload(&request, section.now, section.api_base.as_deref(), settings) {
-        Ok(created) => {
-            json!({"ok": true, "url": created.url, "filename": created.filename, "content_type": created.content_type, "content": created.content, "purpose": created.purpose.wire_name()})
-        }
-        Err(error) => json!({"ok": false, "status": error.status_code()}),
-    }
+    let created = create_upload(&request, section.now, section.api_base.as_deref(), settings)
+        .map_err(|error| file_failure(&error))?;
+    Ok(
+        json!({"ok": true, "url": created.url, "filename": created.filename, "content_type": created.content_type, "content": created.content, "purpose": created.purpose.wire_name()}),
+    )
 }
-fn list_outcome(purpose: Option<&str>, section: &FilesSection, settings: &Settings) -> Value {
-    match list_request(purpose, section.api_base.as_deref(), settings) {
-        Ok((url, query)) => json!({"ok": true, "url": url, "query": query}),
-        Err(error) => json!({"ok": false, "status": error.status_code()}),
-    }
+fn list_outcome(
+    purpose: Option<&str>,
+    section: &FilesSection,
+    settings: &Settings,
+) -> Result<Value, Box<HelperError>> {
+    let (url, query) = list_request(purpose, section.api_base.as_deref(), settings)
+        .map_err(|error| file_failure(&error))?;
+    Ok(json!({"ok": true, "url": url, "query": query}))
 }
-fn files_outcome(section: &FilesSection, settings: &Settings) -> Value {
+fn files_outcome(section: &FilesSection, settings: &Settings) -> Result<Value, Box<HelperError>> {
     let mut uploads = Vec::with_capacity(section.uploads.len());
     for upload in &section.uploads {
-        uploads.push(upload_outcome(upload, section, settings));
+        uploads.push(upload_outcome(upload, section, settings)?);
     }
     let mut listed = Vec::with_capacity(section.list_purposes.len());
     for purpose in &section.list_purposes {
-        listed.push(list_outcome(purpose.as_deref(), section, settings));
+        listed.push(list_outcome(purpose.as_deref(), section, settings)?);
     }
     let mut bodies = Vec::with_capacity(section.bodies.len());
     for body in &section.bodies {
         bodies.push(json!(to_file_object(body, section.now)));
     }
-    json!({"uploads": uploads, "list": listed, "bodies": bodies})
+    Ok(json!({"uploads": uploads, "list": listed, "bodies": bodies}))
 }
 fn create_outcome(section: &CreateSection, settings: &Settings) -> Value {
     let key = section.api_key.as_deref().map(SecretString::from);
@@ -115,7 +132,7 @@ fn create_outcome(section: &CreateSection, settings: &Settings) -> Value {
     let api_base = section.api_base.as_deref();
     let plan = create_batch(&section.data, &section.model, api_base, settings);
     if let (Ok(headers), Ok(created)) = (auth, plan) {
-        return json!({"ok": true, "url": created.url, "authorization": headers.get(AUTHORIZATION.as_str()), "body": created.body});
+        return json!({"ok": true, "url": created.url, "authorization": headers.get("Authorization"), "body": created.body});
     }
     json!({"ok": false, "status": null})
 }
@@ -141,7 +158,8 @@ impl crate::helpers::Helper for Op {
         let files = input
             .files
             .as_ref()
-            .map(|section| files_outcome(section, &settings));
+            .map(|section| files_outcome(section, &settings))
+            .transpose()?;
         let mut create = Vec::with_capacity(input.creates.len());
         for section in &input.creates {
             create.push(create_outcome(section, &settings));

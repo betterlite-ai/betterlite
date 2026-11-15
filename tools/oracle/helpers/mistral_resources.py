@@ -1,15 +1,15 @@
 import json
 import os
 import time
+from datetime import UTC, datetime
 from functools import partial
 from typing import Final, Literal, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.mistral.batches.transformation import MistralBatchesConfig
 from litellm.llms.mistral.files.transformation import MistralFilesConfig
-from litellm.types.llms.openai import CreateBatchRequest, CreateFileRequest
+from litellm.types.llms.openai import CreateBatchRequest
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -18,9 +18,17 @@ class UploadParts(TypedDict):
     purpose: tuple[None, str]
 
 
-LOGGING: Final = Logging.__new__(Logging)
-FILES: Final = MistralFilesConfig()
-BATCHES: Final = MistralBatchesConfig()
+LOGGING: Final = Logging(
+    model="",
+    messages=None,
+    stream=False,
+    call_type="",
+    start_time=datetime(2024, 1, 1, tzinfo=UTC),
+    litellm_call_id="",
+    function_id="",
+)
+FILES: Final = MistralFilesConfig.__new__(MistralFilesConfig)
+BATCHES: Final = MistralBatchesConfig.__new__(MistralBatchesConfig)
 JSON: Final = TypeAdapter(JsonValue)
 UPLOAD_PARTS: Final = TypeAdapter(UploadParts)
 
@@ -29,6 +37,11 @@ class Upload(TypedDict):
     filename: str | None
     content_type: str | None
     content: list[int]
+    purpose: Literal["assistants", "batch", "fine-tune", "messages"]
+
+
+class UploadRequest(TypedDict):
+    file: tuple[str | None, bytes, str | None]
     purpose: Literal["assistants", "batch", "fine-tune", "messages"]
 
 
@@ -65,13 +78,11 @@ class Input(TypedDict):
 def upload_outcome(upload: Upload, call: Files) -> JsonValue:
     params: dict[str, JsonValue] = {"api_base": call["api_base"]}
     url = FILES.get_complete_url(call["api_base"], call["api_key"], "", {}, params)
-    file = (upload["filename"], bytes(upload["content"]), upload["content_type"])
-    try:
-        body = FILES.transform_create_file_request(
-            "", CreateFileRequest(file=file, purpose=upload["purpose"]), {}, params
-        )
-    except BaseLLMException as error:
-        return {"ok": False, "status": error.status_code}
+    request = UploadRequest(
+        file=(upload["filename"], bytes(upload["content"]), upload["content_type"]),
+        purpose=upload["purpose"],
+    )
+    body = FILES.transform_create_file_request("", request, {}, params)
     parts = UPLOAD_PARTS.validate_python(body)
     filename, content, content_type = parts["file"]
     return {
@@ -85,10 +96,7 @@ def upload_outcome(upload: Upload, call: Files) -> JsonValue:
 
 
 def list_outcome(purpose: str | None, call: Files) -> JsonValue:
-    try:
-        url, query = FILES.transform_list_files_request(purpose, {}, {"api_base": call["api_base"]})
-    except BaseLLMException as error:
-        return {"ok": False, "status": error.status_code}
+    url, query = FILES.transform_list_files_request(purpose, {}, {"api_base": call["api_base"]})
     return {"ok": True, "url": url, "query": [[name, value] for name, value in query.items()]}
 
 
@@ -111,7 +119,15 @@ def create_outcome(call: Create) -> JsonValue:
     params: dict[str, JsonValue] = {"api_base": call["api_base"]}
     api_base, api_key, model, data = call["api_base"], call["api_key"], call["model"], call["data"]
     try:
-        headers = BATCHES.validate_environment({}, "", [], {}, params, api_key, api_base)
+        headers = BATCHES.validate_environment(
+            headers={},
+            model="",
+            messages=(),
+            optional_params={},
+            litellm_params=params,
+            api_key=api_key,
+            api_base=api_base,
+        )
         url = BATCHES.get_complete_batch_url(api_base, api_key, model, {}, params, data)
         body = BATCHES.transform_create_batch_request(model, data, {}, params)
     except ValueError:

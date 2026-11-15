@@ -70,13 +70,36 @@ fn oracle_ocr_reads_back_as_user_data() {
 
 #[test]
 fn oracle_rejects_purposes_mistral_lacks() {
-    let result = run_case("unsupported-purpose-400.yaml");
-    let files = &result["files"];
-    assert_eq!(files["uploads"][0]["status"], json!(400_i64));
-    assert_eq!(files["uploads"][1]["status"], json!(400_i64));
-    assert_eq!(files["list"][0]["status"], json!(400_i64));
-    assert_eq!(files["list"][1]["status"], json!(400_i64));
-    assert_eq!(files["list"][2]["status"], json!(400_i64));
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("cases/helpers/mistral-resources/unsupported-purpose-400.yaml");
+    let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let error = super::Op::decode_and_run(&case.call.input).expect_err("a rejected purpose");
+    assert_eq!(error.class, "MistralError");
+    assert_eq!(error.status, Some(400));
+    assert_eq!(
+        error.message,
+        "Mistral does not support purpose 'assistants'; use one of: fine-tune, batch, ocr, user_data"
+    );
+}
+
+#[test]
+fn a_list_purpose_mistral_lacks_is_a_400() {
+    let input = json!({
+        "env": {},
+        "files": {
+            "api_base": null,
+            "now": 1_704_153_600,
+            "uploads": [],
+            "list_purposes": ["vision"],
+            "bodies": [],
+        },
+        "creates": [],
+        "jobs": [],
+        "retrieve": [],
+    });
+    let error = super::Op::decode_and_run(&input).expect_err("a rejected list purpose");
+    assert_eq!(error.class, "MistralError");
+    assert_eq!(error.status, Some(400));
 }
 
 #[test]
