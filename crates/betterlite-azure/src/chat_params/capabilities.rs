@@ -31,56 +31,32 @@ pub struct AzureCapabilities<'capabilities, Capabilities> {
     pub inner: &'capabilities mut Capabilities,
 }
 
+macro_rules! forward_lookup {
+    ($method:ident -> $answer:ty) => {
+        fn $method(
+            &mut self,
+            request: &CapabilityRequest<'_>,
+            key: &str,
+        ) -> impl Future<Output = $answer> + Send {
+            async move {
+                let model = lookup_model(request.model, key);
+                let normalized = CapabilityRequest {
+                    model: model.as_str(),
+                    custom_llm_provider: request.custom_llm_provider,
+                };
+                self.inner.$method(&normalized, key).await
+            }
+        }
+    };
+}
+
 impl<Capabilities> ReasoningCapabilities for AzureCapabilities<'_, Capabilities>
 where
     Capabilities: ReasoningCapabilities + Send,
 {
-    fn supports_factory(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-        key: &str,
-    ) -> impl Future<Output = bool> + Send {
-        async move {
-            let model = lookup_model(request.model, key);
-            let normalized = CapabilityRequest {
-                model: model.as_str(),
-                custom_llm_provider: request.custom_llm_provider,
-            };
-            self.inner.supports_factory(&normalized, key).await
-        }
-    }
-
-    fn declared_value_factory(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-        key: &str,
-    ) -> impl Future<Output = Option<String>> + Send {
-        async move {
-            let model = lookup_model(request.model, key);
-            let normalized = CapabilityRequest {
-                model: model.as_str(),
-                custom_llm_provider: request.custom_llm_provider,
-            };
-            self.inner.declared_value_factory(&normalized, key).await
-        }
-    }
-
-    fn is_explicitly_disabled_factory(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-        key: &str,
-    ) -> impl Future<Output = bool> + Send {
-        async move {
-            let model = lookup_model(request.model, key);
-            let normalized = CapabilityRequest {
-                model: model.as_str(),
-                custom_llm_provider: request.custom_llm_provider,
-            };
-            self.inner
-                .is_explicitly_disabled_factory(&normalized, key)
-                .await
-        }
-    }
+    forward_lookup!(supports_factory -> bool);
+    forward_lookup!(declared_value_factory -> Option<String>);
+    forward_lookup!(is_explicitly_disabled_factory -> bool);
 
     fn supports_response_schema(
         &mut self,

@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 
+use betterlite_models::decisions::Json as StreamingAnswer;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Object as ParamsObject};
 use betterlite_openai::reasoning_models::gpt_5::Mapping as Gpt5Mapping;
@@ -10,7 +11,6 @@ use betterlite_openai::reasoning_models::{
 use betterlite_openai::response_events::NativeStreamingSupport;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
-use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
 
 use crate::chat_params::capabilities::AzureCapabilities;
@@ -63,11 +63,11 @@ pub(super) const MODEL_COST: &str = r#"{
 
 pub(super) struct CapabilityFixture {
     pub(super) catalog: CatalogCapabilities,
-    entries: BTreeMap<String, Value>,
+    entries: BTreeMap<String, Json>,
 }
 
 impl CapabilityFixture {
-    fn field(&self, request: &CapabilityRequest<'_>, key: &str) -> Option<&Value> {
+    fn field(&self, request: &CapabilityRequest<'_>, key: &str) -> Option<&Json> {
         let entry = match request.custom_llm_provider {
             None => {
                 let known = self.catalog.chat_models.contains(request.model)
@@ -76,7 +76,14 @@ impl CapabilityFixture {
             }
             Some(_) => self.entries.get(request.model),
         };
-        entry?.get(key)
+        entry?.as_object()?.get(key)
+    }
+}
+
+fn as_bool(value: &Json) -> Option<bool> {
+    match value {
+        Json::Bool(answer) => Some(*answer),
+        Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 
@@ -86,7 +93,7 @@ impl ReasoningCapabilities for CapabilityFixture {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        ready(self.field(request, key).and_then(Value::as_bool) == Some(true))
+        ready(self.field(request, key).and_then(as_bool) == Some(true))
     }
 
     fn declared_value_factory(
@@ -96,7 +103,7 @@ impl ReasoningCapabilities for CapabilityFixture {
     ) -> impl Future<Output = Option<String>> + Send {
         ready(
             self.field(request, key)
-                .and_then(Value::as_str)
+                .and_then(Json::as_str)
                 .map(str::to_owned),
         )
     }
@@ -106,7 +113,7 @@ impl ReasoningCapabilities for CapabilityFixture {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        ready(self.field(request, key).and_then(Value::as_bool) == Some(false))
+        ready(self.field(request, key).and_then(as_bool) == Some(false))
     }
 
     fn supports_response_schema(
@@ -115,19 +122,23 @@ impl ReasoningCapabilities for CapabilityFixture {
     ) -> impl Future<Output = bool> + Send {
         ready(
             self.field(request, "supports_response_schema")
-                .and_then(Value::as_bool)
+                .and_then(as_bool)
                 == Some(true),
         )
     }
 
     fn catalogue_declares_default(&mut self) -> bool {
-        let entries: Vec<String> = self.entries.values().map(Value::to_string).collect();
+        let entries: Vec<String> = self
+            .entries
+            .values()
+            .map(|entry| serde_json::to_string(entry).unwrap())
+            .collect();
         catalogue_declares_default(entries.iter().map(String::as_str))
     }
 }
 
 pub(super) struct StreamFixture {
-    entries: BTreeMap<String, Value>,
+    entries: BTreeMap<String, Json>,
 }
 
 impl NativeStreamingSupport for StreamFixture {
@@ -136,19 +147,20 @@ impl NativeStreamingSupport for StreamFixture {
     fn supports_native_streaming(
         &mut self,
         request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = Result<Json, std::io::Error>> + Send {
+    ) -> impl Future<Output = Result<StreamingAnswer, std::io::Error>> + Send {
         let key = request.custom_llm_provider.map_or_else(
             || request.model.to_owned(),
             |provider| format!("{provider}/{}", request.model),
         );
         let streaming = self.entries.get(&key).map(|entry| {
             entry
-                .get("supports_native_streaming")
-                .and_then(Value::as_bool)
+                .as_object()
+                .and_then(|fields| fields.get("supports_native_streaming"))
+                .and_then(as_bool)
         });
         ready(streaming.map_or_else(
             || Err(std::io::Error::other("the model map has no such entry")),
-            |answer| Ok(answer.map_or(Json::Null, Json::Bool)),
+            |answer| Ok(answer.map_or(StreamingAnswer::Null, StreamingAnswer::Bool)),
         ))
     }
 }
@@ -157,7 +169,7 @@ pub(super) fn runtime() -> Runtime {
     Builder::new_current_thread().build().unwrap()
 }
 
-fn model_cost() -> BTreeMap<String, Value> {
+fn model_cost() -> BTreeMap<String, Json> {
     serde_json::from_str(MODEL_COST).unwrap()
 }
 
@@ -201,7 +213,7 @@ pub(super) fn resolves_none(model: &str) -> bool {
 }
 
 pub(super) fn resolves_none_with(map_text: &str, model: &str) -> bool {
-    let entries: BTreeMap<String, Value> = serde_json::from_str(map_text).unwrap();
+    let entries: BTreeMap<String, Json> = serde_json::from_str(map_text).unwrap();
     let chat_models = entries.keys().cloned().collect();
     let mut capabilities = CapabilityFixture {
         catalog: CatalogCapabilities {
@@ -247,6 +259,16 @@ fn messages(text: &str) -> Vec<Message> {
     serde_json::from_str(text).unwrap()
 }
 
+fn prompt_object(values: ParamsObject) -> Object {
+    values
+        .into_iter()
+        .map(|(name, value)| {
+            let parsed: Json = serde_json::from_value(value).unwrap();
+            (name, parsed)
+        })
+        .collect()
+}
+
 pub(super) fn mapped(
     model: &str,
     non_default: &str,
@@ -265,17 +287,23 @@ pub(super) fn mapped(
         catalog: &catalog,
     };
     runtime().block_on(gpt5::map_params(&mut capabilities, &mut mapping))?;
-    Ok(serde_json::from_value(Value::Object(existing)).unwrap())
+    Ok(prompt_object(existing))
 }
 
 pub(super) fn composed(
     model: &str,
-    params: &str,
+    requested: &str,
     messages_text: &str,
     system_first: bool,
 ) -> Object {
-    let optional = mapped(model, params, "{}", DropParams::default()).unwrap();
-    gpt5::transform_request(model, &messages(messages_text), &optional, system_first).unwrap()
+    let optional = mapped(model, requested, "{}", DropParams::default()).unwrap();
+    gpt5::transform_request(
+        model,
+        &messages(messages_text),
+        &optional,
+        system_first,
+    )
+    .unwrap()
 }
 
 pub(super) fn o_series_body(
@@ -285,13 +313,13 @@ pub(super) fn o_series_body(
     system_first: bool,
 ) -> Object {
     let mut capabilities = fixture();
-    runtime()
-        .block_on(o_series::transform_request(
-            &mut capabilities,
-            model,
-            &messages(messages_text),
-            &object(optional),
-            system_first,
-        ))
-        .unwrap()
+    let converted = messages(messages_text);
+    let request = o_series::transform_request(
+        &mut capabilities,
+        model,
+        &converted,
+        &object(optional),
+        system_first,
+    );
+    runtime().block_on(request).unwrap()
 }

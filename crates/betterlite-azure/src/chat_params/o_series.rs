@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 
+use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::{CapabilityRequest, NamedCapability};
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::{ChatContent, ChatContentError, Mode, RefuseDownloads};
@@ -10,7 +11,7 @@ use betterlite_openai::openai_base_config::{
 use betterlite_openai::reasoning_models::ReasoningCapabilities;
 use betterlite_openai::reasoning_models::o_series::transform_messages;
 use betterlite_openai::response_events::NativeStreamingSupport;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_prompts::message_fields::system_runs::system_messages_first;
 
@@ -88,14 +89,7 @@ where
     };
     match capabilities.supports_native_streaming(&request).await {
         Ok(Json::Bool(true)) => false,
-        Ok(
-            Json::Null
-            | Json::Bool(false)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        ) => true,
+        Ok(_) => true,
         Err(failure) => {
             tracing::debug!(
                 error = %failure,

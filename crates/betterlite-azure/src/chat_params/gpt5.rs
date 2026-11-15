@@ -1,5 +1,5 @@
 use betterlite_models::model_capability_predicates::{CapabilityRequest, NamedCapability};
-use betterlite_openai::openai_base_config::CatalogCapabilities;
+use betterlite_openai::openai_base_config::{CatalogCapabilities, Object as ParamsObject};
 use betterlite_openai::reasoning_models::gpt_5::{self, Mapping as Gpt5Mapping};
 use betterlite_openai::reasoning_models::{
     ReasoningCapabilities, effort_level, is_model_gpt_5_2_model,
@@ -66,7 +66,21 @@ where
     let azure_supported = supported_params(&mut azure, mapping.model, mapping.catalog).await;
     let openai_supported =
         gpt_5::supported_params(&mut azure, mapping.model, mapping.catalog).await;
-    // LiteLLM's final copy reads the Azure allowlist, so names only OpenAI's list carries are undone
+    copy_azure_allowlist(mapping, &before, &azure_supported, &openai_supported);
+    let mapped = mapping.optional_params.get(REASONING_EFFORT);
+    if !supports_none && effort_level(mapped) == Some(NONE) {
+        mapping.optional_params.remove(REASONING_EFFORT);
+    }
+    Ok(())
+}
+
+// LiteLLM's final copy reads the Azure allowlist, so names only OpenAI's list carries are undone
+fn copy_azure_allowlist(
+    mapping: &mut Gpt5Mapping<'_>,
+    before: &ParamsObject,
+    azure_supported: &[&str],
+    openai_supported: &[&str],
+) {
     for (name, value) in mapping.non_default_params.iter() {
         let in_azure = azure_supported.contains(&name.as_str());
         let in_openai = openai_supported.contains(&name.as_str());
@@ -86,11 +100,6 @@ where
             }
         }
     }
-    let mapped = mapping.optional_params.get(REASONING_EFFORT);
-    if !supports_none && effort_level(mapped) == Some(NONE) {
-        mapping.optional_params.remove(REASONING_EFFORT);
-    }
-    Ok(())
 }
 
 pub fn transform_request(
@@ -105,6 +114,7 @@ pub fn transform_request(
         optional,
         openai_system_messages_first,
     )
+    .map_err(ChatParamsError::Messages)
 }
 
 async fn supports_none_effort<Capabilities>(
