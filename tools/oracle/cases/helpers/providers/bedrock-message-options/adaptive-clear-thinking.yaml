@@ -1,0 +1,88 @@
+kind: helper
+name: adaptive-clear-thinking
+call:
+  bedrock_message_options:
+    function: ensure_thinking
+    model_cost:
+      fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      bedrock/fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+    cases:
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 2047}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 2048}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 4095}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 4096}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 8191}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 8192}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 10000}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 5000}
+          output_config: {format: x, effort: null}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 8192}
+          output_config: {effort: low}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 5000}
+          output_config: {effort: 5}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 2048}
+          output_config: plain
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 2048}
+          output_config: [1]
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 4096, display: summarized}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 4096, display: null}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 4096, display: ""}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 4096, display: false}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 4096, extra: 1}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: disabled, display: x}
+env: {}
+compare: {ignore: []}
