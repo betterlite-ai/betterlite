@@ -354,6 +354,17 @@ fn reports_unbilled_usage_when_the_session_closes() {
 }
 
 #[test]
+fn provider_frames_before_configuration_use_endpointing_mode() {
+    let mut config = base_config(&[]);
+    let orphan = transform_response(
+        &mut config,
+        &text_frame(r#"{"type":"transcript","transcript":"hi"}"#),
+    )
+    .unwrap_err();
+    assert!(matches!(orphan, MuseProtocolError::MissingTurnId));
+}
+
+#[test]
 fn passes_the_response_state_through_unchanged() {
     let mut config = configured_config(&[]);
     let input = transform_input();
