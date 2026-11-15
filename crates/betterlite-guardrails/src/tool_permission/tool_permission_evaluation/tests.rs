@@ -571,6 +571,27 @@ fn empty_argument_text_is_missing_not_malformed() {
 }
 
 #[test]
+fn an_object_argument_is_used_as_given() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![pattern_rule(
+            "safe",
+            ToolDecision::Allow,
+            "^read$",
+            &[("path", "^/safe$")],
+        )],
+    );
+    let arguments = GuardrailValue::Object(BTreeMap::from([(
+        "path".to_owned(),
+        GuardrailValue::Text("/safe".to_owned()),
+    )]));
+    let result =
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
+    assert!(result.is_allowed);
+    assert_eq!(result.rule_id.as_deref(), Some("safe"));
+}
+
+#[test]
 fn arguments_parse_from_the_json_string_form() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
