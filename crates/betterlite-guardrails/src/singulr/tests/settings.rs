@@ -118,16 +118,15 @@ fn a_plain_http_base_with_another_loopback_spelling_is_refused_at_start() {
     assert!(matches!(error, SettingsError::PlainHttp { .. }));
 }
 
-#[test]
-fn a_plain_http_base_with_a_malformed_host_is_refused_at_start() {
-    let error = resolve(&[("SINGULR_API_BASE", "http://[localhost")]).unwrap_err();
-    assert!(matches!(error, SettingsError::PlainHttp { .. }));
-}
-
-#[test]
-fn an_https_base_with_a_malformed_host_is_not_refused_at_start() {
-    let settings = resolve(&[("SINGULR_API_BASE", "https://[guard.example]")]).unwrap();
-    assert_eq!(settings.api_base, "https://[guard.example]");
+#[rstest]
+#[case::plain_http("http://[localhost")]
+#[case::https("https://[guard.example]")]
+fn a_base_urlparse_rejects_is_refused_at_start(#[case] base: &str) {
+    let error = resolve(&[("SINGULR_API_BASE", base)]).unwrap_err();
+    assert!(
+        matches!(&error, SettingsError::InvalidBase { api_base, .. } if api_base.as_str() == base)
+    );
+    assert!(error.to_string().contains(base));
 }
 
 #[test]

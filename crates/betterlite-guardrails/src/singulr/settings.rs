@@ -1,6 +1,7 @@
 use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_http::user_url::error::UrlParseError;
 use betterlite_http::user_url::split::urlparse;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
@@ -29,6 +30,12 @@ pub struct SingulrSettings {
 
 #[derive(Debug, Error)]
 pub enum SettingsError {
+    #[error("Singulr: api_base {api_base} is not a valid URL")]
+    InvalidBase {
+        api_base: String,
+        #[source]
+        source: UrlParseError,
+    },
     #[error(
         "Singulr: api_base {api_base} uses plain HTTP for a non-local endpoint; the guardrail token and the conversation would travel in clear text, so this endpoint must use HTTPS"
     )]
@@ -54,19 +61,15 @@ impl SingulrSettings {
         let api_base = resolve_text(args.singulr_api_base.as_deref(), environment, API_BASE_ENV)
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         let trimmed = api_base.trim().trim_end_matches('/').to_owned();
-        // urlparse lowercases the scheme before the first ':'; the text read also works when urlparse rejects the base
-        let scheme_text = trimmed
-            .trim_start_matches(|c: char| matches!(c, '\0'..=' '))
-            .replace(['\t', '\r', '\n'], "");
-        let plain_http = scheme_text
-            .split_once(':')
-            .is_some_and(|(scheme, _rest)| scheme.eq_ignore_ascii_case("http"));
-        let local = urlparse(&trimmed, "").is_ok_and(|parsed| {
-            parsed
-                .hostname()
-                .is_some_and(|host| LOCAL_HOSTS.contains(&host.as_str()))
-        });
-        if plain_http && !local {
+        // urlparse raises ValueError on a netloc it rejects, and LiteLLM's init fails there before the plain-HTTP check
+        let parsed = urlparse(&trimmed, "").map_err(|source| SettingsError::InvalidBase {
+            api_base: trimmed.clone(),
+            source,
+        })?;
+        let local = parsed
+            .hostname()
+            .is_some_and(|host| LOCAL_HOSTS.contains(&host.as_str()));
+        if parsed.scheme == "http" && !local {
             return Err(SettingsError::PlainHttp { api_base: trimmed });
         }
         let api_key = resolve_text(
