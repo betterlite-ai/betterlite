@@ -51,7 +51,7 @@ pub trait DeploymentHooks {
     where
         H: DeploymentHookTarget;
 
-    fn post_call_success_deployment_hook<H>(
+    fn post_call_deployment_hook<H>(
         &self,
         hooks: &H,
         suppressed: &BTreeSet<String>,
