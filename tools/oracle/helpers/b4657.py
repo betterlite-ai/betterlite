@@ -110,7 +110,7 @@ def form_view(content: bytes) -> Json:
         [name, "<assertion>" if name == "client_assertion" else value]
         for name, value in pairs
     ]
-    return sorted(rendered)
+    return [list(pair) for pair in sorted(rendered)]
 
 
 def auth_client(spec: AuthSpec) -> ClientAuth:
@@ -192,7 +192,7 @@ async def run_operations(input_value: Input) -> Json:
 class FakeLock:
     def __init__(self) -> None:
         self.held = False
-        self.acquisitions: list[str] = []
+        self.acquisitions: list[Json] = []
         self.releases = 0
         self.extends = 0
         self.key = ""
