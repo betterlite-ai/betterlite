@@ -300,7 +300,7 @@ impl TraceRuntime for FakeRuntime {
     }
 
     fn query_store(&self) -> Arc<dyn TraceQueryStore> {
-        Arc::clone(&self.queries)
+        Arc::<FakeQueryStore>::clone(&self.queries)
     }
 }
 

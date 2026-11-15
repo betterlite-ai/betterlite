@@ -224,7 +224,7 @@ where
     }
 
     fn query_store(&self) -> Arc<dyn TraceQueryStore> {
-        Arc::clone(&self.queries)
+        Arc::<Q>::clone(&self.queries)
     }
 }
 
