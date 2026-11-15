@@ -22,7 +22,7 @@ use tokio::task::JoinSet;
 use super::error::PromptGuardError;
 use super::init::PromptGuardArgs;
 use super::wire::{self, Direction, GuardResponse};
-use super::{DEFAULT_API_BASE, MAX_RESPONSE_BYTES, PromptGuardGuardrail};
+use super::{DEFAULT_API_BASE, MAX_RESPONSE_BYTES, PromptGuardGuardrail, SUPPORTED_EVENT_HOOKS};
 use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailMessage};
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 
@@ -867,4 +867,9 @@ async fn an_answer_of_exactly_the_limit_is_read() {
 #[test]
 fn the_answer_limit_is_one_mebibyte() {
     assert_eq!(MAX_RESPONSE_BYTES, 0x0010_0000);
+}
+
+#[test]
+fn the_supported_event_hooks_are_pre_call_and_post_call() {
+    assert_eq!(SUPPORTED_EVENT_HOOKS, ["pre_call", "post_call"]);
 }
