@@ -93,9 +93,9 @@ def stored_rows(request: Input) -> list[Row]:
 
 
 async def validate(request: Input) -> dict[str, JsonValue]:
-    settings: dict[str, JsonValue] = {
-        "weights": {request["model_group"]: {request["deployment_id"]: 1.0}}
-    }
+    group_weights: dict[str, JsonValue] = {request["deployment_id"]: 1.0}
+    weights: dict[str, JsonValue] = {request["model_group"]: group_weights}
+    settings: dict[str, JsonValue] = {"weights": weights}
     try:
         await validate_router_settings_weights(
             settings,
