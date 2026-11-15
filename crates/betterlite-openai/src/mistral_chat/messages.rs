@@ -90,22 +90,20 @@ pub fn handle_message_with_file(messages: &mut [ChatMessage]) -> Result<(), Mist
             if part.kind != "file" {
                 continue;
             }
-            let lifted = match part.fields.get("file") {
-                None => None,
-                Some(file) => {
-                    let Some(fields) = file.as_object() else {
-                        return Err(MistralChatError::FileBlockShape);
-                    };
-                    match fields.get("file_id") {
-                        Some(Value::String(id)) if !id.is_empty() => Some(id.clone()),
-                        _ => None,
-                    }
-                }
+            let Some(file) = part.fields.get("file") else {
+                continue;
+            };
+            let Some(fields) = file.as_object() else {
+                return Err(MistralChatError::FileBlockShape);
+            };
+            let lifted = match fields.get("file_id") {
+                Some(Value::String(id)) if !id.is_empty() => Some(id.clone()),
+                _ => None,
             };
             if let Some(id) = lifted {
                 part.fields
                     .insert(String::from("file_id"), Value::String(id));
-                part.fields.shift_remove("file");
+                part.fields.remove("file");
             }
         }
     }

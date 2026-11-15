@@ -50,8 +50,8 @@ fn normalize_choices(chunk: &mut Value) -> Option<()> {
             normalized.text.map_or(Value::Null, Value::String),
         );
         if normalized.thinking_blocks.is_empty() {
-            delta_fields.shift_remove("thinking_blocks");
-            delta_fields.shift_remove("reasoning_content");
+            delta_fields.remove("thinking_blocks");
+            delta_fields.remove("reasoning_content");
         } else {
             delta_fields.insert(
                 String::from("thinking_blocks"),
