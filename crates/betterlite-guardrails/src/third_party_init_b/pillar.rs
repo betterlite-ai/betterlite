@@ -40,7 +40,7 @@ pub fn initialize_pillar(
         api_base: params.base.fields.api_base.clone(),
         on_flagged_action: match params.base.extra.0.get("on_flagged_action") {
             None => Some(DEFAULT_ACTION.to_owned()),
-            value => decode("on_flagged_action", value)?,
+            Some(value) => decode("on_flagged_action", Some(value))?,
         },
         event_hook: params.mode.clone(),
         default_on: params.base.fields.default_on.unwrap_or_default(),
