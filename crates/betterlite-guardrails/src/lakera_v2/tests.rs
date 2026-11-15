@@ -763,5 +763,36 @@ async fn call_v2_guard_records_a_failed_response() {
     assert_eq!(sink.records.lock().unwrap().len(), 1);
 }
 
+#[tokio::test]
+async fn call_v2_guard_records_an_answer_without_a_payload_key() {
+    let server = serve(200, r#"{"flagged":false,"breakdown":[]}"#.to_owned()).await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = chat_data();
+    let sink = CollectingSink::default();
+    let suppressed = BTreeSet::new();
+    let mut call = invocation(&data);
+    let mut call_context = context(ScopeFlags::default(), &mut call, &sink, &suppressed);
+    let messages = vec![lakera_message("user", "hello")];
+    let (response, _counts) = guardrail
+        .call_v2_guard(
+            &messages,
+            &mut data,
+            GuardrailEventHooks::PreCall,
+            &mut call_context,
+        )
+        .await
+        .expect("an answer without a payload key still decodes");
+    assert_eq!(response.flagged, Some(false));
+    let record = record_of(&data);
+    assert_eq!(
+        record_field(record, "guardrail_status"),
+        &GuardrailValue::Text("success".to_owned())
+    );
+    let GuardrailValue::Object(recorded) = record_field(record, "guardrail_response") else {
+        panic!("the recorded response is not an object");
+    };
+    assert!(recorded.get("payload").is_none(), "{recorded:?}");
+}
+
 mod coverage;
 mod hooks;
