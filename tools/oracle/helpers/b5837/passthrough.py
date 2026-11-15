@@ -71,8 +71,8 @@ def passthrough_credentials(input_value: PassthroughCredentialsInput) -> JsonVal
         )
         for case in input_value["cases"]
     ]
-    streaming = [
+    streaming: list[JsonValue] = [
         PASSTHROUGH.is_streaming_request("chat/completions", {"stream": case["stream"]})
         for case in input_value["cases"]
     ]
-    return JSON.validate_python({"headers": headers, "streaming": streaming})
+    return {"headers": headers, "streaming": streaming}

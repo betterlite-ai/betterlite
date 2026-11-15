@@ -1,5 +1,6 @@
 import datetime as dt
-from typing import Final, Literal, TypedDict
+from collections.abc import Callable
+from typing import Final, Literal, TypedDict, cast
 
 import httpx
 import litellm
@@ -15,6 +16,7 @@ from .config import JSON, Document, JsonObject, Kind, RerankConfig, set_env
 
 FIXED_NOW: Final = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
 ERRORS: Final = (AttributeError, IndexError, KeyError, TypeError, ValueError)
+SELECTOR: Final = cast(Callable[[str], RerankConfig], get_nvidia_nim_rerank_config)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/common_utils.py#L6
 
 
 class RerankUrlCase(TypedDict):
@@ -77,17 +79,12 @@ def provider(kind: Kind) -> RerankConfig:
     return NvidiaNimRerankConfig()
 
 
-def url_of(config: RerankConfig, model: str, api_base: str | None) -> str:
-    return config.get_complete_url(api_base, model)
-
-
 def rerank_select(input_value: RerankSelectInput) -> JsonValue:
     selected = [
-        url_of(get_nvidia_nim_rerank_config(model), model, None)
-        for model in input_value["models"]
+        SELECTOR(model).get_complete_url(None, model) for model in input_value["models"]
     ]
     urls = [
-        url_of(get_nvidia_nim_rerank_config(case["model"]), case["model"], case["api_base"])
+        SELECTOR(case["model"]).get_complete_url(case["api_base"], case["model"])
         for case in input_value["urls"]
     ]
     return {"selected": JSON.validate_python(selected), "urls": JSON.validate_python(urls)}
