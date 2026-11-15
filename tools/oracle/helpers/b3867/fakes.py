@@ -1,6 +1,6 @@
 import json
 from collections.abc import AsyncIterable
-from typing import TypeVar
+from typing import NotRequired, TypeVar, TypedDict
 
 from litellm.rust_bridge.traces import ClickHouseStorage, QueryScope
 from litellm.tracing import TracingPayloadTooLargeError
@@ -17,8 +17,6 @@ from litellm.tracing.types import (
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-from .types import Script
-
 OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 PAGE: TypeAdapter[TracePage] = TypeAdapter(TracePage)
 TRACE: TypeAdapter[Trace | None] = TypeAdapter(Trace | None)
@@ -27,6 +25,40 @@ ERROR_PAGE: TypeAdapter[SpanErrorPage | None] = TypeAdapter(SpanErrorPage | None
 
 DEFAULT_MESSAGE = "the trace read failed"
 DEFAULT_REJECTION = "OTLP payload rejected"
+
+
+class RequestInput(TypedDict):
+    method: str
+    path: str
+    headers: NotRequired[dict[str, str]]
+    query: NotRequired[dict[str, str]]
+    body: NotRequired[str]
+    body_base64: NotRequired[bool]
+
+
+class AuthInput(TypedDict):
+    user_role: NotRequired[str]
+    team_id: NotRequired[str]
+    token: NotRequired[str]
+    project_id: NotRequired[str]
+    org_id: NotRequired[str]
+
+
+class Script(TypedDict):
+    decoder: NotRequired[JsonValue]
+    list_traces: NotRequired[JsonValue]
+    get_trace: NotRequired[JsonValue]
+    get_span: NotRequired[JsonValue]
+    get_span_error: NotRequired[JsonValue]
+
+
+class Input(TypedDict):
+    request: RequestInput
+    auth: NotRequired[AuthInput]
+    tracing: NotRequired[bool]
+    master_key: NotRequired[str]
+    script: NotRequired[Script]
+
 
 ReadValue = TypeVar("ReadValue")
 
@@ -44,6 +76,14 @@ def read_answer(value: JsonValue, adapter: TypeAdapter[ReadValue]) -> ReadValue:
     if failure.get("kind") == "invalid_cursor":
         raise ValueError(text)
     raise RuntimeError(text)
+
+
+def read_script(
+    value: JsonValue | None, message: str, adapter: TypeAdapter[ReadValue]
+) -> ReadValue:
+    if value is None:
+        raise ValueError(message)
+    return read_answer(value, adapter)
 
 
 def decoder_state(script: Script) -> tuple[str, str]:
@@ -106,30 +146,21 @@ class ScriptedReceiver(TraceReceiver):
         self, scope: TraceScope, start_ms: int, end_ms: int, cursor: str | None = None
     ) -> TracePage:
         del scope, start_ms, end_ms, cursor
-        found = self.script.get("list_traces")
-        if found is None:
-            raise ValueError("the case has no list_traces script")
-        return read_answer(found, PAGE)
+        return read_script(self.script.get("list_traces"), "no list_traces script", PAGE)
 
     @override
     async def get_trace(
         self, trace_id: str, scope: TraceScope, trace_ref: str = ""
     ) -> Trace | None:
         del trace_id, scope, trace_ref
-        found = self.script.get("get_trace")
-        if found is None:
-            raise ValueError("the case has no get_trace script")
-        return read_answer(found, TRACE)
+        return read_script(self.script.get("get_trace"), "no get_trace script", TRACE)
 
     @override
     async def get_span(
         self, trace_id: str, span_id: str, scope: TraceScope, trace_ref: str = ""
     ) -> SpanDetail | None:
         del trace_id, span_id, scope, trace_ref
-        found = self.script.get("get_span")
-        if found is None:
-            raise ValueError("the case has no get_span script")
-        return read_answer(found, SPAN)
+        return read_script(self.script.get("get_span"), "no get_span script", SPAN)
 
     @override
     async def get_span_error(
@@ -141,7 +172,6 @@ class ScriptedReceiver(TraceReceiver):
         cursor: str | None = None,
     ) -> SpanErrorPage | None:
         del trace_id, span_id, scope, trace_ref, cursor
-        found = self.script.get("get_span_error")
-        if found is None:
-            raise ValueError("the case has no get_span_error script")
-        return read_answer(found, ERROR_PAGE)
+        return read_script(
+            self.script.get("get_span_error"), "no get_span_error script", ERROR_PAGE
+        )
