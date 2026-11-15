@@ -1,6 +1,6 @@
 use betterlite_redis::config_sync::publish::PublishChange;
 use chrono::{DateTime, Utc};
-use deadpool_postgres::GenericClient;
+use deadpool_postgres::GenericClient as _;
 use serde::de::DeserializeOwned;
 
 use crate::postgres_store::errors::backend;
@@ -59,13 +59,13 @@ impl<'db> ManagedBatchRepository<'db> {
             .query_opt(FIND_ROW_SQL, &[&unified_batch_id])
             .await
             .map_err(|source| TableError::Database(backend(source)))?;
-        let Some(row) = row else {
+        let Some(found) = row else {
             return Ok(None);
         };
-        let file_object = row
+        let file_object = found
             .try_get(0)
             .map_err(|source| TableError::Database(backend(source)))?;
-        let status = row
+        let status = found
             .try_get(1)
             .map_err(|source| TableError::Database(backend(source)))?;
         Ok(Some(StoredBatch {

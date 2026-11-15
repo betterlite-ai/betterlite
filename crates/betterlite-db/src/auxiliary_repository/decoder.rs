@@ -22,7 +22,11 @@ where
     }
     let value = match stored {
         JsonData::String(inner) => parse_data(inner.as_bytes())?,
-        other => other,
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::Array(_)
+        | JsonData::Object(_)) => other,
     };
     serde_json::to_value(value)
         .and_then(serde_json::from_value::<Batch>)

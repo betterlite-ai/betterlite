@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 
 use betterlite_redis::config_sync::publish::PublishChange;
 use betterlite_redis::config_sync::table_actions::{ConfigSyncTableActions, TableActions};
-use deadpool_postgres::GenericClient;
+use deadpool_postgres::GenericClient as _;
 use serde::de::DeserializeOwned;
 use tokio_postgres::types::ToSql;
 
@@ -78,12 +78,12 @@ impl<'db, T: TableBinding> PrismaTableRepository<'db, T> {
     }
 
     #[must_use]
-    pub fn with_writer(mut self) -> Self {
+    pub const fn with_writer(mut self) -> Self {
         self.use_writer = true;
         self
     }
 
-    pub fn prisma_client(&self) -> Result<PrismaClient<'db>, DbError> {
+    pub const fn prisma_client(&self) -> Result<PrismaClient<'db>, DbError> {
         let Some(client) = self.client else {
             return Err(DbError::NoDbConnected);
         };
@@ -127,7 +127,7 @@ impl<'db, T: TableBinding> PrismaTableRepository<'db, T> {
     }
 }
 
-pub(super) type Params<'a> = [&'a (dyn ToSql + Sync)];
+pub(super) type Params<'query> = [&'query (dyn ToSql + Sync)];
 
 pub(super) async fn query_json<T>(
     store: &PostgresStore,
@@ -142,10 +142,10 @@ where
         .query_opt(sql, params)
         .await
         .map_err(|source| TableError::Database(backend(source)))?;
-    let Some(row) = row else {
+    let Some(found) = row else {
         return Ok(None);
     };
-    let text: String = row
+    let text: String = found
         .try_get(0)
         .map_err(|source| TableError::Database(backend(source)))?;
     serde_json::from_str(&text)

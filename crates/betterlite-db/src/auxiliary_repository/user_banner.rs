@@ -1,8 +1,6 @@
-use std::future::Future;
-
 use betterlite_redis::config_sync::publish::PublishChange;
 use betterlite_redis::config_sync::table_actions::TableActions;
-use deadpool_postgres::GenericClient;
+use deadpool_postgres::GenericClient as _;
 use tokio_postgres::Row;
 
 use crate::budget_permission_rows::JsonData;
@@ -61,20 +59,6 @@ impl BannerActions<'_> {
             .map_err(|source| TableError::Database(backend(source)))
     }
 
-    async fn one(&self, sql: &str, params: &Params<'_>) -> Result<JsonData, TableError> {
-        let row = self.row(sql, params).await?.ok_or(TableError::MissingRow)?;
-        Self::row_json(&row)
-    }
-
-    async fn optional(
-        &self,
-        sql: &str,
-        params: &Params<'_>,
-    ) -> Result<Option<JsonData>, TableError> {
-        let row = self.row(sql, params).await?;
-        row.as_ref().map(Self::row_json).transpose()
-    }
-
     async fn changed(&self, sql: &str, params: &Params<'_>) -> Result<usize, TableError> {
         let client = self.access.write.session().await?;
         let rows = client
@@ -92,64 +76,60 @@ impl TableActions for BannerActions<'_> {
     type UpdateData = String;
     type Failure = TableError;
 
-    fn create(
-        &self,
-        data: Self::CreateData,
-    ) -> impl Future<Output = Result<Self::Row, Self::Failure>> + Send {
-        async move { self.one(CREATE_SQL, &[&data.id, &data.ui_settings]).await }
+    async fn create(&self, data: Self::CreateData) -> Result<Self::Row, Self::Failure> {
+        let row = self
+            .row(CREATE_SQL, &[&data.id, &data.ui_settings])
+            .await?
+            .ok_or(TableError::MissingRow)?;
+        Self::row_json(&row)
     }
 
-    fn create_many(
-        &self,
-        data: Vec<Self::CreateData>,
-    ) -> impl Future<Output = Result<usize, Self::Failure>> + Send {
-        async move {
-            let mut created = 0_usize;
-            for row in &data {
-                self.changed(CREATE_SQL, &[&row.id, &row.ui_settings])
-                    .await?;
-                created = created.saturating_add(1);
-            }
-            Ok(created)
+    async fn create_many(&self, data: Vec<Self::CreateData>) -> Result<usize, Self::Failure> {
+        let mut created = 0_usize;
+        for row in &data {
+            self.changed(CREATE_SQL, &[&row.id, &row.ui_settings])
+                .await?;
+            created = created.saturating_add(1);
         }
+        Ok(created)
     }
 
-    fn update(
+    async fn update(
         &self,
         data: Self::UpdateData,
         filter: Self::Filter,
-    ) -> impl Future<Output = Result<Option<Self::Row>, Self::Failure>> + Send {
-        async move { self.optional(UPDATE_SQL, &[&filter, &data]).await }
+    ) -> Result<Option<Self::Row>, Self::Failure> {
+        let row = self.row(UPDATE_SQL, &[&filter, &data]).await?;
+        row.as_ref().map(Self::row_json).transpose()
     }
 
-    fn update_many(
+    async fn update_many(
         &self,
         data: Self::UpdateData,
         filter: Self::Filter,
-    ) -> impl Future<Output = Result<usize, Self::Failure>> + Send {
-        async move { self.changed(UPDATE_MANY_SQL, &[&filter, &data]).await }
+    ) -> Result<usize, Self::Failure> {
+        self.changed(UPDATE_MANY_SQL, &[&filter, &data]).await
     }
 
-    fn upsert(
+    async fn upsert(
         &self,
         _filter: Self::Filter,
         data: Self::CreateData,
-    ) -> impl Future<Output = Result<Self::Row, Self::Failure>> + Send {
-        async move { self.one(UPSERT_SQL, &[&data.id, &data.ui_settings]).await }
+    ) -> Result<Self::Row, Self::Failure> {
+        let row = self
+            .row(UPSERT_SQL, &[&data.id, &data.ui_settings])
+            .await?
+            .ok_or(TableError::MissingRow)?;
+        Self::row_json(&row)
     }
 
-    fn delete(
-        &self,
-        filter: Self::Filter,
-    ) -> impl Future<Output = Result<Option<Self::Row>, Self::Failure>> + Send {
-        async move { self.optional(DELETE_SQL, &[&filter]).await }
+    async fn delete(&self, filter: Self::Filter) -> Result<Option<Self::Row>, Self::Failure> {
+        let row = self.row(DELETE_SQL, &[&filter]).await?;
+        row.as_ref().map(Self::row_json).transpose()
     }
 
-    fn delete_many(
-        &self,
-        filter: Self::Filter,
-    ) -> impl Future<Output = Result<usize, Self::Failure>> + Send {
-        async move { self.changed(DELETE_MANY_SQL, &[&filter]).await }
+    async fn delete_many(&self, filter: Self::Filter) -> Result<usize, Self::Failure> {
+        self.changed(DELETE_MANY_SQL, &[&filter]).await
     }
 }
 
@@ -165,6 +145,7 @@ impl<'db> UserBannerRepository<'db> {
         }
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - LiteLLM's one-query public read
     pub async fn get_raw_settings(&self) -> Result<Option<JsonData>, TableError> {
         let access = self.base.access()?;
         query_json(access.read, SELECT_SQL, &[&USER_BANNER_ROW_ID]).await

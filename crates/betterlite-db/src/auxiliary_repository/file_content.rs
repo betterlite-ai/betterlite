@@ -1,5 +1,5 @@
 use betterlite_redis::config_sync::publish::PublishChange;
-use deadpool_postgres::GenericClient;
+use deadpool_postgres::GenericClient as _;
 use uuid::Uuid;
 
 use crate::postgres_store::errors::backend;
@@ -49,10 +49,10 @@ impl<'db> ManagedFileContentRepository<'db> {
             .query_opt(SELECT_SQL, &[&row_id])
             .await
             .map_err(|source| TableError::Database(backend(source)))?;
-        let Some(row) = row else {
+        let Some(found) = row else {
             return Ok(None);
         };
-        let content = row
+        let content = found
             .try_get(0)
             .map_err(|source| TableError::Database(backend(source)))?;
         Ok(Some(content))

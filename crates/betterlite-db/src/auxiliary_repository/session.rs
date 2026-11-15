@@ -30,6 +30,7 @@ impl<'db> AutoRouterSessionRepository<'db> {
         }
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - LiteLLM's one-query public read
     pub async fn find_latest_for_key(
         &self,
         api_key: &str,
