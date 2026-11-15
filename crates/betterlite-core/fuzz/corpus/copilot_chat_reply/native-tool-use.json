@@ -1,0 +1,1 @@
+{"id":"msg_1","model":"claude-x","stop_reason":"tool_use","content":[{"type":"thinking","thinking":"hmm","signature":"s"},{"type":"tool_use","id":"toolu_1","name":"lookup","input":{"q":"x"}}],"usage":{"input_tokens":3,"output_tokens":4}}
