@@ -29,6 +29,7 @@ pub fn validate_api_base(url: &str) -> Result<String, CompresrTransportError> {
         | ParseError::InvalidIpv4Address
         | ParseError::InvalidIpv6Address
         | ParseError::InvalidDomainCharacter
+        // ast-grep-ignore: no-long-names
         | ParseError::RelativeUrlWithCannotBeABaseBase
         | ParseError::SetHostOnCannotBeABaseUrl
         | ParseError::Overflow => CompresrTransportError::InvalidApiBase,
