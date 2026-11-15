@@ -1,0 +1,28 @@
+kind: helper
+name: fal-image-core-generic-base-only
+call:
+  fal_image_core:
+    operation: generic_base_only
+    environment: {}
+    api_bases: [null, "", "https://proxy.test/fal///"]
+    models: ["fal-ai/flux/schnell", "openai/gpt-image-2"]
+    model: "fal-ai/flux/schnell"
+    cases:
+      - non_default: {n: 2, size: "1024x768", response_format: "url"}
+        optional: {}
+        drop_params: false
+      - non_default: {seed: 1}
+        optional: {}
+        drop_params: true
+      - non_default: {seed: 1}
+        optional: {}
+        drop_params: false
+      - non_default: {n: 2}
+        optional: {n: 4}
+        drop_params: false
+      - non_default: {response_format: "b64_json"}
+        optional: {seed: 9}
+        drop_params: false
+env: {}
+compare:
+  ignore: []
