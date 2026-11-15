@@ -6,3 +6,10 @@ deviations:
   - what: Repository availability does not enable managed files or batches; without the enterprise-created hook, the executed-batch route keeps 400 invalid_request_error with param null and code '400', even with a configured database.
     why: Keep the current missing-hook behavior while Max decides whether betterlite should build a native managed service. B086/B087 route parts own its HTTP equality cases.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
+kept_bugs:
+  - what: load_batch treats a falsey stored file_object (JSON null, empty string, empty object or array, false, or zero) as no batch instead of a validation failure.
+    why: LiteLLM returns None for a row whose blob is still empty, so the batch routes read such a row as not found rather than a server error; a setup that stores placeholder rows relies on that read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L19-L20
+  - what: The managed-object lookup has no order or status filter, so duplicate unified_object_id rows resolve to one arbitrary row, and compare_and_set updates every match and reports affected_rows > 0.
+    why: The unified_object_id unique index makes duplicates impossible in a working setup, and copying the unqualified query keeps the single-row read and the write predicate identical to LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L45-L46
