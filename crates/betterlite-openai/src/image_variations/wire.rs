@@ -1,6 +1,13 @@
+use std::time::Duration;
+
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::controls::multipart::{
+    DEFAULT_MAX_RECURSE_DEPTH, MultipartField, serialize_multipart_fields,
+};
 use betterlite_models::decisions::Json;
+use betterlite_prompts::media_metadata::{FileBody, FileData, extract_file_metadata};
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
@@ -10,12 +17,17 @@ use url::Url;
 use super::call::PreparedImageVariation;
 use super::error::ImageVariationSource;
 
+// the SDK's create_variation body writes these keywords in this order; the rest arrive through extra_body
+const FORM_PARAMS: [&'static str; 5] = ["model", "n", "response_format", "size", "user"];
+
 pub fn outbound_request(
     prepared: &PreparedImageVariation,
 ) -> Result<OutboundRequest, ImageVariationSource> {
     let (headers, mut options) = header_options(prepared)?;
     let query = query_pairs(&mut options)?;
     let extra_body = take_extra(&mut options, "extra_body")?;
+    let deadline = request_deadline(&mut options, prepared.deadline)?;
+    reject_unknown(&options)?;
     let parts = form_parts(&options, &extra_body, prepared)?;
     Ok(OutboundRequest {
         method: Method::POST,
@@ -26,7 +38,7 @@ pub fn outbound_request(
             boundary: prepared.boundary.clone(),
             parts,
         },
-        deadline: prepared.deadline,
+        deadline,
     })
 }
 
@@ -44,69 +56,110 @@ fn header_options(
     let mut options = prepared.data.options.clone();
     for (name, value) in take_extra(&mut options, "extra_headers")? {
         let Json::Text(text) = value else {
-            return Err(ImageVariationSource::Option {
-                field: String::from("extra_headers"),
-            });
+            return Err(ImageVariationSource::Option { field: name });
         };
         insert_header(&mut headers, &name, &text, false)?;
     }
     Ok((headers, options))
 }
 
+// the SDK serializes its multipart body and its extra_query with the same bracket expansion
 fn form_parts(
     options: &IndexMap<String, Json>,
     extra_body: &IndexMap<String, Json>,
     prepared: &PreparedImageVariation,
 ) -> Result<Vec<MultipartPart>, ImageVariationSource> {
-    let mut parts = Vec::new();
-    for (name, value) in options.iter().chain(extra_body.iter()) {
-        let Some(data) = form_value(name, value)? else {
-            continue;
-        };
-        parts.push(MultipartPart {
-            name: name.clone(),
-            file_name: None,
-            content_type: None,
-            data: data.into_bytes(),
-        });
-    }
+    let fields = serialize_multipart_fields(
+        &json_object(form_fields(options, extra_body)),
+        DEFAULT_MAX_RECURSE_DEPTH,
+    )?;
+    let mut parts: Vec<MultipartPart> = fields.into_iter().map(form_part).collect();
     parts.push(image_part(prepared));
     Ok(parts)
 }
 
+// extra_body overrides a keyword where it stands and lands its new keys after the keywords
+fn form_fields(
+    options: &IndexMap<String, Json>,
+    extra_body: &IndexMap<String, Json>,
+) -> IndexMap<String, Json> {
+    let mut merged = IndexMap::new();
+    for name in FORM_PARAMS {
+        if let Some(value) = options.get(name) {
+            merged.insert(String::from(name), value.clone());
+        }
+    }
+    for (name, value) in extra_body {
+        match merged.get_mut(name) {
+            Some(existing) => *existing = value.clone(),
+            None => {
+                merged.insert(name.clone(), value.clone());
+            }
+        }
+    }
+    merged
+}
+
+fn json_object(fields: IndexMap<String, Json>) -> JsonValue {
+    JsonValue::Object(
+        fields
+            .into_iter()
+            .map(|(name, value)| (name, json_value(&value)))
+            .collect(),
+    )
+}
+
+// the image variation records hold the shared decisions::Json, which the controls' serializer does not take
+fn json_value(value: &Json) -> JsonValue {
+    match value {
+        Json::Null => JsonValue::Null,
+        Json::Bool(flag) => JsonValue::Bool(*flag),
+        Json::Number(number) => JsonValue::Number(number.clone()),
+        Json::Text(text) => JsonValue::Text(text.clone()),
+        Json::List(items) => JsonValue::Array(items.iter().map(json_value).collect()),
+        Json::Object(fields) => JsonValue::Object(
+            fields
+                .iter()
+                .map(|(name, value)| (name.clone(), json_value(value)))
+                .collect(),
+        ),
+    }
+}
+
+fn form_part(field: MultipartField) -> MultipartPart {
+    MultipartPart {
+        name: field.name,
+        file_name: None,
+        content_type: None,
+        data: field.value.into_bytes(),
+    }
+}
+
 fn image_part(prepared: &PreparedImageVariation) -> MultipartPart {
     let image = &prepared.data.image;
-    let file_name = image
+    let name = image
         .filename
         .clone()
         .unwrap_or_else(|| String::from("upload"));
-    // httpx guesses a missing part type from the file name, and sends none for an empty name
-    let content_type = image.content_type.clone().or_else(|| {
-        (!file_name.is_empty()).then(|| {
-            mime_guess::from_path(&file_name)
-                .first_raw()
-                .map_or_else(|| String::from("application/octet-stream"), str::to_owned)
-        })
-    });
+    // httpx guesses a missing part type through Python's mimetypes table, and writes no name or type for ""
+    let content_type = image
+        .content_type
+        .clone()
+        .or_else(|| (!name.is_empty()).then(|| guessed_content_type(&name)));
     MultipartPart {
         name: String::from("image"),
-        file_name: Some(file_name),
+        file_name: (!name.is_empty()).then_some(name),
         content_type,
         data: image.content.clone(),
     }
 }
 
-// the SDK drops a null or empty form value and writes the rest with Python's str text
-fn form_value(name: &str, value: &Json) -> Result<Option<String>, ImageVariationSource> {
-    match value {
-        Json::Null => Ok(None),
-        Json::Text(text) => Ok((!text.is_empty()).then(|| text.clone())),
-        Json::Bool(flag) => Ok(Some(flag.to_string())),
-        Json::Number(number) => Ok(Some(number.to_string())),
-        Json::List(_) | Json::Object(_) => Err(ImageVariationSource::Option {
-            field: name.to_owned(),
-        }),
-    }
+fn guessed_content_type(file_name: &str) -> String {
+    let found = FileData::Tuple2 {
+        filename: Some(file_name.to_owned()),
+        content: FileBody::Bytes(Vec::new()),
+    };
+    extract_file_metadata(&found).1
 }
 
 fn variation_url(base_url: &str) -> Result<Url, ImageVariationSource> {
@@ -119,22 +172,45 @@ fn variation_url(base_url: &str) -> Result<Url, ImageVariationSource> {
 fn query_pairs(
     options: &mut IndexMap<String, Json>,
 ) -> Result<Vec<(String, String)>, ImageVariationSource> {
-    let mut pairs = Vec::new();
-    for (name, value) in take_extra(options, "extra_query")? {
-        let text = match value {
-            Json::Text(text) => text,
-            Json::Number(number) => number.to_string(),
-            Json::Bool(flag) => flag.to_string(),
-            Json::Null => String::new(),
-            Json::List(_) | Json::Object(_) => {
-                return Err(ImageVariationSource::Option {
-                    field: String::from("extra_query"),
-                });
-            }
-        };
-        pairs.push((name, text));
+    let fields = take_extra(options, "extra_query")?;
+    let serialized = serialize_multipart_fields(&json_object(fields), DEFAULT_MAX_RECURSE_DEPTH)?;
+    Ok(serialized
+        .into_iter()
+        .map(|MultipartField { name, value }| (name, value))
+        .collect())
+}
+
+// create_variation takes a timeout keyword that overrides the client timeout for this one call
+fn request_deadline(
+    options: &mut IndexMap<String, Json>,
+    client_deadline: Duration,
+) -> Result<Duration, ImageVariationSource> {
+    match options.shift_remove("timeout") {
+        None | Some(Json::Null) => Ok(client_deadline),
+        Some(Json::Number(number)) => number
+            .as_f64()
+            .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
+            .ok_or(ImageVariationSource::Option {
+                field: String::from("timeout"),
+            }),
+        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(ImageVariationSource::Option {
+                field: String::from("timeout"),
+            })
+        }
     }
-    Ok(pairs)
+}
+
+// every remaining key reaches create_variation as a keyword, so an unknown one is the SDK's TypeError
+fn reject_unknown(options: &IndexMap<String, Json>) -> Result<(), ImageVariationSource> {
+    for name in options.keys() {
+        if !FORM_PARAMS.contains(&name.as_str()) {
+            return Err(ImageVariationSource::Unsupported {
+                field: name.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn take_extra(
