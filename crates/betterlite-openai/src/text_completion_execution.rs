@@ -20,7 +20,7 @@ use crate::text_completion_transport::{TextCompletionConfigs, TextCompletionTran
 
 use self::catalog::{CompletionCatalog, CompletionRoute, route_for};
 use self::failure::{CompletionFailure, INTERNAL_ERROR, transport_failure};
-use self::http::HttpCompletionConstructor;
+use self::http::{HttpCompletionConstructor, UpstreamFacts};
 
 pub mod catalog;
 pub mod failure;
@@ -47,6 +47,18 @@ pub struct CompletionAnswer {
     pub response: Box<CompletionResponse>,
     pub upstream_headers: HeaderMap,
     pub upstream_time: Duration,
+}
+
+impl CompletionAnswer {
+    fn from_reply(response: CompletionResponse, facts: &Mutex<Option<UpstreamFacts>>) -> Self {
+        let taken = facts.lock().unwrap_or_else(PoisonError::into_inner).take();
+        let captured = taken.unwrap_or_default();
+        Self {
+            response: Box::new(response),
+            upstream_headers: captured.headers,
+            upstream_time: captured.elapsed,
+        }
+    }
 }
 
 pub struct CompletionExecutor {
@@ -95,13 +107,7 @@ impl CompletionExecutor {
                     format!("the provider completion could not be read: {source}"),
                 )
             })?;
-        let taken = facts.lock().unwrap_or_else(PoisonError::into_inner).take();
-        let captured = taken.unwrap_or_default();
-        Ok(CompletionAnswer {
-            response: Box::new(response),
-            upstream_headers: captured.headers,
-            upstream_time: captured.elapsed,
-        })
+        Ok(CompletionAnswer::from_reply(response, &facts))
     }
 }
 
