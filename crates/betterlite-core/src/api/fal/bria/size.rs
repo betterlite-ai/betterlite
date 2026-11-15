@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::default_calculator::parse_image_dimensions;
 use num_traits::cast::cast;
 
-use crate::api::fal::images::UrlOnlyImageError;
+use crate::api::fal::images::error::FalImageError;
 
 const SIZE_ALIASES: [(&str, &str); 8] = [
     ("1024x1024", "1:1"),
@@ -15,9 +15,9 @@ const SIZE_ALIASES: [(&str, &str); 8] = [
     ("960x1280", "3:4"),
 ];
 
-pub fn translate_size(size: &Json) -> Result<(&'static str, Json), UrlOnlyImageError> {
+pub fn translate_size(size: &Json) -> Result<(&'static str, Json), FalImageError> {
     let Json::Text(text) = size else {
-        return Err(UrlOnlyImageError::SizeNotText);
+        return Err(FalImageError::SizeNotText);
     };
     Ok((
         "aspect_ratio",

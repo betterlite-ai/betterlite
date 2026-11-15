@@ -7,10 +7,10 @@ use betterlite_openai::api::image_contracts::records::{
 };
 
 use crate::api::fal::bria::size::translate_size;
-use crate::api::fal::images::UrlOnlyImageError;
-use crate::api::fal::images::decode_url_only_reply;
+use crate::api::fal::images::decode::decode_fal_image_record;
+use crate::api::fal::images::error::FalImageError;
 use crate::api::fal::images::image_url;
-use crate::api::fal::images::map_url_only_params;
+use crate::api::fal::images::params::map_url_only_params;
 
 pub const ENDPOINT: &str = "bria/text-to-image/3.2";
 
@@ -19,7 +19,7 @@ pub fn map_openai_params(
     optional_params: ImageParams,
     model: &str,
     drop_params: bool,
-) -> Result<ImageParams, UrlOnlyImageError> {
+) -> Result<ImageParams, FalImageError> {
     map_url_only_params(
         non_default_params,
         optional_params,
@@ -35,8 +35,8 @@ pub fn append_singular_image(
     status: u16,
     headers: &ImageHeaders,
     body: &[u8],
-) -> Result<(), UrlOnlyImageError> {
-    let reply = decode_url_only_reply(status, headers, body)?;
+) -> Result<(), FalImageError> {
+    let reply = decode_fal_image_record(status, headers, body)?;
     let data = model_response.data.get_or_insert_with(Vec::new);
     let Some(Json::Object(image)) = reply.get("image") else {
         return Ok(());

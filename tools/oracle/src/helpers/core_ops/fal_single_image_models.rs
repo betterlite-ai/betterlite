@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::Sections;
 use betterlite_core::api::fal::bria;
-use betterlite_core::api::fal::images::UrlOnlyImageError;
+use betterlite_core::api::fal::images::error::FalImageError;
 use betterlite_core::api::fal::images::params::{GENERIC_OPENAI_PARAMS, image_generation_body};
 use betterlite_core::api::fal::images::settings::FalImageSettings;
 use betterlite_core::api::fal::recraft;
@@ -76,11 +76,9 @@ pub(crate) struct ReplyCase {
     existing: Vec<String>,
 }
 
-type MapParams =
-    fn(&ImageParams, ImageParams, &str, bool) -> Result<ImageParams, UrlOnlyImageError>;
+type MapParams = fn(&ImageParams, ImageParams, &str, bool) -> Result<ImageParams, FalImageError>;
 
-type AppendImages =
-    fn(&mut ImageResponse, u16, &ImageHeaders, &[u8]) -> Result<(), UrlOnlyImageError>;
+type AppendImages = fn(&mut ImageResponse, u16, &ImageHeaders, &[u8]) -> Result<(), FalImageError>;
 
 #[derive(Clone, Copy)]
 struct Profile {
@@ -190,7 +188,7 @@ fn size_outcomes(profile: Profile, sizes: &[String]) -> Value {
     json!({"sizes": outcomes})
 }
 
-fn mapping_outcome(mapped: Result<ImageParams, UrlOnlyImageError>) -> Value {
+fn mapping_outcome(mapped: Result<ImageParams, FalImageError>) -> Value {
     mapped.map_or_else(
         |_| json!({"error": {"status": null}}),
         |params| json!({"params": params}),

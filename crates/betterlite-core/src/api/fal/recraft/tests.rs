@@ -15,7 +15,6 @@ use super::ENDPOINT;
 use super::append_url_images;
 use super::map_openai_params;
 use super::size::{SQUARE_HD, map_image_size};
-use crate::api::fal::images::UrlOnlyImageError;
 use crate::api::fal::images::decode::MAX_FAL_REPLY_BYTES;
 use crate::api::fal::images::error::FalImageError;
 
@@ -149,7 +148,7 @@ fn recraft_mapping_overwrites_the_translated_destination() {
 fn recraft_mapping_rejects_the_first_unsupported_option() {
     let non_default = params(&[("seed", number(1)), ("user", text("alice"))]);
     match map_openai_params(&non_default, ImageParams::new(), ENDPOINT, false) {
-        Err(UrlOnlyImageError::UnsupportedParameters { parameters, model }) => {
+        Err(FalImageError::UnsupportedParameters { parameters, model }) => {
             assert_eq!(parameters, ["seed"]);
             assert_eq!(model, ENDPOINT);
         }
@@ -182,7 +181,7 @@ fn recraft_mapping_keeps_an_unsupported_option_already_present() {
 fn recraft_mapping_requires_a_text_size(#[case] size: Json) {
     let non_default = params(&[("size", size)]);
     match map_openai_params(&non_default, ImageParams::new(), ENDPOINT, false) {
-        Err(UrlOnlyImageError::SizeNotText) => {}
+        Err(FalImageError::SizeNotText) => {}
         other => panic!("{other:?}"),
     }
 }
@@ -233,7 +232,7 @@ fn recraft_map_member_without_a_url_keeps_a_null_url() {
 fn recraft_image_url_must_be_text(#[case] body: &str) {
     let mut response = ImageResponse::default();
     match append_url_images(&mut response, 200, &headers(), body.as_bytes()) {
-        Err(UrlOnlyImageError::FieldNotText { field, model }) => {
+        Err(FalImageError::FieldNotText { field, model }) => {
             assert_eq!(field, "url");
             assert_eq!(model, ENDPOINT);
         }
@@ -268,11 +267,11 @@ fn recraft_reply_keeps_existing_images() {
 fn recraft_malformed_reply_keeps_the_source_status_and_headers() {
     let mut response = ImageResponse::default();
     match append_url_images(&mut response, 502, &headers(), b"{") {
-        Err(UrlOnlyImageError::Reply(FalImageError::ReplyDecode {
+        Err(FalImageError::ReplyDecode {
             status,
             headers: carried,
             ..
-        })) => {
+        }) => {
             assert_eq!(status, 502);
             assert_eq!(carried, headers());
         }
@@ -288,10 +287,10 @@ fn recraft_malformed_reply_keeps_the_source_status_and_headers() {
 fn recraft_reply_requires_an_object_root(#[case] body: &[u8]) {
     let mut response = ImageResponse::default();
     match append_url_images(&mut response, 500, &headers(), body) {
-        Err(UrlOnlyImageError::Reply(FalImageError::ReplyNotAnObject {
+        Err(FalImageError::ReplyNotAnObject {
             status,
             headers: carried,
-        })) => {
+        }) => {
             assert_eq!(status, 500);
             assert_eq!(carried, headers());
         }
@@ -304,11 +303,11 @@ fn recraft_reply_size_is_bounded() {
     let oversized = vec![b' '; MAX_FAL_REPLY_BYTES + 1];
     let mut response = ImageResponse::default();
     match append_url_images(&mut response, 413, &headers(), &oversized) {
-        Err(UrlOnlyImageError::Reply(FalImageError::ReplyTooLarge {
+        Err(FalImageError::ReplyTooLarge {
             status,
             headers: carried,
             limit,
-        })) => {
+        }) => {
             assert_eq!(status, 413);
             assert_eq!(carried, headers());
             assert_eq!(limit, MAX_FAL_REPLY_BYTES);

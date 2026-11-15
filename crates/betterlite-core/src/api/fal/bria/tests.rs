@@ -15,7 +15,6 @@ use super::ENDPOINT;
 use super::append_singular_image;
 use super::map_openai_params;
 use super::size::map_aspect_ratio;
-use crate::api::fal::images::UrlOnlyImageError;
 use crate::api::fal::images::decode::MAX_FAL_REPLY_BYTES;
 use crate::api::fal::images::error::FalImageError;
 
@@ -176,7 +175,7 @@ fn bria_mapping_overwrites_the_translated_destination() {
 fn bria_mapping_rejects_the_first_unsupported_option() {
     let non_default = params(&[("seed", number(1)), ("user", text("alice"))]);
     match map_openai_params(&non_default, ImageParams::new(), ENDPOINT, false) {
-        Err(UrlOnlyImageError::UnsupportedParameters { parameters, model }) => {
+        Err(FalImageError::UnsupportedParameters { parameters, model }) => {
             assert_eq!(parameters, ["seed"]);
             assert_eq!(model, ENDPOINT);
         }
@@ -209,7 +208,7 @@ fn bria_mapping_keeps_an_unsupported_option_already_present() {
 fn bria_mapping_requires_a_text_size(#[case] size: Json) {
     let non_default = params(&[("size", size)]);
     match map_openai_params(&non_default, ImageParams::new(), ENDPOINT, false) {
-        Err(UrlOnlyImageError::SizeNotText) => {}
+        Err(FalImageError::SizeNotText) => {}
         other => panic!("{other:?}"),
     }
 }
@@ -218,7 +217,7 @@ fn bria_mapping_requires_a_text_size(#[case] size: Json) {
 fn bria_mapping_requires_a_text_size_with_drop_params() {
     let non_default = params(&[("size", number(5))]);
     match map_openai_params(&non_default, ImageParams::new(), ENDPOINT, true) {
-        Err(UrlOnlyImageError::SizeNotText) => {}
+        Err(FalImageError::SizeNotText) => {}
         other => panic!("{other:?}"),
     }
 }
@@ -271,7 +270,7 @@ fn url_image_null() -> ImageData {
 fn bria_image_url_must_be_text(#[case] body: &str) {
     let mut response = ImageResponse::default();
     match append_singular_image(&mut response, 200, &headers(), body.as_bytes()) {
-        Err(UrlOnlyImageError::FieldNotText { field, model }) => {
+        Err(FalImageError::FieldNotText { field, model }) => {
             assert_eq!(field, "url");
             assert_eq!(model, ENDPOINT);
         }
@@ -306,11 +305,11 @@ fn bria_reply_keeps_existing_images() {
 fn bria_malformed_reply_keeps_the_source_status_and_headers() {
     let mut response = ImageResponse::default();
     match append_singular_image(&mut response, 502, &headers(), b"{") {
-        Err(UrlOnlyImageError::Reply(FalImageError::ReplyDecode {
+        Err(FalImageError::ReplyDecode {
             status,
             headers: carried,
             ..
-        })) => {
+        }) => {
             assert_eq!(status, 502);
             assert_eq!(carried, headers());
         }
@@ -326,10 +325,10 @@ fn bria_malformed_reply_keeps_the_source_status_and_headers() {
 fn bria_reply_requires_an_object_root(#[case] body: &[u8]) {
     let mut response = ImageResponse::default();
     match append_singular_image(&mut response, 500, &headers(), body) {
-        Err(UrlOnlyImageError::Reply(FalImageError::ReplyNotAnObject {
+        Err(FalImageError::ReplyNotAnObject {
             status,
             headers: carried,
-        })) => {
+        }) => {
             assert_eq!(status, 500);
             assert_eq!(carried, headers());
         }
@@ -342,11 +341,11 @@ fn bria_reply_size_is_bounded() {
     let oversized = vec![b' '; MAX_FAL_REPLY_BYTES + 1];
     let mut response = ImageResponse::default();
     match append_singular_image(&mut response, 413, &headers(), &oversized) {
-        Err(UrlOnlyImageError::Reply(FalImageError::ReplyTooLarge {
+        Err(FalImageError::ReplyTooLarge {
             status,
             headers: carried,
             limit,
-        })) => {
+        }) => {
             assert_eq!(status, 413);
             assert_eq!(carried, headers());
             assert_eq!(limit, MAX_FAL_REPLY_BYTES);

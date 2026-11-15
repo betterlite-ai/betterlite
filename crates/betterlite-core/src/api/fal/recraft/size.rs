@@ -3,7 +3,7 @@ use betterlite_models::image_cost::default_calculator::parse_image_dimensions;
 use indexmap::IndexMap;
 use serde_json::Number;
 
-use crate::api::fal::images::UrlOnlyImageError;
+use crate::api::fal::images::error::FalImageError;
 
 pub const SQUARE_HD: &str = "square_hd";
 
@@ -16,9 +16,9 @@ const SIZE_PRESETS: [(&str, &str); 6] = [
     ("1024x576", "landscape_16_9"),
 ];
 
-pub fn translate_size(size: &Json) -> Result<(&'static str, Json), UrlOnlyImageError> {
+pub fn translate_size(size: &Json) -> Result<(&'static str, Json), FalImageError> {
     let Json::Text(text) = size else {
-        return Err(UrlOnlyImageError::SizeNotText);
+        return Err(FalImageError::SizeNotText);
     };
     Ok(("image_size", map_image_size(text)))
 }
