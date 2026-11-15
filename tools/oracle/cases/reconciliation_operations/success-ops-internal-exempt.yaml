@@ -1,0 +1,23 @@
+kind: helper
+name: reconciliation-operations-success-ops-internal-exempt
+call:
+  b3045:
+    function: success_ops
+    call_id: call-1
+    stash:
+      owner_call_id: call-1
+      reserved_tokens: 100
+      reserved_scopes:
+        - [api_key, key-1]
+    response:
+      kind: with_usage
+      usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+    rate_limit_type: total
+    logging:
+      user_api_key_hash: key-1
+    request_metadata:
+      internal_call_origin: background_evaluation
+    model_group: gpt-4
+    window_size: 60
+env: {LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"}
+compare: {ignore: []}

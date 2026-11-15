@@ -1,0 +1,32 @@
+task: B3045
+deviations:
+  - what: >-
+      When reconciling ITPM/OTPM usage, if the response carries no usage and combined_usage_object
+      also carries none, aggregate-only total (from _aggregate_only_total_tokens) is attempted; if
+      no aggregate exists, the reconciliation falls back to using reserved counts as a placeholder.
+      This ensures that release-guarded scopes emit zero delta even when usage information is missing.
+    why: >-
+      When providers return responses without usage data (especially pass-through deployments),
+      betterlite must still emit reconciliation ops to settle reserved counts at a reasonable value.
+      The fallback to reserved counts represents "assume worst case" and avoids silent under-counting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4670-L4680
+  - what: >-
+      Scope enumeration includes tpm_limited_tags from the stash in sorted order; tags that are
+      not present in the stash are not included, even if configured globally. This matches the
+      admission-time set of limited tags and ensures the reconciliation targets are consistent
+      with what was reserved at pre-call.
+    why: >-
+      Tag limits and their scopes are determined at admission time when the request enters; reconciliation
+      must target the same scopes to settle the reserved counts accurately. Tags without limits at
+      admission should not appear in reconciliation targets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4958-L4959
+  - what: >-
+      Operations for the ITPM and OTPM sides of _build_io_token_reservation_ops are emitted in
+      counter-key order. LiteLLM iterates the stash's frozensets, so its order varies with the
+      Python process's hash seed.
+    why: >-
+      A pipeline increment is order-independent, so the settled counters are identical; the sorted
+      order keeps the emitted operation list deterministic and lets the oracle compare both sides
+      on the same input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4683-L4696
+kept_bugs: []

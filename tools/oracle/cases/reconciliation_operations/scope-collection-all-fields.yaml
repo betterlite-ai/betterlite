@@ -1,0 +1,19 @@
+kind: helper
+name: reconciliation-operations-scope-collection-all-fields
+call:
+  b3045:
+    function: scope_targets
+    logging:
+      user_api_key_hash: key-1
+      user_api_key_user_id: user-1
+      user_api_key_team_id: team-1
+      user_api_key_org_id: org-1
+      user_api_key_project_id: proj-1
+      user_api_key_end_user_id: end-1
+      agent_id: agent-1
+      session_id: session-1
+    request_user: request-user-1
+    model_group: gpt-4
+    tags: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: reconciliation-operations-success-ops-model-alias
+call:
+  b3045:
+    function: success_ops
+    call_id: call-1
+    response:
+      kind: with_usage
+      usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+    logging:
+      user_api_key_hash: key-1
+      user_api_key_user_id: user-1
+      user_api_key_team_id: team-1
+      user_api_key_org_id: org-1
+      user_api_key_project_id: proj-1
+    model_group: alias-name
+    groups: {alias-name: alias-group}
+    window_size: 60
+env: {LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"}
+compare: {ignore: []}

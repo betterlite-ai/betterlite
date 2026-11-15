@@ -1,0 +1,14 @@
+kind: helper
+name: reconciliation-operations-scope-collection-missing-fields
+call:
+  b3045:
+    function: scope_targets
+    logging:
+      user_api_key_hash: key-1
+      user_api_key_user_id: ""
+      user_api_key_end_user_id: end-2
+      trace_id: trace-1
+    model_group: ""
+    tags: []
+env: {}
+compare: {ignore: []}
