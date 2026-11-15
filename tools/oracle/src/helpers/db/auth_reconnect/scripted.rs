@@ -53,6 +53,7 @@ impl ReconnectClock for ScriptedClock {
         let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
         let fallback = script.fallback;
         let offset = script.offsets.pop_front().unwrap_or(fallback);
+        drop(script);
         self.base.checked_add(offset).unwrap_or(self.base)
     }
 }

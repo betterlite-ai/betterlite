@@ -163,10 +163,7 @@ async fn await_select(scripted: Outcome) -> Result<(), FakeError> {
     if scripted.pending {
         return pending().await;
     }
-    match scripted.error {
-        Some(error) => Err(FakeError(error)),
-        None => Ok(()),
-    }
+    scripted.error.map_or(Ok(()), |error| Err(FakeError(error)))
 }
 
 impl ReconnectEngine for FakeEngine {
