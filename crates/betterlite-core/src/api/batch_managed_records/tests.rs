@@ -27,8 +27,8 @@ use tokio_postgres::NoTls;
 use super::lookup::ManagedFileRows;
 use super::{
     BatchCostPoller, BatchDatabaseLookup, BatchFileIds, BatchManagedRecords,
-    BatchManagedRecordsInput, BatchManagedRecordsResult, BatchUpdate, ManagedFileLookup,
-    ScheduledJob, ScheduledJobs,
+    BatchManagedRecordsInput, BatchManagedRecordsResult, BatchUpdate, CHECK_BATCH_COST_JOB,
+    ManagedFileLookup, ScheduledJob, ScheduledJobs,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -43,18 +43,7 @@ struct RecordingFiles {
 }
 
 impl RecordingFiles {
-    fn recording(rows: &[(&str, &str)]) -> Self {
-        Self {
-            rows: rows
-                .iter()
-                .map(|(raw, unified)| ((*raw).to_owned(), (*unified).to_owned()))
-                .collect(),
-            failures: BTreeSet::new(),
-            lookups: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn failing(rows: &[(&str, &str)], failures: &[&str]) -> Self {
+    fn scripted(rows: &[(&str, &str)], failures: &[&str]) -> Self {
         Self {
             rows: rows
                 .iter()
@@ -133,40 +122,14 @@ impl BatchCostPoller for UnconfirmedPoller {
     }
 }
 
-struct ConfirmedJobs;
+struct ScriptedJob(Option<&'static dyn BatchCostPoller>);
 
-impl ScheduledJobs for ConfirmedJobs {
+impl ScheduledJobs for ScriptedJob {
     fn scheduled_job(&self, name: &str) -> Option<ScheduledJob<'_>> {
-        if name != "check_batch_cost_job" {
+        if name != CHECK_BATCH_COST_JOB {
             return None;
         }
-        Some(ScheduledJob {
-            poller: Some(&ConfirmedPoller),
-        })
-    }
-}
-
-struct UnconfirmedJobs;
-
-impl ScheduledJobs for UnconfirmedJobs {
-    fn scheduled_job(&self, name: &str) -> Option<ScheduledJob<'_>> {
-        if name != "check_batch_cost_job" {
-            return None;
-        }
-        Some(ScheduledJob {
-            poller: Some(&UnconfirmedPoller),
-        })
-    }
-}
-
-struct DetachedJob;
-
-impl ScheduledJobs for DetachedJob {
-    fn scheduled_job(&self, name: &str) -> Option<ScheduledJob<'_>> {
-        if name != "check_batch_cost_job" {
-            return None;
-        }
-        Some(ScheduledJob { poller: None })
+        Some(ScheduledJob { poller: self.0 })
     }
 }
 
@@ -198,7 +161,7 @@ fn ids(
 
 #[tokio::test]
 async fn existing_input_id_mapping() {
-    let files = RecordingFiles::recording(&[("file-raw-in", "litellm_proxy:file:unified-in")]);
+    let files = RecordingFiles::scripted(&[("file-raw-in", "litellm_proxy:file:unified-in")], &[]);
     let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::ResolveInput {
@@ -217,10 +180,13 @@ async fn existing_input_id_mapping() {
 
 #[tokio::test]
 async fn existing_output_error_id__5d60() {
-    let files = RecordingFiles::recording(&[
-        ("file-raw-out", "litellm_proxy:file:unified-out"),
-        ("file-raw-err", "litellm_proxy:file:unified-err"),
-    ]);
+    let files = RecordingFiles::scripted(
+        &[
+            ("file-raw-out", "litellm_proxy:file:unified-out"),
+            ("file-raw-err", "litellm_proxy:file:unified-err"),
+        ],
+        &[],
+    );
     let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::ResolveOutput {
@@ -243,7 +209,7 @@ async fn existing_output_error_id__5d60() {
 
 #[tokio::test]
 async fn lookup_failure_keeps_raw_id() {
-    let files = RecordingFiles::failing(
+    let files = RecordingFiles::scripted(
         &[("file-raw-in", "litellm_proxy:file:unified-in")],
         &["file-raw-in"],
     );
@@ -261,7 +227,7 @@ async fn lookup_failure_keeps_raw_id() {
 
 #[tokio::test]
 async fn missing_row_keeps_raw_id() {
-    let files = RecordingFiles::recording(&[]);
+    let files = RecordingFiles::scripted(&[], &[]);
     let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::ResolveOutput {
@@ -297,7 +263,7 @@ async fn absent_client_keeps_raw_ids() {
 #[tokio::test]
 async fn empty_and_unified_ids_are_not_looked_up() {
     let unified = URL_SAFE_NO_PAD.encode("litellm_proxy:file:unified-in");
-    let files = RecordingFiles::recording(&[]);
+    let files = RecordingFiles::scripted(&[], &[]);
     let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::Ensure {
@@ -312,11 +278,14 @@ async fn empty_and_unified_ids_are_not_looked_up() {
 
 #[tokio::test]
 async fn ensure_no_hook_stops_afte_1794() {
-    let files = RecordingFiles::recording(&[
-        ("file-raw-in", "litellm_proxy:file:unified-in"),
-        ("file-raw-out", "litellm_proxy:file:unified-out"),
-        ("file-raw-err", "litellm_proxy:file:unified-err"),
-    ]);
+    let files = RecordingFiles::scripted(
+        &[
+            ("file-raw-in", "litellm_proxy:file:unified-in"),
+            ("file-raw-out", "litellm_proxy:file:unified-out"),
+            ("file-raw-err", "litellm_proxy:file:unified-err"),
+        ],
+        &[],
+    );
     let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::Ensure {
@@ -343,7 +312,8 @@ async fn ensure_no_hook_stops_afte_1794() {
 // the absent hook returns (None, None) before the source reads a managed-object row
 #[tokio::test]
 async fn database_get_no_hook_no_query() {
-    let files = RecordingFiles::recording(&[("file-raw-out", "litellm_proxy:file:unified-out")]);
+    let files =
+        RecordingFiles::scripted(&[("file-raw-out", "litellm_proxy:file:unified-out")], &[]);
     let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::DatabaseGet {
@@ -363,10 +333,13 @@ async fn database_get_no_hook_no_query() {
 // the same guard returns before the response is normalized or a row is written
 #[tokio::test]
 async fn database_update_no_hook_n_99fb() {
-    let files = RecordingFiles::recording(&[
-        ("file-raw-in", "litellm_proxy:file:unified-in"),
-        ("file-raw-out", "litellm_proxy:file:unified-out"),
-    ]);
+    let files = RecordingFiles::scripted(
+        &[
+            ("file-raw-in", "litellm_proxy:file:unified-in"),
+            ("file-raw-out", "litellm_proxy:file:unified-out"),
+        ],
+        &[],
+    );
     let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::DatabaseUpdate {
@@ -393,35 +366,47 @@ async fn poller_job_absent() {
 
 #[tokio::test]
 async fn poller_with_confirmed_job_is_active() {
-    let records = service(None::<RecordingFiles>, Some(ConfirmedJobs), true);
+    let records = service(
+        None::<RecordingFiles>,
+        Some(ScriptedJob(Some(&ConfirmedPoller))),
+        true,
+    );
     let result = records.run(&BatchManagedRecordsInput::PollerActive).await;
     assert_eq!(result, BatchManagedRecordsResult::PollerActive(true));
 }
 
 #[tokio::test]
 async fn poller_disabled_with_confirmed_job_is_inactive() {
-    let records = service(None::<RecordingFiles>, Some(ConfirmedJobs), false);
+    let records = service(
+        None::<RecordingFiles>,
+        Some(ScriptedJob(Some(&ConfirmedPoller))),
+        false,
+    );
     let result = records.run(&BatchManagedRecordsInput::PollerActive).await;
     assert_eq!(result, BatchManagedRecordsResult::PollerActive(false));
 }
 
 #[tokio::test]
 async fn poller_without_scheduler_is_inactive() {
-    let records = service(None::<RecordingFiles>, None::<ConfirmedJobs>, true);
+    let records = service(None::<RecordingFiles>, None::<ScriptedJob>, true);
     let result = records.run(&BatchManagedRecordsInput::PollerActive).await;
     assert_eq!(result, BatchManagedRecordsResult::PollerActive(false));
 }
 
 #[tokio::test]
 async fn poller_with_unconfirmed_job_is_inactive() {
-    let records = service(None::<RecordingFiles>, Some(UnconfirmedJobs), true);
+    let records = service(
+        None::<RecordingFiles>,
+        Some(ScriptedJob(Some(&UnconfirmedPoller))),
+        true,
+    );
     let result = records.run(&BatchManagedRecordsInput::PollerActive).await;
     assert_eq!(result, BatchManagedRecordsResult::PollerActive(false));
 }
 
 #[tokio::test]
 async fn poller_with_unbound_job_function_is_inactive() {
-    let records = service(None::<RecordingFiles>, Some(DetachedJob), true);
+    let records = service(None::<RecordingFiles>, Some(ScriptedJob(None)), true);
     let result = records.run(&BatchManagedRecordsInput::PollerActive).await;
     assert_eq!(result, BatchManagedRecordsResult::PollerActive(false));
 }
@@ -542,7 +527,7 @@ async fn loads_settings(#[case] environment: &[(&str, &str)], #[case] expected: 
     assert_eq!(settings.proxy_batch_polling_enabled, enabled);
     let records = BatchManagedRecords {
         files: None::<RecordingFiles>,
-        scheduler: Some(ConfirmedJobs),
+        scheduler: Some(ScriptedJob(Some(&ConfirmedPoller))),
         settings,
     };
     assert_eq!(
