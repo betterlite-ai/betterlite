@@ -86,10 +86,8 @@ def _resolved_model_info(value: ModelInfo | dict[str, JsonValue] | None) -> Mode
     match value:
         case dict():
             return ModelInfo.model_validate(value)
-        case ModelInfo():
-            return value
-        case None:
-            return ModelInfo()
+        case ModelInfo() | None:
+            return ModelInfo() if value is None else value
 
 
 def _mirror_pricing(

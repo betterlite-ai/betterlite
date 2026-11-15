@@ -95,7 +95,8 @@ class ModelGroupInfo(ResponseObject):
                     if filled.get(name) is None:
                         filled[name] = False
                 return filled
-        return data
+            case bool() | int() | float() | str() | list() | None:
+                return data
 
 
 class AssistantsTypedDict(TypedDict):
