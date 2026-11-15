@@ -12,3 +12,6 @@ deviations:
   - what: "The iterators accept the upstream response through the InteractionsAsyncResponse and InteractionsSyncResponse traits, which expose headers, aiter_lines and iter_lines, instead of an httpx.Response."
     why: "betterlite has no httpx; the workspace HTTP client and a buffered body both feed the same iterator through the trait, and line splitting and header processing stay with B005 and B206."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L141
+  - what: "A response line whose unterminated part passes 16 MiB ends the stream with the line error after the events decoded before it, instead of being read on."
+    why: "LiteLLM reads the body through httpx's line reader, whose buffer has no bound, while a provider line is untrusted input that a gateway bounds (rule bounded-inputs)."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L141
