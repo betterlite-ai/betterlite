@@ -1,0 +1,24 @@
+kind: helper
+name: resource-repository-config-json-shapes
+call:
+  resource_repository:
+    raw: '{"a":[1,2],"b":null,"c":true,"d":"s","e":3.5}'
+calls:
+  - resource_repository:
+      raw: 'null'
+  - resource_repository:
+      raw: 'true'
+  - resource_repository:
+      raw: '7'
+  - resource_repository:
+      raw: '"text"'
+  - resource_repository:
+      raw: '[1,null,{"k":"v"}]'
+  - resource_repository:
+      raw: '{"k":1,"k":2}'
+  - resource_repository:
+      raw: '"[[[[not depth]]]]"'
+  - resource_repository:
+      raw: '"a\"[b"'
+env: {}
+compare: {ignore: []}

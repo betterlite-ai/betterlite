@@ -1,0 +1,14 @@
+kind: helper
+name: list_error_use_reader
+call:
+  b4681:
+    operation: list
+    timestamp: '2026-01-02T03:04:05'
+    rows:
+      - {toolset_id: ts-1, toolset_name: alpha}
+    toolset_ids: null
+    use_writer: false
+    fail: true
+env: {}
+compare:
+  ignore: []

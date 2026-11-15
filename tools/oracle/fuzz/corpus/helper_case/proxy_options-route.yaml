@@ -1,0 +1,24 @@
+kind: helper
+name: proxy_options-route-seed
+call:
+  proxy_options:
+    operation: route
+    params:
+      - model: litellm_proxy/openai/gpt-4
+        api_base: null
+        api_key: null
+        environment_base: https://env.example/v1
+        environment_key: sk-env
+        environment_use_litellm_proxy: true
+        global_use_litellm_proxy: false
+        deployment_use_litellm_proxy: false
+      - model: gpt-4o
+        api_base: https://proxy.example
+        api_key: sk-explicit
+        environment_base: null
+        environment_key: null
+        environment_use_litellm_proxy: null
+        global_use_litellm_proxy: true
+        deployment_use_litellm_proxy: false
+env: {}
+compare: {ignore: []}

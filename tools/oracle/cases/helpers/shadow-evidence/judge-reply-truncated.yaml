@@ -1,0 +1,16 @@
+kind: helper
+name: shadow-judge-reply-truncated
+call:
+  b4081:
+    operation: judge_shape
+    response:
+      model: judge-model
+      choices:
+        - message:
+            role: assistant
+            content: '{"preference": "A"'
+          finish_reason: length
+    metadata: {}
+    routed_model: ""
+env: {}
+compare: {ignore: []}
