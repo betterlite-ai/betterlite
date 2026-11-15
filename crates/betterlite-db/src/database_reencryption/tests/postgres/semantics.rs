@@ -14,14 +14,6 @@ async fn count(database: &Database, key: &SecretString) -> usize {
         .expect("the count succeeds")
 }
 
-async fn row_text(database: &Database, column: &SecretColumn, key: &str) -> String {
-    database
-        .stored(column, key)
-        .await
-        .expect("the row exists")
-        .expect("the column is not null")
-}
-
 fn credentials() -> SecretColumn {
     column("LiteLLM_CredentialsTable", "credential_values")
 }
@@ -150,7 +142,7 @@ async fn postgres_marked_metadata_prefilter() {
         1,
         "only the marked row is selected"
     );
-    let unmarked_before = row_text(&database, &column, "unmarked").await;
+    let unmarked_before = database.stored(&column, "unmarked").await;
     let outcome = migrate_once(&database, Algorithm::XSalsa20Poly1305).await;
     assert!(matches!(
         outcome,
@@ -159,15 +151,12 @@ async fn postgres_marked_metadata_prefilter() {
             remaining: 0
         }
     ));
-    let marked_after = row_text(&database, &column, "marked").await;
+    let marked_after = database.stored(&column, "marked").await;
     assert_eq!(
         plaintexts(&marked_after, true, MASTER_KEY),
         vec!["marked-secret"]
     );
-    assert_eq!(
-        row_text(&database, &column, "unmarked").await,
-        unmarked_before
-    );
+    assert_eq!(database.stored(&column, "unmarked").await, unmarked_before);
     database.close().await;
 }
 
@@ -190,8 +179,8 @@ async fn postgres_like_underscore_and_marker_in_key() {
             &format!("{{\"secret\":\"litellm_enc::{real}\"}}"),
         )
         .await;
-    let key_marker_before = row_text(&database, &column, "key-marker").await;
-    let wildcard_before = row_text(&database, &column, "wildcard").await;
+    let key_marker_before = database.stored(&column, "key-marker").await;
+    let wildcard_before = database.stored(&column, "wildcard").await;
     assert_eq!(count(&database, &previous()).await, 1);
     let outcome = migrate_once(&database, Algorithm::XSalsa20Poly1305).await;
     assert!(matches!(
@@ -202,13 +191,10 @@ async fn postgres_like_underscore_and_marker_in_key() {
         }
     ));
     assert_eq!(
-        row_text(&database, &column, "key-marker").await,
+        database.stored(&column, "key-marker").await,
         key_marker_before
     );
-    assert_eq!(
-        row_text(&database, &column, "wildcard").await,
-        wildcard_before
-    );
+    assert_eq!(database.stored(&column, "wildcard").await, wildcard_before);
     database.close().await;
 }
 
@@ -235,7 +221,7 @@ async fn postgres_selected_metadata_unmarked_leaf() {
             remaining: 0
         }
     ));
-    let text = row_text(&database, &column, "user-1").await;
+    let text = database.stored(&column, "user-1").await;
     let mut found = plaintexts(&text, true, MASTER_KEY);
     found.sort();
     assert_eq!(found, vec!["first", "second"]);
@@ -284,8 +270,8 @@ async fn postgres_legacy_and_aes_reencrypted() {
             remaining: 0
         }
     ));
-    let migrated_legacy = row_text(&database, &column, "legacy").await;
-    let migrated_aes = row_text(&database, &column, "aes").await;
+    let migrated_legacy = database.stored(&column, "legacy").await;
+    let migrated_aes = database.stored(&column, "aes").await;
     assert!(migrated_legacy.contains("v2:gcm:"), "the target codec wins");
     assert!(migrated_aes.contains("v2:gcm:"), "the target codec wins");
     assert_eq!(plaintexts(&migrated_legacy, true, MASTER_KEY).len(), 1);
@@ -313,7 +299,7 @@ async fn postgres_empty_plaintext_counts() {
             remaining: 0
         }
     ));
-    let text = row_text(&database, &column, "empty").await;
+    let text = database.stored(&column, "empty").await;
     assert_eq!(plaintexts(&text, true, MASTER_KEY), vec![String::new()]);
     database.close().await;
 }
@@ -376,7 +362,7 @@ async fn empty_target_uses_configured_key() {
             remaining: 0
         }
     ));
-    let text = row_text(&database, &column, "credential-1").await;
+    let text = database.stored(&column, "credential-1").await;
     assert_eq!(
         plaintexts(&text, true, SALT_KEY),
         vec!["targetless"],

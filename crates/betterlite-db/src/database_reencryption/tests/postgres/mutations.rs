@@ -41,14 +41,6 @@ async fn legacy_value(database: &Database, column: &SecretColumn, key: &str) {
     database.insert(column, key, &value).await;
 }
 
-async fn stored_text(database: &Database, column: &SecretColumn, key: &str) -> String {
-    database
-        .stored(column, key)
-        .await
-        .expect("the row exists")
-        .expect("the column is not null")
-}
-
 #[tokio::test]
 async fn postgres_jsonb_structural_cas() {
     let database = database().await;
@@ -66,7 +58,7 @@ async fn postgres_jsonb_structural_cas() {
         1,
         "the CAS compares jsonb structures"
     );
-    let text = stored_text(&database, &column, "credential-1").await;
+    let text = database.stored(&column, "credential-1").await;
     assert_eq!(plaintexts(&text, true, MASTER_KEY), vec!["structured"]);
     database.close().await;
 }
@@ -91,7 +83,7 @@ async fn postgres_concurrent_change_preserved() {
         .await
         .expect("the CAS runs");
     assert!(!updated, "a stale row does not match");
-    let text = stored_text(&database, &column, "credential-1").await;
+    let text = database.stored(&column, "credential-1").await;
     assert_eq!(
         serde_json::to_string(&stored_value(&text, true)).expect("the value serializes"),
         "{\"edited\":true}",
@@ -133,7 +125,7 @@ async fn postgres_partial_progress_after_failure() {
     install_rejecting_trigger(&database).await;
     let interrupted = run(&database).await;
     assert!(matches!(interrupted, MigrationOutcome::Failed(_)));
-    let migrated = stored_text(&database, &credentials_column, "credential-1").await;
+    let migrated = database.stored(&credentials_column, "credential-1").await;
     assert_eq!(
         plaintexts(&migrated, true, MASTER_KEY),
         vec!["hunter2"],
@@ -144,7 +136,7 @@ async fn postgres_partial_progress_after_failure() {
         .await;
     let resumed = run(&database).await;
     assert_eq!(migrated_leaves(&resumed), 1, "the restart resumes the rest");
-    let user = stored_text(&database, &users, "user-1").await;
+    let user = database.stored(&users, "user-1").await;
     assert_eq!(plaintexts(&user, true, MASTER_KEY), vec!["hunter2"]);
     database.close().await;
 }
@@ -170,9 +162,9 @@ async fn postgres_two_workers_resumable() {
         2,
         "each row migrates once across both workers"
     );
-    let first = stored_text(&database, &column, "credential-0").await;
+    let first = database.stored(&column, "credential-0").await;
     assert_eq!(plaintexts(&first, true, MASTER_KEY), vec!["hunter2"]);
-    let second = stored_text(&database, &column, "credential-1").await;
+    let second = database.stored(&column, "credential-1").await;
     assert_eq!(plaintexts(&second, true, MASTER_KEY), vec!["hunter2"]);
     let third = run(&database).await;
     assert!(matches!(

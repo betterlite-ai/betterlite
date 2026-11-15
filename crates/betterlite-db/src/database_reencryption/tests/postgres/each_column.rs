@@ -45,9 +45,7 @@ async fn migrates_both_codecs(secret_column: SecretColumn, plaintext: &str) {
     for index in 0_u8..2 {
         let text = database
             .stored(&secret_column, &format!("key-{index}"))
-            .await
-            .expect("the row exists")
-            .expect("the column is not null");
+            .await;
         assert_eq!(
             plaintexts(&text, secret_column.is_json, MASTER_KEY),
             vec![plaintext.to_owned()]

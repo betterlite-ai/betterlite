@@ -1,5 +1,5 @@
 use betterlite_secrets::secret_codec::{StoredValue, decrypt_if_encrypted_with};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 use super::MigrationError;
 use super::registry::SecretColumn;

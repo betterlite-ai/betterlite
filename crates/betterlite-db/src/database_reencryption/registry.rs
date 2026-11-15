@@ -156,14 +156,14 @@ pub fn rows_sql(column: &SecretColumn) -> String {
         "SELECT \"{primary_key}\", {selected} FROM \"{table}\" WHERE \"{name}\" IS NOT NULL"
     );
     if column.marked_only {
-        sql.push_str(" AND ");
-        sql.push_str(&format!(
-            "\"{name}\"::text LIKE '%{CALLBACK_VAR_ENCRYPTED_PREFIX}%'"
-        ));
+        let marker_filter =
+            format!(" AND \"{name}\"::text LIKE '%{CALLBACK_VAR_ENCRYPTED_PREFIX}%'");
+        sql.push_str(&marker_filter);
     }
     sql
 }
 
+#[must_use]
 pub fn update_sql(column: &SecretColumn) -> String {
     let cast = if column.is_json { "::jsonb" } else { "" };
     let (table, name, key) = (column.table, column.column, column.primary_key);

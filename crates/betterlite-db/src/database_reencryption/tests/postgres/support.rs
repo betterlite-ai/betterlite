@@ -100,21 +100,22 @@ impl Database {
             .collect()
     }
 
-    async fn single_value(&self, sql: &str, key: &str) -> Option<Option<String>> {
-        let row = self
-            .client
+    async fn single_text(&self, sql: &str, key: &str) -> String {
+        self.client
             .query_opt(sql, &[&key])
             .await
-            .expect("the fixture query runs");
-        row.map(|record| record.get::<_, Option<String>>(0))
+            .expect("the fixture query runs")
+            .expect("the row exists")
+            .get::<_, Option<String>>(0)
+            .expect("the column is not null")
     }
 
-    pub(crate) async fn stored(&self, column: &SecretColumn, key: &str) -> Option<Option<String>> {
+    pub(crate) async fn stored(&self, column: &SecretColumn, key: &str) -> String {
         let sql = format!(
             "SELECT \"{}\"::text FROM \"{}\" WHERE \"{}\" = $1",
             column.column, column.table, column.primary_key
         );
-        self.single_value(&sql, key).await
+        self.single_text(&sql, key).await
     }
 
     pub(crate) async fn snapshot(&self, column: &SecretColumn) -> Vec<String> {
@@ -138,10 +139,7 @@ impl Database {
             "SELECT xmin::text FROM \"{}\" WHERE \"{}\" = $1",
             column.table, column.primary_key
         );
-        self.single_value(&sql, key)
-            .await
-            .expect("the row exists")
-            .expect("xmin is set")
+        self.single_text(&sql, key).await
     }
 }
 
@@ -166,7 +164,7 @@ pub(crate) async fn migrate(
         cipher,
         max_depth: 100,
     };
-    migrate_if_requested(&request, || Ok(Some(&database.client)), Ok, Ok).await
+    migrate_if_requested(&request, || Ok(Some(&database.client)), |_| Ok(()), Ok).await
 }
 
 pub(crate) fn stored_value(text: &str, is_json: bool) -> MigrationJson {

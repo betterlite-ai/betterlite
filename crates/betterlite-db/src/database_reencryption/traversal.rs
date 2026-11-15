@@ -18,7 +18,7 @@ struct Builder {
     max_depth: i64,
 }
 
-type Replacement<'a> = &'a mut dyn FnMut(&str) -> Result<Option<String>, MigrationError>;
+type Replacement<'caller> = &'caller mut dyn FnMut(&str) -> Result<Option<String>, MigrationError>;
 
 impl Builder {
     fn visit(

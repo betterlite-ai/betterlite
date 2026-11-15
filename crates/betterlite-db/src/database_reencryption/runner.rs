@@ -51,10 +51,12 @@ where
     let database = connected_database()?;
     match migrate_from_previous_key(&plan, database, &log).await? {
         MigrationOutcome::Failed(failure) => {
-            let failure = raise_unless_tolerated(failure)?;
-            Ok(Some(MigrationOutcome::Failed(failure)))
+            let tolerated = raise_unless_tolerated(failure)?;
+            Ok(Some(MigrationOutcome::Failed(tolerated)))
         }
-        outcome => Ok(Some(outcome)),
+        outcome @ (MigrationOutcome::Nothing(_) | MigrationOutcome::Migrated { .. }) => {
+            Ok(Some(outcome))
+        }
     }
 }
 

@@ -61,7 +61,7 @@ fn advice_remaining_restart() {
 #[test]
 fn advice_failed_unreadable() {
     let failure =
-        MigrationFailure::from_cause(MigrationError::Logger(std::io::Error::other("boom")), &[]);
+        MigrationFailure::from_cause(MigrationError::Logger(io::Error::other("boom")), &[]);
     assert_eq!(
         describe_outcome(&MigrationOutcome::Failed(failure)),
         "Could not migrate stored values from the LITELLM_MIGRATE_FROM_MASTER_KEY key (LoggerError: the migration logger failed: boom). Values still encrypted with the previous key cannot be read until the migration succeeds. Keep LITELLM_MIGRATE_FROM_MASTER_KEY set and restart the proxy once the database is reachable."
@@ -73,7 +73,7 @@ fn native_migration_failure_redacts_secrets() {
     let previous = SecretString::from(PREVIOUS_KEY);
     let master = SecretString::from(MASTER_KEY);
     let failure = MigrationFailure::from_cause(
-        MigrationError::Logger(std::io::Error::other(format!(
+        MigrationError::Logger(io::Error::other(format!(
             "the old {PREVIOUS_KEY} and the new {MASTER_KEY} both leaked"
         ))),
         &[&previous, &master],
@@ -101,7 +101,7 @@ fn failure_cause_limit_300_characters() {
         "Could not migrate stored values from the LITELLM_MIGRATE_FROM_MASTER_KEY key ({truncated}). Values still encrypted with the previous key cannot be read until the migration succeeds. Keep LITELLM_MIGRATE_FROM_MASTER_KEY set and restart the proxy once the database is reachable."
     );
     let ascii =
-        MigrationFailure::from_cause(MigrationError::Logger(std::io::Error::other(message)), &[]);
+        MigrationFailure::from_cause(MigrationError::Logger(io::Error::other(message)), &[]);
     assert_eq!(describe_outcome(&MigrationOutcome::Failed(ascii)), expected);
     let multibyte = "\u{e9}".repeat(400);
     let limited: String = format!("LoggerError: the migration logger failed: {multibyte}")
@@ -109,10 +109,8 @@ fn failure_cause_limit_300_characters() {
         .take(300)
         .collect();
     assert_eq!(limited.chars().count(), 300);
-    let unicode = MigrationFailure::from_cause(
-        MigrationError::Logger(std::io::Error::other(multibyte)),
-        &[],
-    );
+    let unicode =
+        MigrationFailure::from_cause(MigrationError::Logger(io::Error::other(multibyte)), &[]);
     assert!(
         describe_outcome(&MigrationOutcome::Failed(unicode)).contains(&limited),
         "the bound counts characters, not bytes"
