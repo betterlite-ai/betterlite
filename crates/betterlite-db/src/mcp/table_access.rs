@@ -10,7 +10,6 @@ use crate::stored_cipher::DbCipher;
 
 pub mod actions;
 pub mod filter;
-// lock.rs holds the identifier checks and the locked write: fn _identifier_where (mode=insensitive; approval_status NULL or not draft), fn _mcp_identifier_lock_keys (blake2b digest_size=8, signed=True, keys from sorted(normalized)), the alias-first fn find_identifier_conflict and fn mcp_server_write_if_identifier_free (pg_advisory_xact_lock through execute_raw)
 pub mod lock;
 pub mod rows;
 pub mod server_reads;
