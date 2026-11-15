@@ -59,6 +59,23 @@ async fn a_gcs_module_is_written_into_an_existing_directory() {
 }
 
 #[tokio::test]
+async fn a_module_with_non_ascii_text_is_written_as_utf8() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("handler.py");
+    let text = "def handler():\n    return \"héllo\"\n";
+    let objects = [("module.py".to_owned(), text.as_bytes().to_vec())]
+        .into_iter()
+        .collect();
+
+    downloader(objects)
+        .download_python_module(BucketType::Gcs, "bucket", "module.py", &path)
+        .await
+        .unwrap();
+
+    assert_eq!(read(&path).unwrap(), text.as_bytes());
+}
+
+#[tokio::test]
 async fn a_gcs_module_creates_the_parent_folders_of_the_local_path() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("callbacks/remote/handler.py");
