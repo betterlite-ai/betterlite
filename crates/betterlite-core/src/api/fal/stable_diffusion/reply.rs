@@ -2,7 +2,7 @@ use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHttpResponse, ImageResponse,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::api::fal::images::decode::MAX_FAL_REPLY_BYTES;
 use crate::api::fal::images::error::FalImageError;
@@ -11,15 +11,24 @@ use crate::api::fal::stable_diffusion::error::StableDiffusionError;
 #[derive(Debug, Deserialize)]
 struct ReplyFields {
     images: Option<Json>,
-    seed: Option<Present>,
-    timings: Option<Present>,
-    has_nsfw_concepts: Option<Present>,
+    #[serde(default, deserialize_with = "present_field")]
+    seed: Option<Json>,
+    #[serde(default, deserialize_with = "present_field")]
+    timings: Option<Json>,
+    #[serde(default, deserialize_with = "present_field")]
+    has_nsfw_concepts: Option<Json>,
 }
 
 // A key that is present with a null value is not the same as a key that is absent
-#[derive(Debug, Deserialize)]
-#[serde(transparent)]
-struct Present(Json);
+pub(super) fn present_field<'de, D>(deserializer: D) -> Result<Option<Json>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<Json>::deserialize(deserializer)? {
+        Some(value) => Ok(Some(value)),
+        None => Ok(Some(Json::Null)),
+    }
+}
 
 pub fn transform_reply(
     response: &mut ImageResponse,
@@ -80,7 +89,7 @@ fn copy_hidden(fields: &ReplyFields, hidden_params: &mut HiddenParams) {
         ("timings", &fields.timings),
         ("has_nsfw_concepts", &fields.has_nsfw_concepts),
     ] {
-        if let Some(Present(value)) = value {
+        if let Some(value) = value {
             hidden_params.insert(name.to_owned(), value.clone());
         }
     }
