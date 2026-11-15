@@ -94,7 +94,7 @@ impl RowMappers for Mappers {
     type Error = MapperFailure;
 
     fn responses_to_chat(&self, provider: &str, body: &Object) -> Result<Object, MapperFailure> {
-        let body: DecisionsJson = serde_json::from_slice(&serde_json::to_vec(body)?)?;
+        let wire_body: DecisionsJson = serde_json::from_slice(&serde_json::to_vec(body)?)?;
         let mut assembly = RequestAssembly {
             limits: ApiLimits::default(),
             cache: &self.cache,
@@ -103,7 +103,7 @@ impl RowMappers for Mappers {
             logging: None,
             route_all_openai_to_responses: false,
         };
-        let request = responses_batch_to_chat_body(&body, Some(provider), &mut assembly)?;
+        let request = responses_batch_to_chat_body(&wire_body, Some(provider), &mut assembly)?;
         Ok(serde_json::from_slice(&serde_json::to_vec(&request)?)?)
     }
 
@@ -152,24 +152,23 @@ impl RemoteMediaFetcher for NoFetch {
     }
 }
 
-pub(super) fn run(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+fn build_mappers() -> Result<Mappers, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
-    let mappers = Mappers {
-        cache: DualLocalCache::new(
-            None,
-            None,
-            &CacheSettings::default(),
-            Arc::new(|| 0.0_f64),
-            Diagnostics {
-                redactor: Arc::new(redactor),
-                emit: Arc::new(|_event| {}),
-            },
-        ),
-    };
-    let options = OptionSettings::default();
-    let schema = SchemaSettings::default();
-    let thinking = ThinkingSettings {
+    let cache = DualLocalCache::new(
+        None,
+        None,
+        &CacheSettings::default(),
+        Arc::new(|| 0.0_f64),
+        Diagnostics {
+            redactor: Arc::new(redactor),
+            emit: Arc::new(|_event| {}),
+        },
+    );
+    Ok(Mappers { cache })
+}
+
+fn thinking_settings() -> ThinkingSettings {
+    ThinkingSettings {
         budgets: ThinkingBudgets {
             minimal: 128,
             minimal_flash: 1,
@@ -181,7 +180,15 @@ pub(super) fn run(input: &Input) -> HelperResult {
             disable: 0,
         },
         default_thinking_level_low: false,
-    };
+    }
+}
+
+pub(super) fn run(input: &Input) -> HelperResult {
+    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let mappers = build_mappers()?;
+    let options = OptionSettings::default();
+    let schema = SchemaSettings::default();
+    let thinking = thinking_settings();
     let context = RowContext {
         mappers: &mappers,
         fetcher: &NoFetch,

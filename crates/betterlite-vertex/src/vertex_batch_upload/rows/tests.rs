@@ -55,7 +55,7 @@ async fn first_failure(line: &str) -> String {
 )]
 #[case::ascii_json_bytes(
     r#"{"custom_id":"só","url":"/v1/embeddings","body":{"input":"é😀"}}"#,
-    &[r#"{"key": "s%C3%B3", "request": {"content": {"parts": [{"text": "é😀"}]}}}"#]
+    &[r#"{"key": "s%C3%B3", "request": {"content": {"parts": [{"text": "\u00e9\ud83d\ude00"}]}}}"#]
 )]
 #[case::no_custom_id_no_key(
     r#"{"url":"/v1/embeddings","body":{"input":""}}"#,
