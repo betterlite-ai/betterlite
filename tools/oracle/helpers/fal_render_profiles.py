@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
@@ -33,6 +34,7 @@ class RenderConfig(Protocol):
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
+        *,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
@@ -54,17 +56,28 @@ class RenderConfig(Protocol):
         headers: dict[str, JsonValue],
     ) -> dict[str, JsonValue]: ...
 
+
+# LiteLLM types the request dicts bare, so this alias names what the call passes
+ReplyTransform: TypeAlias = Callable[
+    [
+        str,
+        httpx.Response,
+        ImageResponse,
+        Recorder,
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        None,
+    ],
+    ImageResponse,
+]
+
+
+class ReplyConfig(Protocol):
+    @property
     def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
-        model: str,
-        raw_response: httpx.Response,
-        model_response: ImageResponse,
-        logging_obj: Recorder,
-        request_data: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        encoding: None,
-    ) -> ImageResponse: ...
+    ) -> ReplyTransform: ...
 
 
 class HiddenRecord(BaseModel):
@@ -113,9 +126,9 @@ class ReplyCases(TypedDict):
 
 Input: TypeAlias = SizeCases | CustomDiffusionPathInput | ReplyCases
 
-IDEOGRAM: RenderConfig = FalAIIdeogramV3Config()
-DIFFUSION: RenderConfig = FalAIStableDiffusionConfig()
-# LiteLLM leaves BaseLLMException.__init__ untyped, so mypy reads the class itself as Any
+IDEOGRAM = FalAIIdeogramV3Config()
+DIFFUSION = FalAIStableDiffusionConfig()
+# the alias types the class itself, since the class object's constructor takes bare dicts
 REPLY_ERROR: type[BaseLLMException] = BaseLLMException
 
 
@@ -132,7 +145,7 @@ def mapping_entry(config: RenderConfig, model: str, prompt: str, case: MappingCa
             dict(case["non_default"]),
             dict(case["optional"]),
             model,
-            case["drop_params"],
+            drop_params=case["drop_params"],
         )
     except (TypeError, ValueError):
         return {"error": {"status": None}}
@@ -155,10 +168,12 @@ def size_outcomes(call: SizeCases) -> JsonValue:
     return {"sizes": sizes}
 
 
-def url_entry(api_base: str | None, model: str) -> JsonValue:
+def url_entry(
+    ideogram: RenderConfig, diffusion: RenderConfig, api_base: str | None, model: str
+) -> JsonValue:
     answer: dict[str, JsonValue] = {
-        "ideogram": IDEOGRAM.get_complete_url(api_base, None, model, {}, {}),
-        "stable_diffusion": DIFFUSION.get_complete_url(api_base, None, model, {}, {}),
+        "ideogram": ideogram.get_complete_url(api_base, None, model, {}, {}),
+        "stable_diffusion": diffusion.get_complete_url(api_base, None, model, {}, {}),
     }
     return JSON.validate_python(answer)
 
@@ -174,7 +189,7 @@ def case_entry(call: CustomDiffusionPathInput, case: MappingCase) -> JsonValue:
 def custom_diffusion_path(call: CustomDiffusionPathInput) -> JsonValue:
     apply_environment(call["environment"])
     urls = [
-        url_entry(api_base, model)
+        url_entry(IDEOGRAM, DIFFUSION, api_base, model)
         for api_base in call["api_bases"]
         for model in call["models"]
     ]
@@ -214,7 +229,7 @@ def hidden_value(response: ImageResponse) -> JsonValue:
     return JSON.validate_python(record.hidden_params)
 
 
-def reply_entry(config: RenderConfig, case: ReplyCase) -> JsonValue:
+def reply_entry(config: ReplyConfig, case: ReplyCase) -> JsonValue:
     seeded: dict[str, JsonValue] = dict(case["hidden_params"])
     model_response = ImageResponse(created=1, hidden_params=seeded)
     if case["data"]:
@@ -222,9 +237,19 @@ def reply_entry(config: RenderConfig, case: ReplyCase) -> JsonValue:
     raw_response = httpx.Response(
         case["status"], headers=dict(case["headers"]), content=case["body"]
     )
+    request_data: dict[str, JsonValue] = {}
+    optional_params: dict[str, JsonValue] = {}
+    litellm_params: dict[str, JsonValue] = {}
     try:
         finished = config.transform_image_generation_response(
-            REPLY_MODEL, raw_response, model_response, Recorder(), {}, {}, {}, None
+            REPLY_MODEL,
+            raw_response,
+            model_response,
+            Recorder(),
+            request_data,
+            optional_params,
+            litellm_params,
+            None,
         )
     except REPLY_ERROR as error:
         return {"error": {"status": error.status_code}}
