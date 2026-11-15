@@ -9,6 +9,27 @@ use crate::realtime_completion::records::{DeltaChunk, DeltaType, ResponseState};
 use crate::realtime_session::RealtimeSession;
 
 pub(super) fn content_end_text_audio() {
+    text_parts();
+    audio_parts();
+    let mut no_chunks = open_state(Some(DeltaType::Text), None);
+    let events = no_chunks.content_end_events(&FixedIds::sequence(3));
+    let wired = wire(&events);
+    assert!(wired[0].ends_with(r#""response_id":"resp_1","text":""}"#));
+    assert!(wired[1].contains(r#""part":{"type":"text","text":""}"#));
+
+    let mut unknown = open_state(None, Some(&["kept"]));
+    let events = unknown.content_end_events(&FixedIds::sequence(3));
+    assert_eq!(
+        wire(&events),
+        [format!(
+            r#"{{"type":"response.output_item.done","event_id":"{EVENT_1}",{ITEM_DONE_BODY}"#
+        )]
+    );
+    assert_eq!(unknown.delta_chunks, None);
+    missing_ids_keep_chunks();
+}
+
+fn text_parts() {
     let mut text = open_state(Some(DeltaType::Text), Some(&["Hel", "lo"]));
     let events = text.content_end_events(&FixedIds::sequence(3));
     assert_eq!(
@@ -26,7 +47,9 @@ pub(super) fn content_end_text_audio() {
         ]
     );
     assert_eq!(text.delta_chunks, None);
+}
 
+fn audio_parts() {
     let mut audio = open_state(Some(DeltaType::Audio), Some(&["ignored"]));
     let events = audio.content_end_events(&FixedIds::sequence(3));
     assert_eq!(
@@ -44,23 +67,6 @@ pub(super) fn content_end_text_audio() {
         ]
     );
     assert_eq!(audio.delta_chunks, None);
-
-    let mut no_chunks = open_state(Some(DeltaType::Text), None);
-    let events = no_chunks.content_end_events(&FixedIds::sequence(3));
-    let wired = wire(&events);
-    assert!(wired[0].ends_with(r#""response_id":"resp_1","text":""}"#));
-    assert!(wired[1].contains(r#""part":{"type":"text","text":""}"#));
-
-    let mut unknown = open_state(None, Some(&["kept"]));
-    let events = unknown.content_end_events(&FixedIds::sequence(3));
-    assert_eq!(
-        wire(&events),
-        [format!(
-            r#"{{"type":"response.output_item.done","event_id":"{EVENT_1}",{ITEM_DONE_BODY}"#
-        )]
-    );
-    assert_eq!(unknown.delta_chunks, None);
-    missing_ids_keep_chunks();
 }
 
 fn missing_ids_keep_chunks() {
@@ -102,20 +108,34 @@ pub(super) fn output_item_completion() {
     assert_eq!(state.conversation_id.as_deref(), Some("conv_1"));
 }
 
+pub(super) fn output_item_completion() {
+    let mut state = open_state(None, None);
+    let events = state.content_end_events(&FixedIds::sequence(1));
+    assert_eq!(
+        wire(&events),
+        [format!(
+            r#"{{"type":"response.output_item.done","event_id":"{EVENT_1}",{ITEM_DONE_BODY}"#
+        )]
+    );
+    assert_eq!(state.delta_chunks, None);
+    assert_eq!(state.delta_type, None);
+    assert_eq!(state.output_item_id.as_deref(), Some("item_1"));
+    assert_eq!(state.response_id.as_deref(), Some("resp_1"));
+    assert_eq!(state.conversation_id.as_deref(), Some("conv_1"));
+}
+
 pub(super) fn multiple_content_blocks() {
-    let ids = FixedIds::sequence(8);
-    let mut session = RealtimeSession::new(&FixedIds::sequence(3));
-    let mut state = open_state(Some(DeltaType::Text), Some(&["one"]));
-    let text_events = state.content_end_events(&ids);
-    assert_eq!(text_events.len(), 3);
+    let ids = FixedIds::sequence(11);
+    let mut state = open_state(Some(DeltaType::Text), Some(&["one", "two"]));
+    let first = wire(&state.content_end_events(&ids));
+    assert!(first[0].ends_with(r#""response_id":"resp_1","text":"onetwo"}"#));
     assert_eq!(state.delta_chunks, None);
     assert_eq!(state.response_id.as_deref(), Some("resp_1"));
     assert_eq!(state.output_item_id.as_deref(), Some("item_1"));
 
     state.delta_type = Some(DeltaType::Audio);
-    let audio_events = state.content_end_events(&ids);
     assert_eq!(
-        wire(&audio_events),
+        wire(&state.content_end_events(&ids)),
         [
             format!(
                 r#"{{"type":"response.audio.done","content_index":0,"event_id":"{EVENT_4}","item_id":"item_1","output_index":0,"response_id":"resp_1"}}"#
@@ -129,12 +149,20 @@ pub(super) fn multiple_content_blocks() {
         ]
     );
 
+    state.delta_type = Some(DeltaType::Text);
+    let again = wire(&state.content_end_events(&ids));
+    assert!(again[0].ends_with(r#""response_id":"resp_1","text":""}"#));
+    finish_response(&mut state, &ids);
+}
+
+fn finish_response(state: &mut ResponseState, ids: &FixedIds) {
+    let mut session = RealtimeSession::new(&FixedIds::sequence(3));
     let done = session
-        .response_done_events(&mut state, &ids)
+        .response_done_events(state, ids)
         .expect("the usage counts subtract");
     assert_eq!(done.len(), 1);
     assert_eq!(
-        state,
+        *state,
         ResponseState {
             output_item_id: None,
             response_id: None,
@@ -143,10 +171,10 @@ pub(super) fn multiple_content_blocks() {
             delta_chunks: None,
         }
     );
-    let again = session
-        .response_done_events(&mut state, &ids)
+    let repeated = session
+        .response_done_events(state, ids)
         .expect("the usage counts subtract");
-    assert!(again.is_empty());
-    assert!(state.content_end_events(&ids).is_empty());
-    assert_eq!(ids.next_id(), Uuid::from_u128(8));
+    assert!(repeated.is_empty());
+    assert!(state.content_end_events(ids).is_empty());
+    assert_eq!(ids.next_id(), Uuid::from_u128(11));
 }
