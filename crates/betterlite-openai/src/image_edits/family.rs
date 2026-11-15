@@ -46,7 +46,7 @@ impl ImageEditFamily {
 // get_openai_image_edit_config lowercases the name and drops hyphens and underscores before comparing
 #[must_use]
 pub fn select_image_edit_family(model: &str) -> ImageEditFamily {
-    let normalized = model.to_lowercase().replace('-', "").replace('_', "");
+    let normalized = model.to_lowercase().replace(['-', '_'], "");
     if normalized == "dalle2" {
         ImageEditFamily::DallE2
     } else {

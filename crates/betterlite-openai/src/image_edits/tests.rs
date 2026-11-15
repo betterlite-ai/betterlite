@@ -2,7 +2,7 @@
 
 use betterlite_config::sections::openai_credentials::{DEFAULT_API_BASE, Settings};
 use betterlite_models::decisions::Json;
-use http::HeaderMap;
+use http::{HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -29,11 +29,11 @@ const PNG: &[u8] = b"\x89PNG\r\n\x1a\nimage";
 const JPEG: &[u8] = b"\xff\xd8\xffjpeg";
 const SUCCESS_BODY: &str = r#"{"created":1700000000,"data":[{"b64_json":"YQ=="}]}"#;
 
-fn supplied(content: &[u8], name: Option<&str>) -> Option<ImageEditFile> {
-    Some(ImageEditFile {
+fn supplied(content: &[u8], name: Option<&str>) -> ImageEditFile {
+    ImageEditFile {
         content: content.to_vec(),
         name: name.map(str::to_owned),
-    })
+    }
 }
 
 fn options(source: &str) -> ImageParams {
@@ -86,10 +86,23 @@ fn pair(
     )
 }
 
+fn authorization(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+}
+
 fn credentials(key: Option<&str>) -> OpenAiCredentials {
     OpenAiCredentials {
         api_base: String::from(DEFAULT_API_BASE),
         api_key: key.map(SecretString::from),
+        organization: None,
+    }
+}
+
+fn endpoint_settings() -> Settings {
+    Settings {
+        api_base: String::from("https://env.test/v1"),
         organization: None,
     }
 }
@@ -121,8 +134,8 @@ fn single_image_and_mask() {
     let source = request(
         "gpt-image-1",
         Some("change"),
-        Some(vec![supplied(PNG, Some("baby.png"))]),
-        Some(vec![supplied(PNG, Some("mask-src.png"))]),
+        Some(vec![Some(supplied(PNG, Some("baby.png")))]),
+        Some(vec![Some(supplied(PNG, Some("mask-src.png")))]),
         options(r#"{"n":2}"#),
     );
     let found = form(ImageEditFamily::OpenAi, &source);
@@ -146,11 +159,14 @@ fn multiple_image_array() {
         "gpt-image-1",
         None,
         Some(vec![
-            supplied(PNG, None),
+            Some(supplied(PNG, None)),
             None,
-            supplied(JPEG, Some("b.jpg")),
+            Some(supplied(JPEG, Some("b.jpg"))),
         ]),
-        Some(vec![supplied(PNG, Some("m1.png")), supplied(JPEG, None)]),
+        Some(vec![
+            Some(supplied(PNG, Some("m1.png"))),
+            Some(supplied(JPEG, None)),
+        ]),
         ImageParams::new(),
     );
     let found = form(ImageEditFamily::OpenAi, &source);
@@ -167,7 +183,7 @@ fn multiple_image_array() {
         &request(
             "gpt-image-1",
             None,
-            Some(vec![supplied(PNG, None)]),
+            Some(vec![Some(supplied(PNG, None))]),
             Some(Vec::new()),
             ImageParams::new(),
         ),
@@ -179,6 +195,12 @@ fn multiple_image_array() {
 }
 
 fn dalle2_fields() {
+    family_selection();
+    dalle2_single_image();
+    dalle2_rejects_two_images();
+}
+
+fn family_selection() {
     assert_eq!(
         select_image_edit_family("dall-e-2"),
         ImageEditFamily::DallE2
@@ -205,12 +227,15 @@ fn dalle2_fields() {
     );
     assert_eq!(ImageEditFamily::DallE2.name(), "dall_e_2");
     assert_eq!(ImageEditFamily::OpenAi.name(), "openai");
+}
+
+fn dalle2_single_image() {
     let single = form(
         ImageEditFamily::DallE2,
         &request(
             "dall-e-2",
             Some("change"),
-            Some(vec![supplied(PNG, None)]),
+            Some(vec![Some(supplied(PNG, None))]),
             None,
             ImageParams::new(),
         ),
@@ -219,12 +244,15 @@ fn dalle2_fields() {
         filenames(&single),
         vec![pair("image", DEFAULT_IMAGE_NAME, "image/png")]
     );
+}
+
+fn dalle2_rejects_two_images() {
     let rejected = transform_image_edit_request(
         ImageEditFamily::DallE2,
         &request(
             "dall-e-2",
             Some("change"),
-            Some(vec![supplied(PNG, None), None]),
+            Some(vec![Some(supplied(PNG, None)), None]),
             None,
             ImageParams::new(),
         ),
@@ -239,6 +267,15 @@ fn dalle2_fields() {
 }
 
 fn gpt_image_optional_fields() {
+    supported_params();
+    let supplied_options = options(
+        r#"{"background":"transparent","quality":"high","prompt":"from-options","image":null,"mask":null,"extension":3,"model":"other"}"#,
+    );
+    mapped_options(&supplied_options);
+    option_fields_override(supplied_options);
+}
+
+fn supported_params() {
     assert_eq!(
         SUPPORTED_OPENAI_PARAMS,
         [
@@ -259,18 +296,21 @@ fn gpt_image_optional_fields() {
             "timeout",
         ]
     );
-    let supplied_options = options(
-        r#"{"background":"transparent","quality":"high","prompt":"from-options","image":null,"mask":null,"extension":3,"model":"other"}"#,
-    );
-    let mapped = map_openai_params(&supplied_options);
-    assert_eq!(mapped, supplied_options);
+}
+
+fn mapped_options(supplied_options: &ImageParams) {
+    let mapped = map_openai_params(supplied_options);
+    assert_eq!(&mapped, supplied_options);
     assert_eq!(mapped.len(), supplied_options.len());
+}
+
+fn option_fields_override(supplied_options: ImageParams) {
     let found = form(
         ImageEditFamily::OpenAi,
         &request(
             "gpt-image-1",
             Some("change"),
-            Some(vec![supplied(PNG, None)]),
+            Some(vec![Some(supplied(PNG, None))]),
             None,
             supplied_options,
         ),
@@ -288,13 +328,19 @@ fn gpt_image_optional_fields() {
 }
 
 fn filename_and_mime() {
+    named_file_and_mask();
+    literal_request_bytes();
+    unknown_image_bytes();
+}
+
+fn named_file_and_mask() {
     let named = form(
         ImageEditFamily::OpenAi,
         &request(
             "gpt-image-1",
             None,
-            Some(vec![supplied(JPEG, Some("photo.jpeg"))]),
-            Some(vec![supplied(JPEG, None)]),
+            Some(vec![Some(supplied(JPEG, Some("photo.jpeg")))]),
+            Some(vec![Some(supplied(JPEG, None))]),
             ImageParams::new(),
         ),
     );
@@ -305,6 +351,9 @@ fn filename_and_mime() {
             pair("mask", DEFAULT_MASK_NAME, "image/jpeg"),
         ]
     );
+}
+
+fn literal_request_bytes() {
     // a request string never authorizes a filesystem read; its bytes are what LiteLLM uploads
     let path = b"/etc/passwd";
     let literal = form(
@@ -312,7 +361,7 @@ fn filename_and_mime() {
         &request(
             "gpt-image-1",
             None,
-            Some(vec![supplied(path, None)]),
+            Some(vec![Some(supplied(path, None))]),
             None,
             ImageParams::new(),
         ),
@@ -322,12 +371,15 @@ fn filename_and_mime() {
         filenames(&literal),
         vec![pair("image[]", DEFAULT_IMAGE_NAME, DEFAULT_CONTENT_TYPE)]
     );
+}
+
+fn unknown_image_bytes() {
     let unknown = form(
         ImageEditFamily::OpenAi,
         &request(
             "gpt-image-1",
             None,
-            Some(vec![supplied(b"not an image", None)]),
+            Some(vec![Some(supplied(b"not an image", None))]),
             None,
             ImageParams::new(),
         ),
@@ -344,7 +396,7 @@ fn inline_data_edit() {
         &request(
             "gpt-image-1",
             Some("change"),
-            Some(vec![supplied(JPEG, None)]),
+            Some(vec![Some(supplied(JPEG, None))]),
             None,
             ImageParams::new(),
         ),
@@ -362,10 +414,13 @@ fn inline_data_edit() {
 }
 
 fn edit_auth_and_endpoint() {
-    let settings = Settings {
-        api_base: String::from("https://env.test/v1"),
-        organization: None,
-    };
+    explicit_key_header();
+    global_and_openai_key_header();
+    inherited_key_header();
+    base_and_endpoint_forms();
+}
+
+fn explicit_key_header() {
     let explicit = get_openai_credentials(
         ExplicitCredentials {
             api_base: Some(String::from("https://explicit.test/v1")),
@@ -373,17 +428,15 @@ fn edit_auth_and_endpoint() {
             organization: None,
         },
         LiteLlmGlobals::default(),
-        &settings,
+        &endpoint_settings(),
         Some(SecretString::from("env-key")),
     );
     assert_eq!(explicit.api_base, "https://explicit.test/v1");
     let headers = validate_environment(&Headers::new(), &explicit).expect("headers");
-    assert_eq!(
-        headers
-            .get("authorization")
-            .map(|value| value.to_str().expect("text")),
-        Some("Bearer explicit-key")
-    );
+    assert_eq!(authorization(&headers), Some("Bearer explicit-key"));
+}
+
+fn global_and_openai_key_header() {
     let global = get_openai_credentials(
         ExplicitCredentials::default(),
         LiteLlmGlobals {
@@ -392,7 +445,7 @@ fn edit_auth_and_endpoint() {
             openai_key: Some(SecretString::from("openai-key")),
             organization: None,
         },
-        &settings,
+        &endpoint_settings(),
         Some(SecretString::from("env-key")),
     );
     assert_eq!(global.api_base, "https://global.test/v1");
@@ -404,23 +457,20 @@ fn edit_auth_and_endpoint() {
             openai_key: Some(SecretString::from("openai-key")),
             organization: None,
         },
-        &settings,
+        &endpoint_settings(),
         Some(SecretString::from("env-key")),
     );
-    let openai_headers = validate_environment(&Headers::new(), &openai_key).expect("headers");
-    assert_eq!(
-        openai_headers
-            .get("authorization")
-            .map(|value| value.to_str().expect("text")),
-        Some("Bearer openai-key")
-    );
+    let headers = validate_environment(&Headers::new(), &openai_key).expect("headers");
+    assert_eq!(authorization(&headers), Some("Bearer openai-key"));
+}
+
+fn inherited_key_header() {
     let inherited = validate_environment(&Headers::new(), &credentials(None)).expect("headers");
-    assert_eq!(
-        inherited
-            .get("authorization")
-            .map(|value| value.to_str().expect("text")),
-        Some("Bearer None")
-    );
+    assert_eq!(authorization(&inherited), Some("Bearer None"));
+}
+
+fn base_and_endpoint_forms() {
+    let settings = endpoint_settings();
     assert_eq!(
         resolve_openai_api_base(None, None, &settings),
         "https://env.test/v1"
@@ -465,14 +515,9 @@ fn openai_image_edits_credential_identity_isolation() {
         .expect("headers");
     let second = validate_environment(&Headers::new(), &credentials(Some("sk-identity-b")))
         .expect("headers");
-    let shown = |headers: &HeaderMap| {
-        headers
-            .get("authorization")
-            .map(|value| value.to_str().expect("text").to_owned())
-    };
-    assert_eq!(shown(&first).as_deref(), Some("Bearer sk-identity-a"));
-    assert_eq!(shown(&second).as_deref(), Some("Bearer sk-identity-b"));
-    assert_ne!(shown(&first), shown(&second));
+    assert_eq!(authorization(&first), Some("Bearer sk-identity-a"));
+    assert_eq!(authorization(&second), Some("Bearer sk-identity-b"));
+    assert_ne!(authorization(&first), authorization(&second));
     let mut supplied = Headers::new();
     supplied.insert(String::from("x-team"), String::from("a"));
     let team =
@@ -483,13 +528,9 @@ fn openai_image_edits_credential_identity_isolation() {
         Some("a")
     );
     assert!(second.get("x-team").is_none());
-    assert_eq!(
-        shown(
-            &validate_environment(&Headers::new(), &credentials(Some("sk-identity-a")))
-                .expect("again")
-        ),
-        shown(&first)
-    );
+    let again =
+        validate_environment(&Headers::new(), &credentials(Some("sk-identity-a"))).expect("again");
+    assert_eq!(authorization(&again), authorization(&first));
 }
 
 #[test]
@@ -498,19 +539,14 @@ fn openai_image_edits_secret_safe_failure() {
     let headers =
         validate_environment(&Headers::new(), &credentials(Some(SECRET))).expect("headers");
     let bearer = format!("Bearer {SECRET}");
-    assert_eq!(
-        headers
-            .get("authorization")
-            .map(|value| value.to_str().expect("text")),
-        Some(bearer.as_str())
-    );
+    assert_eq!(authorization(&headers), Some(bearer.as_str()));
     let invalid = complete_url("http://[::1sk-fixture").expect_err("bad base");
     let multiple = transform_image_edit_request(
         ImageEditFamily::DallE2,
         &request(
             "dall-e-2",
             None,
-            Some(vec![supplied(PNG, None), supplied(PNG, None)]),
+            Some(vec![Some(supplied(PNG, None)), Some(supplied(PNG, None))]),
             None,
             ImageParams::new(),
         ),
@@ -535,12 +571,7 @@ fn validate_environment_keeps_supplied_headers_and_overwrites_authorization() {
     supplied.insert(String::from("authorization"), String::from("Bearer stale"));
     supplied.insert(String::from("x-extra"), String::from("kept"));
     let headers = validate_environment(&supplied, &credentials(Some("fresh"))).expect("headers");
-    assert_eq!(
-        headers
-            .get("authorization")
-            .map(|value| value.to_str().expect("text")),
-        Some("Bearer fresh")
-    );
+    assert_eq!(authorization(&headers), Some("Bearer fresh"));
     assert_eq!(
         headers
             .get("x-extra")
@@ -550,6 +581,6 @@ fn validate_environment_keeps_supplied_headers_and_overwrites_authorization() {
     assert!(
         headers
             .get("authorization")
-            .is_some_and(|value| value.is_sensitive())
+            .is_some_and(HeaderValue::is_sensitive)
     );
 }

@@ -5,7 +5,7 @@ use super::family::{ImageEditFamily, map_openai_params};
 use super::file::{DEFAULT_IMAGE_NAME, DEFAULT_MASK_NAME, ImageEditFile, file_record};
 use crate::api::image_contracts::records::{ImageFiles, ImageParams};
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ImageEditRequest {
     pub model: String,
     pub prompt: Option<String>,
@@ -14,7 +14,7 @@ pub struct ImageEditRequest {
     pub options: ImageParams,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ImageEditForm {
     pub data: ImageParams,
     pub files: ImageFiles,
@@ -43,12 +43,12 @@ pub fn transform_image_edit_request(
             files.push(file_record(family.image_field(), image, DEFAULT_IMAGE_NAME));
         }
     }
-    let mask = request
+    if let Some(mask) = request
         .mask
         .as_ref()
         .and_then(|masks| masks.first())
-        .and_then(Option::as_ref);
-    if let Some(mask) = mask {
+        .and_then(Option::as_ref)
+    {
         files.push(file_record("mask", mask, DEFAULT_MASK_NAME));
     }
     Ok(ImageEditForm { data, files })

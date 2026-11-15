@@ -18,10 +18,10 @@ pub fn validate_environment(
         let header_value = HeaderValue::from_str(value).map_err(ImageEditError::HeaderValue)?;
         environment.insert(header_name, header_value);
     }
-    let bearer = match &credentials.api_key {
-        Some(key) => format!("Bearer {}", key.expose_secret()),
-        None => String::from("Bearer None"),
-    };
+    let bearer = credentials.api_key.as_ref().map_or_else(
+        || String::from("Bearer None"),
+        |key| format!("Bearer {}", key.expose_secret()),
+    );
     let mut authorization =
         HeaderValue::from_str(&bearer).map_err(ImageEditError::Authorization)?;
     authorization.set_sensitive(true);
