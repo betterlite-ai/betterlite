@@ -16,6 +16,12 @@ struct TestRow {
 }
 
 #[derive(Serialize)]
+struct TaggedRow {
+    request_id: String,
+    tags: Vec<u8>,
+}
+
+#[derive(Serialize)]
 struct Refused {
     #[serde(flatten)]
     keys: BTreeMap<i64, i64>,
@@ -62,6 +68,11 @@ fn batch_lengths<'rows, Row>(batches: &[&'rows [Row]]) -> Vec<usize> {
 
 #[rstest]
 #[case::plain("a", "b", r#"{"request_id": "a", "tool_name": "b"}"#)]
+#[case::spaces(
+    "a b",
+    "two words",
+    r#"{"request_id": "a b", "tool_name": "two words"}"#
+)]
 #[case::escapes("a\"b\\c", "x\ny", r#"{"request_id": "a\"b\\c", "tool_name": "x\ny"}"#)]
 #[case::non_ascii("a", "\u{754c}", "{\"request_id\": \"a\", \"tool_name\": \"\\u754c\"}")]
 #[case::controls(
@@ -82,6 +93,18 @@ fn measures_a_row_as_python_dumps_writes_it(
     assert_eq!(
         spend_log_row_bytes(&row(request_id, tool_name)),
         expected.len()
+    );
+}
+
+#[test]
+fn measures_an_array_with_python_separators() {
+    let tagged = TaggedRow {
+        request_id: String::from("a"),
+        tags: vec![1, 2],
+    };
+    assert_eq!(
+        spend_log_row_bytes(&tagged),
+        r#"{"request_id": "a", "tags": [1, 2]}"#.len()
     );
 }
 
@@ -139,6 +162,9 @@ fn keeps_every_row_while_the_queue_fits() {
     let single = spend_log_queue_within_budget(&rows[..1], 99, 1);
     assert_eq!(single.rows.len(), 1);
     assert_eq!(single.queued_bytes, 99);
+    let fitting_single = spend_log_queue_within_budget(&rows[..1], 3, 16);
+    assert_eq!(fitting_single.rows.len(), 1);
+    assert_eq!(fitting_single.queued_bytes, 3);
 }
 
 #[test]
