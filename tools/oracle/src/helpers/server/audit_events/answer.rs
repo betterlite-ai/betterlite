@@ -35,10 +35,11 @@ pub(super) async fn answer(input: &Input) -> crate::helpers::HelperResult {
 }
 
 fn policy_answer(call: &Input) -> crate::helpers::HelperResult {
-    let lookup = match &call.env {
-        Some(env) => BTreeMap::from([(LITELLM_STORE_AUDIT_LOGS_ENV.to_owned(), env.clone())]),
-        None => BTreeMap::new(),
-    };
+    let lookup: BTreeMap<String, String> = call
+        .env
+        .iter()
+        .map(|env| (LITELLM_STORE_AUDIT_LOGS_ENV.to_owned(), env.clone()))
+        .collect();
     let mut settings = ConfigLoader { lookup }
         .load("{}")
         .map_err(|error| failure("ConfigError", error))?
@@ -220,6 +221,6 @@ async fn sink_answer(call: &Input) -> crate::helpers::HelperResult {
     Ok(json!({
         "delivered": delivery_view(&[recorder]),
         "stored": stored_ids(&repository),
-        "calls": 2,
+        "calls": 2_u8,
     }))
 }
