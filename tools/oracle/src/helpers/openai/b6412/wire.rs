@@ -23,7 +23,7 @@ use betterlite_openai::scaleway_audio::request::{
 };
 use betterlite_prompts::arguments::json::Object as JsonObject;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use super::{
     AudioProvider, ChatRequestCall, HeaderCall, HeaderProvider, ReplyCall, TranscriptionCall,
@@ -41,10 +41,10 @@ pub(super) fn chat_request_value(call: &ChatRequestCall) -> Value {
         downloads: &RefuseDownloads,
     };
     let url = chat_url(call.api_base.as_deref());
-    match transform_request(&transform) {
-        Ok(body) => json!({"url": url, "ok": true, "value": body}),
-        Err(_) => json!({"raised": null}),
-    }
+    transform_request(&transform).map_or_else(
+        |_| json!({"raised": null}),
+        |body| json!({"url": url, "ok": true, "value": body}),
+    )
 }
 
 pub(super) fn chunk_value(chunk: &JsonObject) -> Value {
@@ -126,7 +126,7 @@ fn form_value(fields: &[(String, Value)], file: &ProcessedAudioFile) -> Value {
 pub(super) fn transcription_reply_value(provider: AudioProvider, call: &ReplyCall) -> Value {
     if provider == AudioProvider::Scaleway {
         return match scaleway_reply(call.body.as_bytes(), call.status, &call.headers) {
-            Ok(transcription) => json!({"ok": true, "value": scaleway_text(transcription)}),
+            Ok(transcription) => json!({"ok": true, "value": scaleway_text(&transcription)}),
             Err(error) => json!({"raised": error.status_code}),
         };
     }
@@ -136,12 +136,13 @@ pub(super) fn transcription_reply_value(provider: AudioProvider, call: &ReplyCal
     }
 }
 
-fn scaleway_text(transcription: ScalewayTranscription) -> Value {
-    let mut value = json!({"text": transcription.response.text});
+fn scaleway_text(transcription: &ScalewayTranscription) -> Value {
+    let mut fields = Map::new();
+    fields.insert(String::from("text"), json!(transcription.response.text));
     for name in ["segments", "language"] {
         if let Some(field) = transcription.response.extra.get(name) {
-            value[name] = json!(field);
+            fields.insert(String::from(name), json!(field));
         }
     }
-    value
+    Value::Object(fields)
 }
