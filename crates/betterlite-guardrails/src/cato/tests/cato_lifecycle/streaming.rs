@@ -247,6 +247,23 @@ async fn streaming_relay_raises_a_blocking_message() {
     assert!(delivered.is_empty());
 }
 
+// LiteLLM returns on done before it looks at a blocking message in the same frame
+#[tokio::test]
+async fn streaming_relay_lets_done_win_over_a_blocking_message() {
+    let frame = object(&[
+        ("done", GuardrailValue::Boolean(true)),
+        ("blocking_message", text("ignored")),
+    ]);
+    let (result, delivered) = relay_frames(
+        vec![FakeFrame::Message(encoded(&frame))],
+        false,
+        empty_chunks(),
+    )
+    .await;
+    result.expect("done ends the stream");
+    assert!(delivered.is_empty());
+}
+
 #[tokio::test]
 async fn streaming_relay_ends_on_a_frame_it_does_not_recognize() {
     let frame = object(&[("surprise", GuardrailValue::Boolean(true))]);
