@@ -32,11 +32,11 @@ pub(super) fn principal_of(
 }
 
 fn decode_content(text: Option<&str>) -> Result<Option<Vec<u8>>, Box<crate::helpers::HelperError>> {
-    let Some(text) = text else {
+    let Some(encoded) = text else {
         return Ok(None);
     };
     STANDARD
-        .decode(text)
+        .decode(encoded)
         .map(Some)
         .map_err(|error| super::invalid_input(error.to_string()))
 }

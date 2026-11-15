@@ -74,9 +74,11 @@ impl Scripted {
 
     pub(super) fn response(&self, steps: &[Value], warnings: &[Value]) -> Value {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let effects = state.effects.clone();
+        drop(state);
         json!({
             "steps": steps,
-            "effects": state.effects,
+            "effects": effects,
             "warnings": warnings,
         })
     }
@@ -92,6 +94,7 @@ impl Scripted {
     fn failure(&self, kind: &str) -> Result<(), TableError> {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let faulted = state.faults.get(kind).copied().unwrap_or(false);
+        drop(state);
         if !faulted {
             return Ok(());
         }
@@ -133,18 +136,18 @@ impl Scripted {
             .push(json!({"kind": "create", "data": data}));
     }
 
-    fn created_row(&self, write: SkillWrite) -> Result<SkillTable, TableError> {
+    fn created_row(&self, write: &SkillWrite) -> Result<SkillTable, TableError> {
         let metadata = write
             .metadata
             .as_deref()
             .map(serde_json::from_str::<Value>)
             .transpose()
             .map_err(TableError::Row)?;
-        self.record_create(&write, metadata.as_ref());
+        self.record_create(write, metadata.as_ref());
         self.failure("create")?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let stored = metadata.unwrap_or_else(|| Value::Object(Map::new()));
-        let row: SkillTable = serde_json::from_value(json!({
+        let row = serde_json::from_value::<SkillTable>(json!({
             "skill_id": &write.skill_id,
             "display_title": &write.display_title,
             "description": &write.description,
@@ -162,6 +165,7 @@ impl Scripted {
         }))
         .map_err(TableError::Row)?;
         state.rows.insert(write.skill_id.clone(), row.clone());
+        drop(state);
         Ok(row)
     }
 
@@ -213,7 +217,7 @@ impl SkillRepository for Scripted {
         &self,
         write: SkillWrite,
     ) -> impl Future<Output = Result<SkillTable, TableError>> + Send {
-        ready(self.created_row(write))
+        ready(self.created_row(&write))
     }
 
     fn find_unique(

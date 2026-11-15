@@ -16,7 +16,7 @@ fn page_of(step: &Step) -> SkillPage {
     }
 }
 
-fn token(error: &StoreError) -> &'static str {
+const fn token(error: &StoreError) -> &'static str {
     match error {
         StoreError::NotFound { .. } => "not_found",
         StoreError::NoDatabase => "no_database",
@@ -51,10 +51,13 @@ fn row_answer(
     }
 }
 
-pub(super) async fn run_steps<R: SkillRepository>(
+pub(super) async fn run_steps<R>(
     store: &HostedSkillStore<R>,
     steps: &[Step],
-) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
+) -> Result<Vec<Value>, Box<crate::helpers::HelperError>>
+where
+    R: SkillRepository,
+{
     let mut results = Vec::with_capacity(steps.len());
     for step in steps {
         results.push(run_step(store, step).await?);
@@ -62,14 +65,19 @@ pub(super) async fn run_steps<R: SkillRepository>(
     Ok(results)
 }
 
-async fn run_step<R: SkillRepository>(
+async fn run_step<R>(
     store: &HostedSkillStore<R>,
     step: &Step,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<crate::helpers::HelperError>>
+where
+    R: SkillRepository,
+{
     let caller = step.principal.as_ref().map(principal_of).transpose()?;
     let action = step.action.as_str();
     match action {
-        "list" | "search" => return list_step(store, step, caller.as_ref()).await,
+        "list" | "search" => {
+            return list_step(store, action, page_of(step), caller.as_ref()).await;
+        }
         "get" | "delete" | "fetch" => return skill_step(store, step, caller.as_ref()).await,
         "create" => {}
         _ => return Ok(json!({"action": action, "error": "invalid_input"})),
@@ -86,16 +94,19 @@ async fn run_step<R: SkillRepository>(
     )
 }
 
-async fn list_step<R: SkillRepository>(
+async fn list_step<R>(
     store: &HostedSkillStore<R>,
-    step: &Step,
+    action: &str,
+    page: SkillPage,
     caller: Option<&Principal>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let action = step.action.as_str();
+) -> Result<Value, Box<crate::helpers::HelperError>>
+where
+    R: SkillRepository,
+{
     let outcome = if action == "search" {
         store.list_skills_for_search(caller).await
     } else {
-        store.list_skills(page_of(step), caller).await
+        store.list_skills(page, caller).await
     };
     match outcome {
         Ok(rows) => rows_json(&rows).map(|value| json!({"action": action, "rows": value})),
@@ -103,11 +114,14 @@ async fn list_step<R: SkillRepository>(
     }
 }
 
-async fn skill_step<R: SkillRepository>(
+async fn skill_step<R>(
     store: &HostedSkillStore<R>,
     step: &Step,
     caller: Option<&Principal>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<crate::helpers::HelperError>>
+where
+    R: SkillRepository,
+{
     let Some(skill_id) = step.skill_id.as_deref() else {
         return Ok(json!({"action": step.action.as_str(), "error": "invalid_input"}));
     };

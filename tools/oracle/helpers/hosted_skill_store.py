@@ -113,7 +113,8 @@ class TableState:
         stored = {**data, "skill_id": self.fixed_id}
         if "metadata" in stored:
             stored["metadata"] = OBJECT.validate_json(TEXT.validate_python(stored["metadata"]))
-        self.effects.append(JSON.validate_python({"kind": "create", "data": stored}))
+        effect = {"kind": "create", "data": stored}
+        self.effects.append(JSON.validate_python(effect))
         self.fail("create")
         row = make_row(stored, self.now)
         if row.get("metadata") is None:
@@ -122,7 +123,8 @@ class TableState:
         return row
 
     async def find_unique(self, where: dict[str, str]) -> FakeRow | None:
-        self.effects.append(JSON.validate_python({"kind": "find_unique", "where": where}))
+        effect = {"kind": "find_unique", "where": where}
+        self.effects.append(JSON.validate_python(effect))
         self.fail("find_unique")
         return self.rows.get(where["skill_id"])
 
@@ -135,7 +137,8 @@ class TableState:
         return self.page
 
     async def delete(self, where: dict[str, str]) -> FakeRow | None:
-        self.effects.append(JSON.validate_python({"kind": "delete", "where": where}))
+        effect = {"kind": "delete", "where": where}
+        self.effects.append(JSON.validate_python(effect))
         self.fail("delete")
         return self.rows.pop(where["skill_id"], None)
 

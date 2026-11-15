@@ -128,14 +128,14 @@ impl ScriptedRepository {
         })
     }
 
-    fn created_row(&self, write: SkillWrite) -> Result<SkillTable, TableError> {
+    fn created_row(&self, write: &SkillWrite) -> Result<SkillTable, TableError> {
         let failure = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.effects.push(Effect::Create(Box::new(write.clone())));
             state.create_failure
         };
         Self::failing(failure)?;
-        let row = row_for(&write, NOW);
+        let row = row_for(write, NOW);
         self.update(|state| {
             state.rows.insert(write.skill_id.clone(), row.clone());
         });
@@ -222,7 +222,7 @@ impl SkillRepository for ScriptedRepository {
         &self,
         write: SkillWrite,
     ) -> impl Future<Output = Result<SkillTable, TableError>> + Send {
-        ready(self.created_row(write))
+        ready(self.created_row(&write))
     }
 
     fn find_unique(

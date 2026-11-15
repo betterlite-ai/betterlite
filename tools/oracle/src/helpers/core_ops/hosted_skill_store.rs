@@ -100,7 +100,7 @@ fn invalid_input(message: String) -> Box<HelperError> {
     })
 }
 
-fn store_error(error: StoreError) -> Box<HelperError> {
+fn store_error(error: &StoreError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "StoreError".to_owned(),
         status: None,
@@ -119,7 +119,8 @@ impl Helper for Op {
         let uuid = input.uuid.clone();
         let ids: SkillIdSource = Arc::new(move || uuid.clone());
         let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| CACHE_CLOCK);
-        let store = HostedSkillStore::new(scripted.clone(), ids, clock).map_err(store_error)?;
+        let store = HostedSkillStore::new(scripted.clone(), ids, clock)
+            .map_err(|error| store_error(&error))?;
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .map_err(|error| invalid_input(error.to_string()))?;
