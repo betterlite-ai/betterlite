@@ -89,6 +89,8 @@ fn decimal(text: &str) -> Decimal {
 #[case::string_count(r#"{"n":"2"}"#, 2)]
 #[case::integer_count(r#"{"n":2}"#, 2)]
 #[case::float_count(r#"{"n":2.9}"#, 2)]
+#[case::negative_float(r#"{"n":-2.9}"#, -2)]
+#[case::huge_number(r#"{"n":1e300}"#, 1)]
 #[case::padded_string(r#"{"n":" 2 "}"#, 2)]
 #[case::negative(r#"{"n":-1}"#, -1)]
 #[case::absent("{}", 1)]

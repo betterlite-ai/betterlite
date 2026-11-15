@@ -63,6 +63,7 @@ fn compatible_host(#[case] hostname: Option<&str>, #[case] expected: bool) {
 #[case::scheme_four_slashes("http:////api.openai.com/v1/models", false)]
 #[case::scheme_relative_triple_slash("///api.openai.com/v1/models", false)]
 #[case::scheme_relative_empty("//?api.openai.com", false)]
+#[case::scheme_relative_fragment("//#api.openai.com", false)]
 #[case::opaque_scheme("mailto:api.openai.com", false)]
 #[case::host_without_scheme_colon("api.openai.com:8080/v1/models", false)]
 fn compatible_url(#[case] route: &str, #[case] expected: bool) {
