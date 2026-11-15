@@ -1,0 +1,15 @@
+task: B1375
+deviations:
+  - what: A batch line longer than the byte limit the caller passes fails the upload with a typed error, where LiteLLM reads a line of any size into memory.
+    why: A file without line breaks would otherwise be held whole in memory, and every input has a limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L711
+kept_bugs:
+  - what: A developer message is replaced by a system message that keeps only role and content, so its name and every other field are lost.
+    why: A working LiteLLM setup sends exactly that Vertex request, and the task fixes the projection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L215
+  - what: A line whose url is absent or not a string is routed as a chat entry instead of being refused.
+    why: LiteLLM returns an empty route path for it, so existing batch files with such lines keep translating as chat requests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L534
+  - what: Raw passthrough needs the passthrough value to be literally true, so 1 or "true" still translates the rows.
+    why: LiteLLM tests it with `is True`, and a setup that sends another value relies on the translation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L530

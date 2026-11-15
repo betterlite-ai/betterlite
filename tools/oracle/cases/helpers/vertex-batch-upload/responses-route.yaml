@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-batch-upload-responses-route
+call:
+  vertex_batch_upload:
+    calls:
+      - content: |-
+          {"custom_id":"r1","url":"/v1/responses","body":{"model":"gemini-2.5-flash","input":"hello"}}
+          {"custom_id":"r2","url":"responses/?x=1","body":{"model":"gemini-2.5-flash","input":"hi","temperature":0.2}}
+        passthrough: false
+env: {}
+compare: {ignore: []}
