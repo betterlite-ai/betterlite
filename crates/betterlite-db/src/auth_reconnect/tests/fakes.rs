@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
+use std::future::pending;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -55,22 +56,8 @@ pub(super) fn record(effects: &Effects, effect: Effect) {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum ProbeOutcome {
-    Value(bool),
-    Failure(String),
-    Pending,
-}
-
-#[derive(Debug, Clone)]
-pub(super) enum RecreateOutcome {
-    Value(bool),
-    Failure(String),
-    Pending,
-}
-
-#[derive(Debug, Clone)]
-pub(super) enum StepOutcome {
-    Done,
+pub(super) enum Step<T> {
+    Done(T),
     Failure(String),
     Pending,
 }
@@ -86,10 +73,10 @@ pub(super) struct EngineScript {
     pub(super) reader_generation: u64,
     pub(super) read_route: ReadRoute,
     pub(super) engine_state: EngineState,
-    pub(super) probes: VecDeque<ProbeOutcome>,
-    pub(super) recreates: VecDeque<RecreateOutcome>,
-    pub(super) selects: VecDeque<StepOutcome>,
-    pub(super) rearms: VecDeque<StepOutcome>,
+    pub(super) probes: VecDeque<Step<bool>>,
+    pub(super) recreates: VecDeque<Step<bool>>,
+    pub(super) selects: VecDeque<Step<()>>,
+    pub(super) rearms: VecDeque<Step<()>>,
     pub(super) bump_on_probe: bool,
     pub(super) hold_recreate: Option<Arc<Notify>>,
 }
@@ -135,6 +122,32 @@ impl FakeEngine {
         }
     }
 
+    fn with_script<T>(&self, select: impl FnOnce(&mut EngineScript) -> T) -> T {
+        let mut script = self
+            .shared
+            .script
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        select(&mut script)
+    }
+
+    fn observation(&self, handle: Arc<Handle>, generation: u64) -> Observation<Handle> {
+        Observation {
+            generation,
+            handle: Some(handle),
+            connected: true,
+        }
+    }
+
+    async fn settle(
+        &self,
+        effect: Effect,
+        next: impl FnOnce(&mut EngineScript) -> Option<Step<()>>,
+    ) -> Result<(), FakeError> {
+        record(&self.shared.effects, effect);
+        apply(self.with_script(next).unwrap_or(Step::Done(()))).await
+    }
+
     pub(super) fn writer_handle(&self) -> Arc<Handle> {
         Arc::clone(&self.shared.writer)
     }
@@ -144,37 +157,21 @@ impl FakeEngine {
     }
 
     pub(super) fn writer_observation(&self) -> Observation<Handle> {
-        let script = self
-            .shared
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        Observation {
-            generation: script.writer_generation,
-            handle: Some(Arc::clone(&self.shared.writer)),
-            connected: true,
-        }
+        let generation = self.with_script(|script| script.writer_generation);
+        self.observation(Arc::clone(&self.shared.writer), generation)
     }
 
     pub(super) fn reader_observation(&self) -> Observation<Handle> {
-        let script = self
-            .shared
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        Observation {
-            generation: script.reader_generation,
-            handle: Some(Arc::clone(&self.shared.reader)),
-            connected: true,
-        }
+        let generation = self.with_script(|script| script.reader_generation);
+        self.observation(Arc::clone(&self.shared.reader), generation)
     }
 }
 
-async fn step_outcome(outcome: StepOutcome) -> Result<(), FakeError> {
-    match outcome {
-        StepOutcome::Done => Ok(()),
-        StepOutcome::Failure(message) => Err(FakeError(message)),
-        StepOutcome::Pending => std::future::pending::<Result<(), FakeError>>().await,
+async fn apply<T>(step: Step<T>) -> Result<T, FakeError> {
+    match step {
+        Step::Done(value) => Ok(value),
+        Step::Failure(message) => Err(FakeError(message)),
+        Step::Pending => pending().await,
     }
 }
 
@@ -187,32 +184,18 @@ impl ReconnectEngine for FakeEngine {
     }
 
     fn read_target(&self) -> Observation<Self::Handle> {
-        let script = self
-            .shared
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if script.read_route == ReadRoute::Reader {
-            Observation {
-                generation: script.reader_generation,
-                handle: Some(Arc::clone(&self.shared.reader)),
-                connected: true,
+        let (handle, generation) = self.with_script(|script| {
+            if script.read_route == ReadRoute::Reader {
+                (Arc::clone(&self.shared.reader), script.reader_generation)
+            } else {
+                (Arc::clone(&self.shared.writer), script.writer_generation)
             }
-        } else {
-            Observation {
-                generation: script.writer_generation,
-                handle: Some(Arc::clone(&self.shared.writer)),
-                connected: true,
-            }
-        }
+        });
+        self.observation(handle, generation)
     }
 
     fn engine_state(&self) -> EngineState {
-        self.shared
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .engine_state
+        self.with_script(|script| script.engine_state)
     }
 
     fn recreate(
@@ -227,79 +210,36 @@ impl ReconnectEngine for FakeEngine {
                     expected_generation,
                 },
             );
-            let gate = self
-                .shared
-                .script
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .hold_recreate
-                .clone();
+            let gate = self.with_script(|script| script.hold_recreate.clone());
             if let Some(gate) = gate {
                 gate.notified().await;
             }
-            let outcome = self
-                .shared
-                .script
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .recreates
-                .pop_front()
-                .unwrap_or(RecreateOutcome::Value(true));
-            match outcome {
-                RecreateOutcome::Value(value) => Ok(value),
-                RecreateOutcome::Failure(message) => Err(FakeError(message)),
-                RecreateOutcome::Pending => std::future::pending::<Result<bool, FakeError>>().await,
-            }
+            let step = self
+                .with_script(|script| script.recreates.pop_front())
+                .unwrap_or(Step::Done(true));
+            apply(step).await
         })
     }
 
     fn writer_read_only(&self) -> PoolFuture<'_, bool, Self::Error> {
         Box::pin(async move {
             record(&self.shared.effects, Effect::Probe);
-            let outcome = {
-                let mut script = self
-                    .shared
-                    .script
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
+            let step = self.with_script(|script| {
                 if script.bump_on_probe {
                     script.writer_generation = script.writer_generation.saturating_add(1);
                 }
-                script
-                    .probes
-                    .pop_front()
-                    .unwrap_or(ProbeOutcome::Value(false))
-            };
-            match outcome {
-                ProbeOutcome::Value(value) => Ok(value),
-                ProbeOutcome::Failure(message) => Err(FakeError(message)),
-                ProbeOutcome::Pending => std::future::pending::<Result<bool, FakeError>>().await,
-            }
+                script.probes.pop_front()
+            });
+            apply(step.unwrap_or(Step::Done(false))).await
         })
     }
 
     fn writer_select_one(&self) -> PoolFuture<'_, (), Self::Error> {
-        Box::pin(async move {
-            record(&self.shared.effects, Effect::SelectOne);
-            let outcome = self
-                .shared
-                .script
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .selects
-                .pop_front()
-                .unwrap_or(StepOutcome::Done);
-            step_outcome(outcome).await
-        })
+        Box::pin(self.settle(Effect::SelectOne, |script| script.selects.pop_front()))
     }
 
     fn mark_writer_recovered(&self) {
-        let read_route = self
-            .shared
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .read_route;
+        let read_route = self.with_script(|script| script.read_route);
         if read_route == ReadRoute::Reader {
             record(&self.shared.effects, Effect::MarkWriterRecovered);
         }
@@ -314,18 +254,7 @@ impl ReconnectEngine for FakeEngine {
     }
 
     fn rearm_watcher(&self) -> PoolFuture<'_, (), Self::Error> {
-        Box::pin(async move {
-            record(&self.shared.effects, Effect::Rearm);
-            let outcome = self
-                .shared
-                .script
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .rearms
-                .pop_front()
-                .unwrap_or(StepOutcome::Done);
-            step_outcome(outcome).await
-        })
+        Box::pin(self.settle(Effect::Rearm, |script| script.rearms.pop_front()))
     }
 }
 
@@ -342,7 +271,7 @@ pub(super) struct ScriptedClock {
 
 impl ScriptedClock {
     pub(super) fn from_seconds(values: &[f64]) -> Self {
-        let mut offsets: VecDeque<Duration> = values
+        let offsets: VecDeque<Duration> = values
             .iter()
             .map(|value| {
                 Duration::try_from_secs_f64(*value)

@@ -91,6 +91,16 @@ struct NativeShared {
     dead: AtomicBool,
 }
 
+impl NativeShared {
+    fn new(pool: Pool) -> Self {
+        Self {
+            pool: Mutex::new(Arc::new(pool)),
+            generation: AtomicU64::new(0),
+            dead: AtomicBool::new(false),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct NativeEngine {
     shared: Arc<NativeShared>,
@@ -99,11 +109,7 @@ struct NativeEngine {
 impl NativeEngine {
     fn new(pool: Pool) -> Self {
         Self {
-            shared: Arc::new(NativeShared {
-                pool: Mutex::new(Arc::new(pool)),
-                generation: AtomicU64::new(0),
-                dead: AtomicBool::new(false),
-            }),
+            shared: Arc::new(NativeShared::new(pool)),
         }
     }
 
@@ -159,13 +165,14 @@ impl ReconnectEngine for NativeEngine {
         url: &SecretString,
         expected_generation: Option<u64>,
     ) -> PoolFuture<'_, bool, Self::Error> {
+        let database_url = url.expose_secret().to_owned();
         Box::pin(async move {
             if let Some(expected) = expected_generation
                 && expected != self.generation()
             {
                 return Ok(false);
             }
-            let replacement = build_pool(url.expose_secret())?;
+            let replacement = build_pool(&database_url)?;
             let connection = replacement
                 .get()
                 .await

@@ -20,13 +20,14 @@ use super::settings::ReconnectSettings;
 use super::stale::StaleReadEngine;
 
 use fakes::{
-    CapturedLogs, Effect, Effects, EngineScript, FakeEngine, FakeLock, LockMode, ProbeOutcome,
-    ReadRoute, RecreateOutcome, ScriptedClock, StepOutcome,
+    CapturedLogs, Effect, Effects, EngineScript, FakeEngine, FakeLock, LockMode, ReadRoute,
+    ScriptedClock, Step,
 };
 
 const URL: &str = "postgresql://user:pw@db.example:5432/litellm";
 
 type Policy = AuthReconnect<FakeEngine, ScriptedClock, FakeLock>;
+type GatedPolicy = AuthReconnect<FakeEngine, ScriptedClock, TokioLock>;
 
 const fn settings() -> ReconnectSettings {
     ReconnectSettings {
@@ -39,30 +40,31 @@ const fn settings() -> ReconnectSettings {
 }
 
 fn policy_with_engine(engine: FakeEngine, effects: Effects) -> Policy {
+    let lock = FakeLock::new(LockMode::Free, effects);
+    policy_of(engine, lock)
+}
+
+fn policy_with_lock(mode: LockMode, effects: &Effects) -> Policy {
+    let engine = FakeEngine::new(EngineScript::default(), Arc::clone(effects));
+    let lock = FakeLock::new(mode, Arc::clone(effects));
+    policy_of(engine, lock)
+}
+
+fn policy_of(engine: FakeEngine, lock: FakeLock) -> Policy {
     AuthReconnect::new(
         engine,
         settings(),
         ScriptedClock::from_seconds(&[1000.0]),
-        FakeLock::new(LockMode::Free, effects),
+        lock,
         ReconnectHistory::default(),
     )
 }
 
-fn policy_with_lock(mode: LockMode, effects: &Effects) -> Policy {
-    AuthReconnect::new(
-        FakeEngine::new(EngineScript::default(), Arc::clone(effects)),
-        settings(),
-        ScriptedClock::from_seconds(&[1000.0]),
-        FakeLock::new(mode, Arc::clone(effects)),
-        ReconnectHistory::default(),
-    )
-}
-
-fn gated_policy(effects: &Effects, gate: &Arc<Notify>) -> Policy {
+fn gated_policy(effects: &Effects, gate: &Arc<Notify>) -> GatedPolicy {
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.recreates.push_back(RecreateOutcome::Value(true));
+    script.probes.push_back(Step::Done(true));
+    script.probes.push_back(Step::Done(true));
+    script.recreates.push_back(Step::Done(true));
     script.hold_recreate = Some(Arc::clone(gate));
     AuthReconnect::new(
         FakeEngine::new(script, Arc::clone(effects)),
@@ -73,43 +75,30 @@ fn gated_policy(effects: &Effects, gate: &Arc<Notify>) -> Policy {
     )
 }
 
-fn escalation_script() -> EngineScript {
+fn scripted(probes: &[bool], recreates: Vec<Step<bool>>) -> EngineScript {
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script
-        .recreates
-        .push_back(RecreateOutcome::Failure("recreate failed".to_owned()));
-    script
-        .recreates
-        .push_back(RecreateOutcome::Failure("recreate failed".to_owned()));
-    script
-        .recreates
-        .push_back(RecreateOutcome::Failure("recreate failed".to_owned()));
-    script
-        .recreates
-        .push_back(RecreateOutcome::Failure("recreate failed".to_owned()));
+    script.probes = probes.iter().copied().map(Step::Done).collect();
+    script.recreates = recreates.into();
     script
 }
 
+fn escalation_script() -> EngineScript {
+    scripted(
+        &[true, true, true],
+        vec![Step::Failure("recreate failed".to_owned()); 4],
+    )
+}
+
 fn decline_script() -> EngineScript {
-    let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script
-        .recreates
-        .push_back(RecreateOutcome::Failure("first".to_owned()));
-    script
-        .recreates
-        .push_back(RecreateOutcome::Failure("second".to_owned()));
-    script.recreates.push_back(RecreateOutcome::Value(false));
-    script
-        .recreates
-        .push_back(RecreateOutcome::Failure("after".to_owned()));
-    script
+    scripted(
+        &[true, true, true, true],
+        vec![
+            Step::Failure("first".to_owned()),
+            Step::Failure("second".to_owned()),
+            Step::Done(false),
+            Step::Failure("after".to_owned()),
+        ],
+    )
 }
 
 async fn seed_two_failures(policy: &Policy, url: &SecretString) {
@@ -155,7 +144,7 @@ const fn request<'request>(
     }
 }
 
-impl<'request> ReconnectRequest<'request> {
+impl ReconnectRequest<'_> {
     #[must_use]
     const fn forced(mut self) -> Self {
         self.force = true;
@@ -186,8 +175,8 @@ async fn equal_generation_different_handle() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
     script.read_route = ReadRoute::Reader;
-    script.probes.push_back(ProbeOutcome::Value(false));
-    script.probes.push_back(ProbeOutcome::Value(false));
+    script.probes.push_back(Step::Done(false));
+    script.probes.push_back(Step::Done(false));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -211,11 +200,11 @@ async fn stale_live_waives_once() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
     script.read_route = ReadRoute::Reader;
-    script.probes.push_back(ProbeOutcome::Value(false));
-    script.probes.push_back(ProbeOutcome::Value(true));
+    script.probes.push_back(Step::Done(false));
+    script.probes.push_back(Step::Done(true));
     script
         .recreates
-        .push_back(RecreateOutcome::Failure("recreate failed".to_owned()));
+        .push_back(Step::Failure("recreate failed".to_owned()));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -240,10 +229,10 @@ async fn stale_live_waives_once() {
 async fn failed_repair_cooldown() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
+    script.probes.push_back(Step::Done(true));
     script
         .recreates
-        .push_back(RecreateOutcome::Failure("recreate failed".to_owned()));
+        .push_back(Step::Failure("recreate failed".to_owned()));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -261,11 +250,11 @@ async fn failed_repair_cooldown() {
 async fn force_bypasses_both_checks() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
+    script.probes.push_back(Step::Done(true));
     script
         .recreates
-        .push_back(RecreateOutcome::Failure("recreate failed".to_owned()));
-    script.probes.push_back(ProbeOutcome::Value(false));
+        .push_back(Step::Failure("recreate failed".to_owned()));
+    script.probes.push_back(Step::Done(false));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -322,8 +311,8 @@ async fn queued_caller_rechecks() {
 async fn completion_time_cooldown() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(false));
-    script.probes.push_back(ProbeOutcome::Value(false));
+    script.probes.push_back(Step::Done(false));
+    script.probes.push_back(Step::Done(false));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = AuthReconnect::new(
         engine,
@@ -380,10 +369,10 @@ async fn lock_timeout_and_acquire_error() {
 async fn cancellation_acquire_race_releases() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.recreates.push_back(RecreateOutcome::Pending);
-    script.recreates.push_back(RecreateOutcome::Value(true));
+    script.probes.push_back(Step::Done(true));
+    script.probes.push_back(Step::Done(true));
+    script.recreates.push_back(Step::Pending);
+    script.recreates.push_back(Step::Done(true));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = AuthReconnect::new(
         engine,
@@ -442,7 +431,7 @@ async fn generation_snapshotted_before_await() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
     script.bump_on_probe = true;
-    script.probes.push_back(ProbeOutcome::Value(true));
+    script.probes.push_back(Step::Done(true));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -486,22 +475,20 @@ async fn missing_database_url_error() {
 async fn dead_recreate_failure_keeps_marker() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.probes.push_back(ProbeOutcome::Value(true));
+    script.probes.push_back(Step::Done(true));
+    script.probes.push_back(Step::Done(true));
+    script.probes.push_back(Step::Done(true));
     script
         .recreates
-        .push_back(RecreateOutcome::Failure("seeding".to_owned()));
+        .push_back(Step::Failure("seeding".to_owned()));
     script
         .recreates
-        .push_back(RecreateOutcome::Failure("seeding".to_owned()));
+        .push_back(Step::Failure("seeding".to_owned()));
     script
         .recreates
-        .push_back(RecreateOutcome::Failure("seeding".to_owned()));
-    script
-        .recreates
-        .push_back(RecreateOutcome::Failure("dead".to_owned()));
-    script.recreates.push_back(RecreateOutcome::Value(true));
+        .push_back(Step::Failure("seeding".to_owned()));
+    script.recreates.push_back(Step::Failure("dead".to_owned()));
+    script.recreates.push_back(Step::Done(true));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -521,7 +508,7 @@ async fn direct_writable_short_circuit() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
     script.read_route = ReadRoute::Reader;
-    script.probes.push_back(ProbeOutcome::Value(false));
+    script.probes.push_back(Step::Done(false));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -540,10 +527,10 @@ async fn direct_writable_short_circuit() {
 }
 
 #[rstest]
-#[case::read_only_session(ProbeOutcome::Value(true), false)]
-#[case::probe_error(ProbeOutcome::Failure("probe failed".to_owned()), true)]
+#[case::read_only_session(Step::Done(true), false)]
+#[case::probe_error(Step::Failure("probe failed".to_owned()), true)]
 #[tokio::test]
-async fn readonly_or_probe_error_recreates(#[case] probe: ProbeOutcome, #[case] failed: bool) {
+async fn readonly_or_probe_error_recreates(#[case] probe: Step<bool>, #[case] failed: bool) {
     let logs = CapturedLogs::default();
     let _guard =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
@@ -584,7 +571,7 @@ async fn forced_skips_probe() {
     let mut script = EngineScript::default();
     script
         .probes
-        .push_back(ProbeOutcome::Failure("the probe must not run".to_owned()));
+        .push_back(Step::Failure("the probe must not run".to_owned()));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -604,10 +591,10 @@ async fn direct_select_one_after_recreate() {
         tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
     let effects = fakes::effects();
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
+    script.probes.push_back(Step::Done(true));
     script
         .selects
-        .push_back(StepOutcome::Failure("select one failed".to_owned()));
+        .push_back(Step::Failure("select one failed".to_owned()));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -668,10 +655,10 @@ async fn failures_record_original_target() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
     script.read_route = ReadRoute::Reader;
-    script.probes.push_back(ProbeOutcome::Value(true));
+    script.probes.push_back(Step::Done(true));
     script
         .recreates
-        .push_back(RecreateOutcome::Failure("recreate failed".to_owned()));
+        .push_back(Step::Failure("recreate failed".to_owned()));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -717,8 +704,8 @@ async fn overall_timeout() {
         tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
     let effects = fakes::effects();
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.recreates.push_back(RecreateOutcome::Pending);
+    script.probes.push_back(Step::Done(true));
+    script.recreates.push_back(Step::Pending);
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -762,7 +749,7 @@ async fn dead_engine_reads_the_engine_state() {
 async fn dead_forced_decline_clears_marker() {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
-    script.recreates.push_back(RecreateOutcome::Value(false));
+    script.recreates.push_back(Step::Done(false));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = AuthReconnect::new(
         engine,
@@ -770,8 +757,10 @@ async fn dead_forced_decline_clears_marker() {
         ScriptedClock::from_seconds(&[1000.0]),
         FakeLock::new(LockMode::Free, Arc::clone(&effects)),
         ReconnectHistory {
+            last_attempt: None,
+            consecutive_failures: 0,
             engine_dead: true,
-            ..ReconnectHistory::default()
+            failed_repairs: Vec::new(),
         },
     );
     let url = SecretString::from(URL);
@@ -788,8 +777,8 @@ async fn dead_forced_decline_clears_marker() {
 async fn unforced_false_replacement_succeeds(#[case] dead: bool) {
     let effects = fakes::effects();
     let mut script = EngineScript::default();
-    script.probes.push_back(ProbeOutcome::Value(true));
-    script.recreates.push_back(RecreateOutcome::Value(false));
+    script.probes.push_back(Step::Done(true));
+    script.recreates.push_back(Step::Done(false));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = AuthReconnect::new(
         engine,
@@ -797,8 +786,10 @@ async fn unforced_false_replacement_succeeds(#[case] dead: bool) {
         ScriptedClock::from_seconds(&[1000.0]),
         FakeLock::new(LockMode::Free, Arc::clone(&effects)),
         ReconnectHistory {
+            last_attempt: None,
+            consecutive_failures: 0,
             engine_dead: dead,
-            ..ReconnectHistory::default()
+            failed_repairs: Vec::new(),
         },
     );
     let url = SecretString::from(URL);
