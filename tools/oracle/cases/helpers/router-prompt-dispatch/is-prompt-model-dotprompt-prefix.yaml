@@ -1,0 +1,14 @@
+kind: helper
+name: prompt-dispatch-is-prompt-model-dotprompt-prefix
+call:
+  b8466:
+    check: is_prompt_model
+    model: dotprompt/my-prompt
+    model_list:
+    - model_name: dotprompt/my-prompt
+      litellm_params:
+        model: dotprompt/my-prompt
+        prompt_id: greeting
+env: {}
+compare:
+  ignore: []

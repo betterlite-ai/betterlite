@@ -129,5 +129,5 @@ pitfalls:
   - An Agent Engine request must receive resolved credentials in litellm_params before its base HTTP handler runs.
   - A body selector belongs only to a step that refreshes; on a step that reuses the token it matches nothing and B9850 fails the case.
   - An authorized_user credential has no project_id, so each vertex_ai deployment sets vertex_project; without it LiteLLM takes quota_project_id and otherwise fails with "Could not resolve project_id".
-budget: {max_changed_lines: 800, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: security

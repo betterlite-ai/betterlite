@@ -1,0 +1,20 @@
+kind: helper
+name: snowflake-headers-and-key
+call:
+  b5844:
+    steps:
+      - {kind: headers, model: mistral-large2, api_key: jwt-token, headers: {X-Trace: abc}}
+      - {kind: headers, model: mistral-large2, api_key: pat/secret-token, headers: {}}
+      - {kind: headers, model: claude-3-5-sonnet, api_key: jwt-token, headers: {}}
+      - {kind: headers, model: SNOWFLAKE/CLAUDE_3, api_key: pat/secret-token, headers: {Accept: text/plain, Authorization: Bearer old}}
+      - {kind: headers, model: mistral-large2, api_key: null, headers: {}}
+      - {kind: headers, model: claude-3-5-sonnet, api_key: null, headers: {X-Trace: abc}}
+      - {kind: headers, model: mistral-large2, api_key: '', headers: {}}
+      - {kind: headers, model: mistral-large2, api_key: 'pat/', headers: {}}
+      - {kind: headers, model: mistral-large2, api_key: PAT/upper, headers: {}}
+      - {kind: info, api_base: 'https://base.example', api_key: given-key, jwt_env: env-key}
+      - {kind: info, api_base: null, api_key: null, jwt_env: env-key}
+      - {kind: info, api_base: null, api_key: '', jwt_env: env-key}
+      - {kind: info, api_base: null, api_key: null, jwt_env: null}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+kind: helper
+name: patch-strips-max-tokens
+call:
+  b4118:
+    cases:
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls:
+          - id: toolu_1
+            type: tool_use
+            name: web_search
+            input: {query: first}
+        optional_params:
+          max_tokens: 700
+          temperature: 0.2
+        kwargs: {}
+        searches:
+          - kind: success
+            text: one
+env: {}
+compare: {ignore: []}

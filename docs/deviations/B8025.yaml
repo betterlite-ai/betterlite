@@ -1,0 +1,8 @@
+task: B8025
+deviations:
+  - what: A Nimble reply that fails the /v2/search schema reports betterlite's decoder message instead of pydantic's validation text.
+    why: betterlite reads the reply with serde, whose validation message names the JSON path and the expected type rather than pydantic's `results` field error list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nimble/search/transformation.py#L185-L191
+  - what: Parallel AI's reported usage is stored in SearchResponse.hidden_params under _parallel_ai_usage, and the search caller copies it into the logging object's optional params.
+    why: betterlite's search provider hooks have no logging object to write, so the reply step carries the value on the response until the caller (B3272) prices it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/parallel_ai/search/transformation.py#L249-L254

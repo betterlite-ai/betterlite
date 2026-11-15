@@ -1,0 +1,24 @@
+kind: helper
+name: genai-generate-content-response-sdk-construction
+call:
+  b3480:
+    constructs:
+      - record: response
+        fields:
+          candidates:
+            - content: {parts: [{text: "Hello there"}], role: model}
+              finishReason: STOP
+              index: 0
+          usageMetadata: {promptTokenCount: 4, candidatesTokenCount: 3, totalTokenCount: 7}
+          modelVersion: gemini-2.5-flash
+          responseId: resp-1
+      - record: response
+        fields:
+          candidates:
+            - content: {parts: [{functionCall: {name: lookup, args: {city: Oslo}}}]}
+              finishReason: STOP
+          promptFeedback: {blockReason: BLOCKLIST}
+    top_level: []
+    errors: []
+env: {}
+compare: {ignore: []}

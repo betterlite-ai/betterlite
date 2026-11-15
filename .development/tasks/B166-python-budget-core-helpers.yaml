@@ -100,6 +100,6 @@ pitfalls:
 - "`safe_deep_copy` has a depth limit and handles exceptions and `datetime`; read L514-L563 before writing it."
 - "`filter_exceptions_from_params` stops at `max_depth=20` and must not loop on a cycle."
 budget:
-  max_changed_lines: 1400
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

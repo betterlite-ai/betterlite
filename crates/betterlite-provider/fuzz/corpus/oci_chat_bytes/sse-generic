@@ -1,0 +1,5 @@
+data: {"index":0,"message":{"role":"ASSISTANT","content":[{"type":"TEXT","text":"he"}]}}
+
+data: {"index":0,"message":{"content":[{"type":"TEXT","text":"llo"}]},"finishReason":"STOP"}
+
+data: [DONE]
