@@ -8,7 +8,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L834
   - what: A caller-supplied HTTP handler's own timeout is not carried into the plan; a blocking call uses the timeout argument or the 600/5 default, where LiteLLM reuses a supplied handler and posts without a timeout so that client's default applies.
     why: betterlite has no handler injection at this seam, and its shared transport takes one deadline from the plan (B173); the argument and the default are the only timeouts a caller here can reach.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L364
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L365
   - what: The body of a non-200 blocking stream answer is decoded as UTF-8 text for the error message, and a body that is not UTF-8 becomes its own error that keeps the status, where LiteLLM passes the body bytes to OpenAILikeError.
     why: Lossy text would hide a corrupt answer behind a made-up message, and a message is betterlite's own, so the error's status stays LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L97
