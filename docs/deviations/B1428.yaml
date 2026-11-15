@@ -1,0 +1,24 @@
+task: B1428
+deviations:
+  - what: The async streaming send is bounded by the transport's 100-minute stream deadline, where LiteLLM's make_call posts without a timeout, so a stream that stalls after the response head never ends there.
+    why: betterlite's transport needs a deadline on every request (B173); the streaming default is the bound every other streaming provider here uses, and it only ends a stream left idle past 100 minutes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L60
+  - what: An async stream answered with a non-200 status is returned as a stream, where LiteLLM's AsyncHTTPHandler.post raises a masked HTTPStatusError before make_call returns, so here the status surfaces only when the body fails to parse as a line.
+    why: make_call has no status check, and betterlite's shared transport hands a streamed answer back without raising on its status; the source's raise lives in custom_httpx/http_handler.py, outside this task's references.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L834
+  - what: A caller-supplied HTTP handler's own timeout is not carried into the plan; a blocking call uses the timeout argument or the 600/5 default, where LiteLLM reuses a supplied handler and posts without a timeout so that client's default applies.
+    why: betterlite has no handler injection at this seam, and its shared transport takes one deadline from the plan (B173); the argument and the default are the only timeouts a caller here can reach.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L364
+  - what: The body of a non-200 blocking stream answer is decoded as UTF-8 text for the error message, and a body that is not UTF-8 becomes its own error that keeps the status, where LiteLLM passes the body bytes to OpenAILikeError.
+    why: Lossy text would hide a corrupt answer behind a made-up message, and a message is betterlite's own, so the error's status stays LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L97
+kept_bugs:
+  - what: acompletion_stream_function takes fake_stream but never forwards it to make_call, so an async fake stream is sent and read as an ordinary stream.
+    why: A working setup that asks for an async fake stream gets real streaming chunks back and may depend on that; async fake mode makes no difference in the payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L146
+  - what: make_call writes the completion stream object itself into the post-call log's original_response, where betterlite records the fixed text "stream", because an iterator has no JSON form.
+    why: A setup reading proxy logs sees a stand-in for the object LiteLLM logs, and no working setup can parse the iterator's repr out of a log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L73
+  - what: A true custom_endpoint argument short-circuits the option pop, so custom_endpoint stays in optional_params and is sent in the request body, while a false or absent argument removes it.
+    why: A provider that ignores unknown body keys accepts the extra field, and a setup passing the argument as True sends it today, so removing it would change the request body it relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L249
