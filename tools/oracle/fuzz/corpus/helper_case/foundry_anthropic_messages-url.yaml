@@ -1,0 +1,12 @@
+kind: helper
+name: foundry-anthropic-messages-url
+call:
+  foundry_anthropic_messages:
+    function: url
+    api_bases:
+      - https://r.services.ai.azure.com/anthropic/?x=1
+      - null
+    environment:
+      AZURE_API_BASE: https://env.services.ai.azure.com
+env: {}
+compare: {ignore: []}
