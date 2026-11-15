@@ -41,7 +41,7 @@ impl Fixture {
         })
     }
 
-    pub(super) fn source<'fixture>(
+    pub(super) const fn source<'fixture>(
         &'fixture self,
         custom_prompt_dict: &'fixture BTreeMap<String, CustomPromptEntry>,
     ) -> PromptSource<'fixture> {
@@ -64,9 +64,9 @@ pub(super) fn tiktoken() -> Result<Engine, Box<HelperError>> {
 
 pub(super) fn blank_response(content: &str) -> Result<ChatResponse, Box<HelperError>> {
     let body = json!({
-        "id": "chatcmpl-kept", "object": "chat.completion", "created": 1, "model": "unset",
+        "id": "chatcmpl-kept", "object": "chat.completion", "created": 1_i32, "model": "unset",
         "choices": [
-            {"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": null},
+            {"index": 0_i32, "message": {"role": "assistant", "content": content}, "finish_reason": null},
         ],
     });
     serde_json::from_value(body).or_value_error()

@@ -9,8 +9,9 @@ use rstest::rstest;
 
 use super::{OptionValues, Settings};
 use crate::loader::{ConfigError, ConfigLoader};
+use crate::types::Config;
 
-fn loaded(source: &str, environment: &[(&str, &str)]) -> Result<crate::types::Config, ConfigError> {
+fn loaded(source: &str, environment: &[(&str, &str)]) -> Result<Config, ConfigError> {
     let lookup = environment
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
