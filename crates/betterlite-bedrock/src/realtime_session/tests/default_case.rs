@@ -2,7 +2,8 @@ use rust_decimal::Decimal;
 
 use super::support::{AUDIO_CONTENT, CONTENT, PROMPT, session};
 use crate::realtime_session::records::{
-    AudioSettings, ExactDecimal, MaxResponseTokens, Setting, UsageDetails, UsageEvent,
+    AudioSettings, BedrockContentEnd, ExactDecimal, MaxResponseTokens, Setting, UsageDetails,
+    UsageEvent, UsageTokens,
 };
 
 const USAGE_ZERO: &str = concat!(
@@ -15,6 +16,7 @@ pub(super) fn default_session_configuration() {
     default_inference_configuration();
     default_prompt_configuration();
     partial_usage_event_zero_fills();
+    content_end_defaults();
 }
 
 fn partial_usage_event_zero_fills() {
@@ -24,6 +26,19 @@ fn partial_usage_event_zero_fills() {
     assert_eq!(usage.total_output_tokens, 0);
     assert_eq!(usage.total_tokens, 0);
     assert_eq!(usage.details, UsageDetails::default());
+    let nested: UsageEvent =
+        serde_json::from_str(r#"{"details":{"total":{"input":{"speechTokens":3}}}}"#)
+            .expect("a nested partial usage event");
+    assert_eq!(nested.details.total.input.speech_tokens, 3);
+    assert_eq!(nested.details.total.output, UsageTokens::default());
+}
+
+fn content_end_defaults() {
+    let empty: BedrockContentEnd = serde_json::from_str("{}").expect("an empty content end");
+    assert_eq!(empty, BedrockContentEnd::default());
+    let stopped: BedrockContentEnd =
+        serde_json::from_str(r#"{"stopReason":"END_TURN"}"#).expect("a stopped content end");
+    assert_eq!(stopped.stop_reason, Some("END_TURN".to_owned()));
 }
 
 fn default_session_state() {
