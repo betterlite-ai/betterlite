@@ -99,13 +99,22 @@ impl Reading {
             if let Some(error) = self.error.take() {
                 return Some(self.stop(error));
             }
+            // the decoder's last chunk comes out once the body ended, and the stream stays finished after it
             if self.ended {
-                return self.finish();
+                self.done = true;
+                return match self.decoder.finish() {
+                    Ok(None) => None,
+                    Ok(Some(chunk)) => Some(Ok(chunk)),
+                    Err(source) => Some(Err(GeminiStreamError::Chunk(source))),
+                };
             }
             match self.chunks.next().await {
                 Some(Ok(bytes)) => self.absorb(&bytes),
                 Some(Err(source)) => self.error = Some(body_error(source)),
-                None => self.end(),
+                None => {
+                    self.lines.flush(&mut self.pending);
+                    self.ended = true;
+                }
             }
         }
     }
@@ -116,25 +125,10 @@ impl Reading {
         Err(error)
     }
 
-    // the decoder's last chunk comes out once the body ended, and the stream stays finished after it
-    fn finish(&mut self) -> Option<Result<StreamChunk, GeminiStreamError>> {
-        self.done = true;
-        match self.decoder.finish() {
-            Ok(None) => None,
-            Ok(Some(chunk)) => Some(Ok(chunk)),
-            Err(source) => Some(Err(GeminiStreamError::Chunk(source))),
-        }
-    }
-
     fn absorb(&mut self, bytes: &[u8]) {
         if let Err(source) = self.lines.push(bytes, &mut self.pending) {
             self.error = Some(GeminiStreamError::Line { source });
         }
-    }
-
-    fn end(&mut self) {
-        self.lines.flush(&mut self.pending);
-        self.ended = true;
     }
 }
 
