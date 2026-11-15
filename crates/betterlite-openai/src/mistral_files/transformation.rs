@@ -5,6 +5,7 @@ use crate::mistral_identity::base_url;
 use betterlite_config::sections::mistral_resources::Settings;
 use betterlite_http::url_path::encode_segment;
 use betterlite_prompts::media_metadata::{FileData, extract_file_data};
+pub const SUPPORTED_OPENAI_PARAMS: &[&str] = &["purpose"];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileUploadRequest {
     pub file: FileData,

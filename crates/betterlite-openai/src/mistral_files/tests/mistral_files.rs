@@ -8,8 +8,8 @@ use rstest::rstest;
 use super::super::error::MistralFilesError;
 use super::super::records::{MistralFile, MistralFileDeleted, MistralPurpose};
 use super::super::transformation::{
-    FileUploadRequest, create_upload, file_url, list_request, openai_purpose, to_file_deleted,
-    to_file_object, upload_purpose,
+    FileUploadRequest, SUPPORTED_OPENAI_PARAMS, create_upload, file_url, list_request,
+    openai_purpose, to_file_deleted, to_file_object, upload_purpose,
 };
 use super::settings;
 use crate::files::records::{BinaryContent, FileKind, FileStatus, FilesPurpose};
@@ -23,6 +23,11 @@ fn upload(file_data: FileData, purpose: Option<&str>) -> FileUploadRequest {
         file: file_data,
         purpose: purpose.map(str::to_owned),
     }
+}
+
+#[test]
+fn only_purpose_is_advertised() {
+    assert_eq!(SUPPORTED_OPENAI_PARAMS, ["purpose"]);
 }
 
 #[rstest]
