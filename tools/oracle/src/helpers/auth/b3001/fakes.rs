@@ -36,7 +36,7 @@ impl ModelInfoSource for FakeModelInfo<'_> {
         let mut info = entry.clone();
         for field in PER_TOKEN_RATES {
             if matches!(info.get(field), None | Some(Json::Null)) {
-                info.insert(field.to_owned(), Json::Number(Number::from(0)));
+                info.insert(field.to_owned(), Json::Number(Number::from(0_u64)));
             }
         }
         Ok(Some(info))
@@ -133,7 +133,7 @@ fn fill_paired_rates(info: &mut JsonObject) {
     } else {
         output_field
     };
-    info.insert(missing.to_owned(), Json::Number(Number::from(0)));
+    info.insert(missing.to_owned(), Json::Number(Number::from(0_u64)));
 }
 
 fn text_value(value: Option<&Json>) -> Option<String> {

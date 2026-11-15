@@ -37,7 +37,7 @@ fn reject_uncountable_estimate(input: &Input) -> Result<(), Box<HelperError>> {
     if !countable {
         return Ok(());
     }
-    let reused = input.input_token_counts.is_some();
+    let reused = input.token_counts.is_some();
     if reused && !matches!(input.function, Function::Count) {
         return Ok(());
     }
@@ -77,7 +77,7 @@ async fn dispatch(
     request: &EstimateRequest<'_>,
     sources: &EstimateSources<'_>,
 ) -> HelperResult {
-    let counts = input.input_token_counts.as_ref();
+    let counts = input.token_counts.as_ref();
     match input.function {
         Function::MaxCost => {
             let amount = estimate_request_max_cost(request, sources, counts)

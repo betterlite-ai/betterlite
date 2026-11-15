@@ -26,6 +26,7 @@ pub(crate) struct Input {
     pub(crate) request: JsonObject,
     pub(crate) route: String,
     pub(crate) model_cost: BTreeMap<String, JsonObject>,
-    pub(crate) input_token_counts: Option<IndexMap<String, usize>>,
+    #[serde(rename = "input_token_counts")]
+    pub(crate) token_counts: Option<IndexMap<String, usize>>,
     pub(crate) model_list: Vec<Deployment>,
 }
