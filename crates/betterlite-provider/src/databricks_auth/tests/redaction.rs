@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
 
-use betterlite_prompts::arguments::json::Json;
 use crate::databricks_auth::Headers;
-use crate::databricks_auth::redaction::{
-    redact_headers_for_logging, redact_sensitive_data,
-};
+use crate::databricks_auth::redaction::{redact_headers_for_logging, redact_sensitive_data};
+use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 use serde_json::json;
 

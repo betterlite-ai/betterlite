@@ -220,19 +220,22 @@ fn a_custom_embedding_endpoint_keeps_the_base() {
 #[test]
 fn a_wrongly_typed_user_agent_is_a_400_naming_the_field() {
     let pat = key();
-    let error = prepare(
+    let Err(error) = prepare(
         params(&[("user_agent", Json::Number(serde_json::Number::from(5)))]),
         Some(&pat),
         Some("https://host"),
-    )
-    .expect_err("a number is not a user agent");
+    ) else {
+        panic!("a number is not a user agent");
+    };
     assert_eq!(error.status_code, 400);
     assert!(error.message.contains("user_agent"));
 }
 
 #[test]
 fn a_missing_key_reaches_the_sdk_error() {
-    let error = prepare(params(&[]), None, Some("https://host")).expect_err("no key");
+    let Err(error) = prepare(params(&[]), None, Some("https://host")) else {
+        panic!("no key");
+    };
     assert_eq!(error.status_code, 400);
     assert_eq!(error.message, SDK_CREDENTIALS);
 }

@@ -48,9 +48,8 @@ async fn authenticate(
     tokens: &dyn OauthTokenSource,
 ) -> Result<(String, Headers), DatabricksError> {
     let mut headers = request.headers;
-    if let Some((client_id, client_secret, base)) =
-        oauth_credentials(env, request.api_base.as_deref())
-    {
+    let oauth = oauth_credentials(env, request.api_base.as_deref());
+    if let Some((client_id, client_secret, base)) = oauth {
         debug!("Using OAuth M2M authentication for Databricks");
         let token_request = oauth_token_request(base, client_id, client_secret.expose_secret());
         let token = request_oauth_token(&token_request, tokens).await?;
@@ -60,7 +59,11 @@ async fn authenticate(
             format!("Bearer {}", token.expose_secret()),
         );
         map.insert("Content-Type".to_owned(), "application/json".to_owned());
-    } else if request.api_key.is_none() && headers.as_ref().is_none_or(|map| map.is_empty()) {
+    }
+    if oauth.is_none()
+        && request.api_key.is_none()
+        && headers.as_ref().is_none_or(|map| map.is_empty())
+    {
         return Err(DatabricksError {
             status_code: 400,
             message: if request.custom_endpoint {

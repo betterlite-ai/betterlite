@@ -60,6 +60,6 @@ pub fn workspace(url: &str) -> String {
     match (parts.scheme, parts.authority) {
         (Some(scheme), Some(authority)) => format!("{}://{authority}", scheme.to_ascii_lowercase()),
         (None, Some(authority)) => format!("//{authority}"),
-        (Some(_), None) | (None, None) => String::new(),
+        (_, None) => String::new(),
     }
 }

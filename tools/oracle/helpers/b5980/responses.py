@@ -1,6 +1,14 @@
+from litellm.llms.databricks.responses.transformation import DatabricksResponsesAPIConfig
 from pydantic import JsonValue
+from typing_extensions import override
 
-from .common import ResponsesApi, ResponsesConfig, UrlCase, guarded
+from .common import ResponsesApi, UrlCase, guarded
+
+
+class ResponsesConfig(DatabricksResponsesAPIConfig):
+    @override
+    def __init__(self) -> None:
+        pass
 
 
 def url_of(config: ResponsesApi, case: UrlCase) -> dict[str, JsonValue]:

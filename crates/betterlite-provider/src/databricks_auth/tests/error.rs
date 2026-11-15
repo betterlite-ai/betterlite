@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use betterlite_openai::error::ProviderError;
 use crate::databricks_auth::error::DatabricksError;
+use betterlite_openai::error::ProviderError;
 
 #[test]
 fn a_databricks_error_converts_to_the_gateway_error() {

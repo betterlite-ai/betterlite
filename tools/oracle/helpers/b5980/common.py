@@ -3,7 +3,6 @@ from typing import ClassVar, Literal, NotRequired, ParamSpec, Protocol, TypedDic
 
 import httpx
 import requests
-from litellm.llms.databricks.responses.transformation import DatabricksResponsesAPIConfig
 from litellm.types.utils import EmbeddingResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 from requests import PreparedRequest
@@ -129,7 +128,7 @@ EmbedCall = Callable[
 
 class AuthApi(Protocol):
     @property
-    def databricks_validate_environment(self) -> AuthCall: ...  # ast-grep-ignore: no-long-names
+    def databricks_validate_environment(self) -> AuthCall: ...
 
 
 class ChatApi(Protocol):
@@ -145,12 +144,6 @@ class ChatApi(Protocol):
 
 class ResponsesApi(Protocol):
     def get_complete_url(self, api_base: str | None, litellm_params: dict[str, str]) -> str: ...
-
-
-class ResponsesConfig(DatabricksResponsesAPIConfig):
-    @override
-    def __init__(self) -> None:
-        pass
 
 
 class EmbeddingApi(Protocol):

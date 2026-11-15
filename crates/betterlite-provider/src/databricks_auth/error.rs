@@ -21,7 +21,7 @@ impl From<DatabricksError> for ProviderError {
     fn from(error: DatabricksError) -> Self {
         let headers: Option<Vec<(String, String)>> = error
             .headers
-            .map(|pairs| pairs.into_iter().collect())
+            .map(|pairs| pairs.into_iter().collect::<Vec<_>>())
             .filter(|pairs| !pairs.is_empty());
         Self::from(ProviderErrorParts {
             status_code: error.status_code,

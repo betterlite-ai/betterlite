@@ -5,13 +5,13 @@ use crate::databricks_auth::Headers;
 
 const SENSITIVE_PATTERNS: [(&str, &str); 6] = [
     (r"(?i)(Bearer\s+)[A-Za-z0-9_.-]+", "${1}[REDACTED]"),
-    (r#"(?i)(Authorization:\s*)[^\s,}]+"#, "${1}[REDACTED]"),
+    (r"(?i)(Authorization:\s*)[^\s,}]+", "${1}[REDACTED]"),
     (r#"(?i)(api[_-]?key["\s:=]+)[^\s,}"']+"#, "${1}[REDACTED]"),
     (
         r#"(?i)(client[_-]?secret["\s:=]+)[^\s,}"']+"#,
         "${1}[REDACTED]",
     ),
-    (r"(?i)(dapi[a-zA-Z0-9]{32,})", "[REDACTED_PAT]"),
+    ("(?i)(dapi[a-zA-Z0-9]{32,})", "[REDACTED_PAT]"),
     (
         r#"(?i)(access[_-]?token["\s:=]+)[^\s,}"']+"#,
         "${1}[REDACTED]",

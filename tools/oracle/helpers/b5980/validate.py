@@ -11,12 +11,12 @@ from .common import (
     Input,
     RecordingAdapter,
     ResponsesApi,
-    ResponsesConfig,
     UserAgentCase,
     ValidateCase,
     cases_of,
     guarded,
 )
+from .responses import ResponsesConfig
 
 GATEWAY_MODEL = "a.b.c"
 
