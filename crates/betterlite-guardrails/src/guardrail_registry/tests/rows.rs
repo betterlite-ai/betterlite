@@ -118,4 +118,8 @@ fn rows_sql_stores_json_text_and_reads_it_back() {
     assert!(insert.contains("to_jsonb($3::text)"));
     let active = super::postgres_rows::sql::select_active();
     assert!(active.contains("'litellm_params', litellm_params::text"));
+    assert!(super::postgres_rows::sql::select_by_id().contains("WHERE guardrail_id = $1"));
+    assert!(super::postgres_rows::sql::select_by_name().contains("WHERE guardrail_name = $1"));
+    assert!(super::postgres_rows::sql::update().contains("litellm_params = to_jsonb($3::text)"));
+    assert!(super::postgres_rows::sql::delete().contains("DELETE FROM"));
 }

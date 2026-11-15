@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
@@ -139,6 +141,7 @@ include!("tests/stable_id.rs");
 include!("tests/build.rs");
 include!("tests/scoping.rs");
 include!("tests/rows.rs");
+include!("tests/postgres.rs");
 include!("tests/registry.rs");
 include!("tests/handler.rs");
 include!("tests/changed.rs");

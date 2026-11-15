@@ -30,10 +30,11 @@ pub fn params_changed(
             changed.push(key.clone());
         }
     }
-    if !changed.is_empty() {
-        tracing::debug!(fields = ?changed, "guardrail litellm_params changed");
+    if changed.is_empty() {
+        return Ok(false);
     }
-    Ok(!changed.is_empty())
+    tracing::debug!(fields = ?changed, "guardrail litellm_params changed");
+    Ok(true)
 }
 
 // a key missing on one side reads as null, as dict.get does in LiteLLM
