@@ -13,7 +13,6 @@ use crate::api::messages_chat_output::records::{
 };
 use crate::api::messages_chat_output::usage::project_usage;
 
-#[must_use]
 pub fn content_block(
     choices: &[ChoiceRecord],
     ids: &dyn IdSource,
@@ -58,8 +57,8 @@ fn tool_use_start(tool_call: &ToolCallRecord, ids: &dyn IdSource) -> ContentBloc
         id: normalize_tool_use_id(&raw_id),
         name,
         input: Json::Object(Object::new()),
-        provider_specific_fields: signature.map(|signature| SignatureFields {
-            signature: signature.to_owned(),
+        provider_specific_fields: signature.map(|value| SignatureFields {
+            signature: value.to_owned(),
         }),
     }
 }
@@ -96,7 +95,6 @@ fn thinking_start(delta: &DeltaRecord) -> Result<Option<ContentBlock>, ChatOutpu
     }))
 }
 
-#[must_use]
 pub fn delta(choices: &[ChoiceRecord]) -> Result<DeltaProjection, ChatOutputError> {
     let mut text = String::new();
     let mut thinking = String::new();
@@ -114,8 +112,10 @@ pub fn delta(choices: &[ChoiceRecord]) -> Result<DeltaProjection, ChatOutputErro
             thinking.push_str(&choice.delta.reasoning_content);
         }
     }
-    if let Some(partial_json) = partial_json {
-        return Ok(DeltaProjection::InputJsonDelta { partial_json });
+    if let Some(fragment) = partial_json {
+        return Ok(DeltaProjection::InputJsonDelta {
+            partial_json: fragment,
+        });
     }
     if !signature.is_empty() {
         return Ok(DeltaProjection::SignatureDelta { signature });
@@ -164,7 +164,6 @@ fn thinking_blocks_text(
     Ok(())
 }
 
-#[must_use]
 pub fn terminal_frame(record: &TerminalRecord) -> Result<StreamFrame, ChatOutputError> {
     let Some(choice) = record.choices.first() else {
         return Err(ChatOutputError::NoChoices);

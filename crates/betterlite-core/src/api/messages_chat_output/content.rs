@@ -26,7 +26,6 @@ pub fn anthropic_finish_reason(reason: &str) -> AnthropicStopReason {
     }
 }
 
-#[must_use]
 pub fn content_blocks(
     choices: &[ChoiceRecord],
     tool_name_mapping: Option<&IndexMap<String, String>>,
@@ -69,11 +68,11 @@ fn choice_entries(
 }
 
 fn thinking_entries(message: &MessageRecord) -> Result<Vec<ContentEntry>, ChatOutputError> {
-    let blocks = message
+    let Some(blocks) = message
         .thinking_blocks
         .as_ref()
-        .filter(|blocks| !blocks.is_empty());
-    let Some(blocks) = blocks else {
+        .filter(|values| !values.is_empty())
+    else {
         if message.reasoning_content.is_empty() {
             return Ok(Vec::new());
         }
@@ -172,7 +171,7 @@ fn tool_use_entry(
         id: normalize_tool_use_id(tool_call.id.as_deref().unwrap_or("")),
         name: original_name,
         input,
-        provider_specific_fields: signature.map(|signature| SignatureFields { signature }),
+        provider_specific_fields: signature.map(|value| SignatureFields { signature: value }),
     }))
 }
 

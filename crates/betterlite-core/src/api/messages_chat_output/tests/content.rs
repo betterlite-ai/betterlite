@@ -122,9 +122,7 @@ fn tool_name_mapping_restores_long_name() {
     let choices = choices(
         r#"[{"message": {"tool_calls": [{"id": "t1", "function": {"name": "trunc", "arguments": "{}"}}]}}]"#,
     );
-    let mapping = [("trunc".to_owned(), "original_tool".to_owned())]
-        .into_iter()
-        .collect();
+    let mapping = std::iter::once(("trunc".to_owned(), "original_tool".to_owned())).collect();
     let entries = content_blocks(&choices, Some(&mapping)).expect("translates");
     assert_rendered(
         &entries,

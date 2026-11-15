@@ -16,7 +16,6 @@ use crate::api::messages_options::refusal::refusal_stop_details;
 
 pub const UNKNOWN_MODEL: &str = "unknown-model";
 
-#[must_use]
 pub fn response_message(
     response: &ResponseRecord,
     tool_name_mapping: Option<&IndexMap<String, String>>,
