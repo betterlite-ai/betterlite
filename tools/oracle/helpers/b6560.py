@@ -1,17 +1,19 @@
 import json
 from typing import Literal, TypedDict, TypeVar
 
-from litellm.proxy.guardrails.guardrail_endpoints import _get_fields_from_model
+from litellm.proxy.guardrails.guardrail_endpoints import _get_fields_from_model  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1902
 from litellm.types.guardrails import (
-    BedrockGuardrailConfigModel,
-    BedrockGuardrailStreamingParams,
-    LakeraV2GuardrailConfigModel,
-    PresidioPresidioConfigModelUserInterface,
-    ToolPermissionGuardrailConfigModel,
+    BedrockGuardrailConfigModel as BedrockModel,
+    BedrockGuardrailStreamingParams as BedrockStreaming,
+    LakeraV2GuardrailConfigModel as LakeraModel,
+    PresidioPresidioConfigModelUserInterface as PresidioUI,
 )
 from litellm.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
 from litellm.types.proxy.guardrails.guardrail_hooks.hide_secrets import (
-    HideSecretsGuardrailConfigModel,
+    HideSecretsGuardrailConfigModel as HideSecretsModel,
+)
+from litellm.types.proxy.guardrails.guardrail_hooks.tool_permission import (
+    ToolPermissionGuardrailConfigModel as ToolPermissionModel,
 )
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from pydantic_core import PydanticUndefinedType
@@ -19,6 +21,7 @@ from typing_extensions import override
 
 ANSWERS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 T = TypeVar("T", bound=BaseModel)
+ModelClass = type[GuardrailConfigModel[BaseModel]]
 
 
 class SyntheticEntity(BaseModel):
@@ -88,42 +91,39 @@ class Input(TypedDict):
     model: str
 
 
-def as_answer(fields: dict[str, object]) -> JsonValue:
-    return ANSWERS.validate_json(json.dumps(fields, default=UndefinedAsNull()))
+def as_answer(model_class: type[BaseModel]) -> dict[str, JsonValue]:
+    text = json.dumps(_get_fields_from_model(model_class), default=UndefinedAsNull())
+    return ANSWERS.validate_json(text)
 
 
-def synthetic_fields(model_class: type[GuardrailConfigModel[BaseModel]]) -> dict[str, object]:
-    fields = _get_fields_from_model(model_class)
+def named_answer(model_class: ModelClass) -> dict[str, JsonValue]:
+    fields = as_answer(model_class)
     fields["ui_friendly_name"] = model_class.ui_friendly_name()
     return fields
 
 
-def provider_answers() -> dict[str, dict[str, object]]:
-    bedrock_fields: dict[str, object] = {
-        **_get_fields_from_model(BedrockGuardrailConfigModel),
-        **_get_fields_from_model(BedrockGuardrailStreamingParams),
+def provider_fields() -> dict[str, JsonValue]:
+    models: tuple[ModelClass, ModelClass, ModelClass] = (ToolPermissionModel, HideSecretsModel, LakeraModel)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L12
+    tool_permission, hide_secrets, lakera = models
+    bedrock: dict[str, JsonValue] = {
+        **as_answer(BedrockModel),
+        **as_answer(BedrockStreaming),
     }
-    tool_permission_fields = _get_fields_from_model(ToolPermissionGuardrailConfigModel)
-    tool_permission_fields["ui_friendly_name"] = (
-        ToolPermissionGuardrailConfigModel.ui_friendly_name()
-    )
-    hide_secrets_fields = _get_fields_from_model(HideSecretsGuardrailConfigModel)
-    hide_secrets_fields["ui_friendly_name"] = HideSecretsGuardrailConfigModel.ui_friendly_name()
     return {
-        "bedrock": bedrock_fields,
-        "presidio": _get_fields_from_model(PresidioPresidioConfigModelUserInterface),
-        "lakera_v2": _get_fields_from_model(LakeraV2GuardrailConfigModel),
-        "tool_permission": tool_permission_fields,
-        "hide-secrets": hide_secrets_fields,
-        "synthetic_literal_list": synthetic_fields(SyntheticLiteralList),
-        "synthetic_nested": synthetic_fields(SyntheticNested),
+        "bedrock": bedrock,
+        "presidio": as_answer(PresidioUI),
+        "lakera_v2": as_answer(lakera),
+        "tool_permission": named_answer(tool_permission),
+        "hide-secrets": named_answer(hide_secrets),
+        "synthetic_literal_list": named_answer(SyntheticLiteralList),
+        "synthetic_nested": named_answer(SyntheticNested),
     }
 
 
 def run(input_value: Input) -> JsonValue:
     if input_value["model"] == "synthetic_generic":
         return {
-            "unfilled": as_answer(synthetic_fields(SyntheticGenericUnfilled)),
-            "filled": as_answer(synthetic_fields(SyntheticGenericFilled)),
+            "unfilled": named_answer(SyntheticGenericUnfilled),
+            "filled": named_answer(SyntheticGenericFilled),
         }
-    return as_answer(provider_answers()[input_value["model"]])
+    return provider_fields()[input_value["model"]]
