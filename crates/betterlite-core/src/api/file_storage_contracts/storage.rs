@@ -113,6 +113,7 @@ impl<R: FileContentRepository> FileStorageBackend for LiteLlmDbStorageBackend<R>
 
     async fn delete_file(&self, storage_url: &str) -> Result<(), StorageError> {
         let row_id = storage_url_to_row_id(storage_url)?;
-        self.contents.delete_content(row_id).await
+        self.contents.delete_content(row_id).await?;
+        Ok(())
     }
 }
