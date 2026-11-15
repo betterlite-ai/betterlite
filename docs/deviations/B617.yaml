@@ -9,8 +9,8 @@ deviations:
   - what: 'A reply body whose top-level JSON value is not an object fails with "the response body is not a JSON object", where LiteLLM raises AttributeError from calling get on a list.'
     why: 'LiteLLM lets that AttributeError leave transform_response as an unhandled failure, so the request ends in a 500-class error; the typed error rejects the same malformed reply without the crash.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L223
-  - what: 'A finishReason that is a JSON object or array fails with "the response finishReason field cannot be mapped", where LiteLLM raises TypeError from the dict lookup inside map_finish_reason.'
-    why: 'The TypeError leaves transform_response unhandled in LiteLLM, so the request ends in a 500-class error; the typed error reports the malformed provider reply instead.'
+  - what: 'A finishReason that is a JSON object or array, or a number with a fraction or exponent, fails with "the response finishReason field cannot be mapped", where LiteLLM raises TypeError for an object or array and maps a fractional number to stop.'
+    why: 'The Bedrock field model carries a JSON number with a fraction as a mapping, the same shape an object has, so the reply cannot tell them apart; an object or array is a malformed reply, and the typed error names the field instead of the unhandled TypeError.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L227
   - what: 'A reply message that is truthy but not a string fails with "the response message field is not a string", where LiteLLM assigns the value to message.content as it is.'
     why: 'The reply message content is a string in betterlite, and a non-string value on a field the provider documents as text is a malformed reply rather than content to pass through.'
