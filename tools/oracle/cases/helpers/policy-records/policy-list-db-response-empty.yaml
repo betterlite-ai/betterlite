@@ -1,0 +1,20 @@
+kind: helper
+name: policy-list-db-response-empty
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyListDBResponse
+    value: {}
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyListDBResponse
+      value:
+        policies:
+          - policy_id: p1
+            policy_name: baseline
+        total_count: 1
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: tool-spend-dedup-seed
+call:
+  tool_spend:
+    transaction:
+      request_id: req-1
+      start_time_iso: "2026-01-02T00:30:00Z"
+      mcp_namespaced_tool_name: mcp__search
+      spend: 1.25
+      total_tokens: 42
+      completion_response:
+        choices:
+          - message:
+              tool_calls:
+                - function: {name: search, arguments: "{}"}
+      realtime_tool_calls:
+        - function: {name: search}
+env: {}
+compare: {ignore: []}

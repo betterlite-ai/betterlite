@@ -1,0 +1,58 @@
+kind: helper
+name: thinking-extra-body
+call:
+  proxy_options:
+    operation: chat_request
+    params:
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        non_default:
+          thinking:
+            type: enabled
+            budget_tokens: 1024
+        optional_params: {}
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        non_default:
+          thinking: null
+        optional_params: {}
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        non_default:
+          thinking: new
+          temperature: 0.4
+        optional_params:
+          extra_body:
+            caller: 1
+            thinking: old
+      - model: openai/gpt-4o
+        messages:
+          - role: system
+            content: be brief
+          - role: user
+            content: hi
+        non_default:
+          temperature: 0.9
+          top_p: 0.5
+          stream: true
+          reasoning_effort: low
+          verbosity: medium
+          include_server_side_tool_invocations: true
+          response_format:
+            type: json_object
+          user: user-1
+          api_base: https://ignored.example
+          max_retries: 2
+          service_tier: auto
+          store: true
+          parallel_tool_calls: false
+          unknown_param: 1
+        optional_params: {}
+env: {}
+compare: {ignore: []}
