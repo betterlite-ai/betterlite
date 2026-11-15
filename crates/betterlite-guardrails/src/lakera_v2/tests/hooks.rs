@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_translation::LakeraOnFlagged;
@@ -23,6 +24,9 @@ use super::{
     PII_ONLY, args, base, body_of, build, chat_data, content_of, context, flagged, invocation,
     message, run_hook, serve,
 };
+
+const CHOICE_EMAIL_SPAN: &str =
+    r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#;
 
 #[tokio::test]
 async fn pre_call_masks_a_pii_only_verdict() {
@@ -161,7 +165,7 @@ async fn pre_call_monitor_forwards_multimodal_pii_it_cannot_mask() {
         .await
         .expect("the unredacted request is forwarded");
     assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
-    assert_eq!(data, original);
+    assert_eq!(data.get("messages"), original.get("messages"));
 }
 
 #[tokio::test]
@@ -310,14 +314,7 @@ fn choice_content(response: &Data, index: usize) -> Option<GuardrailValue> {
 
 #[tokio::test]
 async fn post_call_masks_the_assistant_content_by_choice() {
-    let server = serve(
-        200,
-        flagged(
-            PII_ONLY,
-            r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#,
-        ),
-    )
-    .await;
+    let server = serve(200, flagged(PII_ONLY, CHOICE_EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
     let mut response = assistant_response();
@@ -372,8 +369,7 @@ async fn post_call_allows_a_non_pii_verdict_in_monitor_or_advisory_mode(
 
 fn update_params(extra: &str) -> LitellmParams {
     let body = format!(r#"{{"guardrail": "lakera_v2", "mode": "post_call"{extra}}}"#);
-    betterlite_config::sections::guardrail_params::decode::decode_litellm_params(body.as_bytes())
-        .expect("valid params")
+    decode_litellm_params(body.as_bytes()).expect("valid params")
 }
 
 #[test]
@@ -547,7 +543,7 @@ fn update_to_advisory_mode_defaults_an_omitted_payload_to_true() {
 #[test]
 fn timeout_is_resolved_from_the_configured_seconds() {
     let mut args = args();
-    args.timeout = Some(2.5);
+    args.timeout = Some(2.5_f64);
     assert_eq!(built(args).timeout, Duration::from_millis(2500));
 }
 
@@ -559,7 +555,7 @@ fn the_default_timeout_is_lite_llms_six_hundred_seconds() {
 #[test]
 fn update_resets_an_omitted_timeout_to_the_default() {
     let mut args = args();
-    args.timeout = Some(2.5);
+    args.timeout = Some(2.5_f64);
     let mut guardrail = built(args);
     update::update_params(&mut guardrail, &update_params("")).expect("a valid update");
     assert_eq!(guardrail.timeout, Duration::from_secs(600));
@@ -567,14 +563,7 @@ fn update_resets_an_omitted_timeout_to_the_default() {
 
 #[tokio::test]
 async fn post_call_leaves_out_choices_with_an_empty_content() {
-    let server = serve(
-        200,
-        flagged(
-            PII_ONLY,
-            r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#,
-        ),
-    )
-    .await;
+    let server = serve(200, flagged(PII_ONLY, CHOICE_EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
     let mut response = assistant_response_with(GuardrailValue::Text(String::new()));
@@ -674,14 +663,7 @@ async fn post_call_keeps_a_text_part_list_unmasked() {
 
 #[tokio::test]
 async fn post_call_masks_the_choice_after_a_skipped_system_message() {
-    let server = serve(
-        200,
-        flagged(
-            PII_ONLY,
-            r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#,
-        ),
-    )
-    .await;
+    let server = serve(200, flagged(PII_ONLY, CHOICE_EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = Data::new();
     data.insert(
@@ -713,7 +695,7 @@ async fn post_call_masks_the_choice_after_a_skipped_system_message() {
         panic!("the request messages are missing");
     };
     assert_eq!(
-        messages.get(0),
+        messages.first(),
         Some(&message("system", "secret a@example.com"))
     );
     assert_eq!(

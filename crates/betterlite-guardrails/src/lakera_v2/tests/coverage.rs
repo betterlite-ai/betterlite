@@ -29,10 +29,18 @@ fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())
 }
 
-fn flags(skip_system_message: bool, skip_tool_message: bool) -> ScopeFlags {
+#[derive(Clone, Copy)]
+enum Skip {
+    Nothing,
+    System,
+    Tool,
+    Both,
+}
+
+fn flags(skipped: Skip) -> ScopeFlags {
     ScopeFlags {
-        skip_system_message,
-        skip_tool_message,
+        skip_system_message: matches!(skipped, Skip::System | Skip::Both),
+        skip_tool_message: matches!(skipped, Skip::Tool | Skip::Both),
         scan: ScanScope::AllMessages,
     }
 }
@@ -124,13 +132,13 @@ fn a_null_input_is_not_a_combined_input() {
 #[test]
 fn only_non_empty_instructions_that_are_not_skipped_count() {
     let mut data = Data::new();
-    assert!(!has_responses_instructions(&data, flags(false, false)));
+    assert!(!has_responses_instructions(&data, flags(Skip::Nothing)));
     data.insert("instructions".to_owned(), text(""));
-    assert!(!has_responses_instructions(&data, flags(false, false)));
+    assert!(!has_responses_instructions(&data, flags(Skip::Nothing)));
     data.insert("instructions".to_owned(), text("be brief"));
-    assert!(has_responses_instructions(&data, flags(false, false)));
-    assert!(!has_responses_instructions(&data, flags(true, false)));
-    assert!(has_responses_instructions(&data, flags(false, true)));
+    assert!(has_responses_instructions(&data, flags(Skip::Nothing)));
+    assert!(!has_responses_instructions(&data, flags(Skip::System)));
+    assert!(has_responses_instructions(&data, flags(Skip::Tool)));
 }
 
 #[test]
@@ -158,18 +166,18 @@ fn masking_scope_indices_follow_the_skip_flags_and_lowercased_roles() {
         ])),
     ];
     assert_eq!(
-        pre_masking_scope_indices(&messages, flags(false, false)),
+        pre_masking_scope_indices(&messages, flags(Skip::Nothing)),
         [0, 1, 2]
     );
     assert_eq!(
-        pre_masking_scope_indices(&messages, flags(true, false)),
+        pre_masking_scope_indices(&messages, flags(Skip::System)),
         [1, 2]
     );
     assert_eq!(
-        pre_masking_scope_indices(&messages, flags(false, true)),
+        pre_masking_scope_indices(&messages, flags(Skip::Tool)),
         [0, 1]
     );
-    assert_eq!(pre_masking_scope_indices(&messages, flags(true, true)), [1]);
+    assert_eq!(pre_masking_scope_indices(&messages, flags(Skip::Both)), [1]);
 }
 
 #[tokio::test]
@@ -256,7 +264,7 @@ async fn pre_call_masks_around_a_skipped_system_message_and_keeps_other_fields()
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
-    let mut call_context = context(flags(true, false), &mut call, &sink, &suppressed);
+    let mut call_context = context(flags(Skip::System), &mut call, &sink, &suppressed);
     pre_call(&guardrail, &mut data, &mut call_context)
         .await
         .expect("masked");
@@ -336,7 +344,7 @@ async fn call_v2_guard_records_the_clock_times() {
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
-    let mut call_context = context(flags(false, false), &mut call, &sink, &suppressed);
+    let mut call_context = context(flags(Skip::Nothing), &mut call, &sink, &suppressed);
     guardrail
         .call_v2_guard(
             &[lakera_message("user", "hi")],
@@ -346,11 +354,16 @@ async fn call_v2_guard_records_the_clock_times() {
         )
         .await
         .expect("an answer");
-    let records = sink.records.lock().unwrap();
-    let record = records.first().expect("one record");
-    assert_eq!(record.start_time, Some(1_700_000_000.0));
-    assert_eq!(record.end_time, Some(1_700_000_001.0));
-    assert_eq!(record.duration, Some(1.0));
+    let record = sink
+        .records
+        .lock()
+        .unwrap()
+        .first()
+        .cloned()
+        .expect("one record");
+    assert_eq!(record.start_time, Some(1_700_000_000.0_f64));
+    assert_eq!(record.end_time, Some(1_700_000_001.0_f64));
+    assert_eq!(record.duration, Some(1.0_f64));
 }
 
 fn breakdown_of(items: usize) -> String {
@@ -374,8 +387,8 @@ async fn call_v2_guard_reads_an_answer_of_several_kilobytes() {
 }
 
 #[rstest]
-#[case::configured_allows(Some(1000.0), Duration::from_secs(500), true)]
-#[case::configured_expires(Some(100.0), Duration::from_secs(500), false)]
+#[case::configured_allows(Some(1000.0_f64), Duration::from_secs(500), true)]
+#[case::configured_expires(Some(100.0_f64), Duration::from_secs(500), false)]
 #[case::default_allows(None, Duration::from_secs(500), true)]
 #[case::default_expires(None, Duration::from_secs(700), false)]
 #[tokio::test(start_paused = true)]
@@ -396,7 +409,7 @@ async fn a_stalled_guard_call_ends_at_its_timeout(
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
-    let mut call_context = context(flags(false, false), &mut call, &sink, &suppressed);
+    let mut call_context = context(flags(Skip::Nothing), &mut call, &sink, &suppressed);
     let result = guardrail
         .call_v2_guard(
             &[lakera_message("user", "hi")],
@@ -410,9 +423,8 @@ async fn a_stalled_guard_call_ends_at_its_timeout(
         return;
     }
     let error = result.expect_err("the answer arrives after the timeout");
-    let source = match error {
-        LakeraV2Error::Transport { source } => source,
-        other => panic!("expected the timeout as a transport error: {other:?}"),
+    let LakeraV2Error::Transport { source } = &error else {
+        panic!("expected the timeout as a transport error: {error:?}");
     };
     assert!(source.is_timeout(), "{source}");
 }
@@ -425,7 +437,7 @@ async fn call_v2_guard_refuses_an_answer_over_one_mebibyte() {
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
-    let mut call_context = context(flags(false, false), &mut call, &sink, &suppressed);
+    let mut call_context = context(flags(Skip::Nothing), &mut call, &sink, &suppressed);
     let error = guardrail
         .call_v2_guard(
             &[lakera_message("user", "hi")],
