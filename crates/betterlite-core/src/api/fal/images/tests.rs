@@ -34,12 +34,12 @@ fn provider(
     width: Option<u64>,
     height: Option<u64>,
     content_type: Option<&str>,
-) -> Option<FalImageProviderSpecificFields> {
-    Some(FalImageProviderSpecificFields {
+) -> FalImageProviderSpecificFields {
+    FalImageProviderSpecificFields {
         width,
         height,
         content_type: content_type.map(str::to_owned),
-    })
+    }
 }
 
 fn decoded(body: &str) -> Vec<FalImage> {
@@ -69,7 +69,7 @@ fn fal_image_reply_reads_string_and_map_entries() {
             FalImage {
                 url: Some("https://b.test/2.png".to_owned()),
                 b64_json: Some("aGk=".to_owned()),
-                provider_specific_fields: provider(Some(10), Some(20), Some("image/png")),
+                provider_specific_fields: Some(provider(Some(10), Some(20), Some("image/png"))),
             },
             FalImage {
                 url: None,
@@ -100,7 +100,7 @@ fn fal_image_reply_ignores_other_list_members() {
 }
 
 #[rstest]
-#[case::missing(r#"{}"#)]
+#[case::missing("{}")]
 #[case::object(r#"{"images": {"url": "https://a.test/1.png"}}"#)]
 #[case::text(r#"{"images": "https://a.test/1.png"}"#)]
 #[case::number(r#"{"images": 1}"#)]
@@ -152,7 +152,7 @@ fn fal_image_reply_keeps_an_empty_content_type() {
     let images = decoded(r#"{"images": [{"content_type": ""}]}"#);
     assert_eq!(
         images[0].provider_specific_fields,
-        provider(None, None, Some(""))
+        Some(provider(None, None, Some("")))
     );
 }
 
