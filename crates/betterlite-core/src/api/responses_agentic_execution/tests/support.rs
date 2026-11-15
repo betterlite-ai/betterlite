@@ -432,12 +432,18 @@ pub(crate) fn plan_harness(fixture: Fixture, script: Script) -> PlanHarness {
     let order = Arc::new(Mutex::new(Vec::new()));
     let callback = recording("cb", script, &order);
     let provider_kwargs = fixture.kwargs.clone();
+    let defaults = PlanState::default();
     PlanHarness {
         fixture,
         callback,
         state: PlanState {
+            gate: defaults.gate,
+            tool_calls: defaults.tool_calls,
+            settings: defaults.settings,
+            fingerprint: defaults.fingerprint,
+            hook_kwargs: defaults.hook_kwargs,
             provider_kwargs,
-            ..PlanState::default()
+            logging: defaults.logging,
         },
     }
 }

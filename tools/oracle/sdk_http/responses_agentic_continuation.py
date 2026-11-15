@@ -28,6 +28,15 @@ class Identity(TypedDict):
 IDENTITY: TypeAdapter[Identity] = TypeAdapter(Identity)
 
 
+class StreamingAnswerError(TypeError):
+    def __init__(self) -> None:
+        super().__init__("the responses surface answered with a streaming iterator")
+
+
+class ScriptedCallbackError(ValueError):
+    pass
+
+
 class GateScript(BaseModel):
     model_config = ConfigDict(extra="forbid")
     run: bool
@@ -71,7 +80,7 @@ class GateCallback(CustomLogger):
         kwargs: dict[str, Json],
     ) -> tuple[bool, dict[str, Json]]:
         if self.script.gate_error is not None:
-            raise ValueError(self.script.gate_error)
+            raise ScriptedCallbackError(self.script.gate_error)
         gate = self.script.gate
         if gate is None:
             return False, {}
@@ -96,7 +105,7 @@ class PlanCallback(GateCallback):
         kwargs: dict[str, Json],
     ) -> AgenticLoopPlan:
         if self.script.plan_error is not None:
-            raise ValueError(self.script.plan_error)
+            raise ScriptedCallbackError(self.script.plan_error)
         plan = self.script.plan
         return AgenticLoopPlan() if plan is None else PLAN.validate_python(plan)
 
@@ -140,7 +149,7 @@ async def execute(call: ContinuationCall, api_base: str) -> Json:
             identity = IDENTITY.validate_json(result.model_dump_json())
             outcome["returned"] = JSON.validate_python(identity)
         case BaseResponsesAPIStreamingIterator():
-            raise ValueError("the responses surface answered with a streaming iterator")
+            raise StreamingAnswerError
     return outcome
 
 
