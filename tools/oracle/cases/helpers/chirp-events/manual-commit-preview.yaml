@@ -1,0 +1,38 @@
+kind: helper
+name: chirp-events-manual-commit-preview
+call:
+  chirp_events:
+    function: trace
+    session_id: sess_manual
+    session:
+      model: chirp_2
+      language: null
+      sample_rate: 24000
+      server_vad: false
+    frames:
+      - kind: response
+        speech_event: none
+        results:
+          - transcript: draft
+            is_final: false
+        billed_seconds: 0.25
+      - kind: response
+        speech_event: none
+        results:
+          - transcript: final one
+            is_final: true
+        billed_seconds: 0.5
+      - kind: response
+        speech_event: end
+        results: []
+        billed_seconds: 0.5
+      - kind: turn_finished
+env: {}
+compare:
+  ignore:
+    - pointer: /value/events/0/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/events/1/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/events/2/event_id
+      why: both sides generate their own event ids
