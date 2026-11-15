@@ -1,0 +1,15 @@
+kind: helper
+name: response-shapes
+call:
+  b5848:
+    steps:
+      - kind: response
+        model: "model"
+        status: 200
+        body: '[{"index": 0, "score": 0.5, "text": "first"}, {"index": 1}]'
+        request_data: {query: "q", texts: ["first"], return_text: true}
+        token_counts: [2, 3]
+        id: "9f6b2b0e-6a1e-4c1e-9a5f-1f2c3d4e5f60"
+      - {kind: validate_environment, headers: {x-call: kept}, api_key: "sk-hf", api_base: null}
+env: {}
+compare: {ignore: []}
