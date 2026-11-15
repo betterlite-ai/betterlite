@@ -184,8 +184,7 @@ impl LangfusePromptManagement {
             completion_start_time: parts.completion_start_time,
             level: parts.level,
             status_message: parts.status_message.as_deref(),
-            litellm_trace_id: Some(event.payload.trace_id.as_str())
-                .filter(|trace| !trace.is_empty()),
+            litellm_trace_id: Some(event.payload.trace_id.as_str()),
             vertex_location: None,
             aws_region_name: None,
             preset_cache_key: None,

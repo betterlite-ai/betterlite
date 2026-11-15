@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use super::support;
+use crate::langfuse_logger::LangfuseLoggerError;
+use crate::langfuse_prompt_management::LangfusePromptManagementError;
 use crate::langfuse_prompt_management::clients::{
     LangfusePromptClients, PROMPT_CLIENT_CACHE_CAPACITY, PromptClientRequest,
 };
@@ -105,6 +107,26 @@ async fn the_eleventh_client_evicts_the_least_recently_used_one() {
         )
         .expect("the newest client is still cached");
     assert_eq!(builder.configs().len(), PROMPT_CLIENT_CACHE_CAPACITY + 2);
+}
+
+#[tokio::test]
+async fn an_unusable_prompt_cache_ttl_is_reported_without_building_a_client() {
+    let builder = support::RecordingBuilder::default();
+    let mut variables = support::env(support::HOST);
+    variables.push((
+        "LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS",
+        "soon".to_owned(),
+    ));
+    let services = support::services(&support::borrowed(&variables), Arc::new(builder.clone()));
+    let clients = LangfusePromptClients::default();
+    let result = clients.client_init(&services, &request("pk-1", support::HOST));
+    assert!(matches!(
+        result,
+        Err(LangfusePromptManagementError::Logger(
+            LangfuseLoggerError::Settings(_)
+        ))
+    ));
+    assert!(builder.configs().is_empty());
 }
 
 #[tokio::test]
