@@ -1,0 +1,9 @@
+kind: helper
+name: dashscope-rerank-reply-code-without-results
+call:
+  b8171:
+    function: rerank_reply
+    body: '{"code":"InvalidParameter","message":"documents is empty","request_id":"r-1"}'
+    status: 400
+env: {}
+compare: {ignore: []}

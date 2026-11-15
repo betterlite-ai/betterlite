@@ -1,0 +1,30 @@
+kind: helper
+name: rerank-headers
+call:
+  b6070:
+    model_cost: {}
+    api_keys: []
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params: []
+    pricing: []
+    costs: []
+    rerank_urls: []
+    rerank_headers:
+      - headers: {}
+        api_key: direct-key
+        env: {}
+      - headers: {Authorization: Bearer caller}
+        api_key: direct-key
+        env: {}
+      - headers: {authorization: Bearer lower, Content-Type: text/plain}
+        api_key: direct-key
+        env: {}
+      - headers: {}
+        api_key: null
+        env: {fireworks_api_key: env-key}
+    rerank_requests: []
+    rerank_responses: []
+env: {FIREWORKS_API_KEY: env-key}
+compare: {ignore: []}

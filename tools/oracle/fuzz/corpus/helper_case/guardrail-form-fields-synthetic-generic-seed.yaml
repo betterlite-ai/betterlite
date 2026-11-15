@@ -1,0 +1,7 @@
+kind: helper
+name: guardrail-form-fields-synthetic-generic-seed
+call:
+  b6560:
+    model: synthetic_generic
+env: {}
+compare: {ignore: []}

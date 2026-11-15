@@ -1,0 +1,7 @@
+kind: helper
+name: guardrail-form-fields-synthetic-literal-list-seed
+call:
+  b6560:
+    model: synthetic_literal_list
+env: {}
+compare: {ignore: []}

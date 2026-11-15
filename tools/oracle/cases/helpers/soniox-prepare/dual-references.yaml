@@ -1,0 +1,15 @@
+kind: helper
+name: soniox-prepare-dual-references
+call:
+  soniox_prepare:
+    calls:
+    - {function: create_body, prepare: {optional_params: {audio_url: "https://a.test/clip.wav", file_id: file_1}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4, file_id: file_2}
+    - {function: create_body, prepare: {optional_params: {audio_url: "https://a.test/clip.wav"}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4}
+    - {function: create_body, prepare: {optional_params: {file_id: file_1}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4}
+    - {function: create_body, prepare: {optional_params: {}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4, file_id: file_2}
+    - {function: create_body, prepare: {optional_params: {audio_url: "", file_id: ""}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4}
+    - {function: create_body, prepare: {optional_params: {audio_url: null, file_id: null}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4, file_id: ""}
+    - {function: create_body, prepare: {optional_params: {audio_url: "https://a.test/clip.wav"}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4, file_id: file_2}
+    - {function: create_body, prepare: {optional_params: {webhook_url: "https://hook.test/a", webhook_auth_header_value: secret, language_hints: [en]}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4}
+compare: {ignore: []}
+env: {}
