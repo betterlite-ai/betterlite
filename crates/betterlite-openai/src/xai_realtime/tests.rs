@@ -91,6 +91,19 @@ fn drops_only_ping_events() {
 }
 
 #[test]
+fn non_object_records_pass_through_unnormalized() {
+    let mut normalizer = XaiRealtimeNormalizer::default();
+    let record = json(r#"[{"type":"response.done"}]"#);
+    assert_eq!(
+        normalized(&mut normalizer, r#"[{"type":"response.done"}]"#),
+        record
+    );
+    assert_eq!(normalized(&mut normalizer, r#""ping""#), json(r#""ping""#));
+    assert_eq!(patch_outgoing_session(json("[1]")), json("[1]"));
+    assert_eq!(patch_outgoing_session(json("null")), json("null"));
+}
+
+#[test]
 fn backfills_content_part_done_from_the_cache() {
     let mut normalizer = XaiRealtimeNormalizer::default();
     normalized(

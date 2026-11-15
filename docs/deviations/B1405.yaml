@@ -3,6 +3,9 @@ deviations:
   - what: A Grok Voice session exceeding 4096 cached content-part keys closes with websocket code 1009 instead of retaining unlimited history.
     why: The bounded-input rule requires a finite per-session allocation limit; updating an existing key does not consume another slot.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/realtime/transformation.py#L57-L61
+  - what: A decoded record or outgoing session that is not a JSON object passes through unchanged, where LiteLLM raises an AttributeError or TypeError while normalizing it.
+    why: The declared record type is a JSON object, so anything else is malformed input that betterlite does not crash on; docs/compatibility.md keeps Python's duck-typed failures out of the contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/realtime/transformation.py#L71-L90
 kept_bugs:
   - what: Absent output_index and content_index are filled with 0 on every streaming response event, so the second output item of one response is reported with the first item's indices.
     why: Strict GA clients require both fields as non-optional integers and a working Grok Voice setup depends on the repair, so the default survives.

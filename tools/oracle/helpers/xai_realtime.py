@@ -8,6 +8,7 @@ from typing import Literal, NoReturn, Protocol, TypeAlias, TypedDict, Unpack
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.xai.realtime.handler import XAIRealtime
 from litellm.llms.xai.realtime.transformation import XAIRealtimeNormalizer
+from litellm.types.realtime import RealtimeQueryParams
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 from websockets import exceptions as websockets_exceptions
@@ -41,12 +42,16 @@ class ClientSocket(Protocol):
     async def close(self, code: int = 1000, reason: str | None = None) -> None: ...
 
 
+# the handler only matches this protocol when the call names timeout and litellm_metadata too
 class RealtimeCall(TypedDict):
     model: str
     websocket: ClientSocket
     logging_obj: Logging
     api_base: str | None
     api_key: str | None
+    timeout: float | None
+    query_params: RealtimeQueryParams | None
+    litellm_metadata: dict[str, JsonValue] | None
 
 
 class RealtimeRunner(Protocol):
@@ -156,6 +161,9 @@ def connection_answer(input_value: Input) -> JsonValue:
             "logging_obj": logging_object(input_value),
             "api_base": None,
             "api_key": api_key,
+            "timeout": None,
+            "query_params": None,
+            "litellm_metadata": None,
         }
         asyncio.run(RUNNER.async_realtime(**call))
     finally:
