@@ -1,0 +1,20 @@
+kind: helper
+name: batch-provider-read-bedrock-arn-seed
+call:
+  batch_provider_read:
+    request:
+      batch_id: arn:aws:bedrock:us-east-1:111122223333:async-invoke/seed
+      provider: bedrock
+      model: anthropic.claude-3-5-sonnet
+      aretrieve_batch: true
+      optional_params:
+        aws_region_name: eu-west-1
+        aws_access_key_id: SEEDKEY
+        aws_secret_access_key: seed-secret
+        aws_session_token: seed-token
+    litellm_settings: {}
+    environment: {}
+    script:
+      status: 500
+env: {}
+compare: {ignore: []}

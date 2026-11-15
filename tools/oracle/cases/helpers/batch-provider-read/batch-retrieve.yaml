@@ -1,0 +1,33 @@
+kind: helper
+name: batch-retrieve
+call:
+  batch_provider_read:
+    request:
+      batch_id: batch_1
+      provider: openai
+    litellm_settings: {}
+    environment: {}
+    script: {}
+calls:
+  - batch_provider_read:
+      request:
+        batch_id: batch_2
+        provider: hosted_vllm
+        aretrieve_batch: true
+      litellm_settings: {}
+      environment:
+        OPENAI_BASE_URL: https://vllm-env.example/v1
+        OPENAI_API_KEY: env-vllm-key
+      script: {}
+  - batch_provider_read:
+      request:
+        batch_id: batch_3
+        provider: litellm_proxy
+      litellm_settings:
+        api_base: https://proxy-global.example/v1
+        api_key: sk-proxy
+        organization: proxy-org
+      environment: {}
+      script: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: batch-not-found
+call:
+  batch_provider_read:
+    request:
+      batch_id: batch_missing
+      provider: openai
+    litellm_settings: {}
+    environment: {}
+    script:
+      status: 404
+env: {}
+compare: {ignore: []}
