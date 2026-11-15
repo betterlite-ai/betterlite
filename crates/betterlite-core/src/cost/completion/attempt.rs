@@ -4,10 +4,11 @@ use std::time::SystemTime;
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_models::billed_tokens::TokenTypeCostBreakdown;
 use betterlite_models::tool_fees::billing::BuiltInToolRequest;
+use betterlite_models::tool_fees::error::ToolFeeError;
 use rust_decimal::Decimal;
 
 use super::Round;
-use super::args::CostCalculator;
+use super::args::{CostCalculator, ToolBorrows};
 use super::breakdown::{BreakdownRequest, token_type_breakdown};
 use super::error::CompletionCostError;
 use crate::cost::call_price::error::CallPriceError;
@@ -36,6 +37,20 @@ struct Charge {
     adjusted: Adjusted,
 }
 
+// The built-in tool fees one attempt owes for the response it returned.
+fn tool_fee(attempt: &Attempt<'_>, tools: &ToolBorrows<'_>) -> Result<Decimal, ToolFeeError> {
+    let params = &attempt.args.charge.tools;
+    tools
+        .billing()
+        .cost_for_built_in_tools(&BuiltInToolRequest {
+            model: attempt.model,
+            custom_llm_provider: attempt.provider,
+            response: &params.response,
+            google_maps_requests: params.google_maps_requests,
+            params: &params.params,
+        })
+}
+
 // Prices the tokens, adds the built-in tool fees and the provider's extra fees, then applies the discount and the margin.
 fn price_attempt<Resolver, ImagePolicy, Inference>(
     services: &CostCalculator<'_, Resolver, ImagePolicy, Inference>,
@@ -55,18 +70,7 @@ where
     };
     let priced = call_price(&price_input(attempt, owned), &env)?;
     let additional_costs = additional_fees(attempt, lookup)?;
-    let params = &attempt.args.charge.tools;
-    let tool_usage_cost =
-        services
-            .tools
-            .billing()
-            .cost_for_built_in_tools(&BuiltInToolRequest {
-                model: attempt.model,
-                custom_llm_provider: attempt.provider,
-                response: &params.response,
-                google_maps_requests: params.google_maps_requests,
-                params: &params.params,
-            })?;
+    let tool_usage_cost = tool_fee(attempt, &services.tools)?;
     let original_cost = checked_total(
         priced.prompt_cost,
         priced.completion_cost,
