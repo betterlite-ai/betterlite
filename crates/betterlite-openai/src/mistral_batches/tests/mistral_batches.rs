@@ -3,9 +3,7 @@
 use crate::api::batch_records::CreateBatchRequest;
 use crate::batches::records::{BatchEndpoint, BatchStatus};
 use crate::mistral_batches::error::MistralBatchesError;
-use crate::mistral_batches::records::{
-    MistralBatchError, MistralBatchJob, MistralBatchStatus, MistralGetRequest,
-};
+use crate::mistral_batches::records::{MistralBatchError, MistralBatchJob, MistralBatchStatus};
 use crate::mistral_batches::transformation::{
     create_batch, openai_status, retrieve_batch, to_batch_object,
 };
@@ -115,15 +113,11 @@ fn retrieve_resolves_its_own_get_credentials() {
     let key = SecretString::from("Key");
     let request =
         retrieve_batch("job-1", None, Some(&key), &settings(None, None)).expect("a GET plan");
+    assert_eq!(request.method, Method::GET);
+    assert_eq!(request.url, "https://api.mistral.ai/v1/batch/jobs/job-1");
     assert_eq!(
-        request,
-        MistralGetRequest {
-            method: Method::GET,
-            url: String::from("https://api.mistral.ai/v1/batch/jobs/job-1"),
-            headers: [(String::from("Authorization"), String::from("Bearer Key"))]
-                .into_iter()
-                .collect(),
-        }
+        request.headers.get("Authorization").map(String::as_str),
+        Some("Bearer Key")
     );
 }
 
@@ -226,12 +220,8 @@ fn the_job_record_appends_the_error_count_only_above_one() {
         r#"{"id": "j", "endpoint": "/v1/ocr", "status": "FAILED", "created_at": 1, "output_file": "out-1", "error_file": "err-1", "errors": [{"message": "bad"}, {"message": "many", "count": 3}, {"message": "zero", "count": 0}, {"message": "two", "count": 2}]}"#,
     ));
     let errors = record.errors.expect("errors");
-    let messages: Vec<Option<&str>> = errors
-        .data
-        .expect("rows")
-        .iter()
-        .map(|row| row.message.as_deref())
-        .collect();
+    let rows = errors.data.expect("rows");
+    let messages: Vec<Option<&str>> = rows.iter().map(|row| row.message.as_deref()).collect();
     assert_eq!(
         messages,
         vec![

@@ -13,12 +13,11 @@ pub struct FileUploadRequest {
 pub fn upload_purpose(purpose: Option<&str>) -> Result<MistralPurpose, MistralFilesError> {
     match purpose {
         Some("fine-tune") => Ok(MistralPurpose::FineTune),
-        Some("batch") => Ok(MistralPurpose::Batch),
+        Some("batch") | None => Ok(MistralPurpose::Batch),
         Some("ocr" | "user_data") => Ok(MistralPurpose::Ocr),
         Some(other) => Err(MistralFilesError::UnsupportedPurpose {
             purpose: other.to_owned(),
         }),
-        None => Ok(MistralPurpose::Batch),
     }
 }
 pub fn create_upload(

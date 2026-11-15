@@ -26,8 +26,7 @@ fn decode_tagged(bytes: &[u8]) -> Result<(), MistralDecodeError> {
     }
 }
 
-#[test]
-fn replays_mistral_resource_corpus() {
+fn replay_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/mistral_resource");
     let mut paths: Vec<PathBuf> = fs::read_dir(corpus)
         .expect("the corpus folder exists")
@@ -49,6 +48,16 @@ fn replays_mistral_resource_corpus() {
             assert!(decoded.is_err(), "{name}: {decoded:?}");
         }
     }
+}
+
+#[test]
+fn replays_mistral_resource_corpus() {
+    replay_corpus();
+}
+
+#[test]
+fn replays_the_mistral_resource_corpus() {
+    replay_corpus();
 }
 
 #[test]

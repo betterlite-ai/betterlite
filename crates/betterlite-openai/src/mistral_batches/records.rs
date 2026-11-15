@@ -53,7 +53,7 @@ pub struct MistralCreateBatchJobRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<IndexMap<String, String>>,
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct MistralGetRequest {
     pub method: Method,
     pub url: String,
