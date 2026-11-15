@@ -140,7 +140,7 @@ if [[ -z "${LAND_ONLY}" ]]; then
       RETRIED=1 exec bash "${P}/dispatch-flow.sh" "${id}" "${run}b" "main is merged into your branch now; continue where the last run stopped."
     fi
     if grep -q -E 'at its usage limit|ladder is unavailable|every worker vendor is unavailable' "${log}"; then
-      why=$(grep -o -E "[a-z]+ (can't reach its API|is logged out|is at its usage limit)" "${log}") && why=$(sort -u <<< "${why}") && why=${why//$'\n'/,}
+      why=$(grep -o -E "[a-z][a-z0-9-]* (can't reach its API|is logged out|is at its usage limit)" "${log}") && why=$(sort -u <<< "${why}") && why=${why//$'\n'/,}
       say "paused: ${why:-vendor unavailable}; waiting for its reset or recovery before preparing another checkout"
       sleep 60
       maintenance
@@ -372,10 +372,10 @@ Mutants that timed out in CI (the gate counts a timeout as a failure, so a test 
 ${timed_out}}
 The gate logs of that run are in target/ci-logs/${run_id}/ in your worktree. Fix the cause and finish as usual. The final gate here builds nothing; CI runs clippy and the tests again once the branch is pushed."
     ;;
-  # main moved under the open PR; the land path merges main again (line 88) and stops when the merge needs a person, three rounds at most
+  # main moved under the open PR; the land path merges main again and stops when the merge needs a person, eight rounds at most, since main keeps adding bins next to a task's in a fuzz manifest while its CI runs (B8171, B6414, B3790 on 11-15)
   *" conflicts with main"*)
-    [[ "${CONFLICTS:-0}" -lt 3 ]] || {
-      park "PR #${pr} conflicts with main after 3 merges of main"
+    [[ "${CONFLICTS:-0}" -lt 8 ]] || {
+      park "PR #${pr} conflicts with main after 8 merges of main"
       exit 5
     }
     say "PR #${pr} conflicts with main; merging main and landing again"
