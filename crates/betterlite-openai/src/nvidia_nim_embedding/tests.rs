@@ -23,8 +23,8 @@ fn object(value: Value) -> Object {
 }
 
 fn mapped(non_default: Value, optional: Value, extra: Option<Value>) -> Object {
-    let extra = extra.map(object);
-    map_params(&object(non_default), object(optional), extra.as_ref()).unwrap()
+    let merged = extra.map(object);
+    map_params(&object(non_default), object(optional), merged.as_ref()).unwrap()
 }
 
 #[test]

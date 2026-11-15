@@ -644,19 +644,20 @@ fn transform_rerank_response_reports_a_body_that_is_not_json() {
     );
 }
 
-#[test]
-fn transform_rerank_response_reports_a_body_that_is_not_an_object() {
-    for body in ["[]", "null", r#""text""#] {
-        let error = response(
-            &config(),
-            200,
-            body.as_bytes(),
-            &Params::new(),
-            &Params::new(),
-        )
-        .unwrap_err();
-        assert!(matches!(error, NvidiaNimRerankError::ReplyNotAnObject));
-    }
+#[rstest]
+#[case::array("[]")]
+#[case::null("null")]
+#[case::text(r#""text""#)]
+fn transform_rerank_response_reports_a_body_that_is_not_an_object(#[case] body: &str) {
+    let error = response(
+        &config(),
+        200,
+        body.as_bytes(),
+        &Params::new(),
+        &Params::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, NvidiaNimRerankError::ReplyNotAnObject));
 }
 
 #[rstest]
