@@ -1,0 +1,12 @@
+kind: helper
+name: openai-evals-seed-run-get-cancel-delete
+call:
+  openai_evals:
+    run_get_cancel_delete:
+      probes:
+        - operation: cancel
+          eval_id: eval-1
+          run_id: run-1
+          api_base: https://api.openai.com
+env: {}
+compare: {ignore: []}
