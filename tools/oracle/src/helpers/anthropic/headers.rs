@@ -198,8 +198,8 @@ fn model_list_answer(call: &ModelListCall, created_at: &str) -> HelperResult {
         &call.listed_ids,
         created_at,
     );
-    let response = serde_json::to_value(&response).or_config_error()?;
-    Ok(json!({ "response": response }))
+    let value = serde_json::to_value(&response).or_config_error()?;
+    Ok(json!({ "response": value }))
 }
 
 fn response_headers_answer(call: &ResponseHeadersCall) -> HelperResult {
