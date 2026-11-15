@@ -1,0 +1,32 @@
+kind: helper
+name: append-results
+call:
+  bfl_generation:
+    operation: append_results
+    now: 1700000000
+    replies:
+      - existing: []
+        body:
+          status: Ready
+          result:
+            sample: https://delivery.test/a.png
+      - existing:
+          - {url: https://delivery.test/old.png, b64_json: null, revised_prompt: null, provider_specific_fields: null}
+        body:
+          status: Ready
+          result:
+            - https://delivery.test/b.png
+            - {url: https://delivery.test/c.png}
+            - {width: 1}
+            - 7
+      - existing:
+          - {url: https://delivery.test/old.png, b64_json: null, revised_prompt: null, provider_specific_fields: null}
+        body:
+          status: Ready
+          result: {}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/responses/0/created, why: LiteLLM stamps the wall clock while betterlite takes an injected clock}
+    - {pointer: /value/responses/1/created, why: LiteLLM stamps the wall clock while betterlite takes an injected clock}
+    - {pointer: /value/responses/2/created, why: LiteLLM stamps the wall clock while betterlite takes an injected clock}
