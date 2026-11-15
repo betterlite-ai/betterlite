@@ -36,6 +36,7 @@ use crate::guardrail_base::inputs::GuardrailApiInputs;
 
 mod config_section;
 
+#[derive(Clone)]
 struct Recorded {
     path: String,
     af_api_key: Option<String>,
@@ -57,6 +58,33 @@ enum Answer {
     Json { status: u16, body: String },
     Raw { status: u16, body: String },
     Timeout,
+}
+
+#[derive(Default, Serialize)]
+struct ScriptedVerdict {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verdict: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    correlation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    categories: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replacements: Option<Vec<ScriptedReplacement>>,
+}
+
+#[derive(Serialize)]
+struct ScriptedReplacement {
+    index: i64,
+    text: String,
+}
+
+fn verdict(name: &str) -> ScriptedVerdict {
+    ScriptedVerdict {
+        verdict: Some(name.to_owned()),
+        ..ScriptedVerdict::default()
+    }
 }
 
 struct Harness {
@@ -184,7 +212,7 @@ async fn apply(
     )
     .await
     {
-        Ok(inputs) => Outcome::Returned(inputs),
+        Ok(returned) => Outcome::Returned(returned),
         Err(failure) => Outcome::Failed(failure),
     }
 }
@@ -215,7 +243,14 @@ fn raised(outcome: Outcome) -> (String, u16, bool) {
             status_code,
             blocked_content,
         ),
-        other => panic!("expected a guardrail-raised failure, got {other}"),
+        other @ (GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Http { .. }
+        | GuardrailFailure::HttpObject { .. }
+        | GuardrailFailure::Other(_)) => {
+            panic!("expected a guardrail-raised failure, got {other}")
+        }
     }
 }
 
@@ -231,7 +266,7 @@ where
 
 #[tokio::test]
 async fn alice_guardrail_empty_inputs_skip_the_call() {
-    let harness = serve(answer(serde_json::json!({"verdict": "BLOCK"}))).await;
+    let harness = serve(answer(verdict("BLOCK"))).await;
     let instance = guardrail(
         &harness.base,
         UnreachableFallback::FailClosed,
@@ -268,7 +303,7 @@ async fn alice_guardrail_empty_inputs_skip_the_call() {
 async fn alice_guardrail_fields_outside_the_selectable_five_do_not_start_a_call(
     #[case] inputs: GuardrailApiInputs,
 ) {
-    let harness = serve(answer(serde_json::json!({"verdict": "ALLOW"}))).await;
+    let harness = serve(answer(verdict("ALLOW"))).await;
     let instance = guardrail(
         &harness.base,
         UnreachableFallback::FailClosed,
@@ -281,7 +316,7 @@ async fn alice_guardrail_fields_outside_the_selectable_five_do_not_start_a_call(
 
 #[tokio::test]
 async fn alice_guardrail_posts_the_stripped_bounded_payload() {
-    let harness = serve(answer(serde_json::json!({"verdict": "ALLOW"}))).await;
+    let harness = serve(answer(verdict("ALLOW"))).await;
     let instance = guardrail(
         &harness.base,
         UnreachableFallback::FailClosed,
@@ -289,9 +324,11 @@ async fn alice_guardrail_posts_the_stripped_bounded_payload() {
     );
     let outcome = apply(&instance, text_inputs(&["hello"]), &secret_request_data()).await;
     assert_eq!(returned_inputs(outcome), text_inputs(&["hello"]));
-    let recorded = harness.recorded.lock().expect("the recorder");
-    assert_eq!(recorded.len(), 1);
-    let request = &recorded[0];
+    let request = {
+        let recorded = harness.recorded.lock().expect("the recorder");
+        assert_eq!(recorded.len(), 1);
+        recorded[0].clone()
+    };
     assert_eq!(request.path, EVALUATE_PATH);
     assert_eq!(request.af_api_key.as_deref(), Some("alice-key"));
     assert_eq!(request.content_type.as_deref(), Some("application/json"));
@@ -360,7 +397,7 @@ fn assert_stripped_payload(body: &[u8]) {
 
 #[tokio::test]
 async fn alice_guardrail_allow_returns_the_inputs_unchanged() {
-    let harness = serve(answer(serde_json::json!({"verdict": "ALLOW"}))).await;
+    let harness = serve(answer(verdict("ALLOW"))).await;
     let instance = guardrail(
         &harness.base,
         UnreachableFallback::FailClosed,
@@ -372,9 +409,11 @@ async fn alice_guardrail_allow_returns_the_inputs_unchanged() {
 
 #[tokio::test]
 async fn alice_guardrail_block_raises_400_with_the_verdict_message() {
-    let harness = serve(answer(
-        serde_json::json!({"verdict": "BLOCK", "message": "policy says no"}),
-    ))
+    let harness = serve(answer(ScriptedVerdict {
+        verdict: Some("BLOCK".to_owned()),
+        message: Some("policy says no".to_owned()),
+        ..ScriptedVerdict::default()
+    }))
     .await;
     let instance = guardrail(
         &harness.base,
@@ -390,7 +429,7 @@ async fn alice_guardrail_block_raises_400_with_the_verdict_message() {
 
 #[tokio::test]
 async fn alice_guardrail_block_without_a_message_uses_the_default_text() {
-    let harness = serve(answer(serde_json::json!({"verdict": "BLOCK"}))).await;
+    let harness = serve(answer(verdict("BLOCK"))).await;
     let instance = guardrail(
         &harness.base,
         UnreachableFallback::FailOpen,
@@ -400,20 +439,37 @@ async fn alice_guardrail_block_without_a_message_uses_the_default_text() {
         GuardrailFailure::GuardrailRaised { message, .. } => {
             assert_eq!(message, DEFAULT_BLOCK_MESSAGE);
         }
-        other => panic!("expected a guardrail-raised failure, got {other}"),
+        other @ (GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Http { .. }
+        | GuardrailFailure::HttpObject { .. }
+        | GuardrailFailure::Other(_)) => {
+            panic!("expected a guardrail-raised failure, got {other}")
+        }
     }
 }
 
 #[tokio::test]
 async fn alice_guardrail_mask_applies_replacements_in_order() {
-    let harness = serve(answer(serde_json::json!({
-        "verdict": "MASK",
-        "replacements": [
-            {"index": 0, "text": "first"},
-            {"index": 1, "text": "second"},
-            {"index": 0, "text": "last"},
-        ],
-    })))
+    let harness = serve(answer(ScriptedVerdict {
+        verdict: Some("MASK".to_owned()),
+        replacements: Some(vec![
+            ScriptedReplacement {
+                index: 0,
+                text: "first".to_owned(),
+            },
+            ScriptedReplacement {
+                index: 1,
+                text: "second".to_owned(),
+            },
+            ScriptedReplacement {
+                index: 0,
+                text: "last".to_owned(),
+            },
+        ]),
+        ..ScriptedVerdict::default()
+    }))
     .await;
     let instance = guardrail(
         &harness.base,
@@ -454,10 +510,14 @@ async fn alice_guardrail_mask_refuses_a_malformed_verdict(#[case] body: &str) {
 
 #[tokio::test]
 async fn alice_guardrail_mask_without_texts_cannot_apply_a_replacement() {
-    let harness = serve(answer(serde_json::json!({
-        "verdict": "MASK",
-        "replacements": [{"index": 0, "text": "x"}],
-    })))
+    let harness = serve(answer(ScriptedVerdict {
+        verdict: Some("MASK".to_owned()),
+        replacements: Some(vec![ScriptedReplacement {
+            index: 0,
+            text: "x".to_owned(),
+        }]),
+        ..ScriptedVerdict::default()
+    }))
     .await;
     let instance = guardrail(
         &harness.base,
@@ -480,11 +540,12 @@ async fn alice_guardrail_mask_without_texts_cannot_apply_a_replacement() {
 
 #[tokio::test]
 async fn alice_guardrail_detect_logs_the_correlation_id_and_categories() {
-    let harness = serve(answer(serde_json::json!({
-        "verdict": "DETECT",
-        "correlation_id": "corr-1",
-        "categories": ["cat-a", "cat-b"],
-    })))
+    let harness = serve(answer(ScriptedVerdict {
+        verdict: Some("DETECT".to_owned()),
+        correlation_id: Some("corr-1".to_owned()),
+        categories: Some(vec!["cat-a".to_owned(), "cat-b".to_owned()]),
+        ..ScriptedVerdict::default()
+    }))
     .await;
     let instance = guardrail(
         &harness.base,
@@ -510,7 +571,7 @@ async fn alice_guardrail_detect_logs_the_correlation_id_and_categories() {
 
 #[tokio::test]
 async fn alice_guardrail_unrecognized_verdict_fails_closed() {
-    let harness = serve(answer(serde_json::json!({"verdict": "REVIEW"}))).await;
+    let harness = serve(answer(verdict("REVIEW"))).await;
     let instance = guardrail(
         &harness.base,
         UnreachableFallback::FailClosed,
@@ -525,7 +586,11 @@ async fn alice_guardrail_unrecognized_verdict_fails_closed() {
 
 #[tokio::test]
 async fn alice_guardrail_missing_verdict_fails_open_when_configured() {
-    let harness = serve(answer(serde_json::json!({"message": "no verdict"}))).await;
+    let harness = serve(answer(ScriptedVerdict {
+        message: Some("no verdict".to_owned()),
+        ..ScriptedVerdict::default()
+    }))
+    .await;
     let instance = guardrail(
         &harness.base,
         UnreachableFallback::FailOpen,
@@ -549,7 +614,12 @@ async fn alice_guardrail_a_redirect_propagates_instead_of_failing_open() {
     );
     match failure(apply(&instance, text_inputs(&["x"]), &BTreeMap::new()).await) {
         GuardrailFailure::Http { status, .. } => assert_eq!(status, 304),
-        other => panic!("expected an http failure, got {other}"),
+        other @ (GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::HttpObject { .. }
+        | GuardrailFailure::Other(_)) => panic!("expected an http failure, got {other}"),
     }
 }
 
@@ -567,7 +637,12 @@ async fn alice_guardrail_a_client_error_propagates_without_the_fallback_policy()
     );
     match failure(apply(&instance, text_inputs(&["x"]), &BTreeMap::new()).await) {
         GuardrailFailure::Http { status, .. } => assert_eq!(status, 401),
-        other => panic!("expected an http failure, got {other}"),
+        other @ (GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::HttpObject { .. }
+        | GuardrailFailure::Other(_)) => panic!("expected an http failure, got {other}"),
     }
 }
 
@@ -665,7 +740,7 @@ async fn alice_guardrail_fail_open_logs_at_error_level() {
 
 #[tokio::test]
 async fn alice_guardrail_builds_the_url_from_a_base_with_a_trailing_slash() {
-    let harness = serve(answer(serde_json::json!({"verdict": "ALLOW"}))).await;
+    let harness = serve(answer(verdict("ALLOW"))).await;
     let base = format!("{}/", harness.base);
     let instance = guardrail(
         &base,
@@ -815,7 +890,7 @@ fn alice_guardrail_defaults_api_base_and_fallback() {
 async fn alice_guardrail_any_one_selectable_field_starts_the_call(
     #[case] inputs: GuardrailApiInputs,
 ) {
-    let harness = serve(answer(serde_json::json!({"verdict": "ALLOW"}))).await;
+    let harness = serve(answer(verdict("ALLOW"))).await;
     let instance = guardrail(
         &harness.base,
         UnreachableFallback::FailClosed,
@@ -890,12 +965,12 @@ impl Captured {
 }
 
 impl Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|_poisoned| io::Error::other("poisoned"))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

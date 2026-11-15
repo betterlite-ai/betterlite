@@ -18,7 +18,7 @@ fn settings_from(yaml: &str, env: &[(&str, &str)]) -> Settings {
     raw.convert(&lookup).expect("the alice section converts")
 }
 
-const ALICE_ONLY: &str = r"
+const ALICE_ONLY: &str = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
@@ -49,8 +49,8 @@ fn alice_conduct_decisions_falls_back_to_the_alice_environment_names() {
         configured
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("env-key")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("env-key".to_owned())
     );
     assert_eq!(configured.api_base.as_deref(), Some("https://env.example"));
     assert_eq!(
@@ -61,7 +61,7 @@ fn alice_conduct_decisions_falls_back_to_the_alice_environment_names() {
 
 #[test]
 fn alice_conduct_decisions_prefers_configured_values_over_the_environment() {
-    let yaml = r"
+    let yaml = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
@@ -82,8 +82,8 @@ guardrails:
         configured
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("config-key")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("config-key".to_owned())
     );
     assert_eq!(
         configured.api_base.as_deref(),
@@ -97,7 +97,7 @@ guardrails:
 
 #[test]
 fn alice_conduct_decisions_resolves_environment_references_in_config_values() {
-    let yaml = r"
+    let yaml = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
@@ -110,8 +110,8 @@ guardrails:
         configured
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("resolved-key")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("resolved-key".to_owned())
     );
 }
 
@@ -132,7 +132,7 @@ fn alice_conduct_decisions_treats_an_empty_environment_key_as_unset() {
 
 #[test]
 fn alice_conduct_decisions_lowercases_the_fallback_value() {
-    let yaml = r"
+    let yaml = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
@@ -148,7 +148,7 @@ guardrails:
 
 #[test]
 fn alice_conduct_decisions_accepts_an_explicit_fail_closed_fallback() {
-    let yaml = r"
+    let yaml = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
@@ -164,7 +164,7 @@ guardrails:
 
 #[test]
 fn alice_conduct_decisions_rejects_an_unknown_fallback_value() {
-    let yaml = r"
+    let yaml = "
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
@@ -177,9 +177,9 @@ guardrails:
         .expect_err("an unknown fallback refuses the config");
     assert!(
         matches!(
-            error,
+            &error,
             ConfigError::InvalidScalar {
-                ref path,
+                path,
                 value: false,
             } if path == "guardrails.0.litellm_params.unreachable_fallback"
         ),

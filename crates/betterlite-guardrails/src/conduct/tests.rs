@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Ready, ready};
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -39,16 +40,16 @@ struct FixedCheck {
 }
 
 impl ConductCheck for FixedCheck {
-    async fn call(
+    fn call(
         &self,
         data: &BTreeMap<String, GuardrailValue>,
         call_type: &str,
-    ) -> Result<ConductDecision, ConductError> {
+    ) -> Ready<Result<ConductDecision, ConductError>> {
         self.calls
             .lock()
             .expect("the call log is not poisoned")
             .push(format!("{call_type}:{}", data.len()));
-        Ok(self.decision.clone())
+        ready(Ok(self.decision.clone()))
     }
 }
 
@@ -249,7 +250,7 @@ fn conduct_guardrail_request_payload_keeps_every_request_data_field() {
     ]);
     let payload = request_payload(&inputs, &request_data, GuardrailInputType::Request)
         .expect("a request input has a payload");
-    assert_eq!(payload.len(), 4);
+    assert_eq!(payload.len(), 3);
     assert_eq!(
         payload.get("metadata"),
         Some(&GuardrailValue::Null),

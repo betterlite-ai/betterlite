@@ -122,8 +122,8 @@ guardrails:
         .expect_err("an unknown fallback refuses the config");
     assert!(
         matches!(
-            error,
-            ConfigError::InvalidScalar { ref path, .. }
+            &error,
+            ConfigError::InvalidScalar { path, .. }
                 if path == "guardrails.0.litellm_params.unreachable_fallback"
         ),
         "{error:?}"

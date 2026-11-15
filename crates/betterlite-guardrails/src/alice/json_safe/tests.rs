@@ -55,7 +55,13 @@ fn alice_guardrail_json_safe_caps_each_container_at_five_thousand_items() {
             assert_eq!(values.len(), MAX_ITEMS);
             assert_eq!(values.last(), Some(&GuardrailValue::SignedInteger(4999)));
         }
-        other => panic!("expected an array, got {other:?}"),
+        other @ (GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Object(_)) => panic!("expected an array, got {other:?}"),
     }
 }
 
@@ -64,12 +70,12 @@ fn alice_guardrail_json_safe_strips_credential_keys_at_any_depth() {
     let stripped = safe(&credential_value(), &CREDENTIAL_KEYS_TO_STRIP);
     match stripped {
         GuardrailValue::Object(fields) => {
-            assert!(fields.get("headers").is_none());
+            assert!(!fields.contains_key("headers"));
             match fields.get("outer") {
                 Some(GuardrailValue::Array(items)) => match items.first() {
                     Some(GuardrailValue::Object(inner)) => {
-                        assert!(inner.get("headers").is_none());
-                        assert!(inner.get("provider_specific_header").is_none());
+                        assert!(!inner.contains_key("headers"));
+                        assert!(!inner.contains_key("provider_specific_header"));
                         assert_eq!(
                             inner.get("keep"),
                             Some(&GuardrailValue::Text("kept".to_owned()))
@@ -80,7 +86,13 @@ fn alice_guardrail_json_safe_strips_credential_keys_at_any_depth() {
                 other => panic!("expected an array, got {other:?}"),
             }
         }
-        other => panic!("expected an object, got {other:?}"),
+        other @ (GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)) => panic!("expected an object, got {other:?}"),
     }
 }
 
