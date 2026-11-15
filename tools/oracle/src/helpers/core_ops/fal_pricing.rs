@@ -88,9 +88,12 @@ impl PriceLookup for CaseLookup {
 }
 
 fn priced(found: Option<PriceRecord>) -> Option<PricedModel> {
-    found.map(|record| PricedModel {
+    let record = found?;
+    Some(PricedModel {
         record,
-        ..PricedModel::default()
+        tiered_pricing: Vec::new(),
+        off_peak_pricing: None,
+        off_peak_cache_read_present: false,
     })
 }
 
