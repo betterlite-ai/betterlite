@@ -108,7 +108,7 @@ impl FakeHttp {
     }
 
     fn record(&self, method: &Method, url: &Url, headers: &HeaderMap, body: Vec<u8>) {
-        let headers = headers
+        let captured_headers = headers
             .iter()
             .map(|(name, value)| {
                 (
@@ -126,7 +126,7 @@ impl FakeHttp {
             .push(Recorded {
                 method: method.as_str().to_owned(),
                 url: url.to_string(),
-                headers,
+                headers: captured_headers,
                 body,
             });
     }
