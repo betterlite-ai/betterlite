@@ -14,7 +14,7 @@ main=${BETTERLITE_ROOT:-$(git -C "${P}" rev-parse --show-toplevel)}
 cd "${main}" || exit 1
 # \$n is the GraphQL variable gh fills from -F n=
 query="query(\$n:Int!){repository(owner:\"betterlite-ai\",name:\"betterlite\"){pullRequest(number:\$n){state headRefName mergeStateStatus autoMergeRequest{enabledAt} mergeQueueEntry{state} mergeCommit{oid}}}}"
-# One REST call per poll: gh run list --workflow spends a second call resolving the workflow, and 28 watchers listing twice a minute used up the account's 5000 calls an hour
+# One REST call per poll and a poll every two minutes: gh run list --workflow spends a second call resolving the workflow, and 87 watchers polling once a minute used up the account's 5000 calls an hour on 11-15
 branch_runs() {
   gh api "repos/${GH_REPO}/actions/workflows/gate.yml/runs?branch=$1&per_page=30" \
     -q '.workflow_runs[] | "\(.id) \(.run_attempt) \(.conclusion) \(.status) \(.created_at) \(.head_sha)"' 2> /dev/null
@@ -53,7 +53,7 @@ while true; do
       exit 0
     fi
     polls=0
-    while [[ "${polls}" -lt 60 ]]; do
+    while [[ "${polls}" -lt 30 ]]; do
       git fetch -q origin main 2> /dev/null
       run=""
       for line in $(gh api "repos/${GH_REPO}/actions/workflows/gate.yml/runs?branch=main&event=push&per_page=10" -q '.workflow_runs | reverse | .[] | select(.conclusion != "cancelled") | "\(.id),\(.head_sha),\(.status),\(.conclusion)"' 2> /dev/null); do
@@ -73,7 +73,7 @@ while true; do
         echo "PR ${pr} merged as ${commit:0:8}; main run ${run_id} ${run_conclusion}: ${fail}"
         exit 1
       fi
-      sleep 60
+      sleep 120
       polls=$((polls + 1))
     done
     echo "PR ${pr} merged as ${commit:0:8}; main run did not finish within an hour"
@@ -156,5 +156,5 @@ while true; do
     echo "PR ${pr} is neither queued nor set to auto-merge (${merge_state}); the merge queue removed it for ${reason}, auto-merge re-armed ${rearmed} times"
     exit 1
   fi
-  sleep 60
+  sleep 120
 done
