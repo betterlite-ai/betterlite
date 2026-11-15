@@ -57,13 +57,7 @@ async fn a_pooled_timeout_reports_408() {
         .send_buffered(request)
         .await
         .expect_err("the stalling listener never answers");
-    assert!(
-        matches!(
-            &error,
-            TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
-        ),
-        "{error:?}"
-    );
+    assert!(matches!(&error, TransportError::Deadline(_)), "{error:?}");
     assert_eq!(error.status_code(), Some(408));
     assert_eq!(TransportError::Closed.status_code(), None);
 }
