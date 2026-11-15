@@ -7,7 +7,9 @@ use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::studio_identity::Settings;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
-use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_config::sections::vertex_credential_sources::credential_source::{
+    ConfiguredCredentials, decode_vertex_credentials,
+};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -621,6 +623,34 @@ fn selection_provider_predicates() {
     assert!(!studio.should_use_token_counting_api(Some("gemini/")));
     assert!(!studio.should_use_token_counting_api(Some("vertex_ai")));
     assert!(!studio.should_use_token_counting_api(None));
+}
+
+#[test]
+fn selection_source_credentials_are_named() {
+    let document = concat!(
+        r#"{"type":"service_account","project_id":"proj","#,
+        r#""private_key":"-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n","#,
+        r#""client_email":"service@example.com"}"#
+    );
+    let source =
+        ConfiguredCredentials::Source(decode_vertex_credentials(document.as_bytes()).unwrap());
+    let text = ConfiguredCredentials::Text(SecretString::from("alias-credentials"));
+    let options = deployment(
+        "vertex_ai/claude-sonnet-4-6@default",
+        VertexParams {
+            project: Some("proj"),
+            ai_project: None,
+            location: Some("us-east5"),
+            ai_location: None,
+            credentials: Some(&source),
+            ai_credentials: Some(&text),
+        },
+        None,
+    );
+    assert!(matches!(
+        options.explicit_credentials(),
+        Some(ConfiguredCredentials::Source(_))
+    ));
 }
 
 #[test]
