@@ -1,0 +1,41 @@
+task: B4814
+deviations:
+  - what: >-
+      asend_message takes the logging object as an explicit Option<&mut LoggingState> parameter instead of running
+      under LiteLLM's @client decorator, and asend_message_streaming takes an Option<LoggingState>. The trace id the
+      decorator would read from that object is read from its litellm_trace_id field.
+    why: >-
+      The decorator injects kwargs and a logging object into a Python frame; a Rust entry point passes the state the
+      caller already owns. The same trace id and the same agent headers reach the agent either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L403
+  - what: >-
+      The answers are wrapped by LiteLLMSendMessageResponse::from_a2a_response and LiteLLMSendMessageResponse::from_dict,
+      supplied by B4771, at the two places LiteLLM calls them, instead of by methods this task defines on the type.
+    why: >-
+      B4771 owns the response wrapper and its _hidden_params for cost tracking and logging, so the entry points call it
+      rather than repeat it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L468-L505
+  - what: >-
+      Trace ids and timestamps do not come from uuid.uuid4 and datetime.now. The entry points take a trace-id generator
+      from B198's injected boundary, and the streaming logging build takes the clock and monotonic sources from its
+      caller's dependencies.
+    why: >-
+      B198 owns the injected id and time sources so tests and replay can fix them. The generated trace id is still the
+      fallback after the logging object's trace id and, for streaming, the request id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L490
+  - what: >-
+      A send without a request cannot happen: SendCall and StreamCall carry a SendMessageRequest, so the `request is
+      None` ValueErrors ("request is required for completion bridge", "request is required") have no counterpart.
+    why: >-
+      A request that is always present makes those checks unrepresentable in the type, which is how betterlite states a
+      required argument; a caller with no request gets a compile error instead of a ValueError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L472-L484
+  - what: >-
+      asend_message_streaming is an async function returning Result<BoxStream<...>, SendCallError>, so client creation,
+      a missing api_base and the logging build report their failures from the call itself. LiteLLM's async generator
+      raises the same failures on the first iteration.
+    why: >-
+      A Rust entry point cannot be an async generator over a stream that also reports setup errors, and the call site
+      handles them before it consumes an event. No event is lost or reordered; the first item would have carried the
+      same failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L627
