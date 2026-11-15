@@ -10,12 +10,13 @@ pub fn remove_ttl_from_cache_control(
     model: Option<&str>,
     model_cost: &ParamMap,
 ) -> Result<(), MessageOptionsError> {
-    let mut supported = false;
-    if let Some(name) = model
+    let supported = if let Some(name) = model
         && !name.is_empty()
     {
-        supported = is_claude_4_5_on_bedrock(name, model_cost)?;
-    }
+        is_claude_4_5_on_bedrock(name, model_cost)?
+    } else {
+        false
+    };
     if let Some(tools) = iterable_items(request, "tools")? {
         for tool in tools {
             let ParamValue::Mapping(fields) = tool else {

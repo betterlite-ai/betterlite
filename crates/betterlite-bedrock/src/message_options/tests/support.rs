@@ -31,6 +31,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
 
+use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::mantle_inputs::region::split_region_prefix;
 use crate::message_options::effort::clamp_adaptive_effort;
 use crate::message_options::thinking::{ensure_clear_thinking, supports_extended_thinking};
@@ -126,8 +127,46 @@ pub(super) struct Session<'fixture> {
     dynamic: NoDynamicMetadata,
 }
 
+// One unit of test work: the production call and the request or params it reads.
+pub(super) enum Job<'request> {
+    Ensure(&'request str, &'request mut ParamMap),
+    Clamp(&'request str, &'request mut ParamMap, &'request Answers),
+    Supports(&'request [&'request str]),
+}
+
+// What the job answered, in the shape its production call returns.
+pub(super) enum Outcome {
+    Injected(Result<bool, MessageOptionsError>),
+    Clamped(Result<(), MessageOptionsError>),
+    Supported(Vec<bool>),
+}
+
+impl Outcome {
+    pub(super) fn injected(self) -> Result<bool, MessageOptionsError> {
+        match self {
+            Self::Injected(result) => result,
+            Self::Clamped(_) | Self::Supported(_) => panic!("an ensure job answers an injection"),
+        }
+    }
+
+    pub(super) fn clamped(self) -> Result<(), MessageOptionsError> {
+        match self {
+            Self::Clamped(result) => result,
+            Self::Injected(_) | Self::Supported(_) => panic!("a clamp job answers a clamp"),
+        }
+    }
+
+    pub(super) fn supported(self) -> Vec<bool> {
+        match self {
+            Self::Supported(result) => result,
+            Self::Injected(_) | Self::Clamped(_) => panic!("a support job answers support"),
+        }
+    }
+}
+
 impl Session<'_> {
-    pub(super) fn extended_thinking(&mut self, budgets: &Settings, models: &[&str]) -> Vec<bool> {
+    // The one place a request's sources are built, so every question runs over the same fixture.
+    pub(super) fn ask(&mut self, budgets: &Settings, job: Job<'_>) -> Outcome {
         let catalogs = self.fixture.catalogs();
         let mut environment = CapabilityEnvironment {
             metadata: MetadataEnvironment {
@@ -149,77 +188,22 @@ impl Session<'_> {
             budgets,
         };
         let runtime = runtime();
-        models
-            .iter()
-            .map(|model| runtime.block_on(supports_extended_thinking(model, &mut sources)))
-            .collect()
-    }
-
-    pub(super) fn ensure_thinking(
-        &mut self,
-        budgets: &Settings,
-        request: &mut ParamMap,
-        model: &str,
-    ) -> Result<bool, MessageOptionsError> {
-        let catalogs = self.fixture.catalogs();
-        let mut environment = CapabilityEnvironment {
-            metadata: MetadataEnvironment {
-                model_cost: &self.fixture.entries.entries,
-                vertex: &self.fixture.entries.vertex,
-                generalizations: &self.fixture.catalog.generalizations,
-                resolution: &self.resolution,
-                normalizers: NORMALIZERS,
-            },
-            keys: &mut self.keys,
-            dynamic: &self.dynamic,
-            hf: &self.fixture.hf,
-            provider_catalog: &self.fixture.provider_catalog,
-            provider_generation: 0,
-        };
-        let mut sources = OptionsSources {
-            environment: &mut environment,
-            catalogs: &catalogs,
-            budgets,
-        };
-        let runtime = runtime();
-        runtime.block_on(ensure_clear_thinking(request, model, &mut sources))
-    }
-
-    pub(super) fn clamp(
-        &mut self,
-        budgets: &Settings,
-        model: &str,
-        params: &mut ParamMap,
-        answers: &Answers,
-    ) -> Result<(), MessageOptionsError> {
-        let catalogs = self.fixture.catalogs();
-        let mut environment = CapabilityEnvironment {
-            metadata: MetadataEnvironment {
-                model_cost: &self.fixture.entries.entries,
-                vertex: &self.fixture.entries.vertex,
-                generalizations: &self.fixture.catalog.generalizations,
-                resolution: &self.resolution,
-                normalizers: NORMALIZERS,
-            },
-            keys: &mut self.keys,
-            dynamic: &self.dynamic,
-            hf: &self.fixture.hf,
-            provider_catalog: &self.fixture.provider_catalog,
-            provider_generation: 0,
-        };
-        let mut sources = OptionsSources {
-            environment: &mut environment,
-            catalogs: &catalogs,
-            budgets,
-        };
-        let runtime = runtime();
-        runtime.block_on(clamp_adaptive_effort(
-            model,
-            params,
-            &mut sources,
-            answers,
-            &self.fixture.catalog,
-        ))
+        match job {
+            Job::Ensure(model, request) => Outcome::Injected(
+                runtime.block_on(ensure_clear_thinking(request, model, &mut sources)),
+            ),
+            Job::Clamp(model, params, answers) => Outcome::Clamped(runtime.block_on(
+                clamp_adaptive_effort(model, params, &mut sources, answers, &self.fixture.catalog),
+            )),
+            Job::Supports(models) => {
+                let mut supported = Vec::new();
+                for model in models {
+                    supported
+                        .push(runtime.block_on(supports_extended_thinking(model, &mut sources)));
+                }
+                Outcome::Supported(supported)
+            }
+        }
     }
 }
 

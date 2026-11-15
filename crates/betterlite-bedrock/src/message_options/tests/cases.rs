@@ -1,7 +1,10 @@
-use betterlite_config::sections::anthropic_capability_catalog::Settings;
+use betterlite_config::sections::anthropic_capability_catalog::{
+    HIGH_THINKING_BUDGET, LOW_THINKING_BUDGET, MAX_THINKING_BUDGET, MEDIUM_THINKING_BUDGET,
+    MINIMAL_THINKING_BUDGET, Settings, XHIGH_THINKING_BUDGET,
+};
 use tracing::Level;
 
-use super::support::{Answers, Fixture, Session, Watch, map};
+use super::support::{Answers, Fixture, Job, Session, Watch, map};
 use crate::bedrock_model_capabilities::CapabilityError;
 use crate::message_options::MessageOptionsError;
 use crate::message_options::cache_ttl::remove_ttl_from_cache_control;
@@ -107,7 +110,9 @@ fn ensure(
 ) {
     let watch = Watch::default();
     let guard = watch.install();
-    let result = session.ensure_thinking(budgets, &mut request, model);
+    let result = session
+        .ask(budgets, Job::Ensure(model, &mut request))
+        .injected();
     let messages = watch.messages();
     drop(guard);
     (result, request, messages)
@@ -381,11 +386,13 @@ pub(super) fn clear_thinking_budget() {
 pub(super) fn adaptive_clear_thinking() {
     let budgets = Settings::default();
     let custom = Settings {
-        bedrock_min: 7,
+        minimal: MINIMAL_THINKING_BUDGET,
+        low: LOW_THINKING_BUDGET,
         medium: 10,
         high: 20,
         xhigh: 30,
-        ..Settings::default()
+        max: MAX_THINKING_BUDGET,
+        bedrock_min: 7,
     };
 
     let base = map("{}");
@@ -582,7 +589,12 @@ pub(super) fn effort_clamp() {
         let mut params = map(&format!(
             r#"{{"reasoning_effort": "{effort}", "temperature": 0.5}}"#
         ));
-        let result = session.clamp(&budgets, "fixture-adaptive", &mut params, &answers);
+        let result = session
+            .ask(
+                &budgets,
+                Job::Clamp("fixture-adaptive", &mut params, &answers),
+            )
+            .clamped();
         assert!(result.is_ok(), "effort {effort}");
         assert_eq!(
             params,
@@ -603,29 +615,43 @@ pub(super) fn effort_clamp() {
         r#"{"temperature": 0.5}"#,
     ] {
         let mut params = map(params_json);
-        let result = session.clamp(&budgets, "fixture-adaptive", &mut params, &answers);
+        let result = session
+            .ask(
+                &budgets,
+                Job::Clamp("fixture-adaptive", &mut params, &answers),
+            )
+            .clamped();
         assert!(result.is_ok(), "{params_json}");
         assert_eq!(params, map(params_json), "{params_json}");
     }
 
     let mut non_adaptive = map(r#"{"reasoning_effort": "xhigh"}"#);
-    let non_adaptive_result =
-        session.clamp(&budgets, "fixture-legacy", &mut non_adaptive, &answers);
+    let non_adaptive_result = session
+        .ask(
+            &budgets,
+            Job::Clamp("fixture-legacy", &mut non_adaptive, &answers),
+        )
+        .clamped();
     assert!(non_adaptive_result.is_ok());
     assert_eq!(non_adaptive, map(r#"{"reasoning_effort": "xhigh"}"#));
 
     let mut no_ceiling = map(r#"{"reasoning_effort": "xhigh"}"#);
-    let ceiling_result = session.clamp(
-        &budgets,
-        "fixture-adaptive",
-        &mut no_ceiling,
-        &Answers::new(&[]),
-    );
+    let ceiling_result = session
+        .ask(
+            &budgets,
+            Job::Clamp("fixture-adaptive", &mut no_ceiling, &Answers::new(&[])),
+        )
+        .clamped();
     assert!(ceiling_result.is_ok());
     assert_eq!(no_ceiling, map(r#"{"reasoning_effort": "xhigh"}"#));
 
     let mut weird = map(r#"{"reasoning_effort": "xhigh"}"#);
-    let weird_result = session.clamp(&budgets, "fixture-weird-ceiling", &mut weird, &answers);
+    let weird_result = session
+        .ask(
+            &budgets,
+            Job::Clamp("fixture-weird-ceiling", &mut weird, &answers),
+        )
+        .clamped();
     assert!(weird_result.is_ok());
     assert_eq!(weird, map(r#"{"reasoning_effort": "xhigh"}"#));
 }
@@ -660,7 +686,10 @@ pub(super) fn extended_thinking_support() {
         true, false, true, true, true, true, true, true, true, true, true, true, true, true, true,
         true, false, false, false, false,
     ];
-    assert_eq!(session.extended_thinking(&budgets, &models), expected);
+    assert_eq!(
+        session.ask(&budgets, Job::Supports(&models)).supported(),
+        expected
+    );
 }
 
 pub(super) fn clear_thinking_injection_limit() {
@@ -853,8 +882,13 @@ pub(super) fn clear_thinking_injection_limit() {
     }
 
     let tight = Settings {
+        minimal: MINIMAL_THINKING_BUDGET,
+        low: LOW_THINKING_BUDGET,
+        medium: MEDIUM_THINKING_BUDGET,
+        high: HIGH_THINKING_BUDGET,
+        xhigh: XHIGH_THINKING_BUDGET,
+        max: MAX_THINKING_BUDGET,
         bedrock_min: 5,
-        ..Settings::default()
     };
     {
         let (result, _request, messages) = ensure(

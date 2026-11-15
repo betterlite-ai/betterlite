@@ -122,7 +122,7 @@ fn inject_fallback_thinking(
     budgets: &Settings,
 ) -> bool {
     let budget = budgets.bedrock_min;
-    if let Some(tokens) = request.get("max_tokens").and_then(python_int)
+    if let Some(tokens) = request.get("max_tokens").and_then(int_value)
         && tokens <= budget
     {
         let logged = request
@@ -210,8 +210,8 @@ pub fn inject_adaptive_thinking(
         .cloned();
     let mut adaptive = IndexMap::new();
     adaptive.insert("type".to_owned(), ParamValue::Text(ADAPTIVE.to_owned()));
-    if let Some(display) = display {
-        adaptive.insert("display".to_owned(), display);
+    if let Some(value) = display {
+        adaptive.insert("display".to_owned(), value);
     }
     request.insert(
         "output_config".to_owned(),
@@ -247,12 +247,12 @@ fn log_value(value: &ParamValue) -> String {
 }
 
 // Python's isinstance(max_tokens, int): only a JSON integer, bools included, is a Python int.
-fn python_int(value: &ParamValue) -> Option<i64> {
-    match value {
-        ParamValue::Bool(flag) => Some(i64::from(*flag)),
-        ParamValue::Number(number) => number.as_i64(),
-        ParamValue::Null | ParamValue::Text(_) | ParamValue::List(_) | ParamValue::Mapping(_) => {
-            None
-        }
+fn int_value(value: &ParamValue) -> Option<i64> {
+    if let ParamValue::Bool(flag) = value {
+        return Some(i64::from(*flag));
     }
+    if let ParamValue::Number(number) = value {
+        return number.as_i64();
+    }
+    None
 }

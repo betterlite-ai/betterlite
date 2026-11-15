@@ -2,7 +2,7 @@ from typing import Final, Literal, TypeAlias, TypedDict
 
 import litellm
 from litellm.llms.bedrock.messages.invoke_transformations.anthropic_claude3_transformation import (
-    AmazonAnthropicClaudeMessagesConfig,
+    AmazonAnthropicClaudeMessagesConfig as MessagesConfig,
 )
 from pydantic import JsonValue
 
@@ -51,7 +51,7 @@ class ClampEffortCall(TypedDict):
 Input = RemoveTtlCall | EnsureThinkingCall | ExtendedThinkingCall | ClampEffortCall
 
 
-class Config(AmazonAnthropicClaudeMessagesConfig):
+class Config(MessagesConfig):
     def remove_ttl(self, request: JsonObject, model: str | None) -> None:
         self._remove_ttl_from_cache_control(  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L158
             request, model
@@ -75,31 +75,35 @@ class Config(AmazonAnthropicClaudeMessagesConfig):
 CONFIG: Final = Config()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L99-L101
 
 
+def ttl_request(case: TtlCase) -> JsonValue:
+    try:
+        CONFIG.remove_ttl(case["request"], case["model"])
+    except (AttributeError, TypeError):
+        return {"raised": True}
+    return case["request"]
+
+
 def remove_ttl(call: RemoveTtlCall) -> JsonValue:
     litellm.model_cost = call["model_cost"]
     requests: list[JsonValue] = []
     for case in call["cases"]:
-        request = case["request"]
-        try:
-            CONFIG.remove_ttl(request, case["model"])
-        except (AttributeError, TypeError):
-            requests.append({"raised": True})
-            continue
-        requests.append(request)
+        requests.append(ttl_request(case))
     return {"requests": requests}
+
+
+def thinking_request(case: EnsureCase) -> JsonValue:
+    try:
+        injected = CONFIG.ensure_thinking(case["request"], case["model"])
+    except (AttributeError, TypeError, ValueError):
+        return {"raised": True}
+    return {"injected": injected, "request": case["request"]}
 
 
 def ensure_thinking(call: EnsureThinkingCall) -> JsonValue:
     litellm.model_cost = call["model_cost"]
     results: list[JsonValue] = []
     for case in call["cases"]:
-        request = case["request"]
-        try:
-            injected = CONFIG.ensure_thinking(request, case["model"])
-        except (AttributeError, TypeError, ValueError):
-            results.append({"raised": True})
-            continue
-        results.append({"injected": injected, "request": request})
+        results.append(thinking_request(case))
     return {"results": results}
 
 
@@ -115,9 +119,8 @@ def clamp_effort(call: ClampEffortCall) -> JsonValue:
     litellm.model_cost = call["model_cost"]
     results: list[JsonValue] = []
     for case in call["cases"]:
-        params = case["params"]
-        CONFIG.clamp_effort(case["model"], params)
-        results.append(params)
+        CONFIG.clamp_effort(case["model"], case["params"])
+        results.append(case["params"])
     return {"results": results}
 
 
