@@ -515,6 +515,7 @@ fn document_score_citation() {
     document_score_citation_uses_logged_query();
     document_score_citation_reports_provider_failure();
     document_score_citation_rejects_bad_shapes();
+    document_score_citation_rejects_out_of_range_score();
 }
 
 fn document_score_citation_attributes() {
@@ -618,6 +619,14 @@ fn document_score_citation_rejects_bad_shapes() {
     assert!(matches!(
         decode(r#"{"value":[{"@search.score":"high"}]}"#),
         Err(AzureSearchError::ReplyShape { .. })
+    ));
+}
+
+// a finite score outside the exact decimal range is refused rather than rounded, as docs/deviations/B558.yaml records
+fn document_score_citation_rejects_out_of_range_score() {
+    assert!(matches!(
+        decode(r#"{"value":[{"id":"d","content":"t","@search.score":1e30}]}"#),
+        Err(AzureSearchError::Score { .. })
     ));
 }
 
