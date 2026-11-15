@@ -1,0 +1,24 @@
+task: B3682
+deviations:
+  - what: Live callbacks are held by InMemoryGuardrailHandler and read through its methods. LiteLLM adds each one to litellm.logging_callback_manager, and delete_in_memory_guardrail removes it from every callback list.
+    why: Rust has no global callback list, and B189's registry is a closed enum of logging sinks. The hook dispatcher (B124) asks the handler. Removing a guardrail drops its callbacks with it, so none is left behind.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L556-L560
+  - what: A guardrail type with a dot in its name (a custom guardrail class loaded with get_instance_fn from a Python file or module) gives the error "Unsupported guardrail" with the type name.
+    why: Rust cannot import a Python class. Custom guardrails run as custom code guardrails (B3801 and its siblings), which are separate types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L580-L589
+  - what: _normalize_litellm_params_for_comparison does not fall back to the raw dict when LitellmParams validation fails.
+    why: Params are already typed when they reach the handler, so the invalid case cannot happen here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L747-L773
+  - what: Only the seven builtin kinds are in GuardrailFactories. grayswan and llm_as_a_judge, which LiteLLM registers in the same dict, return Unsupported here; B8521 adds them with every other guardrail_hooks folder through GuardrailFactories::with_hooks.
+    why: Neither has an argument-struct builder in B3681, and their class constructors belong to B3772 and B3809. Third-party guardrails found by get_guardrail_initializer_from_hooks are registered the same way, by an explicit list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L80-L89
+  - what: Environment references in api_key and api_base read only environment variables, not secret managers.
+    why: The function get_secret lives in the secret manager tasks (B8500). The config path already resolves references through B3662, so this covers guardrails created through the routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L528-L532
+  - what: InMemoryGuardrailHandler::new takes a HandlerSettings struct holding strict_modes and global_skip_tool_message, where the task text passes the two booleans as separate arguments.
+    why: The lint table allows one boolean parameter per function. The values and their effect are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L439-L461
+kept_bugs:
+  - what: A missing os.environ/ variable behind api_key or api_base stores the text "None", so the guardrail starts and then fails at its first provider call.
+    why: LiteLLM wraps get_secret in str(), and a working setup relies on startup accepting a guardrail whose provider credential is only needed per request. The text is copied rather than turning the missing variable into a startup error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L528-L532
