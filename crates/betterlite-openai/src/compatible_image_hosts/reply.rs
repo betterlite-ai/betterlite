@@ -32,9 +32,9 @@ pub fn decode_compatible_image_reply(
             limit: MAX_REPLY_BYTES,
         });
     }
-    let Ok(Json::Object(fields)) =
-        serde_json::from_slice(&reply.body).map_err(|source| json_failure(reply, &source))
-    else {
+    let parsed =
+        serde_json::from_slice(&reply.body).map_err(|source| json_failure(reply, &source))?;
+    let Json::Object(fields) = parsed else {
         return Err(CompatibleImageReplyError::NotObject);
     };
     let mut data = model_response.data.unwrap_or_default();
