@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 
 use crate::openai_video_identifiers::ids::encode_video_id_with_provider;
 use crate::videos::error::VideoError;
-use crate::videos::list::{VideoList, carries_list_data, decode_list};
+use crate::videos::list::{VideoList, carries_list_data};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum VideoObjectType {
@@ -51,11 +51,9 @@ impl VideoObject {
     }
 }
 
-// a truthy provider and id take the provider into the id; only create passes a model
+// the encoder leaves an empty provider or id alone; only create passes a model
 pub(crate) fn wrap_video_id(video: &mut VideoObject, provider: Option<&str>, model: Option<&str>) {
-    if let Some(provider) = provider.filter(|value| !value.is_empty())
-        && !video.id.is_empty()
-    {
+    if let Some(provider) = provider {
         video.id = encode_video_id_with_provider(&video.id, provider, model);
     }
 }
@@ -75,20 +73,15 @@ pub enum VideoReply {
     List(Box<VideoList>),
 }
 
-pub(crate) fn decode_value(body: &[u8]) -> Result<Value, VideoError> {
-    serde_json::from_slice(body).map_err(VideoError::from)
-}
-
 // decode_video_reply: LiteLLM picks the shape per endpoint, so the data key is the list marker
 pub fn decode_video_reply(body: &[u8]) -> Result<VideoReply, VideoError> {
-    let value = decode_value(body)?;
-    if carries_list_data(&value) {
-        let list = decode_list(value)?;
+    let json = serde_json::from_slice::<Value>(body)?;
+    if carries_list_data(&json) {
+        let list = serde_json::from_value::<VideoList>(json)?;
         return Ok(VideoReply::List(Box::new(list)));
     }
-    serde_json::from_value(value)
-        .map(|video| VideoReply::Video(Box::new(video)))
-        .map_err(VideoError::from)
+    let video = serde_json::from_value::<VideoObject>(json)?;
+    Ok(VideoReply::Video(Box::new(video)))
 }
 
 pub(crate) fn expect_video(reply: VideoReply) -> Result<VideoObject, VideoError> {

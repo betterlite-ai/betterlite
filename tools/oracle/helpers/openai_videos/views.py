@@ -2,7 +2,7 @@ from litellm.types.videos.main import VideoObject
 from pydantic import JsonValue
 
 from .config import Parts
-from .types import VIDEO_VIEW, Reference, VideoListView, VideoView
+from .types import VIDEO_VIEW, Reference, VideoView
 
 
 def files_json(files: Parts, reference: Reference | None) -> list[JsonValue]:
@@ -49,18 +49,6 @@ def video_json(view: VideoView) -> JsonValue:
 def video_view(video: VideoObject) -> JsonValue:
     view = VIDEO_VIEW.validate_json(video.model_dump_json())
     return video_json(view)
-
-
-def list_view(reply: VideoListView) -> JsonValue:
-    data: list[JsonValue] = [video_json(video) for video in reply["data"]]
-    rendered: dict[str, JsonValue] = {
-        "data": data,
-        "first_id": reply["first_id"],
-        "last_id": reply["last_id"],
-        "object": reply["object"],
-        "has_more": reply["has_more"],
-    }
-    return rendered
 
 
 def request_view(url: str, params: dict[str, JsonValue]) -> JsonValue:

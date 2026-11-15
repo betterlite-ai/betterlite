@@ -12,15 +12,13 @@ pub fn remix_request(
     video_id: &str,
     prompt: &str,
     api_base: &str,
-    extra_body: Option<&VideoOptions>,
+    extra_body: &VideoOptions,
 ) -> Result<(String, VideoOptions), VideoError> {
     let url = path_url(video_id, api_base, "/remix")?;
     let mut data = VideoOptions::new();
     data.insert("prompt".to_owned(), Value::String(prompt.to_owned()));
-    if let Some(extra_body) = extra_body {
-        for (name, value) in extra_body {
-            data.insert(name.clone(), value.clone());
-        }
+    for (name, value) in extra_body {
+        data.insert(name.clone(), value.clone());
     }
     Ok((url, data))
 }

@@ -13,7 +13,6 @@ from pydantic import JsonValue
 
 from .config import API_BASE, CONFIG, ENV_NAME, MODEL, CreateParams
 from .types import (
-    VIDEO_LIST,
     Call,
     EnvironmentCall,
     Reference,
@@ -22,7 +21,7 @@ from .types import (
     VideoReplyOps,
     VideoRequestOps,
 )
-from .views import files_json, list_view, request_view, video_view
+from .views import files_json, request_view, video_view
 
 START: Final = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -155,7 +154,7 @@ def reply_ops(call: VideoReplyOps) -> JsonValue:
             reply = CONFIG.transform_video_list_response(
                 fixture_response(call["body_base64"]), logging_object(), call["provider"]
             )
-            return list_view(VIDEO_LIST.validate_python(reply))
+            return dict(reply)
         case "delete_response":
             video = CONFIG.transform_video_delete_response(
                 fixture_response(call["body_base64"]), logging_object()

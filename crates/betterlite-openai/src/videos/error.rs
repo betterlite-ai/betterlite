@@ -1,3 +1,4 @@
+use betterlite_http::error::HttpError;
 use thiserror::Error;
 
 use crate::error::{ProviderError, ProviderErrorParts};
@@ -5,10 +6,11 @@ use crate::openai_base_config::Headers;
 
 #[derive(Debug, Error)]
 pub enum VideoError {
-    #[error("video_id is required")]
-    MissingVideoId,
-    #[error("video_id cannot be a dot path segment")]
-    DotSegment,
+    #[error(transparent)]
+    Path {
+        #[from]
+        source: HttpError,
+    },
     #[error("a video reply does not parse: {source}")]
     Reply {
         #[source]

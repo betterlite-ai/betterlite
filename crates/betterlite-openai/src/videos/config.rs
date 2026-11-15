@@ -2,8 +2,11 @@ use std::fmt::{self, Formatter};
 
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::openai_base_config::Headers;
+use serde_json::Value;
+
+use crate::vector_stores::Headers;
 use crate::videos::VideoOptions;
+use crate::videos::create::VideoCreate;
 
 pub const SUPPORTED_PARAMS: [&str; 8] = [
     "model",
@@ -66,13 +69,15 @@ fn first_secret(credentials: &VideoCredentials) -> Option<&SecretString> {
 
 // validate_environment: the first truthy key wins, and an absent key still writes Bearer None
 #[must_use]
-pub fn validate_environment(headers: Headers, credentials: &VideoCredentials) -> Headers {
+pub fn validate_environment(mut headers: Headers, credentials: &VideoCredentials) -> Headers {
     let authorization = match first_secret(credentials) {
         Some(secret) => format!("Bearer {}", secret.expose_secret()),
         None => "Bearer None".to_owned(),
     };
-    let mut headers = headers;
-    headers.insert("Authorization".to_owned(), authorization);
+    headers.insert(
+        "Authorization".to_owned(),
+        SecretString::from(authorization),
+    );
     headers
 }
 
@@ -84,8 +89,26 @@ pub fn complete_url(api_base: Option<&str>) -> String {
 }
 
 // map_openai_params copies every option, supported or not, and drop_params changes nothing
-pub fn map_params(options: &VideoOptions, mapped: &mut VideoOptions) {
-    for (name, value) in options {
+pub fn map_params(options: &VideoCreate, mapped: &mut VideoOptions) {
+    for (name, value) in &options.extra {
         mapped.insert(name.clone(), value.clone());
+    }
+    for (name, value) in [
+        ("seconds", &options.seconds),
+        ("size", &options.size),
+        ("user", &options.user),
+    ] {
+        if let Some(text) = value {
+            mapped.insert(name.to_owned(), Value::String(text.clone()));
+        }
+    }
+    if let Some(characters) = &options.characters {
+        let rendered = characters.iter().map(|character| {
+            let fields = character
+                .iter()
+                .map(|(key, text)| (key.clone(), Value::String(text.clone())));
+            Value::Object(fields.collect())
+        });
+        mapped.insert("characters".to_owned(), Value::Array(rendered.collect()));
     }
 }

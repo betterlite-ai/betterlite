@@ -12,9 +12,9 @@ deviations:
   - what: "The duration parse is Rust's f64 grammar after surrounding whitespace is trimmed, so 1_0 and a text built from non-ASCII digits add no duration_seconds where Python's float() accepts both and LiteLLM stores the converted value."
     why: "Every decimal form a provider sends parses the same in both; the underscore and Unicode-digit forms are Python conveniences no provider reply uses."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L195
-  - what: "A list reply is decoded into VideoList and VideoObject, so unknown keys are dropped and an item that is not a video object fails the decode; LiteLLM returns the provider dict unchanged apart from the id wrapping."
-    why: "The typed record is what a caller reads, and every declared field keeps the value LiteLLM answers."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L336-L375
+  - what: "A list item that is not a JSON object, or whose id is not a string, fails the decode, and an item whose id is null loses that key; LiteLLM leaves every non-dict item and every id value untouched and only wraps ids that exist."
+    why: "A reply that cannot be read as a list of videos is the caller's 4xx; every key of a real item, including prompt and undeclared ones, comes back exactly as the provider sent it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L346-L352
   - what: "A reply counts as a video list only when its data value is an array; LiteLLM tests only the data key, so a number under data raises TypeError and an object raises KeyError in its cursor lookup, reaching the caller as a server error."
     why: "A reply that cannot be read as a list is the caller's 4xx, not a 500, and the ids it would have wrapped are not a reply anyone can use."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L344-L352

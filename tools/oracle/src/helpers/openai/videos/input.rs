@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_openai::videos::VideoOptions;
+use betterlite_openai::videos::create::VideoCreate;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -42,7 +42,7 @@ pub(crate) struct Create {
     pub(crate) model: String,
     pub(crate) prompt: String,
     pub(crate) api_base: String,
-    pub(crate) options: VideoOptions,
+    pub(crate) options: VideoCreate,
     pub(crate) reference: Option<Reference>,
 }
 

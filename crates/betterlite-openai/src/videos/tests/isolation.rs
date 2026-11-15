@@ -1,3 +1,4 @@
+use betterlite_http::error::HttpError;
 use serde_json::Value;
 
 use crate::videos::config::{
@@ -5,48 +6,44 @@ use crate::videos::config::{
 };
 use crate::videos::error::{VideoError, get_error_class};
 
-use super::support::{credentials, headers};
+use super::support::{credentials, exposed, headers, secret_headers};
 
 #[test]
 fn openai_videos_credential_identity_isolation() {
     let first = credentials(Some("sk-first"), None, None, None, None);
     let second = credentials(None, None, Some("sk-second"), None, None);
-    let base = headers(&[("Authorization", "Bearer old")]);
+    let base = secret_headers(&[("Authorization", "Bearer old")]);
     let first_headers = validate_environment(base.clone(), &first);
     let second_headers = validate_environment(base.clone(), &second);
     assert_eq!(
-        first_headers.get("Authorization").map(String::as_str),
+        exposed(&first_headers, "Authorization"),
         Some("Bearer sk-first")
     );
     assert_eq!(
-        second_headers.get("Authorization").map(String::as_str),
+        exposed(&second_headers, "Authorization"),
         Some("Bearer sk-second")
     );
-    assert_eq!(
-        base.get("Authorization").map(String::as_str),
-        Some("Bearer old")
-    );
-    assert_ne!(first_headers, second_headers);
+    assert_eq!(exposed(&base, "Authorization"), Some("Bearer old"));
 
     let environment = credentials(None, None, None, None, Some("sk-environment"));
     assert_eq!(
-        validate_environment(base.clone(), &environment)
-            .get("Authorization")
-            .map(String::as_str),
+        exposed(
+            &validate_environment(base.clone(), &environment),
+            "Authorization"
+        ),
         Some("Bearer sk-environment")
     );
     assert_eq!(
-        validate_environment(base, &first)
-            .get("Authorization")
-            .map(String::as_str),
+        exposed(&validate_environment(base, &first), "Authorization"),
         Some("Bearer sk-first")
     );
 
     let unconfigured = VideoCredentials::default();
     assert_eq!(
-        validate_environment(headers(&[]), &unconfigured)
-            .get("Authorization")
-            .map(String::as_str),
+        exposed(
+            &validate_environment(secret_headers(&[]), &unconfigured),
+            "Authorization"
+        ),
         Some("Bearer None")
     );
     assert_eq!(complete_url(None), format!("{DEFAULT_API_BASE}/videos"));
@@ -66,9 +63,19 @@ fn openai_videos_secret_safe_failure() {
     assert!(!debugged.contains(secret));
     assert_eq!(debugged.matches("[REDACTED]").count(), 5);
 
+    let returned = validate_environment(secret_headers(&[("X-Trace", "trace-1")]), &configured);
+    assert_eq!(
+        exposed(&returned, "Authorization"),
+        Some("Bearer sk-live-fixture-secret")
+    );
+    assert!(!format!("{returned:?}").contains(secret));
+
     let failures = [
-        VideoError::MissingVideoId,
-        VideoError::DotSegment,
+        VideoError::Path {
+            source: HttpError::Required {
+                field_name: "video_id".to_owned(),
+            },
+        },
         VideoError::ExpectedVideo,
         VideoError::Reply {
             source: serde_json::from_str::<Value>("{").unwrap_err(),

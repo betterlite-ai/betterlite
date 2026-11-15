@@ -25,6 +25,9 @@ call:
       - op: list_response
         provider: openai
         body_base64: eyJkYXRhIjpbXSwiZmlyc3RfaWQiOiJ2aWQtMSIsImxhc3RfaWQiOiJ2aWQtMiIsIm9iamVjdCI6Imxpc3QiLCJoYXNfbW9yZSI6ZmFsc2V9
+      - op: list_response
+        provider: openai
+        body_base64: eyJvYmplY3QiOiJsaXN0IiwiZGF0YSI6W3siaWQiOiJ2aWQtMSIsIm9iamVjdCI6InZpZGVvIiwic3RhdHVzIjoiY29tcGxldGVkIiwibW9kZWwiOiJzb3JhLTIiLCJwcm9tcHQiOiJhIGNhdCBvbiBhIHJvb2YiLCJzaXplIjoiNzIweDEyODAiLCJ2ZW5kb3IiOnsidGllciI6MX19LHsiaWQiOiJ2aWQtMiIsIm9iamVjdCI6InZpZGVvIiwic3RhdHVzIjoicXVldWVkIiwibW9kZWwiOm51bGwsInByb21wdCI6ImEgZG9nIn1dLCJmaXJzdF9pZCI6InZpZC0xIiwibGFzdF9pZCI6InZpZC0yIiwiaGFzX21vcmUiOmZhbHNlLCJ2ZW5kb3JfcGFnZSI6M30=
       - op: status_request
         video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTM=
         api_base: https://mock.example/v1/videos/

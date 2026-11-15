@@ -153,13 +153,4 @@ class VideoView(TypedDict):
     usage: dict[str, JsonValue] | None
 
 
-class VideoListView(TypedDict):
-    data: list[VideoView]
-    first_id: str | None
-    last_id: str | None
-    object: str | None
-    has_more: bool | None
-
-
 VIDEO_VIEW: TypeAdapter[VideoView] = TypeAdapter(VideoView)
-VIDEO_LIST: TypeAdapter[VideoListView] = TypeAdapter(VideoListView)

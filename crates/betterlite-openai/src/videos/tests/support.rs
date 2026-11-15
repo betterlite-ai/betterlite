@@ -1,14 +1,20 @@
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::{Map, Value};
 
 use crate::openai_base_config::Headers;
+use crate::vector_stores::Headers as SecretHeaders;
 use crate::videos::config::VideoCredentials;
+use crate::videos::create::VideoCreate;
 
 pub(super) fn options(pairs: &[(&str, Value)]) -> Map<String, Value> {
     pairs
         .iter()
         .map(|(name, value)| ((*name).to_owned(), value.clone()))
         .collect()
+}
+
+pub(super) fn video_create(value: Value) -> VideoCreate {
+    serde_json::from_value(value).unwrap()
 }
 
 pub(super) fn body(value: &Value) -> Vec<u8> {
@@ -20,6 +26,20 @@ pub(super) fn headers(pairs: &[(&str, &str)]) -> Headers {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect()
+}
+
+pub(super) fn secret_headers(pairs: &[(&str, &str)]) -> SecretHeaders {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), SecretString::from(*value)))
+        .collect()
+}
+
+pub(super) fn exposed<'headers>(
+    headers: &'headers SecretHeaders,
+    name: &str,
+) -> Option<&'headers str> {
+    headers.get(name).map(ExposeSecret::expose_secret)
 }
 
 pub(super) fn credentials(

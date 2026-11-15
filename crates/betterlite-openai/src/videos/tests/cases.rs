@@ -1,6 +1,8 @@
 use rstest::rstest;
 use serde_json::{Value, json};
 
+use betterlite_http::error::HttpError;
+
 use crate::openai_video_identifiers::ids::{
     decode_video_id_with_provider, encode_character_id, encode_video_id_with_provider,
 };
@@ -11,7 +13,7 @@ use crate::videos::config::{
     map_params, validate_environment,
 };
 use crate::videos::content::{content_request, content_response};
-use crate::videos::create::{create_request, create_response};
+use crate::videos::create::{VideoCreate, create_request, create_response};
 use crate::videos::delete::{delete_request, delete_response};
 use crate::videos::error::{VideoError, get_error_class};
 use crate::videos::list::{list_request, list_response};
@@ -19,7 +21,7 @@ use crate::videos::remix::{remix_request, remix_response};
 use crate::videos::reply::VideoObject;
 use crate::videos::status::{status_request, status_response};
 
-use super::support::{body, credentials, headers, options};
+use super::support::{body, credentials, exposed, headers, options, secret_headers, video_create};
 
 const MODEL: &str = "sora-2";
 const PROMPT: &str = "make a video";
@@ -43,17 +45,18 @@ fn seconds_video(seconds: Option<Value>) -> VideoObject {
 
 fn create_multipart_case() {
     let character = encode_character_id("char-1", "openai", Some(MODEL));
-    let given = options(&[
-        ("model", json!("option-model")),
-        ("prompt", json!("option-prompt")),
-        ("extra_headers", json!({"x-option": "1"})),
-        ("input_reference", json!("option-reference")),
-        ("seconds", json!("4")),
-        ("size", json!("720x1280")),
-        ("user", json!("user-1")),
-        ("characters", json!([{"id": character, "role": "hero"}])),
-        ("vendor_flag", json!(true)),
-    ]);
+    let given_json = json!({
+        "model": "option-model",
+        "prompt": "option-prompt",
+        "extra_headers": {"x-option": "1"},
+        "input_reference": "option-reference",
+        "seconds": "4",
+        "size": "720x1280",
+        "user": "user-1",
+        "characters": [{"id": character, "role": "hero"}],
+        "vendor_flag": true,
+    });
+    let given = video_create(given_json.clone());
     let form = create_request(
         MODEL,
         PROMPT,
@@ -98,7 +101,9 @@ fn create_multipart_case() {
     assert!(MULTIPART_FORM_DATA);
     let mut mapped = VideoOptions::new();
     map_params(&given, &mut mapped);
-    assert_eq!(mapped, given);
+    assert_eq!(Value::Object(mapped), given_json);
+    assert!(serde_json::from_value::<VideoCreate>(json!({"seconds": 4})).is_err());
+    assert!(serde_json::from_value::<VideoCreate>(json!({"characters": [{"id": 1}]})).is_err());
 }
 
 fn input_reference_case() {
@@ -106,7 +111,7 @@ fn input_reference_case() {
         MODEL,
         PROMPT,
         API_BASE,
-        &VideoOptions::new(),
+        &VideoCreate::default(),
         Some(MediaBody::Bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")),
     );
     assert_eq!(png.files.len(), 1);
@@ -121,7 +126,7 @@ fn input_reference_case() {
         MODEL,
         PROMPT,
         API_BASE,
-        &VideoOptions::new(),
+        &VideoCreate::default(),
         Some(MediaBody::Bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00")),
     );
     assert_eq!(jpeg.files[0].content_type, "image/jpeg");
@@ -130,16 +135,16 @@ fn input_reference_case() {
         MODEL,
         PROMPT,
         API_BASE,
-        &VideoOptions::new(),
+        &VideoCreate::default(),
         Some(MediaBody::Text("")),
     );
     assert_eq!(empty.files[0].content_type, "image/png");
     assert!(matches!(&empty.files[0].body, MediaBody::Text(text) if text.is_empty()));
 
-    let none = create_request(MODEL, PROMPT, API_BASE, &VideoOptions::new(), None);
+    let none = create_request(MODEL, PROMPT, API_BASE, &VideoCreate::default(), None);
     assert!(none.files.is_empty());
 
-    let given = options(&[("input_reference", json!("option-reference"))]);
+    let given = video_create(json!({"input_reference": "option-reference"}));
     let dropped = create_request(MODEL, PROMPT, API_BASE, &given, None);
     assert!(!dropped.fields.contains_key("input_reference"));
     assert!(dropped.files.is_empty());
@@ -152,7 +157,7 @@ fn list_requests() {
         Some(&after),
         Some(0),
         Some("asc"),
-        None,
+        &VideoOptions::new(),
     );
     assert_eq!(url, "https://mock.example/v1/videos/");
     assert_eq!(
@@ -160,7 +165,13 @@ fn list_requests() {
         json!({"after": "vid-cursor", "limit": "0", "order": "asc"})
     );
 
-    let (url, params) = list_request("https://mock.example/v1/videos", None, None, None, None);
+    let (url, params) = list_request(
+        "https://mock.example/v1/videos",
+        None,
+        None,
+        None,
+        &VideoOptions::new(),
+    );
     assert_eq!(url, "https://mock.example/v1/videos");
     assert!(params.is_empty());
 
@@ -170,7 +181,7 @@ fn list_requests() {
         Some(&after),
         Some(5),
         None,
-        Some(&extra),
+        &extra,
     );
     assert_eq!(
         Value::Object(params),
@@ -182,39 +193,41 @@ fn list_replies() {
     let reply = json!({
         "object": "list",
         "data": [
-            {"id": "vid-1", "object": "video", "status": "completed", "model": MODEL},
-            {"id": "vid-2", "object": "video", "status": "queued"}
+            {"id": "vid-1", "object": "video", "status": "completed", "model": MODEL, "prompt": "a cat"},
+            {"id": "vid-2", "object": "video", "status": "queued", "model": null, "vendor": {"n": 1}}
         ],
         "first_id": "vid-1",
         "last_id": "vid-2",
-        "has_more": true
+        "has_more": true,
+        "vendor_page": 3
     });
     let decoded = list_response(&body(&reply), Some("openai")).unwrap();
+    let wrapped = serde_json::to_value(&decoded).unwrap();
+    let first_id = encode_video_id_with_provider("vid-1", "openai", Some(MODEL));
+    let last_id = encode_video_id_with_provider("vid-2", "openai", None);
     assert_eq!(
-        decoded.data[0].id,
-        encode_video_id_with_provider("vid-1", "openai", Some(MODEL))
+        wrapped,
+        json!({
+            "object": "list",
+            "data": [
+                {"id": first_id, "object": "video", "status": "completed", "model": MODEL, "prompt": "a cat"},
+                {"id": last_id, "object": "video", "status": "queued", "model": null, "vendor": {"n": 1}}
+            ],
+            "first_id": first_id,
+            "last_id": last_id,
+            "has_more": true,
+            "vendor_page": 3
+        })
     );
-    assert_eq!(model_of(&decoded.data[0].id).as_deref(), Some(MODEL));
-    assert_eq!(model_of(&decoded.data[1].id), None);
-    assert_eq!(
-        decoded.first_id,
-        Some(encode_video_id_with_provider(
-            "vid-1",
-            "openai",
-            Some(MODEL)
-        ))
-    );
-    assert_eq!(
-        model_of(decoded.last_id.as_deref().unwrap()).as_deref(),
-        Some(MODEL)
-    );
-    assert_eq!(decoded.object.as_deref(), Some("list"));
-    assert_eq!(decoded.has_more, Some(true));
+    assert_eq!(model_of(&first_id).as_deref(), Some(MODEL));
+    assert_eq!(model_of(&last_id), None);
 
     let empty = json!({"data": [], "first_id": "vid-1", "last_id": "vid-2"});
     let cursors = list_response(&body(&empty), Some("openai")).unwrap();
-    assert_eq!(model_of(cursors.first_id.as_deref().unwrap()), None);
-    assert_eq!(model_of(cursors.last_id.as_deref().unwrap()), None);
+    let rendered = serde_json::to_value(&cursors).unwrap();
+    assert_eq!(model_of(rendered["first_id"].as_str().unwrap()), None);
+    assert_eq!(video_of(rendered["first_id"].as_str().unwrap()), "vid-1");
+    assert_eq!(video_of(rendered["last_id"].as_str().unwrap()), "vid-2");
     assert!(cursors.data.is_empty());
 
     let native = list_response(
@@ -222,11 +235,27 @@ fn list_replies() {
         Some("openai"),
     )
     .unwrap();
-    assert_eq!(native.first_id.as_deref(), Some("vid-1"));
+    assert_eq!(native.fields["first_id"], json!("vid-1"));
+
+    let null_cursor = list_response(
+        &body(&json!({"data": [], "first_id": null, "last_id": ""})),
+        Some("openai"),
+    )
+    .unwrap();
+    assert_eq!(null_cursor.fields["first_id"], Value::Null);
+    assert_eq!(null_cursor.fields["last_id"], json!(""));
+
+    let item_without_id = list_response(
+        &body(&json!({"data": [{"object": "video"}]})),
+        Some("openai"),
+    )
+    .unwrap();
+    assert_eq!(item_without_id.data[0].id, None);
 
     let plain = list_response(&body(&reply), Some("")).unwrap();
-    assert_eq!(plain.data[0].id, "vid-1");
-    assert_eq!(plain.first_id.as_deref(), Some("vid-1"));
+    assert_eq!(plain.data[0].id.as_deref(), Some("vid-1"));
+    assert_eq!(plain.fields["first_id"], json!("vid-1"));
+    assert_eq!(serde_json::to_value(&plain).unwrap(), reply);
 }
 
 fn status_calls() {
@@ -278,7 +307,7 @@ fn remix_case() {
         &encoded,
         "make it blue",
         "https://mock.example/v1/videos/",
-        None,
+        &VideoOptions::new(),
     )
     .unwrap();
     assert_eq!(url, "https://mock.example/v1/videos/vid%2Fone%20two/remix");
@@ -289,7 +318,7 @@ fn remix_case() {
         &encoded,
         "make it blue",
         "https://mock.example/v1/videos",
-        Some(&extra),
+        &extra,
     )
     .unwrap();
     assert_eq!(
@@ -335,12 +364,24 @@ fn delete_requests() {
     assert!(params.is_empty());
 
     let missing = delete_request("", API_BASE).unwrap_err();
+    assert!(matches!(
+        missing,
+        VideoError::Path { source: HttpError::Required { ref field_name } } if field_name == "video_id"
+    ));
     assert_eq!(missing.to_string(), "video_id is required");
-    assert!(matches!(missing, VideoError::MissingVideoId));
     let dot = delete_request(".", API_BASE).unwrap_err();
+    assert!(matches!(
+        dot,
+        VideoError::Path { source: HttpError::DotSegment { ref field_name } } if field_name == "video_id"
+    ));
     assert_eq!(dot.to_string(), "video_id cannot be a dot path segment");
     let dot_dot = delete_request("..", API_BASE).unwrap_err();
-    assert!(matches!(dot_dot, VideoError::DotSegment));
+    assert!(matches!(
+        dot_dot,
+        VideoError::Path {
+            source: HttpError::DotSegment { .. }
+        }
+    ));
 }
 
 fn delete_reply() {
@@ -503,10 +544,12 @@ fn duration_case() {
 }
 
 fn bearer(configured: &VideoCredentials) -> String {
-    let base = headers(&[("Authorization", "Bearer old"), ("X-Trace", "trace-1")]);
+    let base = secret_headers(&[("Authorization", "Bearer old"), ("X-Trace", "trace-1")]);
     let updated = validate_environment(base, configured);
-    assert_eq!(updated.get("X-Trace").map(String::as_str), Some("trace-1"));
-    updated.get("Authorization").cloned().unwrap_or_default()
+    assert_eq!(exposed(&updated, "X-Trace"), Some("trace-1"));
+    exposed(&updated, "Authorization")
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn auth_chain_case() {
@@ -620,11 +663,15 @@ fn content_variant_case() {
 
     assert!(matches!(
         content_request("", API_BASE, None),
-        Err(VideoError::MissingVideoId)
+        Err(VideoError::Path {
+            source: HttpError::Required { .. }
+        })
     ));
     assert!(matches!(
         content_request("..", API_BASE, None),
-        Err(VideoError::DotSegment)
+        Err(VideoError::Path {
+            source: HttpError::DotSegment { .. }
+        })
     ));
 }
 

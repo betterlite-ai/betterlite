@@ -85,7 +85,7 @@ class VideoConfig(Protocol):
     @property
     def transform_video_list_response(
         self,
-    ) -> Callable[[httpx.Response, Logging, str | None], dict[str, str]]: ...
+    ) -> Callable[[httpx.Response, Logging, str | None], Mapping[str, JsonValue]]: ...
 
     @property
     def transform_video_delete_request(

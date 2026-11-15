@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_openai::openai_video_identifiers::multipart::{MediaBody, MultipartPart};
@@ -11,9 +13,9 @@ use betterlite_openai::videos::delete::{delete_request, delete_response};
 use betterlite_openai::videos::error::{VideoError, get_error_class};
 use betterlite_openai::videos::list::{list_request, list_response};
 use betterlite_openai::videos::remix::{remix_request, remix_response};
-use betterlite_openai::videos::reply::{VideoList, VideoObject};
+use betterlite_openai::videos::reply::VideoObject;
 use betterlite_openai::videos::status::{status_request, status_response};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
@@ -32,7 +34,7 @@ pub(super) fn run_call(call: &Call) -> HelperResult {
         Call::CreateResponse(response) => create_response_view(response),
         Call::ContentRequest(request) => content_request_view(request),
         Call::ContentResponse(body) => {
-            let bytes = decode_body(&body.body_base64)?;
+            let bytes = STANDARD.decode(&body.body_base64).or_value_error()?;
             Ok(json!({"body_base64": STANDARD.encode(content_response(&bytes))}))
         }
         Call::RemixRequest(request) => remix_request_view(request),
@@ -59,22 +61,6 @@ pub(super) fn run_call(call: &Call) -> HelperResult {
     }
 }
 
-fn decode_body(body_base64: &str) -> Result<Vec<u8>, Box<HelperError>> {
-    STANDARD.decode(body_base64).or_value_error()
-}
-
-fn video_view(video: &VideoObject) -> Result<Value, Box<HelperError>> {
-    serde_json::to_value(video).or_value_error()
-}
-
-fn list_view(list: &VideoList) -> Result<Value, Box<HelperError>> {
-    serde_json::to_value(list).or_value_error()
-}
-
-fn request_view(url: &str, params: &VideoOptions) -> Value {
-    json!({"url": url, "params": params})
-}
-
 fn files_view(files: &[MultipartPart<'_>]) -> Vec<Value> {
     files
         .iter()
@@ -98,7 +84,9 @@ fn files_view(files: &[MultipartPart<'_>]) -> Vec<Value> {
 fn create_view(call: &Create) -> HelperResult {
     let reference = call.reference.as_ref();
     let decoded = match reference {
-        Some(Reference::Bytes { data_base64 }) => Some(decode_body(data_base64)?),
+        Some(Reference::Bytes { data_base64 }) => {
+            Some(STANDARD.decode(data_base64).or_value_error()?)
+        }
         Some(Reference::Text { .. }) | None => None,
     };
     let media = match (reference, decoded.as_deref()) {
@@ -126,13 +114,18 @@ fn create_view(call: &Create) -> HelperResult {
 fn content_request_view(call: &ContentRequest) -> HelperResult {
     let (url, params) = content_request(&call.video_id, &call.api_base, call.variant.as_deref())
         .or_value_error()?;
-    Ok(request_view(&url, &params))
+    Ok(json!({"url": url, "params": params}))
 }
 
 fn remix_request_view(call: &RemixRequest) -> HelperResult {
-    let (url, params) =
-        remix_request(&call.video_id, &call.prompt, &call.api_base, None).or_value_error()?;
-    Ok(request_view(&url, &params))
+    let (url, params) = remix_request(
+        &call.video_id,
+        &call.prompt,
+        &call.api_base,
+        &VideoOptions::new(),
+    )
+    .or_value_error()?;
+    Ok(json!({"url": url, "params": params}))
 }
 
 fn list_request_view(call: &ListRequest) -> HelperResult {
@@ -141,38 +134,38 @@ fn list_request_view(call: &ListRequest) -> HelperResult {
         call.after.as_deref(),
         call.limit,
         call.order.as_deref(),
-        None,
+        &VideoOptions::new(),
     );
-    Ok(request_view(&url, &params))
+    Ok(json!({"url": url, "params": params}))
 }
 
 fn path_request_view(call: &Request, transform: PathRequest) -> HelperResult {
     let (url, params) = transform(&call.video_id, &call.api_base).or_value_error()?;
-    Ok(request_view(&url, &params))
+    Ok(json!({"url": url, "params": params}))
 }
 
 fn delete_response_view(body: &Body) -> HelperResult {
-    let bytes = decode_body(&body.body_base64)?;
+    let bytes = STANDARD.decode(&body.body_base64).or_value_error()?;
     let video = delete_response(&bytes).or_value_error()?;
-    video_view(&video)
+    serde_json::to_value(&video).or_value_error()
 }
 
 fn create_response_view(call: &CreateResponse) -> HelperResult {
-    let bytes = decode_body(&call.body_base64)?;
+    let bytes = STANDARD.decode(&call.body_base64).or_value_error()?;
     let video = create_response(&call.model, &bytes, call.provider.as_deref()).or_value_error()?;
-    video_view(&video)
+    serde_json::to_value(&video).or_value_error()
 }
 
 fn video_response_view(call: &Response, transform: VideoReply) -> HelperResult {
-    let bytes = decode_body(&call.body_base64)?;
+    let bytes = STANDARD.decode(&call.body_base64).or_value_error()?;
     let video = transform(&bytes, call.provider.as_deref()).or_value_error()?;
-    video_view(&video)
+    serde_json::to_value(&video).or_value_error()
 }
 
 fn list_response_view(call: &Response) -> HelperResult {
-    let bytes = decode_body(&call.body_base64)?;
+    let bytes = STANDARD.decode(&call.body_base64).or_value_error()?;
     let list = list_response(&bytes, call.provider.as_deref()).or_value_error()?;
-    list_view(&list)
+    serde_json::to_value(&list).or_value_error()
 }
 
 fn environment_view(call: &Environment) -> HelperResult {
@@ -183,6 +176,15 @@ fn environment_view(call: &Environment) -> HelperResult {
         openai_key: call.openai_key.as_deref().map(SecretString::from),
         environment_api_key: call.environment_api_key.as_deref().map(SecretString::from),
     };
-    let updated = validate_environment(call.headers.clone(), &configured);
-    Ok(json!({"headers": updated}))
+    let given = call
+        .headers
+        .iter()
+        .map(|(name, value)| (name.clone(), SecretString::from(value.as_str())))
+        .collect();
+    let updated = validate_environment(given, &configured);
+    let exposed: BTreeMap<&str, &str> = updated
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.expose_secret()))
+        .collect();
+    Ok(json!({"headers": exposed}))
 }
