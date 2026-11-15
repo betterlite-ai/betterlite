@@ -738,12 +738,12 @@ async fn send_unknown_event_sends_the_default_body() {
     let mailer = plain_mailer(&env, &sender, &creator);
     let mut event = key_created_event();
     event.event = WebhookEventType::BudgetCrossed;
-    event.event_message = "budget_crossed".to_owned();
+    event.event_message = "Budget alert".to_owned();
     event.token = Some(SecretString::from("sk-secret-token"));
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
     assert_eq!(delivered.len(), 1);
-    assert_eq!(delivered[0].subject, "LiteLLM: budget_crossed");
+    assert_eq!(delivered[0].subject, "LiteLLM: Budget alert");
     assert_eq!(delivered[0].html, "Alert from LiteLLM Server");
     let output = logs.contents();
     assert!(
