@@ -38,12 +38,16 @@ impl From<PredictionError> for StreamFailure {
     }
 }
 
-pub async fn complete<C: PredictionClient>(
+pub async fn complete<C, Lookup>(
     client: &C,
     invocation: LegacyInvocation,
     context: &LegacyContext<'_, '_>,
-    lookup: impl Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
-) -> Result<LegacyResult, LegacyPredictionError> {
+    lookup: Lookup,
+) -> Result<LegacyResult, LegacyPredictionError>
+where
+    C: PredictionClient,
+    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
+{
     complete_inner(client, invocation, context, lookup)
         .await
         .map_err(|source| LegacyPredictionError::Completion { source })

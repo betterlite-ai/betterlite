@@ -19,7 +19,7 @@ pub trait LocalEncoding: Send + Sync {
 
 impl LocalEncoding for Engine {
     fn encode(&self, text: &str) -> Result<usize, EngineError> {
-        let ids = Engine::encode(self, text)?;
+        let ids = Self::encode(self, text)?;
         Ok(ids.len())
     }
 }

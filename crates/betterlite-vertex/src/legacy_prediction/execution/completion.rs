@@ -11,12 +11,12 @@ use super::super::invocation::LegacyInvocation;
 use super::super::projection::{LegacyResult, ProjectionInput, project};
 use super::super::records::{Prediction, ReplyMeta, TextReply, strip_output_separator};
 use super::LegacyContext;
-use super::scope::{RpcScope, require_custom, resolve_scope};
+use super::scope::{RpcScope, endpoint_path, require_custom, resolve_scope};
 
 struct EndpointCall {
     model: String,
     prompt: String,
-    endpoint: Option<String>,
+    endpoint: String,
     instances: Vec<Json>,
 }
 
@@ -36,34 +36,11 @@ where
         LegacyInvocation::Chat { .. } | LegacyInvocation::Text { .. } => {
             publisher_completion(client, context, scope, invocation).await
         }
-        LegacyInvocation::CustomEndpoint {
-            model,
-            prompt,
-            instances,
-            ..
-        } => {
-            let call = EndpointCall {
-                model,
-                prompt,
-                endpoint: None,
-                instances,
+        LegacyInvocation::CustomEndpoint { .. } | LegacyInvocation::PrivateEndpoint { .. } => {
+            let Some(call) = endpoint_call(invocation, &scope) else {
+                return Err(PredictionError::CustomEndpointContext);
             };
-            endpoint_completion_call(client, context, scope, call).await
-        }
-        LegacyInvocation::PrivateEndpoint {
-            model,
-            prompt,
-            endpoint,
-            instances,
-            ..
-        } => {
-            let call = EndpointCall {
-                model,
-                prompt,
-                endpoint: Some(endpoint),
-                instances,
-            };
-            endpoint_completion_call(client, context, scope, call).await
+            endpoint_completion(client, context, scope, call).await
         }
         LegacyInvocation::Vision { model, prompt } => {
             projected(context, &model, &prompt, None, None)
@@ -134,7 +111,38 @@ fn text_result(
     )
 }
 
-async fn endpoint_completion_call<C>(
+fn endpoint_call(invocation: LegacyInvocation, scope: &RpcScope) -> Option<EndpointCall> {
+    let (model, prompt, given_endpoint, instances) = match invocation {
+        LegacyInvocation::CustomEndpoint {
+            model,
+            prompt,
+            instances,
+            ..
+        } => (model, prompt, None, instances),
+        LegacyInvocation::PrivateEndpoint {
+            model,
+            prompt,
+            endpoint,
+            instances,
+            ..
+        } => (model, prompt, Some(endpoint), instances),
+        LegacyInvocation::Chat { .. }
+        | LegacyInvocation::Text { .. }
+        | LegacyInvocation::Vision { .. } => return None,
+    };
+    let endpoint = match given_endpoint {
+        Some(endpoint) => endpoint,
+        None => endpoint_path(scope, &model),
+    };
+    Some(EndpointCall {
+        model,
+        prompt,
+        endpoint,
+        instances,
+    })
+}
+
+async fn endpoint_completion<C>(
     client: &C,
     context: &LegacyContext<'_, '_>,
     scope: RpcScope,
@@ -149,38 +157,18 @@ where
         endpoint,
         instances,
     } = call;
-    let endpoint = match endpoint {
-        Some(endpoint) => endpoint,
-        None => format!(
-            "projects/{}/locations/{}/endpoints/{}",
-            scope.project, scope.location, model
-        ),
-    };
     let request = EndpointPredictRequest {
         token: scope.token,
         location: scope.location,
         endpoint,
         instances,
     };
-    endpoint_completion(client, context, &request, &model, &prompt).await
-}
-
-async fn endpoint_completion<C>(
-    client: &C,
-    context: &LegacyContext<'_, '_>,
-    request: &EndpointPredictRequest,
-    model: &str,
-    prompt: &str,
-) -> Result<LegacyResult, PredictionError>
-where
-    C: PredictionClient,
-{
-    let reply = client.predict_endpoint(request).await?;
+    let reply = client.predict_endpoint(&request).await?;
     let Some(prediction) = reply.predictions.first() else {
         return Err(PredictionError::MissingPrediction);
     };
     let stripped = strip_output_separator(prediction);
-    projected(context, model, prompt, Some(&stripped), Some(&reply.meta))
+    projected(context, &model, &prompt, Some(&stripped), Some(&reply.meta))
 }
 
 fn projected(

@@ -13,7 +13,7 @@ use super::super::error::{LegacyPredictionError, PredictionError};
 use super::super::invocation::{LegacyInvocation, remove_instance_stream};
 use super::super::records::{LegacyChunk, Prediction, PredictionsReply, strip_output_separator};
 use super::super::streamer::TextStreamer;
-use super::scope::{RpcScope, require_custom, resolve_scope};
+use super::scope::{RpcScope, endpoint_path, require_custom, resolve_scope};
 use super::{LegacyChunkStream, LegacyContext, StreamFailure};
 
 pub(super) async fn stream_inner<C, Lookup>(
@@ -120,13 +120,6 @@ where
         | LegacyInvocation::PrivateEndpoint { .. }
         | LegacyInvocation::Vision { .. } => Err(PredictionError::MissingPrediction),
     }
-}
-
-fn endpoint_path(scope: &RpcScope, model: &str) -> String {
-    format!(
-        "projects/{}/locations/{}/endpoints/{}",
-        scope.project, scope.location, model
-    )
 }
 
 async fn endpoint_stream<C>(

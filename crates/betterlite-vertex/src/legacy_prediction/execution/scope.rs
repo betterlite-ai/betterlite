@@ -16,6 +16,13 @@ pub(super) struct RpcScope {
     pub(super) location: String,
 }
 
+pub(super) fn endpoint_path(scope: &RpcScope, model: &str) -> String {
+    format!(
+        "projects/{}/locations/{}/endpoints/{}",
+        scope.project, scope.location, model
+    )
+}
+
 pub(super) const fn require_custom(context: &LegacyContext<'_, '_>) -> Result<(), PredictionError> {
     if context.project.is_some() && context.location.is_some() {
         return Ok(());
