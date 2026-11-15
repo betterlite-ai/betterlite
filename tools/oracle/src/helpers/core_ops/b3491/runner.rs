@@ -27,6 +27,15 @@ use super::fixtures::{
 use super::{Input, Mode};
 
 type Setup<'setup> = InteractionsStreamSetup<'setup, FixtureConfig, RecordingLogging>;
+type AsyncStream<'base> =
+    InteractionsStreamIterator<'base, FakeAsyncResponse, FixtureConfig, RecordingLogging>;
+type SyncStream<'base> =
+    SyncInteractionsStreamIterator<'base, FakeSyncResponse, FixtureConfig, RecordingLogging>;
+
+enum Streams<'base> {
+    Async(AsyncStream<'base>),
+    Sync(SyncStream<'base>),
+}
 
 pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
     let catalog = ModelCatalog::default();
@@ -57,55 +66,73 @@ pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
         custom_llm_provider: None,
         api_base: &resolver,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| runtime_failure(&error))?;
-    runtime.block_on(drive(input, setup, input.mode))
+    drive(open_stream(input, setup)?)
 }
 
-async fn drive(input: &Input, setup: Setup<'_>, mode: Mode) -> crate::helpers::HelperResult {
-    match mode {
+fn open_stream<'setup>(
+    input: &Input,
+    setup: Setup<'setup>,
+) -> Result<Streams<'setup>, Box<crate::helpers::HelperError>> {
+    match input.mode {
         Mode::Async => {
             let response = FakeAsyncResponse::new(&input.lines);
-            let mut iterator = InteractionsStreamIterator::new(response, setup)
-                .map_err(|error| failure(&error))?;
-            let mut events = Vec::new();
-            while let Some(item) = iterator.next_chunk().await {
-                events.push(item.map_err(|error| failure(&error))?);
-            }
-            finish(iterator.base, events)
+            InteractionsStreamIterator::new(response, setup)
+                .map(Streams::Async)
+                .map_err(|error| failure(&error))
         }
         Mode::Sync => {
             let response = FakeSyncResponse::new(&input.lines);
-            let mut iterator = SyncInteractionsStreamIterator::new(response, setup)
-                .map_err(|error| failure(&error))?;
-            let events = from_fn(|| iterator.next_chunk())
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| failure(&error))?;
-            finish(iterator.base, events)
+            SyncInteractionsStreamIterator::new(response, setup)
+                .map(Streams::Sync)
+                .map_err(|error| failure(&error))
         }
     }
 }
 
+fn drive(streams: Streams<'_>) -> crate::helpers::HelperResult {
+    match streams {
+        Streams::Async(mut iterator) => {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| runtime_failure(&error))?;
+            runtime.block_on(collect_async(&mut iterator))
+        }
+        Streams::Sync(mut iterator) => {
+            let events = from_fn(|| iterator.next_chunk())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| failure(&error))?;
+            Ok(finish(&iterator.base, &events))
+        }
+    }
+}
+
+async fn collect_async(iterator: &mut AsyncStream<'_>) -> crate::helpers::HelperResult {
+    let mut events = Vec::new();
+    while let Some(item) = iterator.next_chunk().await {
+        events.push(item.map_err(|error| failure(&error))?);
+    }
+    Ok(finish(&iterator.base, &events))
+}
+
 fn finish(
-    base: InteractionsStreamBase<'_, FixtureConfig, RecordingLogging>,
-    events: Vec<InteractionsStreamChunk>,
-) -> crate::helpers::HelperResult {
+    base: &InteractionsStreamBase<'_, FixtureConfig, RecordingLogging>,
+    events: &[InteractionsStreamChunk],
+) -> Value {
     let dispatches = base.logging.records();
-    Ok(output(
+    output(
         events,
         base.finished,
-        base.completed_response,
-        dispatches,
-    ))
+        base.completed_response.as_ref(),
+        &dispatches,
+    )
 }
 
 fn output(
-    events: Vec<InteractionsStreamChunk>,
+    events: &[InteractionsStreamChunk],
     finished: bool,
-    completed: Option<InteractionsStreamChunk>,
-    dispatches: Vec<DispatchOutput>,
+    completed: Option<&InteractionsStreamChunk>,
+    dispatches: &[DispatchOutput],
 ) -> Value {
     json!({
         "events": events,
