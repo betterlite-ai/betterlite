@@ -19,7 +19,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Map, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -27,7 +27,7 @@ pub(crate) enum MediaSpec {
     Bytes { data: String },
     File { data: String, position: usize },
     Text { text: String },
-    List { items: Vec<MediaSpec> },
+    List { items: Vec<Self> },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -180,10 +180,9 @@ fn prepare(params: &PrepareParams) -> HelperResult {
         MaskSpec::Supplied { media } => Some(media_from(media)?),
     };
     let mask_input = match (&params.mask, mask.as_mut()) {
-        (MaskSpec::Absent, _) => MaskInput::Absent,
         (MaskSpec::Null, _) => MaskInput::Null,
         (MaskSpec::Supplied { .. }, Some(media)) => MaskInput::Media(media),
-        (MaskSpec::Supplied { .. }, None) => MaskInput::Absent,
+        (MaskSpec::Absent, _) | (MaskSpec::Supplied { .. }, None) => MaskInput::Absent,
     };
     let form = transform_image_edit_request(
         params.prompt.as_deref(),

@@ -150,23 +150,22 @@ def media_from(spec: MediaSpec, handles: list[io.BytesIO]) -> Media:
 
 def masked(
     call: PrepareCall, handles: list[io.BytesIO]
-) -> tuple[dict[str, JsonValue | Media], Media | None]:
+) -> dict[str, JsonValue | Media]:
     optional: dict[str, JsonValue | Media] = dict(call["options"])
     spec = call["mask"]
     if spec["kind"] == "absent":
-        return optional, None
+        return optional
     if spec["kind"] == "null":
         optional["mask"] = None
-        return optional, None
-    mask = media_from(spec["media"], handles)
-    optional["mask"] = mask
-    return optional, mask
+        return optional
+    optional["mask"] = media_from(spec["media"], handles)
+    return optional
 
 
 def prepared(call: PrepareCall) -> JsonValue:
     handles: list[io.BytesIO] = []
     image = None if call["image"] is None else media_from(call["image"], handles)
-    optional, mask = masked(call, handles)
+    optional = masked(call, handles)
     body, files = CONFIG.transform_image_edit_request(
         MODEL, call["prompt"], image, optional, {}, {}
     )
