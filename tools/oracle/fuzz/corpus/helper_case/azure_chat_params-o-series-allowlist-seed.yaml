@@ -1,0 +1,15 @@
+kind: helper
+name: azure-chat-params-o-series-allowlist-seed
+call:
+  azure_chat_params:
+    function: o_series_allowlist
+    install:
+      model_cost:
+        o1-mini: {supports_reasoning: true}
+      chat_models: [o1-mini]
+      text_models: []
+      drop_params: false
+      openai_system_messages_first: false
+    models: [o1-mini, my-o1-deployment]
+env: {}
+compare: {ignore: []}
