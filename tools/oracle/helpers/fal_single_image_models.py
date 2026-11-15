@@ -1,6 +1,6 @@
 import os
 from collections.abc import Sequence
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -137,8 +137,19 @@ class ImageResponseFields(TypedDict):
     data: list[ImageUrl]
 
 
+class ExistingImage(TypedDict):
+    url: str
+
+
+class ReplyPayload(TypedDict):
+    created: int
+    data: list[ExistingImage]
+
+
 RESPONSE: TypeAdapter[ImageResponse] = TypeAdapter(ImageResponse)
 IMAGES: TypeAdapter[ImageResponseFields] = TypeAdapter(ImageResponseFields)
+# LiteLLM's class carries Any in its constructor, so the catch names it through a typed alias
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
 class Recorder(Logging):
@@ -193,20 +204,19 @@ def ignored_count(call: IgnoredCount) -> JsonValue:
     }
 
 
-def size_outcome(config: ProfileConfig, model: str, size: str) -> JsonValue:
-    case = MappingCase(non_default={"size": size}, optional={}, drop_params=False)
-    return mapping_outcome(config, model, case)
-
-
 def size_list(config: ProfileConfig, model: str, call: SizeCall) -> JsonValue:
-    return {"sizes": [size_outcome(config, model, size) for size in call["sizes"]]}
+    outcomes: list[JsonValue] = []
+    for size in call["sizes"]:
+        case = MappingCase(non_default={"size": size}, optional={}, drop_params=False)
+        outcomes.append(mapping_outcome(config, model, case))
+    return {"sizes": outcomes}
 
 
 def reply_outcome(config: ProfileConfig, case: ReplyCase) -> JsonValue:
-    payload = JSON.validate_python({
+    payload: ReplyPayload = {
         "created": 0,
-        "data": [{"url": url} for url in case["existing"]],
-    })
+        "data": [ExistingImage(url=url) for url in case["existing"]],
+    }
     request = httpx.Request("POST", REQUEST_URL)
     raw = httpx.Response(
         status_code=case["status"],
@@ -224,7 +234,7 @@ def reply_outcome(config: ProfileConfig, case: ReplyCase) -> JsonValue:
             {},
             None,
         )
-    except (BaseLLMException, ValueError):
+    except (ValueError, PROVIDER_ERROR):
         return {"error": {"status": case["status"]}}
     dumped = IMAGES.validate_json(result.model_dump_json())
     return {"images": JSON.validate_python(dumped["data"])}
