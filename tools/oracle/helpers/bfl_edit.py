@@ -1,5 +1,6 @@
 import base64
 import io
+from collections.abc import Callable
 from typing import Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 import httpx
@@ -69,45 +70,31 @@ IMAGES: TypeAdapter[ImageFields] = TypeAdapter(ImageFields)
 
 @runtime_checkable
 class EditConfig(Protocol):
-    def get_supported_openai_params(self, model: str) -> list[str]: ...
-
-    def map_openai_params(
-        self,
-        image_edit_optional_params: dict[str, JsonValue],
-        model: str,
-        *,
-        drop_params: bool,
-    ) -> dict[str, JsonValue]: ...
-
-    def validate_environment(
-        self,
-        headers: dict[str, str],
-        model: str,
-        api_key: str | None = None,
-        litellm_params: dict[str, JsonValue] | None = None,
-        api_base: str | None = None,
-    ) -> dict[str, str]: ...
-
-    def get_complete_url(
-        self, model: str, api_base: str | None, litellm_params: dict[str, JsonValue]
-    ) -> str: ...
-
-    def transform_image_edit_request(
-        self,
-        model: str,
-        prompt: str | None,
-        image: Media | None,
-        params: dict[str, JsonValue | Media],
-        litellm_params: dict[str, JsonValue],
-        headers: dict[str, str],
-    ) -> tuple[dict[str, JsonValue], tuple[()]]: ...
-
-    def transform_image_edit_response(
-        self,
-        model: str,
-        raw_response: httpx.Response,
-        logging_obj: None,
-    ) -> ImageResponse: ...
+    get_supported_openai_params: Callable[[str], list[str]]
+    map_openai_params: Callable[
+        [dict[str, JsonValue], str, bool],
+        dict[str, JsonValue],
+    ]
+    validate_environment: Callable[
+        [dict[str, str], str, str | None, dict[str, JsonValue] | None, str | None],
+        dict[str, str],
+    ]
+    get_complete_url: Callable[[str, str | None, dict[str, JsonValue]], str]
+    transform_image_edit_request: Callable[
+        [
+            str,
+            str | None,
+            Media | None,
+            dict[str, JsonValue | Media],
+            dict[str, JsonValue],
+            dict[str, str],
+        ],
+        tuple[dict[str, JsonValue], tuple[()]],
+    ]
+    transform_image_edit_response: Callable[
+        [str, httpx.Response, None],
+        ImageResponse,
+    ]
 
 
 CONFIG: EditConfig = TypeAdapter(EditConfig, config=ARBITRARY).validate_python(
@@ -203,9 +190,7 @@ def prepared(call: PrepareCall) -> JsonValue:
 def defaults(call: DefaultsCall) -> JsonValue:
     supported = JSON.validate_python(CONFIG.get_supported_openai_params(call["model"]))
     mapped = JSON.validate_python(
-        CONFIG.map_openai_params(
-            call["options"], call["model"], drop_params=call["drop_params"]
-        )
+        CONFIG.map_openai_params(call["options"], call["model"], call["drop_params"])
     )
     answer: dict[str, JsonValue] = {"supported": supported, "mapped": mapped}
     return JSON.validate_python(answer)
@@ -237,7 +222,11 @@ def sample(call: SampleCall) -> JsonValue:
 
 def run(input_value: EditCall) -> JsonValue:
     match input_value["operation"]:
-        case "first_image_only" | "restored_file_cursor" | "mask_presence":
+        case "first_image_only":
+            return prepared(input_value)
+        case "restored_file_cursor":
+            return prepared(input_value)
+        case "mask_presence":
             return prepared(input_value)
         case "edit_defaults":
             return defaults(input_value)
