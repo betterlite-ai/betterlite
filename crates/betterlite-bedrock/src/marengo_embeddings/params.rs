@@ -17,8 +17,12 @@ pub const MARENGO_SHARED_PARAMS: [&str; 11] = [
     "media_sources",
 ];
 
-pub const MARENGO_2_7_ONLY_PARAMS: [&str; 4] =
-    ["textTruncate", "lengthSec", "useFixedLengthSec", "minClipSec"];
+pub const MARENGO_2_7_ONLY_PARAMS: [&str; 4] = [
+    "textTruncate",
+    "lengthSec",
+    "useFixedLengthSec",
+    "minClipSec",
+];
 
 const PASSTHROUGH_PARAMS: [&str; 13] = [
     "textTruncate",
@@ -68,7 +72,10 @@ pub fn map_openai_params(is_marengo_3: bool, non_default: &Params, mut optional:
 
 #[must_use]
 pub const fn drop_params_enabled(policy: DropPolicy) -> bool {
-    policy.litellm_drop_params || matches!(policy.drop_params, Some(true))
+    match policy.drop_params {
+        Some(deployment) => policy.litellm_drop_params || deployment,
+        None => policy.litellm_drop_params,
+    }
 }
 
 #[must_use]
