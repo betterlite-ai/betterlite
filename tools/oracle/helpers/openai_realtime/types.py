@@ -10,7 +10,7 @@ FailMode: TypeAlias = Literal["invalid_status", "error"]
 
 class QuerySetup(TypedDict):
     api_base: str | None
-    query_params: dict[str, str | None] | None
+    query_params: RealtimeQueryParams | None
 
 
 class FailureSetup(TypedDict):
@@ -94,6 +94,5 @@ class RealtimeRunner(Protocol):
     async def async_realtime(self, **call: Unpack[RealtimeCall]) -> None: ...
 
 
-QUERY: TypeAdapter[RealtimeQueryParams] = TypeAdapter(RealtimeQueryParams)
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 HEADERS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
