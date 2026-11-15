@@ -632,6 +632,17 @@ fn prepare_create_encrypts_credentials_and_drops_null_values() {
     assert!(!decoded.contains_key("client_secret"));
 }
 
+// LiteLLM's pydantic model drops this key; docs/deviations/B4710.yaml records the difference.
+#[test]
+fn prepare_create_keeps_a_credential_field_outside_the_typed_model() {
+    let prepared = create(&request(
+        r#"{"server_name":"srv","credentials":{"client_id":"abc","future_field":5}}"#,
+    ));
+    let decoded = decrypted_blob(&prepared);
+    assert_eq!(decoded.get("client_id"), Some(&s("abc")));
+    assert_eq!(decoded.get("future_field"), Some(&json("5")));
+}
+
 #[test]
 fn prepare_create_lifts_token_exchange_settings_out_of_the_credentials_blob() {
     let prepared = create(&request(
