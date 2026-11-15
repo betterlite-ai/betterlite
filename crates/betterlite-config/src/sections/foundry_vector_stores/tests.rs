@@ -10,19 +10,19 @@ use super::{AzureSearchSettings, Settings};
 
 const BASE: &str = "model_list:\n  - model_name: foundry-vector\n    litellm_params:\n      model: azure_ai/text-embedding-3-small\n";
 
-fn load_source(source: String, variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+fn load_source(source: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
     let lookup: BTreeMap<String, String> = variables
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     ConfigLoader { lookup }
-        .load(&source)
+        .load(source)
         .map(|config| config.sections.foundry_vector_stores)
 }
 
 fn load(extra_params: &str, settings: &str, variables: &[(&str, &str)]) -> Settings {
     let source = format!("{BASE}{extra_params}{settings}");
-    load_source(source, variables).expect("the config should load")
+    load_source(&source, variables).expect("the config should load")
 }
 
 fn deployment(settings: &Settings) -> &AzureSearchSettings {
@@ -129,7 +129,7 @@ fn loads_azure_search_vector_field() {
 
 fn rejects_unrelated_key() {
     let unrelated = format!("{BASE}litellm_settings:\n  foundry_vector_store_unrelated: 1\n");
-    let error = load_source(unrelated, &[]).unwrap_err();
+    let error = load_source(&unrelated, &[]).unwrap_err();
     let ConfigError::Unsupported { paths } = error else {
         panic!("the unrelated key loaded without an unsupported-key error");
     };
@@ -138,7 +138,7 @@ fn rejects_unrelated_key() {
         vec!["litellm_settings.foundry_vector_store_unrelated".to_owned()]
     );
     let deployment_unrelated = format!("{BASE}      foundry_vector_store_unrelated: 1\n");
-    let deployment_error = load_source(deployment_unrelated, &[]).unwrap_err();
+    let deployment_error = load_source(&deployment_unrelated, &[]).unwrap_err();
     let ConfigError::Unsupported {
         paths: deployment_paths,
     } = deployment_error
