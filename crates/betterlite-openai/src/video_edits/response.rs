@@ -54,11 +54,9 @@ pub struct VideoObject {
     pub usage: Option<IndexMap<String, Json>>,
 }
 
+// ast-grep-ignore: no-one-line-functions - the task names this decoder as the fuzz target's entry point
 pub fn decode_character_reply(bytes: &[u8]) -> Result<CharacterObject, VideoEditError> {
-    match serde_json::from_slice(bytes) {
-        Ok(object) => Ok(object),
-        Err(source) => Err(VideoEditError::CharacterReply(source)),
-    }
+    serde_json::from_slice(bytes).map_err(VideoEditError::CharacterReply)
 }
 
 pub struct VideoReply<'reply> {
