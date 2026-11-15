@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
+use std::sync::Arc;
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
@@ -22,6 +23,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use indexmap::IndexMap;
+use tokio::runtime::{Builder, Runtime};
 
 use super::super::ModelInfoLookup;
 use super::super::tool_search::supports_tool_search;
@@ -38,8 +40,8 @@ pub(super) fn map(source: &str) -> ParamMap {
     serde_json::from_str(source).expect("fixture map parses")
 }
 
-pub(super) fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Runtime {
+    Builder::new_current_thread()
         .build()
         .expect("the test runtime builds")
 }
@@ -93,55 +95,102 @@ impl ModelInfoClient for NoHfTransport {
 
 // The model-cost-aware capability chain B688 reads, over the fixture map and the bundled rules.
 pub(super) fn tool_search_answers(model_cost: &str, models: &[&str]) -> Vec<bool> {
-    let bytes = model_cost.as_bytes();
-    let entries = ModelCostMap::parse(bytes).expect("the model cost map parses");
-    let mut bundled = BundledCatalog::default();
-    let catalog = bundled.get();
-    let typed = ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("an empty catalog parses");
-    let known = BTreeSet::new();
-    let custom = BTreeSet::new();
-    let variables = BTreeMap::new();
-    let resolution = ResolutionContext {
-        catalog: &typed,
-        known_model_names: &known,
-        custom_providers: &custom,
-        environment: &variables,
-        registry: JSONProviderRegistry::load(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    };
-    let dynamic = NoDynamicMetadata;
-    let hf = HfConfigClient {
-        client: NoHfTransport,
-        base_url: HF_CONFIG_BASE_URL.to_owned(),
-    };
-    let provider_catalog = Catalog::new();
-    let patterns = CandidatePatterns::new().expect("the candidate patterns compile");
-    let raw_runtime: RawCatalog = serde_json::from_slice(bytes).expect("the raw catalog parses");
-    let raw_packaged = RawCatalog::new();
-    let catalogs = CatalogSources {
-        patterns: &patterns,
-        runtime: &raw_runtime,
-        packaged: &raw_packaged,
-    };
-    let mut keys = ModelCostKeys::default();
-    let mut environment = CapabilityEnvironment {
-        metadata: MetadataEnvironment {
-            model_cost: &entries.entries,
-            vertex: &entries.vertex,
-            generalizations: &catalog.generalizations,
-            resolution: &resolution,
-            normalizers: NORMALIZERS,
-        },
-        keys: &mut keys,
-        dynamic: &dynamic,
-        hf: &hf,
-        provider_catalog: &provider_catalog,
-        provider_generation: 0,
-    };
-    let runtime = runtime();
-    models
-        .iter()
-        .map(|model| runtime.block_on(supports_tool_search(*model, &mut environment, &catalogs)))
-        .collect()
+    let fixture = ToolSearchFixture::new(model_cost);
+    ToolSearchSession::new(&fixture).answers(models)
+}
+
+struct ToolSearchFixture {
+    entries: ModelCostMap,
+    catalog: Arc<ModelCatalog>,
+    typed: ModelCatalog,
+    known_model_names: BTreeSet<String>,
+    custom_providers: BTreeSet<String>,
+    variables: BTreeMap<String, String>,
+    hf: HfConfigClient<NoHfTransport>,
+    provider_catalog: Catalog,
+    patterns: CandidatePatterns,
+    runtime_catalog: RawCatalog,
+    packaged_catalog: RawCatalog,
+}
+
+impl ToolSearchFixture {
+    fn new(model_cost: &str) -> Self {
+        let mut bundled = BundledCatalog::default();
+        Self {
+            entries: ModelCostMap::parse(model_cost.as_bytes()).expect("the model cost map parses"),
+            catalog: bundled.get(),
+            typed: ModelCatalog::parse(b"{}", UnknownFields::Warn)
+                .expect("an empty catalog parses"),
+            known_model_names: BTreeSet::new(),
+            custom_providers: BTreeSet::new(),
+            variables: BTreeMap::new(),
+            hf: HfConfigClient {
+                client: NoHfTransport,
+                base_url: HF_CONFIG_BASE_URL.to_owned(),
+            },
+            provider_catalog: Catalog::new(),
+            patterns: CandidatePatterns::new().expect("the candidate patterns compile"),
+            runtime_catalog: serde_json::from_slice(model_cost.as_bytes())
+                .expect("the raw catalog parses"),
+            packaged_catalog: RawCatalog::new(),
+        }
+    }
+
+    const fn catalogs(&self) -> CatalogSources<'_> {
+        CatalogSources {
+            patterns: &self.patterns,
+            runtime: &self.runtime_catalog,
+            packaged: &self.packaged_catalog,
+        }
+    }
+}
+
+struct ToolSearchSession<'fixture> {
+    fixture: &'fixture ToolSearchFixture,
+    resolution: ResolutionContext<'fixture>,
+    keys: ModelCostKeys,
+    dynamic: NoDynamicMetadata,
+}
+
+impl<'fixture> ToolSearchSession<'fixture> {
+    fn new(fixture: &'fixture ToolSearchFixture) -> Self {
+        let resolution = ResolutionContext {
+            catalog: &fixture.typed,
+            known_model_names: &fixture.known_model_names,
+            custom_providers: &fixture.custom_providers,
+            environment: &fixture.variables,
+            registry: JSONProviderRegistry::load(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        };
+        Self {
+            fixture,
+            resolution,
+            keys: ModelCostKeys::default(),
+            dynamic: NoDynamicMetadata,
+        }
+    }
+
+    fn answers(&mut self, models: &[&str]) -> Vec<bool> {
+        let catalogs = self.fixture.catalogs();
+        let mut environment = CapabilityEnvironment {
+            metadata: MetadataEnvironment {
+                model_cost: &self.fixture.entries.entries,
+                vertex: &self.fixture.entries.vertex,
+                generalizations: &self.fixture.catalog.generalizations,
+                resolution: &self.resolution,
+                normalizers: NORMALIZERS,
+            },
+            keys: &mut self.keys,
+            dynamic: &self.dynamic,
+            hf: &self.fixture.hf,
+            provider_catalog: &self.fixture.provider_catalog,
+            provider_generation: 0,
+        };
+        let runtime = runtime();
+        models
+            .iter()
+            .map(|model| runtime.block_on(supports_tool_search(model, &mut environment, &catalogs)))
+            .collect()
+    }
 }
