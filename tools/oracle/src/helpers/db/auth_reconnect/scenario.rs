@@ -1,4 +1,4 @@
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_db::auth_reconnect::policy::AuthReconnect;
@@ -8,11 +8,21 @@ use betterlite_db::auth_reconnect::stale::StaleReadEngine;
 use secrecy::SecretString;
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use super::fakes::{self, Database, FakeEngine};
+use super::fakes::{self, Database, FakeEngine, Handle};
 use super::scripted::{Capture, ScriptedClock, ScriptedLock};
 use super::{Flag, Report, Scenario, TargetName, failure};
 
 type ScenarioPolicy = AuthReconnect<FakeEngine, ScriptedClock, ScriptedLock>;
+
+impl Scenario {
+    const fn read_target(&self) -> TargetName {
+        if self.routing {
+            TargetName::Reader
+        } else {
+            TargetName::Writer
+        }
+    }
+}
 
 fn scenario_engine(scenario: &Scenario, effects: &fakes::Effects) -> FakeEngine {
     let database = match (scenario.routing, scenario.reader_unavailable) {
@@ -50,7 +60,7 @@ fn scenario_history(
     last_attempt: Duration,
     clock: &ScriptedClock,
     engine: &FakeEngine,
-) -> ReconnectHistory {
+) -> ReconnectHistory<Handle> {
     let failed_repairs = scenario
         .failed
         .iter()
@@ -64,6 +74,13 @@ fn scenario_history(
     }
 }
 
+fn failed_flag(policy: &ScenarioPolicy, engine: &FakeEngine, target: TargetName) -> Flag {
+    Flag(policy.has_failed_repair_for(
+        &engine.report_handle(target),
+        engine.current_generation(target),
+    ))
+}
+
 fn scenario_report(
     scenario: &Scenario,
     policy: &ScenarioPolicy,
@@ -71,30 +88,18 @@ fn scenario_report(
     effects: &fakes::Effects,
     result: bool,
 ) -> Report {
-    let reader_target = if scenario.routing {
-        TargetName::Reader
-    } else {
-        TargetName::Writer
-    };
+    let reader_target = scenario.read_target();
     let snapshot = policy.snapshot();
-    let recorded = effects
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
+    let failed_writer = failed_flag(policy, engine, TargetName::Writer);
+    let failed_reader = failed_flag(policy, engine, reader_target);
     Report {
         name: scenario.name.clone(),
         result: Flag(result),
-        effects: recorded,
+        effects: fakes::recorded(effects),
         failures: snapshot.consecutive_failures,
         dead: Flag(snapshot.engine_dead),
-        failed_writer: Flag(policy.has_failed_repair_for(
-            &engine.report_handle(TargetName::Writer),
-            engine.current_generation(TargetName::Writer),
-        )),
-        failed_reader: Flag(policy.has_failed_repair_for(
-            &engine.report_handle(reader_target),
-            engine.current_generation(reader_target),
-        )),
+        failed_writer,
+        failed_reader,
     }
 }
 

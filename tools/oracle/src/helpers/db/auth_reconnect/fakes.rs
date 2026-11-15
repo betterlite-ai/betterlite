@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::pending;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::auth_reconnect::engine::{EngineState, ReconnectEngine};
@@ -48,6 +49,13 @@ pub(super) fn record(effects: &Effects, effect: Effect) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(effect);
+}
+
+pub(super) fn recorded(effects: &Effects) -> Vec<Effect> {
+    effects
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
 }
 
 pub(super) struct EngineScript {
@@ -123,6 +131,15 @@ impl FakeEngine {
             TargetName::Reader => Arc::clone(&self.shared.reader),
         }
     }
+
+    fn take(&self, select: impl FnOnce(&mut EngineScript) -> Outcome) -> Outcome {
+        let mut script = self
+            .shared
+            .script
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        select(&mut script)
+    }
 }
 
 fn outcome(scripted: &Outcome, default: bool) -> Result<bool, FakeError> {
@@ -130,6 +147,23 @@ fn outcome(scripted: &Outcome, default: bool) -> Result<bool, FakeError> {
         return Err(FakeError(error.clone()));
     }
     Ok(scripted.value.unwrap_or(default))
+}
+
+async fn await_outcome(scripted: Outcome, default: bool) -> Result<bool, FakeError> {
+    if scripted.pending {
+        return pending().await;
+    }
+    outcome(&scripted, default)
+}
+
+async fn await_select(scripted: Outcome) -> Result<(), FakeError> {
+    if scripted.pending {
+        return pending().await;
+    }
+    match scripted.error {
+        Some(error) => Err(FakeError(error)),
+        None => Ok(()),
+    }
 }
 
 impl ReconnectEngine for FakeEngine {
@@ -178,58 +212,28 @@ impl ReconnectEngine for FakeEngine {
                     expected_generation,
                 },
             );
-            let scripted = self
-                .shared
-                .script
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .recreate
-                .clone();
-            if scripted.pending {
-                return std::future::pending::<Result<bool, FakeError>>().await;
-            }
-            outcome(&scripted, true)
+            let scripted = self.take(|script| script.recreate.clone());
+            await_outcome(scripted, true).await
         })
     }
 
     fn writer_read_only(&self) -> PoolFuture<'_, bool, Self::Error> {
         Box::pin(async move {
             record(&self.shared.effects, Effect::Probe);
-            let scripted = {
-                let mut script = self
-                    .shared
-                    .script
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
+            let scripted = self.take(|script| {
                 if script.bump_on_probe {
                     script.writer_generation = script.writer_generation.saturating_add(1);
                 }
                 script.probe.clone()
-            };
-            if scripted.pending {
-                return std::future::pending::<Result<bool, FakeError>>().await;
-            }
-            outcome(&scripted, false)
+            });
+            await_outcome(scripted, false).await
         })
     }
 
     fn writer_select_one(&self) -> PoolFuture<'_, (), Self::Error> {
         Box::pin(async move {
             record(&self.shared.effects, Effect::SelectOne);
-            let scripted = self
-                .shared
-                .script
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .select
-                .clone();
-            if scripted.pending {
-                return std::future::pending::<Result<(), FakeError>>().await;
-            }
-            match scripted.error {
-                Some(error) => Err(FakeError(error)),
-                None => Ok(()),
-            }
+            await_select(self.take(|script| script.select.clone())).await
         })
     }
 
