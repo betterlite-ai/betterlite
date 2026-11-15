@@ -9,7 +9,7 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.anthropic_messages.transformation import BaseAnthropicMessagesConfig
 from litellm.types.integrations.custom_logger import AgenticLoopPlan
 from openai.types.responses.response_input_param import ResponseInputParam
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic import JsonValue as Json
 from typing_extensions import override
 
@@ -135,8 +135,11 @@ async def execute(call: ContinuationCall, api_base: str) -> Json:
         failure: Json = {"class": type(error).__name__, "message": str(error.__context__)}
         outcome["error"] = failure
         return outcome
-    # every non-streaming answer, a dict override included, is read for its identity
-    identity = Identity.model_validate(result, from_attributes=True)
+    # every answered object, a dict override included, is read for its identity; a non-object stays null
+    try:
+        identity = Identity.model_validate(result, from_attributes=True)
+    except ValidationError:
+        return outcome
     outcome["returned"] = JSON.validate_json(identity.model_dump_json())
     return outcome
 
