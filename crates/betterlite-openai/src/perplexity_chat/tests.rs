@@ -8,6 +8,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
+use super::enhance::{PerplexityReplyError, apply};
 use super::{
     CapabilityLookup, SUPPORTED_PARAMS, provider_info, supported_openai_params,
     with_perplexity_fields,
@@ -556,20 +557,22 @@ fn citation_tokens_alone_create_empty_prompt_token_details() {
 }
 
 #[rstest]
-#[case::zero(json!(0), true)]
-#[case::empty_text(json!(""), true)]
-#[case::empty_object(json!({}), true)]
-#[case::false_flag(json!(false), true)]
-#[case::number(json!(5), false)]
-#[case::text(json!("x"), false)]
-fn choices_that_are_not_a_list_only_fail_when_truthy(
-    #[case] choices: Value,
-    #[case] skipped: bool,
-) {
-    let raw = json!({"citations": ["abcd"]});
-    let reply = json!({"choices": choices});
-    let enhanced = enhanced_reply(&reply.to_string(), &raw.to_string());
-    assert_eq!(enhanced.get("usage").is_some(), skipped);
+#[case::zero(json!(0))]
+#[case::empty_text(json!(""))]
+#[case::empty_object(json!({}))]
+#[case::false_flag(json!(false))]
+#[case::number(json!(5))]
+#[case::text(json!("x"))]
+fn non_list_choices_fail_with_the_field_and_leave_the_reply_unchanged(#[case] choices: Value) {
+    let mut reply = json!({"choices": choices});
+    let original = reply.clone();
+    let error = enhance::apply(&mut reply, br#"{"citations": ["abcd"]}"#)
+        .expect_err("the choices shape failure");
+    assert!(matches!(
+        error,
+        PerplexityReplyError::Shape { field: "choices" }
+    ));
+    assert_eq!(reply, original);
 }
 
 #[test]

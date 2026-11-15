@@ -105,23 +105,9 @@ fn first_choice(
     match reply.get("choices") {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Array(choices)) => Ok(choices.first().and_then(Value::as_object)),
-        Some(other) => {
-            // a falsy choices value is the pinned code's `if not model_response.choices`
-            if falsy(other) {
-                return Ok(None);
-            }
+        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_)) => {
             Err(PerplexityReplyError::Shape { field: "choices" })
         }
-    }
-}
-
-fn falsy(value: &Value) -> bool {
-    match value {
-        Value::Bool(flag) => !*flag,
-        Value::Number(number) => number.as_f64().is_some_and(|parsed| parsed == 0.0_f64),
-        Value::String(text) => text.is_empty(),
-        Value::Object(fields) => fields.is_empty(),
-        Value::Null | Value::Array(_) => false,
     }
 }
 
