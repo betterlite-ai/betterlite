@@ -4,6 +4,7 @@ use std::time::Duration;
 use rstest::rstest;
 
 use super::support::{COOLDOWN, FakeReconnect, capture_logs, fake_clock, recreate_call};
+use crate::auth_reconnect::clock::ReconnectClock;
 use crate::db_lifecycle::read_only::{ReadOnlyWriter, RecreateState};
 
 type TestedWriter = ReadOnlyWriter<FakeReconnect, super::support::FakeClock>;
@@ -82,7 +83,7 @@ async fn recreate_waits_longer_with_each_streak(#[case] streak: u32) {
             streak,
         }),
     };
-    let wait = COOLDOWN.mul(1_u32 << streak);
+    let wait = COOLDOWN * (1_u32 << streak);
     assert!(!read_only.recreate("waiting", None).await);
     clock.advance(wait.saturating_sub(Duration::from_millis(1)));
     assert!(!read_only.recreate("still waiting", None).await);

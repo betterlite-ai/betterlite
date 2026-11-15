@@ -277,6 +277,11 @@ impl FakeReconnect {
             .pop_front()
             .unwrap_or(true)
     }
+
+    fn call(&self, force_recreate: bool, reason: &str, timeout: Option<Duration>) -> bool {
+        self.record(force_recreate, reason, timeout);
+        self.next_result()
+    }
 }
 
 impl ReconnectControl for FakeReconnect {
@@ -285,8 +290,7 @@ impl ReconnectControl for FakeReconnect {
         reason: &'borrow str,
         timeout: Option<Duration>,
     ) -> LifecycleFuture<'borrow, bool> {
-        self.record(false, reason, timeout);
-        Box::pin(async move { self.next_result() })
+        Box::pin(async move { self.call(false, reason, timeout) })
     }
 
     fn force_recreate<'borrow>(
@@ -294,8 +298,7 @@ impl ReconnectControl for FakeReconnect {
         reason: &'borrow str,
         timeout: Option<Duration>,
     ) -> LifecycleFuture<'borrow, bool> {
-        self.record(true, reason, timeout);
-        Box::pin(async move { self.next_result() })
+        Box::pin(async move { self.call(true, reason, timeout) })
     }
 }
 
@@ -384,16 +387,21 @@ impl HealthCheck for FakeHealth {
     type Error = FakeFailure;
 
     fn health_check(&self) -> LifecycleFuture<'_, Result<(), FakeFailure>> {
-        self.actions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push("health_check".to_owned());
-        let outcome = self
-            .outcome
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        Box::pin(async move { outcome.map_or(Ok(()), Err) })
+        Box::pin(async move {
+            self.actions
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push("health_check".to_owned());
+            match self
+                .outcome
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+            {
+                Some(failure) => Err(failure),
+                None => Ok(()),
+            }
+        })
     }
 
     fn publish_spend_logs_row_count<'borrow>(
@@ -478,6 +486,22 @@ impl FakeCatalogState {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn take_creation(&self) -> Result<(), FakeFailure> {
+        self.creates
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or(Ok(()))
+    }
+
+    fn take_query(&self) -> Result<Vec<RawRow>, FakeFailure> {
+        self.queries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_else(|| Err(FakeFailure::message("no query was scripted")))
+    }
 }
 
 #[derive(Clone, Default)]
@@ -553,14 +577,7 @@ impl SupportsExecuteRaw for FakeCatalog {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(query.to_owned());
-        let reply = self
-            .state
-            .creates
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or(Ok(()));
-        Box::pin(async move { reply })
+        Box::pin(async move { self.state.take_creation() })
     }
 }
 
@@ -569,14 +586,7 @@ impl SupportsRawQueries for FakeCatalog {
         &'database self,
         _query: &'database str,
     ) -> QueryFuture<'database, FakeFailure> {
-        let reply = self
-            .state
-            .queries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or_else(|| Err(FakeFailure::message("no query was scripted")));
-        Box::pin(async move { reply })
+        Box::pin(async move { self.state.take_query() })
     }
 }
 

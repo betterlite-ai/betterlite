@@ -78,24 +78,23 @@ impl Section for Raw {
     }
 }
 
-fn enabled_setting<L>(lookup: &L) -> Result<bool, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn enabled_setting<L: EnvironmentLookup>(lookup: &L) -> Result<bool, ConfigError> {
     let Some(text) = lookup.lookup(ENABLED_VARIABLE) else {
         return Ok(true);
     };
-    Ok(betterlite_env::flag(ENABLED_VARIABLE, &text)?.unwrap_or(true))
+    let flag = betterlite_env::flag(ENABLED_VARIABLE, &text)?;
+    Ok(flag.unwrap_or(true))
 }
 
 fn interval_setting<L>(lookup: &L) -> Result<Duration, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let Some(text) = lookup.lookup(INTERVAL_VARIABLE) else {
-        return Ok(Duration::from_secs(DEFAULT_INTERVAL_SECS.unsigned_abs()));
-    };
-    let configured = betterlite_env::number::<i64>(INTERVAL_VARIABLE, &text)?;
+    let configured = lookup
+        .lookup(INTERVAL_VARIABLE)
+        .map(|text| betterlite_env::number::<i64>(INTERVAL_VARIABLE, &text))
+        .transpose()?
+        .flatten();
     let bounded = configured
         .unwrap_or(DEFAULT_INTERVAL_SECS)
         .max(MIN_INTERVAL_SECS);
@@ -120,15 +119,9 @@ where
     Ok(Duration::try_from_secs_f64(selected).unwrap_or(Duration::MAX))
 }
 
-fn schema_setting<L>(lookup: &L) -> String
-where
-    L: EnvironmentLookup,
-{
-    let Some(schema) = lookup
+fn schema_setting<L: EnvironmentLookup>(lookup: &L) -> String {
+    lookup
         .lookup(SCHEMA_VARIABLE)
         .filter(|value| !value.is_empty())
-    else {
-        return DEFAULT_SCHEMA.to_owned();
-    };
-    schema
+        .unwrap_or_else(|| DEFAULT_SCHEMA.to_owned())
 }

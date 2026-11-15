@@ -94,16 +94,14 @@ where
     pub async fn run(&self) -> ViewSetupOutcome {
         let started = Instant::now();
         loop {
-            match self.attempt().await {
-                Ok(()) => return ViewSetupOutcome::Ready,
-                Err(failure) => {
-                    if started.elapsed() >= self.deadline {
-                        self.log_timeout(&failure);
-                        return ViewSetupOutcome::TimedOut;
-                    }
-                    sleep(self.poll_interval).await;
-                }
+            let Err(failure) = self.attempt().await else {
+                return ViewSetupOutcome::Ready;
+            };
+            if started.elapsed() >= self.deadline {
+                self.log_timeout(&failure);
+                return ViewSetupOutcome::TimedOut;
             }
+            sleep(self.poll_interval).await;
         }
     }
 
@@ -127,7 +125,9 @@ where
             debug!("Waiting for table {VIEW_SETUP_GATE_TABLE} before creating the spend views");
             return Err(ViewSetupFailure::TableMissing);
         }
-        self.health.publish_spend_logs_row_count(&self.sink).await;
+        self.health
+            .publish_spend_logs_row_count(self.sink.as_ref())
+            .await;
         check_view_exists(&self.database, &self.health, &self.schema)
             .await
             .map_err(failed_attempt)
