@@ -95,7 +95,7 @@ fn tool_use_ids_default_to_empty_text(#[case] text: &str) {
 #[case::numeric_id(r#"{"toolUse":{"toolUseId":5}}"#)]
 #[case::list_name(r#"{"toolUse":{"toolName":["a"]}}"#)]
 fn tool_use_with_wrong_types_is_an_error(#[case] text: &str) {
-    assert!(serde_json::from_str::<ToolUseEvent>(text).is_err());
+    serde_json::from_str::<ToolUseEvent>(text).unwrap_err();
 }
 
 #[rstest]

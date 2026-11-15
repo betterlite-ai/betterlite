@@ -110,7 +110,15 @@ fn replay(
             session.cumulative_usage = serde_json::from_value::<UsageEvent>(usage.clone())?;
             Ok(Value::Null)
         }
-        Step::ContentEnd => content_end(state, ids),
+        Step::ContentEnd => {
+            let events = content_end_events(state, ids);
+            let chunks = state.delta_chunks.as_ref().map(|kept| {
+                kept.iter()
+                    .map(|chunk| chunk.delta.as_str())
+                    .collect::<Vec<_>>()
+            });
+            Ok(json!({ "events": serde_json::to_value(&events)?, "delta_chunks": chunks }))
+        }
         Step::PromptEnd => prompt_end(session, state, ids),
         Step::TakeUsage => take_usage(session, ids),
         Step::Leftover => {
@@ -119,16 +127,6 @@ fn replay(
         }
         Step::ToolUse { event } => tool_use(state, event, ids),
     }
-}
-
-fn content_end(state: &mut ResponseState, ids: &FixedIds) -> HelperResult {
-    let events = content_end_events(state, ids);
-    let chunks = state.delta_chunks.as_ref().map(|kept| {
-        kept.iter()
-            .map(|chunk| chunk.delta.as_str())
-            .collect::<Vec<_>>()
-    });
-    Ok(json!({ "events": serde_json::to_value(&events)?, "delta_chunks": chunks }))
 }
 
 fn prompt_end(

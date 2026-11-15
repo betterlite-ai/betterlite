@@ -2,6 +2,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use serde_json::value::RawValue;
+
 use crate::realtime_completion::tool_input::decode_realtime_tool_input;
 
 #[test]
@@ -21,7 +23,7 @@ fn replays_the_bedrock_services_realtime_completion_corpus() {
             let decoded = decode_realtime_tool_input(&bytes);
             assert_eq!(decoded.is_ok(), expected_ok, "{name}");
             if let Ok(raw) = decoded {
-                serde_json::from_str::<Box<serde_json::value::RawValue>>(raw.get())
+                serde_json::from_str::<Box<RawValue>>(raw.get())
                     .unwrap_or_else(|error| panic!("{name} decodes to JSON: {error}"));
                 if name.starts_with("valid-string-not-json") {
                     assert_eq!(raw.get(), "{}", "{name}");

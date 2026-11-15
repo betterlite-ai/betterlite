@@ -165,7 +165,7 @@ class Replay:
         }
 
     def take_usage(self) -> JsonValue:
-        events, *_ = self.config.transform_prompt_end_event(
+        events, _item_id, _response_id, _delta_type = self.config.transform_prompt_end_event(
             {"promptEnd": {}}, "resp-take", "conv-take"
         )
         return DoneAdapter.validate_json(json.dumps(events))[0]["response"]["usage"]

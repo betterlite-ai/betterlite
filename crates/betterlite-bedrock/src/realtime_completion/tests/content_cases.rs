@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 use super::support::{EVENT_1, FixedIds, ITEM_DONE_BODY, done_wire, open_state, wire};
-use crate::agentcore_stream::IdSource;
+use crate::agentcore_stream::IdSource as _;
 use crate::realtime_completion::content_end::content_end_events;
 use crate::realtime_completion::records::{DeltaChunk, DeltaType, ResponseState};
 use crate::realtime_completion::usage::response_done_events;
@@ -9,32 +9,44 @@ use crate::realtime_session::RealtimeSession;
 
 pub(super) fn content_end_text_audio() {
     let mut text = open_state(Some(DeltaType::Text), Some(&["Good ", "day"]));
-    let events = content_end_events(&mut text, &FixedIds::sequence(3));
-    let part = r#"{"type":"text","text":"Good day"}"#;
+    let text_events = content_end_events(&mut text, &FixedIds::sequence(3));
     assert_eq!(
-        wire(&events),
-        done_wire("response.text.done", r#","text":"Good day""#, part)
+        wire(&text_events),
+        done_wire(
+            "response.text.done",
+            r#","text":"Good day""#,
+            r#"{"type":"text","text":"Good day"}"#
+        )
     );
     assert_eq!(text.delta_chunks, None);
 
     let mut audio = open_state(Some(DeltaType::Audio), Some(&["ignored"]));
-    let events = content_end_events(&mut audio, &FixedIds::sequence(3));
-    let part = r#"{"type":"audio","transcript":""}"#;
-    assert_eq!(wire(&events), done_wire("response.audio.done", "", part));
+    let audio_events = content_end_events(&mut audio, &FixedIds::sequence(3));
+    assert_eq!(
+        wire(&audio_events),
+        done_wire(
+            "response.audio.done",
+            "",
+            r#"{"type":"audio","transcript":""}"#
+        )
+    );
     assert_eq!(audio.delta_chunks, None);
 
     let mut no_chunks = open_state(Some(DeltaType::Text), None);
-    let events = content_end_events(&mut no_chunks, &FixedIds::sequence(3));
-    let part = r#"{"type":"text","text":""}"#;
+    let empty_events = content_end_events(&mut no_chunks, &FixedIds::sequence(3));
     assert_eq!(
-        wire(&events),
-        done_wire("response.text.done", r#","text":"""#, part)
+        wire(&empty_events),
+        done_wire(
+            "response.text.done",
+            r#","text":"""#,
+            r#"{"type":"text","text":""}"#
+        )
     );
 
     let mut unknown = open_state(None, Some(&["kept"]));
-    let events = content_end_events(&mut unknown, &FixedIds::sequence(3));
+    let unknown_events = content_end_events(&mut unknown, &FixedIds::sequence(3));
     assert_eq!(
-        wire(&events),
+        wire(&unknown_events),
         [format!(
             r#"{{"type":"response.output_item.done","event_id":"{EVENT_1}",{ITEM_DONE_BODY}"#
         )]

@@ -1,7 +1,7 @@
 use rstest::rstest;
 
 use super::support::{EVENT_1, FixedIds, open_state, wire};
-use crate::agentcore_stream::IdSource;
+use crate::agentcore_stream::IdSource as _;
 use crate::realtime_completion::error::CompletionError;
 use crate::realtime_completion::records::DeltaType;
 use crate::realtime_completion::usage::{
@@ -133,8 +133,8 @@ pub(super) fn leftover_usage_done() {
     assert_eq!(ids.next_id(), uuid::Uuid::from_u128(1));
 
     session.cumulative_usage = parse_usage(FIRST_USAGE);
-    let ids = FixedIds::sequence(3);
-    let events = leftover_usage_done_events(&mut session, &ids).expect("a leftover event");
+    let fresh_ids = FixedIds::sequence(3);
+    let events = leftover_usage_done_events(&mut session, &fresh_ids).expect("a leftover event");
     assert_eq!(
         wire(&events),
         [format!(
