@@ -1,8 +1,6 @@
 from collections.abc import Callable
-from contextlib import ExitStack
 from datetime import UTC, datetime
-from typing import Final, Protocol
-from unittest.mock import patch
+from typing import Final, Protocol, TypeAlias
 
 import httpx
 import litellm
@@ -10,11 +8,13 @@ import openai
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.image_variations.transformation import BaseImageVariationConfig
 from litellm.llms.openai.common_utils import OpenAIError
+from litellm.llms.openai.image_variations import handler as variation_handler
 from litellm.llms.openai.image_variations.handler import OpenAIImageVariationsHandler
-from litellm.types.utils import ImageResponse, LlmProviders
+from litellm.types.utils import FileTypes, ImageResponse, LlmProviders
 from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel
 from pydantic import JsonValue as Json
+from typing_extensions import override
 
 from .config import variation_config
 from .probe import DOCUMENT, NOW, Probe, file_object, text_of
@@ -26,25 +26,47 @@ litellm.suppress_debug_info = True
 PROVIDER_ERROR: Final[type[Exception]] = OpenAIError
 
 
+Variation: TypeAlias = Callable[
+    [
+        ImageResponse,
+        str,
+        str,
+        str | None,
+        FileTypes,
+        float | None,
+        str,
+        Logging,
+        dict[str, Json],
+        dict[str, Json],
+        None,
+        None,
+        openai.OpenAI | None,
+        str | None,
+        dict[str, str] | None,
+    ],
+    ImageResponse,
+]
+
+
 class VariationHandler(Protocol):
     @property
-    def image_variations(self) -> Callable[..., ImageResponse]: ...
+    def image_variations(self) -> Variation: ...
 
 
+# LiteLLM leaves the handler's params bare, so this typed view is the entry to create_variation
 HANDLER: Final[VariationHandler] = OpenAIImageVariationsHandler()
 
 
-class AbsentVariationConfig:
-    def __init__(
-        self,
-        installed: Callable[[str, LlmProviders], BaseImageVariationConfig | None],
-    ) -> None:
-        self.installed = installed
-
-    def __call__(self, model: str, provider: LlmProviders) -> BaseImageVariationConfig | None:
+class AbsentProviderConfigManager(ProviderConfigManager):
+    @staticmethod
+    @override
+    def get_provider_image_variation_config(  # ast-grep-ignore: no-long-names
+        model: str, provider: LlmProviders
+    ) -> BaseImageVariationConfig | None:
+        # the fake registry has no OpenAI image variation config
         if provider == LlmProviders.OPENAI:
             return None
-        return self.installed(model, provider)
+        return ProviderConfigManager.get_provider_image_variation_config(model, provider)
 
 
 class ErrorRecord(BaseModel):
@@ -202,37 +224,31 @@ def request_value(probe: Probe) -> Json:
     previous_session = litellm.client_session
     if supplied is None:
         litellm.client_session = httpx.Client(transport=transport)
-    patches = ExitStack()
+    previous_config = variation_handler.ProviderConfigManager
     if probe.missing_config:
-        installed = ProviderConfigManager.get_provider_image_variation_config
-        patches.enter_context(
-            patch.object(
-                ProviderConfigManager,
-                "get_provider_image_variation_config",
-                AbsentVariationConfig(installed),
-            )
-        )
+        variation_handler.ProviderConfigManager = AbsentProviderConfigManager
     optional_params: dict[str, Json] = dict(probe.optional_params)
     litellm_params: dict[str, Json] = {}
     error: Json = None
     result: Json = None
     try:
-        with patches:
-            response = HANDLER.image_variations(
-                model_response=ImageResponse(created=NOW),
-                api_key=text_of(probe.api_key),
-                api_base=text_of(probe.api_base),
-                model=probe.model,
-                image=file_object(probe),
-                timeout=timeout_of(probe),
-                custom_llm_provider="openai",
-                logging_obj=logging_object(),
-                optional_params=optional_params,
-                litellm_params=litellm_params,
-                client=supplied,
-                organization=probe.organization,
-                headers=None,
-            )
+        response = HANDLER.image_variations(
+            ImageResponse(created=NOW),
+            text_of(probe.api_key),
+            text_of(probe.api_base),
+            probe.model,
+            file_object(probe),
+            timeout_of(probe),
+            "openai",
+            logging_object(),
+            optional_params,
+            litellm_params,
+            None,  # print_verbose stays at its default
+            None,  # logger_fn stays at its default
+            supplied,
+            probe.organization,
+            None,  # headers stay at their default
+        )
     except PROVIDER_ERROR as failure:
         record = ErrorRecord.model_validate(failure, from_attributes=True)
         failure_view: dict[str, Json] = {
@@ -245,6 +261,7 @@ def request_value(probe: Probe) -> Json:
     else:
         result = DOCUMENT.validate_json(response.model_dump_json())
     finally:
+        variation_handler.ProviderConfigManager = previous_config
         litellm.client_session = previous_session
     answer["supplied"] = probe.client is not None
     answer["kind"] = "sync"
