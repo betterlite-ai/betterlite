@@ -9,6 +9,9 @@ deviations:
   - what: A petals 2xx reply that is not a JSON object with a non-empty string outputs ends in a typed 500 decode error naming the failed shape.
     why: LiteLLM swallows the decode exception (the PetalsError it builds is never raised) and then crashes in its tokenizer on a null content, so the caller gets an APIConnectionError whose message is a Python traceback. betterlite names the decode failure with the same status.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/handler.py#L80-L88
+  - what: A petals request for a model whose prompt factory returns no prompt (falcon-7b, mpt-7b, codellama-34b) posts empty inputs and its reply ends in a typed 500 naming the missing prompt.
+    why: LiteLLM posts inputs None for that model and only fails when its tokenizer counts the None prompt, so the caller gets an APIConnectionError whose message is a Python traceback. betterlite keeps the same empty inputs and status, and the reply error names the cause instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/handler.py#L130
   - what: A custom prompt dictionary entry that lacks roles, initial_prompt_value or final_prompt_value ends in a typed error naming the missing field.
     why: LiteLLM reads the three keys directly, so a missing one raises KeyError inside completion and surfaces as a server fault. betterlite refuses the entry with an error that names the field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/handler.py#L42-L50
