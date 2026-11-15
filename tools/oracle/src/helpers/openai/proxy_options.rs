@@ -72,7 +72,7 @@ pub(crate) struct ImageCase {
     headers: Headers,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Endpoint {
     Generations,
@@ -114,11 +114,6 @@ impl Script {
             requests: Mutex::new(Vec::new()),
         }
     }
-
-    fn first_request(&self) -> Option<(String, Option<String>)> {
-        let requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
-        requests.first().cloned()
-    }
 }
 
 impl ModelListTransport for Script {
@@ -152,18 +147,32 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Route { params } => Ok(values(params, route_value)),
+            Input::Route { params } => {
+                let results: Vec<Value> = params.iter().map(route_value).collect();
+                Ok(json!({ "results": results }))
+            }
             Input::ChatRequest { params } => chat_values(params),
-            Input::ResponsesUrl { params } => Ok(values(params, responses_value)),
-            Input::ImageRequest { params } => Ok(values(params, image_value)),
-            Input::Models { params } => models_values(params),
+            Input::ResponsesUrl { params } => {
+                let results: Vec<Value> = params.iter().map(responses_value).collect();
+                Ok(json!({ "results": results }))
+            }
+            Input::ImageRequest { params } => {
+                let results: Vec<Value> = params.iter().map(image_value).collect();
+                Ok(json!({ "results": results }))
+            }
+            Input::Models { params } => {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .or_value_error()?;
+                let results: Vec<Value> = params
+                    .iter()
+                    .map(|case| models_value(&runtime, case))
+                    .collect();
+                Ok(json!({ "results": results }))
+            }
         }
     }
-}
-
-fn values<Case>(cases: &[Case], convert: fn(&Case) -> Value) -> Value {
-    let results: Vec<Value> = cases.iter().map(convert).collect();
-    json!({ "results": results })
 }
 
 fn route_value(case: &RouteCase) -> Value {
@@ -256,18 +265,6 @@ fn image_value(case: &ImageCase) -> Value {
     }
 }
 
-fn models_values(params: &[ModelsCase]) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .or_value_error()?;
-    let results: Vec<Value> = params
-        .iter()
-        .map(|case| models_value(&runtime, case))
-        .collect();
-    Ok(json!({ "results": results }))
-}
-
 fn models_value(runtime: &tokio::runtime::Runtime, case: &ModelsCase) -> Value {
     let options = ProxyOptions {
         api_base: case.environment_base.clone(),
@@ -283,7 +280,11 @@ fn models_value(runtime: &tokio::runtime::Runtime, case: &ModelsCase) -> Value {
     };
     let script = Script::recording(case);
     let listed = runtime.block_on(get_models(&options, &script, &request));
-    match (listed, script.first_request()) {
+    let requests = script
+        .requests
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    match (listed, requests.first().cloned()) {
         (Ok(models), Some((url, authorization))) => json!({
             "ok": true,
             "models": models,
