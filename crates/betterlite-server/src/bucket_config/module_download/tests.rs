@@ -51,7 +51,7 @@ async fn a_gcs_module_is_written_into_an_existing_directory() {
     let path = directory.path().join("handler.py");
 
     downloader(module_objects())
-        .download_python_module(BucketType::Gcs, "bucket", "module.py", &path)
+        .download_module(BucketType::Gcs, "bucket", "module.py", &path)
         .await
         .unwrap();
 
@@ -68,7 +68,7 @@ async fn a_module_with_non_ascii_text_is_written_as_utf8() {
         .collect();
 
     downloader(objects)
-        .download_python_module(BucketType::Gcs, "bucket", "module.py", &path)
+        .download_module(BucketType::Gcs, "bucket", "module.py", &path)
         .await
         .unwrap();
 
@@ -81,7 +81,7 @@ async fn a_gcs_module_creates_the_parent_folders_of_the_local_path() {
     let path = directory.path().join("callbacks/remote/handler.py");
 
     downloader(module_objects())
-        .download_python_module(BucketType::Gcs, "bucket", "callbacks/remote.py", &path)
+        .download_module(BucketType::Gcs, "bucket", "callbacks/remote.py", &path)
         .await
         .unwrap();
 
@@ -95,7 +95,7 @@ async fn an_s3_module_is_signed_and_written_to_the_local_path() {
     let path = directory.path().join("handler.py");
 
     s3_downloader(Arc::clone(&transport), credential_environment())
-        .download_python_module(BucketType::S3, "bucket", "loggers/module.py", &path)
+        .download_module(BucketType::S3, "bucket", "loggers/module.py", &path)
         .await
         .unwrap();
 
@@ -120,7 +120,7 @@ async fn each_s3_download_signs_its_own_request() {
     let directory = tempfile::tempdir().unwrap();
 
     downloader
-        .download_python_module(
+        .download_module(
             BucketType::S3,
             "bucket",
             "loggers/module.py",
@@ -129,7 +129,7 @@ async fn each_s3_download_signs_its_own_request() {
         .await
         .unwrap();
     downloader
-        .download_python_module(
+        .download_module(
             BucketType::S3,
             "bucket",
             "loggers/module.py",
@@ -152,7 +152,7 @@ async fn each_s3_download_signs_its_own_request() {
 #[tokio::test]
 async fn an_empty_path_is_not_a_directory_to_create() {
     let error = downloader(module_objects())
-        .download_python_module(BucketType::Gcs, "bucket", "module.py", Path::new(""))
+        .download_module(BucketType::Gcs, "bucket", "module.py", Path::new(""))
         .await
         .unwrap_err();
 
@@ -165,7 +165,7 @@ async fn a_missing_gcs_object_leaves_no_file() {
     let path = directory.path().join("handler.py");
 
     let error = downloader(BTreeMap::new())
-        .download_python_module(BucketType::Gcs, "bucket", "module.py", &path)
+        .download_module(BucketType::Gcs, "bucket", "module.py", &path)
         .await
         .unwrap_err();
 
@@ -183,7 +183,7 @@ async fn a_missing_s3_object_leaves_no_file() {
     let path = directory.path().join("handler.py");
 
     let error = downloader
-        .download_python_module(BucketType::S3, "bucket", "module.py", &path)
+        .download_module(BucketType::S3, "bucket", "module.py", &path)
         .await
         .unwrap_err();
 
@@ -199,7 +199,7 @@ async fn an_s3_download_without_resolvable_credentials_is_the_read_error() {
     let path = directory.path().join("handler.py");
 
     let error = downloader
-        .download_python_module(BucketType::S3, "bucket", "module.py", &path)
+        .download_module(BucketType::S3, "bucket", "module.py", &path)
         .await
         .unwrap_err();
 
@@ -217,7 +217,7 @@ async fn a_gcs_object_that_is_not_utf8_leaves_no_file() {
         .collect();
 
     let error = downloader(objects)
-        .download_python_module(BucketType::Gcs, "bucket", "module.py", &path)
+        .download_module(BucketType::Gcs, "bucket", "module.py", &path)
         .await
         .unwrap_err();
 
@@ -235,7 +235,7 @@ async fn an_s3_object_that_is_not_utf8_is_the_decode_error() {
     let path = directory.path().join("handler.py");
 
     let error = downloader
-        .download_python_module(BucketType::S3, "bucket", "module.py", &path)
+        .download_module(BucketType::S3, "bucket", "module.py", &path)
         .await
         .unwrap_err();
 
@@ -251,7 +251,7 @@ async fn a_parent_path_that_is_a_file_is_the_directory_error() {
     let path = blocker.join("handler.py");
 
     let error = downloader(module_objects())
-        .download_python_module(BucketType::Gcs, "bucket", "module.py", &path)
+        .download_module(BucketType::Gcs, "bucket", "module.py", &path)
         .await
         .unwrap_err();
 
@@ -265,7 +265,7 @@ async fn a_target_that_is_a_directory_is_the_write_error() {
     create_dir(&path).unwrap();
 
     let error = downloader(module_objects())
-        .download_python_module(BucketType::Gcs, "bucket", "module.py", &path)
+        .download_module(BucketType::Gcs, "bucket", "module.py", &path)
         .await
         .unwrap_err();
 
@@ -289,12 +289,7 @@ fn the_module_text_is_not_logged() {
             .enable_all()
             .build()
             .unwrap()
-            .block_on(downloader.download_python_module(
-                BucketType::Gcs,
-                "bucket",
-                "module.py",
-                &path,
-            ))
+            .block_on(downloader.download_module(BucketType::Gcs, "bucket", "module.py", &path))
             .unwrap();
     });
 

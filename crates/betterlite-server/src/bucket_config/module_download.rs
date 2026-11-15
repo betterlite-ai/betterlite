@@ -43,7 +43,7 @@ pub struct BucketModuleDownloader {
 
 impl BucketModuleDownloader {
     // LiteLLM builds a fresh client and fresh credentials for every module download
-    pub async fn download_python_module(
+    pub async fn download_module(
         &self,
         source_type: BucketType,
         bucket_name: &str,
