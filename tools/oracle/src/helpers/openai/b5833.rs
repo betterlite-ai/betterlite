@@ -99,11 +99,9 @@ impl Failure for GroqSttError {
     }
 }
 
-fn projected<Step, Error>(
-    calls: &[Step],
-    section: impl Fn(&Step) -> Result<Value, Error>,
-) -> Vec<Value>
+fn projected<Step, Error, Section>(calls: &[Step], section: Section) -> Vec<Value>
 where
+    Section: Fn(&Step) -> Result<Value, Error>,
     Error: Failure,
 {
     let mut values = Vec::with_capacity(calls.len());
