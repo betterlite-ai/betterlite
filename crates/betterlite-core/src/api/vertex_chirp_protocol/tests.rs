@@ -934,6 +934,16 @@ fn blank_results_are_skipped_and_transcripts_are_trimmed() {
 }
 
 #[test]
+fn blank_interims_emit_nothing() {
+    let mut transformer = chirp_transformer(true);
+    let results = [("  ", false), ("   ", false)];
+    let events = transformer
+        .transform(frame(ChirpSpeechEvent::None, &results, "0.5"))
+        .unwrap();
+    assert!(events.is_empty());
+}
+
+#[test]
 fn uuid_item_ids_look_like_openai_item_ids() {
     let mut item_ids = UuidItemIds;
     let first = item_ids.next_item_id();
