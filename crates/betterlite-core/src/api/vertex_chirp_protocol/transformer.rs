@@ -11,7 +11,7 @@ use super::events::{
     ChirpBackendEvent, ChirpEvent, ChirpSpeechEvent, ChirpStreamingResponse, ChirpStreamingResult,
 };
 use super::words::{join_transcript, new_words};
-use super::{ChirpProtocolError, ChirpSessionConfig, session_created_event};
+use super::{ChirpProtocolError, ChirpSessionConfig, created_event};
 
 pub trait ItemIdSource {
     fn next_item_id(&mut self) -> String;
@@ -111,11 +111,9 @@ where
             .as_ref()
             .ok_or(ChirpProtocolError::Unconfigured)?;
         let event_id = self.event_ids.next_event_id();
-        Ok(ChirpEvent::SessionCreated(session_created_event(
-            event_id,
-            &configured.config,
-            &configured.session_id,
-        )))
+        let session = configured.config.openai_session(&configured.session_id);
+        let created = created_event(event_id, &session);
+        Ok(ChirpEvent::SessionCreated(created))
     }
 
     fn response(

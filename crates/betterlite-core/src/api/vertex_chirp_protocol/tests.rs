@@ -23,8 +23,8 @@ use super::words::{join_transcript, new_words};
 use super::{
     ChirpProtocolError, ChirpSessionConfig, DEFAULT_SAMPLE_RATE_HERTZ, DISCARD_TURN_COMMAND,
     FINISH_TURN_COMMAND, MAX_AUDIO_MESSAGE_BYTES, MAX_SAMPLE_RATE_HERTZ, MIN_SAMPLE_RATE_HERTZ,
-    ProtocolError, default_session_config, is_vertex_speech_to_text_model,
-    normalize_speech_to_text_model, parse_chirp_session_update, session_created_event,
+    ProtocolError, created_event, default_session_config, is_vertex_speech_to_text_model,
+    normalize_speech_to_text_model, parse_chirp_session_update,
 };
 
 const STARTED: &str = "input_audio_buffer.speech_started";
@@ -435,7 +435,8 @@ fn rejects_a_fractional_sample_rate() {
 
 #[test]
 fn session_created_event_describes_the_configured_session() {
-    let event = session_created_event("event_0".to_owned(), &session_config(true), "sess_1");
+    let config = session_config(true);
+    let event = created_event("event_0".to_owned(), &config.openai_session("sess_1"));
     let document = serde_json::to_value(&event).unwrap();
     assert_eq!(document["type"], "session.created");
     assert_eq!(document["event_id"], "event_0");
@@ -458,10 +459,9 @@ fn session_created_event_describes_the_configured_session() {
 fn session_created_event_omits_disabled_turn_detection_and_language() {
     let mut config = session_config(false);
     config.language = None;
-    let document = serde_json::to_value(session_created_event(
+    let document = serde_json::to_value(created_event(
         "event_0".to_owned(),
-        &config,
-        "sess_1",
+        &config.openai_session("sess_1"),
     ))
     .unwrap();
     assert_eq!(
@@ -677,7 +677,7 @@ fn one_frame_emits_begin_finals_interim_and_end_in_order() {
     let mut transformer = chirp_transformer(true);
     let events = transformer
         .transform(frame(
-            ChirpSpeechEvent::Begin,
+            ChirpSpeechEvent::End,
             &[("hello", true), ("next", false)],
             "0.5",
         ))
@@ -753,6 +753,17 @@ fn a_finished_turn_without_a_turn_emits_nothing() {
     assert!(
         transformer
             .transform(ChirpBackendEvent::TurnFinished)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn an_end_frame_without_a_turn_emits_nothing() {
+    let mut transformer = chirp_transformer(true);
+    assert!(
+        transformer
+            .transform(frame(ChirpSpeechEvent::End, &[], "0.5"))
             .unwrap()
             .is_empty()
     );

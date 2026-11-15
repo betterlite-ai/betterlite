@@ -11,13 +11,13 @@ use betterlite_models::lookup::resolve::find_info;
 use betterlite_models::metadata::identity::Mode;
 use betterlite_openai::api::audio_file_input::language::normalize_language_to_bcp47;
 use betterlite_tokenizer::model_capabilities::BEDROCK_NAMES;
+use command::{CommandKind, ConfigureCommand};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::transcription_protocol::events::{
     TranscriptionSession,
-    TranscriptionSessionCreated,
     transcription_session,
     // ast-grep-ignore: no-long-names
     transcription_session_created_event as created_event,
@@ -88,7 +88,13 @@ impl ChirpSessionConfig {
     }
 
     pub fn configure_command(&self) -> Result<String, ChirpProtocolError> {
-        command::configure_command(self)
+        let command = ConfigureCommand {
+            kind: CommandKind::Configure,
+            model: &self.model,
+            language_codes: [self.language.as_deref().unwrap_or(AUTO_LANGUAGE_CODE)],
+            sample_rate_hertz: self.sample_rate,
+        };
+        serde_json::to_string(&command).map_err(ChirpProtocolError::Command)
     }
 }
 
@@ -103,10 +109,10 @@ pub fn is_vertex_speech_to_text_model(catalog: &ModelCatalog, model: &str) -> bo
         return false;
     };
     resolved.mode == Some(Mode::AudioTranscription)
-        && supports_speech_to_text_endpoints(catalog, &resolved.key)
+        && supports_speech_endpoints(catalog, &resolved.key)
 }
 
-fn supports_speech_to_text_endpoints(catalog: &ModelCatalog, key: &str) -> bool {
+fn supports_speech_endpoints(catalog: &ModelCatalog, key: &str) -> bool {
     catalog.entries.get(key).is_some_and(|entry| {
         SPEECH_TO_TEXT_ENDPOINTS.iter().all(|endpoint| {
             entry
@@ -165,15 +171,6 @@ pub fn parse_chirp_session_update(
         sample_rate: sample_rate_hertz(update.audio_format.as_ref())?,
         server_vad: server_vad(&update)?,
     })
-}
-
-#[must_use]
-pub fn session_created_event(
-    event_id: String,
-    config: &ChirpSessionConfig,
-    session_id: &str,
-) -> TranscriptionSessionCreated {
-    created_event(event_id, &config.openai_session(session_id))
 }
 
 fn sample_rate_hertz(format: Option<&TranscriptionAudioFormat>) -> Result<i64, ChirpProtocolError> {
