@@ -493,12 +493,10 @@ fn flux_projection_keeps_reply_errors_with_status_and_headers() {
 
 #[test]
 fn flux_projection_refuses_a_reply_past_the_size_limit() {
-    let body = format!(
-        r#"{{"images": [], "prompt": "{}"}}"#,
-        "a".repeat(MAX_FAL_REPLY_BYTES)
-    );
+    let mut body = vec![b'{'];
+    body.resize(MAX_FAL_REPLY_BYTES + 1, b'a');
     let mut response = FluxImageResponse::default();
-    let error = project_response(200, &reply_headers(), body.as_bytes(), &mut response)
+    let error = project_response(200, &reply_headers(), &body, &mut response)
         .expect_err("an oversized reply");
     assert!(matches!(
         error,

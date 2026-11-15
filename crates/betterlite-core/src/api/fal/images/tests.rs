@@ -43,7 +43,9 @@ fn provider(
 }
 
 fn decoded(body: &str) -> Vec<FalImage> {
-    decode_fal_image_reply(200, &headers(), body.as_bytes()).expect("a decoded reply")
+    decode_fal_image_reply(200, &headers(), body.as_bytes())
+        .expect("a decoded reply")
+        .images
 }
 
 fn number(value: i64) -> Json {
@@ -216,8 +218,29 @@ fn fal_image_reply_rejects_an_oversized_reply() {
 fn fal_image_reply_accepts_a_reply_at_the_bound() {
     let mut at_bound = vec![b' '; MAX_FAL_REPLY_BYTES];
     at_bound[..13].copy_from_slice(br#"{"images":[]}"#);
-    let images = decode_fal_image_reply(200, &headers(), &at_bound).expect("a decoded reply");
+    let images = decode_fal_image_reply(200, &headers(), &at_bound)
+        .expect("a decoded reply")
+        .images;
     assert!(images.is_empty());
+}
+
+#[test]
+fn fal_image_reply_keeps_the_root_metadata() {
+    let reply = decode_fal_image_reply(
+        200,
+        &headers(),
+        br#"{"images": [], "seed": 7, "timings": null, "images_extra": true}"#,
+    )
+    .expect("a decoded reply");
+    assert!(reply.images.is_empty());
+    assert_eq!(
+        reply.metadata,
+        IndexMap::from([
+            ("seed".to_owned(), number(7)),
+            ("timings".to_owned(), Json::Null),
+            ("images_extra".to_owned(), Json::Bool(true)),
+        ])
+    );
 }
 
 #[test]

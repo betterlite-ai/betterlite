@@ -27,6 +27,13 @@ pub struct FalImage {
     pub provider_specific_fields: Option<FalImageProviderSpecificFields>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FalImageReply {
+    pub images: Vec<FalImage>,
+    /// The reply object's root fields other than images, in reply order.
+    pub metadata: IndexMap<String, Json>,
+}
+
 #[must_use]
 pub fn fal_images_to_image_objects(images: &Json) -> Vec<FalImage> {
     let Json::List(entries) = images else {
@@ -80,7 +87,7 @@ pub fn decode_fal_image_reply(
     status: u16,
     headers: &ImageHeaders,
     body: &[u8],
-) -> Result<Vec<FalImage>, FalImageError> {
+) -> Result<FalImageReply, FalImageError> {
     if body.len() > MAX_FAL_REPLY_BYTES {
         return Err(FalImageError::ReplyTooLarge {
             status,
@@ -100,9 +107,16 @@ pub fn decode_fal_image_reply(
             headers: headers.clone(),
         });
     };
-    Ok(fields
-        .get("images")
-        .map_or_else(Vec::new, fal_images_to_image_objects))
+    let mut images = Vec::new();
+    let mut metadata = IndexMap::new();
+    for (name, value) in fields {
+        if name == "images" {
+            images = fal_images_to_image_objects(&value);
+        } else {
+            metadata.insert(name, value);
+        }
+    }
+    Ok(FalImageReply { images, metadata })
 }
 
 pub fn append_generation_images(
@@ -111,7 +125,7 @@ pub fn append_generation_images(
     headers: &ImageHeaders,
     body: &[u8],
 ) -> Result<(), FalImageError> {
-    let images = decode_fal_image_reply(status, headers, body)?;
-    data.get_or_insert_with(Vec::new).extend(images);
+    let reply = decode_fal_image_reply(status, headers, body)?;
+    data.get_or_insert_with(Vec::new).extend(reply.images);
     Ok(())
 }

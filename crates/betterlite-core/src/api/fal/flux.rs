@@ -224,23 +224,10 @@ pub fn project_response(
     body: &[u8],
     response: &mut FluxImageResponse,
 ) -> Result<(), FalImageError> {
-    let reply: Json =
-        serde_json::from_slice(body).map_err(|source| FalImageError::ReplyDecode {
-            status,
-            headers: headers.clone(),
-            source,
-        })?;
-    let Json::Object(fields) = reply else {
-        return Err(FalImageError::ReplyNotAnObject {
-            status,
-            headers: headers.clone(),
-        });
-    };
-    response
-        .data
-        .extend(decode_fal_image_reply(status, headers, body)?);
+    let reply = decode_fal_image_reply(status, headers, body)?;
+    response.data.extend(reply.images);
     for name in HIDDEN_METADATA {
-        if let Some(value) = fields.get(name) {
+        if let Some(value) = reply.metadata.get(name) {
             response
                 .hidden_params
                 .insert(name.to_owned(), value.clone());
