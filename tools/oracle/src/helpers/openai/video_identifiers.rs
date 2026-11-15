@@ -126,7 +126,10 @@ impl<Inner: Subscriber> Layer<Inner> for Logs {
     }
 }
 
-fn observed<T, F: FnOnce() -> T>(logs: &Logs, capture: bool, work: F) -> (T, bool) {
+fn observed<T, F>(logs: &Logs, capture: bool, work: F) -> (T, bool)
+where
+    F: FnOnce() -> T,
+{
     if !capture {
         return (work(), false);
     }
@@ -144,31 +147,52 @@ fn observed<T, F: FnOnce() -> T>(logs: &Logs, capture: bool, work: F) -> (T, boo
     (value, logged)
 }
 
-fn decoded_video(logs: &Logs, decode: &Decode) -> Value {
-    let (decoded, logged) = observed(logs, decode.capture_debug, || {
-        decode_video_id_with_provider(&decode.encoded)
-    });
-    json!({
-        "custom_llm_provider": decoded.custom_llm_provider,
-        "model_id": decoded.model_id,
-        "video_id": decoded.video_id,
-        "logged": logged,
-    })
+type DecodedParts = (Option<String>, Option<String>, String);
+
+#[derive(Clone, Copy)]
+enum IdCall {
+    Video,
+    Character,
 }
 
-fn decoded_character(logs: &Logs, decode: &Decode) -> Value {
-    let (decoded, logged) = observed(logs, decode.capture_debug, || {
-        decode_character_id(&decode.encoded)
-    });
-    json!({
-        "custom_llm_provider": decoded.custom_llm_provider,
-        "model_id": decoded.model_id,
-        "character_id": decoded.character_id,
-        "logged": logged,
-    })
+impl IdCall {
+    fn decode(self, encoded: &str) -> DecodedParts {
+        match self {
+            Self::Video => {
+                let decoded = decode_video_id_with_provider(encoded);
+                (
+                    decoded.custom_llm_provider,
+                    decoded.model_id,
+                    decoded.video_id,
+                )
+            }
+            Self::Character => {
+                let decoded = decode_character_id(encoded);
+                (
+                    decoded.custom_llm_provider,
+                    decoded.model_id,
+                    decoded.character_id,
+                )
+            }
+        }
+    }
 }
 
-fn extracted<F: FnOnce(&str) -> String>(logs: &Logs, decode: &Decode, extract: F) -> Value {
+fn decoded_id(logs: &Logs, decode: &Decode, id_field: &str, kind: IdCall) -> Value {
+    let (decoded, logged) = observed(logs, decode.capture_debug, || kind.decode(&decode.encoded));
+    let (custom_llm_provider, model_id, id) = decoded;
+    let mut rendered = Map::new();
+    rendered.insert("custom_llm_provider".to_owned(), json!(custom_llm_provider));
+    rendered.insert("model_id".to_owned(), json!(model_id));
+    rendered.insert(id_field.to_owned(), json!(id));
+    rendered.insert("logged".to_owned(), json!(logged));
+    Value::Object(rendered)
+}
+
+fn extracted<F>(logs: &Logs, decode: &Decode, extract: F) -> Value
+where
+    F: FnOnce(&str) -> String,
+{
     let (id, logged) = observed(logs, decode.capture_debug, || extract(&decode.encoded));
     json!({"id": id, "logged": logged})
 }
@@ -180,7 +204,7 @@ fn run_call(call: &Call, logs: &Logs) -> Value {
             &encode.provider,
             encode.model_id.as_deref()
         )),
-        Call::DecodeVideoId(decode) => decoded_video(logs, decode),
+        Call::DecodeVideoId(decode) => decoded_id(logs, decode, "video_id", IdCall::Video),
         Call::ExtractOriginalVideoId(decode) => extracted(logs, decode, |encoded| {
             decode_video_id_with_provider(encoded).video_id
         }),
@@ -189,7 +213,9 @@ fn run_call(call: &Call, logs: &Logs) -> Value {
             &encode.provider,
             encode.model_id.as_deref()
         )),
-        Call::DecodeCharacterId(decode) => decoded_character(logs, decode),
+        Call::DecodeCharacterId(decode) => {
+            decoded_id(logs, decode, "character_id", IdCall::Character)
+        }
         Call::ExtractOriginalCharacterId(decode) => extracted(logs, decode, |encoded| {
             decode_character_id(encoded).character_id
         }),

@@ -1,14 +1,15 @@
 import base64
 import io
 from collections.abc import Mapping, Sequence
-from typing import IO, Annotated, Literal, Protocol, TypeAlias, TypedDict
+from typing import Annotated, Literal, Protocol, TypeAlias, TypedDict
 
+from litellm.types.llms.openai import FileContent
 from pydantic import Field, JsonValue
 from typing_extensions import override
 
 Kind = Literal["bytes", "text", "stream"]
 Failure = Literal["none", "tell", "seek", "read", "restore"]
-Content: TypeAlias = IO[bytes] | bytes | str
+Content: TypeAlias = FileContent | str
 StoredFiles: TypeAlias = (
     Content
     | tuple[str | None, Content]
@@ -106,7 +107,7 @@ class FaultyBytesIO(io.BytesIO):
         return self.position
 
 
-class BufferedCursor:
+class BufferedCursor(CursorStream):
     def __init__(self, buffered: io.BufferedIOBase) -> None:
         self.buffered = buffered
 

@@ -91,18 +91,17 @@ impl ProbeReader {
 }
 
 impl Read for ProbeReader {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if matches!(self.failure, Failure::Read) {
             return Err(io::Error::other("read failed"));
         }
         let remaining = self.data.len().saturating_sub(self.position);
-        let taken = remaining.min(buffer.len());
+        let taken = remaining.min(buf.len());
         let source = self
             .data
             .get(self.position..self.position.saturating_add(taken))
             .unwrap_or_default();
-        buffer
-            .get_mut(..taken)
+        buf.get_mut(..taken)
             .unwrap_or_default()
             .copy_from_slice(source);
         self.position = self.position.saturating_add(taken);
@@ -111,7 +110,7 @@ impl Read for ProbeReader {
 }
 
 impl Seek for ProbeReader {
-    fn seek(&mut self, target: SeekFrom) -> io::Result<u64> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.seeks = self.seeks.saturating_add(1);
         if matches!(self.failure, Failure::Seek) && self.seeks == 1 {
             return Err(io::Error::other("seek failed"));
@@ -119,7 +118,7 @@ impl Seek for ProbeReader {
         if matches!(self.failure, Failure::Restore) && self.seeks > 1 {
             return Err(io::Error::other("restore failed"));
         }
-        if let SeekFrom::Start(offset) = target {
+        if let SeekFrom::Start(offset) = pos {
             self.position =
                 usize::try_from(offset).map_err(|error| io::Error::other(error.to_string()))?;
         }
