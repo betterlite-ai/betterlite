@@ -28,6 +28,10 @@ use super::support::map;
 )]
 #[case::bare_user_api_key_ignored(r#"{"metadata":{"user_api_key":"client"}}"#, "")]
 #[case::empty_api_key_ignored(r#"{"metadata":{"user_api_key_auth":{"api_key":""}}}"#, "")]
+#[case::empty_key_falls_through(
+    r#"{"litellm_params":{"metadata":{"user_api_key_auth":{"api_key":""}}},"metadata":{"user_api_key_auth":{"api_key":"top"}}}"#,
+    "top"
+)]
 #[case::non_text_api_key_ignored(r#"{"metadata":{"user_api_key_auth":{"api_key":5}}}"#, "")]
 #[case::auth_not_an_object(r#"{"metadata":{"user_api_key_auth":"client"}}"#, "")]
 #[case::metadata_not_an_object(

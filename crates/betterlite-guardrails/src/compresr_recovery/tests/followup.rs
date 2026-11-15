@@ -129,6 +129,14 @@ fn assistant_text_leads_the_function_calls_responses_followup(
     );
 }
 
+// A reasoning item's content holds text too, and only message items contribute the assistant text
+#[test]
+fn only_message_items_contribute_text_responses_followup() {
+    let response = r#"{"output":[{"type":"reasoning","content":[{"type":"output_text","text":"leak"}]},{"type":"message","content":[{"type":"output_text","text":"checking"}]},{"type":"function_call","call_id":"call_1","name":"compresr_retrieve","arguments":"{\"hash\":\"HASH\"}"}]}"#.replace("HASH", HASH_ONE);
+    let rest = r#"{"role":"assistant","content":"checking"},{"type":"function_call","call_id":"call_1","name":"compresr_retrieve","arguments":"{\"hash\":\"HASH\"}"},{"type":"function_call_output","call_id":"call_1","output":"original one"}"#;
+    assert_eq!(follow_up(&response), expected(rest));
+}
+
 #[test]
 fn responses_shape_wins_over_the_anthropic_shape_responses_followup() {
     let response = responses_response(HASH_ONE).replacen('{', r#"{"content":[],"#, 1);
