@@ -51,7 +51,7 @@ fn event() -> LoggerEvent {
     }
 }
 
-const CONFIGURED: &str = "litellm_settings:\n  success_callback: langfuse\n";
+const CONFIGURED: &str = "litellm_settings:\n  success_callback: [langfuse]\n";
 
 #[tokio::test]
 async fn callback_logger_resolves_when_the_config_lists_langfuse() {
