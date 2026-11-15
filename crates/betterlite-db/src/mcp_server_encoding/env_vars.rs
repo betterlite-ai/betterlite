@@ -42,10 +42,10 @@ pub fn encrypt_global_env_var_values<N: NonceSource, D: SecretDiagnostics>(
         let Some(value) = fields.get_mut("value") else {
             continue;
         };
-        let stored = match value {
+        let stored = match value.clone() {
             JsonValue::String(text) if text.is_empty() => continue,
-            JsonValue::String(text) => StoredValue::Text(SecretString::from(text.clone())),
-            other => StoredValue::Other(other.clone()),
+            JsonValue::String(text) => StoredValue::Text(SecretString::from(text)),
+            other => StoredValue::Other(other),
         };
         match cipher.encrypt_value(stored, None)? {
             StoredValue::Text(sealed) => {
@@ -59,16 +59,8 @@ pub fn encrypt_global_env_var_values<N: NonceSource, D: SecretDiagnostics>(
 
 pub fn decrypt_global_env_var_values(env_vars: &mut [McpEnvVar], cipher: &DbCipher) {
     for entry in env_vars {
-        if !is_global_env_var_scope(Some(entry.scope)) || entry.value.is_empty() {
-            continue;
-        }
-        let stored = StoredValue::<()>::Text(SecretString::from(take(&mut entry.value)));
-        if let Some(StoredValue::Text(plaintext)) =
-            cipher.decrypt_value(stored, GLOBAL_ENV_VAR_KEY, DECRYPT_POLICY)
-        {
-            entry.value = plaintext.expose_secret().to_owned();
-        } else {
-            warn_undecryptable(&entry.name);
+        if is_global_env_var_scope(Some(entry.scope)) {
+            decrypt_global_value(&mut entry.value, &entry.name, cipher);
         }
     }
 }
@@ -85,17 +77,18 @@ pub fn decrypt_stored_env_var_values(env_vars: &mut [JsonValue], cipher: &DbCiph
         let Some(JsonValue::String(text)) = fields.get_mut("value") else {
             continue;
         };
-        if text.is_empty() {
-            continue;
-        }
-        let stored = StoredValue::<()>::Text(SecretString::from(take(text)));
-        if let Some(StoredValue::Text(plaintext)) =
-            cipher.decrypt_value(stored, GLOBAL_ENV_VAR_KEY, DECRYPT_POLICY)
-        {
-            *text = plaintext.expose_secret().to_owned();
-        } else {
-            warn_undecryptable(&name);
-        }
+        decrypt_global_value(text, &name, cipher);
+    }
+}
+
+fn decrypt_global_value(value: &mut String, name: &str, cipher: &DbCipher) {
+    if value.is_empty() {
+        return;
+    }
+    let stored = StoredValue::<()>::Text(SecretString::from(take(value)));
+    match cipher.decrypt_value(stored, GLOBAL_ENV_VAR_KEY, DECRYPT_POLICY) {
+        Some(StoredValue::Text(plaintext)) => *value = plaintext.expose_secret().to_owned(),
+        Some(StoredValue::Other(())) | None => warn_undecryptable(name),
     }
 }
 
@@ -131,15 +124,10 @@ fn stored_entry_is_user_scope(fields: &BTreeMap<String, JsonValue>) -> bool {
 }
 
 fn entry_name(fields: &BTreeMap<String, JsonValue>) -> &str {
-    match fields.get("name") {
-        Some(JsonValue::String(name)) => name.as_str(),
-        Some(JsonValue::Null)
-        | Some(JsonValue::Bool(_))
-        | Some(JsonValue::Number(_))
-        | Some(JsonValue::Array(_))
-        | Some(JsonValue::Object(_))
-        | None => "",
+    if let Some(JsonValue::String(name)) = fields.get("name") {
+        return name.as_str();
     }
+    ""
 }
 
 fn warn_undecryptable(name: &str) {

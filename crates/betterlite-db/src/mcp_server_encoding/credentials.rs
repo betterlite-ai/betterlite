@@ -60,9 +60,9 @@ pub fn encrypt_credentials<N: NonceSource, D: SecretDiagnostics>(
         let Some(value) = credentials.get_mut(field) else {
             continue;
         };
-        let stored = match value {
-            JsonValue::String(text) => StoredValue::Text(SecretString::from(text.clone())),
-            other => StoredValue::Other(other.clone()),
+        let stored = match value.clone() {
+            JsonValue::String(text) => StoredValue::Text(SecretString::from(text)),
+            other => StoredValue::Other(other),
         };
         match cipher.encrypt_value(stored, None)? {
             StoredValue::Text(sealed) => {
