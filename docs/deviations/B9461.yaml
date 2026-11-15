@@ -11,6 +11,13 @@ deviations:
       the same elapsed time as LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L346-L348
   - what: >-
+      A wall clock set before the Unix epoch records start_time and end_time as 0.0. LiteLLM's record only ever
+      holds two monotonic readings, which stay usable on such a host.
+    why: >-
+      Rust has no negative reading for a SystemTime before the epoch, and a host clock set before 1970 is a broken
+      setup rather than one a guardrail can rely on; the run still compacts and records the counts.
+    link: ""
+  - what: >-
       A guardrail record that cannot be written is logged as a warning and the request continues uncompacted or
       compacted as decided. LiteLLM's add_standard_logging_guardrail_information_to_request_data raises out of
       apply_guardrail if serializing the entry fails.
